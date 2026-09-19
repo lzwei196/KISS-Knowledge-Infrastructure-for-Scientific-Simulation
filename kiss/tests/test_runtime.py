@@ -1971,8 +1971,12 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn('id="s-obs-mode"', page)
         self.assertIn("Direct through GeoForge Desktop (recommended)", page)
         self.assertIn('id="s-obs-test"', page)
-        self.assertIn("GeoForge Database access (optional)", page)
+        self.assertIn("Activation token", page)
         self.assertIn("Save &amp; test database", page)
+        # settings window: sidebar pages, provider cards, catalogue browser
+        for marker in ('class="setnav"', 'data-page="ai"', 'data-page="db"', 'data-page="net"', 'data-page="perm"',
+                       'id="s-providers"', 'id="db-facets"', 'id="db-list"', "loadDatabaseBrowser", "KEY_ENV"):
+            self.assertIn(marker, page)
         self.assertIn("/api/obs/test", page)
         self.assertIn("/api/obs/catalogue", page)
         self.assertIn("GeoForge Database", page)
@@ -1983,7 +1987,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn('id="plan-data"', page)
         self.assertIn('id="request-done"', page)
         self.assertIn('id="action-plan"', page)
-        self.assertIn("Test AI & GitHub", page)
+        self.assertIn("Test AI &amp; GitHub", page)
         self.assertIn("agent-run Git, pip, curl, and download commands", page)
         self.assertIn("/api/selfcheck?provider=", page)
         self.assertIn("refreshMachineStatus", page)

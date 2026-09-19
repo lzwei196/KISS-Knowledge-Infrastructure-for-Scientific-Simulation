@@ -167,6 +167,36 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .card2 label{display:block;font-size:12px;color:var(--fg-2);margin:10px 0 4px}
 .card2 input,.card2 select,.card2 textarea{width:100%;padding:7px 10px;border:1px solid var(--line);
   border-radius:8px;background:var(--raised);color:var(--fg);font:inherit}
+.setwin{width:min(940px,94vw);height:min(660px,88vh);max-height:88vh;padding:0;display:grid;grid-template-columns:190px minmax(0,1fr);overflow:hidden}
+.setnav{background:var(--surface);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:2px}
+.setnav-title{font-weight:600;padding:2px 10px 10px;font-size:15px}
+.setnav-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:9px;background:transparent;font-size:13px}
+.setnav-item:hover{background:var(--hover)}.setnav-item.active{background:var(--brand-50);color:var(--brand);font-weight:600}
+.setnav-ico{width:18px;text-align:center;opacity:.8}
+.setbody{position:relative;display:flex;flex-direction:column;min-height:0}
+.setbody .modal-x{position:absolute;top:12px;right:14px;float:none;margin:0}
+.setpage{display:none;flex:1;min-height:0;overflow-y:auto;padding:18px 22px 12px}.setpage.active{display:block}
+.setpage h2{margin:0 0 6px}.setpage h3{font-size:13px;margin:14px 0 6px}
+.setfoot{display:flex;gap:8px;padding:10px 22px;border-top:1px solid var(--line);background:var(--bg)}
+.provgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.provcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--raised);display:flex;flex-direction:column;gap:5px}
+.provcard.default{border-color:var(--brand)}
+.provhead{display:flex;align-items:center;gap:8px}.provhead b{flex:1;font-size:13px}
+.provcard small{color:var(--fg-3);line-height:16px}.provcard input{margin-top:2px;padding:6px 9px;font-size:12px}
+.provdef{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--fg-2);cursor:pointer;margin:0}
+.provdef input{width:auto;margin:0}
+.togglelist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.togglelist label{display:flex;align-items:center;gap:8px;margin:0;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;color:var(--fg)}
+.togglelist input{width:auto;margin:0}
+.dbbrowser{margin-top:14px}
+.facetrow{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.facet{padding:4px 9px;border-radius:99px;border:1px solid var(--line);background:var(--raised);font-size:12px;cursor:pointer}
+.facet:hover{background:var(--hover)}.facet.on{border-color:var(--brand);background:var(--brand-50);color:var(--brand)}
+.facet i{font-style:normal;color:var(--fg-3);margin-left:4px}
+.dbrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:7px 8px;border-top:1px solid var(--line-1);cursor:pointer;align-items:center}
+.dbrow:hover{background:var(--hover)}.dbrow b{font-size:12.5px;display:block}.dbrow small{color:var(--fg-3);display:block}
+.dbdetail{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--raised);margin-top:8px}
+.dbdetail dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:3px 10px;margin:8px 0 0;font-size:12px}.dbdetail dt{color:var(--fg-3)}.dbdetail dd{margin:0}
 .actionoption{display:flex;width:100%;text-align:left;gap:9px;align-items:flex-start;padding:10px 11px;margin-top:7px;border-radius:11px}.actionoption:hover{background:var(--hover)}.actionoption.selected{border-color:var(--brand);background:var(--brand-50)}
 .actionradio{width:17px;height:17px;border:1.5px solid var(--fg-3);border-radius:99px;flex:0 0 auto;margin-top:2px}.actionoption.selected .actionradio{border:5px solid var(--brand)}.actionoption b{display:block}.actionoption small{display:block;color:var(--fg-3);line-height:16px;margin-top:2px}
 .pickrow{display:flex;align-items:center;gap:9px;padding:6px 4px;border-radius:8px;cursor:pointer}
@@ -311,57 +341,87 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div class="activitynote" id="activitynote"><span class="activitypulse"></span><div class="activitycopy"><b id="activitytitle"></b><span id="activitytext"></span><small id="activityevidence"></small></div><button id="activity-refresh">Recheck</button><button id="activity-stop">Stop</button><button id="activity-new">＋ New chat</button></div>
     <div class="hint" id="hint"></div>
   </footer>
-  <div id="modal"><div class="card2">
-    <button class="modal-x" data-modal-close aria-label="Close" title="Close">✕</button>
-    <h2>AI connections</h2>
-    <label>Local agent CLIs</label><div id="s-local"></div>
-    <div style="display:flex;gap:8px;margin:6px 0 12px"><button id="s-recheck">Recheck local CLIs</button><span class="hint" id="s-local-msg" style="align-self:center;margin:0"></span></div>
-    <label>Default provider</label><select id="s-def"></select>
-    <div class="datacard" style="margin-top:12px;padding:14px">
-      <label for="s-proxy-mode" style="margin-top:0">Network &amp; proxy</label>
-      <select id="s-proxy-mode">
-        <option value="auto">Use Mac system proxy (recommended)</option>
-        <option value="manual">Enter proxy manually</option>
-        <option value="off">Do not use a proxy</option>
-      </select>
-      <div id="s-proxy-manual" style="display:none;margin-top:8px"><input id="s-proxy-url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:7897"></div>
-      <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the services selected below.</div>
-      <label style="margin-top:11px">Use proxy for</label>
-      <div id="s-proxy-providers" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px"></div>
-      <div class="hint" style="margin:7px 0 0">Select GitHub &amp; KI updates for the built-in updater. Select an AI provider when that provider and its agent-run Git, pip, curl, and download commands need the same route.</div>
+  <div id="modal"><div class="card2 setwin">
+    <nav class="setnav">
+      <div class="setnav-title">Settings</div>
+      <button class="setnav-item active" data-page="ai"><span class="setnav-ico">✦</span>AI services</button>
+      <button class="setnav-item" data-page="db"><span class="setnav-ico">◈</span>GeoForge Database</button>
+      <button class="setnav-item" data-page="net"><span class="setnav-ico">⇄</span>Network &amp; proxy</button>
+      <button class="setnav-item" data-page="perm"><span class="setnav-ico">⚿</span>Permissions</button>
+    </nav>
+    <div class="setbody">
+      <button class="modal-x" data-modal-close aria-label="Close" title="Close">✕</button>
+      <section class="setpage active" data-page="ai">
+        <h2>AI services</h2>
+        <div class="hint" style="margin:0 0 10px">Local agent CLIs use their own sign-in. API providers need a key. Pick the one GeoForge should use by default.</div>
+        <select id="s-def" hidden></select>
+        <div id="s-providers" class="provgrid"></div>
+        <div style="display:flex;gap:8px;margin:12px 0 0;align-items:center;flex-wrap:wrap"><button id="s-recheck">Recheck local CLIs</button><button id="s-test">Test AI &amp; GitHub</button><span class="hint" id="s-local-msg" style="margin:0"></span></div>
+        <pre id="s-test-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0 0;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace"></pre>
+      </section>
+      <section class="setpage" data-page="db">
+        <h2>GeoForge Database</h2>
+        <div class="datacard" style="padding:12px 14px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span id="s-obs-pill" class="statuspill">…</span><span class="hint" id="s-obs-status" style="margin:0;flex:1;min-width:200px"></span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;margin-top:10px">
+            <div><label for="s-obs-token" style="margin-top:0">Activation token</label><input type="password" id="s-obs-token" autocomplete="new-password" spellcheck="false" placeholder="Paste activation token"></div>
+            <button id="s-obs-test">Save &amp; test database</button>
+          </div>
+          <div class="hint" id="s-obs-note" style="margin:6px 0 0"></div>
+          <label for="s-obs-mode" style="margin-top:10px">Database access for Agents</label>
+          <select id="s-obs-mode">
+            <option value="direct">Direct through GeoForge Desktop (recommended)</option>
+            <option value="off">Do not provide database access</option>
+          </select>
+          <div class="hint" style="margin:6px 0 0">Direct mode lets the Agent search live records through a protected Desktop tool. GeoForge keeps the token and returns only sanitized metadata.</div>
+        </div>
+        <div id="s-browser" class="dbbrowser">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><h3 style="margin:0;flex:1">What the database holds</h3><input id="db-q" placeholder="Search datasets…" autocomplete="off" style="width:min(260px,50%);margin:0"></div>
+          <div id="db-facets"></div>
+          <div id="db-detail" hidden></div>
+          <div id="db-list"></div>
+        </div>
+      </section>
+      <section class="setpage" data-page="net">
+        <h2>Network &amp; proxy</h2>
+        <div class="datacard" style="padding:12px 14px">
+          <label for="s-proxy-mode" style="margin-top:0">Proxy</label>
+          <select id="s-proxy-mode">
+            <option value="auto">Use Mac system proxy (recommended)</option>
+            <option value="manual">Enter proxy manually</option>
+            <option value="off">Do not use a proxy</option>
+          </select>
+          <div id="s-proxy-manual" style="display:none;margin-top:8px"><input id="s-proxy-url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:7897"></div>
+          <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the services selected below.</div>
+        </div>
+        <div class="datacard" style="padding:12px 14px">
+          <label style="margin-top:0">Use proxy for</label>
+          <div id="s-proxy-providers" class="togglelist"></div>
+          <div class="hint" style="margin:7px 0 0">Select GitHub &amp; KI updates for the built-in updater. Select an AI provider when that provider and its agent-run Git, pip, curl, and download commands need the same route.</div>
+        </div>
+      </section>
+      <section class="setpage" data-page="perm">
+        <h2>Permissions</h2>
+        <div class="datacard" style="padding:12px 14px">
+          <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
+          <select id="s-kimi-security">
+            <option value="scoped">Project scoped (recommended)</option>
+            <option value="full">Full computer access</option>
+          </select>
+          <div class="hint" id="s-kimi-security-note" style="margin:7px 0 0">Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.</div>
+        </div>
+        <div class="datacard" style="padding:12px 14px">
+          <label style="margin-top:0">MCP connections</label>
+          <div class="hint" style="margin:4px 0 8px">MCP servers are chosen per chat, because each chat decides which tools its agent may use.</div>
+          <button id="s-open-mcp">Choose MCP servers for this chat</button>
+        </div>
+      </section>
+      <div class="setfoot">
+        <button class="primary" id="s-save">Save</button>
+        <button id="s-close">Close</button>
+        <span class="hint" id="s-msg" style="align-self:center;margin:0"></span>
+      </div>
     </div>
-    <div class="datacard" style="margin-top:12px;padding:14px">
-      <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
-      <select id="s-kimi-security">
-        <option value="scoped">Project scoped (recommended)</option>
-        <option value="full">Full computer access</option>
-      </select>
-      <div class="hint" id="s-kimi-security-note" style="margin:7px 0 0">Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.</div>
-    </div>
-    <div class="datacard" style="margin-top:12px;padding:14px">
-      <label for="s-obs-token" style="margin-top:0">GeoForge Database access (optional)</label>
-      <input type="password" id="s-obs-token" autocomplete="new-password" spellcheck="false" placeholder="Paste activation token">
-      <div class="hint" id="s-obs-note" style="margin:7px 0 0">Stored privately on this computer, readable only by your user account. The Agent and chat never receive this token.</div>
-      <label for="s-obs-mode" style="margin-top:11px">Database access for Agents</label>
-      <select id="s-obs-mode">
-        <option value="direct">Direct through GeoForge Desktop (recommended)</option>
-        <option value="off">Do not provide database access</option>
-      </select>
-      <div class="hint" style="margin:7px 0 0">Direct mode lets the Agent search live records through a protected Desktop tool. GeoForge keeps the token and returns only sanitized metadata.</div>
-      <div class="hint" id="s-obs-status" style="margin:7px 0 0"></div>
-      <button id="s-obs-test" style="margin-top:9px">Save &amp; test database</button>
-    </div>
-    <label>Anthropic API key</label><input id="s-anthropic" autocomplete="off">
-    <label>DeepSeek API key</label><input id="s-deepseek" autocomplete="off">
-    <label>OpenAI API key</label><input id="s-openai" autocomplete="off">
-    <label>OpenRouter API key</label><input id="s-openrouter" autocomplete="off">
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="primary" id="s-save">Save</button>
-      <button id="s-test">Test AI & GitHub</button>
-      <button id="s-close">Close</button>
-      <span class="hint" id="s-msg" style="align-self:center"></span>
-    </div>
-    <pre id="s-test-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap;background:#11151b;color:#e8edf4;border-radius:10px;padding:12px;margin:12px 0 0;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace"></pre>
   </div></div>
   <div id="sessionpick"><div class="card2" style="width:min(560px,92vw)">
     <button class="modal-x" data-modal-close aria-label="Close" title="Close">✕</button>
@@ -1361,7 +1421,7 @@ $("#view-agent").onclick=async()=>{
 };
 
 /* per-chat data requirements and local input files */
-const sizeLabel=n=>n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:`${(n/1048576).toFixed(1)} MB`;
+const sizeLabel=n=>typeof n!=="number"?"":n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:n<1073741824?`${(n/1048576).toFixed(1)} MB`:`${(n/1073741824).toFixed(2)} GB`;
 const displayValue=value=>{
   if(value==null||value==="")return "";
   if(typeof value==="string"||typeof value==="number"||typeof value==="boolean")return String(value);
@@ -1918,11 +1978,32 @@ $("#conn-apply").onclick=async()=>{
 };
 
 /* settings */
+const KEY_ENV={"api:anthropic":"ANTHROPIC_API_KEY","api:deepseek":"DEEPSEEK_API_KEY","api:openai":"OPENAI_API_KEY","api:openrouter":"OPENROUTER_API_KEY"};
+let SETTINGS_KEYS={};                      // api keys as edited in the settings window
 function drawLocalSettings(){
-  const box=$("#s-local");if(!box)return;
-  const local=PROV.providers.filter(p=>p.kind==="cli"&&p.installed);
-  box.innerHTML=local.length?local.map(p=>{const state=p.usable?(p.authenticated==null?'Available':'Ready'):providerIssue(p).replace(/^./,c=>c.toUpperCase());return `<div class="localagent"><span class="dot ${p.usable&&p.authenticated!=null?'ok':'warn'}" style="margin-top:7px"></span><span><b>${esc(p.label)} · ${state}</b><small>${esc(p.status||'Installed')}${p.usable?'':` · ${esc(p.fix||p.auth_command||'Check this CLI in Terminal')}`}</small></span></div>`}).join("")
-    :'<div class="hint" style="margin:0">No local agent CLI found. Install Claude Code, Codex, Gemini, Kimi, or Qwen, then recheck.</div>';
+  const box=$("#s-providers");if(!box)return;
+  const zh=chineseUI(),def=$("#s-def").value;
+  const card=p=>{
+    const env=KEY_ENV[p.name],key=env?(SETTINGS_KEYS[env]||""):"";
+    const ok=p.kind==="cli"?(p.usable&&p.authenticated!=null):!!key;
+    const state=p.kind==="cli"
+      ?(p.installed?(p.usable?(zh?"已登录":"signed in"):esc(p.status||providerIssue(p))):(zh?"未安装":"not installed"))
+      :(key?(zh?"已填写密钥":"key set"):(zh?"缺少密钥":"no key"));
+    const url=((p.fix||"").match(/https?:\/\/\S+/)||[])[0];
+    const help=p.kind==="cli"
+      ?(p.usable?"":esc(p.fix||p.auth_command||(zh?"在终端中检查此 CLI":"Check this CLI in Terminal")))
+      :(key?"":(url?`<a href="${esc(url)}" target="_blank" rel="noreferrer">${zh?"获取密钥":"Get a key"}</a>`:""));
+    return `<div class="provcard${def===p.name?" default":""}">
+      <div class="provhead"><span class="dot ${ok?"ok":(p.kind==="cli"&&!p.installed?"block":"warn")}"></span><b>${esc(p.label)}</b><span class="hint" style="margin:0">${state}</span></div>
+      ${env?`<input type="password" data-key="${env}" value="${esc(key)}" placeholder="${zh?"粘贴 API 密钥":"Paste API key"}" autocomplete="new-password" spellcheck="false">`:""}
+      ${help?`<small>${help}</small>`:""}
+      <label class="provdef"><input type="radio" name="s-default" value="${esc(p.name)}" ${def===p.name?"checked":""}>${zh?"默认使用":"Use by default"}</label>
+    </div>`;
+  };
+  const order=[...PROV.providers.filter(p=>p.kind==="cli"&&p.installed),...PROV.providers.filter(p=>p.kind==="api"),...PROV.providers.filter(p=>p.kind==="cli"&&!p.installed)];
+  box.innerHTML=`<label class="provdef" style="grid-column:1/-1;padding:2px 2px 0"><input type="radio" name="s-default" value="" ${def?"":"checked"}>${zh?"自动：使用第一个可用的连接":"Automatic: the first usable connection"}</label>`+order.map(card).join("");
+  box.querySelectorAll("[data-key]").forEach(i=>i.oninput=()=>{SETTINGS_KEYS[i.dataset.key]=i.value;});
+  box.querySelectorAll("[name=s-default]").forEach(r=>r.onchange=()=>{$("#s-def").value=r.value;box.querySelectorAll(".provcard").forEach(c=>c.classList.toggle("default",c.contains(r)));});
 }
 let LAST_PROVIDER_CHECK=0;
 let SETTINGS_PROXY_EFFECTIVE="";
@@ -1973,16 +2054,72 @@ function databaseStatusText(st){
 }
 async function drawDatabaseStatus(selector){
   const el=$(selector);if(!el)return;
-  try{const st=await (await fetch("/api/obs/status",{cache:"no-store"})).json();el.textContent=databaseStatusText(st);el.style.whiteSpace="pre-line";}
+  try{const st=await (await fetch("/api/obs/status",{cache:"no-store"})).json();el.textContent=databaseStatusText(st);el.style.whiteSpace="pre-line";
+    const pill=$("#s-obs-pill");if(pill){const zh=chineseUI();const ok=st.configured&&st.mode!=="off"&&(st.catalogue_ok||st.records);
+      pill.className="statuspill "+(ok?(st.stale?"warn":"ok"):"warn");
+      pill.textContent=!st.configured?(zh?"未配置":"Not configured"):st.mode==="off"?(zh?"已关闭":"Off"):ok?(zh?"已连接":"Connected"):(zh?"未同步":"Not synced");}}
   catch(_e){el.textContent="";}
+}
+// ── database browser: what the catalogue holds, from the local copy ──
+let DB_ALL=null,DB_FILTER={domain:"",delivery:"",kind:""};
+async function loadDatabaseBrowser(){
+  if(DB_ALL)return;
+  const list=$("#db-list"),zh=chineseUI();list.innerHTML=`<div class="hint" style="margin:8px 0">${zh?"正在读取本地目录……":"Reading the local catalogue…"}</div>`;
+  try{
+    const rows=[];let offset=0,total=Infinity;
+    while(offset<total&&offset<5000){
+      const d=await (await fetch(`/api/obs/catalogue?limit=500&offset=${offset}`)).json();
+      if(!d.ok)throw new Error(d.message||d.error||"catalogue unavailable");
+      total=d.total||0;rows.push(...(d.datasets||[]));offset+=500;if(!(d.datasets||[]).length)break;
+    }
+    DB_ALL=rows.filter(r=>!r.parent_id);
+  }catch(e){list.innerHTML=`<div class="hint" style="margin:8px 0;color:var(--block)">${esc(String(e.message||e))}</div>`;return;}
+  drawDatabaseBrowser();
+}
+const DB_KIND_LABEL={gridded:["格点","gridded"],reanalysis:["再分析","reanalysis"],forcing:["驱动数据","forcing"],gauge:["测站","gauge"],station:["站点","station"],remote_sensing:["遥感","remote sensing"],satellite:["卫星","satellite"],static_dataset:["静态数据集","static dataset"],database:["数据库","database"],ltar_library:["LTAR 长期观测","LTAR library"],statistical:["统计","statistical"],benchmark:["基准","benchmark"]};
+const DB_DELIVERY_LABEL={served:["可直接下载","direct download"],manual:["网盘手动下载","manual (Baidu Pan)"]};
+function drawDatabaseBrowser(){
+  const zh=chineseUI(),f=DB_FILTER,q=($("#db-q").value||"").trim().toLowerCase();
+  const count=(key,get)=>{const c=new Map();for(const r of DB_ALL)for(const v of get(r))c.set(v,(c.get(v)||0)+1);return [...c].sort((a,b)=>b[1]-a[1]);};
+  const chips=(key,pairs,label)=>`<div class="facetrow">${pairs.map(([v,n])=>`<span class="facet${f[key]===v?" on":""}" data-facet="${key}" data-value="${esc(v)}">${esc(label?label(v):v)}<i>${n}</i></span>`).join("")}</div>`;
+  $("#db-facets").innerHTML=
+    `<small class="hint" style="margin:0">${zh?"按领域":"By domain"}</small>`+chips("domain",count("domain",r=>r.applicable_domains||[]).slice(0,14))+
+    `<small class="hint" style="margin:0">${zh?"按获取方式":"By delivery"}</small>`+chips("delivery",count("delivery",r=>[r.delivery||"unknown"]),v=>(DB_DELIVERY_LABEL[v]||[v,v])[zh?0:1])+
+    `<small class="hint" style="margin:0">${zh?"按类型":"By kind"}</small>`+chips("kind",count("kind",r=>[r.dataset_kind||"other"]).slice(0,12),v=>(DB_KIND_LABEL[v]||[v,v])[zh?0:1]);
+  $("#db-facets").querySelectorAll(".facet").forEach(c=>c.onclick=()=>{const k=c.dataset.facet;DB_FILTER[k]=DB_FILTER[k]===c.dataset.value?"":c.dataset.value;drawDatabaseBrowser();});
+  const hit=DB_ALL.filter(r=>(!f.domain||(r.applicable_domains||[]).includes(f.domain))&&(!f.delivery||(r.delivery||"unknown")===f.delivery)&&(!f.kind||(r.dataset_kind||"other")===f.kind)
+    &&(!q||`${r.id} ${r.name||""} ${r.type||""} ${(r.variables||[]).map(v=>v.name).join(" ")}`.toLowerCase().includes(q)));
+  const period=r=>r.start_date||r.end_date?`${(r.start_date||"…").slice(0,4)}–${(r.end_date||"…").slice(0,4)}`:"";
+  const shown=hit.slice(0,120);
+  $("#db-list").innerHTML=`<div class="hint" style="margin:6px 0 2px">${zh?`${hit.length} 个数据集（共 ${DB_ALL.length}）`:`${hit.length} of ${DB_ALL.length} datasets`}${hit.length>shown.length?(zh?"，只显示前 120 个，请用搜索缩小范围":", showing the first 120 — narrow with search"):""}</div>`+
+    shown.map(r=>`<div class="dbrow" data-id="${esc(r.id)}"><span><b>${esc(r.name||r.id)}</b><small>${esc([r.type,period(r),r.format].filter(Boolean).join(" · "))}</small></span><span style="text-align:right"><span class="statuspill ${r.delivery==="served"?"ok":"warn"}" style="font-size:11px">${esc((DB_DELIVERY_LABEL[r.delivery]||[r.delivery,r.delivery])[zh?0:1])}</span><small style="display:block;color:var(--fg-3)">${esc(sizeLabel(r.size))}</small></span></div>`).join("");
+  $("#db-list").querySelectorAll(".dbrow").forEach(row=>row.onclick=()=>showDataset(row.dataset.id));
+}
+$("#db-q").oninput=()=>{if(DB_ALL)drawDatabaseBrowser();};
+function showDataset(id){
+  // the local catalogue copy already carries everything the agent sees: no network call
+  const box=$("#db-detail"),zh=chineseUI(),d=(DB_ALL||[]).find(r=>r.id===id);
+  if(!d)return;box.hidden=false;
+  const row=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:"";
+  const bbox=Array.isArray(d.bbox)?d.bbox.map(x=>Number(x).toFixed(2)).join(", "):d.point?`${d.point.lat??d.point[1]}, ${d.point.lon??d.point[0]}`:"";
+  box.innerHTML=`<div class="dbdetail"><div style="display:flex;gap:8px;align-items:flex-start"><b style="flex:1">${esc(d.name||d.id)}</b><button class="tiny" id="db-detail-x">${zh?"收起":"Hide"}</button></div><small style="color:var(--fg-3)"><code>${esc(d.id)}</code></small><dl>
+    ${row(zh?"变量":"Variables",esc((d.variables||[]).map(v=>v.name).join(", ")))}
+    ${row(zh?"时间":"Period",esc([d.start_date,d.end_date].filter(Boolean).join(" → ")))}
+    ${row(zh?"范围":"Extent",esc(bbox||d.spatial_coverage||""))}
+    ${row(zh?"分辨率":"Resolution",esc(d.resolution||(d.resolution_deg?d.resolution_deg+"°":"")))}
+    ${row(zh?"格式":"Format",esc(d.format||""))}
+    ${row(zh?"大小":"Size",esc(sizeLabel(d.size)))}
+    ${row(zh?"获取方式":"Delivery",esc((DB_DELIVERY_LABEL[d.delivery]||[d.delivery,d.delivery])[zh?0:1]))}
+    ${row(zh?"适用领域":"Domains",esc((d.applicable_domains||[]).join(", ")))}
+  </dl></div>`;
+  $("#db-detail-x").onclick=()=>{box.hidden=true;};
+  box.scrollIntoView({block:"start",behavior:"smooth"});
 }
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
     `<option value="${esc(p.name)}" ${p.name===s.default_provider?"selected":""}>${esc(p.label)}</option>`).join("");
-  for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
-                       ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
-    $("#"+id).value=s.api_keys[k]||"";
+  SETTINGS_KEYS={...(s.api_keys||{})};
   $("#s-proxy-mode").value=s.proxy_mode||"auto";
   $("#s-proxy-url").value=s.proxy_url||"";
   SETTINGS_PROXY_EFFECTIVE=s.proxy_effective||"";
@@ -2000,6 +2137,13 @@ async function openSettings(){
   drawLocalSettings();
   $("#modal").classList.add("open");
 }
+function showSettingsPage(name){
+  document.querySelectorAll(".setnav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===name));
+  document.querySelectorAll(".setpage").forEach(p=>p.classList.toggle("active",p.dataset.page===name));
+  if(name==="db")loadDatabaseBrowser();
+}
+document.querySelectorAll(".setnav-item").forEach(b=>b.onclick=()=>showSettingsPage(b.dataset.page));
+$("#s-open-mcp").onclick=()=>{$("#modal").classList.remove("open");openConnections();};
 $("#settings").onclick=openSettings;
 $("#s-recheck").onclick=()=>refreshProviders(true);
 $("#s-proxy-mode").onchange=drawProxySettingsNote;
@@ -2017,9 +2161,7 @@ async function saveSettings(showMessage=true){
   const body={default_provider:$("#s-def").value,kimi_security_mode:$("#s-kimi-security").value,
     proxy_mode:$("#s-proxy-mode").value,proxy_url:$("#s-proxy-url").value,
     proxy_providers:[...SETTINGS_PROXY_PROVIDERS],database_access_mode:$("#s-obs-mode").value,
-    obs_activation_token:$("#s-obs-token").value,api_keys:{
-    ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
-    OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
+    obs_activation_token:$("#s-obs-token").value,api_keys:{...SETTINGS_KEYS}};
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
   let result={};try{result=await r.json()}catch(_error){}

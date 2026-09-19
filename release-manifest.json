@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.52",
-  "release_date": "2026-09-03",
+  "version": "0.6.54",
+  "release_date": "2026-09-19",
   "source": {
     "branch": "mac-version",
-    "code_commit": "a892e84b29782a9936049864245a5cd27c326dd2",
-    "repository": "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation"
+    "code_commit": "f1b89e587b0422a5d1065b4a5f1b6d55b714db97",
+    "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation"
   },
   "ki_library": {
     "package_count": 127,
@@ -21,6 +21,24 @@
     ]
   },
   "changes": [
+    {
+      "id": "settings-window-and-database-browser",
+      "area": "desktop-ui",
+      "summary": "Settings is a sidebar window: AI services as provider cards, GeoForge Database with a local catalogue browser (domain / delivery / kind, search, per-dataset detail), Network & proxy, Permissions. The sidebar Connections button is removed; MCP servers are chosen from Settings > Permissions.",
+      "user_action": "None. Open Settings from the sidebar."
+    },
+    {
+      "id": "one-flow-host-acquisition",
+      "area": "agent-runtime",
+      "summary": "Plan and data are one flow: the inventory is the proposal, one approval card with GeoForge-fetches / needs-you / run-prepares groups and data-source choices; after approval the desktop acquires every input itself (ACQUIRING state) with signed receipts; whole-file rasters are clipped server-side without a variable list; the manual-download card offers Change the plan.",
+      "user_action": "Approve the plan card once; place Baidu files where the card says, or click Change the plan."
+    },
+    {
+      "id": "per-input-upload",
+      "area": "desktop-ui",
+      "summary": "Inputs the user must provide are uploaded per row into inputs/user/<input>/ and count as available once files are there.",
+      "user_action": "Use the Upload files button on the input's row in Project status."
+    },
     {
       "id": "study-aware-database-hints",
       "area": "scientific-data",
@@ -291,9 +309,19 @@
       "skipped": 3,
       "command": "PYTHONPATH=kiss:ki_tools_common python -m pytest -q --import-mode=importlib kiss/tests ki_tools_common/tests/flow"
     },
-    "ki_tools_unit_tests": {"passed": 98, "failed": 0, "skipped": 2},
-    "climate_and_units_tests": {"passed": 83, "failed": 0},
-    "diagnostic_framework_checks": {"passed": 46, "failed": 0},
+    "ki_tools_unit_tests": {
+      "passed": 98,
+      "failed": 0,
+      "skipped": 2
+    },
+    "climate_and_units_tests": {
+      "passed": 83,
+      "failed": 0
+    },
+    "diagnostic_framework_checks": {
+      "passed": 46,
+      "failed": 0
+    },
     "localhost_csrf_regression": "same-origin HTTP 200; cross-origin HTTP 403",
     "python_compile_check": "passed",
     "ki_catalog": "passed",

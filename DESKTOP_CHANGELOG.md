@@ -6,24 +6,18 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
-## Unreleased — project data selection and approval
-
-- 数据估算与批准分开：探索、失败及被替代的请求留在折叠历史中；Agent 只把与当前项目有关的已选请求提交为一份数据建议，说明每项用途和范围。
-- 用户一次查看所选数据、范围、时段、变量和预计大小，并明确批准；不会因每次估算而弹窗。查看/关闭提示不等于批准，模型运行仍需独立批准。
-- API 和 CLI Agent 共用提交入口：`subset_proposal` / `geoforge-db --propose`。已有估算不会被猜测为已选数据；需由 Agent 明确提交。
-- 非空变量筛选没有得到服务器确认时，客户端阻止批准；有意选择整个栅格的空变量列表仍可用。
-- 修复批准按钮“点击无反应”：过期状态会自动更新，错误与处理状态显示在按钮旁；可直接刷新相同范围的估算，不创建任务、不继承批准。刷新后须重新确认，已创建任务保留。
-
-- Estimates are exploration history, not approval requests. Agents publish one explicit, project-relevant data selection with each dataset's purpose and exact scope.
-- Users review the selected region, period, fields and estimated bytes together. A new selection receives one review prompt; dismissing it never authorizes downloads or model execution.
-- API and CLI agents share `subset_proposal` / `geoforge-db --propose`. Existing estimates are not automatically promoted into selected data.
-- Unconfirmed nonempty variable filters block acquisition approval; intentional whole-raster requests remain supported.
-- Approval feedback is shown beside the action, with live expiry/status updates. Expired estimates can be renewed for the same scopes without starting jobs or transferring consent; renewed estimates require review and existing jobs are retained.
-
-## Unreleased — authenticated GeoForge Database access
+## v0.6.54 — 2026-09-19
 
 ### 中文
 
+- 设置改为带侧边栏的窗口：AI 服务（每个服务商一张卡片，状态、密钥、默认选择一目了然）、GeoForge 数据库
+  （连接状态、Token，以及本地目录浏览器：按领域 / 获取方式 / 类型筛选、搜索、查看每个数据集的变量、时段、范围、
+  格式、大小）、网络与代理、权限（Kimi 文件访问；MCP 按对话选择）。侧栏的“⌁ 连接”按钮移除。
+- 整文件栅格（如 HWSD）服务器拒绝按波段筛选时，Desktop 自动改为不带变量列表重新估算，蒙特利尔案例的 HWSD
+  从 1.7 GB 网盘下载变为 14 KB 服务器裁剪。等待网盘文件时，下载卡新增“修改计划”，可直接回到规划。
+- 项目状态里“需要你处理”的输入可逐项上传，文件放到 `inputs/user/<输入名>/`，文件到位后该行变为“文件已到位”；
+  原“添加源数据”改名为“上传其他文件”并说明用途。
+- 仓库清理：约 35 GB 误提交的构建产物、验收数据与发布包移出 git，并加入忽略规则。
 - 本地数据库搜索返回覆盖判断（已声明条件满足／不足／待核实），优先显示覆盖满足的候选，
   拒绝无效坐标和日期。备选源不再自动固定为已选数据。项目状态新增数据准备下一步，
   区分手动下载、批准后由 Agent 下载、已有文件检查、上游就绪后准备及重新选择数据。
@@ -152,6 +146,17 @@ Desktop update agents should read the JSON manifest first and use this file to e
 
 ### English
 
+- Settings is now a window with a sidebar: AI services (one card per provider with status, key and default
+  choice), GeoForge Database (connection state, token, and a browser of the local catalogue by domain / delivery /
+  kind with search and per-dataset variables, period, extent, format and size), Network & proxy, Permissions
+  (Kimi file access; MCP servers stay per chat). The sidebar "⌁ Connections" button is gone.
+- Whole-file rasters (HWSD) that refuse band selection are re-estimated without a variable list, so the Montreal
+  case gets a 14 KB server clip instead of a 1.7 GB Baidu download. While waiting for Baidu files the download
+  card offers "Change the plan", which returns to planning directly.
+- Inputs under "needs you" in Project status can be uploaded one by one into `inputs/user/<input>/`; the row turns
+  to "files available" once real files are there. "Add source data" is now "Upload other files" with its purpose stated.
+- Repository cleanup: ~35 GB of accidentally committed build output, acceptance data and release bundles removed
+  from git and ignored.
 - Flow rework step 4 (in progress): the approval card and Project status sort data into three groups
   decided by the desktop from facts, never from the agent's status/needs_user: "GeoForge fetches after
   approval" (served, server clip), "You" (Baidu download, pick a dataset in the plan, or provide a file with

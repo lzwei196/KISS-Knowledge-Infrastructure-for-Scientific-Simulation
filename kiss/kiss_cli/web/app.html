@@ -301,9 +301,8 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <a href="/observatory">KI Observatory</a>
     <a href="/library">KI Library</a>
     <a href="/studio">KI Studio</a>
-    <button id="connect">⌁ Connections</button>
     <button id="help">Guide</button>
-    <button id="settings">AI Settings</button>
+    <button id="settings">Settings</button>
     <button data-language-toggle>简体中文</button>
     <button id="theme" title="theme" style="flex:0 0 auto">◐</button>
   </div>
@@ -1285,7 +1284,6 @@ function setControls(on){
   $("#openview").disabled=!CUR;
   $("#skills").disabled=!available||active;
   $("#attach").disabled=!available||active||uploading;
-  $("#connect").disabled=!available;
   updateActivityUI();
 }
 $("#send").onclick=send;
@@ -1967,7 +1965,6 @@ async function configureGitHub(){
   const github=(MCP.connections||[]).find(c=>c.name.toLowerCase().includes("github"));if(github)MCPPICK.add(github.name);
   drawConnections();$("#connnote").textContent=result.message||"GitHub MCP configured";
 }
-$("#connect").onclick=openConnections;
 $("#conn-close").onclick=()=>$("#connections").classList.remove("open");
 $("#conn-apply").onclick=async()=>{
   if(!await ensureSession())return;
@@ -2143,7 +2140,7 @@ function showSettingsPage(name){
   if(name==="db")loadDatabaseBrowser();
 }
 document.querySelectorAll(".setnav-item").forEach(b=>b.onclick=()=>showSettingsPage(b.dataset.page));
-$("#s-open-mcp").onclick=()=>{$("#modal").classList.remove("open");openConnections();};
+$("#s-open-mcp").onclick=()=>{if(!CUR)return;$("#modal").classList.remove("open");openConnections();};
 $("#settings").onclick=openSettings;
 $("#s-recheck").onclick=()=>refreshProviders(true);
 $("#s-proxy-mode").onchange=drawProxySettingsNote;

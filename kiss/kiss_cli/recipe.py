@@ -221,6 +221,7 @@ def brief(res: Research, ki) -> str:
         "    - <build commands, in order>",
         f"  produces: {res.produces or '<path to the binary, relative to the checkout>'}",
         "  system_deps: [<packages needing sudo — these are the human's job>]",
+        "python_version: \"3.11\"      # optional: only when the package refuses the host Python",
         "```",
         "",
         "[RULES]",

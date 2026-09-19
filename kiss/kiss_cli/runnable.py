@@ -388,7 +388,21 @@ def declared_imports(ki) -> list[str]:
             scan(child, env)
 
     scan(tree, {})
+    # A module that lives inside the KI package itself (EPIC's tools/_common.py)
+    # is shipped with the KI, not installed into the environment; the import
+    # probe runs from the KI root and would report it missing for the wrong
+    # reason. Drop names that resolve to a file or package inside the KI.
+    root = Path(getattr(ki, "root", "") or "")
+    if root.is_dir():
+        def _local(mod: str) -> bool:
+            head = mod.split(".")[0]
+            for base in (root, root / "tools", root / "scripts", root / "workflow"):
+                if (base / f"{head}.py").is_file() or (base / head / "__init__.py").is_file():
+                    return True
+            return False
+        out = [m for m in out if not _local(m)]
     return out
+
 
 def missing_imports(mods: list[str], python: str, cwd: Path | None = None,
                     env: dict[str, str] | None = None) -> list[str]:
@@ -478,6 +492,30 @@ def find_binary(ki, man=None, cfg=None, harvested: dict | None = None) -> Path |
         # An explicit native product is authoritative even before it exists.
         # Falling back to upstream setup tooling can falsely certify a failed build.
         if str(getattr(man, "binary_type", "")).strip().lower() in {"mach-o", "macho", "elf", "pe"}:
+            if cands[0].is_file():
+                return cands[0]
+            # The recipe names the product; an agent that cloned one level
+            # deeper (src/epanet2.2/...) or copied the product to binaries/
+            # still built THAT file. Accept the same-named real executable
+            # under the binaries root — never a script or an interpreter —
+            # so a layout difference is not reported as a failed build.
+            want = Path(man.acquire.produces).name
+            skip = {".git", "venv", ".venv", "ki_tools_common", "ki", "runs", "node_modules"}
+            hits = []
+            for root in (cfg.roles.get("binaries"), getattr(cfg, "root", None)):
+                if not root or not Path(root).is_dir():
+                    continue
+                try:
+                    hits += [f for f in Path(root).rglob(want)
+                             if f.is_file() and os.access(f, os.X_OK)
+                             and not (skip & set(f.relative_to(root).parts[:-1]))
+                             and f.suffix not in (".sh", ".py", ".pl", ".txt", ".cmake", ".o")]
+                except OSError:
+                    continue
+                if hits:
+                    break
+            if hits:
+                return max(hits, key=lambda f: f.stat().st_mtime)
             return cands[0]
     rel = (harvested or {}).get(ki.name)
     if rel and cfg is not None:
@@ -583,12 +621,31 @@ def _ki_script(p: Path, ki) -> bool:
 
 # ---------------------------------------------------------------- linkage
 
+def _sidecar_lib_env(p: Path, env: dict[str, str] | None = None) -> dict[str, str]:
+    """LD_LIBRARY_PATH with the binary's own directory (and its lib/ siblings).
+
+    Several upstreams ship their .so files next to the executable and document
+    `export LD_LIBRARY_PATH=$dirbin` (DualSPHysics, DSSAT's dependencies).
+    Checking such a binary with a bare loader path reports libraries as
+    missing that are sitting beside it.
+    """
+    base = dict(env if env is not None else os.environ)
+    if platform.system() != "Linux":
+        return base
+    d = p.resolve().parent
+    extra = [str(d), str(d.parent / "lib"), str(d / "lib")]
+    have = base.get("LD_LIBRARY_PATH", "")
+    base["LD_LIBRARY_PATH"] = os.pathsep.join([x for x in extra if Path(x).is_dir()] + ([have] if have else []))
+    return base
+
+
 def _missing_libs(p: Path) -> list[str]:
     """Shared libraries the loader cannot resolve. Linux only; [] elsewhere."""
     if platform.system() != "Linux" or not shutil.which("ldd"):
         return []
     try:
-        r = subprocess.run(["ldd", str(p)], capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["ldd", str(p)], capture_output=True, text=True, timeout=30,
+                           env=_sidecar_lib_env(p))
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [ln.split("=>")[0].strip() for ln in r.stdout.splitlines() if "not found" in ln]
@@ -962,9 +1019,27 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
                                  for p in Path(probe_dir).rglob("*")}
                                 if v.model == "PHREEQC" else set())
                 try:
-                    r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                                       errors="replace", cwd=probe_dir, stdin=subprocess.DEVNULL,
-                                       env=probe_env)
+                    if argv and argv[0] == "wine":
+                        # A Windows console program under WINE can block for
+                        # ever when its stdout is a pipe (Intel Fortran's
+                        # CONOUT$ handling — EPIC 1102). Give it real files
+                        # and read them back; the verdict is unchanged.
+                        with open(Path(probe_dir) / ".probe.out", "w+", encoding="utf-8",
+                                  errors="replace") as fo, \
+                             open(Path(probe_dir) / ".probe.err", "w+", encoding="utf-8",
+                                  errors="replace") as fe:
+                            r = subprocess.run(argv, stdout=fo, stderr=fe, timeout=timeout,
+                                               cwd=probe_dir, stdin=subprocess.DEVNULL,
+                                               env=_sidecar_lib_env(b, probe_env))
+                            fo.seek(0); fe.seek(0)
+                            r = subprocess.CompletedProcess(argv, r.returncode,
+                                                            fo.read(), fe.read())
+                        for f in (".probe.out", ".probe.err"):
+                            (Path(probe_dir) / f).unlink(missing_ok=True)
+                    else:
+                        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                                           errors="replace", cwd=probe_dir, stdin=subprocess.DEVNULL,
+                                           env=_sidecar_lib_env(b, probe_env))
                 finally:
                     if v.model == "PHREEQC":
                         v.probe_created_paths = sorted(

@@ -172,10 +172,9 @@ def _acq_download(man, prefix, python, env=None):
     try:
         if not dest.exists():
             req = urllib.request.Request(a.url, headers={"User-Agent": "geoforge-desktop"})
-            proxy = ((env or {}).get("HTTPS_PROXY") or
-                     (env or {}).get("https_proxy") or
-                     (env or {}).get("HTTP_PROXY") or
-                     (env or {}).get("http_proxy") or "")
+            penv = {**os.environ, **(env or {})}
+            proxy = (penv.get("HTTPS_PROXY") or penv.get("https_proxy") or
+                     penv.get("HTTP_PROXY") or penv.get("http_proxy") or "")
             opener = urllib.request.build_opener(
                 urllib.request.ProxyHandler(
                     {"http": proxy, "https": proxy} if proxy else {}),
@@ -208,6 +207,52 @@ def _acq_download(man, prefix, python, env=None):
     if binary:
         binary.chmod(binary.stat().st_mode | 0o111)
     return Step("acquire[download]", True, f"from {a.url}"), binary
+
+
+def _venv_env(python: str, env: dict | None = None) -> dict:
+    """Build commands must see the KI's own venv first.
+
+    A manifest's `pip install …` or `python setup.py …` line used to resolve to
+    whatever pip/python was first on the host PATH: on Ubuntu 24.04 that is the
+    system interpreter, which refuses with "externally-managed-environment",
+    and on other hosts it silently installs into the wrong interpreter. Put
+    the venv's bin directory first and mark it active, the way `source
+    venv/bin/activate` would.
+    """
+    merged = dict(env or {})
+    # absolute(), never resolve(): venv/bin/python is a symlink to the base
+    # interpreter, and following it put the BASE bin dir first on PATH — so
+    # `pip` was the system/uv pip again and PEP 668 refused the install.
+    bindir = Path(python).absolute().parent
+    if bindir.is_dir():
+        merged["PATH"] = str(bindir) + os.pathsep + (merged.get("PATH") or os.environ.get("PATH", ""))
+        merged["VIRTUAL_ENV"] = str(bindir.parent)
+        merged.pop("PYTHONHOME", None)
+    return merged
+
+
+_ERR_LINE = re.compile(r"(error|Error|ERROR|fatal|FATAL|undefined reference|cannot find|"
+                       r"No such file|not found|No rule to make|Could not|could not|"
+                       r"does not appear|ModuleNotFoundError|ImportError|Traceback)")
+
+
+def _error_digest(out: str, tail: int = 1200, max_err: int = 25) -> str:
+    """The tail of a build log plus the error lines that scrolled past it.
+
+    A cmake configure prints its real error, then pages of deprecation
+    warnings; make prints the failing compile, then the Makefile unwinding.
+    The last 1500 chars alone showed only the noise.
+    """
+    text = out.strip()
+    lines = text.splitlines()
+    tail_txt = text[-tail:]
+    tail_start = max(0, len(lines) - tail_txt.count("\n") - 1)
+    errs = [ln.rstrip() for i, ln in enumerate(lines[:tail_start]) if _ERR_LINE.search(ln)]
+    if not errs:
+        return tail_txt
+    errs = errs[-max_err:]
+    return "error lines before the tail:\n" + "\n".join(f"  {e[:240]}" for e in errs) + \
+        "\n--- tail ---\n" + tail_txt
 
 
 def _acq_build(man, prefix, python, env=None):
@@ -266,12 +311,15 @@ def _acq_build(man, prefix, python, env=None):
             return Step("acquire[build]", False, f"clone failed: {out.strip()[-400:]}",
                         commands=cmds), None
 
+    # Only the manifest's own commands see the venv; git clone/fetch above keep
+    # the caller's env untouched (a provider proxy must pass through verbatim).
+    build_env = _venv_env(python, env)
     for c in a.commands:
-        rc, out = _run(c, cwd=src, env=env)
+        rc, out = _run(c, cwd=src, env=build_env)
         cmds.append(c)
         if rc != 0:
             return Step("acquire[build]", False,
-                        f"`{c}` failed (rc={rc}):\n{out.strip()[-1500:]}", commands=cmds), None
+                        f"`{c}` failed (rc={rc}):\n{_error_digest(out)}", commands=cmds), None
 
     binary = src / a.produces if a.produces else None
     if binary and not binary.exists():
@@ -291,8 +339,23 @@ def _acq_build(man, prefix, python, env=None):
 
         else:
             found = f"; {len(hits)} candidates named {want}" if hits else ""
+            # Tell the next attempt what the build DID leave behind, so a wrong
+            # `produces:` guess is a one-line fix rather than a rebuild in the dark.
+            import time as _time
+            fresh = []
+            for f in src.rglob("*"):
+                try:
+                    if (f.is_file() and os.access(f, os.X_OK) and ".git" not in f.parts
+                            and f.suffix not in (".sh", ".py", ".pl", ".txt", ".cmake", ".o")
+                            and _time.time() - f.stat().st_mtime < 6 * 3600):
+                        fresh.append(f)
+                except OSError:
+                    continue
+            fresh.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            listing = "\n".join(f"    {f.relative_to(src)}" for f in fresh[:15])
             return Step("acquire[build]", False,
-                        f"build reported success but {a.produces} is absent{found}",
+                        f"build reported success but {a.produces} is absent{found}\n"
+                        f"  executables the build left under the checkout (newest first):\n{listing or '    (none)'}",
                         commands=cmds), None
     if binary:
         binary.chmod(binary.stat().st_mode | 0o111)
@@ -301,15 +364,33 @@ def _acq_build(man, prefix, python, env=None):
 
 
 def _acq_wine(man, prefix, python, env=None):
+    """A Windows-only model run through WINE on Linux/macOS.
+
+    Two shapes: with ``url`` the archive is fetched and unpacked into the
+    prefix exactly like strategy: download; without one the executable must
+    already be in place (licensed or registration-gated products — the
+    ``agent_hint`` says where the user must drop it). ``exe`` defaults to
+    ``produces`` so a ported Windows recipe needs no second field.
+    """
     if shutil.which("wine") is None:
         return Step("acquire[wine]", False,
                     "wine is not installed — required to run this model's Windows binary"), None
     a = man.acquire
-    exe = Path(a.exe) if a.exe else None
+    rel = a.exe or a.produces
+    exe = Path(rel) if rel else None
     if exe and not exe.is_absolute():
         exe = prefix / exe
+    if exe and not exe.exists() and a.url:
+        prefix.mkdir(parents=True, exist_ok=True)
+        step, _ = _acq_download(man, prefix, python, env)
+        if not step.ok:
+            return Step("acquire[wine]", False, step.detail, commands=step.commands), None
     if exe and not exe.exists():
-        return Step("acquire[wine]", False, f"Windows executable not found: {exe}"), None
+        return Step("acquire[wine]", False,
+                    f"Windows executable not found: {exe}" +
+                    (f" — {man.agent_hint}" if man.agent_hint else "")), None
+    if exe:
+        exe.chmod(exe.stat().st_mode | 0o111)
     return Step("acquire[wine]", True, f"wine present; exe at {exe}"), exe
 
 
@@ -522,7 +603,31 @@ def runtime_python(configured: str | None = None) -> str:
     return find_base_python() or "python3"
 
 
-def ensure_python_env(cfg, base_python: str | None = None) -> Step:
+def _python_for_version(want: str) -> str | None:
+    """Find (or fetch through uv) an interpreter matching ``want`` like 3.11."""
+    want = str(want).strip()
+    for name in (f"python{want}",):
+        p = shutil.which(name)
+        if p:
+            return p
+    uv = shutil.which("uv")
+    if not uv:
+        return None
+    for attempt in ("find", "install"):
+        if attempt == "install":
+            rc, _ = _run([uv, "python", "install", want], timeout=900)
+            if rc != 0:
+                return None
+        rc, out = _run([uv, "python", "find", want], timeout=120)
+        if rc == 0 and out.strip():
+            cand = out.strip().splitlines()[-1].strip()
+            if Path(cand).exists():
+                return cand
+    return None
+
+
+def ensure_python_env(cfg, base_python: str | None = None,
+                      python_version: str | None = None) -> Step:
     """Guarantee an interpreter that survives relocation.
 
     The venv is created at cfg.roles['python_env'] so the KI's hardcoded
@@ -535,8 +640,9 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
     target = Path(cfg.roles["python_env"])
     interpreter = target / "bin" / "python"
     if interpreter.exists():
-        rc, _ = _run([str(interpreter), "-c", "import sys; print(sys.version)"])
-        if rc == 0:
+        rc, out = _run([str(interpreter), "-c",
+                        "import sys; print('%d.%d' % sys.version_info[:2])"])
+        if rc == 0 and (not python_version or out.strip().endswith(str(python_version).strip())):
             cfg.python = str(interpreter)
             return Step("python-env", True, f"using {interpreter}")
         # A venv built from a frozen binary in an earlier version: unusable.
@@ -544,6 +650,13 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
         _sh.rmtree(target, ignore_errors=True)
 
     base = base_python or find_base_python()
+    if python_version:
+        pinned = _python_for_version(python_version)
+        if pinned is None:
+            return Step("python-env", False,
+                        f"manifest pins python_version {python_version} but no such "
+                        f"interpreter is available and uv could not fetch one")
+        base = pinned
     if base is None:
         return Step(
             "python-env", False,
@@ -558,7 +671,14 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
         return Step("python-env", False,
                     f"could not create a venv with {base}: {out.strip()[-300:]}")
     cfg.python = str(interpreter)
-    return Step("python-env", True, f"created {interpreter} (from {base})")
+    # Python >= 3.12 creates a venv with pip only. Many scientific packages
+    # still `import pkg_resources` (setuptools) at import time, so a clean
+    # `pip install` followed by an ImportError looked like a broken package
+    # when it was a bare venv. Best effort: an offline host keeps the venv.
+    rc, out = _run([str(interpreter), "-m", "pip", "install", "--quiet",
+                    "--upgrade", "pip", "setuptools", "wheel"], timeout=600)
+    seeded = "" if rc == 0 else " (setuptools/wheel seed failed: " + out.strip().splitlines()[-1][:80] + ")" if out.strip() else " (setuptools/wheel seed failed)"
+    return Step("python-env", True, f"created {interpreter} (from {base}){seeded}")
 
 
 def install_ki_tools_common(cfg, repo_root: Path) -> Step:

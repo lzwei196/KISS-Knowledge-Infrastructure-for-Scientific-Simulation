@@ -105,6 +105,9 @@ class Manifest:
     depends_on: list[str] = field(default_factory=list)
     acquire: Acquire | None = None
     python_deps: list[str] = field(default_factory=list)
+    #: Optional interpreter pin ("3.11") for packages that refuse the host
+    #: Python; resolved through uv when the host lacks it.
+    python_version: str | None = None
     system_deps: list[str] = field(default_factory=list)
     data: list[DataNeed] = field(default_factory=list)
     #: command proving the install works, run after preflight
@@ -141,6 +144,7 @@ class Manifest:
             depends_on=list(raw.get("depends_on") or []),
             acquire=Acquire.from_dict(raw["acquire"]) if raw.get("acquire") else None,
             python_deps=list(raw.get("python_deps") or []),
+            python_version=(str(raw["python_version"]) if raw.get("python_version") else None),
             system_deps=list(raw.get("system_deps") or []),
             data=[DataNeed.from_dict(d) for d in (raw.get("data") or [])],
             reference_case=raw.get("reference_case"),

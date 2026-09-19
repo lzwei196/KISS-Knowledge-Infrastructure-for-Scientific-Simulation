@@ -210,7 +210,10 @@ class KissConfig:
         root = Path(raw.get("kiss", {}).get("root", cfg.parent)).expanduser()
         obj = cls.default(root)
         for role, val in (raw.get("paths") or {}).items():
-            obj.roles[role] = Path(val).expanduser()
+            # An agent may add its own sub-table ([paths.parflow]) beside the
+            # role paths; a dict is not a path and must not abort loading.
+            if isinstance(val, (str, Path)):
+                obj.roles[role] = Path(val).expanduser()
         obj.python = raw.get("kiss", {}).get("python", obj.python)
         obj.relocation = raw.get("kiss", {}).get("relocation", obj.relocation)
         return obj

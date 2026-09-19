@@ -186,7 +186,7 @@ def cmd_init(args) -> int:
     # From here on the KI in use is the materialised copy, not the package.
     ki = type(ki)(name=ki.name, root=live)
 
-    s = result.add(install.ensure_python_env(cfg))
+    s = result.add(install.ensure_python_env(cfg, python_version=man.python_version))
     if s.ok and not args.python:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     print(f"  [2/8] python env ...... {_c('ok' if s.ok else 'BLOCK', s.mark)}")

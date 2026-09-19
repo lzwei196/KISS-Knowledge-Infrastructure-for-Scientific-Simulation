@@ -51,7 +51,9 @@ def _write_index(workroot: Path, value: dict) -> Path:
     root = Path(workroot).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     path = root / INDEX_FILE
-    pending = path.with_suffix(path.suffix + ".new")
+    # Unique per process: two installs finishing together used to share one
+    # ".new" file, and the loser died on the rename with ENOENT.
+    pending = path.with_suffix(f"{path.suffix}.{os.getpid()}.new")
     pending.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n",
                        encoding="utf-8")
     pending.replace(path)

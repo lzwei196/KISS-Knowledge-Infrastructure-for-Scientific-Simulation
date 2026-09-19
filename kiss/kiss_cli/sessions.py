@@ -138,6 +138,27 @@ def _pointer_project(workroot: Path, sid: str) -> Path | None:
     return candidate
 
 
+def registered_project_for_path(workroot: Path, path: Path) -> Path | None:
+    """Return the registered external project containing *path*, if any.
+
+    A process-local Agent may ask the Desktop to run a receipt wrapper from an
+    external chat project. Trust only a project whose ``--<session id>`` suffix
+    maps back to the Desktop-owned pointer under ``workroot/sessions``.
+    """
+    candidate = Path(path).expanduser().resolve()
+    workroot = Path(workroot).expanduser().resolve()
+    for ancestor in (candidate, *candidate.parents):
+        if ancestor == workroot:
+            break
+        match = re.search(r"--([a-f0-9]{12})$", ancestor.name)
+        if not match:
+            continue
+        registered = _pointer_project(workroot, match.group(1))
+        if registered is not None and registered == ancestor:
+            return registered
+    return None
+
+
 def _find_project(workroot: Path, sid: str, s: dict | None = None) -> Path | None:
     if not valid_id(sid):
         raise ValueError(f"invalid session id {sid!r}")
@@ -386,9 +407,19 @@ def list_all(workroot: Path) -> list[dict]:
             if not valid_id(sid) or sid in seen:
                 continue          # a malformed file must not break the list
             if s.get("kind") == _PROJECT_POINTER_KIND:
-                s = load(workroot, sid)
-                if not s:
-                    continue
+                # An external project (chosen folder, possibly under Documents or
+                # a cloud drive).  Do not open it while listing: on macOS that can
+                # raise a folder-permission dialog for every new build.  List it
+                # from the pointer alone; the project is read when it is opened.
+                root = str(s.get("project_root") or "")
+                name = Path(root).name
+                title = name.rsplit("--", 1)[0]
+                title = title[11:] if len(title) > 11 and title[:10].count("-") == 2 else title
+                seen.add(sid)
+                out.append({"id": sid, "title": title.replace("-", " ").strip() or "?",
+                            "created": p.stat().st_mtime, "models": [], "skills": [], "mcps": [],
+                            "n": 0, "project_path": root, "external": True})
+                continue
             elif p.parent.name.endswith(f"--{sid}"):
                 s["project_dir"] = p.parent.relative_to(Path(workroot).resolve()).as_posix()
             else:
@@ -456,12 +487,17 @@ def open_in_file_manager(workroot: Path, s: dict,
     return target
 
 
-def save_upload(workroot: Path, s: dict, filename: str, data: bytes) -> Path:
-    """Save a browser-supplied input without allowing path traversal."""
+def save_upload(workroot: Path, s: dict, filename: str, data: bytes, item: str = "") -> Path:
+    """Save a browser-supplied input without allowing path traversal.
+
+    With ``item`` (a plan input id) the file lands at inputs/user/<item>/, the path the
+    plan card tells the user to use; otherwise at inputs/uploads/."""
     clean = re.sub(r"[^\w.()+-]+", "_", Path(filename or "data").name,
                    flags=re.UNICODE).strip("._")
     clean = clean[:180] or "data"
-    folder = project_path(workroot, s) / "inputs" / "uploads"
+    item = re.sub(r"[^\w.-]+", "_", str(item or "")).strip("._")[:120]
+    folder = project_path(workroot, s) / "inputs" / ("user/" + item if item else "uploads")
+    folder.mkdir(parents=True, exist_ok=True)
     target = folder / clean
     if target.exists():
         stem, suffix = target.stem, target.suffix

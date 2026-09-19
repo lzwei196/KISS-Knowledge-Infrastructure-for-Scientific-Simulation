@@ -26,3 +26,9 @@ fort.*
 
 # macOS
 .DS_Store
+
+# Suffixed local build outputs (dist-<tag>-vX.Y.Z etc.) and a stray app bundle at the root.
+kiss/dist-*/
+kiss/build-*/
+kiss/.pyinstaller-*/
+/GeoForge Desktop.app/

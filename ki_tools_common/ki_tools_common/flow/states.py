@@ -33,6 +33,7 @@ class State(str, Enum):
     PLAN_REVIEW = "PLAN_REVIEW"
     WAITING_FOR_USER = "WAITING_FOR_USER"
     APPROVED = "APPROVED"
+    ACQUIRING = "ACQUIRING"          # host fetches the approved data; no agent turn
     EXECUTING = "EXECUTING"
     VERIFYING = "VERIFYING"
     COMPLETED = "COMPLETED"
@@ -76,6 +77,7 @@ ALLOWED: dict[State, frozenset[Capability]] = {
     State.PLAN_REVIEW: frozenset(_R),
     State.WAITING_FOR_USER: frozenset(_R),
     State.APPROVED: frozenset(_R),
+    State.ACQUIRING: frozenset(_R),
     State.EXECUTING: frozenset(_R | {Capability.WRITE_PROJECT, Capability.DOWNLOAD,
                                      Capability.COMPILE, Capability.RUN_MODEL, Capability.PLOT}),
     State.VERIFYING: frozenset(_R | {Capability.PLOT}),
@@ -99,6 +101,7 @@ DISPLAY_STAGE: dict[State, str] = {
     State.NEW: "understanding", State.RESOLVING_KIS: "understanding",
     State.PLANNING: "preparing", State.PLAN_REVIEW: "preparing",
     State.WAITING_FOR_USER: "preparing", State.APPROVED: "validating",
+    State.ACQUIRING: "researching",
     State.EXECUTING: "running", State.VERIFYING: "validating", State.COMPLETED: "results",
     State.BLOCKED: "preparing", State.FAILED: "running", State.FAILED_VALIDATION: "validating",
     State.REPLAN_REQUIRED: "preparing",
@@ -123,6 +126,12 @@ _MOVES: dict[tuple[State, str], tuple[State, str | None]] = {
     (State.WAITING_FOR_USER, "approved"): (State.APPROVED, "approval"),
     (State.APPROVED, "execution_started"): (State.EXECUTING, "setup_verified"),
     (State.APPROVED, "setup_needed"): (State.SETUP_REQUIRED, None),
+    # data acquisition sub-flow (FLOW-TARGET-2026-09-17 step 3): host only, returns to
+    # APPROVED like SETUP_VERIFIED does, so the setup gate and rerun paths stay untouched
+    (State.APPROVED, "acquire"): (State.ACQUIRING, "approval"),
+    (State.ACQUIRING, "acquired"): (State.APPROVED, "data_receipted"),
+    (State.ACQUIRING, "acquisition_failed"): (State.BLOCKED, None),
+    (State.BLOCKED, "retry_acquire"): (State.ACQUIRING, "approval"),
     (State.EXECUTING, "run_finished"): (State.VERIFYING, None),
     (State.EXECUTING, "drift"): (State.REPLAN_REQUIRED, None),
     (State.EXECUTING, "replan"): (State.REPLAN_REQUIRED, None),
@@ -137,6 +146,8 @@ _MOVES: dict[tuple[State, str], tuple[State, str | None]] = {
     (State.FAILED, "replan"): (State.REPLAN_REQUIRED, None),
     (State.REPLAN_REQUIRED, "plan_written"): (State.PLAN_REVIEW, "plan_valid"),
     (State.BLOCKED, "unblocked"): (State.PLANNING, None),
+    # waiting for manual (Baidu) files, the user asks for a different plan instead
+    (State.ACQUIRING, "modify"): (State.PLANNING, None),
     (State.SETUP_REQUIRED, "setup_started"): (State.SETUP_RUNNING, None),
     (State.SETUP_RUNNING, "setup_verified"): (State.SETUP_VERIFIED, "preflight_ok"),
     (State.SETUP_RUNNING, "setup_failed"): (State.SETUP_REQUIRED, None),
@@ -173,6 +184,9 @@ def transition(state: State, event: str, evidence: dict | None = None) -> State:
     elif need == "selected_kis":
         if not ev.get("selected_kis"):
             raise FlowError("cannot enter PLANNING without at least one resolved KI")
+    elif need == "data_receipted":
+        if ev.get("data_receipted") is not True:
+            raise FlowError("cannot leave ACQUIRING until every approved input has a receipt")
     elif need == "setup_verified":
         if ev.get("setup_verified") is not True:
             raise FlowError("cannot execute: the KI software is not verified (setup sub-flow)")

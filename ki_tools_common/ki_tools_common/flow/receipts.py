@@ -165,11 +165,27 @@ def _now() -> str:
 # record
 # ---------------------------------------------------------------------------
 
+def selection_sha256(item: dict) -> str:
+    """Bind acquisition evidence to source AND requirements, not a display ID.
+
+    Excludes mutable progress/local paths. Unknown legacy selections cannot be
+    reused across approvals; a source or scope change must be reviewed again.
+    """
+    selection = {k: item[k] for k in (
+        "id", "dataset_id", "chosen_source", "requirements", "acquisition_id",
+        "acquisition_request_sha256") if k in item}
+    if not any(selection.get(k) for k in ("dataset_id", "chosen_source", "acquisition_id")):
+        return ""
+    # A conservative fingerprint: differing metadata never silently reuses bytes.
+    return hashlib.sha256(_canonical(selection)).hexdigest()
+
+
 def record_download(project: Path, *, item_id: str, source: str, request_url: str,
                     http_status: int | None, raw_files: list, approval_sha256: str,
                     processed_files: list | None = None, transform_tool: str | None = None,
                     units_before: dict | None = None, units_after: dict | None = None,
-                    requested_at: str | None = None, plan_step_id: str | None = None) -> Path:
+                    requested_at: str | None = None, plan_step_id: str | None = None,
+                    inventory_item: dict | None = None, acquisition: dict | None = None) -> Path:
     if not approval_sha256:
         raise ReceiptError("a download receipt must be bound to the current approval")
     doc = {
@@ -181,6 +197,8 @@ def record_download(project: Path, *, item_id: str, source: str, request_url: st
         "units_after": units_after or {},
         "plan_step_id": plan_step_id, "approval_sha256": approval_sha256,
         "wrapper_pid": os.getpid(), "recorded_at": _now(),
+        "selection_sha256": selection_sha256(inventory_item or {}),
+        "acquisition": acquisition or {},
     }
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in item_id)[:80]
     return _write(project, DATA_SUB, safe, doc)
@@ -278,38 +296,68 @@ def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[fl
                 import xarray as xr
                 import numpy as np
             except ImportError:
-                # kimi #4: an uninspectable NetCDF must FAIL, never pass as a warning
-                return None, None, "NETCDF_UNINSPECTABLE: xarray not installed"
-            ds = None
-            last = None
-            for eng in (None, "h5netcdf", "scipy", "netcdf4"):   # HDF5 file-locking / engine quirks
+                xr = None
                 try:
-                    ds = xr.open_dataset(path, engine=eng) if eng else xr.open_dataset(path)
-                    break
-                except Exception as e:  # noqa: BLE001
-                    last = e
-            if ds is None:
-                return None, None, f"NETCDF_UNINSPECTABLE: {type(last).__name__}"
+                    import numpy as np
+                except ImportError:
+                    return None, None, "NETCDF_UNINSPECTABLE: numpy not installed"
+            if xr is not None:
+                ds = None
+                last = None
+                for eng in (None, "h5netcdf", "scipy", "netcdf4"):  # engine/file-lock quirks
+                    try:
+                        ds = xr.open_dataset(path, engine=eng) if eng else xr.open_dataset(path)
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        last = e
+                if ds is not None:
+                    try:
+                        names = [v for v in ds.data_vars]
+                        lower = {v.lower(): v for v in names}
+                        picked = [lower[p.lower()] for p in prefer_vars if p.lower() in lower]
+                        # When the KI names a rank-1 variable and this file does not carry it,
+                        # another variable's positive values may not stand in for it.
+                        note = "netcdf rank-1 var(s) " + ",".join(picked) if picked else \
+                               ("NETCDF_RANK1_ABSENT: " + ",".join(prefer_vars) if prefer_vars
+                                else "netcdf ALL vars (KI declares no rank-1 variable)")
+                        vals: list[float] = []
+                        n = None
+                        for v in (picked or names):
+                            arr = np.asarray(ds[v].values, dtype="float64").ravel()
+                            vals.extend(arr[:400000].tolist())
+                            if "time" in ds[v].dims:
+                                n = int(ds[v].sizes["time"])
+                        return vals, n, note
+                    finally:
+                        ds.close()
+            # The frozen Desktop intentionally does not bundle pandas/xarray.
+            # netCDF4 is the compact inspection backend and handles VIC/CaMa HDF5 files.
             try:
-                names = [v for v in ds.data_vars]
-                lower = {v.lower(): v for v in names}
-                picked = [lower[p.lower()] for p in prefer_vars if p.lower() in lower]
-                # codex R2 #1: when the KI names a rank-1 variable and this file does not carry
-                # it, say so explicitly — validate_outputs() then FAILS the physical check instead
-                # of letting another variable's positive values satisfy it.
-                note = "netcdf rank-1 var(s) " + ",".join(picked) if picked else \
-                       ("NETCDF_RANK1_ABSENT: " + ",".join(prefer_vars) if prefer_vars
-                        else "netcdf ALL vars (KI declares no rank-1 variable)")
-                vals: list[float] = []
-                n = None
-                for v in (picked or names):
-                    arr = np.asarray(ds[v].values, dtype="float64").ravel()
-                    vals.extend(arr[:400000].tolist())
-                    if "time" in ds[v].dims:
-                        n = int(ds[v].sizes["time"])
-                return vals, n, note
-            finally:
-                ds.close()
+                import netCDF4
+            except ImportError:
+                detail = type(last).__name__ if xr is not None and last is not None else \
+                         "xarray and netCDF4 not installed"
+                return None, None, f"NETCDF_UNINSPECTABLE: {detail}"
+            try:
+                with netCDF4.Dataset(path, mode="r") as ds4:
+                    names = [name for name in ds4.variables if name not in ds4.dimensions]
+                    lower = {v.lower(): v for v in names}
+                    picked = [lower[p.lower()] for p in prefer_vars if p.lower() in lower]
+                    note = "netcdf rank-1 var(s) " + ",".join(picked) if picked else \
+                           ("NETCDF_RANK1_ABSENT: " + ",".join(prefer_vars) if prefer_vars
+                            else "netcdf ALL vars (KI declares no rank-1 variable)")
+                    vals = []
+                    n = None
+                    for name in (picked or names):
+                        var = ds4.variables[name]
+                        arr = np.ma.filled(var[:], np.nan)
+                        values = np.asarray(arr, dtype="float64").ravel()
+                        vals.extend(values[:400000].tolist())
+                        if "time" in var.dimensions:
+                            n = int(var.shape[var.dimensions.index("time")])
+                    return vals, n, note
+            except Exception as error:  # noqa: BLE001
+                return None, None, f"NETCDF_UNINSPECTABLE: {type(error).__name__}"
         text = path.read_text(errors="ignore")
         cols: dict[int, list[float]] = {}
         rows = 0
@@ -440,14 +488,42 @@ def _read_all(project: Path, sub: str) -> list[tuple[Path, dict, bool]]:
     return out
 
 
-EXECUTABLE_STEP_KINDS = ("process", "run", "calibrate", "route", "couple", "prepare", "download")
+EXECUTABLE_STEP_KINDS = (
+    "process", "run", "model_run", "calibrate", "route", "couple", "prepare", "download",
+)
+
+
+def _download_files_valid(project: Path, receipt: dict) -> bool:
+    """Recheck both acquired and extracted files; reject paths outside the project."""
+    raw = receipt.get("raw_files") or []
+    if not raw:
+        return False
+    for entry in raw + (receipt.get("processed_files") or []):
+        if not isinstance(entry, dict):
+            return False
+        path = Path(project) / str(entry.get("path") or "")
+        try:
+            if not _inside(path, project) or not path.is_file() or sha256_file(path) != str(entry.get("sha256") or ""):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _download_still_valid(project: Path, receipt: dict, inventory: dict | None) -> bool:
+    """Reuse only an identical selected source/scope with intact acquired files."""
+    item = next((it for it in (inventory or {}).get("items") or []
+                 if isinstance(it, dict) and str(it.get("id")) == str(receipt.get("item_id"))), None)
+    if item is None or not receipt.get("selection_sha256"):
+        return False
+    return receipt["selection_sha256"] == selection_sha256(item) and _download_files_valid(project, receipt)
 
 
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
                                                    ".png", ".json", ".bin"),
-             enforcement: str = "none") -> dict:
+             enforcement: str = "none", inventory: dict | None = None) -> dict:
     """Machine-readable summary the UI shows and COMPLETED requires. Trusts ONLY receipts
     that verify AND are bound to the current approval (`approval_sha256 == the signed
     approval's plan_sha256`), name a selected KI and a planned step. COMPLETED needs every
@@ -505,7 +581,11 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
             bound_runs.append(d)
     bound_dl: list[dict] = []
     for p, d, ok in dl:
-        if ok and cur and d.get("approval_sha256") == cur:
+        if (ok and cur and d.get("approval_sha256") == cur
+                and _download_files_valid(project, d)
+                and (inventory is None or _download_still_valid(project, d, inventory))):
+            bound_dl.append(d)
+        elif ok and _download_still_valid(project, d, inventory):
             bound_dl.append(d)
         else:
             rejected.append({"path": str(p), "why": "signature" if not ok else

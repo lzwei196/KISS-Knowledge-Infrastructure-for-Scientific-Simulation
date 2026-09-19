@@ -262,6 +262,19 @@ select option:disabled{color:var(--fg-3)}
       <div id="s-proxy-providers" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px"></div>
       <div class="hint" style="margin:7px 0 0">Select GitHub &amp; KI updates for the built-in updater. Select an AI provider when that provider and its agent-run Git, pip, curl, and download commands need the same route.</div>
     </div>
+    <div style="margin-top:14px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface)">
+      <label for="s-obs-token" style="margin-top:0">GeoForge Database access (optional)</label>
+      <input type="password" id="s-obs-token" autocomplete="new-password" spellcheck="false" placeholder="Paste activation token">
+      <div class="hint" id="s-obs-note" style="margin:7px 0 0">Stored privately on this computer, readable only by your user account. The Agent never receives this token.</div>
+      <label for="s-obs-mode" style="margin-top:11px">Database access for Agents</label>
+      <select id="s-obs-mode">
+        <option value="direct">Direct through GeoForge Desktop (recommended)</option>
+        <option value="off">Do not provide database access</option>
+      </select>
+      <div class="hint" style="margin:7px 0 0">Direct mode lets the Agent search live records through a protected Desktop tool. GeoForge keeps the token and returns only sanitized metadata.</div>
+      <div class="hint" id="s-obs-status" style="margin:7px 0 0"></div>
+      <button id="s-obs-test" style="margin-top:9px">Save &amp; test database</button>
+    </div>
     <label>Anthropic API key (ANTHROPIC_API_KEY)</label><input id="s-anthropic" placeholder="sk-ant-…" autocomplete="off">
     <label>DeepSeek API key (DEEPSEEK_API_KEY)</label><input id="s-deepseek" placeholder="sk-…" autocomplete="off">
     <label>OpenAI API key (OPENAI_API_KEY)</label><input id="s-openai" placeholder="sk-…" autocomplete="off">
@@ -581,7 +594,7 @@ if(localStorage.getItem("kiss-dark")==="1"||
 
 let PROV={providers:[],any_usable:false,default:""};
 let SETTINGS_PROXY_EFFECTIVE="";
-let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","cli:claude","cli:codex"]);
+let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","network:obs","cli:claude","cli:codex"]);
 async function loadProviders(){
   PROV=await (await fetch("/api/providers")).json();
   const sel=$("#prov");
@@ -595,7 +608,7 @@ async function loadProviders(){
 }
 function drawProxyProviderSettings(){
   const box=$("#s-proxy-providers");if(!box)return;
-  const targets=[{name:"network:github",label:updateText("GitHub & KI updates","GitHub 与 KI 更新")},...PROV.providers];
+  const targets=[{name:"network:github",label:updateText("GitHub & KI updates","GitHub 与 KI 更新")},{name:"network:obs",label:updateText("Observation data","观测数据服务")},...PROV.providers];
   box.innerHTML=targets.map(p=>`<label style="display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px;color:var(--fg)"><input style="width:auto" type="checkbox" data-proxy-provider="${esc(p.name)}" ${SETTINGS_PROXY_PROVIDERS.has(p.name)?"checked":""}><span>${esc(p.label)}</span></label>`).join("");
   box.querySelectorAll("[data-proxy-provider]").forEach(input=>input.onchange=()=>{
     input.checked?SETTINGS_PROXY_PROVIDERS.add(input.dataset.proxyProvider):SETTINGS_PROXY_PROVIDERS.delete(input.dataset.proxyProvider);
@@ -610,6 +623,21 @@ function drawProxySettingsNote(){
   else if(mode==="manual")$("#s-proxy-note").textContent=updateText("Enter the local HTTP or mixed proxy port. Proxy passwords are not stored here.","请输入本地 HTTP 或 mixed 代理端口；这里不会保存代理密码。");
   else $("#s-proxy-note").textContent=updateText("GeoForge will connect directly without a proxy.","GeoForge 将不通过代理直接连接。");
 }
+function databaseStatusText(st){
+  const zh=chineseUI();
+  if(!st||!st.configured)return zh?"未配置 Token：Agent 无法检索 GeoForge 数据库。":"No token: the Agent cannot search GeoForge Database.";
+  if(st.mode==="off")return zh?"已关闭：Agent 不会检索数据库。":"Disabled: the Agent will not search the database.";
+  const when=st.generated_at?new Date(st.generated_at):null,mins=when?Math.max(0,Math.round((Date.now()-when.getTime())/60000)):null;
+  const synced=mins===null?(zh?"尚未同步":"not synced yet"):mins<1?(zh?"刚刚同步":"synced just now"):(zh?`${mins} 分钟前同步`:`synced ${mins} min ago`);
+  const copy=st.catalogue_ok||st.records?(zh?`本地目录 ${st.records} 条（${st.served} 条可直接下载）· ${synced}${st.stale?" · 已过期："+st.error:""}`:`local catalogue: ${st.records} records (${st.served} direct download) · ${synced}${st.stale?" · stale: "+st.error:""}`):(zh?`目录未下载${st.error?"："+st.error:""}`:`catalogue not downloaded${st.error?": "+st.error:""}`);
+  const how=zh?`Agent 检索方式：API 使用 ${st.api_tool} 工具，CLI 使用 ${st.cli_command} 命令；两者都读同一份本地目录，Token 留在 Desktop。`:`Agent access: API providers call the ${st.api_tool} tool, CLI agents run ${st.cli_command}; both read this same local copy and never see the token.`;
+  return copy+"\n"+how;
+}
+async function drawDatabaseStatus(selector){
+  const el=$(selector);if(!el)return;
+  try{const st=await (await fetch("/api/obs/status",{cache:"no-store"})).json();el.textContent=databaseStatusText(st);el.style.whiteSpace="pre-line";}
+  catch(_e){el.textContent="";}
+}
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
@@ -620,25 +648,47 @@ async function openSettings(){
   $("#s-proxy-mode").value=s.proxy_mode||"auto";
   $("#s-proxy-url").value=s.proxy_url||"";
   SETTINGS_PROXY_EFFECTIVE=s.proxy_effective||"";
-  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["network:github","cli:claude","cli:codex"]);
+  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["network:github","network:obs","cli:claude","cli:codex"]);
+  $("#s-obs-token").value=s.obs_activation_token||"";
+  $("#s-obs-mode").value=s.database_access_mode==="off"?"off":"direct";
+  drawDatabaseStatus("#s-obs-status");
+  $("#s-obs-note").textContent=s.obs_token_error||(s.obs_token_configured
+    ?updateText("Token is stored privately on this computer, readable only by your user account; the Agent cannot read it.","Token 已私密保存在本机，仅你的用户账户可读；Agent 无法读取。")
+    :updateText("Paste the activation token; it is stored privately on this computer.","粘贴激活 token；它只会私密保存在本机。"));
   drawProxyProviderSettings();drawProxySettingsNote();
   $("#modal").classList.add("open");
 }
 $("#settings").onclick=openSettings;
 $("#s-proxy-mode").onchange=drawProxySettingsNote;
 $("#s-close").onclick=()=>$("#modal").classList.remove("open");
-$("#s-save").onclick=async()=>{
+async function saveSettings(showMessage=true){
   const body={default_provider:$("#s-def").value,proxy_mode:$("#s-proxy-mode").value,
-    proxy_url:$("#s-proxy-url").value,proxy_providers:[...SETTINGS_PROXY_PROVIDERS],api_keys:{
+    proxy_url:$("#s-proxy-url").value,proxy_providers:[...SETTINGS_PROXY_PROVIDERS],
+    database_access_mode:$("#s-obs-mode").value,obs_activation_token:$("#s-obs-token").value,api_keys:{
     ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
     OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
   let result={};try{result=await r.json()}catch(_error){}
-  $("#s-msg").textContent=r.ok?updateText("saved","已保存"):(result.error||updateText("error","保存失败"));
-  if(r.ok){SETTINGS_PROXY_EFFECTIVE=result.proxy_effective||"";SETTINGS_PROXY_PROVIDERS=new Set(result.proxy_providers||[]);drawProxyProviderSettings();drawProxySettingsNote();}
+  if(!r.ok){$("#s-msg").textContent=result.error||updateText("error","保存失败");return false;}
+  SETTINGS_PROXY_EFFECTIVE=result.proxy_effective||"";SETTINGS_PROXY_PROVIDERS=new Set(result.proxy_providers||[]);drawProxyProviderSettings();drawProxySettingsNote();
+  if(showMessage)$("#s-msg").textContent=updateText("saved","已保存");
   await loadProviders();
-  setTimeout(()=>{$("#s-msg").textContent="";},1500);
+  if(showMessage)setTimeout(()=>{$("#s-msg").textContent="";},1500);
+  return true;
+}
+$("#s-save").onclick=()=>saveSettings(true);
+$("#s-obs-test").onclick=async()=>{
+  const button=$("#s-obs-test"),note=$("#s-obs-note");button.disabled=true;
+  note.textContent=updateText("Saving and testing data access…","正在保存并测试数据服务……");
+  try{
+    if(!await saveSettings(false))return;
+    const response=await fetch("/api/obs/test",{cache:"no-store"}),result=await response.json();
+    note.textContent=response.ok
+      ?updateText(`Connected: ${result.total} catalogue records available.`,`连接成功：目录中有 ${result.total} 条数据记录。`)
+      :(result.message||result.error||updateText("Data access test failed","数据访问测试失败"));
+  }catch(error){note.textContent=updateText("Test failed: ","测试失败：")+(error.message||error);}
+  finally{button.disabled=false;}
 };
 
 (async()=>{

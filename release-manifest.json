@@ -22,6 +22,84 @@
   },
   "changes": [
     {
+      "id": "study-aware-database-hints",
+      "area": "scientific-data",
+      "summary": "The desktop derives which catalogue records fit the study (station ids, basin and river names incl. Chinese aliases) and tells the agent at intake and planning; manual delivery is presented as a normal path that hands the download to the user after approval. Execution turns without any receipt are contradicted in the chat.",
+      "user_action": "None. Expect the agent to list the matching GeoForge Database records in its first reply."
+    },
+    {
+      "id": "replan-in-the-same-turn",
+      "area": "agent-runtime",
+      "summary": "API agents get request_replan: a mid-execution plan change moves the project to REPLAN_REQUIRED, revokes the approval and unlocks write_plan in the same turn. CLI agents' REPLAN_REQUIRED marker now starts the re-planning turn automatically. After a failed validation the next message resumes execution; verified downloads stay bound across replans.",
+      "user_action": "Re-approve the revised plan when the card returns; nothing runs before that."
+    },
+    {
+      "id": "one-time-database-token-on-macos",
+      "area": "desktop-runtime",
+      "summary": "The GeoForge Database token is kept in a private 0600 file under the user's Application Support directory on macOS instead of the login Keychain, whose access list is bound to each build's ad-hoc code signature and prompted on every update. One migration read on first start, then no more consent dialogs.",
+      "user_action": "Allow the Keychain read one last time when this version first starts; later versions will not ask."
+    },
+    {
+      "id": "user-approval-always-required",
+      "area": "agent-runtime",
+      "summary": "The approval card is sectioned (understanding, grouped data, steps with tools, decisions, blockers). Plans are never auto-approved: execution starts only after the user clicks Approve and start. Run-generated intermediate inputs no longer block execution readiness, and a request to review the plan first persists across repair rounds.",
+      "user_action": "Click Approve and start on the plan card to run; nothing executes before that."
+    },
+    {
+      "id": "declared-model-binary-as-step-tool",
+      "area": "agent-runtime",
+      "summary": "A KI's declared model binary is accepted as a plan-step tool by validation, the CLI run-tool and the API run_ki_tool, with a signed receipt; compiled models such as VIC can now pass the model_run tool gate. Database status no longer opens a Keychain prompt.",
+      "user_action": "None."
+    },
+    {
+      "id": "write-plan-output-limit-and-split-submission",
+      "area": "agent-runtime",
+      "summary": "API requests now set an 8K output-token limit so DeepSeek no longer truncates the write_plan call; truncated tool calls are reported to the agent, write_plan accepts plan and data_inventory in two calls, streamed responses are capped at 15 minutes, and an answered intake question promotes the session to planning.",
+      "user_action": "None. If a DeepSeek session previously looped on 'plan and data_inventory must be JSON objects', retry it on this build."
+    },
+    {
+      "id": "desktop-draft-without-server-sources",
+      "area": "agent-runtime",
+      "summary": "The auto-derived plan draft no longer proposes server-only forcing providers or dataset lookups; such inputs are marked for the agent to resolve from the GeoForge Database, and the provider-id choice is gone from the approval card. Agent-written display names are matched to catalogue ids when unambiguous.",
+      "user_action": "None."
+    },
+    {
+      "id": "verified-dataset-pins-in-plans",
+      "area": "agent-runtime",
+      "summary": "Inventory items that name a GeoForge Database record are verified against the local catalogue when the plan is written and stamped with dataset_id, delivery, size, coverage and period. Unknown ids and whole-product parents are returned to the agent as validation errors. The approval card groups inputs into automatic downloads, manual downloads with sizes, run-generated files, and missing; manual downloads block auto-approval and name the file inside the Baidu share.",
+      "user_action": "Read the Data section of the approval card before approving; manual items list their size and will show the Baidu link only after approval."
+    },
+    {
+      "id": "database-status-and-static-project-button",
+      "area": "desktop-ui",
+      "summary": "AI Settings and the Project status panel show the GeoForge Database link honestly: local catalogue size, direct-download count, last sync time, and how API agents (search_observation_data) and CLI agents (geoforge-db) reach the same copy. The Project status button keeps one fixed name with a colored state dot; the activity bar names database searches; the Project view count refreshes while closed.",
+      "user_action": "None."
+    },
+    {
+      "id": "app-level-database-catalogue",
+      "area": "scientific-data",
+      "summary": "The GeoForge Database catalogue is cached once per app (metadata only) and refreshed by ETag; every search surface filters it locally by bounding box, period, variable, category and delivery. Records now expose bbox, point, temporal, resolution_deg, parent_id and sha256 to agents.",
+      "user_action": "Save & test the database token once; searches then work offline from the local copy and refresh automatically."
+    },
+    {
+      "id": "streamed-api-turns-and-stop",
+      "area": "agent-runtime",
+      "summary": "API provider turns stream their responses, so a long planning generation is no longer cut off at five minutes and retried from scratch; the activity panel gains a Stop button for API and CLI turns; in-progress API turns are no longer reported as finished.",
+      "user_action": "None. If a DeepSeek planning turn previously hung for 10-15 minutes, retry it on this build; use Stop to end a turn that is not converging."
+    },
+    {
+      "id": "geoforge-database-system-ki",
+      "area": "scientific-data",
+      "summary": "Authenticated catalogue discovery is packaged as a KDT-single-verified system task-workflow KI. CLI agents receive only a short-lived read-only capability for the running Desktop process; the persistent GeoForge Database activation token remains host-owned.",
+      "user_action": "Add and test the GeoForge Database token in Settings, keep Agent access in Direct mode, and describe the scientific data need normally. Review exact returned dataset ids before approving a download."
+    },
+    {
+      "id": "popup-free-agent-flow-bridge",
+      "area": "agent-runtime",
+      "summary": "Kimi, Claude and Codex flow launchers no longer execute the frozen App Bundle a second time. They forward only database search and receipt-gated run, fetch and observation-download commands to the already-running Desktop over a random process-local loopback capability, preventing repeated macOS Documents permission prompts. The host reads its database credential once per process and suppresses automatic retries after a denied or cancelled Keychain request.",
+      "user_action": "Quit older GeoForge builds before opening this build; the stable launchers refresh automatically on the next Agent turn. If Keychain access was denied, use Settings > Save & test database for one deliberate retry. A locally rebuilt ad-hoc-signed app may need one first-use authorization after each rebuild; a production Apple-signed build preserves identity across updates."
+    },
+    {
       "id": "enforced-plan-approval-execution-flow",
       "area": "agent-runtime",
       "summary": "The KI harness is now backed by a desktop flow gate: task intake, evidence inventory and planning remain read-only; downloads and model tools are unavailable until the user approves the recorded plan; tool runs then receive approval-bound receipts and output validation.",

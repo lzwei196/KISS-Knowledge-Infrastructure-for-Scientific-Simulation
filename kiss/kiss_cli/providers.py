@@ -671,6 +671,7 @@ def _strip_flags(argv: list[str], flags: tuple[str, ...]) -> list[str]:
 
 def run(provider: Provider, prompt: str, cwd: Path,
         *, extra_dirs: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
         cfg=None, ki_root: Path | None = None, pol=None,
         model: str | None = None,
         timeout: int | None = None,
@@ -757,8 +758,14 @@ def run(provider: Provider, prompt: str, cwd: Path,
     argv = provider.build(prompt, extra_dirs=cli_extra_dirs, model=model,
                           resume=resume)
     from .settings import with_provider_proxy
-    env = with_provider_proxy(f"cli:{provider.name}",
-                              {**os.environ, **provider.env})
+    # ``extra_env`` carries process-local capabilities owned by Desktop (for
+    # example the loopback GeoForge Database adapter).  It is deliberately
+    # passed only to this child instead of being written to settings or the
+    # user's shell environment.
+    env = with_provider_proxy(
+        f"cli:{provider.name}",
+        {**os.environ, **provider.env, **(extra_env or {})},
+    )
     if cfg is not None:
         from .paths import with_ki_tools_common
         env = with_ki_tools_common(cfg, env)

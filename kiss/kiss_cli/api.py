@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -41,6 +42,52 @@ from . import skilllib, tls
 from .presentation import activity_marker
 
 TIMEOUT = 300
+# Hard wall-clock cap for one streamed provider response.  The socket timeout
+# only bounds silence between chunks; a proxy sending keep-alive lines could
+# otherwise hold a dead or looping generation open forever.
+STREAM_MAX_SECONDS = 900
+# A plan plus its data inventory is easily 20 KB of JSON in one tool call.
+# DeepSeek's default output limit (4K tokens) truncated exactly that call.
+MAX_OUTPUT_TOKENS = 8192
+INTAKE_ESTIMATE_CAP = 5          # read-only clip estimates allowed while understanding the task
+
+
+class TurnHandle:
+    """Stop switch and heartbeat for one in-process API turn.
+
+    A provider turn has no child process, so the GUI needs its own way to
+    stop it and to see that the stream is still delivering chunks.  ``stop``
+    closes the in-flight HTTP response, which unblocks the reading thread.
+    """
+
+    def __init__(self):
+        self.stopped = threading.Event()
+        self.last_chunk_at: float | None = None
+        self._response = None
+        self._lock = threading.Lock()
+
+    def attach(self, response) -> None:
+        with self._lock:
+            self._response = response
+            if self.stopped.is_set():
+                self._close_locked()
+
+    def detach(self) -> None:
+        with self._lock:
+            self._response = None
+
+    def stop(self) -> None:
+        self.stopped.set()
+        with self._lock:
+            self._close_locked()
+
+    def _close_locked(self) -> None:
+        response, self._response = self._response, None
+        if response is not None:
+            try:
+                response.close()
+            except Exception:  # noqa: BLE001 — closing is best-effort
+                pass
 
 
 @dataclass
@@ -234,10 +281,13 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "configuration generation, validation, and model harness steps. "
                     "Arguments may reference this chat project, this KI package, or "
                     "the current KI's GeoForge-managed shared binaries directory. "
-                    "Do not replace a KI tool with improvised calculations."
+                    "Do not replace a KI tool with improvised calculations. Required "
+                    "environment values are taken automatically from this approved plan step; "
+                    "do not try to install startup hooks or mutate the system environment."
                 ),
                 "input_schema": {"type": "object", "properties": {
-                    "tool_path": {"type": "string",
+                    "tool_path": {"type": "string", "description": "path below tools/ of the KI, "
+                                  "or the absolute path of the model binary the KI declares",
                                   "description": "Python file relative to the KI root and below a tools/ directory"},
                     "arguments": {"type": "array", "items": {"type": "string"}},
                     "cwd": {"type": "string",
@@ -511,17 +561,81 @@ def tool_schemas(ki, *, setup_mode: bool = False,
     if project_mode:
         tools += [
             {
+                "name": "search_catalogue",
+                "description": (
+                    "Search the GeoForge Database catalogue (local copy, no credentials). Filter by "
+                    "keywords, bbox, period, variable, category or delivery. Pass parent_id to list the "
+                    "real delivery children of a split product instead of a keyword search. Results are "
+                    "metadata: 'served' downloads after approval, 'manual' is handed to the user after "
+                    "approval (a normal path, never a dead end). Record the exact dataset id in the plan."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "query": {"type": "string", "description": "keywords, variable, place, or dataset id"},
+                    "bbox": {"type": "string", "description": "min_lon,min_lat,max_lon,max_lat (WGS84)"},
+                    "start": {"type": "string", "description": "YYYY-MM-DD"},
+                    "end": {"type": "string", "description": "YYYY-MM-DD"},
+                    "variable": {"type": "string", "description": "comma-separated variable names, e.g. prec,temp"},
+                    "category": {"type": "string", "description": "forcing, gauge, gridded, static_dataset, ..."},
+                    "delivery": {"type": "string", "enum": ["served", "manual"]},
+                    "parent_id": {"type": "string", "description": "split product to resolve into children; combine with variable/start/end/time_step/bbox"},
+                    "time_step": {"type": "string", "enum": ["daily", "3hr"]},
+                    "offset": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                }},
+            },
+            {
+                "name": "describe_dataset",
+                "description": (
+                    "Read the live source-file schema of one catalogue dataset: exact variable names, "
+                    "units, dimensions, member files, versions. Call it before estimate_clip; use the "
+                    "returned names, not catalogue labels. Read-only; proves nothing about data values."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "dataset_id": {"type": "string"},
+                }, "required": ["dataset_id"]},
+            },
+            {
+                "name": "estimate_clip",
+                "description": (
+                    "Read-only estimate of a server-side clip: output bytes, parts, grid, versions. "
+                    "Use exact source names from describe_dataset; an empty variables list means the "
+                    "whole file. Creates no job and no download. Put the returned acquisition_id on the "
+                    "matching data-inventory item in write_plan; the user approves it with the plan."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "dataset_id": {"type": "string"},
+                    "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                    "start": {"type": "string"}, "end": {"type": "string"},
+                }, "required": ["dataset_id", "bbox"], "additionalProperties": False},
+            },
+            {
+                "name": "request_replan",
+                "description": (
+                    "EXECUTING only. Use when the approved plan cannot be carried out as written "
+                    "(a tool needs a different input, a data source is unusable, a step or "
+                    "scientific choice must change). GeoForge moves the project to REPLAN_REQUIRED, "
+                    "revokes the approval, and makes write_plan available immediately, so you "
+                    "write the corrected plan in this same turn. Do not improvise around the plan."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "reason": {"type": "string", "description": "one sentence: what must change and why"},
+                }, "required": ["reason"]},
+            },
+            {
                 "name": "write_plan",
                 "description": (
                     "PLANNING only. Write runs/plan.json and runs/data-inventory.json (the "
                     "schemas are in your instructions). GeoForge validates them; errors come "
                     "back and nothing is written until they pass. No downloads, no inputs, no "
-                    "model runs happen in planning — the user approves the plan first."
+                    "model runs happen in planning — the user approves the plan first. If the "
+                    "two documents together are large, send them in two calls: first only "
+                    "plan, then only data_inventory; GeoForge merges them."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "plan": {"type": "object"},
                     "data_inventory": {"type": "object"},
-                }, "required": ["plan", "data_inventory"]},
+                }},
             },
             {
                 "name": "fetch_data",
@@ -685,6 +799,12 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
         )
 
 
+def _user_only_file(path: Path, project_root: Path) -> bool:
+    """Request cards (current and archived) carry Baidu links and extraction codes for the
+    user's eyes only; agents never read them."""
+    return path.name.startswith("setup-request") and path.suffix == ".json"
+
+
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                  setup_context: dict | None = None,
                  project_mode: bool = False, flow=None) -> str:
@@ -820,7 +940,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(f"no such project directory: {args.get('subdir')}")
         names = []
         for f in sorted(base.rglob("*")):
-            if not f.is_file() or "memory" in f.relative_to(project_root).parts:
+            if not f.is_file() or "memory" in f.relative_to(project_root).parts or _user_only_file(f, project_root):
                 continue
             try:
                 names.append(f"{f.relative_to(project_root)} ({f.stat().st_size} bytes)")
@@ -832,6 +952,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         p = _inside_project(args.get("path") or "")
         if not p.is_file():
             raise ToolError(f"no such project file: {args.get('path')}")
+        if _user_only_file(p, project_root):
+            raise ToolError("that file is a request card for the user (it may hold a private download "
+                            "link or code); its answer reaches you through the conversation")
         if p.stat().st_size > 5_000_000:
             raise ToolError("project file is too large for the text reader; use a KI tool")
         return p.read_text(encoding="utf-8", errors="replace")[:120000]
@@ -879,14 +1002,21 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             if p != _root and _root not in p.parents:
                 raise ToolError(f"path escapes the KI package: {rel}")
             return p
-        script = _inside_tool_ki(args.get("tool_path") or "")
-        try:
-            rel_script = script.relative_to(tool_root)
-        except ValueError:
-            raise ToolError("tool escapes the selected KI")
-        from ki_tools_common.flow.tools import is_ki_tool
-        if script.suffix.casefold() != ".py" or not is_ki_tool(tool_root, script):
-            raise ToolError("run_ki_tool accepts only shipped Python files below tools/")
+        from ki_tools_common.flow.tools import is_declared_binary, is_ki_tool
+        requested = str(args.get("tool_path") or "")
+        binary = is_declared_binary(tool_root, requested)
+        if binary:
+            script = Path(requested).resolve()
+            rel_script = script.name
+        else:
+            script = _inside_tool_ki(requested)
+            try:
+                rel_script = script.relative_to(tool_root)
+            except ValueError:
+                raise ToolError("tool escapes the selected KI")
+            if script.suffix.casefold() != ".py" or not is_ki_tool(tool_root, script):
+                raise ToolError("run_ki_tool accepts only shipped Python files below tools/ "
+                                "or the model binary the KI declares")
         arguments = args.get("arguments") or []
         if (not isinstance(arguments, list) or len(arguments) > 100 or
                 not all(isinstance(x, str) and len(x) <= 4000 for x in arguments)):
@@ -905,6 +1035,19 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     for base in project_argument_roots):
                 raise ToolError(f"tool argument path escapes the project and KI: {value}")
         timeout = max(1, min(int(args.get("timeout_seconds") or 600), 3600))
+        approved_env: dict[str, str] = {}
+        before = None
+        if flow is not None:
+            from . import flowgate as _fg
+            from .flowgate import FlowDenied
+            # The step, KI, tool and its environment are all checked before
+            # construction of the child process.
+            try:
+                step = flow.check_step_tool(args.get("plan_step_id"), tool_ki_name, script)
+                approved_env = flow.approved_step_environment(step, tool_root)
+            except FlowDenied as e:
+                raise ToolError(str(e)) from None
+            before = _fg._snapshot(project_root)
         child_env = {
             key: value for key, value in os.environ.items()
             if not any(secret in key.upper() for secret in (
@@ -918,17 +1061,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if provider_id:
             from .settings import with_provider_proxy
             child_env = with_provider_proxy(provider_id, child_env)
-        command = [str(cfg.python), str(script), *arguments]
-        before = None
-        if flow is not None:
-            from . import flowgate as _fg
-            from .flowgate import FlowDenied
-            # the step, its KI and its tool are checked BEFORE anything runs (codex R2 #4)
-            try:
-                flow.check_step_tool(args.get("plan_step_id"), tool_ki_name, script)
-            except FlowDenied as e:
-                raise ToolError(str(e)) from None
-            before = _fg._snapshot(project_root)
+        child_env.update(approved_env)
+        command = ([str(script)] if binary else [str(cfg.python), str(script)]) + list(arguments)
         started = time.time()
         try:
             proc = subprocess.run(
@@ -1020,17 +1154,101 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 raise ToolError(str(e)) from None
         return json.dumps(summary, indent=2, ensure_ascii=False, default=str)
 
+    if project_mode and name == "request_replan":
+        if flow is None:
+            raise ToolError("request_replan is available only in a flow-managed project")
+        from .flowgate import FlowDenied
+        try:
+            return flow.request_replan(str(args.get("reason") or ""))
+        except FlowDenied as e:
+            raise ToolError(str(e)) from None
+
     if project_mode and name == "write_plan":
         if flow is None:
             raise ToolError("write_plan is available only in a flow-managed project")
+        if args.get("_vendor_argument_error"):
+            raise ToolError(
+                f"write_plan arguments were not delivered intact: {args['_vendor_argument_error']}. "
+                "Call write_plan twice: once with only plan, once with only data_inventory; "
+                "GeoForge merges the two before validating.")
         plan_doc, inv_doc = args.get("plan"), args.get("data_inventory")
-        if not isinstance(plan_doc, dict) or not isinstance(inv_doc, dict):
-            raise ToolError("plan and data_inventory must be JSON objects")
+        for key, value in (("plan", plan_doc), ("data_inventory", inv_doc)):
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError as e:
+                    raise ToolError(f"{key} is not valid JSON: {e}") from None
+            if value is not None and not isinstance(value, dict):
+                raise ToolError(f"{key} must be a JSON object")
+            if key == "plan":
+                plan_doc = value
+            else:
+                inv_doc = value
+        # Two-call submission: keep the half that arrived until the other one comes.
+        parts = getattr(flow, "pending_plan_parts", None) or {}
+        if plan_doc is not None:
+            parts["plan"] = plan_doc
+        if inv_doc is not None:
+            parts["data_inventory"] = inv_doc
+        flow.pending_plan_parts = parts
+        if "plan" not in parts or "data_inventory" not in parts:
+            have = "plan" if "plan" in parts else "data_inventory"
+            missing = "data_inventory" if have == "plan" else "plan"
+            return (f"Received {have}; now call write_plan again with only {missing}. "
+                    "Nothing is validated or written until both halves are in.")
+        plan_doc, inv_doc = parts["plan"], parts["data_inventory"]
+        flow.pending_plan_parts = {}
         errs = flow.write_plan(plan_doc, inv_doc)
         if errs:
             return "PLAN NOT WRITTEN — fix these and call write_plan again:\n- " + "\n- ".join(errs[:30])
         return ("Plan files written: runs/plan.json, runs/data-inventory.json. Stop here: GeoForge "
                 "shows the plan to the user; execution starts in a separate session after approval.")
+
+    if project_mode and name in ("search_catalogue", "describe_dataset", "estimate_clip"):
+        # Thin adapters over the legacy multi-mode handler (removed in step 2).
+        if name == "describe_dataset":
+            args = {"describe_dataset_id": str(args.get("dataset_id") or "")}
+        elif name == "estimate_clip":
+            if flow is not None and getattr(flow, "state", None) is not None \
+                    and flow.state.value == "RESOLVING_KIS":
+                used = getattr(flow, "intake_estimates", 0)
+                if used >= INTAKE_ESTIMATE_CAP:
+                    raise ToolError(f"at most {INTAKE_ESTIMATE_CAP} clip estimates during task "
+                                    "understanding; finish the intake, estimate the rest in planning")
+                flow.intake_estimates = used + 1
+            args = {"subset_request": {k: v for k, v in args.items()
+                                       if k in ("dataset_id", "bbox", "variables", "start", "end")}}
+        else:
+            args = dict(args)
+            if args.get("parent_id"):
+                args["resolve_dataset_id"] = args.pop("parent_id")
+        name = "search_observation_data"
+
+    if project_mode and name == "search_observation_data":
+        from . import obs_access
+        try:
+            if sum((bool(args.get('describe_dataset_id')), bool(args.get('resolve_dataset_id')),
+                    args.get('subset_request') is not None)) > 1:
+                raise ValueError('Choose one of describe, resolve or subset estimate per call')
+            if args.get('subset_request') is not None:
+                from . import obs_subset
+                if flow is None:
+                    raise ValueError('Subset estimates require a project session')
+                return json.dumps(obs_subset.estimate(flow.project, args['subset_request']), ensure_ascii=False)
+            result = obs_access.search_catalogue(
+                q=str(args.get("query") or ""),
+                offset=int(args.get("offset") or 0),
+                limit=int(args.get("limit") or 25),
+                bbox=args.get("bbox") or None, start=args.get("start") or None,
+                end=args.get("end") or None, variable=str(args.get("variable") or ""),
+                category=str(args.get("category") or ""),
+                describe_dataset_id=str(args.get("describe_dataset_id") or ""),
+                resolve_dataset_id=str(args.get("resolve_dataset_id") or ""),
+                time_step=str(args.get("time_step") or ""),
+                delivery=str(args.get("delivery") or ""))
+        except (obs_access.ObsAccessError, TypeError, ValueError) as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(result, indent=2, ensure_ascii=False)
 
     if project_mode and name == "fetch_data":
         if flow is None:
@@ -1407,7 +1625,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
 # --- wire formats -----------------------------------------------------------
 
-def _post(url: str, headers: dict, payload: dict, *, provider: str) -> dict:
+def _open(url: str, headers: dict, payload: dict, *, provider: str):
+    """Open the provider request with the connection-level retries only."""
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(), method="POST",
         headers={"Content-Type": "application/json", **headers},
@@ -1423,20 +1642,154 @@ def _post(url: str, headers: dict, payload: dict, *, provider: str) -> dict:
                     {"http": proxy, "https": proxy} if proxy else {}),
                 urllib.request.HTTPSHandler(context=tls.context()),
             ]
-            with urllib.request.build_opener(*handlers).open(req, timeout=TIMEOUT) as r:
-                return json.loads(r.read())
+            return urllib.request.build_opener(*handlers).open(req, timeout=TIMEOUT)
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "replace")[:800]
             if e.code not in {429, 502, 503, 504} or attempt == 2:
                 raise ToolError(f"HTTP {e.code} from {url}: {body}") from None
         except urllib.error.URLError as e:
+            if isinstance(e.reason, TimeoutError):
+                raise ToolError(
+                    f"no response from {url} within {TIMEOUT}s; the model was still generating "
+                    "(not retried: a retry restarts the generation)") from None
             if isinstance(e.reason, ssl.SSLCertVerificationError) or attempt == 2:
                 raise ToolError(f"cannot reach {url}: {e.reason}") from None
         except (http.client.RemoteDisconnected, http.client.IncompleteRead,
-                TimeoutError, ConnectionError) as e:
+                ConnectionError) as e:
             if attempt == 2:
                 raise ToolError(f"provider connection interrupted: {type(e).__name__}") from None
         time.sleep(2 ** attempt)
+    raise ToolError(f"cannot reach {url}")  # unreachable; keeps the type checker honest
+
+
+def _post(url: str, headers: dict, payload: dict, *, provider: str,
+          wire: str | None = None, handle: TurnHandle | None = None) -> dict:
+    """POST to a provider and return the complete response document.
+
+    With ``wire`` set the request streams and the chunks are reassembled into
+    the same document shape the non-streaming API returns.  Streaming keeps
+    the socket busy during a long generation (the read timeout then bounds
+    silence between chunks, not the whole answer) and gives ``handle`` a
+    response it can close to stop the turn.
+    """
+    if wire is None:
+        try:
+            with _open(url, headers, payload, provider=provider) as r:
+                return json.loads(r.read())
+        except TimeoutError:
+            raise ToolError(
+                f"no response from {url} within {TIMEOUT}s; the model was still generating "
+                "(not retried: a retry restarts the generation)") from None
+    response = _open(url, headers, {**payload, "stream": True}, provider=provider)
+    if handle is not None:
+        handle.attach(response)
+    try:
+        events = _sse_events(response, handle)
+        return (_assemble_anthropic(events) if wire == "anthropic"
+                else _assemble_openai(events))
+    except (TimeoutError, http.client.IncompleteRead, ConnectionError,
+            ValueError, OSError) as e:
+        if handle is not None and handle.stopped.is_set():
+            raise ToolError("stopped by the user") from None
+        raise ToolError(f"provider stream interrupted: {type(e).__name__}: {e}") from None
+    finally:
+        if handle is not None:
+            handle.detach()
+        try:
+            response.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _sse_events(response, handle: TurnHandle | None) -> Iterator[dict]:
+    """Yield the JSON ``data:`` payloads of a server-sent-event stream."""
+    started = time.time()
+    for raw in response:
+        if time.time() - started > STREAM_MAX_SECONDS:
+            raise ToolError(
+                f"provider response exceeded {STREAM_MAX_SECONDS}s without completing; "
+                "the generation was stopped")
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue          # comments / keep-alives are not progress
+        if handle is not None:
+            handle.last_chunk_at = time.time()
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            obj = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            if obj.get("error"):
+                err = obj["error"]
+                raise ToolError(f"provider error: {err.get('message', err) if isinstance(err, dict) else err}")
+            yield obj
+
+
+def _assemble_openai(events: Iterator[dict]) -> dict:
+    """Rebuild ``{"choices":[{"message": …}]}`` from OpenAI-style deltas."""
+    text: list[str] = []
+    calls: dict[int, dict] = {}
+    finish = None
+    for obj in events:
+        choice = (obj.get("choices") or [{}])[0]
+        delta = choice.get("delta") or {}
+        if delta.get("content"):
+            text.append(str(delta["content"]))
+        for tc in delta.get("tool_calls") or []:
+            slot = calls.setdefault(int(tc.get("index") or 0), {
+                "id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+            if tc.get("id"):
+                slot["id"] = tc["id"]
+            fn = tc.get("function") or {}
+            if fn.get("name"):
+                slot["function"]["name"] += fn["name"]
+            if fn.get("arguments"):
+                slot["function"]["arguments"] += fn["arguments"]
+        finish = choice.get("finish_reason") or finish
+    # reasoning_content (DeepSeek) is deliberately dropped: the vendor rejects
+    # it when echoed back in the next request.
+    message: dict = {"role": "assistant", "content": "".join(text)}
+    if calls:
+        message["tool_calls"] = [calls[i] for i in sorted(calls)]
+    return {"choices": [{"message": message, "finish_reason": finish}]}
+
+
+def _assemble_anthropic(events: Iterator[dict]) -> dict:
+    """Rebuild ``{"content": [...]}`` from Anthropic content-block events."""
+    blocks: dict[int, dict] = {}
+    partial: dict[int, list[str]] = {}
+    for obj in events:
+        kind = obj.get("type")
+        if kind == "content_block_start":
+            index = int(obj.get("index") or 0)
+            block = dict(obj.get("content_block") or {})
+            if block.get("type") == "text":
+                block["text"] = block.get("text") or ""
+            blocks[index] = block
+            partial[index] = []
+        elif kind == "content_block_delta":
+            index = int(obj.get("index") or 0)
+            delta = obj.get("delta") or {}
+            block = blocks.setdefault(index, {"type": "text", "text": ""})
+            if delta.get("type") == "text_delta":
+                block["text"] = block.get("text", "") + str(delta.get("text") or "")
+            elif delta.get("type") == "input_json_delta":
+                partial.setdefault(index, []).append(str(delta.get("partial_json") or ""))
+        elif kind == "error":
+            err = obj.get("error") or {}
+            raise ToolError(f"provider error: {err.get('message', err)}")
+    for index, block in blocks.items():
+        if block.get("type") == "tool_use":
+            raw = "".join(partial.get(index) or [])
+            try:
+                block["input"] = json.loads(raw) if raw.strip() else {}
+            except json.JSONDecodeError:
+                block["input"] = {"_vendor_argument_error": "invalid JSON arguments",
+                                  "_raw_arguments": raw[:2000]}
+    return {"content": [blocks[i] for i in sorted(blocks)]}
 
 
 def _cacheable_system(system: str) -> list[dict]:
@@ -1475,13 +1828,14 @@ def _cached_messages(messages: list[dict]) -> list[dict]:
     return [*messages[:-1], {**messages[-1], "content": blocks}]
 
 
-def _anthropic_turn(prov, model, system, messages, tools, key):
+def _anthropic_turn(prov, model, system, messages, tools, key, handle=None):
     data = _post(prov.base_url,
                  {"x-api-key": key, "anthropic-version": "2023-06-01"},
-                 {"model": model, "max_tokens": 4096,
+                 {"model": model, "max_tokens": MAX_OUTPUT_TOKENS,
                   "system": _cacheable_system(system),
                   "messages": _cached_messages(messages), "tools": tools},
-                 provider=f"api:{getattr(prov, 'name', 'anthropic')}")
+                 provider=f"api:{getattr(prov, 'name', 'anthropic')}",
+                 wire="anthropic", handle=handle)
     text = "".join(b.get("text", "") for b in data.get("content", [])
                    if b.get("type") == "text")
     calls = [(b["id"], b["name"], b.get("input") or {})
@@ -1489,14 +1843,16 @@ def _anthropic_turn(prov, model, system, messages, tools, key):
     return text, calls, data.get("content", [])
 
 
-def _openai_turn(prov, model, system, messages, tools, key):
+def _openai_turn(prov, model, system, messages, tools, key, handle=None):
     oai_tools = [{"type": "function",
                   "function": {"name": t["name"], "description": t["description"],
                                "parameters": t["input_schema"]}} for t in tools]
     msgs = [{"role": "system", "content": system}, *messages]
     data = _post(prov.base_url, {"Authorization": f"Bearer {key}"},
-                 {"model": model, "messages": msgs, "tools": oai_tools},
-                 provider=f"api:{getattr(prov, 'name', 'openai')}")
+                 {"model": model, "messages": msgs, "tools": oai_tools,
+                  "max_tokens": MAX_OUTPUT_TOKENS},
+                 provider=f"api:{getattr(prov, 'name', 'openai')}",
+                 wire="openai", handle=handle)
     choice = (data.get("choices") or [{}])[0].get("message", {})
     text = choice.get("content") or ""
     calls = []
@@ -1517,8 +1873,13 @@ def _openai_turn(prov, model, system, messages, tools, key):
             if not isinstance(args, dict):
                 args = {}
         except json.JSONDecodeError as e:
+            cut = (choice.get("finish_reason") == "length" or
+                   (data.get("choices") or [{}])[0].get("finish_reason") == "length")
             args = {
-                "_vendor_argument_error": f"invalid JSON arguments: {e}",
+                "_vendor_argument_error": (
+                    f"the provider cut this tool call off at its output limit "
+                    f"({len(str(raw_args))} characters received); send less in one call"
+                    if cut else f"invalid JSON arguments: {e}"),
                 "_raw_arguments": str(raw_args)[:2000],
             }
         calls.append((call_id, name, args))
@@ -1542,6 +1903,43 @@ def _looks_like_text_tool_request(text: str) -> bool:
     return bool(_TEXT_TOOL_REQUEST.search(str(text or "")))
 
 
+# States in which a turn must end with a handoff (a question card, an intake report or a
+# plan), never with prose alone (FLOW-TARGET-2026-09-17 step 1).
+_HANDOFF_STATES = {"RESOLVING_KIS", "PLANNING", "REPLAN_REQUIRED"}
+_NUDGE = {
+    "RESOLVING_KIS": (
+        "Your turn ended without a handoff, so GeoForge cannot move on: a question written in "
+        "prose shows the user no card and the project waits forever. Either call "
+        "request_user_action now with that ONE question and its options, or call "
+        "report_project_progress with selected_kis and an intake object with "
+        "ready_for_planning=true and an empty missing list."),
+    "PLANNING": (
+        "Your turn ended without write_plan, so nothing was submitted. Do not describe what you "
+        "will do; call write_plan now with both files. If one decision genuinely needs the user, "
+        "call request_user_action with that single question instead."),
+}
+_NUDGE["REPLAN_REQUIRED"] = _NUDGE["PLANNING"]
+_TRANSPORT_FAILURE = ("provider stream interrupted", "no response from", "cannot reach")
+
+
+def _handoff_made(name: str, args: dict, out: str) -> bool:
+    """Did this tool call end the agent's obligation for a handoff state?"""
+    if out.startswith(("ERROR:", "DENIED", "PLAN NOT WRITTEN")):
+        return False
+    if name == "write_plan":
+        return out.startswith("Plan files written")
+    if name == "request_user_action":
+        return True
+    if name == "report_project_progress":
+        intake = args.get("intake")
+        # "Not ready, one question missing" is a handoff only when that question
+        # was asked through request_user_action; a question in prose leaves the
+        # project waiting with no card, which is the seam this rule closes.
+        return (bool(args.get("selected_kis")) and isinstance(intake, dict)
+                and intake.get("ready_for_planning") is True and not intake.get("missing"))
+    return False
+
+
 def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         *, model: str | None = None, max_steps: int | None = None,
         history: list[dict] | None = None,
@@ -1550,7 +1948,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         setup_context: dict | None = None,
         project_mode: bool = False,
         presentation: str = "chat",
-        flow=None) -> Iterator[str]:
+        flow=None, handle: TurnHandle | None = None) -> Iterator[str]:
     """Drive one task to completion, yielding text as it is produced.
 
     ``approve`` is the seam the CLI driver cannot offer: it is called before
@@ -1585,6 +1983,9 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             messages.append({"role": role, "content": body})
     messages.append({"role": "user", "content": task})
     text_tool_retries = 0
+    transport_retries = 0
+    nudged = False
+    handoff = False
     step = 0
 
     # A scientific setup or model run is complete when the provider returns a
@@ -1595,13 +1996,30 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     # build.  ``None`` is therefore the normal contract.  ``max_steps`` remains
     # available only for small, explicitly bounded probes and unit tests.
     while max_steps is None or step < max_steps:
+        if flow is not None and step:
+            # A request_replan in the previous step changes what is allowed now.
+            tools = tool_schemas(ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow)
         step += 1
+        if handle is not None and handle.stopped.is_set():
+            yield f"\n[{prov.label} stopped by the user]"
+            return
         try:
             if prov.wire == "anthropic":
-                text, calls, raw = _anthropic_turn(prov, model_id, system, messages, tools, key)
+                text, calls, raw = _anthropic_turn(prov, model_id, system, messages, tools, key,
+                                                   handle=handle)
             else:
-                text, calls, raw = _openai_turn(prov, model_id, system, messages, tools, key)
+                text, calls, raw = _openai_turn(prov, model_id, system, messages, tools, key,
+                                                handle=handle)
         except ToolError as e:
+            if handle is not None and handle.stopped.is_set():
+                yield f"\n[{prov.label} stopped by the user]"
+                return
+            if str(e).startswith(_TRANSPORT_FAILURE) and not transport_retries:
+                # One retry: the failed call appended nothing, so the same request is
+                # simply sent again. A second failure is reported as before.
+                transport_retries += 1
+                yield f"\n[{prov.label}: connection dropped; retrying once]\n"
+                continue
             yield f"\n[{prov.label} failed: {e}]"
             return
 
@@ -1635,12 +2053,27 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         if text and (not calls or presentation == "log"):
             yield text
         if not calls:
+            state_name = getattr(getattr(flow, "state", None), "value", "")
+            if flow is not None and state_name in _HANDOFF_STATES and not handoff and not nudged:
+                # Prose is not a handoff. One nudge, then the turn ends and flowrun.after
+                # reports the missing submission as today.
+                nudged = True
+                if prov.wire == "anthropic":
+                    messages.append({"role": "assistant", "content": raw})
+                else:
+                    messages.append(raw)
+                messages.append({"role": "user", "content": _NUDGE[state_name]})
+                yield f"\n\n[GeoForge: the turn ended without a plan or a question; asking {prov.label} to finish it]\n\n"
+                continue
             if flow is not None:
                 flow.provider_succeeded = True
             return
 
         results = []
         for call_id, name, args in calls:
+            if handle is not None and handle.stopped.is_set():
+                yield f"\n[{prov.label} stopped by the user before {name}]"
+                return
             if presentation == "log":
                 yield f"\n`> {name}({', '.join(f'{k}={v!r}' for k, v in args.items())[:80]})`\n"
             else:
@@ -1654,7 +2087,16 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                                        project_mode=project_mode, flow=flow)
                 except ToolError as e:
                     out = f"ERROR: {e}"
+            handoff = handoff or _handoff_made(name, args, str(out))
             results.append((call_id, out))
+            if (name == "request_user_action" and flow is not None
+                    and getattr(getattr(flow, "state", None), "value", "") in _HANDOFF_STATES
+                    and not str(out).startswith(("ERROR:", "DENIED"))):
+                # A question to the user ends the turn: the answer arrives as the next
+                # message. Writing a plan on top of an unanswered question is not allowed.
+                yield f"\n[GeoForge: {prov.label} asked you a question; waiting for your answer]\n"
+                flow.provider_succeeded = True
+                return
 
         if prov.wire == "anthropic":
             messages.append({"role": "assistant", "content": raw})

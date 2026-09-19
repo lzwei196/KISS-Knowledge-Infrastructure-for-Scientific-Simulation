@@ -52,7 +52,7 @@ def load():
         # discovering the incomplete bundle halfway through a project.
         for sub in (
                 "states", "resolve", "plan", "approval", "contracts",
-                "receipts", "policy", "tools", "build_data"):
+                "receipts", "policy", "tools", "build_data", "declared"):
             importlib.import_module(f"ki_tools_common.flow.{sub}")
     except Exception as error:
         raise FlowUnavailable(
@@ -95,16 +95,19 @@ class FlowSession:
     plan: dict | None = None
     inventory: dict | None = None
     approval_doc: dict | None = None
+    database_access_mode: str = "direct"
 
     # ---------------------------------------------------------------- construction
     @classmethod
-    def open(cls, project: Path, ki_roots: dict[str, Path], python: str | None = None) -> "FlowSession":
+    def open(cls, project: Path, ki_roots: dict[str, Path], python: str | None = None,
+             database_access_mode: str = "direct") -> "FlowSession":
         flow = load()
         ctx = flow.states.FlowContext.load(Path(project))
         if ki_roots and not ctx.selected_kis:
             ctx.selected_kis = list(ki_roots)
         s = cls(project=Path(project), flow=flow, ctx=ctx,
-                ki_roots={k: Path(v) for k, v in ki_roots.items()}, python=python or "python3")
+                ki_roots={k: Path(v) for k, v in ki_roots.items()}, python=python or "python3",
+                database_access_mode=database_access_mode)
         s.reload_artifacts()
         return s
 
@@ -129,11 +132,14 @@ class FlowSession:
 
     # ---------------------------------------------------------------- tool gating (api.py B4)
     def api_tools(self) -> frozenset[str]:
-        return self.flow.policy.api_tools_for(self.state)
+        tools = self.flow.policy.api_tools_for(self.state)
+        if self.database_access_mode == "direct":
+            return tools
+        return frozenset(tools - set(self.flow.policy.DATABASE_API_TOOLS))
 
     def check_tool(self, name: str) -> None:
         """Raise ``FlowDenied`` when ``name`` is not allowed in the current state."""
-        if not self.flow.policy.api_tool_allowed(self.state, name):
+        if name not in self.api_tools() or not self.flow.policy.api_tool_allowed(self.state, name):
             raise FlowDenied(
                 f"'{name}' is not allowed while the project is in {self.state.value}. "
                 + _hint(self.state))
@@ -168,6 +174,9 @@ class FlowSession:
         if step.get("ki") != ki:
             raise FlowDenied(f"step {plan_step_id!r} belongs to KI {step.get('ki')!r}, not {ki!r}")
         want = step.get("tool")
+        if tool_path is not None and not want:
+            raise FlowDenied(
+                f"step {plan_step_id!r} has no approved tool; revise and re-approve the plan")
         if want and tool_path is not None:
             try:
                 same = Path(want).resolve() == Path(tool_path).resolve()
@@ -176,7 +185,43 @@ class FlowSession:
             if not same:
                 raise FlowDenied(f"step {plan_step_id!r} is approved for tool {want!r}, not "
                                  f"{str(tool_path)!r}")
+        if step.get('kind') != 'download':
+            for item in (self.inventory or {}).get('items') or []:
+                if item.get('acquisition_id') and item.get('id') in (step.get('inputs') or []):
+                    valid = any(ok and d.get('item_id') == item['id']
+                                and self.flow.receipts._download_still_valid(self.project, d, self.inventory)
+                                for _, d, ok in self.flow.receipts._read_all(
+                                    self.project, self.flow.receipts.DATA_SUB))
+                    if not valid:
+                        raise FlowDenied(f"Input {item['id']!r} has no intact, bound acquisition. "
+                                         "Complete its approved data download before running this step.")
         return step
+
+    def request_replan(self, reason: str) -> str:
+        """EXECUTING -> REPLAN_REQUIRED in the middle of a turn.
+
+        The approval is revoked and ``write_plan`` becomes available at once, so
+        the agent that discovered the problem can write the corrected plan in
+        the same turn instead of stopping to ask for a state change."""
+        S = self.flow.states.State
+        if self.state is not S.EXECUTING:
+            raise FlowDenied(f"request_replan is only meaningful while EXECUTING, not in {self.state.value}")
+        self.move("replan")
+        self.flow.approval.revoke(self.project, reason or "agent requested a plan change")
+        self.reload_artifacts()
+        from . import projectrun
+        projectrun.set_stage(self.project, self.flow.states.DISPLAY_STAGE.get(self.state, "preparing"),
+                             "The agent is revising the plan")
+        return ("Plan change accepted: the project is now REPLAN_REQUIRED and the approval is revoked. "
+                "Write the corrected plan now with write_plan (plan first, then data_inventory if "
+                "large). Nothing runs until the user approves the revision.")
+
+    def approved_step_environment(self, step: dict, ki_root: Path) -> dict[str, str]:
+        """Return only the environment recorded in the signed plan step."""
+        try:
+            return self.flow.plan.step_environment(step, self.project, ki_root)
+        except ValueError as error:
+            raise FlowDenied(f"step {step.get('id')!r} has an unsafe environment: {error}") from None
 
     def step_kind(self, plan_step_id: str | None) -> str:
         for st in (self.plan or {}).get("steps") or []:
@@ -230,6 +275,15 @@ class FlowSession:
         errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots)
         if errs:
             return errs
+        from . import obs_subset
+        for item in inventory.get('items') or []:
+            if item.get('acquisition_id'):
+                try:
+                    obs_subset.stamp_item(self.project, item)
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    errs.append(f"item {item.get('id')!r}: {error}")
+        if errs:
+            return errs
         self.flow.plan.write_artifacts(self.project, plan, inventory)
         self.reload_artifacts()
         self.plan_submission = (self.flow.plan.sha256(plan), self.flow.plan.sha256(inventory))
@@ -271,25 +325,21 @@ class FlowSession:
         path = r.record_download(self.project, item_id=item_id, source=parsed.netloc,
                                  request_url=url, http_status=status, raw_files=[dest],
                                  approval_sha256=self.approval_id, requested_at=requested_at,
-                                 plan_step_id=plan_step_id)
+                                 plan_step_id=plan_step_id,
+                                 inventory_item=next((it for it in (self.inventory or {}).get("items", [])
+                                                      if str(it.get("id")) == item_id), None))
         # mark the inventory item as ready (the app does this, not the agent)
         if self.inventory:
             for it in self.inventory.get("items") or []:
                 if isinstance(it, dict) and str(it.get("id")) == item_id:
                     it["status"] = "ready"
                     it.setdefault("local_paths", []).append(str(dest.relative_to(self.project)))
-            # inventory changes after approval are DRIFT by design — record the download
-            # under runs/ instead of rewriting the approved inventory
-            (self.project / "runs" / "inventory-updates.jsonl").open("a", encoding="utf-8").write(
-                json.dumps({"item_id": item_id, "status": "ready",
-                            "path": str(dest.relative_to(self.project)), "receipt": str(path)}) + "\n")
         return {"receipt": str(path), "path": str(dest.relative_to(self.project)),
                 "bytes": dest.stat().st_size, "http_status": status}
 
-    # ---------------------------------------------------------------- evidence
     def evidence(self, enforcement: str = "exact") -> dict:
         return self.flow.receipts.evidence(self.project, self.plan, self.approval_doc,
-                                           enforcement=enforcement)
+                                           enforcement=enforcement, inventory=self.inventory)
 
 
 class FlowDenied(Exception):

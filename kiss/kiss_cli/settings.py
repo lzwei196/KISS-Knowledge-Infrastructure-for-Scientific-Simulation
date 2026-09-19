@@ -27,8 +27,11 @@ KEY_NAMES = ("ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
              "OPENAI_API_KEY", "OPENROUTER_API_KEY")
 KIMI_SECURITY_MODES = {"scoped", "full"}
 PROXY_MODES = {"auto", "manual", "off"}
+DATABASE_ACCESS_MODES = {"direct", "snapshot", "off"}
 GITHUB_PROXY_TARGET = "network:github"
-DEFAULT_PROXY_PROVIDERS = (GITHUB_PROXY_TARGET, "cli:claude", "cli:codex")
+OBS_PROXY_TARGET = "network:obs"
+DEFAULT_PROXY_PROVIDERS = (
+    GITHUB_PROXY_TARGET, OBS_PROXY_TARGET, "cli:claude", "cli:codex")
 PROXY_ENV_KEYS = (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "all_proxy", "no_proxy",
@@ -171,8 +174,11 @@ def proxy_providers(data: dict | None = None) -> set[str]:
     # Older releases had no separate updater target. Adopt the same route on
     # first upgrade so a proxy that already fixed Claude/Codex also fixes KI
     # updates. Once the new UI is saved, an explicit unchecked choice wins.
-    if int(current.get("proxy_targets_version") or 0) < 1:
+    version = int(current.get("proxy_targets_version") or 0)
+    if version < 1:
         selected.add(GITHUB_PROXY_TARGET)
+    if version < 2:
+        selected.add(OBS_PROXY_TARGET)
     return selected
 
 
@@ -220,10 +226,26 @@ def masked() -> dict:
     s = load()
     out = {"default_provider": s.get("default_provider", ""),
            "kimi_security_mode": kimi_security_mode(s),
+           "database_access_mode": database_access_mode(s),
            "api_keys": {}, **proxy_details(s)}
     for k in KEY_NAMES:
         v = (s.get("api_keys") or {}).get(k) or os.environ.get(k) or ""
         out["api_keys"][k] = (f"…{v[-4:]}" if v else "")
+    # Observation access is intentionally absent from settings.json. Only its
+    # presence and a fixed mask reach the browser; the value stays in the OS
+    # password store and is read only by the local backend.
+    try:
+        from . import obs_access
+        state = obs_access.token_state()
+        # Only the first look in this process may open the password store; a
+        # read already in flight (consent dialog) must not stall the settings page.
+        configured = obs_access.token_configured() if state == "unknown" else state == "configured"
+        out["obs_token_error"] = ""
+    except Exception as error:
+        configured = False
+        out["obs_token_error"] = str(error)
+    out["obs_token_configured"] = configured
+    out["obs_activation_token"] = "…………" if configured else ""
     return out
 
 
@@ -232,6 +254,19 @@ def kimi_security_mode(data: dict | None = None) -> str:
     mode = (data if data is not None else load()).get(
         "kimi_security_mode", "scoped")
     return mode if mode in KIMI_SECURITY_MODES else "scoped"
+
+
+def database_access_mode(data: dict | None = None) -> str:
+    """How project Agents discover GeoForge Database records.
+
+    ``direct`` still keeps the credential in the Desktop host: API Agents call
+    the typed host tool and CLI Agents call the app's credential-free
+    ``obs-search`` adapter.  ``snapshot`` exposes only a sanitized catalogue
+    file, and ``off`` exposes neither route.
+    """
+    mode = (data if data is not None else load()).get(
+        "database_access_mode", "direct")
+    return mode if mode in DATABASE_ACCESS_MODES else "direct"
 
 
 def update(payload: dict) -> None:
@@ -268,6 +303,11 @@ def update(payload: dict) -> None:
             if mode not in KIMI_SECURITY_MODES:
                 raise ValueError(f"unknown Kimi security mode {mode!r}")
             s["kimi_security_mode"] = mode
+        if "database_access_mode" in payload:
+            mode = payload["database_access_mode"]
+            if mode not in DATABASE_ACCESS_MODES:
+                raise ValueError(f"unknown database access mode {mode!r}")
+            s["database_access_mode"] = mode
         if "proxy_mode" in payload:
             mode = payload["proxy_mode"]
             if mode not in PROXY_MODES:
@@ -288,12 +328,20 @@ def update(payload: dict) -> None:
                 raise ValueError("proxy providers must be a list")
             from . import api as _api
             from . import providers as _prov
-            allowed = ({GITHUB_PROXY_TARGET} |
+            allowed = ({GITHUB_PROXY_TARGET, OBS_PROXY_TARGET} |
                        {f"cli:{name}" for name in _prov.PROVIDERS} |
                        {f"api:{name}" for name in _api.PROVIDERS})
             unknown = sorted(set(requested) - allowed)
             if unknown:
                 raise ValueError(f"unknown proxy providers: {', '.join(unknown)}")
             s["proxy_providers"] = sorted(set(requested))
-            s["proxy_targets_version"] = 1
+            s["proxy_targets_version"] = 2
+        # Validate the whole settings payload before changing the native
+        # credential. This avoids accepting a token from a form whose other
+        # fields were rejected.
+        if "obs_activation_token" in payload:
+            value = str(payload.get("obs_activation_token") or "")
+            if not value.startswith("…"):
+                from . import obs_access
+                obs_access.set_token(value)
         save(s)

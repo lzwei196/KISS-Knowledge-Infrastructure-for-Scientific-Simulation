@@ -20,7 +20,7 @@ from .states import FlowError, State, Capability, Enforcement, FlowContext  # no
 
 
 def __getattr__(name):
-    if name in ("states", "resolve", "plan", "approval", "contracts", "receipts", "policy"):
+    if name in ("states", "resolve", "plan", "approval", "contracts", "receipts", "policy", "declared", "tools"):
         import importlib
         return importlib.import_module(f".{name}", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

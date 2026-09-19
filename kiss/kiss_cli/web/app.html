@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GeoForge Desktop</title>
 <style>
+#no-user-action[hidden]{display:none!important}
 /* Sessions-first shell. Palette follows the DeepSeek Harness design platform:
    neutral-bluish ramp, one brand blue, hairline borders, 14/22 body type. */
 :root{
@@ -199,6 +200,11 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .datacard{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px}
 .datacard h3{font-size:13.5px;margin:0 0 6px}.dataitem{padding:7px 0;border-top:1px solid var(--line-1)}
 .dataitem:first-child{border-top:0}.dataitem small{display:block;color:var(--fg-3);line-height:16px}
+.proposal-toolbar{position:sticky;top:0;z-index:3;background:var(--raised);padding:8px 0;border-bottom:1px solid var(--line)}
+.subset-feedback:not(:empty){padding:9px 10px;margin:6px 0;border:1px solid var(--line);border-radius:7px;background:var(--surface);overflow-wrap:anywhere}
+.subset-feedback[data-kind="error"]{border-color:var(--warn);color:var(--warn)}
+.subset-feedback[data-kind="busy"]{color:var(--fg)}
+.proposal-status{display:block;font-size:12px;font-weight:600;margin:6px 0}
 .filetable{width:100%;border-collapse:collapse;font-size:11.5px}.filetable td{padding:5px 0;border-top:1px solid var(--line-1)}
 .prep-summary{background:linear-gradient(135deg,var(--brand-50),var(--raised) 65%);border-color:color-mix(in srgb,var(--brand) 25%,var(--line))}
 .prep-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}
@@ -249,8 +255,11 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .runstep:first-child{border-top:0}.runstep .stepdot{width:21px;height:21px;border-radius:99px;border:1px solid var(--line);display:grid;place-items:center;font-size:11px;color:var(--fg-3);flex:0 0 auto}
 .runstep.done .stepdot{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}.runstep.active .stepdot{background:var(--brand-50);border-color:var(--brand);color:var(--brand)}
 .runstep b{font-size:12.5px}.runstep small{display:block;color:var(--fg-3)}
+.planreview{display:grid;gap:10px;margin:4px 0 2px}.planreview .prsec{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--surface)}.planreview h4{margin:0 0 6px;font-size:12px;letter-spacing:.02em;color:var(--fg-2);text-transform:uppercase}.planreview .prgoal{font-size:13.5px;line-height:1.5;color:var(--fg)}.planreview .prmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.planreview .prtag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--fg-2)}.planreview .prgroup{margin:6px 0 0}.planreview .prgroup b{font-size:12px}.planreview .prgroup ul{margin:3px 0 0;padding-left:18px;font-size:12px;line-height:1.45}.planreview .prgroup code{font-size:11px}.planreview .pr-auto b{color:var(--ok)}.planreview .pr-manual b{color:var(--warn)}.planreview .pr-missing b{color:var(--block)}.planreview .pr-gen b,.planreview .pr-other b{color:var(--fg-3)}.planreview ol.prsteps{margin:0;padding-left:20px;font-size:12px;line-height:1.5}.planreview ol.prsteps code{font-size:11px}.planreview .prkind{font-size:10.5px;padding:1px 6px;border-radius:6px;background:var(--raised);border:1px solid var(--line);margin-left:5px;color:var(--fg-3)}.planreview .prblock{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--surface))}.planreview .prblock ul{margin:2px 0 0;padding-left:18px;font-size:12px}.planreview details{font-size:12px;color:var(--fg-3)}.planreview details pre{white-space:pre-wrap;font-size:11.5px;margin:6px 0 0;color:var(--fg-2)}
 .projectbtn.run-working{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}.projectbtn.run-waiting{color:var(--warn);border-color:var(--warn)}
 .projectbtn.run-complete{color:var(--ok);border-color:var(--ok)}.projectbtn.run-failed{color:var(--block);border-color:var(--block)}
+#opendata[data-state]:not([data-state=""])::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;background:currentColor;vertical-align:middle}
+#opendata[data-state="working"]::after{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.25}}
 .ki-update-toast{position:fixed;right:18px;bottom:18px;z-index:40;width:min(390px,calc(100vw - 36px));padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--raised);box-shadow:0 16px 45px rgba(20,28,40,.16);display:none}.ki-update-toast.open{display:block}.ki-update-toast b{display:block;margin-bottom:3px}.ki-update-toast small{display:block;color:var(--fg-2);line-height:17px}.ki-update-actions{display:flex;gap:7px;margin-top:10px}.ki-update-actions button{padding:5px 9px;font-size:12px}
 </style></head>
 <body>
@@ -299,7 +308,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
         <button class="primary" id="send" disabled>Send</button>
       </div>
     </div>
-    <div class="activitynote" id="activitynote"><span class="activitypulse"></span><div class="activitycopy"><b id="activitytitle"></b><span id="activitytext"></span><small id="activityevidence"></small></div><button id="activity-refresh">Recheck</button><button id="activity-new">＋ New chat</button></div>
+    <div class="activitynote" id="activitynote"><span class="activitypulse"></span><div class="activitycopy"><b id="activitytitle"></b><span id="activitytext"></span><small id="activityevidence"></small></div><button id="activity-refresh">Recheck</button><button id="activity-stop">Stop</button><button id="activity-new">＋ New chat</button></div>
     <div class="hint" id="hint"></div>
   </footer>
   <div id="modal"><div class="card2">
@@ -328,6 +337,19 @@ textarea:focus{outline:none;border-color:var(--brand)}
         <option value="full">Full computer access</option>
       </select>
       <div class="hint" id="s-kimi-security-note" style="margin:7px 0 0">Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.</div>
+    </div>
+    <div class="datacard" style="margin-top:12px;padding:14px">
+      <label for="s-obs-token" style="margin-top:0">GeoForge Database access (optional)</label>
+      <input type="password" id="s-obs-token" autocomplete="new-password" spellcheck="false" placeholder="Paste activation token">
+      <div class="hint" id="s-obs-note" style="margin:7px 0 0">Stored privately on this computer, readable only by your user account. The Agent and chat never receive this token.</div>
+      <label for="s-obs-mode" style="margin-top:11px">Database access for Agents</label>
+      <select id="s-obs-mode">
+        <option value="direct">Direct through GeoForge Desktop (recommended)</option>
+        <option value="off">Do not provide database access</option>
+      </select>
+      <div class="hint" style="margin:7px 0 0">Direct mode lets the Agent search live records through a protected Desktop tool. GeoForge keeps the token and returns only sanitized metadata.</div>
+      <div class="hint" id="s-obs-status" style="margin:7px 0 0"></div>
+      <button id="s-obs-test" style="margin-top:9px">Save &amp; test database</button>
     </div>
     <label>Anthropic API key</label><input id="s-anthropic" autocomplete="off">
     <label>DeepSeek API key</label><input id="s-deepseek" autocomplete="off">
@@ -391,10 +413,11 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <button id="conn-close">Close</button>
     </div>
   </div></div>
-  <div id="actionpick"><div class="card2" style="width:min(560px,92vw)">
+  <div id="actionpick"><div class="card2" id="action-card" style="width:min(560px,92vw);max-height:88vh;overflow:auto">
     <button class="modal-x" data-modal-close aria-label="Close" title="Close">✕</button>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="mark">?</span><h2 id="action-title" style="margin:0;flex:1">Choose how to continue</h2><span class="statuspill warn">Needs you</span></div>
     <div id="action-message" style="color:var(--fg-2);white-space:pre-wrap"></div>
+    <div id="action-plan" hidden></div>
     <div id="action-options" style="margin-top:10px"></div>
     <label id="action-note-label" for="action-note">Optional note for the agent</label>
     <textarea id="action-note" rows="2" placeholder="Add context only if needed…"></textarea>
@@ -420,7 +443,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div class="inspectbody" id="databody"></div>
     <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap">
       <button class="primary" id="data-agent">Continue in chat</button>
-      <button id="data-upload">Add source data</button>
+      <button id="data-upload" title="Files not tied to one plan input; they go to inputs/uploads and the agent sees them next turn">Upload other files</button>
       <input type="file" id="datafile" multiple style="display:none">
       <input type="file" id="paperfile" accept="application/pdf,.pdf" multiple style="display:none">
       <span class="hint" id="data-msg" style="align-self:center;margin:0"></span>
@@ -468,8 +491,8 @@ function artifactImage(alt,raw,sid){
   const caption=alt||parts[parts.length-1];
   return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
 }
-const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command"};
-const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令"};
+const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command",search_observation_data:"Searched GeoForge Database",search_catalogue:"Searched GeoForge Database",describe_dataset:"Read dataset schema",estimate_clip:"Estimated a server clip",download_observation_data:"Downloaded from GeoForge Database",fetch_data:"Downloaded a data file",write_plan:"Wrote the plan",run_calibration:"Ran a calibration",search_diagnostics:"Searched KDT diagnostics",responding:"Generating a response"};
+const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令",search_observation_data:"已检索 GeoForge 数据库",search_catalogue:"已检索 GeoForge 数据库",describe_dataset:"已读取数据集字段",estimate_clip:"已估算服务器裁剪",download_observation_data:"已从 GeoForge 数据库下载",fetch_data:"已下载数据文件",write_plan:"已写入计划",run_calibration:"已运行校准",search_diagnostics:"已检索 KDT 诊断",responding:"正在生成回复"};
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
 let KI_UPDATE_REVISION="",KI_UPDATE_POLL=null;
 async function watchKiUpdates(){try{const r=await fetch("/api/ki-updates",{cache:"no-store"}),u=await r.json();if(u.state==="checking"){clearTimeout(KI_UPDATE_POLL);KI_UPDATE_POLL=setTimeout(watchKiUpdates,1000);return}if(["updated","up_to_date","error"].includes(u.state)){const revision=u.active_revision||"";if(revision&&revision!==KI_UPDATE_REVISION){KI_UPDATE_REVISION=revision;MODELS=await (await fetch("/api/models",{cache:"no-store"})).json();STATUS=await (await fetch("/api/status",{cache:"no-store"})).json();if(CUR)drawModelLabel()}const zh=chineseUI();$("#ki-update-title").textContent=u.state==="error"?(zh?"KI 更新未完成":"KI update not completed"):(zh?"KI 库检查完成":"KI library checked");$("#ki-update-message").textContent=u.state==="error"?(zh?"网络或验证出现问题，GeoForge 已继续使用上一次验证通过的 KI 库。":"A network or validation issue occurred. GeoForge kept the last validated KI library."):zh?(u.state==="updated"?`KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`:"KI 库已经是最新版本。"):(u.summary||"");$("#ki-update-view").textContent=zh?"查看报告":"View report";$("#ki-update-dismiss").textContent=zh?"关闭":"Dismiss";$("#ki-update-toast").classList.add("open")}}catch(_error){}}
@@ -575,14 +598,23 @@ async function refreshMachineStatus(redraw=true,force=false){
 async function loadAll(){
   let autoSendSession="";
   try{
-    [SESSIONS,MODELS,SKILLS,MCP,STATUS,PROV,PROJECT_LOCATION]=await Promise.all([
+    // The backend may be briefly stalled at start-up (a consent dialog, a first
+    // catalogue fetch).  Retry the boot requests before declaring a failure.
+    let boot=null,lastError=null;
+    for(let attempt=0;attempt<8&&!boot;attempt++){
+      try{boot=await Promise.all([
+
       fetch("/api/sessions").then(r=>r.json()),
       fetch("/api/models").then(r=>r.json()),
       fetch("/api/skills").then(r=>r.json()),
       fetch("/api/mcp").then(r=>r.json()),
       fetch("/api/status").then(r=>r.json()),
       fetch("/api/providers").then(r=>r.json()),
-      fetch("/api/project-location").then(r=>r.json())]);
+      fetch("/api/project-location").then(r=>r.json())]);}
+      catch(e){lastError=e;await new Promise(r=>setTimeout(r,2500));}
+    }
+    if(!boot)throw lastError||new Error("backend not reachable");
+    [SESSIONS,MODELS,SKILLS,MCP,STATUS,PROV,PROJECT_LOCATION]=boot;
     LAST_STATUS_CHECK=Date.now();
     drawSessions(); drawProviders();
     const requested=new URLSearchParams(location.search).get("session");
@@ -609,7 +641,8 @@ async function loadAll(){
       else $("#hint").textContent=chineseUI()?"新对话已经创建，问题已填入。连接 AI 后点击发送。":"The new chat is ready with the question filled in. Connect an AI, then press Send.";
     }
   }catch(e){
-    $("#chat").innerHTML=`<div class="banner"><b>GeoForge could not start.</b> ${esc(e)}<br>Reload the app; if it repeats, open the KI Library and AI Settings.</div>`;
+    $("#chat").innerHTML=`<div class="banner"><b>GeoForge could not start.</b> ${esc(e)}<br>${chineseUI()?"后台可能刚被系统授权窗口阻塞过。":"The backend may have been stalled by a system permission dialog."} <button id="boot-retry" style="margin-left:8px">${chineseUI()?"重新加载":"Reload"}</button></div>`;
+    const retry=$("#boot-retry");if(retry)retry.onclick=()=>location.reload();
   }
 }
 let SESSION_REFRESHING=false;
@@ -633,23 +666,28 @@ const RUN_GROUPS=[
   {name:"Results",stages:["results"],detail:"Save and explain the results"},
 ];
 function runGroupIndex(stage){const i=RUN_GROUPS.findIndex(g=>g.stages.includes(stage));return i<0?0:i;}
-function runButtonLabel(run){
-  if(!run||!run.goal)return "Project status";
-  if(run.status==="working")return "Working";
-  if(run.status==="waiting_for_user")return "Needs you";
-  if(run.status==="complete")return "Complete";
-  if(run.status==="failed")return "Needs attention";
-  return "Ready";
+function runButtonLabel(){return chineseUI()?"项目状态":"Project status";}
+function runStateText(run){
+  if(!run||!run.goal)return "";
+  const zh=chineseUI();
+  if(run.status==="working")return zh?"进行中":"Working";
+  if(run.status==="waiting_for_user")return zh?"需要你":"Needs you";
+  if(run.status==="complete")return zh?"已完成":"Complete";
+  if(run.status==="failed")return zh?"需要处理":"Needs attention";
+  return zh?"就绪":"Ready";
 }
 function drawRunStatus(run=RUN){
   RUN=run||null;const b=$("#opendata"),label=$("#runlabel");if(!b||!label)return;
-  label.textContent=runButtonLabel(RUN);
+  // The button name never changes; the state is the colored dot and the tooltip.
+  label.textContent=runButtonLabel();
+  b.dataset.state=RUN&&RUN.goal?String(RUN.status||"ready"):"";
   b.classList.remove("run-working","run-waiting","run-complete","run-failed");
   if(RUN&&RUN.status==="working")b.classList.add("run-working");
   if(RUN&&RUN.status==="waiting_for_user")b.classList.add("run-waiting");
   if(RUN&&RUN.status==="complete")b.classList.add("run-complete");
   if(RUN&&RUN.status==="failed")b.classList.add("run-failed");
-  b.title=RUN&&RUN.summary?RUN.summary:"See what GeoForge is doing in this project";
+  const state=runStateText(RUN);
+  b.title=(state?state+" · ":"")+(RUN&&RUN.summary?RUN.summary:(chineseUI()?"查看 GeoForge 在这个项目中正在做什么":"See what GeoForge is doing in this project"));
 }
 async function refreshRun(id=CUR&&CUR.id){
   if(!id)return null;
@@ -805,7 +843,7 @@ async function openSession(id){
   const c=$("#chat"); c.innerHTML="";
   for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=messageHtml(m,CUR.id);
   renderLiveTurn(id);
-  c.scrollTop=c.scrollHeight;
+  CHAT_FOLLOW=true; c.scrollTop=c.scrollHeight;
   $("#msg").value=DRAFTS.get(id)||"";
   $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
   renderAttachments();
@@ -843,7 +881,7 @@ function addTurn(who,cls){
     button.textContent=ok?"Copied":"Copy failed";setTimeout(()=>button.textContent="Copy",1200);
   };
   const c=$("#chat"); if(c.querySelector(".empty")) c.innerHTML="";
-  c.appendChild(d); c.scrollTop=c.scrollHeight;
+  c.appendChild(d); chatFollow(c);
   return d.querySelector(".bubble");
 }
 function messageHtml(message,sid){
@@ -858,6 +896,12 @@ function renderLiveTurn(id){
   out.innerHTML=flight.raw.trim()?md(flight.raw,id,true):liveWaitingHtml(flight);
 }
 function liveBubble(id){return document.querySelector(`.turn[data-flight="${id}"] .bubble`);}
+// Auto-scroll follows the stream only while the reader is at the bottom. Scrolling up
+// to read earlier text must stick until the reader comes back down (user report 2026-09-18).
+let CHAT_FOLLOW=true;
+function chatAtBottom(c){return c.scrollHeight-c.scrollTop-c.clientHeight<48;}
+function chatFollow(c){if(CHAT_FOLLOW)c.scrollTop=c.scrollHeight;}
+(function(){const arm=()=>{const c=$("#chat");if(c)c.addEventListener("scroll",()=>{CHAT_FOLLOW=chatAtBottom(c);},{passive:true});};if($("#chat"))arm();else document.addEventListener("DOMContentLoaded",arm);})();
 function providerDisplay(name){const p=PROV.providers.find(item=>item.name===name);return p&&p.label||String(name||"AI").replace(/^(api|cli):/,"");}
 function elapsedTime(started){const seconds=Math.max(0,Math.floor((Date.now()-started)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
 function durationLabel(seconds){seconds=Math.max(0,Number(seconds)||0);return seconds<60?`${Math.floor(seconds)}s`:`${Math.floor(seconds/60)}m ${Math.floor(seconds%60)}s`;}
@@ -884,7 +928,7 @@ function agentActivityTitle(flight){
   const status=flight.agentStatus||{},state=agentLiveState(flight),kind=status.activity_kind;
   if(state.kind==="disconnected")return chineseUI()?"连接可能已经中断":"The live connection may be interrupted";
   if(state.kind==="stalled")return chineseUI()?"没有新的工作证据，可能已经卡住":"No new work evidence; the turn may be stuck";
-  const labels=chineseUI()?{data_transfer:"检测到数据传输",checking:"正在检查或验证",visualizing:"正在生成可视化",writing:"正在写入项目文件",responding:"Agent 正在回复",tool:"Agent 正在使用工具",file_activity:"检测到项目文件更新",reported_running:"Agent 报告模型正在运行",waiting:"正在等待你的选择",unknown:"进程仍在，当前动作尚未确认"}:{data_transfer:"Data transfer detected",checking:"Checking or validating",visualizing:"Creating a visualization",writing:"Writing project files",responding:"Agent is responding",tool:"Agent is using a tool",file_activity:"Project file activity detected",reported_running:"Agent reports that the model is running",waiting:"Waiting for your choice",unknown:"Process is alive; current action is unconfirmed"};
+  const labels=chineseUI()?{database:"正在检索 GeoForge 数据库",database_download:"正在从 GeoForge 数据库下载",data_transfer:"检测到数据传输",checking:"正在检查或验证",visualizing:"正在生成可视化",writing:"正在写入项目文件",responding:"Agent 正在回复",tool:"Agent 正在使用工具",file_activity:"检测到项目文件更新",reported_running:"Agent 报告模型正在运行",waiting:"正在等待你的选择",unknown:"进程仍在，当前动作尚未确认"}:{database:"Searching GeoForge Database",database_download:"Downloading from GeoForge Database",data_transfer:"Data transfer detected",checking:"Checking or validating",visualizing:"Creating a visualization",writing:"Writing project files",responding:"Agent is responding",tool:"Agent is using a tool",file_activity:"Project file activity detected",reported_running:"Agent reports that the model is running",waiting:"Waiting for your choice",unknown:"Process is alive; current action is unconfirmed"};
   return labels[kind]||labels.unknown;
 }
 function agentEvidenceText(flight){
@@ -929,6 +973,7 @@ function updateActivityUI(){
     $("#activitytext").textContent=agentStateText(flight);
     $("#activityevidence").textContent=agentEvidenceText(flight)||(chineseUI()?"正在等待第一条可确认的 Agent 活动。":"Waiting for the first confirmed agent activity.");
     $("#activity-refresh").textContent=chineseUI()?"重新检查":"Recheck";
+    $("#activity-stop").textContent=chineseUI()?"停止":"Stop";
     $("#activity-new").textContent=chineseUI()?"＋ 新建对话":"＋ New chat";
     sendButton.textContent=chineseUI()?"处理中…":"Working…";
     if(!flight.raw.trim()){const out=liveBubble(CUR.id);if(out)out.innerHTML=liveWaitingHtml(flight);}
@@ -943,6 +988,44 @@ async function refreshAgentStatus(id=CUR&&CUR.id){
     if(CUR&&CUR.id===id)updateActivityUI();drawSessions();return status;
   }catch(_error){return null;}
 }
+function howLabels(zh){
+  return {served:zh?"直接下载":"direct download",clip:zh?"服务器裁剪后下载":"server clip",manual:zh?"需你从网盘下载（批准后给链接）":"Baidu download, link shown after approval",provide:zh?"需你提供文件":"please provide",choose:zh?"尚未选定数据集":"pick a dataset in the plan",on_disk:zh?"已在本机":"already on disk",generated:zh?"运行步骤生成":"made by a step",default:zh?"按 KI 默认方法生成":"KI default method",prepared:zh?"运行时自动准备":"prepared during the run"};
+}
+function itemNote(item,zh){
+  const f=item.facts||{},how=item.how;
+  if(!zh)return item.note||"";
+  const bits=[];if(f.format)bits.push(`格式 ${f.format}`);if(f.unit)bits.push(`单位 ${f.unit}`);if(f.notes)bits.push(f.notes);
+  if(how==="provide")return `请你自行准备：${bits.length?bits.join("；")+"；":""}放到 ${item.target_path||"inputs/user/"+item.id}。`;
+  if(how==="choose")return `模型需要这项数据（${f.format||"模型格式"}），方案里还没有选定数据集，请让 Agent 选一个。`;
+  if(how==="default")return `KI 默认由 ${f.default_tool||"KI 工具"} 生成${f.notes?`（${f.notes}）`:""}；只有当你有自己的数据时才需要更改。`;
+  if(how==="prepared")return "运行时自动准备。";
+  return "";
+}
+function renderPlanReview(r,rawMessage){
+  const zh=chineseUI(),d0=r.data||{},d=d0.fetch||d0.you||d0.run?d0:{total:d0.total,fetch:[...(d0.ready||[]),...(d0.auto||[])],you:[...(d0.manual||[]),...(d0.missing||[])],run:[...(d0.other||[]),...(d0.generated||[])]},row=item=>`<li><code>${esc(item.id||"")}</code>${item.dataset_id&&item.dataset_id!==item.id?` ← <code>${esc(item.dataset_id)}</code>`:""}${item.size_label?` · ${esc(item.size_label)}`:""}${item.how&&item.how!=="generated"&&item.how!=="prepared"?` <small>${esc(howLabel[item.how]||"")}</small>`:""}${item.for&&item.for.length?` <span class="prtag">${esc(item.for.join(", "))}</span>`:""}${itemNote(item,zh)?`<small style="display:block;color:var(--muted)">${esc(itemNote(item,zh))}</small>`:""}${item.resolution?.spatial_filter_applied===false?`<small style="display:block">${zh?"未裁剪下载范围":"Uncut delivery extent"}: ${esc(JSON.stringify(item.resolution.delivery_extent))} → ${zh?"本地提取研究范围":"extract study area locally"}: ${esc(JSON.stringify(item.resolution.requested_bbox))}</small>`:""}</li>`;
+  const group=(cls,label,list,max=8)=>Array.isArray(list)&&list.length?`<div class="prgroup ${cls}"><b>${esc(label)} (${list.length})</b><ul>${list.slice(0,max).map(row).join("")}${list.length>max?`<li>…${list.length-max} ${zh?"项":"more"}</li>`:""}</ul></div>`:"";
+  const howLabel=howLabels(zh);
+  const runGroup=list=>Array.isArray(list)&&list.length?`<details class="prgroup pr-gen"><summary><b>${zh?"运行时自动准备":"The run prepares itself"} (${list.length})</b> <small>${esc([...new Set(list.map(i=>howLabel[i.how]||i.how))].join(" · "))}</small></summary><ul>${list.map(row).join("")}</ul></details>`:"";
+  const count=(cls,label,list)=>Array.isArray(list)&&list.length?`<div class="prgroup ${cls}"><b>${esc(label)} (${list.length})</b></div>`:"";
+  const meta=[...(r.kis||[]).map(k=>`KI · ${k}`),...(r.coupling||[]).map(c=>`${zh?"耦合":"coupled"} · ${c}`),r.study_area?`${zh?"区域":"area"} · ${r.study_area}`:"",r.period?`${zh?"时段":"period"} · ${r.period}`:""].filter(Boolean);
+  const NEEDS_TOOL=new Set(["process","run","model_run","calibrate","route","couple","prepare","download"]);
+  const toolText=s=>{if(s.tool)return ` · <code>${esc(s.tool)}</code>`;if(s.kind==="check")return ` · <span style="color:var(--fg-3)">${zh?"由 GeoForge 执行（预检）":"run by GeoForge (preflight)"}</span>`;if(!NEEDS_TOOL.has(String(s.kind||"process")))return ` · <span style="color:var(--fg-3)">${zh?"由 Agent 直接产出":"written by the agent"}</span>`;return ` · <span style="color:var(--block)">${zh?"缺少工具，无法执行":"no tool — cannot execute"}</span>`;};
+  const steps=(r.steps||[]).map(s=>`<li><b>${esc(s.id||"")}</b><span class="prkind">${esc(s.kind||"")}</span>${toolText(s)}${s.env&&s.env.length?` <span class="prtag">env ${s.env.length}</span>`:""}</li>`).join("");
+  const delivLabel={served:zh?"直接下载":"direct download",manual:zh?"网盘手动下载":"Baidu manual download",subset:zh?"服务器裁剪":"server clip"};
+  const dataChoices=(r.data_choices||[]).length?`<div class="prsec" id="pr-data-choices"><h4>${zh?"数据来源，你来选":"Data sources, your pick"} · ${r.data_choices.length}</h4><div class="hint" style="margin:0 0 6px">${zh?"Agent 在 GeoForge 数据库里为每项输入找到的候选，推荐项已选中。改选后批准，GeoForge 会自动改用你选的数据。":"Candidates the agent found in the GeoForge Database for each input; the recommendation is preselected. Change a pick and approve; GeoForge re-pins the data itself."}</div>${r.data_choices.map(c=>`<div class="prgroup"><b><code>${esc(c.item)}</code></b>${c.rationale?`<small style="display:block;color:var(--muted)">${esc(c.rationale)}</small>`:""}<div style="display:grid;gap:4px;margin-top:4px">${c.options.map(o=>`<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="radio" name="dc-${esc(c.id)}" data-choice="${esc(c.id)}" value="${esc(o.dataset_id)}" ${o.dataset_id===c.picked?"checked":""} style="width:auto;margin-top:4px"><span><code>${esc(o.dataset_id)}</code>${o.name?` · ${esc(o.name)}`:""}<small style="display:block">${esc(delivLabel[o.delivery]||o.delivery||"")}${o.size_label?` · ${esc(o.size_label)}`:""}${o.period?` · ${esc((o.period[0]||"")+"–"+(o.period[1]||""))}`:""}${o.dataset_id===c.picked?` · ${zh?"推荐":"recommended"}`:""}</small></span></label>`).join("")}</div></div>`).join("")}</div>`:"";
+  const decisions=(r.decisions||[]).filter(c=>c.high_impact).map(c=>`<li>${esc(c.kind||c.id||"")}: ${esc((c.options||[]).join(" / "))}${c.picked?` → <b>${esc(String(c.picked))}</b>`:""} ${c.decided?`<span class="prtag">${zh?"已决定":"decided"}</span>`:`<span class="prtag" style="color:var(--warn)">${zh?"待你决定":"needs you"}</span>`}</li>`).join("");
+  const blockers=(r.blockers||[]).length?`<div class="prsec prblock"><h4>${zh?"等待你处理":"Waiting on you"}</h4><ul>${r.blockers.map(b=>`<li>${esc(b)}</li>`).join("")}</ul></div>`:"";
+  const notReady=(r.not_ready||[]).length?`<div class="prsec prblock"><h4>${zh?"尚不能执行":"Not ready to execute yet"}</h4><ul>${r.not_ready.map(b=>`<li>${esc(b)}</li>`).join("")}</ul></div>`:"";
+  return `<div class="planreview">
+    <div class="prsec"><h4>${zh?"任务理解":"What I understood"}</h4><div class="prgoal">${esc(r.goal||"")}</div>${meta.length?`<div class="prmeta">${meta.map(m=>`<span class="prtag">${esc(m)}</span>`).join("")}</div>`:""}</div>
+    <div class="prsec"><h4>${zh?"数据":"Data"} · ${d.total||0}</h4>${group("pr-auto",zh?"批准后由 GeoForge 自动下载":"GeoForge fetches after approval",d.fetch)}${group("pr-manual",zh?"需要你处理":"You",d.you)}${runGroup(d.run)}</div>
+    ${dataChoices}
+    <div class="prsec"><h4>${zh?"步骤":"Steps"} · ${(r.steps||[]).length}</h4><ol class="prsteps">${steps}</ol></div>
+    ${decisions?`<div class="prsec"><h4>${zh?"科学决定":"Scientific decisions"}</h4><ul class="prsteps" style="list-style:disc">${decisions}</ul></div>`:""}
+    ${blockers}${notReady}
+    <details><summary>${zh?"文字版摘要与工具策略":"Text summary and tool policy"}</summary><pre>${esc(rawMessage)}</pre><div class="hint" style="margin-top:4px">${zh?"详情":"Details"}: runs/plan.json · runs/data-inventory.json${r.tool_policy?` · ${esc(r.tool_policy)}`:""}</div></details>
+  </div>`;
+}
 function closeActionPicker(){
   $("#actionpick").classList.remove("open");ACTION_REQUEST=null;ACTION_SESSION=null;ACTION_INDEX=-1;
 }
@@ -950,7 +1033,9 @@ function showActionPicker(request,sid){
   const options=Array.isArray(request.options)?request.options:[];if(!options.length)return false;
   ACTION_REQUEST=request;ACTION_SESSION=sid;ACTION_INDEX=-1;
   $("#action-title").textContent=request.title||"Choose how to continue";
-  $("#action-message").textContent=request.message||"Select one option so GeoForge can continue.";
+  const review=request.plan_review;
+  if(review){$("#action-card").style.width="min(760px,94vw)";$("#action-message").hidden=true;$("#action-plan").hidden=false;$("#action-plan").innerHTML=renderPlanReview(review,request.message||"");}
+  else{$("#action-card").style.width="min(560px,92vw)";$("#action-plan").hidden=true;$("#action-message").hidden=false;$("#action-message").textContent=request.message||"Select one option so GeoForge can continue.";}
   $("#action-options").innerHTML=options.map((option,index)=>`<button class="actionoption" data-index="${index}"><span class="actionradio"></span><span><b>${esc(option.label||`Option ${index+1}`)}</b>${option.description?`<small>${esc(option.description)}</small>`:""}</span></button>`).join("");
   $("#action-options").querySelectorAll(".actionoption").forEach(button=>button.onclick=()=>{
     ACTION_INDEX=Number(button.dataset.index);$("#action-error").textContent="";
@@ -966,7 +1051,7 @@ async function maybeShowAction(id){
   const r=await fetch(`/api/session/${id}/request`);if(!r.ok)return;
   const data=await r.json(),request=data.request;
   if(!request||request.status!=="waiting"||!Array.isArray(request.options)||!request.options.length)return;
-  const key=`${id}:${request.id||request.created_at||request.title}`;if(SEEN_ACTIONS.has(key))return;
+  const key=`${id}:${request.id||request.title}:${request.created_at||""}`;if(SEEN_ACTIONS.has(key))return;
   if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
 }
 let PROJECT_PICK_RESOLVE=null,LAST_PROJECT_ERROR="";
@@ -1043,6 +1128,7 @@ async function send(){
   const target=CUR.id, attachments=[...pendingFor(target)];
   const action=PENDING_ACTIONS.get(target)||null;
   if(sessionBusy(target)||sessionUploading(target)||(!text&&!attachments.length))return;
+  CHAT_FOLLOW=true;                      // the reader's own message always brings the view down
   if(!text&&attachments.length)text=chineseUI()?"请检查我附上的文件。":"Please inspect the attached files.";
   const slash=text.match(/^\/([^\s]+)(?:\s+([\s\S]+))?$/);
   if(slash){
@@ -1085,7 +1171,7 @@ async function send(){
       const chunk=dec.decode(value,{stream:true});flight.lastHeartbeat=Date.now();
       if(chunk.replaceAll("\u200b","").length)flight.lastOutput=Date.now();
       flight.raw+=chunk;
-      if(CUR&&CUR.id===target){const out=liveBubble(target),visible=flight.raw.replaceAll("\u200b","");if(out){out.innerHTML=visible.trim()?md(visible,target,true):liveWaitingHtml(flight);$("#chat").scrollTop=$("#chat").scrollHeight;}}}
+      if(CUR&&CUR.id===target){const out=liveBubble(target),visible=flight.raw.replaceAll("\u200b","");if(out){out.innerHTML=visible.trim()?md(visible,target,true):liveWaitingHtml(flight);chatFollow($("#chat"));}}}
     flight.raw=flight.raw.replaceAll("\u200b","");
     if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=flight.raw.trim()?md(flight.raw,target,false):'<p style="color:var(--fg-3)">(no output)</p>';}
   }catch(e){
@@ -1167,6 +1253,7 @@ $("#newsess").onclick=async()=>{
 };
 $("#activity-new").onclick=()=>$("#newsess").click();
 $("#activity-refresh").onclick=()=>refreshAgentStatus();
+$("#activity-stop").onclick=async()=>{if(!CUR||!CUR.id)return;const b=$("#activity-stop");b.disabled=true;try{await fetch(`/api/session/${CUR.id}/stop`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})}finally{setTimeout(()=>{b.disabled=false},3000)}};
 $("#project-create").onclick=()=>{
   const value=$("#project-parent").value.trim();
   if(!value){$("#project-location-error").textContent=chineseUI()?"请选择或输入一个文件夹。":"Choose or enter a folder.";return;}
@@ -1191,7 +1278,8 @@ $("#action-continue").onclick=async()=>{
   if(!ACTION_REQUEST||!ACTION_SESSION||ACTION_INDEX<0){$("#action-error").textContent=chineseUI()?"请先选择一项。":"Choose one option first.";return;}
   if(!CUR||CUR.id!==ACTION_SESSION){$("#action-error").textContent=chineseUI()?"请返回提出此问题的对话。":"Return to the chat that asked this question.";return;}
   const option=ACTION_REQUEST.options[ACTION_INDEX],note=$("#action-note").value.trim();
-  PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note});
+  const choices={};document.querySelectorAll('#pr-data-choices input[type=radio]:checked').forEach(e=>{choices[e.dataset.choice]=e.value;});
+  PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note,...(Object.keys(choices).length?{choices}:{})});
   const text=chineseUI()?`关于“${ACTION_REQUEST.title}”，我的选择是：${option.label}。\n决定：${option.response||option.label}${note?`\n补充说明：${note}`:""}\n请根据这个选择继续。`:`For “${ACTION_REQUEST.title}”, I choose: ${option.label}.\nDecision: ${option.response||option.label}${note?`\nAdditional note: ${note}`:""}\nPlease continue using this choice.`;
   closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
 };
@@ -1297,10 +1385,10 @@ function renderData(data){
   const softwareLabel=sw.total?`${sw.ready||0} / ${sw.total} software verified`:'Auto KI';
   const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.goal?"Ready to continue":"Ready when you are";
   const stateClass=run.status==="complete"?"ok":run.status==="waiting_for_user"?"warn":run.status==="failed"?"block":"";
-  const summary=`<div class="datacard prep-summary"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${esc(stateLabel)}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div>
-    <div class="hint" style="margin:0 0 8px">${esc(run.summary||(run.goal?"GeoForge will continue from the project files and conversation.":"Describe the scientific goal in chat to begin."))}</div>${run.goal?`<div class="dataitem"><b>Goal</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">${modelchips}</div>`:""}</div>`;
   const current=runGroupIndex(run.stage), allDone=run.status==="complete";
-  const progress=`<div class="datacard"><h3>Project progress</h3><div class="runsteps">${RUN_GROUPS.map((group,i)=>{
+  const zhP=chineseUI();
+  const progressTitle=waiting?(zhP?"项目进度":"Progress"):esc(stateLabel);
+  const progress=`<div class="datacard"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${progressTitle}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div><div class="hint" style="margin:0 0 8px">${esc(run.summary||(run.goal?"":(zhP?"在对话中描述科学目标即可开始。":"Describe the scientific goal in chat to begin.")))}</div>${run.goal?`<div class="dataitem"><b>${zhP?"目标":"Goal"}</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0">${modelchips}</div>`:""}<div class="runsteps">${RUN_GROUPS.map((group,i)=>{
     const done=allDone||i<current,active=Boolean(run.goal)&&!allDone&&i===current;
     return `<div class="runstep ${done?'done':active?'active':''}"><span class="stepdot">${done?'✓':active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
   }).join("")}</div></div>`;
@@ -1375,6 +1463,7 @@ function renderData(data){
     const fileDetails=listed.length?`<details style="margin-top:5px"><summary>${listed.length} source file${listed.length===1?'':'s'}${record.checksum_count?` · ${record.checksum_count} checksum${record.checksum_count===1?'':'s'}`:''}</summary><div class="hint" style="margin:4px 0 0">${listed.map(file=>`${esc(file.name)}${Number.isFinite(file.size)?` · ${sizeLabel(file.size)}`:''}${file.sha256?` · SHA-256 ${esc(file.sha256.slice(0,12))}…`:''}`).join('<br>')}</div></details>`:'';
     return `<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">${esc(record.title||'Recorded data source')}</b><span class="actiontag ok">Recorded</span></div><small>${esc(record.method||'Saved for reproducibility')}</small>${record.version?`<small>Version or commit: <code>${esc(record.version)}</code></small>`:''}${record.note?`<small>${esc(record.note)}</small>`:''}${record.url?`<small><a href="${esc(record.url)}" target="_blank" rel="noreferrer">Open public source ↗</a></small>`:''}${fileDetails}<small>Audit record: <code>${esc(record.relative_path||'')}</code></small></div>`;
   }).join('')}</div>`:"";
+  const obsCatalogue=`<div class="datacard"><div class="data-overview-head"><div><h3>${chineseUI()?"GeoForge 数据库":"GeoForge Database"}</h3><div class="hint" style="margin:1px 0 0">${chineseUI()?"从服务器搜索真实记录；规划阶段固定数据 ID，批准后由 GeoForge 校验下载。":"Search real server records; pin an ID during planning, then let GeoForge verify the download after approval."}</div></div><span class="statuspill" id="obs-pill">…</span></div><div class="hint" id="obs-status" style="margin:6px 0 0"></div><div style="display:flex;gap:7px;margin-top:9px"><input id="obs-query" style="flex:1" autocomplete="off" spellcheck="false" placeholder="${chineseUI()?"变量、地区、时期或数据 ID":"variable, place, period, or dataset ID"}"><button id="obs-search">${chineseUI()?"搜索":"Search"}</button></div><div id="obs-results" class="hint" style="margin:8px 0 0">${chineseUI()?"Token 在 AI 设置中配置；Agent 不会看到它。":"Configure the token in AI settings; the Agent never sees it."}</div></div>`;
   const calibrationAdapters=Array.isArray(calibration.adapters)?calibration.adapters:[];
   const readyCalibration=calibrationAdapters.filter(item=>item.status==="ready");
   const latestCalibration=calibration.latest_run||null;
@@ -1391,8 +1480,15 @@ function renderData(data){
   const calibrationLatest=latestCalibration?`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">Latest calibration · ${esc(latestCalibration.ki||'KI')}</b><span class="actiontag ${latestCalibration.promotable?'ok':'warn'}">${latestCalibration.promotable?'Validated':'Not promoted'}</span></div><small>${esc(latestCalibration.algorithm||'optimizer')} · ${esc(latestCalibration.status||'unknown status')}${calibrationLoss?` · best loss ${esc(calibrationLoss)}`:''}</small>${latestCalibration.reason?`<small>${esc(latestCalibration.reason)}</small>`:''}<small>Report: <code>${esc(latestCalibration.report_path||'')}</code></small></div>`:"";
   const calibrationModels=calibrationAdapters.length?calibrationAdapters.map(item=>`${esc(item.ki)} · ${item.status==='ready'?'adapter ready':'adapter needed'}`).join('<br>'):(runModels.length?runModels.map(esc).join(', '):'No KI selected yet');
   const calibrationCard=`<div class="datacard"><div class="data-overview-head"><div><h3>Calibration</h3><div class="hint" style="margin:1px 0 0">GeoForge uses the real KI model, keeps observations and runs in this project, and accepts a result only after held-out validation.</div></div><span class="statuspill ${calibrationClass}">${esc(calibrationLabel)}</span></div><div class="dataitem"><b>${esc(calibration.ready_adapter_count||0)} ready adapter${Number(calibration.ready_adapter_count||0)===1?'':'s'} · ${esc(calibration.case_count||0)} case file${Number(calibration.case_count||0)===1?'':'s'} · ${esc(calibration.run_count||0)} run${Number(calibration.run_count||0)===1?'':'s'}</b><small>${calibrationModels}</small><small>${esc(calibrationHint)}</small></div>${calibrationLatest}<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><button id="calibration-agent" class="primary">${latestCalibration?'Continue calibration':'Calibrate with agent'}</button><button id="calibration-files">Add observations</button></div></div>`;
-  const human=waiting?`<div class="datacard" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">One thing needs you</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b><div class="hint" style="margin:4px 0">${esc(request.message||'')}</div>${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">Open official page</button></a>`:''}</div>`:
-    `<div class="datacard"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
+  const zhUI=chineseUI();
+  const requestRows=(request.rows||[]).length?`<div style="display:grid;gap:8px;margin-top:8px">${request.rows.map((r,i)=>`<div class="dataitem" style="padding:7px 0"><b>${esc(r.name||r.dataset_id||"")}</b>${r.size?` <small>${esc(sizeLabel(r.size))}</small>`:""}${r.code?`<small style="display:block">${zhUI?"提取码":"Extraction code"}: <code>${esc(r.code)}</code></small>`:""}${r.path_in_share?`<small style="display:block">${zhUI?"分享内只需下载":"Inside the share, download only"}: <code>${esc(r.path_in_share)}</code></small>`:""}<small style="display:block">${zhUI?"放置到":"Place at"}: <code>${esc(r.expected_path||"")}</code> <button class="tiny" data-copy-path="${esc(r.expected_path||"")}" style="margin-left:6px">${zhUI?"复制路径":"Copy path"}</button></small>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noreferrer"><button class="tiny" style="margin-top:4px">${zhUI?"打开下载链接":"Open download link"}</button></a>`:""}</div>`).join("")}</div>`:"";
+  const requestActions=waiting?(request.kind==="download"&&(request.rows||[]).length
+    ?`${requestRows}<div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap"><button id="request-done">${zhUI?"文件已放好，继续":"Files are in place, continue"}</button><button id="request-modify">${zhUI?"修改计划":"Change the plan"}</button></div>`
+    :request.kind==="download"
+    ?`${request.expected_path?`<small style="display:block;margin-top:6px">${zhUI?"放置到":"Place at"}: <code>${esc(request.expected_path)}</code> <button class="tiny" id="request-copy-path" style="margin-left:6px">${zhUI?"复制路径":"Copy path"}</button></small>`:""}<div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap">${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button class="primary">${zhUI?"打开下载链接":"Open download link"}</button></a>`:""}<button id="request-done">${zhUI?"文件已放好，继续":"Files are in place, continue"}</button></div>`
+    :`${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">${zhUI?"打开官方页面":"Open official page"}</button></a>`:""}${(request.options||[]).length?`<button class="primary" id="request-respond" style="margin-top:7px">${zhUI?"回答这个问题":"Respond"}</button>`:""}`):"";
+  const human=waiting?`<div class="datacard" id="human-request" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${zhUI?"需要你处理":"One thing needs you"}</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b>${(request.rows||[]).length?"":`<div class="hint" style="margin:4px 0;white-space:pre-wrap">${esc(request.message||'')}</div>`}${requestActions}</div>`:
+    `<div class="datacard" id="no-user-action"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
   const filecard=`<div class="datacard"><h3>Project files · ${files.length}</h3>
     ${files.length?`<table class="filetable">${files.map(f=>`<tr><td><b>${esc(f.name)}</b><br><span style="color:var(--fg-3)">${esc(f.relative_path)}</span></td><td style="text-align:right">${sizeLabel(f.size)}</td></tr>`).join("")}</table>`:
     '<div class="hint" style="margin:0">No local source files yet. This is not an error—the agent can begin by checking documented public sources.</div>'}</div>`;
@@ -1402,7 +1498,152 @@ function renderData(data){
     <div class="hint" style="margin:8px 0 0">If you legally download a paper, add it here so the agent can use it inside this project. GeoForge never republishes it.</div></div>`:"";
   const totalInternal=lanes.reduce((n,l)=>n+(l.count||0),0);
   const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. Every declared requirement can now be opened and questioned in the main data card above. This section keeps file-path checks, project files, and optional literature for audit and debugging.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${filecard}${literature}</div></details>`;
-  return `${summary}${progress}${dataOverview}${dataSources}${calibrationCard}${human}${advanced}`;
+  const pd=data.plan_data;
+  const bindingNote=pd&&pd.binding_status&&pd.binding_status.status==="needs_review"?`<section class="datacard"><h3>${zhUI?"数据关联需要检查":"Data binding needs review"}</h3><p>${esc(pd.binding_status.message)}</p></section>`:"";
+  const pdLabel={done:[zhUI?"文件已到位":"Files available","ok"],acquired:[zhUI?"已下载，待检查":"Acquired; scientific checks pending","warn"],waiting_for_you:[zhUI?"等你处理":"Waiting for you","warn"],pending:[zhUI?"尚未准备":"Pending",""],failed:[zhUI?"下载失败":"Fetch failed","block"],unused:[zhUI?"计划中未用到":"No step uses it",""],missing:[zhUI?"缺失":"Missing","block"]};
+  const pdGroup={fetch:zhUI?"GeoForge 自动下载":"GeoForge fetches",you:zhUI?"需要你处理":"You",run:zhUI?"运行时自动准备":"The run prepares itself"};
+  const planData=pd&&Array.isArray(pd.items)&&pd.items.length?`<div class="datacard" id="plan-data"><div class="data-overview-head"><div><h3>${zhUI?"本次计划的数据":"Data in this plan"} · ${pd.total}</h3><div class="hint" style="margin:1px 0 0">${zhUI?"来自已批准/已提交的数据清单；状态由 receipt 和本地文件决定，不是 Agent 的说法。":"From the submitted data inventory; status comes from receipts and files on disk, not from the agent's words."}</div></div><span class="statuspill ${(pd.counts||{}).waiting_for_you?'warn':(pd.counts||{}).missing?'block':(((pd.counts||{}).pending||(pd.counts||{}).acquired)?'warn':'ok')}">${((pd.counts||{}).done||0)+((pd.counts||{}).acquired||0)}/${pd.total} ${zhUI?"文件已到位":"files available"}</span></div>${["fetch","you","run"].map(g=>{const rows=pd.items.filter(i=>i.group===g);if(!rows.length)return "";return `<div style="margin-top:8px"><b style="font-size:12px">${esc(pdGroup[g])} (${rows.length})</b>${rows.map(i=>{const [lab,cls]=pdLabel[i.status]||[i.status,""];return `<div class="dataitem" style="padding:5px 0"><div style="display:flex;gap:7px;align-items:flex-start"><span style="flex:1"><code>${esc(i.id)}</code>${i.dataset_id&&i.dataset_id!==i.id?` ← <code>${esc(i.dataset_id)}</code>`:""}${i.size_label?` · ${esc(i.size_label)}`:""}${i.for&&i.for.length?` <small>${esc(i.for.join(", "))}</small>`:""}${itemNote(i,zhUI)?`<small style="display:block">${esc(itemNote(i,zhUI))}</small>`:""}${i.how==="provide"&&i.status!=="done"?`<button class="tiny pd-upload" data-item="${esc(i.id)}" style="margin-top:4px">${zhUI?"上传文件":"Upload files"}</button>`:""}</span><span class="actiontag ${cls}">${esc(lab)}</span></div></div>`;}).join("")}</div>`;}).join("")}</div>`:"";
+  const actionNames={manual_download:zhUI?"需要手动下载":"Manual download needed",agent_download:zhUI?"可由 Agent 发起下载（批准后）":"Agent can download after approval",agent_prepare:zhUI?"由 Agent 准备（上游数据就绪后）":"Agent prepares after upstream inputs are ready",agent_validate:zhUI?"已有文件，Agent 下一步检查和准备":"Files present: agent checks and prepares next",check_coverage:zhUI?"先核实数据覆盖与格式":"Check coverage and format first",choose_data:zhUI?"需要重新选择数据":"Choose another dataset"};
+  actionNames.acquire_subset=zhUI?"服务器裁剪：先批准取数，再由 Agent 下载和检查":"Server subset: approve acquisition, then agent downloads and checks";
+  const coverageNames={covered:zhUI?"目录覆盖满足已声明条件；尚需验证分辨率、单位和文件":"Catalogue covers declared requirements; verify resolution, units and files",unknown:zhUI?"需求或元数据不足，尚不能确认适用":"Requirements or metadata incomplete; suitability unconfirmed",insufficient:zhUI?"已知覆盖不足，不能作为完整输入":"Known coverage gap; not a complete input"};
+  const dataActions=pd&&Array.isArray(pd.items)?`<section class="datacard" id="data-next-actions"><h3>${zhUI?"数据准备 · 下一步":"Data preparation · next actions"}</h3>${Object.entries(actionNames).map(([action,label])=>{const rows=pd.items.filter(i=>i.action===action);return rows.length?`<h4>${esc(label)} · ${rows.length}</h4>${rows.map(i=>`<div class="dataitem"><b>${esc(i.dataset_id||i.id)}</b>${i.size_label?` · ${esc(i.size_label)}`:""}<small>${esc(coverageNames[(i.match||{}).status]||coverageNames.unknown)}</small>${(i.match||{}).requires_local_extraction?`<small>${zhUI?"不是网格级下载：需要检查范围并在本地提取。":"Not a grid-specific download: inspect extent and extract locally."}</small>`:""}</div>`).join("")}`:"";}).join("")}</section>`:"";
+  const resolvedUnits=pd&&Array.isArray(pd.items)?pd.items.filter(i=>i.resolution):[];
+  const uniqueUnits=[...new Map(resolvedUnits.map(i=>[i.dataset_id||i.id,i])).values()];
+  const knownSizes=uniqueUnits.every(i=>typeof i.size==="number"&&i.size>=0);
+  const resolutionCard=uniqueUnits.length?`<section class="datacard" id="resolved-data-units"><h3>${zhUI?"实际下载文件":"Actual delivery files"} · ${uniqueUnits.length}</h3><p>${knownSizes?`${(uniqueUnits.reduce((n,i)=>n+i.size,0)/1e9).toFixed(2)} GB`:zhUI?"总大小未知":"Total size unknown"} · ${zhUI?"不等于本地裁剪后的大小":"Not the locally clipped size"}</p>${uniqueUnits.map(i=>{const r=i.resolution;return `<div class="dataitem"><b>${esc(i.dataset_id||i.id)}</b><small>${zhUI?"研究范围":"Study bbox"}: ${esc(JSON.stringify(r.requested_bbox??null))}</small><small>${zhUI?"下载范围":"Delivery extent"}: ${esc(JSON.stringify(r.delivery_extent??null))}</small><small>${r.spatial_filter_applied===false?(zhUI?"未裁剪文件：下载后需由 Agent 在本地提取、重采样及检查单位。":"Uncut file: agent must extract locally, regrid and check units after download."):(zhUI?"需核对实际交付方式，不自动假定已裁剪。":"Verify actual delivery; do not assume clipping.")}</small><small>${zhUI?"解析请求的变量/年份完整性":"Resolver variable/year completeness"}: ${r.coverage_complete===true?(zhUI?"完整（仍须检查计划是否包含所有文件）":"Complete (check the plan includes every file)"):r.coverage_complete===false?(zhUI?"有缺口":"Gaps reported"):(zhUI?"未确认":"Unconfirmed")}</small></div>`;}).join("")}</section>`:"";
+  const subsets=`<section class="datacard" id="project-data-review"><div id="subset-jobs"><div id="subset-note" class="subset-feedback" role="status" aria-live="polite"></div></div><details style="margin-top:12px"><summary>${zhUI?"高级：手动估算（不会弹出批准）":"Advanced: manual estimate (no approval popup)"}</summary><input id="subset-dataset" placeholder="dataset_id"><input id="subset-bbox" placeholder="west,south,east,north"><input id="subset-variables" placeholder="prec,temp (raster: leave empty)"><input id="subset-start" type="date" aria-label="Subset start"><input id="subset-end" type="date" aria-label="Subset end"><button id="subset-estimate">${zhUI?"估算裁剪（不下载）":"Estimate subset (no download)"}</button></details></section>`;
+  const details=`<details class="datacard" id="status-details"><summary style="cursor:pointer"><b>${zhP?"更多细节":"Details"}</b> <small class="hint">${zhP?"下载任务记录、项目文件夹、目录搜索、数据来源、校准":"acquisition log, folders, catalogue search, data sources, calibration"}</small></summary>${subsets}${bindingNote}${resolutionCard}${dataActions}${dataOverview}${obsCatalogue}${dataSources}${calibrationCard}${advanced}</details>`;
+  return `${waiting?human:""}${progress}${planData||""}${details}`;
+}
+let SUBSET_TIMER=null;
+
+const DATA_ACTIONS=new Set(), DATA_FEEDBACK=new Map(), SUBSET_READS=new Map();
+
+function subsetFeedback(sid,message,kind="info"){
+  DATA_FEEDBACK.set(sid,{message,kind});
+  if(CUR?.id!==sid||!$("#subset-note"))return;
+  const note=$("#subset-note");note.dataset.kind=kind;
+  note.setAttribute("role",kind==="error"?"alert":"status");
+  note.innerHTML=(kind==="busy"?'<span class="spin" aria-hidden="true"></span> ':"")+esc(message);
+}
+function subsetStatusReadFailed(sid,message){
+  subsetFeedback(sid,message,"error");
+  DATA_FEEDBACK.get(sid).statusReadFailed=true;
+  if(CUR?.id!==sid)return;
+  const retry=$("#proposal-status-retry");
+  if(retry){retry.hidden=false;retry.disabled=false;retry.onclick=async()=>{if(DATA_ACTIONS.has(sid))return;retry.disabled=true;try{await refreshSubsets(sid);}catch(e){subsetStatusReadFailed(sid,e.message);}};}
+  clearTimeout(SUBSET_TIMER);
+  SUBSET_TIMER=setTimeout(async()=>{if(CUR?.id!==sid||!$("#datapanel").classList.contains("open")||DATA_ACTIONS.has(sid))return;try{await refreshSubsets(sid);}catch(e){subsetStatusReadFailed(sid,e.message);}},5000);
+}
+function subsetVisibleStatus(s,zh){
+  const names={awaiting_approval:["已估算 · 随计划批准","Estimated · approved with the plan"],needs_review:["已估算（覆盖未确认）· 随计划批准","Estimated (coverage unconfirmed) · approved with the plan"],queued:["已批准 · 服务器排队中","Approved · server queued"],running:["已批准 · 服务器正在裁剪","Approved · server processing"],ready:["裁剪完成 · 可以下载并校验","Subset ready · download and verify"],downloading:["正在下载与校验","Downloading and verifying"],downloaded:[((s.manifest||{}).unreadable_files||[]).length?"文件已取得（部分成员缺失）· 尚需科学检查":"文件已取得 · 尚需科学检查",((s.manifest||{}).unreadable_files||[]).length?"Files acquired (some members missing) · scientific checks remain":"Files acquired · scientific checks remain"],failed:["服务器任务失败","Server job failed"],download_failed:["下载失败 · 可以重试","Download failed · retry available"],cancelled:["任务已取消","Job cancelled"],expired:["结果已过期","Result expired"],estimate_failed:["估算失败 · 未批准取数","Estimate failed · not approved"]};
+  return names[s.status]?.[zh?0:1]||s.status||"";
+}
+function subsetReadyAction(s,zh){
+  if(!s.job_id||!["ready","download_failed"].includes(s.status)||(s.offer?.blockers||[]).length)return "";
+  return `<button data-subset-action="download" data-subset-id="${esc(s.id)}" data-inspection="false">${zh?"下载并校验全部文件":"Download and check all files"}</button>`+(s.status==="ready"?` <button data-subset-action="cancel" data-subset-id="${esc(s.id)}" data-inspection="false">${zh?"取消":"Cancel"}</button>`:"");
+}
+function subsetPartialNote(s,zh){
+  const m=s.manifest||{},bad=m.unreadable_files||[],missing=Math.max(m.missing_members||0,bad.length);if(!missing)return "";
+  const got=(s.files||[]).length,total=m.n_files||(got+missing);
+  const names=bad.length?` ${esc(bad.join(", "))}`:(zh?" 服务器未说明是哪些成员。":" The server did not name them.");
+  return `<small style="color:var(--warn)">${zh?`部分交付：估算承诺 ${total} 个成员文件，只收到 ${got} 个（缺 ${missing}）。请确认缺失的成员是否是本项目需要的。`:`Partial delivery: the estimate promised ${total} member files, ${got} arrived (${missing} missing). Check whether the missing members matter for this project.`}${names}</small>`;
+}
+function subsetStateCard(s,zh,allowActions=false){
+  const e=s.estimate||{},r=s.request||{},offer=s.offer||{};
+  const labels={awaiting_approval:zh?"已估算 · 随计划批准":"Estimated · approved with the plan",needs_review:zh?"已估算（覆盖未确认）· 随计划批准":"Estimated (coverage unconfirmed) · approved with the plan",queued:zh?"服务器排队":"Server queued",running:zh?"服务器裁剪中":"Server processing",ready:zh?"裁剪完成，待下载":"Ready to download",downloading:zh?"下载与校验中":"Downloading and verifying",downloaded:zh?"文件已取得；科学检查待做":"Files acquired; scientific checks pending",failed:zh?"服务器失败":"Server failed",download_failed:zh?"下载失败，可重试":"Download failed; retry available",cancelled:zh?"已取消":"Cancelled",expired:zh?"结果已过期":"Result expired"};
+  const button=(action,label,inspection=false)=>`<button data-subset-action="${action}" data-subset-id="${esc(s.id)}" data-inspection="${inspection}">${label}</button>`;
+  let actions="";
+  labels.estimate_failed=zh?"裁剪估算失败；尚未确认可取数":"Estimate failed; acquisition unverified";
+  if(s.status==="estimate_failed"&&s.next_action!=="describe_and_revise")actions+=button("retry_estimate",zh?"重试同一范围的估算（不下载）":"Retry this estimate (no download)");
+  if(s.status==="estimate_failed"&&s.next_action==="describe_and_revise")actions+=`<small>${zh?"请让 Agent 查看数据源字段（--describe），修正变量名后重新估算；不能删除筛选条件绕过错误。":"Ask the agent to describe the source schema and submit corrected variable names. Do not remove filters to bypass this error."}</small>`;
+  if(["ready","download_failed"].includes(s.status)&&!(offer.blockers||[]).length)actions+=button("download",zh?"下载并校验全部文件":"Download and check all files");
+  if(["queued","running","ready"].includes(s.status))actions+=button("cancel",zh?"取消":"Cancel");
+  return `<div class="dataitem"><b>${esc(r.dataset_id)}</b> · ${esc(labels[s.status]||s.status)}
+    <small>${zh?"取数 ID":"Acquisition ID"}: <code>${esc(s.id)}</code></small>
+    <small>${esc(JSON.stringify(r.bbox))} → ${esc(JSON.stringify(e.snapped_output_bounds??null))}</small>
+    <small>${esc((r.variables||[]).join(", "))} · ${esc(r.start||"")} — ${esc(r.end||"")}</small>
+    <small>${zh?"预计输出 / 源读取":"Estimated output / source I/O"}: ${esc(e.estimated_output_bytes??"?")} / ${esc(e.source_io_bytes??"?")} bytes</small>
+    <small>${zh?"覆盖":"Coverage"}: ${esc((offer.coverage||{}).overall||"unknown")} · ${esc(s.stage||"")}</small>
+    ${s.status==="estimate_failed"?`<small>${zh?"失败阶段：估算；未创建裁剪任务、未下载。目录记录存在不代表服务器现在可裁剪。":"Failed at estimation; no job created or files downloaded. A catalogue record does not prove live clipping availability."} ${esc(s.failure?.code||"")}</small>`:""}
+    ${(offer.blockers||[]).length?`<small>${zh?"阻碍":"Blocked"}: ${esc(offer.blockers.join(", "))}</small>`:""}
+    ${e.reason?`<small>${esc(e.reason)}</small>`:""}
+    ${(offer.warnings||[]).length?`<small>${esc(offer.warnings.join(", "))}${offer.coverage?.overall==="unknown"?(zh?" · 只批准取得文件用于检查；不是完整数据或模型运行批准。":" · Approval allows inspection only; it does not establish coverage or authorize simulation."):""}</small>`:""}
+    ${s.received_bytes!=null?`<small>${esc(s.received_bytes)} bytes ${zh?"已接收":"received"}</small>`:""}
+    ${s.path?`<small>${esc(s.path)}</small>`:""}
+    ${e.processing_version||e.source_version?`<small>${zh?"服务器版本":"Server versions"}: ${esc(e.processing_version||"?")} · ${zh?"数据源":"source"} ${esc(e.source_version||"?")}</small>`:""}
+    ${subsetPartialNote(s,zh)}
+    ${s.content_validation?`<small>${zh?"文件结构检查":"File structure checks"}: ${esc(s.content_validation.status)} · ${esc((s.content_validation.pending||[]).join(", "))}</small>`:""}
+    ${s.status==="downloaded"?`<small>${zh?"取得的文件通过已批准清单中的 acquisition_id 自动关联；仍须 KI 准备与科学验证。":"Acquired files bind through acquisition_id in the approved inventory; KI preparation and scientific checks are still required."}</small>`:""}
+    ${s.binding_error?`<small>${esc(s.binding_error)}</small>`:""}${s.error?`<small>${esc(s.error)}</small>`:""}${allowActions?actions:""}</div>`;
+}
+function acquisitionsCard(result,zh){
+  const active=result.active||[], estimates=result.estimates||[];
+  const feedback=`<div id="subset-note" class="subset-feedback" role="status" aria-live="polite"></div>`;
+  const head=`<h3>${zh?"GeoForge 数据库下载任务":"GeoForge Database acquisitions"}</h3><p class="hint">${zh?"批准方案后，GeoForge 自动创建裁剪任务并下载；这里是任务记录。估算记录仅供参考。":"Server clips are approved with the plan: approving the plan starts the jobs; download and verify them here when ready. Estimates are a log and need no separate approval."}</p>`;
+  const jobs=active.length?`<div>${active.map(s=>subsetStateCard(s,zh,true)).join("")}</div>`:`<p class="hint">${zh?"本项目还没有下载任务。":"No acquisitions for this project yet."}</p>`;
+  const log=`<details id="subset-history"><summary>${zh?"裁剪估算记录":"Clip estimates on file"} · ${estimates.length}</summary>${estimates.map(s=>subsetStateCard(s,zh,false)).join("")}</details>`;
+  return head+feedback+jobs+log;
+}
+async function subsetAction(sid,action,payload){
+  const r=await fetch(`/api/session/${sid}/subsets/${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const value=await r.json();if(!r.ok)throw new Error(value.error||"Subset request failed");return value;
+}
+async function refreshSubsets(sid){
+  if(!CUR||CUR.id!==sid||!$("#subset-jobs")||DATA_ACTIONS.has(sid))return;
+  const read=(SUBSET_READS.get(sid)||0)+1;SUBSET_READS.set(sid,read);
+  const response=await fetch(`/api/session/${sid}/subsets`,{cache:"no-store"}),result=await response.json();
+  if(!response.ok)throw new Error(result.error||"Cannot load subsets");
+  if(!CUR||CUR.id!==sid||!$("#subset-jobs")||DATA_ACTIONS.has(sid)||SUBSET_READS.get(sid)!==read)return;
+  const zh=chineseUI();
+  $("#subset-jobs").innerHTML=acquisitionsCard(result,zh);
+  const previousFeedback=DATA_FEEDBACK.get(sid);if(previousFeedback?.statusReadFailed)subsetFeedback(sid,zh?"状态读取已恢复。":"Status connection restored.");else if(previousFeedback)subsetFeedback(sid,previousFeedback.message,previousFeedback.kind);
+  const perform=async(action,payload,message,onSuccess)=>{
+    if(DATA_ACTIONS.has(sid)||CUR?.id!==sid)return;
+    DATA_ACTIONS.add(sid);clearTimeout(SUBSET_TIMER);
+    document.querySelectorAll('#subset-jobs button, #subset-jobs input').forEach(e=>e.disabled=true);
+    subsetFeedback(sid,message,"busy");
+    try{const r=await subsetAction(sid,action,payload);onSuccess(r);}
+    catch(e){subsetFeedback(sid,e.message,"error");}
+    finally{DATA_ACTIONS.delete(sid);try{await refreshSubsets(sid);}catch(e){subsetStatusReadFailed(sid,(zh?"操作后状态刷新失败。":"Could not reload status after the operation. ")+e.message);}}
+  };
+  document.querySelectorAll('[data-subset-action]').forEach(b=>b.onclick=()=>perform(b.dataset.subsetAction,{id:b.dataset.subsetId,inspection:b.dataset.inspection==="true"},b.dataset.subsetAction==="download"?(zh?"正在提交下载与校验请求…":"Submitting download and verification request…"):(zh?"处理中…":"Working…"),()=>subsetFeedback(sid,zh?"请求已处理，下方显示当前状态。":"Request handled; current status is shown below.")));
+  clearTimeout(SUBSET_TIMER);
+  const active=result.active||[];
+  const processing=active.some(s=>["queued","running","downloading"].includes(s.status));
+  if(processing){SUBSET_TIMER=setTimeout(async()=>{if(!CUR||CUR.id!==sid||!$("#datapanel").classList.contains("open")||DATA_ACTIONS.has(sid))return;try{for(const s of active)if(["queued","running"].includes(s.status))await subsetAction(sid,"refresh",{id:s.id});await refreshSubsets(sid);}catch(e){subsetStatusReadFailed(sid,e.message);}},3000);}
+}
+
+function obsVariableNames(dataset){
+  return (Array.isArray(dataset.variables)?dataset.variables:[]).map(value=>typeof value==="string"?value:value&&value.name).filter(Boolean).slice(0,8);
+}
+function observationAgentPrompt(dataset){
+  const variables=obsVariableNames(dataset).join(", ")||"not listed";
+  const extent=[dataset.lat,dataset.lon].filter(value=>value!=null&&value!=="").map(displayValue).join(" · ")||dataset.spatial_coverage||"not listed";
+  const period=[dataset.start_date,dataset.end_date].filter(Boolean).join(" to ")||"not listed";
+  const domains=(Array.isArray(dataset.applicable_domains)?dataset.applicable_domains:[]).join(", ")||"not listed";
+  if(chineseUI())return `我从 GeoForge 数据库选择了一个候选数据集。\n数据 ID：${dataset.id}\n名称：${dataset.name||dataset.id}\n类型：${dataset.dataset_kind||dataset.type||"未注明"}\n变量：${variables}\n范围：${extent}\n时期：${period}\n适用领域：${domains}\n格式：${dataset.format||"未注明"}\n交付方式：${dataset.delivery||"未注明"}\n请先对照当前 KI 的真实输入合同检查变量、单位、时空范围和格式是否适用。在规划阶段只把这个精确 ID 和理由写入 data inventory，不要下载；用户批准计划后，必须调用 GeoForge 的 observation download 工具下载并校验 SHA-256、记录 receipt。若不适用，清楚说明原因并继续搜索真实目录，不要合成替代数据。`;
+  return `I selected a candidate from the GeoForge Database.\nDataset ID: ${dataset.id}\nName: ${dataset.name||dataset.id}\nKind: ${dataset.dataset_kind||dataset.type||"not listed"}\nVariables: ${variables}\nExtent: ${extent}\nPeriod: ${period}\nApplicable domains: ${domains}\nFormat: ${dataset.format||"not listed"}\nDelivery: ${dataset.delivery||"not listed"}\nFirst compare its variables, units, space/time coverage, and format with the active KI's real input contract. During PLANNING, only pin this exact ID and rationale in the data inventory; do not download. After the user approves the plan, call GeoForge's observation download tool so SHA-256 and the signed receipt are verified. If it is unsuitable, explain why and search the real catalogue again; never synthesize substitute data.`;
+}
+async function searchObservationCatalogue(){
+  const input=$("#obs-query"),results=$("#obs-results");if(!input||!results)return;
+  const query=input.value.trim();results.innerHTML='<span class="spin"></span> '+(chineseUI()?"正在检索数据库目录……":"Searching the catalogue…");
+  try{
+    const response=await fetch(`/api/obs/catalogue?q=${encodeURIComponent(query)}&limit=20`,{cache:"no-store"});
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.message||payload.error||"Catalogue search failed");
+    const rows=Array.isArray(payload.datasets)?payload.datasets:[];
+    if(!rows.length){results.textContent=chineseUI()?"没有找到匹配数据。":"No matching data found.";return;}
+    results.innerHTML=`<div style="margin-bottom:7px">${chineseUI()?`找到 ${payload.total} 条；显示前 ${rows.length} 条。`:`${payload.total} found; showing ${rows.length}.`}</div>`+rows.map((dataset,index)=>{
+      const vars=obsVariableNames(dataset),period=[dataset.start_date,dataset.end_date].filter(Boolean).join(" – ");
+      const coverage=dataset.spatial_coverage||(Array.isArray(dataset.bbox)&&dataset.bbox.length===4?`bbox ${dataset.bbox.join(", ")}`:"")||[dataset.lat,dataset.lon].filter(value=>value!=null&&value!=="").map(displayValue).join(" · ");
+      const parent=dataset.parent_id?(chineseUI()?`属于 ${dataset.parent_id}`:`part of ${dataset.parent_id}`):"";
+      const domains=(Array.isArray(dataset.applicable_domains)?dataset.applicable_domains:[]).slice(0,4).join(" · ");
+      const delivery=dataset.delivery==="served"?(chineseUI()?"可直接下载":"direct"):dataset.delivery==="manual"?(chineseUI()?"百度网盘手动下载":"manual Baidu"):dataset.delivery||"unknown";
+      return `<div class="dataitem"><div style="display:flex;gap:7px;align-items:flex-start"><b style="flex:1">${esc(dataset.name||dataset.id)}</b><span class="actiontag ${dataset.delivery==='served'?'ok':'warn'}">${esc(delivery)}</span></div><small><code>${esc(dataset.id)}</code>${dataset.dataset_kind||dataset.type?` · ${esc(dataset.dataset_kind||dataset.type)}`:""}${dataset.format?` · ${esc(dataset.format)}`:""}${period?` · ${esc(period)}`:""}</small>${vars.length?`<small>${esc(vars.join(" · "))}</small>`:""}${coverage?`<small>${esc(coverage)}</small>`:""}${parent?`<small>${esc(parent)}</small>`:""}${domains?`<small>${chineseUI()?"领域":"Domains"}: ${esc(domains)}</small>`:""}${Number.isFinite(dataset.size)?`<small>${sizeLabel(dataset.size)}</small>`:""}<button class="obs-use" data-obs-index="${index}" style="margin-top:7px">${chineseUI()?"交给 Agent 检查":"Check with Agent"}</button></div>`;
+    }).join("");
+    results.querySelectorAll(".obs-use").forEach(button=>button.onclick=()=>sendDataPanelPrompt(observationAgentPrompt(rows[Number(button.dataset.obsIndex)]),"data"));
+  }catch(error){results.innerHTML=`<span style="color:var(--block)">${esc(error.message||error)}</span> <button id="obs-settings">${chineseUI()?"打开 AI 设置":"Open AI settings"}</button>`;const settingsButton=$("#obs-settings");if(settingsButton)settingsButton.onclick=()=>{openSettings();};}
 }
 function calibrationAgentPrompt(data){
   const calibration=data&&data.calibration||{},adapters=Array.isArray(calibration.adapters)?calibration.adapters:[];
@@ -1476,10 +1717,18 @@ async function explainDataItem(data,lane,item){
 }
 async function refreshData(){
   if(!CUR)return;
+  const requestedSession=CUR.id;
+  if(DATA_ACTIONS.has(requestedSession))return;
   $("#databody").innerHTML='<span class="spin"></span>reading project status…';
   const r=await fetch(`/api/session/${CUR.id}/data`), data=await r.json();
+  if(!CUR||CUR.id!==requestedSession||DATA_ACTIONS.has(requestedSession))return;
   LAST_PREP=r.ok?data:null;
   $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
+  if(r.ok){const sid=CUR.id;refreshSubsets(sid).catch(e=>{$("#subset-note").textContent=e.message;});$("#subset-estimate").onclick=async()=>{const button=$("#subset-estimate");button.disabled=true;$("#subset-note").textContent=chineseUI()?"正在估算…":"Estimating…";try{await subsetAction(sid,"estimate",{request:{dataset_id:$("#subset-dataset").value.trim(),bbox:$("#subset-bbox").value.split(",").map(Number),variables:$("#subset-variables").value.split(",").map(s=>s.trim()).filter(Boolean),start:$("#subset-start").value,end:$("#subset-end").value}});await refreshSubsets(sid);$("#subset-note").textContent="";}catch(e){$("#subset-note").textContent=e.message;}finally{button.disabled=false;}};}
+  const obsSearch=$("#obs-search"),obsQuery=$("#obs-query");
+  drawDatabaseStatus("#obs-status").then(()=>{const pill=$("#obs-pill");if(!pill)return;fetch("/api/obs/status",{cache:"no-store"}).then(r=>r.json()).then(st=>{pill.textContent=!st.configured?(chineseUI()?"未配置":"Not set up"):st.mode==="off"?(chineseUI()?"已关闭":"Off"):st.stale?(chineseUI()?"过期":"Stale"):(chineseUI()?"本地目录":"Local copy");pill.className="statuspill "+(st.configured&&st.mode!=="off"&&!st.stale?"ok":"warn");}).catch(()=>{});});
+  if(obsSearch)obsSearch.onclick=searchObservationCatalogue;
+  if(obsQuery)obsQuery.onkeydown=event=>{if(event.key==="Enter"){event.preventDefault();searchObservationCatalogue();}};
   document.querySelectorAll("#databody .data-resolve").forEach(button=>button.onclick=async()=>{
     const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane);if(lane)await startDataAgent(data,lane);
   });
@@ -1496,6 +1745,24 @@ async function refreshData(){
     $("#hint").textContent=response.ok?`${chineseUI()?"已打开":"Opened"} ${opened.target_path||opened.project_path}`:(opened.error||(chineseUI()?"无法打开数据文件夹":"Could not open data folder"));
   });
   const paperButton=$("#paper-add");if(paperButton)paperButton.onclick=()=>$("#paperfile").click();
+  const respond=$("#request-respond");if(respond)respond.onclick=()=>{const run=data.project_run||RUN||{};const req=(run.blocker&&run.status==="waiting_for_user")?run.blocker:(data.human_request||{});$("#datapanel").classList.remove("open");showActionPicker(req,CUR.id);};
+  document.querySelectorAll("[data-copy-path]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copyPath);b.textContent=chineseUI()?"已复制":"Copied";}catch(e){}});
+  const requestDone=$("#request-done");if(requestDone)requestDone.onclick=async()=>{
+    const req=data.human_request||{};const zh=chineseUI();
+    const paths=(req.rows||[]).map(r=>r.expected_path).filter(Boolean);const where=paths.length?paths.join(", "):(req.expected_path||(zh?"指定路径":"the requested path"));
+    const text=zh?`我已把 ${req.title||"文件"} 放到 ${where}，请继续。`:`I placed ${req.title||"the files"} at ${where}. Please continue.`;
+    $("#datapanel").classList.remove("open");$("#msg").value=text;if(CUR)DRAFTS.set(CUR.id,text);
+    if(sessionBusy()){$("#hint").textContent=zh?"本对话仍在处理，消息已放入输入框。":"This chat is still working; the message is in the composer.";return;}
+    await send();
+  };
+  const requestModify=$("#request-modify");if(requestModify)requestModify.onclick=()=>{
+    const req=data.human_request||{};const zh=chineseUI();
+    // the click is the flow action; the user's own words in the composer are the reason
+    PENDING_ACTIONS.set(CUR.id,{request_id:req.id,option_id:"modify",note:""});
+    $("#datapanel").classList.remove("open");$("#msg").value=zh?"请修改计划：":"Please change the plan: ";$("#msg").focus();
+    $("#hint").textContent=zh?"写下你想改的地方，然后发送。":"Say what should change, then send.";
+  };
+  const copyPath=$("#request-copy-path");if(copyPath)copyPath.onclick=async()=>{try{await navigator.clipboard.writeText((data.human_request||{}).expected_path||"");copyPath.textContent=chineseUI()?"已复制":"Copied";}catch(_e){}};
   const calibrationButton=$("#calibration-agent");if(calibrationButton)calibrationButton.onclick=async()=>{
     $("#datapanel").classList.remove("open");
     const prompt=calibrationAgentPrompt(data);$("#msg").value=prompt;
@@ -1511,15 +1778,19 @@ $("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
 $("#data-agent").onclick=async()=>{
   $("#datapanel").classList.remove("open");$("#msg").focus();
 };
-$("#data-upload").onclick=()=>$("#datafile").click();
+let UPLOAD_ITEM="";                      // plan input id the next file pick is for ("" = inputs/uploads)
+$("#data-upload").onclick=()=>{UPLOAD_ITEM="";$("#datafile").click();};
+document.addEventListener("click",e=>{const b=e.target.closest(".pd-upload");if(!b)return;UPLOAD_ITEM=b.dataset.item||"";$("#datafile").click();});
 $("#datafile").onchange=async e=>{
   if(!CUR||!e.target.files.length)return;
-  let done=0;$("#data-msg").textContent="uploading…";
+  const zh=chineseUI(),item=UPLOAD_ITEM;UPLOAD_ITEM="";
+  let done=0;$("#data-msg").textContent=zh?"上传中…":"uploading…";
   for(const file of e.target.files){
-    const r=await fetch(`/api/session/${CUR.id}/upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
-    if(r.ok)done++;else{$("#data-msg").textContent=`Could not add ${file.name}`;return;}
+    const r=await fetch(`/api/session/${CUR.id}/upload?name=${encodeURIComponent(file.name)}${item?`&item=${encodeURIComponent(item)}`:""}`,{method:"POST",body:file});
+    if(r.ok)done++;else{$("#data-msg").textContent=(zh?"无法添加 ":"Could not add ")+file.name;return;}
   }
-  $("#data-msg").textContent=`${done} file${done===1?'':'s'} added`;e.target.value="";await refreshData();
+  const where=item?`inputs/user/${item}`:"inputs/uploads";
+  $("#data-msg").textContent=zh?`已放入 ${where}（${done} 个文件）`:`${done} file${done===1?'':'s'} placed in ${where}`;e.target.value="";await refreshData();
 };
 $("#paperfile").onchange=async e=>{
   if(!CUR||!e.target.files.length)return;
@@ -1655,7 +1926,7 @@ function drawLocalSettings(){
 }
 let LAST_PROVIDER_CHECK=0;
 let SETTINGS_PROXY_EFFECTIVE="";
-let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","cli:claude","cli:codex"]);
+let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","network:obs","cli:claude","cli:codex"]);
 async function refreshProviders(showStatus=false){
   const note=$("#s-local-msg");if(showStatus&&note)note.textContent="checking…";
   try{
@@ -1666,7 +1937,7 @@ async function refreshProviders(showStatus=false){
 }
 function drawProxyProviderSettings(){
   const box=$("#s-proxy-providers");if(!box)return;
-  const targets=[{name:"network:github",label:chineseUI()?"GitHub 与 KI 更新":"GitHub & KI updates"},...PROV.providers];
+  const targets=[{name:"network:github",label:chineseUI()?"GitHub 与 KI 更新":"GitHub & KI updates"},{name:"network:obs",label:chineseUI()?"观测数据服务":"Observation data"},...PROV.providers];
   box.innerHTML=targets.map(p=>`<label style="display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px"><input type="checkbox" data-proxy-provider="${esc(p.name)}" ${SETTINGS_PROXY_PROVIDERS.has(p.name)?"checked":""}><span>${esc(p.label)}</span></label>`).join("");
   box.querySelectorAll("[data-proxy-provider]").forEach(input=>input.onchange=()=>{
     input.checked?SETTINGS_PROXY_PROVIDERS.add(input.dataset.proxyProvider):SETTINGS_PROXY_PROVIDERS.delete(input.dataset.proxyProvider);
@@ -1690,6 +1961,21 @@ function drawProxySettingsNote(){
       :"GeoForge will remove proxy variables from its local CLI and API connections.";
   }
 }
+function databaseStatusText(st){
+  const zh=chineseUI();
+  if(!st||!st.configured)return zh?"未配置 Token：Agent 无法检索 GeoForge 数据库。":"No token: the Agent cannot search GeoForge Database.";
+  if(st.mode==="off")return zh?"已关闭：Agent 不会检索数据库。":"Disabled: the Agent will not search the database.";
+  const when=st.generated_at?new Date(st.generated_at):null,mins=when?Math.max(0,Math.round((Date.now()-when.getTime())/60000)):null;
+  const synced=mins===null?(zh?"尚未同步":"not synced yet"):mins<1?(zh?"刚刚同步":"synced just now"):(zh?`${mins} 分钟前同步`:`synced ${mins} min ago`);
+  const copy=st.catalogue_ok||st.records?(zh?`本地目录 ${st.records} 条（${st.served} 条可直接下载）· ${synced}${st.stale?" · 已过期："+st.error:""}`:`local catalogue: ${st.records} records (${st.served} direct download) · ${synced}${st.stale?" · stale: "+st.error:""}`):(zh?`目录未下载${st.error?"："+st.error:""}`:`catalogue not downloaded${st.error?": "+st.error:""}`);
+  const how=zh?`Agent 检索方式：API 使用 ${st.api_tool} 工具，CLI 使用 ${st.cli_command} 命令；两者都读同一份本地目录，Token 留在 Desktop。`:`Agent access: API providers call the ${st.api_tool} tool, CLI agents run ${st.cli_command}; both read this same local copy and never see the token.`;
+  return copy+"\n"+how;
+}
+async function drawDatabaseStatus(selector){
+  const el=$(selector);if(!el)return;
+  try{const st=await (await fetch("/api/obs/status",{cache:"no-store"})).json();el.textContent=databaseStatusText(st);el.style.whiteSpace="pre-line";}
+  catch(_e){el.textContent="";}
+}
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
@@ -1700,7 +1986,13 @@ async function openSettings(){
   $("#s-proxy-mode").value=s.proxy_mode||"auto";
   $("#s-proxy-url").value=s.proxy_url||"";
   SETTINGS_PROXY_EFFECTIVE=s.proxy_effective||"";
-  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["network:github","cli:claude","cli:codex"]);
+  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["network:github","network:obs","cli:claude","cli:codex"]);
+  $("#s-obs-token").value=s.obs_activation_token||"";
+  $("#s-obs-mode").value=s.database_access_mode==="off"?"off":"direct";
+  drawDatabaseStatus("#s-obs-status");
+  $("#s-obs-note").textContent=s.obs_token_error||(s.obs_token_configured
+    ?(chineseUI()?"Token 已私密保存在本机，仅你的用户账户可读；Agent 和对话无法读取。":"Token is stored privately on this computer, readable only by your user account; the Agent and chat cannot read it.")
+    :(chineseUI()?"粘贴激活 token；它只会私密保存在本机。":"Paste the activation token; it is stored privately on this computer."));
   drawProxyProviderSettings();
   drawProxySettingsNote();
   $("#s-kimi-security").value=s.kimi_security_mode||"scoped";
@@ -1724,7 +2016,8 @@ $("#s-close").onclick=()=>$("#modal").classList.remove("open");
 async function saveSettings(showMessage=true){
   const body={default_provider:$("#s-def").value,kimi_security_mode:$("#s-kimi-security").value,
     proxy_mode:$("#s-proxy-mode").value,proxy_url:$("#s-proxy-url").value,
-    proxy_providers:[...SETTINGS_PROXY_PROVIDERS],api_keys:{
+    proxy_providers:[...SETTINGS_PROXY_PROVIDERS],database_access_mode:$("#s-obs-mode").value,
+    obs_activation_token:$("#s-obs-token").value,api_keys:{
     ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
     OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1743,6 +2036,18 @@ async function saveSettings(showMessage=true){
   return true;
 }
 $("#s-save").onclick=()=>saveSettings(true);
+$("#s-obs-test").onclick=async()=>{
+  const button=$("#s-obs-test"),note=$("#s-obs-note"),zh=chineseUI();button.disabled=true;
+  note.textContent=zh?"正在保存并测试数据服务……":"Saving and testing data access…";
+  try{
+    if(!await saveSettings(false))return;
+    const response=await fetch("/api/obs/test",{cache:"no-store"}),result=await response.json();
+    note.textContent=response.ok
+      ?(zh?`连接成功：目录中有 ${result.total} 条数据记录。`:`Connected: ${result.total} catalogue records available.`)
+      :(result.message||result.error||"Data access test failed");
+  }catch(error){note.textContent=(zh?"测试失败：":"Test failed: ")+(error.message||error);}
+  finally{button.disabled=false;}
+};
 $("#s-test").onclick=async()=>{
   const button=$("#s-test"),output=$("#s-test-output"),zh=chineseUI();
   button.disabled=true;$("#s-msg").textContent=zh?"正在测试真实连接……":"testing a real connection…";
@@ -1784,7 +2089,8 @@ if(localStorage.getItem("kiss-dark")==="1"||
   document.body.setAttribute("data-dark","");
 setInterval(updateActivityUI,1000);
 setInterval(refreshSessionList,5000);
-setInterval(()=>{if(CUR&&$("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});},5000);
+
+setInterval(()=>{if(!CUR)return;if($("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});else refreshViewStatus().catch(()=>{});},5000);
 $("#ki-update-view").onclick=()=>location.href="/library?updates=1";
 $("#ki-update-dismiss").onclick=()=>$("#ki-update-toast").classList.remove("open");
 loadAll();

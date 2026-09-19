@@ -39,14 +39,20 @@ EXEC_WRITABLE = ("inputs", "outputs", "artifacts", "references", "calibration/ca
                  "calibration/kis", "runs/logs", "runs/notes")
 
 # desktop API-provider tool names (kiss_cli/api.py tool_schemas L115-489) allowed per state
+# GeoForge Database tools: one job each (FLOW-TARGET-2026-09-17 step 1). The old
+# multi-mode search_observation_data stays until the data proposal folds into the plan.
+DATABASE_API_TOOLS = frozenset({"search_catalogue", "describe_dataset", "estimate_clip"})
 _BASE_API = frozenset({"read_ki_file", "list_ki_files", "list_skills", "read_skill",
                        "search_diagnostics", "list_project_files", "read_project_file",
-                       "report_project_progress", "request_user_action"})
+                       "report_project_progress", "request_user_action"}) | DATABASE_API_TOOLS
 API_TOOLS_BY_STATE: dict[State, frozenset[str]] = {s: _BASE_API for s in State}
 API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan"}
 API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan"}
+# Data comes in during ACQUIRING (host-driven); EXECUTING keeps fetch_data for public URLs.
 API_TOOLS_BY_STATE[State.EXECUTING] = _BASE_API | {"run_preflight", "write_project_file", "run_ki_tool", "run_calibration",
-                                                   "fetch_data", "create_project_plot", "publish_project_view"}
+                                                   "fetch_data",
+                                                   "create_project_plot", "publish_project_view",
+                                                   "request_replan"}
 for _s in (State.VERIFYING, State.COMPLETED, State.FAILED_VALIDATION):
     API_TOOLS_BY_STATE[_s] = _BASE_API | {"create_project_plot", "publish_project_view"}
 API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_preflight", "run_builtin_setup", "list_work_files",
@@ -183,13 +189,16 @@ def claude_path(path: Path | str) -> str:
     return "/" + p if p.startswith("/") and not p.startswith("//") else p
 
 
-def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str) -> list[str]:
+def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str,
+                           wrappers: dict | None = None) -> list[str]:
     tools = list(PLAN_ONLY_BASE_TOOLS)
     # Read code and previous reports: even --help/preflight may have side effects.
     tools += _read_grants(list(ki_roots.values()) + [Path(project)])
     for rel in PLAN_FILES:
         p = claude_path(Path(project) / rel)
         tools += [f"Write({p})", f"Edit({p})"]
+    if wrappers and wrappers.get("obs_search"):
+        tools.append(f"Bash({wrappers['obs_search']}:*)")
     return tools
 
 
@@ -258,11 +267,11 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
 
     if provider == "claude":
         if planning:
-            tools = _claude_planning_tools(project, ki_roots, python)
+            tools = _claude_planning_tools(project, ki_roots, python, wrappers)
             _assert_key_dir_unreadable(tools)
             return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools),
                                   "--permission-mode", "dontAsk", "--tools",
-                                  "Read,Glob,Grep,Write,Edit,WebSearch,WebFetch,TodoWrite"], _CLAUDE_DROP,
+                                  "Read,Glob,Grep,Write,Edit,Bash,WebSearch,WebFetch,TodoWrite"], _CLAUDE_DROP,
                                   Enforcement.EXACT, False,
                                   "read-only tool wall + the two plan files (CPM L237-259 pattern)")
         if state == State.EXECUTING:
@@ -274,6 +283,12 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
                                   "reads from the base grants; writes only under the project's "
                                   "output subtrees; Bash only through the receipt wrappers")
         tools = _read_grants([Path(project)] + list(ki_roots.values()))
+        # RESOLVING_KIS is read-only, but a catalogue search is also read-only
+        # and may be needed to choose the right KI or ask the right question.
+        # ``auto_turn`` passes only obs_search here; it never passes the run,
+        # fetch, or download wrappers before planning is approved.
+        if state is State.RESOLVING_KIS and wrappers and wrappers.get("obs_search"):
+            tools.append(f"Bash({wrappers['obs_search']}:*)")
         return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools)], _CLAUDE_DROP,
                               Enforcement.EXACT, False, "read-only")
 

@@ -25,8 +25,8 @@ from . import receipts as _r
 
 FILE = "approval.json"
 SCHEMA_VERSION = "1.0"
-_REQUIRED = ("schema_version", "plan_sha256", "data_inventory_sha256", "approved_by",
-             "approved_at", "decisions", "selected_kis", "signature")
+_REQUIRED = ("schema_version", "plan_sha256", "data_inventory_sha256", "tool_sha256",
+             "approved_by", "approved_at", "decisions", "selected_kis", "signature")
 
 
 def _path(project: Path) -> Path:
@@ -53,6 +53,20 @@ def may_auto_approve(plan: dict, inventory: dict) -> tuple[bool, list[str]]:
     return (not why), why
 
 
+def _tool_hashes(plan: dict) -> dict[str, dict[str, str]]:
+    """Hash every executable named by the plan at approval time."""
+    result: dict[str, dict[str, str]] = {}
+    for step in (plan or {}).get("steps") or []:
+        if not isinstance(step, dict) or not step.get("tool"):
+            continue
+        step_id = str(step.get("id") or "")
+        path = Path(str(step["tool"])).expanduser().resolve()
+        if not step_id or not path.is_file():
+            raise FileNotFoundError(f"cannot approve: step {step_id!r} tool does not exist: {path}")
+        result[step_id] = {"path": str(path), "sha256": _r.sha256_file(path)}
+    return result
+
+
 def approve(project: Path, decisions: dict | None = None, by: str = "user") -> dict:
     """Write a SIGNED runs/approval.json for the CURRENT plan files. Raises if they are
     missing or invalid-shaped."""
@@ -66,6 +80,7 @@ def approve(project: Path, decisions: dict | None = None, by: str = "user") -> d
         "schema_version": SCHEMA_VERSION,
         "plan_sha256": sha256(plan),
         "data_inventory_sha256": sha256(inv),
+        "tool_sha256": _tool_hashes(plan),
         "approved_by": by,
         "approved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "decisions": dict(decisions or {}),
@@ -106,7 +121,8 @@ def check(project: Path) -> str:
     if any(k not in doc for k in _REQUIRED) or doc.get("schema_version") != SCHEMA_VERSION \
             or doc.get("approved_by") not in ("user", "auto") \
             or not isinstance(doc.get("decisions"), dict) \
-            or not isinstance(doc.get("selected_kis"), list):
+            or not isinstance(doc.get("selected_kis"), list) \
+            or not isinstance(doc.get("tool_sha256"), dict):
         return "FORGED"
     if not _r.verify(project, doc):
         return "FORGED"
@@ -116,6 +132,11 @@ def check(project: Path) -> str:
     if doc.get("plan_sha256") != sha256(plan) or doc.get("data_inventory_sha256") != sha256(inv):
         return "DRIFT"
     if list(plan.get("selected_kis") or []) != list(doc.get("selected_kis") or []):
+        return "DRIFT"
+    try:
+        if doc.get("tool_sha256") != _tool_hashes(plan):
+            return "DRIFT"
+    except (OSError, FileNotFoundError):
         return "DRIFT"
     return "OK"
 

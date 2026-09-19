@@ -89,12 +89,56 @@ PROGRESS_LONG_JOBS = (
 _PLAN_SCHEMA_NOTE = (
     "[PLAN FILES — WRITE EXACTLY THESE]\n"
     "  runs/plan.json           : {schema_version:'1.0', goal, selected_kis:[…], coupling:[…], "
-    "steps:[{id, ki, tool:'<absolute path to a shipped tool under <KI>/tools/ or a protocol-declared sN_stage/ script, or null>', kind, inputs:[inventory "
-    "ids], outputs:[…], status:'planned'}], scientific_choices:[{id, kind, options, picked, "
+    "steps:[{id, ki, tool:'<absolute path to a shipped tool under <KI>/tools/, a protocol-declared sN_stage/ script, or the model binary the KI declares under binary.path in knowledge_infrastructure.yaml; or null>', kind, inputs:[inventory "
+    "ids], outputs:[…], status:'planned', env?:{NAME:'value'}}], scientific_choices:[{id, kind, options, picked, "
     "high_impact:true|false, decision?}], unresolved_questions:[…], created_at}\n"
     "  runs/data-inventory.json : {schema_version:'1.0', items:[{id, required_by:[KI…], "
-    "status:'missing'|'resolved'|'ready', acceptable_sources:[…], chosen_source, local_paths:[…], "
-    "agent_resolvable:bool, needs_user:bool, decision?}]}\n"
+    "status:'missing'|'resolved'|'ready', acceptable_sources:[…], chosen_source, dataset_id?, "
+    "local_paths:[…], agent_resolvable:bool, needs_user:bool, decision?, acquisition_id?, "
+    "requirements?:{bbox:[west,south,east,north],start:'YYYY-MM-DD',end:'YYYY-MM-DD',variable:'prec,temp'}}]}\n"
+    "  Save known data requirements per inventory item; do not invent unknown grid or dates. "
+    "Search with those same filters. The project's status panel uses requirements to compare "
+    "coverage and identify manual downloads versus agent preparation. Search match.status is "
+    "metadata-only: covered is not scientific validation; unknown needs inspection and "
+    "insufficient requires a different selection or explicit revised scope. Acceptable sources "
+    "are alternatives, not a chosen dataset.\n"
+    "  For every inventory item pinned from the GeoForge Database add one scientific choice "
+    "{id:'data:<item id>', kind:'data_source', item:'<item id>', options:[dataset ids you considered, "
+    "including the one you picked], picked:'<dataset id>', rationale:'one sentence', high_impact:true}. "
+    "GeoForge shows those candidates to the user with delivery, size and coverage from the catalogue; "
+    "the user may pick another one on the approval card, and GeoForge re-pins the item itself. "
+    "List real candidates only (ids returned by search_catalogue), never invented ones.\n"
+    "  Use the KI's declared input names (dag.yaml inputs) as inventory ids wherever they apply; "
+    "GeoForge reads the KI's source_kind, format and notes for each and decides on the card whether "
+    "GeoForge fetches it, the run prepares it with the KI's default tool, or the user must provide it. "
+    "Set decision: 'user' on an item only when the user should supply their own file instead of the "
+    "KI default. Do not mark inputs missing or needs_user by yourself.\n"
+    "  dataset_id is the exact GeoForge Database id when the input comes from the catalogue; "
+    "GeoForge verifies it and records delivery, size and coverage on the item. A catalogue "
+    "input is 'resolved', not 'missing', even before download. For server clipping, call "
+    "describe_dataset then estimate_clip (CLI geoforge-db --describe / --subset ...) for the study "
+    "bbox, period and native variables, then give the inventory item that dataset_id, "
+    "delivery 'subset' and the same bbox/variables/period in requirements. GeoForge joins the "
+    "item to the matching estimate itself (you may also copy the acquisition_id), re-estimates "
+    "it before the card, and starts the server job when the user approves the plan: there is "
+    "no separate data approval. Unknown coverage is shown on the card as inspection-only; it is "
+    "not model-ready. After approval GeoForge fetches every served dataset, server clip and "
+    "manual delivery itself, before execution starts, and signs a receipt for each. Inspect and "
+    "prepare KI inputs before simulation; never manufacture acquisition/approval files. "
+    "For whole-file delivery, never pin an unresolved whole-product parent "
+    "(a national grid of hundreds of GB): use search_catalogue with parent_id "
+    "(CLI obs-search --resolve PRODUCT --variable prec,temp --start YYYY-MM-DD --end YYYY-MM-DD "
+    "--time-step daily --bbox west,south,east,north). Pin only actual returned items[].id; never "
+    "construct child IDs. Each child inventory item describes its own year/variable requirements; "
+    "the plan must include all files needed for the full simulation and warmup period. "
+    "spatial_filter_applied:false means national files with local extraction, not clipped downloads. "
+    "Show total download bytes and explicit local preprocessing steps before approval.\n"
+    "  For gridded forcing, choose by the model grid extent/cells, required variables and period, "
+    "not a basin-name match alone. Catalogue bbox filtering is not spatial clipping. Verify "
+    "the actual downloadable unit. Prefer matching spatial tiles or verified grid extraction; "
+    "if only a larger regional/national package exists, disclose its coverage, size and local "
+    "extraction requirements as a scientific choice for user confirmation. Do not claim a "
+    "basin download link is a grid-specific link.\n"
     "  A draft of both is already there. Correct it; do not invent a different format. 'ready' "
     "means the file exists on disk at local_paths — you may NOT download anything in this turn, "
     "so only files that already exist can be 'ready'. Every step input must reference an "
@@ -103,13 +147,17 @@ _PLAN_SCHEMA_NOTE = (
     "tool:null with an unresolved question; never invent an executable path. A preflight check "
     "is host-managed, not a pipeline tool: represent it as kind:'check', tool:null with a note "
     "that GeoForge will verify the installation after approval; do not use preflight_check.py "
-    "as a step tool.\n"
+    "as a step tool. A shipped tool's required environment belongs in that step's optional env "
+    "object before approval. Use only literal values or ${PROJECT}/${KI_ROOT}; never put PATH, "
+    "HOME, interpreter startup variables, credentials, shell expressions, or personal/system "
+    "paths there. GeoForge passes exactly this approved environment to that step.\n"
 )
 
 
 def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: Path,
                    ambiguous: dict | None = None, partners_to_ask: list[str] | None = None,
-                   replan_reason: str = "") -> str:
+                   replan_reason: str = "", wrappers: dict | None = None,
+                   database_access_mode: str = "direct") -> str:
     """The read-only planning turn. kis = {model_id: ki_root}."""
     names = ", ".join(kis)
     s = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
@@ -135,6 +183,42 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "Approval and execution happen in a LATER, separate session — do not ask "
         "'shall I proceed'; the app asks the user.",
     ]
+    if database_access_mode == "direct" and wrappers and wrappers.get("obs_search"):
+        lines.append(
+            "[AUTHENTICATED OBSERVATION CATALOGUE] When an observation or forcing input is "
+            "missing, query the live GeoForge Database through the Desktop host with "
+            f"`{wrappers['obs_search']} <keywords>` (filters: --bbox minlon,minlat,maxlon,maxlat "
+            "--start YYYY-MM-DD --end YYYY-MM-DD --variable name --category forcing|gauge|... "
+            "--delivery served|manual; --limit/--offset). Records carry bbox, point, period, "
+            "delivery, size, parent_id and notes; read notes for coverage written in prose. "
+            "Run this command yourself instead of asking the user whether the database has data. "
+            "The Desktop retains the token; this read-only adapter returns sanitized metadata only. "
+            "Pin the exact dataset id, delivery type, variables, extent and period in the inventory; "
+            "never download during planning. A dataset with delivery 'manual' is a normal choice: "
+            "pin it, and after approval GeoForge shows the user the download link and target folder "
+            "and waits for the files. Do not call manual delivery a dead end."
+            " Manual delivery is never a reason to ask the user which data to use: pick the best-fitting dataset yourself, pin it, and state the choice in scientific_choices with your reason. Ask the user only when a scientific choice is genuinely open (site, period, evaluation target), and then with request_user_action, one question at a time, recommending a default.")
+    elif database_access_mode == "direct" and wrappers is None:
+        lines.append(
+            "[AUTHENTICATED OBSERVATION CATALOGUE] When an observation or forcing input is "
+            "missing, call search_catalogue yourself during planning instead of asking "
+            "the user whether the database has data. It returns live GeoForge Database "
+            "metadata but no credentials. Pin the exact dataset id, delivery type, variables, "
+            "extent and period in the inventory. You never download: after the user approves the "
+            "plan, GeoForge fetches every pinned dataset itself and signs a receipt. A dataset with "
+            "delivery 'manual' is a normal choice: pin it; GeoForge shows the user a private card "
+            "with the link and target folder and waits for the files. Do not call manual delivery "
+            "a dead end."
+            " Manual delivery is never a reason to ask the user which data to use: pick the best-fitting dataset yourself, pin it, and state the choice in scientific_choices with your reason. Ask the user only when a scientific choice is genuinely open (site, period, evaluation target), and then with request_user_action, one question at a time, recommending a default.")
+    elif database_access_mode == "snapshot":
+        lines.append(
+            "[GEOFORGE DATABASE: CACHED CATALOGUE MODE] The Desktop will append the path to a "
+            "sanitized catalogue snapshot. Inspect that file; no live database query tool is "
+            "available in this mode. Clearly identify stale or unavailable metadata.")
+    else:
+        lines.append(
+            "[GEOFORGE DATABASE: DISABLED] Database discovery is disabled for this project turn. "
+            "Do not claim that the catalogue was searched or that a dataset is available.")
     if replan_reason:
         lines.append(f"[RE-PLAN] {replan_reason}. Correct the existing draft rather than "
                      "restarting the study. Nothing is approved for this revision; save both "
@@ -200,24 +284,37 @@ def execution_block(kis: dict[str, Path], plan: dict, approval: dict, project: P
             f"  downloads            : {wrappers.get('fetch', 'fetch')} --item <inventory id> "
             f"--step <plan step id> <url>\n"
             "  (options BEFORE the positional arguments; tool arguments after `--`)\n"
+            "  GeoForge Database data (served, server clips, manual Baidu deliveries) is already "
+            "fetched and receipted by GeoForge before this execution turn; find it under inputs/ "
+            "via the data receipts. Missing catalogue data is a plan change (request_replan), not "
+            "something to download here.\n"
             "  These write a signed receipt (command, binary hash, exit code, input/output hashes). "
             "A model run or download done any other way has NO receipt and can never make the "
             "project 'done' — the app lists it as an unreceipted artifact.\n")
     else:
         lines.append(
             "[RECEIPTS] Every run_ki_tool / run_calibration / fetch_data call writes a signed "
-            "receipt. Outputs that no receipt names cannot make the project 'done'.\n")
+            "receipt. Outputs that no receipt names cannot make the project 'done'. GeoForge "
+            "Database inputs (served, server clips, manual deliveries) were fetched and receipted "
+            "by GeoForge before this turn; find them under inputs/ via the data receipts.\n")
     lines.append(
         "[VALIDATION — NOT YOUR OWN JUDGE] The app validates every output against the KI's "
         "dag.yaml (exists, non-empty, no NaN/Inf, complete time axis, physically required "
         "positive values, units). You PRODUCE the run and report exactly what it produced; you do "
         "not declare a metric the verdict, and a FAILED validation is never a result.\n"
         "[DONE MEANS] every planned step has a receipt and validation passed. Do not claim "
-        "completion while a detached job is still running — wait for it in this turn.\n"
-        "[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
-        "core algorithm, a different data source, or a different extent/period/scenario/"
-        "calibration target: STOP, say 'REPLAN_REQUIRED: <why>' and end the turn. Do not "
-        "continue on a plan the user did not approve.\n")
+        "completion while a detached job is still running — wait for it in this turn.\n")
+    lines.append(
+        ("[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
+         "core algorithm, a different data source, or a different extent/period/scenario/"
+         "calibration target: STOP, say 'REPLAN_REQUIRED: <why>' and end the turn. GeoForge then "
+         "starts the re-planning turn for you. Do not continue on a plan the user did not approve.\n"
+         if wrappers else
+         "[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
+         "core algorithm, a different data source, a different tool input, or a different extent/"
+         "period/scenario/calibration target: call request_replan(reason) and then write_plan "
+         "with the corrected plan in this same turn. Do not improvise around the approved plan; "
+         "the user approves the revision before anything else runs.\n"))
     return "\n".join(lines)
 
 

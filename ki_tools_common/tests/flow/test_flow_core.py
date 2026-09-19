@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -221,6 +222,31 @@ def test_validate_rejects_bad_plans(tmp_path):
     assert any("unknown status" in e for e in plan.validate(good, inv4, ["M"], {"M": ki}))
 
 
+def test_plan_step_environment_is_safe_and_expands_only_approved_roots(tmp_path):
+    ki = _fake_ki(tmp_path / "catalogue")
+    project = tmp_path / "project"; project.mkdir()
+    good = _good_plan(ki)
+    good["steps"][0]["env"] = {
+        "VIC_INPUT": "${PROJECT}/inputs/forcing.txt",
+        "VIC_TOOL_ROOT": "${KI_ROOT}/tools",
+        "VIC_TIMESTEP": "3",
+    }
+    assert plan.validate(good, _INV, ["M"], {"M": ki}) == []
+    expanded = plan.step_environment(good["steps"][0], project, ki)
+    assert expanded["VIC_INPUT"] == str(project.resolve() / "inputs/forcing.txt")
+    assert expanded["VIC_TOOL_ROOT"] == str(ki.resolve() / "tools")
+    assert expanded["VIC_TIMESTEP"] == "3"
+
+    for key in ("PATH", "PYTHONPATH", "DYLD_INSERT_LIBRARIES", "MODEL_API_TOKEN",
+                "GEOFORGE_AGENT_FLOW_URL"):
+        bad = json.loads(json.dumps(good)); bad["steps"][0]["env"] = {key: "x"}
+        assert any("not allowed" in e for e in plan.validate(bad, _INV, ["M"], {"M": ki}))
+    bad = json.loads(json.dumps(good)); bad["steps"][0]["env"] = {"VIC_INPUT": "${HOME}/x"}
+    assert any("unsupported tokens" in e for e in plan.validate(bad, _INV, ["M"], {"M": ki}))
+    with pytest.raises(ValueError, match="outside the project and KI"):
+        plan.step_environment({"env": {"VIC_OUTPUT": "/Library/geoforge.txt"}}, project, ki)
+
+
 def test_sha256_is_canonical():
     assert plan.sha256({"b": 1, "a": [1, 2]}) == plan.sha256({"a": [1, 2], "b": 1})
 
@@ -397,6 +423,19 @@ def test_validate_outputs_netcdf_uses_rank1_variable_only(tmp_path):
     f2 = tmp_path / "o2.nc"; ds2.to_netcdf(f2, engine="scipy")
     v = receipts.validate_outputs(cama, [f2], expected_steps=5)
     assert any(c["check"].startswith("time_axis_complete") and not c["ok"] for c in v["checks"])
+
+
+def test_netcdf4_fallback_inspects_output_without_xarray(tmp_path, monkeypatch):
+    nc4 = pytest.importorskip("netCDF4"); np = pytest.importorskip("numpy")
+    path = tmp_path / "fallback.nc"
+    with nc4.Dataset(path, "w") as ds:
+        ds.createDimension("time", 3)
+        var = ds.createVariable("outflw", "f8", ("time",))
+        var[:] = np.array([0.0, 1.5, 2.0])
+    monkeypatch.setitem(sys.modules, "xarray", None)
+    values, steps, note = receipts._load_series(path, ("outflw",))
+    assert values == [0.0, 1.5, 2.0]
+    assert steps == 3 and note == "netcdf rank-1 var(s) outflw"
 
 
 def test_key_dir_inside_project_is_refused(tmp_path, monkeypatch):
@@ -578,6 +617,10 @@ def test_validate_for_execution_requires_tools_and_resolved_inputs(tmp_path):
     inv = json.loads(json.dumps(_INV)); inv["items"][0]["status"] = "missing"
     errs = plan.validate(_good_plan(ki), inv, ["M"], {"M": ki}, for_execution=True)
     assert any("still missing" in e for e in errs)
+    model_run = _good_plan(ki, tool=False)
+    model_run["steps"][0]["kind"] = "model_run"
+    assert any("has no tool" in e for e in
+               plan.validate(model_run, _INV, ["M"], {"M": ki}, for_execution=True))
 
 
 def test_failed_can_replan_and_coupling_graph_keeps_agent_todo(tmp_path):
@@ -667,3 +710,89 @@ def test_validate_accepts_extensionless_executable_tool(tmp_path):
     assert plan.validate(pj, _INV, ["M"], {"M": ki}) == []
     os.chmod(exe, 0o644)
     assert any("not a runnable" in e for e in plan.validate(pj, _INV, ["M"], {"M": ki}))
+
+
+def test_download_receipt_survives_a_replan_when_the_item_is_still_pinned(tmp_path):
+    from ki_tools_common.flow import receipts
+    project = tmp_path / "p"
+    (project / "inputs" / "obs").mkdir(parents=True)
+    raw = project / "inputs" / "obs" / "q.txt"
+    raw.write_text("flow\n")
+    inventory = {"items": [{"id": "obs", "dataset_id": "source-A", "requirements": {"start": "2000"}}]}
+    receipts.record_download(project, item_id="obs", source="test", request_url="https://x/y",
+                             http_status=200, raw_files=[raw], plan_step_id="s1",
+                             approval_sha256="old-approval", inventory_item=inventory["items"][0])
+    plan = {"selected_kis": ["M"], "steps": [{"id": "s1", "ki": "M", "kind": "download",
+                                              "inputs": ["obs"], "outputs": []}]}
+    approval = {"plan_sha256": "new-approval", "selected_kis": ["M"]}
+    ev = receipts.evidence(project, plan, approval, enforcement="exact", inventory=inventory)
+    assert ev["downloads_bound"] == 1 and not ev["rejected_receipts"]
+    inventory["items"][0]["dataset_id"] = "source-B"
+    assert receipts.evidence(project, plan, approval, inventory=inventory)["downloads_bound"] == 0
+    inventory["items"][0]["dataset_id"] = "source-A"
+    inventory["items"][0]["requirements"]["start"] = "2001"
+    assert receipts.evidence(project, plan, approval, inventory=inventory)["downloads_bound"] == 0
+    inventory["items"][0]["requirements"]["start"] = "2000"
+    # a changed file, or an item no longer in the plan, breaks the binding
+    raw.write_text("tampered\n")
+    ev = receipts.evidence(project, plan, approval, enforcement="exact", inventory=inventory)
+    assert ev["downloads_bound"] == 0
+
+
+def test_legacy_receipt_cannot_reuse_same_plan_hash_with_new_inventory(tmp_path):
+    from ki_tools_common.flow import receipts
+    raw = tmp_path / 'raw.dat'
+    raw.write_bytes(b'legacy data')
+    receipts.record_download(tmp_path, item_id='forcing', source='A', request_url='https://a.test/data',
+        http_status=200, raw_files=[raw], approval_sha256='unchanged-plan-hash')
+    result = receipts.evidence(tmp_path, {'steps': []}, {'plan_sha256': 'unchanged-plan-hash'},
+        inventory={'items': [{'id': 'forcing', 'dataset_id': 'B'}]})
+    assert result['downloads_bound'] == 0
+
+
+def test_declared_inputs_drive_the_data_groups(tmp_path):
+    """Step 4: the KI's declaration, not the agent's status fields, decides fetch / you / run."""
+    from ki_tools_common.flow import declared as D
+    ki = tmp_path / "ki"; (ki / "s4_initial_conditions" / "tools").mkdir(parents=True)
+    (ki / "dag.yaml").write_text("""
+inputs:
+  forcing:
+    - {name: air_temperature, unit: degC, source_kind: forcing, model_input_format: ".wea"}
+  initial_conditions:
+    - {name: soil_moisture_profile, unit: fraction, source_kind: user_provided, model_input_format: ".moi", notes: ">=2 profiles"}
+    - {name: measured_snow_course, unit: m, source_kind: user_provided, model_input_format: ".snw"}
+  parameters:
+    - {name: soil_texture (sand/silt/clay), unit: percent, source_kind: dataset_lookup, model_input_format: ".sit"}
+""")
+    (ki / "s4_initial_conditions" / "tools" / "set_initial_conditions.py").write_text('OUT = "trial.moi"\n')
+    decl = D.declared_inputs(str(ki))
+    assert [d["default_tool"] for d in decl] == [None, "s4_initial_conditions/tools/set_initial_conditions.py", None, None]
+    produced = {"made_by_step"}
+    cases = {
+        # agent said needs_user, KI says user_provided with a default tool -> run/default
+        "initial_profiles_ic": ({"id": "initial_profiles_ic", "status": "missing", "needs_user": True}, "run", "default"),
+        # user_provided, no tool writes .snw -> you/provide with instructions
+        "measured_snow_course": ({"id": "measured_snow_course", "status": "missing"}, "you", "provide"),
+        # forcing declared, nothing pinned -> you/choose
+        "meteorology_daily": ({"id": "meteorology_daily", "status": "missing", "needs_user": True}, "you", "choose"),
+        # lookup -> run/prepared regardless of agent fields
+        "soil_texture_hwsd": ({"id": "soil_texture_hwsd", "status": "missing", "needs_user": True}, "run", "prepared"),
+        # catalogue delivery wins
+        "obs": ({"id": "obs", "delivery": "served", "dataset_id": "x"}, "fetch", "served"),
+        "baidu": ({"id": "baidu", "delivery": "manual", "dataset_id": "y"}, "you", "manual"),
+        # step output wins over everything else
+        "made_by_step": ({"id": "made_by_step", "status": "missing", "needs_user": True}, "run", "generated"),
+        # unknown to the KI, nothing pinned, no step -> prepared during the run (not "missing")
+        "shaw_input_bundle": ({"id": "shaw_input_bundle", "status": "missing"}, "run", "prepared"),
+    }
+    for iid, (item, group, how) in cases.items():
+        v = D.classify(item, decl, produced)
+        assert (v["group"], v["how"]) == (group, how), (iid, v)
+    v = D.classify(cases["measured_snow_course"][0], decl, produced)
+    text = D.instructions(cases["measured_snow_course"][0], v)
+    assert "format .snw" in text and "inputs/user/measured_snow_course" in text
+    v = D.classify(cases["initial_profiles_ic"][0], decl, produced)
+    assert "set_initial_conditions.py" in D.instructions(cases["initial_profiles_ic"][0], v)
+    # the agent may still hand an item to the user explicitly
+    v = D.classify({"id": "initial_profiles_ic", "decision": "user"}, decl, produced)
+    assert (v["group"], v["how"]) == ("you", "provide")

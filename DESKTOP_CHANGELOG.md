@@ -6,6 +6,324 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Unreleased — project data selection and approval
+
+- 数据估算与批准分开：探索、失败及被替代的请求留在折叠历史中；Agent 只把与当前项目有关的已选请求提交为一份数据建议，说明每项用途和范围。
+- 用户一次查看所选数据、范围、时段、变量和预计大小，并明确批准；不会因每次估算而弹窗。查看/关闭提示不等于批准，模型运行仍需独立批准。
+- API 和 CLI Agent 共用提交入口：`subset_proposal` / `geoforge-db --propose`。已有估算不会被猜测为已选数据；需由 Agent 明确提交。
+- 非空变量筛选没有得到服务器确认时，客户端阻止批准；有意选择整个栅格的空变量列表仍可用。
+- 修复批准按钮“点击无反应”：过期状态会自动更新，错误与处理状态显示在按钮旁；可直接刷新相同范围的估算，不创建任务、不继承批准。刷新后须重新确认，已创建任务保留。
+
+- Estimates are exploration history, not approval requests. Agents publish one explicit, project-relevant data selection with each dataset's purpose and exact scope.
+- Users review the selected region, period, fields and estimated bytes together. A new selection receives one review prompt; dismissing it never authorizes downloads or model execution.
+- API and CLI agents share `subset_proposal` / `geoforge-db --propose`. Existing estimates are not automatically promoted into selected data.
+- Unconfirmed nonempty variable filters block acquisition approval; intentional whole-raster requests remain supported.
+- Approval feedback is shown beside the action, with live expiry/status updates. Expired estimates can be renewed for the same scopes without starting jobs or transferring consent; renewed estimates require review and existing jobs are retained.
+
+## Unreleased — authenticated GeoForge Database access
+
+### 中文
+
+- 本地数据库搜索返回覆盖判断（已声明条件满足／不足／待核实），优先显示覆盖满足的候选，
+  拒绝无效坐标和日期。备选源不再自动固定为已选数据。项目状态新增数据准备下一步，
+  区分手动下载、批准后由 Agent 下载、已有文件检查、上游就绪后准备及重新选择数据。
+  覆盖判断仅基于目录元数据，不表示已经验证模型输入或提供了网格裁剪下载。
+- 数据到位检查忽略空目录、隐藏缓存和未完成的下载文件；无目标路径时保留等待状态。
+  数据面板验证下载 receipt 签名及文件校验和，文件删除或被替换后不再显示为已下载。
+- 流程改造第 4 步（进行中）：批准卡与项目状态的数据分为三组，由 Desktop 依据事实判定，不再信任 Agent 的
+  status/needs_user：“批准后由 GeoForge 取回”（直接下载、服务器裁剪）、“需要你”（网盘下载、需在方案中选定数据集、
+  需你提供文件并给出格式/单位/要求/放置路径）、“运行自行准备”（已在本机、由步骤生成、KI 默认工具并注明工具名）。
+  判定来源是 KI 自己的 dag.yaml 输入声明（source_kind、格式、单位、说明）与写出该格式的 KI 工具。项目状态面板压缩为
+  三块：需要你、项目进度（含目标与 KI）、本次计划的数据；其余折叠到“更多细节”。手动下载卡按数据集去重并成为项目
+  记录的当前阻塞项；对话滚动只在已到底部时跟随；提问卡片会结束 Agent 回合；连接建立失败也重试一次；断线前已提交的方案不再丢失；
+  安装修复继续原会话而不是重启。
+- 第 3 步复审修复：手动交付在真实客户端下无法签 receipt（目标目录非空检查早于“manual”应答）、
+  “文件已放好”消息触发未赋值变量崩溃、旧的取数状态在重新规划后残留导致永远 BLOCKED，三项均已修复并有回归测试。
+  另：取数过程与面板轮询互斥；估算临时失败可重试；请求卡片文件对 Agent 不可读；卡片被关掉后可从项目状态重新打开；
+  网盘链接只接受 http(s)；`.bc!`/`.crdownload` 等未完成文件与符号链接不进入 receipt；删除已死的 download_observation_data /
+  obs-download / fetch_observation 与 inventory-updates.jsonl。
+- 流程改造第 3 步：新增 ACQUIRING 状态。计划批准后，Desktop 自己把每个已批准输入取回来（直接下载、
+  服务器裁剪、网盘手动交付），每项写签名 receipt，全部到位后才进入执行；进度记录在 `.geoforge/acquisition.json`，
+  不再改动已批准的清单。手动交付合并为一张多行卡片；“文件已放好，继续”会对放置的文件做哈希并签名 receipt
+  （此前手动数据没有 receipt，会挡住项目完成）。取数失败进入 BLOCKED，卡片提供“重试缺失项 / 修改方案”。
+  项目状态面板轮询时也会推进取数，无需在对话里发消息。执行阶段不再提供 download_observation_data /
+  obs-download。顺带修复：裁剪预算按每个文件加 64 KB 容器开销（176 个单格 NetCDF 实际 5 MB，估算 0.5 MB）；
+  重新规划改名后的条目复用已校验的文件而不重复下载；下载前先检查目标目录非空，不再覆盖并删除原始 zip 证据。
+- 流程改造第 2 步：数据清单就是数据建议。Agent 在 write_plan 里只需给出 dataset_id 与研究范围
+  （bbox/时段/变量，或直接给 acquisition_id），Desktop 自己把条目对应到已有的裁剪估算、在出卡前重新估算、
+  在“批准并开始”时再估算一次；体量或数据源版本变化就退回卡片而不签名。批准计划即创建服务器裁剪任务，
+  项目状态里不再有单独的“批准所选取数请求”按钮、数据建议弹窗、刷新与 15 分钟过期。执行阶段若发现任务
+  未创建会按已批准计划自行补建。旧的 `search_observation_data` 工具与 `--propose` 已移除。
+- 流程改造第 1 步（见 docs/FLOW-TARGET-2026-09-17.md）：GeoForge 数据库工具拆成三个单一职责工具
+  `search_catalogue`（含 parent_id 解析）、`describe_dataset`、`estimate_clip`（任务理解阶段最多 5 次），旧的多模式
+  `search_observation_data` 标记为弃用、仅保留 subset_proposal。任务理解与规划回合不能以纯文字结束：
+  没有 write_plan / request_user_action / 完整 intake 报告时，Desktop 自动追问一次；报告“未就绪、有待问问题”
+  但把问题写在文字里也会被追问，要求用卡片提问。API 流中断自动重试一次。
+- 对接 GeoForge 数据库裁剪服务 obs_subset/3：估算、清单和数据源描述中的处理版本、数据源版本、
+  格网约定（cell_edges / 格心范围 / 形状 / 间距）、单位来源与覆盖范围说明现在都被保留并写入签名 receipt；
+  清单版本与已批准估算不一致时拒绝下载。多成员数据（作物日历）少交付时，项目状态会标注
+  “部分交付：承诺 N 个成员，收到 M 个”，不再当作完整；`variable_selection_unsupported` 会提示 Agent
+  查看 schema 后用空变量列表重新估算。已用 DeepSeek 在编译版 App 中复测 CMFD、Sacks、GGCMI、DEM、HWSD 五类数据。
+- 新增 GeoForge Database 数据目录搜索：项目数据面板可按变量、地区、时期或数据 ID
+  查询服务器的真实记录，并把候选数据交给 Agent 对照当前 KI 合同检查。
+- 激活 token 在 macOS 使用 0600 私密文件（从 Keychain 迁移），Windows 使用 Credential Manager，Linux 使用 Secret Service；
+  不写入设置文件、Agent 提示词或对话记录；设置页保留后端的精确错误说明。
+- KI Harness 在规划阶段只能搜索并固定精确数据 ID。用户批准后才能下载；
+  Desktop 校验 SHA-256、安全解压到项目 `inputs/`，并写入签名 receipt 和数据来源记录。
+- 超过直接下载限制的数据会以私有用户弹窗显示百度网盘链接、提取码和
+  项目目标路径，不把这些内容回显给 Agent。
+- 数据库接入现在也是一个由 KDT-single 验证的 `task_workflow` KI。CLI Agent
+  只获得当前 Desktop 进程签发的临时只读 capability；真实激活 token 始终留在 Desktop。
+- 修复 Kimi 调用数据库或 Flow 工具时反复弹出 macOS“文稿”权限的问题。
+  稳定 launcher 不再二次执行 Documents 中的 App Bundle，而是通过带随机 capability
+  的 loopback bridge 调回已运行的 Desktop；命令仍由计划、批准和 receipt 闸门检查。
+- 数据库 token 在单次 Desktop 进程中只读取一次钥匙串；如果用户拒绝或取消授权，自动
+  查询不会再次触发系统窗口。只有用户在设置中主动点击“保存并测试数据库”才会重试。
+  未使用稳定 Apple 签名的本地开发包在每次重新编译后仍可能需要一次首次授权。
+- API 服务商（DeepSeek、OpenAI、OpenRouter、Anthropic）改为流式响应。此前一次超过 5 分钟的
+  规划回合会被当作断线重试三次，每次从头生成，因此永远无法完成；现在长回合正常完成，
+  且超时只针对“连续 5 分钟没有任何数据”。
+- 活动面板新增“停止”按钮：可中止正在进行的 API 回合或本地 CLI Agent。
+- GeoForge 数据库目录改为应用级本地副本：保存 Token 后自动下载完整目录（仅元数据，约 1,100 条），
+  启动时和每 6 小时按 ETag 刷新，服务器不可达时保留上一份并标注过期。数据面板、API Agent 工具
+  和 CLI 的 `obs-search` 都在本地按范围（bbox）、时段、变量、类别、交付方式筛选，不再逐次请求服务器。
+- 修复 API 回合在计算过程中被显示为“已结束，正在保存”的状态误报；
+  计划自动修复回合现在标注轮次。
+- “项目状态”按钮名称固定不变，状态改用彩色圆点和悬停提示表示；项目视图的面板数量在面板关闭时也会每 5 秒更新。
+- AI 设置和项目状态面板中的 GeoForge 数据库卡片现在显示：本地目录条数、可直接下载条数、上次同步时间，
+  以及 API Agent（search_observation_data 工具）和 CLI Agent（geoforge-db 命令）各自的检索方式。
+  Agent 访问方式简化为“直接查询”和“关闭”两项。活动栏会明确显示“正在检索 GeoForge 数据库”。
+- 计划提交时，Desktop 会把数据清单中每个指向 GeoForge 数据库的条目核对到本地目录：写入 `dataset_id`、
+  交付方式、大小、范围与时段；未知 ID 会作为校验错误退回 Agent；整库级父产品（如 242 GB 的全国 CMFD）
+  不允许作为下载单元，必须选区域子集或按变量×年份的子文件。批准卡按“GeoForge 自动下载 / 需你手动下载
+  （含大小）/ 由运行生成 / 缺失”分组显示；含手动下载数据的计划不再自动批准。
+- 手动下载提示会给出网盘分享内应下载的具体文件路径；直接下载上限对齐服务器的 100 MB。
+- 修复 DeepSeek 等 API 提交计划反复失败的根因：请求未设置输出 token 上限（DeepSeek 默认 4K），
+  计划加数据清单的工具调用参数被截断，Desktop 只报“must be JSON objects”。现在两种接口都请求 8K 输出；
+  被截断的工具调用会明确告知 Agent；`write_plan` 支持分两次提交（先 plan，再 data_inventory）并接受 JSON 字符串。
+- 单次流式响应设 15 分钟硬上限，代理的 keep-alive 行不再被当作进展。
+- Agent 的 intake 提问被用户回答后，Desktop 直接进入规划，不再等待 Agent 再报一次 intake（避免连问两轮）。
+- KI 在 `knowledge_infrastructure.yaml` 中声明的模型可执行文件（如 VIC 的 `vic_classic.exe`）现在可以
+  作为计划步骤的 tool：计划校验、CLI `run-tool` 和 API `run_ki_tool` 都接受它，并写入签名 receipt。
+  此前编译型模型的运行步骤无法指定合法 tool，导致新加入的“model_run 必须有 tool”门禁无法通过。
+- 手动下载请求在文件真正放到指定路径之前保持打开：在对话中提问不会再让链接和提取码消失。
+- 项目状态面板新增“本次计划的数据”卡片：列出计划数据清单中的每一项及其真实状态（已就绪 / 等你下载 /
+  待处理 / 缺失），状态来自 receipt 和本地文件而非 Agent 的说法。手动下载请求卡片现在带“打开下载链接”、
+  放置路径复制和“文件已放好，继续”按钮；对话中同时出现一条提醒，指向项目状态（链接和提取码不进入对话）。
+- Desktop 在任务理解和规划阶段自动从本地目录匹配与研究描述相关的记录（站号、流域/河流名及其英文别名、
+  关键词），以“本研究可用的 GeoForge 数据库数据”块注入 Agent 提示；Agent 必须向用户说明这些数据存在、
+  哪些可自动下载、哪些需手动下载。用户不再需要主动想起“用 CMFD”。
+- 数据库检索工具说明和任务理解阶段的规则也写明 manual 交付可用；以数据集 ID 命名的数据清单条目
+  在计划提交时会自动固定该 ID，执行阶段的下载也接受这种写法。
+- 规划与执行合同明确说明：`delivery: manual` 的数据集是正常选项——规划时固定其 ID，批准后
+  `download_observation_data` 会向用户显示网盘链接、提取码和放置路径并等待文件；Agent 不应把人工交付当作走不通。
+- 执行回合结束时，若该回合没有产生任何签名 receipt（既没运行工具也没下载），对话中会追加一条
+  “GeoForge 校验”说明：本回合无受 receipt 记录的步骤，Agent 文字中描述的产物在有 receipt 之前不算存在。
+  此前 Agent 可以在对话里声称已完成步骤而界面不作纠正。
+- API Agent 在执行中发现计划无法照办时，可调用新的 `request_replan(reason)`：Desktop 立即把项目切换到
+  REPLAN_REQUIRED、撤销批准并开放 `write_plan`，Agent 在同一回合内写出修正后的计划；用户随后重新批准。
+  此前 Agent 只能停下来请用户“把会话退回规划”。
+- Agent 在执行中报告 REPLAN_REQUIRED 后，Desktop 会自动以其说明启动重新规划回合并写出修正后的计划，
+  不再需要用户重复提出修改请求；修正后的计划仍需用户批准。
+- 会话列表不再在列出时打开位于外部文件夹（如“文稿”或云盘）中的项目，只在用户打开该会话时读取；
+  此前每个新构建的 App 都会在启动时触发一次 macOS 文件夹访问授权。
+- 页面启动时的请求会重试（后台可能刚被系统授权窗口阻塞），失败横幅提供“重新加载”按钮。
+- macOS 上数据库 Token 不再存入登录钥匙串，改为保存在仅当前用户可读的私密文件
+  （`~/Library/Application Support/KISS/secrets/`，权限 0600）。钥匙串条目的访问权与 App 的代码签名绑定，
+  而 GeoForge Desktop 每次构建/更新都是新的签名身份，导致每次都弹出授权；现在只在首次启动时从钥匙串
+  迁移一次，之后不再询问。
+- 目录刷新在等待钥匙串授权或网络时不再阻塞其他调用：搜索、设置页和状态查询直接使用现有本地副本，
+  由单个后台线程完成刷新。
+- 运行验证失败后，用户的下一条消息会在同一已批准计划下重新进入执行回合（此前会话会卡在
+  FAILED_VALIDATION，既不能重跑也不能重新规划）。
+- 重新规划后，已校验通过的下载不再作废：只要同一数据条目仍在计划中且文件校验和未变，
+  其 receipt 继续有效，不必重复下载。
+- 取消计划的自动批准：任何计划都必须由用户在批准卡上点击“批准并开始”后才会执行，
+  批准卡不再是可以被跳过的提示。此前当计划没有待定选项时，Desktop 会自动批准并直接开始运行。
+- 批准卡改为分区结构化展示：任务理解（KI、耦合、区域、时段）、数据（已在本机 / 自动下载 / 需手动下载含大小 /
+  由运行生成 / 缺失）、步骤（工具与环境变量数）、科学决定、等待你处理的事项；文字版摘要折叠在底部。
+- 由前序步骤生成的中间产物不再被判定为“缺失输入”，多步骤流水线的计划可以正常通过执行就绪检查。
+- 用户在任务中要求“先规划、批准后再执行”时，该要求对整个项目生效：修改计划或自动修复的回合
+  不会再因为说明文字不含该要求而被自动批准。
+- 数据库状态查询不再触发钥匙串读取；只有真正需要联网的刷新和“保存并测试数据库”才会读取 Token。
+- 桌面端草案不再沿用服务器时代的数据来源（`cmfd_v1`、`mswx_v1` 等 provider id 和服务器路径）：
+  这些输入在草案中标为待 Agent 从 GeoForge 数据库检索并固定 `dataset_id`，批准卡上也不再出现
+  provider id 选项。Agent 写的展示名（如 `AVHRR_1km_LANDCOVER_1981_1994`）在唯一匹配时会自动对应到目录 ID。
+
+### English
+
+- Flow rework step 4 (in progress): the approval card and Project status sort data into three groups
+  decided by the desktop from facts, never from the agent's status/needs_user: "GeoForge fetches after
+  approval" (served, server clip), "You" (Baidu download, pick a dataset in the plan, or provide a file with
+  format / unit / rules / target path), "The run prepares itself" (on disk, made by a step, KI default tool
+  named). The source is the KI's own dag.yaml input declaration (source_kind, format, unit, notes) plus the KI
+  tool that writes that format. Project status is reduced to three blocks: Needs you, Progress (goal + KI),
+  Data in this plan; everything else under "Details". The manual download card dedupes by dataset and is the
+  run's current blocker; chat scroll follows only at the bottom; a question card ends the agent's turn; a
+  failed connect is retried once; a plan submitted before a dropped connection is kept; setup repair
+  continues the agent's own session instead of restarting.
+- Step 3 review fixes: manual delivery could not be receipted with the real client (destination check ran
+  before the "manual" answer), the "Files are in place" message crashed on an unassigned local, and stale
+  acquisition entries survived a replan and kept the project BLOCKED; all three fixed with regression tests.
+  Also: acquisition passes and the panel poll are mutually exclusive; a transient estimate failure is retried;
+  request-card files are unreadable to agents; a dismissed card reopens from Project status; Baidu links must be
+  http(s); partial downloads and symlinks never enter a receipt; dead download_observation_data / obs-download /
+  fetch_observation and inventory-updates.jsonl removed.
+- Flow rework step 3: ACQUIRING state. After plan approval the desktop fetches every approved input
+  itself (served download, server clip, Baidu manual delivery), signs a receipt per item, and only
+  then enters execution; progress lives in `.geoforge/acquisition.json`, the approved inventory is
+  never edited. Manual deliveries share one multi-row card; "Files are in place, continue" hashes the
+  placed files and signs a receipt (manual data had none before and blocked completion). A failed
+  fetch lands in BLOCKED with a Retry / Modify card. Project status polling advances acquisition
+  without a chat message. download_observation_data / obs-download are gone from execution. Also
+  fixed: clip budget allows 64 KB container overhead per part (176 single-cell NetCDFs were 5 MB
+  against a 0.5 MB estimate); renamed items after a replan reuse verified files; downloads check the
+  destination before touching the archive, so a retry can no longer delete raw zip evidence.
+- Flow rework step 2: the data inventory is the proposal. In write_plan the agent gives a dataset_id
+  and the study scope (bbox/period/variables, or an acquisition_id); the desktop joins the item to the
+  matching clip estimate, re-estimates before the card and again at "Approve and start", and re-issues
+  the card unsigned if size or source version changed. Approving the plan creates the server clip jobs.
+  Project status loses the separate "Approve selected acquisitions" button, the proposal popup, Refresh
+  and the 15-minute expiry. Execution creates a missed job under the approved plan. The old
+  `search_observation_data` tool and `--propose` are removed.
+- Flow rework step 1 (docs/FLOW-TARGET-2026-09-17.md): the GeoForge Database tool is split into
+  `search_catalogue` (with parent_id resolution), `describe_dataset` and `estimate_clip` (capped at 5 during
+  intake); the multi-mode `search_observation_data` is deprecated and kept only for subset_proposal.
+  Intake and planning turns may no longer end in prose: without write_plan, request_user_action or a
+  ready intake report the desktop nudges the agent once; a "not ready" report whose question is written
+  in prose is nudged to ask through the card. A dropped API stream is retried once.
+- Support the GeoForge Database subset service obs_subset/3: processing/source versions, grid
+  convention (cell_edges, cell-centre bounds, shape, spacing), units authority and coverage scope
+  from estimate, manifest and describe are kept and signed into the acquisition receipt; a manifest
+  whose version differs from the approved estimate is refused. Short multi-member deliveries (crop
+  calendars) are shown in Project status as "partial delivery: promised N, received M" instead of
+  complete; `variable_selection_unsupported` tells the agent to describe the schema and re-estimate
+  with an empty variable list. Retested CMFD, Sacks, GGCMI, DEM and HWSD through the compiled app with DeepSeek.
+- Add live GeoForge Database catalogue search to the project data panel by variable, place, period or
+  exact dataset id, with a handoff that asks the Agent to validate a candidate against the active
+  KI contract.
+- Store the activation token only in Keychain, Credential Manager or Secret Service. It is absent
+  from settings JSON, prompts and chat transcripts, and backend authentication errors remain
+  distinct and actionable in Settings.
+- During planning, the KI Harness can search metadata and pin an exact dataset id but cannot
+  download it. After approval, Desktop verifies SHA-256, safely extracts below project `inputs/`,
+  and records a signed receipt plus provenance.
+- Large manual datasets open a private user handoff containing the Baidu link, extraction code and
+  exact target path without echoing those details back to the Agent.
+- Package database discovery as a KDT-single-verified `task_workflow` KI. CLI Agents receive only a
+  short-lived read-only capability for the current Desktop process; the persistent activation token
+  never enters their environment or prompt.
+- Stop Kimi's repeated macOS Documents permission prompts during database and Flow calls. Stable
+  launchers now use a capability-authenticated loopback bridge to the already-running Desktop instead
+  of executing the App Bundle a second time; plan, approval and receipt gates remain authoritative.
+- Read the database token from the native password store only once per Desktop process. A denied or
+  cancelled Keychain request is not retried by automatic Agent searches; only the user's explicit
+  **Save & test database** action reopens it. Locally rebuilt apps without a stable Apple signing
+  identity may still require one first-use authorization after each rebuild.
+- Stream API provider responses (DeepSeek, OpenAI, OpenRouter, Anthropic). A planning turn longer
+  than five minutes was previously treated as a dropped connection and retried three times, each
+  restarting the generation, so it could never finish. Long turns now complete; the timeout only
+  covers five minutes of complete silence.
+- Add a **Stop** button to the activity panel that ends the running API turn or local CLI agent.
+- Keep one app-level copy of the GeoForge Database catalogue: downloaded when the token is saved
+  (metadata only, about 1,100 records), refreshed at start and every six hours by ETag, kept and
+  marked stale when the server is unreachable. The data panel, the API agent tool and the CLI
+  `obs-search` command all filter that copy locally by bbox, period, variable, category and
+  delivery instead of querying the server per search.
+- Fix API turns being shown as "finished; saving" while the model was still computing, and label
+  automatic plan-repair rounds with their round number.
+- The **Project status** button keeps one fixed name; its state is a colored dot plus tooltip. The
+  Project view panel count now refreshes every 5 s even while the panel is closed.
+- The GeoForge Database card in AI Settings and in the Project status panel shows the local
+  catalogue size, how many records download directly, when it was last synced, and how each kind
+  of agent reaches it (API providers through the search_observation_data tool, CLI agents through
+  the geoforge-db command). Agent access is now a two-way choice: direct or off. The activity bar
+  says "Searching GeoForge Database" while a search runs.
+- When a plan is submitted, the desktop checks every inventory item that names a GeoForge Database
+  record against the local catalogue and records `dataset_id`, delivery, size, coverage and period
+  on it. Unknown ids go back to the agent as validation errors. A whole-product parent (such as the
+  242 GB national CMFD) is refused as a download unit: the agent must pin the regional subset or
+  per-variable-year children. The approval card groups inputs as GeoForge downloads, you must
+  download (with sizes), generated by the run, and missing. Plans with manual downloads are never
+  auto-approved.
+- Manual download handoffs name the exact file inside the Baidu share; the direct-download cap
+  matches the server's 100 MB.
+- Fix the root cause of repeated plan-submission failures with DeepSeek and other API providers:
+  requests set no output token limit (DeepSeek defaults to 4K), so the write_plan tool call carrying
+  plan plus inventory was truncated and the desktop only said "must be JSON objects". Both wires now
+  request 8K output tokens, a truncated tool call is reported to the agent as such, and write_plan
+  accepts two calls (plan first, then data_inventory) as well as JSON strings.
+- One streamed response is capped at 15 minutes; proxy keep-alive lines no longer count as progress.
+- When the user answers the agent's intake question, the desktop enters planning directly instead
+  of waiting for the agent to report intake a second time.
+- The model executable a KI declares in `knowledge_infrastructure.yaml` (for VIC, `vic_classic.exe`)
+  is now a valid plan-step tool: plan validation, the CLI `run-tool` and the API `run_ki_tool` all
+  accept it and write a signed receipt. Before this, a compiled model's run step could not name any
+  legal tool, so the new "model_run must have a tool" gate could never pass.
+- A manual download request stays open until files actually exist at the expected path; asking a
+  question in the chat no longer makes the link and code disappear.
+- Project status gains a "Data in this plan" card listing every inventory item with its real
+  state (ready, waiting for you, pending, missing), taken from receipts and files on disk rather
+  than the agent's words. The manual-download request card now has an "Open download link"
+  button, a copyable target path and a "Files are in place, continue" button, and the chat shows a
+  reminder pointing at Project status (the link and code never enter the chat).
+- At intake and planning the desktop itself matches the study description against the local
+  catalogue (station numbers, basin and river names with their English aliases, keywords) and
+  injects an "available for this study" block into the agent's prompt. The agent must tell the
+  user which records exist, which download automatically and which are manual. Users no longer
+  have to remember that a dataset such as CMFD exists.
+- The database search tool's description and the intake rules also say manual delivery is usable.
+  An inventory item named after a catalogue dataset is pinned to it automatically at plan
+  submission, and the execution-time download accepts that form.
+- The planning and execution contracts now say that a manual-delivery dataset is a normal choice:
+  pin it, and after approval download_observation_data shows the user the link, code and target
+  folder and waits for the files. Agents must not present manual delivery as a dead end.
+- When an execution turn ends without a single signed receipt (no tool run, no download), the chat
+  now carries a "GeoForge verification" line saying so: anything the agent described as produced
+  does not exist until a receipt records it. Before, the agent's prose stood uncontradicted.
+- An API agent that finds the approved plan cannot be carried out can call the new
+  `request_replan(reason)` tool: the desktop moves the project to REPLAN_REQUIRED, revokes the
+  approval and offers `write_plan` at once, so the corrected plan is written in the same turn and
+  the user re-approves it. Before, the agent had to stop and ask for the session to be moved back.
+- When the agent reports REPLAN_REQUIRED during execution, the desktop starts the re-planning turn
+  with the agent's reason and lets it write the corrected plan, instead of waiting for the user to
+  repeat the request. The corrected plan still needs approval.
+- The session list no longer opens projects that live in external folders (Documents, a cloud
+  drive) while listing; they are read only when opened. Every new build used to trigger a macOS
+  folder-permission dialog at start-up because of this.
+- The page retries its start-up requests (the backend may have been stalled by a system permission
+  dialog) and the failure banner offers a Reload button.
+- On macOS the database token now lives in a private file readable only by the current user
+  (`~/Library/Application Support/KISS/secrets/`, mode 0600) instead of the login Keychain. A
+  Keychain item's access list is bound to the app's code signature, and every GeoForge build or
+  update is a new ad-hoc identity, so the consent dialog reappeared on every version. The token
+  is migrated from the Keychain once on first start and never asked for again.
+- A catalogue refresh that is waiting on the Keychain or the network no longer blocks other
+  callers: searches, the settings page and the status line answer from the current local copy
+  while a single background thread does the refresh.
+- After a failed validation the user's next message resumes execution of the same approved plan
+  (the session used to be stuck in FAILED_VALIDATION with no way to rerun or replan).
+- Verified downloads survive a replan: a download receipt stays bound while the same inventory
+  item is pinned and the file's checksum is unchanged, so data is not fetched twice.
+- No more automatic plan approval: every plan waits for the user to click **Approve and start**
+  on the approval card. Previously a plan with nothing left to decide was approved by the desktop
+  and execution began without a click.
+- The approval card is now sectioned: what was understood (KI, coupling, area, period), data
+  grouped as on disk / automatic download / manual download with sizes / generated by the run /
+  missing, steps with their tool and environment count, scientific decisions, and what is waiting
+  on you. The text summary folds away at the bottom.
+- Inputs produced by an earlier step of the same plan no longer count as missing, so multi-step
+  pipelines pass the execution-readiness check.
+- A request to review the plan before anything runs now holds for the whole project: modify and
+  repair rounds are no longer auto-approved just because the note text lacks that request.
+- The database status query no longer touches the Keychain; only a real network refresh and
+  "Save & test database" read the token.
+- Desktop drafts no longer carry server-era data sources (`cmfd_v1`, `mswx_v1` provider ids and
+  server paths). Those inputs are marked for the agent to resolve from the GeoForge Database with
+  an exact dataset_id, and the provider-id choice no longer appears on the approval card. Display
+  names the agent writes, such as `AVHRR_1km_LANDCOVER_1981_1994`, are matched to a catalogue id
+  when exactly one fits.
+
 ## v0.6.52 — 2026-09-03
 
 ### 中文

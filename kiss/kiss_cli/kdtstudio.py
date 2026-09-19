@@ -1182,7 +1182,7 @@ def build_prompt(job_id: str) -> str:
     return f"""[GEOFORGE KI STUDIO — KDT-SINGLE DESKTOP CONTRACT]
 Create a Knowledge Infrastructure for the real {subject} described below.
 KI type: {ki_kind}
-This is a desktop run. The old HydroCraft server paths, databases, Bengbu data,
+This is a desktop run. Private GeoForge server paths, databases, Bengbu data,
 CMFD archives, and server-only generators are NOT available and must never be
 invented, quoted as local files, or used as proof.
 

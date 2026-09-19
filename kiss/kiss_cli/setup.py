@@ -27,6 +27,7 @@ from pathlib import Path
 from . import install, install_locations, paths, port
 
 REQUEST_FILE = "setup-request.json"
+PARTIAL_SUFFIXES = (".part", ".partial", ".crdownload", ".download", ".tmp", ".aria2", ".bc!")
 USER_FILES_DIR = "user-files"
 LOG_FILE = "setup-agent.log"
 REQUEST_KINDS = {"download", "licence", "login", "permission", "choice", "other"}
@@ -223,6 +224,43 @@ def request_for_provider_connection(root: Path, provider: str,
     })
 
 
+def data_path_present(path: Path) -> bool:
+    """A nonempty payload exists, not just a directory or download temporary file.
+
+    This is a handoff check, not proof of dataset completeness or scientific
+    validity. The KI still has to inspect the delivered data before running.
+    Do not follow symlinks or scan hidden cache directories.
+    """
+    partial = PARTIAL_SUFFIXES
+
+    def present(candidate: Path) -> bool:
+        try:
+            if candidate.is_symlink() or candidate.name.startswith("."):
+                return False
+            if candidate.name.lower().endswith(partial):
+                return False
+            if candidate.is_file():
+                return candidate.stat().st_size > 0
+            if candidate.is_dir():
+                return any(present(child) for child in candidate.iterdir())
+        except OSError:
+            return False
+        return False
+
+    return present(Path(path))
+
+
+def download_placed(request: dict | None) -> bool:
+    """True only when every requested destination contains a candidate payload."""
+    rows = (request or {}).get("rows") or []
+    paths = [str(r.get("expected_path") or "").strip() for r in rows if isinstance(r, dict)]
+    if not paths:
+        paths = [str((request or {}).get("expected_path") or "").strip()]
+    if not all(paths):
+        return False  # no destination means delivery cannot be verified
+    return all(data_path_present(Path(p).expanduser()) for p in paths)
+
+
 def resume(root: Path, note: str = "") -> dict | None:
     """Mark the user's part complete so the next agent turn can continue."""
     path = Path(root) / REQUEST_FILE
@@ -404,6 +442,46 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
         built_in_command=runtime_command(models_dir, ki.name, root),
     )
     return live_ki, cfg
+
+
+CLI_SESSION_FILE = ".geoforge-setup-session.json"
+
+
+def cli_session(root: Path, provider: str) -> str | None:
+    """The CLI's own session id from the last setup run of this provider, if any."""
+    path = Path(root) / CLI_SESSION_FILE
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    entry = doc.get(provider) if isinstance(doc, dict) else None
+    sid = (entry or {}).get("id") if isinstance(entry, dict) else None
+    return str(sid) if sid else None
+
+
+def remember_cli_session(root: Path, provider: str, session_id: str) -> None:
+    path = Path(root) / CLI_SESSION_FILE
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict):
+            doc = {}
+    except (OSError, ValueError):
+        doc = {}
+    doc[provider] = {"id": str(session_id), "saved_at": time.time()}
+    path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+
+
+def resume_message(resumed: dict, root: Path) -> str:
+    """What the continuing agent needs after the user's action: no restart, no re-diagnosis."""
+    return (
+        "The user has completed the request you made.\n"
+        f"User note: {resumed.get('user_note') or '(none)'}\n"
+        f"Files supplied: {json.dumps(uploads(root), ensure_ascii=False)}\n"
+        f"Your resume hint: {resumed.get('resume_hint') or '(none)'}\n"
+        "Continue exactly where you stopped. Do not re-read the KI, re-run the diagnosis or "
+        "repeat installation steps that already succeeded; verify only the step that was "
+        "blocked, then finish the setup and run the KI preflight."
+    )
 
 
 def agent_task(ki, cfg, root: Path, *, resumed: dict | None = None,

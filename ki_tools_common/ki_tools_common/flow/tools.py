@@ -17,10 +17,37 @@ def is_ki_tool(root: Path, tool: Path | str) -> bool:
         return False
 
 
+def declared_binaries(root: Path) -> set[Path]:
+    """Executables the KI declares in knowledge_infrastructure.yaml (``binary.path``
+    or ``binaries: [{path}]``).  They live in GeoForge's managed binaries
+    directory, outside the KI package, and are the only way to run a compiled
+    model such as VIC through a receipted step."""
+    doc = Path(root) / "knowledge_infrastructure.yaml"
+    if not doc.is_file() or doc.is_symlink():
+        return set()
+    text = doc.read_text(encoding="utf-8", errors="replace")
+    out: set[Path] = set()
+    for match in re.finditer(r"^\s*(?:-\s*)?path:\s*(\S.*?)\s*$", text, re.M):
+        candidate = Path(match.group(1).strip("'\""))
+        if candidate.is_absolute() and candidate.is_file() and os.access(candidate, os.X_OK):
+            out.add(candidate.resolve())
+    return out
+
+
+def is_declared_binary(root: Path, tool: Path | str) -> bool:
+    try:
+        p = Path(tool)
+        return p.is_absolute() and p.resolve() in declared_binaries(root)
+    except (OSError, ValueError, RuntimeError, TypeError):
+        return False
+
+
 def _is_ki_tool(root: Path, tool: Path | str) -> bool:
     root = Path(root).resolve()
     p = Path(tool)
     p = (root / p).resolve() if not p.is_absolute() else p.resolve()
+    if p in declared_binaries(root):
+        return True
     if root not in p.parents or not p.is_file() or p.name in ("preflight_check.py", "__init__.py"):
         return False
     if not (p.suffix.lower() in (".py", ".sh") or (not p.suffix and os.access(p, os.X_OK))):

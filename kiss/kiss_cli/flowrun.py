@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,123 @@ INTAKE_MARKER = "GEOFORGE_INTAKE"
 _INTAKE_PATTERN = re.compile(
     r"<!--\s*" + INTAKE_MARKER + r"\s*(\{.*?\})\s*-->", re.S)
 
+_DATABASE_HELPER = r'''#!/usr/bin/env python3
+"""Process-local GeoForge Database search adapter.
+
+The real activation token stays in GeoForge Desktop.  This helper receives a
+short-lived loopback capability in its child environment and becomes useless
+as soon as that Desktop process exits.
+"""
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Search GeoForge Database")
+    parser.add_argument("keywords", nargs="?", default="")
+    parser.add_argument("--query", dest="query", default="")
+    parser.add_argument("--bbox", default="", help="min_lon,min_lat,max_lon,max_lat")
+    parser.add_argument("--start", default="", help="YYYY-MM-DD")
+    parser.add_argument("--end", default="", help="YYYY-MM-DD")
+    parser.add_argument("--variable", default="")
+    parser.add_argument("--describe", dest="describe_dataset_id", default="", help="Read the actual source schema before selecting subset variables")
+    parser.add_argument("--resolve", dest="resolve_dataset_id", default="")
+    parser.add_argument("--subset", default="", help="Estimate native-grid server clipping for this dataset; no job is created")
+    parser.add_argument("--time-step", default="", choices=["", "daily", "3hr"])
+    parser.add_argument("--category", default="")
+    parser.add_argument("--delivery", default="", choices=["", "served", "manual"])
+    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--limit", type=int, default=25)
+    args = parser.parse_args()
+    endpoint = os.environ.get("GEOFORGE_AGENT_DATABASE_URL", "").strip()
+    capability = os.environ.get("GEOFORGE_AGENT_DATABASE_TOKEN", "").strip()
+    if not endpoint or not capability:
+        print("GeoForge Database is not available in this agent session. Start the search from GeoForge Desktop.", file=sys.stderr)
+        return 3
+    params = urllib.parse.urlencode({
+        "q": args.query or args.keywords,
+        "bbox": args.bbox, "start": args.start, "end": args.end,
+        "variable": args.variable, "category": args.category, "delivery": args.delivery,
+        "describe_dataset_id": args.describe_dataset_id,
+        "resolve_dataset_id": args.resolve_dataset_id, "time_step": args.time_step,
+        "subset_dataset_id": args.subset, "cwd": os.getcwd() if args.subset else "",
+        "offset": max(0, args.offset),
+        "limit": max(1, min(args.limit, 100)),
+    })
+    request = urllib.request.Request(
+        endpoint + ("&" if "?" in endpoint else "?") + params,
+        headers={"X-GeoForge-Agent-Token": capability, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.loads(error.read().decode("utf-8", "replace")).get("message")
+        except Exception:
+            detail = None
+        print("GeoForge Database search failed: " + (detail or f"HTTP {error.code}"), file=sys.stderr)
+        return 3
+    except Exception as error:
+        print(f"GeoForge Database search failed: {type(error).__name__}: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+_FLOW_HELPER = r'''#!/usr/bin/env python3
+"""Forward one gated flow command to the owning GeoForge Desktop process."""
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+
+def main():
+    endpoint = os.environ.get("GEOFORGE_AGENT_FLOW_URL", "").strip()
+    capability = os.environ.get("GEOFORGE_AGENT_DATABASE_TOKEN", "").strip()
+    if not endpoint or not capability:
+        print("GeoForge flow command is unavailable outside its Desktop agent session.", file=sys.stderr)
+        return 3
+    body = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint, data=body, method="POST",
+        headers={"X-GeoForge-Agent-Token": capability, "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=None) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.loads(error.read().decode("utf-8", "replace")).get("message")
+        except Exception:
+            detail = None
+        print(detail or f"GeoForge flow command failed: HTTP {error.code}", file=sys.stderr)
+        return 3
+    except Exception as error:
+        print(f"GeoForge flow command failed: {type(error).__name__}: {error}", file=sys.stderr)
+        return 1
+    if result.get("stdout"):
+        print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
+    if result.get("stderr"):
+        print(result["stderr"], end="" if result["stderr"].endswith("\n") else "\n", file=sys.stderr)
+    return int(result.get("returncode", 1))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -45,6 +163,31 @@ def catalogue_entries(catalog) -> list[dict]:
 
 def _flow():
     return flowgate.load()
+
+
+_SERVER_STRATEGIES = ("from_forcing_provider", "from_dataset_lookup")
+_CATALOGUE_HINT = "GeoForge Database: search by variable, place and period, then pin dataset_id"
+
+
+def _localize_draft(plan: dict, inventory: dict) -> None:
+    """Strip server-era data sources from a desktop draft.
+
+    The bundled planner cards still name the server's forcing providers
+    (``cmfd_v1``, ``mswx_v1`` …) and dataset lookups, none of which exist on a
+    desktop.  Those items become honest gaps the Agent fills from the GeoForge
+    Database, and the provider-id choice disappears from the approval card.
+    """
+    for item in inventory.get("items") or []:
+        if not isinstance(item, dict) or item.get("strategy") not in _SERVER_STRATEGIES:
+            continue
+        item.update({"status": "missing", "chosen_source": None,
+                     "acceptable_sources": [_CATALOGUE_HINT],
+                     "needs_user": False, "agent_resolvable": True,
+                     "rationale": "desktop: no local data service; pick an exact GeoForge "
+                                  "Database dataset_id during planning"})
+    plan["scientific_choices"] = [
+        c for c in plan.get("scientific_choices") or []
+        if not (isinstance(c, dict) and c.get("kind") == "forcing_source")]
 
 
 def _data_roots(flow, repo_root: Path | None):
@@ -79,6 +222,20 @@ def _explicit_positive_model_mention(text: str, model: str) -> bool:
             if not negation.search(text[max(0, match.start() - 48):match.start()]):
                 return True
     return False
+
+
+def current_state(project: Path) -> str:
+    """The flow state name on disk, or '' when the project has no flow yet."""
+    try:
+        return _flow().states.FlowContext.load(Path(project)).state.value
+    except Exception:  # noqa: BLE001 — no flow, unreadable state: not a flow project
+        return ""
+
+
+def replan_reason_from(reply: str) -> str:
+    """The agent's own words after the REPLAN_REQUIRED marker, for the re-planning turn."""
+    match = re.search(REPLAN_MARKER + r"\s*[:：]?\s*([^\n]{1,400})", reply or "")
+    return match.group(1).strip() if match else ""
 
 
 def display_stage(flow, state) -> str:
@@ -119,17 +276,119 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
                            replan_reason="The plan or inventory changed after review. Review this revision before approval.")
         setup_flow.clear_request(project)
         if choice == "approve":
+            from . import obs_subset, obs_access
+            pj, inv = flow.plan.read_artifacts(project)
+            picks = action.get("choices") if isinstance(action.get("choices"), dict) else {}
+            repinned = apply_data_choices(pj, inv, picks) if picks else []
+            if repinned:
+                # The user chose different data on the card: re-pin, re-stamp (incl. the
+                # host's clip check), rewrite the plan files and show the card again unsigned.
+                errs = obs_access.stamp_inventory(inv, project=project)
+                flow.plan.write_artifacts(project, pj, inv)
+                chosen = set(ctx.selected_kis or names)
+                roots = {k.name: Path(k.root) for k in catalog if k.name in chosen}
+                fs = flowgate.FlowSession.open(project, roots, database_access_mode="direct")
+                note_text = str(((pending or {}).get("plan_review") or {}).get("tool_policy") or "")
+                _issue_card(project, fs, pj, inv, note_text,
+                            extra_why=(["data re-pinned to your choice: " + ", ".join(repinned)] + errs))
+                return Pre(names=list(ctx.selected_kis or names),
+                           message="Data re-pinned to your choice: " + ", ".join(repinned)
+                                   + ". The updated card is in the chat; approve it to start.")
+            if picks:
+                for c in pj.get("scientific_choices") or []:
+                    if isinstance(c, dict) and c.get("kind") == "data_source" and picks.get(str(c.get("id"))):
+                        c["decision"] = picks[str(c.get("id"))]
+                flow.plan.write_artifacts(project, pj, inv)
+                pj, inv = flow.plan.read_artifacts(project)
+            # Fresh numbers for every server clip before anything is signed. If a
+            # clip grew or its source changed, the card comes back unsigned.
+            changed = obs_subset.refresh_inventory(project, inv)
+            stamp_errors = obs_access.stamp_inventory(inv, project=project) if changed else []
+            for err in stamp_errors:
+                changed.setdefault("inventory", []).append(err)
+            if changed:
+                flow.plan.write_artifacts(project, pj, inv)
+                chosen = set(ctx.selected_kis or names)
+                roots = {k.name: Path(k.root) for k in catalog if k.name in chosen}
+                fs = flowgate.FlowSession.open(project, roots, database_access_mode="direct")
+                why = [f"{item}: {'; '.join(reasons)}" for item, reasons in changed.items()]
+                note_text = str(((pending or {}).get("plan_review") or {}).get("tool_policy") or "")
+                _issue_card(project, fs, pj, inv, note_text,
+                            extra_why=["clip estimates changed since you reviewed: "] + why)
+                return Pre(names=list(ctx.selected_kis or names),
+                           message="The server clip estimates changed since you reviewed the plan: "
+                                   + "; ".join(why) + ". The updated card is in the chat; approve again if it still fits.")
             verdict = flow.approval.check(project)
             if verdict != "OK":
                 # (re)approve the CURRENT plan files by the user's click
                 flow.approval.approve(project, {"note": note} if note else {}, by="user")
+            # Approving the plan approves its data: start the server clips now.
+            # A creation that fails here is retried by the execution turn.
+            for r in obs_subset.approve_inventory(project, inv):
+                if not r["ok"]:
+                    projectrun.report(project, {"status": "needs_attention",
+                                                "summary": f"clip job for {r['item']} not started: {r['error']}"},
+                                      source="flow")
+            try:
+                obs_subset.bind_approved(project)
+            except (ValueError, OSError, KeyError):
+                obs_access._atomic_json(Path(project) / '.geoforge/data-binding-status.json', {
+                    'status': 'needs_review',
+                    'message': 'Data binding failed: check the selected acquisition scope and intact file evidence. '
+                               'Approval was saved, but dependent steps remain blocked.'})
             ctx.move("approved", {"approval": flow.approval.check(project)})
-            _start_execution(flow, ctx, project, setup_ok)
+            result = _start_execution(flow, ctx, project, setup_ok)
+            if ctx.state in (S.ACQUIRING, S.BLOCKED):
+                # the host is still fetching data (or hit a wall): no agent turn yet
+                return Pre(names=list(ctx.selected_kis or names), message=_acquisition_message(result))
             return Pre(names=list(ctx.selected_kis or names), message=None)
         # modify → back to planning with the note as the reason
         ctx.move("modify")
         projectrun.set_stage(project, display_stage(flow, ctx.state), "Revising the plan")
         return Pre(names=list(ctx.selected_kis or names), replan_reason=note or "user asked for changes")
+
+    # 1b. the acquisition-blocked card: retry the missing data or go back to planning
+    if pending and str(pending.get("id")) == BLOCKED_REQUEST_ID and action \
+            and str(action.get("request_id")) == str(pending.get("id")):
+        setup_flow.clear_request(project)
+        if str(action.get("option_id")) == "retry":
+            ctx.move("retry_acquire", {"approval": flow.approval.check(project)})
+            result = acquire_then_continue(flow, ctx, project, setup_ok)
+            return Pre(names=list(ctx.selected_kis or names),
+                       message=None if result["status"] == "done" else _acquisition_message(result))
+        flow.approval.revoke(project, "user asked to modify the plan after a data failure")
+        ctx.move("unblocked")
+        return Pre(names=list(ctx.selected_kis or names), replan_reason=note or "user asked for changes after a data failure")
+
+    # 1c. while the host is acquiring data, a message (or "files are in place") re-runs the pass
+    if ctx.state is S.BLOCKED:
+        from . import acquire
+        current = setup_flow.request(project)
+        if not (current and current.get("status") == "waiting" and current.get("id") == BLOCKED_REQUEST_ID):
+            _acquisition_card(project, acquire.status(project))      # the card was dismissed: show it again
+        return Pre(names=list(ctx.selected_kis or names), message=_acquisition_message(acquire.status(project)))
+    if ctx.state is S.ACQUIRING:
+        from . import acquire
+        if action and str(action.get("request_id")) == acquire.MANUAL_REQUEST_ID \
+                and str(action.get("option_id")) == "modify":
+            # the manual-download card's "change the plan": drop the approval, replan now
+            setup_flow.clear_request(project)
+            flow.approval.revoke(project, "user asked to modify the plan while data was pending")
+            ctx.move("modify")
+            projectrun.set_stage(project, display_stage(flow, ctx.state), "Revising the plan")
+            return Pre(names=list(ctx.selected_kis or names), replan_reason=note or text or "user asked for changes")
+        result = acquire_then_continue(flow, ctx, project, setup_ok)
+        if result["status"] == "done":
+            return Pre(names=list(ctx.selected_kis or names), message=None)
+        return Pre(names=list(ctx.selected_kis or names), message=_acquisition_message(result))
+
+    # 1d. continuing after a failed run: rerun under the same approval (through ACQUIRING)
+    if ctx.state in (S.FAILED, S.FAILED_VALIDATION) and flow.approval.check(project) == "OK":
+        ctx.move("rerun", {"approval": "OK"})
+        result = _start_execution(flow, ctx, project, setup_ok)
+        if ctx.state in (S.ACQUIRING, S.BLOCKED):
+            return Pre(names=list(ctx.selected_kis or names), message=_acquisition_message(result))
+        return Pre(names=list(ctx.selected_kis or names))
 
     # 2. ordinary chat stays ungated until a scientific task starts a flow — with or
     #    without a pinned KI ("thanks" in a VIC chat is not a run request)
@@ -179,9 +438,58 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
     return Pre(names=list(ctx.selected_kis or res.resolved or names))
 
 
-def _start_execution(flow, ctx, project: Path, setup_ok: bool) -> None:
-    """APPROVED → EXECUTING when every selected KI's software is verified, else the SETUP
-    sub-flow (plan v2 §5 item 2). The execution turn starts a fresh agent session."""
+BLOCKED_REQUEST_ID = "flow-acquisition-blocked"
+
+
+def _acquisition_card(project: Path, result: dict) -> dict:
+    failed = [f"{k}: {v.get('error')}" for k, v in (result.get("items") or {}).items() if v.get("status") == "failed"]
+    doc = setup_flow.request_user(project, {
+        "kind": "choice", "title": "Some approved data could not be fetched",
+        "message": "GeoForge could not bring in every input of the approved plan:\n  " + "\n  ".join(failed[:8])
+                   + "\n\nRetry fetches only the missing items. Modify sends the plan back to the agent with your note.",
+        "allow_note": True,
+        "options": [
+            {"id": "retry", "label": "Retry the missing data", "response": "Retry the data acquisition."},
+            {"id": "modify", "label": "Modify the plan", "response": "Please revise the plan."},
+        ]})
+    doc["id"] = BLOCKED_REQUEST_ID
+    (Path(project) / setup_flow.REQUEST_FILE).write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    projectrun.report(project, {"status": "waiting_for_user", "summary": doc["title"], "blocker": doc}, source="flow")
+    return doc
+
+
+def acquire_then_continue(flow, ctx, project: Path, setup_ok: bool) -> dict:
+    """Run the host acquisition pass from ACQUIRING and move on when it is complete.
+
+    Returns the pass result; its status is done (now APPROVED→EXECUTING/SETUP), pending
+    (server clip still processing), waiting (user must place files) or failed (BLOCKED).
+    Serialized per project with the panel poll so two passes never overlap."""
+    with _acq_lock(project):
+        return _acquire_pass(flow, ctx, project, setup_ok)
+
+
+def _acquire_pass(flow, ctx, project: Path, setup_ok: bool) -> dict:
+    from . import acquire
+    result = acquire.run(project)
+    state = result["status"]
+    if state == "done":
+        ctx.move("acquired", {"data_receipted": True})
+        _enter_execution(flow, ctx, project, setup_ok)
+    elif state == "failed":
+        ctx.move("acquisition_failed")
+        _acquisition_card(project, result)
+        projectrun.set_stage(project, display_stage(flow, ctx.state), "Some approved data could not be fetched")
+    else:
+        waiting = [k for k, v in result["items"].items() if v.get("status") == "waiting"]
+        pending = [k for k, v in result["items"].items() if v.get("status") == "pending"]
+        projectrun.set_stage(project, display_stage(flow, ctx.state),
+                             ("Waiting for you to place: " + ", ".join(waiting)) if waiting
+                             else ("Fetching approved data: " + ", ".join(pending)))
+    ctx.save()
+    return result
+
+
+def _enter_execution(flow, ctx, project: Path, setup_ok: bool) -> None:
     if setup_ok:
         ctx.move("execution_started", {"setup_verified": True})
         projectrun.set_stage(project, display_stage(flow, ctx.state), "Approved — running the plan")
@@ -189,6 +497,71 @@ def _start_execution(flow, ctx, project: Path, setup_ok: bool) -> None:
         ctx.move("setup_needed")
         projectrun.set_stage(project, display_stage(flow, ctx.state),
                              "Approved — the scientific software must be set up first")
+
+
+_ACQ_POLL: dict[str, float] = {}
+_ACQ_POLL_LOCK = threading.Lock()
+_ACQ_RUN_LOCKS: dict[str, threading.Lock] = {}
+ACQ_POLL_SECONDS = 8.0
+
+
+def _acq_lock(project: Path) -> threading.Lock:
+    # ponytail: one lock per project for the process lifetime; the dict never shrinks
+    with _ACQ_POLL_LOCK:
+        return _ACQ_RUN_LOCKS.setdefault(str(Path(project).resolve()), threading.Lock())
+
+
+def poll_acquisition(project: Path, setup_ok: bool) -> str | None:
+    """Advance an ACQUIRING project from a status poll (no user message needed).
+
+    Rate-limited per project and never overlapping a chat-driven pass; safe to call
+    from the panel's refresh loop. Returns the pass status when one ran, else None."""
+    project = Path(project)
+    flow = _flow()
+    ctx = flow.states.FlowContext.load(project)
+    if ctx.state is not flow.states.State.ACQUIRING:
+        return None
+    key = str(project.resolve())
+    with _ACQ_POLL_LOCK:
+        last = _ACQ_POLL.get(key, 0.0)
+        if time.time() - last < ACQ_POLL_SECONDS:
+            return None
+        _ACQ_POLL[key] = time.time()
+    lock = _acq_lock(project)
+    if not lock.acquire(blocking=False):
+        return None                       # a chat-driven pass is running
+    try:
+        ctx = flow.states.FlowContext.load(project)   # re-read under the lock
+        if ctx.state is not flow.states.State.ACQUIRING:
+            return None
+        return _acquire_pass(flow, ctx, project, setup_ok)["status"]
+    except Exception:  # noqa: BLE001 — a poll must never break the panel
+        return None
+    finally:
+        lock.release()
+
+
+def _acquisition_message(result: dict) -> str:
+    state = result.get("status")
+    items = result.get("items") or {}
+    if state == "waiting":
+        rows = [f"`{v.get('expected_path')}`" for v in items.values() if v.get("status") == "waiting"]
+        return ("**GeoForge needs you:** place the Baidu Pan dataset(s) at " + ", ".join(rows)
+                + ". The link and extraction code are in **Project status**. Then click "
+                "**Files are in place, continue**. Nothing runs until the files are there.")
+    if state == "pending":
+        rows = [f"{k} ({v.get('job_status')})" for k, v in items.items() if v.get("status") == "pending"]
+        return ("**GeoForge is fetching the approved data:** " + ", ".join(rows)
+                + ". Send any message to check again; the run starts when every input has a receipt.")
+    return "**Some approved data could not be fetched.** Use the card in the chat to retry or modify the plan."
+
+
+def _start_execution(flow, ctx, project: Path, setup_ok: bool) -> dict:
+    """APPROVED → ACQUIRING (host fetches every approved input) → APPROVED → EXECUTING when
+    every selected KI's software is verified, else the SETUP sub-flow. The execution turn
+    starts a fresh agent session."""
+    ctx.move("acquire", {"approval": flow.approval.check(project)})
+    return acquire_then_continue(flow, ctx, project, setup_ok)
 
 
 # ---------------------------------------------------------------------------
@@ -210,21 +583,43 @@ class Turn:
     project_before: dict = field(default_factory=dict)
     provider_succeeded: bool | None = None
     confirmation_required: bool = False
+    started_at: float = 0.0                # wall clock when the turn was handed to the provider
+
+
+def _receipts_since(project: Path, since: float) -> int:
+    """Signed receipts (runs and downloads) written after *since*."""
+    count = 0
+    for sub in ("model-runs", "data-receipts"):
+        folder = Path(project) / ".geoforge" / "receipts" / sub
+        if folder.is_dir():
+            count += sum(1 for f in folder.glob("*.json") if f.stat().st_mtime >= since)
+    return count
 
 
 def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
          repo_root: Path | None, goal: str, replan_reason: str = "",
-         base_allowed_tools: list[str] | None = None) -> Turn | None:
+         base_allowed_tools: list[str] | None = None,
+         database_access_mode: str = "direct") -> Turn | None:
     """resolved = the live KI objects (name, root) the agent will see."""
     flow = _flow()
     S = flow.states.State
     ki_roots = {k.name: Path(k.root) for k in resolved}
-    fs = flowgate.FlowSession.open(project, ki_roots, python=str(getattr(cfg, "python", "") or "python3"))
+    fs = flowgate.FlowSession.open(
+        project, ki_roots, python=str(getattr(cfg, "python", "") or "python3"),
+        database_access_mode=database_access_mode)
     state = fs.state
     provider = "api" if provider_kind == "api" else provider_name
     wrappers = wrapper_commands() if provider != "api" else None
+    if wrappers and database_access_mode == "off":
+        wrappers = dict(wrappers)
+        wrappers.pop("obs_search", None)
+        wrappers.pop("obs_download", None)
 
     if state in (S.PLANNING, S.REPLAN_REQUIRED):
+        planning_wrappers = wrappers
+        if planning_wrappers and database_access_mode != "direct":
+            planning_wrappers = dict(planning_wrappers)
+            planning_wrappers.pop("obs_search", None)
         # the app derives the draft plan; the agent corrects it
         if fs.plan is None or fs.inventory is None or state is S.REPLAN_REQUIRED and replan_reason:
             roots = _data_roots(flow, repo_root)
@@ -236,6 +631,7 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
                     intent[key] = intake[key]
             try:
                 _full, pj, inv = flow.plan.derive(list(ki_roots), intent, goal, roots, ki_roots)
+                _localize_draft(pj, inv)
             except Exception as e:  # noqa: BLE001 — a missing card is a planning fact, not a crash
                 pj, inv = {"schema_version": "1.0", "goal": goal, "selected_kis": list(ki_roots),
                            "coupling": [], "intent": intent, "steps": [], "scientific_choices": [],
@@ -248,7 +644,8 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
         edges = flow.resolve.couplings_for(list(ki_roots), _data_roots(flow, repo_root).couplings, one_end=True)
         partners = [e["partner_missing"] for e in edges if e.get("partner_missing")]
         pp = flow.policy.for_state(state, provider, project, ki_roots,
-                                   python=str(getattr(cfg, "python", "") or "python3"))
+                                   python=str(getattr(cfg, "python", "") or "python3"),
+                                   wrappers=planning_wrappers)
         wt = _planning_worktree(project) if pp.planning_worktree else None
         draft_root = wt or project
         draft_plan, draft_inv = flow.plan.read_artifacts(draft_root)
@@ -256,7 +653,18 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
                                               draft_plan if isinstance(draft_plan, dict) else {},
                                               draft_inv if isinstance(draft_inv, dict) else {}, draft_root,
                                               partners_to_ask=sorted(set(partners)) or None,
-                                              replan_reason=replan_reason)
+                                              replan_reason=replan_reason,
+                                              wrappers=planning_wrappers,
+                                              database_access_mode=database_access_mode)
+        if database_access_mode == "direct":
+            # What the database holds for this study, derived by the desktop, so the
+            # agent presents real options instead of waiting to be told they exist.
+            from . import obs_access
+            store = obs_access.load_catalogue() or {}
+            known = projectrun.load(project).get("intake") or {}
+            extra += "\n" + obs_access.study_hint_block(
+                store.get("datasets") or [], goal, known.get("study_area"),
+                known.get("understanding"), known.get("process"))
         extra += (f"\n[PLAN HANDOFF] Save BOTH JSON files under {draft_root / 'runs'}, even if "
                   "your review leaves their content unchanged. The app must observe a submission "
                   "from this turn; an untouched auto-draft is never a completed plan. "
@@ -270,7 +678,14 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
         import uuid
         import re
         confirm = bool(re.search(r"未确认|先只|只做|先.*规划|plan(?:ning)?[- ]only|do not|don't|before.*approv", goal, re.I))
-        return Turn(fs, False, extra, True, pp, f"flow:{state.value}:{uuid.uuid4().hex}", wt, wrappers or {},
+        # "Plan first, I approve before anything runs" holds for the whole project,
+        # including repair and modify rounds whose goal text is only the user's note.
+        review_flag = project / ".geoforge" / "plan-review-requested"
+        if confirm:
+            review_flag.parent.mkdir(parents=True, exist_ok=True)
+            review_flag.touch()
+        confirm = confirm or review_flag.is_file()
+        return Turn(fs, False, extra, True, pp, f"flow:{state.value}:{uuid.uuid4().hex}", wt, planning_wrappers or {},
                     draft_before=_plan_versions(draft_root), project_before=_plan_versions(project),
                     confirmation_required=confirm)
 
@@ -282,12 +697,31 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
                         replan_reason="the plan files changed after approval")
         extra = flow.contracts.execution_block(ki_roots, fs.plan or {}, fs.approval_doc or {}, project,
                                                provider=provider, wrappers=wrappers)
+        # Projects approved before ACQUIRING existed, or a replan that added data: one
+        # idempotent host pass brings the approved inputs in before the agent runs steps.
+        try:
+            from . import acquire
+            acq = acquire.run(project)
+        except Exception as error:  # noqa: BLE001 — network trouble is reported, not fatal
+            acq = {"status": "failed", "items": {}, "error": str(error)}
+        if acq.get("status") != "done":
+            unfinished = [f"{k}: {v.get('status')}{' (' + str(v.get('error')) + ')' if v.get('error') else ''}"
+                          for k, v in (acq.get("items") or {}).items() if v.get("status") != "done"]
+            extra += ("\n[DATA STATUS] GeoForge has not finished bringing in these approved inputs: "
+                      + "; ".join(unfinished or [acq.get("error", "unknown")])
+                      + ". Do not run steps that need them and do not fetch them yourself; "
+                      "run the other steps or call request_replan if the plan must change.\n")
         pp = flow.policy.for_state(state, provider, project, ki_roots,
                                    python=str(getattr(cfg, "python", "") or "python3"),
                                    base_allowed_tools=base_allowed_tools, wrappers=wrappers)
         fs.ctx.enforcement = flow.states.Enforcement(pp.enforcement.value); fs.ctx.save()
         return Turn(fs, True, extra, True, pp, f"flow:{state.value}:{fs.approval_id}", None, wrappers or {},
-                    kind="execution")
+                    kind="execution", started_at=time.time())
+
+    if state in (S.ACQUIRING, S.BLOCKED):
+        # pre() already ran the acquisition pass and replied, or the blocked card is
+        # waiting for a click; nothing for an agent to do.
+        return None
 
     if state in (S.SETUP_REQUIRED, S.SETUP_RUNNING):
         pp = flow.policy.for_state(state, provider, project, ki_roots)
@@ -372,26 +806,303 @@ def _planning_failure(project: Path, t: Turn, errors: list[str], *, repair: bool
     return Result(message=message, retry_planning=repair, revision=fingerprint)
 
 
+def _ki_roots_for(plan: dict, project: Path | None) -> dict[str, Path]:
+    """The materialised KI folders of the plan's KIs inside the project (models/<KI>/ki)."""
+    roots = {}
+    for name in plan.get("selected_kis") or []:
+        if project is None:
+            continue
+        cand = Path(project) / "models" / str(name) / "ki"
+        if (cand / "dag.yaml").is_file():
+            roots[str(name)] = cand
+    return roots
+
+
+def _data_groups(plan: dict, inv: dict, project: Path | None = None) -> dict:
+    """Inputs in the three groups the user needs: fetch / you / run.
+
+    Decided by the host from facts, never from the agent's bookkeeping: the catalogue
+    delivery, the plan's step outputs, files on disk, and the KI's own declaration of
+    each input (source kind, format, notes, the tool that prepares it). See
+    ki_tools_common.flow.declared."""
+    from . import obs_access
+    flow = _flow()
+    items = [it for it in inv.get("items") or [] if isinstance(it, dict)]
+    produced = {str(o) for st in plan.get("steps") or [] if isinstance(st, dict)
+                for o in st.get("outputs") or []}
+    declared = ()
+    for root in _ki_roots_for(plan, project).values():
+        declared = declared + flow.declared.declared_inputs(str(root))
+
+    def _row(it, verdict):
+        cat = it.get("catalogue") or {}
+        return {"id": it.get("id"), "for": list(it.get("required_by") or []),
+                "resolution": cat.get("resolution"),
+                "dataset_id": it.get("dataset_id"), "size": cat.get("size"),
+                "size_label": obs_access.size_label(cat.get("size")),
+                "name": cat.get("name"), "how": verdict["how"],
+                "declared": (verdict.get("declared") or {}).get("name"),
+                "facts": {k: (verdict.get("declared") or {}).get(k) for k in ("format", "unit", "notes", "default_tool")},
+                "target_path": f"inputs/user/{it.get('id')}" if verdict["how"] == "provide" else None,
+                "note": flow.declared.instructions(it, verdict),
+                "period": [cat.get("start_date"), cat.get("end_date")] if cat.get("start_date") else None}
+
+    groups = {"fetch": [], "you": [], "run": []}
+    for it in items:
+        verdict = flow.declared.classify(it, declared, produced)
+        groups[verdict["group"]].append(_row(it, verdict))
+    return {"total": len(items), **groups}
+
+
+def plan_data_status(project: Path) -> dict | None:
+    """Every input of the approved/drafted plan with what has happened to it.
+
+    done: on disk with a receipt or a present local path; waiting_for_you: the
+    manual download GeoForge is currently asking the user for; pending: not yet
+    downloaded or generated; missing: no source at all."""
+    project = Path(project)
+    try:
+        flow = _flow()
+        pj, inv = flow.plan.read_artifacts(project)
+    except Exception:  # noqa: BLE001 — no flow or unreadable plan: no plan data
+        return None
+    if not isinstance(pj, dict) or not isinstance(inv, dict):
+        return None
+    from . import obs_access
+    groups = _data_groups(pj, inv, project)
+    by_id = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
+    receipted: set[str] = set()
+    acquisitions: dict[str, dict] = {}
+    for f in (project / ".geoforge" / "receipts" / "data-receipts").glob("*.json"):
+        try:
+            receipt = json.loads(f.read_text(encoding="utf-8"))
+            if (isinstance(receipt, dict) and receipt.get("kind") == "download"
+                    and flow.receipts.verify(project, receipt)
+                    and flow.receipts._download_still_valid(project, receipt, inv)):
+                receipted.add(str(receipt.get("item_id")))
+                if receipt.get('acquisition'):
+                    acquisitions[str(receipt.get('item_id'))] = receipt['acquisition']
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    try:
+        passed = set(json.loads((project / "runs" / "evidence.json").read_text(encoding="utf-8")).get("steps_passed") or [])
+    except (OSError, json.JSONDecodeError):
+        passed = set()
+    produced_by = {str(o): str(st.get("id")) for st in pj.get("steps") or [] if isinstance(st, dict)
+                   for o in st.get("outputs") or []}
+    request = setup_flow.request(project)
+    waiting_title = str(request.get("title") or "") if request and request.get("status") == "waiting" else ""
+    waiting_items = {str(r.get("item_id")) for r in (request or {}).get("rows") or []} if waiting_title else set()
+    from . import acquire
+    acq_items = acquire.status(project).get("items") or {}
+
+    def _local(item: dict) -> bool:
+        for raw in item.get("local_paths") or []:
+            path = Path(str(raw).replace("${PROJECT}", str(project)))
+            if not path.is_absolute():
+                path = project / path
+            if setup_flow.data_path_present(path):
+                return True
+        return False
+
+    rows: list[dict] = []
+    consumed = {str(i) for st in pj.get("steps") or [] if isinstance(st, dict) for i in st.get("inputs") or []}
+    for group in ("fetch", "you", "run"):
+        for row in groups[group]:
+            item = by_id.get(str(row.get("id")), {})
+            dataset_id = row.get("dataset_id") or ""
+            how = row.get("how")
+            if str(row.get("id")) not in consumed and how not in ("generated", "on_disk"):
+                status = "unused"          # listed by the agent, used by no step: nothing fetches it
+            elif how == "generated":
+                status = "done" if produced_by.get(str(row.get("id"))) in passed else "pending"
+            elif how in ("prepared", "default"):
+                status = "pending"
+            elif how == "provide":
+                target = project / str(row.get("target_path") or "")
+                status = "done" if any(p.is_file() and not p.name.startswith(".") for p in target.rglob("*")) \
+                    else "waiting_for_you"
+            elif how == "choose":
+                status = "waiting_for_you"
+            elif str(row.get('id')) in acquisitions:
+                status = 'acquired'
+            elif str(row.get("id")) in receipted or (how == "on_disk" and _local(item)):
+                status = "done"
+            elif how == "manual" and (str(row.get("id")) in waiting_items
+                                      or (waiting_title and waiting_title.endswith(dataset_id or str(row.get("id"))))):
+                status = "waiting_for_you"
+            elif (acq_items.get(str(row.get("id"))) or {}).get("status") == "failed":
+                status = "failed"
+            else:
+                status = "pending"
+            requirements = item.get("requirements") or {}
+            try:
+                match = obs_access.assess_dataset(item.get("catalogue") or {}, **{
+                    k: requirements[k] for k in ("bbox", "start", "end", "variable")
+                    if isinstance(requirements, dict) and requirements.get(k)})
+            except (TypeError, ValueError):
+                match = {"status": "unknown", "checks": {}, "note": "Invalid data requirements"}
+            if match["status"] == "insufficient":
+                action = "choose_data"
+            elif status in {"done", "acquired"}:
+                action = "agent_validate"
+            elif item.get('delivery') == 'subset':
+                action = 'acquire_subset'
+            elif group == "generated":
+                action = "agent_prepare"
+            elif item.get("delivery") == "manual":
+                action = "manual_download"
+            elif item.get("delivery") == "served":
+                action = "agent_download" if match["status"] == "covered" else "check_coverage"
+            else:
+                action = "choose_data" if how == "provide" else "check_coverage"
+            rows.append({"id": row.get("id"), "group": group, "how": how, "note": row.get("note"),
+                         "facts": row.get("facts"), "target_path": row.get("target_path"), "status": status,
+                         "action": action, "match": match,
+                         "resolution": (item.get("catalogue") or {}).get("resolution"),
+                         "size": (item.get("catalogue") or {}).get("size"),
+                         'acquisition_id': item.get('acquisition_id'),
+                         'scientific_validation': 'pending' if item.get('acquisition_id') else None,
+                         "dataset_id": dataset_id or None, "size_label": row.get("size_label") or "",
+                         "for": row.get("for") or [], "delivery": item.get("delivery")})
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    binding_status = obs_access._read_snapshot(project / '.geoforge/data-binding-status.json') or {}
+    return {"items": rows, "counts": counts, "total": len(rows), 'binding_status': binding_status}
+
+
+def _data_summary(plan: dict, inv: dict, project: Path | None = None) -> str:
+    """The text twin of the card's data section: fetch / you / run."""
+    from . import obs_access
+    g = _data_groups(plan, inv, project)
+    by_id = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
+    lines = [f"Data: {g['total']} inputs"]
+    if g["fetch"]:
+        lines.append(f"  ✓ GeoForge fetches after approval ({len(g['fetch'])})")
+        for r in g["fetch"][:8]:
+            it = by_id.get(str(r["id"]), {})
+            es = it.get("estimate_summary") or {}
+            what = (f"server clip, {obs_access.size_label(es.get('bytes')) or 'size unknown'}, {es.get('n_parts') or '?'} files"
+                    if r["how"] == "clip" else f"{r['size_label'] or 'size unknown'}")
+            lines.append(f"    {r['id']} ← {r['dataset_id']} ({what})")
+    if g["you"]:
+        lines.append(f"  ⬇ you ({len(g['you'])})")
+        for r in g["you"][:8]:
+            if r["how"] == "manual":
+                lines.append(f"    download {r['dataset_id']} ({r['size_label'] or 'size unknown'}) from the Baidu link GeoForge shows after approval → {r['id']}")
+            else:
+                lines.append(f"    {r['id']}: {r['note'] or 'provide it'}")
+    if g["run"]:
+        kinds = {"on_disk": "already on disk", "generated": "made by a step", "default": "KI default method",
+                 "prepared": "prepared during the run"}
+        counts = {}
+        for r in g["run"]:
+            counts[r["how"]] = counts.get(r["how"], 0) + 1
+        lines.append("  ⚙ the run prepares itself (" + ", ".join(f"{n} {kinds[k]}" for k, n in counts.items()) + ")")
+    for it in inv.get("items") or []:
+        res = ((it or {}).get("catalogue") or {}).get("resolution") or {}
+        if isinstance(it, dict) and res.get("spatial_filter_applied") is False:
+            lines.append(f"  {it.get('id')}: uncut delivery extent {res.get('delivery_extent')}; "
+                         f"study bbox {res.get('requested_bbox')}; local extraction required.")
+    return "\n".join(lines)
+
+
+def _data_choices(plan: dict, inv: dict) -> list[dict]:
+    """The candidates the agent considered per input, with catalogue facts, for the card.
+
+    This is the missing step the user asked for: what the database holds for each input,
+    shown before approval, with the recommendation preselected and the user free to pick."""
+    from . import obs_access
+    store = obs_access.load_catalogue() or {}
+    by_id = {str(d.get("id")): d for d in store.get("datasets") or [] if d.get("id")}
+    items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
+    out = []
+    for c in plan.get("scientific_choices") or []:
+        if not isinstance(c, dict) or c.get("kind") != "data_source":
+            continue
+        item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
+        options = []
+        for ds in c.get("options") or []:
+            rec = by_id.get(str(ds))
+            if rec is None:
+                continue                # invented ids never reach the user
+            options.append({"dataset_id": str(ds), "name": rec.get("name"), "delivery": rec.get("delivery"),
+                            "size": rec.get("size"), "size_label": obs_access.size_label(rec.get("size")),
+                            "period": [rec.get("start_date"), rec.get("end_date")] if rec.get("start_date") else None,
+                            "bbox": rec.get("bbox")})
+        if not options:
+            continue
+        picked = str(c.get("decision") or c.get("picked") or items.get(item_id, {}).get("dataset_id") or "")
+        out.append({"id": str(c.get("id")), "item": item_id, "picked": picked,
+                    "rationale": str(c.get("rationale") or ""), "options": options})
+    return out
+
+
+def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
+    """The user's picks from the card: re-pin the items, clear stale stamps. Returns changed item ids."""
+    changed = []
+    items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
+    for c in plan.get("scientific_choices") or []:
+        if not isinstance(c, dict) or c.get("kind") != "data_source":
+            continue
+        pick = choices.get(str(c.get("id")))
+        if not pick or pick not in [str(o) for o in c.get("options") or []]:
+            continue
+        item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
+        item = items.get(item_id)
+        if item is None or item.get("dataset_id") == pick:
+            c["decision"] = pick
+            continue
+        c["decision"] = pick
+        c["picked"] = pick
+        for key in ("acquisition_id", "acquisition_request_sha256", "acquisition_offer", "estimate_summary", "catalogue"):
+            item.pop(key, None)
+        item["dataset_id"] = pick
+        item["chosen_source"] = pick
+        item.pop("delivery", None)
+        changed.append(item_id)
+    return changed
+
+
 def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
     """The PLAN_REVIEW card, in the shape setup.request_user renders (issue §UI)."""
     can = [f"prepare inputs for {k}" for k in plan.get("selected_kis") or []]
     edges = [c.get("edge_id") for c in plan.get("coupling") or [] if c.get("edge_id")]
     if edges:
         can.append("couple: " + ", ".join(edges))
-    missing = [f"{it.get('id')} (for {', '.join(it.get('required_by') or [])})"
-               for it in inv.get("items") or [] if it.get("status") == "missing"]
     decide = [f"{c.get('kind')}: {', '.join(map(str, c.get('options') or []))} (suggested {c.get('picked')})"
               for c in plan.get("scientific_choices") or [] if c.get("high_impact") and not c.get("decision")]
-    resolved = sum(1 for it in inv.get("items") or [] if it.get("status") in ("resolved", "ready"))
     msg = (f"What I understood\n  {plan.get('goal')}\n\n"
            f"GeoForge can do itself\n  " + ("\n  ".join("✓ " + c for c in can) or "—") + "\n\n"
-           f"Data: {resolved} inputs resolved, {len(missing)} missing"
-           + ("\n  " + "\n  ".join("! " + m for m in missing[:8]) if missing else "") + "\n\n"
+           + _data_summary(plan, inv, fs.project) + "\n\n"
            + ("You decide\n  " + "\n  ".join(decide) + "\n\n" if decide else "")
            + f"Steps: {len(plan.get('steps') or [])}   Tool policy: {provider_note}\n"
            f"Details: runs/plan.json, runs/data-inventory.json")
+    intent = plan.get("intent") if isinstance(plan.get("intent"), dict) else {}
+    steps = []
+    for st in plan.get("steps") or []:
+        if not isinstance(st, dict):
+            continue
+        tool = str(st.get("tool") or "")
+        steps.append({"id": st.get("id"), "kind": st.get("kind"), "ki": st.get("ki"),
+                      "tool": Path(tool).name if tool else None,
+                      "env": sorted((st.get("env") or {}).keys()),
+                      "inputs": list(st.get("inputs") or []), "outputs": list(st.get("outputs") or [])})
+    decisions = [{"id": c.get("id"), "kind": c.get("kind"), "options": list(c.get("options") or []),
+                  "picked": c.get("picked"), "decided": bool(c.get("decision")),
+                  "high_impact": bool(c.get("high_impact"))}
+                 for c in plan.get("scientific_choices") or [] if isinstance(c, dict)
+                 and c.get("kind") != "data_source"]
+    data_choices = _data_choices(plan, inv)
+    review = {"goal": plan.get("goal"), "kis": list(plan.get("selected_kis") or []),
+              "coupling": edges, "study_area": intent.get("study_area"), "period": intent.get("period"),
+              "data": _data_groups(plan, inv, fs.project), "steps": steps, "decisions": decisions,
+              "data_choices": data_choices,
+              "tool_policy": provider_note, "blockers": [], "not_ready": []}
     return {
-        "id": APPROVAL_REQUEST_ID_PREFIX + fs.flow.plan.sha256(plan)[:10],
+        "id": APPROVAL_REQUEST_ID_PREFIX + fs.flow.plan.sha256(plan)[:10] + "-" + fs.flow.plan.sha256(inv)[:6],
+        "plan_review": review,
         "kind": "choice", "title": "Approve the plan?", "message": msg, "allow_note": True,
         "options": [
             {"id": "approve", "label": "Approve and start",
@@ -404,10 +1115,53 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
     }
 
 
+def _issue_card(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
+                turn_id: str = "", extra_why: list[str] | None = None) -> dict:
+    """Show the one approval card for exactly this plan/inventory pair (WAITING_FOR_USER).
+
+    There is no automatic approval: the card is the contract between the user and the run.
+    Also used when the Approve click finds that a clip estimate changed."""
+    from . import obs_access
+    flow = fs.flow
+    project = Path(project)
+    # The approval UI is bound to exactly the reviewed pair, not just a plan filename.
+    receipt = {"plan_sha256": flow.plan.sha256(pj), "inventory_sha256": flow.plan.sha256(inv),
+               "turn": turn_id, "submitted_at": time.time()}
+    (project / "runs" / "plan-review.json").write_text(json.dumps(receipt), encoding="utf-8")
+    _ok, why = flow.approval.may_auto_approve(pj, inv)
+    why = list(extra_why or []) + list(why)
+    manual = [it for it in inv.get("items") or []
+              if isinstance(it, dict) and it.get("delivery") == "manual"]
+    if manual:
+        why.append("manual download needed: " + ", ".join(
+            f"{it.get('dataset_id') or it.get('id')}"
+            + (f" ({obs_access.size_label((it.get('catalogue') or {}).get('size'))})"
+               if (it.get('catalogue') or {}).get('size') else "")
+            for it in manual[:6]))
+    ready = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots, for_execution=True)
+    card = _card(flow, fs, pj, inv, provider_note)
+    if why:
+        card["message"] += "\n\nWaiting on you\n  " + "\n  ".join(why[:8])
+        card["plan_review"]["blockers"] = list(why[:8])
+    if ready:
+        card["message"] += "\n\nNot ready to execute yet\n  " + "\n  ".join(ready[:6])
+        card["plan_review"]["not_ready"] = list(ready[:6])
+    doc = setup_flow.request_user(project, card)
+    doc["id"] = card["id"]
+    doc["review"] = receipt
+    doc["plan_review"] = card["plan_review"]
+    (project / setup_flow.REQUEST_FILE).write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    if fs.state is not flow.states.State.WAITING_FOR_USER:
+        fs.move("needs_user")
+    projectrun.report(project, {"status": "waiting_for_user", "summary": card["title"], "blocker": doc},
+                      source="flow")
+    return doc
+
+
 @dataclass
 class Result:
     request: dict | None = None     # the approval card (setup.request_user doc) to show
-    continue_now: bool = False      # auto-approved: start the execution turn right away
+    continue_now: bool = False      # setup verified: start the execution turn right away
     message: str = ""
     retry_planning: bool = False
     revision: str = ""
@@ -436,13 +1190,24 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         return Result(continue_now=True)          # setup verified → run the approved plan now
 
     if state in (S.PLANNING, S.REPLAN_REQUIRED):
-        if t.provider_succeeded is False or getattr(fs, "provider_succeeded", None) is False:
+        submitted = getattr(fs, "plan_submission", None)
+        if (t.provider_succeeded is False or getattr(fs, "provider_succeeded", None) is False) and not submitted:
+            # A plan that was submitted before the connection died is still a plan;
+            # only a turn that never submitted is a failure.
             return _planning_failure(project, t, ["The provider failed or was interrupted. Your draft is preserved; retry planning."])
         draft_root = t.planning_worktree or project
         current = _plan_versions(draft_root)
         saved_both = len(current) == 2 and all(current.get(k) != v for k, v in t.draft_before.items())
         api_submission = getattr(fs, "plan_submission", None)
         pj, inv = flow.plan.read_artifacts(draft_root)
+        asked = setup_flow.request(project)
+        if (not saved_both and not api_submission and asked and asked.get("status") == "waiting"
+                and not str(asked.get("id", "")).startswith(APPROVAL_REQUEST_ID_PREFIX)):
+            # The agent asked the user one question instead of writing the plan: that is
+            # a pause, not a failed submission. Planning resumes with the answer.
+            projectrun.report(project, {"status": "waiting_for_user", "summary": asked.get("title") or "Question for you",
+                                        "blocker": asked}, source="flow")
+            return Result()
         if not saved_both and not api_submission:
             unsaved = [k for k in ("runs/plan.json", "runs/data-inventory.json")
                        if k not in current or current[k] == t.draft_before.get(k)]
@@ -457,40 +1222,27 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots)
         if errs:
             return _planning_failure(project, t, errs, repair=True)
-        if t.planning_worktree:
-            if _plan_versions(project) != t.project_before:
-                return _planning_failure(project, t, ["The original plan changed while planning. Both revisions are preserved; review and resubmit instead of overwriting."])
-            flow.plan.write_artifacts(project, pj, inv)
-            fs.reload_artifacts()
-        # The approval UI is bound to exactly the reviewed pair, not just a plan filename.
-        receipt = {"plan_sha256": flow.plan.sha256(pj), "inventory_sha256": flow.plan.sha256(inv),
-                   "turn": t.fingerprint_extra, "submitted_at": time.time()}
-        (project / "runs" / "plan-review.json").write_text(json.dumps(receipt), encoding="utf-8")
+        # Every pinned GeoForge Database id becomes a verified fact on the item
+        # (delivery, size, coverage) before the user sees the card.
+        from . import obs_access
+        stamp_errors = obs_access.stamp_inventory(inv, project=project)
+        if stamp_errors:
+            return _planning_failure(project, t, stamp_errors, repair=True)
+        # Fresh clip numbers on the card: re-estimate every attached clip now and
+        # stamp again so the sizes the user reads are seconds old, not minutes.
+        from . import obs_subset
+        obs_subset.refresh_inventory(project, inv)
+        stamp_errors = obs_access.stamp_inventory(inv, project=project)
+        if stamp_errors:
+            return _planning_failure(project, t, stamp_errors, repair=True)
+        if t.planning_worktree and _plan_versions(project) != t.project_before:
+            return _planning_failure(project, t, ["The original plan changed while planning. Both revisions are preserved; review and resubmit instead of overwriting."])
+        flow.plan.write_artifacts(project, pj, inv)
+        fs.reload_artifacts()
         (project / "runs" / "plan-validation.txt").unlink(missing_ok=True)
         (project / ".geoforge" / "planning-last.json").unlink(missing_ok=True)
         fs.move("plan_written", {"plan_valid": True})
-        ok, why = flow.approval.may_auto_approve(pj, inv)
-        if t.confirmation_required:
-            ok = False
-            why.append("You requested plan review before any execution.")
-        ready = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots, for_execution=True)
-        if ok and not ready:
-            flow.approval.approve(project, {}, by="auto")
-            fs.move("approved", {"approval": flow.approval.check(project)})
-            _start_execution(flow, fs.ctx, project, setup_ok)
-            return Result(continue_now=fs.ctx.state is S.EXECUTING)
-        card = _card(flow, fs, pj, inv, provider_note)
-        if not ok:
-            card["message"] += "\n\nWaiting on you\n  " + "\n  ".join(why[:8])
-        if ready:
-            card["message"] += "\n\nNot ready to execute yet\n  " + "\n  ".join(ready[:6])
-        doc = setup_flow.request_user(project, card)
-        doc["id"] = card["id"]
-        doc["review"] = receipt
-        (Path(project) / setup_flow.REQUEST_FILE).write_text(json.dumps(doc, indent=2), encoding="utf-8")
-        fs.move("needs_user")
-        projectrun.report(project, {"status": "waiting_for_user", "summary": card["title"], "blocker": doc},
-                          source="flow")
+        doc = _issue_card(project, fs, pj, inv, provider_note, turn_id=t.fingerprint_extra)
         return Result(request=doc)
 
     if state is S.EXECUTING:
@@ -511,10 +1263,26 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             projectrun.set_stage(project, display_stage(flow, fs.state), "Completed — every step has a verified receipt")
         else:
             missing = ev.get("steps_missing") or []
+            done = len(ev.get("steps_passed") or [])
             projectrun.set_stage(project, display_stage(flow, state),
-                                 f"Running — {len(ev.get('steps_passed') or [])} steps done, "
+                                 f"Running — {done} steps done, "
                                  f"{len(missing)} to go" + (f", {len(ev['unreceipted_artifacts'])} unreceipted files"
                                                              if ev.get("unreceipted_artifacts") else ""))
+            pending = setup_flow.request(project)
+            if pending and pending.get("status") == "waiting" and pending.get("kind") == "download":
+                # The link and code are private to the user; the chat only points there.
+                return Result(message=(
+                    f"**GeoForge needs you:** {pending.get('title')}. The download link and "
+                    "extraction code are in **Project status**. Place the files at "
+                    f"`{pending.get('expected_path') or 'the path shown there'}`, then click "
+                    "**Files are in place, continue** or reply here. The run waits until then."))
+            # The agent's prose is not evidence.  Say in the chat what the receipts say,
+            # so a turn that describes work it never ran is contradicted right there.
+            if t.started_at and (reply or "").strip() and _receipts_since(project, t.started_at) == 0:
+                return Result(message=(
+                    f"**GeoForge verification:** this turn ran no receipted step and downloaded "
+                    f"nothing. Steps with a verified receipt: {done} of {done + len(missing)}. "
+                    "Anything described above as produced does not exist until a receipt records it."))
         return Result()
     return Result()
 
@@ -534,25 +1302,56 @@ def wrapper_commands() -> dict:
     import os as _os
     import shlex
     import sys as _sys
+    database_launcher = _database_launcher_path()
     if not getattr(_sys, "frozen", False):
         base = f"{_sys.executable} -m kiss_cli"
         if " " in _sys.executable:
             base = f"{shlex.quote(_sys.executable)} -m kiss_cli"
-        return {"run_tool": f"{base} run-tool", "fetch": f"{base} fetch"}
+        return {"run_tool": f"{base} run-tool", "fetch": f"{base} fetch",
+                "obs_search": (str(database_launcher) if database_launcher else
+                               f"{base} obs-search")}
     launcher = _launcher_path()
     if launcher is None:
         base = shlex.quote(_sys.executable)
     else:
         base = str(launcher)
-    return {"run_tool": f"{base} run-tool", "fetch": f"{base} fetch"}
+    return {"run_tool": f"{base} run-tool", "fetch": f"{base} fetch",
+            "obs_search": (str(database_launcher) if database_launcher else
+                           f"{base} obs-search")}
+
+
+def wrapper_access_roots(wrappers: dict | None) -> list[str]:
+    """Return only the launcher directory needed by a scoped CLI.
+
+    Frozen builds use ``~/.kiss/bin/geoforge-flow`` so a bundle path containing
+    spaces remains shell-safe. Kimi's outer macOS sandbox needs that one
+    directory declared explicitly; the rest of the user's home stays closed.
+    """
+    import shlex
+    roots: list[str] = []
+    for command in (wrappers or {}).values():
+        try:
+            executable = Path(shlex.split(str(command))[0]).resolve(strict=False)
+        except (IndexError, OSError, ValueError):
+            continue
+        if executable.name not in {"geoforge-flow", "geoforge-flow.cmd",
+                                   "geoforge-db", "geoforge-db.cmd"}:
+            continue
+        parent = str(executable.parent)
+        if executable.is_file() and parent not in roots:
+            roots.append(parent)
+    return roots
 
 
 def _launcher_path() -> Path | None:
-    """Create (once) a launcher for the frozen binary at a path without spaces."""
+    """Create a stable IPC launcher for gated flow commands.
+
+    The previous launcher executed the frozen app binary a second time.  A
+    development build below Documents therefore crossed both Kimi's Seatbelt
+    boundary and macOS TCC, causing a permission popup on every command.  This
+    helper talks only to the already-running Desktop process over loopback.
+    """
     import os as _os
-    import stat
-    import sys as _sys
-    exe = Path(_sys.executable)
     home = Path.home()
     # user-owned locations only (kimi desktop R2 #3: never a world-writable temp dir). When
     # every candidate has a space in it the caller quotes the binary path instead.
@@ -567,17 +1366,80 @@ def _launcher_path() -> Path | None:
             except OSError:
                 pass
             if _os.name == "nt":
+                script = d / "geoforge-flow.py"
                 p = d / "geoforge-flow.cmd"
-                body = f'@echo off\r\n"{exe}" %*\r\n'
+                body = '@echo off\r\npy -3 "%~dp0geoforge-flow.py" %*\r\n'
+                if (not script.is_file() or
+                        script.read_text(encoding="utf-8", errors="replace") != _FLOW_HELPER):
+                    script.write_text(_FLOW_HELPER, encoding="utf-8")
             else:
                 p = d / "geoforge-flow"
-                body = f'#!/bin/sh\nexec "{exe}" "$@"\n'
-            # always point at the CURRENT executable (an old launcher must not exec a stale app)
+                body = _FLOW_HELPER
             if not p.is_file() or p.read_text(encoding="utf-8", errors="replace") != body:
                 p.write_text(body, encoding="utf-8")
             if _os.name != "nt":
                 p.chmod(0o755)
             return p
+        except OSError:
+            continue
+    return None
+
+
+def _database_launcher_path() -> Path | None:
+    """Install the token-free database KI adapter in a stable user path.
+
+    Unlike ``geoforge-flow``, this helper never jumps back into the frozen app
+    bundle.  That distinction matters when a development build lives below
+    Documents: macOS TCC otherwise asks for folder access on every invocation,
+    while Kimi's outer sandbox correctly refuses the bundle target.
+    """
+    import os as _os
+    import sys as _sys
+    home = Path.home()
+    helper_body = _DATABASE_HELPER
+    # The task-workflow KI is the reviewed source of the adapter.  Keep the
+    # inline copy only as a recovery fallback for a partially downloaded KI
+    # library; normal source and frozen builds both find models/ here.
+    roots = [Path(__file__).resolve().parents[2]]
+    frozen_root = getattr(_sys, "_MEIPASS", None)
+    if frozen_root:
+        roots.insert(0, Path(frozen_root))
+    for root in roots:
+        for source in (
+                root / "system_kis" / "GeoForge_Database" / "tools" / "search_catalogue.py",
+                root / "kiss" / "system_kis" / "GeoForge_Database" / "tools" / "search_catalogue.py"):
+            try:
+                if source.is_file():
+                    helper_body = source.read_text(encoding="utf-8")
+                    break
+            except OSError:
+                continue
+        else:
+            continue
+        break
+    candidates = [home / ".kiss" / "bin", home / ".config" / "geoforge" / "bin"]
+    for directory in candidates:
+        if " " in str(directory):
+            continue
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            if _os.name == "nt":
+                script = directory / "geoforge-db.py"
+                launcher = directory / "geoforge-db.cmd"
+                body = '@echo off\r\npy -3 "%~dp0geoforge-db.py" %*\r\n'
+                if (not script.is_file() or
+                        script.read_text(encoding="utf-8", errors="replace") != helper_body):
+                    script.write_text(helper_body, encoding="utf-8")
+                if (not launcher.is_file() or
+                        launcher.read_text(encoding="utf-8", errors="replace") != body):
+                    launcher.write_text(body, encoding="utf-8")
+            else:
+                launcher = directory / "geoforge-db"
+                if (not launcher.is_file() or
+                        launcher.read_text(encoding="utf-8", errors="replace") != helper_body):
+                    launcher.write_text(helper_body, encoding="utf-8")
+                launcher.chmod(0o755)
+            return launcher
         except OSError:
             continue
     return None
@@ -593,12 +1455,15 @@ def couplings_dir() -> Path | None:
         return None
 
 
-def setup_turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str) -> Turn | None:
+def setup_turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
+               database_access_mode: str = "direct") -> Turn | None:
     """A software-setup turn under the flow: the SETUP sub-flow, never a scientific run."""
     flow = _flow()
     S = flow.states.State
     ki_roots = {k.name: Path(k.root) for k in resolved}
-    fs = flowgate.FlowSession.open(project, ki_roots, python=str(getattr(cfg, "python", "") or "python3"))
+    fs = flowgate.FlowSession.open(
+        project, ki_roots, python=str(getattr(cfg, "python", "") or "python3"),
+        database_access_mode=database_access_mode)
     if fs.state is S.APPROVED:
         fs.move("setup_needed")
     if fs.state is S.SETUP_REQUIRED:
@@ -650,20 +1515,43 @@ def describe_policy(t: Turn) -> str:
         return ""
 
 
-def auto_turn(project: Path, provider_kind: str, provider_name: str) -> Turn | None:
+def auto_turn(project: Path, provider_kind: str, provider_name: str,
+              database_access_mode: str = "direct") -> Turn | None:
     """The 'choose a model' turn when nothing resolved (codex desktop review #1/#2): a real
     FlowSession in RESOLVING_KIS (API tools filtered to read-only + report/request; CLI argv
     read-only), never project writes, never a worktree. Providers that cannot be gated are
     refused for scientific projects."""
     flow = _flow()
-    fs = flowgate.FlowSession.open(project, {})
+    fs = flowgate.FlowSession.open(
+        project, {}, database_access_mode=database_access_mode)
     provider = "api" if provider_kind == "api" else provider_name
     if provider in flow.policy.NOT_OFFERED:
         raise flowgate.FlowDenied(
             f"{provider} cannot be held to the planning gate; choose Claude Code, Codex, Kimi or "
             f"an API provider for scientific projects")
-    pp = flow.policy.for_state(fs.state, provider, project, {})
-    return Turn(fs, False, "", False, pp, f"flow:{fs.state.value}", None, {}, kind="auto")
+    # Data availability can materially change both the KI choice and the first
+    # clarification question.  Give CLI providers the same Desktop-owned,
+    # read-only catalogue adapter during intake that they receive during
+    # planning.  Do not expose fetch/download/run wrappers in RESOLVING_KIS.
+    # API providers already receive ``search_observation_data`` through the
+    # flow-filtered tool schema, so they need no shell adapter.
+    wrappers: dict[str, str] = {}
+    if provider_kind != "api" and database_access_mode == "direct":
+        commands = wrapper_commands()
+        if commands.get("obs_search"):
+            wrappers["obs_search"] = commands["obs_search"]
+    pp = flow.policy.for_state(fs.state, provider, project, {}, wrappers=wrappers)
+    return Turn(fs, False, "", False, pp, f"flow:{fs.state.value}", None,
+                wrappers, kind="auto")
+
+
+def database_hint_for(goal: str, database_access_mode: str = "direct") -> str:
+    """Intake-time list of catalogue records that match the user's goal text."""
+    if database_access_mode != "direct":
+        return ""
+    from . import obs_access
+    store = obs_access.load_catalogue() or {}
+    return obs_access.study_hint_block(store.get("datasets") or [], goal)
 
 
 def setup_allowed(project: Path) -> bool:
@@ -744,9 +1632,16 @@ def promote_auto_choice(project: Path, catalog, reply: str = "") -> list[str]:
     # the Desktop still checks that the Agent explained the task and did not list an
     # unanswered material question while claiming readiness.
     waiting = setup_flow.request(project)
-    if (not names or not str(intake.get("understanding") or "").strip() or
-            intake.get("ready_for_planning") is not True or intake.get("missing") or
-            (waiting and waiting.get("status") == "waiting")):
+    if not names or not str(intake.get("understanding") or "").strip():
+        return []
+    if waiting and waiting.get("status") == "waiting":
+        return []
+    # The Agent's one material question was answered by the user (the request is
+    # "ready") and this turn brought no new intake: the stored intake is complete
+    # now.  Promote instead of letting the Agent open a second round of questions.
+    answered = bool(waiting and waiting.get("status") == "ready")
+    ready = intake.get("ready_for_planning") is True and not intake.get("missing")
+    if not ready and not (marker is None and answered):
         return []
     ctx.selected_kis = names
     ctx.move("kis_resolved", {"selected_kis": names})

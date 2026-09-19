@@ -61,6 +61,26 @@ def _number(value, fallback: float) -> float:
         return fallback
 
 
+def _blocker_rows(value) -> list[dict]:
+    """The N manual-download rows of an acquisition card (link, code, path per dataset)."""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for raw in value[:12]:
+        if not isinstance(raw, dict):
+            continue
+        url = str(raw.get("url") or "")[:2000]
+        out.append({
+            "item_id": _short(raw.get("item_id"), 100), "dataset_id": _short(raw.get("dataset_id"), 200),
+            "name": _short(raw.get("name"), 200), "size": raw.get("size") if isinstance(raw.get("size"), int) else None,
+            "url": url if url.startswith(("https://", "http://")) else None,
+            "code": _short(raw.get("code"), 40) or None,
+            "path_in_share": str(raw.get("path_in_share") or "").strip()[:500] or None,
+            "expected_path": str(raw.get("expected_path") or "").strip()[:1000],
+        })
+    return out
+
+
 def _blocker_options(value) -> list[dict]:
     if not isinstance(value, list):
         return []
@@ -170,6 +190,7 @@ def _normalise(raw: dict | None, fallback: dict | None = None, *,
             "resume_hint": str(blocker.get("resume_hint") or "").strip()[:4000] or None,
             "options": _blocker_options(blocker.get("options")),
             "allow_note": bool(blocker.get("allow_note", True)),
+            "rows": _blocker_rows(blocker.get("rows")),
         }
     else:
         base.pop("blocker", None)

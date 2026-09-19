@@ -48,6 +48,81 @@ INVENTORY_SCHEMA = {
 }
 
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_ENV_BLOCKED_EXACT = {
+    "HOME", "PATH", "SHELL", "USER", "LOGNAME", "TMPDIR",
+    "KISS_ROOT",
+    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONINSPECT",
+    "BASH_ENV", "ENV", "NODE_OPTIONS", "RUBYOPT", "PERL5OPT", "PERL5LIB",
+}
+_ENV_SECRET_FRAGMENTS = (
+    "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH",
+)
+_ENV_ALLOWED_TOKENS = {"PROJECT", "KI_ROOT"}
+
+
+def validate_step_environment(value: Any) -> list[str]:
+    """Validate an optional, approval-bound step environment.
+
+    These values configure a shipped KI tool; they are not a second command
+    language. In particular, a plan cannot alter executable search paths,
+    inject interpreter startup code, or carry credentials.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, dict):
+        return ["env must be an object of string keys and values"]
+    errors: list[str] = []
+    if len(value) > 128:
+        errors.append("env may contain at most 128 entries")
+    for raw_key, raw_value in value.items():
+        key = str(raw_key)
+        upper = key.upper()
+        if not _ENV_KEY_RE.fullmatch(key):
+            errors.append(f"env key {key!r} is invalid")
+            continue
+        if (upper in _ENV_BLOCKED_EXACT or upper.startswith(("LD_", "DYLD_", "GEOFORGE_")) or
+                any(fragment in upper for fragment in _ENV_SECRET_FRAGMENTS)):
+            errors.append(f"env key {key!r} is not allowed")
+        if not isinstance(raw_value, str):
+            errors.append(f"env value for {key!r} must be a string")
+            continue
+        if len(raw_value) > 8192 or "\x00" in raw_value:
+            errors.append(f"env value for {key!r} is too long or contains NUL")
+        tokens = set(re.findall(r"\$\{([^}]+)\}", raw_value))
+        unknown = sorted(tokens - _ENV_ALLOWED_TOKENS)
+        if unknown:
+            errors.append(f"env value for {key!r} uses unsupported tokens {unknown}")
+    return errors
+
+
+def step_environment(step: dict, project: Path, ki_root: Path) -> dict[str, str]:
+    """Expand the already-approved environment for one plan step.
+
+    Only two literal tokens are expanded. Absolute path values must remain
+    inside the chat project or selected KI so an approved environment cannot
+    become a write channel into arbitrary user/system locations.
+    """
+    raw = step.get("env")
+    errors = validate_step_environment(raw)
+    if errors:
+        raise ValueError("; ".join(errors))
+    if not raw:
+        return {}
+    project = Path(project).resolve()
+    ki_root = Path(ki_root).resolve()
+    result: dict[str, str] = {}
+    for key, value in raw.items():
+        expanded = value.replace("${PROJECT}", str(project)).replace("${KI_ROOT}", str(ki_root))
+        candidate = Path(expanded).expanduser()
+        if candidate.is_absolute():
+            resolved = candidate.resolve(strict=False)
+            if not any(resolved == base or base in resolved.parents for base in (project, ki_root)):
+                raise ValueError(f"env path for {key!r} is outside the project and KI")
+        result[key] = expanded
+    return result
+
+
 @dataclass(frozen=True)
 class DataRoots:
     """Where the planner's data lives. Server default = the real ata-kdt tree."""
@@ -664,7 +739,8 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
                         f"with no decision")
         if it.get("status") == "ready" and not it.get("local_paths"):
             errs.append(f"inventory item {it.get('id')!r} is 'ready' but names no local file")
-    for st in plan.get("steps") or []:
+    steps = [s for s in (plan.get("steps") or [])]
+    for idx, st in enumerate(steps):
         if not isinstance(st, dict):
             errs.append("plan step is not an object"); continue
         step_id = st.get("id")
@@ -685,17 +761,24 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         tool = st.get("tool")
         if tool is not None and not isinstance(tool, str):
             errs.append(f"step {st.get('id')!r} tool must be a path string or null"); continue
+        for problem in validate_step_environment(st.get("env")):
+            errs.append(f"step {st.get('id')!r} {problem}")
         if any(not isinstance(st.get(k), list) or
                any(not isinstance(v, str) for v in st[k]) for k in ("inputs", "outputs")):
             errs.append(f"step {st.get('id')!r} inputs and outputs must be arrays of strings"); continue
         if for_execution and not tool and (st.get("kind") or "process") in (
-                "process", "run", "calibrate", "route", "couple", "prepare"):
+                "process", "run", "model_run", "calibrate", "route", "couple", "prepare"):
             errs.append(f"step {st.get('id')!r} has no tool — not ready to execute")
         if for_execution:
             by_id = {str(it.get("id")): it for it in items if isinstance(it, dict)}
+            # An input produced by an earlier step of this plan is not a gap:
+            # the pipeline itself creates it before the consumer runs.
+            produced_earlier = {str(o) for prev in steps[:idx]
+                                if isinstance(prev, dict) for o in prev.get("outputs") or []}
             for inp in st.get("inputs") or []:
                 it = by_id.get(str(inp))
-                if it and it.get("status") == "missing" and not it.get("decision"):
+                if (it and it.get("status") == "missing" and not it.get("decision")
+                        and str(inp) not in produced_earlier):
                     errs.append(f"step {st.get('id')!r} input {inp!r} is still missing")
         if tool:
             root = ki_roots.get(ki)

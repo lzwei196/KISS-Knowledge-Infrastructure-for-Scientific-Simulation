@@ -49,8 +49,15 @@ def _approve(project, ki):
         it["status"] = "resolved"; it["needs_user"] = False
     assert t.session.write_plan(pj, inv) == []
     res = flowrun.after(project, t, "planned", setup_ok=True)
-    assert res.continue_now
+    _click_approve(project, ki, res)
     return pj["steps"][0]["id"]
+
+
+def _click_approve(project, ki, res):
+    """Only the user's click on the card approves a plan."""
+    assert res.request and not res.continue_now
+    flowrun.pre(project, "Approved. Start the execution.", [ki.name], [ki],
+                {"request_id": res.request["id"], "option_id": "approve"}, res.request, setup_ok=True)
 
 
 def test_run_tool_refused_before_approval_and_writes_receipt_after(tmp_path, capsys, monkeypatch):
@@ -71,6 +78,39 @@ def test_run_tool_refused_before_approval_and_writes_receipt_after(tmp_path, cap
     assert cli.main(["run-tool", "--step", "M:ghost", "M", "tools/run.py", "--", "outputs/z.csv"]) == 3
 
 
+def test_run_tool_uses_only_environment_from_the_approved_step(
+        tmp_path, capsys, monkeypatch):
+    project, ki = _project_with_ki(tmp_path)
+    monkeypatch.chdir(project)
+    env_tool = ki.root / "tools" / "env.py"
+    env_tool.write_text(
+        "import json, os, pathlib\n"
+        "out = pathlib.Path(os.environ['VIC_OUTPUT'])\n"
+        "out.parent.mkdir(parents=True, exist_ok=True)\n"
+        "out.write_text(json.dumps({'ki': os.environ['VIC_KI_ROOT'], "
+        "'secret': 'TEST_API_KEY' in os.environ}))\n")
+    flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
+    turn = flowrun.turn(
+        project, [ki], SimpleNamespace(root=project, python=sys.executable, roles={}),
+        "cli", "claude", None, "run M for 2003")
+    plan, inventory = turn.session.flow.plan.read_artifacts(project)
+    step = plan["steps"][0]
+    step.update({
+        "tool": str(env_tool), "kind": "run",
+        "env": {"VIC_OUTPUT": "${PROJECT}/outputs/env.json",
+                "VIC_KI_ROOT": "${KI_ROOT}"},
+    })
+    for item in inventory["items"]:
+        item["status"] = "resolved"; item["needs_user"] = False
+    assert turn.session.write_plan(plan, inventory) == []
+    _click_approve(project, ki, flowrun.after(project, turn, "planned", setup_ok=True))
+    monkeypatch.setenv("TEST_API_KEY", "must-not-leak")
+    rc = cli.main(["run-tool", "--step", step["id"], "M", "tools/env.py"])
+    assert rc == 0 and "[RECEIPT]" in capsys.readouterr().out
+    observed = json.loads((project / "outputs" / "env.json").read_text())
+    assert observed == {"ki": str(ki.root.resolve()), "secret": False}
+
+
 def test_fetch_refused_outside_executing(tmp_path, capsys, monkeypatch):
     project, ki = _project_with_ki(tmp_path)
     monkeypatch.chdir(project)
@@ -82,4 +122,7 @@ def test_fetch_refused_outside_executing(tmp_path, capsys, monkeypatch):
 def test_wrapper_commands_are_the_app_itself():
     w = flowrun.wrapper_commands()
     assert w["run_tool"].endswith("run-tool") and w["fetch"].endswith("fetch")
+    assert (w["obs_search"].endswith("obs-search") or
+            Path(w["obs_search"]).name in {"geoforge-db", "geoforge-db.cmd"})
+    assert "obs_download" not in w      # data is fetched by the host during ACQUIRING
     assert sys.executable in w["run_tool"]

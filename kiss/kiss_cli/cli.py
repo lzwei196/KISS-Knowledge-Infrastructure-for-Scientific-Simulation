@@ -352,14 +352,26 @@ def cmd_run_tool(args) -> int:
     if argv and argv[0] == "--":
         argv = argv[1:]
     try:
-        fs.check_step_tool(args.step, args.ki, tool)          # KI + tool + step agree BEFORE running
+        step = fs.check_step_tool(args.step, args.ki, tool)   # KI + tool + step agree BEFORE running
+        approved_env = fs.approved_step_environment(step, ki_root)
     except flowgate.FlowDenied as e:
         print(f"run-tool refused: {e}", file=sys.stderr)
         return 3
     command = ([str(cfg.python), str(tool)] if tool.suffix == ".py" else [str(tool)]) + argv
+    child_env = {
+        key: value for key, value in os.environ.items()
+        if not any(secret in key.upper() for secret in (
+            "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
+    }
+    child_env["KISS_ROOT"] = str(project)
+    child_env = paths.with_ki_tools_common(cfg, child_env)
+    from .calibration import with_framework_env
+    child_env = with_framework_env(child_env)
+    child_env.update(approved_env)
     before = flowgate._snapshot(project)
     started = _time.time()
-    proc = subprocess.run(command, cwd=str(project), capture_output=True, text=True, errors="replace")
+    proc = subprocess.run(command, cwd=str(project), env=child_env,
+                          capture_output=True, text=True, errors="replace")
     finished = _time.time()
     out = (proc.stdout + proc.stderr)[-80000:]
     try:
@@ -391,6 +403,28 @@ def cmd_fetch(args) -> int:
         print(f"fetch failed: {e}", file=sys.stderr)
         return 1
     print("[RECEIPT] " + json.dumps(info, ensure_ascii=False))
+    return 0
+
+
+def cmd_obs_search(args) -> int:
+    """Search GeoForge Database without exposing its token."""
+    from . import obs_access
+    try:
+        result = obs_access.search_catalogue(
+            q=(getattr(args, "query_option", "") or args.query or ""),
+            offset=args.offset, limit=args.limit,
+            bbox=getattr(args, "bbox", None), start=getattr(args, "start", None),
+            end=getattr(args, "end", None), variable=getattr(args, "variable", "") or "",
+            category=getattr(args, "category", "") or "",
+            describe_dataset_id=getattr(args, "describe_dataset_id", "") or "",
+            resolve_dataset_id=getattr(args, "resolve_dataset_id", "") or "",
+            time_step=getattr(args, "time_step", "") or "",
+            delivery=getattr(args, "delivery", "") or "")
+    except obs_access.ObsAccessError as error:
+        print(f"GeoForge Database search failed: {error}", file=sys.stderr)
+        return 3 if error.code in {
+            "missing_token", "invalid_token", "expired_token", "revoked_token"} else 1
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -560,6 +594,24 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--step")
     q.add_argument("--project")
     q.set_defaults(fn=cmd_fetch)
+
+    q = sub.add_parser(
+        "obs-search", help="search the authenticated GeoForge Database catalogue")
+    q.add_argument("query", nargs="?", default="")
+    q.add_argument("--query", dest="query_option", default="",
+                   help="search words (alias for the positional query)")
+    q.add_argument("--bbox", help="min_lon,min_lat,max_lon,max_lat")
+    q.add_argument("--start", help="YYYY-MM-DD")
+    q.add_argument("--end", help="YYYY-MM-DD")
+    q.add_argument("--variable", default="")
+    q.add_argument("--describe", dest="describe_dataset_id", default="", help="Read a dataset's actual source schema; no download")
+    q.add_argument("--resolve", dest="resolve_dataset_id", default="")
+    q.add_argument("--time-step", default="", choices=["", "daily", "3hr"])
+    q.add_argument("--category", default="")
+    q.add_argument("--delivery", default="", choices=["", "served", "manual"])
+    q.add_argument("--offset", type=int, default=0)
+    q.add_argument("--limit", type=int, default=25)
+    q.set_defaults(fn=cmd_obs_search)
 
     q = sub.add_parser(
         "calibration-status",

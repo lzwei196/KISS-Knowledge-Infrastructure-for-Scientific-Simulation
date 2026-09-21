@@ -838,7 +838,7 @@ def test_claude_planning_paths_and_tool_surface(tmp_path):
     grants = policy.argv_delta[1]
     assert f"Write(/{project}/runs/plan.json)" in grants
     assert "Bash(" not in grants and "bypassPermissions" not in policy.argv_delta
-    assert "dontAsk" in policy.argv_delta
+    assert "dontAsk" not in policy.argv_delta and "dontAsk" in policy.argv_extra   # wall vs launcher flags
     assert p.claude_path(r"C:\Users\User Name\项目") == "//c/Users/User Name/项目"
 
 

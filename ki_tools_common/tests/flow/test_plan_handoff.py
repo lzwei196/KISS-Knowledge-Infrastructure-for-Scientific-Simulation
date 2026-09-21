@@ -81,7 +81,7 @@ def test_unicode_absolute_claude_paths_and_planning_contract(tmp_path):
     assert policy.claude_path(project) == "/" + str(project)
     assert policy.claude_path(r"C:\Users\User Name\项目") == "//c/Users/User Name/项目"
     pp = policy.for_state(states.State.PLANNING, "claude", project, {})
-    assert "dontAsk" in pp.argv_delta and "Bash(" not in " ".join(pp.argv_delta)
+    assert "dontAsk" not in pp.argv_delta and "dontAsk" in pp.argv_extra and "Bash(" not in " ".join(pp.argv_delta)
     pj, inv = documents()
     pj.update(summary="bad draft", coupling=[None])
     text = contracts.planning_block({}, pj, inv, project, replan_reason="missing input ID")

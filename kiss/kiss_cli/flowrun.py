@@ -696,7 +696,8 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
             return turn(project, resolved, cfg, provider_kind, provider_name, repo_root, goal,
                         replan_reason="the plan files changed after approval")
         extra = flow.contracts.execution_block(ki_roots, fs.plan or {}, fs.approval_doc or {}, project,
-                                               provider=provider, wrappers=wrappers)
+                                               provider=provider, wrappers=wrappers,
+                                               host_acquired=True)      # ACQUIRING ran before this turn
         # Projects approved before ACQUIRING existed, or a replan that added data: one
         # idempotent host pass brings the approved inputs in before the agent runs steps.
         try:

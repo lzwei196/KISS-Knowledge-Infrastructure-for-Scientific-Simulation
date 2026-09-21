@@ -20,7 +20,7 @@ Overlap is decided on resolved PATHS, not substrings.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .states import State, Capability, Enforcement, allowed
@@ -29,7 +29,9 @@ SUPPORTED_PROVIDERS = ("claude", "codex", "kimi", "api")
 NOT_OFFERED = ("gemini", "qwen")
 
 # chat's plan-only set (CPM L237) — Claude Code tool names
-PLAN_ONLY_BASE_TOOLS = ("WebSearch", "WebFetch", "TodoWrite")
+# No bare Read/Glob/Grep (kimi R2 #1: a bare Read reads the whole disk, including the
+# receipt-signing key); reads are granted path-scoped by _read_grants.
+PLAN_ONLY_BASE_TOOLS = ("WebSearch", "WebFetch", "TodoWrite", "Skill")
 
 PLAN_FILES = ("runs/plan.json", "runs/data-inventory.json")
 ALWAYS_PROTECTED = ("runs/flow-state.json", "runs/approval.json", ".geoforge")
@@ -55,7 +57,7 @@ API_TOOLS_BY_STATE[State.EXECUTING] = _BASE_API | {"run_preflight", "write_proje
                                                    "request_replan"}
 for _s in (State.VERIFYING, State.COMPLETED, State.FAILED_VALIDATION):
     API_TOOLS_BY_STATE[_s] = _BASE_API | {"create_project_plot", "publish_project_view"}
-API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_preflight", "run_builtin_setup", "list_work_files",
+API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_builtin_setup", "list_work_files",
                                                        "read_work_file", "write_work_file",
                                                        "run_setup_command", "publish_setup_output"}
 
@@ -149,9 +151,13 @@ class ProviderPolicy:
     enforcement: Enforcement
     planning_worktree: bool        # codex/kimi PLANNING: run in a throwaway copy, harvest plan files
     note: str
+    # Desktop-only launcher flags that are NOT part of the tool wall (the web asserts
+    # argv_delta is exactly `--allowedTools …` with no --permission-mode). The desktop
+    # appends these after argv_delta; the web ignores them.
+    argv_extra: list[str] = field(default_factory=list)
 
 
-_CLAUDE_DROP = ("--dangerously-skip-permissions", "--permission-mode", "--tools", "--allowedTools")
+_CLAUDE_DROP = ("--dangerously-skip-permissions", "--permission-mode")
 _TOOL_RE = re.compile(r"^(?P<name>[A-Za-z]+)\((?P<arg>.*)\)$")
 
 
@@ -170,9 +176,15 @@ def _assert_key_dir_unreadable(tools: list[str]) -> None:
 
 
 def _read_grants(paths: list[Path]) -> list[str]:
+    def _claude_absolute(path: Path) -> str:
+        value = str(_res(path))
+        # Claude Code permission patterns reserve // for filesystem-absolute
+        # paths; /foo is interpreted relative to the project root.
+        return "/" + value if value.startswith("/") else value
+
     out = []
     for p in paths:
-        p = claude_path(p).rstrip("/")
+        p = _claude_absolute(Path(p)).rstrip("/")
         out += [f"Read({p}/**)", f"Glob({p}/**)", f"Grep({p}/**)"]
     return out
 
@@ -191,11 +203,11 @@ def claude_path(path: Path | str) -> str:
 
 def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str,
                            wrappers: dict | None = None) -> list[str]:
+    del python  # strict preflight is host-owned; non-RUN_MODEL agents get no Bash surface
     tools = list(PLAN_ONLY_BASE_TOOLS)
-    # Read code and previous reports: even --help/preflight may have side effects.
     tools += _read_grants(list(ki_roots.values()) + [Path(project)])
     for rel in PLAN_FILES:
-        p = claude_path(Path(project) / rel)
+        p = claude_path(_res(Path(project) / rel))      # same realpath rule as the read grants
         tools += [f"Write({p})", f"Edit({p})"]
     if wrappers and wrappers.get("obs_search"):
         tools.append(f"Bash({wrappers['obs_search']}:*)")
@@ -224,8 +236,8 @@ def _claude_executing_tools(project: Path, ki_roots: dict[str, Path],
         # Write/Edit/Bash/NotebookEdit/Agent from the base are NOT carried over
     _assert_key_dir_unreadable(kept)
     for rel in EXEC_WRITABLE:
-        p = claude_path(project / rel)
-        kept += [f"Write({p}/**)", f"Edit({p}/**)"]
+        target = "/" + str(_res(project / rel))
+        kept += [f"Write({target}/**)", f"Edit({target}/**)"]
     for cmd in (wrappers or {}).values():
         kept.append(f"Bash({cmd}:*)")
     # belt and braces: nothing kept may touch a protected path
@@ -269,11 +281,11 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
         if planning:
             tools = _claude_planning_tools(project, ki_roots, python, wrappers)
             _assert_key_dir_unreadable(tools)
-            return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools),
-                                  "--permission-mode", "dontAsk", "--tools",
-                                  "Read,Glob,Grep,Write,Edit,Bash,WebSearch,WebFetch,TodoWrite"], _CLAUDE_DROP,
+            return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools)], _CLAUDE_DROP,
                                   Enforcement.EXACT, False,
-                                  "read-only tool wall + the two plan files (CPM L237-259 pattern)")
+                                  "read-only tool wall + the two plan files (CPM L237-259 pattern)",
+                                  argv_extra=["--permission-mode", "dontAsk", "--tools",
+                                              "Read,Glob,Grep,Write,Edit,Bash,WebSearch,WebFetch,TodoWrite"])
         if state == State.EXECUTING:
             if not wrappers:
                 raise ValueError("EXECUTING on claude needs the receipt wrappers (run_tool, fetch)")
@@ -293,7 +305,7 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
                               Enforcement.EXACT, False, "read-only")
 
     # codex / kimi: no per-command allowlist (kiss_cli/policy.py codex_args L288-300)
-    drop = ("--dangerously-bypass-approvals-and-sandbox", "--yolo", "--sandbox")
+    drop = ("--dangerously-bypass-approvals-and-sandbox", "--yolo")
     if planning:
         return ProviderPolicy(provider, state, ["--sandbox", "workspace-write"] if provider == "codex" else [],
                               drop, Enforcement.APPROXIMATE, True,

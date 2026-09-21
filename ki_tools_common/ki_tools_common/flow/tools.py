@@ -9,6 +9,11 @@ import os
 import re
 
 
+# Never approvable as a step tool: a declared "binary" that is really an interpreter.
+_INTERPRETER = re.compile(r"^(python[0-9.]*|python[0-9.]*\.exe|rscript|r|julia[0-9.-]*|octave(-cli)?|"
+                          r"bash|sh|zsh|dash|perl[0-9.]*|node|ruby|php|java)$", re.IGNORECASE)
+
+
 def is_ki_tool(root: Path, tool: Path | str) -> bool:
     try:
         return _is_ki_tool(root, tool)
@@ -25,12 +30,35 @@ def declared_binaries(root: Path) -> set[Path]:
     doc = Path(root) / "knowledge_infrastructure.yaml"
     if not doc.is_file() or doc.is_symlink():
         return set()
-    text = doc.read_text(encoding="utf-8", errors="replace")
+    try:
+        import yaml
+        data = yaml.safe_load(doc.read_text(encoding="utf-8", errors="replace")) or {}
+    except Exception:
+        return set()
+    # Only the model's own declared product counts: `model.binary.path`, `binary.path`,
+    # or `binaries: [{path}]`. A bare regex over every `path:` line used to promote the
+    # interpreters some KIs list (python, Rscript, octave, julia) into approvable tools —
+    # arbitrary code through the tool wall.
+    cands: list = []
+    # `binary:` sits at the top level or under one top-level section (package:, model:, …)
+    holders = [data] + [v for v in data.values() if isinstance(v, dict)]
+    for holder in holders:
+        if not isinstance(holder, dict):
+            continue
+        b = holder.get("binary")
+        if isinstance(b, dict) and b.get("path"):
+            cands.append(b["path"])
+        for entry in holder.get("binaries") or []:
+            if isinstance(entry, dict) and entry.get("path"):
+                cands.append(entry["path"])
     out: set[Path] = set()
-    for match in re.finditer(r"^\s*(?:-\s*)?path:\s*(\S.*?)\s*$", text, re.M):
-        candidate = Path(match.group(1).strip("'\""))
-        if candidate.is_absolute() and candidate.is_file() and os.access(candidate, os.X_OK):
-            out.add(candidate.resolve())
+    for raw in cands:
+        candidate = Path(str(raw).strip("'\""))
+        if not (candidate.is_absolute() and candidate.is_file() and os.access(candidate, os.X_OK)):
+            continue
+        if _INTERPRETER.match(candidate.name):
+            continue
+        out.add(candidate.resolve())
     return out
 
 

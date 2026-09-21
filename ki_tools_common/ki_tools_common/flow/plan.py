@@ -27,7 +27,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
+
+
+def _yaml():
+    """Import the optional planning dependency only in YAML-consuming code paths."""
+    import yaml
+    return yaml
 
 SCHEMA_VERSION = "1.0"
 
@@ -170,7 +175,7 @@ def build_indexes(roots: DataRoots) -> dict:
     # 1. forcing_providers/*.yaml — canonical_id → provider list
     for f in sorted(roots.forcing_providers.glob("*.yaml")):
         try:
-            d = yaml.safe_load(f.read_text())
+            d = _yaml().safe_load(f.read_text())
         except Exception:
             continue
         pid = d.get("provider_id") or f.stem
@@ -178,6 +183,8 @@ def build_indexes(roots: DataRoots) -> dict:
             cid = var.get("canonical_id")
             if cid:
                 forcing_index[cid].append({
+                    "spatial": d.get("spatial") or {},
+                    "temporal": d.get("temporal") or {},
                     "provider_id": pid,
                     "name": d.get("provider_name", pid),
                     "data_path": d.get("data_path"),
@@ -190,7 +197,7 @@ def build_indexes(roots: DataRoots) -> dict:
     if roots.data_ki and roots.data_ki.is_dir():
         for f in sorted(roots.data_ki.glob("*/card.yaml")):
             try:
-                d = yaml.safe_load(f.read_text())
+                d = _yaml().safe_load(f.read_text())
             except Exception:
                 continue
             ident = d.get("identity", {})
@@ -215,7 +222,7 @@ def build_indexes(roots: DataRoots) -> dict:
     # 3. cards/*_ata_card.yaml — canonical_id → producer model list
     for f in sorted(roots.cards.glob("*_ata_card.yaml")):
         try:
-            d = yaml.safe_load(f.read_text())
+            d = _yaml().safe_load(f.read_text())
         except Exception:
             continue
         m = d.get("identity", {}).get("model_id") or f.stem.replace("_ata_card", "")
@@ -250,7 +257,7 @@ def build_indexes(roots: DataRoots) -> dict:
     matrix_file = roots.coupling_matrix
     if matrix_file and matrix_file.exists():
         try:
-            mat = yaml.safe_load(matrix_file.read_text())
+            mat = _yaml().safe_load(matrix_file.read_text())
             for etype, info in (mat.get("edge_types") or {}).items():
                 for ex in (info.get("examples") or []):
                     edge = ex.get("edge", "")
@@ -409,24 +416,81 @@ def _strategy_for_canonical(cid: str, input_category: str, indexes: dict, intent
     return {"primary": primary, "fallback": fallbacks}
 
 
+_PROVIDER_PRIORITY = ("cmfd_v1", "mswx_v1", "nasa_power_v1", "era5_v1")
+_POLY_CACHE: dict = {}
+
+
+def _year(v) -> int | None:
+    try:
+        return int(str(v)[:4])
+    except (TypeError, ValueError):
+        return None                       # "near-real-time" / blank = open-ended
+
+
+def _provider_covers_point(spatial: dict, lat, lon) -> bool:
+    """A provider covers the point when it lies inside the declared coverage POLYGON (web defect 5:
+    CMFD's grid extent is not its coverage — the polygon is China), else inside the extent box.
+    A declared polygon that cannot be read fails CLOSED (the point is NOT covered) and is logged."""
+    poly = (spatial or {}).get("coverage_polygon")
+    if lat is None or lon is None:
+        return not poly                   # no location: a region-limited provider cannot be verified
+    if poly:
+        try:
+            key = (poly.get("path"), tuple(poly.get("names") or []), poly.get("name_field"))
+            geom = _POLY_CACHE.get(key)
+            if geom is None:
+                import geopandas as gpd
+                g = gpd.read_file(poly["path"])
+                sel = g[g[poly.get("name_field") or "ADMIN"].isin(poly.get("names") or [])]
+                geom = sel.geometry.union_all() if hasattr(sel.geometry, "union_all") else sel.geometry.unary_union
+                geom = geom.buffer(float(poly.get("buffer_deg") or 0))
+                _POLY_CACHE[key] = geom
+            from shapely.geometry import Point
+            return bool(geom.contains(Point(float(lon), float(lat))))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("forcing coverage polygon unreadable (%s): point treated as NOT covered", e)
+            return False
+    ext = (spatial or {}).get("extent") or {}
+    if not ext:
+        return True
+    return (float(ext.get("west", -180)) <= float(lon) <= float(ext.get("east", 180))
+            and float(ext.get("south", -90)) <= float(lat) <= float(ext.get("north", 90)))
+
+
+def _provider_covers_period(temporal: dict, start_year, end_year) -> bool:
+    rng = (temporal or {}).get("range") or {}
+    y0, y1 = _year(rng.get("start")), _year(rng.get("end"))
+    if start_year is not None and y0 is not None and int(start_year) < y0:
+        return False
+    if end_year is not None and y1 is not None and int(end_year) > y1:
+        return False
+    return True
+
+
 def _pick_forcing_provider(options: list[dict], intent: dict) -> str:
-    """Location+period rule: CMFD in China ≤2018 → MSWX → NASA POWER → ERA5 (chat's
-    LOCATION AWARENESS rule, made deterministic)."""
+    """Location + period rule, DATA-DRIVEN (web defect 5, 2026-09-17): providers in priority order
+    (CMFD → MSWX → NASA POWER → ERA5); the first whose declared coverage contains the point AND whose
+    declared period contains the run period is picked. Coverage and period come from
+    ata-kdt/forcing_providers/<p>.yaml — CMFD: the China polygon and 1951-2024 (was a 70-140E/15-55N
+    rectangle and 1979-2018, which chose CMFD for New Delhi and MSWX for eastern China in 2020)."""
     lat, lon = intent.get("lat"), intent.get("lon")
-    start_year = intent.get("start_year")
-    end_year = intent.get("end_year")
+    start_year, end_year = intent.get("start_year"), intent.get("end_year")
     pids = {o["provider_id"]: o for o in options}
-    in_china = lat is not None and lon is not None and 70 <= lon <= 140 and 15 <= lat <= 55
-    if "cmfd_v1" in pids and in_china:
-        if start_year is None or (start_year >= 1979 and (end_year or 2018) <= 2018):
-            return "cmfd_v1"
-    if "mswx_v1" in pids:
-        if start_year is None or (start_year >= 1979 and (end_year or 2026) <= 2026):
-            return "mswx_v1"
-    if "nasa_power_v1" in pids:
-        return "nasa_power_v1"
-    if "era5_v1" in pids:
-        return "era5_v1"
+    for pid in _PROVIDER_PRIORITY:
+        o = pids.get(pid)
+        if o is None:
+            continue
+        if _provider_covers_point(o.get("spatial") or {}, lat, lon) and \
+                _provider_covers_period(o.get("temporal") or {}, start_year, end_year):
+            return pid
+    for o in options:                       # a provider outside the priority list
+        if _provider_covers_point(o.get("spatial") or {}, lat, lon) and \
+                _provider_covers_period(o.get("temporal") or {}, start_year, end_year):
+            return o["provider_id"]
+    # nothing covers it: the planner still names one; validate() flags the period. NOTE (kimi): an
+    # open-ended "near-real-time" range accepts a FUTURE period (2030 → NASA POWER) — projection runs
+    # belong to the CMIP6 path, not to this picker.
     return options[0]["provider_id"]
 
 
@@ -450,31 +514,65 @@ def _strategy_for_unnamed(local_name: str, input_category: str, intent: dict) ->
 # Plan derivation — derive_plan.py L382-565
 # ---------------------------------------------------------------------------
 
-def derive_plan_for_model(model_id: str, intent: dict, indexes: dict, roots: DataRoots) -> dict:
-    card_path = roots.cards / f"{model_id}_ata_card.yaml"
-    if not card_path.exists():
-        return {"model": model_id, "error": f"ATA card not found: {card_path}",
+def derive_plan_for_model(model_id: str, intent: dict, indexes: dict, roots: DataRoots,
+                          ki_root: Path | None = None) -> dict:
+    """Owner (2026-09-16): the planner reads the model's OWN KI — dag.yaml (what the model needs:
+    inputs, units, connections) and SKILL.md (the KI's stages and tools) — not the ATA card.
+    Owner (2026-09-18): simple rules, no input→stage mapping:
+      * a forcing input a provider offers goes to the forcing providers by location (design point 6);
+      * an input a model in the run produces comes from that model;
+      * otherwise the dag's own `source_kind` decides: `user_provided` is shown as a question (the agent
+        reads the SKILL — if a stage's tool computes it, it says so and does not ask); anything else
+        (forcing nobody offers, derived, dataset_lookup, default, computed, calibrated, internal, unset)
+        is a KI DEFAULT the KI prepares per its SKILL.md;
+      * dag entries the vocabulary does not resolve (calibration parameters, model switches) are the
+        KI's internals: never questions, reported as ONE group (`ki_internal`);
+      * the SKILL's stages are listed verbatim (`ki_stages`) for the agent and the user to read."""
+    from .ki_inputs import model_inputs, skill_stages, model_ki_root
+    # The driver knows where the KI lives (web: <root>/models/<M>/knowledge_infrastructure;
+    # desktop: the bundled models/<M>/). Only fall back to the server layout when it does not.
+    ki_root = Path(ki_root) if ki_root else model_ki_root(roots.root, model_id)   # S0 round 2: DB ids (HEC-RAS) → HEC_RAS
+    ki_inputs, note = model_inputs(roots.root, model_id, ki_root=ki_root)
+    if not ki_inputs:
+        return {"model": model_id, "error": f"KI unreadable for {model_id}: {note}",
                 "inputs": [], "ask_user": [], "input_count": 0, "auto_resolved": 0}
-    card = yaml.safe_load(card_path.read_text())
     intent_with_self = {**intent, "_current_model": model_id}
-    inputs_plan, ask_user = [], []
-    for inp in (card.get("inputs") or []):
+    inputs_plan, ask_user, internals = [], [], []
+    for inp in ki_inputs:
+        if inp.get("category") == "_meta":
+            continue
         cid = inp.get("canonical_id")
-        local_name = inp.get("local_name") or ""
-        category = inp.get("input_category") or "?"
+        local_name = inp.get("name") or ""
+        category = inp.get("category") or "?"
         unit = inp.get("unit") or ""
-        if cid:
-            strategy = _strategy_for_canonical(cid, category, indexes, intent_with_self)
-        else:
-            strategy = _strategy_for_unnamed(local_name, category, intent_with_self)
+        sk = inp.get("source_kind")
+        if not cid:
+            internals.append({"name": local_name, "category": category, "unit": unit, "source_kind": sk})
+            continue
+        strategy = _strategy_for_canonical(cid, category, indexes, intent_with_self)
+        prim = strategy["primary"]
+        if prim.get("kind") in ("from_user", "from_dataset_lookup") and sk != "user_provided":
+            # nobody outside covers it and the dag does not say the user gives it: the KI prepares it
+            prev = prim
+            strategy = {"primary": {"kind": "ki_default", "source_kind": sk, "modes": inp.get("modes"),
+                                    "default_source": (f"{model_id} KI prepares it per SKILL.md "
+                                                       f"(dag source_kind: {sk or 'unset'})"),
+                                    "rationale": (f"the {model_id} dag marks it {sk or 'unset'} (not user_provided) "
+                                                  f"and no provider/upstream model covers it — the KI prepares it")},
+                        "fallback": ([prev] if prev.get("kind") == "from_dataset_lookup" else []) + list(strategy["fallback"])}
         inputs_plan.append({
-            "canonical_id": cid, "local_name": local_name, "input_category": category,
-            "unit": unit, "primary_strategy": strategy["primary"], "fallbacks": strategy["fallback"],
+            "canonical_id": cid, "local_name": local_name, "input_category": category, "unit": unit,
+            "dag_source_kind": sk,
+            "primary_strategy": strategy["primary"], "fallbacks": strategy["fallback"],
         })
         if strategy["primary"]["kind"] == "from_user":
             ask_user.append({"field": local_name or cid or "<unnamed>", "category": category,
-                             "unit": unit, "rationale": strategy["primary"].get("rationale")})
-    return {"model": model_id, "card_path": _rel(card_path, roots.root), "inputs": inputs_plan,
+                             "unit": unit, "dag_source_kind": sk,
+                             "rationale": strategy["primary"].get("rationale")})
+    stages = [{"code": st["code"], "name": st.get("name") or "", "tools": st.get("tools") or []}
+              for st in skill_stages(ki_root)]
+    return {"model": model_id, "ki_root": _rel(ki_root, roots.root),
+            "inputs": inputs_plan, "ki_internal": internals, "ki_stages": stages,
             "ask_user": ask_user, "input_count": len(inputs_plan),
             "auto_resolved": len(inputs_plan) - len(ask_user)}
 
@@ -521,15 +619,17 @@ def emit_coupling_graph(plan: dict, output_path: Path) -> None:
         "_TODO_for_execution": ("the above is done in the EXECUTING turn, never in planning"),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(yaml.safe_dump(out, default_flow_style=False, sort_keys=False))
+    output_path.write_text(_yaml().safe_dump(out, default_flow_style=False, sort_keys=False))
 
 
 def derive_full_plan(models: list[str], intent: dict, roots: DataRoots,
+                     ki_roots: dict[str, Path] | None = None,
                      indexes: dict | None = None) -> dict:
     if indexes is None:
         indexes = build_indexes(roots)
     intent_full = {**intent, "models": models}
-    plans = [derive_plan_for_model(m, intent_full, indexes, roots) for m in models]
+    plans = [derive_plan_for_model(m, intent_full, indexes, roots, ki_root=(ki_roots or {}).get(m))
+             for m in models]
     seen, combined = set(), []
     for p in plans:
         for q in p.get("ask_user", []):
@@ -565,7 +665,7 @@ def _dag_steps(model_id: str, ki_root: Path | None) -> list[dict]:
         p = Path(ki_root) / "dag.yaml"
         if p.is_file():
             try:
-                dag = yaml.safe_load(p.read_text(errors="ignore")) or {}
+                dag = _yaml().safe_load(p.read_text(errors="ignore")) or {}
             except Exception:
                 dag = None
     procs = (dag or {}).get("processes") or []
@@ -615,6 +715,8 @@ def to_artifacts(full_plan: dict, goal: str, ki_roots: dict[str, Path] | None = 
                                                  if f.get("kind") == "from_dataset_lookup"]
             elif kind == "from_upstream_model":
                 sources = [f"model:{ps.get('upstream_model')}"]
+            elif kind == "ki_default":
+                sources = ["ki_default"]
             if iid in seen_ids:
                 for it in items:
                     if it["id"] == iid and model not in it["required_by"]:
@@ -631,7 +733,11 @@ def to_artifacts(full_plan: dict, goal: str, ki_roots: dict[str, Path] | None = 
                 "strategy": kind,
                 "acceptable_sources": [s for s in sources if s],
                 "chosen_source": (ps.get("picked_provider") or ps.get("dataset")
-                                  or ps.get("upstream_model")),
+                                  or ps.get("upstream_model")
+                                  or ("ki_default" if kind == "ki_default" else None)),
+                "ki_default": ({"source_kind": ps.get("source_kind"),
+                                "default_source": ps.get("default_source"), "modes": ps.get("modes")}
+                               if kind == "ki_default" else None),
                 "local_paths": [],
                 "agent_resolvable": not needs_user,
                 "needs_user": needs_user,
@@ -652,6 +758,8 @@ def to_artifacts(full_plan: dict, goal: str, ki_roots: dict[str, Path] | None = 
         "intent": full_plan.get("intent", {}),
         "steps": steps,
         "scientific_choices": choices,
+        "ki_internal": {mp["model"]: mp.get("ki_internal") or [] for mp in full_plan.get("plans", [])},
+        "ki_stages": {mp["model"]: mp.get("ki_stages") or [] for mp in full_plan.get("plans", [])},
         "unresolved_questions": [q.get("field") for q in full_plan.get("ask_user_combined", [])],
         "summary": full_plan.get("summary", {}),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -664,7 +772,7 @@ def derive(models: list[str], intent: dict, goal: str, roots: DataRoots,
            ki_roots: dict[str, Path] | None = None) -> tuple[dict, dict, dict]:
     """One call: derived plan + the two artifacts. Pure; the driver caches/writes."""
     from .resolve import couplings_for
-    full = derive_full_plan(models, intent, roots)
+    full = derive_full_plan(models, intent, roots, ki_roots=ki_roots)
     edges = couplings_for(models, roots.couplings)
     plan_json, inventory = to_artifacts(full, goal, ki_roots, edges)
     return full, plan_json, inventory
@@ -789,6 +897,9 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
                 # by a legacy KI protocol. A preflight script is host-managed.
                 from .tools import is_ki_tool
                 tools_dir = Path(root) / "tools"
+                if not Path(str(tool)).is_absolute():
+                    errs.append(f"step {st.get('id')!r} tool must be an absolute path (the approval "
+                                f"is checked from other processes): {tool}"); continue
                 ok = is_ki_tool(root, tool)
                 if not ok:
                     errs.append(f"step {st.get('id')!r}: tool {tool!r} is not a runnable .py/.sh/"

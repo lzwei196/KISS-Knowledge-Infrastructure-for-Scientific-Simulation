@@ -157,7 +157,7 @@ _PLAN_SCHEMA_NOTE = (
 def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: Path,
                    ambiguous: dict | None = None, partners_to_ask: list[str] | None = None,
                    replan_reason: str = "", wrappers: dict | None = None,
-                   database_access_mode: str = "direct") -> str:
+                   database_access_mode: str = "disabled") -> str:
     """The read-only planning turn. kis = {model_id: ki_root}."""
     names = ", ".join(kis)
     s = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
@@ -178,9 +178,9 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "source, calibration target, extent/period). Offer 2-5 concrete options each.",
         "  5. Write runs/plan.json and runs/data-inventory.json (format below), then stop.",
         "Do NOT prepare inputs, do NOT compile, do NOT download, do NOT run any model binary or KI "
-        "pipeline tool. Read scripts and existing verification reports instead. Do not assume "
-        "--help or preflight is side-effect-free: some scripts run preprocessing on import. "
-        "Approval and execution happen in a LATER, separate session — do not ask "
+        "pipeline tool. Reading files is allowed; strict preflight is host-owned and runs at the "
+        "approval boundary, so do not invoke the KI's preflight or any --help command through "
+        "Bash in this planning turn. Approval and execution happen in a LATER, separate session — do not ask "
         "'shall I proceed'; the app asks the user.",
     ]
     if database_access_mode == "direct" and wrappers and wrappers.get("obs_search"):
@@ -220,9 +220,8 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
             "[GEOFORGE DATABASE: DISABLED] Database discovery is disabled for this project turn. "
             "Do not claim that the catalogue was searched or that a dataset is available.")
     if replan_reason:
-        lines.append(f"[RE-PLAN] {replan_reason}. Correct the existing draft rather than "
-                     "restarting the study. Nothing is approved for this revision; save both "
-                     "files and stop for host validation.")
+        lines.append(f"[RE-PLAN] The previous approval is void: {replan_reason}. Revise the plan "
+                     f"files; the user will approve again.")
     if ambiguous:
         lines.append("[AMBIGUOUS MODEL NAMES — ASK] " + "; ".join(
             f"'{k}' could be {v}" for k, v in ambiguous.items()))
@@ -260,22 +259,44 @@ def grounding_line(project: Path, plan: dict, approval: dict) -> str:
             "the scope, do NOT re-select models.\n")
 
 
+# Desktop only (host_acquired=True): data was fetched and receipted by the app before the
+# execution turn. The web lets the agent fetch, so it never says this.
+_DB_ACQUIRED_NOTE = (" GeoForge Database inputs (served, server clips, manual deliveries) were fetched "
+                     "and receipted by GeoForge before this turn; find them under inputs/ via the data "
+                     "receipts.")
+_DB_ACQUIRED_NOTE_WRAPPERS = (
+    "  GeoForge Database data (served, server clips, manual Baidu deliveries) is already "
+    "fetched and receipted by GeoForge before this execution turn; find it under inputs/ "
+    "via the data receipts. Missing catalogue data is a plan change (request_replan), not "
+    "something to download here.\n")
+
+
 def execution_block(kis: dict[str, Path], plan: dict, approval: dict, project: Path,
-                    provider: str = "", wrappers: dict | None = None, short: bool = False) -> str:
+                    provider: str = "", wrappers: dict | None = None, short: bool = False,
+                    include_discipline: bool = True, project_obligations: bool = True,
+                    host_acquired: bool = False, replan_tool: bool | None = None) -> str:
     """The execution session's contract. Raises KiHarnessError if a selected KI has no
     protocol (plan v3 B2: never fall back to run wording).
 
     wrappers: {"run_tool": "<cmd prefix>", "fetch": "<cmd prefix>"} for CLI providers;
-    None for API providers (their tools write receipts themselves)."""
+    None for API providers (their tools write receipts themselves).
+    include_discipline=False (chat, block C): the host prompt already carries its own
+    single-source discipline + long-job rules — skip this module's copy so the two
+    variants never both reach one prompt.
+    project_obligations=False (chat, block C): the host composes its own judge/hand-off
+    wording keyed to its project switch — skip the [VALIDATION — NOT YOUR OWN JUDGE] /
+    [DONE MEANS] lines (the receipts + re-plan lines still apply)."""
     lines = [grounding_line(project, plan, approval)]
     if short:
-        lines.append(discipline(len(kis)))
+        if include_discipline:
+            lines.append(discipline(len(kis)))
         return "\n".join(lines)
     for mid, root in kis.items():
         lines.append(f"===== {mid} " + "=" * max(4, 60 - len(mid)))
         lines.append(_ki_contract(Path(root), "execute"))
-    lines.append(discipline(len(kis)))
-    lines.append(PROGRESS_LONG_JOBS)
+    if include_discipline:
+        lines.append(discipline(len(kis)))
+        lines.append(PROGRESS_LONG_JOBS)
     if wrappers:
         lines.append(
             "[RECEIPTS — HOW A RUN BECOMES REAL]\n"
@@ -284,37 +305,39 @@ def execution_block(kis: dict[str, Path], plan: dict, approval: dict, project: P
             f"  downloads            : {wrappers.get('fetch', 'fetch')} --item <inventory id> "
             f"--step <plan step id> <url>\n"
             "  (options BEFORE the positional arguments; tool arguments after `--`)\n"
-            "  GeoForge Database data (served, server clips, manual Baidu deliveries) is already "
-            "fetched and receipted by GeoForge before this execution turn; find it under inputs/ "
-            "via the data receipts. Missing catalogue data is a plan change (request_replan), not "
-            "something to download here.\n"
+            + (_DB_ACQUIRED_NOTE_WRAPPERS if host_acquired else "") +
             "  These write a signed receipt (command, binary hash, exit code, input/output hashes). "
             "A model run or download done any other way has NO receipt and can never make the "
             "project 'done' — the app lists it as an unreceipted artifact.\n")
     else:
         lines.append(
             "[RECEIPTS] Every run_ki_tool / run_calibration / fetch_data call writes a signed "
-            "receipt. Outputs that no receipt names cannot make the project 'done'. GeoForge "
-            "Database inputs (served, server clips, manual deliveries) were fetched and receipted "
-            "by GeoForge before this turn; find them under inputs/ via the data receipts.\n")
-    lines.append(
-        "[VALIDATION — NOT YOUR OWN JUDGE] The app validates every output against the KI's "
-        "dag.yaml (exists, non-empty, no NaN/Inf, complete time axis, physically required "
-        "positive values, units). You PRODUCE the run and report exactly what it produced; you do "
-        "not declare a metric the verdict, and a FAILED validation is never a result.\n"
-        "[DONE MEANS] every planned step has a receipt and validation passed. Do not claim "
-        "completion while a detached job is still running — wait for it in this turn.\n")
-    lines.append(
-        ("[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
-         "core algorithm, a different data source, or a different extent/period/scenario/"
-         "calibration target: STOP, say 'REPLAN_REQUIRED: <why>' and end the turn. GeoForge then "
-         "starts the re-planning turn for you. Do not continue on a plan the user did not approve.\n"
-         if wrappers else
-         "[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
-         "core algorithm, a different data source, a different tool input, or a different extent/"
-         "period/scenario/calibration target: call request_replan(reason) and then write_plan "
-         "with the corrected plan in this same turn. Do not improvise around the approved plan; "
-         "the user approves the revision before anything else runs.\n"))
+            "receipt. Outputs that no receipt names cannot make the project 'done'."
+            + (_DB_ACQUIRED_NOTE if host_acquired else "") + "\n")
+    if project_obligations:
+        lines.append(
+            "[VALIDATION — NOT YOUR OWN JUDGE] The app validates every output against the KI's "
+            "dag.yaml (exists, non-empty, no NaN/Inf, complete time axis, physically required "
+            "positive values, units). You PRODUCE the run and report exactly what it produced; you do "
+            "not declare a metric the verdict, and a FAILED validation is never a result.\n"
+            "[DONE MEANS] every planned step has a receipt and validation passed. Do not claim "
+            "completion while a detached job is still running — wait for it in this turn.\n")
+    # replan_tool: the agent has request_replan/write_plan tools (desktop tool loop). Callers
+    # that know say so; the provider name is only the default.
+    if (replan_tool if replan_tool is not None else provider == "api"):
+        lines.append(
+            "[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
+            "core algorithm, a different data source, a different tool input, or a different extent/"
+            "period/scenario/calibration target: call request_replan(reason) and then write_plan "
+            "with the corrected plan in this same turn. Do not improvise around the approved plan; "
+            "the user approves the revision before anything else runs.\n")
+    else:
+        # CLI providers (web chat, desktop CLIs): the host parses the REPLAN_REQUIRED line
+        lines.append(
+            "[RE-PLAN TRIGGERS] If you find you need another model, a substitute for a model or a "
+            "core algorithm, a different data source, or a different extent/period/scenario/"
+            "calibration target: STOP, say 'REPLAN_REQUIRED: <why>' and end the turn. Do not "
+            "continue on a plan the user did not approve.\n")
     return "\n".join(lines)
 
 

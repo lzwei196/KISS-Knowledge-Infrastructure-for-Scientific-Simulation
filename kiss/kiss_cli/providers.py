@@ -796,7 +796,11 @@ def run(provider: Provider, prompt: str, cwd: Path,
                 # the flow state's argv replaces the base mapping (plan v3 B6/B7)
                 drop = tuple(getattr(flow_policy, "drop_flags", ()) or ())
                 base_kept = _strip_flags(extra_args, drop + ("--allowedTools",))
-                extra_args = base_kept + list(getattr(flow_policy, "argv_delta", []) or [])
+                # argv_delta is the exact tool wall (shared with the web, which asserts it
+                # carries no --permission-mode); argv_extra holds the desktop-only launcher
+                # flags (non-interactive permission mode, the fixed tool set).
+                extra_args = (base_kept + list(getattr(flow_policy, "argv_delta", []) or [])
+                              + list(getattr(flow_policy, "argv_extra", []) or []))
                 argv = _strip_flags(argv, drop)
                 enforcement = _pol.Enforcement(getattr(flow_policy, "enforcement").value)
             argv = argv + extra_args

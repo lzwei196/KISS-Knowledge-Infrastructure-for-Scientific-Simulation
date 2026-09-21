@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import time
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -94,10 +95,8 @@ ALLOWED: dict[State, frozenset[Capability]] = {
 # Which of the eight desktop display labels (kiss_cli/projectrun.py STAGES L25-28) a
 # flow state maps to. Display only; the UI panel keeps its wording.
 DISPLAY_STAGE: dict[State, str] = {
-    # RESOLVING_KIS is the protected task-intake turn: the Agent is still
-    # understanding the whole scientific request while proposing KI(s).  Showing
-    # "Choosing a KI" here made the architecture look — and behave — like a model
-    # name picker, which is precisely not the contract.
+    # RESOLVING_KIS is the protected task-intake turn: the agent is still understanding the
+    # whole request while proposing KI(s). "choosing_ki" made it look like a name picker.
     State.NEW: "understanding", State.RESOLVING_KIS: "understanding",
     State.PLANNING: "preparing", State.PLAN_REVIEW: "preparing",
     State.WAITING_FOR_USER: "preparing", State.APPROVED: "validating",
@@ -220,14 +219,30 @@ class FlowContext:
         p = cls._path(project)
         ctx = cls(project=Path(project))
         if not p.exists():
+            # Once the server registry has named a current state, deleting the workspace
+            # copy is corruption, not a way to reset a managed flow to NEW.
+            from . import receipts as _receipts
+            if _receipts.current_value(Path(project), "state") is not None:
+                raise FlowError(f"current flow state file missing: {p}; resolve by hand")
             return ctx                      # first run: NEW
         try:
             raw = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as e:
             # corrupt state is LOUD, never silently NEW (codex review #8)
             raise FlowError(f"flow state file unreadable: {p} ({e}); resolve by hand") from e
+        # flow-state controls the RUN_MODEL capability, so structural validity is not
+        # enough.  It is signed with the same app-owned per-project key as approvals and
+        # receipts; an agent-written state value must never grant itself EXECUTING.
+        from . import receipts as _receipts
+        if not _receipts.verify(Path(project), raw):
+            raise FlowError(f"flow state file signature invalid: {p}; resolve by hand")
+        if not _receipts.current_matches(Path(project), "state", raw):
+            raise FlowError(f"flow state file is stale, not the server-current state: {p}; "
+                            "resolve by hand")
         if not isinstance(raw, dict) or raw.get("state") not in State.__members__:
             raise FlowError(f"flow state file invalid: {p} (state={raw.get('state') if isinstance(raw, dict) else raw!r})")
+        if not isinstance(raw.get("state_nonce"), str) or not raw["state_nonce"]:
+            raise FlowError(f"flow state file invalid: {p} (missing state nonce)")
         ctx.state = State(raw["state"])
         ctx.selected_kis = [str(k) for k in (raw.get("selected_kis") or [])][:20]
         ctx.plan_sha256 = raw.get("plan_sha256")
@@ -249,7 +264,13 @@ class FlowContext:
         d["state"] = self.state.value
         d["enforcement"] = self.enforcement.value
         d["display_stage"] = DISPLAY_STAGE[self.state]
-        d["updated_at"] = time.time()
+        self.updated_at = time.time()
+        d["updated_at"] = self.updated_at
+        # A nonce guarantees that two saves in the same clock tick cannot produce the
+        # same signed document and accidentally make an older state replay-current.
+        d["state_nonce"] = secrets.token_hex(16)
+        from . import receipts as _receipts
+        d = _receipts.sign(Path(self.project), d)
         # kimi R2 #3: the temp file lives under the protected .geoforge/ tree, never beside the
         # final file where a sibling name could be agent-writable
         tmpdir = Path(self.project) / ".geoforge" / "tmp"
@@ -257,6 +278,7 @@ class FlowContext:
         tmp = tmpdir / f"flow-state.{os.getpid()}.json"
         tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(p)
+        _receipts.publish_current(Path(self.project), "state", d)
         return p
 
     def move(self, event: str, evidence: dict | None = None) -> State:

@@ -56,11 +56,31 @@ _AMBIGUOUS_OUTPUT_HEADS = {"temperature", "temp", "surface_temp", "t", "h", "s",
                            "p", "z", "stage", "level", "depth"}
 
 
+def _registry_path(root: Path) -> Path:
+    """The canonical variable registry: the server's ata-kdt tree, or the desktop bundle
+    (flow/data/canonical_variable_registry.yaml, copied by build_data.py)."""
+    server = Path(root) / "ata-kdt" / "artifacts" / "canonical_variable_registry.yaml"
+    return server if server.is_file() else Path(root) / "canonical_variable_registry.yaml"
+
+
 def _card_gen_module(root: Path):
-    """The card generator's tables (EXTRA_ALIASES, EXTRA_TARGET_DIMENSIONS) — imported by path so there is one table."""
+    """The card generator's tables (EXTRA_ALIASES, DROPPED_ALIASES, EXTRA_TARGET_DIMENSIONS) —
+    imported by path on the server so there is one table; on the desktop the same tables are
+    read from the bundle (flow/data/alias_tables.json, exported by build_data.py)."""
     import importlib.util, sys
     p = Path(root) / "ata-kdt" / "pipelines" / "ata_pipeline1_card_gen.py"
     if not p.is_file():
+        j = Path(root) / "alias_tables.json"
+        if j.is_file():
+            try:
+                import json
+                from types import SimpleNamespace
+                d = json.loads(j.read_text(encoding="utf-8")) or {}
+                return SimpleNamespace(EXTRA_ALIASES=dict(d.get("EXTRA_ALIASES") or {}),
+                                       DROPPED_ALIASES=set(d.get("DROPPED_ALIASES") or []),
+                                       EXTRA_TARGET_DIMENSIONS=dict(d.get("EXTRA_TARGET_DIMENSIONS") or {}))
+            except Exception:
+                return None
         return None
     mod = sys.modules.get("_ata_card_gen")
     if mod is not None and getattr(mod, "__file__", None) == str(p):
@@ -82,7 +102,7 @@ def canonical_facts(root: Path) -> dict[str, dict]:
         return _FACTS_CACHE[key]
     facts: dict[str, dict] = {}
     try:
-        reg = _yaml().safe_load((Path(root) / "ata-kdt" / "artifacts" / "canonical_variable_registry.yaml")
+        reg = _yaml().safe_load(_registry_path(root)
                                 .read_text(encoding="utf-8")) or {}
         for cid, info in (reg.get("registry") or {}).items():
             tt = info.get("target_type")
@@ -332,7 +352,7 @@ def alias_index(root: Path) -> dict[str, str]:
         return _ALIAS_CACHE[key]
     idx: dict[str, str] = {}
     try:
-        reg = _yaml().safe_load((Path(root) / "ata-kdt" / "artifacts" / "canonical_variable_registry.yaml")
+        reg = _yaml().safe_load(_registry_path(root)
                                 .read_text(encoding="utf-8")) or {}
         # S0 (2026-09-21): a canonical id always names itself (water_table_depth must not become
         # hydraulic_head because a registry entry got there first), and only EXACT-confidence

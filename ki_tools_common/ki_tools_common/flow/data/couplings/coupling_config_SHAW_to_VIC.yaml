@@ -169,7 +169,7 @@ risks:
       model: VIC
       trap_id: vic_frozen_002
       description: VIC state file ice_content units are volumetric (mm water equivalent per layer)
-      fix: Convert SHAW fice [fraction] → VIC ice_content [mm]: ice_mm = fice * porosity * layer_depth_mm
+      fix: "Convert SHAW fice [fraction] → VIC ice_content [mm]: ice_mm = fice * porosity * layer_depth_mm"
       is_unit_trap: true
       automatable: false
     - canonical_var: soil_ice_fraction

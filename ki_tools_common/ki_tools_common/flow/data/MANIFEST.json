@@ -166,11 +166,11 @@
     "couplings/coupling_config_Pywr_to_CaMa_Flood.yaml": "a58dea6ba7d6657c16d1927b85323c65889550a88aa75874208ea4631951cf64",
     "couplings/coupling_config_RZWQM2_to_HSPF.yaml": "521e59da94df21fefaae530cc827c27fee273be710e6569d858744a29f3d7c3b",
     "couplings/coupling_config_Ribasim_to_CWatM.yaml": "44bc4f83050f24e649bb7b9e0fdd1b605b49ab1486dcb05663077ba612c7d4bd",
-    "couplings/coupling_config_SFINCS_to_UrbanSim.yaml": "fd98224c227d8287dc152e4ca57ece0609166c0af9cdc04bd15c8b9b648a5c12",
+    "couplings/coupling_config_SFINCS_to_UrbanSim.yaml": "443294c2eaa98ee71ed143379f853237aae46335379e1fe3c483e96743ed85f8",
     "couplings/coupling_config_SFINCS_to_WNTR.yaml": "c9bf0bbb70df0bbcaf295c0f83860e1f489bff43c4341af409b654babdf1753a",
     "couplings/coupling_config_SHAW_to_AquaCrop.yaml": "e66c4ae25f1948166975e99af8c6de6042f8c1569c1209043e337c962d582087",
     "couplings/coupling_config_SHAW_to_DSSAT.yaml": "189cf31ba3addf35e451035a3256360ae3bb666337b509276f1e3e6a65e984f6",
-    "couplings/coupling_config_SHAW_to_VIC.yaml": "e2dfcbeb2a0eba716deb259ee9f6d50ea2b47097321371b044c0dddd21c9c088",
+    "couplings/coupling_config_SHAW_to_VIC.yaml": "b3db542c4b2e938c52426c614d701cf124047ab5eb9383532ed7a25df709cac7",
     "couplings/coupling_config_SWAT_Plus_to_CaMa_Flood.yaml": "2d78adf7cf2d074b65734c6a152aaa03ffa3df89216877a86158b956f126139d",
     "couplings/coupling_config_SWMM_to_CaMa_Flood.yaml": "a06f5299168bd3210076ed9508c2ea408ec8d9f02064ccf1dbcc3893c19841ee",
     "couplings/coupling_config_SaltMod_to_DSSAT.yaml": "7098a6a8c049844b65057e5f057d36cbb025b3ca65fbc048fcdfa905ca75989c",
@@ -234,11 +234,13 @@
     "couplings/couple_WSIMOD_to_CWatM.py": "7a72b3a35037047a174ba201232d99661ef6ed4137225441fe13fd1551bf97e2",
     "couplings/couple_WaTEM_SEDEM_to_SWAT_Plus.py": "e08e38064c94ddf7d0084ed0c4d35e22db276871b9fd62a80d217955c175db99",
     "couplings/couple_wflow_to_CaMa_Flood.py": "e8a34600d084c535f1a6a411d4dba28ba43fa8e05749f112e10ed33be285dfd5",
-    "forcing_providers/cmfd.yaml": "e62f0dc889d226f6f0337987134d0b6dbf9c139518bb636835ebd48d1501fd88",
+    "forcing_providers/cmfd.yaml": "ca1007bedbd3aa96587a745960d3e790ad1b204fe15b383a110c2cf0866f49cf",
     "forcing_providers/era5.yaml": "42bb7b6cde3bd4532917efdd68ee5a4cce72d82b6b8d5998bb7dbbe6b86b53a5",
     "forcing_providers/mswx.yaml": "0ea295bb8c9b8e6b80a706a043ad3b7c380c65c7441df5a2aab1e35143464b10",
     "forcing_providers/nasa_power.yaml": "41e916bf11b050c117cd76d65b65fd95ea321af9025f6c8d7afab183271720da",
+    "alias_tables.json": "ff434b3ffe305537f4d096ead86a3ebf1bdb6b4284e5d777c1ff22d89a2b555a",
     "_schema.md": "0b48b81073efa44457674917793a371b88fc4f1f70c3b0450a36c13b85e6387b",
-    "coupling_matrix_v2.yaml": "b3eaa062240c4236b50e77da66b8fd0cad593f6ceadeb21bc6090ee4cf1d3d9a"
+    "coupling_matrix_v2.yaml": "b3eaa062240c4236b50e77da66b8fd0cad593f6ceadeb21bc6090ee4cf1d3d9a",
+    "canonical_variable_registry.yaml": "e4d3ae667a12bb37358e6ca1c4dce75b34946d3a48179ae3b440670f4f5fb422"
   }
 }

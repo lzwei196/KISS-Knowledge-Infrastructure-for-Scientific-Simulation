@@ -3,7 +3,7 @@ entity_type: forcing_provider
 provider_id: cmfd_v1
 provider_name: "China Meteorological Forcing Dataset"
 version: "1.0"
-description: "Gridded meteorological forcing for China, 0.1° resolution, 3-hourly, 1979-2018"
+description: "Gridded meteorological forcing for China, 0.1° resolution, 3-hourly, 1951-2024"
 reference: "He et al., 2020, Scientific Data"
 data_path: "/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg/"
 
@@ -72,10 +72,19 @@ spatial:
   resolution: 0.1deg
   extent: {west: 70, east: 140, south: 15, north: 55}
   crs: EPSG:4326
+  # web defect 5 (2026-09-17): the grid EXTENT is not the coverage — CMFD is valid over China only
+  # (the VIC SKILL: "using CMFD outside China silently produces wrong results"); the grid carries
+  # extrapolated values at New Delhi or Bangkok. The picker tests the point against this polygon.
+  coverage_polygon:
+    path: /mnt/datasets/Crop_model_dataset/FAOSTAT/ne110m/ne_110m_admin_0_countries.shp
+    name_field: ADMIN
+    names: [China, Taiwan]
+    buffer_deg: 0.25
 
 temporal:
   resolution: 3-hourly
-  range: {start: "1979-01-01", end: "2018-12-31"}
+  # web defect 5: the files on disk, the registry and the VIC SKILL all say 1951-2024 (was 1979-2018)
+  range: {start: "1951-01-01", end: "2024-12-31"}
   calendar: standard
 
 data_format: netcdf

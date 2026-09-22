@@ -1,0 +1,4669 @@
+# ATA Step 1 — Canonical Variable Registry (updated 2026-04-17, fix round)
+# 50 canonical quantities
+# Fix: discharge↔surface_runoff semantic transform + surface_water_flux family
+
+stats:
+  total_canonical_quantities: 50
+  coupling_variables: 23
+  unmapped_variables: 462
+registry:
+  precipitation_rate:
+    description: Rate of water (liquid+solid) reaching the surface
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: atmospheric
+    n_producers: 10
+    n_consumers: 61
+    n_unit_conventions: 33
+    observed_units:
+      '%':
+      - APSIM
+      cm:
+      - RZWQM2
+      cm/day:
+      - BIOME_BGC
+      - HydroCNHS
+      - WOFOST
+      g:
+      - APSIM
+      g/m2:
+      - APSIM
+      in/hr (US) or mm/hr (SI):
+      - PySWMM
+      inches:
+      - RZWQM2
+      inches/day:
+      - PRMS
+      kg m-2 per timestep:
+      - openAMUNDSEN
+      kg m-2 s-1:
+      - CWatM
+      kg m^-2 year^-1:
+      - PISM
+      kg/m2/month:
+      - OGGM
+      kg/m2/s:
+      - CLM5___CTSM
+      - ROMS
+      - SUMMA
+      m/day:
+      - GLM
+      - PCR_GLOBWB_2
+      - RHESSys
+      m/s:
+      - COAWST
+      - Ribasim
+      - TRIGRS
+      m/timestep:
+      - DHSVM
+      m/year:
+      - pyBadlands
+      m/yr:
+      - HydroTrend
+      m^2:
+      - Landlab
+      mm:
+      - HydroTrend
+      - LISFLOOD
+      - Landlab
+      mm (IFLAGSI=1) or inches (IFLAGSI=0):
+      - SHAW
+      mm d⁻¹:
+      - MONICA
+      mm/d:
+      - CRHM
+      - Daisy
+      - Raven
+      - SuperflexPy
+      mm/day:
+      - APSIM
+      - AquaCrop
+      - Climate_Projection
+      - DSSAT
+      - GR4J___airGR
+      - HYPE
+      - LDNDC
+      - LPJmL
+      - SWAT_Plus
+      - mHM
+      mm/h:
+      - CREST
+      mm/hr:
+      - CAESAR_Lisflood
+      - Delft3D
+      - SFINCS
+      - TopoFlow
+      - tRIBS
+      mm/hr (INTENSITY) or mm/interval (VOLUME):
+      - SWMM
+      mm/hr (SI) or in/hr (US):
+      - PySWMM
+      mm/hr (rate):
+      - EF5
+      mm/s:
+      - ELM
+      - FATES
+      - ParFlow
+      - WRF_Hydro
+      mm/timestep:
+      - VIC
+      - wflow
+      s:
+      - SWAN
+      unknown:
+      - ANUGA
+      - EPANET
+      - GSFLOW
+      - HEC_RAS
+      - MARRMoT
+      - pySTEPS
+    known_units_with_factors:
+      mm/day: 1.0
+      mm/hr: 24.0
+      mm/s: 86400.0
+      mm/3hr: 8.0
+      mm/timestep: null
+      m/day: 0.001
+      m/s: 1.157e-06
+      cm/day: 10.0
+      kg/m2/s: 86400.0
+      kg m-2 s-1: 86400.0
+      inches/day: 25.4
+      inches: null
+      mm: null
+    producers:
+    - model: APSIM
+      native_name: Wheat.Grain.Total.Wt
+      native_unit: g/m2
+      confidence: substring
+    - model: APSIM
+      native_name: Wheat.Grain.Protein
+      native_unit: '%'
+      confidence: substring
+    - model: APSIM
+      native_name: Wheat.Grain.Size
+      native_unit: g
+      confidence: substring
+    - model: HYPE
+      native_name: corrected_precipitation
+      native_unit: mm/day
+      confidence: substring
+    - model: LISFLOOD
+      native_name: rain
+      native_unit: mm
+      confidence: exact_alias
+    - model: Landlab
+      native_name: drainage_area
+      native_unit: m^2
+      confidence: substring
+    - model: PySWMM
+      native_name: system_rainfall
+      native_unit: in/hr (US) or mm/hr (SI)
+      confidence: substring
+    - model: RZWQM2
+      native_name: tile_drainage
+      native_unit: cm
+      confidence: substring
+    - model: SWAN
+      native_name: Tp
+      native_unit: s
+      confidence: exact_alias
+    - model: VIC
+      native_name: precipitation
+      native_unit: mm/timestep
+      confidence: exact_alias
+    consumers:
+    - model: ANUGA
+      native_name: rain
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: APSIM
+      native_name: rain
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: AquaCrop
+      native_name: precipitation
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: BIOME_BGC
+      native_name: precipitation
+      native_unit: cm/day
+      confidence: exact_alias
+    - model: CAESAR_Lisflood
+      native_name: rainfall_rate
+      native_unit: mm/hr
+      confidence: substring
+    - model: CLM5___CTSM
+      native_name: PRECTmms
+      native_unit: kg/m2/s
+      confidence: substring
+    - model: COAWST
+      native_name: rain
+      native_unit: m/s
+      confidence: exact_alias
+    - model: CREST
+      native_name: precipitation
+      native_unit: mm/h
+      confidence: exact_alias
+    - model: CRHM
+      native_name: precipitation
+      native_unit: mm/d
+      confidence: exact_alias
+    - model: CWatM
+      native_name: precipitation
+      native_unit: kg m-2 s-1
+      confidence: exact_alias
+    - model: Climate_Projection
+      native_name: cmip6_precipitation
+      native_unit: mm/day
+      confidence: substring
+    - model: DHSVM
+      native_name: Precipitation
+      native_unit: m/timestep
+      confidence: exact_alias
+    - model: DSSAT
+      native_name: precipitation
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: Daisy
+      native_name: Precip
+      native_unit: mm/d
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: precipitation
+      native_unit: mm/hr
+      confidence: exact_alias
+    - model: EF5
+      native_name: Precipitation
+      native_unit: mm/hr (rate)
+      confidence: exact_alias
+    - model: ELM
+      native_name: PRECTmms
+      native_unit: mm/s
+      confidence: substring
+    - model: EPANET
+      native_name: rain
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: FATES
+      native_name: Precipitation
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: GLM
+      native_name: precipitation
+      native_unit: m/day
+      confidence: exact_alias
+    - model: GR4J___airGR
+      native_name: Precip
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: GSFLOW
+      native_name: precipitation
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HEC_RAS
+      native_name: rain
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HYPE
+      native_name: precipitation
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: HydroCNHS
+      native_name: precipitation
+      native_unit: cm/day
+      confidence: exact_alias
+    - model: HydroTrend
+      native_name: monthly_precipitation
+      native_unit: mm
+      confidence: substring
+    - model: HydroTrend
+      native_name: monthly_precipitation_stddev
+      native_unit: mm
+      confidence: substring
+    - model: HydroTrend
+      native_name: annual_precipitation
+      native_unit: m/yr
+      confidence: substring
+    - model: LDNDC
+      native_name: precipitation
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: prec
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: Landlab
+      native_name: rainfall__daily_depth
+      native_unit: mm
+      confidence: substring
+    - model: MARRMoT
+      native_name: rain
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MONICA
+      native_name: precip
+      native_unit: mm d⁻¹
+      confidence: exact_alias
+    - model: OGGM
+      native_name: precipitation
+      native_unit: kg/m2/month
+      confidence: exact_alias
+    - model: PCR_GLOBWB_2
+      native_name: precipitation
+      native_unit: m/day
+      confidence: exact_alias
+    - model: PISM
+      native_name: precipitation
+      native_unit: kg m^-2 year^-1
+      confidence: exact_alias
+    - model: PRMS
+      native_name: precip
+      native_unit: inches/day
+      confidence: exact_alias
+    - model: ParFlow
+      native_name: precipitation
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: PySWMM
+      native_name: rainfall
+      native_unit: mm/hr (SI) or in/hr (US)
+      confidence: exact_alias
+    - model: RHESSys
+      native_name: rain
+      native_unit: m/day
+      confidence: exact_alias
+    - model: ROMS
+      native_name: rain
+      native_unit: kg/m2/s
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: breakpoint_rainfall
+      native_unit: inches
+      confidence: exact_alias
+    - model: Raven
+      native_name: precipitation
+      native_unit: mm/d
+      confidence: exact_alias
+    - model: Ribasim
+      native_name: precipitation
+      native_unit: m/s
+      confidence: exact_alias
+    - model: SFINCS
+      native_name: precipitation
+      native_unit: mm/hr
+      confidence: exact_alias
+    - model: SHAW
+      native_name: precipitation
+      native_unit: mm (IFLAGSI=1) or inches (IFLAGSI=0)
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: precipitation
+      native_unit: kg/m2/s
+      confidence: exact_alias
+    - model: SWAT_Plus
+      native_name: precipitation
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: SWMM
+      native_name: rainfall
+      native_unit: mm/hr (INTENSITY) or mm/interval (VOLUME)
+      confidence: exact_alias
+    - model: SuperflexPy
+      native_name: precipitation
+      native_unit: mm/d
+      confidence: exact_alias
+    - model: TRIGRS
+      native_name: rainfall_intensity
+      native_unit: m/s
+      confidence: substring
+    - model: TopoFlow
+      native_name: P_rain
+      native_unit: mm/hr
+      confidence: substring
+    - model: VIC
+      native_name: precipitation
+      native_unit: mm/timestep
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: precipitation
+      native_unit: cm/day
+      confidence: exact_alias
+    - model: WRF_Hydro
+      native_name: precipitation
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: mHM
+      native_name: precipitation
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: precip
+      native_unit: kg m-2 per timestep
+      confidence: exact_alias
+    - model: pyBadlands
+      native_name: rainfall
+      native_unit: m/year
+      confidence: exact_alias
+    - model: pySTEPS
+      native_name: precipitation
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: tRIBS
+      native_name: rainfall_rate
+      native_unit: mm/hr
+      confidence: substring
+    - model: wflow
+      native_name: precipitation
+      native_unit: mm/timestep
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  air_temperature:
+    description: Near-surface air temperature (mean/instantaneous)
+    dimension: Theta
+    preferred_unit: degC
+    domain_family: atmospheric
+    n_producers: 14
+    n_consumers: 49
+    n_unit_conventions: 12
+    observed_units:
+      Celsius:
+      - COAWST
+      - OpenHydroQual
+      - ROMS
+      K:
+      - Alpine3D
+      - Amanzi_ATS
+      - BMI
+      - CWatM
+      - FATES
+      - ForeFire
+      - ISSM
+      - OpenGeoSys
+      - PISM
+      - ParFlow
+      - PorePy
+      - SNOWPACK
+      - SUMMA
+      - WRF_Hydro
+      - icepack
+      - openAMUNDSEN
+      deg C:
+      - CISM
+      - DHSVM
+      - LPJmL
+      deg C (relative to pressure melting point):
+      - Elmer_Ice
+      degC:
+      - CE_QUAL_W2
+      - CRHM
+      - Delft3D
+      - EF5
+      - GEOPHIRES
+      - GLM
+      - GR4J___airGR
+      - HYPE
+      - HydroCNHS
+      - HydroTrend
+      - LDNDC
+      - MOM6
+      - Raven
+      - SHAW
+      - SuperflexPy
+      - VIC
+      - mHM
+      - wflow
+      degC (monthly mean):
+      - OGGM
+      degrees_C (or K with TemperatureInKelvin=1):
+      - LISFLOOD
+      degrees_Celsius:
+      - PCR_GLOBWB_2
+      dgC:
+      - Daisy
+      unknown:
+      - DayCent
+      - EPIC
+      - WASP
+      °C:
+      - MONICA
+      - tRIBS
+      °C or °F:
+      - PySWMM
+    known_units_with_factors:
+      degC: 0
+      K: -273.15
+      degrees_Celsius: 0
+      deg C: 0
+      °C: 0
+    producers:
+    - model: Alpine3D
+      native_name: TA
+      native_unit: K
+      confidence: exact_alias
+    - model: BMI
+      native_name: plate_surface__temperature
+      native_unit: K
+      confidence: substring
+    - model: CE_QUAL_W2
+      native_name: temperature_curtain
+      native_unit: degC
+      confidence: substring
+    - model: CISM
+      native_name: temp
+      native_unit: deg C
+      confidence: exact_alias
+    - model: COAWST
+      native_name: temp
+      native_unit: Celsius
+      confidence: exact_alias
+    - model: DayCent
+      native_name: temperature
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: Delft3D
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: Elmer_Ice
+      native_name: Temperature
+      native_unit: deg C (relative to pressure melting point)
+      confidence: exact_alias
+    - model: ISSM
+      native_name: Temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: MOM6
+      native_name: temp
+      native_unit: degC
+      confidence: exact_alias
+    - model: OpenGeoSys
+      native_name: temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: PorePy
+      native_name: temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: ROMS
+      native_name: temp
+      native_unit: Celsius
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: surface_temp
+      native_unit: K
+      confidence: substring
+    consumers:
+    - model: Alpine3D
+      native_name: TA
+      native_unit: K
+      confidence: exact_alias
+    - model: Amanzi_ATS
+      native_name: temperature_bc
+      native_unit: K
+      confidence: substring
+    - model: BMI
+      native_name: plate_surface__temperature
+      native_unit: K
+      confidence: substring
+    - model: CE_QUAL_W2
+      native_name: air_temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: COAWST
+      native_name: Tair
+      native_unit: Celsius
+      confidence: exact_alias
+    - model: CRHM
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: CWatM
+      native_name: tavg
+      native_unit: K
+      confidence: exact_alias
+    - model: DHSVM
+      native_name: Temperature
+      native_unit: deg C
+      confidence: exact_alias
+    - model: Daisy
+      native_name: AirTemp
+      native_unit: dgC
+      confidence: exact_alias
+    - model: DayCent
+      native_name: temperature
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: Delft3D
+      native_name: air_temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: EF5
+      native_name: Temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: EPIC
+      native_name: temp
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: FATES
+      native_name: Temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: ForeFire
+      native_name: temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: GEOPHIRES
+      native_name: Injection Temperature
+      native_unit: degC
+      confidence: substring
+    - model: GLM
+      native_name: air_temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: GR4J___airGR
+      native_name: TempMean
+      native_unit: degC
+      confidence: substring
+    - model: HYPE
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: HydroCNHS
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: HydroTrend
+      native_name: monthly_temperature
+      native_unit: degC
+      confidence: substring
+    - model: HydroTrend
+      native_name: monthly_temperature_stddev
+      native_unit: degC
+      confidence: substring
+    - model: HydroTrend
+      native_name: annual_temperature
+      native_unit: degC
+      confidence: substring
+    - model: LDNDC
+      native_name: temperature_average
+      native_unit: degC
+      confidence: exact_alias
+    - model: LISFLOOD
+      native_name: ta
+      native_unit: degrees_C (or K with TemperatureInKelvin=1)
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: temp
+      native_unit: deg C
+      confidence: exact_alias
+    - model: MONICA
+      native_name: tavg
+      native_unit: °C
+      confidence: exact_alias
+    - model: OGGM
+      native_name: temperature
+      native_unit: degC (monthly mean)
+      confidence: exact_alias
+    - model: OpenGeoSys
+      native_name: temperature_bc
+      native_unit: K
+      confidence: substring
+    - model: OpenHydroQual
+      native_name: Temperature
+      native_unit: Celsius
+      confidence: exact_alias
+    - model: PCR_GLOBWB_2
+      native_name: temperature
+      native_unit: degrees_Celsius
+      confidence: exact_alias
+    - model: PISM
+      native_name: ice_surface_temp
+      native_unit: K
+      confidence: substring
+    - model: ParFlow
+      native_name: air_temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: PorePy
+      native_name: temperature_bc
+      native_unit: K
+      confidence: substring
+    - model: PySWMM
+      native_name: temperature
+      native_unit: °C or °F
+      confidence: exact_alias
+    - model: ROMS
+      native_name: Tair
+      native_unit: Celsius
+      confidence: exact_alias
+    - model: Raven
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: SHAW
+      native_name: air_temperature_hourly
+      native_unit: degC
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: TA
+      native_unit: K
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: air_temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: SuperflexPy
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: VIC
+      native_name: air_temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: WASP
+      native_name: temp
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: WRF_Hydro
+      native_name: temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: icepack
+      native_name: temperature
+      native_unit: K
+      confidence: exact_alias
+    - model: mHM
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: temp
+      native_unit: K
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: air_temperature
+      native_unit: °C
+      confidence: exact_alias
+    - model: wflow
+      native_name: temperature
+      native_unit: degC
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  air_temperature_max:
+    description: Daily maximum air temperature
+    dimension: Theta
+    preferred_unit: degC
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 14
+    n_unit_conventions: 5
+    observed_units:
+      K:
+      - CWatM
+      deg C:
+      - LPJmL
+      - RHESSys
+      degC:
+      - AquaCrop
+      - BIOME_BGC
+      - Climate_Projection
+      - DSSAT
+      - LDNDC
+      - RZWQM2
+      - SHAW
+      - SWAT_Plus
+      - WOFOST
+      degrees Fahrenheit:
+      - PRMS
+      °C:
+      - MONICA
+    known_units_with_factors:
+      degC: 0
+      K: -273.15
+      deg C: 0
+      degrees Fahrenheit: null
+    producers:
+    - model: PRMS
+      native_name: basin_tmax
+      native_unit: degrees Fahrenheit
+      confidence: substring
+    consumers:
+    - model: AquaCrop
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    - model: BIOME_BGC
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    - model: CWatM
+      native_name: tmax
+      native_unit: K
+      confidence: exact_alias
+    - model: Climate_Projection
+      native_name: cmip6_tasmax
+      native_unit: degC
+      confidence: substring
+    - model: DSSAT
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: tmax
+      native_unit: deg C
+      confidence: exact_alias
+    - model: MONICA
+      native_name: tmax
+      native_unit: °C
+      confidence: exact_alias
+    - model: PRMS
+      native_name: tmax
+      native_unit: degrees Fahrenheit
+      confidence: exact_alias
+    - model: RHESSys
+      native_name: tmax
+      native_unit: deg C
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    - model: SHAW
+      native_name: temperature_max_min_daily
+      native_unit: degC
+      confidence: exact_alias
+    - model: SWAT_Plus
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: temperature_max
+      native_unit: degC
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  air_temperature_min:
+    description: Daily minimum air temperature
+    dimension: Theta
+    preferred_unit: degC
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 13
+    n_unit_conventions: 5
+    observed_units:
+      K:
+      - CWatM
+      deg C:
+      - LPJmL
+      - RHESSys
+      degC:
+      - AquaCrop
+      - BIOME_BGC
+      - Climate_Projection
+      - DSSAT
+      - LDNDC
+      - RZWQM2
+      - SWAT_Plus
+      - WOFOST
+      degrees Fahrenheit:
+      - PRMS
+      °C:
+      - MONICA
+    known_units_with_factors:
+      degC: 0
+      K: -273.15
+      deg C: 0
+      degrees Fahrenheit: null
+    producers:
+    - model: PRMS
+      native_name: basin_tmin
+      native_unit: degrees Fahrenheit
+      confidence: substring
+    consumers:
+    - model: AquaCrop
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    - model: BIOME_BGC
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    - model: CWatM
+      native_name: tmin
+      native_unit: K
+      confidence: exact_alias
+    - model: Climate_Projection
+      native_name: cmip6_tasmin
+      native_unit: degC
+      confidence: substring
+    - model: DSSAT
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: tmin
+      native_unit: deg C
+      confidence: exact_alias
+    - model: MONICA
+      native_name: tmin
+      native_unit: °C
+      confidence: exact_alias
+    - model: PRMS
+      native_name: tmin
+      native_unit: degrees Fahrenheit
+      confidence: exact_alias
+    - model: RHESSys
+      native_name: tmin
+      native_unit: deg C
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    - model: SWAT_Plus
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: temperature_min
+      native_unit: degC
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  dewpoint_temperature:
+    description: Dewpoint temperature
+    dimension: Theta
+    preferred_unit: degC
+    domain_family: atmospheric
+    n_producers: 0
+    n_consumers: 3
+    n_unit_conventions: 2
+    observed_units:
+      degC:
+      - CE_QUAL_W2
+      - SHAW
+      °C:
+      - tRIBS
+    known_units_with_factors:
+      degC: 0
+      K: -273.15
+    producers: []
+    consumers:
+    - model: CE_QUAL_W2
+      native_name: dewpoint_temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: SHAW
+      native_name: dewpoint_temperature
+      native_unit: degC
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: dew_point_temperature
+      native_unit: °C
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  shortwave_radiation:
+    description: Downward shortwave (solar) radiation at surface
+    dimension: M T^-3
+    preferred_unit: W/m2
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 27
+    n_unit_conventions: 7
+    observed_units:
+      J/m2/day:
+      - WOFOST
+      MJ/m2/d:
+      - Raven
+      MJ/m2/day:
+      - DSSAT
+      - HYPE
+      - RZWQM2
+      - SWAT_Plus
+      W m-2:
+      - openAMUNDSEN
+      W/m2:
+      - Alpine3D
+      - BIOME_BGC
+      - CE_QUAL_W2
+      - CRHM
+      - CWatM
+      - DHSVM
+      - Delft3D
+      - FATES
+      - GLM
+      - LDNDC
+      - LPJmL
+      - MOM6
+      - ParFlow
+      - SHAW
+      - SNOWPACK
+      - SUMMA
+      - VIC
+      - WRF_Hydro
+      W/m^2:
+      - OpenHydroQual
+      W/m²:
+      - tRIBS
+    known_units_with_factors:
+      W/m2: 1.0
+      W/m^2: 1.0
+      MJ/m2/day: 11.574
+      MJ/m2/d: 11.574
+      J/m2/day: 1.157e-05
+      kJ/m2/hr: null
+      cal/cm2/day: null
+    producers:
+    - model: Alpine3D
+      native_name: ISWR
+      native_unit: W/m2
+      confidence: exact_alias
+    consumers:
+    - model: Alpine3D
+      native_name: ISWR
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: BIOME_BGC
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: CE_QUAL_W2
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: CRHM
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: CWatM
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: DHSVM
+      native_name: Shortwave Radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: DSSAT
+      native_name: solar_radiation
+      native_unit: MJ/m2/day
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: FATES
+      native_name: Shortwave radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: GLM
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: HYPE
+      native_name: solar_radiation
+      native_unit: MJ/m2/day
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: global_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: swdown
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: MOM6
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: OpenHydroQual
+      native_name: Solar_radiation
+      native_unit: W/m^2
+      confidence: exact_alias
+    - model: ParFlow
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: solar_radiation
+      native_unit: MJ/m2/day
+      confidence: exact_alias
+    - model: Raven
+      native_name: shortwave_radiation
+      native_unit: MJ/m2/d
+      confidence: exact_alias
+    - model: SHAW
+      native_name: solar_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: ISWR
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: SWAT_Plus
+      native_name: solar_radiation
+      native_unit: MJ/m2/day
+      confidence: exact_alias
+    - model: VIC
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: irradiance
+      native_unit: J/m2/day
+      confidence: exact_alias
+    - model: WRF_Hydro
+      native_name: shortwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: sw_in
+      native_unit: W m-2
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: shortwave_radiation
+      native_unit: W/m²
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  longwave_radiation:
+    description: Downward longwave (thermal) radiation at surface
+    dimension: M T^-3
+    preferred_unit: W/m2
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 10
+    n_unit_conventions: 1
+    observed_units:
+      W/m2:
+      - Alpine3D
+      - CWatM
+      - DHSVM
+      - FATES
+      - GLM
+      - ParFlow
+      - SNOWPACK
+      - SUMMA
+      - VIC
+      - WRF_Hydro
+    known_units_with_factors:
+      W/m2: 1.0
+      W/m^2: 1.0
+    producers:
+    - model: Alpine3D
+      native_name: ILWR
+      native_unit: W/m2
+      confidence: exact_alias
+    consumers:
+    - model: Alpine3D
+      native_name: ILWR
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: CWatM
+      native_name: longwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: DHSVM
+      native_name: Longwave Radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: FATES
+      native_name: Longwave radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: GLM
+      native_name: longwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: ParFlow
+      native_name: longwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: ILWR
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: longwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: VIC
+      native_name: longwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: WRF_Hydro
+      native_name: longwave_radiation
+      native_unit: W/m2
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  wind_speed:
+    description: Near-surface wind speed
+    dimension: L T^-1
+    preferred_unit: m/s
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 47
+    n_unit_conventions: 13
+    observed_units:
+      Pa:
+      - MOM6
+      degrees:
+      - SWAN
+      - SimFire
+      degrees from N (nautical FROM convention):
+      - Delft3D
+      ft/min:
+      - SimFire
+      km/day:
+      - DSSAT
+      - RZWQM2
+      km/h:
+      - Cell2Fire
+      m s-1:
+      - openAMUNDSEN
+      m s⁻¹:
+      - MONICA
+      m/s:
+      - ADCIRC
+      - APSIM
+      - CE_QUAL_W2
+      - CLM5___CTSM
+      - COAWST
+      - CRHM
+      - CWatM
+      - DHSVM
+      - Daisy
+      - ELM
+      - FATES
+      - ForeFire
+      - GLM
+      - GeoClaw
+      - HYPE
+      - LDNDC
+      - LPJmL
+      - OpenHydroQual
+      - ParFlow
+      - ROMS
+      - Raven
+      - SUMMA
+      - SWAN
+      - SWAT_Plus
+      - VIC
+      - WOFOST
+      - WRF_Hydro
+      - tRIBS
+      m/s (IFLAGSI=1) or mph/miles_day (IFLAGSI=0):
+      - SHAW
+      m/s at 10m:
+      - Delft3D
+      mph:
+      - ELMFIRE
+      unknown:
+      - APEX
+    known_units_with_factors:
+      m/s: 1.0
+      m s-1: 1.0
+      m/s at 10m: 1.0
+      km/day: 0.01157
+      km/hr: 0.2778
+      ft/min: 0.00508
+      mph: 0.447
+    producers:
+    - model: ADCIRC
+      native_name: wind_velocity_output
+      native_unit: m/s
+      confidence: substring
+    consumers:
+    - model: ADCIRC
+      native_name: wind_velocity
+      native_unit: m/s
+      confidence: substring
+    - model: APEX
+      native_name: wind
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: APSIM
+      native_name: wind
+      native_unit: m/s
+      confidence: exact_alias
+    - model: CE_QUAL_W2
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: CLM5___CTSM
+      native_name: WIND
+      native_unit: m/s
+      confidence: exact_alias
+    - model: COAWST
+      native_name: Uwind
+      native_unit: m/s
+      confidence: substring
+    - model: COAWST
+      native_name: Vwind
+      native_unit: m/s
+      confidence: substring
+    - model: CRHM
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: CWatM
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: Cell2Fire
+      native_name: WS
+      native_unit: km/h
+      confidence: exact_alias
+    - model: DHSVM
+      native_name: Wind Speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: DSSAT
+      native_name: wind_speed
+      native_unit: km/day
+      confidence: exact_alias
+    - model: Daisy
+      native_name: Wind
+      native_unit: m/s
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: wind_speed
+      native_unit: m/s at 10m
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: wind_direction
+      native_unit: degrees from N (nautical FROM convention)
+      confidence: substring
+    - model: ELM
+      native_name: WIND
+      native_unit: m/s
+      confidence: exact_alias
+    - model: ELMFIRE
+      native_name: ws
+      native_unit: mph
+      confidence: exact_alias
+    - model: FATES
+      native_name: Wind speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: ForeFire
+      native_name: windU
+      native_unit: m/s
+      confidence: substring
+    - model: ForeFire
+      native_name: windV
+      native_unit: m/s
+      confidence: substring
+    - model: GLM
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: GeoClaw
+      native_name: wind_speed (storm surge)
+      native_unit: m/s
+      confidence: substring
+    - model: HYPE
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: wind
+      native_unit: m/s
+      confidence: exact_alias
+    - model: MOM6
+      native_name: wind_stress
+      native_unit: Pa
+      confidence: substring
+    - model: MONICA
+      native_name: wind
+      native_unit: m s⁻¹
+      confidence: exact_alias
+    - model: OpenHydroQual
+      native_name: Wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: ParFlow
+      native_name: wind_speed_east
+      native_unit: m/s
+      confidence: substring
+    - model: ParFlow
+      native_name: wind_speed_north
+      native_unit: m/s
+      confidence: substring
+    - model: ROMS
+      native_name: Uwind
+      native_unit: m/s
+      confidence: substring
+    - model: ROMS
+      native_name: Vwind
+      native_unit: m/s
+      confidence: substring
+    - model: RZWQM2
+      native_name: wind_speed
+      native_unit: km/day
+      confidence: exact_alias
+    - model: Raven
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: SHAW
+      native_name: wind_speed
+      native_unit: m/s (IFLAGSI=1) or mph/miles_day (IFLAGSI=0)
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: SWAN
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: SWAN
+      native_name: wind_direction
+      native_unit: degrees
+      confidence: substring
+    - model: SWAT_Plus
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: SimFire
+      native_name: wind_speed
+      native_unit: ft/min
+      confidence: exact_alias
+    - model: SimFire
+      native_name: wind_direction
+      native_unit: degrees
+      confidence: substring
+    - model: VIC
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    - model: WRF_Hydro
+      native_name: wind_u
+      native_unit: m/s
+      confidence: substring
+    - model: WRF_Hydro
+      native_name: wind_v
+      native_unit: m/s
+      confidence: substring
+    - model: openAMUNDSEN
+      native_name: wind_speed
+      native_unit: m s-1
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: wind_speed
+      native_unit: m/s
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  air_pressure:
+    description: Surface atmospheric pressure
+    dimension: M L^-1 T^-2
+    preferred_unit: Pa
+    domain_family: atmospheric
+    n_producers: 10
+    n_consumers: 18
+    n_unit_conventions: 6
+    observed_units:
+      Pa:
+      - Amanzi_ATS
+      - CWatM
+      - Delft3D
+      - DualSPHysics
+      - Elmer_Ice
+      - FATES
+      - GeoClaw
+      - ISSM
+      - OpenGeoSys
+      - PFLOTRAN
+      - ParFlow
+      - PorePy
+      - SUMMA
+      - WRF_Hydro
+      - dfnWorks
+      kPa:
+      - CRHM
+      - Raven
+      - VIC
+      m:
+      - TRIGRS
+      m (meters of water):
+      - ParFlow
+      m H2O:
+      - ADCIRC
+      mb (hPa):
+      - tRIBS
+    known_units_with_factors:
+      Pa: 1.0
+      kPa: 1000.0
+      hPa: 100.0
+      mb (hPa): 100.0
+      mbar: 100.0
+      m H2O: null
+    producers:
+    - model: ADCIRC
+      native_name: atmospheric_pressure_output
+      native_unit: m H2O
+      confidence: substring
+    - model: Amanzi_ATS
+      native_name: aqueous_pressure
+      native_unit: Pa
+      confidence: substring
+    - model: DualSPHysics
+      native_name: pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: Elmer_Ice
+      native_name: Pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: ISSM
+      native_name: Pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: OpenGeoSys
+      native_name: pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: PFLOTRAN
+      native_name: LIQUID_PRESSURE
+      native_unit: Pa
+      confidence: substring
+    - model: ParFlow
+      native_name: pressure_head
+      native_unit: m (meters of water)
+      confidence: substring
+    - model: PorePy
+      native_name: pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: TRIGRS
+      native_name: pressure_head_at_fs_min
+      native_unit: m
+      confidence: substring
+    consumers:
+    - model: ADCIRC
+      native_name: atmospheric_pressure
+      native_unit: m H2O
+      confidence: exact_alias
+    - model: Amanzi_ATS
+      native_name: pressure_bc
+      native_unit: Pa
+      confidence: substring
+    - model: CRHM
+      native_name: vapour_pressure
+      native_unit: kPa
+      confidence: substring
+    - model: CWatM
+      native_name: surface_pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: atmospheric_pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: FATES
+      native_name: Surface pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: GeoClaw
+      native_name: pressure (storm surge)
+      native_unit: Pa
+      confidence: substring
+    - model: OpenGeoSys
+      native_name: pressure_bc
+      native_unit: Pa
+      confidence: substring
+    - model: PFLOTRAN
+      native_name: LIQUID_PRESSURE
+      native_unit: Pa
+      confidence: substring
+    - model: ParFlow
+      native_name: atmospheric_pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: PorePy
+      native_name: pressure_bc
+      native_unit: Pa
+      confidence: substring
+    - model: Raven
+      native_name: air_pressure
+      native_unit: kPa
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: air_pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: VIC
+      native_name: air_pressure
+      native_unit: kPa
+      confidence: exact_alias
+    - model: WRF_Hydro
+      native_name: surface_pressure
+      native_unit: Pa
+      confidence: exact_alias
+    - model: dfnWorks
+      native_name: pressure_in
+      native_unit: Pa
+      confidence: substring
+    - model: dfnWorks
+      native_name: pressure_out
+      native_unit: Pa
+      confidence: substring
+    - model: tRIBS
+      native_name: atmospheric_pressure
+      native_unit: mb (hPa)
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  relative_humidity:
+    description: Relative humidity
+    dimension: '1'
+    preferred_unit: fraction
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 19
+    n_unit_conventions: 10
+    observed_units:
+      '%':
+      - Daisy
+      - LDNDC
+      - MONICA
+      - PIHM
+      - RZWQM2
+      '% (0-100)':
+      - DHSVM
+      0-1:
+      - SNOWPACK
+      dimensionless:
+      - TopoFlow
+      fraction:
+      - HYPE
+      - Raven
+      - SWAT_Plus
+      fraction (0-1):
+      - Alpine3D
+      - OpenHydroQual
+      fraction (0–1):
+      - tRIBS
+      kgC m-2 s-1:
+      - CLASSIC
+      percent:
+      - CRHM
+      - Cell2Fire
+      percent (0-100):
+      - Delft3D
+      - GLM
+      - SHAW
+    known_units_with_factors:
+      fraction: 1.0
+      0-1: 1.0
+      dimensionless: 1.0
+      percent: 0.01
+      '% (0-100)': 0.01
+    producers:
+    - model: CLASSIC
+      native_name: rh
+      native_unit: kgC m-2 s-1
+      confidence: exact_alias
+    consumers:
+    - model: Alpine3D
+      native_name: RH
+      native_unit: fraction (0-1)
+      confidence: exact_alias
+    - model: CRHM
+      native_name: relative_humidity
+      native_unit: percent
+      confidence: exact_alias
+    - model: Cell2Fire
+      native_name: RH
+      native_unit: percent
+      confidence: exact_alias
+    - model: DHSVM
+      native_name: Relative Humidity
+      native_unit: '% (0-100)'
+      confidence: exact_alias
+    - model: Daisy
+      native_name: RelHum
+      native_unit: '%'
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: relative_humidity
+      native_unit: percent (0-100)
+      confidence: exact_alias
+    - model: GLM
+      native_name: relative_humidity
+      native_unit: percent (0-100)
+      confidence: exact_alias
+    - model: HYPE
+      native_name: relative_humidity
+      native_unit: fraction
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: relative_humidity
+      native_unit: '%'
+      confidence: exact_alias
+    - model: MONICA
+      native_name: relhumid
+      native_unit: '%'
+      confidence: substring
+    - model: OpenHydroQual
+      native_name: Relative_humidity
+      native_unit: fraction (0-1)
+      confidence: exact_alias
+    - model: PIHM
+      native_name: RH
+      native_unit: '%'
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: relative_humidity
+      native_unit: '%'
+      confidence: exact_alias
+    - model: Raven
+      native_name: relative_humidity
+      native_unit: fraction
+      confidence: exact_alias
+    - model: SHAW
+      native_name: relative_humidity
+      native_unit: percent (0-100)
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: RH
+      native_unit: 0-1
+      confidence: exact_alias
+    - model: SWAT_Plus
+      native_name: relative_humidity
+      native_unit: fraction
+      confidence: exact_alias
+    - model: TopoFlow
+      native_name: RH
+      native_unit: dimensionless
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: relative_humidity
+      native_unit: fraction (0–1)
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: rh can also be 'heterotrophic respiration' in biogeochem models
+    target_type:
+    - variable
+  specific_humidity:
+    description: Specific humidity (mass mixing ratio)
+    dimension: '1'
+    preferred_unit: kg/kg
+    domain_family: atmospheric
+    n_producers: 0
+    n_consumers: 5
+    n_unit_conventions: 1
+    observed_units:
+      kg/kg:
+      - CWatM
+      - FATES
+      - ParFlow
+      - SUMMA
+      - WRF_Hydro
+    known_units_with_factors:
+      kg/kg: 1.0
+      g/kg: 0.001
+    producers: []
+    consumers:
+    - model: CWatM
+      native_name: specific_humidity
+      native_unit: kg/kg
+      confidence: exact_alias
+    - model: FATES
+      native_name: Specific humidity
+      native_unit: kg/kg
+      confidence: exact_alias
+    - model: ParFlow
+      native_name: specific_humidity
+      native_unit: kg/kg
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: specific_humidity
+      native_unit: kg/kg
+      confidence: exact_alias
+    - model: WRF_Hydro
+      native_name: specific_humidity
+      native_unit: kg/kg
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  vapor_pressure:
+    description: Water vapor pressure
+    dimension: M L^-1 T^-2
+    preferred_unit: kPa
+    domain_family: atmospheric
+    n_producers: 0
+    n_consumers: 4
+    n_unit_conventions: 3
+    observed_units:
+      hPa:
+      - APSIM
+      kPa:
+      - VIC
+      - WOFOST
+      mb (hPa):
+      - tRIBS
+    known_units_with_factors:
+      kPa: 1.0
+      Pa: 0.001
+      hPa: 0.1
+      mbar: 0.1
+    producers: []
+    consumers:
+    - model: APSIM
+      native_name: vp
+      native_unit: hPa
+      confidence: exact_alias
+    - model: VIC
+      native_name: vapor_pressure
+      native_unit: kPa
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: vapor_pressure
+      native_unit: kPa
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: vapor_pressure
+      native_unit: mb (hPa)
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  vapor_pressure_deficit:
+    description: Vapor pressure deficit
+    dimension: M L^-1 T^-2
+    preferred_unit: Pa
+    domain_family: atmospheric
+    n_producers: 0
+    n_consumers: 1
+    n_unit_conventions: 1
+    observed_units:
+      Pa:
+      - BIOME_BGC
+    known_units_with_factors:
+      Pa: 1.0
+      kPa: 1000.0
+    producers: []
+    consumers:
+    - model: BIOME_BGC
+      native_name: vpd
+      native_unit: Pa
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  cloud_cover:
+    description: Cloud cover fraction
+    dimension: '1'
+    preferred_unit: fraction
+    domain_family: atmospheric
+    n_producers: 0
+    n_consumers: 4
+    n_unit_conventions: 3
+    observed_units:
+      '%':
+      - openAMUNDSEN
+      fraction (0-1):
+      - Delft3D
+      - GLM
+      tenths (0-10):
+      - CE_QUAL_W2
+    known_units_with_factors:
+      fraction: 1.0
+      percent: 0.01
+      oktas: 0.125
+    producers: []
+    consumers:
+    - model: CE_QUAL_W2
+      native_name: cloud_cover
+      native_unit: tenths (0-10)
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: cloud_cover
+      native_unit: fraction (0-1)
+      confidence: exact_alias
+    - model: GLM
+      native_name: cloud_cover
+      native_unit: fraction (0-1)
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: cloud_fraction
+      native_unit: '%'
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  snow_rate:
+    description: Snowfall rate
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: atmospheric
+    n_producers: 0
+    n_consumers: 1
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - COSIPY
+    known_units_with_factors:
+      mm/day: 1.0
+      mm/s: 86400.0
+      kg/m2/s: 86400.0
+    producers: []
+    consumers:
+    - model: COSIPY
+      native_name: SNOWFALL
+      native_unit: m
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  surface_runoff:
+    description: Surface runoff (overland flow)
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: surface_water_flux
+    n_producers: 25
+    n_consumers: 8
+    n_unit_conventions: 15
+    observed_units:
+      CFS (US) or CMS (SI):
+      - PySWMM
+      W/m2:
+      - SNOWPACK
+      cfs:
+      - PRMS
+      kg m-2:
+      - openAMUNDSEN
+      kg/m2:
+      - Alpine3D
+      kg/month:
+      - OGGM
+      m:
+      - CWatM
+      m/day:
+      - PCR_GLOBWB_2
+      m/s:
+      - SUMMA
+      m3/s:
+      - mizuRoute
+      mm/day:
+      - CaMa_Flood
+      - VIC
+      - mHM
+      mm/month:
+      - LPJmL
+      mm/s:
+      - CLM5___CTSM
+      - ELM
+      - MOSART
+      - mizuRoute
+      mm/timestep:
+      - VIC
+      - wflow
+      unknown:
+      - GSFLOW
+      - HEC_HMS
+      - HEC_RAS
+      - Lohmann_Routing
+      - MARRMoT
+      - TOPMODEL
+    known_units_with_factors:
+      mm/day: 1.0
+      mm/timestep: null
+      mm/s: 86400.0
+      mm/hr: 24.0
+      mm/month: null
+      m: null
+      m3/s: null
+      cfs: null
+      kg m-2: null
+    producers:
+    - model: Alpine3D
+      native_name: MS_SNOWPACK_RUNOFF
+      native_unit: kg/m2
+      confidence: substring
+    - model: Alpine3D
+      native_name: MS_SOIL_RUNOFF
+      native_unit: kg/m2
+      confidence: substring
+    - model: CLM5___CTSM
+      native_name: QRUNOFF
+      native_unit: mm/s
+      confidence: substring
+    - model: CWatM
+      native_name: runoff
+      native_unit: m
+      confidence: exact_alias
+    - model: ELM
+      native_name: QRUNOFF
+      native_unit: mm/s
+      confidence: substring
+    - model: ELM
+      native_name: QOVER
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: GSFLOW
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HEC_HMS
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HEC_RAS
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: LPJmL
+      native_name: runoff
+      native_unit: mm/month
+      confidence: exact_alias
+    - model: Lohmann_Routing
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MARRMoT
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: OGGM
+      native_name: glacier_runoff
+      native_unit: kg/month
+      confidence: substring
+    - model: PCR_GLOBWB_2
+      native_name: totalRunoff
+      native_unit: m/day
+      confidence: substring
+    - model: PySWMM
+      native_name: subcatch_runoff
+      native_unit: CFS (US) or CMS (SI)
+      confidence: substring
+    - model: PySWMM
+      native_name: system_runoff
+      native_unit: CFS (US) or CMS (SI)
+      confidence: substring
+    - model: SNOWPACK
+      native_name: qs
+      native_unit: W/m2
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: total_runoff
+      native_unit: m/s
+      confidence: exact_alias
+    - model: TOPMODEL
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: VIC
+      native_name: runoff
+      native_unit: mm/timestep
+      confidence: exact_alias
+    - model: VIC
+      native_name: total_runoff
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: mHM
+      native_name: total_runoff
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: mizuRoute
+      native_name: basin_runoff
+      native_unit: m3/s
+      confidence: substring
+    - model: openAMUNDSEN
+      native_name: runoff
+      native_unit: kg m-2
+      confidence: exact_alias
+    - model: wflow
+      native_name: runoff
+      native_unit: mm/timestep
+      confidence: exact_alias
+    consumers:
+    - model: CaMa_Flood
+      native_name: runoff
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: GSFLOW
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HEC_RAS
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: Lohmann_Routing
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MARRMoT
+      native_name: runoff
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MOSART
+      native_name: QOVER
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: PRMS
+      native_name: runoff
+      native_unit: cfs
+      confidence: exact_alias
+    - model: mizuRoute
+      native_name: surface_runoff
+      native_unit: mm/s
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: runoff can mean surface only or total (surface+subsurface). Context-dependent.
+    target_type:
+    - variable
+    semantic_transforms:
+    - to: discharge
+      transform: discharge_m3s = runoff_mm_day * cell_area_m2 / 86400 / 1000
+      requires:
+      - cell_area_m2
+  baseflow:
+    description: 'Upward/lateral water flux from aquifer to stream or soil zone. Direction: groundwater → hydrology. NOT interchangeable
+      with recharge.'
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: subsurface_exchange
+    n_producers: 4
+    n_consumers: 2
+    n_unit_conventions: 4
+    observed_units:
+      m:
+      - CWatM
+      mm/day:
+      - LDNDC
+      mm/s:
+      - ELM
+      - MOSART
+      - mizuRoute
+      mm/timestep:
+      - VIC
+    known_units_with_factors:
+      mm/day: 1.0
+      mm/timestep: null
+      mm/s: 86400.0
+      m: null
+    producers:
+    - model: CWatM
+      native_name: baseflow
+      native_unit: m
+      confidence: exact_alias
+    - model: ELM
+      native_name: QDRAI
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: drainage
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: VIC
+      native_name: baseflow
+      native_unit: mm/timestep
+      confidence: exact_alias
+    consumers:
+    - model: MOSART
+      native_name: QDRAI
+      native_unit: mm/s
+      confidence: exact_alias
+    - model: mizuRoute
+      native_name: baseflow
+      native_unit: mm/s
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    semantic_relationship:
+      paired_with: recharge
+      relationship: baseflow and recharge are the two directions of hydrology↔groundwater coupling
+      transform: MODFLOW6 budget DRN/RIV/GHB flow terms → baseflow in mm/day per cell
+    target_type:
+    - variable
+  evapotranspiration:
+    description: Actual evapotranspiration
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: hydrology
+    n_producers: 12
+    n_consumers: 5
+    n_unit_conventions: 10
+    observed_units:
+      kg/m2:
+      - Alpine3D
+      kg/m2/s:
+      - SUMMA
+      m/day:
+      - FloPy
+      - RHESSys
+      m/s:
+      - Ribasim
+      mm:
+      - CRHM
+      mm/day:
+      - HYPE
+      - LDNDC
+      - RZWQM2
+      - SWMM
+      - mHM
+      mm/day (SI) or in/day (US):
+      - PySWMM
+      mm/hr:
+      - tRIBS
+      mm/timestep:
+      - VIC
+      - wflow
+      unknown:
+      - GSFLOW
+    known_units_with_factors:
+      mm/day: 1.0
+      mm/timestep: null
+      mm/hr: 24.0
+      mm/s: 86400.0
+      m/day: 0.001
+      kg/m2/s: 86400.0
+      cm/day: 10.0
+    producers:
+    - model: Alpine3D
+      native_name: ET
+      native_unit: kg/m2
+      confidence: exact_alias
+    - model: CRHM
+      native_name: actual_ET
+      native_unit: mm
+      confidence: exact_alias
+    - model: GSFLOW
+      native_name: evapotranspiration
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HYPE
+      native_name: evapotranspiration
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: evapotranspiration
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: RHESSys
+      native_name: evaporation
+      native_unit: m/day
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: evapotranspiration
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: evapotranspiration
+      native_unit: kg/m2/s
+      confidence: exact_alias
+    - model: VIC
+      native_name: evapotranspiration
+      native_unit: mm/timestep
+      confidence: exact_alias
+    - model: mHM
+      native_name: evapotranspiration
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: evapotranspiration
+      native_unit: mm/hr
+      confidence: exact_alias
+    - model: wflow
+      native_name: evapotranspiration
+      native_unit: mm/timestep
+      confidence: exact_alias
+    consumers:
+    - model: FloPy
+      native_name: evapotranspiration
+      native_unit: m/day
+      confidence: exact_alias
+    - model: PySWMM
+      native_name: evaporation
+      native_unit: mm/day (SI) or in/day (US)
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: pan_evaporation
+      native_unit: mm/day
+      confidence: substring
+    - model: Ribasim
+      native_name: evaporation
+      native_unit: m/s
+      confidence: exact_alias
+    - model: SWMM
+      native_name: evaporation
+      native_unit: mm/day
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ET can mean elapsed_time in non-earth-science contexts. In this library it's always evapotranspiration.
+    target_type:
+    - variable
+  potential_evapotranspiration:
+    description: Potential / reference evapotranspiration
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: hydrology
+    n_producers: 0
+    n_consumers: 10
+    n_unit_conventions: 6
+    observed_units:
+      cm/day:
+      - HydroCNHS
+      - WOFOST
+      mm/d:
+      - SuperflexPy
+      mm/day:
+      - AquaCrop
+      - LISFLOOD
+      - mHM
+      mm/h:
+      - CREST
+      mm/hr (rate):
+      - EF5
+      mm/timestep:
+      - wflow
+    known_units_with_factors:
+      mm/day: 1.0
+      mm/timestep: null
+      mm/hr: 24.0
+      cm/day: 10.0
+    producers: []
+    consumers:
+    - model: AquaCrop
+      native_name: reference_et
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: CREST
+      native_name: potential_evapotranspiration
+      native_unit: mm/h
+      confidence: exact_alias
+    - model: EF5
+      native_name: PET
+      native_unit: mm/hr (rate)
+      confidence: exact_alias
+    - model: HydroCNHS
+      native_name: potential_evapotranspiration
+      native_unit: cm/day
+      confidence: exact_alias
+    - model: LISFLOOD
+      native_name: et0
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: LISFLOOD
+      native_name: e0
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: SuperflexPy
+      native_name: potential_evapotranspiration
+      native_unit: mm/d
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: reference_et
+      native_unit: cm/day
+      confidence: exact_alias
+    - model: mHM
+      native_name: potential_evapotranspiration
+      native_unit: mm/day
+      confidence: exact_alias
+    - model: wflow
+      native_name: potential_evapotranspiration
+      native_unit: mm/timestep
+      confidence: exact_alias
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  soil_moisture:
+    description: Soil water content
+    dimension: L or 1
+    preferred_unit: mm
+    domain_family: hydrology
+    n_producers: 9
+    n_consumers: 1
+    n_unit_conventions: 7
+    observed_units:
+      dimensionless (0–1):
+      - tRIBS
+      fraction (volumetric):
+      - SHAW
+      m3/m3:
+      - SUMMA
+      mm:
+      - CRHM
+      - VIC
+      - mHM
+      percent:
+      - CREST
+      percent of WM:
+      - EF5
+      unknown:
+      - SWAP
+    known_units_with_factors:
+      mm: 1.0
+      m3/m3: null
+      cm3/cm3: null
+      fraction: null
+      percent: null
+      percent of WM: null
+      dimensionless (0–1): null
+    producers:
+    - model: CREST
+      native_name: soil_moisture
+      native_unit: percent
+      confidence: exact_alias
+    - model: CRHM
+      native_name: soil_moisture
+      native_unit: mm
+      confidence: exact_alias
+    - model: EF5
+      native_name: Soil Moisture
+      native_unit: percent of WM
+      confidence: exact_alias
+    - model: SHAW
+      native_name: soil_moisture_profiles
+      native_unit: fraction (volumetric)
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: soil_moisture
+      native_unit: m3/m3
+      confidence: exact_alias
+    - model: SWAP
+      native_name: soil_moisture
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: VIC
+      native_name: soil_moisture
+      native_unit: mm
+      confidence: exact_alias
+    - model: mHM
+      native_name: soil_moisture
+      native_unit: mm
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: soil_moisture
+      native_unit: dimensionless (0–1)
+      confidence: exact_alias
+    consumers:
+    - model: SWAP
+      native_name: soil_moisture
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+    - parameter
+  discharge:
+    description: Volumetric river discharge at a point
+    dimension: L^3 T^-1
+    preferred_unit: m3/s
+    domain_family: surface_water_flux
+    n_producers: 53
+    n_consumers: 15
+    n_unit_conventions: 16
+    observed_units:
+      CFS (US) or CMS (SI):
+      - PySWMM
+      hm3/day:
+      - LPJmL
+      kg/s:
+      - GEOPHIRES
+      m w.e.:
+      - COSIPY
+      m/day:
+      - FloPy
+      m/day per m^2 basin area:
+      - RHESSys
+      m2/s:
+      - PyDeltaRCM
+      m3/s:
+      - ADCIRC
+      - CAESAR_Lisflood
+      - CE_QUAL_W2
+      - CREST
+      - CRHM
+      - CWatM
+      - CaMa_Flood
+      - Climate_Projection
+      - DHSVM
+      - DLBreach
+      - Delft3D
+      - HYPE
+      - HydroTrend
+      - MOSART
+      - PCR_GLOBWB_2
+      - Pywr
+      - Raven
+      - Ribasim
+      - SFINCS
+      - SWAT_Plus
+      - WRF_Hydro
+      - mHM
+      - mizuRoute
+      - wflow
+      m3/s (for CMS units):
+      - SWMM
+      m^3/day:
+      - OpenHydroQual
+      m^3/s:
+      - Landlab
+      m^3/s (cms):
+      - EF5
+      mm/d:
+      - SuperflexPy
+      m³/s:
+      - tRIBS
+      m³/year:
+      - pyBadlands
+      unknown:
+      - ANUGA
+      - GEOtop
+      - HEC_HMS
+      - HEC_RAS
+      - Lohmann_Routing
+      - MARRMoT
+      - TOPMODEL
+      - pySTEPS
+    known_units_with_factors:
+      m3/s: 1.0
+      m³/s: 1.0
+      m^3/s (cms): 1.0
+      cfs: 0.02832
+      m3/day: 1.157e-05
+      hm3/day: null
+      m2/s: null
+      mm/day: null
+      m/day per m^2 basin area: null
+      m³/year: null
+    producers:
+    - model: ANUGA
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: CAESAR_Lisflood
+      native_name: actual_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: CAESAR_Lisflood
+      native_name: expected_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: CE_QUAL_W2
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: COSIPY
+      native_name: Q
+      native_unit: m w.e.
+      confidence: domain_disambiguated
+    - model: CREST
+      native_name: streamflow
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: CRHM
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: CWatM
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: CaMa_Flood
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: Climate_Projection
+      native_name: projected_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: DHSVM
+      native_name: Streamflow
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: DLBreach
+      native_name: breach_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: DLBreach
+      native_name: spillway_gate_flow
+      native_unit: m3/s
+      confidence: substring
+    - model: Delft3D
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: EF5
+      native_name: Streamflow
+      native_unit: m^3/s (cms)
+      confidence: exact_alias
+    - model: FloPy
+      native_name: specific_discharge
+      native_unit: m/day
+      confidence: substring
+    - model: GEOtop
+      native_name: discharge.txt
+      native_unit: unknown
+      confidence: substring
+    - model: HEC_HMS
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HEC_RAS
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HYPE
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: HYPE
+      native_name: observed_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: HydroTrend
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: discharge
+      native_unit: hm3/day
+      confidence: exact_alias
+    - model: Landlab
+      native_name: surface_water__discharge
+      native_unit: m^3/s
+      confidence: substring
+    - model: Lohmann_Routing
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MARRMoT
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MOSART
+      native_name: channel_outflow
+      native_unit: m3/s
+      confidence: substring
+    - model: MOSART
+      native_name: RIVER_DISCHARGE_OVER_LAND_LIQ
+      native_unit: m3/s
+      confidence: substring
+    - model: OpenHydroQual
+      native_name: inflow
+      native_unit: m^3/day
+      confidence: substring
+    - model: PCR_GLOBWB_2
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: PyDeltaRCM
+      native_name: discharge
+      native_unit: m2/s
+      confidence: exact_alias
+    - model: PySWMM
+      native_name: node_total_inflow
+      native_unit: CFS (US) or CMS (SI)
+      confidence: substring
+    - model: PySWMM
+      native_name: link_flow
+      native_unit: CFS (US) or CMS (SI)
+      confidence: substring
+    - model: PySWMM
+      native_name: system_outflow
+      native_unit: CFS (US) or CMS (SI)
+      confidence: substring
+    - model: Pywr
+      native_name: release_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: Pywr
+      native_name: spill_discharge
+      native_unit: m3/s
+      confidence: substring
+    - model: RHESSys
+      native_name: streamflow
+      native_unit: m/day per m^2 basin area
+      confidence: exact_alias
+    - model: Raven
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: Ribasim
+      native_name: inflow_rate
+      native_unit: m3/s
+      confidence: substring
+    - model: Ribasim
+      native_name: outflow_rate
+      native_unit: m3/s
+      confidence: substring
+    - model: Ribasim
+      native_name: flow_rate
+      native_unit: m3/s
+      confidence: substring
+    - model: SWAT_Plus
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: SWMM
+      native_name: outfall_discharge
+      native_unit: m3/s (for CMS units)
+      confidence: substring
+    - model: SWMM
+      native_name: conduit_flow
+      native_unit: m3/s (for CMS units)
+      confidence: substring
+    - model: SuperflexPy
+      native_name: streamflow
+      native_unit: mm/d
+      confidence: exact_alias
+    - model: TOPMODEL
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: WRF_Hydro
+      native_name: channel_discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: mHM
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: mizuRoute
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: pyBadlands
+      native_name: discharge
+      native_unit: m³/year
+      confidence: exact_alias
+    - model: pySTEPS
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: tRIBS
+      native_name: discharge
+      native_unit: m³/s
+      confidence: exact_alias
+    - model: wflow
+      native_name: discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    consumers:
+    - model: ADCIRC
+      native_name: river_discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: ANUGA
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: DLBreach
+      native_name: inflow_hydrograph
+      native_unit: m3/s
+      confidence: substring
+    - model: Delft3D
+      native_name: river_discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: GEOPHIRES
+      native_name: Production Flow Rate per Well
+      native_unit: kg/s
+      confidence: substring
+    - model: HEC_HMS
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: HEC_RAS
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: Lohmann_Routing
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: MARRMoT
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: OpenHydroQual
+      native_name: Inflow
+      native_unit: m^3/day
+      confidence: substring
+    - model: Pywr
+      native_name: reservoir_inflow
+      native_unit: m3/s
+      confidence: substring
+    - model: Ribasim
+      native_name: flow_boundary
+      native_unit: m3/s
+      confidence: substring
+    - model: SFINCS
+      native_name: river_discharge
+      native_unit: m3/s
+      confidence: exact_alias
+    - model: TOPMODEL
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: pySTEPS
+      native_name: discharge
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    is_coupling_variable: true
+    ambiguous_note: Q can mean discharge or specific humidity. In hydrology/routing models it's discharge.
+    target_type:
+    - variable
+    semantic_transforms:
+    - to: surface_runoff
+      transform: runoff_mm_day = discharge_m3s * 86400 / cell_area_m2 * 1000
+      requires:
+      - cell_area_m2
+      notes: Requires cell/basin area. This is a semantic transform (volumetric→flux_density), NOT a unit conversion.
+    common_traps:
+    - trap_id: discharge_runoff_confusion
+      description: Treating discharge (m³/s) as runoff (mm/day). Different physical dimensions — discharge is volume/time,
+        runoff is length/time.
+      severity: critical
+      detection: automatable
+      fix: Use transform_semantic with cell area, NOT convert_units
+    - trap_id: discharge_area_mismatch
+      description: Wrong cell area for discharge↔runoff conversion. Use SOURCE cell area for discharge→runoff.
+      severity: high
+  water_surface_elevation:
+    description: Water surface elevation above datum
+    dimension: L
+    preferred_unit: m
+    domain_family: hydrology
+    n_producers: 12
+    n_consumers: 5
+    n_unit_conventions: 8
+    observed_units:
+      0-7:
+      - MONICA
+      code:
+      - APSIM
+      dimensionless:
+      - WOFOST
+      m:
+      - CE_QUAL_W2
+      - Delft3D
+      - FloPy
+      - GLM
+      - MODFLOW6
+      - PIHM
+      - PyDeltaRCM
+      - SFINCS
+      m (MSL):
+      - Delft3D
+      m (above base):
+      - DLBreach
+      m (above embankment base):
+      - DLBreach
+      m ASL:
+      - CaMa_Flood
+    known_units_with_factors:
+      m: 1.0
+      m ASL: 1.0
+      m_ASL: 1.0
+      ft: 0.3048
+    producers:
+    - model: APSIM
+      native_name: Wheat.Phenology.Zadok.Stage
+      native_unit: code
+      confidence: substring
+    - model: CE_QUAL_W2
+      native_name: water_surface_elevation
+      native_unit: m
+      confidence: exact_alias
+    - model: CaMa_Flood
+      native_name: water_surface_elevation
+      native_unit: m ASL
+      confidence: exact_alias
+    - model: DLBreach
+      native_name: upstream_water_level
+      native_unit: m (above base)
+      confidence: substring
+    - model: Delft3D
+      native_name: water_level
+      native_unit: m
+      confidence: exact_alias
+    - model: GLM
+      native_name: lake_level
+      native_unit: m
+      confidence: exact_alias
+    - model: MODFLOW6
+      native_name: sfr_stage
+      native_unit: m
+      confidence: substring
+    - model: MONICA
+      native_name: Stage
+      native_unit: 0-7
+      confidence: exact_alias
+    - model: PIHM
+      native_name: STAGE
+      native_unit: m
+      confidence: exact_alias
+    - model: PyDeltaRCM
+      native_name: stage
+      native_unit: m
+      confidence: exact_alias
+    - model: SFINCS
+      native_name: water_surface_elevation
+      native_unit: m
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: development_stage
+      native_unit: dimensionless
+      confidence: substring
+    consumers:
+    - model: DLBreach
+      native_name: initial_water_level
+      native_unit: m (above embankment base)
+      confidence: substring
+    - model: Delft3D
+      native_name: water_level_boundary
+      native_unit: m (MSL)
+      confidence: substring
+    - model: FloPy
+      native_name: river_stage
+      native_unit: m
+      confidence: exact_alias
+    - model: MODFLOW6
+      native_name: river_stage
+      native_unit: m
+      confidence: exact_alias
+    - model: SFINCS
+      native_name: water_level_boundary
+      native_unit: m
+      confidence: substring
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  river_depth:
+    description: River channel water depth
+    dimension: L
+    preferred_unit: m
+    domain_family: hydrology
+    n_producers: 1
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - CaMa_Flood
+    known_units_with_factors:
+      m: 1.0
+    producers:
+    - model: CaMa_Flood
+      native_name: river_depth
+      native_unit: m
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  floodplain_depth:
+    description: Floodplain inundation depth
+    dimension: L
+    preferred_unit: m
+    domain_family: hydrology
+    n_producers: 2
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - CaMa_Flood
+      - SFINCS
+    known_units_with_factors:
+      m: 1.0
+    producers:
+    - model: CaMa_Flood
+      native_name: floodplain_depth
+      native_unit: m
+      confidence: exact_alias
+    - model: SFINCS
+      native_name: flood_depth
+      native_unit: m
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  floodplain_fraction:
+    description: Fraction of cell inundated by floodplain
+    dimension: '1'
+    preferred_unit: fraction
+    domain_family: hydrology
+    n_producers: 1
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      fraction:
+      - CaMa_Flood
+    known_units_with_factors:
+      fraction: 1.0
+    producers:
+    - model: CaMa_Flood
+      native_name: floodplain_fraction
+      native_unit: fraction
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  recharge:
+    description: 'Downward water flux from soil/root zone to aquifer. Always positive. Direction: hydrology → groundwater.
+      NOT interchangeable with baseflow.'
+    dimension: L T^-1
+    preferred_unit: mm/day
+    domain_family: subsurface_exchange
+    n_producers: 2
+    n_consumers: 5
+    n_unit_conventions: 4
+    observed_units:
+      kg/(m²·s):
+      - DuMux
+      kg/m2/s:
+      - Amanzi_ATS
+      m/day:
+      - FloPy
+      - MODFLOW6
+      - PCR_GLOBWB_2
+      m/s:
+      - OpenGeoSys
+      - PIHM
+    known_units_with_factors:
+      mm/day: 1.0
+      m/day: 0.001
+      m/s: 1.157e-06
+      kg/(m²·s): 86400.0
+    producers:
+    - model: PCR_GLOBWB_2
+      native_name: gwRecharge
+      native_unit: m/day
+      confidence: substring
+    - model: PIHM
+      native_name: RECHARGE
+      native_unit: m/s
+      confidence: exact_alias
+    consumers:
+    - model: Amanzi_ATS
+      native_name: recharge_flux
+      native_unit: kg/m2/s
+      confidence: substring
+    - model: DuMux
+      native_name: recharge
+      native_unit: kg/(m²·s)
+      confidence: exact_alias
+    - model: FloPy
+      native_name: recharge
+      native_unit: m/day
+      confidence: exact_alias
+    - model: MODFLOW6
+      native_name: recharge
+      native_unit: m/day
+      confidence: exact_alias
+    - model: OpenGeoSys
+      native_name: recharge
+      native_unit: m/s
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    semantic_relationship:
+      paired_with: baseflow
+      relationship: recharge and baseflow are the two directions of hydrology↔groundwater coupling
+      transform: baseflow × partition_fraction → recharge (typical fraction 0.3-0.7)
+    target_type:
+    - variable
+  hydraulic_head:
+    description: Absolute elevation of water surface in aquifer (m above datum). Native to MODFLOW6, FloPy, ParFlow. Can be
+      negative (below datum).
+    dimension: L
+    preferred_unit: m
+    domain_family: groundwater_level
+    n_producers: 7
+    n_consumers: 1
+    n_unit_conventions: 3
+    observed_units:
+      m:
+      - Amanzi_ATS
+      - FloPy
+      - MODFLOW6
+      - OpenHydroQual
+      - TRIGRS
+      mm:
+      - tRIBS
+      unknown:
+      - PHREEQC
+    known_units_with_factors:
+      m: 1.0
+      ft: 0.3048
+    producers:
+    - model: Amanzi_ATS
+      native_name: hydraulic_head
+      native_unit: m
+      confidence: exact_alias
+    - model: FloPy
+      native_name: head
+      native_unit: m
+      confidence: exact_alias
+    - model: MODFLOW6
+      native_name: hydraulic_head
+      native_unit: m
+      confidence: exact_alias
+    - model: OpenHydroQual
+      native_name: head
+      native_unit: m
+      confidence: exact_alias
+    - model: PHREEQC
+      native_name: water_table
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: TRIGRS
+      native_name: water_table_depth
+      native_unit: m
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: water_table_depth
+      native_unit: mm
+      confidence: exact_alias
+    consumers:
+    - model: FloPy
+      native_name: constant_head
+      native_unit: m
+      confidence: substring
+    is_coupling_variable: true
+    ambiguous_note: 'Datum confusion: MODFLOW uses model-local datum, not sea level. Must know the DEM/surface elevation to
+      convert to water_table_depth.'
+    semantic_relationship:
+      derived_to: water_table_depth
+      transform_equation: water_table_depth = surface_elevation - hydraulic_head
+      auxiliary_data:
+      - surface_elevation (DEM)
+    target_type:
+    - variable
+    - parameter
+  water_temperature:
+    description: Water body temperature (lake/river)
+    dimension: Theta
+    preferred_unit: degC
+    domain_family: lake
+    n_producers: 2
+    n_consumers: 2
+    n_unit_conventions: 3
+    observed_units:
+      K:
+      - ISSM
+      deg C:
+      - Elmer_Ice
+      degC:
+      - GLM
+    known_units_with_factors:
+      degC: 0
+      K: -273.15
+      deg C: 0
+    producers:
+    - model: GLM
+      native_name: temperature_profile
+      native_unit: degC
+      confidence: exact_alias
+    - model: GLM
+      native_name: surface_temperature
+      native_unit: degC
+      confidence: exact_alias
+    consumers:
+    - model: Elmer_Ice
+      native_name: surface_temperature
+      native_unit: deg C
+      confidence: exact_alias
+    - model: ISSM
+      native_name: surface_temperature
+      native_unit: K
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  grain_yield:
+    description: Harvested grain/fruit yield
+    dimension: M L^-2
+    preferred_unit: kg/ha
+    domain_family: crop
+    n_producers: 9
+    n_consumers: 0
+    n_unit_conventions: 6
+    observed_units:
+      kg DM ha⁻¹:
+      - MONICA
+      kg/ha:
+      - APSIM
+      - DSSAT
+      - RZWQM2
+      kg/ha (dry matter):
+      - WOFOST
+      kgC/ha:
+      - LDNDC
+      t/ha:
+      - AquaCrop
+      unknown:
+      - PyAEZ
+    known_units_with_factors:
+      kg/ha: 1.0
+      t/ha: 1000.0
+      kgC/ha: null
+      bushels/acre: null
+    producers:
+    - model: APSIM
+      native_name: Yield
+      native_unit: kg/ha
+      confidence: exact_alias
+    - model: AquaCrop
+      native_name: dry_yield
+      native_unit: t/ha
+      confidence: substring
+    - model: AquaCrop
+      native_name: fresh_yield
+      native_unit: t/ha
+      confidence: substring
+    - model: DSSAT
+      native_name: grain_yield
+      native_unit: kg/ha
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: crop_yield
+      native_unit: kgC/ha
+      confidence: exact_alias
+    - model: MONICA
+      native_name: Yield
+      native_unit: kg DM ha⁻¹
+      confidence: exact_alias
+    - model: PyAEZ
+      native_name: yield
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: RZWQM2
+      native_name: crop_yield
+      native_unit: kg/ha
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: grain_yield
+      native_unit: kg/ha (dry matter)
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  biomass:
+    description: Above-ground or total biomass
+    dimension: M L^-2
+    preferred_unit: kg/ha
+    domain_family: crop
+    n_producers: 3
+    n_consumers: 0
+    n_unit_conventions: 2
+    observed_units:
+      kg/ha:
+      - DSSAT
+      - WOFOST
+      unknown:
+      - PyAEZ
+    known_units_with_factors:
+      kg/ha: 1.0
+      t/ha: 1000.0
+      gC/m2: null
+    producers:
+    - model: DSSAT
+      native_name: total_biomass
+      native_unit: kg/ha
+      confidence: exact_alias
+    - model: PyAEZ
+      native_name: biomass
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: WOFOST
+      native_name: total_above_ground_biomass
+      native_unit: kg/ha
+      confidence: substring
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  leaf_area_index:
+    description: Leaf area index
+    dimension: '1'
+    preferred_unit: m2/m2
+    domain_family: crop
+    n_producers: 5
+    n_consumers: 0
+    n_unit_conventions: 3
+    observed_units:
+      m2 m-2:
+      - CLASSIC
+      m2/m2:
+      - BIOME_BGC
+      - ELM
+      - WOFOST
+      m² m⁻²:
+      - MONICA
+    known_units_with_factors:
+      m2/m2: 1.0
+    producers:
+    - model: BIOME_BGC
+      native_name: leaf_area_index
+      native_unit: m2/m2
+      confidence: exact_alias
+    - model: CLASSIC
+      native_name: lai
+      native_unit: m2 m-2
+      confidence: exact_alias
+    - model: ELM
+      native_name: TLAI
+      native_unit: m2/m2
+      confidence: exact_alias
+    - model: MONICA
+      native_name: LAI
+      native_unit: m² m⁻²
+      confidence: exact_alias
+    - model: WOFOST
+      native_name: leaf_area_index
+      native_unit: m2/m2
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  n2o_emission:
+    description: Nitrous oxide emission from soil
+    dimension: M L^-2 T^-1
+    preferred_unit: kgN/ha/day
+    domain_family: biogeochemistry
+    n_producers: 4
+    n_consumers: 0
+    n_unit_conventions: 3
+    observed_units:
+      kg N ha⁻¹:
+      - MONICA
+      kgN/ha/day:
+      - DSSAT
+      - LDNDC
+      unknown:
+      - DayCent
+    known_units_with_factors:
+      kgN/ha/day: 1.0
+      kgN/ha/yr: null
+      gN/m2/day: 10.0
+    producers:
+    - model: DSSAT
+      native_name: n2o_emission
+      native_unit: kgN/ha/day
+      confidence: exact_alias
+    - model: DayCent
+      native_name: n2o
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: LDNDC
+      native_name: n2o_emission
+      native_unit: kgN/ha/day
+      confidence: exact_alias
+    - model: MONICA
+      native_name: N2O
+      native_unit: kg N ha⁻¹
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  co2_flux:
+    description: CO2 flux (soil respiration or net ecosystem exchange)
+    dimension: M L^-2 T^-1
+    preferred_unit: kgC/ha/day
+    domain_family: biogeochemistry
+    n_producers: 3
+    n_consumers: 0
+    n_unit_conventions: 2
+    observed_units:
+      gC/m2/s:
+      - CLM5___CTSM
+      - ELM
+      kgC/ha/day:
+      - LDNDC
+    known_units_with_factors:
+      kgC/ha/day: 1.0
+      gC/m2/day: 10.0
+      gC/m2/s: 864000.0
+      kgC m-2 s-1: 86400000.0
+      umol/m2/s: null
+    producers:
+    - model: CLM5___CTSM
+      native_name: NEE
+      native_unit: gC/m2/s
+      confidence: exact_alias
+    - model: ELM
+      native_name: NEE
+      native_unit: gC/m2/s
+      confidence: exact_alias
+    - model: LDNDC
+      native_name: co2_heterotrophic
+      native_unit: kgC/ha/day
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: 'rh is ambiguous: relative_humidity (atmospheric) vs heterotrophic_respiration (biogeochem). Resolved
+      by model domain.'
+    target_type:
+    - variable
+  ch4_emission:
+    description: Methane emission
+    dimension: M L^-2 T^-1
+    preferred_unit: kgC/ha/day
+    domain_family: biogeochemistry
+    n_producers: 2
+    n_consumers: 0
+    n_unit_conventions: 2
+    observed_units:
+      kgC/ha/day:
+      - LDNDC
+      unknown:
+      - DayCent
+    known_units_with_factors:
+      kgC/ha/day: 1.0
+      gC/m2/day: 10.0
+    producers:
+    - model: DayCent
+      native_name: ch4
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: LDNDC
+      native_name: ch4_emission
+      native_unit: kgC/ha/day
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  nitrate_leaching:
+    description: Nitrate leaching below root zone
+    dimension: M L^-2 T^-1
+    preferred_unit: kgN/ha/day
+    domain_family: biogeochemistry
+    n_producers: 2
+    n_consumers: 0
+    n_unit_conventions: 2
+    observed_units:
+      kgN/ha:
+      - RZWQM2
+      kgN/ha/day:
+      - LDNDC
+    known_units_with_factors:
+      kgN/ha/day: 1.0
+      kgN/ha/yr: null
+    producers:
+    - model: LDNDC
+      native_name: no3_leaching
+      native_unit: kgN/ha/day
+      confidence: exact_alias
+    - model: RZWQM2
+      native_name: no3_leaching
+      native_unit: kgN/ha
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  soil_organic_carbon:
+    description: Soil organic carbon content
+    dimension: '1'
+    preferred_unit: fraction
+    domain_family: biogeochemistry
+    n_producers: 1
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      kgC kg⁻¹:
+      - MONICA
+    known_units_with_factors:
+      fraction: 1.0
+      percent: 0.01
+      g/kg: 0.001
+      kgC/m2: null
+    producers:
+    - model: MONICA
+      native_name: SOC
+      native_unit: kgC kg⁻¹
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+    - parameter
+  gross_primary_production:
+    description: Gross primary production (photosynthesis)
+    dimension: M L^-2 T^-1
+    preferred_unit: gC/m2/day
+    domain_family: biogeochemistry
+    n_producers: 6
+    n_consumers: 0
+    n_unit_conventions: 5
+    observed_units:
+      gC/m2/day:
+      - BIOME_BGC
+      gC/m2/month:
+      - LPJmL
+      gC/m2/s:
+      - CLM5___CTSM
+      - ELM
+      kg C ha⁻¹:
+      - MONICA
+      kgC m-2 s-1:
+      - CLASSIC
+    known_units_with_factors:
+      gC/m2/day: 1.0
+      gC/m2/s: 86400.0
+      kgC m-2 s-1: 86400000.0
+      gC/m2/month: null
+      kg C ha⁻¹: null
+    producers:
+    - model: BIOME_BGC
+      native_name: gross_primary_production
+      native_unit: gC/m2/day
+      confidence: exact_alias
+    - model: CLASSIC
+      native_name: gpp
+      native_unit: kgC m-2 s-1
+      confidence: exact_alias
+    - model: CLM5___CTSM
+      native_name: GPP
+      native_unit: gC/m2/s
+      confidence: exact_alias
+    - model: ELM
+      native_name: GPP
+      native_unit: gC/m2/s
+      confidence: exact_alias
+    - model: LPJmL
+      native_name: gpp
+      native_unit: gC/m2/month
+      confidence: exact_alias
+    - model: MONICA
+      native_name: GPP
+      native_unit: kg C ha⁻¹
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  snow_depth:
+    description: Snow depth on ground
+    dimension: L
+    preferred_unit: m
+    domain_family: cryosphere
+    n_producers: 5
+    n_consumers: 0
+    n_unit_conventions: 2
+    observed_units:
+      m:
+      - CLM5___CTSM
+      - FSM2
+      - SUMMA
+      - openAMUNDSEN
+      m (depth), mm (SWE):
+      - SHAW
+    known_units_with_factors:
+      m: 1.0
+      cm: 0.01
+      mm: 0.001
+    producers:
+    - model: CLM5___CTSM
+      native_name: SNOW_DEPTH
+      native_unit: m
+      confidence: exact_alias
+    - model: FSM2
+      native_name: snd
+      native_unit: m
+      confidence: exact_alias
+    - model: SHAW
+      native_name: snow_depth_swe
+      native_unit: m (depth), mm (SWE)
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: snow_depth
+      native_unit: m
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: snow_depth
+      native_unit: m
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  snow_water_equivalent:
+    description: Snow water equivalent
+    dimension: L
+    preferred_unit: mm
+    domain_family: cryosphere
+    n_producers: 9
+    n_consumers: 0
+    n_unit_conventions: 3
+    observed_units:
+      kg m-2:
+      - CLASSIC
+      - openAMUNDSEN
+      kg/m2:
+      - Alpine3D
+      - FSM2
+      - SNOWPACK
+      - SUMMA
+      mm:
+      - CRHM
+      - HYPE
+      - tRIBS
+    known_units_with_factors:
+      mm: 1.0
+      m: 1000.0
+      kg/m2: 1.0
+    producers:
+    - model: Alpine3D
+      native_name: SWE
+      native_unit: kg/m2
+      confidence: exact_alias
+    - model: CLASSIC
+      native_name: snw
+      native_unit: kg m-2
+      confidence: exact_alias
+    - model: CRHM
+      native_name: SWE
+      native_unit: mm
+      confidence: exact_alias
+    - model: FSM2
+      native_name: snw
+      native_unit: kg/m2
+      confidence: exact_alias
+    - model: HYPE
+      native_name: snow_water_equivalent
+      native_unit: mm
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: SWE
+      native_unit: kg/m2
+      confidence: exact_alias
+    - model: SUMMA
+      native_name: snow_water_equivalent
+      native_unit: kg/m2
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: swe
+      native_unit: kg m-2
+      confidence: exact_alias
+    - model: tRIBS
+      native_name: snow_water_equivalent
+      native_unit: mm
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  ice_thickness:
+    description: Ice sheet/shelf/lake ice thickness
+    dimension: L
+    preferred_unit: m
+    domain_family: cryosphere
+    n_producers: 5
+    n_consumers: 2
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - CISM
+      - COAWST
+      - ISSM
+      - PISM
+      - icepack
+    known_units_with_factors:
+      m: 1.0
+    producers:
+    - model: CISM
+      native_name: thk
+      native_unit: m
+      confidence: exact_alias
+    - model: COAWST
+      native_name: bed_thickness
+      native_unit: m
+      confidence: substring
+    - model: ISSM
+      native_name: Thickness
+      native_unit: m
+      confidence: exact_alias
+    - model: PISM
+      native_name: thk
+      native_unit: m
+      confidence: exact_alias
+    - model: icepack
+      native_name: thickness
+      native_unit: m
+      confidence: exact_alias
+    consumers:
+    - model: CISM
+      native_name: thk
+      native_unit: m
+      confidence: exact_alias
+    - model: icepack
+      native_name: thickness
+      native_unit: m
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: thickness is generic — could be ice, snow, soil layer. Resolved by model domain.
+    target_type:
+    - variable
+  glacier_mass_balance:
+    description: Glacier mass balance (accumulation minus ablation)
+    dimension: L T^-1
+    preferred_unit: m_we/yr
+    domain_family: cryosphere
+    n_producers: 1
+    n_consumers: 3
+    n_unit_conventions: 4
+    observed_units:
+      kg m^-2 year^-1:
+      - PISM
+      m/a ice equivalent:
+      - Elmer_Ice
+      m/yr ice equivalent:
+      - ISSM
+      mm:
+      - DHSVM
+    known_units_with_factors:
+      m_we/yr: 1.0
+      kg/m2/yr: null
+      mm_we/yr: 0.001
+    producers:
+    - model: DHSVM
+      native_name: Mass Balance
+      native_unit: mm
+      confidence: exact_alias
+    consumers:
+    - model: Elmer_Ice
+      native_name: surface_mass_balance
+      native_unit: m/a ice equivalent
+      confidence: substring
+    - model: ISSM
+      native_name: smb
+      native_unit: m/yr ice equivalent
+      confidence: exact_alias
+    - model: PISM
+      native_name: climatic_mass_balance
+      native_unit: kg m^-2 year^-1
+      confidence: substring
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  soil_temperature:
+    description: Soil temperature at depth
+    dimension: Theta
+    preferred_unit: degC
+    domain_family: soil
+    n_producers: 3
+    n_consumers: 0
+    n_unit_conventions: 2
+    observed_units:
+      K:
+      - FSM2
+      - openAMUNDSEN
+      degC:
+      - SHAW
+    known_units_with_factors:
+      degC: 0
+      K: -273.15
+    producers:
+    - model: FSM2
+      native_name: Tsoil
+      native_unit: K
+      confidence: exact_alias
+    - model: SHAW
+      native_name: soil_temperature_profiles
+      native_unit: degC
+      confidence: exact_alias
+    - model: openAMUNDSEN
+      native_name: soil_temp
+      native_unit: K
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+    - parameter
+  frost_depth:
+    description: Depth of frozen ground
+    dimension: L
+    preferred_unit: m
+    domain_family: soil
+    n_producers: 1
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - SHAW
+    known_units_with_factors:
+      m: 1.0
+      cm: 0.01
+    producers:
+    - model: SHAW
+      native_name: frost_thaw_depth
+      native_unit: m
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  sensible_heat_flux:
+    description: Sensible heat flux
+    dimension: M T^-3
+    preferred_unit: W/m2
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      W m-2:
+      - CLASSIC
+    known_units_with_factors:
+      W/m2: 1.0
+    producers:
+    - model: CLASSIC
+      native_name: hfss
+      native_unit: W m-2
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  latent_heat_flux:
+    description: Latent heat flux
+    dimension: M T^-3
+    preferred_unit: W/m2
+    domain_family: atmospheric
+    n_producers: 1
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      W m-2:
+      - CLASSIC
+    known_units_with_factors:
+      W/m2: 1.0
+    producers:
+    - model: CLASSIC
+      native_name: hfls
+      native_unit: W m-2
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  sea_surface_height:
+    description: Sea surface height anomaly
+    dimension: L
+    preferred_unit: m
+    domain_family: ocean
+    n_producers: 5
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - ADCIRC
+      - COAWST
+      - MOM6
+      - PyDeltaRCM
+      - ROMS
+    known_units_with_factors:
+      m: 1.0
+    producers:
+    - model: ADCIRC
+      native_name: water_elevation
+      native_unit: m
+      confidence: exact_alias
+    - model: COAWST
+      native_name: zeta
+      native_unit: m
+      confidence: exact_alias
+    - model: MOM6
+      native_name: ssh
+      native_unit: m
+      confidence: exact_alias
+    - model: PyDeltaRCM
+      native_name: eta
+      native_unit: m
+      confidence: exact_alias
+    - model: ROMS
+      native_name: zeta
+      native_unit: m
+      confidence: exact_alias
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    target_type:
+    - variable
+  significant_wave_height:
+    description: Significant wave height
+    dimension: L
+    preferred_unit: m
+    domain_family: ocean
+    n_producers: 3
+    n_consumers: 3
+    n_unit_conventions: 1
+    observed_units:
+      m:
+      - Alpine3D
+      - Delft3D
+      - DualSPHysics
+      - SNOWPACK
+    known_units_with_factors:
+      m: 1.0
+    producers:
+    - model: Alpine3D
+      native_name: HS
+      native_unit: m
+      confidence: exact_alias
+    - model: Delft3D
+      native_name: significant_wave_height
+      native_unit: m
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: HS
+      native_unit: m
+      confidence: exact_alias
+    consumers:
+    - model: Alpine3D
+      native_name: HS
+      native_unit: m
+      confidence: exact_alias
+    - model: DualSPHysics
+      native_name: wave_height
+      native_unit: m
+      confidence: exact_alias
+    - model: SNOWPACK
+      native_name: HS
+      native_unit: m
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: 'hs is ambiguous: wave height (ocean) vs snow depth (cryosphere). Resolved by domain.'
+    target_type:
+    - variable
+  ocean_velocity:
+    description: Ocean current velocity
+    dimension: L T^-1
+    preferred_unit: m/s
+    domain_family: ocean
+    n_producers: 25
+    n_consumers: 2
+    n_unit_conventions: 5
+    observed_units:
+      ft/s (US) or m/s (SI):
+      - PySWMM
+      m/s:
+      - ADCIRC
+      - Amanzi_ATS
+      - COAWST
+      - Delft3D
+      - DuMux
+      - DualSPHysics
+      - Elmer_Ice
+      - MOM6
+      - OpenFOAM
+      - OpenGeoSys
+      - PFLOTRAN
+      - PyDeltaRCM
+      - ROMS
+      - SFINCS
+      - TopoFlow
+      - pyGIMLi
+      m/s (convert to m/a by multiplying by 31556926):
+      - Elmer_Ice
+      m/s, m, m:
+      - HydroTrend
+      m/yr:
+      - icepack
+    known_units_with_factors:
+      m/s: 1.0
+      m/yr: null
+      cm/s: 0.01
+    producers:
+    - model: ADCIRC
+      native_name: velocity
+      native_unit: m/s
+      confidence: exact_alias
+    - model: ADCIRC
+      native_name: max_velocity
+      native_unit: m/s
+      confidence: substring
+    - model: Amanzi_ATS
+      native_name: darcy_velocity
+      native_unit: m/s
+      confidence: substring
+    - model: COAWST
+      native_name: u
+      native_unit: m/s
+      confidence: exact_alias
+    - model: COAWST
+      native_name: v
+      native_unit: m/s
+      confidence: domain_disambiguated
+    - model: Delft3D
+      native_name: velocity_x
+      native_unit: m/s
+      confidence: substring
+    - model: Delft3D
+      native_name: velocity_y
+      native_unit: m/s
+      confidence: substring
+    - model: DuMux
+      native_name: velocity_Groundwater (m/s)
+      native_unit: m/s
+      confidence: substring
+    - model: DualSPHysics
+      native_name: velocity
+      native_unit: m/s
+      confidence: exact_alias
+    - model: Elmer_Ice
+      native_name: SSAVelocity
+      native_unit: m/s (convert to m/a by multiplying by 31556926)
+      confidence: substring
+    - model: Elmer_Ice
+      native_name: Velocity
+      native_unit: m/s
+      confidence: exact_alias
+    - model: HydroTrend
+      native_name: velocity_width_depth
+      native_unit: m/s, m, m
+      confidence: substring
+    - model: MOM6
+      native_name: u
+      native_unit: m/s
+      confidence: exact_alias
+    - model: MOM6
+      native_name: v
+      native_unit: m/s
+      confidence: domain_disambiguated
+    - model: OpenFOAM
+      native_name: U
+      native_unit: m/s
+      confidence: exact_alias
+    - model: OpenGeoSys
+      native_name: darcy_velocity
+      native_unit: m/s
+      confidence: substring
+    - model: PFLOTRAN
+      native_name: LIQUID_VELOCITY
+      native_unit: m/s
+      confidence: substring
+    - model: PyDeltaRCM
+      native_name: velocity
+      native_unit: m/s
+      confidence: exact_alias
+    - model: PySWMM
+      native_name: link_velocity
+      native_unit: ft/s (US) or m/s (SI)
+      confidence: substring
+    - model: ROMS
+      native_name: u
+      native_unit: m/s
+      confidence: exact_alias
+    - model: ROMS
+      native_name: v
+      native_unit: m/s
+      confidence: domain_disambiguated
+    - model: SFINCS
+      native_name: flood_velocity
+      native_unit: m/s
+      confidence: substring
+    - model: TopoFlow
+      native_name: velocity
+      native_unit: m/s
+      confidence: exact_alias
+    - model: icepack
+      native_name: velocity
+      native_unit: m/yr
+      confidence: exact_alias
+    - model: pyGIMLi
+      native_name: velocity
+      native_unit: m/s
+      confidence: exact_alias
+    consumers:
+    - model: OpenFOAM
+      native_name: U
+      native_unit: m/s
+      confidence: exact_alias
+    - model: icepack
+      native_name: velocity
+      native_unit: m/yr
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: 'u/velocity is extremely ambiguous: ocean current, ice velocity, wind, flow velocity. Resolved by domain.'
+    target_type:
+    - variable
+  elevation:
+    description: Surface elevation above reference datum
+    dimension: L
+    preferred_unit: m
+    domain_family: terrain
+    n_producers: 4
+    n_consumers: 6
+    n_unit_conventions: 5
+    observed_units:
+      ft:
+      - SimFire
+      m:
+      - ADCIRC
+      - Landlab
+      - pyBadlands
+      m (above base):
+      - DLBreach
+      metres:
+      - pyBadlands
+      unknown:
+      - ANUGA
+      - Lohmann_Routing
+    known_units_with_factors:
+      m: 1.0
+      ft: 0.3048
+    producers:
+    - model: ADCIRC
+      native_name: max_elevation
+      native_unit: m
+      confidence: substring
+    - model: DLBreach
+      native_name: breach_bottom_elevation
+      native_unit: m (above base)
+      confidence: substring
+    - model: Landlab
+      native_name: topographic__elevation
+      native_unit: m
+      confidence: exact_alias
+    - model: pyBadlands
+      native_name: elevation
+      native_unit: m
+      confidence: exact_alias
+    consumers:
+    - model: ADCIRC
+      native_name: tidal_elevation
+      native_unit: m
+      confidence: substring
+    - model: ANUGA
+      native_name: dem
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: Landlab
+      native_name: topographic__elevation
+      native_unit: m
+      confidence: exact_alias
+    - model: Lohmann_Routing
+      native_name: dem
+      native_unit: unknown
+      confidence: skill_md_exact_alias
+    - model: SimFire
+      native_name: elevation
+      native_unit: ft
+      confidence: exact_alias
+    - model: pyBadlands
+      native_name: dem
+      native_unit: metres
+      confidence: exact_alias
+    is_coupling_variable: true
+    ambiguous_note: ''
+    target_type:
+    - variable
+  water_table_depth:
+    description: 'Distance from ground surface to water table. Always positive (depth below surface). Transform: water_table_depth
+      = surface_elevation - hydraulic_head. Requires DEM/surface_elevation as auxiliary data.'
+    dimension: L
+    preferred_unit: m
+    domain_family: groundwater_level
+    n_producers: 0
+    n_consumers: 0
+    n_unit_conventions: 1
+    observed_units: {}
+    known_units_with_factors:
+      m: 1.0
+      cm: 0.01
+      ft: 0.3048
+    producers: []
+    consumers: []
+    is_coupling_variable: false
+    ambiguous_note: ''
+    semantic_relationship:
+      derived_from: hydraulic_head
+      transform_equation: water_table_depth = surface_elevation - hydraulic_head
+      auxiliary_data:
+      - surface_elevation (DEM)
+      note: MODFLOW uses hydraulic_head natively; land surface models use water_table_depth
+    target_type:
+    - variable
+    - parameter
+    parameter_feedback_note: 'When used as parameter feedback: water_table_depth modifies VIC soil_d3 (effective third layer
+      depth), ParFlow pressure initial conditions, or SWAT+ groundwater table parameters. This is NOT a time-varying input
+      but a configuration update between coupling iterations.'
+unmapped_variables:
+- variable: radn
+  model: APSIM
+  direction: input
+  reason: unmapped
+- variable: maxt
+  model: APSIM
+  direction: input
+  reason: unmapped
+- variable: mint
+  model: APSIM
+  direction: input
+  reason: unmapped
+- variable: co2
+  model: APSIM
+  direction: input
+  reason: unmapped
+- variable: Wheat.AboveGround.Wt
+  model: APSIM
+  direction: output
+  reason: unmapped
+- variable: Wheat.LAI
+  model: APSIM
+  direction: output
+  reason: unmapped
+- variable: VW
+  model: Alpine3D
+  direction: input
+  reason: unmapped
+- variable: DW
+  model: Alpine3D
+  direction: input
+  reason: unmapped
+- variable: PSUM
+  model: Alpine3D
+  direction: input
+  reason: unmapped
+- variable: P
+  model: Alpine3D
+  direction: input
+  reason: unmapped
+- variable: TSS
+  model: Alpine3D
+  direction: output
+  reason: unmapped
+- variable: RSNO
+  model: Alpine3D
+  direction: output
+  reason: unmapped
+- variable: concentration_bc
+  model: Amanzi_ATS
+  direction: input
+  reason: unmapped
+- variable: saturation
+  model: Amanzi_ATS
+  direction: output
+  reason: unmapped
+- variable: aqueous_concentration
+  model: Amanzi_ATS
+  direction: output
+  reason: unmapped
+- variable: volumetric_flux
+  model: Amanzi_ATS
+  direction: output
+  reason: unmapped
+- variable: date
+  model: AquaCrop
+  direction: input
+  reason: unmapped
+- variable: seasonal_irrigation
+  model: AquaCrop
+  direction: output
+  reason: unmapped
+- variable: day_length
+  model: BIOME_BGC
+  direction: input
+  reason: unmapped
+- variable: net_primary_production
+  model: BIOME_BGC
+  direction: output
+  reason: unmapped
+- variable: net_ecosystem_exchange
+  model: BIOME_BGC
+  direction: output
+  reason: unmapped
+- variable: vegetation_carbon
+  model: BIOME_BGC
+  direction: output
+  reason: unmapped
+- variable: soil_carbon
+  model: BIOME_BGC
+  direction: output
+  reason: unmapped
+- variable: total_ecosystem_carbon
+  model: BIOME_BGC
+  direction: output
+  reason: unmapped
+- variable: total_sediment_Q
+  model: CAESAR_Lisflood
+  direction: output
+  reason: unmapped
+- variable: water_quality_constituents
+  model: CE_QUAL_W2
+  direction: output
+  reason: unmapped
+- variable: topg
+  model: CISM
+  direction: input
+  reason: unmapped
+- variable: artm
+  model: CISM
+  direction: input
+  reason: unmapped
+- variable: acab
+  model: CISM
+  direction: input
+  reason: unmapped
+- variable: beta
+  model: CISM
+  direction: input
+  reason: unmapped
+- variable: bheatflx
+  model: CISM
+  direction: input
+  reason: unmapped
+- variable: usurf
+  model: CISM
+  direction: output
+  reason: unmapped
+- variable: uvel
+  model: CISM
+  direction: output
+  reason: unmapped
+- variable: vvel
+  model: CISM
+  direction: output
+  reason: unmapped
+- variable: velnorm
+  model: CISM
+  direction: output
+  reason: unmapped
+- variable: npp
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: nep
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: nbp
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: ra
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: rss
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: rls
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: mrro
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: evspsbl
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: cLand
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: cVeg
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: cSoil
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: tas
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: tsl
+  model: CLASSIC
+  direction: output
+  reason: unmapped
+- variable: TBOT
+  model: CLM5___CTSM
+  direction: input
+  reason: unmapped
+- variable: FSDS
+  model: CLM5___CTSM
+  direction: input
+  reason: unmapped
+- variable: FLDS
+  model: CLM5___CTSM
+  direction: input
+  reason: unmapped
+- variable: QBOT
+  model: CLM5___CTSM
+  direction: input
+  reason: unmapped
+- variable: PSRF
+  model: CLM5___CTSM
+  direction: input
+  reason: unmapped
+- variable: NPP
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: EFLX_LH_TOT
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: FSH
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: H2OSOI
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: TSOI
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: TOTSOMC
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: TOTVEGC
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: FSNO
+  model: CLM5___CTSM
+  direction: output
+  reason: unmapped
+- variable: Pair
+  model: COAWST
+  direction: input
+  reason: unmapped
+- variable: Qair
+  model: COAWST
+  direction: input
+  reason: unmapped
+- variable: swrad
+  model: COAWST
+  direction: input
+  reason: unmapped
+- variable: lwrad
+  model: COAWST
+  direction: input
+  reason: unmapped
+- variable: salt
+  model: COAWST
+  direction: output
+  reason: unmapped
+- variable: w
+  model: COAWST
+  direction: output
+  reason: unmapped
+- variable: ubar
+  model: COAWST
+  direction: output
+  reason: unmapped
+- variable: vbar
+  model: COAWST
+  direction: output
+  reason: unmapped
+- variable: Hsig
+  model: COAWST
+  direction: output
+  reason: unmapped
+- variable: T2
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: RH2
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: U2
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: G
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: PRES
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: RRR
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: N
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: LWin
+  model: COSIPY
+  direction: input
+  reason: unmapped
+- variable: MB
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: surfMB
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: intMB
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: SNOWHEIGHT
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: TOTALHEIGHT
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: TS
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: ALBEDO
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: ME
+  model: COSIPY
+  direction: output
+  reason: unmapped
+- variable: sublimation
+  model: CRHM
+  direction: output
+  reason: unmapped
+- variable: totalET
+  model: CWatM
+  direction: output
+  reason: unmapped
+- variable: storGroundwater
+  model: CWatM
+  direction: output
+  reason: unmapped
+- variable: SnowCover
+  model: CWatM
+  direction: output
+  reason: unmapped
+- variable: tws
+  model: CWatM
+  direction: output
+  reason: unmapped
+- variable: river_storage
+  model: CaMa_Flood
+  direction: output
+  reason: unmapped
+- variable: WD
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: FireScenario
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: FFMC
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: DMC
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: DC
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: ISI
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: BUI
+  model: Cell2Fire
+  direction: input
+  reason: unmapped
+- variable: FWI
+  model: Cell2Fire
+  direction: input
+  reason: unmapped

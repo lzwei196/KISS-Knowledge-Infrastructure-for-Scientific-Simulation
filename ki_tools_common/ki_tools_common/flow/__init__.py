@@ -14,13 +14,15 @@ Design: ANALYSIS/06_PLAN_harness_flow_v2.md; file map: 07_PLAN_v3_file_map.md
 from __future__ import annotations
 
 __all__ = ["states", "resolve", "plan", "approval", "contracts", "receipts", "policy",
+           "decisions", "declared", "tools",
            "FlowError", "State", "Capability", "Enforcement", "FlowContext"]
 
 from .states import FlowError, State, Capability, Enforcement, FlowContext  # noqa: E402,F401
 
 
 def __getattr__(name):
-    if name in ("states", "resolve", "plan", "approval", "contracts", "receipts", "policy", "declared", "tools"):
+    if name in ("states", "resolve", "plan", "approval", "contracts", "receipts", "policy",
+                "decisions", "declared", "tools"):
         import importlib
         return importlib.import_module(f".{name}", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

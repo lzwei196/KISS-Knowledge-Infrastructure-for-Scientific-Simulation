@@ -52,7 +52,7 @@ def load():
         # discovering the incomplete bundle halfway through a project.
         for sub in (
                 "states", "resolve", "plan", "approval", "contracts",
-                "receipts", "policy", "tools", "build_data", "declared"):
+                "receipts", "policy", "tools", "build_data", "declared", "decisions"):
             importlib.import_module(f"ki_tools_common.flow.{sub}")
     except Exception as error:
         raise FlowUnavailable(

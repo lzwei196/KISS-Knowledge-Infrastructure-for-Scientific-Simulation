@@ -318,10 +318,41 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
                 return Pre(names=list(ctx.selected_kis or names),
                            message="The server clip estimates changed since you reviewed the plan: "
                                    + "; ".join(why) + ". The updated card is in the chat; approve again if it still fits.")
+            # Who decided what. An input still waiting on the user never starts a run
+            # (the web chat's rule since 2026-09-15), and the user is told which inputs the
+            # KI's own protocol decided. `user` comes ONLY from the host-written answer store.
+            if apply_choice_picks(pj, picks):
+                flow.plan.write_artifacts(project, pj, inv)
+                pj, inv = flow.plan.read_artifacts(project)
+            answers = record_user_answers(project, pending, picks)
+            records, invalid = decision_records(flow, pj, inv, answers)
+            blocking = [display_input_id(i) for i in flow.decisions.open_inputs(records)] + invalid
+            if blocking:
+                chosen = set(ctx.selected_kis or names)
+                roots = {k.name: Path(k.root) for k in catalog if k.name in chosen}
+                fs = flowgate.FlowSession.open(project, roots, database_access_mode="direct")
+                note_text = str(((pending or {}).get("plan_review") or {}).get("tool_policy") or "")
+                _issue_card(project, fs, pj, inv, note_text,
+                            extra_why=["still waiting on your decision: " + ", ".join(blocking[:8])])
+                # Only the data sources have a control on the card; everything else is answered
+                # by sending the plan back — never tell the user a note will clear it (kimi #2).
+                return Pre(names=list(ctx.selected_kis or names),
+                           message="These still need your decision before anything runs: "
+                                   + ", ".join(blocking[:8])
+                                   + ". Pick a data source on the card where one is offered; for "
+                                     "anything else choose \u201cModify the plan\u201d and say what to use.")
+            revision = flow.decisions.revision_of(records)
+            if pj.get("decision_revision") != revision:
+                pj["decision_revision"] = revision          # inside the hash the approval signs
+                flow.plan.write_artifacts(project, pj, inv)
+                pj, inv = flow.plan.read_artifacts(project)
             verdict = flow.approval.check(project)
             if verdict != "OK":
                 # (re)approve the CURRENT plan files by the user's click
-                flow.approval.approve(project, {"note": note} if note else {}, by="user")
+                decided = dict(records)
+                if note:
+                    decided["note"] = {"input_id": "note", "source": "user", "value": note}
+                flow.approval.approve(project, decided, by="user")
             # Approving the plan approves its data: start the server clips now.
             # A creation that fails here is retried by the execution turn.
             for r in obs_subset.approve_inventory(project, inv):
@@ -698,6 +729,25 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
         extra = flow.contracts.execution_block(ki_roots, fs.plan or {}, fs.approval_doc or {}, project,
                                                provider=provider, wrappers=wrappers,
                                                host_acquired=True)      # ACQUIRING ran before this turn
+        # The user did not choose these; the KI's protocol did. Say so when reporting, so a
+        # default is never presented as the user's decision (web chat rule, 2026-09-15).
+        _defaults, _suggested = [], []
+        for k, r in sorted(((fs.approval_doc or {}).get("decisions") or {}).items()):
+            if not isinstance(r, dict) or r.get("source") != "ki_default":
+                continue
+            line = f"{display_input_id(r.get('input_id') or k)}: {str(r.get('value') or '')[:100]}"
+            (_suggested if r.get("rationale") == _SUGGESTION_WHY else _defaults).append(line)
+        if _defaults:
+            extra += ("\n[INPUTS ON KI PROTOCOL DEFAULTS] The user was not asked about these; the KI's "
+                      "own dag.yaml/SKILL.md decides them. Say which ones you relied on when you "
+                      "report the result:\n  " + "\n  ".join(_defaults[:20])
+                      + (f"\n  … and {len(_defaults) - 20} more" if len(_defaults) > 20 else "") + "\n")
+        if _suggested:
+            extra += ("\n[RECOMMENDATIONS THE USER ACCEPTED] The card showed these under "
+                      "\u201cYou decide\u201d with a suggestion, and approving the plan accepted the "
+                      "suggestion — the user did not pick them deliberately. Name them when you "
+                      "report:\n  " + "\n  ".join(_suggested[:20])
+                      + (f"\n  … and {len(_suggested) - 20} more" if len(_suggested) > 20 else "") + "\n")
         # Projects approved before ACQUIRING existed, or a replan that added data: one
         # idempotent host pass brings the approved inputs in before the agent runs steps.
         try:
@@ -1040,6 +1090,20 @@ def _data_choices(plan: dict, inv: dict) -> list[dict]:
     return out
 
 
+def apply_choice_picks(plan: dict, choices: dict) -> list[str]:
+    """Write NON-data card picks into the plan so a re-issued card keeps them (codex/kimi #5).
+    A pick that is not one of the offered options is ignored."""
+    done = []
+    for c in plan.get("scientific_choices") or []:
+        if not isinstance(c, dict) or c.get("kind") == "data_source" or not c.get("id"):
+            continue
+        pick = (choices or {}).get(str(c["id"]))
+        if pick and str(pick) in [str(o) for o in c.get("options") or []]:
+            c["decision"], c["decision_source"] = pick, "user"      # display only; provenance
+            done.append(str(c["id"]))                               # comes from the answer store
+    return done
+
+
 def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
     """The user's picks from the card: re-pin the items, clear stale stamps. Returns changed item ids."""
     changed = []
@@ -1053,10 +1117,11 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
         item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
         item = items.get(item_id)
         if item is None or item.get("dataset_id") == pick:
-            c["decision"] = pick
+            c["decision"], c["decision_source"] = pick, "user"
             continue
-        c["decision"] = pick
+        c["decision"], c["decision_source"] = pick, "user"
         c["picked"] = pick
+        item["decision_source"] = "user"
         for key in ("acquisition_id", "acquisition_request_sha256", "acquisition_offer", "estimate_summary", "catalogue"):
             item.pop(key, None)
         item["dataset_id"] = pick
@@ -1064,6 +1129,149 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
         item.pop("delivery", None)
         changed.append(item_id)
     return changed
+
+
+ANSWERS_FILE = "user-answers.json"          # under .geoforge/ — policy.ALWAYS_PROTECTED
+
+
+def _answers_path(project: Path) -> Path:
+    return Path(project) / ".geoforge" / ANSWERS_FILE
+
+
+def load_user_answers(project: Path) -> dict:
+    """What the USER actually answered, host-written. The plan files are agent-writable, so a
+    provenance marker inside them proves nothing (codex/kimi review, 2026-09-25)."""
+    try:
+        doc = json.loads(_answers_path(project).read_text(encoding="utf-8"))
+        return doc.get("answers") or {} if isinstance(doc, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def record_user_answers(project: Path, card: dict | None, picks: dict | None) -> dict:
+    """Store the picks that are a real answer, at the moment of the click.
+
+    The approval card pre-selects the recommendation and the UI submits EVERY checked radio
+    (web/app.html L1339), so a pick equal to what the card recommended is not evidence that the
+    user chose anything — it is the default coming back. Only a pick that DIFFERS from the
+    recommendation (or answers something the card recommended nothing for) is recorded as the
+    user's. Anything else stays a disclosed default.
+    """
+    review = (card or {}).get("plan_review") or {}
+    suggested = {}
+    for ch in review.get("data_choices") or []:
+        if isinstance(ch, dict) and ch.get("id"):
+            suggested[str(ch["id"])] = str(ch.get("picked") or "")
+    for ch in review.get("decisions") or []:
+        if isinstance(ch, dict) and ch.get("id"):
+            suggested[str(ch["id"])] = str(ch.get("picked") or "")
+    answers = load_user_answers(project)
+    for raw_id, value in (picks or {}).items():
+        cid = str(raw_id)
+        if value in (None, ""):
+            continue
+        if str(value) == suggested.get(cid, object()):
+            continue                     # the pre-selected recommendation came back untouched
+        answers[f"choice:{cid}"] = {"value": value, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    p = _answers_path(project)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"schema": 1, "answers": answers}, indent=2, ensure_ascii=False),
+                   encoding="utf-8")
+    tmp.replace(p)
+    return answers
+
+
+_KI_DEFAULT_WHY = "KI protocol default (its dag.yaml / SKILL.md decides it)"
+_SUGGESTION_WHY = "planner recommendation shown on the card; accepted by approving the plan"
+
+
+def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -> tuple[dict, list]:
+    """Who decided each thing the plan asked about — the web chat's schema (flow.decisions).
+
+        user       the user answered it; taken ONLY from the host-written answer store
+        ki_default the KI's protocol, or a planner recommendation the card showed and the user
+                   accepted by approving; disclosed on every execution turn, never "their" choice
+        open       nothing to fall back on — approving cannot answer it, so it must not start
+
+    Ids are namespaced (`item:`, `choice:`, `question:`): desktop ids are free-form, and the
+    shared schema reserves the bare names `site` and `period` for the web's scope records
+    (a plain `period` choice would otherwise be unapprovable). Namespacing also keeps two
+    same-named things in different namespaces from folding into one record.
+
+    Returns (records, invalid); the caller refuses the approval while either blocks.
+    """
+    answers = answers or {}
+    built: list[dict] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+
+    def _add(ns: str, raw_id: str, source: str, value, why: str = "") -> None:
+        iid = f"{ns}:{raw_id}"
+        if iid.lower() in seen:
+            invalid.append(f"{iid}: duplicate id in the plan — ids must be unique")
+            return
+        seen.add(iid.lower())
+        built.append({"input_id": iid, "source": source, "value": value, "rationale": why or None})
+
+    def _answer(ns: str, raw_id: str):
+        rec = answers.get(f"{ns}:{raw_id}") or answers.get(f"choice:{raw_id}")
+        return rec.get("value") if isinstance(rec, dict) else None
+
+    for it in inv.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        if not it.get("id"):
+            invalid.append("an inventory item has no id")
+            continue
+        iid = str(it["id"])
+        answered = _answer("item", iid) or _answer("item", f"data:{iid}")
+        concrete = (it.get("dataset_id") or it.get("chosen_source") or it.get("decision")
+                    or (", ".join(str(p) for p in it.get("local_paths") or []) or None))
+        if answered:
+            _add("item", iid, "user", answered, "you chose this on the approval card")
+        elif it.get("needs_user") and not concrete:
+            _add("item", iid, "open", f"{it.get('category') or 'input'} still needs your decision")
+        elif concrete:
+            _add("item", iid, "ki_default", str(concrete), _KI_DEFAULT_WHY)
+        else:
+            kd = it.get("ki_default") or {}
+            _add("item", iid, "ki_default",
+                 str(kd.get("default_source") or kd.get("source_kind") or it.get("strategy")
+                     or "the KI prepares it per its SKILL.md"), _KI_DEFAULT_WHY)
+
+    for c in plan.get("scientific_choices") or []:
+        if not isinstance(c, dict):
+            continue
+        if not c.get("id"):
+            invalid.append("a scientific choice has no id")
+            continue
+        cid = str(c["id"])
+        answered = _answer("choice", cid)
+        if answered:
+            _add("choice", cid, "user", answered, "you chose this on the approval card")
+        elif c.get("decision"):
+            _add("choice", cid, "ki_default", str(c["decision"]), _KI_DEFAULT_WHY)
+        elif c.get("picked"):
+            _add("choice", cid, "ki_default", str(c["picked"]), _SUGGESTION_WHY)
+        elif c.get("high_impact"):
+            opts = ", ".join(str(o) for o in (c.get("options") or [])[:6])
+            _add("choice", cid, "open", f"{c.get('kind') or 'choice'}: {opts or 'needs your decision'}")
+
+    # The planner saying "this is unresolved" is exactly an open input (Design B parity): the
+    # card already lists these under "Waiting on you", so approval must not run past them.
+    for n, q in enumerate(plan.get("unresolved_questions") or [], 1):
+        if str(q or "").strip():
+            _add("question", str(n), "open", str(q)[:300])
+
+    invalid += [f"{r['input_id']}: {why}" for r in built
+                for ok, why in [flow.decisions.validate_record(r)] if not ok]
+    return flow.decisions.fold_payloads(built), invalid
+
+
+def display_input_id(iid: str) -> str:
+    """`item:forcing` → `forcing` for anything a person reads."""
+    return str(iid).split(":", 1)[1] if ":" in str(iid) else str(iid)
 
 
 def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
@@ -1130,6 +1338,16 @@ def _issue_card(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
                "turn": turn_id, "submitted_at": time.time()}
     (project / "runs" / "plan-review.json").write_text(json.dumps(receipt), encoding="utf-8")
     _ok, why = flow.approval.may_auto_approve(pj, inv)
+    # `may_auto_approve` answers "could this be approved with no user at all"; the desktop always
+    # asks the user, and approving ACCEPTS a shown recommendation. Saying "undecided" about a
+    # choice the click will accept made the card contradict the approval rule (kimi review #6).
+    _suggested = {str(c.get("id")) for c in pj.get("scientific_choices") or []
+                  if isinstance(c, dict) and c.get("picked") and not c.get("decision")}
+    why = [w for w in why if not any(f"{cid!r}" in str(w) for cid in _suggested)]
+    for c in pj.get("scientific_choices") or []:
+        if isinstance(c, dict) and str(c.get("id")) in _suggested and c.get("high_impact"):
+            why.append(f"{c.get('kind') or 'choice'} {c.get('id')}: defaults to "
+                       f"{c.get('picked')} unless you pick another")
     why = list(extra_why or []) + list(why)
     manual = [it for it in inv.get("items") or []
               if isinstance(it, dict) and it.get("delivery") == "manual"]

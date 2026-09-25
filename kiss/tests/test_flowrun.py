@@ -240,7 +240,10 @@ def test_high_impact_choice_shows_the_approval_card_and_click_approves(tmp_path)
     st = json.loads((project / "runs" / "flow-state.json").read_text())
     assert st["state"] == "EXECUTING" and r.message is None
     a = json.loads((project / "runs" / "approval.json").read_text())
-    assert a["approved_by"] == "user" and a["decisions"] == {"note": "use cmfd"}
+    assert a["approved_by"] == "user"
+    # the signed approval now carries WHO decided each input (flow.decisions), the note included
+    assert a["decisions"]["note"]["value"] == "use cmfd" and a["decisions"]["note"]["source"] == "user"
+    assert a["decisions"]["choice:f"]["source"] == "ki_default"   # the planner pick, accepted by approving
     assert setup_flow.request(project) is None
 
 
@@ -1412,3 +1415,94 @@ def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_pa
     pre = flowrun.pre(project, "Approved.", ["M"], [ki],
                       {"request_id": card["id"], "option_id": "approve", "choices": {"data:forcing": "risma_on2"}}, card)
     assert pre.message is None and (project / "runs" / "approval.json").exists()
+
+
+# ── who decided what (flow.decisions on the desktop) ──────────────────────────
+
+def test_approval_records_who_decided_each_input_and_the_plan_carries_the_revision(tmp_path):
+    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+    flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
+    t = _drive_planning(tmp_path, ki, project, with_choice=True)
+    res = flowrun.after(project, t, "planned", setup_ok=True)
+    pre = _approve(project, ki, res)
+    assert pre.message is None
+    approval = json.loads((project / "runs" / "approval.json").read_text())
+    plan = json.loads((project / "runs" / "plan.json").read_text())
+    recs = approval["decisions"]
+    assert plan["decision_revision"] and len(plan["decision_revision"]) == 16
+    # the planner's recommendation is disclosed, never recorded as the user's own choice
+    assert recs["choice:f"]["source"] == "ki_default" and recs["choice:f"]["value"] == "cmfd_v1"
+    assert recs["choice:f"]["rationale"] == flowrun._SUGGESTION_WHY
+    assert all(r["source"] in ("user", "ki_default") for r in recs.values())
+    assert all(k.split(":")[0] in ("item", "choice", "question", "note") for k in recs)
+
+
+def test_a_high_impact_choice_with_no_candidate_refuses_to_start_and_is_named(tmp_path):
+    """Approving accepts a recommendation; it cannot answer a question that has none."""
+    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+    flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
+    t = _drive_planning(tmp_path, ki, project)
+    pj, inv = t.session.flow.plan.read_artifacts(project)
+    pj["scientific_choices"] = [{"id": "routing", "kind": "routing_scheme",
+                                 "options": ["lohmann", "cama"], "high_impact": True}]   # nothing picked
+    assert t.session.write_plan(pj, inv) == []
+    res = flowrun.after(project, t, "planned", setup_ok=True)
+    pre = _approve(project, ki, res)
+    assert "routing" in (pre.message or "") and "need your decision" in (pre.message or "")
+    assert not (project / "runs" / "approval.json").exists()
+    # the user picks on the re-issued card: it signs, and the pick is recorded as THEIRS
+    card = json.loads((project / "setup-request.json").read_text())
+    pre = flowrun.pre(project, "Approved.", ["M"], [ki],
+                      {"request_id": card["id"], "option_id": "approve", "choices": {"routing": "cama"}}, card)
+    assert pre.message is None
+    recs = json.loads((project / "runs" / "approval.json").read_text())["decisions"]
+    assert recs["choice:routing"]["source"] == "user" and recs["choice:routing"]["value"] == "cama"
+    # the user's answer is host-written, outside anything the agent may edit
+    assert json.loads((project / ".geoforge" / "user-answers.json").read_text())["answers"]["choice:routing"]["value"] == "cama"
+
+
+def test_an_input_with_nothing_to_fall_back_on_is_recorded_open(tmp_path):
+    """Unit rule: an item needing the user with no decision and no data behind it is open."""
+    ki = _ki(tmp_path, "M"); project = _project(tmp_path)
+    fs = flowgate.FlowSession.open(project, {"M": Path(ki.root)}, database_access_mode="direct")
+    inv = {"items": [
+        {"id": "gauge", "needs_user": True, "category": "observations"},
+        {"id": "gauge_ok", "needs_user": True, "decision": "51080 Bengbu"},
+        {"id": "forcing", "needs_user": False, "ki_default": {"default_source": "CMFD"}},
+        {"id": "planted", "needs_user": True, "decision_source": "user", "decision": "agent's pick"},
+        {"id": "picked_by_user", "needs_user": True, "dataset_id": "risma_on2"}]}
+    recs, invalid = flowrun.decision_records(fs.flow, {}, inv,
+                                             {"item:picked_by_user": {"value": "risma_on2"}})
+    assert invalid == []
+    assert fs.flow.decisions.open_inputs(recs) == ["item:gauge"]
+    assert recs["item:gauge_ok"]["source"] == "ki_default" and recs["item:forcing"]["value"] == "CMFD"
+    # a provenance marker the AGENT wrote into the plan is not evidence of a user decision
+    assert recs["item:planted"]["source"] == "ki_default"
+    assert recs["item:picked_by_user"]["source"] == "user"
+
+def test_the_execution_turn_names_the_inputs_the_ki_decided(tmp_path):
+    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+    flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
+    t = _drive_planning(tmp_path, ki, project, with_choice=True)
+    res = flowrun.after(project, t, "planned", setup_ok=True)
+    _approve(project, ki, res)
+    nxt = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
+    # a planner suggestion is disclosed as one, not as a KI protocol default
+    assert "[RECOMMENDATIONS THE USER ACCEPTED]" in nxt.extra_prompt and "f: cmfd_v1" in nxt.extra_prompt
+    assert "[INPUTS ON KI PROTOCOL DEFAULTS]" not in nxt.extra_prompt    # this KI derives no inputs
+    # the namespaced id belongs to the signed record (grounding line); what the agent reads out
+    # to the user is the plain name
+    block = nxt.extra_prompt.split("[RECOMMENDATIONS THE USER ACCEPTED]", 1)[1]
+    assert "choice:f" not in block
+
+
+def test_an_untouched_recommendation_coming_back_from_the_card_is_not_a_user_decision(tmp_path):
+    """The card pre-selects the suggestion and the UI submits every checked radio, so a pick
+    equal to the suggestion proves nothing (codex review, 2026-09-25)."""
+    project = _project(tmp_path)
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "picked": "cmfd_v1"}],
+                            "decisions": [{"id": "routing", "picked": "lohmann"}]}}
+    answers = flowrun.record_user_answers(project, card, {"data:forcing": "cmfd_v1",
+                                                          "routing": "cama"})
+    assert "choice:data:forcing" not in answers          # unchanged suggestion: not an answer
+    assert answers["choice:routing"]["value"] == "cama"  # a real change is

@@ -246,6 +246,18 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
 # Execution turn
 # ---------------------------------------------------------------------------
 
+def _decisions_line(decisions: dict, budget: int = 1200) -> str:
+    """The signed decisions, verbatim while they are small. A driver that records one entry per
+    input (the desktop) would otherwise paste the whole set into every execution turn: past the
+    budget, render `id=source` pairs — the values reach the agent in the disclosure blocks."""
+    full = json.dumps(decisions or {}, ensure_ascii=False)
+    if len(full) <= budget:
+        return full
+    pairs = ", ".join(f"{k}={(v or {}).get('source', '?') if isinstance(v, dict) else '?'}"
+                      for k, v in sorted(decisions.items()))
+    return f"{len(decisions)} recorded decisions ({pairs[:budget]}…)"
+
+
 def grounding_line(project: Path, plan: dict, approval: dict) -> str:
     """cli_process_manager.py L1291-1297, verbatim shape."""
     r = Path(project) / "runs"
@@ -254,7 +266,7 @@ def grounding_line(project: Path, plan: dict, approval: dict) -> str:
             f"{r / 'plan.coupling.yaml'}\n"
             f"APPROVED: by {approval.get('approved_by')} at {approval.get('approved_at')} "
             f"(plan sha256 {str(approval.get('plan_sha256'))[:12]}…); decisions = "
-            f"{json.dumps(approval.get('decisions') or {}, ensure_ascii=False)}\n"
+            f"{_decisions_line(approval.get('decisions') or {})}\n"
             "Execute the plan handed off from planning; do NOT disk-glob for it, do NOT re-plan "
             "the scope, do NOT re-select models.\n")
 

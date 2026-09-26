@@ -19,6 +19,7 @@ the next turn, exactly like every other request.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -267,13 +268,25 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
         choice = str(action.get("option_id") or "")
         if choice == "approve":
             pj, inv = flow.plan.read_artifacts(project)
-            review = pending.get("review") or {}
+            review = _issued_review(project, pending)        # host copy, not the request file
             if (pj is None or inv is None or review.get("plan_sha256") != flow.plan.sha256(pj)
                     or review.get("inventory_sha256") != flow.plan.sha256(inv)):
                 setup_flow.clear_request(project)
                 ctx.move("modify")
                 return Pre(names=list(ctx.selected_kis or names),
                            replan_reason="The plan or inventory changed after review. Review this revision before approval.")
+            # What the browser rendered is what must match the host's record: the click echoes
+            # the card it displayed (web/app.html `shown`), so a request file altered, shown and
+            # restored before the click is still caught (codex review B4 #3). An older UI that
+            # sends no echo is checked against the request file as read now.
+            displayed = action.get("shown") if isinstance(action.get("shown"), dict) else pending
+            if review.get("shown_sha256") != shown_sha256(displayed):
+                # not the card the host issued: the user may have seen pre-selections the plan
+                # never had (codex review B #1) — re-issue, unsigned
+                setup_flow.clear_request(project)
+                ctx.move("modify")
+                return Pre(names=list(ctx.selected_kis or names),
+                           replan_reason="The approval card changed after it was issued. Review the re-issued card before approval.")
         if choice == "approve":
             try:
                 load_user_answers(project)       # before the card is cleared: a refusal here
@@ -285,18 +298,20 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
             from . import obs_subset, obs_access
             pj, inv = flow.plan.read_artifacts(project)
             picks = action.get("choices") if isinstance(action.get("choices"), dict) else {}
+            # What the card SHOWED, taken from the plan files the click was just verified
+            # against (sha check above), before any pick is applied. The request card itself
+            # is agent-writable, so its `picked` values are not a baseline (kimi/codex, gap 3 B).
+            baseline = review["baseline"]                  # validated by _issued_review; never rebuilt
             repinned = apply_data_choices(pj, inv, picks) if picks else []
             # Record the picks now, against the card the user actually saw, before any branch
             # below re-issues a card: both the re-pin and the clip-refresh re-issue pre-select
             # the new values, so on the next click they would look like untouched suggestions
             # (codex review A #1, A2 #2, A3 #1). A pick equal to what THIS card showed is still
             # not a choice — a re-pin alone proves nothing. Only ids this card offered count.
-            review_shown = (pending or {}).get("plan_review") or {}
-            shown = {str(ch.get("id")) for key in ("data_choices", "decisions")
-                     for ch in review_shown.get(key) or [] if isinstance(ch, dict) and ch.get("id")}
+            shown = set(baseline["suggested"])
             if picks:
                 try:
-                    record_user_answers(project, pending, {k: v for k, v in picks.items() if str(k) in shown})
+                    record_user_answers(project, baseline, {k: v for k, v in picks.items() if str(k) in shown})
                 except AnswersUnreadable as e:
                     return Pre(names=list(ctx.selected_kis or names),
                                message=f"Your saved answers cannot be read ({e}). Fix or remove that file, then ask for the plan again.")
@@ -348,11 +363,11 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
                 flow.plan.write_artifacts(project, pj, inv)
                 pj, inv = flow.plan.read_artifacts(project)
             try:                          # only ids the card offered, as in the early write (kimi A5)
-                answers = record_user_answers(project, pending, {k: v for k, v in (picks or {}).items() if str(k) in shown})
+                answers = record_user_answers(project, baseline, {k: v for k, v in (picks or {}).items() if str(k) in shown})
             except AnswersUnreadable as e:
                 return Pre(names=list(ctx.selected_kis or names),
                            message=f"Your saved answers cannot be read ({e}). Fix or remove that file, then ask for the plan again.")
-            records, invalid = decision_records(flow, pj, inv, answers)
+            records, invalid = decision_records(flow, pj, inv, answers, baseline=baseline)
             blocking = [display_input_id(i) for i in flow.decisions.open_inputs(records)] + invalid
             if blocking:
                 chosen = set(ctx.selected_kis or names)
@@ -763,7 +778,7 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
             if not isinstance(r, dict) or r.get("source") != "ki_default":
                 continue
             line = f"{display_input_id(r.get('input_id') or k)}: {str(r.get('value') or '')[:100]}"
-            (_suggested if r.get("rationale") == _SUGGESTION_WHY else _defaults).append(line)
+            (_suggested if _is_accepted_suggestion(r.get("rationale")) else _defaults).append(line)
         if _defaults:
             extra += ("\n[INPUTS ON KI PROTOCOL DEFAULTS] The user was not asked about these; the KI's "
                       "own dag.yaml/SKILL.md decides them. Say which ones you relied on when you "
@@ -793,6 +808,11 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
                                    python=str(getattr(cfg, "python", "") or "python3"),
                                    base_allowed_tools=base_allowed_tools, wrappers=wrappers)
         fs.ctx.enforcement = flow.states.Enforcement(pp.enforcement.value); fs.ctx.save()
+        if pp.enforcement is not flow.states.Enforcement.EXACT:
+            extra += (f"\n[PROVENANCE UNDER {provider}] The tool fence for this provider is approximate: "
+                      "an agent turn before approval could have altered the host-written answer store or "
+                      "the host's record of the approval card (runs/plan-review.json). Inputs labelled as "
+                      "the user's are as the host recorded them at the Approve click.\n")
         return Turn(fs, True, extra, True, pp, f"flow:{state.value}:{fs.approval_id}", None, wrappers or {},
                     kind="execution", started_at=time.time())
 
@@ -1197,7 +1217,31 @@ def load_user_answers(project: Path) -> dict:
     return answers
 
 
-def record_user_answers(project: Path, card: dict | None, picks: dict | None) -> dict:
+def suggestion_baseline(plan: dict, inv: dict, rows: list | None = None) -> dict:
+    """What the approval card showed as pre-selected, per choice id, and which inventory item
+    each data choice answers — derived from the plan files, which the Approve click has just
+    verified by hash against the card it was issued for. Same rules as `_data_choices` and
+    `_card`, so the baseline is exactly what the user saw."""
+    suggested: dict[str, str] = {}
+    item_of: dict[str, str] = {}
+    options: dict[str, list] = {}
+    for row in (rows if rows is not None else _data_choices(plan, inv)):   # the rendered rows (B #2)
+        opts = [str(o.get("dataset_id")) for o in row.get("options") or [] if isinstance(o, dict)]
+        picked = str(row.get("picked") or "")
+        # a pre-selection that is not among the rendered radios was never displayed: nothing
+        # was shown as chosen for this row (codex review B4 #1)
+        suggested[str(row["id"])] = picked if picked in opts else ""
+        item_of[str(row["id"])] = str(row["item"])
+        options[str(row["id"])] = opts
+    for c in (plan or {}).get("scientific_choices") or []:
+        # the UI lists only high-impact decisions (web/app.html renderPlanReview)
+        if isinstance(c, dict) and c.get("id") and c.get("kind") != "data_source" and c.get("high_impact"):
+            suggested[str(c["id"])] = str(c.get("decision") or c.get("picked") or "")
+            options[str(c["id"])] = [str(o) for o in c.get("options") or []]
+    return {"suggested": suggested, "item_of": item_of, "options": options}
+
+
+def record_user_answers(project: Path, baseline: dict | None, picks: dict | None) -> dict:
     """Store the picks that are a real answer, at the moment of the click.
 
     The approval card pre-selects the recommendation and the UI submits EVERY checked radio
@@ -1206,26 +1250,18 @@ def record_user_answers(project: Path, card: dict | None, picks: dict | None) ->
     recommendation (or answers something the card recommended nothing for) is recorded as the
     user's. Anything else stays a disclosed default.
 
-    A data-source choice answers an inventory ITEM. The card row says which (`item`), so the
-    answer is stored under both `choice:<id>` and `item:<item>` — the reader never guesses
-    across namespaces (kimi review, 2026-09-26).
+    A data-source choice answers an inventory ITEM. `baseline` (see `suggestion_baseline`) says
+    which, so the answer is stored under both `choice:<id>` and `item:<item>` — the reader never
+    guesses across namespaces (kimi review, 2026-09-26).
     """
-    review = (card or {}).get("plan_review") or {}
-    suggested: dict[str, str] = {}
-    item_of: dict[str, str] = {}
-    for ch in review.get("data_choices") or []:
-        if isinstance(ch, dict) and ch.get("id"):
-            suggested[str(ch["id"])] = str(ch.get("picked") or "")
-            if ch.get("item"):
-                item_of[str(ch["id"])] = str(ch["item"])
-    for ch in review.get("decisions") or []:
-        if isinstance(ch, dict) and ch.get("id"):
-            suggested[str(ch["id"])] = str(ch.get("picked") or "")
+    suggested: dict[str, str] = dict((baseline or {}).get("suggested") or {})
+    item_of: dict[str, str] = dict((baseline or {}).get("item_of") or {})
+    options: dict[str, list] = dict((baseline or {}).get("options") or {})
     answers = load_user_answers(project)
     stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     # Stores written before 2026-09-26 hold only `choice:` keys. The item a choice answers is
-    # taken from the card row (`item`), exactly as for new writes — never guessed from the id's
-    # `data:` prefix, which is not proof of the binding (codex review A2 #1). Only a record with
+    # taken from the baseline (`item_of`), exactly as for new writes — never guessed from the
+    # id's `data:` prefix alone, which is not proof of the binding (codex A2 #1). Only a record with
     # no `item` stamp is legacy: a modern record carries the binding it was written under, and
     # a replan that rebinds the same choice id to another item must not carry it over (A4 #1).
     for cid, item_id in item_of.items():
@@ -1241,6 +1277,9 @@ def record_user_answers(project: Path, card: dict | None, picks: dict | None) ->
             continue                     # what the reader rejects, the writer never stores (kimi A3)
         if str(value) == suggested.get(cid, object()):
             continue                     # the pre-selected recommendation came back untouched
+        if cid in options and str(value) not in options[cid]:
+            continue                     # not one of the choices the card offered (kimi B2 #3);
+                                         # an empty menu offers nothing (codex B3 #4)
         answers[f"choice:{cid}"] = {"value": value, "at": stamp, "item": item_of.get(cid)}
         if item_of.get(cid):
             answers[f"item:{item_of[cid]}"] = {"value": value, "at": stamp}
@@ -1253,11 +1292,22 @@ def record_user_answers(project: Path, card: dict | None, picks: dict | None) ->
     return answers
 
 
-_KI_DEFAULT_WHY = "KI protocol default (its dag.yaml / SKILL.md decides it)"
-_SUGGESTION_WHY = "planner recommendation shown on the card; accepted by approving the plan"
+# Fixed tags at the front of `rationale`: the disclosure splits on the tag, never on wording.
+# (The shared record schema has no extra field; `rationale` is the one free slot it keeps.)
+_KI_DEFAULT_TAG = "[ki_default]"
+_SUGGESTION_TAG = "[suggestion_accepted]"
+_KI_DEFAULT_WHY = f"{_KI_DEFAULT_TAG} KI protocol default (its dag.yaml / SKILL.md decides it)"
+_SUGGESTION_WHY = f"{_SUGGESTION_TAG} planner recommendation shown on the card; accepted by approving the plan"
+_LEGACY_SUGGESTION_WHY = "planner recommendation shown on the card; accepted by approving the plan"  # signed before the tag
 
 
-def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -> tuple[dict, list]:
+def _is_accepted_suggestion(rationale) -> bool:
+    r = str(rationale or "")
+    return r.startswith(_SUGGESTION_TAG) or r == _LEGACY_SUGGESTION_WHY
+
+
+def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
+                     baseline: dict | None = None) -> tuple[dict, list]:
     """Who decided each thing the plan asked about — the web chat's schema (flow.decisions).
 
         user       the user answered it; taken ONLY from the host-written answer store
@@ -1276,6 +1326,17 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -
     built: list[dict] = []
     invalid: list[str] = []
     seen: set[str] = set()
+    # A value the card SHOWED and the user approved untouched was ACCEPTED, not decided by the
+    # KI's protocol behind their back — say so. "Shown" is what the renderer shows: the data
+    # rows `_data_choices` produces, with the value they pre-selected, and the high-impact
+    # decisions (kimi gap-3 #5, codex G-4, B2 #2/#3).
+    if baseline is None:
+        baseline = suggestion_baseline(plan, inv)       # the approve path passes the ISSUED one
+    _item_of = dict(baseline.get("item_of") or {})       # (codex review B3 #2): what the card
+    _sugg = dict(baseline.get("suggested") or {})        # showed, not today's catalogue
+    displayed_choice = {cid: _sugg.get(cid, "") for cid in _item_of}
+    displayed_item = {item: _sugg.get(cid, "") for cid, item in _item_of.items()}
+    displayed_decision = {cid for cid in _sugg if cid not in _item_of}   # rendered non-data choices
 
     def _add(ns: str, raw_id: str, source: str, value, why: str = "") -> None:
         iid = f"{ns}:{raw_id}"
@@ -1306,7 +1367,8 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -
         elif it.get("needs_user") and not concrete:
             _add("item", iid, "open", f"{it.get('category') or 'input'} still needs your decision")
         elif concrete:
-            _add("item", iid, "ki_default", str(concrete), _KI_DEFAULT_WHY)
+            why = _SUGGESTION_WHY if displayed_item.get(iid) == str(concrete) else _KI_DEFAULT_WHY
+            _add("item", iid, "ki_default", str(concrete), why)
         else:
             kd = it.get("ki_default") or {}
             _add("item", iid, "ki_default",
@@ -1331,9 +1393,19 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -
         if answered:
             _add("choice", cid, "user", answered, "you chose this on the approval card")
         elif c.get("decision"):
-            _add("choice", cid, "ki_default", str(c["decision"]), _KI_DEFAULT_WHY)
+            if c.get("kind") == "data_source":
+                shown_val = displayed_choice.get(cid)
+            else:
+                shown_val = _sugg.get(cid) if cid in displayed_decision else None
+            why = _SUGGESTION_WHY if shown_val is not None and shown_val == str(c["decision"]) else _KI_DEFAULT_WHY
+            _add("choice", cid, "ki_default", str(c["decision"]), why)
         elif c.get("picked"):
-            _add("choice", cid, "ki_default", str(c["picked"]), _SUGGESTION_WHY)
+            # a suggestion with no decision: accepted only if the card actually rendered it
+            # (codex review B3 #1); otherwise the plan carried it and the user never saw it
+            shown_val = displayed_choice.get(cid) if c.get("kind") == "data_source" \
+                else (_sugg.get(cid) if cid in displayed_decision else None)
+            accepted = shown_val is not None and shown_val == str(c["picked"])   # value, not row (B5 #2)
+            _add("choice", cid, "ki_default", str(c["picked"]), _SUGGESTION_WHY if accepted else _KI_DEFAULT_WHY)
         elif c.get("high_impact"):
             opts = ", ".join(str(o) for o in (c.get("options") or [])[:6])
             _add("choice", cid, "open", f"{c.get('kind') or 'choice'}: {opts or 'needs your decision'}")
@@ -1416,7 +1488,6 @@ def _issue_card(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
     # The approval UI is bound to exactly the reviewed pair, not just a plan filename.
     receipt = {"plan_sha256": flow.plan.sha256(pj), "inventory_sha256": flow.plan.sha256(inv),
                "turn": turn_id, "submitted_at": time.time()}
-    (project / "runs" / "plan-review.json").write_text(json.dumps(receipt), encoding="utf-8")
     _ok, why = flow.approval.may_auto_approve(pj, inv)
     # `may_auto_approve` answers "could this be approved with no user at all"; the desktop always
     # asks the user, and approving ACCEPTS a shown recommendation. Saying "undecided" about a
@@ -1447,13 +1518,77 @@ def _issue_card(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
         card["plan_review"]["not_ready"] = list(ready[:6])
     doc = setup_flow.request_user(project, card)
     doc["id"] = card["id"]
-    doc["review"] = receipt
     doc["plan_review"] = card["plan_review"]
+    # Everything the card SHOWS is part of the contract: the request file the UI renders is
+    # agent-writable, so the host keeps its own hash of the whole rendered card (title, message,
+    # plan review, the action buttons) under runs/ and refuses a click on a card that no longer
+    # matches it (codex review B #1, B2 #1).
+    receipt["shown_sha256"] = shown_sha256(doc)
+    receipt["baseline"] = suggestion_baseline(pj, inv, rows=card["plan_review"].get("data_choices"))
+    # ^ what was shown, as values, from the SAME rendered rows — not a second catalogue read
+    #   that could disagree with the card (kimi B2 #2, codex B4 #4)
+    (project / "runs" / "plan-review.json").write_text(json.dumps(receipt), encoding="utf-8")
+    doc["review"] = receipt
     (project / setup_flow.REQUEST_FILE).write_text(json.dumps(doc, indent=2), encoding="utf-8")
     if fs.state is not flow.states.State.WAITING_FOR_USER:
         fs.move("needs_user")
     projectrun.report(project, {"status": "waiting_for_user", "summary": card["title"], "blocker": doc},
                       source="flow")
+    return doc
+
+
+_SHOWN_KEYS = ("title", "message", "plan_review", "options", "allow_note")   # what the UI renders
+
+
+def shown_sha256(doc: dict) -> str:
+    """Hash of everything the approval card shows the user — title, message, the whole plan
+    review (goal, data groups, data choices with their options, steps, decisions, blockers,
+    tool policy) and the action buttons (id, label, description, response). The Approve click
+    is valid only for a card that still shows exactly this (codex review B2 #1)."""
+    shown = _json_canon({k: (doc or {}).get(k) for k in _SHOWN_KEYS})
+    return hashlib.sha256(json.dumps(shown, sort_keys=True, ensure_ascii=False, default=str)
+                          .encode("utf-8", "surrogatepass")).hexdigest()   # lone surrogates hash, not raise (B6 #2)
+
+
+def _json_canon(v):
+    """Hash what survives a JavaScript JSON round trip, so an unchanged card is never rejected
+    (codex review B5 #1, B6 #1): every number becomes a double, as JSON.parse makes it (ints past
+    2**53 lose precision the same way), and an integral double below 1e21 prints as an integer,
+    as JSON.stringify prints it."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        d = float(v)
+        if d != d or d in (float("inf"), float("-inf")):
+            return str(v)
+        return int(d) if d.is_integer() and abs(d) < 1e21 else d
+    if isinstance(v, dict):
+        return {str(k): _json_canon(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_json_canon(x) for x in v]
+    return v
+
+
+def _issued_review(project: Path, pending: dict | None) -> dict:
+    """The host's own record of the card it issued (runs/plan-review.json). The copy inside the
+    request file is never consulted: it is agent-writable, and any marker that would tell a
+    legacy card from a tampered one is writable too (codex review B3 #3). A missing or unreadable
+    record voids the click, and the card is re-issued — one extra click, once, for cards issued
+    before the record existed."""
+    path = Path(project) / "runs" / "plan-review.json"
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(doc, dict) or not doc.get("plan_sha256") or not doc.get("shown_sha256"):
+        return {}          # a record without the card hash (issued before batch B) cannot verify
+    bl = doc.get("baseline")   # a click: void, re-issue (codex review B4 #2)
+    if not isinstance(bl, dict) or not all(isinstance(bl.get(k), dict) for k in ("suggested", "item_of", "options")):
+        return {}          # a malformed or missing snapshot voids too, before anything is cleared (B5 #3)
+    if (not all(isinstance(x, str) for x in bl["suggested"].values())
+            or not all(isinstance(x, str) for x in bl["item_of"].values())
+            or not all(isinstance(x, list) and all(isinstance(o, str) for o in x) for x in bl["options"].values())):
+        return {}          # contents too, so the approve path never raises after clearing the card (B6 #3)
     return doc
 
 

@@ -1337,7 +1337,7 @@ $("#action-continue").onclick=async()=>{
   if(!CUR||CUR.id!==ACTION_SESSION){$("#action-error").textContent=chineseUI()?"请返回提出此问题的对话。":"Return to the chat that asked this question.";return;}
   const option=ACTION_REQUEST.options[ACTION_INDEX],note=$("#action-note").value.trim();
   const choices={};document.querySelectorAll('#pr-data-choices input[type=radio]:checked').forEach(e=>{choices[e.dataset.choice]=e.value;});
-  PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note,...(Object.keys(choices).length?{choices}:{})});
+  PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note,...(Object.keys(choices).length?{choices}:{}),...(ACTION_REQUEST.plan_review?{shown:ACTION_REQUEST}:{})});
   const text=chineseUI()?`关于“${ACTION_REQUEST.title}”，我的选择是：${option.label}。\n决定：${option.response||option.label}${note?`\n补充说明：${note}`:""}\n请根据这个选择继续。`:`For “${ACTION_REQUEST.title}”, I choose: ${option.label}.\nDecision: ${option.response||option.label}${note?`\nAdditional note: ${note}`:""}\nPlease continue using this choice.`;
   closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
 };

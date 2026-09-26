@@ -274,15 +274,37 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
                 ctx.move("modify")
                 return Pre(names=list(ctx.selected_kis or names),
                            replan_reason="The plan or inventory changed after review. Review this revision before approval.")
+        if choice == "approve":
+            try:
+                load_user_answers(project)       # before the card is cleared: a refusal here
+            except AnswersUnreadable as e:       # leaves it in place to approve again (review A)
+                return Pre(names=list(ctx.selected_kis or names),
+                           message=f"Your saved answers cannot be read ({e}). Fix or remove that file, then approve again.")
         setup_flow.clear_request(project)
         if choice == "approve":
             from . import obs_subset, obs_access
             pj, inv = flow.plan.read_artifacts(project)
             picks = action.get("choices") if isinstance(action.get("choices"), dict) else {}
             repinned = apply_data_choices(pj, inv, picks) if picks else []
+            # Record the picks now, against the card the user actually saw, before any branch
+            # below re-issues a card: both the re-pin and the clip-refresh re-issue pre-select
+            # the new values, so on the next click they would look like untouched suggestions
+            # (codex review A #1, A2 #2, A3 #1). A pick equal to what THIS card showed is still
+            # not a choice — a re-pin alone proves nothing. Only ids this card offered count.
+            review_shown = (pending or {}).get("plan_review") or {}
+            shown = {str(ch.get("id")) for key in ("data_choices", "decisions")
+                     for ch in review_shown.get(key) or [] if isinstance(ch, dict) and ch.get("id")}
+            if picks:
+                try:
+                    record_user_answers(project, pending, {k: v for k, v in picks.items() if str(k) in shown})
+                except AnswersUnreadable as e:
+                    return Pre(names=list(ctx.selected_kis or names),
+                               message=f"Your saved answers cannot be read ({e}). Fix or remove that file, then ask for the plan again.")
             if repinned:
                 # The user chose different data on the card: re-pin, re-stamp (incl. the
                 # host's clip check), rewrite the plan files and show the card again unsigned.
+                # Non-data picks made in the same click stay on the re-issued card (kimi A2).
+                apply_choice_picks(pj, picks)
                 errs = obs_access.stamp_inventory(inv, project=project)
                 flow.plan.write_artifacts(project, pj, inv)
                 chosen = set(ctx.selected_kis or names)
@@ -298,7 +320,8 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
                 for c in pj.get("scientific_choices") or []:
                     if isinstance(c, dict) and c.get("kind") == "data_source" and picks.get(str(c.get("id"))):
                         c["decision"] = picks[str(c.get("id"))]
-                flow.plan.write_artifacts(project, pj, inv)
+                apply_choice_picks(pj, picks)     # before the clip refresh can re-issue the card,
+                flow.plan.write_artifacts(project, pj, inv)   # so it shows these picks too (kimi A7)
                 pj, inv = flow.plan.read_artifacts(project)
             # Fresh numbers for every server clip before anything is signed. If a
             # clip grew or its source changed, the card comes back unsigned.
@@ -324,7 +347,11 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
             if apply_choice_picks(pj, picks):
                 flow.plan.write_artifacts(project, pj, inv)
                 pj, inv = flow.plan.read_artifacts(project)
-            answers = record_user_answers(project, pending, picks)
+            try:                          # only ids the card offered, as in the early write (kimi A5)
+                answers = record_user_answers(project, pending, {k: v for k, v in (picks or {}).items() if str(k) in shown})
+            except AnswersUnreadable as e:
+                return Pre(names=list(ctx.selected_kis or names),
+                           message=f"Your saved answers cannot be read ({e}). Fix or remove that file, then ask for the plan again.")
             records, invalid = decision_records(flow, pj, inv, answers)
             blocking = [display_input_id(i) for i in flow.decisions.open_inputs(records)] + invalid
             if blocking:
@@ -1138,14 +1165,36 @@ def _answers_path(project: Path) -> Path:
     return Path(project) / ".geoforge" / ANSWERS_FILE
 
 
+class AnswersUnreadable(RuntimeError):
+    """The host-written answer store exists but cannot be read. Treating that as "no answers"
+    would quietly turn every earlier user decision into a KI default (kimi review, 2026-09-26)."""
+
+
 def load_user_answers(project: Path) -> dict:
     """What the USER actually answered, host-written. The plan files are agent-writable, so a
-    provenance marker inside them proves nothing (codex/kimi review, 2026-09-25)."""
+    provenance marker inside them proves nothing (codex/kimi review, 2026-09-25).
+
+    A missing file means nothing was answered yet. Anything else that stops it being read is
+    raised, so the approval refuses with the path instead of signing downgraded provenance."""
+    path = _answers_path(project)
     try:
-        doc = json.loads(_answers_path(project).read_text(encoding="utf-8"))
-        return doc.get("answers") or {} if isinstance(doc, dict) else {}
-    except (OSError, ValueError):
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {}
+    except (OSError, UnicodeDecodeError) as e:
+        raise AnswersUnreadable(f"{path}: {e}") from e
+    try:
+        doc = json.loads(raw)
+    except ValueError as e:
+        raise AnswersUnreadable(f"{path}: not valid JSON ({e})") from e
+    if not isinstance(doc, dict) or not isinstance(doc.get("answers"), dict):
+        raise AnswersUnreadable(f"{path}: unexpected shape (no answers map)")
+    answers = dict(doc["answers"])
+    for k, v in answers.items():
+        val = v.get("value") if isinstance(v, dict) else None
+        if val in (None, "") or (isinstance(val, (list, dict)) and not val):
+            raise AnswersUnreadable(f"{path}: malformed entry {k!r}")
+    return answers
 
 
 def record_user_answers(project: Path, card: dict | None, picks: dict | None) -> dict:
@@ -1156,23 +1205,45 @@ def record_user_answers(project: Path, card: dict | None, picks: dict | None) ->
     user chose anything — it is the default coming back. Only a pick that DIFFERS from the
     recommendation (or answers something the card recommended nothing for) is recorded as the
     user's. Anything else stays a disclosed default.
+
+    A data-source choice answers an inventory ITEM. The card row says which (`item`), so the
+    answer is stored under both `choice:<id>` and `item:<item>` — the reader never guesses
+    across namespaces (kimi review, 2026-09-26).
     """
     review = (card or {}).get("plan_review") or {}
-    suggested = {}
+    suggested: dict[str, str] = {}
+    item_of: dict[str, str] = {}
     for ch in review.get("data_choices") or []:
         if isinstance(ch, dict) and ch.get("id"):
             suggested[str(ch["id"])] = str(ch.get("picked") or "")
+            if ch.get("item"):
+                item_of[str(ch["id"])] = str(ch["item"])
     for ch in review.get("decisions") or []:
         if isinstance(ch, dict) and ch.get("id"):
             suggested[str(ch["id"])] = str(ch.get("picked") or "")
     answers = load_user_answers(project)
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    # Stores written before 2026-09-26 hold only `choice:` keys. The item a choice answers is
+    # taken from the card row (`item`), exactly as for new writes — never guessed from the id's
+    # `data:` prefix, which is not proof of the binding (codex review A2 #1). Only a record with
+    # no `item` stamp is legacy: a modern record carries the binding it was written under, and
+    # a replan that rebinds the same choice id to another item must not carry it over (A4 #1).
+    for cid, item_id in item_of.items():
+        legacy = answers.get(f"choice:{cid}")
+        if isinstance(legacy, dict) and "item" not in legacy:
+            if f"item:{item_id}" not in answers:
+                answers[f"item:{item_id}"] = {k: v for k, v in legacy.items()}
+            legacy["item"] = item_id          # stamped whether or not the item record existed:
+                                              # a later rebinding must not reuse it (codex A6)
     for raw_id, value in (picks or {}).items():
         cid = str(raw_id)
-        if value in (None, ""):
-            continue
+        if value in (None, "") or (isinstance(value, (list, dict)) and not value):
+            continue                     # what the reader rejects, the writer never stores (kimi A3)
         if str(value) == suggested.get(cid, object()):
             continue                     # the pre-selected recommendation came back untouched
-        answers[f"choice:{cid}"] = {"value": value, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+        answers[f"choice:{cid}"] = {"value": value, "at": stamp, "item": item_of.get(cid)}
+        if item_of.get(cid):
+            answers[f"item:{item_of[cid]}"] = {"value": value, "at": stamp}
     p = _answers_path(project)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
@@ -1215,8 +1286,8 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -
         built.append({"input_id": iid, "source": source, "value": value, "rationale": why or None})
 
     def _answer(ns: str, raw_id: str):
-        rec = answers.get(f"{ns}:{raw_id}") or answers.get(f"choice:{raw_id}")
-        return rec.get("value") if isinstance(rec, dict) else None
+        rec = answers.get(f"{ns}:{raw_id}")          # its own namespace only — a choice id that
+        return rec.get("value") if isinstance(rec, dict) else None   # happens to equal an item id
 
     for it in inv.get("items") or []:
         if not isinstance(it, dict):
@@ -1225,9 +1296,11 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -
             invalid.append("an inventory item has no id")
             continue
         iid = str(it["id"])
-        answered = _answer("item", iid) or _answer("item", f"data:{iid}")
         concrete = (it.get("dataset_id") or it.get("chosen_source") or it.get("decision")
                     or (", ".join(str(p) for p in it.get("local_paths") or []) or None))
+        answered = _answer("item", iid)
+        if answered and str(answered) != str(concrete or ""):
+            answered = None     # a replan re-pinned it: the saved answer is not what will run
         if answered:
             _add("item", iid, "user", answered, "you chose this on the approval card")
         elif it.get("needs_user") and not concrete:
@@ -1248,6 +1321,13 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None) -
             continue
         cid = str(c["id"])
         answered = _answer("choice", cid)
+        if answered and str(answered) != str(c.get("decision") or c.get("picked") or ""):
+            answered = None     # the plan moved on since the user answered (review A #3)
+        if answered and c.get("kind") == "data_source":
+            bound = (answers.get(f"choice:{cid}") or {}).get("item")
+            now = str(c.get("item") or cid.replace("data:", "", 1))
+            if bound and str(bound) != now:
+                answered = None     # answered for another item; the id was rebound (review A5 #1)
         if answered:
             _add("choice", cid, "user", answered, "you chose this on the approval card")
         elif c.get("decision"):
@@ -1299,7 +1379,7 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
                       "env": sorted((st.get("env") or {}).keys()),
                       "inputs": list(st.get("inputs") or []), "outputs": list(st.get("outputs") or [])})
     decisions = [{"id": c.get("id"), "kind": c.get("kind"), "options": list(c.get("options") or []),
-                  "picked": c.get("picked"), "decided": bool(c.get("decision")),
+                  "picked": c.get("decision") or c.get("picked"), "decided": bool(c.get("decision")),
                   "high_impact": bool(c.get("high_impact"))}
                  for c in plan.get("scientific_choices") or [] if isinstance(c, dict)
                  and c.get("kind") != "data_source"]

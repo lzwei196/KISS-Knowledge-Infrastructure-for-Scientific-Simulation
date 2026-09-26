@@ -1506,3 +1506,188 @@ def test_an_untouched_recommendation_coming_back_from_the_card_is_not_a_user_dec
                                                           "routing": "cama"})
     assert "choice:data:forcing" not in answers          # unchanged suggestion: not an answer
     assert answers["choice:routing"]["value"] == "cama"  # a real change is
+
+
+def test_a_repinned_data_choice_survives_the_reissued_card(tmp_path):
+    """Pick A, approve, change to B: the re-issued card pre-selects B, so the next click alone
+    cannot prove the user chose B. The re-pin path records it against the card the user saw."""
+    project = _project(tmp_path)
+    old_card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
+    flowrun.record_user_answers(project, old_card, {"data:forcing": "mswx_v1"})
+    new_card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "mswx_v1"}]}}
+    answers = flowrun.record_user_answers(project, new_card, {"data:forcing": "mswx_v1"})
+    assert answers["choice:data:forcing"]["value"] == "mswx_v1"
+    assert answers["item:forcing"]["value"] == "mswx_v1"          # the item it answers, explicitly
+
+
+def test_a_repin_alone_is_not_a_user_choice(tmp_path):
+    """The card can pre-select a suggestion that differs from the pinned dataset; leaving it
+    untouched still re-pins. That must not become a user decision (codex review A #1)."""
+    project = _project(tmp_path)
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "mswx_v1"}]}}
+    answers = flowrun.record_user_answers(project, card, {"data:forcing": "mswx_v1"})
+    assert answers == {}
+
+
+def test_a_legacy_store_answers_the_item_the_card_binds_it_to(tmp_path):
+    """Stores from before 2026-09-26 hold only `choice:<id>`. The item is taken from the card
+    row's `item`, never from the id's `data:` prefix — a choice `data:forcing` may be bound to
+    the item `temperature` (codex review A2 #1)."""
+    project = _project(tmp_path)
+    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"schema": 1, "answers": {"choice:data:forcing": {"value": "mswx_v1"}}}), encoding="utf-8")
+    assert "item:forcing" not in flowrun.load_user_answers(project)          # no guessing at load
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "temperature", "picked": "cmfd_v1"}]}}
+    answers = flowrun.record_user_answers(project, card, {})
+    assert answers["item:temperature"]["value"] == "mswx_v1"
+    assert "item:forcing" not in answers
+
+
+def test_a_saved_answer_that_the_plan_no_longer_uses_is_not_signed_as_user(tmp_path):
+    """User chose B; a replan re-pinned the item to A. Signing "user chose B" while A runs would
+    be false (codex review A #3): the saved answer counts only while it is what will run."""
+    plan = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
+                                    "options": ["a", "b"], "decision": "a"}]}
+    inv = {"items": [{"id": "forcing", "dataset_id": "a"}]}
+    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv,
+                                       {"item:forcing": {"value": "b"}, "choice:data:forcing": {"value": "b"}})
+    assert recs["item:forcing"]["source"] == "ki_default" and recs["item:forcing"]["value"] == "a"
+    assert recs["choice:data:forcing"]["source"] == "ki_default"
+    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv,
+                                       {"item:forcing": {"value": "a"}, "choice:data:forcing": {"value": "a"}})
+    assert recs["item:forcing"]["source"] == "user"
+
+
+def test_an_item_is_answered_only_in_its_own_namespace(tmp_path):
+    """A planner-authored choice id that happens to equal an item id must not answer the item
+    (kimi review, 2026-09-26): the mapping is explicit, never a fallback across namespaces."""
+    plan = {"scientific_choices": [{"id": "forcing", "kind": "routing", "options": ["a", "b"], "decision": "a"}]}
+    inv = {"items": [{"id": "forcing", "needs_user": True}]}
+    recs, invalid = flowrun.decision_records(flowrun._flow(), plan, inv, {"choice:forcing": {"value": "a"}})
+    assert recs["item:forcing"]["source"] == "open"               # still open: not answered
+    assert recs["choice:forcing"]["source"] == "user"
+    inv2 = {"items": [{"id": "forcing", "dataset_id": "cmfd_v1"}]}
+    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv2, {"item:forcing": {"value": "cmfd_v1"}})
+    assert recs["item:forcing"]["source"] == "user"
+
+
+def test_a_corrupt_answer_store_is_loud_not_silent(tmp_path):
+    """A missing store is "nothing answered yet"; an unreadable one must refuse, not quietly
+    turn every earlier user decision into a KI default (kimi review, 2026-09-26)."""
+    project = _project(tmp_path)
+    assert flowrun.load_user_answers(project) == {}
+    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p.parent.mkdir(parents=True, exist_ok=True)
+    for bad in ("{not json", b"\xff\xfe{}", '{"schema": 1}', '{"schema": 1, "answers": {"item:x": null}}',
+                '{"schema": 1, "answers": {"item:x": {"value": []}}}'):
+        if isinstance(bad, bytes):
+            p.write_bytes(bad)
+        else:
+            p.write_text(bad, encoding="utf-8")
+        with pytest.raises(flowrun.AnswersUnreadable):
+            flowrun.load_user_answers(project)
+    p.write_text('{"schema": 1, "answers": {}}', encoding="utf-8")
+    assert flowrun.load_user_answers(project) == {}                # valid and empty is fine
+
+
+def test_a_changed_pick_survives_a_clip_refresh_reissue(tmp_path, monkeypatch):
+    """Card recommends A, the inventory already pins B, the user picks B: no re-pin, but a
+    changed clip estimate re-issues a card pre-selecting B. The pick must already be recorded
+    against the card the user saw (codex review A2 #2)."""
+    project = _project(tmp_path)
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
+    answers = flowrun.record_user_answers(project, card, {"data:forcing": "mswx_v1"})
+    assert answers["item:forcing"]["value"] == "mswx_v1"
+    # the re-issued card now pre-selects B; the untouched click keeps the earlier record
+    card2 = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "mswx_v1"}]}}
+    answers = flowrun.record_user_answers(project, card2, {"data:forcing": "mswx_v1"})
+    assert answers["item:forcing"]["value"] == "mswx_v1"
+
+
+def test_a_non_data_pick_made_with_a_repin_is_recorded_at_that_click(tmp_path):
+    """Routing changed in the same click as a data re-pin: the re-issued card keeps the routing
+    decision, so it must be recorded against the card the user saw, or the next approval
+    signs it as a KI default (codex review A3 #1)."""
+    project = _project(tmp_path)
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}],
+                            "decisions": [{"id": "routing", "picked": "lohmann"}]}}
+    picks = {"data:forcing": "mswx_v1", "routing": "cama"}
+    shown = {ch["id"] for key in ("data_choices", "decisions") for ch in card["plan_review"][key]}
+    answers = flowrun.record_user_answers(project, card, {k: v for k, v in picks.items() if k in shown})
+    assert answers["choice:routing"]["value"] == "cama"
+    plan = {"scientific_choices": [{"id": "routing", "kind": "routing", "options": ["lohmann", "cama"],
+                                    "decision": "cama", "picked": "lohmann"}]}
+    recs, _ = flowrun.decision_records(flowrun._flow(), plan, {"items": []}, answers)
+    assert recs["choice:routing"]["source"] == "user"
+
+
+def test_a_rebound_choice_id_does_not_carry_the_old_answer_to_the_new_item(tmp_path):
+    """User chose B for `forcing`. A replan binds the same choice id to `temperature` (already
+    pinned to B). Approving untouched must not sign "user chose B for temperature": only
+    records without an `item` stamp are legacy (codex review A4 #1)."""
+    project = _project(tmp_path)
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
+    flowrun.record_user_answers(project, card, {"data:forcing": "mswx_v1"})
+    rebound = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "temperature", "picked": "mswx_v1"}]}}
+    answers = flowrun.record_user_answers(project, rebound, {"data:forcing": "mswx_v1"})
+    assert "item:temperature" not in answers
+    assert answers["item:forcing"]["value"] == "mswx_v1"
+    # and the choice record itself is not the user's for the rebound item either (codex A5 #1)
+    plan = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "temperature",
+                                    "options": ["mswx_v1"], "decision": "mswx_v1"}]}
+    inv = {"items": [{"id": "temperature", "dataset_id": "mswx_v1"}]}
+    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv, answers)
+    assert recs["choice:data:forcing"]["source"] == "ki_default"
+    assert recs["item:temperature"]["source"] == "ki_default"
+
+
+def test_a_migrated_legacy_record_is_stamped_and_never_migrates_again(tmp_path):
+    """Legacy `choice:data:forcing` migrates once to the item the card binds it to; a later
+    rebinding of the same choice id must not migrate it again (codex review A5 #2)."""
+    project = _project(tmp_path)
+    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"schema": 1, "answers": {"choice:data:forcing": {"value": "mswx_v1"}}}), encoding="utf-8")
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
+    answers = flowrun.record_user_answers(project, card, {})
+    assert answers["item:forcing"]["value"] == "mswx_v1"
+    assert answers["choice:data:forcing"]["item"] == "forcing"
+    rebound = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "temperature", "picked": "mswx_v1"}]}}
+    answers = flowrun.record_user_answers(project, rebound, {"data:forcing": "mswx_v1"})
+    assert "item:temperature" not in answers
+
+
+def test_a_legacy_choice_is_stamped_even_when_its_item_record_already_exists(tmp_path):
+    """Two legacy choices bound to the same item: the second finds `item:forcing` already
+    present and must still be stamped, or a later rebinding migrates it (codex review A6)."""
+    project = _project(tmp_path)
+    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"schema": 1, "answers": {"choice:data:forcing": {"value": "mswx_v1"},
+                                                       "choice:select-forcing": {"value": "mswx_v1"}}}), encoding="utf-8")
+    card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"},
+                                             {"id": "select-forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
+    answers = flowrun.record_user_answers(project, card, {})
+    assert answers["choice:data:forcing"]["item"] == "forcing"
+    assert answers["choice:select-forcing"]["item"] == "forcing"
+    rebound = {"plan_review": {"data_choices": [{"id": "select-forcing", "item": "temperature", "picked": "mswx_v1"}]}}
+    answers = flowrun.record_user_answers(project, rebound, {"select-forcing": "mswx_v1"})
+    assert "item:temperature" not in answers
+
+
+def test_a_reissued_card_shows_the_non_data_pick_the_user_made(tmp_path):
+    """Whichever branch re-issues the card (re-pin or clip refresh), the plan must already carry
+    the non-data picks from that click, or the card shows the old suggestion and the next click
+    demotes the recorded answer (codex A3 #1, kimi A7 #1)."""
+    plan = {"goal": "g", "selected_kis": ["VIC"],
+            "scientific_choices": [{"id": "routing", "kind": "routing", "options": ["lohmann", "cama"],
+                                    "picked": "lohmann", "high_impact": True}]}
+    assert flowrun.apply_choice_picks(plan, {"routing": "cama"}) == ["routing"]
+    assert plan["scientific_choices"][0]["decision"] == "cama"
+
+    class _FS:
+        project = tmp_path
+        flow = flowrun._flow()
+    card = flowrun._card(flowrun._flow(), _FS(), plan, {"items": []}, "note")
+    assert card["plan_review"]["decisions"][0]["picked"] == "cama"

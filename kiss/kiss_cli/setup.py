@@ -67,8 +67,12 @@ def _read_json(path: Path) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-def request(root: Path) -> dict | None:
-    """Return the current structured human request, if one exists."""
+def request(root: Path, *, archive_obsolete: bool = True) -> dict | None:
+    """Return the current structured human request, if one exists.
+
+    Read-only status projections disable legacy permission-request archival.
+    Existing callers retain the migration behavior.
+    """
     raw = _read_json(Path(root) / REQUEST_FILE)
     if not raw:
         return None
@@ -83,7 +87,8 @@ def request(root: Path) -> dict | None:
         # surface, so archive the stale request instead of showing it forever.
         from .kimi_security import is_runtime_read_path
         if is_runtime_read_path(expected):
-            clear_request(root)
+            if archive_obsolete:
+                clear_request(root)
             return None
     url = str(raw.get("url") or "").strip()[:2000]
     return {

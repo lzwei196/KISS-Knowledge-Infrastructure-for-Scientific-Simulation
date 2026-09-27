@@ -232,6 +232,8 @@ def test_subset_binds_to_approved_inventory_without_mutating_plan(tmp_path, monk
     fs.flow.approval.approve(project, by='user')
     fs.reload_artifacts()
     before = (project / 'runs/data-inventory.json').read_bytes()
+    approved_plan = (project / 'runs/plan.json').read_bytes()
+    approval = (project / 'runs/approval.json').read_bytes()
     from kiss_cli.flowgate import FlowDenied
     with pytest.raises(FlowDenied, match='no intact, bound acquisition'):
         fs.check_step_tool('M:run', 'M', ki.root / 'tools/run.py')
@@ -245,6 +247,20 @@ def test_subset_binds_to_approved_inventory_without_mutating_plan(tmp_path, monk
     assert receipt['acquisition']['files'][0]['time_range'] == ['1989-01-01', '1989-12-31']
     assert receipt['acquisition']['files'][0]['crs_source'] == 'declared'
     assert receipt['acquisition']['scientific_validation'] == 'pending'
+    receipt_bytes = Path(paths[0]).read_bytes()
+    acquired = fs.flow.receipts.inspect_downloads(project, fs.inventory, approval_sha256=fs.approval_id)
+    assert len(acquired) == 1
+    assert acquired[0].reusable and acquired[0].bound
+    assert acquired[0].request_match == 'exact' and acquired[0].files == 'intact'
+    assert acquired[0].source_freshness == 'unknown'
+    assert acquired[0].scientific_validation == 'not_assessed'
+    evidence = fs.flow.receipts.evidence(project, fs.plan, fs.approval_doc, inventory=fs.inventory)
+    assert evidence['downloads_total'] == evidence['downloads_bound'] == 1
+    assert evidence['rejected_receipts'] == []
+    # Acquisition evidence permits the approved tool to start; it does not say
+    # the scientific step has run or passed validation.
+    assert evidence['validation'] == 'incomplete' and evidence['steps_missing'] == ['M:run']
+    assert not evidence['receipts_verified']
     assert flowrun.plan_data_status(project)['items'][0]['status'] == 'acquired'
     assert flowrun.plan_data_status(project)['items'][0]['action'] == 'agent_validate'
     assert fs.check_step_tool('M:run', 'M', ki.root / 'tools/run.py')['id'] == 'M:run'
@@ -255,15 +271,34 @@ def test_subset_binds_to_approved_inventory_without_mutating_plan(tmp_path, monk
     from kiss_cli import acquire
     fs.move('plan_written', {'plan_valid': True}); fs.move('approved', {'approval': 'OK'})
     monkeypatch.setattr(obs_access, 'Client', lambda: c)
+    request_count = len(c._provided_opener.requests)
     result = acquire.run(project)
     assert result['status'] == 'done' and result['items']['forcing']['receipt'] == paths[0]
+    assert len(c._provided_opener.requests) == request_count
 
     (Path(s.read(project, ident)['path']) / 'rain.dat').write_bytes(b'changed')
+    changed = fs.flow.receipts.inspect_downloads(project, fs.inventory, approval_sha256=fs.approval_id)
+    assert len(changed) == 1
+    assert not changed[0].reusable and not changed[0].bound and not changed[0].recoverable
+    assert changed[0].request_match == 'exact' and changed[0].files == 'changed'
+    assert changed[0].source_freshness == 'unknown'
+    evidence = fs.flow.receipts.evidence(project, fs.plan, fs.approval_doc, inventory=fs.inventory)
+    assert evidence['downloads_total'] == 1 and evidence['downloads_bound'] == 0
+    assert evidence['rejected_receipts'] == [{'path': paths[0], 'why': changed[0].reason}]
+    assert evidence['validation'] == 'incomplete' and not evidence['receipts_verified']
     assert flowrun.plan_data_status(project)['items'][0]['status'] == 'pending'
     with pytest.raises(FlowDenied, match='no intact, bound acquisition'):
         fs.check_step_tool('M:run', 'M', ki.root / 'tools/run.py')
     with pytest.raises(ValueError, match='missing or changed'):
         s.download(project, ident, client=c)
+    failed = acquire.run(project)
+    assert failed['status'] == 'failed' and failed['items']['forcing']['status'] == 'failed'
+    assert flowrun.plan_data_status(project)['items'][0]['status'] == 'failed'
+    assert len(c._provided_opener.requests) == request_count  # no silent download or repair
+    assert Path(paths[0]).read_bytes() == receipt_bytes
+    assert (project / 'runs/data-inventory.json').read_bytes() == before
+    assert (project / 'runs/plan.json').read_bytes() == approved_plan
+    assert (project / 'runs/approval.json').read_bytes() == approval
 
 
 def test_subset_cannot_bind_to_different_dataset_or_period(tmp_path):

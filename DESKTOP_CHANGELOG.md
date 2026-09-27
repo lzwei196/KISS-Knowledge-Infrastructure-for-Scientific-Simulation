@@ -6,6 +6,27 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## mac-version checkpoint — 2026-09-27 (v0.6.54 test build, not a new release)
+
+### English
+
+- Consolidated acquired-input evidence: request matching, file integrity and safe reuse now share one interpretation. Changed source/scope or tampered files cannot silently reuse old evidence; acquisition is not scientific validation.
+- Centralized approved KI execution for API and CLI agents. Each permitted invocation records its observed outcome; failed scientific tools are returned to the agent for diagnosis, without automatic host retries.
+- Added a Plan Review owner for the issued card, saved user choices and signing order. Stale/changed reviews require re-review; refresh failures preserve the pending review; off-menu answers cannot mutate the plan.
+- Unified project status across the main panel, details and status button. Files present, acquired inputs and evidenced outputs are distinguished; agent statements alone cannot mark a project complete. Presentation checks use an invalidated in-memory cache without weakening fresh execution checks.
+- Verification: 814 source tests and 121 subtests passed; five unavailable-server-reference checks skipped. A dated Apple Silicon build passed frozen KI discovery (127 packages), harness/Flow loading, calibration-backend imports, source/payload comparison and signature checks. Live providers, real simulations, native GUI acceptance and Windows acceptance remain separate.
+- Integration: take the shared `ki_tools_common/flow/receipts.py` changes together with the Desktop changes and include the new `execution.py`, `plan_review.py` and `project_status.py` modules. No public version bump or release asset replacement is part of this checkpoint.
+
+### 中文
+
+- 统一已获取数据的证据检查与安全复用；数据已下载不等于科学验证通过。
+- API/CLI 共用已批准步骤的执行流程，失败交回 Agent 诊断，Desktop 不自动重跑科学工具。
+- 统一批准卡、用户选择与签名顺序；旧卡、变化后的方案需重新确认，刷新失败保留待处理卡片。
+- 主面板、详情和状态按钮使用同一状态解释，区分文件存在、获取完成与有证据的输出，不能仅凭 Agent 的文字宣称项目完成。
+- 本次是 v0.6.54 的日期标识测试构建，不是新发布版本；Windows 更新时需同步共享 receipt 模块和三个新增 Desktop 模块，并另行验证。
+
+Details and remaining limits: [improvement plan](docs/ARCHITECTURE-IMPROVEMENT-PLAN-2026-09-27.md) and [Mac build verification](docs/ARCHITECTURE-MAC-BUILD-2026-09-27.md).
+
 ## v0.6.54 — 2026-09-19
 
 ### 中文

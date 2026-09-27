@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import secrets
 import sys
 import time
 import urllib.parse
@@ -188,10 +189,7 @@ class FlowSession:
         if step.get('kind') != 'download':
             for item in (self.inventory or {}).get('items') or []:
                 if item.get('acquisition_id') and item.get('id') in (step.get('inputs') or []):
-                    valid = any(ok and d.get('item_id') == item['id']
-                                and self.flow.receipts._download_still_valid(self.project, d, self.inventory)
-                                for _, d, ok in self.flow.receipts._read_all(
-                                    self.project, self.flow.receipts.DATA_SUB))
+                    valid = self.flow.receipts.find_download(self.project, item)
                     if not valid:
                         raise FlowDenied(f"Input {item['id']!r} has no intact, bound acquisition. "
                                          "Complete its approved data download before running this step.")
@@ -232,23 +230,41 @@ class FlowSession:
     def record_tool_run(self, *, ki: str, ki_root: Path, command: list[str], cwd: Path,
                         started_at: float, finished_at: float, exit_code: int | None,
                         before: dict, plan_step_id: str | None, stdout_tail: str = "",
-                        forcing_source: str | None = None) -> dict:
+                        forcing_source: str | None = None,
+                        expected_approval_sha256: str | None = None,
+                        execution_status: str | None = None,
+                        process_started: bool | None = None,
+                        input_arguments: list[str] | None = None) -> dict:
         """Write the signed run receipt + validation for one tool/model run and return a
         small summary for the agent. Receipts are bound to the current approval; an
         unapproved run cannot get one (the tool proxy refuses earlier, but never trust it)."""
         r = self.flow.receipts
         if self.approval_status() != "OK":
             raise FlowDenied("no valid approval for this run — the receipt cannot be written")
+        if expected_approval_sha256 is not None and (
+                self.approval_id != expected_approval_sha256 or
+                self.flow.approval.approval_id(self.flow.approval.read(self.project)) != expected_approval_sha256):
+            raise FlowDenied("approval changed during execution — the receipt cannot be written for a different approval")
         if not plan_step_id:
             raise FlowDenied("run_ki_tool needs plan_step_id (the plan step this run executes)")
         if not any(str(s.get("id")) == str(plan_step_id) for s in (self.plan or {}).get("steps") or []):
             raise FlowDenied(f"plan_step_id {plan_step_id!r} is not a step of the approved plan")
         after = _snapshot(self.project)
         outputs = _changed(before, after)
-        inputs = [Path(t) for t in command[2:] if isinstance(t, str) and Path(t).is_file()]
+        inputs = []
+        # The caller knows which tokens are arguments (binary commands have no
+        # interpreter prefix). Resolve relative paths against the child's cwd.
+        for token in input_arguments if input_arguments is not None else command[2:]:
+            if not isinstance(token, str):
+                continue
+            value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+            path = Path(value)
+            path = path if path.is_absolute() else cwd / path
+            if path.is_file() and path not in outputs:
+                inputs.append(path)
         logs_dir = self.project / "runs" / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
-        log = logs_dir / f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}.log"
+        log = logs_dir / f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}_{secrets.token_hex(6)}.log"
         log.write_text(stdout_tail, encoding="utf-8", errors="replace")
         kind = self.step_kind(plan_step_id)
         physical = kind in ("run", "route", "calibrate")
@@ -257,16 +273,22 @@ class FlowSession:
             run_facts={"errored": exit_code != 0, "output_nonempty": any(
                 p.is_file() and p.stat().st_size > 0 for p in outputs)},
             physical=physical)
+        # Validation may take time; do not attach this attempt to a later approval.
+        if expected_approval_sha256 is not None and (self.approval_status() != "OK" or
+                self.flow.approval.approval_id(self.flow.approval.read(self.project)) != expected_approval_sha256):
+            raise FlowDenied("approval changed during execution — the receipt cannot be written for a different approval")
         path = r.record_run(self.project, ki=ki, executable=command[0], command=command,
                             cwd=str(cwd), started_at=started_at, finished_at=finished_at,
                             exit_code=exit_code, inputs=inputs, outputs=outputs,
                             stdout_log=str(log), plan_step_id=plan_step_id,
-                            approval_sha256=self.approval_id, forcing_source=forcing_source,
-                            validation=validation)
+                            approval_sha256=expected_approval_sha256 or self.approval_id,
+                            forcing_source=forcing_source,
+                            validation=validation, execution_status=execution_status,
+                            process_started=process_started)
         return {"receipt": str(path), "run_id": json.loads(path.read_text())["run_id"],
                 "outputs": [str(p.relative_to(self.project)) if _under(p, self.project) else str(p)
                             for p in outputs][:50],
-                "validation": validation["status"],
+                "validation": validation["status"], "execution_status": execution_status,
                 "failed_checks": [c["check"] for c in validation["checks"] if not c["ok"]][:12]}
 
     # ---------------------------------------------------------------- plan files (api.py write_plan)

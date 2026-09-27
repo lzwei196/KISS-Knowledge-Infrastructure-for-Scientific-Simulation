@@ -332,7 +332,7 @@ def cmd_run_tool(args) -> int:
     """Run one KI tool for an APPROVED plan step and write the signed receipt (plan v3 B7).
     This is the only way a CLI agent's run can count; anything run outside it has no receipt."""
     from . import flowgate
-    import subprocess, time as _time
+    from .execution import execute_ki_tool
     project = _flow_project(args.project)
     ki_root = _flow_ki_root(project, args.ki, args)
     cfg = paths.KissConfig.load(project)
@@ -352,38 +352,24 @@ def cmd_run_tool(args) -> int:
     if argv and argv[0] == "--":
         argv = argv[1:]
     try:
-        step = fs.check_step_tool(args.step, args.ki, tool)   # KI + tool + step agree BEFORE running
-        approved_env = fs.approved_step_environment(step, ki_root)
+        result = execute_ki_tool(
+            flow=fs, cfg=cfg, project=project, ki=args.ki, ki_root=ki_root,
+            tool=tool, arguments=argv, cwd=project, plan_step_id=args.step,
+            python_tool=tool.suffix == ".py", timeout=None)
     except flowgate.FlowDenied as e:
         print(f"run-tool refused: {e}", file=sys.stderr)
         return 3
-    command = ([str(cfg.python), str(tool)] if tool.suffix == ".py" else [str(tool)]) + argv
-    child_env = {
-        key: value for key, value in os.environ.items()
-        if not any(secret in key.upper() for secret in (
-            "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
-    }
-    child_env["KISS_ROOT"] = str(project)
-    child_env = paths.with_ki_tools_common(cfg, child_env)
-    from .calibration import with_framework_env
-    child_env = with_framework_env(child_env)
-    child_env.update(approved_env)
-    before = flowgate._snapshot(project)
-    started = _time.time()
-    proc = subprocess.run(command, cwd=str(project), env=child_env,
-                          capture_output=True, text=True, errors="replace")
-    finished = _time.time()
-    out = (proc.stdout + proc.stderr)[-80000:]
-    try:
-        summary = fs.record_tool_run(ki=args.ki, ki_root=ki_root, command=command, cwd=project,
-                                     started_at=started, finished_at=finished, exit_code=proc.returncode,
-                                     before=before, plan_step_id=args.step, stdout_tail=out[-20000:])
-    except flowgate.FlowDenied as e:
-        print(out); print(f"[receipt NOT written: {e}]", file=sys.stderr)
+    print(result.output)
+    if result.detail:
+        print(result.detail, file=sys.stderr)
+    if result.receipt_error:
+        print(f"[receipt NOT written: {result.receipt_error}]", file=sys.stderr)
         return 3
-    print(out)
-    print("[RECEIPT] " + json.dumps(summary, ensure_ascii=False))
-    return proc.returncode
+    if result.receipt:
+        print("[RECEIPT] " + json.dumps(result.receipt, ensure_ascii=False))
+    if result.exit_code is not None:
+        return result.exit_code
+    return {"timed_out": 124, "interrupted": 130}.get(result.status, 1)
 
 
 def cmd_fetch(args) -> int:

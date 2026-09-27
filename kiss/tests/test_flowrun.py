@@ -17,7 +17,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import api, flowgate, flowrun, gui, obs_access, projectrun, sessions, setup as setup_flow  # noqa: E402
+from kiss_cli import api, flowgate, flowrun, plan_review, gui, obs_access, projectrun, sessions, setup as setup_flow  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -929,7 +929,7 @@ def test_approval_card_groups_inputs_by_what_happens_to_them():
         {"id": "veglib", "status": "missing", "required_by": ["VIC"]},
         {"id": "local", "status": "ready", "required_by": ["VIC"]},
     ]}
-    text = flowrun._data_summary(plan, inv)
+    text = plan_review._data_summary(plan, inv)
     assert "Data: 5 inputs" in text
     assert "GeoForge fetches after approval (1)" in text and "bengbu_51080 (553 KB)" in text
     assert "you (1)" in text and "7.35 GB" in text and "Baidu link" in text
@@ -1084,26 +1084,26 @@ def test_plan_data_status_rejects_forged_deleted_and_changed_downloads(tmp_path,
     monkeypatch.setattr(flow.plan, "read_artifacts", lambda _p: (plan, inv))
     def status():
         return flowrun.plan_data_status(project)["items"][0]["status"]
-    assert status() == "pending"  # existing bytes alone are not a served-download receipt
+    assert status() == "present_unverified"  # existing bytes alone are not a served-download receipt
     receipt = flow.receipts.record_download(
         project, item_id="forcing", source="test", request_url="https://example.test/data",
         http_status=200, raw_files=[payload], approval_sha256="approved", inventory_item=inv["items"][0])
-    assert status() == "done"
+    assert status() == "acquired"
     inv["items"][0]["dataset_id"] = "source-B"
-    assert status() == "pending"
+    assert status() == "present_unverified"
     inv["items"][0]["dataset_id"] = "source-A"
     inv["items"][0]["requirements"] = {"start": "2000", "end": "2001"}
-    assert status() == "pending"
+    assert status() == "present_unverified"
     inv["items"][0].pop("requirements")
-    assert status() == "done"
+    assert status() == "acquired"
     original = receipt.read_text()
     forged = json.loads(original)
     forged["source"] = "tampered"
     receipt.write_text(json.dumps(forged))
-    assert status() == "pending"
+    assert status() == "present_unverified"
     receipt.write_text(original)
     payload.write_bytes(b"different bytes")
-    assert status() == "pending"
+    assert status() == "present_unverified"
     payload.unlink()
     assert status() == "pending"
 
@@ -1117,10 +1117,10 @@ def test_plan_data_status_does_not_mark_empty_local_directory_ready(tmp_path, mo
     monkeypatch.setattr(flowrun._flow().plan, "read_artifacts", lambda _p: ({"steps": []}, inv))
     assert flowrun.plan_data_status(project)["items"][0]["status"] == "pending"
     (directory / "data.nc").write_bytes(b"local data")
-    assert flowrun.plan_data_status(project)["items"][0]["status"] == "done"
+    assert flowrun.plan_data_status(project)["items"][0]["status"] == "present_unverified"
 
 
-def test_provided_input_is_done_once_files_sit_at_its_target_path(tmp_path, monkeypatch):
+def test_provided_input_is_present_unverified_once_files_sit_at_its_target_path(tmp_path, monkeypatch):
     """2026-09-19: "Add source data" put files in inputs/uploads while the card said
     inputs/user/<id>; the row never changed. Now the per-row upload lands there and counts."""
     project = _project(tmp_path)
@@ -1134,7 +1134,7 @@ def test_provided_input_is_done_once_files_sit_at_its_target_path(tmp_path, monk
     (project / "inputs/user/site_geometry/.DS_Store").write_bytes(b"")
     assert flowrun.plan_data_status(project)["items"][0]["status"] == "waiting_for_you"
     (project / "inputs/user/site_geometry/site.csv").write_text("lat,lon\n")
-    assert flowrun.plan_data_status(project)["items"][0]["status"] == "done"
+    assert flowrun.plan_data_status(project)["items"][0]["status"] == "present_unverified"
 
 
 def test_data_actions_distinguish_manual_agent_and_coverage_gap(tmp_path, monkeypatch):
@@ -1432,7 +1432,7 @@ def test_approval_records_who_decided_each_input_and_the_plan_carries_the_revisi
     assert plan["decision_revision"] and len(plan["decision_revision"]) == 16
     # the planner's recommendation is disclosed, never recorded as the user's own choice
     assert recs["choice:f"]["source"] == "ki_default" and recs["choice:f"]["value"] == "cmfd_v1"
-    assert recs["choice:f"]["rationale"] == flowrun._SUGGESTION_WHY
+    assert recs["choice:f"]["rationale"] == plan_review._SUGGESTION_WHY
     assert all(r["source"] in ("user", "ki_default") for r in recs.values())
     assert all(k.split(":")[0] in ("item", "choice", "question", "note") for k in recs)
 
@@ -1471,7 +1471,7 @@ def test_an_input_with_nothing_to_fall_back_on_is_recorded_open(tmp_path):
         {"id": "forcing", "needs_user": False, "ki_default": {"default_source": "CMFD"}},
         {"id": "planted", "needs_user": True, "decision_source": "user", "decision": "agent's pick"},
         {"id": "picked_by_user", "needs_user": True, "dataset_id": "risma_on2"}]}
-    recs, invalid = flowrun.decision_records(fs.flow, {}, inv,
+    recs, invalid = plan_review.decision_records(fs.flow, {}, inv,
                                              {"item:picked_by_user": {"value": "risma_on2"}})
     assert invalid == []
     assert fs.flow.decisions.open_inputs(recs) == ["item:gauge"]
@@ -1515,7 +1515,7 @@ def _bl(card):
                         "high_impact": True})
     cat = {"datasets": [{"id": i, "name": i, "delivery": "served"} for i in ids]}
     with mock.patch.object(obs_access, "load_catalogue", lambda: cat):
-        bl = flowrun.suggestion_baseline({"scientific_choices": choices}, {"items": items})
+        bl = plan_review.suggestion_baseline({"scientific_choices": choices}, {"items": items})
     bl["options"] = {}          # these tests describe recording, not the menu; the off-menu rule
     return bl                   # has its own test (test_the_baseline_comes_from_the_plan_not_the_card)
 
@@ -1526,7 +1526,7 @@ def test_an_untouched_recommendation_coming_back_from_the_card_is_not_a_user_dec
     project = _project(tmp_path)
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "picked": "cmfd_v1"}],
                             "decisions": [{"id": "routing", "picked": "lohmann"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card), {"data:forcing": "cmfd_v1",
+    answers = plan_review.record_user_answers(project, _bl(card), {"data:forcing": "cmfd_v1",
                                                           "routing": "cama"})
     assert "choice:data:forcing" not in answers          # unchanged suggestion: not an answer
     assert answers["choice:routing"]["value"] == "cama"  # a real change is
@@ -1537,9 +1537,9 @@ def test_a_repinned_data_choice_survives_the_reissued_card(tmp_path):
     cannot prove the user chose B. The re-pin path records it against the card the user saw."""
     project = _project(tmp_path)
     old_card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
-    flowrun.record_user_answers(project, _bl(old_card), {"data:forcing": "mswx_v1"})
+    plan_review.record_user_answers(project, _bl(old_card), {"data:forcing": "mswx_v1"})
     new_card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "mswx_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(new_card), {"data:forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(new_card), {"data:forcing": "mswx_v1"})
     assert answers["choice:data:forcing"]["value"] == "mswx_v1"
     assert answers["item:forcing"]["value"] == "mswx_v1"          # the item it answers, explicitly
 
@@ -1549,7 +1549,7 @@ def test_a_repin_alone_is_not_a_user_choice(tmp_path):
     untouched still re-pins. That must not become a user decision (codex review A #1)."""
     project = _project(tmp_path)
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "mswx_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card), {"data:forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(card), {"data:forcing": "mswx_v1"})
     assert answers == {}
 
 
@@ -1558,12 +1558,12 @@ def test_a_legacy_store_answers_the_item_the_card_binds_it_to(tmp_path):
     row's `item`, never from the id's `data:` prefix — a choice `data:forcing` may be bound to
     the item `temperature` (codex review A2 #1)."""
     project = _project(tmp_path)
-    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p = project / ".geoforge" / plan_review.ANSWERS_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"schema": 1, "answers": {"choice:data:forcing": {"value": "mswx_v1"}}}), encoding="utf-8")
-    assert "item:forcing" not in flowrun.load_user_answers(project)          # no guessing at load
+    assert "item:forcing" not in plan_review.load_user_answers(project)          # no guessing at load
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "temperature", "picked": "cmfd_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card), {})
+    answers = plan_review.record_user_answers(project, _bl(card), {})
     assert answers["item:temperature"]["value"] == "mswx_v1"
     assert "item:forcing" not in answers
 
@@ -1574,11 +1574,11 @@ def test_a_saved_answer_that_the_plan_no_longer_uses_is_not_signed_as_user(tmp_p
     plan = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
                                     "options": ["a", "b"], "decision": "a"}]}
     inv = {"items": [{"id": "forcing", "dataset_id": "a"}]}
-    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv,
+    recs, _ = plan_review.decision_records(flowrun._flow(), plan, inv,
                                        {"item:forcing": {"value": "b"}, "choice:data:forcing": {"value": "b"}})
     assert recs["item:forcing"]["source"] == "ki_default" and recs["item:forcing"]["value"] == "a"
     assert recs["choice:data:forcing"]["source"] == "ki_default"
-    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv,
+    recs, _ = plan_review.decision_records(flowrun._flow(), plan, inv,
                                        {"item:forcing": {"value": "a"}, "choice:data:forcing": {"value": "a"}})
     assert recs["item:forcing"]["source"] == "user"
 
@@ -1588,11 +1588,11 @@ def test_an_item_is_answered_only_in_its_own_namespace(tmp_path):
     (kimi review, 2026-09-26): the mapping is explicit, never a fallback across namespaces."""
     plan = {"scientific_choices": [{"id": "forcing", "kind": "routing", "options": ["a", "b"], "decision": "a"}]}
     inv = {"items": [{"id": "forcing", "needs_user": True}]}
-    recs, invalid = flowrun.decision_records(flowrun._flow(), plan, inv, {"choice:forcing": {"value": "a"}})
+    recs, invalid = plan_review.decision_records(flowrun._flow(), plan, inv, {"choice:forcing": {"value": "a"}})
     assert recs["item:forcing"]["source"] == "open"               # still open: not answered
     assert recs["choice:forcing"]["source"] == "user"
     inv2 = {"items": [{"id": "forcing", "dataset_id": "cmfd_v1"}]}
-    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv2, {"item:forcing": {"value": "cmfd_v1"}})
+    recs, _ = plan_review.decision_records(flowrun._flow(), plan, inv2, {"item:forcing": {"value": "cmfd_v1"}})
     assert recs["item:forcing"]["source"] == "user"
 
 
@@ -1600,8 +1600,8 @@ def test_a_corrupt_answer_store_is_loud_not_silent(tmp_path):
     """A missing store is "nothing answered yet"; an unreadable one must refuse, not quietly
     turn every earlier user decision into a KI default (kimi review, 2026-09-26)."""
     project = _project(tmp_path)
-    assert flowrun.load_user_answers(project) == {}
-    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    assert plan_review.load_user_answers(project) == {}
+    p = project / ".geoforge" / plan_review.ANSWERS_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
     for bad in ("{not json", b"\xff\xfe{}", '{"schema": 1}', '{"schema": 1, "answers": {"item:x": null}}',
                 '{"schema": 1, "answers": {"item:x": {"value": []}}}'):
@@ -1609,10 +1609,10 @@ def test_a_corrupt_answer_store_is_loud_not_silent(tmp_path):
             p.write_bytes(bad)
         else:
             p.write_text(bad, encoding="utf-8")
-        with pytest.raises(flowrun.AnswersUnreadable):
-            flowrun.load_user_answers(project)
+        with pytest.raises(plan_review.AnswersUnreadable):
+            plan_review.load_user_answers(project)
     p.write_text('{"schema": 1, "answers": {}}', encoding="utf-8")
-    assert flowrun.load_user_answers(project) == {}                # valid and empty is fine
+    assert plan_review.load_user_answers(project) == {}                # valid and empty is fine
 
 
 def test_a_changed_pick_survives_a_clip_refresh_reissue(tmp_path, monkeypatch):
@@ -1621,11 +1621,11 @@ def test_a_changed_pick_survives_a_clip_refresh_reissue(tmp_path, monkeypatch):
     against the card the user saw (codex review A2 #2)."""
     project = _project(tmp_path)
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card), {"data:forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(card), {"data:forcing": "mswx_v1"})
     assert answers["item:forcing"]["value"] == "mswx_v1"
     # the re-issued card now pre-selects B; the untouched click keeps the earlier record
     card2 = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "mswx_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card2), {"data:forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(card2), {"data:forcing": "mswx_v1"})
     assert answers["item:forcing"]["value"] == "mswx_v1"
 
 
@@ -1638,11 +1638,11 @@ def test_a_non_data_pick_made_with_a_repin_is_recorded_at_that_click(tmp_path):
                             "decisions": [{"id": "routing", "picked": "lohmann"}]}}
     picks = {"data:forcing": "mswx_v1", "routing": "cama"}
     shown = {ch["id"] for key in ("data_choices", "decisions") for ch in card["plan_review"][key]}
-    answers = flowrun.record_user_answers(project, _bl(card), {k: v for k, v in picks.items() if k in shown})
+    answers = plan_review.record_user_answers(project, _bl(card), {k: v for k, v in picks.items() if k in shown})
     assert answers["choice:routing"]["value"] == "cama"
     plan = {"scientific_choices": [{"id": "routing", "kind": "routing", "options": ["lohmann", "cama"],
                                     "decision": "cama", "picked": "lohmann"}]}
-    recs, _ = flowrun.decision_records(flowrun._flow(), plan, {"items": []}, answers)
+    recs, _ = plan_review.decision_records(flowrun._flow(), plan, {"items": []}, answers)
     assert recs["choice:routing"]["source"] == "user"
 
 
@@ -1652,16 +1652,16 @@ def test_a_rebound_choice_id_does_not_carry_the_old_answer_to_the_new_item(tmp_p
     records without an `item` stamp are legacy (codex review A4 #1)."""
     project = _project(tmp_path)
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
-    flowrun.record_user_answers(project, _bl(card), {"data:forcing": "mswx_v1"})
+    plan_review.record_user_answers(project, _bl(card), {"data:forcing": "mswx_v1"})
     rebound = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "temperature", "picked": "mswx_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(rebound), {"data:forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(rebound), {"data:forcing": "mswx_v1"})
     assert "item:temperature" not in answers
     assert answers["item:forcing"]["value"] == "mswx_v1"
     # and the choice record itself is not the user's for the rebound item either (codex A5 #1)
     plan = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "temperature",
                                     "options": ["mswx_v1"], "decision": "mswx_v1"}]}
     inv = {"items": [{"id": "temperature", "dataset_id": "mswx_v1"}]}
-    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv, answers)
+    recs, _ = plan_review.decision_records(flowrun._flow(), plan, inv, answers)
     assert recs["choice:data:forcing"]["source"] == "ki_default"
     assert recs["item:temperature"]["source"] == "ki_default"
 
@@ -1670,15 +1670,15 @@ def test_a_migrated_legacy_record_is_stamped_and_never_migrates_again(tmp_path):
     """Legacy `choice:data:forcing` migrates once to the item the card binds it to; a later
     rebinding of the same choice id must not migrate it again (codex review A5 #2)."""
     project = _project(tmp_path)
-    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p = project / ".geoforge" / plan_review.ANSWERS_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"schema": 1, "answers": {"choice:data:forcing": {"value": "mswx_v1"}}}), encoding="utf-8")
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card), {})
+    answers = plan_review.record_user_answers(project, _bl(card), {})
     assert answers["item:forcing"]["value"] == "mswx_v1"
     assert answers["choice:data:forcing"]["item"] == "forcing"
     rebound = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "temperature", "picked": "mswx_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(rebound), {"data:forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(rebound), {"data:forcing": "mswx_v1"})
     assert "item:temperature" not in answers
 
 
@@ -1686,17 +1686,17 @@ def test_a_legacy_choice_is_stamped_even_when_its_item_record_already_exists(tmp
     """Two legacy choices bound to the same item: the second finds `item:forcing` already
     present and must still be stamped, or a later rebinding migrates it (codex review A6)."""
     project = _project(tmp_path)
-    p = project / ".geoforge" / flowrun.ANSWERS_FILE
+    p = project / ".geoforge" / plan_review.ANSWERS_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"schema": 1, "answers": {"choice:data:forcing": {"value": "mswx_v1"},
                                                        "choice:select-forcing": {"value": "mswx_v1"}}}), encoding="utf-8")
     card = {"plan_review": {"data_choices": [{"id": "data:forcing", "item": "forcing", "picked": "cmfd_v1"},
                                              {"id": "select-forcing", "item": "forcing", "picked": "cmfd_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(card), {})
+    answers = plan_review.record_user_answers(project, _bl(card), {})
     assert answers["choice:data:forcing"]["item"] == "forcing"
     assert answers["choice:select-forcing"]["item"] == "forcing"
     rebound = {"plan_review": {"data_choices": [{"id": "select-forcing", "item": "temperature", "picked": "mswx_v1"}]}}
-    answers = flowrun.record_user_answers(project, _bl(rebound), {"select-forcing": "mswx_v1"})
+    answers = plan_review.record_user_answers(project, _bl(rebound), {"select-forcing": "mswx_v1"})
     assert "item:temperature" not in answers
 
 
@@ -1707,13 +1707,13 @@ def test_a_reissued_card_shows_the_non_data_pick_the_user_made(tmp_path):
     plan = {"goal": "g", "selected_kis": ["VIC"],
             "scientific_choices": [{"id": "routing", "kind": "routing", "options": ["lohmann", "cama"],
                                     "picked": "lohmann", "high_impact": True}]}
-    assert flowrun.apply_choice_picks(plan, {"routing": "cama"}) == ["routing"]
+    assert plan_review.apply_choice_picks(plan, {"routing": "cama"}) == ["routing"]
     assert plan["scientific_choices"][0]["decision"] == "cama"
 
     class _FS:
         project = tmp_path
         flow = flowrun._flow()
-    card = flowrun._card(flowrun._flow(), _FS(), plan, {"items": []}, "note")
+    card = plan_review._card(flowrun._flow(), _FS(), plan, {"items": []}, "note")
     assert card["plan_review"]["decisions"][0]["picked"] == "cama"
 
 
@@ -1734,28 +1734,28 @@ def test_the_baseline_comes_from_the_plan_not_the_card(tmp_path, monkeypatch):
         {"id": "routing", "kind": "routing", "options": ["lohmann", "cama"], "picked": "lohmann", "high_impact": True},
         {"id": "quiet", "kind": "tuning", "options": ["p", "q"], "picked": "p"}]}       # not rendered
     inv = {"items": [{"id": "forcing", "dataset_id": "b"}, {"id": "dem", "dataset_id": "d1"}]}
-    bl = flowrun.suggestion_baseline(plan, inv)
+    bl = plan_review.suggestion_baseline(plan, inv)
     assert bl["suggested"] == {"data:forcing": "a", "data:dem": "d1", "routing": "lohmann"}
     assert bl["item_of"] == {"data:forcing": "forcing", "data:dem": "dem"}
     assert bl["options"] == {"data:forcing": ["a", "b"], "data:dem": ["d1"], "routing": ["lohmann", "cama"]}
     # a pre-selection the radios never showed counts as nothing shown (codex B4 #1)
     gone = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
                                     "options": ["a", "removed"], "picked": "removed"}]}
-    assert flowrun.suggestion_baseline(gone, inv)["suggested"] == {"data:forcing": ""}
-    recs, _ = flowrun.decision_records(flowrun._flow(), gone, {"items": [{"id": "forcing", "dataset_id": "removed"}]}, {})
-    assert recs["item:forcing"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)
+    assert plan_review.suggestion_baseline(gone, inv)["suggested"] == {"data:forcing": ""}
+    recs, _ = plan_review.decision_records(flowrun._flow(), gone, {"items": [{"id": "forcing", "dataset_id": "removed"}]}, {})
+    assert recs["item:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
     # the rows the card rendered give the same baseline as a fresh catalogue read (B4 #4)
-    from kiss_cli.flowrun import _data_choices
-    assert flowrun.suggestion_baseline(plan, inv, rows=_data_choices(plan, inv)) == bl
+    from kiss_cli.plan_review import _data_choices
+    assert plan_review.suggestion_baseline(plan, inv, rows=_data_choices(plan, inv)) == bl
     hidden = {"scientific_choices": [{"id": "data:x", "kind": "data_source", "item": "x", "options": ["invented"]}]}
-    assert flowrun.suggestion_baseline(hidden, {"items": [{"id": "x"}]}) == {"suggested": {}, "item_of": {}, "options": {}}
+    assert plan_review.suggestion_baseline(hidden, {"items": [{"id": "x"}]}) == {"suggested": {}, "item_of": {}, "options": {}}
     project2 = _project(tmp_path / "p2")
-    answers = flowrun.record_user_answers(project2, bl, {"routing": "not-offered"})
+    answers = plan_review.record_user_answers(project2, bl, {"routing": "not-offered"})
     assert answers == {}                                             # off-menu pick never stored (kimi B2 #3)
     empty_menu = dict(bl, options={**bl["options"], "routing": []})
-    assert flowrun.record_user_answers(project2, empty_menu, {"routing": "cama"}) == {}   # empty menu offers nothing (B3 #4)
+    assert plan_review.record_user_answers(project2, empty_menu, {"routing": "cama"}) == {}   # empty menu offers nothing (B3 #4)
     project = _project(tmp_path)
-    answers = flowrun.record_user_answers(project, bl, {"data:forcing": "a", "routing": "cama"})
+    answers = plan_review.record_user_answers(project, bl, {"data:forcing": "a", "routing": "cama"})
     assert "choice:data:forcing" not in answers and answers["choice:routing"]["value"] == "cama"
 
 
@@ -1770,32 +1770,32 @@ def test_an_accepted_recommendation_is_disclosed_as_accepted_not_as_a_protocol_d
         {"id": "routing", "kind": "routing", "options": ["x", "y"], "picked": "x", "decision": "x", "high_impact": True},
         {"id": "quiet", "kind": "tuning", "options": ["p", "q"], "decision": "p"}]}          # not high-impact: not rendered
     inv = {"items": [{"id": "forcing", "dataset_id": "a"}, {"id": "dem", "dataset_id": "d1"}, {"id": "pinned", "dataset_id": "a"}]}
-    recs, _ = flowrun.decision_records(flowrun._flow(), plan, inv, {})
-    assert recs["item:forcing"]["rationale"].startswith(flowrun._SUGGESTION_TAG)
-    assert recs["item:pinned"]["rationale"].startswith(flowrun._SUGGESTION_TAG)     # shown by its pin (B2 #2)
-    assert recs["item:dem"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)
-    assert recs["choice:routing"]["rationale"].startswith(flowrun._SUGGESTION_TAG)
-    assert recs["choice:data:hidden"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)   # never rendered (B2 #3)
-    assert recs["choice:quiet"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)         # never rendered
+    recs, _ = plan_review.decision_records(flowrun._flow(), plan, inv, {})
+    assert recs["item:forcing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
+    assert recs["item:pinned"]["rationale"].startswith(plan_review._SUGGESTION_TAG)     # shown by its pin (B2 #2)
+    assert recs["item:dem"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
+    assert recs["choice:routing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
+    assert recs["choice:data:hidden"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)   # never rendered (B2 #3)
+    assert recs["choice:quiet"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)         # never rendered
     # a suggestion with no decision yet: accepted only where the card rendered it (B3 #1)
     plan2 = {"scientific_choices": [
         {"id": "routing", "kind": "routing", "options": ["x", "y"], "picked": "x", "high_impact": True},
         {"id": "quiet", "kind": "tuning", "options": ["p", "q"], "picked": "p"},
         {"id": "data:hidden", "kind": "data_source", "item": "h", "options": ["invented"], "picked": "b"}]}
-    recs2, _ = flowrun.decision_records(flowrun._flow(), plan2, {"items": [{"id": "h"}]}, {})
-    assert recs2["choice:routing"]["rationale"].startswith(flowrun._SUGGESTION_TAG)
+    recs2, _ = plan_review.decision_records(flowrun._flow(), plan2, {"items": [{"id": "h"}]}, {})
+    assert recs2["choice:routing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
     # a suggestion the radios never displayed (not among the rendered options) is not accepted (B5 #2)
     plan3 = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
                                      "options": ["a", "removed"], "picked": "removed"}]}
-    recs3b, _ = flowrun.decision_records(flowrun._flow(), plan3, {"items": [{"id": "forcing"}]}, {})
-    assert recs3b["choice:data:forcing"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)
-    assert recs2["choice:quiet"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)
-    assert recs2["choice:data:hidden"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)
+    recs3b, _ = plan_review.decision_records(flowrun._flow(), plan3, {"items": [{"id": "forcing"}]}, {})
+    assert recs3b["choice:data:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
+    assert recs2["choice:quiet"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
+    assert recs2["choice:data:hidden"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
     # the ISSUED baseline decides, not today's catalogue (B3 #2): a row that was not shown at
     # issue stays a KI default even if the catalogue now knows its options
     issued = {"suggested": {}, "item_of": {}, "options": {}}
-    recs3, _ = flowrun.decision_records(flowrun._flow(), plan, inv, {}, baseline=issued)
-    assert recs3["item:forcing"]["rationale"].startswith(flowrun._KI_DEFAULT_TAG)
+    recs3, _ = plan_review.decision_records(flowrun._flow(), plan, inv, {}, baseline=issued)
+    assert recs3["item:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
 
 
 def test_a_card_whose_shown_values_changed_after_issue_is_not_approvable(tmp_path):
@@ -1806,8 +1806,8 @@ def test_a_card_whose_shown_values_changed_after_issue_is_not_approvable(tmp_pat
                                              "options": [{"dataset_id": "cmfd_v1"}, {"dataset_id": "mswx_v1"}]}],
                            "decisions": [{"id": "routing", "picked": "lohmann"}], "blockers": [], "tool_policy": "exact"},
            "options": [{"id": "approve", "label": "Approve and start"}, {"id": "modify", "label": "Modify the plan"}]}
-    h = flowrun.shown_sha256(doc)
-    assert h == flowrun.shown_sha256(json.loads(json.dumps(doc)))
+    h = plan_review.shown_sha256(doc)
+    assert h == plan_review.shown_sha256(json.loads(json.dumps(doc)))
     for mutate in (lambda d: d["plan_review"]["data_choices"][0].__setitem__("picked", "mswx_v1"),
                    lambda d: d["plan_review"]["data_choices"][0]["options"].pop(),
                    lambda d: d["plan_review"].__setitem__("blockers", ["x"]),
@@ -1815,57 +1815,57 @@ def test_a_card_whose_shown_values_changed_after_issue_is_not_approvable(tmp_pat
                    lambda d: d["options"][0].__setitem__("label", "Modify the plan"),
                    lambda d: d.__setitem__("message", "m2")):
         t2 = json.loads(json.dumps(doc)); mutate(t2)
-        assert flowrun.shown_sha256(t2) != h                     # every rendered field is bound (B2 #1)
+        assert plan_review.shown_sha256(t2) != h                     # every rendered field is bound (B2 #1)
     t3 = json.loads(json.dumps(doc)); t3["status"] = "answered"; t3["created_at"] = 1
-    assert flowrun.shown_sha256(t3) == h                         # bookkeeping fields are not
+    assert plan_review.shown_sha256(t3) == h                         # bookkeeping fields are not
     # the click echoes what the browser displayed; the host hashes THAT (B4 #3): an altered
     # display is caught even if the request file was restored before the click
     echoed = json.loads(json.dumps(doc)); echoed["options"][0]["label"] = "Modify the plan"
-    assert flowrun.shown_sha256(echoed) != h and flowrun.shown_sha256(doc) == h
+    assert plan_review.shown_sha256(echoed) != h and plan_review.shown_sha256(doc) == h
     # the browser's JSON turns -180.0 into -180: an unchanged card must still match (B5 #1)
     doc["plan_review"]["data_choices"][0]["options"][0]["bbox"] = [-180.0, -90.0, 180.0, 90.0]
     doc["plan_review"]["data_choices"][0]["options"][0]["size"] = 12.5
-    h2 = flowrun.shown_sha256(doc)
+    h2 = plan_review.shown_sha256(doc)
     def _js(v):   # what JSON.stringify would send back
         if isinstance(v, float) and v.is_integer(): return int(v)
         if isinstance(v, dict): return {k: _js(x) for k, x in v.items()}
         if isinstance(v, list): return [_js(x) for x in v]
         return v
-    assert flowrun.shown_sha256(_js(json.loads(json.dumps(doc)))) == h2
+    assert plan_review.shown_sha256(_js(json.loads(json.dumps(doc)))) == h2
     # JavaScript numbers are doubles: an int past 2**53 comes back rounded, 1.0000000000000001e18
     # comes back as 1e18, and a lone surrogate in a catalogue name must hash, not raise (B6 #1, #2)
     doc["plan_review"]["data_choices"][0]["options"][0]["size"] = 9007199254740993
     doc["plan_review"]["data_choices"][0]["options"][0]["name"] = "bad\ud800name"
-    h3 = flowrun.shown_sha256(doc)
+    h3 = plan_review.shown_sha256(doc)
     back = json.loads(json.dumps(doc)); back["plan_review"]["data_choices"][0]["options"][0]["size"] = 9007199254740992
-    assert flowrun.shown_sha256(back) == h3
+    assert plan_review.shown_sha256(back) == h3
     doc["plan_review"]["data_choices"][0]["options"][0]["size"] = 1.0000000000000001e18
-    assert flowrun.shown_sha256(doc) == flowrun.shown_sha256(_js(json.loads(json.dumps(doc))))
+    assert plan_review.shown_sha256(doc) == plan_review.shown_sha256(_js(json.loads(json.dumps(doc))))
     project = _project(tmp_path)
     (project / "runs").mkdir(parents=True, exist_ok=True)
     good = {"plan_sha256": "p", "inventory_sha256": "i", "shown_sha256": h,
             "baseline": {"suggested": {}, "item_of": {}, "options": {}}}
     (project / "runs" / "plan-review.json").write_text(json.dumps(good), encoding="utf-8")
-    assert flowrun._issued_review(project, {"review": {"plan_sha256": "forged"}})["plan_sha256"] == "p"
+    assert plan_review._issued_review(project, {"review": {"plan_sha256": "forged"}})["plan_sha256"] == "p"
     bad = dict(good, baseline={"suggested": 1})
     (project / "runs" / "plan-review.json").write_text(json.dumps(bad), encoding="utf-8")
-    assert flowrun._issued_review(project, {}) == {}                # malformed snapshot voids (B5 #3)
+    assert plan_review._issued_review(project, {}) == {}                # malformed snapshot voids (B5 #3)
     bad2 = dict(good, baseline={"suggested": {"data:x": "a"}, "item_of": {"data:x": "x"}, "options": {"data:x": None}})
     (project / "runs" / "plan-review.json").write_text(json.dumps(bad2), encoding="utf-8")
-    assert flowrun._issued_review(project, {}) == {}                # malformed contents void too (B6 #3)
+    assert plan_review._issued_review(project, {}) == {}                # malformed contents void too (B6 #3)
     (project / "runs" / "plan-review.json").write_text(json.dumps({k: v for k, v in good.items() if k != "baseline"}), encoding="utf-8")
-    assert flowrun._issued_review(project, {}) == {}                # missing snapshot voids (B5 #3)
+    assert plan_review._issued_review(project, {}) == {}                # missing snapshot voids (B5 #3)
     (project / "runs" / "plan-review.json").write_text(json.dumps({"plan_sha256": "p", "inventory_sha256": "i"}), encoding="utf-8")
-    assert flowrun._issued_review(project, {}) == {}                # batch-A record, no card hash: void (B4 #2)
+    assert plan_review._issued_review(project, {}) == {}                # batch-A record, no card hash: void (B4 #2)
     (project / "runs" / "plan-review.json").write_text("{broken", encoding="utf-8")
-    assert flowrun._issued_review(project, {"review": {"plan_sha256": "forged"}}) == {}   # present but unreadable voids (B2 #4)
+    assert plan_review._issued_review(project, {"review": {"plan_sha256": "forged"}}) == {}   # present but unreadable voids (B2 #4)
     (project / "runs" / "plan-review.json").unlink()
-    assert flowrun._issued_review(project, {"review": {"plan_sha256": "old"}}) == {}      # missing: void, never the request file (B3 #3)
+    assert plan_review._issued_review(project, {"review": {"plan_sha256": "old"}}) == {}      # missing: void, never the request file (B3 #3)
 
 
 def test_legacy_untagged_accepted_rationale_still_reads_as_accepted():
     """Approvals signed by batch A carry the untagged text; they must not be re-labelled as
     'the user was never asked' (codex review B #3)."""
-    assert flowrun._is_accepted_suggestion(flowrun._LEGACY_SUGGESTION_WHY)
-    assert flowrun._is_accepted_suggestion(flowrun._SUGGESTION_WHY)
-    assert not flowrun._is_accepted_suggestion(flowrun._KI_DEFAULT_WHY)
+    assert plan_review.is_accepted_suggestion(plan_review._LEGACY_SUGGESTION_WHY)
+    assert plan_review.is_accepted_suggestion(plan_review._SUGGESTION_WHY)
+    assert not plan_review.is_accepted_suggestion(plan_review._KI_DEFAULT_WHY)

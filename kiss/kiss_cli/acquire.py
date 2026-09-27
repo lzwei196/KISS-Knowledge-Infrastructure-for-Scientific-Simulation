@@ -52,19 +52,6 @@ def needed(plan: dict | None, inventory: dict | None, project: Path | None = Non
     return out
 
 
-def _receipt_for(project: Path, flow, item: dict, approval: str, inventory: dict) -> str | None:
-    for path, doc, ok in flow.receipts._read_all(project, flow.receipts.DATA_SUB):
-        if (ok and doc.get("item_id") == item.get("id") and doc.get("approval_sha256") == approval
-                and flow.receipts._download_files_valid(project, doc)
-                and flow.receipts._download_still_valid(project, doc, inventory)):
-            return str(path)
-    for path, doc, ok in flow.receipts._read_all(project, flow.receipts.DATA_SUB):
-        # a download from an earlier approval stays valid while the selection is unchanged
-        if ok and doc.get("item_id") == item.get("id") and flow.receipts._download_still_valid(project, doc, inventory):
-            return str(path)
-    return None
-
-
 def status(project: Path) -> dict:
     path = Path(project) / STATUS_FILE
     if path.is_file():
@@ -81,50 +68,38 @@ def _write(project: Path, doc: dict) -> dict:
     return doc
 
 
-def _rebind_existing(project: Path, flow, item: dict, dataset_id: str, approval: str) -> dict | None:
-    """Files of this dataset already verified under an earlier approval or item id
-    (a replan renamed the item): sign them again for the current plan, no re-download."""
-    marker = f"/{obs_access._safe_component(dataset_id)}/"
-    for _path, doc, ok in flow.receipts._read_all(project, flow.receipts.DATA_SUB):
-        if not ok or doc.get("kind") != "download" or doc.get("source") != "GeoForge Database catalogue":
-            continue
-        raws = [r.get("path") or "" for r in doc.get("raw_files") or []]
-        if not raws or not all(marker in f"/{r}" for r in raws):
-            continue
-        processed = [p.get("path") or "" for p in doc.get("processed_files") or []]
-        if flow.receipts._download_files_valid(project, doc):
-            raw_paths, proc_paths, tool = raws, processed, doc.get("transform_tool")
-        elif processed and _entries_valid(project, flow, doc.get("processed_files") or []):
-            # The transport archive is gone but every extracted file still matches its
-            # recorded hash: the extracted files become the raw evidence of this receipt.
-            raw_paths, proc_paths, tool = processed, [], "rebound_extracted_files"
-        else:
-            continue
-        receipt = flow.receipts.record_download(
-            project, item_id=str(item["id"]), source="GeoForge Database catalogue",
-            request_url=doc.get("request_url") or "", http_status=doc.get("http_status"),
-            raw_files=[project / r for r in raw_paths],
-            processed_files=[project / r for r in proc_paths],
-            transform_tool=tool, approval_sha256=approval,
-            plan_step_id=item.get("_step"), inventory_item=item)
-        return {"status": "done", "receipt": str(receipt), "path": str(Path(raw_paths[0]).parent)}
-    return None
-
-
-def _entries_valid(project: Path, flow, entries: list) -> bool:
-    for entry in entries:
-        path = Path(project) / str(entry.get("path") or "")
-        try:
-            if not path.is_file() or flow.receipts.sha256_file(path) != str(entry.get("sha256") or ""):
-                return False
-        except OSError:
-            return False
-    return True
+def _rebind_existing(project: Path, flow, item: dict, approval: str) -> dict | None:
+    """Explicit host recovery, only after shared evidence proves the same request."""
+    found = flow.receipts.find_download(project, item, approval_sha256=approval, recover=True,
+                                        source="GeoForge Database catalogue")
+    if found is None:
+        return None
+    doc = found.receipt
+    raws, processed = doc["raw_files"], doc.get("processed_files") or []
+    if found.files == "extracted_only":
+        raw_paths, proc_paths, tool = processed, [], "rebound_extracted_files"
+    else:
+        raw_paths, proc_paths, tool = raws, processed, doc.get("transform_tool")
+    receipt = flow.receipts.record_download(
+        project, item_id=str(item["id"]), source=doc["source"],
+        request_url=doc.get("request_url") or "", http_status=doc.get("http_status"),
+        raw_files=[project / r["path"] for r in raw_paths],
+        processed_files=[project / r["path"] for r in proc_paths],
+        transform_tool=tool, approval_sha256=approval,
+        plan_step_id=item.get("_step"), inventory_item=item,
+        units_before=doc.get("units_before"), units_after=doc.get("units_after"),
+        requested_at=doc.get("requested_at"), acquisition=doc.get("acquisition"),
+        expected_files={"raw_files": raw_paths, "processed_files": proc_paths},
+        recovery={"receipt": str(found.path.relative_to(project)),
+                  "receipt_signature": doc["signature"]["value"],
+                  "reason": found.reason, "original_raw_files": raws,
+                  "previous_receipt": doc})
+    return {"status": "done", "receipt": str(receipt), "path": str(Path(raw_paths[0]["path"]).parent)}
 
 
 def _served(project: Path, flow, item: dict, approval: str, client=None) -> dict:
     dataset_id = str(item.get("dataset_id") or item.get("chosen_source") or "")
-    existing = _rebind_existing(project, flow, item, dataset_id, approval)
+    existing = _rebind_existing(project, flow, item, approval)
     if existing:
         return existing
     result = (client or obs_access.Client()).download(dataset_id, project)
@@ -242,9 +217,9 @@ def run(project: Path, *, client=None) -> dict:
         iid = str(item["id"])
         entry = items.get(iid) or {}
         entry.update(delivery=item.get("delivery"), dataset_id=item.get("dataset_id"))
-        receipt = _receipt_for(project, flow, item, approval, inventory)
-        if receipt:
-            entry.update(status="done", receipt=receipt, error=None)
+        found = flow.receipts.find_download(project, item, approval_sha256=approval)
+        if found:
+            entry.update(status="done", receipt=str(found.path), error=None)
             items[iid] = entry
             continue
         try:
@@ -263,9 +238,11 @@ def run(project: Path, *, client=None) -> dict:
                     if error.code != "destination_not_empty":
                         raise
                     raise ValueError(
-                        f"{_manual_destination(project, item)} already holds files that carry no receipt "
-                        "(a download that was never recorded, or files copied in by hand). Move them "
-                        "away and Retry, or Modify the plan to use them as a local input.") from None
+                        f"{_manual_destination(project, item)} already holds files with no receipt "
+                        "proving intact data for this exact approved request. The request may have "
+                        "changed, evidence may be missing, or files may have changed. Existing files "
+                        "were not overwritten. Move them away and Retry, or Modify the plan to use "
+                        "them as a local input and validate them.") from None
                 if out["status"] == "waiting":
                     row = _manual_row(project, item, out["manual"])
                     manual_rows.append((item, row))

@@ -409,11 +409,11 @@ def bind_approved(project, ident=None):
             if not steps:
                 raise ValueError('No approved step consumes this acquisition')
             step = next((s for s in steps if s.get('kind') == 'download'), steps[0])
-            existing = [p for p, d, ok in flow.receipts._read_all(project, flow.receipts.DATA_SUB)
-                        if ok and d.get('approval_sha256') == approved
-                        and d.get('plan_step_id') == step['id']
-                        and d.get('item_id') == item['id']
-                        and flow.receipts._download_still_valid(project, d, inventory)]
+            existing = [r.path for r in flow.receipts.inspect_downloads(project, inventory,
+                                                                       approval_sha256=approved)
+                        if r.reusable and r.receipt.get('approval_sha256') == approved
+                        and r.receipt.get('plan_step_id') == step['id']
+                        and r.receipt.get('item_id') == item['id']]
             if existing:
                 bound.append(str(existing[-1]))
                 continue

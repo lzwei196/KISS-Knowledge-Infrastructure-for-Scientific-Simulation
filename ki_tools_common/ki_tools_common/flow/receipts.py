@@ -35,6 +35,7 @@ import os
 import secrets
 import time
 import fcntl
+from dataclasses import dataclass
 from pathlib import Path
 
 RECEIPT_DIR = ".geoforge/receipts"
@@ -312,7 +313,7 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 
 def selection_sha256(item: dict) -> str:
-    """Bind acquisition evidence to source AND requirements, not a display ID.
+    """Bind acquisition evidence to item ID, source AND requirements.
 
     Excludes mutable progress/local paths. Unknown legacy selections cannot be
     reused across approvals; a source or scope change must be reviewed again.
@@ -331,7 +332,13 @@ def record_download(project: Path, *, item_id: str, source: str, request_url: st
                     processed_files: list | None = None, transform_tool: str | None = None,
                     units_before: dict | None = None, units_after: dict | None = None,
                     requested_at: str | None = None, plan_step_id: str | None = None,
-                    inventory_item: dict | None = None, acquisition: dict | None = None) -> Path:
+                    inventory_item: dict | None = None, acquisition: dict | None = None,
+                    recovery: dict | None = None, expected_files: dict | None = None) -> Path:
+    """Issue host evidence. Recovery must pass the previously verified file entries.
+
+    Check freshly collected entries against ``expected_files`` before signing so
+    a concurrent file change cannot be promoted to trusted recovery evidence.
+    """
     if not approval_sha256:
         raise ReceiptError("a download receipt must be bound to the current approval")
     doc = {
@@ -346,6 +353,12 @@ def record_download(project: Path, *, item_id: str, source: str, request_url: st
         "selection_sha256": selection_sha256(inventory_item or {}),
         "acquisition": acquisition or {},
     }
+    if recovery is not None:
+        doc["recovery"] = recovery
+    if expected_files is not None:
+        for field in ("raw_files", "processed_files"):
+            if doc[field] != expected_files.get(field):
+                raise ReceiptError("acquired files changed during recovery; refusing to sign new bytes")
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in item_id)[:80]
     return _write(project, DATA_SUB, safe, doc)
 
@@ -355,7 +368,8 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
                inputs: list, outputs: list, approval_sha256: str, plan_step_id: str,
                stdout_log: str | None = None, stderr_log: str | None = None,
                forcing_source: str | None = None, validation: dict | None = None,
-               run_id: str | None = None) -> Path:
+               run_id: str | None = None, execution_status: str | None = None,
+               process_started: bool | None = None) -> Path:
     if not approval_sha256 or not plan_step_id:
         raise ReceiptError("a run receipt must name the approval it runs under and the plan step "
                            "it executes (codex review #2)")
@@ -382,6 +396,9 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
         "validation": validation or {"status": "not_run", "checks": []},
         "wrapper_pid": os.getpid(), "recorded_at": _now(),
     }
+    if execution_status is not None:
+        doc.update(execution_status=execution_status, process_started=process_started,
+                   binary_actually_ran=process_started is True)
     return _write(project, RUNS_SUB, rid, doc)
 
 
@@ -729,7 +746,9 @@ def _read_all(project: Path, sub: str) -> list[tuple[Path, dict, bool]]:
     for p in sorted(d.glob("*.json")):
         try:
             doc = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
+            out.append((p, {}, False)); continue
+        if not isinstance(doc, dict):
             out.append((p, {}, False)); continue
         out.append((p, doc, verify(project, doc)))
     return out
@@ -740,37 +759,152 @@ EXECUTABLE_STEP_KINDS = (
 )
 
 
-def _download_files_valid(project: Path, receipt: dict) -> bool:
-    """Recheck both acquired and extracted files; reject paths outside the project."""
-    raw = receipt.get("raw_files") or []
+@dataclass(frozen=True)
+class DownloadEvidence:
+    """Read-only conclusion at inspection time, not an authorization or scientific check.
+
+    ``reusable`` means exact request + intact files. ``recoverable`` additionally
+    allows rename-only or missing-ZIP recovery, but the host must explicitly issue
+    a replacement receipt before consumers may rely on that recovery. ``bound``
+    preserves final evidence's older current-approval receipt rules; it is NOT a
+    synonym for reusable. Local integrity establishes neither remote freshness
+    nor scientific suitability. Do not cache a conclusion across file changes.
+    """
+    path: Path
+    receipt: dict
+    request_match: str
+    files: str
+    reason: str
+    reusable: bool = False
+    recoverable: bool = False
+    bound: bool = False
+    source_freshness: str = "unknown"
+    scientific_validation: str = "not_assessed"
+
+
+def _entry_status(project: Path, entry) -> str:
+    if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
+            or not entry["path"] or not isinstance(entry.get("sha256"), str)
+            or not entry["sha256"]):
+        return "malformed"
+    path = Path(project) / entry["path"]
+    try:
+        if not _inside(path, project):
+            return "unsafe"
+        if not path.exists():
+            if path.is_symlink():
+                return "unsafe"
+            return "missing"
+        if not path.is_file():
+            return "unsafe"
+        return "intact" if sha256_file(path) == entry["sha256"] else "changed"
+    except (OSError, ValueError, RuntimeError):
+        return "unsafe"  # unreadable or unresolvable paths cannot support recovery
+
+
+def _download_file_status(project: Path, receipt: dict) -> str:
+    raw, processed = receipt.get("raw_files", []), receipt.get("processed_files", [])
+    if not isinstance(raw, list) or not isinstance(processed, list):
+        return "malformed"
+    raw_status = [_entry_status(project, e) for e in raw]
+    processed_status = [_entry_status(project, e) for e in processed]
+    for failure in ("unsafe", "malformed", "changed"):
+        if failure in raw_status + processed_status:
+            return failure
     if not raw:
-        return False
-    for entry in raw + (receipt.get("processed_files") or []):
-        if not isinstance(entry, dict):
-            return False
-        path = Path(project) / str(entry.get("path") or "")
-        try:
-            if not _inside(path, project) or not path.is_file() or sha256_file(path) != str(entry.get("sha256") or ""):
-                return False
-        except OSError:
-            return False
-    return True
+        return "missing"
+    if all(s == "intact" for s in raw_status + processed_status):
+        return "intact"
+    # Only lost transport ZIPs may be replaced by their recorded extraction.
+    # A changed archive, arbitrary missing input, or missing extraction is not
+    # recovery evidence. Check every raw entry, including surviving archives.
+    if (processed and all(s == "intact" for s in processed_status)
+            and receipt.get("transform_tool") == "verified_zip_extract"
+            and all(Path(e["path"]).suffix.lower() == ".zip" for e in raw)
+            and "missing" in raw_status):
+        return "extracted_only"
+    return "missing"
 
 
-def _download_still_valid(project: Path, receipt: dict, inventory: dict | None) -> bool:
-    """Reuse only an identical selected source/scope with intact acquired files."""
-    item = next((it for it in (inventory or {}).get("items") or []
-                 if isinstance(it, dict) and str(it.get("id")) == str(receipt.get("item_id"))), None)
-    if item is None or not receipt.get("selection_sha256"):
-        return False
-    return receipt["selection_sha256"] == selection_sha256(item) and _download_files_valid(project, receipt)
+def _inspect_download(project: Path, path: Path, doc: dict, verified: bool,
+                      item: dict | None, approval_sha256: str, selection_required: bool) -> DownloadEvidence:
+    if not verified or doc.get("kind") != "download":
+        return DownloadEvidence(path, doc, "unknown", "malformed",
+                                "signature" if not verified else "not a download receipt")
+    fingerprint = doc.get("selection_sha256")
+    match = "unknown" if not fingerprint else "mismatch"
+    if fingerprint and item is not None:
+        if str(item.get("id")) == str(doc.get("item_id")):
+            if fingerprint == selection_sha256(item):
+                match = "exact"
+        elif doc.get("item_id") and fingerprint == selection_sha256({**item, "id": doc["item_id"]}):
+            match = "renamed"
+    files = _download_file_status(project, doc)
+    reusable = match == "exact" and files == "intact"
+    recoverable = match in ("exact", "renamed") and files in ("intact", "extracted_only")
+    bound = reusable
+    current = bool(approval_sha256) and doc.get("approval_sha256") == approval_sha256
+    # Legacy final-evidence compatibility is intentionally weaker than reuse.
+    # No fingerprint must never gain new scope proof or cross-approval authority.
+    if current and (not fingerprint or not selection_required):
+        no_files = doc.get("raw_files", []) == [] and doc.get("processed_files", []) == []
+        bound = files == "intact" or no_files
+    if match in ("renamed", "mismatch") and selection_required:
+        bound = False
+    if match == "unknown":
+        reason = "receipt has no selected-request fingerprint; automatic reuse is unavailable"
+    elif match == "mismatch":
+        reason = "selected source or requirements changed, or item is no longer in the inventory"
+    elif files == "extracted_only":
+        reason = "transport ZIP missing; intact extraction requires explicit host recovery"
+    elif files != "intact":
+        reason = f"acquired files are {files}; automatic reuse is unavailable"
+    elif match == "renamed":
+        reason = "request unchanged except item name; explicit host rebinding required"
+    else:
+        reason = "exact selected request and intact acquired files"
+    return DownloadEvidence(path, doc, match, files, reason, reusable, recoverable, bound)
+
+
+def inspect_downloads(project: Path, inventory: dict | None = None, *,
+                      approval_sha256: str = "") -> list[DownloadEvidence]:
+    """Inspect all acquisition receipts without writes, downloads or re-signing.
+
+    Returns rejected records too, with explanations. An omitted inventory retains
+    legacy current-approval final-evidence behavior, but never proves exact reuse.
+    Uses local file hashes only; there is no remote freshness lookup.
+    """
+    items = {str(i.get("id")): i for i in (inventory or {}).get("items") or [] if isinstance(i, dict)}
+    return [_inspect_download(project, p, d, ok, items.get(str(d.get("item_id"))),
+                              approval_sha256, inventory is not None)
+            for p, d, ok in _read_all(project, DATA_SUB)]
+
+
+def find_download(project: Path, item: dict, *, approval_sha256: str = "",
+                  recover: bool = False, source: str | None = None) -> DownloadEvidence | None:
+    """Find intact exact-request evidence, or explicitly opt into recovery candidates.
+
+    Even with ``recover=True`` this ONLY inspects. Prefer exact reusable records,
+    then current-approval records; never infer a request from a dataset directory.
+    Rename matching preserves the historical fingerprint algorithm (including ID).
+    """
+    candidates = []
+    for path, doc, ok in _read_all(project, DATA_SUB):
+        if source is not None and doc.get("source") != source:
+            continue
+        result = _inspect_download(project, path, doc, ok, item, approval_sha256, True)
+        if result.reusable or (recover and result.recoverable):
+            candidates.append(result)
+    return max(candidates, key=lambda r: (r.reusable, r.receipt.get("approval_sha256") == approval_sha256),
+               default=None)
 
 
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
                                                    ".png", ".json", ".bin"),
-             enforcement: str = "none", inventory: dict | None = None) -> dict:
+             enforcement: str = "none", inventory: dict | None = None, *,
+             _download_inspection: list[DownloadEvidence] | None = None) -> dict:
     """Machine-readable summary the UI shows and COMPLETED requires. Trusts ONLY receipts
     that verify AND are bound to the current approval (`approval_sha256 == the signed
     approval issuance's unique signature`), name a selected KI and a planned step. COMPLETED needs every
@@ -793,7 +927,10 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                   if (s.get("kind") or "process") in EXECUTABLE_STEP_KINDS}
 
     runs = _read_all(project, RUNS_SUB)
-    dl = _read_all(project, DATA_SUB)
+    # An in-process status query can share its already computed inspection with
+    # this summary. Enforcement callers omit it and always inspect afresh.
+    dl = (inspect_downloads(project, inventory, approval_sha256=cur)
+          if _download_inspection is None else _download_inspection)
     rejected: list[dict] = []
     bound_runs: list[dict] = []
 
@@ -828,32 +965,11 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         else:
             bound_runs.append(d)
     bound_dl: list[dict] = []
-    for p, d, ok in dl:
-        if not ok:
-            rejected.append({"path": str(p), "why": "signature"}); continue
-        if not cur or d.get("approval_sha256") != cur:
-            # A download made under an EARLIER approval survives a re-plan when the inventory
-            # still pins the same selected source/scope and the files are intact (desktop
-            # ACQUIRING: the data need not be fetched twice). Anything else is unbound.
-            if d.get("selection_sha256") and inventory is not None and _download_still_valid(project, d, inventory):
-                bound_dl.append(d)
-            else:
-                rejected.append({"path": str(p), "why": "not bound to the current approval"})
-            continue
-        if d.get("selection_sha256") and inventory is not None:
-            # desktop receipts since 2026-09: the selected source/scope must still be the
-            # one in the inventory, and the acquired files must be intact
-            valid, why = _download_still_valid(project, d, inventory), "selected source or files changed"
-        elif d.get("raw_files"):
-            # receipts from before selection_sha256 existed (web chats, older desktop
-            # projects): approval-bound, and the files they name are still intact
-            valid, why = _download_files_valid(project, d), "acquired files changed or missing"
+    for result in dl:
+        if result.bound:
+            bound_dl.append(result.receipt)
         else:
-            valid, why = True, ""            # bound receipt without file entries: the web's rule
-        if valid:
-            bound_dl.append(d)
-        else:
-            rejected.append({"path": str(p), "why": why})
+            rejected.append({"path": str(result.path), "why": result.reason})
 
     receipted_outputs = set()
     for d in bound_runs:

@@ -34,7 +34,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
+from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, policy, port, preparation, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -1163,15 +1163,19 @@ class Handler(BaseHTTPRequestHandler):
             except KeyError:
                 continue
         calibration_state = calibration.project_state(project, calibration_kis)
+        status = project_status.snapshot(
+            project, report=run_state, plans=plans, preparation=project_preparation,
+            activity=_agent_run_snapshot(s["id"]))
         return {
             "session": s["id"], "project_path": str(project),
             "upload_path": str(project / "inputs" / "uploads"),
             "auto_ki": not bool(effective_models), "plans": plans,
             "files": files, "reference_files": sessions.reference_files(self.workroot, s),
             "provenance": sessions.provenance_records(self.workroot, s),
-            "human_request": setup_flow.request(project),
-            "plan_data": flowrun.plan_data_status(project),
-            "project_run": run_state,
+            "human_request": status["request"],
+            "plan_data": status["plan_data"],
+            "project_run": status["progress"],
+            "project_status": status,
             "preparation": project_preparation,
             "calibration": calibration_state,
         }
@@ -1715,8 +1719,9 @@ class Handler(BaseHTTPRequestHandler):
             if not s:
                 return self._json({"error": "no such session"}, 404)
             project = sessions.project_path(self.workroot, s)
-            return self._json(projectrun.load(
-                project, selected_kis=s.get("models") or []))
+            report = projectrun.load(project, selected_kis=s.get("models") or [])
+            return self._json(project_status.snapshot(
+                project, report=report, activity=_agent_run_snapshot(sid))["progress"])
 
         if route.startswith("/api/session/") and route.endswith("/calibration"):
             sid = route.split("/")[3]

@@ -1035,68 +1035,24 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     for base in project_argument_roots):
                 raise ToolError(f"tool argument path escapes the project and KI: {value}")
         timeout = max(1, min(int(args.get("timeout_seconds") or 600), 3600))
-        approved_env: dict[str, str] = {}
-        before = None
-        if flow is not None:
-            from . import flowgate as _fg
-            from .flowgate import FlowDenied
-            # The step, KI, tool and its environment are all checked before
-            # construction of the child process.
-            try:
-                step = flow.check_step_tool(args.get("plan_step_id"), tool_ki_name, script)
-                approved_env = flow.approved_step_environment(step, tool_root)
-            except FlowDenied as e:
-                raise ToolError(str(e)) from None
-            before = _fg._snapshot(project_root)
-        child_env = {
-            key: value for key, value in os.environ.items()
-            if not any(secret in key.upper() for secret in (
-                "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
-        }
-        child_env["KISS_ROOT"] = str(project_root)
-        from .paths import with_ki_tools_common
-        child_env = with_ki_tools_common(cfg, child_env)
-        from .calibration import with_framework_env
-        child_env = with_framework_env(child_env)
-        if provider_id:
-            from .settings import with_provider_proxy
-            child_env = with_provider_proxy(provider_id, child_env)
-        child_env.update(approved_env)
-        command = ([str(script)] if binary else [str(cfg.python), str(script)]) + list(arguments)
-        started = time.time()
-        try:
-            proc = subprocess.run(
-                command, cwd=str(cwd),
-                env=child_env, capture_output=True, text=True, errors="replace",
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as e:
-            tail = "".join(part.decode("utf-8", errors="replace") if isinstance(part, bytes) else (part or "")
-                           for part in (e.stdout, e.stderr))[-12000:]
-            if flow is not None:
-                try:
-                    flow.record_tool_run(ki=tool_ki_name, ki_root=tool_root, command=command, cwd=cwd,
-                                         started_at=started, finished_at=time.time(), exit_code=None,
-                                         before=before, plan_step_id=args.get("plan_step_id"),
-                                         stdout_tail=tail)
-                except Exception as exc:  # the timeout is the headline; the receipt failure is noted
-                    tail += f"\n[receipt not written: {exc}]"
-            return f"TIMEOUT after {timeout}s\n{tail}"
-        finished = time.time()
-        output = (proc.stdout + proc.stderr)[-80000:]
-        if flow is None:
-            return f"exit_code={proc.returncode}\n{output}"
+        from .execution import execute_ki_tool
         from .flowgate import FlowDenied
         try:
-            summary = flow.record_tool_run(ki=tool_ki_name, ki_root=tool_root, command=command, cwd=cwd,
-                                           started_at=started, finished_at=finished,
-                                           exit_code=proc.returncode, before=before,
-                                           plan_step_id=args.get("plan_step_id"),
-                                           stdout_tail=output[-20000:])
+            result = execute_ki_tool(
+                flow=flow, cfg=cfg, project=project_root, ki=tool_ki_name, ki_root=tool_root,
+                tool=script, arguments=arguments, cwd=cwd, plan_step_id=args.get("plan_step_id"),
+                python_tool=not binary, timeout=timeout, provider_id=provider_id)
         except FlowDenied as e:
             raise ToolError(str(e)) from None
-        return (f"exit_code={proc.returncode}\n[RECEIPT] {json.dumps(summary, ensure_ascii=False)}\n"
-                f"{output}")
+        headline = (f"exit_code={result.exit_code}" if result.exit_code is not None
+                    else result.detail)
+        if result.receipt_error and result.status != "timed_out":
+            raise ToolError(f"{headline}\n[receipt NOT written: {result.receipt_error}]\n{result.output}")
+        receipt = (f"[RECEIPT] {json.dumps(result.receipt, ensure_ascii=False)}\n"
+                   if result.receipt else "")
+        error = f"\n[receipt not written: {result.receipt_error}]" if result.receipt_error else ""
+        detail = f"\n{result.detail}" if result.exit_code is not None and result.detail else ""
+        return f"{headline}\n{receipt}{result.output}{detail}{error}"
 
     if project_mode and name == "run_calibration":
         from . import calibration as _calibration

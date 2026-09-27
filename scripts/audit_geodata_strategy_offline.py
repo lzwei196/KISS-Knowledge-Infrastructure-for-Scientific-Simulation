@@ -146,7 +146,7 @@ def run(root, saved):
         report['receipt_reuse_changed_selection'] = {
             'signature_valid': receipts.verify(project, receipt),
             'same_item_id_but_different_dataset_and_period_accepted':
-                receipts._download_still_valid(project, receipt, new_inventory),
+                receipts.find_download(project, new_inventory['items'][0]) is not None,
             'project_status': ui_row['status'], 'project_action': ui_row['action'],
             'new_selected_dataset': ui_row['dataset_id'],
         }

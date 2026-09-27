@@ -733,6 +733,7 @@ function runStateText(run){
   if(run.status==="waiting_for_user")return zh?"需要你":"Needs you";
   if(run.status==="complete")return zh?"已完成":"Complete";
   if(run.status==="failed")return zh?"需要处理":"Needs attention";
+  if(run.status==="unknown")return zh?"尚未确认":"Unconfirmed";
   return zh?"就绪":"Ready";
 }
 function drawRunStatus(run=RUN){
@@ -1001,7 +1002,7 @@ function agentEvidenceText(flight){
   return parts.join(" · ")||(status.project_summary||"");
 }
 function agentStateText(flight,compact=false){
-  const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started),state=agentLiveState(flight),age=durationLabel(state.age);
+  const status=flight.agentStatus||{},label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started),state=agentLiveState(flight),age=durationLabel(state.age);
   if(compact){
     if(state.kind==="active")return chineseUI()?"有新活动":"Active";
     if(state.kind==="quiet")return chineseUI()?"运行中·静默":"Running · quiet";
@@ -1427,49 +1428,48 @@ const displayValue=value=>{
 };
 const prepClass=s=>s==="ready"||s==="validate_sources"?"ok":s==="software_needed"?"block":"warn";
 const actionClass=a=>a==="needs_decision"?"block":a==="provide_or_find"?"warn":"ok";
+function projectStatusRequest(data){
+  // The host resolves current requests; never revive a historical blocker here.
+  const request=data.project_status?.request;
+  return request&&request.status==="waiting"?request:{};
+}
+function statusEvidenceText(observation){
+  const source=String(observation.source||""),age=observation.age_seconds;
+  const time=typeof age==="number"&&Number.isFinite(age)?(chineseUI()?`${durationLabel(age)} 前的记录`:`observed ${durationLabel(age)} ago`):(chineseUI()?"记录时间未知":"observation time unknown");
+  return [source,time,observation.summary].filter(Boolean).join(" · ");
+}
 function renderData(data){
   const files=data.files||[];
   const referenceFiles=data.reference_files||[];
   const provenance=data.provenance||[];
   const plans=data.plans||[];
-  const prep=data.preparation||{}, sw=prep.software_summary||{}, run=data.project_run||RUN||{}, calibration=data.calibration||{};
+  const projection=data.project_status||{},prep=data.preparation||{}, sw=prep.software_summary||{}, calibration=data.calibration||{};
+  const run=projection.progress||{goal:data.project_run?.goal||"",selected_kis:data.project_run?.selected_kis||[],status:"unknown",stage:"",summary:chineseUI()?"尚未收到可确认的项目状态。":"Project status has not been confirmed."};
   const models=prep.models||[], lanes=prep.lanes||[], papers=prep.literature||[], missingPapers=prep.literature_missing||[];
-  const request=(run.blocker&&run.status==="waiting_for_user")?run.blocker:data.human_request;
-  const waiting=request&&(request.status==="waiting"||run.status==="waiting_for_user");
+  const request=projectStatusRequest(data),waiting=request.status==="waiting";
   drawRunStatus(run);
   const runModels=(run.selected_kis||[]).length?run.selected_kis:models.map(m=>m.name);
   const activeData=Boolean(prep.active&&runModels.length);
   const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
   const softwareLabel=sw.total?`${sw.ready||0} / ${sw.total} software verified`:'Auto KI';
-  const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.goal?"Ready to continue":"Ready when you are";
+  const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.status==="unknown"?"Status unconfirmed":run.goal?"Ready to continue":"Ready when you are";
   const stateClass=run.status==="complete"?"ok":run.status==="waiting_for_user"?"warn":run.status==="failed"?"block":"";
-  const current=runGroupIndex(run.stage), allDone=run.status==="complete";
+  const current=run.stage?runGroupIndex(run.stage):-1, allDone=run.status==="complete";
   const zhP=chineseUI();
   const progressTitle=waiting?(zhP?"项目进度":"Progress"):esc(stateLabel);
+  const progressEvidence=run.source?statusEvidenceText({source:run.source,age_seconds:run.age_seconds}):"";
   const progress=`<div class="datacard"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${progressTitle}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div><div class="hint" style="margin:0 0 8px">${esc(run.summary||(run.goal?"":(zhP?"在对话中描述科学目标即可开始。":"Describe the scientific goal in chat to begin.")))}</div>${run.goal?`<div class="dataitem"><b>${zhP?"目标":"Goal"}</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0">${modelchips}</div>`:""}<div class="runsteps">${RUN_GROUPS.map((group,i)=>{
-    const done=allDone||i<current,active=Boolean(run.goal)&&!allDone&&i===current;
+    // Stage identifies current focus, not proof that earlier scientific checks passed.
+    const done=allDone,active=Boolean(run.goal)&&!allDone&&i===current;
     return `<div class="runstep ${done?'done':active?'active':''}"><span class="stepdot">${done?'✓':active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
-  }).join("")}</div></div>`;
+  }).join("")}</div>${progressEvidence?`<small class="hint" data-status-evidence>${esc(progressEvidence)}</small>`:""}</div>`;
   const sourceFiles=files.filter(f=>!/(^|\/)README(?:\.[^/]*)?$/i.test(f.relative_path||f.name||""));
   const datasetChecks=plans.flatMap(plan=>(plan.datasets||[]).map(item=>({...item,model:plan.model||"KI"})));
-  const requiredChecks=datasetChecks.filter(item=>!item.optional);
-  const readyChecks=requiredChecks.filter(item=>item.present);
-  const missingChecks=requiredChecks.filter(item=>!item.present);
-  const dataReached=run.status==="complete"||["running","results"].includes(run.stage);
-  const dataChecking=run.stage==="validating";
-  const dataWorking=run.status==="working"&&["researching","preparing"].includes(run.stage);
-  const dataFailed=run.status==="failed"&&["researching","preparing","validating"].includes(run.stage);
-  const checkedConflict=dataReached&&missingChecks.length>0;
-  const dataOverall=dataFailed||checkedConflict?"Review needed":waiting?"One thing needs you":missingChecks.length?"Agent is preparing":dataReached?"Ready to use":dataChecking?"Being checked":dataWorking?"Agent is preparing":"Agent will prepare";
-  const dataOverallClass=dataFailed||checkedConflict?"block":waiting?"warn":dataReached&&!missingChecks.length?"ok":"";
-  const laneStatus=lane=>{
-    if(lane.id==="source_data"&&requiredChecks.length){
-      const note=chineseUI()?`${readyChecks.length} / ${requiredChecks.length} 个必需数据路径已经就绪。`:`${readyChecks.length} / ${requiredChecks.length} required data paths are ready.`;
-      if(missingChecks.length)return {label:chineseUI()?`${missingChecks.length} 个尚未就绪`:`${missingChecks.length} not ready yet`,cls:checkedConflict?"block":"active",mark:checkedConflict?"!":"•",note};
-      return {label:"Ready to use",cls:"ok",mark:"✓",note};
-    }
-    return dataFailed?{label:"Review needed",cls:"block",mark:"!"}:dataReached?{label:"Ready to use",cls:"ok",mark:"✓"}:dataChecking?{label:"Being checked",cls:"active",mark:"✓"}:dataWorking?{label:"Agent is preparing",cls:"active",mark:"•"}:{label:"Agent will prepare",cls:"",mark:"AI"};
-  };
+  // A later project stage is not evidence that each input was validated.
+  const unconfirmed={label:chineseUI()?"尚未确认":"Unconfirmed",cls:"warn",mark:"?",note:chineseUI()?"尚无当前输入检查证据。":"No current input-check evidence."};
+  const technical=projection.technical||{},overall=technical.overall||unconfirmed;
+  const dataOverall=overall.label,dataOverallClass=overall.cls;
+  const laneStatus=lane=>(technical.lanes||{})[lane.id]||unconfirmed;
   const visibleLanes=activeData?lanes.filter(l=>l.count):[];
   const totalDeclared=visibleLanes.reduce((total,lane)=>total+(lane.count||0),0);
   const dataRows=visibleLanes.map(lane=>{
@@ -1558,11 +1558,14 @@ function renderData(data){
   const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. Every declared requirement can now be opened and questioned in the main data card above. This section keeps file-path checks, project files, and optional literature for audit and debugging.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${filecard}${literature}</div></details>`;
   const pd=data.plan_data;
   const bindingNote=pd&&pd.binding_status&&pd.binding_status.status==="needs_review"?`<section class="datacard"><h3>${zhUI?"数据关联需要检查":"Data binding needs review"}</h3><p>${esc(pd.binding_status.message)}</p></section>`:"";
-  const pdLabel={done:[zhUI?"文件已到位":"Files available","ok"],acquired:[zhUI?"已下载，待检查":"Acquired; scientific checks pending","warn"],waiting_for_you:[zhUI?"等你处理":"Waiting for you","warn"],pending:[zhUI?"尚未准备":"Pending",""],failed:[zhUI?"下载失败":"Fetch failed","block"],unused:[zhUI?"计划中未用到":"No step uses it",""],missing:[zhUI?"缺失":"Missing","block"]};
+  const pdLabel={done:[zhUI?"文件已到位":"Files available","ok"],present_unverified:[zhUI?"文件存在，尚未核实":"Present; not verified","warn"],acquired:[zhUI?"已下载，待科学检查":"Acquired; scientific checks pending","warn"],produced:[zhUI?"工具已生成，待科学检查":"Produced; scientific checks pending","warn"],waiting_for_you:[zhUI?"等你处理":"Waiting for you","warn"],pending:[zhUI?"尚未准备":"Pending",""],failed:[zhUI?"下载失败":"Fetch failed","block"],unused:[zhUI?"计划中未用到":"No step uses it",""],missing:[zhUI?"缺失":"Missing","block"]};
   const pdGroup={fetch:zhUI?"GeoForge 自动下载":"GeoForge fetches",you:zhUI?"需要你处理":"You",run:zhUI?"运行时自动准备":"The run prepares itself"};
-  const planData=pd&&Array.isArray(pd.items)&&pd.items.length?`<div class="datacard" id="plan-data"><div class="data-overview-head"><div><h3>${zhUI?"本次计划的数据":"Data in this plan"} · ${pd.total}</h3><div class="hint" style="margin:1px 0 0">${zhUI?"来自已批准/已提交的数据清单；状态由 receipt 和本地文件决定，不是 Agent 的说法。":"From the submitted data inventory; status comes from receipts and files on disk, not from the agent's words."}</div></div><span class="statuspill ${(pd.counts||{}).waiting_for_you?'warn':(pd.counts||{}).missing?'block':(((pd.counts||{}).pending||(pd.counts||{}).acquired)?'warn':'ok')}">${((pd.counts||{}).done||0)+((pd.counts||{}).acquired||0)}/${pd.total} ${zhUI?"文件已到位":"files available"}</span></div>${["fetch","you","run"].map(g=>{const rows=pd.items.filter(i=>i.group===g);if(!rows.length)return "";return `<div style="margin-top:8px"><b style="font-size:12px">${esc(pdGroup[g])} (${rows.length})</b>${rows.map(i=>{const [lab,cls]=pdLabel[i.status]||[i.status,""];return `<div class="dataitem" style="padding:5px 0"><div style="display:flex;gap:7px;align-items:flex-start"><span style="flex:1"><code>${esc(i.id)}</code>${i.dataset_id&&i.dataset_id!==i.id?` ← <code>${esc(i.dataset_id)}</code>`:""}${i.size_label?` · ${esc(i.size_label)}`:""}${i.for&&i.for.length?` <small>${esc(i.for.join(", "))}</small>`:""}${itemNote(i,zhUI)?`<small style="display:block">${esc(itemNote(i,zhUI))}</small>`:""}${i.how==="provide"&&i.status!=="done"?`<button class="tiny pd-upload" data-item="${esc(i.id)}" style="margin-top:4px">${zhUI?"上传文件":"Upload files"}</button>`:""}</span><span class="actiontag ${cls}">${esc(lab)}</span></div></div>`;}).join("")}</div>`;}).join("")}</div>`:"";
+  const dataSummary=projection.data_summary||{severity:"warn",label:zhUI?"数据状态尚未确认":"Data status unconfirmed"};
+  const summaryCount=Number.isFinite(dataSummary.available)&&Number.isFinite(dataSummary.total)?`${dataSummary.available}/${dataSummary.total} · `:"";
+  const planData=pd&&Array.isArray(pd.items)&&pd.items.length?`<div class="datacard" id="plan-data"><div class="data-overview-head"><div><h3>${zhUI?"本次计划的数据":"Data in this plan"} · ${pd.total}</h3><div class="hint" style="margin:1px 0 0">${zhUI?"来自已批准/已提交的数据清单；状态由 receipt 和本地文件决定，不是 Agent 的说法。":"From the submitted data inventory; status comes from receipts and files on disk, not from the agent's words."}</div></div><span class="statuspill ${esc(dataSummary.severity||"")}" data-plan-data-summary>${esc(summaryCount+(dataSummary.label||""))}</span></div>${["fetch","you","run"].map(g=>{const rows=pd.items.filter(i=>i.group===g);if(!rows.length)return "";return `<div style="margin-top:8px"><b style="font-size:12px">${esc(pdGroup[g])} (${rows.length})</b>${rows.map(i=>{const [lab,cls]=pdLabel[i.status]||[i.status,""];return `<div class="dataitem" style="padding:5px 0"><div style="display:flex;gap:7px;align-items:flex-start"><span style="flex:1"><code>${esc(i.id)}</code>${i.dataset_id&&i.dataset_id!==i.id?` ← <code>${esc(i.dataset_id)}</code>`:""}${i.size_label?` · ${esc(i.size_label)}`:""}${i.for&&i.for.length?` <small>${esc(i.for.join(", "))}</small>`:""}${itemNote(i,zhUI)?`<small style="display:block">${esc(itemNote(i,zhUI))}</small>`:""}${i.how==="provide"&&!["done","acquired","produced","present_unverified"].includes(i.status)?`<button class="tiny pd-upload" data-item="${esc(i.id)}" style="margin-top:4px">${zhUI?"上传文件":"Upload files"}</button>`:""}</span><span class="actiontag ${cls}">${esc(lab)}</span></div></div>`;}).join("")}</div>`;}).join("")}</div>`:"";
   const actionNames={manual_download:zhUI?"需要手动下载":"Manual download needed",agent_download:zhUI?"可由 Agent 发起下载（批准后）":"Agent can download after approval",agent_prepare:zhUI?"由 Agent 准备（上游数据就绪后）":"Agent prepares after upstream inputs are ready",agent_validate:zhUI?"已有文件，Agent 下一步检查和准备":"Files present: agent checks and prepares next",check_coverage:zhUI?"先核实数据覆盖与格式":"Check coverage and format first",choose_data:zhUI?"需要重新选择数据":"Choose another dataset"};
-  actionNames.acquire_subset=zhUI?"服务器裁剪：先批准取数，再由 Agent 下载和检查":"Server subset: approve acquisition, then agent downloads and checks";
+  actionNames.agent_download=zhUI?"方案批准后由 GeoForge 下载，Agent 准备和检查":"GeoForge downloads after plan approval; agent prepares and checks";
+  actionNames.acquire_subset=zhUI?"方案批准后由 GeoForge 裁剪并下载，Agent 准备和检查":"GeoForge subsets and downloads after plan approval; agent prepares and checks";
   const coverageNames={covered:zhUI?"目录覆盖满足已声明条件；尚需验证分辨率、单位和文件":"Catalogue covers declared requirements; verify resolution, units and files",unknown:zhUI?"需求或元数据不足，尚不能确认适用":"Requirements or metadata incomplete; suitability unconfirmed",insufficient:zhUI?"已知覆盖不足，不能作为完整输入":"Known coverage gap; not a complete input"};
   const dataActions=pd&&Array.isArray(pd.items)?`<section class="datacard" id="data-next-actions"><h3>${zhUI?"数据准备 · 下一步":"Data preparation · next actions"}</h3>${Object.entries(actionNames).map(([action,label])=>{const rows=pd.items.filter(i=>i.action===action);return rows.length?`<h4>${esc(label)} · ${rows.length}</h4>${rows.map(i=>`<div class="dataitem"><b>${esc(i.dataset_id||i.id)}</b>${i.size_label?` · ${esc(i.size_label)}`:""}<small>${esc(coverageNames[(i.match||{}).status]||coverageNames.unknown)}</small>${(i.match||{}).requires_local_extraction?`<small>${zhUI?"不是网格级下载：需要检查范围并在本地提取。":"Not a grid-specific download: inspect extent and extract locally."}</small>`:""}</div>`).join("")}`:"";}).join("")}</section>`:"";
   const resolvedUnits=pd&&Array.isArray(pd.items)?pd.items.filter(i=>i.resolution):[];
@@ -1570,7 +1573,9 @@ function renderData(data){
   const knownSizes=uniqueUnits.every(i=>typeof i.size==="number"&&i.size>=0);
   const resolutionCard=uniqueUnits.length?`<section class="datacard" id="resolved-data-units"><h3>${zhUI?"实际下载文件":"Actual delivery files"} · ${uniqueUnits.length}</h3><p>${knownSizes?`${(uniqueUnits.reduce((n,i)=>n+i.size,0)/1e9).toFixed(2)} GB`:zhUI?"总大小未知":"Total size unknown"} · ${zhUI?"不等于本地裁剪后的大小":"Not the locally clipped size"}</p>${uniqueUnits.map(i=>{const r=i.resolution;return `<div class="dataitem"><b>${esc(i.dataset_id||i.id)}</b><small>${zhUI?"研究范围":"Study bbox"}: ${esc(JSON.stringify(r.requested_bbox??null))}</small><small>${zhUI?"下载范围":"Delivery extent"}: ${esc(JSON.stringify(r.delivery_extent??null))}</small><small>${r.spatial_filter_applied===false?(zhUI?"未裁剪文件：下载后需由 Agent 在本地提取、重采样及检查单位。":"Uncut file: agent must extract locally, regrid and check units after download."):(zhUI?"需核对实际交付方式，不自动假定已裁剪。":"Verify actual delivery; do not assume clipping.")}</small><small>${zhUI?"解析请求的变量/年份完整性":"Resolver variable/year completeness"}: ${r.coverage_complete===true?(zhUI?"完整（仍须检查计划是否包含所有文件）":"Complete (check the plan includes every file)"):r.coverage_complete===false?(zhUI?"有缺口":"Gaps reported"):(zhUI?"未确认":"Unconfirmed")}</small></div>`;}).join("")}</section>`:"";
   const subsets=`<section class="datacard" id="project-data-review"><div id="subset-jobs"><div id="subset-note" class="subset-feedback" role="status" aria-live="polite"></div></div><details style="margin-top:12px"><summary>${zhUI?"高级：手动估算（不会弹出批准）":"Advanced: manual estimate (no approval popup)"}</summary><input id="subset-dataset" placeholder="dataset_id"><input id="subset-bbox" placeholder="west,south,east,north"><input id="subset-variables" placeholder="prec,temp (raster: leave empty)"><input id="subset-start" type="date" aria-label="Subset start"><input id="subset-end" type="date" aria-label="Subset end"><button id="subset-estimate">${zhUI?"估算裁剪（不下载）":"Estimate subset (no download)"}</button></details></section>`;
-  const details=`<details class="datacard" id="status-details"><summary style="cursor:pointer"><b>${zhP?"更多细节":"Details"}</b> <small class="hint">${zhP?"下载任务记录、项目文件夹、目录搜索、数据来源、校准":"acquisition log, folders, catalogue search, data sources, calibration"}</small></summary>${subsets}${bindingNote}${resolutionCard}${dataActions}${dataOverview}${obsCatalogue}${dataSources}${calibrationCard}${advanced}</details>`;
+  const observations=Array.isArray(projection.observations)?projection.observations:[];
+  const evidenceDetails=observations.length?`<section class="datacard" id="status-evidence"><h3>${zhUI?"状态依据":"Status evidence"}</h3>${observations.map(observation=>`<div class="dataitem"><small>${esc(statusEvidenceText(observation))}</small></div>`).join("")}</section>`:"";
+  const details=`<details class="datacard" id="status-details"><summary style="cursor:pointer"><b>${zhP?"更多细节":"Details"}</b> <small class="hint">${zhP?"下载任务记录、项目文件夹、目录搜索、数据来源、校准":"acquisition log, folders, catalogue search, data sources, calibration"}</small></summary>${evidenceDetails}${subsets}${bindingNote}${resolutionCard}${dataActions}${dataOverview}${obsCatalogue}${dataSources}${calibrationCard}${advanced}</details>`;
   return `${waiting?human:""}${progress}${planData||""}${details}`;
 }
 let SUBSET_TIMER=null;
@@ -1803,10 +1808,10 @@ async function refreshData(){
     $("#hint").textContent=response.ok?`${chineseUI()?"已打开":"Opened"} ${opened.target_path||opened.project_path}`:(opened.error||(chineseUI()?"无法打开数据文件夹":"Could not open data folder"));
   });
   const paperButton=$("#paper-add");if(paperButton)paperButton.onclick=()=>$("#paperfile").click();
-  const respond=$("#request-respond");if(respond)respond.onclick=()=>{const run=data.project_run||RUN||{};const req=(run.blocker&&run.status==="waiting_for_user")?run.blocker:(data.human_request||{});$("#datapanel").classList.remove("open");showActionPicker(req,CUR.id);};
+  const respond=$("#request-respond");if(respond)respond.onclick=()=>{const req=projectStatusRequest(data);$("#datapanel").classList.remove("open");showActionPicker(req,CUR.id);};
   document.querySelectorAll("[data-copy-path]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copyPath);b.textContent=chineseUI()?"已复制":"Copied";}catch(e){}});
   const requestDone=$("#request-done");if(requestDone)requestDone.onclick=async()=>{
-    const req=data.human_request||{};const zh=chineseUI();
+    const req=projectStatusRequest(data);const zh=chineseUI();
     const paths=(req.rows||[]).map(r=>r.expected_path).filter(Boolean);const where=paths.length?paths.join(", "):(req.expected_path||(zh?"指定路径":"the requested path"));
     const text=zh?`我已把 ${req.title||"文件"} 放到 ${where}，请继续。`:`I placed ${req.title||"the files"} at ${where}. Please continue.`;
     $("#datapanel").classList.remove("open");$("#msg").value=text;if(CUR)DRAFTS.set(CUR.id,text);
@@ -1814,13 +1819,13 @@ async function refreshData(){
     await send();
   };
   const requestModify=$("#request-modify");if(requestModify)requestModify.onclick=()=>{
-    const req=data.human_request||{};const zh=chineseUI();
+    const req=projectStatusRequest(data);const zh=chineseUI();
     // the click is the flow action; the user's own words in the composer are the reason
     PENDING_ACTIONS.set(CUR.id,{request_id:req.id,option_id:"modify",note:""});
     $("#datapanel").classList.remove("open");$("#msg").value=zh?"请修改计划：":"Please change the plan: ";$("#msg").focus();
     $("#hint").textContent=zh?"写下你想改的地方，然后发送。":"Say what should change, then send.";
   };
-  const copyPath=$("#request-copy-path");if(copyPath)copyPath.onclick=async()=>{try{await navigator.clipboard.writeText((data.human_request||{}).expected_path||"");copyPath.textContent=chineseUI()?"已复制":"Copied";}catch(_e){}};
+  const copyPath=$("#request-copy-path");if(copyPath)copyPath.onclick=async()=>{try{await navigator.clipboard.writeText(projectStatusRequest(data).expected_path||"");copyPath.textContent=chineseUI()?"已复制":"Copied";}catch(_e){}};
   const calibrationButton=$("#calibration-agent");if(calibrationButton)calibrationButton.onclick=async()=>{
     $("#datapanel").classList.remove("open");
     const prompt=calibrationAgentPrompt(data);$("#msg").value=prompt;

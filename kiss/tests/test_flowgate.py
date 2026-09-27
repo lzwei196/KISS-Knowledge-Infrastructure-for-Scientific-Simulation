@@ -515,12 +515,142 @@ def test_rebind_survives_a_lost_transport_archive(tmp_path, monkeypatch):
     receipt = json.loads(Path(result["items"]["forcing_v2"]["receipt"]).read_text())
     assert receipt["transform_tool"] == "rebound_extracted_files"
     assert receipt["raw_files"][0]["path"] == "inputs/observations/obs-1/forcing.nc"
-    assert fs.flow.receipts._download_files_valid(project, receipt)
+    assert fs.flow.receipts.find_download(project, inv['items'][0]) is not None
     # a tampered extracted file is not re-bound
     (project / "inputs/observations/obs-1/forcing.nc").write_bytes(b"bad")
     (project / ".geoforge/receipts/data-receipts/forcing_v2.json").unlink()
     result = acquire.run(project)
     assert result["items"]["forcing_v2"]["status"] == "failed" and FakeClient.calls == 1
+
+
+def _acquired_served_request(tmp_path):
+    """A signed acquisition with enough scope to distinguish a safe rename."""
+    from kiss_cli import acquire
+
+    ki = _ki(tmp_path)
+    project, fs = _session(tmp_path, ki, [
+        ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
+    pj, inv = _plan(ki)
+    inv["items"][0].update(dataset_id="obs-1", delivery="served", requirements={
+        "bbox": [110, 30, 112, 32], "start": "2001-01-01", "end": "2001-12-31",
+        "variables": ["prec", "temp"],
+    })
+    assert fs.write_plan(pj, inv) == []
+    fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
+    fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
+
+    class ServedClient:
+        successful_downloads = 0
+
+        def download(self, dataset_id, root, destination=None):
+            raw = root / ".geoforge" / "downloads" / dataset_id / f"{dataset_id}.zip"
+            out = root / "inputs" / "observations" / dataset_id / "forcing.nc"
+            if out.exists():
+                raise obs_access.ObsAccessError("destination_not_empty", "already contains files")
+            self.successful_downloads += 1
+            raw.parent.mkdir(parents=True, exist_ok=True)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            raw.write_bytes(b"transport archive"); out.write_bytes(b"acquired input")
+            return {"ok": True, "served": True, "dataset_id": dataset_id,
+                    "destination": str(out.parent), "raw_file": str(raw), "files": [str(out)]}
+
+    client = ServedClient()
+    result = acquire.run(project, client=client)
+    assert result["status"] == "done" and client.successful_downloads == 1
+    receipt = Path(result["items"]["forcing"]["receipt"])
+    return project, fs, pj, inv, client, receipt
+
+
+def _approve_changed_served_request(fs, pj, inv, *, rename):
+    if rename:
+        inv["items"][0]["id"] = "forcing_v2"
+        pj["steps"][0]["inputs"] = ["forcing_v2"]
+    fs.move("execution_started", {"setup_verified": True}); fs.move("replan")
+    fs.flow.approval.revoke(fs.project, "changed request")
+    assert fs.write_plan(pj, inv) == []
+    fs.flow.approval.approve(fs.project, by="auto"); fs.reload_artifacts()
+    fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
+
+
+@pytest.mark.parametrize("rename", [False, True], ids=["same-item", "renamed-item"])
+@pytest.mark.parametrize("archive_missing", [False, True], ids=["archive-intact", "archive-missing"])
+@pytest.mark.parametrize("change", ["bbox", "narrower_bbox", "period", "variables", "chosen_source"])
+def test_served_rebind_rejects_changed_request(tmp_path, rename, archive_missing, change):
+    """A dataset directory and intact bytes cannot prove a different data request."""
+    from kiss_cli import acquire
+
+    project, fs, pj, inv, client, receipt = _acquired_served_request(tmp_path)
+    original_receipt = receipt.read_bytes()
+    raw = project / ".geoforge/downloads/obs-1/obs-1.zip"
+    out = project / "inputs/observations/obs-1/forcing.nc"
+    original_raw, original_out = raw.read_bytes(), out.read_bytes()
+    if archive_missing:
+        raw.unlink()
+    item = inv["items"][0]
+    if change == "bbox":
+        item["requirements"]["bbox"] = [115, 35, 117, 37]
+    elif change == "narrower_bbox":
+        # Exact-request reuse only: a smaller area is not automatic coverage proof.
+        item["requirements"]["bbox"] = [110.5, 30.5, 111.5, 31.5]
+    elif change == "period":
+        item["requirements"].update(start="2002-01-01", end="2002-12-31")
+    elif change == "variables":
+        item["requirements"]["variables"] = ["wind"]
+    else:
+        item["chosen_source"] = "another_release"
+        item["acceptable_sources"].append("another_release")
+    _approve_changed_served_request(fs, pj, inv, rename=rename)
+    inventory_path = project / "runs/data-inventory.json"
+    approved_inventory = inventory_path.read_bytes()
+
+    result = acquire.run(project, client=client)
+
+    assert result["status"] == "failed"
+    assert result["items"][item["id"]]["status"] == "failed"
+    assert client.successful_downloads == 1
+    assert receipt.read_bytes() == original_receipt  # no silent re-signing for the new scope
+    assert out.read_bytes() == original_out
+    if archive_missing:
+        assert not raw.exists()
+    else:
+        assert raw.read_bytes() == original_raw
+    assert inventory_path.read_bytes() == approved_inventory
+    if rename:
+        assert not (receipt.parent / "forcing_v2.json").exists()
+
+
+@pytest.mark.parametrize("rename", [False, True], ids=["same-item", "renamed-item"])
+@pytest.mark.parametrize("archive_missing", [False, True], ids=["archive-intact", "archive-missing"])
+def test_served_rebind_rejects_missing_selection_fingerprint(tmp_path, rename, archive_missing):
+    """A valid legacy signature authenticates the files, not unrecorded scope."""
+    from kiss_cli import acquire
+
+    project, fs, pj, inv, client, receipt = _acquired_served_request(tmp_path)
+    raw = project / ".geoforge/downloads/obs-1/obs-1.zip"
+    out = project / "inputs/observations/obs-1/forcing.nc"
+    # The public writer supports older callers without inventory_item. This remains
+    # a real signed receipt, but has no fingerprint with which to prove a rename.
+    fs.flow.receipts.record_download(
+        project, item_id="forcing", source="GeoForge Database catalogue",
+        request_url="https://example.test/obs-1/download", http_status=200,
+        raw_files=[raw], processed_files=[out], transform_tool="verified_zip_extract",
+        approval_sha256=fs.approval_id, plan_step_id="M:run")
+    legacy = json.loads(receipt.read_text())
+    assert fs.flow.receipts.verify(project, legacy) and not legacy["selection_sha256"]
+    original_receipt = receipt.read_bytes()
+    if archive_missing:
+        raw.unlink()
+    _approve_changed_served_request(fs, pj, inv, rename=rename)
+
+    result = acquire.run(project, client=client)
+
+    assert result["status"] == "failed"
+    assert result["items"][inv["items"][0]["id"]]["status"] == "failed"
+    assert client.successful_downloads == 1
+    assert receipt.read_bytes() == original_receipt
+    assert out.read_bytes() == b"acquired input"
+    if rename:
+        assert not (receipt.parent / "forcing_v2.json").exists()
 
 
 def test_manual_path_with_the_real_client_signs_placed_files(tmp_path, monkeypatch):

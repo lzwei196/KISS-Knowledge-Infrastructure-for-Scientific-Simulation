@@ -38,7 +38,7 @@ def _request_options(value) -> list[dict]:
     if not isinstance(value, list):
         return []
     out = []
-    for index, item in enumerate(value[:8]):
+    for index, item in enumerate(value):
         if isinstance(item, str):
             raw = {"label": item}
         elif isinstance(item, dict):
@@ -57,6 +57,27 @@ def _request_options(value) -> list[dict]:
             "response": str(raw.get("response") or label).strip()[:2000],
         })
     return out
+
+
+def choice_response(pending: dict, action: dict | None) -> dict | None:
+    """Resolve an explicit answer, never a clarification or an approval card.
+
+    A custom answer is a planning value, not a permission or download grant.
+    The caller still owns the existing permission-option side effects.
+    """
+    if (not action or pending.get("status") != "waiting"
+            or str(action.get("request_id")) != str(pending.get("id"))):
+        return None
+    option_id = str(action.get("option_id") or "")
+    if option_id == "__custom_answer__":
+        note = str(action.get("note") or "").strip()
+        if (pending.get("kind") != "choice" or pending.get("allow_note") is False
+                or pending.get("plan_review") or not note
+                or str(pending.get("id", "")).startswith(("flow:", "flow-"))):
+            return None
+        return {"id": option_id, "label": "Custom answer", "response": note}
+    return next((item for item in pending.get("options") or []
+                 if isinstance(item, dict) and str(item.get("id")) == option_id), None)
 
 
 def _read_json(path: Path) -> dict | None:

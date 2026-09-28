@@ -4,6 +4,28 @@ These terms distinguish project consent, execution, acquired data and scientific
 
 ## Language
 
+### Project inputs
+
+**Project input requirement**:
+A scientific quantity, parameter, state or setting needed by an enabled KI process in a particular project. A requirement is distinct from the file or method used to satisfy it.
+_Avoid_: Filename alone, catalogue dataset alone
+
+**Model parameter**:
+A value or field controlling a model's scientific behaviour, selected from an applicable default, supplied by the user, derived from evidence or estimated through calibration. Having a default does not establish suitability for the project's case.
+_Avoid_: Every input file, every run setting
+
+**Run setting**:
+A project-specific choice about how a model is configured or executed, such as simulation period, enabled processes or output frequency. It is distinct from an environmental dataset or a scientific coefficient.
+_Avoid_: Dataset, physical parameter
+
+**Input artifact**:
+A file or collection of files used to satisfy project input requirements. One artifact may contain data, parameters and initial states together, and a single requirement may need several artifacts.
+_Avoid_: One file equals one requirement
+
+**Input binding**:
+The explicit association between a project input requirement and the selected value or actual artifacts intended to satisfy it. A binding identifies what a consuming step should use; it does not itself establish scientific validity.
+_Avoid_: Upload folder, read permission alone, file presence
+
 ### Data acquisition
 
 **Data request**:

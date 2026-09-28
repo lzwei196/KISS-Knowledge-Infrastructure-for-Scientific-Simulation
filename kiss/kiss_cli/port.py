@@ -396,6 +396,28 @@ class MaterialiseReport:
     skipped: int = 0
 
 
+def validate_materialisation_destination(dest: Path) -> Path:
+    """Reject existing destination aliases before refreshing generated files.
+
+    Resolve the parent (which may use an OS alias such as /tmp) but never
+    follow a symlink at the destination or inside its existing tree. A refresh
+    may otherwise overwrite unrelated files via either a directory or file
+    link. Callers own the parent directory; Desktop separately validates the
+    project/models/<KI> namespace. No links are removed or repaired here.
+    """
+    dest = Path(dest).expanduser()
+    if dest.is_symlink():
+        raise ValueError(f"KI destination is a symlink; review it before refreshing: {dest}")
+    dest = dest.resolve()
+    if dest.exists():
+        if not dest.is_dir():
+            raise ValueError(f"KI destination is not a directory: {dest}")
+        for path in dest.rglob("*"):
+            if path.is_symlink():
+                raise ValueError(f"KI destination contains a symlink; review it before refreshing: {path}")
+    return dest
+
+
 def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
     """Copy a placeholder KI to ``dest`` with real paths written in.
 
@@ -408,7 +430,8 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
     """
     import shutil
 
-    ki_root, dest = Path(ki_root), Path(dest)
+    ki_root = Path(ki_root)
+    dest = validate_materialisation_destination(dest)
     rep = MaterialiseReport(dest=dest)
     dest.mkdir(parents=True, exist_ok=True)
 

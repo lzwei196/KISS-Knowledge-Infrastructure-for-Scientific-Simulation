@@ -3,11 +3,12 @@
 Plan v3 map A5. The per-KI contract itself is the harness's (`contract()`,
 harness/ki_harness.py L188-330) — imported, never re-implemented.
 
-What is adopted from chat and where it came from:
-  * planning wording        prompt_composer.py `_MODEL_PLANNING` L159-177 and
+Historical chat sources (planning interaction is now sequential, not batched):
+  * initial planning text   prompt_composer.py `_MODEL_PLANNING` L159-177 and
                             `_ATA_PLANNING` L179-196 (picks fixed, justify, inputs
-                            auto vs missing, ONE grouped message to the user, pin
-                            decisions, no execution)
+                            auto vs missing, pin decisions, no execution).
+                            Current contract asks one unresolved decision per turn;
+                            acquisition and KI preprocessing/execution are separate.
   * plan block shape        pre_planner.render_plan_block L296-346
   * grounding line          cli_process_manager.py L1291-1297
   * discipline rules        cli_process_manager.py `_exec_discipline_parts` L353-405,
@@ -94,7 +95,7 @@ _PLAN_SCHEMA_NOTE = (
     "high_impact:true|false, decision?}], unresolved_questions:[…], created_at}\n"
     "  runs/data-inventory.json : {schema_version:'1.0', items:[{id, required_by:[KI…], "
     "status:'missing'|'resolved'|'ready', acceptable_sources:[…], chosen_source, dataset_id?, "
-    "local_paths:[…], agent_resolvable:bool, needs_user:bool, decision?, acquisition_id?, "
+    "local_paths:[…], agent_resolvable:bool, needs_user:bool, rationale?, decision?, acquisition_id?, "
     "requirements?:{bbox:[west,south,east,north],start:'YYYY-MM-DD',end:'YYYY-MM-DD',variable:'prec,temp'}}]}\n"
     "  Save known data requirements per inventory item; do not invent unknown grid or dates. "
     "Search with those same filters. The project's status panel uses requirements to compare "
@@ -104,15 +105,48 @@ _PLAN_SCHEMA_NOTE = (
     "are alternatives, not a chosen dataset.\n"
     "  For every inventory item pinned from the GeoForge Database add one scientific choice "
     "{id:'data:<item id>', kind:'data_source', item:'<item id>', options:[dataset ids you considered, "
-    "including the one you picked], picked:'<dataset id>', rationale:'one sentence', high_impact:true}. "
+    "including the one you recommend], picked:'<dataset id>', rationale:'one sentence', high_impact:true}. "
     "GeoForge shows those candidates to the user with delivery, size and coverage from the catalogue; "
     "the user may pick another one on the approval card, and GeoForge re-pins the item itself. "
-    "List real candidates only (ids returned by search_catalogue), never invented ones.\n"
-    "  Use the KI's declared input names (dag.yaml inputs) as inventory ids wherever they apply; "
-    "GeoForge reads the KI's source_kind, format and notes for each and decides on the card whether "
-    "GeoForge fetches it, the run prepares it with the KI's default tool, or the user must provide it. "
-    "Set decision: 'user' on an item only when the user should supply their own file instead of the "
-    "KI default. Do not mark inputs missing or needs_user by yourself.\n"
+    "List real candidates only (ids in the provided catalogue or returned by search_catalogue), "
+    "never invented ones. For the current requirement show all relevant accessible candidates, "
+    "not an arbitrary top-N shortlist. Use available paging when needed, group equivalent records "
+    "without hiding alternatives, and disclose any incomplete search or inaccessible metadata. "
+    "Catalogue labels/units are discovery metadata; they do not prove native variable names, "
+    "file units, file contents or suitability. Use describe_dataset where available before a "
+    "subset estimate and verify the actual downloaded bytes during KI execution.\n"
+    "  Use stable KI-declared input names as inventory ids wherever they apply; qualify with the "
+    "KI name when requirements differ. Canonical vocabulary is a discovery aid, not an inclusion "
+    "requirement. Include applicable FILE and input-deck requirements even when the draft put them "
+    "in ki_internal or gave them no canonical_id. Do not merge inputs just because their labels or "
+    "canonical quantities match: units, scope, format and preparation must also be compatible.\n"
+    "  You interpret the KI and propose how each requirement is satisfied; GeoForge checks the "
+    "submitted artifacts, accessible paths, catalogue facts and approval. For each applicable "
+    "requirement explain the five links in its rationale and the plan's inputs/outputs: "
+    "requirement -> selected source or value -> actual/planned files -> preparation -> consuming "
+    "step. Name the producer step for generated files; use the same inventory ID in that step's "
+    "outputs and the consumer's inputs. Record planned target paths in the rationale, not as "
+    "existing local_paths. A requirement may need several files and a file may serve several "
+    "requirements. Keep unresolved links explicit instead of inventing a source or tool.\n"
+    "  A KI default needs evidence: cite the KI file/section declaring the value, method, "
+    "applicability or preparation tool in the rationale. source_kind alone, a vocabulary match "
+    "or 'the KI prepares it' is not proof of a usable default. Mark an unknown source 'missing'; "
+    "needs_user means a real user decision/input is needed, not merely that a generated file does "
+    "not exist yet. Do not claim agent_resolvable without a supported acquisition/preparation "
+    "route. Preserve the user's supplied files and chosen overrides; propose any replacement "
+    "for review rather than silently switching to a KI default or database dataset.\n"
+    "  This inventory's ready state is file-based, not a scalar-value schema. Discuss model "
+    "parameters and run settings, and record proposed scalar values/units, options and cited "
+    "default evidence in the existing scientific_choices (picked and rationale). Keep a scalar "
+    "proposal as a literal string with its unit in picked, with evidence in rationale. Present "
+    "a critical parameter SET as one coherent decision, with a concise summary and an offer to "
+    "expand its individual values, units, origins and overrides. Preserve those details in the "
+    "draft; do not ask the user about every coefficient separately. If the KI derives values "
+    "from data, recommend its documented method and mark the values 'to be computed during KI "
+    "execution'; never invent numerical defaults or mark a computed default ready. If a value "
+    "must be written into a config/deck, include that file and its KI-supported preparation "
+    "step in the inventory/plan. Never invent a local file to make a scalar 'ready', invent "
+    "unsupported value fields, or fabricate a user decision. The host records approval.\n"
     "  dataset_id is the exact GeoForge Database id when the input comes from the catalogue; "
     "GeoForge verifies it and records delivery, size and coverage on the item. A catalogue "
     "input is 'resolved', not 'missing', even before download. For server clipping, call "
@@ -122,9 +156,11 @@ _PLAN_SCHEMA_NOTE = (
     "item to the matching estimate itself (you may also copy the acquisition_id), re-estimates "
     "it before the card, and starts the server job when the user approves the plan: there is "
     "no separate data approval. Unknown coverage is shown on the card as inspection-only; it is "
-    "not model-ready. After approval GeoForge fetches every served dataset, server clip and "
-    "manual delivery itself, before execution starts, and signs a receipt for each. Inspect and "
-    "prepare KI inputs before simulation; never manufacture acquisition/approval files. "
+    "not model-ready. After approval, acquisition downloads served datasets/approved server clips "
+    "or imports user/manual files; GeoForge records its acquisition receipts. Manual links still "
+    "require the user to supply the files. Model-specific preprocessing, unit/format conversion "
+    "and parameter/config-file creation belong to KI execution AFTER acquisition, before the "
+    "model run. Never manufacture acquisition/approval files. "
     "For whole-file delivery, never pin an unresolved whole-product parent "
     "(a national grid of hundreds of GB): use search_catalogue with parent_id "
     "(CLI obs-search --resolve PRODUCT --variable prec,temp --start YYYY-MM-DD --end YYYY-MM-DD "
@@ -139,9 +175,13 @@ _PLAN_SCHEMA_NOTE = (
     "if only a larger regional/national package exists, disclose its coverage, size and local "
     "extraction requirements as a scientific choice for user confirmation. Do not claim a "
     "basin download link is a grid-specific link.\n"
-    "  A draft of both is already there. Correct it; do not invent a different format. 'ready' "
-    "means the file exists on disk at local_paths — you may NOT download anything in this turn, "
-    "so only files that already exist can be 'ready'. Every step input must reference an "
+    "  FINALIZATION ONLY: a draft of both is already there. Once the interview is settled, "
+    "correct it; do not invent a different format. Do not regenerate these documents between "
+    "questions merely to record an answer: the host conversation already retains that answer. 'ready' "
+    "means the file exists on disk at local_paths, NOT that its scientific suitability is "
+    "validated. Check available metadata against units, coverage, format and the consumer; "
+    "state checks that still need to run after approval. You may NOT download anything in this "
+    "turn, so only files that already exist can be 'ready'. Every step input must reference an "
     "inventory ID, not a filename. Add upstream-generated intermediate inputs to the inventory "
     "with their producer/source and missing status until they exist. Keep unsupported steps "
     "tool:null with an unresolved question; never invent an executable path. A preflight check "
@@ -164,29 +204,76 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
     coupling = plan.get("coupling") if isinstance(plan.get("coupling"), list) else []
     lines = [
         f"[MODE: PLANNING — design the run for {names}; NO execution]",
+        "[THREE PHASES] Planning settles the scientific choices with the user; no downloads or "
+        "input preparation. After the user approves the settled plan, acquisition does "
+        "download/import only (including approved server subsets). KI execution then inspects "
+        "the acquired files, preprocesses data, prepares parameter/config files and runs the "
+        "model using the KI. File acquisition is not proof of model-ready input.",
+        "[RESPONSIVE INTERVIEW] Start with the next material unknown, not a full-document audit. "
+        "If location, period or scientific objective is unresolved, read only the KI references "
+        "needed to explain that ONE question and ask it immediately. Do not rewrite both draft "
+        "files or inspect every pipeline stage before asking. Complete the full KI/input review "
+        "incrementally, before FINAL submission. On EVERY interview turn, ask the next question "
+        "before any full-plan serialization; do not rewrite plan.json or data-inventory.json "
+        "while another user decision remains. Prior answers are already retained in the host "
+        "conversation: read and use them directly. "
+        "A validated example in a different basin, climate or crop is an example, not an applicable "
+        "default for this project. Disclose that transfer needs justification; never present an "
+        "example's period, spin-up, soil or management as scientifically validated at the new site.",
         "The app has ALREADY resolved the models and derived a first plan from each KI's own "
-        "files (below). Your job, in THIS turn:",
+        "files (below). This is a draft, not proof of complete inputs or valid defaults. "
+        "Your job, in THIS turn:",
         "  1. The model picks are FIXED — justify each for this question in one sentence"
         + (" (except where the app flagged an ambiguous name — ask about that)." if ambiguous else "."),
-        "  2. Confirm the location, period, resolution and the forcing source the plan picked "
-        "(read the KI's SKILL.md and dag.yaml to check the choice is right for this model).",
-        "  3. Go through runs/data-inventory.json: which inputs are auto-resolved (a dataset on "
-        "this machine, a forcing provider, an upstream model) and which are MISSING. Check the "
-        "disk for files that already exist. Do not download anything.",
-        "  4. Collect EVERY question for the user into ONE grouped message: missing data you "
-        "cannot obtain yourself, licences/logins, and high-impact scientific choices (forcing "
-        "source, calibration target, extent/period). Offer 2-5 concrete options each.",
-        "  5. Write runs/plan.json and runs/data-inventory.json (format below), then stop.",
+        "  2. Review ALL relevant declarations in each selected KI's SKILL.md, dag.yaml, "
+        "format specifications and linked preparation/workflow docs, including ki_internal. "
+        "Use the selected KI's declared skills and any provided A2A/coupling knowledge; do not "
+        "invent missing skills, coupling contracts or a replacement model-selection step. "
+        "Check location, period, resolution, enabled processes, input files/decks, parameters "
+        "and run settings. Do not assume an absent canonical mapping means an input is optional "
+        "or automatically prepared. Explain optional/not-applicable requirements and unknowns.",
+        "  3. At finalization, correct and extend runs/data-inventory.json using that review, not only the "
+        "draft's existing rows. Distinguish an evidenced source/default from an existing file "
+        "and from validated model-ready input. Check files already available in authorized "
+        "project/KI locations. User files, KI-supported defaults/preparation and upstream "
+        "outputs are legitimate sources without GeoForge Database access. Do not download anything.",
+        "  4. Ask exactly ONE unresolved decision/question at a time, then STOP and wait for "
+        "the user's answer. Read prior answers and saved choices first: do not re-ask settled "
+        "values, replace user overrides, or ask which KI when it is already selected. Explain "
+        "this decision and show its KI-supported recommended/default option with evidence and "
+        "relevant alternatives. A documented method/parameter set can be the recommendation; "
+        "if no applicable default is supported, say so rather than inventing a number. Do not "
+        "send a questionnaire or bundle unrelated decisions. Use request_user_action when "
+        "the driver exposes it; otherwise ask the single question in chat. Do not send another "
+        "request in the same turn or treat an answer as approval of the whole plan.",
+        "  5. While choices remain open, the structured question and the host-recorded answer "
+        "are the progress record. Do NOT rebuild the full drafts before asking the next question. "
+        "Do not claim a final plan submission or say a question was issued before its handoff succeeds. "
+        "Once all required choices are settled, write BOTH runs/plan.json and "
+        "runs/data-inventory.json (format below) for final review, then stop. The host presents "
+        "plan approval; downloads still wait for that approval.",
         "Do NOT prepare inputs, do NOT compile, do NOT download, do NOT run any model binary or KI "
         "pipeline tool. Reading files is allowed; strict preflight is host-owned and runs at the "
         "approval boundary, so do not invoke the KI's preflight or any --help command through "
         "Bash in this planning turn. Approval and execution happen in a LATER, separate session — do not ask "
         "'shall I proceed'; the app asks the user.",
     ]
+    if wrappers and wrappers.get("request_user_action"):
+        lines.append(
+            "[QUESTION HANDOFF] This CLI has no native request_user_action tool. Instead, call "
+            f"`{wrappers['request_user_action']} '<JSON object>'` once through Bash/the shell, "
+            "from the assigned project or planning worktree. The JSON object contains "
+            "kind:'choice', title, message, options:[{id,label,description,response}] and "
+            "allow_note:true. Use valid JSON (double-quoted keys/strings) and shell-quote the "
+            "whole object safely. Include the KI-supported recommendation and evidence in "
+            "the options/message. This only displays a question; it grants no permissions "
+            "and cannot approve the plan. On success STOP and wait for the user's answer. "
+            "Do not write setup-request.json yourself or substitute a prose-only question.")
     if database_access_mode == "direct" and wrappers and wrappers.get("obs_search"):
         lines.append(
-            "[AUTHENTICATED OBSERVATION CATALOGUE] When an observation or forcing input is "
-            "missing, query the live GeoForge Database through the Desktop host with "
+            "[AUTHENTICATED OBSERVATION CATALOGUE] Before asking the current dataset decision, "
+            "inspect any provided cached GeoForge Database (Geo4DB) catalogue for relevant "
+            "accessible options. Use this read-only Desktop query for discovery/refresh as needed: "
             f"`{wrappers['obs_search']} <keywords>` (filters: --bbox minlon,minlat,maxlon,maxlat "
             "--start YYYY-MM-DD --end YYYY-MM-DD --variable name --category forcing|gauge|... "
             "--delivery served|manual; --limit/--offset). Records carry bbox, point, period, "
@@ -197,24 +284,35 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
             "never download during planning. A dataset with delivery 'manual' is a normal choice: "
             "pin it, and after approval GeoForge shows the user the download link and target folder "
             "and waits for the files. Do not call manual delivery a dead end."
-            " Manual delivery is never a reason to ask the user which data to use: pick the best-fitting dataset yourself, pin it, and state the choice in scientific_choices with your reason. Ask the user only when a scientific choice is genuinely open (site, period, evaluation target), and then with request_user_action, one question at a time, recommending a default.")
+            " Manual delivery alone does not leave dataset selection unresolved: recommend the "
+            "best-fitting candidate supported by the KI and query evidence and explain it in "
+            "scientific_choices. Respect user-supplied files and selections. If this decision "
+            "is still open, present that recommendation and the relevant alternatives as the "
+            "ONE current question, then stop; do not silently turn a recommendation into consent.")
     elif database_access_mode == "direct" and wrappers is None:
         lines.append(
-            "[AUTHENTICATED OBSERVATION CATALOGUE] When an observation or forcing input is "
-            "missing, call search_catalogue yourself during planning instead of asking "
-            "the user whether the database has data. It returns live GeoForge Database "
-            "metadata but no credentials. Pin the exact dataset id, delivery type, variables, "
+            "[AUTHENTICATED OBSERVATION CATALOGUE] Before asking the current dataset decision, "
+            "inspect any provided cached GeoForge Database (Geo4DB) catalogue for relevant "
+            "accessible options. Call search_catalogue for read-only discovery/refresh as needed, "
+            "rather than asking the user whether the database has data. It returns catalogue "
+            "metadata, not native file contents or credentials. Pin the exact dataset id, delivery type, variables, "
             "extent and period in the inventory. You never download: after the user approves the "
-            "plan, GeoForge fetches every pinned dataset itself and signs a receipt. A dataset with "
+            "plan, GeoForge acquires the selected data and records its receipts. A dataset with "
             "delivery 'manual' is a normal choice: pin it; GeoForge shows the user a private card "
             "with the link and target folder and waits for the files. Do not call manual delivery "
             "a dead end."
-            " Manual delivery is never a reason to ask the user which data to use: pick the best-fitting dataset yourself, pin it, and state the choice in scientific_choices with your reason. Ask the user only when a scientific choice is genuinely open (site, period, evaluation target), and then with request_user_action, one question at a time, recommending a default.")
+            " Manual delivery alone does not leave dataset selection unresolved: recommend the "
+            "best-fitting candidate supported by the KI and query evidence and explain it in "
+            "scientific_choices. Respect user-supplied files and selections. If this decision "
+            "is still open, present that recommendation and the relevant alternatives as the "
+            "ONE current question, then stop; do not silently turn a recommendation into consent.")
     elif database_access_mode == "snapshot":
         lines.append(
             "[GEOFORGE DATABASE: CACHED CATALOGUE MODE] The Desktop will append the path to a "
-            "sanitized catalogue snapshot. Inspect that file; no live database query tool is "
-            "available in this mode. Clearly identify stale or unavailable metadata.")
+            "sanitized catalogue snapshot. Inspect that file BEFORE asking the current dataset "
+            "decision and show its relevant accessible candidates; no live database query tool is "
+            "available in this mode. Clearly identify stale or unavailable metadata. Catalogue "
+            "availability is not proof of native file contents or scientific suitability.")
     else:
         lines.append(
             "[GEOFORGE DATABASE: DISABLED] Database discovery is disabled for this project turn. "

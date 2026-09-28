@@ -237,7 +237,8 @@ def snapshot(project: Path, *, report: dict | None = None, plans: list | None = 
     try:
         flow = flowgate.load()
         ctx = flow.states.FlowContext.load(project)
-        state, stage = ctx.state.value, flow.states.DISPLAY_STAGE.get(ctx.state, "understanding")
+        state = ctx.state.value
+        stage = projectrun.flow_display_stage(ctx.state, flow.states.DISPLAY_STAGE.get(ctx.state, "understanding"))
         selected, observed_at = list(ctx.selected_kis), ctx.updated_at or None
         pj, inv = flow.plan.read_artifacts(project)
         if isinstance(pj, dict) and isinstance(inv, dict):

@@ -18,6 +18,7 @@ two ever disagree, that is a bug in the GUI.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import queue
@@ -34,7 +35,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, policy, port, preparation, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
+from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -364,6 +365,7 @@ def _agent_run_snapshot(session_id: str) -> dict:
 
     started = process.get("started_at") or events.get("started_at") or now
     last_event = process.get("last_event_at")
+    last_work = process.get("last_work_at")
     last_output = (process.get("last_output_at") or
                    events.get("last_visible_output_at"))
     handle = events.get("_handle")
@@ -371,7 +373,8 @@ def _agent_run_snapshot(session_id: str) -> dict:
         # In-process API turn: every streamed chunk is an event.
         last_event = max(filter(None, (getattr(handle, "last_chunk_at", None),
                                        last_output, started)))
-        process = {"activity": "responding"}
+        last_work = last_output
+        process = {"activity": "responding", "activity_state": "responding"}
     transport = events.get("last_transport_at")
     state = "running" if alive else ("finishing" if not finished else "finished")
     project_state: dict = {}
@@ -404,7 +407,15 @@ def _agent_run_snapshot(session_id: str) -> dict:
         "returncode": returncode,
         "activity": process.get("activity"),
         "activity_detail": process.get("activity_detail"),
+        "activity_state": process.get("activity_state", "unknown"),
+        "activity_elapsed_seconds": (
+            max(0, int((process.get("ended_at") or now) - process["activity_started_at"]))
+            if process.get("activity_started_at") is not None else None),
+        "last_activity_name": process.get("last_activity_name"),
+        "last_activity_detail": process.get("last_activity_detail"),
         "elapsed_seconds": max(0, int(now - started)),
+        "work_silence_seconds": max(0, int(now - (last_work or started))),
+        "work_observed": last_work is not None,
         "event_silence_seconds": (max(0, int(now - last_event))
                                   if last_event else None),
         "output_silence_seconds": (max(0, int(now - last_output))
@@ -540,6 +551,7 @@ def _copy_missing_assets(source: Path, destination: Path) -> list[Path]:
     copied: list[Path] = []
     if not source.is_dir() or source.resolve() == destination.resolve():
         return copied
+    destination = port.validate_materialisation_destination(destination)
     for item in source.rglob("*"):
         if item.is_symlink() or not item.is_file():
             continue
@@ -810,6 +822,9 @@ class Handler(BaseHTTPRequestHandler):
     ki_update_manager: ki_updates.UpdateManager | None = None
     csrf_token: str = secrets.token_urlsafe(32)
     agent_database_token: str = secrets.token_urlsafe(32)
+    # Never send this derivation key to an Agent. The app-global database
+    # capability is deliberately not sufficient to write another chat's card.
+    agent_question_secret: bytes = secrets.token_bytes(32)
     agent_database_url: str = ""
     agent_flow_url: str = ""
 
@@ -883,7 +898,13 @@ class Handler(BaseHTTPRequestHandler):
         return True, ""
 
     @classmethod
-    def _agent_runtime_env(cls) -> dict[str, str]:
+    def _question_capability(cls, project: Path) -> str:
+        identity = str(Path(project).resolve()).encode("utf-8")
+        return hmac.new(cls.agent_question_secret,
+                        b"geoforge-question-v1\0" + identity, hashlib.sha256).hexdigest()
+
+    @classmethod
+    def _agent_runtime_env(cls, project: Path | None = None) -> dict[str, str]:
         """Capabilities inherited only by the current Agent child process."""
         if not cls.agent_database_url or not cls.agent_database_token:
             return {}
@@ -893,6 +914,8 @@ class Handler(BaseHTTPRequestHandler):
         }
         if cls.agent_flow_url:
             result["GEOFORGE_AGENT_FLOW_URL"] = cls.agent_flow_url
+            if project is not None:
+                result["GEOFORGE_AGENT_QUESTION_TOKEN"] = cls._question_capability(project)
         return result
 
     def _agent_capability_allowed(self) -> bool:
@@ -936,12 +959,26 @@ class Handler(BaseHTTPRequestHandler):
                                "message": "invalid agent flow request size"}, 400)
         try:
             request = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(request, dict):
+                raise ValueError("agent flow request must be a JSON object")
             argv = request.get("argv")
             if (not isinstance(argv, list) or not argv or
                     not all(isinstance(item, str) for item in argv)):
                 raise ValueError("argv must be a non-empty string list")
-            if argv[0] not in {"run-tool", "fetch"}:
+            if argv[0] not in {"run-tool", "fetch", "ask-question"}:
                 raise ValueError(f"command {argv[0]!r} is not an Agent flow command")
+            if argv[0] == "ask-question":
+                if len(argv) != 2:
+                    raise ValueError("ask-question requires one JSON payload")
+                project = self._database_project(request.get("cwd"))
+                question_token = str(self.headers.get("X-GeoForge-Question-Token") or "")
+                if not question_token or not secrets.compare_digest(
+                        question_token, self._question_capability(project)):
+                    return self._json({"ok": False, "error": "unauthorized",
+                                       "message": "invalid project question capability"}, 401)
+                card = flowrun.request_planning_question(project, json.loads(argv[1]))
+                return self._json({"ok": True, "returncode": 0,
+                                   "stdout": json.dumps(card, ensure_ascii=False), "stderr": ""})
             cwd = Path(str(request.get("cwd") or "")).expanduser().resolve()
             workroot = self.workroot.resolve()
             registered_external = sessions.registered_project_for_path(workroot, cwd)
@@ -1917,15 +1954,9 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     saved = sessions.save_upload(
                         self.workroot, s, filename, self.rfile.read(n), item=(query.get("item") or [""])[0])
-                    project = sessions.project_path(self.workroot, s)
-                    pending = setup_flow.request(project)
-                    if pending and pending.get("status") == "waiting":
-                        setup_flow.resume(
-                            project, f"Added {saved.name} to the project through GeoForge.")
-                        projectrun.report(project, {
-                            "status": "idle",
-                            "summary": f"Received {saved.name}; ready to continue",
-                        }, source="user_upload")
+                    # Saving bytes is not consent, scientific validation, or
+                    # fulfillment of an unrelated pending request. The user
+                    # explicitly continues/reviews through the normal flow.
                 except (ValueError, OSError) as e:
                     return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "path": str(saved),
@@ -2291,64 +2322,20 @@ class Handler(BaseHTTPRequestHandler):
         """Join a shared software install to one chat's scenario directories."""
         project = Path(project).resolve()
         shared = self._config(ki)
-        # Keep project-owned bindings that an agent deliberately resolved for
-        # this scientific case.  Older code regenerated every role on refresh,
-        # so a legacy model whose runnable deck lived under outputs/ could run
-        # successfully while the data panel kept checking an empty
-        # inputs/static placeholder.  Only scenario/data roles are eligible,
-        # and only when their resolved path remains inside this project.  The
-        # verified shared software roles below can never be overridden here.
-        project_overrides: dict[str, Path] = {}
-        try:
-            saved = paths.KissConfig.load(project)
-            for role in ("data", "forcing", "obs", "static", "outputs",
-                         "outputs_disk1", "data_ki", "forcing_rechunked"):
-                value = saved.roles.get(role)
-                if value is None:
-                    continue
-                resolved = Path(value).expanduser().resolve()
-                if resolved == project or resolved.is_relative_to(project):
-                    project_overrides[role] = resolved
-        except (FileNotFoundError, OSError, ValueError):
-            pass
         # Migrate workspaces created by older desktop builds where the model
         # binary could be verified while GeoForge's own shared Python library
         # was never copied into place.
         repo_root = getattr(self, "repo_root", None)
         if repo_root is not None:
             setup_flow.prepare_common(shared, repo_root)
-        cfg = paths.KissConfig.default(project)
-        cfg.python = shared.python
-        cfg.relocation = "none"
-        cfg.roles.update({
-            "binaries": shared.roles["binaries"],
-            "python_env": shared.roles["python_env"],
-            "ki_tools_common": shared.roles["ki_tools_common"],
-            "data": project / "inputs",
-            "forcing": project / "inputs" / "forcing",
-            "obs": project / "inputs" / "observations",
-            "static": project / "inputs" / "static",
-            "data_ki": project / "inputs",
-            "forcing_rechunked": project / "inputs" / "forcing" / "rechunked",
-            "outputs": project / "outputs" / ki.name,
-            "outputs_disk1": project / "outputs" / ki.name,
-            "ki_root": project / "models",
-            "server_root": project,
-            # Several ported KIs use KISSPATH_HOME as the parent of their
-            # installed scientific software (for example HOME/DSSAT).  A chat
-            # has its own cwd, inputs and outputs, but it does not get a second
-            # copy of that software.  Keep HOME joined to the verified shared
-            # install or materialisation rewrites a healthy binary into the
-            # project folder and preflight falsely reports it missing.
-            "home": shared.roles["home"],
-        })
-        cfg.roles.update(project_overrides)
+        cfg = project_paths.model_config(project, ki.name, shared)
         for role in ("data", "forcing", "obs", "static", "outputs",
                      "forcing_rechunked"):
             cfg.roles[role].mkdir(parents=True, exist_ok=True)
         return cfg
 
-    def _session_workspace(self, project: Path, ki):
+    def _session_workspace(self, project: Path, ki, *, cfg=None,
+                           write_project_config: bool = True):
         """Materialise one KI against this chat's data and output folders.
 
         Scientific software is expensive and belongs to the shared verified
@@ -2357,7 +2344,7 @@ class Handler(BaseHTTPRequestHandler):
         every session.
         """
         project = Path(project).resolve()
-        cfg = self._session_config(project, ki)
+        cfg = cfg if cfg is not None else self._session_config(project, ki)
 
         model_home = project / "models" / ki.name
         live = model_home / "ki"
@@ -2373,10 +2360,33 @@ class Handler(BaseHTTPRequestHandler):
         shared_live = Path(self._config(ki).root) / "ki"
         _copy_missing_assets(shared_live, live)
         (model_home / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
-        # The project-level file is what a model process or agent launched at
-        # the project root discovers by walking upward.
-        (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+        # Root discovery must not select whichever KI happened to be prepared
+        # last. Model tools explicitly use their own config at dispatch.
+        if write_project_config and project_paths.can_write_project_config(project, [ki.name]):
+            neutral = project_paths.project_config(project, python=install.runtime_python())
+            (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
         return type(ki)(name=ki.name, root=live), cfg
+
+    def _session_workspaces(self, project: Path, kis):
+        """Resolve a selected batch before replacing its legacy root config.
+
+        A global legacy config can belong to the LAST selected KI. Resolving
+        and materializing each KI in sequence used to neutralize that config
+        after the first KI, losing the later owner's custom scenario roles.
+        Keep the original root config until all resolutions/materializations
+        succeed; each KI still owns its existing per-KI config, not a registry.
+        """
+        project = Path(project).resolve()
+        prepared = [(ki, self._session_config(project, ki)) for ki in kis]
+        if not prepared:
+            return []
+        resolved = [self._session_workspace(project, ki, cfg=cfg,
+                                           write_project_config=False)
+                    for ki, cfg in prepared]
+        if project_paths.can_write_project_config(project, [ki.name for ki, _ in resolved]):
+            neutral = project_paths.project_config(project, python=install.runtime_python())
+            (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
+        return resolved
 
     # --- install -----------------------------------------------------------
     def _stream_init(self, req) -> None:
@@ -3201,9 +3211,8 @@ verification are different states; never claim this test verified the KI."""
                 options = {str(item.get("id")): item
                            for item in pending.get("options") or []
                            if isinstance(item, dict) and item.get("id")}
-                if (action and str(action.get("request_id")) == str(pending.get("id"))
-                        and str(action.get("option_id")) in options):
-                    resolved_action = options[str(action.get("option_id"))]
+                resolved_action = setup_flow.choice_response(pending, action)
+                if resolved_action is not None:
                     option_id = str(resolved_action.get("id"))
                     if option_id == "enable_https":
                         saved_posture, approved = policy.Policy.load_approved(project)
@@ -3250,7 +3259,8 @@ verification are different states; never claim this test verified the KI."""
                             project,
                             f"The user selected {label}." + (f" {note}" if note else ""),
                         )
-                elif not options:
+                elif (not options and action is None and pending.get("kind") != "choice"
+                      and not pending.get("plan_review")):
                     # A free-form request has no structured choice; the reply
                     # itself is the handoff. Requests with options stay open
                     # when the user clicks “Ask me”, instead of being cleared.
@@ -3588,6 +3598,7 @@ verification are different states; never claim this test verified the KI."""
             pname = _avail0[0].name if _avail0 else ""
         gated = flow_pre is not None and flow_pre.gated
         auto_turn = None
+        question_handoff = ""
         database_mode = settings.database_access_mode()
         if gated:
             try:
@@ -3597,6 +3608,14 @@ verification are different states; never claim this test verified the KI."""
             except Exception as e:  # noqa: BLE001 — FlowDenied or a flow failure: say so, run nothing
                 out(f"[GeoForge: {e}]")
                 return
+            if kind == "cli" and auto_turn.wrappers.get("request_user_action"):
+                question_handoff = (
+                    "\n[QUESTION HANDOFF] To ask the next unresolved intake question, run "
+                    f"`{auto_turn.wrappers['request_user_action']} '<JSON>'` from this chat project. "
+                    "JSON fields: kind='choice', title, message, options (id, label, description, "
+                    "response), allow_note=true. Ask ONE question, offer an evidence-based default "
+                    "when available, then stop and wait. A question in prose alone creates no "
+                    "answer card. This command cannot approve a plan or grant permissions.\n")
             if database_mode == "direct" and kind == "api":
                 intake_database_rules = (
                     "[GEOFORGE DATABASE — READ-ONLY INTAKE SEARCH]\n"
@@ -3663,24 +3682,29 @@ verification are different states; never claim this test verified the KI."""
         project_rules = SESSION_PROJECT_RULES.format(project=project)
         run_rules = projectrun.prompt_block(project)
         # Auto-KI is allowed to remember the model selected by the agent's
-        # truthful project-progress report. On later turns, materialise one
-        # verified selected KI so the direct API and calibration tool operate
+        # truthful project-progress report. On later turns, materialise the
+        # verified selected KIs together so the direct API/calibration tools operate
         # on the real session KI instead of a synthetic catalogue root.
         active_kis = []
         active_cfg = None
+        verified_kis = []
         for name in projectrun.load(project).get("selected_kis") or []:
             try:
                 selected = self._ki(name)
             except KeyError:
                 continue
             if self._status_for(selected).get("can_run"):
-                try:
-                    selected, selected_cfg = self._session_workspace(project, selected)
-                    if active_cfg is None:
-                        active_cfg = selected_cfg
-                except Exception:
-                    pass
+                verified_kis.append(selected)
             active_kis.append(selected)
+        try:
+            materialized = self._session_workspaces(project, verified_kis)
+        except Exception as e:
+            out(f"[could not prepare selected KI workspaces: {e}]")
+            return
+        resolved_by_name = {ki.name: (ki, cfg) for ki, cfg in materialized}
+        active_kis = [resolved_by_name.get(ki.name, (ki, None))[0] for ki in active_kis]
+        if len(active_kis) == 1 and active_kis[0].name in resolved_by_name:
+            active_cfg = resolved_by_name[active_kis[0].name][1]
         calibration_rules = calibration.prompt_block(project, active_kis)
         skill_rules = skilllib.prompt_block(skill_names)
         skill_roots = [str(root) for root in skilllib.roots() if root.is_dir()]
@@ -3697,7 +3721,7 @@ verification are different states; never claim this test verified the KI."""
             # script.  A provider receiving contradictory contracts will often skip task
             # understanding and behave like the screenshot's model-name parser.
             system = (catalogue_rules + "\n\n" + project_rules + "\n\n" + run_rules +
-                      "\n\n" + intake_rules + "\n\n" + intake_database_rules +
+                      "\n\n" + intake_rules + "\n\n" + intake_database_rules + question_handoff +
                       "\n\n" + RESPONSE_PRESENTATION_RULES +
                       "\n\n" + language_rules)
             full = (system + f"\nmodels_root: {self.catalog.models_dir}"
@@ -3782,7 +3806,7 @@ verification are different states; never claim this test verified the KI."""
                                        auto_turn.wrappers if auto_turn is not None else {})],
                        cfg=cfg, pol=pol, model=llm,
                        runtime_events=runtime_events,
-                       extra_env=self._agent_runtime_env(),
+                       extra_env=self._agent_runtime_env(project),
                        flow_policy=(auto_turn.policy if auto_turn is not None else None))
 
     def _chat_with_models(self, names, want, task, out, project: Path, llm=None,
@@ -3835,7 +3859,11 @@ verification are different states; never claim this test verified the KI."""
                 resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
         else:
             wd = project
-            resolved_with_cfg = [self._session_workspace(project, k) for k in kis]
+            try:
+                resolved_with_cfg = self._session_workspaces(project, kis)
+            except Exception as e:
+                out(f"[could not prepare selected KI workspaces: {e}]")
+                return
             resolved = [item[0] for item in resolved_with_cfg]
             cfg = resolved_with_cfg[0][1]
         project_rules = SESSION_PROJECT_RULES.format(project=project)
@@ -3893,7 +3921,8 @@ verification are different states; never claim this test verified the KI."""
                     session_rules = (
                         f"[PLANNING PROJECT] Inspect existing files under {project}. "
                         "No input preparation, downloads, installation, preflight execution or model runs. "
-                        "Write only the TWO draft paths specified in PLAN HANDOFF. "
+                        "Write only the TWO draft paths specified in PLAN HANDOFF, plus the exact "
+                        "QUESTION FALLBACK path if that fallback is provided for this turn. "
                         "Do not write setup-request.json or project-agent-status.json; "
                         "GeoForge handles validation, progress and the approval card.\n\n" +
                         software_status_rules + "\n\n" + language_rules + "\n\n" + RESPONSE_PRESENTATION_RULES)
@@ -4059,7 +4088,7 @@ verification are different states; never claim this test verified the KI."""
                        session=session, cli_state=cli_state,
                        extra_dirs=grants, cfg=cfg, ki_root=ki.root,
                        pol=pol, model=llm, runtime_events=runtime_events,
-                       extra_env=self._agent_runtime_env(),
+                       extra_env=self._agent_runtime_env(project),
                        flow_policy=flow_policy)
         if flow_turn is not None:
             flow_turn.provider_succeeded = bool(completed and completed.get("returncode") == 0)
@@ -4339,6 +4368,7 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
     Handler.workroot.mkdir(parents=True, exist_ok=True)
     Handler.csrf_token = secrets.token_urlsafe(32)
     Handler.agent_database_token = secrets.token_urlsafe(32)
+    Handler.agent_question_secret = secrets.token_bytes(32)
 
     if auto_update:
         def activate(snapshot: Path) -> None:

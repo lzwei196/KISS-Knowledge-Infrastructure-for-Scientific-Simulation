@@ -415,7 +415,19 @@ _ACTIVE: KissConfig | None = None
 def active() -> KissConfig:
     global _ACTIVE
     if _ACTIVE is None:
-        _ACTIVE = KissConfig.load(Path(os.environ.get("KISS_ROOT", Path.cwd())))
+        discovery = Path(os.environ.get("KISS_ROOT", Path.cwd())).resolve()
+        exact = discovery / CONFIG_NAME
+        if discovery.parent.name == "models" and (
+                (discovery / "ki").is_dir() or exact.exists() or exact.is_symlink()):
+            # Desktop model children use this exact discovery directory while
+            # retaining the project as cwd/root. Use the same normalization as
+            # dispatch, including external KI sources without a local ki/,
+            # relative scenario roles and moved projects.
+            # Never walk upward to another model's/global config if missing.
+            from .project_paths import load_model_config
+            _ACTIVE = load_model_config(discovery.parent.parent, discovery.name)
+        else:
+            _ACTIVE = KissConfig.load(discovery)
     return _ACTIVE
 
 

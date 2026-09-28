@@ -211,6 +211,8 @@ def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str
         tools += [f"Write({p})", f"Edit({p})"]
     if wrappers and wrappers.get("obs_search"):
         tools.append(f"Bash({wrappers['obs_search']}:*)")
+    if wrappers and wrappers.get("request_user_action"):
+        tools.append(f"Bash({wrappers['request_user_action']}:*)")
     return tools
 
 
@@ -301,6 +303,8 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
         # fetch, or download wrappers before planning is approved.
         if state is State.RESOLVING_KIS and wrappers and wrappers.get("obs_search"):
             tools.append(f"Bash({wrappers['obs_search']}:*)")
+        if state is State.RESOLVING_KIS and wrappers and wrappers.get("request_user_action"):
+            tools.append(f"Bash({wrappers['request_user_action']}:*)")
         return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools)], _CLAUDE_DROP,
                               Enforcement.EXACT, False, "read-only")
 

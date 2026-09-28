@@ -331,11 +331,19 @@ def _flow_ki_root(project: Path, name: str, args) -> Path:
 def cmd_run_tool(args) -> int:
     """Run one KI tool for an APPROVED plan step and write the signed receipt (plan v3 B7).
     This is the only way a CLI agent's run can count; anything run outside it has no receipt."""
-    from . import flowgate
+    from . import flowgate, project_paths
     from .execution import execute_ki_tool
     project = _flow_project(args.project)
     ki_root = _flow_ki_root(project, args.ki, args)
-    cfg = paths.KissConfig.load(project)
+    try:
+        fallback = None
+        if not (project / "models" / args.ki / paths.CONFIG_NAME).exists() and not Path(ki_root).is_relative_to(project / "models"):
+            fallback = paths.KissConfig.load(project)
+        cfg = project_paths.execution_config(
+            project, args.ki, ki_root, fallback=fallback)
+    except (OSError, ValueError) as e:
+        print(f"run-tool refused: {e}", file=sys.stderr)
+        return 3
     fs = flowgate.FlowSession.open(project, {args.ki: ki_root}, python=str(cfg.python))
     if fs.state.value != "EXECUTING":
         print(f"run-tool refused: project is in {fs.state.value}, not EXECUTING", file=sys.stderr)
@@ -389,6 +397,23 @@ def cmd_fetch(args) -> int:
         print(f"fetch failed: {e}", file=sys.stderr)
         return 1
     print("[RECEIPT] " + json.dumps(info, ensure_ascii=False))
+    return 0
+
+
+def cmd_ask_question(args) -> int:
+    """Publish one planning choice through the same host validator as the bridge."""
+    from . import flowrun
+    try:
+        if len(args.question.encode("utf-8")) > 60 * 1024:
+            raise ValueError("question JSON is too large")
+        payload = json.loads(args.question)
+        result = flowrun.request_planning_question(_flow_project(None), payload)
+    except (OSError, ValueError, TypeError) as error:
+        print(f"ask-question refused: {error}", file=sys.stderr)
+        return 3
+    print(json.dumps({"id": result["id"], "status": result["status"],
+                      "message": "Question shown. Stop and wait for the user's answer."},
+                     ensure_ascii=False))
     return 0
 
 
@@ -572,6 +597,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--project", help="the chat project (default: $KISS_PROJECT or the cwd's project)")
     q.add_argument("argv", nargs=argparse.REMAINDER, help="arguments for the tool (after --)")
     q.set_defaults(fn=cmd_run_tool)
+
+    q = sub.add_parser("ask-question", help="show one planning question; never approve, download or run")
+    q.add_argument("question", help="one JSON object with kind=choice, title, message and options")
+    q.set_defaults(fn=cmd_ask_question)
 
     q = sub.add_parser("fetch", help="download one public file for an approved plan and write its receipt")
     q.add_argument("url")

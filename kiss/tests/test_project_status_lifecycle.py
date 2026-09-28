@@ -247,7 +247,7 @@ def test_snapshot_does_not_accept_agent_claim_of_completion(status_project):
     })
 
     assert result["progress"]["status"] != "complete"
-    assert result["progress"]["stage"] == "preparing"
+    assert result["progress"]["stage"] == "planning"
     assert result["progress"]["summary"] != "Everything is complete"
     assert result["request"] is None
 

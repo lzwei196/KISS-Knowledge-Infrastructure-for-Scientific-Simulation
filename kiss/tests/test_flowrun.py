@@ -309,7 +309,7 @@ def test_database_access_modes_choose_one_planning_surface(tmp_path):
     direct = flowrun.turn(
         direct_project, [direct_ki], _cfg(direct_project), "cli", "kimi", None,
         "run M for 2003", database_access_mode="direct")
-    assert "query the live GeoForge Database" in direct.extra_prompt
+    assert "[THREE PHASES]" in direct.extra_prompt
     assert direct.wrappers["obs_search"] in direct.extra_prompt
     assert "CACHED CATALOGUE MODE" not in direct.extra_prompt
 
@@ -377,7 +377,7 @@ def test_auto_turn_is_read_only_and_refuses_ungateable_providers(monkeypatch, tm
     assert "search_observation_data" not in disabled.session.api_tools()
     disabled_cli = flowrun.auto_turn(
         project, "cli", "kimi", database_access_mode="off")
-    assert disabled_cli.wrappers == {}
+    assert set(disabled_cli.wrappers) == {"request_user_action"}
 
 
 def test_gated_auto_api_receives_only_the_task_intake_contract(monkeypatch, tmp_path):
@@ -489,7 +489,7 @@ def test_pinned_planning_receives_host_database_snapshot_in_snapshot_mode(monkey
     handler.workroot = tmp_path
     handler.repo_root = None
     handler._status_for = lambda _ki: {"label": "Verified", "can_run": True}
-    handler._session_workspace = lambda _project, model: (model, _cfg(project))
+    handler._session_workspaces = lambda _project, models: [(model, _cfg(project)) for model in models]
     handler._software_status_prompt = lambda _kis, _cfg: "Software is verified."
     captured = {}
 

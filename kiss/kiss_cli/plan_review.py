@@ -257,15 +257,30 @@ def _data_choices(plan: dict, inv: dict) -> list[dict]:
         if not isinstance(c, dict) or c.get("kind") != "data_source":
             continue
         item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
+        item = items.get(item_id, {})
         options = []
         for ds in c.get("options") or []:
             rec = by_id.get(str(ds))
             if rec is None:
                 continue                # invented ids never reach the user
-            options.append({"dataset_id": str(ds), "name": rec.get("name"), "delivery": rec.get("delivery"),
-                            "size": rec.get("size"), "size_label": obs_access.size_label(rec.get("size")),
-                            "period": [rec.get("start_date"), rec.get("end_date")] if rec.get("start_date") else None,
-                            "bbox": rec.get("bbox")})
+            option = {"dataset_id": str(ds), "name": rec.get("name"), "delivery": rec.get("delivery"),
+                      "size": rec.get("size"), "size_label": obs_access.size_label(rec.get("size")),
+                      "period": [rec.get("start_date"), rec.get("end_date")] if rec.get("start_date") else None,
+                      "bbox": rec.get("bbox")}
+            if (str(item.get("dataset_id")) == str(ds) and item.get("delivery") == "subset"
+                    and item.get("acquisition_id")):
+                # The host already validated/stamped this item's selected estimate.
+                # Project clip facts, not the whole product's manual delivery/size,
+                # belong on its option. Never borrow a clip from a different item or
+                # fetch a fresh estimate while projecting the reviewed inventory.
+                cat = item.get("catalogue") or {}
+                scope = item.get("requirements") or {}
+                size = cat.get("size")
+                option.update(delivery="subset", size=size, size_label=obs_access.size_label(size),
+                              period=[scope.get("start"), scope.get("end")]
+                              if scope.get("start") or scope.get("end") else None,
+                              bbox=scope.get("bbox"))
+            options.append(option)
         if not options:
             continue
         picked = str(c.get("decision") or c.get("picked") or items.get(item_id, {}).get("dataset_id") or "")

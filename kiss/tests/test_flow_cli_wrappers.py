@@ -12,7 +12,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import cli, flowrun, paths  # noqa: E402
+from kiss_cli import cli, flowrun, paths, project_paths  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -29,12 +29,12 @@ def _project_with_ki(tmp_path):
     (root / "tools" / "run.py").write_text(
         "import sys, pathlib\nout = pathlib.Path(sys.argv[1]); out.parent.mkdir(parents=True, exist_ok=True)\n"
         "out.write_text('t,q\\n1,0.5\\n2,1.2\\n')\n")
-    cfg = paths.KissConfig.default(project)
-    try:
-        cfg.python = Path(sys.executable)
-    except Exception:
-        pass
-    (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    shared = paths.KissConfig.default(project)
+    shared.python = Path(sys.executable)
+    cfg = project_paths.model_config(project, "M", shared)
+    (root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    neutral = project_paths.project_config(project, python=sys.executable)
+    (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
     return project, SimpleNamespace(name="M", root=root)
 
 

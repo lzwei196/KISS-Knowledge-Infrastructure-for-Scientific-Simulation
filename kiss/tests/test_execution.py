@@ -39,6 +39,7 @@ def _project(tmp_path, *, python_tool=True):
     cfg = paths.KissConfig.default(project)
     cfg.python = Path(sys.executable)
     (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    (root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
     fs = flowgate.FlowSession.open(project, {"M": root}, python=sys.executable)
     fs.move("task_received")
     fs.move("kis_resolved", {"selected_kis": ["M"]})
@@ -418,3 +419,99 @@ def test_cli_adapter_keeps_no_deadline_instead_of_adopting_direct_default(
     assert not output.err and "local fixture done" in output.out
     assert len(children) == 1 and children[0].timeouts == [None]
     assert len(_receipt_docs(ctx)) == 1
+
+
+@pytest.mark.parametrize("adapter", ["api", "cli"])
+def test_requested_ki_uses_its_runtime_not_first_or_last_model(
+        tmp_path, monkeypatch, adapter):
+    from kiss_cli import api, cli, project_paths
+
+    ctx = _project(tmp_path)
+    other_root = ctx.project / "models" / "A" / "ki"
+    other_root.mkdir(parents=True)
+    shared = paths.KissConfig.default(tmp_path / "installed-M")
+    shared.python = str(tmp_path / "installed-M" / "python")
+    shared.roles["binaries"].mkdir(parents=True)
+    common = shared.roles["ki_tools_common"] / "ki_tools_common"
+    common.mkdir(parents=True)
+    (common / "__init__.py").write_text("# fixture shared package\n")
+    binary = shared.roles["binaries"] / "model"
+    binary.write_text("fixture executable")
+    # The saved M fixture initially uses project-wide defaults; remove it so
+    # this test gets the normal per-model output paths of a fresh workspace.
+    (ctx.root.parent / paths.CONFIG_NAME).unlink()
+    model = project_paths.model_config(ctx.project, "M", shared)
+    (ctx.root.parent / paths.CONFIG_NAME).write_text(model.dumps())
+    wrong = paths.KissConfig.default(ctx.project)
+    wrong.python = str(tmp_path / "installed-A" / "python")
+    wrong.roles["outputs"] = ctx.project / "outputs" / "A"
+    wrong.roles["binaries"] = tmp_path / "installed-A" / "binaries"
+    (ctx.project / paths.CONFIG_NAME).write_text(wrong.dumps())
+    ctx.flow.ki_roots["A"] = other_root
+    ctx.flow.ctx.selected_kis = ["A", "M"]
+    ctx.flow.ctx.save()
+    launches = []
+
+    def launch(command, **kwargs):
+        launches.append((command, kwargs))
+        return _Child(0, "correct KI fixture")
+
+    monkeypatch.setattr(execution.subprocess, "Popen", launch)
+    if adapter == "api":
+        result = api.execute_tool("run_ki_tool", {
+            "ki": "M", "tool_path": "tools/run.py", "plan_step_id": "M:run",
+            "arguments": [str(binary)],
+        }, SimpleNamespace(name="A", root=other_root), wrong,
+            project_mode=True, flow=ctx.flow)
+        assert "exit_code=0" in result
+    else:
+        assert cli.cmd_run_tool(SimpleNamespace(
+            project=str(ctx.project), step="M:run", ki="M", tool="tools/run.py",
+            argv=[str(binary)])) == 0
+    assert len(launches) == 1
+    command, options = launches[0]
+    assert command[0] == shared.python
+    assert options["cwd"] == str(ctx.project)
+    assert options["env"]["KISS_ROOT"] == str(ctx.root.parent)
+    assert str(shared.roles["ki_tools_common"]) in options["env"]["PYTHONPATH"]
+    assert len(_receipt_docs(ctx)) == 1
+
+
+def test_materialized_missing_runtime_never_falls_back_to_project_config(tmp_path, monkeypatch):
+    ctx = _project(tmp_path)
+    (ctx.root.parent / paths.CONFIG_NAME).unlink()
+    launches = []
+    monkeypatch.setattr(execution.subprocess, "Popen", lambda *a, **k: launches.append(a))
+    with pytest.raises(flowgate.FlowDenied, match="model-specific"):
+        _execute(ctx)
+    assert launches == []
+    assert _receipt_docs(ctx) == []
+
+
+def test_model_child_and_host_agree_on_moved_and_relative_roles(tmp_path):
+    from kiss_cli import project_paths
+
+    project = (tmp_path / "moved-project").resolve()
+    model_home = project / "models" / "M"
+    (model_home / "ki").mkdir(parents=True)
+    run_dir = project / "runs" / "nested"
+    run_dir.mkdir(parents=True)
+    old = (tmp_path / "old-project").resolve()
+    saved = paths.KissConfig.default(old)
+    saved.python = sys.executable
+    saved.roles["outputs"] = old / "outputs" / "M"
+    saved.roles["forcing"] = Path("inputs/forcing/user-weather")
+    (model_home / paths.CONFIG_NAME).write_text(saved.dumps())
+    host = project_paths.load_model_config(project, "M")
+    source = str(Path(paths.__file__).resolve().parents[1])
+    code = (
+        f"import sys;sys.path.insert(0, {source!r});"
+        "import json;from kiss_cli.paths import active,P;"
+        "print(json.dumps({'root':str(active().root),'forcing':str(P('forcing')),'outputs':str(P('outputs'))}))"
+    )
+    env = dict(__import__("os").environ, KISS_ROOT=str(model_home))
+    child = subprocess.run([sys.executable, "-c", code], cwd=run_dir, env=env,
+                           capture_output=True, text=True, check=True, timeout=10)
+    result = json.loads(child.stdout)
+    assert result == {"root": str(project), "forcing": str(host.roles["forcing"]),
+                      "outputs": str(host.roles["outputs"])}

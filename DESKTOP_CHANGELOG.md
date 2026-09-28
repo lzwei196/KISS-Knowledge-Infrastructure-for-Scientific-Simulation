@@ -6,6 +6,29 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## mac-version checkpoint — 2026-09-28 (planner test build, not a new release)
+
+### English
+
+- Reworked shared planning instructions and Desktop handoffs into a sequential interview: one decision, a recorded answer, then the next question; full plan/inventory submission waits until decisions are settled. An unanswered question blocks premature plan review.
+- Added project-bound native CLI question handoff and a turn-bound worktree fallback for Kimi/Codex. API and CLI agents share question validation; cards support custom answers and preserve more than eight options.
+- Cached catalogue discovery returns promptly without a synchronous refresh on every search. Selected CMFD subset cards show the stamped project scope/size rather than the parent-product size. Live authorization, schema and subset checks remain separate.
+- Added per-KI project path/runtime ownership and safer materialization/uploads. User files expose their actual project-relative paths without silently approving a plan or answering an unrelated request.
+- Improved agent activity and planning/acquisition status, including the pending question and expandable full input review.
+- Verification: 1,009 Desktop tests passed, 1 skipped, 123 subtests; shared Flow 131 passed, 4 skipped. Live Kimi tests verified sequential questions/custom answers and catalogue-backed CMFD/HWSD choices, not a complete approved simulation. The dated arm64 build passed harness/Flow loading, signature checks and compiled-source comparisons.
+- Known open issues: full plan-to-download acceptance, evidence-backed scientific recommendations, parent-product versus subset wording, and source-choice/inventory consistency at review/approval. AquaCrop's example period and database-activation gating are under investigation. This checkpoint must not be described as all issues resolved.
+- Integration: include new `kiss_cli/project_paths.py`, both shared `flow/contracts.py` and `flow/policy.py`, all Desktop handoff/path changes and their tests together. Model requirements still come from `dag.yaml` and stages/tools from `SKILL.md`; no new dictionary or separate scientific planner was introduced. Windows packaging and live acceptance require independent verification.
+
+### 中文
+
+- 规划改为逐个问题、保留答案、再问下一项；决策未完成时不反复重写完整方案，不提前进入批准。
+- API/CLI 共用问题校验，支持用户自定义答案；Kimi/Codex 增加受限问题交接，候选项和输入清单不再只显示前八项。
+- 优先读取本地数据目录；已核验的裁剪方案显示项目范围/体积，不把整个父产品大小当作裁剪下载量。
+- 分离各 KI 的运行环境与路径，改进上传安全性及 Agent 活动状态。规划、下载/导入、KI 处理与执行仍是不同阶段。
+- 本次为日期标识测试构建，不更新公开版本号或 release。批准时的数据源一致性等已知问题仍待修复，AquaCrop 示例时段和数据库激活条件仍在检查。
+
+Details: [planner checkpoint](docs/PLANNER-IMPLEMENTATION-2026-09-28.md), [live catalogue test](docs/issues/PLANNER-CATALOGUE-ACCEPTANCE-2026-09-28.md), and [Mac build](docs/MAC-PLANNER-TEST-BUILD-2026-09-28.md).
+
 ## mac-version checkpoint — 2026-09-27 (v0.6.54 test build, not a new release)
 
 ### English

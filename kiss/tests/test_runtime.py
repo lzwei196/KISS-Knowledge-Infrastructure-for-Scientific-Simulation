@@ -1624,10 +1624,11 @@ class SessionProjectTests(unittest.TestCase):
             deck = project / "outputs" / "Demo" / "case-one"
             deck.mkdir(parents=True)
             (deck / "INPUT.DAT").write_text("ready")
-            saved = paths.KissConfig.load(project)
+            model_home = project / "models" / ki.name
+            saved = paths.KissConfig.load(model_home)
             saved.roles["static"] = deck
             saved.roles["binaries"] = project / "untrusted-binaries"
-            (project / paths.CONFIG_NAME).write_text(saved.dumps())
+            (model_home / paths.CONFIG_NAME).write_text(saved.dumps())
             rebound = gui.Handler._session_config(fake_handler, project, ki)
             self.assertEqual(rebound.roles["static"], deck)
             self.assertEqual(rebound.roles["binaries"], shared.roles["binaries"])
@@ -2014,7 +2015,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("has produced no tool or output event for", page)
         self.assertIn("No download, tool-call, or project-file evidence", page)
         self.assertIn("status.activity_detail", page)
-        self.assertIn("Current action:", page)
+        self.assertIn("Last observed action:", page)
         self.assertIn('id="activityevidence"', page)
         self.assertIn('id="activity-refresh"', page)
         self.assertIn("/agent-status", page)
@@ -3080,7 +3081,7 @@ class AgentSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             project = root / "project"
-            ki_root = project / "models" / "Demo"
+            ki_root = project / "models" / "Demo" / "ki"
             tools = ki_root / "tools"
             tools.mkdir(parents=True)
             (project / "inputs").mkdir(parents=True)
@@ -3100,10 +3101,11 @@ class AgentSetupTests(unittest.TestCase):
                 "print('prepared-by-' + ki_tools_common.SOURCE)\n"
                 "if len(sys.argv) > 1:\n"
                 "    print('model=' + Path(sys.argv[1]).read_text())\n")
-            cfg = SimpleNamespace(
-                root=project, python=sys.executable,
-                roles={"ki_tools_common": common, "binaries": binaries})
-            ki = SimpleNamespace(root=ki_root)
+            cfg = paths.KissConfig.default(project)
+            cfg.python = sys.executable
+            cfg.roles.update(ki_tools_common=common, binaries=binaries)
+            (ki_root.parent / paths.CONFIG_NAME).write_text(cfg.dumps())
+            ki = SimpleNamespace(name="Demo", root=ki_root)
 
             wrote = api.execute_tool(
                 "write_project_file",

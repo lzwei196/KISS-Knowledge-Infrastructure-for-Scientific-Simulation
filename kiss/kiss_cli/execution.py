@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import flowgate, paths
+from . import flowgate, paths, project_paths
 
 
 @dataclass(frozen=True)
@@ -89,6 +89,7 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     their existing bounded setting. ``flow=None`` supports the existing legacy
     untracked direct route, which cannot obtain an approved execution receipt.
     """
+    requested_root = Path(ki_root)
     project, ki_root, tool, cwd = map(lambda p: Path(p).resolve(), (project, ki_root, tool, cwd))
     from ki_tools_common.flow.tools import is_ki_tool
     if not is_ki_tool(ki_root, tool):
@@ -100,10 +101,21 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         approval_id = _fresh_approval(flow, project)
         step = flow.check_step_tool(plan_step_id, ki, tool)
         approved_env = flow.approved_step_environment(step, ki_root)
+    # The chat config may belong to its first KI; CLI root discovery used to
+    # pick the last one. Resolve the actual step's runtime at this common seam.
+    selected = getattr(getattr(flow, "ctx", None), "selected_kis", []) or []
+    try:
+        cfg = project_paths.execution_config(
+            project, ki, requested_root, fallback=cfg if len(selected) <= 1 else None)
+    except (OSError, ValueError) as exc:
+        raise flowgate.FlowDenied(f"cannot resolve runtime for {ki}: {exc}") from exc
     child_env = {key: value for key, value in os.environ.items()
                  if not any(secret in key.upper() for secret in
                             ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
-    child_env["KISS_ROOT"] = str(project)
+    # KISS_ROOT is the discovery directory used by paths.active(), not cwd.
+    # The selected config still declares the scenario project as cfg.root.
+    model_home = project / "models" / ki
+    child_env["KISS_ROOT"] = str(model_home if (model_home / paths.CONFIG_NAME).is_file() else project)
     child_env = paths.with_ki_tools_common(cfg, child_env)
     from .calibration import with_framework_env
     child_env = with_framework_env(child_env)

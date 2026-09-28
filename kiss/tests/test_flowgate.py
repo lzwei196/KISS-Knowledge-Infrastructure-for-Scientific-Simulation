@@ -14,7 +14,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import api, flowgate, obs_access, projectrun  # noqa: E402
+from kiss_cli import api, flowgate, obs_access, paths, project_paths, projectrun  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -334,6 +334,15 @@ def test_progress_report_cannot_move_the_stage_once_flow_owned(tmp_path):
 def test_multi_ki_run_ki_tool_selects_by_name(tmp_path):
     a, b = _ki(tmp_path, "A"), _ki(tmp_path, "B")
     project = tmp_path / "project"; (project / "runs").mkdir(parents=True)
+    # Even with external KI source roots, each selected model owns its runtime;
+    # the API caller's first-model cfg is not an execution fallback for B.
+    for ki in (a, b):
+        shared = paths.KissConfig.default(project)
+        shared.python = Path(sys.executable)
+        cfg = project_paths.model_config(project, ki.name, shared)
+        model_home = project / "models" / ki.name
+        model_home.mkdir(parents=True)
+        (model_home / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
     fs = flowgate.FlowSession.open(project, {"A": a.root, "B": b.root}, python=sys.executable)
     fs.move("task_received"); fs.move("kis_resolved", {"selected_kis": ["A", "B"]})
     pj, inv = _plan(a); pj["selected_kis"] = ["A", "B"]

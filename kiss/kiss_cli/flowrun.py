@@ -123,10 +123,17 @@ def main():
     if not endpoint or not capability:
         print("GeoForge flow command is unavailable outside its Desktop agent session.", file=sys.stderr)
         return 3
+    headers = {"X-GeoForge-Agent-Token": capability, "Content-Type": "application/json"}
+    if sys.argv[1:2] == ["ask-question"]:
+        question_token = os.environ.get("GEOFORGE_AGENT_QUESTION_TOKEN", "").strip()
+        if not question_token:
+            print("GeoForge question command is unavailable outside its owning project session.", file=sys.stderr)
+            return 3
+        headers["X-GeoForge-Question-Token"] = question_token
     body = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}).encode("utf-8")
     request = urllib.request.Request(
         endpoint, data=body, method="POST",
-        headers={"X-GeoForge-Agent-Token": capability, "Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=None) as response:
@@ -239,7 +246,7 @@ def replan_reason_from(reply: str) -> str:
 
 
 def display_stage(flow, state) -> str:
-    return flow.states.DISPLAY_STAGE.get(state, "preparing")
+    return projectrun.flow_display_stage(state, flow.states.DISPLAY_STAGE.get(state, "preparing"))
 
 
 # ---------------------------------------------------------------------------
@@ -530,6 +537,7 @@ class Turn:
     provider_succeeded: bool | None = None
     confirmation_required: bool = False
     started_at: float = 0.0                # wall clock when the turn was handed to the provider
+    question_handoff_closed: bool = False  # an ended question turn cannot later submit its old drafts
 
 
 def _receipts_since(project: Path, since: float) -> int:
@@ -611,13 +619,34 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
             extra += "\n" + obs_access.study_hint_block(
                 store.get("datasets") or [], goal, known.get("study_area"),
                 known.get("understanding"), known.get("process"))
-        extra += (f"\n[PLAN HANDOFF] Save BOTH JSON files under {draft_root / 'runs'}, even if "
-                  "your review leaves their content unchanged. The app must observe a submission "
-                  "from this turn; an untouched auto-draft is never a completed plan. "
-                  "For API providers call write_plan. Stop after saving.\n")
+        extra += ("\n[PLAN HANDOFF] If a planning decision needs the user, issue ONE request_user_action "
+                  "(API tool, or the exact CLI QUESTION HANDOFF command above) "
+                  "and stop for the user's answer. Ask before rewriting either full draft; "
+                  "the conversation retains previous answers. Existing partial drafts are not "
+                  "a final submission while a question remains. Only when the planning decisions "
+                  f"are settled, save BOTH JSON files under {draft_root / 'runs'}, even if your review "
+                  "leaves their content unchanged. The app must observe a final submission from this "
+                  "turn; an untouched auto-draft is never a completed plan. For API providers call "
+                  "write_plan. Stop after the final submission and wait for the user's approval.\n")
         if wt:
             extra += (f"Original project {project} is READ ONLY. It is for inventory inspection, "
                       f"not plan writes. The only draft submission location is {draft_root}.\n")
+            extra += (
+                "[QUESTION FALLBACK — THIS PLANNING WORKTREE ONLY] Prefer the exact CLI "
+                "QUESTION HANDOFF command above. If it cannot reach the Desktop (for example, "
+                "the shell sandbox blocks loopback), do not retry repeatedly, change the sandbox "
+                "or request broad network permission. Instead write ONE JSON object to "
+                f"`{wt / 'runs' / 'question-request.json'}` and STOP. Envelope: "
+                f'{{"turn_id":"{wt.name}","question":{{"kind":"choice","title":"...",'
+                '"message":"...","options":[{"id":"ki-default","label":"...",'
+                '"description":"KI evidence and applicability","response":"..."}],"allow_note":true}}. '
+                "The question uses the same narrow schema as the command and the whole file "
+                "must be at most 64 KiB. Include the actual current decision, supported default "
+                "and alternatives, not the placeholder text above. The app reads only this "
+                "turn's exact file after you stop and displays the question; this is not a "
+                "final plan submission or approval. Keep unresolved questions in your drafts. "
+                "Do not put this file in the original project or reuse a previous turn_id. "
+                "This fallback is not available during intake or outside a planning worktree.\n")
         errors = project / "runs" / "plan-validation.txt"
         if errors.is_file():
             extra += "\n[PREVIOUS SUBMISSION NEEDS REPAIR]\n" + errors.read_text(encoding="utf-8")[:16000]
@@ -725,7 +754,7 @@ def _intent_from_goal(goal: str) -> dict:
 
 def _planning_worktree(project: Path) -> Path:
     """codex/kimi have no read-only mode: plan in a throwaway copy of the project (no outputs,
-    no receipts); only the two plan files are harvested back by after()."""
+    no receipts). after() harvests plans or validates a current-turn question artifact."""
     import uuid
     wt = Path(project) / ".geoforge" / "planning" / uuid.uuid4().hex
     (wt / "runs").mkdir(parents=True)
@@ -738,10 +767,78 @@ def _planning_worktree(project: Path) -> Path:
                 source = candidate
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    # Only the drafts are copied, never inputs, binaries, approval keys or outputs.
+    # Only the drafts are copied, never question requests, inputs, binaries,
+    # approval keys or outputs. Every question belongs to one fresh worktree.
     for rel in ("runs/plan.json", "runs/data-inventory.json"):
         shutil.copy2(source / rel, wt / rel)
     return wt
+
+
+def _planning_question_artifact(project: Path, t: Turn) -> dict | None:
+    """Read one bounded question from the host-owned Turn's unique worktree.
+
+    No project identity comes from agent-authored JSON. On POSIX, directory-fd
+    traversal and O_NOFOLLOW reject swapped symlinks, including the runs folder.
+    This does not add a writable location to intake, API or Claude turns.
+    """
+    if t.kind != "planning" or t.planning_worktree is None:
+        return None
+    import os
+    import stat
+    from contextlib import ExitStack
+
+    project = Path(project).resolve()
+    worktree = Path(t.planning_worktree).absolute()
+    base = project / ".geoforge" / "planning"
+    if worktree.parent != base or not re.fullmatch(r"[a-f0-9]{32}", worktree.name):
+        raise ValueError("question fallback is not in this turn's project planning worktree")
+    directories = [project / ".geoforge", base, worktree, worktree / "runs"]
+    if any(directory.is_symlink() for directory in directories):
+        raise ValueError("question fallback directories must not be symlinks")
+    path = worktree / "runs" / "question-request.json"
+    maximum = 64 * 1024
+    try:
+        with ExitStack() as stack:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            if os.open in os.supports_dir_fd:
+                directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                directory_fd = os.open(project, directory_flags)
+                stack.callback(os.close, directory_fd)
+                for name in (".geoforge", "planning", worktree.name, "runs"):
+                    directory_fd = os.open(name, directory_flags, dir_fd=directory_fd)
+                    stack.callback(os.close, directory_fd)
+                fd = os.open("question-request.json", flags, dir_fd=directory_fd)
+            else:
+                # Windows lacks dir_fd traversal. Reject every symlink component
+                # and non-regular leaf before opening; the provider turn has ended.
+                if not stat.S_ISREG(path.lstat().st_mode):
+                    raise ValueError("question fallback must be a regular file, not a symlink")
+                fd = os.open(path, flags | getattr(os, "O_BINARY", 0))
+            stack.callback(os.close, fd)
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError("question fallback must be one regular, non-linked file")
+            if info.st_size > maximum:
+                raise ValueError("question fallback is larger than 64 KiB")
+            with os.fdopen(os.dup(fd), "rb") as stream:
+                raw = stream.read(maximum + 1)
+            if len(raw) > maximum:
+                raise ValueError("question fallback is larger than 64 KiB")
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise ValueError("question fallback could not be read safely; use a regular file in this worktree") from error
+    try:
+        envelope = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        raise ValueError("question fallback must contain valid UTF-8 JSON") from error
+    if not isinstance(envelope, dict) or set(envelope) != {"turn_id", "question"}:
+        raise ValueError("question fallback must contain only turn_id and question")
+    if envelope["turn_id"] != worktree.name:
+        raise ValueError("question fallback belongs to another planning turn; do not reuse old questions")
+    if not isinstance(envelope["question"], dict):
+        raise ValueError("question fallback question must be a JSON object")
+    return envelope["question"]
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +912,35 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         return Result(continue_now=True)          # setup verified → run the approved plan now
 
     if state in (S.PLANNING, S.REPLAN_REQUIRED):
+        asked = setup_flow.request(project)
+        waiting = bool(asked and asked.get("status") == "waiting")
+        if not waiting and t.question_handoff_closed:
+            return Result(message="This planning turn already asked a question. Continue with a new planning turn after answering it; its old drafts were not submitted.")
+        if not waiting and t.planning_worktree is not None and t.kind == "planning":
+            try:
+                question = _planning_question_artifact(project, t)
+                if question is not None:
+                    asked = request_planning_question(project, question)
+            except (ValueError, OSError) as error:
+                return _planning_failure(project, t, [f"Question fallback rejected: {error}"],
+                                         repair=t.provider_succeeded is True)
+        if (asked and asked.get("status") == "waiting"
+                and not str(asked.get("id", "")).startswith(APPROVAL_REQUEST_ID_PREFIX)):
+            t.question_handoff_closed = True
+            # Saved files are still drafts while a question is unanswered. Do not let
+            # finalization (or a provider failure) replace the current user handoff.
+            # Keep worktree drafts for the next turn without harvesting over the
+            # original project's files; the normal validation/conflict checks remain.
+            if t.planning_worktree:
+                meta = project / ".geoforge" / "planning-last.json"
+                meta.write_text(json.dumps({"draft_root": str(t.planning_worktree)}), encoding="utf-8")
+            projectrun.report(project, {"status": "waiting_for_user", "summary": asked.get("title") or "Question for you",
+                                        "blocker": asked}, source="flow")
+            interrupted = t.provider_succeeded is False or getattr(fs, "provider_succeeded", None) is False
+            return Result(message=(
+                "The provider failed or was interrupted. The planning question still needs your answer; "
+                "saved drafts are preserved and no approval review was issued."
+            ) if interrupted else "")
         submitted = getattr(fs, "plan_submission", None)
         if (t.provider_succeeded is False or getattr(fs, "provider_succeeded", None) is False) and not submitted:
             # A plan that was submitted before the connection died is still a plan;
@@ -825,14 +951,6 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         saved_both = len(current) == 2 and all(current.get(k) != v for k, v in t.draft_before.items())
         api_submission = getattr(fs, "plan_submission", None)
         pj, inv = flow.plan.read_artifacts(draft_root)
-        asked = setup_flow.request(project)
-        if (not saved_both and not api_submission and asked and asked.get("status") == "waiting"
-                and not str(asked.get("id", "")).startswith(APPROVAL_REQUEST_ID_PREFIX)):
-            # The agent asked the user one question instead of writing the plan: that is
-            # a pause, not a failed submission. Planning resumes with the answer.
-            projectrun.report(project, {"status": "waiting_for_user", "summary": asked.get("title") or "Question for you",
-                                        "blocker": asked}, source="flow")
-            return Result()
         if not saved_both and not api_submission:
             unsaved = [k for k in ("runs/plan.json", "runs/data-inventory.json")
                        if k not in current or current[k] == t.draft_before.get(k)]
@@ -928,11 +1046,16 @@ def wrapper_commands() -> dict:
     import shlex
     import sys as _sys
     database_launcher = _database_launcher_path()
+    # Questions are host-owned state, including in source builds. A planning
+    # worktree must not gain write access to the real project's request file.
+    question_launcher = _launcher_path()
+    question = ({"request_user_action": f"{question_launcher} ask-question"}
+                if question_launcher else {})
     if not getattr(_sys, "frozen", False):
         base = f"{_sys.executable} -m kiss_cli"
         if " " in _sys.executable:
             base = f"{shlex.quote(_sys.executable)} -m kiss_cli"
-        return {"run_tool": f"{base} run-tool", "fetch": f"{base} fetch",
+        return {**question, "run_tool": f"{base} run-tool", "fetch": f"{base} fetch",
                 "obs_search": (str(database_launcher) if database_launcher else
                                f"{base} obs-search")}
     launcher = _launcher_path()
@@ -940,9 +1063,88 @@ def wrapper_commands() -> dict:
         base = shlex.quote(_sys.executable)
     else:
         base = str(launcher)
-    return {"run_tool": f"{base} run-tool", "fetch": f"{base} fetch",
+    return {**question, "run_tool": f"{base} run-tool", "fetch": f"{base} fetch",
             "obs_search": (str(database_launcher) if database_launcher else
                            f"{base} obs-search")}
+
+
+_QUESTION_LOCKS: dict[str, threading.Lock] = {}
+_QUESTION_LOCKS_LOCK = threading.Lock()
+
+
+def request_planning_question(project: Path, payload: dict) -> dict:
+    """Create one host-owned choice card, never approve or execute anything.
+
+    The authenticated Desktop bridge resolves the real project from the caller's
+    cwd, including disposable planning worktrees. The standalone CLI uses the
+    same validator. Repeating the same call is idempotent; a different question
+    cannot replace one which the user has not answered.
+    """
+    project = Path(project).resolve()
+    permitted = {"kind", "title", "message", "options", "allow_note", "resume_hint"}
+    if not isinstance(payload, dict) or set(payload) - permitted:
+        raise ValueError("a planning question accepts only kind, title, message, options, allow_note and resume_hint")
+    if payload.get("kind", "choice") != "choice":
+        raise ValueError("planning questions must be kind 'choice'; permissions and approvals are separate")
+    for field, maximum in (("title", 160), ("message", 8000)):
+        value = payload.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+            raise ValueError(f"{field} must be a nonempty string of at most {maximum} characters")
+    if "allow_note" in payload and not isinstance(payload["allow_note"], bool):
+        raise ValueError("allow_note must be a boolean")
+    if "resume_hint" in payload and (not isinstance(payload["resume_hint"], str)
+                                       or len(payload["resume_hint"]) > 4000):
+        raise ValueError("resume_hint must be a string of at most 4000 characters")
+    options = payload.get("options", [])
+    if not isinstance(options, list):
+        raise ValueError("options must be a list")
+    seen = set()
+    for index, option in enumerate(options):
+        if not isinstance(option, dict) or set(option) - {"id", "label", "description", "response"}:
+            raise ValueError("each option accepts only id, label, description and response")
+        label = option.get("label")
+        if not isinstance(label, str) or not label.strip() or len(label) > 240:
+            raise ValueError("each option needs a nonempty label of at most 240 characters")
+        identifier = option.get("id", f"option-{index + 1}")
+        if (not isinstance(identifier, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", identifier)
+                or identifier != identifier.strip("-.")
+                or identifier in seen or identifier in {"approve", "modify", "enable_https", "__custom_answer__"}
+                or identifier.startswith("allow-kimi-")):
+            raise ValueError("option ids must be unique choice ids, not permission or approval actions")
+        seen.add(identifier)
+        for field in ("description", "response"):
+            if field in option and (not isinstance(option[field], str) or len(option[field]) > 2000):
+                raise ValueError(f"option {field} must be a string of at most 2000 characters")
+    normalized = {
+        "kind": "choice", "title": " ".join(payload["title"].split()),
+        "message": payload["message"].strip(), "options": setup_flow._request_options(options),
+        "allow_note": payload.get("allow_note", True),
+        "resume_hint": str(payload.get("resume_hint") or "").strip() or None,
+    }
+    # Never silently discard valid candidates through an older request normalizer.
+    if len(normalized["options"]) != len(options):
+        raise ValueError("the request renderer cannot preserve all options; no question was saved")
+    with _QUESTION_LOCKS_LOCK:
+        lock = _QUESTION_LOCKS.setdefault(str(project), threading.Lock())
+    with lock:
+        state = current_state(project)
+        if state not in {"RESOLVING_KIS", "PLANNING", "REPLAN_REQUIRED"}:
+            raise ValueError(f"planning question refused in {state or 'uninitialized project'}")
+        request_path = project / setup_flow.REQUEST_FILE
+        if request_path.is_symlink():
+            raise ValueError("planning question request path must not be a symlink")
+        current = setup_flow.request(project)
+        if current and current.get("status") == "waiting":
+            if all(current.get(key) == value for key, value in normalized.items()):
+                return current
+            raise ValueError("one question is already waiting; stop and wait for the user's answer")
+        if current:
+            setup_flow.clear_request(project)
+        request = setup_flow.request_user(project, normalized)
+        projectrun.report(project, {"status": "waiting_for_user", "summary": request["title"],
+                                    "blocker": request},
+                          source="agent")
+        return request
 
 
 def wrapper_access_roots(wrappers: dict | None) -> list[str]:
@@ -1161,9 +1363,11 @@ def auto_turn(project: Path, provider_kind: str, provider_name: str,
     # API providers already receive ``search_observation_data`` through the
     # flow-filtered tool schema, so they need no shell adapter.
     wrappers: dict[str, str] = {}
-    if provider_kind != "api" and database_access_mode == "direct":
+    if provider_kind != "api":
         commands = wrapper_commands()
-        if commands.get("obs_search"):
+        if commands.get("request_user_action"):
+            wrappers["request_user_action"] = commands["request_user_action"]
+        if database_access_mode == "direct" and commands.get("obs_search"):
             wrappers["obs_search"] = commands["obs_search"]
     pp = flow.policy.for_state(fs.state, provider, project, {}, wrappers=wrappers)
     return Turn(fs, False, "", False, pp, f"flow:{fs.state.value}", None,

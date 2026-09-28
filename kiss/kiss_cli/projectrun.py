@@ -24,7 +24,7 @@ AGENT_FILE = "project-agent-status.json"
 
 STAGES = (
     "understanding", "choosing_ki", "software", "researching",
-    "preparing", "validating", "running", "results",
+    "planning", "acquiring", "preparing", "validating", "running", "results",
 )
 STATUSES = ("idle", "working", "waiting_for_user", "complete", "failed")
 
@@ -33,11 +33,23 @@ STAGE_LABELS = {
     "choosing_ki": "Choosing the scientific model",
     "software": "Checking scientific software",
     "researching": "Finding suitable data",
+    "planning": "Planning the scientific study",
+    "acquiring": "Downloading or importing approved data",
     "preparing": "Preparing model inputs",
     "validating": "Validating the project",
     "running": "Running the scientific model",
     "results": "Preparing results",
 }
+
+
+def flow_display_stage(state, fallback: str = "understanding") -> str:
+    """Desktop phase labels without changing shared Flow state/permissions."""
+    name = str(getattr(state, "value", state))
+    if name in {"PLANNING", "PLAN_REVIEW", "REPLAN_REQUIRED", "WAITING_FOR_USER"}:
+        return "planning"
+    if name == "ACQUIRING":
+        return "acquiring"
+    return fallback
 
 
 def _runs(project: Path) -> Path:
@@ -85,7 +97,7 @@ def _blocker_options(value) -> list[dict]:
     if not isinstance(value, list):
         return []
     out = []
-    for index, item in enumerate(value[:8]):
+    for index, item in enumerate(value):
         raw = {"label": item} if isinstance(item, str) else item
         if not isinstance(raw, dict):
             continue

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import api, cli, flowgate, paths
+from kiss_cli import api, cli, flowgate, paths, project_paths
 
 
 @pytest.fixture(autouse=True)
@@ -35,9 +35,12 @@ def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=No
     if tool.suffix != ".py":
         tool.chmod(0o700)
     ki = SimpleNamespace(name="M", root=root)
-    cfg = paths.KissConfig.default(project)
-    cfg.python = Path(sys.executable)
-    (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    shared = paths.KissConfig.default(project)
+    shared.python = Path(sys.executable)
+    cfg = project_paths.model_config(project, "M", shared)
+    (root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    neutral = project_paths.project_config(project, python=sys.executable)
+    (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
     fs = flowgate.FlowSession.open(project, {"M": root}, python=sys.executable)
     fs.move("task_received")
     fs.move("kis_resolved", {"selected_kis": ["M"]})
@@ -148,7 +151,7 @@ def test_execution_cannot_gain_a_receipt_if_approval_changes_during_run(
 def test_missing_interpreter_returns_a_signed_not_launched_attempt(tmp_path, capsys, adapter):
     ctx = _project(tmp_path, "from pathlib import Path\nPath('launched').write_text('bad')\n")
     ctx.cfg.python = ctx.project / "absent-interpreter"
-    (ctx.project / paths.CONFIG_NAME).write_text(ctx.cfg.dumps(), encoding="utf-8")
+    (ctx.ki.root.parent / paths.CONFIG_NAME).write_text(ctx.cfg.dumps(), encoding="utf-8")
     output, errors = _invoke(adapter, ctx, capsys)
     assert "Could not launch KI tool" in output + errors
     assert "absent-interpreter" in output + errors
@@ -215,13 +218,14 @@ def test_child_gets_sanitized_environment_and_signed_step_values(
         "p = Path(os.environ['MODEL_OUTPUT']); p.parent.mkdir(parents=True, exist_ok=True)\n"
         "p.write_text(json.dumps({'keys': [k for k in os.environ if k.startswith('PRIVATE_')], "
         "'ordinary': os.environ['ORDINARY_MODEL_SETTING'], 'root': os.environ['KISS_ROOT'], "
-        "'ki': os.environ['MODEL_KI_ROOT']}))\n",
+        "'ki': os.environ['MODEL_KI_ROOT'], 'cwd': str(Path.cwd())}))\n",
         step_env={"MODEL_OUTPUT": "${PROJECT}/outputs/env.json", "MODEL_KI_ROOT": "${KI_ROOT}"})
     output, errors = _invoke(adapter, ctx, capsys)
     assert output.startswith("exit_code=0") and not errors
     observed = json.loads((ctx.project / "outputs" / "env.json").read_text())
-    assert observed == {"keys": [], "ordinary": "retained", "root": str(ctx.project),
-                        "ki": str(ctx.ki.root)}
+    # KISS_ROOT selects the exact KI config; tool cwd remains the project.
+    assert observed == {"keys": [], "ordinary": "retained", "root": str(ctx.ki.root.parent),
+                        "ki": str(ctx.ki.root), "cwd": str(ctx.project)}
     assert len(_receipts(ctx)) == 1
 
 

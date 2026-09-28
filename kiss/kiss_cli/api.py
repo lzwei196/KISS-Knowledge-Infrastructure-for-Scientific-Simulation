@@ -399,16 +399,18 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 "name": "request_user_action",
                 "description": (
                     "Pause project preparation and show one concrete action to the "
-                    "user. Use only for a protected download, licence/login, private "
-                    "data, system permission, or high-impact scientific choice that "
-                    "the KI cannot resolve. Never use it for ordinary KI defaults."
+                    "user. During planning, ask ONE unresolved decision at a time, "
+                    "including a critical parameter set or data-source choice. Offer "
+                    "the KI-supported default with its evidence and allow a custom answer. "
+                    "Do not re-ask settled choices or ask about every low-level default. "
+                    "Also use for protected downloads, licence/login, or system permission."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "kind": {"type": "string", "enum": [
                         "download", "licence", "login", "permission", "choice", "other"]},
                     "title": {"type": "string"},
                     "message": {"type": "string"},
-                    "options": {"type": "array", "maxItems": 8, "items": {
+                    "options": {"type": "array", "items": {
                         "type": "object", "properties": {
                             "id": {"type": "string"},
                             "label": {"type": "string"},
@@ -985,13 +987,15 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if project_mode and name == "run_ki_tool":
         tool_ki_name, tool_root = getattr(ki, "name", root.name), root
+        requested_tool_root = Path(ki.root)
         if flow is not None:
             from .flowgate import FlowDenied
             try:
                 tool_ki_name, tool_root = flow.ki_root_for(args.get("ki"), root)
             except FlowDenied as e:
                 raise ToolError(str(e)) from None
-            tool_root = Path(tool_root).resolve()
+            requested_tool_root = Path(tool_root)
+            tool_root = requested_tool_root.resolve()
             if tool_root != root and tool_root not in project_argument_roots:
                 project_argument_roots.append(tool_root)
         def _inside_tool_ki(rel: str, _root=tool_root) -> Path:
@@ -1017,6 +1021,25 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             if script.suffix.casefold() != ".py" or not is_ki_tool(tool_root, script):
                 raise ToolError("run_ki_tool accepts only shipped Python files below tools/ "
                                 "or the model binary the KI declares")
+        if flow is not None:
+            try:
+                flow.check_step_tool(args.get("plan_step_id"), tool_ki_name, script)
+            except FlowDenied as exc:
+                raise ToolError(str(exc)) from None
+        from . import project_paths
+        try:
+            selected = getattr(getattr(flow, "ctx", None), "selected_kis", []) or []
+            tool_cfg = project_paths.execution_config(
+                project_root, tool_ki_name, requested_tool_root,
+                fallback=cfg if len(selected) <= 1 else None)
+        except (OSError, ValueError) as exc:
+            raise ToolError(f"cannot resolve runtime for {tool_ki_name}: {exc}") from None
+        # Only the requested KI's software capability applies to this call,
+        # not the first model's installation that opened the conversation.
+        project_argument_roots = [project_root, tool_root]
+        binary_role = (getattr(tool_cfg, "roles", {}) or {}).get("binaries")
+        if binary_role:
+            project_argument_roots.append(Path(binary_role).expanduser().resolve())
         arguments = args.get("arguments") or []
         if (not isinstance(arguments, list) or len(arguments) > 100 or
                 not all(isinstance(x, str) and len(x) <= 4000 for x in arguments)):
@@ -1039,7 +1062,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         from .flowgate import FlowDenied
         try:
             result = execute_ki_tool(
-                flow=flow, cfg=cfg, project=project_root, ki=tool_ki_name, ki_root=tool_root,
+                flow=flow, cfg=tool_cfg, project=project_root, ki=tool_ki_name, ki_root=requested_tool_root,
                 tool=script, arguments=arguments, cwd=cwd, plan_step_id=args.get("plan_step_id"),
                 python_tool=not binary, timeout=timeout, provider_id=provider_id)
         except FlowDenied as e:
@@ -1285,7 +1308,15 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if project_mode and not setup_mode and name == "request_user_action":
         from . import projectrun as _projectrun, setup as _setup
-        doc = _setup.request_user(project_root, args)
+        if (flow is not None
+                and flow.state.value in {"RESOLVING_KIS", "PLANNING", "REPLAN_REQUIRED"}):
+            from .flowrun import request_planning_question
+            try:
+                doc = request_planning_question(project_root, args)
+            except (OSError, ValueError) as exc:
+                raise ToolError(str(exc)) from None
+        else:
+            doc = _setup.request_user(project_root, args)
         _projectrun.report(progress_root, {
             "status": "waiting_for_user", "summary": doc["title"],
             "blocker": doc,
@@ -1870,9 +1901,11 @@ _NUDGE = {
         "report_project_progress with selected_kis and an intake object with "
         "ready_for_planning=true and an empty missing list."),
     "PLANNING": (
-        "Your turn ended without write_plan, so nothing was submitted. Do not describe what you "
-        "will do; call write_plan now with both files. If one decision genuinely needs the user, "
-        "call request_user_action with that single question instead."),
+        "Your turn ended without a planning handoff. If a decision is unresolved, call "
+        "request_user_action with ONE question, its KI-supported default if known, and "
+        "alternatives; then wait. Keep earlier answers. Only after all required decisions "
+        "are settled, call write_plan with both final files for user review. Do not rush "
+        "past unanswered questions or start downloading during planning."),
 }
 _NUDGE["REPLAN_REQUIRED"] = _NUDGE["PLANNING"]
 _TRANSPORT_FAILURE = ("provider stream interrupted", "no response from", "cannot reach")

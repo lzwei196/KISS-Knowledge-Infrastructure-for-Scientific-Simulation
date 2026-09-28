@@ -491,19 +491,77 @@ def save_upload(workroot: Path, s: dict, filename: str, data: bytes, item: str =
     """Save a browser-supplied input without allowing path traversal.
 
     With ``item`` (a plan input id) the file lands at inputs/user/<item>/, the path the
-    plan card tells the user to use; otherwise at inputs/uploads/."""
+    plan card tells the user to use; otherwise at inputs/uploads/. This only stores
+    bytes: it does not approve, bind, or validate a scientific input."""
+    import os
+    import stat
+
     clean = re.sub(r"[^\w.()+-]+", "_", Path(filename or "data").name,
                    flags=re.UNICODE).strip("._")
     clean = clean[:180] or "data"
     item = re.sub(r"[^\w.-]+", "_", str(item or "")).strip("._")[:120]
-    folder = project_path(workroot, s) / "inputs" / ("user/" + item if item else "uploads")
-    folder.mkdir(parents=True, exist_ok=True)
-    target = folder / clean
-    if target.exists():
-        stem, suffix = target.stem, target.suffix
-        target = folder / f"{stem}-{int(time.time())}{suffix}"
-    target.write_bytes(data)
-    return target
+    # A loaded/created session already records its project. Do not call
+    # project_path(): layout repair itself follows a symlinked inputs directory
+    # and can create unrelated folders before this upload's checks run.
+    if not valid_id(s.get("id", "")):
+        raise ValueError("upload needs a valid session id")
+    project = _safe_recorded_project(workroot, s)
+    if project is None:
+        raise ValueError("upload needs an existing session project")
+    parts = ["inputs", "user", item] if item else ["inputs", "uploads"]
+    folder = project
+    directory_fd = None
+    fd_walk = (os.open in os.supports_dir_fd and os.mkdir in os.supports_dir_fd
+               and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY"))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    try:
+        if fd_walk:
+            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            directory_fd = os.open(project, directory_flags)
+        for part in parts:
+            folder = folder / part
+            if fd_walk:
+                try:
+                    os.mkdir(part, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+                child_fd = os.open(part, directory_flags, dir_fd=directory_fd)
+                os.close(directory_fd)
+                directory_fd = child_fd
+            else:
+                # Windows lacks dir_fd. Refuse symlinks/junctions (reparse
+                # points) at every component before descending into it.
+                try:
+                    folder.mkdir()
+                except FileExistsError:
+                    pass
+                info = folder.lstat()
+                if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                        or getattr(info, "st_file_attributes", 0)
+                        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+                    raise ValueError("upload folder must not be a symlink or junction")
+                if folder.resolve() != folder:
+                    raise ValueError("upload folder escaped the project")
+
+        stem, suffix = Path(clean).stem, Path(clean).suffix
+        name = clean
+        while True:
+            try:
+                if fd_walk:
+                    fd = os.open(name, flags | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+                else:
+                    fd = os.open(folder / name, flags, 0o600)
+                break
+            except FileExistsError:
+                # Exclusive creation handles both concurrent uploads and
+                # dangling symlinks; a timestamp alone can overwrite a file.
+                name = f"{stem}-{uuid.uuid4().hex}{suffix}"
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        return folder / name
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
 
 
 def save_reference(workroot: Path, s: dict, filename: str, data: bytes) -> Path:

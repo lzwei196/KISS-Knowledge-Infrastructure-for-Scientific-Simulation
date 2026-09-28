@@ -136,6 +136,11 @@ footer{border-top:1px solid var(--line);padding:11px 18px}
 .agentstate-icon{grid-row:1/3;width:11px;height:11px;border:2px solid color-mix(in srgb,var(--brand) 25%,var(--line));border-top-color:var(--brand);border-radius:99px;animation:spin .9s linear infinite}
 .livewaiting.quiet .agentstate-icon{border:0;background:var(--warn);animation:pulse 1.8s infinite}.livewaiting.stalled .agentstate-icon{border:0;background:var(--warn);animation:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 14%,transparent)}
 .livewaiting.disconnected .agentstate-icon{border:0;background:var(--danger);animation:none}.livewaiting.stalled b,.livewaiting.disconnected b{color:var(--warn)}
+.liveactivity{margin:0 0 10px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--brand-50);font-size:12px}
+.liveactivity .livewaiting{align-items:start}.liveactivity .livewaiting b{color:var(--fg);line-height:1.5}.liveactivity .livewaiting small{grid-column:2;white-space:normal;overflow-wrap:anywhere;line-height:1.6}
+.liveactivity details{margin:7px 0 0 25px;color:var(--fg-2)}.liveactivity summary{cursor:pointer;font-size:11px}.liveactivity code{display:block;margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 ui-monospace,Menlo,monospace}
+.liveactivity.stalled,.liveactivity.disconnected{background:color-mix(in srgb,var(--warn) 9%,var(--raised));border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+@media(prefers-reduced-motion:reduce){.liveactivity .agentstate-icon{animation:none}}
 @keyframes pulse{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 #slashmenu{display:none;position:absolute;left:0;right:70px;bottom:50px;max-height:280px;
   overflow-y:auto;background:var(--raised);border:1px solid var(--line);border-radius:12px;
@@ -954,6 +959,7 @@ function renderLiveTurn(id){
   const out=addTurn("GeoForge","agent");
   out.closest(".turn").dataset.flight=id;
   out.innerHTML=flight.raw.trim()?md(flight.raw,id,true):liveWaitingHtml(flight);
+  updateLiveActivity(id);
 }
 function liveBubble(id){return document.querySelector(`.turn[data-flight="${id}"] .bubble`);}
 // Auto-scroll follows the stream only while the reader is at the bottom. Scrolling up
@@ -965,12 +971,14 @@ function chatFollow(c){if(CHAT_FOLLOW)c.scrollTop=c.scrollHeight;}
 function providerDisplay(name){const p=PROV.providers.find(item=>item.name===name);return p&&p.label||String(name||"AI").replace(/^(api|cli):/,"");}
 function elapsedTime(started){const seconds=Math.max(0,Math.floor((Date.now()-started)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
 function durationLabel(seconds){seconds=Math.max(0,Number(seconds)||0);return seconds<60?`${Math.floor(seconds)}s`:`${Math.floor(seconds/60)}m ${Math.floor(seconds%60)}s`;}
-const RUN_STAGE_ZH={understanding:"理解任务",choosing_ki:"选择 KI",software:"检查科学软件",researching:"查找数据",preparing:"准备模型输入",validating:"验证项目输入",running:"运行科学模型",results:"整理结果"};
-const RUN_STAGE_EN={understanding:"Understanding the task",choosing_ki:"Choosing a KI",software:"Checking scientific software",researching:"Finding data",preparing:"Preparing model inputs",validating:"Validating project inputs",running:"Running the scientific model",results:"Preparing results"};
+const RUN_STAGE_ZH={understanding:"理解任务",choosing_ki:"选择 KI",software:"检查科学软件",researching:"查找数据",planning:"规划科学任务",acquiring:"下载或导入已批准的数据",preparing:"准备模型输入",validating:"验证项目输入",running:"执行 KI：处理输入与运行模型",results:"整理结果"};
+const RUN_STAGE_EN={understanding:"Understanding the task",choosing_ki:"Choosing a KI",software:"Checking scientific software",researching:"Finding data",planning:"Planning the scientific study",acquiring:"Downloading or importing approved data",preparing:"Preparing model inputs",validating:"Validating project inputs",running:"KI execution: prepare inputs and run the model",results:"Preparing results"};
 function runStageLabel(stage){return(chineseUI()?RUN_STAGE_ZH:RUN_STAGE_EN)[stage]||String(stage||"").replaceAll("_"," ");}
 function agentLiveState(flight){
   const status=flight.agentStatus||{},now=Date.now(),transportAge=Math.max(0,Math.floor((now-(flight.lastHeartbeat||flight.started))/1000));
-  const eventAge=status.event_silence_seconds,activity=status.activity&&status.activity!=="starting"?status.activity:null;
+  const observedAge=Object.prototype.hasOwnProperty.call(status,"work_silence_seconds")?status.work_silence_seconds:status.event_silence_seconds;
+  const pollAge=flight.agentStatusAt?Math.max(0,Math.floor((now-flight.agentStatusAt)/1000)):0;
+  const eventAge=observedAge==null?observedAge:Math.max(0,Number(observedAge)||0)+pollAge,activity=status.activity&&status.activity!=="starting"?status.activity:null;
   const apiTurn=String(flight.provider||"").startsWith("api:");
   if(status.process_alive){
     if(eventAge!==null&&eventAge!==undefined&&eventAge<=12)return{kind:"active",activity,age:eventAge};
@@ -988,6 +996,9 @@ function agentActivityTitle(flight){
   const status=flight.agentStatus||{},state=agentLiveState(flight),kind=status.activity_kind;
   if(state.kind==="disconnected")return chineseUI()?"连接可能已经中断":"The live connection may be interrupted";
   if(state.kind==="stalled")return chineseUI()?"没有新的工作证据，可能已经卡住":"No new work evidence; the turn may be stuck";
+  if(state.finishing)return chineseUI()?"Agent 回合已结束，正在保存":"Agent turn ended; saving the result";
+  if(status.activity_state==="tool_finished")return chineseUI()?"工具已返回，等待 Agent 下一步":"Tool returned; waiting for the agent's next step";
+  if(status.activity_state!=="tool_running"&&status.activity_detail)return chineseUI()?"已观察到工具调用；当前是否仍在执行待确认":"Tool call observed; current execution is unconfirmed";
   const labels=chineseUI()?{database:"正在检索 GeoForge 数据库",database_download:"正在从 GeoForge 数据库下载",data_transfer:"检测到数据传输",checking:"正在检查或验证",visualizing:"正在生成可视化",writing:"正在写入项目文件",responding:"Agent 正在回复",tool:"Agent 正在使用工具",file_activity:"检测到项目文件更新",reported_running:"Agent 报告模型正在运行",waiting:"正在等待你的选择",unknown:"进程仍在，当前动作尚未确认"}:{database:"Searching GeoForge Database",database_download:"Downloading from GeoForge Database",data_transfer:"Data transfer detected",checking:"Checking or validating",visualizing:"Creating a visualization",writing:"Writing project files",responding:"Agent is responding",tool:"Agent is using a tool",file_activity:"Project file activity detected",reported_running:"Agent reports that the model is running",waiting:"Waiting for your choice",unknown:"Process is alive; current action is unconfirmed"};
   return labels[kind]||labels.unknown;
 }
@@ -996,7 +1007,8 @@ function agentEvidenceText(flight){
   if(status.project_stage)parts.push((chineseUI()?"项目阶段：":"Project stage: ")+runStageLabel(status.project_stage));
   if(files.input_growing)parts.push(chineseUI()?`输入目录正在增长（${sizeLabel(files.input_bytes||0)}）`:`Inputs are growing (${sizeLabel(files.input_bytes||0)})`);
   else if(files.latest_path)parts.push((chineseUI()?"最近文件：":"Latest file: ")+files.latest_path);
-  if(status.activity_detail)parts.push((chineseUI()?"当前动作：":"Current action: ")+status.activity_detail);
+  if(status.activity_detail)parts.push((status.activity_state==="tool_running"?(chineseUI()?"工具调用：":"Tool call: "):(chineseUI()?"上次观察到的动作：":"Last observed action: "))+status.activity_detail);
+  else if(status.last_activity_detail)parts.push((chineseUI()?"上次工具：":"Last tool: ")+status.last_activity_detail);
   else if(status.activity&&status.activity!=="starting")parts.push((chineseUI()?"工具事件：":"Tool event: ")+workLabel(status.activity));
   if(!files.latest_path&&!status.activity&&status.event_silence_seconds>=30)parts.push(chineseUI()?"尚未收到下载、工具调用或项目文件变化的证据":"No download, tool-call, or project-file evidence has been received");
   return parts.join(" · ")||(status.project_summary||"");
@@ -1010,9 +1022,10 @@ function agentStateText(flight,compact=false){
     return chineseUI()?"连接异常":"Connection issue";
   }
   if(state.finishing)return chineseUI()?`${label} 已结束，正在保存对话结果 · ${elapsed}`:`${label} finished; GeoForge is saving the result · ${elapsed}`;
+  if(status.activity_state==="tool_finished"&&state.kind!=="stalled"&&state.kind!=="disconnected")return chineseUI()?`已收到工具返回；等待 ${label} 继续。工具返回不等于科学验证通过。`:`A tool result was received; waiting for ${label} to continue. A returned tool is not scientific validation.`;
   if(state.kind==="active"){
     if(state.transportOnly)return chineseUI()?`${label} 的 API 连接正常，正在等待服务返回 · ${elapsed}`:`${label} API connection is active; waiting for the provider · ${elapsed}`;
-    if(status.activity_detail)return chineseUI()?`${label} 正在执行：${status.activity_detail} · ${elapsed}`:`${label} is running: ${status.activity_detail} · ${elapsed}`;
+    if(status.activity_detail)return status.activity_state==="tool_running"?(chineseUI()?`${label} 已发起工具：${status.activity_detail}`:`${label} invoked a tool: ${status.activity_detail}`):(chineseUI()?`${label} 上次观察到的动作：${status.activity_detail}`:`${label}'s last observed action: ${status.activity_detail}`);
     return state.activity?(chineseUI()?`${label} 正在执行 ${workLabel(state.activity)} · ${elapsed}`:`${label} is using ${workLabel(state.activity)} · ${elapsed}`):(chineseUI()?`${label} 刚刚产生了新活动 · ${elapsed}`:`${label} produced new activity · ${elapsed}`);
   }
   if(state.kind==="quiet")return status.activity_detail?(chineseUI()?`${label} 上次动作：${status.activity_detail}；${age} 没有新事件 · ${elapsed}`:`${label}'s last action: ${status.activity_detail}; no new event for ${age} · ${elapsed}`):state.activity?(chineseUI()?`${label} 进程仍在，正在执行 ${workLabel(state.activity)}；${age} 没有新事件 · ${elapsed}`:`${label} process is alive in ${workLabel(state.activity)}; no new event for ${age} · ${elapsed}`):(chineseUI()?`${label} 进程仍在；${age} 没有新事件 · ${elapsed}`:`${label} process is alive; no new event for ${age} · ${elapsed}`);
@@ -1022,6 +1035,33 @@ function agentStateText(flight,compact=false){
 function liveWaitingHtml(flight){
   const state=agentLiveState(flight),line=agentActivityTitle(flight),detail=agentEvidenceText(flight)||agentStateText(flight);
   return `<div class="livewaiting ${state.kind}"><span class="agentstate-icon"></span><b>${esc(line)} · ${esc(elapsedTime(flight.started))}</b><small>${esc(detail)}</small></div>`;
+}
+function liveActivityView(flight){
+  const zh=chineseUI(),status=flight.agentStatus||{},state=agentLiveState(flight);
+  const elapsed=(zh?"本回合已用时：":"Turn elapsed: ")+elapsedTime(flight.started);
+  const toolAge=status.activity_state==="tool_running"&&status.activity_elapsed_seconds!=null?(zh?" · 本次工具已等待：":" · Current tool elapsed: ")+durationLabel(status.activity_elapsed_seconds):"";
+  const observed=state.finishing?(zh?"正在保存结果。":"Saving the result."):status.work_observed===false?(zh?"尚未收到可确认的工具或输出事件；连接存活不代表工作正在推进。":"No confirmed tool or output event yet; a live connection does not prove progress."):state.transportOnly?(zh?"目前只有连接信号，尚未确认新的工作进展。":"Only a connection signal is available; new work is unconfirmed."):(zh?`距上次工作事件 ${durationLabel(state.age)}；连接存活不代表模型正在推进。`:`Last work event ${durationLabel(state.age)} ago; a live connection does not prove model progress.`);
+  const detail=status.activity_detail||status.last_activity_detail||"",tool=status.activity||status.last_activity_name||"";
+  return {kind:state.kind,title:agentActivityTitle(flight),elapsed:elapsed+toolAge,text:agentStateText(flight),observed,detail,detailLabel:(zh?"工具详情":"Tool details")+(tool?` · ${tool}`:"")};
+}
+function liveActivityHtml(flight){
+  const view=liveActivityView(flight);
+  return `<div class="livewaiting ${view.kind}"><span class="agentstate-icon" aria-hidden="true"></span><b class="liveactivity-title" role="status" aria-live="polite" aria-atomic="true">${esc(view.title)}</b><small class="liveactivity-elapsed">${esc(view.elapsed)}</small><small class="liveactivity-text">${esc(view.text)}</small><small class="liveactivity-observed">${esc(view.observed)}</small></div><details${view.detail?"":" hidden"}><summary>${esc(view.detailLabel)}</summary><code>${esc(view.detail)}</code></details>`;
+}
+function updateLiveActivity(id){
+  const turn=document.querySelector(`.turn[data-flight="${id}"]`);if(!turn)return;
+  const flight=INFLIGHT.get(id);let card=turn.querySelector(".liveactivity");
+  if(!flight){if(card)card.remove();return;}
+  if(!card){card=document.createElement("div");card.innerHTML=liveActivityHtml(flight);turn.insertBefore(card,turn.querySelector(".bubble"));}
+  const view=liveActivityView(flight);
+  card.className="liveactivity "+view.kind;
+  card.querySelector(".livewaiting").className="livewaiting "+view.kind;
+  // Retain disclosure/focus/selection across ticks. Only the title is a live
+  // region, so changing durations do not announce the entire card each second.
+  for(const [selector,text] of [[".liveactivity-title",view.title],[".liveactivity-elapsed",view.elapsed],[".liveactivity-text",view.text],[".liveactivity-observed",view.observed],["summary",view.detailLabel],["code",view.detail]]){
+    const node=card.querySelector(selector);if(node.textContent!==text)node.textContent=text;
+  }
+  card.querySelector("details").hidden=!view.detail;
 }
 function updateActivityUI(){
   const flight=CUR&&INFLIGHT.get(CUR.id),note=$("#activitynote"),sendButton=$("#send");
@@ -1036,6 +1076,7 @@ function updateActivityUI(){
     $("#activity-stop").textContent=chineseUI()?"停止":"Stop";
     $("#activity-new").textContent=chineseUI()?"＋ 新建对话":"＋ New chat";
     sendButton.textContent=chineseUI()?"处理中…":"Working…";
+    updateLiveActivity(CUR.id);
     if(!flight.raw.trim()){const out=liveBubble(CUR.id);if(out)out.innerHTML=liveWaitingHtml(flight);}
   }else{note.classList.remove("quiet","stalled");sendButton.textContent=chineseUI()?"发送":"Send";}
 }
@@ -1044,7 +1085,7 @@ async function refreshAgentStatus(id=CUR&&CUR.id){
   try{
     const r=await fetch(`/api/session/${id}/agent-status`,{cache:"no-store"});if(!r.ok)return null;
     const status=await r.json(),flight=INFLIGHT.get(id);if(!flight)return status;
-    flight.agentStatus=status;
+    flight.agentStatus=status;flight.agentStatusAt=Date.now();
     if(CUR&&CUR.id===id)updateActivityUI();drawSessions();return status;
   }catch(_error){return null;}
 }
@@ -1063,7 +1104,7 @@ function itemNote(item,zh){
 }
 function renderPlanReview(r,rawMessage){
   const zh=chineseUI(),d0=r.data||{},d=d0.fetch||d0.you||d0.run?d0:{total:d0.total,fetch:[...(d0.ready||[]),...(d0.auto||[])],you:[...(d0.manual||[]),...(d0.missing||[])],run:[...(d0.other||[]),...(d0.generated||[])]},row=item=>`<li><code>${esc(item.id||"")}</code>${item.dataset_id&&item.dataset_id!==item.id?` ← <code>${esc(item.dataset_id)}</code>`:""}${item.size_label?` · ${esc(item.size_label)}`:""}${item.how&&item.how!=="generated"&&item.how!=="prepared"?` <small>${esc(howLabel[item.how]||"")}</small>`:""}${item.for&&item.for.length?` <span class="prtag">${esc(item.for.join(", "))}</span>`:""}${itemNote(item,zh)?`<small style="display:block;color:var(--muted)">${esc(itemNote(item,zh))}</small>`:""}${item.resolution?.spatial_filter_applied===false?`<small style="display:block">${zh?"未裁剪下载范围":"Uncut delivery extent"}: ${esc(JSON.stringify(item.resolution.delivery_extent))} → ${zh?"本地提取研究范围":"extract study area locally"}: ${esc(JSON.stringify(item.resolution.requested_bbox))}</small>`:""}</li>`;
-  const group=(cls,label,list,max=8)=>Array.isArray(list)&&list.length?`<div class="prgroup ${cls}"><b>${esc(label)} (${list.length})</b><ul>${list.slice(0,max).map(row).join("")}${list.length>max?`<li>…${list.length-max} ${zh?"项":"more"}</li>`:""}</ul></div>`:"";
+  const group=(cls,label,list,max=8)=>Array.isArray(list)&&list.length?`<div class="prgroup ${cls}"><b>${esc(label)} (${list.length})</b><ul>${list.slice(0,max).map(row).join("")}</ul>${list.length>max?`<details><summary>${zh?"查看其余":"Show remaining"} ${list.length-max} ${zh?"项":"inputs"}</summary><ul>${list.slice(max).map(row).join("")}</ul></details>`:""}</div>`:"";
   const howLabel=howLabels(zh);
   const runGroup=list=>Array.isArray(list)&&list.length?`<details class="prgroup pr-gen"><summary><b>${zh?"运行时自动准备":"The run prepares itself"} (${list.length})</b> <small>${esc([...new Set(list.map(i=>howLabel[i.how]||i.how))].join(" · "))}</small></summary><ul>${list.map(row).join("")}</ul></details>`:"";
   const count=(cls,label,list)=>Array.isArray(list)&&list.length?`<div class="prgroup ${cls}"><b>${esc(label)} (${list.length})</b></div>`:"";
@@ -1089,9 +1130,16 @@ function renderPlanReview(r,rawMessage){
 function closeActionPicker(){
   $("#actionpick").classList.remove("open");ACTION_REQUEST=null;ACTION_SESSION=null;ACTION_INDEX=-1;
 }
+function questionOptions(request){
+  const options=Array.isArray(request.options)?request.options.slice():[];
+  if(request.kind==="choice"&&!request.plan_review&&request.allow_note!==false&&!/^flow[:-]/.test(String(request.id||""))){
+    options.push({id:"__custom_answer__",label:chineseUI()?"使用我的答案 / 文件":"Use my own answer / file",description:chineseUI()?"在下方填写数值、文件位置或你的选择；Agent 会检查是否适用。":"Enter a value, file location, or choice below; the agent will check its suitability."});
+  }
+  return options;
+}
 function showActionPicker(request,sid){
-  const options=Array.isArray(request.options)?request.options:[];if(!options.length)return false;
-  ACTION_REQUEST=request;ACTION_SESSION=sid;ACTION_INDEX=-1;
+  const options=questionOptions(request);if(!options.length)return false;
+  ACTION_REQUEST={...request,options};ACTION_SESSION=sid;ACTION_INDEX=-1;
   $("#action-title").textContent=request.title||"Choose how to continue";
   const review=request.plan_review;
   if(review){$("#action-card").style.width="min(760px,94vw)";$("#action-message").hidden=true;$("#action-plan").hidden=false;$("#action-plan").innerHTML=renderPlanReview(review,request.message||"");}
@@ -1110,7 +1158,7 @@ async function maybeShowAction(id){
   if(!id||!CUR||CUR.id!==id||sessionBusy(id))return;
   const r=await fetch(`/api/session/${id}/request`);if(!r.ok)return;
   const data=await r.json(),request=data.request;
-  if(!request||request.status!=="waiting"||!Array.isArray(request.options)||!request.options.length)return;
+  if(!request||request.status!=="waiting"||!questionOptions(request).length)return;
   const key=`${id}:${request.id||request.title}:${request.created_at||""}`;if(SEEN_ACTIONS.has(key))return;
   if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
 }
@@ -1245,6 +1293,7 @@ async function send(){
   }
   clearInterval(runPoll);
   INFLIGHT.delete(target);
+  updateLiveActivity(target);
   if(CUR&&CUR.id===target)setControls(true);
   drawSessions();
   const s=await (await fetch("/api/session/"+target)).json();
@@ -1337,6 +1386,7 @@ $("#action-continue").onclick=async()=>{
   if(!ACTION_REQUEST||!ACTION_SESSION||ACTION_INDEX<0){$("#action-error").textContent=chineseUI()?"请先选择一项。":"Choose one option first.";return;}
   if(!CUR||CUR.id!==ACTION_SESSION){$("#action-error").textContent=chineseUI()?"请返回提出此问题的对话。":"Return to the chat that asked this question.";return;}
   const option=ACTION_REQUEST.options[ACTION_INDEX],note=$("#action-note").value.trim();
+  if(option.id==="__custom_answer__"&&!note){$("#action-error").textContent=chineseUI()?"请在下方填写你的答案或文件位置。":"Enter your answer or file location below.";return;}
   const choices={};document.querySelectorAll('#pr-data-choices input[type=radio]:checked').forEach(e=>{choices[e.dataset.choice]=e.value;});
   PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note,...(Object.keys(choices).length?{choices}:{}),...(ACTION_REQUEST.plan_review?{shown:ACTION_REQUEST}:{})});
   const text=chineseUI()?`关于“${ACTION_REQUEST.title}”，我的选择是：${option.label}。\n决定：${option.response||option.label}${note?`\n补充说明：${note}`:""}\n请根据这个选择继续。`:`For “${ACTION_REQUEST.title}”, I choose: ${option.label}.\nDecision: ${option.response||option.label}${note?`\nAdditional note: ${note}`:""}\nPlease continue using this choice.`;
@@ -1841,19 +1891,56 @@ $("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
 $("#data-agent").onclick=async()=>{
   $("#datapanel").classList.remove("open");$("#msg").focus();
 };
-let UPLOAD_ITEM="";                      // plan input id the next file pick is for ("" = inputs/uploads)
-$("#data-upload").onclick=()=>{UPLOAD_ITEM="";$("#datafile").click();};
-document.addEventListener("click",e=>{const b=e.target.closest(".pd-upload");if(!b)return;UPLOAD_ITEM=b.dataset.item||"";$("#datafile").click();});
+let UPLOAD_ITEM="",UPLOAD_SESSION=null;  // capture the original chat before the native picker opens
+function pickProjectFiles(item=""){
+  if(!CUR)return;
+  UPLOAD_ITEM=item;UPLOAD_SESSION=CUR.id;$("#datafile").click();
+}
+$("#data-upload").onclick=()=>pickProjectFiles();
+document.addEventListener("click",e=>{const b=e.target.closest(".pd-upload");if(b)pickProjectFiles(b.dataset.item||"");});
 $("#datafile").onchange=async e=>{
-  if(!CUR||!e.target.files.length)return;
-  const zh=chineseUI(),item=UPLOAD_ITEM;UPLOAD_ITEM="";
-  let done=0;$("#data-msg").textContent=zh?"上传中…":"uploading…";
-  for(const file of e.target.files){
-    const r=await fetch(`/api/session/${CUR.id}/upload?name=${encodeURIComponent(file.name)}${item?`&item=${encodeURIComponent(item)}`:""}`,{method:"POST",body:file});
-    if(r.ok)done++;else{$("#data-msg").textContent=(zh?"无法添加 ":"Could not add ")+file.name;return;}
+  const files=[...e.target.files],target=UPLOAD_SESSION||(CUR&&CUR.id),item=UPLOAD_ITEM,zh=chineseUI();
+  UPLOAD_ITEM="";UPLOAD_SESSION=null;e.target.value="";
+  if(!target||!files.length)return;
+  const active=()=>CUR&&CUR.id===target,saved=[];
+  let failure="";
+  UPLOADING.set(target,(UPLOADING.get(target)||0)+1);
+  if(active()){setControls(true);$("#data-msg").textContent=zh?"上传中…":"Uploading…";}
+  try{
+    for(const file of files){
+      const r=await fetch(`/api/session/${target}/upload?name=${encodeURIComponent(file.name)}${item?`&item=${encodeURIComponent(item)}`:""}`,{method:"POST",body:file});
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(data.error||(zh?`无法添加 ${file.name}`:`Could not add ${file.name}`));
+      const path=data.relative_path;
+      if(typeof path!=="string"||!path.startsWith("inputs/")||path.split("/").includes(".."))
+        throw new Error(zh?"服务器未返回有效文件路径；请在项目文件夹检查，未猜测附件路径。":"The server returned no valid file path; check the project folder. No attachment path was guessed.");
+      const attached={name:data.name||path.split("/").pop(),path,size:file.size};
+      const pending=PENDING_ATTACHMENTS.get(target)||[];
+      pending.push(attached);PENDING_ATTACHMENTS.set(target,pending);saved.push(attached);
+      if(active())renderAttachments();
+    }
+  }catch(error){failure=error.message||String(error);}
+  finally{
+    if(saved.length){
+      const paths=saved.map(file=>`- ${file.path}`).join("\n");
+      const note=zh?
+        `${item?`请检查这些文件是否适用于输入项 ${JSON.stringify(item)}。`:"请检查这些项目附件。"}\n${paths}\n文件已保存但尚未验证；这不是计划批准，也不代表已经完成输入绑定。请先检查内容，不要仅因上传就开始或恢复运行。`:
+        `${item?`Please inspect these files for input item ${JSON.stringify(item)}.`:"Please inspect these project attachments."}\n${paths}\nThe files are present but unverified; this is not approval of the plan and does not complete input binding. Inspect their contents first; do not start or resume a run merely because they were uploaded.`;
+      const previous=active()?$("#msg").value:(DRAFTS.get(target)||"");
+      const draft=previous+(previous?"\n\n":"")+note;
+      DRAFTS.set(target,draft);
+      if(active()){$("#msg").value=draft;$("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";}
+    }
+    const left=(UPLOADING.get(target)||1)-1;
+    if(left>0)UPLOADING.set(target,left);else UPLOADING.delete(target);
+    if(active()){
+      const message=saved.length?
+        (zh?"已保存并加入待发送附件（未自动发送、批准或验证）：":"Saved and queued for your next message (not sent, approved, or verified): ")+saved.map(file=>file.path).join("; "):"";
+      $("#data-msg").textContent=[message,failure].filter(Boolean).join(" · ");
+      setControls(true);
+      if(saved.length)await refreshData().catch(error=>{if(active())$("#data-msg").textContent+=" · "+(error.message||String(error));});
+    }
   }
-  const where=item?`inputs/user/${item}`:"inputs/uploads";
-  $("#data-msg").textContent=zh?`已放入 ${where}（${done} 个文件）`:`${done} file${done===1?'':'s'} placed in ${where}`;e.target.value="";await refreshData();
 };
 $("#paperfile").onchange=async e=>{
   if(!CUR||!e.target.files.length)return;

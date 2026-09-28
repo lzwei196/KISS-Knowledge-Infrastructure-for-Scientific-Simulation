@@ -626,6 +626,27 @@ def load_catalogue() -> dict | None:
     return _read_snapshot(catalogue_store_path())
 
 
+def _discovery_cache(payload: dict | None, *, ttl: int = CATALOGUE_STORE_TTL) -> dict | None:
+    """Readable populated metadata, with its original age/error; never refresh or authenticate.
+
+    Discovery can use an expired copy. Stamping, source-schema inspection and
+    acquisition keep their existing live checks; cached records cannot prove them.
+    """
+    if not isinstance(payload, dict):
+        return None
+    records = payload.get("datasets")
+    if (not isinstance(records, list) or not records
+            or any(not isinstance(record, dict) or not isinstance(record.get("id"), str)
+                   or not record["id"] for record in records)):
+        return None
+    try:
+        age = time.time() - float(payload.get("generated_at_epoch") or 0)
+        expired = not 0 <= age <= max(0, int(ttl))
+    except (TypeError, ValueError, OverflowError):
+        expired = True
+    return {**payload, "stale": bool(payload.get("stale") or payload.get("ok") is not True or expired)}
+
+
 def refresh_catalogue(*, client: Client | None = None, force: bool = False,
                       path: Path | None = None, ttl: int = CATALOGUE_STORE_TTL,
                       max_items: int = 20000) -> dict:
@@ -913,8 +934,10 @@ def search_catalogue(*, q: str = "", offset: int = 0, limit: int = 25,
                      describe_dataset_id: str = "") -> dict:
     """App-level catalogue query shared by UI, API Agents and CLI.
 
-    Filters the app's local copy of the catalogue.  The server is only asked to
-    refresh that copy.  An explicit ``client`` (tests) queries the server directly.
+    Filters a populated local copy immediately, even after its refresh TTL.
+    Missing/unusable metadata keeps the initial-refresh fallback. Explicit settings
+    and startup refreshes own cache renewal; an explicit ``client`` retains the
+    direct-server query seam. Describe/resolve remain live requests.
     """
     if describe_dataset_id and resolve_dataset_id:
         raise ValueError("Choose either describe or resolve in one request")
@@ -925,16 +948,29 @@ def search_catalogue(*, q: str = "", offset: int = 0, limit: int = 25,
                                variable=variable, time_step=time_step, client=client)
     if client is not None:
         return _server_search(q=q, offset=offset, limit=limit, client=client)
-    store = refresh_catalogue()
+    store = _discovery_cache(load_catalogue())
+    if store is None:
+        store = refresh_catalogue()
     if store.get("datasets"):
         result = local_search(store["datasets"], q=q, bbox=bbox, start=start, end=end,
                               variable=variable, category=category, delivery=delivery,
                               offset=offset, limit=limit)
         result["catalogue_generated_at"] = store.get("generated_at")
-        if not store.get("ok"):
-            result["stale"] = True
-            result["warning"] = ("catalogue copy is stale: " +
-                                 str((store.get("error") or {}).get("message") or ""))
+        result["catalogue_last_refresh_ok"] = store.get("ok") is True
+        result["catalogue_reported_total"] = store.get("total")
+        truncated = store.get("truncated") if type(store.get("truncated")) is bool else None
+        if type(store.get("total")) is int and store["total"] > len(store["datasets"]):
+            truncated = True
+        result["catalogue_truncated"] = truncated
+        result["returned"] = len(result["datasets"])
+        result["has_more"] = result["offset"] + result["returned"] < result["total"]
+        result["stale"] = bool(store.get("stale") or not store.get("ok"))
+        result["acquisition_evidence"].update(authentication="not_checked", source_schema="not_checked")
+        if store.get("error"):
+            result["catalogue_error"] = store["error"]
+        if result["stale"]:
+            reason = str((store.get("error") or {}).get("message") or "not recently refreshed")
+            result["warning"] = "Catalogue copy is stale: " + reason + ". Refresh explicitly in Settings."
         return result
     error = store.get("error") or {}
     raise ObsAccessError(str(error.get("code") or "network_error"),
@@ -1079,12 +1115,15 @@ def prepare_catalogue_snapshot(project: Path, *, client: Client | None = None,
                                max_items: int = 20000) -> Path:
     """Materialize a per-project copy of the catalogue for CLIs in snapshot mode.
 
-    Without an explicit client the copy is taken from the app-level store so
-    the server is not paged once per project.
+    Without an explicit client, reuse populated app-level (or existing project)
+    metadata immediately. Age and refresh errors remain visible. Only force or
+    absence of usable metadata takes the existing refresh path.
     """
     path = Path(project).resolve() / CATALOGUE_SNAPSHOT
     if client is None:
-        _atomic_json(path, refresh_catalogue(force=force))
+        cached = None if force else (_discovery_cache(load_catalogue())
+                                     or _discovery_cache(_read_snapshot(path), ttl=cache_seconds))
+        _atomic_json(path, cached if cached is not None else refresh_catalogue(force=force))
         return path
     refresh_catalogue(client=client, force=force, path=path, ttl=cache_seconds,
                       max_items=max_items)
@@ -1385,9 +1424,11 @@ def manual_handoff_message(info: dict) -> str:
 def planning_snapshot_prompt(path: Path) -> str:
     """Contract text shared by every provider during data-aware planning."""
     payload = _read_snapshot(path) or {}
-    state = (f"current ({len(payload.get('datasets') or [])} records)"
-             if payload.get("ok") else
-             f"unavailable ({(payload.get('error') or {}).get('message') or 'unknown error'})")
+    state = (f"cached metadata ({len(payload.get('datasets') or [])} records)"
+             if payload.get("datasets") else
+             f"unavailable ({(payload.get('error') or {}).get('message') or 'no cached records'})")
+    if payload.get("datasets") and payload.get("error"):
+        state += f"; last refresh failed ({payload['error'].get('message') or 'unknown error'})"
     stale = " A stale cached list is present; identify it as stale." if payload.get("stale") else ""
     return (
         "[GEOFORGE DATABASE — HOST-OWNED DATA SERVICE]\n"
@@ -1396,6 +1437,7 @@ def planning_snapshot_prompt(path: Path) -> str:
         + DATA_DISCOVERY_RULES +
         f"Sanitized catalogue snapshot: {Path(path).resolve()}\n"
         f"Snapshot status: {state}.{stale}\n"
+        "Current authentication and source-file schemas are not checked by this metadata snapshot.\n"
         "Inspect this metadata while planning and compare exact variables, units, spatial/"
         "temporal coverage and format with every selected KI. Pin an exact dataset id only "
         "when the record supports it. If the catalogue is unavailable or has no match, say so "

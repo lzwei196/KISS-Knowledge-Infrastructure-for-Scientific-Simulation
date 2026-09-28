@@ -190,7 +190,7 @@ def main():
               'manifest_stage_count','desktop_default_field_count','desktop_valid_range_count',
               'desktop_format_count','manifest_tool_count','manifest_tool_existing_count','root']
     with (args.output/'matrix.csv').open('w',newline='',encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle,fieldnames=fields,extrasaction='ignore')
+        writer = csv.DictWriter(handle,fieldnames=fields,extrasaction='ignore',lineterminator='\n')
         writer.writeheader()
         writer.writerows(rows)
     print(json.dumps({'summary':summary,'changed_descriptions':changed},indent=2))

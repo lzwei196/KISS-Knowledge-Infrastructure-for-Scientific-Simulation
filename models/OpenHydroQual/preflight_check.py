@@ -16,10 +16,9 @@ TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 DIAGNOSTIC_FIX = f"See {TRIPLETS} for matching recovery triplets."
 
 OHQ_BINARY = Path(
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
-    "OpenHydroQual/source/repo/OHQLibTest/OHQLibTest"
+    "KISSPATH_BINARIES/OpenHydroQual/source/repo/build-cli/OHQLibTest"
 )
-OHQ_RESOURCES = (OHQ_BINARY.parent / "../../../resources").resolve()
+OHQ_RESOURCES = (OHQ_BINARY.parent / "../resources").resolve()
 
 TOOL_FILES = [
     KI_DIR / "tools" / "convert_forcing.py",

@@ -1,0 +1,30 @@
+kiss_manifest_version: 1
+model: GSFLOW
+binary_type: Mach-O
+verified: unverified
+install_dir: GSFLOW/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/rniswon/gsflow_v2.git
+  ref: dcb53506fd0ce6ea21d3f0290724024420840bb2
+  commands:
+  - python3 -m pip install https://github.com/modflowpy/pymake/archive/c48972fd9d3c7ace7ceb1cb78f6dcbb2a7c671b9.zip
+  - python3 ../../../../ki/tools/build_gsflow_native.py .
+  produces: autotest/gsflow
+python_deps:
+- numpy
+- pandas
+- PyYAML
+system_deps:
+- git
+- gfortran
+- make
+- clang
+notes: Exact public GSFLOW developer source 2.3.1 12/15/2023. Native arm64 build locally
+  proven; DS retry pending. Source-hash-guarded help/version exits before scientific
+  initialization. No equations changed.
+agent_hint: Read MACOS_INSTALL.md. Use exact native source, not USGS landing page
+  as git URL. Real pymake builds full Fortran/C source. Invoke the trusted build helper
+  from repo root; it sets upstream driver cwd to autotest and checks the native product.
+  All pip operations must use workspace venv. --help and --version only, from empty
+  directory. Do not download or run scientific datasets/examples.

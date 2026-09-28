@@ -1,0 +1,18 @@
+kiss_manifest_version: 1
+model: CREST
+binary_type: Mach-O
+verified: unverified
+install_dir: CREST/source
+acquire:
+  strategy: build
+  repo: https://github.com/HyDROSLab/EF5.git
+  ref: 744ede20efde956767945d326f9d5832c92d954c
+  commands:
+  - autoreconf -fi
+  - ./configure CC=gcc-16 CXX=g++-16 CPPFLAGS=-I/opt/homebrew/include LDFLAGS=-L/opt/homebrew/lib
+  - make -j2
+  produces: bin/ef5
+python_deps: [numpy, pandas, rasterio, whitebox, matplotlib, gdal==3.12.3]
+system_deps: [gcc, autoconf, automake, libtiff, libgeotiff, gdal]
+notes: Official EF5 v1.2.3 includes actual CREST implementation. Baseline native startup succeeded but actual osgeo import failed. Host gdal-config reports3.12.3; bind against that exact version. Autoconf and automake are now installed.
+agent_hint: Use real autotools-generated config.h and official source build, not a fabricated configuration stub. Preserve binary at <workspace>/binaries/CREST/source/bin/ef5. Inspect configure and compiler errors and apply only evidence-based build compatibility repairs; do not blanket-disable diagnostics hiding type errors. Upstream configure.ac has an unquoted LIBS assignment to inspect if configure reports -ltiff command not found. Use genuine matching GDAL bindings and verify actual osgeo import. Probe EF5 without input data; no scientific runs or datasets.

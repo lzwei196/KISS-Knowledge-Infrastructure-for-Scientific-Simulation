@@ -7,6 +7,7 @@ the host Python only drives the checks. It does not exercise paid AI providers.
 from __future__ import annotations
 
 import argparse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import threading
 import urllib.request
 
 import yaml
@@ -33,7 +35,9 @@ def check(bundle: Path, report: dict) -> None:
     executable = bundle / "GeoForge Desktop.exe"
     internal = bundle / "_internal"
     for path in (executable, internal / "python311.dll",
-                 internal / "release-manifest.json"):
+                 internal / "release-manifest.json",
+                 bundle / "geoforge-agent-bridge.exe",
+                 internal / "system_kis" / "GeoForge_Database" / "SKILL.md"):
         if not path.is_file():
             raise AssertionError(f"Required release file missing: {path}")
     manifest = json.loads((internal / "release-manifest.json").read_text("utf-8"))
@@ -60,7 +64,74 @@ def check(bundle: Path, report: dict) -> None:
                 env.pop(key, None)
         env.update(APPDATA=str(isolated / "roaming"),
                    LOCALAPPDATA=str(isolated / "local"),
+                   USERPROFILE=str(isolated / "home"), HOME=str(isolated / "home"),
+                   GEOFORGE_FLOW_KEYS=str(isolated / "flow-keys"),
+                   GEOFORGE_FLOW_REGISTRY=str(isolated / "flow-registry"),
+                   GEOFORGE_DATABASE_OFFLINE="1",
                    GEOFORGE_KI_UPDATE_HOME=str(isolated / "ki-updates"))
+        for key in list(env):
+            if key.startswith("GEOFORGE_AGENT_"):
+                env.pop(key, None)
+        # No Python/py on PATH: the console helper must use the bundled DLL.
+        helper_env = {**env, "PATH": str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32")}
+        helper = bundle / "geoforge-agent-bridge.exe"
+        for mode in ("flow", "database"):
+            result = subprocess.run([str(helper), mode], cwd=isolated, env=helper_env,
+                                    capture_output=True, text=True, timeout=60,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            assert result.returncode == 3, (mode, result.stdout, result.stderr)
+            assert "session" in result.stderr.lower(), result.stderr
+        report["self_contained_agent_bridge"] = "passed without Python on PATH"
+        seen = []
+
+        class BridgeFixture(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def respond(self, body):
+                encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_GET(self):
+                seen.append(("database", self.headers.get("X-GeoForge-Agent-Token")))
+                self.respond({"ok": True, "datasets": [{"id": "fixture", "name": "测试资料"}]})
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                seen.append(("flow", self.headers.get("X-GeoForge-Question-Token"), body))
+                self.respond({"returncode": 0, "stdout": "已收到问题\n"})
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), BridgeFixture)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            endpoint = f"http://127.0.0.1:{server.server_port}"
+            transport_env = {**helper_env, "GEOFORGE_AGENT_DATABASE_TOKEN": "fixture-capability",
+                             "GEOFORGE_AGENT_QUESTION_TOKEN": "fixture-question",
+                             "GEOFORGE_AGENT_DATABASE_URL": endpoint + "/catalogue",
+                             "GEOFORGE_AGENT_FLOW_URL": endpoint + "/flow"}
+            question = json.dumps({"title": "选择气象资料"}, ensure_ascii=False)
+            for arguments in (["database", "--query", "测试资料"],
+                              ["flow", "ask-question", "--json", question]):
+                result = subprocess.run([str(helper), *arguments], cwd=isolated,
+                                        env=transport_env, capture_output=True,
+                                        encoding="utf-8", timeout=60,
+                                        creationflags=subprocess.CREATE_NO_WINDOW)
+                assert result.returncode == 0, (arguments[0], result.stdout, result.stderr)
+                assert ("测试资料" if arguments[0] == "database" else "已收到问题") in result.stdout
+            assert seen[0] == ("database", "fixture-capability"), seen
+            assert seen[1][0:2] == ("flow", "fixture-question"), seen
+            assert seen[1][2]["argv"] == ["ask-question", "--json", question], seen
+            report["frozen_bridge_unicode_ipc"] = "passed against a local fixture (no live provider)"
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=5)
+        report["database_system_ki"] = "bundled separately from 127 scientific KIs"
         # Never pass --models: discovery must use the bundled library.
         for command in ("harness-status", "calibration-status"):
             process = subprocess.Popen([str(executable), command], cwd=isolated,
@@ -107,8 +178,13 @@ def check(bundle: Path, report: dict) -> None:
             assert "_internal" in flow["source"], flow
             updates = json.loads(fetch("/api/ki-updates"))
             assert updates["branch"] == "main", updates
+            database = json.loads(fetch("/api/obs/status"))
+            assert isinstance(database, dict), database
+            settings = json.loads(fetch("/api/settings"))
+            assert settings["platform"] == "windows", settings
             report.update(http_routes=routes + ["/api/models", "/api/prompt/MODFLOW6",
-                          "/api/flow-status", "/api/ki-updates"],
+                          "/api/flow-status", "/api/ki-updates", "/api/obs/status",
+                          "/api/settings"],
                           flow="passed", ki_update_branch=updates["branch"])
         finally:
             stop(process)

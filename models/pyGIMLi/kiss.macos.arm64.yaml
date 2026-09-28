@@ -1,0 +1,12 @@
+kiss_manifest_version: 1
+model: pyGIMLi
+binary_type: Python
+verified: unverified
+install_dir: pyGIMLi
+acquire:
+  strategy: pip
+  package: pygimli==1.5.5
+  produces: pygimli.core
+python_deps: []
+notes: Genuine native pgcore1.5.4 and pygimli1.5.5 from official gimli+conda-forge channels verified on Apple Silicon Python3.11. Fresh DS KI integration check pending; no inversion or scientific simulation performed.
+agent_hint: Preserve the provisioned workspace conda environment and its actual compiled pgcore package. Do not replace it with the incomplete pip-only wrapper, change architecture or fabricate modules. Verify pygimli.core and pygimli.physics imports and KI dependencies. The official installation route is https://github.com/gimli-org/pyGIMLi/blob/main/INSTALLATION.md. No inversion, forward model, mesh generation or scientific datasets in installation scope.

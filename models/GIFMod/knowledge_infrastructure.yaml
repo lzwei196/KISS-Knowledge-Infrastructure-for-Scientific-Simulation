@@ -12,8 +12,8 @@ package:
   scientific_reference_version: GIFMod (Massoudieh et al. 2017 framework; block-connector variably-saturated
     flow + ADR reactive transport)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GIFMod/source/repo/bindata/GIFMod
-    type: ELF
+    path: binaries/GIFMod/builds/release/GIFMod
+    type: Mach-O
 pipeline:
   stages:
   - s0_configuration

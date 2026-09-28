@@ -1,0 +1,31 @@
+kiss_manifest_version: 1
+model: TRIGRS
+binary_type: Mach-O
+verified: unverified
+install_dir: TRIGRS
+acquire:
+  strategy: build
+  repo: https://code.usgs.gov/usgs/landslides-trigrs.git
+  ref: 969c409f7bc63e7616ebe34dfd5f6afd967f2d2d
+  commands:
+  - make -C src/TRIGRS trg F90=gfortran MPIF90=gfortran FC=gfortran CC=gcc F90FLAGS="-w
+    -O3 -std=legacy -fallow-argument-mismatch" LDFLAGS="-w -O3" CCFLAGS=-lm
+  produces: src/TRIGRS/trg
+  system_deps:
+  - git
+  - make
+  - gfortran
+system_deps:
+- git
+- make
+- gfortran
+python_deps:
+- numpy
+reference_case: src/TRIGRS/trg --help
+notes: Adapted from Windows branch fbed40b installation configuration on 2026-09-08.
+  Mac installation verification is pending.
+agent_hint: 'Build the pinned official USGS serial trg target using native macOS gfortran
+  and make. Override F90, FC and MPIF90 with gfortran: MPI is not needed for the serial
+  target. Retain upstream scientific sources and inputs. Use the current usgs/landslides-trigrs
+  repository, not the obsolete ghsc/lhp/trigrs URL. Verify Mach-O startup without
+  a simulation.'

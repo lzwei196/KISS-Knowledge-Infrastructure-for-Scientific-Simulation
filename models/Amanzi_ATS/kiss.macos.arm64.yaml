@@ -1,0 +1,36 @@
+kiss_manifest_version: 1
+model: Amanzi_ATS
+binary_type: Mach-O
+verified: partial
+install_dir: Amanzi_ATS
+acquire:
+  strategy: build
+  repo: https://github.com/amanzi/amanzi.git
+  ref: f8b03562ec6dea6257baf1250bddf889caef8ffb
+  commands:
+  - python3 ../../ki/tools/build_amanzi_ats_native.py .
+  produces: install/bin/ats
+python_deps:
+- numpy
+- pandas
+- h5py
+- matplotlib
+- lxml
+system_deps:
+- git
+- make
+- mpicc
+- mpicxx
+- mpif90
+notes: Native ATS1.6.0 with pinned Amanzi1.7-dev core; local source/build and installed
+  CLI audit passed. Fresh DS94 installation passed in1247.8seconds with all5KI Python imports. Builds all enabled
+  software targets; no simulations. Standalone Amanzi physics is mutually exclusive
+  and is not included.
+agent_hint: Use the supplied same-host dependency config and trusted helper first.
+  From workspace run python3 ki/tools/build_amanzi_ats_native.py binaries/Amanzi_ATS
+  (the launcher prepares pinned software-only sources). Do not use generic full checkout
+  or recursively fetch scientific examples. The helper validates dependencies and
+  builds the actual ATS engine; no model binaries are preseeded. A denied external-prefix
+  inspection is not proof dependencies are absent. Read MACOS_INSTALL.md. First native
+  startup may take40seconds; helper allows60seconds and requires exact native version
+  with exit0. Do not run simulations or download input datasets.

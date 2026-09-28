@@ -6,13 +6,14 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
 MODEL_ID = "ELM"
 KI_DIR = Path(__file__).resolve().parent
 PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
-DEFAULT_BINARY = Path("KISSPATH_HOME/e3sm_scratch/elm_test_case/bld/e3sm.exe")
+DEFAULT_BINARY = Path("KISSPATH_BINARIES/ELM/ki-build/e3sm.exe")
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
 
 
@@ -194,13 +195,13 @@ def check_binary_smoke_start(checks, binary):
         return False
 
     try:
-        proc = subprocess.run(
-            [str(binary), "--help"],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
+        with tempfile.TemporaryDirectory(prefix="elm-native-load-") as probe_dir:
+            env = os.environ.copy()
+            env.update(FI_PROVIDER="tcp", FI_TCP_IFACE="en0")
+            proc = subprocess.run(
+                [str(Path(binary).resolve()), "--help"],
+                cwd=probe_dir, env=env, capture_output=True, text=True, timeout=8,
+            )
     except subprocess.TimeoutExpired:
         add_check(
             checks,
@@ -208,12 +209,12 @@ def check_binary_smoke_start(checks, binary):
             subject,
             False,
             False,
-            fix_hint("ELM smoke start timed out; verify by launching from the CIME case run directory."),
+            fix_hint("ELM smoke start timed out; inspect the native loader/compiler logs; do not launch a scientific case."),
         )
         return False
 
     output = f"{proc.stdout}\n{proc.stderr}"
-    started = proc.returncode == 0 or "cime_cpl_init" in output or "MPI_ABORT" in output
+    started = proc.returncode == 0 or (proc.returncode == 233 and "(cime_cpl_init) :: namelist read returns an end of file or end of record condition" in output and "MPI_Abort(MPI_COMM_WORLD, 1001)" in output)
     if started:
         add_check(checks, "run", subject, False, True, "")
         return True
@@ -238,7 +239,7 @@ def main():
 
     checks = []
     binary = read_manifest_binary()
-    run_dir = binary.parent.parent / "run"
+    run_dir = binary.parent.parent / "ki-run"
 
     check_file(checks, KI_DIR / "knowledge_infrastructure.yaml", "data", True, nonempty=True)
     check_file(checks, KI_DIR / "dag.yaml", "data", True, nonempty=True)

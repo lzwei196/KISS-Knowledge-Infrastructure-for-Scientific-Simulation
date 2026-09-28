@@ -5,8 +5,7 @@ identity:
   scientific_reference_version: "FATES (Functionally Assembled Terrestrial Ecosystem Simulator), NGEE-Tropics/DOE; size- and age-structured cohort demographic DGVM of the ED/PPA lineage (Moorcroft, Hurtt & Pacala 2001; Fisher et al. 2015), JSON-parameter-file era (post-2023)"
   implementation:
     id: "fates-ctsm"
-    version: ""
-    _reason: "No concrete FATES/CTSM tag surfaced in the streams; the runnable version is tied to the host CTSM/CLM checkout the component is compiled into."
+    version: "sci.1.92.7_api.46.0.0 hosted by CTSM ctsm5.4.054"
     provenance: "Fortran 2003+; FATES compiled as a component of the CTSM/CLM (or E3SM/ELM) host land model; runs only inside the host, not standalone."
   ki_class: "forward_model"
   is_family_dag: false

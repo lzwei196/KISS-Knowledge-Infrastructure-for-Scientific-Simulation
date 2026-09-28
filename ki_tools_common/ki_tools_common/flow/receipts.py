@@ -34,11 +34,14 @@ import math
 import os
 import secrets
 import time
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 RECEIPT_DIR = ".geoforge/receipts"
 RUNS_SUB = "model-runs"
 DATA_SUB = "data-receipts"
+REGISTRY_DEFAULT = Path("/mnt/disk1/Hydrocraft_server/.flow_registry")
 
 
 class ReceiptError(ValueError):
@@ -104,15 +107,189 @@ def sign(project: Path, doc: dict) -> dict:
 
 
 def verify(project: Path, doc: dict) -> bool:
+    if not isinstance(doc, dict):
+        return False
     try:
         k = _key(project, create=False)
     except ReceiptError:
         return False
-    sig = (doc or {}).get("signature") or {}
-    if not k or sig.get("alg") != "HMAC-SHA256" or not sig.get("value") \
+    sig = doc.get("signature") or {}
+    if not isinstance(sig, dict):
+        return False
+    value = sig.get("value")
+    if not k or sig.get("alg") != "HMAC-SHA256" or not isinstance(value, str) or not value \
             or sig.get("key_id") != project_id(project):
         return False
-    return hmac.compare_digest(sig["value"], hmac.new(k, _canonical(doc), "sha256").hexdigest())
+    try:
+        expected = hmac.new(k, _canonical(doc), "sha256").hexdigest()
+        return hmac.compare_digest(value, expected)
+    except (TypeError, ValueError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# server-side current-document registry
+# ---------------------------------------------------------------------------
+
+def registry_dir() -> Path:
+    """App-owned registry outside the workspace; the agent guard protects this tree.
+
+    Server: the fixed tree the guard hook protects. Desktop (no server tree): beside the
+    receipt-signing keys under the user's config dir, the same way the key dir resolves.
+    """
+    configured = os.environ.get("GEOFORGE_FLOW_REGISTRY")
+    if configured:
+        return Path(configured).expanduser()
+    if REGISTRY_DEFAULT.parent.is_dir():
+        return REGISTRY_DEFAULT
+    import sys as _sys
+    if "kiss_cli" in _sys.modules or getattr(_sys, "frozen", False):
+        return keys_dir().parent / "flow-registry"      # the desktop app: beside its signing keys
+    # The server tree is missing (disk mismount): never fail open to an empty registry.
+    raise RuntimeError(f"flow registry unavailable: {REGISTRY_DEFAULT.parent} is not mounted "
+                       "and GEOFORGE_FLOW_REGISTRY is not set")
+
+
+def registry_entry(project: Path) -> Path:
+    ws = str(Path(project).resolve())
+    return registry_dir() / (hashlib.sha1(ws.encode("utf-8")).hexdigest() + ".json")
+
+
+def _signature_value(doc: dict) -> str | None:
+    sig = (doc or {}).get("signature") if isinstance(doc, dict) else None
+    value = sig.get("value") if isinstance(sig, dict) else None
+    return value if isinstance(value, str) and len(value) == 64 else None
+
+
+@contextmanager
+def _registry_lock(stream):
+    """Serialize registry writers on both Windows and POSIX, failing closed."""
+    if os.name == "nt":
+        import msvcrt
+        # Windows byte-range locks also cover a byte beyond EOF. Use the same
+        # byte for every writer and bound contention rather than dropping it.
+        deadline = time.monotonic() + 30
+        while True:
+            stream.seek(0)
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise ReceiptError("flow registry lock unavailable") from exc
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def _update_registry(project: Path, update) -> dict:
+    """Lock, merge, and atomically replace one canonical workspace registry entry."""
+    project = Path(project).resolve()
+    root = registry_dir().resolve()
+    if _inside(root, project):
+        raise ReceiptError(f"flow registry {root} is inside project {project}; refusing")
+    root.mkdir(parents=True, exist_ok=True)
+    entry = registry_entry(project)
+    lock_path = entry.with_suffix(entry.suffix + ".lock")
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    tmp: Path | None = None
+    try:
+        with os.fdopen(lock_fd, "r+b") as lock_file, _registry_lock(lock_file):
+            if entry.exists():
+                try:
+                    current = json.loads(entry.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ReceiptError(f"flow registry entry unreadable: {entry}") from exc
+                if not isinstance(current, dict):
+                    raise ReceiptError(f"flow registry entry is not an object: {entry}")
+                registered_ws = current.get("ws")
+                if registered_ws and Path(registered_ws).resolve() != project:
+                    raise ReceiptError(f"flow registry workspace mismatch: {entry}")
+            else:
+                current = {}
+            current.setdefault("schema_version", "1.0")
+            current["ws"] = str(project)
+            current.setdefault("current", {})
+            if not isinstance(current["current"], dict):
+                raise ReceiptError(f"flow registry current pointer is invalid: {entry}")
+            updated = update(current)
+            if not isinstance(updated, dict):
+                raise ReceiptError("flow registry update did not return an object")
+            updated["updated_at"] = time.time()
+            tmp = entry.with_name(f".{entry.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(updated, fh, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, entry)
+            tmp = None
+            return updated
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def publish_current(project: Path, kind: str, doc: dict | None) -> None:
+    """Make one signed state/approval document current, or revoke it with ``None``."""
+    if kind not in ("state", "approval"):
+        raise ReceiptError(f"unsupported current-document kind: {kind}")
+    value = None if doc is None else _signature_value(doc)
+    if doc is not None and value is None:
+        raise ReceiptError(f"cannot publish unsigned {kind} document")
+
+    def _set(current: dict) -> dict:
+        current["current"][kind] = value
+        return current
+
+    _update_registry(project, _set)
+
+
+def register_workspace(project: Path, **metadata) -> None:
+    """Add server metadata without overwriting current approval/state pointers."""
+    def _register(current: dict) -> dict:
+        for key, value in metadata.items():
+            current.setdefault(key, value)
+        return current
+
+    _update_registry(project, _register)
+
+
+def current_value(project: Path, kind: str) -> str | None:
+    """Read the server-authoritative signature pointer; malformed entries fail closed."""
+    if kind not in ("state", "approval"):
+        return None
+    entry = registry_entry(project)
+    try:
+        current = json.loads(entry.read_text(encoding="utf-8"))
+        registered_ws = current.get("ws") if isinstance(current, dict) else None
+        if not registered_ws or Path(registered_ws).resolve() != Path(project).resolve():
+            return None
+        pointers = current.get("current")
+        value = pointers.get(kind) if isinstance(pointers, dict) else None
+        return value if isinstance(value, str) and len(value) == 64 else None
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def current_matches(project: Path, kind: str, doc: dict) -> bool:
+    """A signature is usable only while it is the registry's current signature."""
+    value = _signature_value(doc)
+    current = current_value(project, kind)
+    return value is not None and current is not None and hmac.compare_digest(value, current)
 
 
 # ---------------------------------------------------------------------------
@@ -165,11 +342,33 @@ def _now() -> str:
 # record
 # ---------------------------------------------------------------------------
 
+def selection_sha256(item: dict) -> str:
+    """Bind acquisition evidence to item ID, source AND requirements.
+
+    Excludes mutable progress/local paths. Unknown legacy selections cannot be
+    reused across approvals; a source or scope change must be reviewed again.
+    """
+    selection = {k: item[k] for k in (
+        "id", "dataset_id", "chosen_source", "requirements", "acquisition_id",
+        "acquisition_request_sha256") if k in item}
+    if not any(selection.get(k) for k in ("dataset_id", "chosen_source", "acquisition_id")):
+        return ""
+    # A conservative fingerprint: differing metadata never silently reuses bytes.
+    return hashlib.sha256(_canonical(selection)).hexdigest()
+
+
 def record_download(project: Path, *, item_id: str, source: str, request_url: str,
                     http_status: int | None, raw_files: list, approval_sha256: str,
                     processed_files: list | None = None, transform_tool: str | None = None,
                     units_before: dict | None = None, units_after: dict | None = None,
-                    requested_at: str | None = None, plan_step_id: str | None = None) -> Path:
+                    requested_at: str | None = None, plan_step_id: str | None = None,
+                    inventory_item: dict | None = None, acquisition: dict | None = None,
+                    recovery: dict | None = None, expected_files: dict | None = None) -> Path:
+    """Issue host evidence. Recovery must pass the previously verified file entries.
+
+    Check freshly collected entries against ``expected_files`` before signing so
+    a concurrent file change cannot be promoted to trusted recovery evidence.
+    """
     if not approval_sha256:
         raise ReceiptError("a download receipt must be bound to the current approval")
     doc = {
@@ -181,7 +380,15 @@ def record_download(project: Path, *, item_id: str, source: str, request_url: st
         "units_after": units_after or {},
         "plan_step_id": plan_step_id, "approval_sha256": approval_sha256,
         "wrapper_pid": os.getpid(), "recorded_at": _now(),
+        "selection_sha256": selection_sha256(inventory_item or {}),
+        "acquisition": acquisition or {},
     }
+    if recovery is not None:
+        doc["recovery"] = recovery
+    if expected_files is not None:
+        for field in ("raw_files", "processed_files"):
+            if doc[field] != expected_files.get(field):
+                raise ReceiptError("acquired files changed during recovery; refusing to sign new bytes")
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in item_id)[:80]
     return _write(project, DATA_SUB, safe, doc)
 
@@ -191,7 +398,8 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
                inputs: list, outputs: list, approval_sha256: str, plan_step_id: str,
                stdout_log: str | None = None, stderr_log: str | None = None,
                forcing_source: str | None = None, validation: dict | None = None,
-               run_id: str | None = None) -> Path:
+               run_id: str | None = None, execution_status: str | None = None,
+               process_started: bool | None = None) -> Path:
     if not approval_sha256 or not plan_step_id:
         raise ReceiptError("a run receipt must name the approval it runs under and the plan step "
                            "it executes (codex review #2)")
@@ -218,6 +426,9 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
         "validation": validation or {"status": "not_run", "checks": []},
         "wrapper_pid": os.getpid(), "recorded_at": _now(),
     }
+    if execution_status is not None:
+        doc.update(execution_status=execution_status, process_started=process_started,
+                   binary_actually_ran=process_started is True)
     return _write(project, RUNS_SUB, rid, doc)
 
 
@@ -266,6 +477,59 @@ def _positive_required(rank1: list[dict]) -> bool:
     return False
 
 
+_AXIS_HEADERS = frozenset({
+    # unmistakable coordinate / date / time / index names ONLY — never a name a model uses for a
+    # result (`level`, `t`, `x`, `z` … are results somewhere; codex round-6 #3: Ribasim water level)
+    "time", "date", "datetime", "timestamp", "year", "yr", "month", "mon", "day", "hour", "hr",
+    "minute", "second", "doy", "jday", "julian", "step", "index", "idx", "row", "col",
+    "cell_id", "lat", "latitude", "lon", "longitude"})
+
+
+def _text_cells(line: str) -> list[str]:
+    """One text line → cells. A leading `#` is dropped (commented header/data), quoted cells are
+    honoured for `,`/`;` files (csv reader), whitespace-separated otherwise; every cell is stripped
+    of quotes and blanks; empty cells are kept so positions match between header and data."""
+    import csv, io
+    body = line.lstrip()
+    if body.startswith("#"):
+        body = body.lstrip("#").strip()
+    if "," in body or ";" in body:
+        delim = "," if body.count(",") >= body.count(";") else ";"
+        try:
+            parts = next(csv.reader(io.StringIO(body), delimiter=delim))
+        except Exception:
+            parts = body.replace(";", ",").split(",")
+    else:
+        # whitespace files have no empty cells; quotes group a cell (`" time "` is one cell)
+        import re, shlex
+        # a unit annotation `(day)` / `[m3/s]` / `(days since 2000-01-01)` belongs to the name before
+        # it, not to a column — removed as a whole BEFORE splitting (codex rounds 6 and 8)
+        body = re.sub(r"[\(\[][^\)\]]*[\)\]]", " ", body)
+        try:
+            parts = shlex.split(body)
+        except ValueError:
+            parts = body.split()
+        parts = [p for p in parts if not (p.startswith("(") or p.startswith("["))]
+        return [t for t in (p.strip().strip("'\"").strip() for p in parts) if t != ""]
+    # positions are PRESERVED in delimited files: an empty cell stays an empty string (codex round-5 #2)
+    return [p.strip().strip("'\"").strip() for p in parts]
+
+
+def _axis_name(cell: str) -> str:
+    """A header cell reduced to its name: a trailing unit annotation `time(day)` / `time (day)` /
+    `lat [deg]` is dropped (codex round-7), quotes/blanks stripped, lower-cased."""
+    import re
+    return re.sub(r"\s*[\(\[].*$", "", cell.strip().strip("'\"")).strip().lower()
+
+
+def _is_number(tok: str) -> bool:
+    try:
+        float(tok)
+        return True
+    except ValueError:
+        return False
+
+
 def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[float] | None, int | None, str]:
     """Numeric read of one output. NetCDF: ONLY the rank-1 variable(s) when present in the
     file (codex #5), else all data variables (and say so). Text/CSV: per-column, dropping
@@ -278,69 +542,142 @@ def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[fl
                 import xarray as xr
                 import numpy as np
             except ImportError:
-                # kimi #4: an uninspectable NetCDF must FAIL, never pass as a warning
-                return None, None, "NETCDF_UNINSPECTABLE: xarray not installed"
-            ds = None
-            last = None
-            for eng in (None, "h5netcdf", "scipy", "netcdf4"):   # HDF5 file-locking / engine quirks
+                xr = None
                 try:
-                    ds = xr.open_dataset(path, engine=eng) if eng else xr.open_dataset(path)
-                    break
-                except Exception as e:  # noqa: BLE001
-                    last = e
-            if ds is None:
-                return None, None, f"NETCDF_UNINSPECTABLE: {type(last).__name__}"
+                    import numpy as np
+                except ImportError:
+                    return None, None, "NETCDF_UNINSPECTABLE: numpy not installed"
+            if xr is not None:
+                ds = None
+                last = None
+                for eng in (None, "h5netcdf", "scipy", "netcdf4"):  # engine/file-lock quirks
+                    try:
+                        ds = xr.open_dataset(path, engine=eng) if eng else xr.open_dataset(path)
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        last = e
+                if ds is not None:
+                    try:
+                        names = [v for v in ds.data_vars]
+                        lower = {v.lower(): v for v in names}
+                        picked = [lower[p.lower()] for p in prefer_vars if p.lower() in lower]
+                        # When the KI names a rank-1 variable and this file does not carry it,
+                        # another variable's positive values may not stand in for it.
+                        note = "netcdf rank-1 var(s) " + ",".join(picked) if picked else \
+                               ("NETCDF_RANK1_ABSENT: " + ",".join(prefer_vars) if prefer_vars
+                                else "netcdf ALL vars (KI declares no rank-1 variable)")
+                        vals: list[float] = []
+                        n = None
+                        for v in (picked or names):
+                            arr = np.asarray(ds[v].values, dtype="float64").ravel()
+                            vals.extend(arr[:400000].tolist())
+                            if "time" in ds[v].dims:
+                                n = int(ds[v].sizes["time"])
+                        return vals, n, note
+                    finally:
+                        ds.close()
+            # The frozen Desktop intentionally does not bundle pandas/xarray.
+            # netCDF4 is the compact inspection backend and handles VIC/CaMa HDF5 files.
             try:
-                names = [v for v in ds.data_vars]
-                lower = {v.lower(): v for v in names}
-                picked = [lower[p.lower()] for p in prefer_vars if p.lower() in lower]
-                # codex R2 #1: when the KI names a rank-1 variable and this file does not carry
-                # it, say so explicitly — validate_outputs() then FAILS the physical check instead
-                # of letting another variable's positive values satisfy it.
-                note = "netcdf rank-1 var(s) " + ",".join(picked) if picked else \
-                       ("NETCDF_RANK1_ABSENT: " + ",".join(prefer_vars) if prefer_vars
-                        else "netcdf ALL vars (KI declares no rank-1 variable)")
-                vals: list[float] = []
-                n = None
-                for v in (picked or names):
-                    arr = np.asarray(ds[v].values, dtype="float64").ravel()
-                    vals.extend(arr[:400000].tolist())
-                    if "time" in ds[v].dims:
-                        n = int(ds[v].sizes["time"])
-                return vals, n, note
-            finally:
-                ds.close()
-        text = path.read_text(errors="ignore")
+                import netCDF4
+            except ImportError:
+                detail = type(last).__name__ if xr is not None and last is not None else \
+                         "xarray and netCDF4 not installed"
+                return None, None, f"NETCDF_UNINSPECTABLE: {detail}"
+            try:
+                with netCDF4.Dataset(path, mode="r") as ds4:
+                    names = [name for name in ds4.variables if name not in ds4.dimensions]
+                    lower = {v.lower(): v for v in names}
+                    picked = [lower[p.lower()] for p in prefer_vars if p.lower() in lower]
+                    note = "netcdf rank-1 var(s) " + ",".join(picked) if picked else \
+                           ("NETCDF_RANK1_ABSENT: " + ",".join(prefer_vars) if prefer_vars
+                            else "netcdf ALL vars (KI declares no rank-1 variable)")
+                    vals = []
+                    n = None
+                    for name in (picked or names):
+                        var = ds4.variables[name]
+                        arr = np.ma.filled(var[:], np.nan)
+                        values = np.asarray(arr, dtype="float64").ravel()
+                        vals.extend(values[:400000].tolist())
+                        if "time" in var.dimensions:
+                            n = int(var.shape[var.dimensions.index("time")])
+                    return vals, n, note
+            except Exception as error:  # noqa: BLE001
+                return None, None, f"NETCDF_UNINSPECTABLE: {type(error).__name__}"
+        text = path.read_text(errors="ignore").replace("\ufeff", "")
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        # (web defect 3, codex rounds 2-4) the HEADER is the LAST number-free line before the first
+        # data row — commented (`# time q`) or not, after any prose preamble; cells are parsed with the csv reader (quotes, inner spaces) so header and data
+        # column positions agree. Header-named coordinate / date / time columns are never result data.
+        parsed = [_text_cells(ln) for ln in lines[:500000]]
+        is_comment = [ln.lstrip().startswith("#") for ln in lines[:500000]]
+        # a DATA row is an UNCOMMENTED row with at least one number (an ISO date cell next to a value
+        # still counts); a comment line with a number in it (`# model version 5`) is metadata, never
+        # data (codex round-5 #1); the HEADER is the last number-free row before the first data row
+        first_data = next((i for i, c in enumerate(parsed)
+                           if not is_comment[i] and c and any(_is_number(t) for t in c)), None)
+        axis_cols: set[int] = set()
+        header_row = None
+        if first_data is not None:
+            # the HEADER BLOCK = the contiguous number-free rows right above the data (names row,
+            # then an optional units row — bracketed `(deg)` or plain `degrees_north` (ERDDAP), codex
+            # rounds 9-10). Axis columns are the UNION over the block: a units row never names an
+            # axis, a names row does, so the union is exact whichever row is which. Uncommented rows
+            # are preferred; commented rows count only when no plain header exists.
+            for want_comment in (False, True):
+                i = first_data - 1
+                while i >= 0:
+                    c = parsed[i]
+                    if not c:
+                        i -= 1                    # a units-only row that tokenised to nothing (`(days) (deg)`)
+                        continue
+                    if any(_is_number(t) for t in c):
+                        break
+                    if is_comment[i] != want_comment:
+                        if want_comment:
+                            break
+                        i -= 1
+                        continue
+                    header_row = i
+                    axis_cols |= {j for j, t in enumerate(c) if _axis_name(t) in _AXIS_HEADERS}
+                    i -= 1
+                if header_row is not None:
+                    break
         cols: dict[int, list[float]] = {}
         rows = 0
-        for line in text.splitlines():
-            if not line.strip() or line.lstrip().startswith("#"):
+        for i, c in enumerate(parsed):
+            if first_data is None or i < first_data or is_comment[i]:
                 continue
             rows += 1
-            for j, tok in enumerate(line.replace(",", " ").replace(";", " ").split()):
+            for j, tok in enumerate(c):
                 try:
                     cols.setdefault(j, []).append(float(tok))
                 except ValueError:
-                    pass
-            if rows > 500000:
-                break
+                    pass                      # an empty / non-numeric cell keeps its position
+        for j in axis_cols:
+            cols.pop(j, None)
         # Drop the index/time axis only: a LEADING column that is strictly increasing with a
         # constant step (1,2,3… or 20030101,20030102… or evenly spaced times). A cumulative
         # data column (kimi #8) is increasing but rarely constant-step, and is never dropped
         # when it is not the first numeric column.
         data_cols = []
-        first = True
         for j in sorted(cols):
             c = cols[j]
             steps = [round(b - a, 9) for a, b in zip(c, c[1:])]
-            axis_like = first and len(c) >= 2 and all(s > 0 for s in steps) and len(set(steps)) <= 2
-            first = False
+            # the spacing heuristic applies to the ORIGINAL first column only (j == 0) and only when
+            # no header named the axis columns — never to a later column that became "first" after
+            # a header-named axis was dropped (a rising discharge series is data)
+            # (codex round-5 #3 / round-6) a header-named single result column (`discharge` rising
+            # evenly) is never an axis; but an unlisted first column (`t`, `i`) next to a result column
+            # still is when it looks like one — the result column is the OTHER column
+            axis_like = (j == 0 and (header_row is None or len(cols) > 1) and len(c) >= 2
+                         and all(s > 0 for s in steps) and len(set(steps)) <= 2)
             if not axis_like:
                 data_cols.append(c)
-        if not data_cols and cols:
-            data_cols = [cols[max(cols)]]
+        # (web defect 3, codex 2026-09-16) a discarded coordinate/time column is NEVER restored as
+        # result data: a file with only a time axis has no model result in it
         vals = [v for c in data_cols for v in c]
-        return vals, rows, "text"
+        return vals, rows, ("text" if vals else "text: only an axis-like column, no result column")
     except Exception as e:
         return None, None, f"unreadable ({type(e).__name__})"
 
@@ -411,8 +748,13 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
             add(f"physically_required_positive:{p.name}", pos > 0,
                 f"{pos} positive of {len(finite)} values; rank-1 output "
                 f"({', '.join(rank1_vars) or '?'}) must have positive values")
-        if finite and len(finite) > 10 and max(finite) == min(finite):
-            add(f"not_constant:{p.name}", False, f"all values == {finite[0]}", level="warn")
+        if physical and finite and len(finite) > 2 and max(finite) == min(finite):
+            # kimi block-A review: when the dag declares no usable rank-1, a constant/all-zero
+            # file must still FAIL — a flat output is never a model result (fail-closed even
+            # for thin dags); with a rank-1 the positive check above already covers zeros.
+            # physical=False (a preparation step): a constant file can be legitimate (a mask
+            # of ones) — no check emitted, so prep validation is not downgraded to 'warning'.
+            add(f"not_constant:{p.name}", False, f"all values == {finite[0]}")
     if not any_numeric:
         add("any_numeric_output", False, "no output file had numeric content to check", level="warn")
 
@@ -434,23 +776,168 @@ def _read_all(project: Path, sub: str) -> list[tuple[Path, dict, bool]]:
     for p in sorted(d.glob("*.json")):
         try:
             doc = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
+            out.append((p, {}, False)); continue
+        if not isinstance(doc, dict):
             out.append((p, {}, False)); continue
         out.append((p, doc, verify(project, doc)))
     return out
 
 
-EXECUTABLE_STEP_KINDS = ("process", "run", "calibrate", "route", "couple", "prepare", "download")
+EXECUTABLE_STEP_KINDS = (
+    "process", "run", "model_run", "calibrate", "route", "couple", "prepare", "download",
+)
+
+
+@dataclass(frozen=True)
+class DownloadEvidence:
+    """Read-only conclusion at inspection time, not an authorization or scientific check.
+
+    ``reusable`` means exact request + intact files. ``recoverable`` additionally
+    allows rename-only or missing-ZIP recovery, but the host must explicitly issue
+    a replacement receipt before consumers may rely on that recovery. ``bound``
+    preserves final evidence's older current-approval receipt rules; it is NOT a
+    synonym for reusable. Local integrity establishes neither remote freshness
+    nor scientific suitability. Do not cache a conclusion across file changes.
+    """
+    path: Path
+    receipt: dict
+    request_match: str
+    files: str
+    reason: str
+    reusable: bool = False
+    recoverable: bool = False
+    bound: bool = False
+    source_freshness: str = "unknown"
+    scientific_validation: str = "not_assessed"
+
+
+def _entry_status(project: Path, entry) -> str:
+    if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
+            or not entry["path"] or not isinstance(entry.get("sha256"), str)
+            or not entry["sha256"]):
+        return "malformed"
+    path = Path(project) / entry["path"]
+    try:
+        if not _inside(path, project):
+            return "unsafe"
+        if not path.exists():
+            if path.is_symlink():
+                return "unsafe"
+            return "missing"
+        if not path.is_file():
+            return "unsafe"
+        return "intact" if sha256_file(path) == entry["sha256"] else "changed"
+    except (OSError, ValueError, RuntimeError):
+        return "unsafe"  # unreadable or unresolvable paths cannot support recovery
+
+
+def _download_file_status(project: Path, receipt: dict) -> str:
+    raw, processed = receipt.get("raw_files", []), receipt.get("processed_files", [])
+    if not isinstance(raw, list) or not isinstance(processed, list):
+        return "malformed"
+    raw_status = [_entry_status(project, e) for e in raw]
+    processed_status = [_entry_status(project, e) for e in processed]
+    for failure in ("unsafe", "malformed", "changed"):
+        if failure in raw_status + processed_status:
+            return failure
+    if not raw:
+        return "missing"
+    if all(s == "intact" for s in raw_status + processed_status):
+        return "intact"
+    # Only lost transport ZIPs may be replaced by their recorded extraction.
+    # A changed archive, arbitrary missing input, or missing extraction is not
+    # recovery evidence. Check every raw entry, including surviving archives.
+    if (processed and all(s == "intact" for s in processed_status)
+            and receipt.get("transform_tool") == "verified_zip_extract"
+            and all(Path(e["path"]).suffix.lower() == ".zip" for e in raw)
+            and "missing" in raw_status):
+        return "extracted_only"
+    return "missing"
+
+
+def _inspect_download(project: Path, path: Path, doc: dict, verified: bool,
+                      item: dict | None, approval_sha256: str, selection_required: bool) -> DownloadEvidence:
+    if not verified or doc.get("kind") != "download":
+        return DownloadEvidence(path, doc, "unknown", "malformed",
+                                "signature" if not verified else "not a download receipt")
+    fingerprint = doc.get("selection_sha256")
+    match = "unknown" if not fingerprint else "mismatch"
+    if fingerprint and item is not None:
+        if str(item.get("id")) == str(doc.get("item_id")):
+            if fingerprint == selection_sha256(item):
+                match = "exact"
+        elif doc.get("item_id") and fingerprint == selection_sha256({**item, "id": doc["item_id"]}):
+            match = "renamed"
+    files = _download_file_status(project, doc)
+    reusable = match == "exact" and files == "intact"
+    recoverable = match in ("exact", "renamed") and files in ("intact", "extracted_only")
+    bound = reusable
+    current = bool(approval_sha256) and doc.get("approval_sha256") == approval_sha256
+    # Legacy final-evidence compatibility is intentionally weaker than reuse.
+    # No fingerprint must never gain new scope proof or cross-approval authority.
+    if current and (not fingerprint or not selection_required):
+        no_files = doc.get("raw_files", []) == [] and doc.get("processed_files", []) == []
+        bound = files == "intact" or no_files
+    if match in ("renamed", "mismatch") and selection_required:
+        bound = False
+    if match == "unknown":
+        reason = "receipt has no selected-request fingerprint; automatic reuse is unavailable"
+    elif match == "mismatch":
+        reason = "selected source or requirements changed, or item is no longer in the inventory"
+    elif files == "extracted_only":
+        reason = "transport ZIP missing; intact extraction requires explicit host recovery"
+    elif files != "intact":
+        reason = f"acquired files are {files}; automatic reuse is unavailable"
+    elif match == "renamed":
+        reason = "request unchanged except item name; explicit host rebinding required"
+    else:
+        reason = "exact selected request and intact acquired files"
+    return DownloadEvidence(path, doc, match, files, reason, reusable, recoverable, bound)
+
+
+def inspect_downloads(project: Path, inventory: dict | None = None, *,
+                      approval_sha256: str = "") -> list[DownloadEvidence]:
+    """Inspect all acquisition receipts without writes, downloads or re-signing.
+
+    Returns rejected records too, with explanations. An omitted inventory retains
+    legacy current-approval final-evidence behavior, but never proves exact reuse.
+    Uses local file hashes only; there is no remote freshness lookup.
+    """
+    items = {str(i.get("id")): i for i in (inventory or {}).get("items") or [] if isinstance(i, dict)}
+    return [_inspect_download(project, p, d, ok, items.get(str(d.get("item_id"))),
+                              approval_sha256, inventory is not None)
+            for p, d, ok in _read_all(project, DATA_SUB)]
+
+
+def find_download(project: Path, item: dict, *, approval_sha256: str = "",
+                  recover: bool = False, source: str | None = None) -> DownloadEvidence | None:
+    """Find intact exact-request evidence, or explicitly opt into recovery candidates.
+
+    Even with ``recover=True`` this ONLY inspects. Prefer exact reusable records,
+    then current-approval records; never infer a request from a dataset directory.
+    Rename matching preserves the historical fingerprint algorithm (including ID).
+    """
+    candidates = []
+    for path, doc, ok in _read_all(project, DATA_SUB):
+        if source is not None and doc.get("source") != source:
+            continue
+        result = _inspect_download(project, path, doc, ok, item, approval_sha256, True)
+        if result.reusable or (recover and result.recoverable):
+            candidates.append(result)
+    return max(candidates, key=lambda r: (r.reusable, r.receipt.get("approval_sha256") == approval_sha256),
+               default=None)
 
 
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
                                                    ".png", ".json", ".bin"),
-             enforcement: str = "none") -> dict:
+             enforcement: str = "none", inventory: dict | None = None, *,
+             _download_inspection: list[DownloadEvidence] | None = None) -> dict:
     """Machine-readable summary the UI shows and COMPLETED requires. Trusts ONLY receipts
     that verify AND are bound to the current approval (`approval_sha256 == the signed
-    approval's plan_sha256`), name a selected KI and a planned step. COMPLETED needs every
+    approval issuance's unique signature`), name a selected KI and a planned step. COMPLETED needs every
     executable planned step to have a passed receipt and no unreceipted artifacts.
 
     `enforcement` = how the EXECUTING provider was contained (flow.policy Enforcement value).
@@ -462,14 +949,18 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     project = Path(project)
     plan = plan or {}
     approval = approval or {}
-    cur = str(approval.get("plan_sha256") or "")
+    sig = approval.get("signature") if isinstance(approval, dict) else None
+    cur = str(sig.get("value") or "") if isinstance(sig, dict) else ""
     selected = set(plan.get("selected_kis") or approval.get("selected_kis") or [])
     steps = {str(s.get("id")): s for s in (plan.get("steps") or []) if isinstance(s, dict)}
     exec_steps = {sid for sid, s in steps.items()
                   if (s.get("kind") or "process") in EXECUTABLE_STEP_KINDS}
 
     runs = _read_all(project, RUNS_SUB)
-    dl = _read_all(project, DATA_SUB)
+    # An in-process status query can share its already computed inspection with
+    # this summary. Enforcement callers omit it and always inspect afresh.
+    dl = (inspect_downloads(project, inventory, approval_sha256=cur)
+          if _download_inspection is None else _download_inspection)
     rejected: list[dict] = []
     bound_runs: list[dict] = []
 
@@ -504,12 +995,11 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         else:
             bound_runs.append(d)
     bound_dl: list[dict] = []
-    for p, d, ok in dl:
-        if ok and cur and d.get("approval_sha256") == cur:
-            bound_dl.append(d)
+    for result in dl:
+        if result.bound:
+            bound_dl.append(result.receipt)
         else:
-            rejected.append({"path": str(p), "why": "signature" if not ok else
-                             "not bound to the current approval"})
+            rejected.append({"path": str(result.path), "why": result.reason})
 
     receipted_outputs = set()
     for d in bound_runs:

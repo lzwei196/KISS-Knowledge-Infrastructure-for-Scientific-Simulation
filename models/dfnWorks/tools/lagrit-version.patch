@@ -1,0 +1,18 @@
+--- a/src/lagrit_main.f
++++ b/src/lagrit_main.f
+@@ -37,6 +37,15 @@
+       integer ierror_return, i
+       character(len=32) :: arg,arg_value,mode,logfile,outfile
+ C
++      include 'lagrit.h'
++
++      call get_command_argument(1,arg)
++      if (trim(arg).eq.'--version') then
++         write(*,'(a,i0,a,i0,a,i0)') 'LaGriT ',v_major,'.',
++     &        v_minor,'.',v_patch
++         stop
++      endif
++
+       mode = 'noisy'
+       logfile = ' '
+       outfile = ' '

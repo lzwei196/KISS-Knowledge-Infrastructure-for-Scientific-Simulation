@@ -27,6 +27,7 @@ from pathlib import Path
 from . import install, install_locations, paths, port
 
 REQUEST_FILE = "setup-request.json"
+PARTIAL_SUFFIXES = (".part", ".partial", ".crdownload", ".download", ".tmp", ".aria2", ".bc!")
 USER_FILES_DIR = "user-files"
 LOG_FILE = "setup-agent.log"
 REQUEST_KINDS = {"download", "licence", "login", "permission", "choice", "other"}
@@ -37,7 +38,7 @@ def _request_options(value) -> list[dict]:
     if not isinstance(value, list):
         return []
     out = []
-    for index, item in enumerate(value[:8]):
+    for index, item in enumerate(value):
         if isinstance(item, str):
             raw = {"label": item}
         elif isinstance(item, dict):
@@ -58,6 +59,27 @@ def _request_options(value) -> list[dict]:
     return out
 
 
+def choice_response(pending: dict, action: dict | None) -> dict | None:
+    """Resolve an explicit answer, never a clarification or an approval card.
+
+    A custom answer is a planning value, not a permission or download grant.
+    The caller still owns the existing permission-option side effects.
+    """
+    if (not action or pending.get("status") != "waiting"
+            or str(action.get("request_id")) != str(pending.get("id"))):
+        return None
+    option_id = str(action.get("option_id") or "")
+    if option_id == "__custom_answer__":
+        note = str(action.get("note") or "").strip()
+        if (pending.get("kind") != "choice" or pending.get("allow_note") is False
+                or pending.get("plan_review") or not note
+                or str(pending.get("id", "")).startswith(("flow:", "flow-"))):
+            return None
+        return {"id": option_id, "label": "Custom answer", "response": note}
+    return next((item for item in pending.get("options") or []
+                 if isinstance(item, dict) and str(item.get("id")) == option_id), None)
+
+
 def _read_json(path: Path) -> dict | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -66,8 +88,12 @@ def _read_json(path: Path) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-def request(root: Path) -> dict | None:
-    """Return the current structured human request, if one exists."""
+def request(root: Path, *, archive_obsolete: bool = True) -> dict | None:
+    """Return the current structured human request, if one exists.
+
+    Read-only status projections disable legacy permission-request archival.
+    Existing callers retain the migration behavior.
+    """
     raw = _read_json(Path(root) / REQUEST_FILE)
     if not raw:
         return None
@@ -82,7 +108,8 @@ def request(root: Path) -> dict | None:
         # surface, so archive the stale request instead of showing it forever.
         from .kimi_security import is_runtime_read_path
         if is_runtime_read_path(expected):
-            clear_request(root)
+            if archive_obsolete:
+                clear_request(root)
             return None
     url = str(raw.get("url") or "").strip()[:2000]
     return {
@@ -221,6 +248,43 @@ def request_for_provider_connection(root: Path, provider: str,
             "select another AI provider on the setup page."
         ),
     })
+
+
+def data_path_present(path: Path) -> bool:
+    """A nonempty payload exists, not just a directory or download temporary file.
+
+    This is a handoff check, not proof of dataset completeness or scientific
+    validity. The KI still has to inspect the delivered data before running.
+    Do not follow symlinks or scan hidden cache directories.
+    """
+    partial = PARTIAL_SUFFIXES
+
+    def present(candidate: Path) -> bool:
+        try:
+            if candidate.is_symlink() or candidate.name.startswith("."):
+                return False
+            if candidate.name.lower().endswith(partial):
+                return False
+            if candidate.is_file():
+                return candidate.stat().st_size > 0
+            if candidate.is_dir():
+                return any(present(child) for child in candidate.iterdir())
+        except OSError:
+            return False
+        return False
+
+    return present(Path(path))
+
+
+def download_placed(request: dict | None) -> bool:
+    """True only when every requested destination contains a candidate payload."""
+    rows = (request or {}).get("rows") or []
+    paths = [str(r.get("expected_path") or "").strip() for r in rows if isinstance(r, dict)]
+    if not paths:
+        paths = [str((request or {}).get("expected_path") or "").strip()]
+    if not all(paths):
+        return False  # no destination means delivery cannot be verified
+    return all(data_path_present(Path(p).expanduser()) for p in paths)
 
 
 def resume(root: Path, note: str = "") -> dict | None:
@@ -497,6 +561,46 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     return live_ki, cfg
 
 
+CLI_SESSION_FILE = ".geoforge-setup-session.json"
+
+
+def cli_session(root: Path, provider: str) -> str | None:
+    """The CLI's own session id from the last setup run of this provider, if any."""
+    path = Path(root) / CLI_SESSION_FILE
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    entry = doc.get(provider) if isinstance(doc, dict) else None
+    sid = (entry or {}).get("id") if isinstance(entry, dict) else None
+    return str(sid) if sid else None
+
+
+def remember_cli_session(root: Path, provider: str, session_id: str) -> None:
+    path = Path(root) / CLI_SESSION_FILE
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict):
+            doc = {}
+    except (OSError, ValueError):
+        doc = {}
+    doc[provider] = {"id": str(session_id), "saved_at": time.time()}
+    path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+
+
+def resume_message(resumed: dict, root: Path) -> str:
+    """What the continuing agent needs after the user's action: no restart, no re-diagnosis."""
+    return (
+        "The user has completed the request you made.\n"
+        f"User note: {resumed.get('user_note') or '(none)'}\n"
+        f"Files supplied: {json.dumps(uploads(root), ensure_ascii=False)}\n"
+        f"Your resume hint: {resumed.get('resume_hint') or '(none)'}\n"
+        "Continue exactly where you stopped. Do not re-read the KI, re-run the diagnosis or "
+        "repeat installation steps that already succeeded; verify only the step that was "
+        "blocked, then finish the setup and run the KI preflight."
+    )
+
+
 def agent_task(ki, cfg, root: Path, *, resumed: dict | None = None,
                initial_failure: str = "",
                installation_mode: str = "new",
@@ -556,11 +660,39 @@ is required.
             + manifest_hint.strip()
             if manifest_hint.strip() else ""
         )
+        from . import runnable
+        import_contract = runnable.declared_imports(ki)
+        executable_contract = runnable.declared(ki)
+        variant = (getattr(ki, "meta", {}) or {}).get("impl_id")
+        from .python_script import VARIANTS
+        variant_info = VARIANTS.get(ki.name)
+        variant_guidance = ""
+        if variant_info and variant == variant_info[0]:
+            variant_guidance = (
+                f"This KI explicitly declares {variant}, an existing bundled Python implementation. "
+                f"Install that declared implementation using the original {variant_info[1]}; "
+                "do not replace it with another implementation or an official upstream product. "
+                "Its fixed installation probe is --help (exit 0), not --version. "
+                "Read its current-platform manifest for all required dependencies. This result establishes "
+                "only the declared variant, never official upstream installation or equivalence.\n"
+            )
+        contract = ("The independent installation check will also verify these KI Python imports: "
+                    + json.dumps(import_contract) + ".\n"
+                    "Install their real dependencies in a workspace environment even when the model "
+                    "itself is a native executable. GeoForge supplies ki_tools_common from the bundled "
+                    "workspace library; do not replace it with an unrelated PyPI project.\n"
+                    "Declared executable locations for this materialised KI: "
+                    + json.dumps(executable_contract) + ".\n"
+                    "If upstream builds elsewhere, reconcile its real product with the install "
+                    "configuration so the independent check can locate it; do not report completion "
+                    "solely because a binary exists at another path.\n")
         return f"""Install {ki.name} on this machine now.
 {experience}
 
+{contract}
+{variant_guidance}
 This is an **installation-only stress test**, not a scientific verification
-run. Install or build the official model software and its runtime dependencies
+run. Install the declared implementation and its runtime dependencies
 inside the selected workspace. You may use a cheap startup probe such as
 `--version` or `--help` to prove that the executable loads, links, and responds.
 
@@ -662,6 +794,11 @@ and stop. If you create or select a Python environment, record its real
 interpreter in `{Path(root) / 'kiss.toml'}` under `kiss.python`; do not leave
 GeoForge pointing at the system Python after the package was installed into a
 workspace venv.
+
+Preserve the absolute environment launcher path, even when it is a symlink.
+Do NOT replace a venv launcher with its realpath or symlink target: launching the
+base interpreter loses the venv and its packages. Verify that sys.prefix points
+to the intended workspace environment before claiming installation success.
 {existing}
 {known_failure}
 {prior}

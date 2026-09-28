@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: LPJmL
+binary_type: Mach-O
+verified: unverified
+install_dir: LPJmL
+acquire:
+  strategy: build
+  repo: https://github.com/PIK-LPJmL/LPJmL.git
+  ref: cdfae4462443908cbe1714d4461e155dfe6c6ad9
+  produces: bin/lpjml
+python_deps: [numpy, pandas, netCDF4]
+system_deps: [git, make, cmake, clang, gfortran, netcdf]
+notes: Source pin and native product recovered from previous Mac build evidence; independent baseline lacked product declaration. Fresh build/startup verification pending.
+agent_hint: Build official v6.0.0 with native NetCDF and json-c paths in /opt/homebrew. UDUNITS is optional; record it if disabled. Keep solver source unchanged; any auxiliary printf format fixes must match their actual C types. Exact product <workspace>/binaries/LPJmL/bin/lpjml. Startup -v only, no scientific run.

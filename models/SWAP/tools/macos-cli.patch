@@ -1,0 +1,19 @@
+--- a/src/swap_main.f90
++++ b/src/swap_main.f90
+@@ -35,6 +35,16 @@
+ 
+ ! functions
+ integer              :: getun
++character(len=132) :: Version
++character(len=32) :: ki_cli_argument
++
++! KI macOS installation-only CLI; version comes from upstream description.fi.
++call get_command_argument(1, ki_cli_argument)
++if (trim(ki_cli_argument) == '--version') then
++   include 'description.fi'
++   write(*,'(a)') 'SWAP '//trim(Version)
++   stop
++end if
+ 
+ ! open logfile and read rerun file
+ iun1 = getun (400,900)

@@ -1,6 +1,6 @@
 [project]
 name = "kiss-ki"
-version = "0.6.53"
+version = "0.6.54"
 description = "Installer and agent handoff for KISS Knowledge Infrastructure packages"
 requires-python = ">=3.11"
 dependencies = [
@@ -8,6 +8,7 @@ dependencies = [
     "certifi>=2024.2.2",
     "truststore>=0.10.4; python_version >= '3.10'",
     "numpy>=2.0,<3",
+    "netCDF4>=1.7,<2",
     "scipy>=1.13,<2",
     "spotpy>=1.6.7,<2",
     "pymoo>=0.6.2,<0.7",

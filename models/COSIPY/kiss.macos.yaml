@@ -1,0 +1,24 @@
+kiss_manifest_version: 1
+model: COSIPY
+binary_type: Python
+verified: observed
+install_dir: COSIPY
+acquire:
+  strategy: pip
+  package: cosipymodel==2.0.2
+  produces: cosipy
+python_deps: []
+system_deps: []
+reference_case: cosipy-run --help
+notes: Real Mac DeepSeek installation on 2026-09-08 corrected the package identity
+  and installed cryotools cosipymodel 2.0.2. Agent startup checks cosipy-run --help,
+  cosipy-setup --help and pip check passed; independent package import check passed.
+  Scientific runs were excluded. The generic pip distribution cosipy is a different
+  astronomy project and must not be used for this KI.
+agent_hint: Install the pinned cosipymodel distribution, which owns the cosipy import
+  namespace. Check distribution metadata identifies the cryotools snow/ice surface-energy
+  model and verify cosipy-run --help; a shallow import of an unrelated cosipy package
+  is insufficient. In a reused test environment remove a previously installed astronomy
+  cosipy distribution before installing cosipymodel. Use the workspace venv launcher
+  or its pip script, preserve that interpreter path, and run pip check. Do not download
+  forcing data or run a snow/glacier simulation.

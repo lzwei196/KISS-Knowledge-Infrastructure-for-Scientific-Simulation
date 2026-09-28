@@ -1,0 +1,32 @@
+kiss_manifest_version: 1
+model: FSM2
+binary_type: Mach-O
+verified: partial
+install_dir: FSM2/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/RichardEssery/FSM2.git
+  ref: f0c86be12274354c958c2b71661cefefd6ae79f3
+  commands:
+  - sh compil.sh
+  produces: FSM2
+python_deps:
+- numpy
+- pandas
+system_deps:
+- git
+- gfortran
+reference_case: FSM2 --help
+notes: Source pin learned from the Windows recipe. The unchanged official compil.sh
+  built a native macOS arm64 FSM2 locally on 2026-09-08. Empty-stdin startup reached
+  the official namelist reader and exited 2 with End of file. This is startup evidence
+  only. A clean DS Mac installation subsequently passed independent native startup
+  and actual Python imports on 2026-09-08; scientific simulation remains untested.
+agent_hint: 'Use the unchanged official compil.sh through run_builtin_setup. Its native
+  POSIX shell route writes the upstream default OPTS.h and compiles the ordered Fortran
+  source list with gfortran; no Windows compiler/archive/DLL steps apply. Keep PROFNC=0
+  and all other upstream defaults. NetCDF/MPI are not required for this ASCII build.
+  The canonical product is FSM2 at the clone root. It has no help/version flag and
+  reads its namelist from stdin: EOF at FSM2_PARAMS.F90 is an expected empty-input
+  startup result, not a reason to run a forcing case. Install real numpy/pandas in
+  the workspace Python environment and preserve its launcher path.'

@@ -1,0 +1,30 @@
+kiss_manifest_version: 1
+model: dfnWorks
+binary_type: Mach-O
+verified: partial
+install_dir: dfnWorks/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/lanl/dfnWorks.git
+  ref: 1c102b068097a9b9d8bfa9182dd6d2d2d41cf6c8
+  produces: DFNGen/DFNGen
+python_deps: [numpy, scipy, networkx, h5py, matplotlib, pyvista, fpdf, mplstereonet, seaborn, pyvtk, mpmath]
+system_deps: [clang, gfortran, cmake, make, git]
+agent_hint: >-
+  Read docs/install.macos.md. Exact official dfnWorks2.10.0 source commit is
+  1c102b068097a9b9d8bfa9182dd6d2d2d41cf6c8; current master is a different version
+  and no2.10 tag was found. Use genuine workspace Python3.13 venv to run
+  ki/tools/build_dfnworks_macos.py from the workspace root. It builds native
+  DFNGen2.3, DFNTrans, correct_volume, ConnectivityTest and LaGriT3.3.3, and installs
+  actual pydfnworks2.10.0. It preserves upstream sources and makes only transparent
+  early native version branches using source-derived version constants.
+  Explicit dfnworks-build-config.json supplies the previously verified native
+  PFLOTRAN/PETSc shared prefix; do not copy its binary and imply relocatability.
+  Native primary --version must say dfnWorks2.10.0 DFNGen2.3 and exit0 (spaces
+  as printed). Additional fixed tools/verify_dfnworks_native.py checks all native
+  utilities and the Python package; all must pass before full installation-ready.
+  Do not construct DFNWORKS, run meshes, read scientific inputs, create cases,
+  run upstream tests/examples, or write HOME configuration. Runtime dependency
+  paths stay in binaries/dfnWorks/runtime-paths.json. The Mac KI runner selects
+  this file; Linux behavior is preserved. Exodus-dependent DFM and FEHM are
+  excluded; the native DFN meshing/PFLOTRAN flow/DFNTrans stack is provisioned.

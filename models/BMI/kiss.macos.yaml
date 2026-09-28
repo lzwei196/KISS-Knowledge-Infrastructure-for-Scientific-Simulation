@@ -1,0 +1,20 @@
+kiss_manifest_version: 1
+model: BMI
+binary_type: Python
+verified: unverified
+install_dir: BMI
+acquire:
+  strategy: pip
+  package: git+https://github.com/csdms/bmi-example-python.git@07016091d721410894ef8b16127fbe2ed063f0dd
+  produces: heat
+python_deps:
+- bmipy
+- numpy
+system_deps: []
+notes: Mac repair candidate from real DS failure. Upstream BMI interface is bmipy.bmi
+  and the official example exports heat.bmi_heat.BmiHeat, not top-level bmi or BmiHeat
+  modules. Mac retest pending.
+agent_hint: Install the pinned official CSDMS example and its actual dependencies
+  inside the recorded workspace Python environment. Verify imports bmipy.bmi and heat.bmi_heat
+  plus pip check. Do not initialize or simulate the heat example during this installation-only
+  test.

@@ -1,0 +1,60 @@
+- id: db-001
+  symptom: The helper says the database is not available in this agent session.
+  diagnosis: It was launched outside a running GeoForge Desktop child session.
+  remedy: Start or continue the task inside GeoForge Desktop and retry the exact helper command.
+- id: db-002
+  symptom: The endpoint returns unauthorized.
+  diagnosis: The short-lived process capability is absent, stale, or does not match this Desktop process.
+  remedy: Start a fresh Agent turn from the currently running Desktop process; never request the activation token.
+- id: db-003
+  symptom: The endpoint reports a missing activation token.
+  diagnosis: GeoForge Database has not been activated in Desktop settings.
+  remedy: Ask the user to add and test their Database token in Settings.
+- id: db-004
+  symptom: The endpoint reports an invalid, expired, or revoked token.
+  diagnosis: The saved activation credential is no longer accepted by the service.
+  remedy: Ask the user to replace and test the Database token in Settings.
+- id: db-005
+  symptom: A query returns zero records.
+  diagnosis: The terms may be too specific or use a model name rather than catalogue geography and variables.
+  remedy: Broaden one dimension at a time and report that no original-query match was found.
+- id: db-006
+  symptom: Many unrelated records are returned.
+  diagnosis: The query omits a discriminating gauge, basin, variable, product, or period.
+  remedy: Add one user-supported discriminator and search again.
+- id: db-007
+  symptom: The Agent starts scanning local folders after a search failure.
+  diagnosis: The bounded adapter contract was ignored.
+  remedy: Stop local discovery and report the exact adapter failure to the user.
+- id: db-008
+  symptom: The Agent claims that a catalogue record was downloaded.
+  diagnosis: Catalogue availability was confused with retrieval evidence.
+  remedy: Mark the record as available only and wait for an approved Desktop download receipt.
+- id: db-009
+  symptom: A manual-delivery record has no local file.
+  diagnosis: The record requires Baidu Pan or another user-mediated transfer.
+  remedy: Present the returned delivery instructions and wait for the user to place the file at the approved path.
+- id: db-010
+  symptom: The helper rejects an unrecognized --query invocation.
+  diagnosis: An outdated adapter supporting only positional search text is being used.
+  remedy: Refresh the Desktop/KI library or use the positional query form shown in the stage guide.
+- id: db-011
+  symptom: Search output is not valid JSON.
+  diagnosis: The request failed before a catalogue payload was returned or a non-adapter command was called.
+  remedy: Preserve stderr and rerun only the exact projected database command.
+- id: db-012
+  symptom: The helper cannot connect to the loopback endpoint.
+  diagnosis: The Desktop process exited or the Agent inherited a stale endpoint.
+  remedy: Begin a new Agent turn in the active Desktop session.
+- id: db-013
+  symptom: Results cover the wrong dates or region.
+  diagnosis: A catalogue match was treated as scientifically suitable without checking its metadata.
+  remedy: Compare returned coverage with the approved study scope before proposing the record.
+- id: db-014
+  symptom: The Agent exposes or asks for the persistent database token.
+  diagnosis: The Desktop-owned credential boundary was violated.
+  remedy: Stop the turn, remove the token from chat or files, and use only the process-local adapter.
+- id: db-015
+  symptom: The Agent invents a dataset ID or fills missing metadata.
+  diagnosis: No returned catalogue evidence supports the claim.
+  remedy: Remove the claim and report only verbatim identifiers and metadata present in the adapter response.

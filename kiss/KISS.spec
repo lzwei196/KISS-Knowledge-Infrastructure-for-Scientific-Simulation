@@ -27,6 +27,7 @@ KI_TOOLS_SOURCE = REPO / "ki_tools_common"
 APP_NAME = "GeoForge Desktop" if sys.platform == "win32" else "GeoForge-Desktop"
 
 trust_datas, trust_binaries, trust_hidden = collect_all("truststore")
+netcdf_datas, netcdf_binaries, netcdf_hidden = collect_all("netCDF4")
 certifi_datas = collect_data_files("certifi")
 calibration_datas = []
 for distribution in ("numpy", "PyYAML", "spotpy", "pymoo", "moocore"):
@@ -67,11 +68,13 @@ harness_hidden = [
 datas = [
     (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
     (str(REPO / "models"), "models"),
+    (str(SOURCE / "system_kis"), "system_kis"),
     (str(REPO / "ki_tools_common"), "ki_tools_common"),
     (str(SOURCE / "manifests"), "kiss/manifests"),
     (str(REPO / "release-manifest.json"), "."),
     (str(REPO / "DESKTOP_CHANGELOG.md"), "."),
     *trust_datas,
+    *netcdf_datas,
     *certifi_datas,
     *calibration_datas,
 ]
@@ -82,9 +85,9 @@ if vendor.is_dir():
 a = Analysis(
     [str(SOURCE / "kiss_entry.py")],
     pathex=[str(SOURCE), str(KI_TOOLS_SOURCE)],
-    binaries=[*trust_binaries, *calibration_binaries],
+    binaries=[*trust_binaries, *netcdf_binaries, *calibration_binaries],
     datas=datas,
-    hiddenimports=[*trust_hidden, *calibration_hidden, *harness_hidden],
+    hiddenimports=[*trust_hidden, *netcdf_hidden, *calibration_hidden, *harness_hidden],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

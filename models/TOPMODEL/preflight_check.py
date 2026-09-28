@@ -5,13 +5,14 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
 MODEL_ID = "TOPMODEL"
 KI_DIR = Path(__file__).resolve().parent
 MODEL_ROOT = KI_DIR.parent
-SOURCE_DIR = MODEL_ROOT / "source" / "repo"
+SOURCE_DIR = Path("KISSPATH_BINARIES/TOPMODEL")
 BINARY = SOURCE_DIR / "run_bmi"
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
 HYDRO_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
@@ -123,21 +124,19 @@ def check_binary_starts(checks):
         f"build TOPMODEL with: cd {SOURCE_DIR / 'src'} && make clean && make",
     )
 
-    result = subprocess.run(
-        [str(BINARY)],
-        cwd=str(SOURCE_DIR),
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    with tempfile.TemporaryDirectory(prefix="topmodel-native-load-") as probe_dir:
+        result = subprocess.run(
+            [str(BINARY.resolve()), "--help"], cwd=probe_dir,
+            capture_output=True, text=True, timeout=10,
+        )
     ok = result.returncode == 0
     add_check(
         checks,
         "run",
-        f"{binary_realpath} cheap demo start in {SOURCE_DIR}",
+        f"{binary_realpath} --help in empty directory",
         True,
         ok,
-        f"run {BINARY} from {SOURCE_DIR} and inspect data/topmod.run, inputs.dat, subcat.dat, params.dat",
+        "Apply tools/prepare_topmodel_build.py to the pinned source and rebuild; do not run a scientific case for installation",
     )
     if result.stdout:
         print(f"        stdout: {result.stdout.strip().splitlines()[0]}")

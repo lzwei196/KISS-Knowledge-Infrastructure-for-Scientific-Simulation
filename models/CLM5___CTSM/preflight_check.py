@@ -20,11 +20,10 @@ HYDROCRAFT_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
 
 # This is the executable path projected into knowledge_infrastructure.yaml from
 # the models DB. Keep a report subject with its realpath for gate drift checks.
-MANIFEST_BINARY = Path("KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe")
+MANIFEST_BINARY = Path("KISSPATH_BINARIES/CTSM/ki-build/cesm.exe")
 
-# SKILL.md section 14b documents this as the validated execution route.
-CESM_ROOT = Path("KISSPATH_HOME/cesm/src/cesm-2.2.2")
-CREATE_NEWCASE = CESM_ROOT / "cime" / "scripts" / "create_newcase"
+# Native Mac installation uses the pinned CTSM source; legacy CESM2.2.2 is historical.
+CESM_ROOT = Path("KISSPATH_BINARIES/CTSM")
 DIN_LOC_ROOT = Path("KISSPATH_HOME/cesm/inputdata")
 DIN_LOC_ROOT_CLMFORC = Path("KISSPATH_HOME/cesm/inputdata/atm/datm7")
 
@@ -222,8 +221,7 @@ def main():
         check_ldd(checks, manifest_realpath)
         check_binary_starts(checks, manifest_realpath)
 
-    check_dir(checks, CESM_ROOT, "validated CESM 2.2.2 root")
-    check_file(checks, CREATE_NEWCASE, "CIME create_newcase", executable=True)
+    check_dir(checks, CESM_ROOT, "pinned CTSM 5.4 source root")
     check_dir(checks, DIN_LOC_ROOT, "CESM inputdata", non_empty=True)
     check_dir(checks, DIN_LOC_ROOT_CLMFORC, "DATM forcing inputdata", non_empty=True)
 

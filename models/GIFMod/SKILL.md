@@ -1,3 +1,8 @@
+> **macOS installation scope:** Read `docs/install.macos.md` and the macOS manifest.
+> Build the exact USEPA 0.1.26 source with genuine Qt5 using the trusted helper.
+> Installation checks use native --help/--version only, before the GUI starts.
+> No model datasets or scientific runs are required for installation.
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

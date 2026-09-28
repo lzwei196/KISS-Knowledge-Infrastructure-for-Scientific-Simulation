@@ -1,0 +1,29 @@
+kiss_manifest_version: 1
+model: icepack
+verified: unverified
+install_dir: icepack
+acquire:
+  strategy: build
+  repo: https://github.com/icepack/icepack.git
+  ref: 6c67b51b445398cf4a6ef284ebe602c397bd6ee4
+  commands:
+  - python3 ../../ki/tools/build_icepack_native.py .
+system_deps:
+- git
+python_deps: []
+notes: >-
+  Genuine icepack1.1.0 Python glacier library, pinned source, hosted on native
+  Firedrake2026.4.2/PETSc3.25.5/MPICH4.3.1 and pyroltrilinos0.5.6. Actual native
+  stack import passed on Apple Silicon; no scientific run or data acquisition.
+agent_hint: >-
+  FIRST read docs/install.macos.md. Invoke the trusted build helper using existing
+  workspace icepack-build-config.json BEFORE installing dependencies or requesting
+  user action. Its absolute providers are genuine SAME-HOST build dependencies,
+  deliberately outside this temporary workspace. The helper validates all wheel
+  hashes and source identity, installs fresh icepack source, and probes native imports.
+  Preserve the configured Python3.11 venv and kiss.python launcher path. Do not use
+  Python3.13, substitute PETSc3.23/3.21, replace modules, or count the interpreter
+  as the model. Python dependencies are installed by the helper after native
+  providers are validated. Do not run firedrake-check, tests, meshes, solvers,
+  tutorial notebooks, inverse problems, or dataset fetch functions. A cold import
+  can take65seconds; the helper bounds it at180seconds and timeout always fails.

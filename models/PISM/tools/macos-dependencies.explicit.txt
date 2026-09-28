@@ -1,0 +1,12 @@
+# platform: osx-arm64
+@EXPLICIT
+https://conda.anaconda.org/conda-forge/osx-arm64/_openmp_mutex-4.5-8_kmp_llvm.conda#a2d706b4a7d603524133037c34f7fb76
+https://conda.anaconda.org/conda-forge/osx-arm64/fftw-3.3.11-nompi_haf1500d_100.conda#58628fdc0c614982f1dafd2116916288
+https://conda.anaconda.org/conda-forge/osx-arm64/libcxx-23.1.0-h55c6f16_0.conda#5303ba06fab927399ed8dfb3227b0af8
+https://conda.anaconda.org/conda-forge/osx-arm64/libexpat-2.8.1-hf6b4638_1.conda#a915151d5d3c5bf039f5ccc8402a436f
+https://conda.anaconda.org/conda-forge/osx-arm64/libgcc-16.2.0-h3cf6597_4.conda#408af8d9d5226ff45ff04756ff1aa91e
+https://conda.anaconda.org/conda-forge/osx-arm64/libgfortran-16.2.0-h07b0088_4.conda#aa6c627acd0f5709d9c79bf708a7b81b
+https://conda.anaconda.org/conda-forge/osx-arm64/libgfortran5-16.2.0-hdb7a957_4.conda#d54390644d893d50e739b19145aae45f
+https://conda.anaconda.org/conda-forge/osx-arm64/libudunits2-2.2.28-h5f3f34b_3.conda#033eab02473b094c801a599f3e35b241
+https://conda.anaconda.org/conda-forge/osx-arm64/llvm-openmp-23.1.0-hdb3d66b_0.conda#0affff5130a421d11d4d77ffbb00dad7
+https://conda.anaconda.org/conda-forge/osx-arm64/udunits2-2.2.28-h5f3f34b_3.conda#11313d54a3ae5a292cece61e7a18b0d2

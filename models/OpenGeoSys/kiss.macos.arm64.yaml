@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: OpenGeoSys
+binary_type: Python console script with native Mach-O extension
+verified: unverified
+install_dir: .
+acquire:
+  strategy: pip
+  package: ogs==6.5.7
+  produces: ogs
+python_deps: [numpy, pandas]
+notes: Official OGS 6.5.7 Apple Silicon wheel installs the ogs console entry point, which loads the compiled ogs.OGSSimulator extension and checks native command-line arguments before returning version/help. The wheel has no standalone ogs Mach-O executable; bundled mesh utilities are not solver substitutes.
+agent_hint: >-
+  Use genuine Python 3.13 and the official cp313 macosx_12_0_arm64 wheel.
+  Create the real environment at <workspace>/venv, install
+  ogs==6.5.7, numpy and pandas there, and save that exact venv/bin/python in kiss.toml.
+  Preserve pip's official venv/bin/ogs entry point and expose it as <workspace>/binaries/ogs via a symlink. Retry51 verified this exact genuine console/native extension path; no extra OpenGeoSys/venv directory in product.
+  Do not substitute a KI wrapper, copied interpreter, or mesh utility for ogs.
+  Verify actual ogs.OGSSimulator import and native version/help startup from an
+  empty directory. OGS_USE_PATH must be unset or 0 so the official wheel extension
+  is used. Do not construct a simulation or acquire project inputs. For certificate
+  errors use the real /opt/homebrew/etc/openssl@3/cert.pem CA bundle; never disable TLS.

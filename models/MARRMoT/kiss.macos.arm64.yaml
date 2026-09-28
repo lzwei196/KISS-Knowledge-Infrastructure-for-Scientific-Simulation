@@ -1,0 +1,133 @@
+kiss_manifest_version: 1
+model: MARRMoT
+binary_type: Octave toolbox
+verified: partial
+install_dir: MARRMoT/source/repo
+octave_package:
+  runtime: binaries/octave/bin/octave-cli
+  source: binaries/MARRMoT/source/repo
+  package_registry_root: octave_packages
+  classes:
+  - m_01_collie1_1p_1s
+  - m_02_wetland_4p_1s
+  - m_03_collie2_4p_1s
+  - m_04_newzealand1_6p_1s
+  - m_05_ihacres_7p_1s
+  - m_06_alpine1_4p_2s
+  - m_07_gr4j_4p_2s
+  - m_08_us1_5p_2s
+  - m_09_susannah1_6p_2s
+  - m_10_susannah2_6p_2s
+  - m_11_collie3_6p_2s
+  - m_12_alpine2_6p_2s
+  - m_13_hillslope_7p_2s
+  - m_14_topmodel_7p_2s
+  - m_15_plateau_8p_2s
+  - m_16_newzealand2_8p_2s
+  - m_17_penman_4p_3s
+  - m_18_simhyd_7p_3s
+  - m_19_australia_8p_3s
+  - m_20_gsfb_8p_3s
+  - m_21_flexb_9p_3s
+  - m_22_vic_10p_3s
+  - m_23_lascam_24p_3s
+  - m_24_mopex1_5p_4s
+  - m_25_tcm_6p_4s
+  - m_26_flexi_10p_4s
+  - m_27_tank_12p_4s
+  - m_28_xinanjiang_12p_4s
+  - m_29_hymod_5p_5s
+  - m_30_mopex2_7p_5s
+  - m_31_mopex3_8p_5s
+  - m_32_mopex4_10p_5s
+  - m_33_sacramento_11p_5s
+  - m_34_flexis_12p_5s
+  - m_35_mopex5_12p_5s
+  - m_36_modhydrolog_15p_5s
+  - m_37_hbv_15p_5s
+  - m_38_tank2_16p_5s
+  - m_39_mcrm_16p_5s
+  - m_40_smar_8p_6s
+  - m_41_nam_10p_6s
+  - m_42_hycymodel_12p_6s
+  - m_43_gsmsocont_12p_6s
+  - m_44_echo_16p_6s
+  - m_45_prms_18p_7s
+  - m_46_classic_12p_8s
+  - m_47_IHM19_16p_4s
+  source_files:
+    MARRMoT/Models/Model files/m_19_australia_8p_3s.m: 15391336f23409d609bfa4c57bc3ac4cacdf8f837660adeac34d2dd7826d25fb
+    MARRMoT/Models/Model files/m_02_wetland_4p_1s.m: 5a65aa927703333075bb35afd77ef60b8840020f6b91a70c16b881b85fb21ad4
+    MARRMoT/Models/Model files/m_16_newzealand2_8p_2s.m: aa5733d89bfacf78922eb004f6c9d3d286a18101ec8c2da5c67d73778c32c236
+    MARRMoT/Models/Model files/m_10_susannah2_6p_2s.m: b518eed7ea6a4f4f7553c6bcbf0930545c67b86f48cd4dfbb1c39fe8f64f2e78
+    MARRMoT/Models/Model files/m_11_collie3_6p_2s.m: fc05a19b5002e12467d5e380044a9dc73e592cce247c0030a246af59a5aa6ea8
+    MARRMoT/Models/Model files/m_30_mopex2_7p_5s.m: f5196cf7ceb15d9fbafcee114a96fb359f76884b69e11f63228a4d7c8f77d8d5
+    MARRMoT/Models/Model files/m_04_newzealand1_6p_1s.m: a51c44d2da2c24776dbd80e14c87ae893a98bab2d6f51a2de5a350b9fece39f3
+    MARRMoT/Models/Model files/m_14_topmodel_7p_2s.m: ab4b1a70e6f2ba3a9ce9b3a2a7e7724b4995d57306aa9c7d48a37b16f5a44918
+    MARRMoT/Models/Model files/m_13_hillslope_7p_2s.m: 4024ad08f1e06476267c0ab535c17682f119fdb2313ab21f8093f233cc17d358
+    MARRMoT/Models/Model files/m_06_alpine1_4p_2s.m: 5f618b8d8f6b70dec360ea9116441f82c72d099c6f3593180520346f0490c678
+    MARRMoT/Models/Model files/m_26_flexi_10p_4s.m: 3a7e5e2535baba28986e3916bd1f29210d4c44cde9c5866fc6ef7e5967e8a595
+    MARRMoT/Models/Model files/m_18_simhyd_7p_3s.m: 4f4ad5e174924c06869ab3763280cfab00a0f61dc1a773fd7e685df09722d2f3
+    MARRMoT/Models/Model files/m_27_tank_12p_4s.m: 51dc445b43bd64a9488b2c8c8df735c1ad364c18a3614e25684d7fda7bdbeb36
+    MARRMoT/Models/Model files/m_22_vic_10p_3s.m: 4d0d67bd3d0fc139e6053b8bf2079d904d8a91f88e0d637654e69fbab336aff5
+    MARRMoT/Models/Model files/m_46_classic_12p_8s.m: 4d62169f3b420cd5396aee26a8ae4bd911563ded24c9f7404009214a821979de
+    MARRMoT/Models/Model files/m_23_lascam_24p_3s.m: d218bb12183ac9e648ad056f474131b17396ca3611d56a83bc032ed9af4add19
+    MARRMoT/Models/Model files/m_24_mopex1_5p_4s.m: a65eb9235a0611bf673f7a125008ebaa8d145e46d5436ca51d91be676456930a
+    MARRMoT/Models/Model files/m_09_susannah1_6p_2s.m: 879abaeb72624be901af6d8a878986038366c27d31804d712bd55ddb9ceb86d9
+    MARRMoT/Models/Model files/m_25_tcm_6p_4s.m: 5c7b625268d544ca318fe2a2b89cb9de58fd651fe77758de2200fca6e54ffc54
+    MARRMoT/Models/Model files/m_03_collie2_4p_1s.m: 09290696406e4123d55cf077e4837680be581137ba77eb33a60bf890890c981f
+    MARRMoT/Models/Model files/m_28_xinanjiang_12p_4s.m: a651cefb2bf204e06941a2be8965d33c4fe9121442a994b64318a40541be6684
+    MARRMoT/Models/Model files/m_37_hbv_15p_5s.m: 664d51281ec8dfc0ae8e9a8b3f98f0435edc783c2ceaea82ee542dd808577231
+    MARRMoT/Models/Model files/m_47_IHM19_16p_4s.m: 7eece11e4a320b542bbf8e0d0ce887544a8b9721dd6c3c1416ad8d453d9d3486
+    MARRMoT/Models/Model files/m_44_echo_16p_6s.m: 9d5782085043f8a18d4b679b626c56ef475fac1a9edf06ce0e4fa7692d91f645
+    MARRMoT/Models/Model files/m_34_flexis_12p_5s.m: afb74f5b647fa80ff23efa2885d2e5406af5d7786fe58265b6584f8ffea6e285
+    MARRMoT/Models/Model files/m_33_sacramento_11p_5s.m: 9234dfbad37f5eb032ee438e7650b781acb7a903e83f2877bc8c6a2f14847ca9
+    MARRMoT/Models/Model files/m_17_penman_4p_3s.m: 1cfe0480c250d56c4b308c1720a394af71a50749988e7435d764e30d5c89fb9c
+    MARRMoT/Models/Model files/m_38_tank2_16p_5s.m: a67529c58a9e2f1f0daf9011c5947921ca44cb533e7104f4a47bb82059d4cfff
+    MARRMoT/Models/Model files/m_31_mopex3_8p_5s.m: 1426473ce94dd32bcf9577a4da75a3b5417c4ee6c2e81f859e1483fbcd5e3b3c
+    MARRMoT/Models/Model files/m_43_gsmsocont_12p_6s.m: 88342b3b599317748a5af2b7c6b1227ef7303c1af64feb986d76d42e3e8002d2
+    MARRMoT/Models/Model files/m_39_mcrm_16p_5s.m: d3084d106db8dc89022d9165ae3b346a222745800f655d7e25a4ef8c0b8ce324
+    MARRMoT/Models/Model files/m_01_collie1_1p_1s.m: 34e8ddd3eb63975b1a5142caf11537efce193131a175e3c43b548feec1abbed5
+    MARRMoT/Models/Model files/m_42_hycymodel_12p_6s.m: 0fd50a7ebe8f067ecd5f743a8928430721275c7211d73e9c04d404c7b427cb17
+    MARRMoT/Models/Model files/m_12_alpine2_6p_2s.m: 6dd0d4b594cfe06879d4c95aff8a92ad90d600ae6357d2aa9d7d14b20d7ae23d
+    MARRMoT/Models/Model files/m_21_flexb_9p_3s.m: 50e975fffaab02c7cb6e426c7c9737ac92327fb2aaa0c1b8d46c97b4f586955c
+    MARRMoT/Models/Model files/m_35_mopex5_12p_5s.m: 18f4f46f30d1e4f6f12ac7c736551265e74c1272f0dce79f40604a906b9a0422
+    MARRMoT/Models/Model files/m_29_hymod_5p_5s.m: 2a37e3131be1e7b849b1a99bb28c4a5ae070b7442cfb416bd450cbfc326dd1be
+    MARRMoT/Models/Model files/m_07_gr4j_4p_2s.m: 496b8107e21bdce3aa273a8584bfc395e6117de7d19ce7c75a1a9cfb614bf8b0
+    MARRMoT/Models/Model files/m_36_modhydrolog_15p_5s.m: 1168d471b79ae5851a329de1b31f6c0e5012ece3878d09f88a0e5b6b0ca09e39
+    MARRMoT/Models/Model files/m_20_gsfb_8p_3s.m: 0bde2d4948dd2fcfaa5af50bfb62b48ff6246104d2efd63ec1bb8a454a6fb289
+    MARRMoT/Models/Model files/m_32_mopex4_10p_5s.m: 0e13ba2b5f61e8ae08ba0424e6aca9c5edcfecb7f8048bbe1e9ef6b4863079fe
+    MARRMoT/Models/Model files/m_05_ihacres_7p_1s.m: 8400f67bb7def497f27d0178cc5628a548f4354db53baa8611787000e82cd187
+    MARRMoT/Models/Model files/MARRMoT_model.m: d24b19b082f76a48a7708d224fcd7dfd1f5698a17f2d2d95fd82e23fbe823093
+    MARRMoT/Models/Model files/m_41_nam_10p_6s.m: 6939e6d2aef52fad4ce4eb1332bd4f0270d3e1bce6b59bf68b365081259df5a6
+    MARRMoT/Models/Model files/m_40_smar_8p_6s.m: 8274e35ddb16415ffb00dec572d973d70e11be4c1c81014dd5f0f79ccc00bcf5
+    MARRMoT/Models/Model files/m_08_us1_5p_2s.m: 314fe5eb34cac9bb78c181b56cd654649f7aa3142ae4eff3ed25fe1df6fb8c56
+    MARRMoT/Models/Model files/m_15_plateau_8p_2s.m: 32531b08203891b94632c6105727dd247a97a65d68146f2e65eb0c95b58a3bfc
+    MARRMoT/Models/Model files/m_45_prms_18p_7s.m: 1a4576a244efc18d3bc70f284ae2e3652a68951128f073a6ea62d52f316c3998
+  packages:
+    optim: 1.6.3
+    statistics: 1.7.7
+    struct: 1.0.18
+acquire:
+  strategy: build
+  repo: https://github.com/wknoben/MARRMoT.git
+  ref: a95b925669385e6c747637dec45c848601177ea4
+python_deps:
+- numpy
+- scipy
+- pandas
+- matplotlib
+- pyyaml
+notes: 'Official MARRMoT2.1.2 source: all47 model classes load with exact source hashes/paths
+  and model_fun methods under native Octave10.3.0. optim1.6.3 native module and statistics1.7.7/struct1.0.18
+  verified. No constructors, timesteps, calibration, examples or scientific datasets.
+  Local installation proof passed; DS end-to-end retry required.'
+agent_hint: Read docs/install.macos.md. Native Octave and its optim/statistics/struct
+  packages must be installed genuinely in the scoped workspace; interpreter --version
+  is not enough. Keep exact source ref and original model bytes. Expected runtime
+  is binaries/octave/bin/octave-cli with OCTAVE_HOME and OCTAVE_EXEC_HOME set to binaries/octave.
+  Preserve isolated octave_packages registry. test_installation loads all47 class
+  definitions and optim native module. The supplied tools/load_marrmot_installation.m
+  is the exact trusted setup probe; do not run scientific model helpers. Never brew-install
+  Octave during concurrent jobs because its MPI/shared-library changes can disrupt
+  them.

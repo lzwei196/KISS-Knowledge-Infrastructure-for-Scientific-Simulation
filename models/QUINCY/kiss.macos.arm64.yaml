@@ -1,0 +1,27 @@
+kiss_manifest_version: 1
+model: QUINCY
+binary_type: Python
+verified: observed
+install_dir: QUINCY
+acquire:
+  strategy: bundled
+  produces: tools/run_quincy.py
+python_script:
+  implementation_id: quincy-analytic-py
+  path: tools/run_quincy.py
+  sha256: bf3e676c78629e5df329d5691a82e8646551162f3d99a81e34898677f0c4dfd2
+python_deps:
+- numpy
+- scipy
+notes: Installs the declared quincy-analytic-py Python implementation (analytic reimplementation
+  (QUINCYModel, monthly timestep)). This is not installation of the official upstream QUINCY application
+  and does not establish algorithmic equivalence. The original scientific runner bytes are unchanged.
+  Fresh DS installation passed the source-bound declared-variant contract on 2026-09-09. Official
+  upstream installation remains unverified.
+agent_hint: Read docs/install.macos.md. Use the actual bundled ki/tools/run_quincy.py in the workspace;
+  do not create a replacement runner, copy a stub, or choose the Python interpreter as model product.
+  Install genuine listed dependencies into the workspace venv. The fixed python_script gate verifies
+  implementation identity and runner SHA256, then requires --help exit0 in an empty directory with
+  no created paths. Do not run --version (unsupported), construct model objects, call simulation/calibration
+  functions, invoke scientific preflight checks, or create/download input data. No official upstream
+  application is required for this explicitly declared variant contract.

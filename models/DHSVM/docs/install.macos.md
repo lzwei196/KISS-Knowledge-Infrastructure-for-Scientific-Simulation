@@ -1,0 +1,7 @@
+# DHSVM: Mac build findings requiring review
+
+The real Mac DeepSeek attempt compiled the official PNNL v3.2 core and reported a startup banner. The independent installation verdict stayed failed because the KI had no declared native product. The reported product was binaries/DHSVM/build/DHSVM/sourcecode/DHSVM; a retry must explicitly reconcile that path through a manifest and verify it independently.
+
+Do not copy the attempt's broad integer/pointer/implicit-declaration warning suppressions into a verified recipe without source review. Its log identifies a road-class assignment that compares a returned pointer with NULL before assigning the result, so merely suppressing the integer-to-pointer diagnostic does not establish correct semantics. The assertion that this path is irrelevant to a particular example is not evidence of general model correctness. Prefer an upstream-supported build/source fix; preserve the requested scientific version and record any limitation rather than silently changing algorithms or accepting pointer truncation.
+
+The attempt used native CMake with CMAKE_POLICY_VERSION_MINIMUM=3.5 and the core DHSVM target. Optional preprocessing utilities were not validated. It reported numpy, pandas, matplotlib, PyYAML, rasterio, pysheds and pyflwdir importing in the recorded workspace environment. Scientific runs and forcing-data acquisition remain outside the installation test.

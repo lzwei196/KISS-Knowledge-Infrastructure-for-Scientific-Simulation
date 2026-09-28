@@ -1,0 +1,35 @@
+kiss_manifest_version: 1
+model: FATES
+binary_type: Mach-O
+verified: unverified
+install_dir: FATES
+acquire:
+  strategy: build
+  repo: https://github.com/ESCOMP/CTSM.git
+  ref: dae706a769a04ff13def0a909930c899a265368a
+  commands:
+  - python3 ../../ki/tools/build_fates_native.py .
+  produces: ki-fates-build/cesm.exe
+python_deps:
+- numpy
+- pandas
+- xarray
+- matplotlib
+- netCDF4
+- PyYAML
+system_deps:
+- git
+- cmake
+- make
+- gfortran
+notes: FATES sci.1.92.7_api.46.0.0 (121723f64e94be97fd91fc95cfd1ba72dfc191ee), hosted
+  by exact CTSM ctsm5.4.054. Build the actual I2000Clm50FatesRsGs native coupled executable;
+  FATES is not standalone. Scientific validation is separate from installation.
+agent_hint: Read docs/macos_build_only.md and run the trusted named build helper from
+  binaries/FATES. Supply genuine ESMF/PIO/MPICH/netCDF development libraries and Python
+  3.11 through workspace fates-build-config.json native_runtime/build_python keys,
+  or explicit --runtime/--python arguments. Preserve exact host and FATES gitlinks;
+  do not use latest master or accept a setup script as the native product. The helper
+  creates a FATES compset, builds support libraries including lnd, then actual native
+  components and final cesm.exe. No scientific dataset download, case execution, or
+  numerical source patches. Probe only in an empty directory with bounded runtime.

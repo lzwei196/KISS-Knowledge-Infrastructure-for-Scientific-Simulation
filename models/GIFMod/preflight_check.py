@@ -7,6 +7,7 @@ import py_compile
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -109,6 +110,7 @@ def candidate_source_dirs():
         candidates.append(SOURCE_DIR)
     candidates.extend(
         [
+            KI_DIR.parent / "binaries" / "GIFMod",
             KI_DIR / "source" / "repo",
             KI_DIR / "source",
             KI_DIR.parent / "source" / "repo",
@@ -133,7 +135,6 @@ def binary_candidates(source_dir=None):
     if source_dir:
         candidates.extend(
             [
-                source_dir / "bindata" / "GIFMod",
                 source_dir / "builds" / "release" / "GIFMod",
                 source_dir / "build" / "GIFMod",
                 source_dir / "build" / "release" / "GIFMod",
@@ -220,7 +221,7 @@ def check_binary_exists(source_dir=None):
 def check_ldd(binary):
     try:
         result = subprocess.run(
-            ["ldd", str(binary)],
+            (["otool", "-L", str(binary)] if sys.platform == "darwin" else ["ldd", str(binary)]),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -237,37 +238,18 @@ def check_ldd(binary):
 
 
 def check_binary_starts(binary):
-    env = os.environ.copy()
-    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    binary = binary.resolve()
     try:
-        result = subprocess.run(
-            [str(binary), "--help"],
-            cwd=str(binary.parent),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=5,
-        )
-    except subprocess.TimeoutExpired:
-        return check("run", binary.resolve(), True, True)
-    except OSError as exc:
-        return check("run", binary.resolve(), True, False, fix(f"Cannot start GIFMod executable: {exc}"))
-    if result.returncode == 0:
-        return check("run", binary.resolve(), True, True)
-    detail_lines = (result.stderr or result.stdout).strip().splitlines()
-    symbol_errors = [line for line in detail_lines if "symbol lookup error" in line]
-    detail = symbol_errors[-1] if symbol_errors else (detail_lines[-1] if detail_lines else f"exit code {result.returncode}")
-    return check(
-        "run",
-        binary.resolve(),
-        True,
-        False,
-        fix(
-            "GIFMod executable fails its cheap start check. Rebuild with the current Qt5/libstdc++ "
-            f"runtime or fix LD_LIBRARY_PATH. First error: {detail}"
-        ),
-    )
+        with tempfile.TemporaryDirectory(prefix="gifmod-native-probe-") as cwd:
+            result = subprocess.run([str(binary), "--version"], cwd=cwd,
+                                    capture_output=True, text=True, timeout=10)
+            clean = not any(Path(cwd).iterdir())
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return check("run", binary, True, False, fix(f"Native version probe failed: {exc}"))
+    expected = "GIFMod 0.1.26 (USEPA 2a314750418099ca51a100d824381924ba982c91)"
+    passed = result.returncode == 0 and result.stdout.strip() == expected and not result.stderr.strip() and clean
+    return check("run", binary, True, passed,
+                 fix(f"Native identity/load probe failed: rc={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"))
 
 
 def check_build_helper(name, install_hint):
@@ -341,7 +323,7 @@ def main():
     if failed:
         print(f"  STATUS: PREFLIGHT FAILED - fix blockers above; start with {DIAGNOSTICS}")
     else:
-        print("  STATUS: PREFLIGHT PASSED - safe to proceed with GIFMod execution")
+        print("  STATUS: PREFLIGHT PASSED - native installation checks complete; scientific workflows not validated")
     emit_report(MODEL_ID, checks)
 
 

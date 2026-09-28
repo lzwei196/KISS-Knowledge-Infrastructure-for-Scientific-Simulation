@@ -1,0 +1,18 @@
+kiss_manifest_version: 1
+model: SUMMA
+binary_type: Mach-O
+verified: unverified
+install_dir: summa-src
+acquire:
+  strategy: build
+  repo: https://github.com/CH-Earth/summa.git
+  ref: 2213bc57358e6709b48217cfce64f96a4b90b287
+  produces: bin/summa.exe
+python_deps: [numpy, pandas, xarray, netCDF4]
+system_deps: [git, make, gfortran, netcdf, netcdf-fortran]
+reference_case: bin/summa.exe --version
+notes: Windows source/product contract adapted to native Mac. Same source pin was compiled in the Mac DS baseline, but independent discovery failed because no executable was declared. Product suffix .exe is upstream naming; verify Mach-O arm64. Build configuration and clean DS retry pending.
+agent_hint: Set F_MASTER to source root and configure FC, FC_EXE, INCLUDES and LIBRARIES against native Homebrew netCDF-Fortran and LAPACK/BLAS. Run upstream compile_noah, compile_comm, compile_summa, link and install targets sequentially with make -j1; do not run global all/clean targets concurrently. Preserve the actual bin/summa.exe product and runtime libraries. Startup/import checks only; no forcing or simulation.
+
+# Repair retry built the real executable under binaries/summa-src/bin/summa.exe.
+# Link netCDF transitively; avoid explicitly linking stale versioned HDF5 libraries.

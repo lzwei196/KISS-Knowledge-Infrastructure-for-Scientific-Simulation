@@ -1,0 +1,33 @@
+kiss_manifest_version: 1
+model: VELMA
+binary_type: Python
+verified: observed
+install_dir: VELMA
+acquire:
+  strategy: bundled
+  produces: tools/run_velma.py
+python_script:
+  implementation_id: velma-python-4layer
+  path: tools/run_velma.py
+  sha256: 051af5442a787087d41e58982040caa6c8500145f593941a18e5f7a29e722123
+python_deps:
+- numpy
+- pandas
+- scipy
+- xarray
+- geopandas
+- shapely
+- netCDF4
+- matplotlib
+notes: Installs the declared velma-python-4layer Python implementation (run_velma.py velma_4layer
+  (lumped daily reimplementation)). This is not installation of the official upstream VELMA application
+  and does not establish algorithmic equivalence. The original scientific runner bytes are unchanged.
+  Fresh DS installation passed the source-bound declared-variant contract on 2026-09-09. Official
+  upstream installation remains unverified.
+agent_hint: Read docs/install.macos.md. Use the actual bundled ki/tools/run_velma.py in the workspace;
+  do not create a replacement runner, copy a stub, or choose the Python interpreter as model product.
+  Install genuine listed dependencies into the workspace venv. The fixed python_script gate verifies
+  implementation identity and runner SHA256, then requires --help exit0 in an empty directory with
+  no created paths. Do not run --version (unsupported), construct model objects, call simulation/calibration
+  functions, invoke scientific preflight checks, or create/download input data. No official upstream
+  application is required for this explicitly declared variant contract.

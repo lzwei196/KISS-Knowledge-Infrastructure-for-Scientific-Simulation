@@ -1,0 +1,24 @@
+schema_version: "1.0"
+renderer: pipeline
+title: GeoForge Database discovery
+nodes:
+  - id: goal
+    label: Scientific data need
+    kind: input
+  - id: query
+    label: Scoped catalogue query
+    kind: transform
+  - id: catalogue
+    label: Authenticated catalogue
+    kind: service
+  - id: candidates
+    label: Exact dataset candidates
+    kind: output
+  - id: approval
+    label: User selects data
+    kind: gate
+edges:
+  - [goal, query]
+  - [query, catalogue]
+  - [catalogue, candidates]
+  - [candidates, approval]

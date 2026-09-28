@@ -1,0 +1,28 @@
+kiss_manifest_version: 1
+model: WASP
+binary_type: Python
+verified: observed
+install_dir: WASP
+acquire:
+  strategy: bundled
+  produces: tools/run_wasp.py
+python_script:
+  implementation_id: hydrocraft-wasp
+  path: tools/run_wasp.py
+  sha256: 6a2f92a70032e1253b2277c5b13d69e55095c46e0b84435cad55b04f4498bd47
+python_deps:
+- numpy
+- pandas
+- scipy
+- matplotlib
+notes: Installs the declared hydrocraft-wasp Python implementation (1.0.0). This is not installation
+  of the official upstream WASP application and does not establish algorithmic equivalence. The original
+  scientific runner bytes are unchanged. Fresh DS installation passed the source-bound declared-variant
+  contract on 2026-09-09. Official upstream installation remains unverified.
+agent_hint: Read docs/install.macos.md. Use the actual bundled ki/tools/run_wasp.py in the workspace;
+  do not create a replacement runner, copy a stub, or choose the Python interpreter as model product.
+  Install genuine listed dependencies into the workspace venv. The fixed python_script gate verifies
+  implementation identity and runner SHA256, then requires --help exit0 in an empty directory with
+  no created paths. Do not run --version (unsupported), construct model objects, call simulation/calibration
+  functions, invoke scientific preflight checks, or create/download input data. No official upstream
+  application is required for this explicitly declared variant contract.

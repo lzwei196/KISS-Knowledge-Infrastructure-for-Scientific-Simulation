@@ -5,15 +5,17 @@ package:
   name: LDNDC
   language: c++
   implementation:
-    id: ldndc-1.37-linux64
+    id: ldndc-1.37-mac64
     version: '1.37'
-    provenance: C++11; KIT/IMK-IFU precompiled closed-source linux64 binary (bin/ldndc) realizing the
-      MoBiLE modular framework.
+    provenance: Official KIT/IMK-IFU native macOS arm64 distribution, revision 12193
+      (2026-03-03), implementing MoBiLE; bundled LICENSE distinguishes the
+      scientific model collection from the crabmeat framework. Legacy Linux
+      distribution and science runner paths remain documented separately.
   scientific_reference_version: LandscapeDNDC 1.37.0 (MoBiLE framework; Models Description Apr 2026),
     MeTrx soil-biogeochemistry lineage from Arable-DNDC / Forest-DNDC
   binary:
-    path: KISSPATH_BINARIES/ldndc/ldndc-1.37.linux64/bin/ldndc
-    type: ELF
+    path: KISSPATH_BINARIES/ldndc/ldndc-1.37.mac64/bin/ldndc
+    type: Mach-O
 pipeline:
   stages:
   - s10_vic_coupling_skill

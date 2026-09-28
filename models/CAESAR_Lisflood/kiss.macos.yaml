@@ -1,0 +1,27 @@
+kiss_manifest_version: 1
+model: CAESAR_Lisflood
+binary_type: Mach-O
+verified: unverified
+install_dir: CAESAR_Lisflood
+acquire:
+  strategy: build
+  repo: https://github.com/dvalters/HAIL-CAESAR.git
+  ref: v1.0
+  commands:
+  - mkdir -p bin
+  - c++ -std=c++11 -O2 -I include src/main.cpp src/topotools/LSDRaster.cpp src/topotools/LSDIndexRaster.cpp
+    src/topotools/LSDStatsTools.cpp src/topotools/LSDShapeTools.cpp src/catchmentmodel/LSDCatchmentModel.cpp
+    src/catchmentmodel/LSDGrainMatrix.cpp src/catchmentmodel/LSDRainfallRunoff.cpp
+    -o bin/HAIL-CAESAR
+  produces: bin/HAIL-CAESAR
+python_deps: []
+system_deps:
+- c++
+reference_case: bin/HAIL-CAESAR --help
+notes: Adapted from windows-version fbed40b installation recipe on 2026-09-08. This
+  Mac recipe has not yet passed a Mac installation test. Windows verification is not
+  Mac verification.
+agent_hint: Build official HAIL-CAESAR v1.0 using the serial source list learned from
+  Windows. The Mac command removes cmd.exe syntax, MinGW runtime flags, and the PE
+  suffix. Use native clang++/c++; do not change scientific routines. Preserve source
+  and record the actual native startup probe.

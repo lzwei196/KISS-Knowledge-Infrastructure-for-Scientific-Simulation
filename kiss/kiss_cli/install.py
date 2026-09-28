@@ -114,11 +114,20 @@ def install_python_deps(deps: list[str], python: str,
 
 
 def acquire(man: Manifest, prefix: Path, python: str,
-            env: dict | None = None) -> tuple[Step, Path | None]:
+            env: dict | None = None, ki=None) -> tuple[Step, Path | None]:
     """Obtain the executable per the manifest's strategy."""
     a = man.acquire
     if a is None:
         return Step("acquire", False, "no acquire block in manifest"), None
+    if getattr(man, "python_script", None) is not None:
+        from . import python_script
+        try:
+            if a.strategy != "bundled" or ki is None:
+                raise ValueError("Declared Python script requires bundled acquisition and KI context")
+            path = python_script.resolve(ki, man.python_script)
+            return Step("acquire[bundled]", True, "Source-bound declared Python implementation"), path
+        except (ValueError, TypeError, OSError) as exc:
+            return Step("acquire[bundled]", False, str(exc)), None
     prefix.mkdir(parents=True, exist_ok=True)
     fn = {
         "pip": _acq_pip, "download": _acq_download, "build": _acq_build,

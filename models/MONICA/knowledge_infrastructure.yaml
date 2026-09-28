@@ -12,7 +12,7 @@ package:
   scientific_reference_version: MONICA 3.6.x (ZALF; MOdel of Nitrogen and Carbon dynamics in Agro-ecosystems;
     Nendel et al. 2011, Ecological Modelling)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MONICA/source/repo/_cmake_release/monica-run
+    path: KISSPATH_BINARIES/MONICA/ki-build/monica-run
     type: work_dir
 pipeline:
   stages: []

@@ -1,0 +1,12 @@
+kiss_manifest_version: 1
+model: ESMF
+binary_type: Python
+verified: unverified
+install_dir: ESMF
+acquire:
+  strategy: pip
+  package: esmpy==8.9.1
+  produces: esmpy.api.esmpymanager
+python_deps: []
+notes: Verifies the official native ESMF8.9.1 framework through its ESMPy Python binding. Genuine conda-forge osx-arm64 ESMF/ESMPy package pair is provisioned in the workspace. Scientific regridding and separate application/model plugins are outside installation scope.
+agent_hint: Preserve real preprovisioned workspace conda environment with ESMF and esmpy8.9.1. Modern Python module is esmpy, not legacy ESMF. Verify actual esmpy.api.esmpymanager import and native ESMF library loading; no fake modules or interpreter-only verdict. Do not generate weights, create model grids, run simulations or acquire scientific datasets. Keep the exact environment launcher in kiss.toml.

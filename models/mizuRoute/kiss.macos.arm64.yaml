@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: mizuRoute
+binary_type: Mach-O
+verified: unverified
+install_dir: mizuRoute
+acquire:
+  strategy: build
+  repo: https://github.com/ESCOMP/mizuRoute.git
+  ref: 77dd385fcceb2447cf7d24b4e47b85352b94ae23
+  produces: route/bin/mizuroute.exe
+python_deps: [numpy, pandas, netCDF4]
+system_deps: [git, make, cmake, clang, gfortran, netcdf]
+notes: Source pin and native product recovered from previous Mac build evidence; independent baseline lacked product declaration. Fresh build/startup verification pending.
+agent_hint: Build real PIO2 pio2_6_6 and GPTL with installed MPICH mpicc/mpif90 and native netCDF. PIO_ENABLE_TIMING=ON and PIO_ENABLE_TESTS=OFF; install into route/build/lib/piolib. Build official route/build/Makefile then make install to route/bin/mizuroute.exe. Use consistent MPI compiler wrappers. No stub PIO/MPI modules. Startup only in empty directory, no routing input or simulations.

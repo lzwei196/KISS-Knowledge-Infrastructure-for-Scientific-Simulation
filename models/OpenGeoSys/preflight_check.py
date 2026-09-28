@@ -195,6 +195,7 @@ def main() -> None:
     check_binary_starts(ogs_binary)
     check_file(ogs_python, "OpenGeoSys launcher Python", critical=True, executable=True)
     check_import("ogs", ogs_python, "OpenGeoSys Python package used by the CLI wrapper", critical=True)
+    check_import("ogs.OGSSimulator", ogs_python, "OpenGeoSys compiled native solver extension", critical=True)
 
     check_file(HYDROCRAFT_PYTHON, "HydroCraft Python environment", critical=True, executable=True)
     for module in ("numpy", "pandas"):

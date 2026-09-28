@@ -1,0 +1,31 @@
+kiss_manifest_version: 1
+model: GR4J___airGR
+binary_type: R package (native Fortran)
+verified: observed
+install_dir: airGR
+r_package:
+  name: airGR
+  version: 1.7.8
+  library_root: workspace
+  library: R/library
+  dll: libs/airGR.so
+  fortran_symbol: frun_gr4j
+  function: RunModel_GR4J
+acquire:
+  strategy: download
+  url: https://cran.r-project.org/src/contrib/Archive/airGR/airGR_1.7.8.tar.gz
+  sha256: 92e96f1f0ac30a8cdbf0759d1199d49bcd9082a5535359712a4c36340ebae705
+python_deps: [numpy, pandas, scipy, matplotlib, xarray, netCDF4]
+system_deps: [R, gfortran]
+notes: Source build and genuine R package/native Fortran load observed locally on macOS arm64 with R4.5.1 and Homebrew gfortran. DS end-to-end retry remains required. See MACOS_INSTALL.md. The package library, DLL identity, version and registered GR4J Fortran routine are independently verified without model execution.
+agent_hint: >-
+  Download/extract the official source in <workspace>/binaries/airGR, preserving
+  source directory airGR. The actual KI tools use <workspace>/R/library. Create <workspace>/R/library.
+  Write the isolated Makevars from MACOS_INSTALL.md inside the workspace.
+  Run bare R with argv [R, CMD, INSTALL, --library=<absolute-workspace>/R/library,
+  <absolute-workspace>/binaries/airGR/airGR], setting R_MAKEVARS_USER to the absolute
+  workspace Makevars path in the command env. This uses existing Homebrew gfortran
+  instead of this host R's missing /opt/gfortran. Keep the complete installed package.
+  R installation commands are limited to workspace source and library; arbitrary
+  Rscript expressions and scientific helpers are prohibited. Use test_installation
+  for the fixed package-load verification; do not call RunModel_GR4J, examples or calibration.

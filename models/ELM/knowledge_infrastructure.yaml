@@ -6,13 +6,13 @@ package:
   language: fortran
   implementation:
     id: elm-e3sm
-    version: E3SM v2/v3-era ELM (components/elm)
+    version: E3SM v3.0.0 (399d4301138617088dd93214123d6c025e061302)
     provenance: Fortran; E3SM Land Model component of DOE E3SM, CLM4.5-derived, DATM-forced offline, with
       optional FATES vegetation demography.
   scientific_reference_version: E3SM Land Model (ELM), E3SM v2/v3 lineage — CLM4.5-derived land-surface
     scheme with CN(P) biogeochemistry and optional FATES vegetation demography
   binary:
-    path: KISSPATH_HOME/e3sm_scratch/elm_test_case/bld/e3sm.exe
+    path: KISSPATH_BINARIES/ELM/ki-build/e3sm.exe
     type: work_dir
 pipeline:
   stages:

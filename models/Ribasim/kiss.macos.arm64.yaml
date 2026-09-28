@@ -1,0 +1,44 @@
+kiss_manifest_version: 1
+model: Ribasim
+binary_type: Julia core package
+verified: partial
+julia_package:
+  name: Ribasim
+  uuid: aac5e3d9-0b8f-4d4f-8241-b1a7a9632635
+  version: 2026.1.0-rc2
+  project: ki/julia
+  depot: julia_depot
+  runtime: binaries/julia-1.12.5/bin/julia
+  symbols:
+  - Model
+  - run
+  - RIBASIM_VERSION
+acquire:
+  strategy: download
+  url: https://julialang-s3.julialang.org/bin/mac/aarch64/1.12/julia-1.12.5-macaarch64.tar.gz
+  sha256: 1fc0e00e8bee5d29b351ebab30c795f18ab335dacc897f1624e70ea25188d405
+python_deps:
+- ribasim==2026.1.0rc2
+- datacompy==0.19.5
+- numpy
+- pandas
+- geopandas
+- shapely
+- pyogrio
+- pyarrow
+- xarray
+- netCDF4
+notes: Official pinned Julia computational core package instantiated, imported and
+  independently verified locally on macOS arm64. Exact UUID/version and module bindings
+  verified from workspace depot. DS end-to-end retry required. This installs the real
+  Julia core, not the standalone packaged CLI; Python ribasim is authoring API only.
+  The existing scientific CLI runner is preserved and still needs a standalone CLI
+  for that mode.
+agent_hint: Read MACOS_INSTALL.md. Extract exact official runtime to binaries/julia-1.12.5/bin/julia.
+  Preserve bundled ki/julia Project.toml, Manifest.toml and LocalPreferences.toml.
+  Instantiate via the documented fixed scoped operation into workspace julia_depot;
+  then fixed-load warmup with timeout_seconds=1800 before test_installation. First
+  cold Julia dependency compilation was approximately19minutes locally; retain warmed
+  cache. Keep [Ribasim] precompile_workload=false and never generate or download testmodels.
+  Do not substitute the Python authoring API for Julia core or claim standalone CLI
+  installed. Python datacompy0.19.5 avoids its later incompatible import layout.

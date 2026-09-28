@@ -1,0 +1,5 @@
+{
+  "query": "Bengbu 51080 discharge",
+  "limit": 5,
+  "expected_behavior": "Return only live catalogue metadata or a truthful adapter error; never fabricate a record."
+}

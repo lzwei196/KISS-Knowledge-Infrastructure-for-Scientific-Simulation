@@ -1,0 +1,20 @@
+kiss_manifest_version: 1
+model: SWMM
+binary_type: Mach-O
+verified: unverified
+install_dir: SWMM/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/USEPA/Stormwater-Management-Model.git
+  ref: 07c371f8a0d477da1d9d4e7c0d75719664f62fec
+  commands:
+  - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include" -DOpenMP_C_LIB_NAMES=omp -DOpenMP_omp_LIBRARY=/opt/homebrew/opt/libomp/lib/libomp.dylib
+  - cmake --build build --target runswmm --parallel 2
+  produces: build/src/run/runswmm
+python_deps: [numpy, pandas, swmm-toolkit==0.17.0]
+system_deps: [git, cmake, clang]
+reference_case: build/src/run/runswmm --help
+notes: Official EPA SWMM5.2.4 source and CMake target inspected at the pinned commit. Actual native compilation and independent startup remain pending. Python toolkit imports alone do not establish that the standalone EPA solver is installed.
+agent_hint: Build the upstream runswmm target in a temporary installation workspace. Exact product is <workspace>/binaries/SWMM/source/repo/build/src/run/runswmm. Read docs/install.macos.md for the narrowly audited native wheel signature repair if using swmm-toolkit0.17.0. Verify both genuine native solver startup and required Python imports. Preserve source pin and native library linkage. Do not run any INP example or simulation. Do not substitute the Python interpreter for runswmm.
+
+# Local official native configure/build/help passed with these Apple clang/OpenMP flags.

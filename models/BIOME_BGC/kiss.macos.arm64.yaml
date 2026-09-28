@@ -1,0 +1,16 @@
+kiss_manifest_version: 1
+model: BIOME_BGC
+binary_type: Mach-O
+verified: unverified
+install_dir: biome-bgc/bgc-src
+acquire:
+  strategy: build
+  repo: https://github.com/bpbond/Biome-BGC.git
+  ref: f80d386d6d79ffe73dba46c28d15b40ee877d67b
+  commands:
+  - python3 ../../../ki/tools/build_biome_native.py .
+  produces: bgc
+python_deps: [numpy, pandas, matplotlib, PyYAML]
+system_deps: [git, make, clang]
+notes: Native Biome-BGC4.2 point model from the GitHub repository linked by NTSG. Exact original4.2 commit, not later model variants. No numerical source edits.
+agent_hint: Read docs/macos_install.md. Build the pinned source with the named helper from binaries/biome-bgc/bgc-src. The genuine model product is bgc. Probe only -V in an empty directory; it prints BiomeBGC version4.2 and exits0 before case inputs. Do not use Python as the product, run make test, or download scientific inputs.

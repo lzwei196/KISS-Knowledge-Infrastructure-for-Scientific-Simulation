@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import csv
 import itertools
+import http.client
+import ssl
 import json
 import os
 import re
@@ -30,6 +32,7 @@ import signal
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -42,56 +45,55 @@ from . import skilllib, tls
 from .presentation import activity_marker
 
 TIMEOUT = 300
+# Hard wall-clock cap for one streamed provider response.  The socket timeout
+# only bounds silence between chunks; a proxy sending keep-alive lines could
+# otherwise hold a dead or looping generation open forever.
+STREAM_MAX_SECONDS = 900
+# A plan plus its data inventory is easily 20 KB of JSON in one tool call.
+# DeepSeek's default output limit (4K tokens) truncated exactly that call.
+MAX_OUTPUT_TOKENS = 8192
+INTAKE_ESTIMATE_CAP = 5          # read-only clip estimates allowed while understanding the task
 
 
-def _terminate_process_tree(proc: subprocess.Popen) -> None:
-    """Stop a timed-out command and every process it started.
+class TurnHandle:
+    """Stop switch and heartbeat for one in-process API turn.
 
-    ``Popen.communicate(timeout=...)`` only terminates the direct child when a
-    caller reacts with ``proc.kill()``. Build wrappers commonly leave their
-    compiler, ``find``, or network helper descendants alive with our output
-    pipes still open. Tear down the Windows process tree, or the private
-    process group created for this command on POSIX.
+    A provider turn has no child process, so the GUI needs its own way to
+    stop it and to see that the stream is still delivering chunks.  ``stop``
+    closes the in-flight HTTP response, which unblocks the reading thread.
     """
-    if os.name == "nt":
-        system_root = os.environ.get("SystemRoot", r"C:\Windows")
-        taskkill = Path(system_root) / "System32" / "taskkill.exe"
-        try:
-            result = subprocess.run(
-                [str(taskkill), "/PID", str(proc.pid), "/T", "/F"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=10,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if result.returncode:
-                proc.kill()
-        except (OSError, subprocess.TimeoutExpired):
-            try:
-                proc.kill()
-            except OSError:
-                pass
-        return
 
-    # ``start_new_session=True`` below guarantees that proc.pid is a process
-    # group created by us, so killpg cannot target GeoForge's own group.
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except (OSError, ProcessLookupError):
-        return
-    try:
-        proc.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        pass
-    # The wrapper may exit before a descendant that ignored SIGTERM. The
-    # process group continues to exist until every member is gone, so always
-    # issue the final bounded kill and harmlessly ignore a vanished group.
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
-        pass
+    def __init__(self):
+        self.stopped = threading.Event()
+        self.last_chunk_at: float | None = None
+        self._response = None
+        self._lock = threading.Lock()
+
+    def attach(self, response) -> None:
+        with self._lock:
+            self._response = response
+            if self.stopped.is_set():
+                self._close_locked()
+
+    def detach(self) -> None:
+        with self._lock:
+            self._response = None
+
+    def stop(self) -> None:
+        self.stopped.set()
+        with self._lock:
+            self._close_locked()
+
+    def _close_locked(self) -> None:
+        response, self._response = self._response, None
+        if response is not None:
+            try:
+                response.close()
+            except Exception:  # noqa: BLE001 — closing is best-effort
+                pass
+
+
+from .processes import terminate_process_tree as _terminate_process_tree
 
 
 def _run_subprocess_tree(
@@ -341,10 +343,13 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "configuration generation, validation, and model harness steps. "
                     "Arguments may reference this chat project, this KI package, or "
                     "the current KI's GeoForge-managed shared binaries directory. "
-                    "Do not replace a KI tool with improvised calculations."
+                    "Do not replace a KI tool with improvised calculations. Required "
+                    "environment values are taken automatically from this approved plan step; "
+                    "do not try to install startup hooks or mutate the system environment."
                 ),
                 "input_schema": {"type": "object", "properties": {
-                    "tool_path": {"type": "string",
+                    "tool_path": {"type": "string", "description": "path below tools/ of the KI, "
+                                  "or the absolute path of the model binary the KI declares",
                                   "description": "Python file relative to the KI root and below a tools/ directory"},
                     "arguments": {"type": "array", "items": {"type": "string"}},
                     "cwd": {"type": "string",
@@ -456,16 +461,18 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 "name": "request_user_action",
                 "description": (
                     "Pause project preparation and show one concrete action to the "
-                    "user. Use only for a protected download, licence/login, private "
-                    "data, system permission, or high-impact scientific choice that "
-                    "the KI cannot resolve. Never use it for ordinary KI defaults."
+                    "user. During planning, ask ONE unresolved decision at a time, "
+                    "including a critical parameter set or data-source choice. Offer "
+                    "the KI-supported default with its evidence and allow a custom answer. "
+                    "Do not re-ask settled choices or ask about every low-level default. "
+                    "Also use for protected downloads, licence/login, or system permission."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "kind": {"type": "string", "enum": [
                         "download", "licence", "login", "permission", "choice", "other"]},
                     "title": {"type": "string"},
                     "message": {"type": "string"},
-                    "options": {"type": "array", "maxItems": 8, "items": {
+                    "options": {"type": "array", "items": {
                         "type": "object", "properties": {
                             "id": {"type": "string"},
                             "label": {"type": "string"},
@@ -642,17 +649,81 @@ def tool_schemas(ki, *, setup_mode: bool = False,
     if project_mode:
         tools += [
             {
+                "name": "search_catalogue",
+                "description": (
+                    "Search the GeoForge Database catalogue (local copy, no credentials). Filter by "
+                    "keywords, bbox, period, variable, category or delivery. Pass parent_id to list the "
+                    "real delivery children of a split product instead of a keyword search. Results are "
+                    "metadata: 'served' downloads after approval, 'manual' is handed to the user after "
+                    "approval (a normal path, never a dead end). Record the exact dataset id in the plan."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "query": {"type": "string", "description": "keywords, variable, place, or dataset id"},
+                    "bbox": {"type": "string", "description": "min_lon,min_lat,max_lon,max_lat (WGS84)"},
+                    "start": {"type": "string", "description": "YYYY-MM-DD"},
+                    "end": {"type": "string", "description": "YYYY-MM-DD"},
+                    "variable": {"type": "string", "description": "comma-separated variable names, e.g. prec,temp"},
+                    "category": {"type": "string", "description": "forcing, gauge, gridded, static_dataset, ..."},
+                    "delivery": {"type": "string", "enum": ["served", "manual"]},
+                    "parent_id": {"type": "string", "description": "split product to resolve into children; combine with variable/start/end/time_step/bbox"},
+                    "time_step": {"type": "string", "enum": ["daily", "3hr"]},
+                    "offset": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                }},
+            },
+            {
+                "name": "describe_dataset",
+                "description": (
+                    "Read the live source-file schema of one catalogue dataset: exact variable names, "
+                    "units, dimensions, member files, versions. Call it before estimate_clip; use the "
+                    "returned names, not catalogue labels. Read-only; proves nothing about data values."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "dataset_id": {"type": "string"},
+                }, "required": ["dataset_id"]},
+            },
+            {
+                "name": "estimate_clip",
+                "description": (
+                    "Read-only estimate of a server-side clip: output bytes, parts, grid, versions. "
+                    "Use exact source names from describe_dataset; an empty variables list means the "
+                    "whole file. Creates no job and no download. Put the returned acquisition_id on the "
+                    "matching data-inventory item in write_plan; the user approves it with the plan."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "dataset_id": {"type": "string"},
+                    "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                    "start": {"type": "string"}, "end": {"type": "string"},
+                }, "required": ["dataset_id", "bbox"], "additionalProperties": False},
+            },
+            {
+                "name": "request_replan",
+                "description": (
+                    "EXECUTING only. Use when the approved plan cannot be carried out as written "
+                    "(a tool needs a different input, a data source is unusable, a step or "
+                    "scientific choice must change). GeoForge moves the project to REPLAN_REQUIRED, "
+                    "revokes the approval, and makes write_plan available immediately, so you "
+                    "write the corrected plan in this same turn. Do not improvise around the plan."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "reason": {"type": "string", "description": "one sentence: what must change and why"},
+                }, "required": ["reason"]},
+            },
+            {
                 "name": "write_plan",
                 "description": (
                     "PLANNING only. Write runs/plan.json and runs/data-inventory.json (the "
                     "schemas are in your instructions). GeoForge validates them; errors come "
                     "back and nothing is written until they pass. No downloads, no inputs, no "
-                    "model runs happen in planning — the user approves the plan first."
+                    "model runs happen in planning — the user approves the plan first. If the "
+                    "two documents together are large, send them in two calls: first only "
+                    "plan, then only data_inventory; GeoForge merges them."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "plan": {"type": "object"},
                     "data_inventory": {"type": "object"},
-                }, "required": ["plan", "data_inventory"]},
+                }},
             },
             {
                 "name": "fetch_data",
@@ -740,7 +811,7 @@ def _read_text_page(path: Path, start_line: object = 1,
     return "".join(lines[start - 1:start - 1 + count])[:60000]
 
 
-_INSTALL_ONLY_PROBE_FLAGS = {"--version", "-V", "-v", "--help", "-h"}
+_INSTALL_ONLY_PROBE_FLAGS = {"--version", "-version", "-V", "-v", "--help", "-h"}
 _INSTALL_ONLY_BUILD_NAMES = (
     "build", "compile", "configure", "setup", "install", "bootstrap",
     "quickbuild", "mkmf", "checkout", "external",
@@ -871,6 +942,27 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
         ".exe", ".cmd", ".bat",
     } else command)
     args = argv[1:]
+    if command in {"octave", "octave-cli"}:
+        from .octpackage import guard
+        try:
+            guard(args, cwd, workroot)
+        except (ValueError, OSError, UnicodeError) as e:
+            raise ToolError(str(e)) from e
+        return
+    if command == "julia":
+        from .jpackage import guard
+        try:
+            guard(args, cwd, workroot)
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+        return
+    if command in {"r", "rscript"}:
+        from .rpackage import guard
+        try:
+            guard(command, args, cwd, workroot)
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+        return
     resolved_command = Path(argv[0]).resolve()
     in_workspace = _is_inside(resolved_command, workroot)
 
@@ -1214,6 +1306,12 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
         )
 
 
+def _user_only_file(path: Path, project_root: Path) -> bool:
+    """Request cards (current and archived) carry Baidu links and extraction codes for the
+    user's eyes only; agents never read them."""
+    return path.name.startswith("setup-request") and path.suffix == ".json"
+
+
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                  setup_context: dict | None = None,
                  project_mode: bool = False, flow=None) -> str:
@@ -1319,6 +1417,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         return "\n".join(names) or "(empty)"
 
     if name == "run_preflight":
+        if bool((setup_context or {}).get("installation_only")):
+            raise ToolError("Full preflight is outside installation-only scope; use the declared import and executable startup checks.")
         from . import install as _install
         step = _install.run_preflight(ki, cfg.python, cfg)
         return f"{'PASS' if step.ok else 'FAIL'}\n{step.detail}"
@@ -1356,7 +1456,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(f"no such project directory: {args.get('subdir')}")
         names = []
         for f in sorted(base.rglob("*")):
-            if not f.is_file() or "memory" in f.relative_to(project_root).parts:
+            if not f.is_file() or "memory" in f.relative_to(project_root).parts or _user_only_file(f, project_root):
                 continue
             try:
                 names.append(
@@ -1370,6 +1470,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         p = _inside_project(args.get("path") or "")
         if not p.is_file():
             raise ToolError(f"no such project file: {args.get('path')}")
+        if _user_only_file(p, project_root):
+            raise ToolError("that file is a request card for the user (it may hold a private download "
+                            "link or code); its answer reaches you through the conversation")
         if p.stat().st_size > 5_000_000:
             raise ToolError("project file is too large for the text reader; use a KI tool")
         return p.read_text(encoding="utf-8", errors="replace")[:120000]
@@ -1403,13 +1506,15 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if project_mode and name == "run_ki_tool":
         tool_ki_name, tool_root = getattr(ki, "name", root.name), root
+        requested_tool_root = Path(ki.root)
         if flow is not None:
             from .flowgate import FlowDenied
             try:
                 tool_ki_name, tool_root = flow.ki_root_for(args.get("ki"), root)
             except FlowDenied as e:
                 raise ToolError(str(e)) from None
-            tool_root = Path(tool_root).resolve()
+            requested_tool_root = Path(tool_root)
+            tool_root = requested_tool_root.resolve()
             if tool_root != root and tool_root not in project_argument_roots:
                 project_argument_roots.append(tool_root)
         def _inside_tool_ki(rel: str, _root=tool_root) -> Path:
@@ -1420,14 +1525,40 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             if p != _root and _root not in p.parents:
                 raise ToolError(f"path escapes the KI package: {rel}")
             return p
-        script = _inside_tool_ki(args.get("tool_path") or "")
+        from ki_tools_common.flow.tools import is_declared_binary, is_ki_tool
+        requested = str(args.get("tool_path") or "")
+        binary = is_declared_binary(tool_root, requested)
+        if binary:
+            script = Path(requested).resolve()
+            rel_script = script.name
+        else:
+            script = _inside_tool_ki(requested)
+            try:
+                rel_script = script.relative_to(tool_root)
+            except ValueError:
+                raise ToolError("tool escapes the selected KI")
+            if script.suffix.casefold() != ".py" or not is_ki_tool(tool_root, script):
+                raise ToolError("run_ki_tool accepts only shipped Python files below tools/ "
+                                "or the model binary the KI declares")
+        if flow is not None:
+            try:
+                flow.check_step_tool(args.get("plan_step_id"), tool_ki_name, script)
+            except FlowDenied as exc:
+                raise ToolError(str(exc)) from None
+        from . import project_paths
         try:
-            rel_script = script.relative_to(tool_root)
-        except ValueError:
-            raise ToolError("tool escapes the selected KI")
-        from ki_tools_common.flow.tools import is_ki_tool
-        if script.suffix.casefold() != ".py" or not is_ki_tool(tool_root, script):
-            raise ToolError("run_ki_tool accepts only shipped Python files below tools/")
+            selected = getattr(getattr(flow, "ctx", None), "selected_kis", []) or []
+            tool_cfg = project_paths.execution_config(
+                project_root, tool_ki_name, requested_tool_root,
+                fallback=cfg if len(selected) <= 1 else None)
+        except (OSError, ValueError) as exc:
+            raise ToolError(f"cannot resolve runtime for {tool_ki_name}: {exc}") from None
+        # Only the requested KI's software capability applies to this call,
+        # not the first model's installation that opened the conversation.
+        project_argument_roots = [project_root, tool_root]
+        binary_role = (getattr(tool_cfg, "roles", {}) or {}).get("binaries")
+        if binary_role:
+            project_argument_roots.append(Path(binary_role).expanduser().resolve())
         arguments = args.get("arguments") or []
         if (not isinstance(arguments, list) or len(arguments) > 100 or
                 not all(isinstance(x, str) and len(x) <= 4000 for x in arguments)):
@@ -1447,60 +1578,24 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     for base in project_argument_roots):
                 raise ToolError(f"tool argument path escapes the project and KI: {value}")
         timeout = max(1, min(int(args.get("timeout_seconds") or 600), 3600))
-        child_env = {
-            key: value for key, value in os.environ.items()
-            if not any(secret in key.upper() for secret in (
-                "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
-        }
-        child_env["KISS_ROOT"] = str(project_root)
-        from .paths import with_ki_tools_common
-        child_env = with_ki_tools_common(cfg, child_env)
-        from .calibration import with_framework_env
-        child_env = with_framework_env(child_env)
-        if provider_id:
-            from .settings import with_provider_proxy
-            child_env = with_provider_proxy(provider_id, child_env)
-        command = [str(cfg.python), str(script), *arguments]
-        before = None
-        if flow is not None:
-            from . import flowgate as _fg
-            from .flowgate import FlowDenied
-            # the step, its KI and its tool are checked BEFORE anything runs (codex R2 #4)
-            try:
-                flow.check_step_tool(args.get("plan_step_id"), tool_ki_name, script)
-            except FlowDenied as e:
-                raise ToolError(str(e)) from None
-            before = _fg._snapshot(project_root)
-        started = time.time()
-        try:
-            proc = _run_subprocess_tree(
-                command, cwd=str(cwd), env=child_env, timeout=timeout)
-        except subprocess.TimeoutExpired as e:
-            tail = ((e.stdout or "") + (e.stderr or ""))[-12000:]
-            if flow is not None:
-                try:
-                    flow.record_tool_run(ki=tool_ki_name, ki_root=tool_root, command=command, cwd=cwd,
-                                         started_at=started, finished_at=time.time(), exit_code=None,
-                                         before=before, plan_step_id=args.get("plan_step_id"),
-                                         stdout_tail=tail)
-                except Exception as exc:  # the timeout is the headline; the receipt failure is noted
-                    tail += f"\n[receipt not written: {exc}]"
-            return f"TIMEOUT after {timeout}s\n{tail}"
-        finished = time.time()
-        output = (proc.stdout + proc.stderr)[-80000:]
-        if flow is None:
-            return f"exit_code={proc.returncode}\n{output}"
+        from .execution import execute_ki_tool
         from .flowgate import FlowDenied
         try:
-            summary = flow.record_tool_run(ki=tool_ki_name, ki_root=tool_root, command=command, cwd=cwd,
-                                           started_at=started, finished_at=finished,
-                                           exit_code=proc.returncode, before=before,
-                                           plan_step_id=args.get("plan_step_id"),
-                                           stdout_tail=output[-20000:])
+            result = execute_ki_tool(
+                flow=flow, cfg=tool_cfg, project=project_root, ki=tool_ki_name, ki_root=requested_tool_root,
+                tool=script, arguments=arguments, cwd=cwd, plan_step_id=args.get("plan_step_id"),
+                python_tool=not binary, timeout=timeout, provider_id=provider_id)
         except FlowDenied as e:
             raise ToolError(str(e)) from None
-        return (f"exit_code={proc.returncode}\n[RECEIPT] {json.dumps(summary, ensure_ascii=False)}\n"
-                f"{output}")
+        headline = (f"exit_code={result.exit_code}" if result.exit_code is not None
+                    else result.detail)
+        if result.receipt_error and result.status != "timed_out":
+            raise ToolError(f"{headline}\n[receipt NOT written: {result.receipt_error}]\n{result.output}")
+        receipt = (f"[RECEIPT] {json.dumps(result.receipt, ensure_ascii=False)}\n"
+                   if result.receipt else "")
+        error = f"\n[receipt not written: {result.receipt_error}]" if result.receipt_error else ""
+        detail = f"\n{result.detail}" if result.exit_code is not None and result.detail else ""
+        return f"{headline}\n{receipt}{result.output}{detail}{error}"
 
     if project_mode and name == "run_calibration":
         from . import calibration as _calibration
@@ -1558,17 +1653,101 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 raise ToolError(str(e)) from None
         return json.dumps(summary, indent=2, ensure_ascii=False, default=str)
 
+    if project_mode and name == "request_replan":
+        if flow is None:
+            raise ToolError("request_replan is available only in a flow-managed project")
+        from .flowgate import FlowDenied
+        try:
+            return flow.request_replan(str(args.get("reason") or ""))
+        except FlowDenied as e:
+            raise ToolError(str(e)) from None
+
     if project_mode and name == "write_plan":
         if flow is None:
             raise ToolError("write_plan is available only in a flow-managed project")
+        if args.get("_vendor_argument_error"):
+            raise ToolError(
+                f"write_plan arguments were not delivered intact: {args['_vendor_argument_error']}. "
+                "Call write_plan twice: once with only plan, once with only data_inventory; "
+                "GeoForge merges the two before validating.")
         plan_doc, inv_doc = args.get("plan"), args.get("data_inventory")
-        if not isinstance(plan_doc, dict) or not isinstance(inv_doc, dict):
-            raise ToolError("plan and data_inventory must be JSON objects")
+        for key, value in (("plan", plan_doc), ("data_inventory", inv_doc)):
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError as e:
+                    raise ToolError(f"{key} is not valid JSON: {e}") from None
+            if value is not None and not isinstance(value, dict):
+                raise ToolError(f"{key} must be a JSON object")
+            if key == "plan":
+                plan_doc = value
+            else:
+                inv_doc = value
+        # Two-call submission: keep the half that arrived until the other one comes.
+        parts = getattr(flow, "pending_plan_parts", None) or {}
+        if plan_doc is not None:
+            parts["plan"] = plan_doc
+        if inv_doc is not None:
+            parts["data_inventory"] = inv_doc
+        flow.pending_plan_parts = parts
+        if "plan" not in parts or "data_inventory" not in parts:
+            have = "plan" if "plan" in parts else "data_inventory"
+            missing = "data_inventory" if have == "plan" else "plan"
+            return (f"Received {have}; now call write_plan again with only {missing}. "
+                    "Nothing is validated or written until both halves are in.")
+        plan_doc, inv_doc = parts["plan"], parts["data_inventory"]
+        flow.pending_plan_parts = {}
         errs = flow.write_plan(plan_doc, inv_doc)
         if errs:
             return "PLAN NOT WRITTEN — fix these and call write_plan again:\n- " + "\n- ".join(errs[:30])
         return ("Plan files written: runs/plan.json, runs/data-inventory.json. Stop here: GeoForge "
                 "shows the plan to the user; execution starts in a separate session after approval.")
+
+    if project_mode and name in ("search_catalogue", "describe_dataset", "estimate_clip"):
+        # Thin adapters over the legacy multi-mode handler (removed in step 2).
+        if name == "describe_dataset":
+            args = {"describe_dataset_id": str(args.get("dataset_id") or "")}
+        elif name == "estimate_clip":
+            if flow is not None and getattr(flow, "state", None) is not None \
+                    and flow.state.value == "RESOLVING_KIS":
+                used = getattr(flow, "intake_estimates", 0)
+                if used >= INTAKE_ESTIMATE_CAP:
+                    raise ToolError(f"at most {INTAKE_ESTIMATE_CAP} clip estimates during task "
+                                    "understanding; finish the intake, estimate the rest in planning")
+                flow.intake_estimates = used + 1
+            args = {"subset_request": {k: v for k, v in args.items()
+                                       if k in ("dataset_id", "bbox", "variables", "start", "end")}}
+        else:
+            args = dict(args)
+            if args.get("parent_id"):
+                args["resolve_dataset_id"] = args.pop("parent_id")
+        name = "search_observation_data"
+
+    if project_mode and name == "search_observation_data":
+        from . import obs_access
+        try:
+            if sum((bool(args.get('describe_dataset_id')), bool(args.get('resolve_dataset_id')),
+                    args.get('subset_request') is not None)) > 1:
+                raise ValueError('Choose one of describe, resolve or subset estimate per call')
+            if args.get('subset_request') is not None:
+                from . import obs_subset
+                if flow is None:
+                    raise ValueError('Subset estimates require a project session')
+                return json.dumps(obs_subset.estimate(flow.project, args['subset_request']), ensure_ascii=False)
+            result = obs_access.search_catalogue(
+                q=str(args.get("query") or ""),
+                offset=int(args.get("offset") or 0),
+                limit=int(args.get("limit") or 25),
+                bbox=args.get("bbox") or None, start=args.get("start") or None,
+                end=args.get("end") or None, variable=str(args.get("variable") or ""),
+                category=str(args.get("category") or ""),
+                describe_dataset_id=str(args.get("describe_dataset_id") or ""),
+                resolve_dataset_id=str(args.get("resolve_dataset_id") or ""),
+                time_step=str(args.get("time_step") or ""),
+                delivery=str(args.get("delivery") or ""))
+        except (obs_access.ObsAccessError, TypeError, ValueError) as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(result, indent=2, ensure_ascii=False)
 
     if project_mode and name == "fetch_data":
         if flow is None:
@@ -1649,7 +1828,15 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if project_mode and not setup_mode and name == "request_user_action":
         from . import projectrun as _projectrun, setup as _setup
-        doc = _setup.request_user(project_root, args)
+        if (flow is not None
+                and flow.state.value in {"RESOLVING_KIS", "PLANNING", "REPLAN_REQUIRED"}):
+            from .flowrun import request_planning_question
+            try:
+                doc = request_planning_question(project_root, args)
+            except (OSError, ValueError) as exc:
+                raise ToolError(str(exc)) from None
+        else:
+            doc = _setup.request_user(project_root, args)
         _projectrun.report(progress_root, {
             "status": "waiting_for_user", "summary": doc["title"],
             "blocker": doc,
@@ -1785,6 +1972,13 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             "dlltool", "gendef", "nm", "objdump", "strip",
             "chmod", "file", "otool", "xcode-select", "brew", "bison", "flex",
             "win_bison", "win_flex", "m4", "swig", "protoc", "cython", "f2py",
+            "gcc", "g++", "cc", "c++", "clang", "clang++", "gfortran", "tar", "unzip", "mkdir",
+            "curl", "wget", "patch", "sed", "awk", "find", "ls", "cp", "mv", "ln",
+            "chmod", "file", "otool", "xcode-select", "brew", "which",
+            "cat", "grep", "head", "tail", "uname", "sw_vers",
+            "autoreconf", "autoconf", "automake", "aclocal", "libtoolize", "glibtoolize",
+            "ar", "ranlib", "nm", "nf-config", "nc-config", "gdal-config",
+            "mpicc", "mpicxx", "mpif90", "mpifort", "flex", "bison", "R", "Rscript", "julia", "octave", "octave-cli",
         }
         exe_path = Path(executable)
         executable_name = exe_path.name.lower()
@@ -1813,7 +2007,29 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                                *external_roots]
             if resolved != cfg_python and not any(
                     resolved == base or base in resolved.parents for base in permitted_roots):
-                raise ToolError(f"executable is outside the setup workspace: {executable}")
+                # A workspace venv may use a different installed Python than cfg.python.
+                # Validate its actual prefix, without dereferencing the launcher we execute.
+                launcher = (workroot / exe_path) if not exe_path.is_absolute() else exe_path
+                launcher = launcher.parent.resolve() / launcher.name
+                workspace_venv = False
+                if (workroot in launcher.parents and
+                        re.fullmatch(r"python(?:\d+(?:\.\d+)*)?(?:\.exe)?", launcher.name)):
+                    probe_env = {key: value for key, value in os.environ.items()
+                                 if not any(secret in key.upper() for secret in
+                                            ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
+                    try:
+                        probe = subprocess.run(
+                            [str(launcher), "-c", "import sys; print(sys.prefix)"],
+                            capture_output=True, text=True, timeout=10, env=probe_env)
+                        prefix = Path(probe.stdout.strip()).resolve()
+                        workspace_venv = (probe.returncode == 0 and
+                                          (prefix == workroot or workroot in prefix.parents))
+                    except (OSError, subprocess.TimeoutExpired, ValueError):
+                        pass
+                if not workspace_venv:
+                    hint = (f" Use the allowlisted tool name {exe_path.name!r} without an absolute path."
+                            if exe_path.name in allowed else "")
+                    raise ToolError(f"executable is outside the setup workspace: {executable}.{hint}")
             if (os.name == "nt" and resolved.suffix.lower() == ".exe" and
                     resolved.is_file()):
                 try:
@@ -1828,8 +2044,12 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                         "MZ header); if the download endpoint returned an archive, "
                         "extract the real executable before running it"
                     )
-            argv[0] = str(resolved)
-        elif executable_key not in allowed:
+            # Validate the resolved target, but execute the original venv path.
+            # Dereferencing venv/bin/python here launches the base interpreter
+            # without pyvenv.cfg and can send pip installs outside the workspace.
+            argv[0] = str((workroot / exe_path).absolute()
+                          if not exe_path.is_absolute() else exe_path)
+        elif executable_key not in {item.lower() for item in allowed}:
             raise ToolError(f"command is not in the setup allowlist: {executable}")
         if executable_key == "brew" and len(argv) > 1 and argv[1] not in (
                 "--prefix", "--version", "list", "info", "config"):
@@ -1838,7 +2058,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         cwd = _inside_work(args.get("cwd") or ".")
         if not cwd.is_dir():
             raise ToolError(f"command directory does not exist: {args.get('cwd')}")
-        if bool((setup_context or {}).get("installation_only")):
+        if (bool((setup_context or {}).get("installation_only"))
+                or Path(argv[0]).name.lower() in {"r", "rscript", "julia", "octave", "octave-cli"}):
             _guard_installation_only_command(argv, cwd, workroot)
             _guard_local_dependency_shim_wheels(argv, cwd, workroot)
         # Reject path arguments that escape the workspace. This is not a
@@ -1887,7 +2108,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError("env must be an object")
         safe_env = {}
         path_prefix: list[str] = []
-        banned = {"HOME", "SHELL", "DYLD_INSERT_LIBRARIES", "PYTHONPATH"}
+        banned = {"HOME", "SHELL", "DYLD_INSERT_LIBRARIES", "PYTHONPATH", "PIP_REQUIRE_VIRTUALENV"}
         workspace_path_env = {
             "CONDA_PKGS_DIRS", "CONDA_ENVS_DIRS", "MAMBA_ROOT_PREFIX",
             "CONDA_PREFIX", "CONDARC", "MAMBARC", "MSYS2_ROOT",
@@ -1926,6 +2147,10 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                             f"environment path escapes the setup workspace: "
                             f"{key}={entry}")
             safe_env[key] = value
+        if Path(argv[0]).name.lower() == "julia" and len(argv) > 2:
+            from . import jpackage
+            jpackage.guard(argv[1:], cwd, workroot)
+            safe_env.update(jpackage.startup_env(jpackage.scoped(argv[8], cwd, workroot)))
         # A tool or build script must never inherit the API key that is driving
         # the agent. Keep the normal build environment, remove credentials.
         child_env = {
@@ -1949,12 +2174,39 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if path_prefix:
             safe_env["PATH"] = os.pathsep.join(
                 [*path_prefix, child_env.get("PATH", "")])
+        pip_guard = "true"
+        # Conda prefixes are isolated too, although pip does not call them venvs.
+        # Permit that interpreter's pip only after checking its actual prefix.
+        if len(argv) > 2 and argv[1:3] == ["-m", "pip"]:
+            try:
+                prefix_probe = subprocess.run(
+                    [argv[0], "-c", "import sys; print(sys.prefix)"],
+                    cwd=str(cwd), env=child_env, capture_output=True,
+                    text=True, timeout=10)
+                prefix = Path(prefix_probe.stdout.strip()).resolve()
+                if prefix_probe.returncode == 0 and (prefix == workroot or workroot in prefix.parents):
+                    pip_guard = "false"
+            except (OSError, subprocess.TimeoutExpired, ValueError):
+                pass
+        from contextlib import nullcontext
+        import tempfile
+        isolate_probe = (bool((setup_context or {}).get("installation_only"))
+                         and Path(argv[0]).is_absolute() and len(argv) == 2
+                         and argv[1] in _INSTALL_ONLY_PROBE_FLAGS)
+        if isolate_probe:
+            timeout = min(timeout, 25)
         try:
-            proc = _run_subprocess_tree(
-                argv, cwd=str(cwd), env={**child_env, **safe_env},
-                timeout=timeout)
+            directory = (tempfile.TemporaryDirectory(prefix="startup-probe-", dir=str(workroot))
+                         if isolate_probe else nullcontext(str(cwd)))
+            with directory as execution_cwd:
+                proc = _run_subprocess_tree(
+                    argv, cwd=execution_cwd,
+                    env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
+                    timeout=timeout,
+                )
         except subprocess.TimeoutExpired as e:
-            tail = ((e.stdout or "") + (e.stderr or ""))[-12000:]
+            tail = "".join(part.decode("utf-8", errors="replace") if isinstance(part, bytes) else (part or "")
+                           for part in (e.stdout, e.stderr))[-12000:]
             return f"TIMEOUT after {timeout}s\n{tail}"
         except OSError as e:
             # A non-executable script, missing command, or platform launch
@@ -1962,7 +2214,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             # choose another invocation (usually ``python3 script.py``)
             # instead of aborting the entire API turn.
             return f"FAILED_TO_START: {type(e).__name__}: {e}"
-        output = (proc.stdout + proc.stderr)[-50000:]
+        output = proc.stdout[-25000:] + "\n" + proc.stderr[-25000:]
+        if isolate_probe:
+            output = "Startup probe used an empty workspace directory (no bundled case inputs).\n" + output
         return f"exit_code={proc.returncode}\n{output}"
 
     if setup_mode and project_mode and name == "publish_setup_output":
@@ -2038,26 +2292,171 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
 # --- wire formats -----------------------------------------------------------
 
-def _post(url: str, headers: dict, payload: dict, *, provider: str) -> dict:
+def _open(url: str, headers: dict, payload: dict, *, provider: str):
+    """Open the provider request with the connection-level retries only."""
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(), method="POST",
         headers={"Content-Type": "application/json", **headers},
     )
+    from .settings import proxy_url_for
+    proxy = proxy_url_for(provider)
+    # Only retry the provider response, before any returned tool is executed.
+    # A transient disconnect must not discard a whole installation repair loop.
+    for attempt in range(3):
+        try:
+            handlers = [
+                urllib.request.ProxyHandler(
+                    {"http": proxy, "https": proxy} if proxy else {}),
+                urllib.request.HTTPSHandler(context=tls.context()),
+            ]
+            return urllib.request.build_opener(*handlers).open(req, timeout=TIMEOUT)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", "replace")[:800]
+            if e.code not in {429, 502, 503, 504} or attempt == 2:
+                raise ToolError(f"HTTP {e.code} from {url}: {body}") from None
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, TimeoutError):
+                raise ToolError(
+                    f"no response from {url} within {TIMEOUT}s; the model was still generating "
+                    "(not retried: a retry restarts the generation)") from None
+            if isinstance(e.reason, ssl.SSLCertVerificationError) or attempt == 2:
+                raise ToolError(f"cannot reach {url}: {e.reason}") from None
+        except (http.client.RemoteDisconnected, http.client.IncompleteRead,
+                ConnectionError) as e:
+            if attempt == 2:
+                raise ToolError(f"provider connection interrupted: {type(e).__name__}") from None
+        time.sleep(2 ** attempt)
+    raise ToolError(f"cannot reach {url}")  # unreachable; keeps the type checker honest
+
+
+def _post(url: str, headers: dict, payload: dict, *, provider: str,
+          wire: str | None = None, handle: TurnHandle | None = None) -> dict:
+    """POST to a provider and return the complete response document.
+
+    With ``wire`` set the request streams and the chunks are reassembled into
+    the same document shape the non-streaming API returns.  Streaming keeps
+    the socket busy during a long generation (the read timeout then bounds
+    silence between chunks, not the whole answer) and gives ``handle`` a
+    response it can close to stop the turn.
+    """
+    if wire is None:
+        try:
+            with _open(url, headers, payload, provider=provider) as r:
+                return json.loads(r.read())
+        except TimeoutError:
+            raise ToolError(
+                f"no response from {url} within {TIMEOUT}s; the model was still generating "
+                "(not retried: a retry restarts the generation)") from None
+    response = _open(url, headers, {**payload, "stream": True}, provider=provider)
+    if handle is not None:
+        handle.attach(response)
     try:
-        from .settings import proxy_url_for
-        proxy = proxy_url_for(provider)
-        handlers = [
-            urllib.request.ProxyHandler(
-                {"http": proxy, "https": proxy} if proxy else {}),
-            urllib.request.HTTPSHandler(context=tls.context()),
-        ]
-        with urllib.request.build_opener(*handlers).open(req, timeout=TIMEOUT) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")[:800]
-        raise ToolError(f"HTTP {e.code} from {url}: {body}") from None
-    except urllib.error.URLError as e:
-        raise ToolError(f"cannot reach {url}: {e.reason}") from None
+        events = _sse_events(response, handle)
+        return (_assemble_anthropic(events) if wire == "anthropic"
+                else _assemble_openai(events))
+    except (TimeoutError, http.client.IncompleteRead, ConnectionError,
+            ValueError, OSError) as e:
+        if handle is not None and handle.stopped.is_set():
+            raise ToolError("stopped by the user") from None
+        raise ToolError(f"provider stream interrupted: {type(e).__name__}: {e}") from None
+    finally:
+        if handle is not None:
+            handle.detach()
+        try:
+            response.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _sse_events(response, handle: TurnHandle | None) -> Iterator[dict]:
+    """Yield the JSON ``data:`` payloads of a server-sent-event stream."""
+    started = time.time()
+    for raw in response:
+        if time.time() - started > STREAM_MAX_SECONDS:
+            raise ToolError(
+                f"provider response exceeded {STREAM_MAX_SECONDS}s without completing; "
+                "the generation was stopped")
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue          # comments / keep-alives are not progress
+        if handle is not None:
+            handle.last_chunk_at = time.time()
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            obj = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            if obj.get("error"):
+                err = obj["error"]
+                raise ToolError(f"provider error: {err.get('message', err) if isinstance(err, dict) else err}")
+            yield obj
+
+
+def _assemble_openai(events: Iterator[dict]) -> dict:
+    """Rebuild ``{"choices":[{"message": …}]}`` from OpenAI-style deltas."""
+    text: list[str] = []
+    calls: dict[int, dict] = {}
+    finish = None
+    for obj in events:
+        choice = (obj.get("choices") or [{}])[0]
+        delta = choice.get("delta") or {}
+        if delta.get("content"):
+            text.append(str(delta["content"]))
+        for tc in delta.get("tool_calls") or []:
+            slot = calls.setdefault(int(tc.get("index") or 0), {
+                "id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+            if tc.get("id"):
+                slot["id"] = tc["id"]
+            fn = tc.get("function") or {}
+            if fn.get("name"):
+                slot["function"]["name"] += fn["name"]
+            if fn.get("arguments"):
+                slot["function"]["arguments"] += fn["arguments"]
+        finish = choice.get("finish_reason") or finish
+    # reasoning_content (DeepSeek) is deliberately dropped: the vendor rejects
+    # it when echoed back in the next request.
+    message: dict = {"role": "assistant", "content": "".join(text)}
+    if calls:
+        message["tool_calls"] = [calls[i] for i in sorted(calls)]
+    return {"choices": [{"message": message, "finish_reason": finish}]}
+
+
+def _assemble_anthropic(events: Iterator[dict]) -> dict:
+    """Rebuild ``{"content": [...]}`` from Anthropic content-block events."""
+    blocks: dict[int, dict] = {}
+    partial: dict[int, list[str]] = {}
+    for obj in events:
+        kind = obj.get("type")
+        if kind == "content_block_start":
+            index = int(obj.get("index") or 0)
+            block = dict(obj.get("content_block") or {})
+            if block.get("type") == "text":
+                block["text"] = block.get("text") or ""
+            blocks[index] = block
+            partial[index] = []
+        elif kind == "content_block_delta":
+            index = int(obj.get("index") or 0)
+            delta = obj.get("delta") or {}
+            block = blocks.setdefault(index, {"type": "text", "text": ""})
+            if delta.get("type") == "text_delta":
+                block["text"] = block.get("text", "") + str(delta.get("text") or "")
+            elif delta.get("type") == "input_json_delta":
+                partial.setdefault(index, []).append(str(delta.get("partial_json") or ""))
+        elif kind == "error":
+            err = obj.get("error") or {}
+            raise ToolError(f"provider error: {err.get('message', err)}")
+    for index, block in blocks.items():
+        if block.get("type") == "tool_use":
+            raw = "".join(partial.get(index) or [])
+            try:
+                block["input"] = json.loads(raw) if raw.strip() else {}
+            except json.JSONDecodeError:
+                block["input"] = {"_vendor_argument_error": "invalid JSON arguments",
+                                  "_raw_arguments": raw[:2000]}
+    return {"content": [blocks[i] for i in sorted(blocks)]}
 
 
 def _cacheable_system(system: str) -> list[dict]:
@@ -2096,13 +2495,14 @@ def _cached_messages(messages: list[dict]) -> list[dict]:
     return [*messages[:-1], {**messages[-1], "content": blocks}]
 
 
-def _anthropic_turn(prov, model, system, messages, tools, key):
+def _anthropic_turn(prov, model, system, messages, tools, key, handle=None):
     data = _post(prov.base_url,
                  {"x-api-key": key, "anthropic-version": "2023-06-01"},
-                 {"model": model, "max_tokens": 4096,
+                 {"model": model, "max_tokens": MAX_OUTPUT_TOKENS,
                   "system": _cacheable_system(system),
                   "messages": _cached_messages(messages), "tools": tools},
-                 provider=f"api:{getattr(prov, 'name', 'anthropic')}")
+                 provider=f"api:{getattr(prov, 'name', 'anthropic')}",
+                 wire="anthropic", handle=handle)
     text = "".join(b.get("text", "") for b in data.get("content", [])
                    if b.get("type") == "text")
     calls = [(b["id"], b["name"], b.get("input") or {})
@@ -2110,14 +2510,16 @@ def _anthropic_turn(prov, model, system, messages, tools, key):
     return text, calls, data.get("content", [])
 
 
-def _openai_turn(prov, model, system, messages, tools, key):
+def _openai_turn(prov, model, system, messages, tools, key, handle=None):
     oai_tools = [{"type": "function",
                   "function": {"name": t["name"], "description": t["description"],
                                "parameters": t["input_schema"]}} for t in tools]
     msgs = [{"role": "system", "content": system}, *messages]
     data = _post(prov.base_url, {"Authorization": f"Bearer {key}"},
-                 {"model": model, "messages": msgs, "tools": oai_tools},
-                 provider=f"api:{getattr(prov, 'name', 'openai')}")
+                 {"model": model, "messages": msgs, "tools": oai_tools,
+                  "max_tokens": MAX_OUTPUT_TOKENS},
+                 provider=f"api:{getattr(prov, 'name', 'openai')}",
+                 wire="openai", handle=handle)
     choice = (data.get("choices") or [{}])[0].get("message", {})
     text = choice.get("content") or ""
     calls = []
@@ -2138,8 +2540,13 @@ def _openai_turn(prov, model, system, messages, tools, key):
             if not isinstance(args, dict):
                 args = {}
         except json.JSONDecodeError as e:
+            cut = (choice.get("finish_reason") == "length" or
+                   (data.get("choices") or [{}])[0].get("finish_reason") == "length")
             args = {
-                "_vendor_argument_error": f"invalid JSON arguments: {e}",
+                "_vendor_argument_error": (
+                    f"the provider cut this tool call off at its output limit "
+                    f"({len(str(raw_args))} characters received); send less in one call"
+                    if cut else f"invalid JSON arguments: {e}"),
                 "_raw_arguments": str(raw_args)[:2000],
             }
         calls.append((call_id, name, args))
@@ -2163,6 +2570,45 @@ def _looks_like_text_tool_request(text: str) -> bool:
     return bool(_TEXT_TOOL_REQUEST.search(str(text or "")))
 
 
+# States in which a turn must end with a handoff (a question card, an intake report or a
+# plan), never with prose alone (FLOW-TARGET-2026-09-17 step 1).
+_HANDOFF_STATES = {"RESOLVING_KIS", "PLANNING", "REPLAN_REQUIRED"}
+_NUDGE = {
+    "RESOLVING_KIS": (
+        "Your turn ended without a handoff, so GeoForge cannot move on: a question written in "
+        "prose shows the user no card and the project waits forever. Either call "
+        "request_user_action now with that ONE question and its options, or call "
+        "report_project_progress with selected_kis and an intake object with "
+        "ready_for_planning=true and an empty missing list."),
+    "PLANNING": (
+        "Your turn ended without a planning handoff. If a decision is unresolved, call "
+        "request_user_action with ONE question, its KI-supported default if known, and "
+        "alternatives; then wait. Keep earlier answers. Only after all required decisions "
+        "are settled, call write_plan with both final files for user review. Do not rush "
+        "past unanswered questions or start downloading during planning."),
+}
+_NUDGE["REPLAN_REQUIRED"] = _NUDGE["PLANNING"]
+_TRANSPORT_FAILURE = ("provider stream interrupted", "no response from", "cannot reach")
+
+
+def _handoff_made(name: str, args: dict, out: str) -> bool:
+    """Did this tool call end the agent's obligation for a handoff state?"""
+    if out.startswith(("ERROR:", "DENIED", "PLAN NOT WRITTEN")):
+        return False
+    if name == "write_plan":
+        return out.startswith("Plan files written")
+    if name == "request_user_action":
+        return True
+    if name == "report_project_progress":
+        intake = args.get("intake")
+        # "Not ready, one question missing" is a handoff only when that question
+        # was asked through request_user_action; a question in prose leaves the
+        # project waiting with no card, which is the seam this rule closes.
+        return (bool(args.get("selected_kis")) and isinstance(intake, dict)
+                and intake.get("ready_for_planning") is True and not intake.get("missing"))
+    return False
+
+
 def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         *, model: str | None = None, max_steps: int | None = None,
         history: list[dict] | None = None,
@@ -2171,7 +2617,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         setup_context: dict | None = None,
         project_mode: bool = False,
         presentation: str = "chat",
-        flow=None) -> Iterator[str]:
+        flow=None, handle: TurnHandle | None = None) -> Iterator[str]:
     """Drive one task to completion, yielding text as it is produced.
 
     ``approve`` is the seam the CLI driver cannot offer: it is called before
@@ -2209,15 +2655,43 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             messages.append({"role": role, "content": body})
     messages.append({"role": "user", "content": task})
     text_tool_retries = 0
+    transport_retries = 0
+    nudged = False
+    handoff = False
+    step = 0
 
-    steps = range(max_steps) if max_steps is not None else itertools.count()
-    for step in steps:
+    # A scientific setup or model run is complete when the provider returns a
+    # final response, asks the user for an external action, or reports a real
+    # error.  Its length is not knowable in advance: compiling one model may
+    # take five calls and another may legitimately take fifty.  A fixed turn
+    # budget previously stopped DeepSeek halfway through a healthy Alpine3D
+    # build.  ``None`` is therefore the normal contract.  ``max_steps`` remains
+    # available only for small, explicitly bounded probes and unit tests.
+    while max_steps is None or step < max_steps:
+        if flow is not None and step:
+            # A request_replan in the previous step changes what is allowed now.
+            tools = tool_schemas(ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow)
+        step += 1
+        if handle is not None and handle.stopped.is_set():
+            yield f"\n[{prov.label} stopped by the user]"
+            return
         try:
             if prov.wire == "anthropic":
-                text, calls, raw = _anthropic_turn(prov, model_id, system, messages, tools, key)
+                text, calls, raw = _anthropic_turn(prov, model_id, system, messages, tools, key,
+                                                   handle=handle)
             else:
-                text, calls, raw = _openai_turn(prov, model_id, system, messages, tools, key)
+                text, calls, raw = _openai_turn(prov, model_id, system, messages, tools, key,
+                                                handle=handle)
         except ToolError as e:
+            if handle is not None and handle.stopped.is_set():
+                yield f"\n[{prov.label} stopped by the user]"
+                return
+            if str(e).startswith(_TRANSPORT_FAILURE) and not transport_retries:
+                # One retry: the failed call appended nothing, so the same request is
+                # simply sent again. A second failure is reported as before.
+                transport_retries += 1
+                yield f"\n[{prov.label}: connection dropped; retrying once]\n"
+                continue
             yield f"\n[{prov.label} failed: {e}]"
             return
 
@@ -2251,12 +2725,27 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         if text and (not calls or presentation == "log"):
             yield text
         if not calls:
+            state_name = getattr(getattr(flow, "state", None), "value", "")
+            if flow is not None and state_name in _HANDOFF_STATES and not handoff and not nudged:
+                # Prose is not a handoff. One nudge, then the turn ends and flowrun.after
+                # reports the missing submission as today.
+                nudged = True
+                if prov.wire == "anthropic":
+                    messages.append({"role": "assistant", "content": raw})
+                else:
+                    messages.append(raw)
+                messages.append({"role": "user", "content": _NUDGE[state_name]})
+                yield f"\n\n[GeoForge: the turn ended without a plan or a question; asking {prov.label} to finish it]\n\n"
+                continue
             if flow is not None:
                 flow.provider_succeeded = True
             return
 
         results = []
         for call_id, name, args in calls:
+            if handle is not None and handle.stopped.is_set():
+                yield f"\n[{prov.label} stopped by the user before {name}]"
+                return
             if presentation == "log":
                 yield f"\n`> {name}({', '.join(f'{k}={v!r}' for k, v in args.items())[:80]})`\n"
             else:
@@ -2270,7 +2759,16 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                                        project_mode=project_mode, flow=flow)
                 except ToolError as e:
                     out = f"ERROR: {e}"
+            handoff = handoff or _handoff_made(name, args, str(out))
             results.append((call_id, out))
+            if (name == "request_user_action" and flow is not None
+                    and getattr(getattr(flow, "state", None), "value", "") in _HANDOFF_STATES
+                    and not str(out).startswith(("ERROR:", "DENIED"))):
+                # A question to the user ends the turn: the answer arrives as the next
+                # message. Writing a plan on top of an unanswered question is not allowed.
+                yield f"\n[GeoForge: {prov.label} asked you a question; waiting for your answer]\n"
+                flow.provider_succeeded = True
+                return
 
         if prov.wire == "anthropic":
             messages.append({"role": "assistant", "content": raw})

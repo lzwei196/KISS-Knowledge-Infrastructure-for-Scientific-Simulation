@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: SWAN
+binary_type: Mach-O
+verified: unverified
+install_dir: SWAN
+acquire:
+  strategy: download
+  url: https://downloads.sourceforge.net/project/swanmodel/swan/SWAN-41.51-macOS-Silicon.tar.gz
+  sha256: 346bccd8ee6f432ddb2eee5ea28d36ae925d8b38cef8b9ca142ece3ddc2491b2
+  produces: SWAN-41.51-macOS-Silicon/bin/swan.exe
+python_deps: [numpy, scipy, matplotlib]
+system_deps: [gcc, git]
+notes: Official upstream SWAN 41.51 arm64 solver archive; local native startup loaded and exited zero with missing scientific INPUT. Fresh full DS installation check pending. Python PySWaN companion alone is not the solver.
+agent_hint: Read docs/install.macos.md. Preserve full official archive layout under binaries/SWAN. Install genuine OpenEarth companion from pinned source with only the documented relative-import packaging fix. Never install unrelated PyPI pyswan. Declare actual native swan.exe as product, not Python or swanrun. Probe in an empty directory with stdin closed; no scientific input or simulation needed.

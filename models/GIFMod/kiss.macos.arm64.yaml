@@ -1,0 +1,33 @@
+kiss_manifest_version: 1
+model: GIFMod
+binary_type: Mach-O
+verified: unverified
+install_dir: GIFMod
+acquire:
+  strategy: build
+  repo: https://github.com/USEPA/GIFMod.git
+  ref: 2a314750418099ca51a100d824381924ba982c91
+  commands:
+  - python3 ../../ki/tools/build_gifmod_native.py .
+  produces: builds/release/GIFMod
+system_deps:
+- make
+- clang
+python_deps: []
+notes: >-
+  Exact upstream GIFMod 0.1.26 compiled natively on Apple Silicon with genuine
+  Qt5.15.15. Fresh DS repair88 rebuilt the model and passed native identity, linking, imports,
+  and exact version response on 2026-09-09; no scientific execution.
+agent_hint: >-
+  FIRST read docs/install.macos.md. The existing workspace gifmod-build-config.json
+  qt_runtime is a genuine SAME-HOST absolute dependency prefix, deliberately outside
+  this temporary workspace, not another machine. Invoke the trusted build helper
+  with that config BEFORE package installation or requesting user action. qmake
+  need not be on PATH; the helper directly validates configured Qt5.15.15. Do not
+  overwrite the config based on an assumption. Workspace config provides qt_runtime,
+  an existing genuine Qt5.15.15 development prefix. The trusted helper applies
+  reviewed source-hash-checked macOS/compiler/startup patches and invokes qmake
+  and make -j2. Do not substitute Qt6 or another model/version. Native help/version
+  return before QApplication and science. Never open GUI, examples, model projects,
+  calibration, forcing, or simulation during installation. Keep the final product
+  at binaries/GIFMod/builds/release/GIFMod. Python tools use standard library only.

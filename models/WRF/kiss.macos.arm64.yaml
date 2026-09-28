@@ -1,0 +1,38 @@
+kiss_manifest_version: 1
+model: WRF
+binary_type: Mach-O
+verified: partial
+install_dir: WRF/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/wrf-model/WRF.git
+  ref: f52c197ed39d12e087d02c50f412d90d418f6186
+  produces: build/main/wrf
+python_deps: [numpy, pandas, xarray, netCDF4, matplotlib, scipy]
+system_deps: [gfortran, mpich, netcdf-fortran, hdf5, cmake]
+agent_hint: >-
+  Apply bundled tools/prepare_wrf_build_registry.py --source binaries/WRF/source/repo
+  from the installation workspace BEFORE compiling registry. It verifies the exact
+  sourcehash and repairs only build-tool include-path buffers and snprintfbounds.
+  Native regression reproduced original SIGTRAP(-5) with a216byte sourceinclude path,
+  emptyoutput in0.04s, and repaired codegeneration passed in5.45s with real generated
+  module_state_description.F and nl_config.inc. This is generator-only proof, not yet
+  a fullWRF installation pass. Earlier ASANhang was sanitizer dyldinitialization, not
+  evidence of unsupported ARM64. Use pinned official v4.7.1 source and genuine native
+  C/Fortran/MPI/NetCDF dependencies; initialize required source submodules. Build ARW
+  EM_REAL with CMake in source/repo/build so actual targetwrf product is build/main/wrf;
+  also compile real. Traditional make may instead produce main/wrf.exe, which is valid
+  only when actually built; record its real path. Never select registry or Pythonwrappers
+  as modelsoftware. Retain -DEM_CORE=1 -DDA_CORE=0 -DNEW_BDYS for registry generation;
+  missing DA_CORE=0 omits j/k dimensions and triggers upstream warningloops. Compile
+  registry with matching MAX_HISTORY=25. Previous CMake Darwin importer left bareMACOS
+  tokens in compilerflagstrings; use proper -DMACOS definitions and valid toolchainflags.
+  Preserve MPI FI_PROVIDER=tcp FI_TCP_IFACE=en0 on this verified host. Do not disable
+  fortification to bypass overflow. Startupchecks only, no namelist/data/simulation.
+
+notes: >-
+  DS74 compiled genuine native wrf and real and independent installation checks passed.
+  Set CMAKE_C_PREPROCESSOR=/opt/homebrew/bin/cpp-16 on this audited host, preserve
+  -DMACOS C/Fortran definitions and original wrf_io_flags.h include location.
+  Read docs/install.macos.md for observed successful configuration; agent-directed
+  build configuration remains distinct from a fully scripted recipe.

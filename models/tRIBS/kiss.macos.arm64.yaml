@@ -1,0 +1,17 @@
+kiss_manifest_version: 1
+model: tRIBS
+binary_type: Mach-O
+verified: unverified
+install_dir: tRIBS
+acquire:
+  strategy: build
+  repo: https://github.com/tribshms/tRIBS.git
+  ref: 839ca297120856337042c3da9c3f8f3a17bceec4
+  commands:
+  - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+  - cmake --build build --parallel 2
+  produces: build/tRIBS
+python_deps: [pytRIBS==1.0.0, geopandas, pyproj, rasterio, numpy, pandas]
+system_deps: [git, cmake, clang]
+notes: Official v5.3.1 serial C++ solver product explicitly declared; previous baseline built it but selected Python as product. Fresh native and import verification pending.
+agent_hint: Build official serial tRIBS at <workspace>/binaries/tRIBS/build/tRIBS. Native solver plus all KI Python imports must pass. Do not replace native solver with pytRIBS wrapper or interpreter. Startup help/version only; no basin simulation or scientific datasets.

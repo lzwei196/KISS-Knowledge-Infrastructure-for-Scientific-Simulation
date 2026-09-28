@@ -49,6 +49,7 @@ version_info = VSVersionInfo(
 )
 
 trust_datas, trust_binaries, trust_hidden = collect_all("truststore")
+netcdf_datas, netcdf_binaries, netcdf_hidden = collect_all("netCDF4")
 certifi_datas = collect_data_files("certifi")
 webview_hidden = []
 calibration_datas = []
@@ -84,14 +85,18 @@ harness_hidden = [
     "ki_tools_common.flow.policy",
     "ki_tools_common.flow.tools",
     "ki_tools_common.flow.build_data",
+    "ki_tools_common.flow.decisions",
+    "ki_tools_common.flow.declared",
+    "ki_tools_common.flow.ki_inputs",
 ]
 
 a = Analysis(
     [str(SOURCE / "kiss_entry.py")],
     pathex=[str(SOURCE), str(KI_TOOLS_SOURCE)],
-    binaries=[*trust_binaries, *calibration_binaries],
+    binaries=[*trust_binaries, *netcdf_binaries, *calibration_binaries],
     datas=[
         (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
+        (str(SOURCE / "system_kis"), "system_kis"),
         *((str(p), f"models/{p.name}") for p in ki_packages),
         (str(REPO / "ki_tools_common"), "ki_tools_common"),
         (str(SOURCE / "vendor" / "agent-calibration-framework"),
@@ -100,11 +105,12 @@ a = Analysis(
         (str(REPO / "release-manifest.json"), "."),
         (str(REPO / "DESKTOP_CHANGELOG.md"), "."),
         *trust_datas,
+        *netcdf_datas,
         *certifi_datas,
         *calibration_datas,
     ],
     hiddenimports=[
-        *trust_hidden, *webview_hidden, *calibration_hidden, *harness_hidden,
+        *trust_hidden, *netcdf_hidden, *webview_hidden, *calibration_hidden, *harness_hidden,
     ],
     hookspath=[],
     hooksconfig={},
@@ -120,7 +126,21 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# A console companion forwards approved IPC commands without requiring Python
+# on PATH. Its runtime/DLLs live beside the same self-contained desktop bundle.
+bridge = Analysis(
+    [str(SOURCE / "agent_bridge_entry.py")],
+    pathex=[str(SOURCE), str(KI_TOOLS_SOURCE)],
+    binaries=[], datas=[], hiddenimports=[], hookspath=[], hooksconfig={},
+    runtime_hooks=[], excludes=a.excludes, noarchive=False, optimize=0,
+)
 pyz = PYZ(a.pure)
+bridge_pyz = PYZ(bridge.pure)
+bridge_exe = EXE(
+    bridge_pyz, bridge.scripts, [], exclude_binaries=True,
+    name="geoforge-agent-bridge", debug=False, strip=False, upx=False,
+    console=True, icon=str(ICON), version=version_info,
+)
 
 exe = EXE(
     pyz,
@@ -143,8 +163,11 @@ exe = EXE(
 )
 coll = COLLECT(
     exe,
+    bridge_exe,
     a.binaries,
     a.datas,
+    bridge.binaries,
+    bridge.datas,
     strip=False,
     upx=False,
     name=f"GeoForge Desktop {VERSION} Windows",

@@ -1,0 +1,15 @@
+kiss_manifest_version: 1
+model: mHM
+binary_type: Mach-O
+verified: unverified
+install_dir: mHM
+acquire:
+  strategy: build
+  repo: https://github.com/mhm-ufz/mHM.git
+  ref: 2aa1adc676593c84e1c59d0bd6d100def2081bee
+  produces: build/mhm
+python_deps: [numpy, netCDF4, xarray, f90nml, fypp]
+system_deps: [git, cmake, gfortran, clang, netcdf-fortran]
+reference_case: build/mhm --version
+notes: Pinned official annotated v5.13.1 target commit; prior Mac build succeeded but lacked declared product. Fresh independent native build verification pending.
+agent_hint: Configure official mHM/FORCES with native netCDF-Fortran and workspace fypp preprocessor via -DFYPP=<workspace>/venv/bin/fypp. If FindThreads rejects Fortran-only languages when loading Homebrew HDF5, enable C in top-level CMake with a minimal documented build-only patch. Configure -S . -B build and preserve exact product <workspace>/binaries/mHM/build/mhm. Do not use build2 or a different unrecorded directory. No scientific source substitutions, model runs or input downloads.

@@ -1,0 +1,51 @@
+kiss_manifest_version: 1
+model: ELMFIRE
+binary_type: Mach-O
+verified: unverified
+install_dir: elmfire
+acquire:
+  strategy: build
+  repo: https://github.com/lautenberger/elmfire.git
+  ref: 168c8d4186fa0854ec7615732532fbcf820680c8
+  commands:
+  - mkdir -p build/linux/elmfire
+  - make -C build/linux/elmfire -f ../Makefile_elmfire -j1 gnu_mpi_linux ELMFIRE_FCOMPL_MPI_GNU=mpifort
+    "ELMFIRE_PRECOMPILER_FLAGS=-D_SMOKE -D_WUI -D_UMDSPOTTING -D_SUPPRESSION" "ELMFIRE_OBJECTS=elmfire_vars.o
+    sort.o elmfire_init.o elmfire_namelists.o elmfire_subs.o elmfire_spread_rate.o
+    elmfire_ignition.o elmfire_io.o elmfire_spotting.o elmfire_suppression.o elmfire_spotting_superseded.o
+    elmfire_calibration.o elmfire_level_set.o elmfire.o" "FFLAGS=-O3 -funroll-loops
+    -frecord-marker=4 -ffree-line-length-none -cpp -march=native -ffpe-summary=none"
+  produces: build/linux/elmfire/elmfire
+python_deps:
+- numpy
+- GDAL==3.12.3
+- PyYAML
+system_deps:
+- git
+- make
+- gfortran
+- mpifort
+- gdalinfo
+- gdalwarp
+- gdal_translate
+notes: Native Mac repair candidate pinned to official ELMFIRE 2025.0717. The KI scientific
+  reference label 2025.1002 has no corresponding upstream tag and must not be used
+  to relabel this executable. Requires genuine MPI Fortran-2008 modules compiled for
+  the selected Fortran compiler. Clean DS verification still required.
+agent_hint: 'Use an isolated genuine Open MPI compiler/runtime providing mpi_f08.mod.
+  Host MPICH 4.3.1 lacks this module; do not replace typed MPI_F08 calls with classic
+  MPI or relink the shared MPI installation. Select the prepared MPI prefix via this
+  worker PATH and confirm mpifort compiles a use mpi_f08 probe. Build the official
+  GNU target serially because module dependencies follow upstream object ordering.
+  Keep the four upstream feature flags and all sources unchanged. The build/linux
+  directory name is an upstream convention; the resulting binary is native Mach-O
+  on macOS. Probe from an empty directory with --version and stdin closed: upstream
+  prints ELMFIRE 2025.0717 and Problem opening input file --version after MPI initialization;
+  this is an installation startup check, not a simulation. Do not create input namelists,
+  landscape/weather files, or run examples. Verify required Python imports in the
+  workspace environment. On this verified host gdal-config reports 3.12.3, so install
+  matching GDAL 3.12.3 bindings and PyYAML, then import numpy, osgeo.gdal, and yaml
+  with the saved workspace interpreter. Do not use a no-dependencies placeholder.
+  The explicit FFLAGS override replaces upstream -unroll with genuine GNU -funroll-loops;
+  on macOS -unroll is parsed as linker -u nroll and causes undefined symbol nroll.
+  This is a build-option correction only; no scientific source is changed.'

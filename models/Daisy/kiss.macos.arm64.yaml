@@ -1,0 +1,17 @@
+kiss_manifest_version: 1
+model: Daisy
+binary_type: Mach-O
+verified: unverified
+install_dir: source
+acquire:
+  strategy: build
+  repo: https://github.com/daisy-model/daisy.git
+  ref: 879090bb363a753835c68d8a328f8923ff8f7585
+  commands:
+  - cmake --preset macos-clang-portable -B build -DBUILD_PYTHON=OFF
+  - cmake --build build --parallel 2
+  - cmake --install build
+  produces: build/daisy-7.1.14/Daisy/bin/daisy-bin
+python_deps: [numpy, pandas, pyyaml]
+system_deps: [cmake, boost, suite-sparse, libomp]
+agent_hint: Exact source root is <workspace>/binaries/source and native product is <workspace>/binaries/source/build/daisy-7.1.14/Daisy/bin/daisy-bin. Retry50 installed successfully there; avoid extra Daisy path component. Retry47 built and installed real7.1.14 successfully; standalone build/daisy-bin aborts due missing staged dylibs. Independent check must target installed build/daisy-7.1.14/Daisy/bin/daisy-bin with complete sibling bin/lib and model lib tree preserved. Do not keep old build/daisy-bin as declared product. Official7.1.14 native Mac recipe, learn Windows version identity but no PE32 archive. Set HOMEBREW_PREFIX=/opt/homebrew for upstream CMake environment; otherwise upstream defaults wrong /usr/local. Root installed real SuiteSparse and verified actual libcxsparse.4.dylib and libsuitesparseconfig.7.dylib load. Boost1.90 and libomp are present. Preserve whole build tree including staged bin/lib as upstream MacOS.cmake rewrites native dependencies there; do not move binary alone. BUILD_PYTHON=OFF disables embedded model Python only; separately verify KI imports. Inspect actual native product name/path and reconcile if build emits daisy instead of daisy-bin. Use only -v or help in empty directory; no simulations or sample data.

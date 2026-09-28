@@ -1,0 +1,38 @@
+kiss_manifest_version: 1
+model: DART
+binary_type: Mach-O
+verified: unverified
+install_dir: dart-11.24.1
+acquire:
+  strategy: build
+  repo: https://github.com/NCAR/DART.git
+  ref: 80502a8e030f5308f557a326819c18cb5079c494
+  commands:
+  - python3 ../../ki/tools/configure_dart_build.py .
+  - cd models/lorenz_63/work && ./quickbuild.sh nompi
+  produces: models/lorenz_63/work/filter
+python_deps:
+- numpy
+- pandas
+- netCDF4
+- PyYAML
+system_deps:
+- git
+- gfortran
+- make
+reference_case: models/lorenz_63/work/filter --help
+notes: Repair candidate derived from the real Mac DART attempt. Official v11.24.1
+  native executables compiled with gfortran and matching netCDF. That attempt failed
+  the independent gate because no product was declared and its probe triggered a bundled
+  case. This manifest declares the real filter product and skips example NetCDF generation
+  in the build driver. Clean DS retry is required; no scientific verification claimed.
+agent_hint: 'Use the exact official commit. The bundled configure_dart_build.py selects
+  the upstream gfortran template with Homebrew netCDF at /opt/homebrew and removes
+  only the build-driver call that generates example NetCDF files. It preserves scientific
+  source and runs the real DART preprocess/compiler steps. Use run_builtin_setup or
+  the equivalent canonical build. The Lorenz-63 adapter is compiled as an installation
+  smoke target, not run as a reference simulation. Keep all built executables. Probe
+  only from an empty directory: filter can ignore help/version flags and consume input.nml
+  when launched from its bundled work directory. Do not run the reference case and
+  do not git-clean away the compiled executables after probing. Satisfy the declared
+  Python imports in the workspace environment.'

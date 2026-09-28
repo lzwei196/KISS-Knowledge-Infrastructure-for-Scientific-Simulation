@@ -1,0 +1,25 @@
+kiss_manifest_version: 1
+model: TopoFlow
+binary_type: Python
+verified: partial
+install_dir: TopoFlow
+acquire:
+  strategy: pip
+  package: git+https://github.com/peckhams/topoflow36.git@a1c07d0a72185cbd0baeff1ef77feadad09c3f88
+  produces: topoflow
+python_deps:
+- numpy
+- scipy
+- netCDF4
+- cfunits
+reference_case: python -c "import topoflow.framework.emeli; print('TopoFlow 3.6 importable')"
+notes: Adapted from windows-version fbed40b installation recipe on 2026-09-08. This
+  Mac recipe has not yet passed a Mac installation test. Windows verification is not
+  Mac verification.
+agent_hint: Install the pinned official TopoFlow source into one workspace Python
+  environment, including all declared imports. cfunits needs a real native UDUNITS-2
+  library. Preserve the upstream dependency constraints; do not replace the library
+  with a shim. Probe topoflow.framework.emeli and all KI imports. Record the workspace
+  interpreter.
+
+# Clean Mac arm64 DS installation and actual imports passed on 2026-09-08.

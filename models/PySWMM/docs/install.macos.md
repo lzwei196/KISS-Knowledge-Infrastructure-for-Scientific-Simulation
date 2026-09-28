@@ -1,0 +1,3 @@
+# Native macOS installation repair
+
+Install the genuine official package and all KI dependencies in the model environment. The audited swmm-toolkit 0.17.0 Apple Silicon wheel contains two invalid native library signatures. Before importing swmm.toolkit or pyswmm, run tools/prepare_swmm_build_runtime.py using the workspace environment Python. This helper only repairs the two exact audited library hashes, verifies signatures, and is idempotent. Never disable Gatekeeper or replace native modules. Verify actual swmm.toolkit.solver and swmm.toolkit.output imports, plus pyswmm for PySWMM. Do not run a simulation or download scientific inputs. Interpreter startup alone is insufficient.

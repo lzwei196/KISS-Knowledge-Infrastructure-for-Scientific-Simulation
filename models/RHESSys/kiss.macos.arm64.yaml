@@ -1,0 +1,15 @@
+kiss_manifest_version: 1
+model: RHESSys
+binary_type: Mach-O
+verified: unverified
+install_dir: RHESSys/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/RHESSys/RHESSys.git
+  ref: 91dccef178e5df33be2f8105f68e3cda819b7bb1
+  produces: rhessys/rhessys7.4
+system_deps: [git, make, clang, flex, bison, netcdf]
+python_deps: [numpy, pandas, netCDF4]
+reference_case: rhessys/rhessys7.4 --version
+notes: Source pin and product layout adapted from Windows recipe; Mac DS reported native build but independent baseline failed because binary was undeclared. Acquisition/product contract only; compatibility patch review and clean DS retry are still required before this is an observed Mac install.
+agent_hint: Use official RHESSys-7.4 and native Apple clang/netCDF. Preserve exact product rhessys/rhessys7.4. Earlier Mac build exposed modern-C comparator/prototype and string-literal defects; review minimal source/build changes explicitly, never blanket-suppress diagnostics. Do not run world-file examples or scientific cases to prove installation.

@@ -1,0 +1,26 @@
+kiss_manifest_version: 1
+model: MODFLOW6
+binary_type: Mach-O
+verified: partial
+install_dir: modflow6
+acquire:
+  strategy: download
+  url: https://github.com/MODFLOW-ORG/modflow6/releases/download/6.6.1/mf6.6.1_macarm.zip
+  produces: mf6.6.1_macarm/bin/mf6
+python_deps:
+- flopy
+- numpy
+- pandas
+system_deps: []
+data:
+- role: static
+  name: Model-specific grid and boundary inputs
+  why: MODFLOW 6 is driven entirely by its own text input files; build them with FloPy.
+  optional: true
+reference_case: mf6 --version
+notes: Mac arm64 asset verified present in the official MODFLOW 6.6.1 GitHub release.
+  Clean DS Mac installation passed native mf6 6.6.1 startup and actual imports
+  on 2026-09-08. Scientific simulations were not run; retain archive provenance.
+agent_hint: Use only the architecture-specific official Mac archive. Preserve the
+  complete distribution. Probe the real mf6 executable with --version; record archive
+  SHA-256 and actual architecture. No simulation data is required for installation.

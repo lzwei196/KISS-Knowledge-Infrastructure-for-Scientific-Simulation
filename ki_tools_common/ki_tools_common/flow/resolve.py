@@ -27,6 +27,9 @@ _SPLIT = re.compile(r"[\W_]+", re.UNICODE)  # punctuation in every UI language
 # that entire sentence look like one mixed-case "unknown model" after CRHM had already
 # been resolved.  Extract the identifier runs instead; separators inside real model
 # names remain available to the VIC-CaMa / WRF_Hydro logic below.
+_CJK_GLUE = re.compile(r"(?<=[A-Za-z0-9])(?=[\u3400-\u9fff\uf900-\ufaff])|"
+                       r"(?<=[\u3400-\u9fff\uf900-\ufaff])(?=[A-Za-z0-9])")
+
 _ASCII_MODEL_TOKEN = re.compile(
     r"[A-Za-z][A-Za-z0-9]*(?:[-–—_/+][A-Za-z][A-Za-z0-9]*)*\+?"
 )
@@ -39,8 +42,10 @@ _STOP = {"run", "runs", "model", "models", "flood", "floods", "water", "river", 
 
 
 def norm(s: str) -> str:
-    """Same normalisation as ki_tools_common.harness.ki_path._norm."""
-    return _SPLIT.sub(" ", str(s or "")).strip().lower()
+    """Same normalisation as ki_tools_common.harness.ki_path._norm, plus a split between
+    latin/digit runs and CJK runs (kimi block-C review: "VIC-CaMa耦合" must tokenize as
+    "vic cama 耦合", not glue the model name to the Chinese verb)."""
+    return _SPLIT.sub(" ", _CJK_GLUE.sub(" ", str(s or ""))).strip().lower()
 
 
 @dataclass

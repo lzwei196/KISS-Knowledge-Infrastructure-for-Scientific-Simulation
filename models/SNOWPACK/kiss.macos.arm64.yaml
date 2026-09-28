@@ -1,0 +1,15 @@
+kiss_manifest_version: 1
+model: SNOWPACK
+binary_type: Mach-O
+verified: unverified
+install_dir: Alpine3D/local_install
+acquire:
+  strategy: build
+  repo: https://github.com/snowpack-model/snowpack.git
+  ref: b324cbdd1b7f4da4db8ff8a5b408274e88ac1945
+  produces: bin/snowpack
+python_deps: [numpy, pandas, xarray, matplotlib, PyYAML]
+system_deps: [git, cmake, clang]
+reference_case: bin/snowpack --help
+notes: Source pin matches earlier Mac build of SNOWPACK3.7.1 and MeteoIO2.11.0; independent baseline failed because no product was declared. Exact native install prefix/product now explicit; fresh DS verification pending.
+agent_hint: Build the official monorepo's MeteoIO first into a workspace prefix, then libsnowpack and snowpack CLI against it. Use pinned commit; there is no 3.7.1 git tag. Stage genuine bin/snowpack plus libsnowpack and libmeteoio dylibs under <workspace>/binaries/Alpine3D/local_install with executable-relative library resolution. Prior Mac build needed no external netcdf/grib/png/proj plugins; document disabled optional plugins. Do not simulate or fetch forcing data. Independently import KI dependencies and run only native help/version.

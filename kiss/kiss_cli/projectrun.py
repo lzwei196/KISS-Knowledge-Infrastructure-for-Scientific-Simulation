@@ -24,7 +24,7 @@ AGENT_FILE = "project-agent-status.json"
 
 STAGES = (
     "understanding", "choosing_ki", "software", "researching",
-    "preparing", "validating", "running", "results",
+    "planning", "acquiring", "preparing", "validating", "running", "results",
 )
 STATUSES = ("idle", "working", "waiting_for_user", "complete", "failed")
 
@@ -33,11 +33,23 @@ STAGE_LABELS = {
     "choosing_ki": "Choosing the scientific model",
     "software": "Checking scientific software",
     "researching": "Finding suitable data",
+    "planning": "Planning the scientific study",
+    "acquiring": "Downloading or importing approved data",
     "preparing": "Preparing model inputs",
     "validating": "Validating the project",
     "running": "Running the scientific model",
     "results": "Preparing results",
 }
+
+
+def flow_display_stage(state, fallback: str = "understanding") -> str:
+    """Desktop phase labels without changing shared Flow state/permissions."""
+    name = str(getattr(state, "value", state))
+    if name in {"PLANNING", "PLAN_REVIEW", "REPLAN_REQUIRED", "WAITING_FOR_USER"}:
+        return "planning"
+    if name == "ACQUIRING":
+        return "acquiring"
+    return fallback
 
 
 def _runs(project: Path) -> Path:
@@ -61,11 +73,31 @@ def _number(value, fallback: float) -> float:
         return fallback
 
 
+def _blocker_rows(value) -> list[dict]:
+    """The N manual-download rows of an acquisition card (link, code, path per dataset)."""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for raw in value[:12]:
+        if not isinstance(raw, dict):
+            continue
+        url = str(raw.get("url") or "")[:2000]
+        out.append({
+            "item_id": _short(raw.get("item_id"), 100), "dataset_id": _short(raw.get("dataset_id"), 200),
+            "name": _short(raw.get("name"), 200), "size": raw.get("size") if isinstance(raw.get("size"), int) else None,
+            "url": url if url.startswith(("https://", "http://")) else None,
+            "code": _short(raw.get("code"), 40) or None,
+            "path_in_share": str(raw.get("path_in_share") or "").strip()[:500] or None,
+            "expected_path": str(raw.get("expected_path") or "").strip()[:1000],
+        })
+    return out
+
+
 def _blocker_options(value) -> list[dict]:
     if not isinstance(value, list):
         return []
     out = []
-    for index, item in enumerate(value[:8]):
+    for index, item in enumerate(value):
         raw = {"label": item} if isinstance(item, str) else item
         if not isinstance(raw, dict):
             continue
@@ -170,6 +202,7 @@ def _normalise(raw: dict | None, fallback: dict | None = None, *,
             "resume_hint": str(blocker.get("resume_hint") or "").strip()[:4000] or None,
             "options": _blocker_options(blocker.get("options")),
             "allow_note": bool(blocker.get("allow_note", True)),
+            "rows": _blocker_rows(blocker.get("rows")),
         }
     else:
         base.pop("blocker", None)

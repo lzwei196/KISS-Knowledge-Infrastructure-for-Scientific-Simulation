@@ -253,5 +253,23 @@ def main():
     emit_report(MODEL_ID, checks)
 
 
+def installation_check():
+    """Native install-only check; intentionally does not assess scientific data."""
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--installation-check', action='store_true')
+    parser.add_argument('--binary', default='binaries/ldndc/ldndc-1.37.mac64/bin/ldndc')
+    args = parser.parse_args()
+    checks = []
+    binary = Path(args.binary).resolve()
+    if check_file(checks, binary, 'Native LDNDC executable', executable=True):
+        check_command(checks, [binary, '--version'], 'Native LDNDC version',
+                      expect='LandscapeDNDC 1.37 (revision 12193)')
+    emit_report(MODEL_ID, checks)
+
+
 if __name__ == "__main__":
-    main()
+    if '--installation-check' in sys.argv:
+        installation_check()
+    else:
+        main()

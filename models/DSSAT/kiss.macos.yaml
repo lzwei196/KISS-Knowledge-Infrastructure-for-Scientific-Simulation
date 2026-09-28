@@ -1,0 +1,39 @@
+kiss_manifest_version: 1
+model: DSSAT
+binary_type: Mach-O
+verified: partial
+install_dir: DSSAT
+acquire:
+  strategy: build
+  repo: https://github.com/DSSAT/dssat-csm-os.git
+  ref: 40793f8d654ca033d027ec3a6cea53cf2f546602
+  commands:
+  - cmake -S . -B build -DCMAKE_BUILD_TYPE=RELEASE
+  - cmake --build build --parallel
+  produces: build/bin/dscsm048
+  system_deps:
+  - git
+  - cmake
+  - make
+  - gfortran
+system_deps:
+- git
+- cmake
+- make
+- gfortran
+python_deps:
+- numpy
+- pandas
+- scipy
+- xarray
+- netCDF4
+reference_case: build/bin/dscsm048 --version
+notes: Adapted from windows-version fbed40b installation recipe on 2026-09-08.
+  The Mac DS installation passed independent native Mach-O presence, linkage,
+  startup and Python-import verification on 2026-09-08. Scientific simulation
+  validation is separate. See retained DSSAT installation-test.json evidence.
+agent_hint: Build the pinned official DSSAT source with native macOS gfortran and
+  CMake. This revision already contains the FORMAT fixes needed by the older Mac recipe.
+  Preserve the checkout and Data directory. Place the actual native executable at
+  build/bin/dscsm048 relative to the install prefix. Verify startup only; weather,
+  soil and management inputs belong to later simulations.

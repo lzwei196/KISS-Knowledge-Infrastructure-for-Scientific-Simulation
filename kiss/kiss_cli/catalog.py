@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import sys
+import platform as host_platform
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -65,6 +66,11 @@ class KI:
         # replace a macOS/Linux recipe when all platforms fetch the same library.
         platform = installation_platform()
         if platform:
+            architecture = host_platform.machine().lower()
+            architecture = {"aarch64": "arm64", "amd64": "x86_64"}.get(architecture, architecture)
+            specific = self._maybe(f"kiss.{platform}.{architecture}.yaml")
+            if specific:
+                return specific
             specific = self._maybe(f"kiss.{platform}.yaml")
             if specific:
                 return specific

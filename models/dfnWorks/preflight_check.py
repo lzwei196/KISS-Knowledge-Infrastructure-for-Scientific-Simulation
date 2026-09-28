@@ -276,4 +276,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if '--installation-check' in sys.argv:
+        args = [arg for arg in sys.argv[1:] if arg != '--installation-check']
+        result = subprocess.run([sys.executable, str(KI_DIR / 'tools' / 'verify_dfnworks_native.py'), *args])
+        emit_report(MODEL_ID, [{"kind": "run", "subject": "fixed native dependency installation checks", "critical": True,
+                               "status": "pass" if result.returncode == 0 else "fail", "fix": "" if result.returncode == 0 else "Inspect native dependency receipt/logs"}])
+    else:
+        main()

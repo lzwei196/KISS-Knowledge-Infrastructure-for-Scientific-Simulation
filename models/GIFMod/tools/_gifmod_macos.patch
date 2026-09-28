@@ -1,0 +1,199 @@
+diff --git a/GIFMod.pro b/GIFMod.pro
+index b56cde3..95f84f4 100644
+--- a/GIFMod.pro
++++ b/GIFMod.pro
+@@ -78,3 +78,17 @@ DEFINES += QT_DEPRECATED_WARNINGS
+ #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
+ 
+ 
++
++# Native Apple Silicon build configuration; retains upstream Qt5 model.
++macx {
++    CONFIG -= app_bundle debug debug_and_release debug_and_release_target
++    CONFIG += release
++    QMAKE_CFLAGS -= -pg
++    QMAKE_CXXFLAGS -= -pg -fopenmp
++    QMAKE_LFLAGS -= -pg -fopenmp
++    LIBS -= -lgomp -lpthread
++    QMAKE_CXXFLAGS += -Xpreprocessor -fopenmp
++    INCLUDEPATH += /opt/homebrew/opt/libomp/include
++    LIBS += -L/opt/homebrew/opt/libomp/lib -lomp -framework Accelerate
++    DEFINES += ARMA_USE_LAPACK ARMA_USE_BLAS
++}
+diff --git a/src/GUI/main.cpp b/src/GUI/main.cpp
+index 881a0ee..8cea04c 100644
+--- a/src/GUI/main.cpp
++++ b/src/GUI/main.cpp
+@@ -1,3 +1,5 @@
++#include <cstdio>
++#include <cstring>
+ 
+ #include "mainwindow.h"
+ #include <QtWidgets/QApplication>
+@@ -6,6 +8,15 @@
+ #ifdef GIFMOD
+ int main(int argc, char *argv[])
+ {
++    // Native startup inspection returns before QApplication or model initialization.
++    if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
++        std::puts("GIFMod 0.1.26 (USEPA 2a314750418099ca51a100d824381924ba982c91)");
++        return 0;
++    }
++    if (argc == 2 && (std::strcmp(argv[1], "--help") == 0 || std::strcmp(argv[1], "-h") == 0)) {
++        std::puts("Usage: GIFMod [--help | --version]\nWithout arguments, opens the GIFMod Qt5 application.");
++        return 0;
++    }
+ 	QApplication GUI(argc, argv);
+     //point to the executable path
+     QDir::setCurrent(QApplication::applicationDirPath());
+diff --git a/src/GUI/qcustomplot.h b/src/GUI/qcustomplot.h
+index 1183e55..8cd5ec3 100644
+--- a/src/GUI/qcustomplot.h
++++ b/src/GUI/qcustomplot.h
+@@ -30,6 +30,7 @@
+ #include <QPointer>
+ #include <QWidget>
+ #include <QPainter>
++#include <QPainterPath>
+ #include <QPaintEvent>
+ #include <QMouseEvent>
+ #include <QPixmap>
+diff --git a/src/GUI/tth_source.c b/src/GUI/tth_source.c
+index a80fb64..5c96310 100644
+--- a/src/GUI/tth_source.c
++++ b/src/GUI/tth_source.c
+@@ -1,3 +1,4 @@
++#include <stdarg.h>
+ /* TtH TeX to HTML translator.
+ TtH Version 
+ "4.08"
+@@ -45,7 +46,7 @@ char transfer(char* text)
+ {
+ 	static char savedText[100000];
+ 	static int counter = 0;
+-	static length = 0;
++	static int length = 0;
+ 	if (text != NULL)
+ 	{
+ 		strcpy(savedText, text);
+@@ -77,42 +78,60 @@ void append(char*txt, char*part1)
+ 	sprintf(temp, part1);
+ 	strcat(txt, temp);
+ }
+-void append2(char*txt, char*part1, char* part2)
++void append2(char *txt, char *format, ...)
+ {
+-	char temp[10000];
+-	sprintf(temp, part1, part2);
+-	strcat(txt, temp);
++    char temp[10000];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(temp, format, arguments);
++    va_end(arguments);
++    strcat(txt, temp);
+ }
+-void append3(char*txt, char*part1, char* part2, char* part3)
++void append3(char *txt, char *format, ...)
+ {
+-	char temp[10000];
+-	sprintf(temp, part1, part2, part3);
+-	strcat(txt, temp);
++    char temp[10000];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(temp, format, arguments);
++    va_end(arguments);
++    strcat(txt, temp);
+ }
+-void append4(char*txt, char*part1, char* part2, char* part3, char* part4)
++void append4(char *txt, char *format, ...)
+ {
+-	char temp[10000];
+-	sprintf(temp, part1, part2, part3, part4);
+-	strcat(txt, temp);
++    char temp[10000];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(temp, format, arguments);
++    va_end(arguments);
++    strcat(txt, temp);
+ }
+-void append5(char*txt, char*part1, char* part2, char* part3, char* part4, char* part5)
++void append5(char *txt, char *format, ...)
+ {
+-	char temp[10000];
+-	sprintf(temp, part1, part2, part3, part4, part5);
+-	strcat(txt, temp);
++    char temp[10000];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(temp, format, arguments);
++    va_end(arguments);
++    strcat(txt, temp);
+ }
+-void append6(char*txt, char*part1, char* part2, char* part3, char* part4, char* part5, char* part6)
++void append6(char *txt, char *format, ...)
+ {
+-	char temp[10000];
+-	sprintf(temp, part1, part2, part3, part4, part5, part6);
+-	strcat(txt, temp);
++    char temp[10000];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(temp, format, arguments);
++    va_end(arguments);
++    strcat(txt, temp);
+ }
+ 
+-void append8(char*txt, char*part1, char* part2, char* part3, char* part4, char* part5, char* part6, char* part7, char* part8)
++void append8(char *txt, char *format, ...)
+ {
+-	char temp[10000];
+-	sprintf(temp, part1, part2, part3, part4, part5, part6, part7, part8);
+-	strcat(txt, temp);
++    char temp[10000];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(temp, format, arguments);
++    va_end(arguments);
++    strcat(txt, temp);
+ }
+ /* C99 systems have <inttypes.h>. Non-C99 systems may or may not. */
+ 
+@@ -28309,7 +28328,7 @@ char main_output[TTH_CHARLEN];
+       if(strlen(tth_latex_file)){
+ 	fprintf(stderr,
+        "**** Invalid switch, %s, or input file already specified.\n",argv[i]); 
+-	return 1;
++	return NULL;
+       }
+       strcpy(tth_latex_file,argv[i]);
+ 
+@@ -28328,7 +28347,7 @@ char main_output[TTH_CHARLEN];
+ 	fprintf(stderr,"Translating %s to %s\n",main_input,main_output);
+       }else{
+ 	fprintf(stderr,"**** Invalid switch or file: %s\n",argv[i]); 
+-	return 1;
++	return NULL;
+       }
+     }else{
+       switch(*(argv[i]+1)){
+@@ -28368,7 +28387,7 @@ char main_output[TTH_CHARLEN];
+ 	  fprintf(stderr,
+ 	      "Do not use both -L switch and file command-line argument %s\n",
+ 		  main_input);
+-	  return 1;
++	  return NULL;
+ 	}
+ 	strcpy(tth_latex_file,argv[i]+2);
+ 	fprintf(stderr,"Including LaTeX commands\n");
+@@ -28391,7 +28410,7 @@ char main_output[TTH_CHARLEN];
+ 	fprintf(stderr,"HTML unicode style %d\n",tth_unicode);break;
+       case 'v': tth_verb=1; tth_debug=1;
+ 	if(*(argv[i]+2)=='?'){fprintf(stderr,"%s",tth_debughelp);
+-	return 1;}
++	return NULL;}
+ 	else if(*(argv[i]+2)) sscanf(argv[i]+2,"%d",&tth_debug);
+         break;
+       case 'V': tth_verb=1; tth_debug=2048+256+7;break;

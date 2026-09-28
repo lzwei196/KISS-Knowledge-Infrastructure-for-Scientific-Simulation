@@ -1,0 +1,6 @@
+[deps]
+Ribasim = "aac5e3d9-0b8f-4d4f-8241-b1a7a9632635"
+[sources]
+Ribasim = {url = "https://github.com/Deltares/Ribasim.git", rev = "6e7dd978975057392493e32284d0fb18ab00081e", subdir = "core"}
+[compat]
+julia = "1.12"

@@ -63,9 +63,18 @@
     "process model": "过程模型",
     "task workflow": "任务工作流",
     "Connections": "连接",
-    "⌁ Connections": "⌁ 连接",
     "Guide": "使用指南",
     "AI Settings": "AI 设置",
+    "GeoForge Database": "GeoForge 数据库",
+    "GeoForge Database access (optional)": "GeoForge 数据库访问（可选）",
+    "Database access for Agents": "Agent 数据库访问方式",
+    "Direct through GeoForge Desktop (recommended)": "通过 GeoForge Desktop 直接查询（推荐）",
+    "Do not provide database access": "不向 Agent 提供数据库访问",
+    "Direct mode lets the Agent search live records through a protected Desktop tool. GeoForge keeps the token and returns only sanitized metadata.": "直接查询模式允许 Agent 通过受保护的 Desktop 工具实时检索；GeoForge 保管 Token，仅返回脱敏后的元数据。",
+    "Paste activation token": "粘贴数据库访问 Token",
+    "Save & test database": "保存并测试数据库",
+    "Stored privately on this computer, readable only by your user account. The Agent never receives this token.": "Token 私密保存在本机，仅你的用户账户可读；Agent 无法读取。",
+    "Stored privately on this computer, readable only by your user account. The Agent and chat never receive this token.": "Token 私密保存在本机，仅你的用户账户可读；Agent 和对话均无法读取。",
     "GeoForge Desktop": "GeoForge 桌面版",
     "Auto KI": "自动选择 KI",
     "Chooses for each task": "按任务自动选择",
@@ -95,6 +104,16 @@
     "Return to the chat that asked this question.": "请返回提出此问题的对话。",
     "Add context only if needed…": "仅在需要时补充说明…",
     "AI connections": "AI 连接",
+    "AI services": "AI 服务",
+    "GeoForge Database": "GeoForge 数据库",
+    "Permissions": "权限",
+    "Local agent CLIs use their own sign-in. API providers need a key. Pick the one GeoForge should use by default.": "本地 Agent CLI 使用各自的登录；API 服务商需要密钥。选择 GeoForge 默认使用的一个。",
+    "Activation token": "激活 Token",
+    "What the database holds": "数据库里有什么",
+    "Search datasets…": "搜索数据集……",
+    "Proxy": "代理",
+    "MCP servers are chosen per chat, because each chat decides which tools its agent may use.": "MCP 服务器按对话选择，因为每个对话各自决定其 Agent 可用的工具。",
+    "Choose MCP servers for this chat": "为当前对话选择 MCP 服务器",
     "Local agent CLIs": "本地 Agent CLI",
     "Recheck local CLIs": "重新检查本地 CLI",
     "Default provider": "默认服务商",
@@ -139,7 +158,7 @@
     "The agent uses the KI and KDT diagnostics until preflight passes, pausing only when it genuinely needs you.": "Agent 会使用 KI 和 KDT 诊断持续修复，直到预检通过；只有确实需要你时才会暂停。",
     "Open KI Library": "打开 KI 库",
     "Continue in chat": "在对话中继续",
-    "Add source data": "添加源数据",
+    "Upload other files": "上传其他文件",
     "What would you like to model?": "你想模拟什么？",
     "Describe the scientific task. GeoForge can choose a KI automatically, or you can pin one for this chat.": "描述你的科学任务。GeoForge 可以自动选择 KI，也可以为本对话指定一个。",
     "Start chatting": "开始对话",
@@ -442,6 +461,8 @@
     "Search skills…": "搜索技能…",
     "Optional note for the agent": "给 Agent 的可选说明"
     ,"New project chat": "新建项目对话"
+    ,"Project name": "项目名称"
+    ,"Project folder (created automatically)": "项目文件夹（自动创建）"
     ,"Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.": "每个对话都有独立的项目文件夹，用来保存记忆、输入、模型运行、输出和图表。"
     ,"Create the project inside": "在此位置创建项目"
     ,"Choose…": "选择…"
@@ -453,7 +474,7 @@
     ,"Could not open the folder picker; enter the path directly.": "无法打开文件夹选择器，请直接输入路径。"
     ,"Ask a scientific question or describe a modelling task…": "提出科学问题或描述一个建模任务…"
     ,"Use an installed agent or a direct API key": "使用已安装的 Agent 或直接 API 密钥"
-    ,"Open this chat's local project folder in Finder": "在访达中打开本对话的本地项目文件夹"
+    ,"Open this chat's local project folder": "打开本对话的本地项目文件夹"
     ,"See what GeoForge is doing in this project": "查看 GeoForge 在本项目中的工作状态"
     ,"AI used for guided setup": "用于引导式设置的 AI"
     ,"Check and import a KI package": "检查并导入 KI 软件包"

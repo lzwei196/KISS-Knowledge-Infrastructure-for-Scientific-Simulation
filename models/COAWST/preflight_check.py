@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 MODEL_ID = "COAWST"
@@ -107,96 +108,75 @@ def check_import(checks, module, label, critical=True):
 
 
 def check_ldd(checks, binary):
-    binary = Path(binary)
-    subject = str(binary.resolve(strict=False)) + " dynamic libraries"
+    """Inspect platform linkage metadata; startup separately proves loading."""
+    binary = Path(binary).resolve()
+    subject = str(binary) + " dynamic libraries"
+    def result(passed, message=""):
+        return add_check(checks, "binary", subject, True, passed,
+                         diagnostics_fix(message) if message else "")
     if not binary.is_file():
-        return add_check(
-            checks,
-            "binary",
-            subject,
-            True,
-            False,
-            diagnostics_fix("Cannot inspect dynamic libraries until the COAWST binary exists"),
-        )
-
-    ldd = shutil.which("ldd")
-    if not ldd:
-        return add_check(
-            checks,
-            "binary",
-            subject,
-            True,
-            False,
-            diagnostics_fix("ldd is not available; install libc-bin or verify binary libraries manually"),
-        )
-
-    proc = subprocess.run([ldd, str(binary)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
-    missing = [line.strip() for line in proc.stdout.splitlines() if "not found" in line]
-    if proc.returncode == 0 and not missing:
-        return add_check(checks, "binary", subject, True, True)
-    ldd_lines = proc.stdout.strip().splitlines()
-    detail = "; ".join(missing) if missing else (ldd_lines[-1] if ldd_lines else f"ldd exited {proc.returncode}")
-    return add_check(
-        checks,
-        "binary",
-        subject,
-        True,
-        False,
-        diagnostics_fix(f"COAWST binary has unresolved shared libraries: {detail}"),
-    )
+        return result(False, "Cannot inspect libraries until the COAWST binary exists")
+    darwin = sys.platform == "darwin"
+    name = "otool" if darwin else "ldd"
+    tool = shutil.which(name)
+    if not tool:
+        return result(False, f"{name} is unavailable; install the platform developer tools")
+    argv = [tool, "-L", str(binary)] if darwin else [tool, str(binary)]
+    try:
+        proc = subprocess.run(argv, text=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=10)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return result(False, f"COAWST library inspection failed: {exc}")
+    output = proc.stdout or ""
+    if proc.returncode != 0:
+        return result(False, f"{name} exited {proc.returncode}: {output[-500:]}")
+    if darwin:
+        dependencies = [line.strip().split(" (compatibility", 1)[0]
+                        for line in output.splitlines()[1:] if line.strip()]
+        # Apple system libraries can reside only in the dyld shared cache.
+        missing = [dep for dep in dependencies if dep.startswith("/")
+                   and not dep.startswith(("/usr/lib/", "/System/Library/"))
+                   and not Path(dep).is_file()]
+        if not dependencies:
+            return result(False, "otool returned no dynamic-library metadata")
+    else:
+        missing = [line for line in output.splitlines() if "not found" in line]
+    if missing:
+        return result(False, "COAWST has unresolved libraries: " + "; ".join(missing))
+    return result(True)
 
 
 def check_binary_starts(checks, binary):
-    binary = Path(binary)
-    subject = str(binary.resolve(strict=False)) + " startup"
+    """Probe without project inputs; a prompt cannot override a failed exit."""
+    binary = Path(binary).resolve()
+    subject = str(binary) + " startup"
+    def result(passed, message=""):
+        return add_check(checks, "run", subject, True, passed,
+                         diagnostics_fix(message) if message else "")
     if not binary.is_file() or not os.access(binary, os.X_OK):
-        return add_check(
-            checks,
-            "run",
-            subject,
-            True,
-            False,
-            diagnostics_fix("Cannot run startup probe until the COAWST binary exists and is executable"),
-        )
-
+        return result(False, "Cannot probe a missing or nonexecutable COAWST binary")
     try:
-        proc = subprocess.run(
-            [str(binary)],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=5,
-            cwd=str(binary.parent),
-        )
+        with tempfile.TemporaryDirectory(prefix="coawst-startup-") as empty:
+            proc = subprocess.run([str(binary), "--version"], text=True,
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, timeout=10, cwd=empty)
+            created = list(Path(empty).iterdir())
     except subprocess.TimeoutExpired:
-        return add_check(
-            checks,
-            "run",
-            subject,
-            True,
-            False,
-            diagnostics_fix("COAWST binary startup probe timed out with no prompt/error"),
-        )
-    except Exception as exc:
-        return add_check(
-            checks,
-            "run",
-            subject,
-            True,
-            False,
-            diagnostics_fix(f"COAWST binary could not be started: {exc}"),
-        )
-
-    output = proc.stdout.replace("\x00", "")
-    expected_prompt = "Coupled Input File name" in output or "READ_COAWST_PAR" in output
-    return add_check(
-        checks,
-        "run",
-        subject,
-        True,
-        expected_prompt,
-        diagnostics_fix("COAWST binary started but did not emit the expected input-file prompt/error"),
-    )
+        return result(False, "COAWST startup timed out; any partial prompt is not success")
+    except OSError as exc:
+        return result(False, f"COAWST could not start: {exc}")
+    output = (proc.stdout or "").replace("\x00", "")
+    if proc.returncode != 0:
+        return result(False, f"COAWST startup exited {proc.returncode}; crash/signal or input-error termination requires review")
+    if created:
+        return result(False, "COAWST startup created files; installation-only boundary not established")
+    if any(text in output.lower() for text in
+           ["dyld:", "library not loaded", "symbol not found", "segmentation fault", "abort trap"]):
+        return result(False, "COAWST startup reported a loader or crash diagnostic")
+    expected = "Coupled Input File name" in output or "READ_COAWST_PAR" in output
+    if not expected:
+        return result(False, "COAWST did not establish the expected coupled input boundary; ocean-only banners are insufficient")
+    return result(True)
 
 
 def main():

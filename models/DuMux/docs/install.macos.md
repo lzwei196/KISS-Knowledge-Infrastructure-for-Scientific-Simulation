@@ -1,0 +1,3 @@
+# Native serial DuMux build
+
+The prior Mac retry built the genuine official DuMux3.10.0/DUNE2.10 one-phase tracer example and its --help probe passed, but the20minute overall deadline was exhausted after first attempting MPI then rebuilding serial. Use a consistent serial configuration from the first configure: CMAKE_DISABLE_FIND_PACKAGE_MPI=ON for every DUNE/DuMux module. Preserve the KI expected product binaries/DuMux/dumux_real_run/example_1ptracer using the actual built upstream example executable. No replacement model, no scientific run, and no case inputs are needed for help. Compile example source only; do not execute it beyond help/version. This retry has40minutes for the native dependency build.

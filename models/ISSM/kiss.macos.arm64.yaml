@@ -1,0 +1,38 @@
+kiss_manifest_version: 1
+model: ISSM
+binary_type: Mach-O
+verified: partial
+install_dir: ISSM
+acquire:
+  strategy: build
+  repo: https://github.com/ISSMteam/ISSM.git
+  ref: fe0867872156f8f77bdf7c6ce50cde301abe768e
+  commands:
+  - python3 ../../ki/tools/build_issm_native.py .
+  produces: bin/issm.exe
+python_deps:
+- numpy
+system_deps:
+- git
+- autoconf
+- automake
+- libtool
+- make
+- gfortran
+- mpicc
+- mpicxx
+- mpifort
+notes: 'DS92 installed in624.9s and independent retained-source/native-core audit passed: exact officialtag2026.2
+  commit fe0867872156f8f77bdf7c6ce50cde301abe768e, upstream2026.1 banner preserved. Real arm64 solver
+  plus compiled model libraries and genuinePETSc3.23.6 dependency stack. Scope is headlessnative
+  installation; Python/MATLAB scientificworkflow wrappers excluded.'
+agent_hint: FIRST invoke python3 ../../ki/tools/build_issm_native.py . from binaries/ISSM after cloning
+  the exact source. When workspace issm-build-config.json already exists, it supplies genuine SAME-HOST
+  build dependencies. The trusted helper validates those providers; a denied direct external-prefix
+  ls is not evidence that providers are absent. Do not start a replacement PETSc build before running
+  this documented helper and reading its actual result. Read MACOS_INSTALL.md. Requires genuine build
+  prefixes in workspace issm-build-config.json. Use trusted build helper; never substitute current
+  official 2026.3 binary for pinned2026.2. Headless --without-wrappers is upstream-supported; Python/MATLAB
+  scientific workflow wrappers are not part of this installation proof. Probe --version or --help
+  only in emptycwd, expected rc1 exact Usage error missing execution directory after native MPI/PETSc
+  startup. No simulations or datasets.

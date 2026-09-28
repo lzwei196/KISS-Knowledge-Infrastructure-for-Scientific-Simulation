@@ -1,0 +1,28 @@
+kiss_manifest_version: 1
+model: PHREEQC
+binary_type: Mach-O
+verified: unverified
+install_dir: PHREEQC/source
+acquire:
+  strategy: download
+  url: https://water.usgs.gov/water-resources/software/PHREEQC/phreeqc-3.8.6-17100.tar.gz
+  sha256: b5c4a6dfea1a6bb6a3436857a50346bb943904a49582714494b4f1b1e54e64e1
+  produces: phreeqc-3.8.6-17100/build/phreeqc
+python_deps: []
+system_deps: [cmake, clang]
+notes: >-
+  Official USGS batch source3.8.6-17100. The trusted helper verifies the archive,
+  builds the full native engine and adds only a version-dispatch branch that
+  calls the original upstream banner before the input-processing method.
+agent_hint: >-
+  FIRST read docs/macos_install.md and run python3 ki/tools/build_phreeqc_macos.py
+  from the installation workspace. The archive is source, not an installed
+  executable; plain CMake alone leaves the original interactive prompt loop.
+  The helper downloads and extracts source/runtime database files without cases,
+  applies source-hash-guarded installation-only changes, and compiles with one job.
+  Expected product is binaries/PHREEQC/source/phreeqc-3.8.6-17100/build/phreeqc.
+  Probe --version from an empty directory with stdin closed. Require exit0 and
+  the original PHREEQC-3.8.6 banner, with no created files. A timeout or repeated
+  input prompt is a failure, never a pass; do not repeat a hanging probe.
+  Keep database/phreeqc.dat as a genuine runtime resource. Do not use an
+  interpreter, wrapper, IPhreeqc replacement, example, input case or simulation.

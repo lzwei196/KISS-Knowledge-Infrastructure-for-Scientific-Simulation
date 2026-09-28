@@ -14,7 +14,9 @@ from pathlib import Path
 MODEL_ID = "Ribasim"
 KI_DIR = Path(__file__).resolve().parent
 HYDRO_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
-JULIA_BIN = Path("KISSPATH_HOME/.juliaup/bin/julia")
+JULIA_BIN = Path("KISSPATH_BINARIES/julia-1.12.5/bin/julia")
+JULIA_PROJECT = KI_DIR / "julia"
+JULIA_DEPOT = KI_DIR.parent / "julia_depot"
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
 DECLARED_BINARY = KI_DIR / "tools" / "run_ribasim.py"
 
@@ -56,8 +58,12 @@ def add_check(
 
 
 def run_command(cmd: list[str], *, timeout: int = 10, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    if cmd and cmd[0] == str(JULIA_BIN):
+        env.update(JULIA_DEPOT_PATH=str(JULIA_DEPOT), JULIA_LOAD_PATH="@" + os.pathsep + "@stdlib")
     return subprocess.run(
         cmd,
+        env=env,
         cwd=str(cwd or KI_DIR),
         text=True,
         capture_output=True,
@@ -227,12 +233,15 @@ def check_ribasim_runtime(checks: list[dict]) -> bool:
         )
 
     python_api_ok = check_python_import(checks, "ribasim", critical=False)
-    runtime_ok = python_api_ok or runtime_ok
+    # The Python package is the authoring API, not the computational core.
 
     if JULIA_BIN.is_file():
         try:
             result = run_command(
-                [str(JULIA_BIN), "-e", "using Ribasim; println(\"Ribasim.jl import ok\")"],
+                [str(JULIA_BIN), "--startup-file=no", "--history-file=no",
+                 "--project=" + str(JULIA_PROJECT), "-e",
+                 "using Ribasim; @assert string(Base.PkgId(Ribasim).uuid) == \"aac5e3d9-0b8f-4d4f-8241-b1a7a9632635\"; "
+                 "@assert string(pkgversion(Ribasim)) == \"2026.1.0-rc2\"; println(\"Ribasim.jl import ok\")"],
                 timeout=30,
             )
             julia_pkg_ok = result.returncode == 0
@@ -253,10 +262,10 @@ def check_ribasim_runtime(checks: list[dict]) -> bool:
     return add_check(
         checks,
         kind="run",
-        subject="Ribasim executable runtime (CLI, Python API, or Julia package)",
+        subject="Ribasim computational runtime (CLI or Julia core package)",
         critical=True,
         passed=runtime_ok,
-        fix=recovery_hint("install the Ribasim CLI, install Python package 'ribasim' in the HydroCraft Python env, or activate Ribasim.jl for Julia"),
+        fix=recovery_hint("install the Ribasim CLI or the pinned Julia core project; the Python package is only the authoring API"),
     )
 
 

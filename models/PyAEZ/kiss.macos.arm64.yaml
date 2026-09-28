@@ -1,0 +1,13 @@
+kiss_manifest_version: 1
+model: PyAEZ
+binary_type: Python
+verified: unverified
+install_dir: PyAEZ
+acquire:
+  strategy: pip
+  package: pyaez==2.2
+  produces: pyaez.CropSimulation
+python_deps: [numpy, pandas, scipy, numba, gdal==3.12.3]
+system_deps: [gdal]
+notes: Official PyAEZ2.2 core module explicitly checked; previous Mac installation reported success but no import contract. GDAL Python3.12.3 matches observed host libgdal; recheck gdal-config before building.
+agent_hint: Install real pyaez2.2 and match Python GDAL bindings exactly to gdal-config --version. Do not replace GDAL or use a shim. Independently import pyaez.CropSimulation, ClimateRegime, ClimaticConstraints, SoilConstraints, TerrainConstraints, EconomicSuitability and ThermalScreening. No crop simulation or datasets.

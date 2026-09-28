@@ -22,6 +22,7 @@ ICON = REPO / "assets" / "logo.icns"
 KI_TOOLS_SOURCE = REPO / "ki_tools_common"
 
 trust_datas, trust_binaries, trust_hidden = collect_all("truststore")
+netcdf_datas, netcdf_binaries, netcdf_hidden = collect_all("netCDF4")
 certifi_datas = collect_data_files("certifi")
 calibration_datas = []
 for distribution in ("numpy", "PyYAML", "spotpy", "pymoo", "moocore"):
@@ -65,10 +66,11 @@ harness_hidden = [
 a = Analysis(
     [str(SOURCE / "kiss_entry.py")],
     pathex=[str(SOURCE), str(KI_TOOLS_SOURCE)],
-    binaries=[*trust_binaries, *calibration_binaries],
+    binaries=[*trust_binaries, *netcdf_binaries, *calibration_binaries],
     datas=[
         (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
         (str(REPO / "models"), "models"),
+        (str(SOURCE / "system_kis"), "system_kis"),
         (str(REPO / "ki_tools_common"), "ki_tools_common"),
         (str(SOURCE / "vendor" / "agent-calibration-framework"),
          "agent-calibration-framework"),
@@ -76,10 +78,11 @@ a = Analysis(
         (str(REPO / "release-manifest.json"), "."),
         (str(REPO / "DESKTOP_CHANGELOG.md"), "."),
         *trust_datas,
+        *netcdf_datas,
         *certifi_datas,
         *calibration_datas,
     ],
-    hiddenimports=[*trust_hidden, *calibration_hidden, *harness_hidden],
+    hiddenimports=[*trust_hidden, *netcdf_hidden, *calibration_hidden, *harness_hidden],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

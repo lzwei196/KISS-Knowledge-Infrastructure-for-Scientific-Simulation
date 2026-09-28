@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: openAMUNDSEN
+binary_type: Python
+verified: unverified
+install_dir: openAMUNDSEN
+acquire:
+  strategy: pip
+  package: openamundsen==1.2.1
+  produces: openamundsen
+python_deps: [numpy, pandas, xarray, netCDF4, rasterio, scipy, numba, pyproj, ruamel.yaml, cerberus, munch, pwlf]
+system_deps: []
+reference_case: openamundsen --help
+notes: Explicit official Python distribution/import contract; baseline imports passed but interpreter-only executable declaration failed native discovery. Clean DS retry required after this manifest is selected.
+agent_hint: Install official openamundsen1.2.1 in an isolated compatible Python environment. Verify distribution metadata, actual openamundsen imports, and installed openamundsen console entrypoint help. Python --version is not a model check. Preserve environment launcher; no snow/energy-balance cases or scientific data acquisition.

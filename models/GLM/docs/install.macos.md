@@ -1,0 +1,3 @@
+# Audited GLM3.3.3 bundle repair
+
+The exact pinned archive was inspected. Ten bundled dylibs have invalid signatures; libgcc_s.1.1.dylib and libsharpyuv.0.dylib are absent. The included prepare_glm_build_runtime.py validates original byte hashes before signing and copies only exact audited native Homebrew runtime hashes. Run it with the workspace Python, passing binaries/glm/glm.app/Contents/MacOS, from workspace root. Local --version then returned0 and the real GLM3.3.3 banner. Unexpected hashes require new review; do not force or disable system protection. Fresh independent installation check remains required.

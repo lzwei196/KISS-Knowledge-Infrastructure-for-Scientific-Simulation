@@ -1,0 +1,34 @@
+kiss_manifest_version: 1
+model: CLASSIC
+binary_type: Mach-O
+verified: unverified
+install_dir: CLASSIC/source/repo
+acquire:
+  strategy: build
+  repo: https://gitlab.com/cccma/classic.git
+  ref: c98fca773217fec7dade3f9e27147f77c6992646
+  commands:
+  - make -j1 mode=serial IFLAGS=-I/opt/homebrew/include LFLAGS="-L/opt/homebrew/lib -lnetcdff
+    -lnetcdf"
+  produces: bin/CLASSIC_serial
+python_deps:
+- numpy
+- netCDF4
+- pandas
+system_deps:
+- git
+- make
+- gfortran
+reference_case: bin/CLASSIC_serial --help
+notes: A fresh parallel stress retry exposed a Fortran module build ordering failure.
+  Serial make -j1 is now required; fresh verification is pending. Previous native macOS arm64 DeepSeek installation completed on 2026-09-08 in 767.8 seconds.
+  Independent installation-test.json confirmed Mach-O presence, shape, linkage and
+  startup (Usage is as follows). No scientific simulation was run. The generic v1.0.0
+  ref does not exist; the official CLASSICv1.0 tag resolves to the pinned commit here.
+agent_hint: Build the official serial target with the native netCDF-C/netCDF-Fortran
+  SDK. This tested Apple Silicon recipe uses Homebrew at /opt/homebrew. Override IFLAGS
+  and LFLAGS on make rather than copying the Makefile Linux include paths. Preserve
+  the workspace venv/bin/python launcher even if it is a symlink; never configure
+  its resolved base-interpreter target. Verify numpy, netCDF4 and pandas imports explicitly;
+  preflight declares them in a loop. Keep test_met datasets and scientific runs out
+  of the installation-only test.

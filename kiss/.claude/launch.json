@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "geoforge-dev",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "kiss_cli.cli", "gui", "--port", "61824", "--no-browser", "--workroot", "/Users/leo/kiss"],
+      "port": 61824
+    }
+  ]
+}

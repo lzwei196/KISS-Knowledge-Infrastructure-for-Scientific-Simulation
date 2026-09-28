@@ -164,6 +164,8 @@ def run_graph_mode(config):
         Execution results.
     """
     from pydfnworks import DFNWORKS
+    from native_runtime import configure_native_runtime
+    configure_native_runtime()
 
     jobname = os.path.abspath(config["output_dir"])
     start_time = time.time()
@@ -246,6 +248,8 @@ def run_full_mode(config):
         Execution results.
     """
     from pydfnworks import DFNWORKS
+    from native_runtime import configure_native_runtime
+    configure_native_runtime()
 
     jobname = os.path.abspath(config["output_dir"])
     start_time = time.time()

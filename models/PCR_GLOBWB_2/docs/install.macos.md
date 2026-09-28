@@ -1,0 +1,3 @@
+# Required product location
+
+The previous retry loaded the real official model but cloned it into the wrong directory, so independent verification correctly failed. Run builtin setup, or clone official source at the pinned commit into `<workspace>/binaries/PCR_GLOBWB_2/source/repo`. The exact product must exist at `<workspace>/binaries/PCR_GLOBWB_2/source/repo/model/pcrglobwb.py`. `install_dir` is relative to the configured binaries role. Do not use `<workspace>/source/repo`. Verify the expected file is present before finishing. Use the preprovisioned real conda environment and install six. Import only; never instantiate or run scientific examples.

@@ -5,7 +5,7 @@ identity:
   scientific_reference_version: "TOPMODEL (Beven & Kirkby 1979; Beven et al. 1995 formulation, TMOD95.02 lineage)"
   implementation:
     id: "topmodel-noaa-owp-bmi"
-    version: "NOAA-OWP topmodel (2021 BMI release)"
+    version: "NOAA-OWP topmodel 7e193d3fb3d94ffec448b04bcbe0b5d01c53bb36 (2021 BMI)"
     provenance: "C; NOAA-OWP BMI port (2021) of Fred Ogden's 2009 C translation of the Beven (1995) TMOD95.02 TOPMODEL Fortran reference, distributed at github.com/NOAA-OWP/topmodel."
   ki_class: "forward_model"
   is_family_dag: false

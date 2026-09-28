@@ -1,0 +1,33 @@
+kiss_manifest_version: 1
+model: Cell2Fire
+binary_type: Mach-O
+verified: unverified
+install_dir: Cell2Fire/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/fire2a/C2F-W.git
+  ref: 83b0c3bc31fa9bd500ff11400671e48bdc98a237
+  commands:
+  - python3 ../../../../ki/tools/prepare_cell2fire_build_cli.py .
+  - make -C Cell2Fire -f makefile.macos -j2
+  produces: Cell2Fire/Cell2Fire
+python_deps: [numpy, pandas, geopandas, xarray, netCDF4]
+system_deps: [git, make, clang, boost, libomp, libtiff]
+reference_case: Cell2Fire/Cell2Fire --help
+notes: >-
+  Native Apple Silicon adaptation of the Windows C2F-W executable contract.
+  Build the pinned official source with its macOS makefile and keep the actual
+  product at binaries/Cell2Fire/source/repo/Cell2Fire/Cell2Fire.
+  The audited source does not exit on -h and ignores --help/--version, so the
+  exact-source helper adds CLI-only early returns before simulation input loading.
+  This changes no numerical or simulation code. The embedded upstream version
+  may be v0.0.0; the source commit is the authoritative build identity.
+agent_hint: >-
+  Apply ki/tools/prepare_cell2fire_build_cli.py to the exact pinned source before
+  compiling. The helper is idempotent and refuses unexpected source contents.
+  Use Homebrew Python3.13 for the isolated model environment and install all
+  required real dependencies. Run native --help or --version from an empty
+  directory with stdin closed; both must exit successfully without opening
+  scientific case inputs. Do not accept the old data-loader crash as a pass.
+  Do not run example instances, data preparation, or simulations. Catch2 is
+  needed only for the upstream unit-test target; build the default executable.

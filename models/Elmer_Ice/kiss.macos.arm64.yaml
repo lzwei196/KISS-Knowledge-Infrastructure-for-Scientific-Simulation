@@ -1,0 +1,44 @@
+kiss_manifest_version: 1
+model: Elmer_Ice
+binary_type: Mach-O
+verified: unverified
+install_dir: Elmer_Ice
+acquire:
+  strategy: build
+  repo: https://github.com/ElmerCSC/elmerfem.git
+  ref: 9352634829dfde24439000571d64438d8c683264
+  commands:
+  - cmake -S . -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=/opt/homebrew/bin/gcc-16 -DCMAKE_CXX_COMPILER=/opt/homebrew/bin/g++-16 -DCMAKE_Fortran_COMPILER=/opt/homebrew/bin/gfortran -DWITH_MPI=ON -DWITH_OpenMP=OFF -DWITH_ElmerIce=ON -DWITH_ELMERGUI=OFF -DWITH_ELMERPOST=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=install
+  - cmake --build build --parallel 2
+  - cmake --install build
+  produces: install/bin/ElmerSolver
+python_deps: [numpy]
+system_deps: [git, cmake, gcc, gfortran]
+notes: >-
+  Official annotated release-9.0 resolves to this commit. Headless MPI-enabled
+  Elmer/Ice scope, including the ElmerIce shared solver modules. Retry52 built the
+  FEM core but exposed bundled UMFPACK missing declarations, serial MPI constant
+  gaps and host-associated loop indices in DCRComplexSolve. The helper now adds
+  the actual bundled UMFPACK header/include directory and explicitly local loop
+  indices in seven contained InputTensor/InputVector procedures. Equations and
+  loop bodies are unchanged. No compiler diagnostics are suppressed. A fresh
+  45-minute full native build with a genuine compatible MPI installation is pending.
+agent_hint: >-
+  BEFORE configuring, run this KI's tools/prepare_elmer_build.py with the cloned
+  source directory as argument, from the installation workspace root. It checks
+  exact upstream file hashes, preserves explicit compiler selections, guards absent
+  GLX headers, sets MATC and elmersolver C targets to GNU17, restores missing
+  declarations/headers and makes internal DCR loop indices local. Use WITH_MPI=ON
+  and real MPI C/CXX/Fortran wrappers from the SAME prefix, built with the selected
+  compiler. Set MPI_HOME and MPI_C_COMPILER, MPI_CXX_COMPILER, MPI_Fortran_COMPILER
+  explicitly in CMake and keep that prefix on PATH. A separately validated native
+  OpenMPI 5.0.10 installation is available in the task's work/elmfire-runtime/openmpi;
+  its mpifort was compiled with this machine's gfortran16. Resolve its absolute path
+  from the supplied task runtime preparation. Do not mix host MPICH libraries with
+  OpenMPI wrappers. No serial MPI header patches or substitute MPI constants apply.
+  Keep source and build under binaries/Elmer_Ice; supply an ABSOLUTE install prefix
+  <workspace>/binaries/Elmer_Ice/install. Build and install the complete default target
+  so ElmerIce modules and ElmerGrid accompany the actual solver. MPI builds produce
+  ElmerSolver_mpi and upstream installs the ElmerSolver link; preserve both and all
+  native libraries. Confirm bounded singleton startup in an empty directory.
+  No scientific SIF files, meshes or simulation runs are required for installation.

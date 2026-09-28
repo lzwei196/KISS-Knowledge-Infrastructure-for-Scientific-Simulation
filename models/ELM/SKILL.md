@@ -1,3 +1,5 @@
+> **macOS installation-only build:** Use `kiss.macos.arm64.yaml` and `docs/macos_build_only.md`. The native product is `KISSPATH_BINARIES/ELM/ki-build/e3sm.exe`, compiled from pinned E3SM v3.0.0. Build via `tools/build_elm_native.py`; no forcing/surface data or case execution is required for native compile/link/load proof. Scientific preflight data checks apply later to scientific runs. A CIME setup script is not the model executable.
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

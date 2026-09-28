@@ -1,0 +1,22 @@
+kiss_manifest_version: 1
+model: WSIMOD
+binary_type: Python
+verified: partial
+install_dir: WSIMOD
+acquire:
+  strategy: pip
+  package: wsimod==0.8.1
+  produces: wsimod
+python_deps:
+- wsimod==0.8.1
+system_deps: []
+notes: Retrospective Mac recipe based on work/mac-ds-parallel-2-20260908/results.jsonl, finished
+  2026-09-08T20:34:56+0800, result installed. Official WSIMOD Python package; observed module import
+  and genuine wsimod --help response. No framework/model simulation. Observed distribution matches
+  KI metadata version 0.8.1. Retained structured installation-test.json reports usable=true and imports_ok=true.
+agent_hint: Install wsimod==0.8.1 into a real workspace Python3.13 venv; preserve the lexical venv
+  launcher under kiss.python. The product is import wsimod, never the interpreter or a generated
+  run_and_score.py. Verify all preflight import contracts plus wsimod; Bundled ki_tools_common modules
+  come from the supplied editable workspace library, never a PyPI lookalike. Use trusted certificate
+  configuration if needed, not disabled TLS verification. Run imports or genuine --help only; no
+  datasets, examples, scientific tests, calibration, model construction, or simulations.

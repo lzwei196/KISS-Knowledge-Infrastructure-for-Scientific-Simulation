@@ -11,7 +11,7 @@ package:
       land-surface science.
   scientific_reference_version: CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics)
   binary:
-    path: KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe
+    path: KISSPATH_BINARIES/CTSM/ki-build/cesm.exe
     type: work_dir
 pipeline:
   stages:

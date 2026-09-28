@@ -1,0 +1,19 @@
+kiss_manifest_version: 1
+model: GeoClaw
+binary_type: Mach-O
+verified: unverified
+install_dir: clawpack
+acquire:
+  strategy: build
+  repo: https://github.com/clawpack/clawpack.git
+  ref: 5ce53b4814a3e03536fa17e8ae05e65960194c56
+  commands:
+    - git submodule update --init --depth 1 geoclaw amrclaw clawutil riemann
+    - mkdir -p native-build
+    - cp geoclaw/examples/tsunami/bowl-radial/Makefile native-build/Makefile
+    - make -C native-build -j1 .exe CLAW="$PWD" FC=gfortran CLAW_PYTHON=python3
+  produces: native-build/xgeoclaw
+python_deps: [clawpack==5.14.0, numpy, scipy, matplotlib, netCDF4, pyyaml, requests]
+system_deps: [git, make, gfortran]
+notes: Official Clawpack 5.14.0 native GeoClaw shallow-water solver with bundled official Riemann routines. Compile only the .exe target; source Makefile selects standard upstream sources with no custom scientific case routines. Serial make is required to avoid Fortran module dependency races.
+agent_hint: Read docs/install.macos.md. Preserve actual native executable at <workspace>/binaries/clawpack/native-build/xgeoclaw. Installing Python clawpack or declaring the Python interpreter alone does not install this native solver. Use the actual workspace Python as CLAW_PYTHON when python3 is not available. Never run default make, .data, topo, .output, .plots or all targets; they create or run scientific cases. Probe native executable from an empty temporary directory with stdin closed. Missing claw.data is the official startup input boundary; do not create it.

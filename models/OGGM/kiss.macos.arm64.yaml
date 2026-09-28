@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: OGGM
+binary_type: Python
+verified: unverified
+install_dir: OGGM
+acquire:
+  strategy: pip
+  package: oggm==1.6.3
+  produces: oggm
+python_deps:
+- oggm==1.6.3
+- netCDF4
+- numpy
+notes: Draft consolidation of retained Mac installation evidence at work/mac-ds-parallel-4-20260908/evidence/OGGM/installation-test.json.
+  Existing receipt proves declared imports resolve; versions and native details come from retained
+  installer logs, not independent version enforcement. Fresh review/probe is required before treating
+  this dedicated manifest as tested.
+agent_hint: Import oggm, oggm.core, oggm.cfg and oggm.utils from the workspace environment. Do not
+  call cfg.initialize, preprocessing, glacier directory constructors, dataset downloads or flowline
+  runs. Keep the workspace venv launcher (do not resolve it to the base interpreter). Confirm importlib.metadata
+  version and module identity/path; installation only.

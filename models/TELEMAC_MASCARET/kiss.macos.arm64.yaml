@@ -1,0 +1,55 @@
+kiss_manifest_version: 1
+model: TELEMAC_MASCARET
+binary_type: Mach-O
+verified: unverified
+install_dir: TELEMAC_MASCARET/source/repo
+acquire:
+  strategy: build
+  repo: https://gitlab.pam-retd.fr/otm/telemac-mascaret.git
+  ref: 1fe3b5141f7d9c9fa8fe6d6d0316c994a39c2d95
+  commands:
+    - cmake -S . -B builds/main_gfortran_release -DCMAKE_BUILD_TYPE=Release -DCMAKE_Fortran_COMPILER=gfortran -DUSE_MPI=OFF -DUSE_MED=OFF -DUSE_MUMPS=OFF -DUSE_AED2=OFF -DUSE_GOTM=OFF
+    - cmake --build builds/main_gfortran_release --target homere_telemac2d --parallel 2
+    - >-
+      python3 -c "from pathlib import Path;
+      p=Path('builds/main_gfortran_release/lib');
+      names=['libtelemac2d','libbief','libspecial'];
+      assert all((p/(n+'.dylib')).is_file() for n in names);
+      [(p/(n+'.so')).symlink_to(n+'.dylib') for n in names
+      if not (p/(n+'.so')).exists()]"
+  produces: builds/main_gfortran_release/bin/telemac2d
+python_deps:
+  - numpy
+  - scipy
+  - PyYAML
+system_deps:
+  - cmake
+  - gfortran
+native_probe:
+  runtime_assets:
+    - source: binaries/TELEMAC_MASCARET/source/repo/sources/telemac2d/telemac2d.dico
+      target: T2DDICO
+      sha256: 984985dabe1deba5c22d2b1a14ce07f2e38fc720aed071eef5512f72c9e46309
+notes: >-
+  Official v9.1 release-line serial TELEMAC2D core. Baseline CMake built the
+  genuine driver and shared libraries with these optional components disabled;
+  missing dictionary in the empty probe directory prevented installation pass.
+  This pinned recipe and runtime-asset probe require a new independent retry.
+  The .so compatibility links name real macOS dylibs required by the legacy KI.
+  No MPI, MED, MUMPS, AED2, GOTM, coupled-solver execution, or scientific validation
+  is claimed. Version metadata 9.1.0 is upstream CMake metadata, not a v9.1.0 tag.
+agent_hint: >-
+  Set GIT_LFS_SKIP_SMUDGE=1 before clone and checkout; scientific LFS datasets are
+  unnecessary for installation. Use the exact pinned official source and preserve
+  its dictionary, scripts, generated systel.cfg, build/lib dylibs and bin/telemac2d.
+  Build homere_telemac2d, not only the telemac2d shared-library target. Configure
+  and build inside the intended source/repo path so the generated runtime paths
+  remain valid. Do not replace actual products with Python launchers or fabricated
+  libraries. ki_tools_common.load_forcing is a genuine bundled KI helper import.
+  The final independent native verifier stages only the hash-verified original
+  dictionary as T2DDICO in its disposable probe directory. T2DCAS is scientific
+  steering input and must remain absent; CONFIG is optional language/output
+  metadata and must not be fabricated. A direct empty-cwd command probe still
+  lacks T2DDICO: preserve that result and let the independent verifier apply the
+  explicit manifest runtime asset. Invoke installation verification after the
+  native build rather than creating a sample case or running a simulation.

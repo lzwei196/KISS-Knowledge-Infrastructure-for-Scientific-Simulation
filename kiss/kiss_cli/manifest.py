@@ -87,6 +87,11 @@ VERIFICATION = ("observed", "partial", "unverified", "manual")
 class Manifest:
     model: str
     binary_type: str = ""
+    r_package: dict | None = None
+    native_probe: dict | None = None
+    julia_package: dict | None = None
+    octave_package: dict | None = None
+    python_script: dict | None = None
     verified: str = "unverified"
     #: Directory name under the ``binaries`` root that this KI's hardcoded
     #: paths expect. The authoring machine used its own naming (``modflow6``,
@@ -131,6 +136,11 @@ class Manifest:
         return cls(
             model=raw["model"],
             binary_type=raw.get("binary_type", ""),
+            r_package=raw.get("r_package"),
+            native_probe=raw.get("native_probe"),
+            julia_package=raw.get("julia_package"),
+            octave_package=raw.get("octave_package"),
+            python_script=raw.get("python_script"),
             verified=ver_status,
             install_dir=raw.get("install_dir", ""),
             depends_on=list(raw.get("depends_on") or []),

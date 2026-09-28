@@ -1,0 +1,47 @@
+kiss_manifest_version: 1
+model: OpenHydroQual
+binary_type: Mach-O
+verified: unverified
+install_dir: OpenHydroQual/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/ArashMassoudieh/OpenHydroQual.git
+  ref: e24ea5eebcc0d2894b779adfdfc7ea78bd9a4ce2
+  commands:
+  - git submodule update --init jsoncpp
+  - python3 ../../../../ki/tools/prepare_openhydroqual_build.py .
+  - cmake -S OHQLib -B build-lib -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qtbase;/opt/homebrew" -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include" -DOpenMP_CXX_LIB_NAMES=omp -DOpenMP_omp_LIBRARY=/opt/homebrew/opt/libomp/lib/libomp.dylib
+  - cmake --build build-lib --parallel 2
+  - cmake -S OHQLibTest -B build-cli -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qtbase;/opt/homebrew" -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include" -DOpenMP_CXX_LIB_NAMES=omp -DOpenMP_omp_LIBRARY=/opt/homebrew/opt/libomp/lib/libomp.dylib
+  - cmake --build build-cli --parallel 2
+  produces: build-cli/OHQLibTest
+python_deps:
+- numpy
+- pandas
+- matplotlib
+- PyYAML
+system_deps:
+- git
+- cmake
+- make
+notes: >-
+  Native macOS implementation explicitly corrected to official v2.0.7 because
+  original KI label v2.0.4 does not contain its declared OHQLibTest build target.
+  Scientific KI description remains derived from 2.0.4; no equivalence of results
+  between versions is claimed. Local compile/load/CLI proof is retained; clean
+  DS installation retry remains required. Upstream Matrix_arma.cpp emits actual
+  infinite-recursion warnings in arithmetic operators; no scientific validity
+  is claimed by this installation check.
+agent_hint: >-
+  Follow docs/macos_native_installation.md and exact pinned manifest, not stale
+  internal_not_shipped paths. Build genuine OHQLib shared library and OHQLibTest
+  CLI. Use bundled hash-guarded prepare_openhydroqual_build.py to adapt Windows
+  imported-library/platform declarations, Apple libomp path, supported Armadillo
+  header-only BLAS/LAPACK linkage, resource-relative path, and bounded help/version
+  early exits before solver construction. Qt6Core, GSL, Armadillo headers and
+  libomp are real native Homebrew dependencies already available on this host.
+  Never call unpatched OHQLibTest with --help: upstream treats it as a model file
+  and calls Solve. After patch, use only --help/--version from an empty directory.
+  Do not run bundled model files or download scientific datasets. Keep stock
+  software resources and native libraries. Do not suppress or misrepresent the
+  known upstream Matrix_arma arithmetic recursion warnings as scientific success.

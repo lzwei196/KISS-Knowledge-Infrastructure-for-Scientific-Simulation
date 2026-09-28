@@ -191,6 +191,13 @@ def check_binary_starts(checks, binary):
         return False
 
     output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
+    if result.returncode < 0:
+        add_check(
+            checks, "run", subject, True, False,
+            f"ROMS startup terminated by signal {-result.returncode}; "
+            f"a banner does not establish a healthy executable. {RECOVERY}",
+        )
+        return False
     loader_failed = "error while loading shared libraries" in output
     started = "ROMS" in output and not loader_failed
     if started:

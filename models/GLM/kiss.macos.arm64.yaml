@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: GLM
+binary_type: Mach-O
+verified: unverified
+install_dir: glm
+acquire:
+  strategy: download
+  url: https://raw.githubusercontent.com/AquaticEcoDynamics/glm-aed/559d62615fa825bb4d063ac55fcc8febd71e3ed6/binaries/macos/Sonoma/glm_3.3.3_macos_Sonoma.zip
+  sha256: 50062c4ed4237c6dcda17edca6afff5f3dc8d7af92526120aec1e0ed176ee4ad
+  produces: glm.app/Contents/MacOS/glm
+python_deps: [numpy, pandas, xarray, netCDF4, geopandas, shapely, matplotlib]
+system_deps: []
+notes: Exact official GLM3.3.3 arm64 archive has ten invalid library signatures and omits libgcc_s.1.1/libsharpyuv.0. Hash-guarded local repair and genuine runtime copies passed native version startup; fresh DS verification pending.
+agent_hint: Read docs/install.macos.md. Run tools/prepare_glm_build_runtime.py with workspace Python and argument binaries/glm/glm.app/Contents/MacOS from workspace root. This repairs only the audited files and supplies exact verified installed native libraries. Preserve entire original bundle; do not copy only glm or disable platform security. Required product binaries/glm/glm.app/Contents/MacOS/glm must report3.3.3 under --version. No lake simulation or scientific data.

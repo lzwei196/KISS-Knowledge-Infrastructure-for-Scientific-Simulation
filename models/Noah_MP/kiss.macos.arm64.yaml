@@ -1,0 +1,16 @@
+kiss_manifest_version: 1
+model: Noah_MP
+binary_type: Mach-O
+verified: unverified
+install_dir: Noah_MP/source/hrldas
+acquire:
+  strategy: build
+  repo: https://github.com/NCAR/hrldas.git
+  ref: d9f5b205a9cdee10d9875e656c1b633a539012e2
+  commands:
+  - git submodule update --init --recursive
+  produces: hrldas/run/hrldas.exe
+python_deps: [numpy, pandas, xarray, netCDF4, scipy, matplotlib]
+system_deps: [git, make, gfortran, netcdf-fortran]
+notes: Official HRLDAS v5.2.0 pins matching Noah-MP v5.2.0 submodule 9fbe672420f4468e7d78aecfd10626927ecc8156. macOS case-insensitive filenames require the supplied build-only preprocessing repair before ANY make or make clean. Local native driver compiled and entered official namelist reader in an empty directory; fresh DS check pending.
+agent_hint: Read docs/install.macos.md. Run the KI tools/prepare_hrldas_macos.py with workspace Python from workspace root, passing binaries/Noah_MP/source/hrldas after git submodule initialization. Then follow documented sequential make targets. The helper only edits build recipes and real nf-config flags; never replace Fortran sources or create missing scientific inputs. Real native executable must remain at binaries/Noah_MP/source/hrldas/hrldas/run/hrldas.exe. Probe from an empty directory with stdin closed; missing namelist.hrldas is unconfigured scientific case input, not a missing library. Do not run forcing generation or simulation.

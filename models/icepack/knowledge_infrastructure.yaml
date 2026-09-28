@@ -11,9 +11,6 @@ package:
       built on Firedrake/PETSc/UFL with pyadjoint/ROL for inverse problems.
   scientific_reference_version: icepack glacier-flow package (Shapero et al. 2021, GMD 14, 4593-4616,
     doi:10.5194/gmd-14-4593-2021), version 1.x
-  binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/icepack/venv/bin/python
-    type: work_dir
 pipeline:
   stages:
   - s0_configuration

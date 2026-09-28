@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: HYPE
+binary_type: Mach-O
+verified: unverified
+install_dir: HYPE/source
+acquire:
+  strategy: download
+  url: https://downloads.sourceforge.net/project/hype/release_hype_5_35_0/hype_5_35_0_src.zip
+  sha256: 9c750726702fc9fc96100da82babf66b73099a575ef7820fb15a7c8ba524ce03
+  produces: hype_5_35_0_src/hype
+python_deps: [numpy, pandas, geopandas, rasterio, shapely, xarray, matplotlib]
+system_deps: [make, gfortran]
+notes: Official SMHI HYPE 5.35.0 source archive, independently downloaded and audited. Baseline compiled native arm64 with make -j1 comp=gfortran. Default build has no NetCDF support.
+agent_hint: After extraction, build inside hype_5_35_0_src with make -j1 comp=gfortran; serial ordering avoids Fortran module dependency races. Preserve exact native product binaries/HYPE/source/hype_5_35_0_src/hype. Read bundled ki_tools_common as real Python helper dependency. HYPE5.35.0 treats --version as the input directory and appends info.txt; source data.f9011431-11432 explains its missing --versioninfo.txt after genuine version banner. This is absent simulation configuration, not a missing installed library. Never create input files or run a simulation to silence it.

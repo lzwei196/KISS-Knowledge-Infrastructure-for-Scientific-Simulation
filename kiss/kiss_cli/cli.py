@@ -211,7 +211,7 @@ def cmd_init(args) -> int:
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
     else:
-        s, binary = install.acquire(man, prefix, cfg.python)
+        s, binary = install.acquire(man, prefix, cfg.python, ki=ki)
     result.add(s)
     result.binary = binary
     for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
@@ -332,11 +332,19 @@ def _flow_ki_root(project: Path, name: str, args) -> Path:
 def cmd_run_tool(args) -> int:
     """Run one KI tool for an APPROVED plan step and write the signed receipt (plan v3 B7).
     This is the only way a CLI agent's run can count; anything run outside it has no receipt."""
-    from . import flowgate
-    import subprocess, time as _time
+    from . import flowgate, project_paths
+    from .execution import execute_ki_tool
     project = _flow_project(args.project)
     ki_root = _flow_ki_root(project, args.ki, args)
-    cfg = paths.KissConfig.load(project)
+    try:
+        fallback = None
+        if not (project / "models" / args.ki / paths.CONFIG_NAME).exists() and not Path(ki_root).is_relative_to(project / "models"):
+            fallback = paths.KissConfig.load(project)
+        cfg = project_paths.execution_config(
+            project, args.ki, ki_root, fallback=fallback)
+    except (OSError, ValueError) as e:
+        print(f"run-tool refused: {e}", file=sys.stderr)
+        return 3
     fs = flowgate.FlowSession.open(project, {args.ki: ki_root}, python=str(cfg.python))
     if fs.state.value != "EXECUTING":
         print(f"run-tool refused: project is in {fs.state.value}, not EXECUTING", file=sys.stderr)
@@ -353,26 +361,24 @@ def cmd_run_tool(args) -> int:
     if argv and argv[0] == "--":
         argv = argv[1:]
     try:
-        fs.check_step_tool(args.step, args.ki, tool)          # KI + tool + step agree BEFORE running
+        result = execute_ki_tool(
+            flow=fs, cfg=cfg, project=project, ki=args.ki, ki_root=ki_root,
+            tool=tool, arguments=argv, cwd=project, plan_step_id=args.step,
+            python_tool=tool.suffix == ".py", timeout=None)
     except flowgate.FlowDenied as e:
         print(f"run-tool refused: {e}", file=sys.stderr)
         return 3
-    command = ([str(cfg.python), str(tool)] if tool.suffix == ".py" else [str(tool)]) + argv
-    before = flowgate._snapshot(project)
-    started = _time.time()
-    proc = subprocess.run(command, cwd=str(project), capture_output=True, text=True, errors="replace")
-    finished = _time.time()
-    out = (proc.stdout + proc.stderr)[-80000:]
-    try:
-        summary = fs.record_tool_run(ki=args.ki, ki_root=ki_root, command=command, cwd=project,
-                                     started_at=started, finished_at=finished, exit_code=proc.returncode,
-                                     before=before, plan_step_id=args.step, stdout_tail=out[-20000:])
-    except flowgate.FlowDenied as e:
-        print(out); print(f"[receipt NOT written: {e}]", file=sys.stderr)
+    print(result.output)
+    if result.detail:
+        print(result.detail, file=sys.stderr)
+    if result.receipt_error:
+        print(f"[receipt NOT written: {result.receipt_error}]", file=sys.stderr)
         return 3
-    print(out)
-    print("[RECEIPT] " + json.dumps(summary, ensure_ascii=False))
-    return proc.returncode
+    if result.receipt:
+        print("[RECEIPT] " + json.dumps(result.receipt, ensure_ascii=False))
+    if result.exit_code is not None:
+        return result.exit_code
+    return {"timed_out": 124, "interrupted": 130}.get(result.status, 1)
 
 
 def cmd_fetch(args) -> int:
@@ -392,6 +398,45 @@ def cmd_fetch(args) -> int:
         print(f"fetch failed: {e}", file=sys.stderr)
         return 1
     print("[RECEIPT] " + json.dumps(info, ensure_ascii=False))
+    return 0
+
+
+def cmd_ask_question(args) -> int:
+    """Publish one planning choice through the same host validator as the bridge."""
+    from . import flowrun
+    try:
+        if len(args.question.encode("utf-8")) > 60 * 1024:
+            raise ValueError("question JSON is too large")
+        payload = json.loads(args.question)
+        result = flowrun.request_planning_question(_flow_project(None), payload)
+    except (OSError, ValueError, TypeError) as error:
+        print(f"ask-question refused: {error}", file=sys.stderr)
+        return 3
+    print(json.dumps({"id": result["id"], "status": result["status"],
+                      "message": "Question shown. Stop and wait for the user's answer."},
+                     ensure_ascii=False))
+    return 0
+
+
+def cmd_obs_search(args) -> int:
+    """Search GeoForge Database without exposing its token."""
+    from . import obs_access
+    try:
+        result = obs_access.search_catalogue(
+            q=(getattr(args, "query_option", "") or args.query or ""),
+            offset=args.offset, limit=args.limit,
+            bbox=getattr(args, "bbox", None), start=getattr(args, "start", None),
+            end=getattr(args, "end", None), variable=getattr(args, "variable", "") or "",
+            category=getattr(args, "category", "") or "",
+            describe_dataset_id=getattr(args, "describe_dataset_id", "") or "",
+            resolve_dataset_id=getattr(args, "resolve_dataset_id", "") or "",
+            time_step=getattr(args, "time_step", "") or "",
+            delivery=getattr(args, "delivery", "") or "")
+    except obs_access.ObsAccessError as error:
+        print(f"GeoForge Database search failed: {error}", file=sys.stderr)
+        return 3 if error.code in {
+            "missing_token", "invalid_token", "expired_token", "revoked_token"} else 1
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -555,6 +600,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("argv", nargs=argparse.REMAINDER, help="arguments for the tool (after --)")
     q.set_defaults(fn=cmd_run_tool)
 
+    q = sub.add_parser("ask-question", help="show one planning question; never approve, download or run")
+    q.add_argument("question", help="one JSON object with kind=choice, title, message and options")
+    q.set_defaults(fn=cmd_ask_question)
+
     q = sub.add_parser("fetch", help="download one public file for an approved plan and write its receipt")
     q.add_argument("url")
     q.add_argument("--item", required=True, help="the data-inventory item id")
@@ -562,6 +611,24 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--step")
     q.add_argument("--project")
     q.set_defaults(fn=cmd_fetch)
+
+    q = sub.add_parser(
+        "obs-search", help="search the authenticated GeoForge Database catalogue")
+    q.add_argument("query", nargs="?", default="")
+    q.add_argument("--query", dest="query_option", default="",
+                   help="search words (alias for the positional query)")
+    q.add_argument("--bbox", help="min_lon,min_lat,max_lon,max_lat")
+    q.add_argument("--start", help="YYYY-MM-DD")
+    q.add_argument("--end", help="YYYY-MM-DD")
+    q.add_argument("--variable", default="")
+    q.add_argument("--describe", dest="describe_dataset_id", default="", help="Read a dataset's actual source schema; no download")
+    q.add_argument("--resolve", dest="resolve_dataset_id", default="")
+    q.add_argument("--time-step", default="", choices=["", "daily", "3hr"])
+    q.add_argument("--category", default="")
+    q.add_argument("--delivery", default="", choices=["", "served", "manual"])
+    q.add_argument("--offset", type=int, default=0)
+    q.add_argument("--limit", type=int, default=25)
+    q.set_defaults(fn=cmd_obs_search)
 
     q = sub.add_parser(
         "calibration-status",

@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-28",
+  "platform": "windows-x64",
+  "version": "0.6.54",
+  "build_label": "windows-mac-parity-20260928",
+  "published": false,
+  "mac_commit": "963164e8598d6c40ad6e0932dabecabd633d7acf",
+  "main_checked_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
+  "windows_baseline_commit": "fbed40b08f2d7c552c5c332a912b5a65f3d8855c",
+  "desktop_tests": {"passed": 1182, "skipped": 7, "subtests_passed": 286, "seconds": 250.79},
+  "shared_tests": {"passed": 313, "skipped": 6},
+  "final_focused_windows_tests": {"passed": 15, "included_in_desktop_total": true},
+  "ki_library": {"scientific_packages": 127, "windows_notes": 127, "windows_recipes": 23, "additional_system_kis": 1, "auto_update_branch": "main"},
+  "packaged_checks": {
+    "portable": "passed",
+    "installed": "passed",
+    "harness_flow_calibration_imports": "passed",
+    "http_routes": 11,
+    "bridge_without_python_on_path": "passed",
+    "bridge_unicode_database_query_and_question": "passed with local HTTP fixture",
+    "installed_payload_hash_comparison": "passed",
+    "installer_exit_code": 0,
+    "uninstaller_exit_code": 0,
+    "temporary_installation_removed": true
+  },
+  "ui_checks": ["Chinese project creation and folder preview", "Settings provider cards and help links", "Settings opened before background CLI detection completes", "database status without token", "Windows-specific folder wording"],
+  "assets": [
+    {"file": "GeoForge-Desktop-Setup-v0.6.54-Windows-x64.exe", "bytes": 129390166, "sha256": "ce5b6b3424f5d3363e4e3ebc78b9d1ca0063479d71140472beba267ec7c8312f"},
+    {"file": "GeoForge-Desktop-v0.6.54-Windows-x64.zip", "bytes": 191026628, "sha256": "0ec0af9b9263d23d411acb751fe605590d46963bfc3af62a8989c61882a9093e"}
+  ],
+  "limits": ["No fresh all-127-model installation, scientific simulation or calibration campaign", "No live paid provider turn or live database download acceptance", "Upstream planner/source-choice consistency and AquaCrop acceptance issues remain documented", "Not tested on a separate clean Windows VM"]
+}

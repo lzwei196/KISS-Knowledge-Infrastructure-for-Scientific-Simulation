@@ -1,3 +1,5 @@
+> **macOS installation-only override:** Use `kiss.macos.arm64.yaml` and `docs/macos_build_only.md`. Build the pinned FATES host with `tools/build_fates_native.py`; the native product is `KISSPATH_BINARIES/FATES/ki-fates-build/cesm.exe`. No scientific datasets, namelist preparation or simulation is needed for native compile/link/load proof. CIME scripts and a source checkout do not satisfy installation.
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -59,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 # FATES (Functionally Assembled Terrestrial Ecosystem Simulator) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-fates-vegetation` v1.0.0
-**Model**: FATES (latest master, NGEET/fates)
+**Model**: FATES sci.1.92.7_api.46.0.0 (121723f64e94be97fd91fc95cfd1ba72dfc191ee), hosted by CTSM ctsm5.4.054
 **Domain**: Biogeochemistry / Dynamic Global Vegetation Model (DGVM)
 **Created by**: Auto-dissect pipeline
 **Last updated**: 2026-03-25

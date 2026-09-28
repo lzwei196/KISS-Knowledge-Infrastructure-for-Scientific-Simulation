@@ -106,7 +106,7 @@ def check_import(module: str, critical: bool = True) -> dict:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=45,
+            timeout=180,
             cwd=str(KI_DIR),
         )
     except Exception as exc:  # pragma: no cover - defensive runtime guard
@@ -177,7 +177,7 @@ def main() -> None:
     checks: list[dict] = []
     checks.append(check_python_executable(PYTHON_ENV))
 
-    for module in ("numpy", "icepack", "firedrake"):
+    for module in ("numpy", "icepack", "firedrake", "petsc4py.PETSc", "mpi4py.MPI", "h5py", "ROL", "_ROL"):
         checks.append(check_import(module, critical=True))
 
     for path, label in (

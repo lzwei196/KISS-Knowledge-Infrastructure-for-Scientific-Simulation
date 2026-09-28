@@ -1,0 +1,29 @@
+kiss_manifest_version: 1
+model: LISFLOOD
+binary_type: Python
+verified: unverified
+install_dir: LISFLOOD
+acquire:
+  strategy: pip
+  package: lisflood-model==5.0.0
+  produces: lisflood
+python_deps:
+- netCDF4
+- numpy
+- numba
+- xarray
+- pandas
+- lxml
+- beautifulsoup4
+system_deps: []
+reference_case: lisflood --help
+notes: Adapted from Windows branch fbed40b installation configuration on 2026-09-08.
+  Mac installation verification is pending.
+agent_hint: Use a workspace-local native macOS environment with Python 3.11 and real
+  PCRaster/GDAL from conda-forge if available for the host architecture. Keep environment,
+  root prefix and caches in the installation workspace. Install the pinned official
+  lisflood-model package with its full constraints and KI dependencies. Native macOS
+  gdal-config must match that environment. Do not apply Windows packaging workarounds
+  without an observed Mac packaging failure. Record the actual interpreter, run pip
+  check and import lisflood, pcraster and osgeo. Report missing architecture packages
+  honestly; no replacement modules.

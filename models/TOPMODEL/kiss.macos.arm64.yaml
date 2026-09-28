@@ -1,0 +1,36 @@
+kiss_manifest_version: 1
+model: TOPMODEL
+binary_type: Mach-O
+verified: unverified
+install_dir: TOPMODEL
+acquire:
+  strategy: build
+  repo: https://github.com/NOAA-OWP/topmodel.git
+  ref: 7e193d3fb3d94ffec448b04bcbe0b5d01c53bb36
+  commands:
+  - python3 ../../ki/tools/prepare_topmodel_build.py .
+  - make -C src clean
+  - make -C src -j2
+  produces: run_bmi
+system_deps:
+- make
+- clang
+python_deps:
+- numpy
+- pandas
+- PyYAML
+- GDAL
+notes: >-
+  Exact 2021 source pin and make recipe adapted from the retained Windows manifest.
+  Native CLI help/version patch affects only driver startup; model equations and
+  BMI implementation remain unchanged. Local native build/load proved on Apple
+  Silicon; fresh DS installation verification remains required.
+agent_hint: >-
+  Read docs/install.macos.md. Use the exact declared source pin, apply the trusted
+  prepare_topmodel_build.py helper and build run_bmi in binaries/TOPMODEL. Do not
+  change to newer366a975 or master, which have different model source. Native
+  --help/--version return before BMI initialization and science. Do not launch
+  bundled examples, calibration or forcing preparation. Preserve the actual product
+  path; no copying to an unrelated binaries/run_bmi location. Install Python GDAL
+  bindings matching the actual native libgdal version and bundled ki_tools_common
+  from the workspace when required; do not substitute unrelated packages.

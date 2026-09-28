@@ -1,0 +1,24 @@
+kiss_manifest_version: 1
+model: MONICA
+binary_type: Mach-O
+verified: unverified
+install_dir: MONICA
+acquire:
+  strategy: build
+  repo: https://github.com/zalf-rpm/monica.git
+  ref: 84f97cb37ff5dcd6a210d40f346de7130822cad7
+  commands:
+  - python3 ../../ki/tools/build_monica_native.py .
+  produces: ki-build/monica-run
+python_deps: []
+system_deps:
+- git
+- cmake
+- clang
+- make
+notes: Official MONICA3.6.56 native arm64 build locally proved; independent DS test pending.
+  Genuine CapnProto1.2.0, libsodium1.0.20, ZeroMQ4.3.5 and zlib1.3.1 built through pinned vcpkg.
+  One hash-guarded libc++ vector<bool> JSON conversion fix; model equations unchanged.
+agent_hint: Read MACOS_INSTALL.md. Build the exact official source and submodules using
+  trusted helper. Do not use Linux binaries or Python replacements. Only --help and
+  --version from an empty directory; no simulations or scientific input downloads.

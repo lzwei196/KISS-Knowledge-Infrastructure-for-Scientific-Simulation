@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -12,7 +13,7 @@ MODEL_ID = "FATES"
 KI_DIR = Path(__file__).resolve().parent
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
-FATES_BINARY = Path("KISSPATH_HOME/cesm/scratch/test_fates/bld/cesm.exe")
+FATES_BINARY = Path("KISSPATH_BINARIES/FATES/ki-fates-build/cesm.exe")
 
 REQUIRED_TOOLS = [
     KI_DIR / "tools" / "convert_fates_params.py",
@@ -94,10 +95,10 @@ def check_directory(checks, path, label, critical=True):
         f"Restore required non-empty directory: {path}", detail)
 
 
-def run_command(cmd, timeout=10, cwd=None):
+def run_command(cmd, timeout=10, cwd=None, env=None):
     try:
         return subprocess.run(
-            cmd, cwd=cwd, text=True, capture_output=True, timeout=timeout)
+            cmd, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         return exc
     except OSError as exc:
@@ -111,23 +112,24 @@ def check_ldd(checks, binary):
             f"Cannot inspect libraries until binary exists: {binary}",
             "shared-library resolution")
 
-    result = run_command(["ldd", str(binary)], timeout=10)
+    inspector = ["otool", "-L"] if sys.platform == "darwin" else ["ldd"]
+    result = run_command([*inspector, str(binary)], timeout=10)
     if isinstance(result, subprocess.CompletedProcess):
         output = (result.stdout or "") + (result.stderr or "")
         missing = [line.strip() for line in output.splitlines()
                    if "not found" in line]
         ok = result.returncode == 0 and not missing
-        detail = "all shared libraries resolved"
+        detail = "linked-library metadata read; native startup checks loading" if sys.platform == "darwin" else "all shared libraries resolved"
         if missing:
             detail = "; ".join(missing[:3])
         return add_check(
             checks, "binary", os.path.realpath(binary), True, ok,
-            "Install or expose the missing CESM/FATES shared libraries in LD_LIBRARY_PATH",
+            "Rebuild with genuine matching native runtime libraries and correct runtime search paths",
             detail)
 
     return add_check(
         checks, "binary", os.path.realpath(binary), True, False,
-        f"Unable to run ldd for {binary}: {result}",
+        f"Unable to inspect linked libraries for {binary}: {result}",
         "shared-library resolution")
 
 
@@ -138,12 +140,15 @@ def check_binary_starts(checks, binary):
             f"Rebuild executable before probing startup: {binary}",
             "cheap startup probe")
 
-    result = run_command([str(binary), "--help"], timeout=5, cwd=KI_DIR)
+    with tempfile.TemporaryDirectory(prefix="fates-native-load-") as probe_dir:
+        env = os.environ.copy()
+        env.update(FI_PROVIDER="tcp", FI_TCP_IFACE="en0")
+        result = run_command([str(binary.resolve()), "--help"], timeout=5, cwd=probe_dir, env=env)
     subject = os.path.realpath(binary)
     if isinstance(result, subprocess.TimeoutExpired):
         return add_check(
             checks, "run", subject, True, False,
-            "The executable did not reach startup within 5s; verify it runs in its CTSM case directory",
+            "The executable did not reach startup within 5s; inspect native compiler/runtime logs",
             "cheap startup probe timed out")
     if isinstance(result, OSError):
         return add_check(
@@ -152,14 +157,14 @@ def check_binary_starts(checks, binary):
             "cheap startup probe")
 
     output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
-    expected_case_error = "Cannot open file 'drv_in'" in output
+    expected_case_error = result.returncode == 2 and "Fortran runtime error: Cannot open file 'drv_in': No such file or directory" in output and "esmApp.F90" in output
     ok = result.returncode == 0 or expected_case_error
     detail = "started and reached CESM runtime input handling"
     if not ok:
         detail = f"exit {result.returncode}; {(output[:240] or 'no output')}"
     return add_check(
         checks, "run", subject, True, ok,
-        "Run from a prepared CTSM/CIME case directory and inspect diagnostics/triplets.yaml",
+        "Inspect native compiler/runtime logs and diagnostics/triplets.yaml; do not execute a scientific case for installation",
         detail)
 
 

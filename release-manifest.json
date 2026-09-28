@@ -1,14 +1,17 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.53",
-  "release_date": "2026-09-07",
+  "version": "0.6.54",
+  "release_date": "2026-09-28",
   "source": {
     "branch": "windows-version",
-    "code_commit": "9000f4d16dedfc85bd9bc7a326363047a58d7457",
+    "code_commit": "fbed40b08f2d7c552c5c332a912b5a65f3d8855c",
     "repository": "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.53",
-    "commit_scope": "Application and KI fixes; release packaging is identified by release_tag."
+    "release_tag": "windows-v0.6.54",
+    "commit_scope": "code_commit identifies the Windows baseline; integrated_mac_commit pins the imported source. Integration and local validation are documented in docs/WINDOWS_MAC_PARITY_2026-09-28.md. No published release is implied.",
+    "integrated_mac_commit": "963164e8598d6c40ad6e0932dabecabd633d7acf",
+    "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
+    "build_label": "windows-mac-parity-20260928"
   },
   "ki_library": {
     "package_count": 127,
@@ -26,6 +29,283 @@
     "windows_platform_recipes": 23
   },
   "changes": [
+    {
+      "id": "windows-september-28-mac-parity",
+      "area": "desktop-runtime",
+      "summary": "Import the September 28 mac source checkpoint: sequential planning questions, decision provenance, per-KI runtime paths, safe project uploads, named folders, database settings and receipt-controlled execution. Retain Windows installation notes, portable runtimes, browser frontend and tray.",
+      "user_action": "Review plans before approving; database and model workflows still require their own data and acceptance tests."
+    },
+    {
+      "id": "settings-window-and-database-browser",
+      "area": "desktop-ui",
+      "summary": "Settings is a sidebar window: AI services as provider cards, GeoForge Database with a local catalogue browser (domain / delivery / kind, search, per-dataset detail), Network & proxy, Permissions. The sidebar Connections button is removed; MCP servers are chosen from Settings > Permissions.",
+      "user_action": "None. Open Settings from the sidebar."
+    },
+    {
+      "id": "one-flow-host-acquisition",
+      "area": "agent-runtime",
+      "summary": "Plan and data are one flow: the inventory is the proposal, one approval card with GeoForge-fetches / needs-you / run-prepares groups and data-source choices; after approval the desktop acquires every input itself (ACQUIRING state) with signed receipts; whole-file rasters are clipped server-side without a variable list; the manual-download card offers Change the plan.",
+      "user_action": "Approve the plan card once; place Baidu files where the card says, or click Change the plan."
+    },
+    {
+      "id": "per-input-upload",
+      "area": "desktop-ui",
+      "summary": "Inputs the user must provide are uploaded per row into inputs/user/<input>/ and count as available once files are there.",
+      "user_action": "Use the Upload files button on the input's row in Project status."
+    },
+    {
+      "id": "study-aware-database-hints",
+      "area": "scientific-data",
+      "summary": "The desktop derives which catalogue records fit the study (station ids, basin and river names incl. Chinese aliases) and tells the agent at intake and planning; manual delivery is presented as a normal path that hands the download to the user after approval. Execution turns without any receipt are contradicted in the chat.",
+      "user_action": "None. Expect the agent to list the matching GeoForge Database records in its first reply."
+    },
+    {
+      "id": "replan-in-the-same-turn",
+      "area": "agent-runtime",
+      "summary": "API agents get request_replan: a mid-execution plan change moves the project to REPLAN_REQUIRED, revokes the approval and unlocks write_plan in the same turn. CLI agents' REPLAN_REQUIRED marker now starts the re-planning turn automatically. After a failed validation the next message resumes execution; verified downloads stay bound across replans.",
+      "user_action": "Re-approve the revised plan when the card returns; nothing runs before that."
+    },
+    {
+      "id": "one-time-database-token-on-macos",
+      "platforms": ["macos"],
+      "area": "desktop-runtime",
+      "summary": "The GeoForge Database token is kept in a private 0600 file under the user's Application Support directory on macOS instead of the login Keychain, whose access list is bound to each build's ad-hoc code signature and prompted on every update. One migration read on first start, then no more consent dialogs.",
+      "user_action": "Allow the Keychain read one last time when this version first starts; later versions will not ask."
+    },
+    {
+      "id": "user-approval-always-required",
+      "area": "agent-runtime",
+      "summary": "The approval card is sectioned (understanding, grouped data, steps with tools, decisions, blockers). Plans are never auto-approved: execution starts only after the user clicks Approve and start. Run-generated intermediate inputs no longer block execution readiness, and a request to review the plan first persists across repair rounds.",
+      "user_action": "Click Approve and start on the plan card to run; nothing executes before that."
+    },
+    {
+      "id": "declared-model-binary-as-step-tool",
+      "area": "agent-runtime",
+      "summary": "A KI's declared model binary is accepted as a plan-step tool by validation, the CLI run-tool and the API run_ki_tool, with a signed receipt; compiled models such as VIC can now pass the model_run tool gate. Database status no longer opens a Keychain prompt.",
+      "user_action": "None."
+    },
+    {
+      "id": "write-plan-output-limit-and-split-submission",
+      "area": "agent-runtime",
+      "summary": "API requests now set an 8K output-token limit so DeepSeek no longer truncates the write_plan call; truncated tool calls are reported to the agent, write_plan accepts plan and data_inventory in two calls, streamed responses are capped at 15 minutes, and an answered intake question promotes the session to planning.",
+      "user_action": "None. If a DeepSeek session previously looped on 'plan and data_inventory must be JSON objects', retry it on this build."
+    },
+    {
+      "id": "desktop-draft-without-server-sources",
+      "area": "agent-runtime",
+      "summary": "The auto-derived plan draft no longer proposes server-only forcing providers or dataset lookups; such inputs are marked for the agent to resolve from the GeoForge Database, and the provider-id choice is gone from the approval card. Agent-written display names are matched to catalogue ids when unambiguous.",
+      "user_action": "None."
+    },
+    {
+      "id": "verified-dataset-pins-in-plans",
+      "area": "agent-runtime",
+      "summary": "Inventory items that name a GeoForge Database record are verified against the local catalogue when the plan is written and stamped with dataset_id, delivery, size, coverage and period. Unknown ids and whole-product parents are returned to the agent as validation errors. The approval card groups inputs into automatic downloads, manual downloads with sizes, run-generated files, and missing; manual downloads block auto-approval and name the file inside the Baidu share.",
+      "user_action": "Read the Data section of the approval card before approving; manual items list their size and will show the Baidu link only after approval."
+    },
+    {
+      "id": "database-status-and-static-project-button",
+      "area": "desktop-ui",
+      "summary": "AI Settings and the Project status panel show the GeoForge Database link honestly: local catalogue size, direct-download count, last sync time, and how API agents (search_observation_data) and CLI agents (geoforge-db) reach the same copy. The Project status button keeps one fixed name with a colored state dot; the activity bar names database searches; the Project view count refreshes while closed.",
+      "user_action": "None."
+    },
+    {
+      "id": "app-level-database-catalogue",
+      "area": "scientific-data",
+      "summary": "The GeoForge Database catalogue is cached once per app (metadata only) and refreshed by ETag; every search surface filters it locally by bounding box, period, variable, category and delivery. Records now expose bbox, point, temporal, resolution_deg, parent_id and sha256 to agents.",
+      "user_action": "Save & test the database token once; searches then work offline from the local copy and refresh automatically."
+    },
+    {
+      "id": "streamed-api-turns-and-stop",
+      "area": "agent-runtime",
+      "summary": "API provider turns stream their responses, so a long planning generation is no longer cut off at five minutes and retried from scratch; the activity panel gains a Stop button for API and CLI turns; in-progress API turns are no longer reported as finished.",
+      "user_action": "None. If a DeepSeek planning turn previously hung for 10-15 minutes, retry it on this build; use Stop to end a turn that is not converging."
+    },
+    {
+      "id": "geoforge-database-system-ki",
+      "area": "scientific-data",
+      "summary": "Authenticated catalogue discovery is packaged as a KDT-single-verified system task-workflow KI. CLI agents receive only a short-lived read-only capability for the running Desktop process; the persistent GeoForge Database activation token remains host-owned.",
+      "user_action": "Add and test the GeoForge Database token in Settings, keep Agent access in Direct mode, and describe the scientific data need normally. Review exact returned dataset ids before approving a download."
+    },
+    {
+      "id": "popup-free-agent-flow-bridge",
+      "area": "agent-runtime",
+      "summary": "Kimi, Claude and Codex flow launchers no longer execute the frozen App Bundle a second time. They forward only database search and receipt-gated run, fetch and observation-download commands to the already-running Desktop over a random process-local loopback capability, preventing repeated macOS Documents permission prompts. The host reads its database credential once per process and suppresses automatic retries after a denied or cancelled Keychain request.",
+      "user_action": "Quit older GeoForge builds before opening this build; the stable launchers refresh automatically on the next Agent turn. If Keychain access was denied, use Settings > Save & test database for one deliberate retry. A locally rebuilt ad-hoc-signed app may need one first-use authorization after each rebuild; a production Apple-signed build preserves identity across updates."
+    },
+    {
+      "id": "enforced-plan-approval-execution-flow",
+      "area": "agent-runtime",
+      "summary": "The KI harness is now backed by a desktop flow gate: task intake, evidence inventory and planning remain read-only; downloads and model tools are unavailable until the user approves the recorded plan; tool runs then receive approval-bound receipts and output validation.",
+      "user_action": "Describe the scientific task normally, review the generated plan and data inventory, then approve it before GeoForge downloads data or runs model tools."
+    },
+    {
+      "id": "frozen-harness-flow-integrity",
+      "area": "release-engineering",
+      "summary": "All KI harness and flow modules are frozen as importable Python code in every desktop build. Startup and CI now prove that the full contract, tool-trust module and data builder load from the shipped application rather than falling back to weaker instructions.",
+      "user_action": "No action is required. Environment Check reports both harness and flow readiness."
+    },
+    {
+      "id": "hidden-intake-protocol",
+      "area": "user-interface",
+      "summary": "The structured GEOFORGE_INTAKE control marker is consumed by the desktop and removed from rendered Agent messages, while still driving deterministic KI selection and readiness checks.",
+      "user_action": "Continue chatting naturally; internal intake JSON is no longer displayed."
+    },
+    {
+      "id": "localhost-write-protection",
+      "area": "security",
+      "summary": "State-changing local API requests now require a process-local SameSite token and a matching loopback origin. Cross-origin web pages can no longer create sessions or change GeoForge state through a browser request to localhost.",
+      "user_action": "No action is required. Reload the GeoForge window if a page was left open while the application restarted."
+    },
+    {
+      "id": "atomic-settings-storage",
+      "area": "security",
+      "summary": "Provider keys and network settings use a locked read-modify-write transaction, restrictive file permissions and atomic replacement, preventing concurrent settings requests from losing keys or leaving malformed JSON.",
+      "user_action": "No migration is required; existing settings are preserved."
+    },
+    {
+      "id": "netcdf-spatial-correctness",
+      "area": "scientific-data",
+      "summary": "Shared NetCDF selection now handles descending axes, 0-to-360 longitudes and antimeridian windows, rejects unsupported curvilinear coordinates and empty/all-missing selections, and reprojects basin polygons to geographic coordinates before masking.",
+      "user_action": "Rerun any earlier data-preparation job whose basin crossed the antimeridian, used western longitudes in a 0-to-360 dataset, or relied on a non-geographic shapefile CRS."
+    },
+    {
+      "id": "portable-install-repairs",
+      "area": "model-setup",
+      "summary": "CRHM, Alpine3D and WRF-Hydro installation metadata and path handling are included with the release KI library, so compiled software is found through the selected install location rather than an author-machine path.",
+      "user_action": "For an existing installation, choose Use software already installed and select its folder or executable; otherwise continue Agent setup."
+    },
+    {
+      "id": "agent-first-task-intake",
+      "area": "agent-runtime",
+      "summary": "A scientific Auto-KI chat now begins with a provider-neutral, read-only task-understanding phase. The Agent returns structured intent and proposed KIs; GeoForge validates the understanding, rejects contradictory readiness claims, and only then opens a separate planning turn.",
+      "user_action": "Describe the complete scientific goal naturally, for example a model preference, study area and target process in one sentence. GeoForge asks only for material missing choices instead of treating the sentence as a model selector."
+    },
+    {
+      "id": "observatory-new-chat-handoff",
+      "area": "user-interface",
+      "summary": "Every Ask Agent action in KI Observatory creates a fresh project chat pinned to the selected KI, navigates to it, and sends the prepared question automatically. Existing conversations are never reused.",
+      "user_action": "Select Ask Agent on a KI, scientific phase, or technical node. GeoForge creates and opens the appropriate new chat without asking for a project folder first."
+    },
+    {
+      "id": "safe-cli-tool-detail",
+      "area": "agent-runtime",
+      "summary": "Structured Kimi Code and Claude Code tool events expose a bounded, credential-redacted command, script, path or query summary through the local status endpoint instead of reporting only a generic Bash tool name.",
+      "user_action": "Read Current action in the chat status card or the Observatory Live project view. Credentials are redacted and long arguments are truncated."
+    },
+    {
+      "id": "scientific-story-projection",
+      "area": "user-interface",
+      "summary": "The default KI Observatory workflow projects DAG semantics into plain scientific stages. Exact program, variable and file identifiers remain available only as Technical evidence or in Full technical DAG.",
+      "user_action": "Open any KI in the Observatory and select a scientific stage for its explanation. Use Technical evidence only when exact implementation detail is needed."
+    },
+    {
+      "id": "evidence-graded-agent-activity",
+      "area": "agent-runtime",
+      "summary": "Chat now separates process life, tool events, project reports and project-file changes. Data transfer is shown only when a matching tool event or growing project input is observed.",
+      "user_action": "Use Recheck when a turn is quiet. If GeoForge reports no confirmed work evidence, start another chat while the original turn remains isolated in the background."
+    },
+    {
+      "id": "ki-observatory",
+      "area": "user-interface",
+      "summary": "A read-only KI Observatory opens a selected KI directly into an animated scientific production line: data intake, core processing stations, verification gate, and result outlet. Cross-KI relationships are optional and hidden by default.",
+      "user_action": "Open KI Observatory from Chat or the KI Library, enter a domain, and choose a KI. Watch the declared data flow, select any station for details or Ask Agent, and use Full technical DAG only when engineering detail is needed."
+    },
+    {
+      "id": "observatory-visualization-contract",
+      "area": "knowledge-infrastructure",
+      "summary": "Every KI has a safe generic DAG projection; visualization_contract.yaml can declare specialized maps, animation, 3D, sections or dashboards without allowing the Observatory to execute KI code.",
+      "user_action": "No migration is required. Existing KIs use the generic view until a verified visualization contract is added."
+    },
+    {
+      "id": "verify-existing-installation",
+      "area": "model-setup",
+      "summary": "Agent setup can now verify software that is already installed instead of rebuilding it. Users may choose an installation folder or executable, or ask the Agent to search standard indexed locations.",
+      "user_action": "Choose Use software already installed on the Agent setup page. The external software is read and executed only; GeoForge stores links, configuration and verification evidence in its own writable model workspace."
+    },
+    {
+      "id": "api-existing-path-contract",
+      "area": "agent-runtime",
+      "summary": "API agents such as DeepSeek receive explicit read and execute access to user-approved existing installation paths while retaining the project-scoped write boundary.",
+      "user_action": "Select or discover the existing path once. GeoForge records it locally in .geoforge-install.json and reuses it for later verification and chat runs."
+    },
+    {
+      "id": "post-chat-verification-refresh",
+      "area": "user-interface",
+      "summary": "The chat header refreshes machine verification immediately after an Agent turn, so a passing preflight no longer leaves a stale red verification badge.",
+      "user_action": "No action is required. A completed DeepSeek or CLI repair now updates the KI badge automatically."
+    },
+    {
+      "id": "wrf-hydro-portable-build-path",
+      "area": "model-setup",
+      "summary": "WRF-Hydro setup supports current CMake policy handling and materialises the complete Run directory at the path used by its KI preflight and execution tools.",
+      "user_action": "Rerun WRF-Hydro setup if an older workspace reported that the compiled wrf_hydro_NoahMP executable could not be found."
+    },
+    {
+      "id": "canonical-main-ki-updates",
+      "area": "knowledge-infrastructure",
+      "summary": "macOS, Windows and Linux desktop clients now update shared KI definitions and manifests from canonical main rather than a platform application branch.",
+      "user_action": "No migration is required. The KI update report should show branch main; a development override remains available through GEOFORGE_KI_UPDATE_BRANCH."
+    },
+    {
+      "id": "ki-updater-network-route",
+      "area": "connectivity",
+      "summary": "The built-in GitHub and KI updater now has an explicit proxy target available from both Chat and KI Library settings.",
+      "user_action": "Open the gear menu, choose Network & proxy, then enable GitHub & KI updates. Use an HTTP or mixed proxy port for the built-in updater."
+    },
+    {
+      "id": "commit-pinned-ki-archive",
+      "area": "knowledge-infrastructure",
+      "summary": "KI updates resolve the branch commit first and download that immutable commit archive, preventing GitHub API and codeload branch-cache mismatches.",
+      "user_action": "Use Check again after changing the route. The report shows the route and exact source commit."
+    },
+    {
+      "id": "ki-library-network-settings",
+      "area": "user-interface",
+      "summary": "The KI Library gear and update report now expose network settings directly instead of hiding proxy controls only in the Chat page.",
+      "user_action": "From a failed KI update report, choose Network settings, save the route, and retry."
+    },
+    {
+      "id": "provider-proxy-routing",
+      "area": "connectivity",
+      "summary": "One user-configurable proxy route now covers the selected AI provider and its agent-run Git, pip, curl and model-download commands.",
+      "user_action": "Use AI Settings > Network route. Auto detects the system proxy; Manual accepts an HTTP or SOCKS URL; Off keeps direct access. Select only the providers that need it."
+    },
+    {
+      "id": "provider-connection-handoff",
+      "area": "user-interface",
+      "summary": "Claude, Codex and Kimi DNS, proxy, VPN and authentication failures now become a specific Needs You popup instead of an unexplained Load failed state.",
+      "user_action": "Follow the popup to test or change the route, then retry the same turn."
+    },
+    {
+      "id": "model-install-location",
+      "area": "model-setup",
+      "summary": "Users can choose a model installation folder, including a folder that does not exist yet. GeoForge creates it and records the location in kiss.toml and .geoforge-install.json.",
+      "user_action": "Choose the folder on the Agent setup page before starting or continuing setup."
+    },
+    {
+      "id": "legacy-ki-layout-bridge",
+      "area": "model-setup",
+      "summary": "GeoForge maps the current portable KI layout to legacy model paths before the first preflight, preventing installed tools from being reported missing.",
+      "user_action": "No migration is required; rerun setup for an affected KI."
+    },
+    {
+      "id": "canonical-ki-refresh",
+      "area": "knowledge-infrastructure",
+      "summary": "All 127 bundled KIs were refreshed from the canonical main snapshot and server-only links needed by VIC, CaMa-Flood and Lohmann Routing were converted to portable files.",
+      "user_action": "Existing chat projects remain unchanged. The desktop KI library updates independently."
+    },
+    {
+      "id": "harness-and-calibration-proof",
+      "area": "agent-runtime",
+      "summary": "The full KI harness contract is bundled and import-checked, and calibration dependency/backend readiness is checked from real imports rather than a stale cached result.",
+      "user_action": "Environment Check reports the loaded harness source and calibration readiness."
+    },
+    {
+      "id": "single-version-source",
+      "area": "release-engineering",
+      "summary": "macOS, Windows and CLI builds now read the same version from pyproject.toml. Release assets include this manifest, the desktop changelog and SHA256SUMS.txt.",
+      "user_action": "Update agents should compare version, code_commit and ki_library.source_commit before replacing software or KI content."
+    },
     {
       "id": "per-ki-windows-installation-experience",
       "area": "model-setup",
@@ -62,10 +342,10 @@
     }
   },
   "validation": {
-    "source_regression_tests": "passed with PYTHONUTF8=1: 343 app tests and 255 shared-library tests. Exact commands and final results are in the evidence asset.",
-    "windows_frozen_smoke": "passed: Python 3.11 DLL, 127 KIs and Windows notes, 23 platform recipes, nine HTTP routes, full harness, Flow, calibration dependency imports and main KI update source",
-    "windows_installer_smoke": "passed: silent install, actual installed-executable runtime checks and silent uninstall; both installer exit codes were 0",
-    "evidence_asset": "Windows-release-validation.json"
+    "status": "Windows source regression passed; packaged acceptance results are recorded separately in the evidence document",
+    "source_tests": {"desktop_passed": 1181, "desktop_skipped": 7, "desktop_subtests_passed": 286, "shared_passed": 313, "shared_skipped": 6, "final_windows_focused_passed": 15},
+    "evidence_document": "docs/WINDOWS_MAC_PARITY_2026-09-28.md",
+    "known_upstream_limits": "Upstream documents unresolved scientific planning and data-source approval consistency issues. This parity build is not certification of every model workflow or calibration."
   },
   "agent_update_protocol": [
     "Read release-manifest.json before changing an installation.",

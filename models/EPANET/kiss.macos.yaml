@@ -1,0 +1,18 @@
+kiss_manifest_version: 1
+model: EPANET
+binary_type: Mach-O
+verified: unverified
+install_dir: EPANET
+acquire:
+  strategy: build
+  repo: https://github.com/USEPA/EPANET2.2.git
+  ref: 598ee6cd214de07a0d62e7dafc1bdbf09173645a
+  commands:
+  - cmake -S SRC_engines -B SRC_engines/build -DCMAKE_BUILD_TYPE=Release
+  - cmake --build SRC_engines/build --target runepanet --parallel 2
+  produces: SRC_engines/build/src/run/runepanet
+python_deps: [numpy, pandas, matplotlib]
+system_deps: [git, cmake, make, clang]
+reference_case: SRC_engines/build/src/run/runepanet --help
+notes: Explicit native product contract for the official USEPA EPANET 2.2 source. This pinned CMake recipe needs a clean DS retry; the earlier DS build used a different flat archive layout and failed independent discovery because no binary was declared.
+agent_hint: Build the unchanged official CMake targets. Keep the build tree and epanet2 shared library together so the native runepanet product retains its runtime linkage. Use only startup/help and actual imports; do not run water-network examples.

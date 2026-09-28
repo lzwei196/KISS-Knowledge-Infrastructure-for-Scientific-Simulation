@@ -1,3 +1,16 @@
+> **macOS installation-only override (2026-09-09)**
+>
+> Follow `kiss.macos.arm64.yaml` and `docs/macos_build_only.md` for the native Mac
+> installation. The authoritative source is CTSM ctsm5.4.054 at dae706a769a04ff13def0a909930c899a265368a;
+> its product is `binaries/CTSM/ki-build/cesm.exe`. Use the bundled named
+> `tools/build_ctsm_native.py` with the provisioned native runtime and Python3.11.
+> Legacy CESM2.2.2 and `create_newcase` below describe historical workflows, not
+> this installation target. CIME script imports do not establish native installation.
+> During installation-only testing, do not run scientific preflight, acquire input
+> datasets, or execute cases. Case creation/setup and the helper's build-only CIME
+> API calls are software compilation steps and are authorized. Native dependencies
+> are provisionable software; do not ask for permission merely to compile them.
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

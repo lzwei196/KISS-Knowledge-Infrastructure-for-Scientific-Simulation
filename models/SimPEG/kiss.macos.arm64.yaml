@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: SimPEG
+binary_type: Python
+verified: unverified
+install_dir: SimPEG
+acquire:
+  strategy: pip
+  package: simpeg==0.25.2
+  produces: simpeg
+python_deps:
+- simpeg==0.25.2
+- discretize
+- pymatsolver
+notes: Draft consolidation of retained Mac installation evidence at work/mac-ds-parallel-4-20260908/evidence/SimPEG/installation-test.json.
+  Existing receipt proves declared imports resolve; versions and native details come from retained
+  installer logs, not independent version enforcement. Fresh review/probe is required before treating
+  this dedicated manifest as tested.
+agent_hint: Import actual simpeg, discretize, pymatsolver and the KI required modules from workspace
+  site-packages. No meshes, surveys, forward models or inversion objects. Version0.25.2 is within
+  declared0.25.x. Keep the workspace venv launcher (do not resolve it to the base interpreter). Confirm
+  importlib.metadata version and module identity/path; installation only.

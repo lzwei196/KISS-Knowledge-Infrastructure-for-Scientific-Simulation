@@ -1,0 +1,30 @@
+kiss_manifest_version: 1
+model: PFLOTRAN
+binary_type: Mach-O
+verified: unverified
+install_dir: PFLOTRAN/source/repo
+acquire:
+  strategy: build
+  repo: https://bitbucket.org/pflotran/pflotran.git
+  ref: fab315dc6559306f2f93b27571bf5add812dd820
+  produces: src/pflotran/pflotran
+python_deps: [numpy, pandas, h5py, matplotlib]
+system_deps: [gfortran, mpich, netcdf-fortran, hdf5, openblas]
+agent_hint: >-
+  Use bundled tools/build_pflotran_macos.py as the primary deterministic build route,
+  invoked with the genuine workspace Python3.11 venv from the installation workspace
+  after acquiring the pinned clean source checkout. Do not reconstruct manual dependency
+  recipes. The helper builds SHA256-pinned official PETSc3.21.4, using hostMPICH and native
+  BLAS/LAPACK, with --download-hdf5 and --with-hdf5-fortran-bindings=1 upfront. This creates
+  real parallelHDF51.14.3 and Fortranbindings in one build. HomebrewHDF52.1.1 is SERIAL
+  despite having genuineFortranlibraries, and is not this recipe's parallelHDF5 provider.
+  PFLOTRAN expects bare HDF5_INCLUDE/HDF5_LIB directories, not PETScflagstrings; helper
+  supplies those as make command-line variables with have_hdf5=1. Local native audit built
+  Mach-O arm64 PFLOTRAN successfully; -help intro exits0 before input loading. Ordinary
+  --version is unsupported and exits87 with missing scientific case file pflotran.in;
+  never create a case file just for installation. Preserve independent verification.
+  Keep actual src/pflotran/pflotran and PETSc/HDF5 inside workspace. GenuinePython3.11 is
+  provisioned at /Users/ziweili/Documents/Codex/2026-09-08/doo-2/work/pcraster-runtime/bin/python;
+  use it for venv and helper, no fabricated xdrlib. Inherit verified host FI_PROVIDER=tcp
+  and FI_TCP_IFACE=en0 for realMPI. Minimal native configuration excludes optional
+  Hypre/Metis/ParMETIS features; do not claim those installed. No simulations or case data.

@@ -1,0 +1,28 @@
+kiss_manifest_version: 1
+model: RAPID
+binary_type: Mach-O
+verified: unverified
+install_dir: RAPID/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/c-h-david/rapid.git
+  ref: 83145101ac8b49b8269e330cfc1372876fce8d7d
+  produces: src/rapid
+python_deps: [numpy, netCDF4, networkx]
+system_deps: [gfortran, mpich, netcdf-fortran, hdf5, openblas]
+agent_hint: >-
+  Use the bundled tools/build_rapid_macos.py deterministic native build helper from
+  the installation workspace after acquiring the pinned clean RAPID checkout.
+  Invoke with the actual workspace Python3.11 venv and the real KI helper path.
+  The helper builds SHA256-pinned official PETSc3.13.6 against existing native
+  MPICH4.3.1 and host BLAS/LAPACK, then serially builds RAPID using both
+  nf-config --fflags/--flibs AND nc-config --libs (the latter supplies the missing
+  NetCDF-C library search directory). Native local audit produced Mach-O arm64
+  RAPID20240624 and --version exit0 in1.5seconds. No new netCDF, MPI or BLAS source
+  build is needed. Do not repeat retry49's unnecessary netCDF rebuild or retry40's
+  bundledMPICH build. Explicit make -j1 rapid prevents upstream Fortran module races.
+  Keep source, PETSc and actual src/rapid within workspace. Genuine Python3.11 is
+  provisioned at /Users/ziweili/Documents/Codex/2026-09-08/doo-2/work/pcraster-runtime/bin/python;
+  use it for the venv, never fabricate xdrlib. On this host inherit FI_PROVIDER=tcp
+  and FI_TCP_IFACE=en0 for MPICH; this names the verified host interface. Preserve
+  final independent installation verification. No simulations or scientific data.

@@ -1,0 +1,29 @@
+kiss_manifest_version: 1
+model: PISM
+binary_type: Mach-O
+verified: partial
+install_dir: PISM/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/pism/pism.git
+  ref: 79cae578d27cf90742be04c0c5a8bcf262da41ca
+  produces: build/pism
+python_deps: [numpy, netCDF4]
+system_deps: [cmake, mpich, gfortran, gsl, netcdf]
+agent_hint: >-
+  Official PISM v2.3.0 is pinned by commit; the tag is v2.3.0, not 2.3.0.
+  Use tools/build_pism_macos.py from the installation workspace with its genuine
+  Python3.11 venv. Provision the isolated FFTW3.3.11 and UDUNITS2.2.28 prefix at
+  binaries/PISM/deps/runtime using tools/macos-dependencies.explicit.txt first.
+  The helper builds SHA256-pinned PETSc3.21.4 against existing host MPICH and native
+  BLAS/LAPACK, with optional PETSc HDF5 disabled. Host NetCDF4.10.0 supplies PISM
+  NetCDF I/O; this avoids mixing the PFLOTRAN parallel HDF5 build with host HDF5.
+  Preserve the genuine build/pism, build/src/libpism shared library, and generated
+  runtime/share/pism/pism_config.nc at their configured locations. Do not copy only
+  the executable or relocate compiled dependencies without rebuilding.
+  Native pism -version exits0 with exact model and dependency versions before
+  input loading; --version is unsupported and exits1. Do not create model inputs
+  for installation. The local native build and -version proof passed; DS testing
+  remains required. Python bindings, PROJ/YAC and parallel NetCDF backends are not
+  included in this configuration. Preserve independent test_installation and
+  caller-supplied verified FI_PROVIDER/FI_TCP_IFACE when required by host MPICH.

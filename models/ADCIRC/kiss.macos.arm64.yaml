@@ -1,0 +1,17 @@
+kiss_manifest_version: 1
+model: ADCIRC
+binary_type: Mach-O
+verified: unverified
+install_dir: ADCIRC
+acquire:
+  strategy: build
+  repo: https://github.com/adcirc/adcirc.git
+  ref: 5d4dfad3a35c6384a6d9548a03d0b649ab315748
+  commands:
+  - cmake -S . -B build -DBUILD_ADCIRC=ON -DBUILD_PADCIRC=OFF
+  - cmake --build build --target adcirc --parallel 2
+  produces: build/adcirc
+python_deps: [numpy, pandas, netCDF4, matplotlib, scipy]
+system_deps: [git, cmake, gfortran]
+notes: Official v56.2.1 source and native serial CMake target built in retry31; independent discovery failed because only interpreter was declared. This recipe declares actual native product; fresh independent check pending.
+agent_hint: Preserve genuine serial executable at <workspace>/binaries/ADCIRC/build/adcirc. Do not copy solely to workspace/bin or use Python as product. Verify actual native banner/input-reading startup in empty directory and all required imports. Missing fort.14 is scientific case input; do not acquire it or simulate merely to prove installation.

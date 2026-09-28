@@ -5,14 +5,14 @@ package:
   name: OpenHydroQual
   language: c++
   implementation:
-    id: openhydroqual-204
-    version: 2.0.4
+    id: openhydroqual-207-macos
+    version: 2.0.7
     provenance: C++14; Aquifolium engine by Arash Massoudieh / EnviroInformatics, generic implicit block-link
       mass-balance + reactive-transport solver.
   scientific_reference_version: OpenHydroQual 2.0.4 (Aquifolium block-link mass-balance / reactive-transport
     engine; Massoudieh & Nguyen 2023, EMS)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest
+    path: KISSPATH_BINARIES/OpenHydroQual/source/repo/build-cli/OHQLibTest
     type: work_dir
 pipeline:
   stages:

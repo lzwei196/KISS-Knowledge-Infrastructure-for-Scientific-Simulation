@@ -1,0 +1,43 @@
+kiss_manifest_version: 1
+model: CISM
+binary_type: Mach-O
+verified: unverified
+install_dir: CISM/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/ESCOMP/CISM.git
+  ref: eb7bef68bc3164968330f6109fab2af252148520
+  commands:
+  - python3 ../../../../ki/tools/prepare_cism_source.py .
+  - cmake -S . -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCISM_SERIAL_MODE=ON -DCISM_MPI_MODE=OFF
+    -DCISM_BUILD_CISM_DRIVER=ON -DCISM_USE_TRILINOS=OFF -DCISM_COUPLED=OFF -DCISM_USE_GPTL_INSTRUMENTATION=OFF
+    -DCISM_ENABLE_BISICLES=OFF -DCISM_NETCDF_DIR=/opt/homebrew -DCMAKE_C_COMPILER=clang
+    -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_Fortran_COMPILER=gfortran -DCMAKE_Fortran_FLAGS="-O2
+    -ffree-line-length-none -fallow-argument-mismatch" -DCMAKE_C_FLAGS="-Wno-implicit-function-declaration
+    -Wno-implicit-int" -DCISM_EXTRA_LIBS=-lblas
+  - cmake --build build --target cism_driver --parallel 2
+  produces: build/cism_driver/cism_driver
+python_deps:
+- numpy
+- netCDF4
+- pandas
+system_deps:
+- git
+- cmake
+- gfortran
+- clang
+reference_case: build/cism_driver/cism_driver -h
+notes: Local macOS arm64 native compilation and startup passed on 2026-09-08 with
+  the reviewed Python 3 build-generator patch. A clean DS installation retry remains
+  pending. No scientific simulation was run. Uses native Homebrew netCDF-C/netCDF-Fortran
+  and BLAS.
+agent_hint: Use this exact source pin and canonical install_dir. The bundled prepare_cism_source.py
+  helper applies only the reviewed build-generator compatibility patch, so system
+  Python 2 is not needed. run_builtin_setup materialises the helper and patch into
+  the KI and executes the recipe. For a manual build, read docs/cism-python3-generator.patch
+  and apply it to the pinned workspace checkout before configuring. Keep scientific
+  Fortran routines and variable-definition inputs unchanged. If native dependencies
+  use a different prefix, resolve the real matching netCDF-Fortran SDK and adjust
+  CISM_NETCDF_DIR. Record the actual product build/cism_driver/cism_driver, not the
+  historical MPI preflight path. Finish with real package imports and the native -h
+  startup probe only.

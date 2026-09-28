@@ -4,8 +4,8 @@ identity:
   model_id: "OpenHydroQual"
   scientific_reference_version: "OpenHydroQual 2.0.4 (Aquifolium block-link mass-balance / reactive-transport engine; Massoudieh & Nguyen 2023, EMS)"
   implementation:
-    id: "openhydroqual-204"
-    version: "2.0.4"
+    id: "openhydroqual-207-macos"
+    version: "2.0.7"
     provenance: "C++14; Aquifolium engine by Arash Massoudieh / EnviroInformatics, generic implicit block-link mass-balance + reactive-transport solver."
   ki_class: "forward_model"
   is_family_dag: false

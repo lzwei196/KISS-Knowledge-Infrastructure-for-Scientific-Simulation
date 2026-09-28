@@ -1,0 +1,33 @@
+kiss_manifest_version: 1
+model: HEC_HMS
+binary_type: Python
+verified: observed
+install_dir: HEC_HMS
+acquire:
+  strategy: bundled
+  produces: tools/run_hec_hms.py
+python_script:
+  implementation_id: hec-hms-python-equiv
+  path: tools/run_hec_hms.py
+  sha256: 172f5301a25757b39597ed8c0d2350669e4a960e82cb1fa2d247440dd32208b5
+python_deps:
+- numpy
+- pandas
+- xarray
+- geopandas
+- shapely
+- rasterio
+- matplotlib
+- scipy
+notes: Installs the declared hec-hms-python-equiv Python implementation (HydroCraft Python equivalent
+  of HEC-HMS 4.x lumped methods). This is not installation of the official upstream HEC_HMS application
+  and does not establish algorithmic equivalence. The original scientific runner bytes are unchanged.
+  Fresh DS installation passed the source-bound declared-variant contract on 2026-09-09. Official
+  upstream installation remains unverified.
+agent_hint: Read docs/install.macos.md. Use the actual bundled ki/tools/run_hec_hms.py in the workspace;
+  do not create a replacement runner, copy a stub, or choose the Python interpreter as model product.
+  Install genuine listed dependencies into the workspace venv. The fixed python_script gate verifies
+  implementation identity and runner SHA256, then requires --help exit0 in an empty directory with
+  no created paths. Do not run --version (unsupported), construct model objects, call simulation/calibration
+  functions, invoke scientific preflight checks, or create/download input data. No official upstream
+  application is required for this explicitly declared variant contract.

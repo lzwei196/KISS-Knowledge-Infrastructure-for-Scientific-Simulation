@@ -1,0 +1,16 @@
+[
+  {
+    "path": "tools/cmake/AmanziVersion.cmake",
+    "before_sha256": "51afa6b658caca0f8c4a5500e6400fbfb1c49322b1e91b9f84231b1b62d3947b",
+    "after_sha256": "e5ba252312ecbac10f583028a8d88f52d52b661720cf94f2c1edd52623dbbfa5",
+    "old": "string(REPLACE \"\\n\" \";\" AMANZI_GIT_BRANCH_INFO_SPLIT ${AMANZI_GIT_BRANCH_INFO})",
+    "new": "string(REPLACE \"\\n\" \";\" AMANZI_GIT_BRANCH_INFO_SPLIT \"${AMANZI_GIT_BRANCH_INFO}\")"
+  },
+  {
+    "path": "src/state/CMakeLists.txt",
+    "before_sha256": "85594f81ac6957fc18fa13aeb440050fa14eff64a4c8837763f9fb4e39b2887e",
+    "after_sha256": "112f009ea4fbdf305d1b4383eb4c5cb834f085a05d3a6bc266525a0910f7eda8",
+    "old": "# Amanzi include directories\ninclude_directories(${ATK_SOURCE_DIR})",
+    "new": "# Amanzi include directories\ninclude_directories(${STATE_SOURCE_DIR})\ninclude_directories(${ATK_SOURCE_DIR})"
+  }
+]

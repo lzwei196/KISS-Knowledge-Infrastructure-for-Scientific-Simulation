@@ -1,0 +1,34 @@
+{
+  "petsc4py-3.25.5-cp311-cp311-macosx_11_0_arm64.whl": {
+    "name": "petsc4py",
+    "size": 1901075,
+    "sha256": "5188fe3acd4e71abab003c82c705496b9621e42b1e6e59e6ef959171d0e3da4e",
+    "source_build_log": "firedrake-install-diskpause.log"
+  },
+  "libsupermesh-2026.2-cp311-cp311-macosx_26_0_arm64.whl": {
+    "name": "libsupermesh",
+    "size": 273580,
+    "sha256": "1c85a7237ec7714a6d2b7959a5149412cde04790c2f9826e530bbe02d1ed4063",
+    "source_build_log": "firedrake-install-hatchling.log"
+  },
+  "mpi4py-4.1.2-cp311-cp311-macosx_11_0_arm64.whl": {
+    "name": "mpi4py",
+    "size": 847899,
+    "sha256": "390d4371852630f168bb5715835e233c72b7950dea2bd9d3d2f980f33ef521c5",
+    "source_build_log": "firedrake-install-hatchling.log"
+  },
+  "h5py-3.16.0-cp311-cp311-macosx_11_0_arm64.whl": {
+    "name": "h5py",
+    "size": 1720847,
+    "sha256": "a582662fbd20b6d778435a162c80d5a16884fac1fbfdb5d8bef77f2748f652d1",
+    "source_build_log": "hdf-bindings-rebuild.log",
+    "link_configuration": "hdf-link-fix-environment.json"
+  },
+  "firedrake-2026.4.2-cp311-cp311-macosx_11_0_arm64.whl": {
+    "name": "firedrake",
+    "size": 2961915,
+    "sha256": "4f3066a6aeabb1e705605bf7a2c9891af045002f64257dac2b63516cd3ea2821",
+    "source_build_log": "hdf-bindings-rebuild.log",
+    "link_configuration": "hdf-link-fix-environment.json"
+  }
+}

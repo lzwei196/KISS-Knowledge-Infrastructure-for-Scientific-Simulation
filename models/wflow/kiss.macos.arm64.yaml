@@ -1,0 +1,38 @@
+kiss_manifest_version: 1
+model: wflow
+binary_type: Julia package
+verified: partial
+julia_package:
+  name: Wflow
+  uuid: d48b7d99-76e7-47ae-b1d5-ff0c1cf9a818
+  version: 1.1.0-dev
+  project: ki/julia
+  depot: julia_depot
+  runtime: binaries/julia-1.10.7/bin/julia
+  symbols:
+  - Model
+  - run
+acquire:
+  strategy: download
+  url: https://julialang-s3.julialang.org/bin/mac/aarch64/1.10/julia-1.10.7-macaarch64.tar.gz
+  sha256: 8beb61a29a6c32e26f55070dba8ded37f8572ad07aebd461a06ff5b10d48dc36
+python_deps:
+- numpy
+- pandas
+- xarray
+- netCDF4
+- geopandas
+- shapely
+- matplotlib
+- rasterio
+- scipy
+- pyyaml
+notes: Official Julia runtime and retained Wflow 1.1.0-dev package UUID/version load
+  verified locally. DS end-to-end retry required. KI Manifest pins Wflow tree 2a5f25884436c1d3038d40b7be4185d59c9533e7.
+  Julia interpreter alone never establishes model installation.
+agent_hint: Read MACOS_INSTALL.md. Install exact official runtime at binaries/julia-1.10.7/bin/julia.
+  Preserve bundled ki/julia/Project.toml and Manifest.toml. Instantiate that project
+  using only the fixed scoped Julia package operation documented there and workspace
+  julia_depot. Do not Pkg.add latest or update the pinned Manifest. Run the fixed
+  load probe once for first compilation, then test_installation verifies actual Wflow
+  module UUID/version/bindings. No simulation or input datasets.

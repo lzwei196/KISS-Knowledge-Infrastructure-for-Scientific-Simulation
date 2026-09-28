@@ -18,6 +18,7 @@ two ever disagree, that is a bug in the GUI.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import queue
@@ -29,13 +30,25 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, observatory, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
+from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
+
+def _installation_config_after_setup(cfg):
+    """Read the installer's saved environment before independent verification."""
+    root = Path(cfg.root).resolve()
+    if not (root / "kiss.toml").is_file():
+        raise FileNotFoundError(f"installation configuration missing: {root / 'kiss.toml'}")
+    current = paths.KissConfig.load(root)
+    if Path(current.root).resolve() != root:
+        raise ValueError("setup changed the installation workspace root")
+    return current
+
 
 PAGE = (Path(__file__).parent / "web" / "app.html")
 SETUP_PAGE = (Path(__file__).parent / "web" / "setup.html")
@@ -55,6 +68,7 @@ SETUP_BUILD_COMMANDS = (
     "gcc", "g++", "clang", "clang++", "gfortran", "tar", "unzip",
     "7z", "7za", "7zr", "innoextract", "micromamba", "curl", "patch",
     "file", "ar", "ranlib", "dlltool", "gendef", "nm", "objdump", "strip",
+    "R", "Rscript",
 )
 
 
@@ -217,6 +231,13 @@ def _activity_kind(activity: str | None, project_state: dict,
     if files.get("input_growing"):
         return "data_transfer", "file_growth"
     if any(word in value for word in (
+            "search_observation_data", "search_catalogue", "describe_dataset", "estimate_clip",
+             "geoforge-db", "obs-search", "obs_search")):
+        return "database", "tool_event"
+    if any(word in value for word in (
+            "obs-download", "obs_download", "acquisition")):
+        return "database_download", "tool_event"
+    if any(word in value for word in (
             "download", "fetch", "curl", "wget", "clone", "acquire")):
         return "data_transfer", "tool_event"
     if any(word in value for word in (
@@ -302,6 +323,60 @@ def _project_file_evidence(project: Path, started: float, previous: dict | None)
     }
 
 
+def _database_status() -> dict:
+    """One honest summary of the GeoForge Database link for Settings and the data panel."""
+    store = obs_access.load_catalogue() or {}
+    error = store.get("error") or {}
+    mode = settings.database_access_mode()
+    state = obs_access.token_state()
+    return {
+        # Status must never open a Keychain prompt; report what this process knows.
+        "configured": state == "configured" or (state == "unknown" and bool(store.get("ok"))),
+        "token_state": state,
+        "mode": mode,
+        "catalogue_ok": bool(store.get("ok")),
+        "records": len(store.get("datasets") or []),
+        "served": sum(1 for d in store.get("datasets") or [] if d.get("delivery") == "served"),
+        "generated_at": store.get("generated_at"),
+        "stale": bool(store.get("stale")),
+        "error": (str(error.get("message") or "") if error else ""),
+        # how each kind of Agent reaches the same local copy
+        "api_tool": "search_catalogue",
+        "cli_command": "geoforge-db",
+    }
+
+
+def _catalogue_query(query: dict) -> dict:
+    """Catalogue search parameters from a parsed query string (shared by both routes)."""
+    first = lambda key, default="": (query.get(key) or [default])[0]  # noqa: E731
+    return {
+        "q": first("q"), "offset": int(first("offset", 0)), "limit": int(first("limit", 25)),
+        "bbox": first("bbox") or None, "start": first("start") or None,
+        "end": first("end") or None, "variable": first("variable"),
+        "category": first("category"), "delivery": first("delivery"),
+        "describe_dataset_id": first("describe_dataset_id"),
+        "resolve_dataset_id": first("resolve_dataset_id"), "time_step": first("time_step"),
+    }
+
+
+def _stop_agent_run(session_id: str) -> dict:
+    """Stop the live turn of one session: close the API stream or end the CLI."""
+    with _LIVE_AGENT_RUNS_LOCK:
+        live = _LIVE_AGENT_RUNS.get(session_id)
+        handle = live.get("_handle") if live else None
+        proc = live.get("_process_handle") if live else None
+    if live is None:
+        return {"ok": False, "stopped": False, "reason": "no live turn"}
+    if handle is not None:
+        handle.stop()
+    if proc is not None and getattr(proc, "poll", lambda: 0)() is None:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+    return {"ok": True, "stopped": True}
+
+
 def _agent_run_snapshot(session_id: str) -> dict:
     """Return a JSON-safe, honest view of one live provider turn.
 
@@ -326,7 +401,10 @@ def _agent_run_snapshot(session_id: str) -> dict:
     process = dict(events.get("process") or {})
     proc = events.get("_process_handle")
     returncode = process.get("returncode")
-    alive = process.get("state") == "running"
+    finished = events.get("finished_at")
+    # API providers run in-process: no child, no "process" record.  Until the
+    # turn records finished_at it is still computing, not "finishing".
+    alive = process.get("state") == "running" or (not process and not finished)
     if proc is not None:
         try:
             polled = proc.poll()
@@ -338,10 +416,17 @@ def _agent_run_snapshot(session_id: str) -> dict:
 
     started = process.get("started_at") or events.get("started_at") or now
     last_event = process.get("last_event_at")
+    last_work = process.get("last_work_at")
     last_output = (process.get("last_output_at") or
                    events.get("last_visible_output_at"))
+    handle = events.get("_handle")
+    if not process and alive:
+        # In-process API turn: every streamed chunk is an event.
+        last_event = max(filter(None, (getattr(handle, "last_chunk_at", None),
+                                       last_output, started)))
+        last_work = last_output
+        process = {"activity": "responding", "activity_state": "responding"}
     transport = events.get("last_transport_at")
-    finished = events.get("finished_at")
     state = "running" if alive else ("finishing" if not finished else "finished")
     project_state: dict = {}
     file_evidence: dict = {}
@@ -373,7 +458,15 @@ def _agent_run_snapshot(session_id: str) -> dict:
         "returncode": returncode,
         "activity": process.get("activity"),
         "activity_detail": process.get("activity_detail"),
+        "activity_state": process.get("activity_state", "unknown"),
+        "activity_elapsed_seconds": (
+            max(0, int((process.get("ended_at") or now) - process["activity_started_at"]))
+            if process.get("activity_started_at") is not None else None),
+        "last_activity_name": process.get("last_activity_name"),
+        "last_activity_detail": process.get("last_activity_detail"),
         "elapsed_seconds": max(0, int(now - started)),
+        "work_silence_seconds": max(0, int(now - (last_work or started))),
+        "work_observed": last_work is not None,
         "event_silence_seconds": (max(0, int(now - last_event))
                                   if last_event else None),
         "output_silence_seconds": (max(0, int(now - last_output))
@@ -509,6 +602,7 @@ def _copy_missing_assets(source: Path, destination: Path) -> list[Path]:
     copied: list[Path] = []
     if not source.is_dir() or source.resolve() == destination.resolve():
         return copied
+    destination = port.validate_materialisation_destination(destination)
     for item in source.rglob("*"):
         if item.is_symlink() or not item.is_file():
             continue
@@ -778,6 +872,12 @@ class Handler(BaseHTTPRequestHandler):
     workroot: Path
     ki_update_manager: ki_updates.UpdateManager | None = None
     csrf_token: str = secrets.token_urlsafe(32)
+    agent_database_token: str = secrets.token_urlsafe(32)
+    # Never send this derivation key to an Agent. The app-global database
+    # capability is deliberately not sufficient to write another chat's card.
+    agent_question_secret: bytes = secrets.token_bytes(32)
+    agent_database_url: str = ""
+    agent_flow_url: str = ""
 
     protocol_version = "HTTP/1.1"
 
@@ -847,6 +947,121 @@ class Handler(BaseHTTPRequestHandler):
                 supplied.value, self.csrf_token):
             return False, "missing or invalid GeoForge request token"
         return True, ""
+
+    @classmethod
+    def _question_capability(cls, project: Path) -> str:
+        identity = str(Path(project).resolve()).encode("utf-8")
+        return hmac.new(cls.agent_question_secret,
+                        b"geoforge-question-v1\0" + identity, hashlib.sha256).hexdigest()
+
+    @classmethod
+    def _agent_runtime_env(cls, project: Path | None = None) -> dict[str, str]:
+        """Capabilities inherited only by the current Agent child process."""
+        if not cls.agent_database_url or not cls.agent_database_token:
+            return {}
+        result = {
+            "GEOFORGE_AGENT_DATABASE_URL": cls.agent_database_url,
+            "GEOFORGE_AGENT_DATABASE_TOKEN": cls.agent_database_token,
+        }
+        if cls.agent_flow_url:
+            result["GEOFORGE_AGENT_FLOW_URL"] = cls.agent_flow_url
+            if project is not None:
+                result["GEOFORGE_AGENT_QUESTION_TOKEN"] = cls._question_capability(project)
+        return result
+
+    def _agent_capability_allowed(self) -> bool:
+        supplied = str(self.headers.get("X-GeoForge-Agent-Token") or "")
+        return bool(supplied) and secrets.compare_digest(
+            supplied, self.agent_database_token)
+
+    def _database_project(self, cwd):
+        """Resolve an agent's database operation to an actual registered chat."""
+        if not isinstance(cwd, str) or not cwd.strip():
+            raise ValueError('Run database project operations from a registered chat project')
+        cwd = Path(cwd).resolve()
+        project = sessions.registered_project_for_path(self.workroot, cwd)
+        if project is None:
+            for ancestor in (cwd, *cwd.parents):
+                match = re.search(r'--([a-f0-9]{12})$', ancestor.name)
+                if match:
+                    session = sessions.load(self.workroot, match.group(1))
+                    if session and sessions.project_path(self.workroot, session).resolve() == ancestor:
+                        project = ancestor
+                        break
+        if project is None:
+            raise ValueError('Run database project operations from a registered chat project')
+        return project
+
+    def _post_agent_flow_command(self, length: int) -> None:
+        """Run only receipt-gated CLI commands for this Desktop's Agent.
+
+        This endpoint replaces the old launcher that re-executed an app bundle
+        below Documents.  The CLI command still performs the authoritative
+        plan/state/tool checks; this narrow endpoint only moves execution back
+        into the already-authorized Desktop process.
+        """
+        if not self._agent_capability_allowed():
+            if length:
+                self.rfile.read(min(length, 64 * 1024))
+            return self._json({"ok": False, "error": "unauthorized",
+                               "message": "invalid agent flow capability"}, 401)
+        if length <= 0 or length > 64 * 1024:
+            return self._json({"ok": False, "error": "invalid_request",
+                               "message": "invalid agent flow request size"}, 400)
+        try:
+            request = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(request, dict):
+                raise ValueError("agent flow request must be a JSON object")
+            argv = request.get("argv")
+            if (not isinstance(argv, list) or not argv or
+                    not all(isinstance(item, str) for item in argv)):
+                raise ValueError("argv must be a non-empty string list")
+            if argv[0] not in {"run-tool", "fetch", "ask-question"}:
+                raise ValueError(f"command {argv[0]!r} is not an Agent flow command")
+            if argv[0] == "ask-question":
+                if len(argv) != 2:
+                    raise ValueError("ask-question requires one JSON payload")
+                project = self._database_project(request.get("cwd"))
+                question_token = str(self.headers.get("X-GeoForge-Question-Token") or "")
+                if not question_token or not secrets.compare_digest(
+                        question_token, self._question_capability(project)):
+                    return self._json({"ok": False, "error": "unauthorized",
+                                       "message": "invalid project question capability"}, 401)
+                card = flowrun.request_planning_question(project, json.loads(argv[1]))
+                return self._json({"ok": True, "returncode": 0,
+                                   "stdout": json.dumps(card, ensure_ascii=False), "stderr": ""})
+            cwd = Path(str(request.get("cwd") or "")).expanduser().resolve()
+            workroot = self.workroot.resolve()
+            registered_external = sessions.registered_project_for_path(workroot, cwd)
+            if (cwd != workroot and workroot not in cwd.parents and
+                    registered_external is None):
+                raise ValueError("command cwd is outside the GeoForge project root")
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, OSError) as error:
+            return self._json({"ok": False, "error": "invalid_request",
+                               "message": str(error)}, 400)
+
+        import subprocess as _subprocess
+        if getattr(sys, "frozen", False):
+            command = [sys.executable, *argv]
+            env = None
+        else:
+            command = [sys.executable, "-m", "kiss_cli", *argv]
+            env = dict(os.environ)
+            package_root = str(Path(__file__).resolve().parents[1])
+            env["PYTHONPATH"] = package_root + (
+                os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        try:
+            result = _subprocess.run(
+                command, cwd=str(cwd), env=env, capture_output=True,
+                text=True, errors="replace",
+            )
+        except OSError as error:
+            return self._json({"ok": False, "error": "launch_failed",
+                               "message": str(error)}, 500)
+        return self._json({"ok": result.returncode == 0,
+                           "returncode": result.returncode,
+                           "stdout": result.stdout[-100000:],
+                           "stderr": result.stderr[-30000:]})
 
     def _shipped_manifest(self, name: str) -> Path:
         """Manifest paired with the currently active, validated KI snapshot."""
@@ -1033,8 +1248,20 @@ class Handler(BaseHTTPRequestHandler):
             deps.append({"name": name, **self._status_for(dep)})
         return build_data_plan(ki, man, self._config(ki), self._status_for(ki), deps)
 
+    def _setup_ok_for(self, s: dict) -> bool:
+        try:
+            return all(self._status_for(self._ki(n)).get("can_run") for n in (s.get("models") or []))
+        except KeyError:
+            return False
+
     def _session_data(self, s: dict) -> dict:
         project = sessions.project_path(self.workroot, s)
+        # A project that is fetching its approved data advances on every panel poll,
+        # so a server clip finishes without the user having to type anything.
+        try:
+            flowrun.poll_acquisition(project, setup_ok=self._setup_ok_for(s))
+        except Exception:  # noqa: BLE001
+            pass
         run_state = projectrun.load(
             project, selected_kis=s.get("models") or [])
         # A chat created with Auto KI becomes model-specific as soon as the
@@ -1084,14 +1311,19 @@ class Handler(BaseHTTPRequestHandler):
             except KeyError:
                 continue
         calibration_state = calibration.project_state(project, calibration_kis)
+        status = project_status.snapshot(
+            project, report=run_state, plans=plans, preparation=project_preparation,
+            activity=_agent_run_snapshot(s["id"]))
         return {
             "session": s["id"], "project_path": str(project),
             "upload_path": str(project / "inputs" / "uploads"),
             "auto_ki": not bool(effective_models), "plans": plans,
             "files": files, "reference_files": sessions.reference_files(self.workroot, s),
             "provenance": sessions.provenance_records(self.workroot, s),
-            "human_request": setup_flow.request(project),
-            "project_run": run_state,
+            "human_request": status["request"],
+            "plan_data": status["plan_data"],
+            "project_run": status["progress"],
+            "project_status": status,
             "preparation": project_preparation,
             "calibration": calibration_state,
         }
@@ -1473,6 +1705,73 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/settings":
             return self._json(settings.masked())
 
+        if route == "/api/obs/status":
+            return self._json(_database_status())
+
+        if route.startswith('/api/session/') and route.endswith('/subsets'):
+            from . import obs_subset
+            sid = route.split('/')[3]
+            s = sessions.load(self.workroot, sid) if sessions.valid_id(sid) else None
+            if not s:
+                return self._json({'error': 'no such session'}, 404)
+            return self._json(obs_subset.presentation(sessions.project_path(self.workroot, s)))
+
+        if route == "/api/obs/test":
+            try:
+                # This route is reached only from the user's explicit
+                # "Save & test database" action.  Automatic Agent searches
+                # must honor the per-process failure circuit breaker instead
+                # of reopening a denied Keychain prompt for every query.
+                obs_access.retry_token_access()
+                result = obs_access.Client().test()
+                threading.Thread(target=obs_access.refresh_catalogue,
+                                 kwargs={"force": True}, daemon=True).start()
+                return self._json(result)
+            except obs_access.ObsAccessError as error:
+                return self._json(error.payload(), error.status or 400)
+
+        if route == "/api/obs/catalogue":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                result = obs_access.search_catalogue(**_catalogue_query(query))
+            except obs_access.ObsAccessError as error:
+                return self._json(error.payload(), error.status or 400)
+            except (TypeError, ValueError) as error:
+                return self._json({"ok": False, "error": "invalid_query",
+                                   "message": str(error)}, 400)
+            return self._json(result)
+
+        if route == "/api/agent/obs/catalogue":
+            if not self._agent_capability_allowed():
+                return self._json({"ok": False, "error": "unauthorized",
+                                   "message": "invalid agent database capability"}, 401)
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                if sum(bool(query.get(k)) for k in ('describe_dataset_id', 'resolve_dataset_id', 'subset_dataset_id')) > 1:
+                    raise ValueError('Choose one of describe, resolve or subset estimate per call')
+                if query.get('subset_dataset_id'):
+                    from . import obs_subset
+                    project = self._database_project((query.get('cwd') or [''])[0])
+                    body = {'dataset_id': query['subset_dataset_id'][0],
+                            'bbox': [float(v) for v in (query.get('bbox') or [''])[0].split(',')],
+                            'variables': [v.strip() for v in (query.get('variable') or [''])[0].split(',') if v.strip()],
+                            'start': (query.get('start') or [''])[0], 'end': (query.get('end') or [''])[0]}
+                    return self._json(obs_subset.estimate(project, body))
+                result = obs_access.search_catalogue(**_catalogue_query(query))
+            except obs_access.ObsAccessError as error:
+                return self._json(error.payload(), error.status or 400)
+            except (TypeError, ValueError) as error:
+                return self._json({"ok": False, "error": "invalid_query",
+                                   "message": str(error)}, 400)
+            return self._json(result)
+
+        if route.startswith("/api/obs/dataset/"):
+            dataset_id = unquote(route.split("/", 4)[4])
+            try:
+                return self._json(obs_access.Client().dataset(dataset_id))
+            except obs_access.ObsAccessError as error:
+                return self._json(error.payload(), error.status or 400)
+
         if route == "/api/sessions":
             return self._json(sessions.list_all(self.workroot))
 
@@ -1503,10 +1802,16 @@ class Handler(BaseHTTPRequestHandler):
             })
 
         if route == "/api/project-location":
-            return self._json({
-                "default_parent": str(sessions.default_project_parent(self.workroot)),
-                "creates_child_folder": True,
-            })
+            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            try:
+                location = sessions.project_location(
+                    self.workroot,
+                    project_name=(query.get("project_name") or [None])[0],
+                    project_parent=(query.get("project_parent") or [None])[0],
+                )
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json(location)
 
         if route.startswith("/api/session/") and route.endswith("/artifact"):
             sid = route.split("/")[3]
@@ -1568,8 +1873,9 @@ class Handler(BaseHTTPRequestHandler):
             if not s:
                 return self._json({"error": "no such session"}, 404)
             project = sessions.project_path(self.workroot, s)
-            return self._json(projectrun.load(
-                project, selected_kis=s.get("models") or []))
+            report = projectrun.load(project, selected_kis=s.get("models") or [])
+            return self._json(project_status.snapshot(
+                project, report=report, activity=_agent_run_snapshot(sid))["progress"])
 
         if route.startswith("/api/session/") and route.endswith("/calibration"):
             sid = route.split("/")[3]
@@ -1713,10 +2019,12 @@ class Handler(BaseHTTPRequestHandler):
     # --- POST --------------------------------------------------------------
     def do_POST(self) -> None:
         route = urlparse(self.path).path
+        n = int(self.headers.get("Content-Length", 0))
+        if route == "/api/agent/flow-command":
+            return self._post_agent_flow_command(n)
         allowed, reason = self._browser_write_allowed()
         if not allowed:
             return self._json({"error": f"blocked unsafe local request: {reason}"}, 403)
-        n = int(self.headers.get("Content-Length", 0))
         if route == "/api/import_ki":
             if n > 300 * 1024 * 1024:
                 return self._json({"error": "zip larger than 300 MB"}, 413)
@@ -1753,28 +2061,23 @@ class Handler(BaseHTTPRequestHandler):
             sid = route.split("/")[3]
             if not sessions.valid_id(sid):
                 return self._json({"error": "invalid session id"}, 400)
-            filename = (parse_qs(urlparse(self.path).query).get("name") or ["data"])[0]
+            query = parse_qs(urlparse(self.path).query)
+            filename = (query.get("name") or ["data"])[0]
             with sessions.lock(sid):
                 s = sessions.load(self.workroot, sid)
                 if not s:
                     return self._json({"error": "no such session"}, 404)
                 try:
                     saved = sessions.save_upload(
-                        self.workroot, s, filename, self.rfile.read(n))
-                    project = sessions.project_path(self.workroot, s)
-                    pending = setup_flow.request(project)
-                    if pending and pending.get("status") == "waiting":
-                        setup_flow.resume(
-                            project, f"Added {saved.name} to the project through GeoForge.")
-                        projectrun.report(project, {
-                            "status": "idle",
-                            "summary": f"Received {saved.name}; ready to continue",
-                        }, source="user_upload")
+                        self.workroot, s, filename, self.rfile.read(n), item=(query.get("item") or [""])[0])
+                    # Saving bytes is not consent, scientific validation, or
+                    # fulfillment of an unrelated pending request. The user
+                    # explicitly continues/reviews through the normal flow.
                 except (ValueError, OSError) as e:
                     return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "path": str(saved),
-                               "relative_path": str(saved.relative_to(
-                                   sessions.project_path(self.workroot, s)))})
+                               "relative_path": saved.relative_to(
+                                   sessions.project_path(self.workroot, s)).as_posix()})
         if route.startswith("/api/session/") and route.endswith("/paper-upload"):
             if n > 100 * 1024 * 1024:
                 return self._json({"error": "paper larger than 100 MB"}, 413)
@@ -1792,9 +2095,28 @@ class Handler(BaseHTTPRequestHandler):
                 except (ValueError, OSError) as e:
                     return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "path": str(saved),
-                               "relative_path": str(saved.relative_to(
-                                   sessions.project_path(self.workroot, s)))})
+                               "relative_path": saved.relative_to(
+                                   sessions.project_path(self.workroot, s)).as_posix()})
         req = json.loads(self.rfile.read(n) or b"{}")
+
+        if route.startswith('/api/session/') and '/subsets/' in route:
+            from . import obs_subset
+            sid = route.split('/')[3]
+            s = sessions.load(self.workroot, sid) if sessions.valid_id(sid) else None
+            if not s:
+                return self._json({'error': 'no such session'}, 404)
+            project = sessions.project_path(self.workroot, s)
+            action = route.rsplit('/', 1)[-1]
+            try:
+                if action == 'estimate':
+                    result = obs_subset.estimate(project, req.get('request'))
+                elif action in {'refresh', 'download', 'cancel', 'retry_estimate'}:
+                    result = getattr(obs_subset, action)(project, req.get('id'))
+                else:
+                    return self._json({'error': 'unknown subset action'}, 404)
+                return self._json(result)
+            except (ValueError, OSError, obs_access.ObsAccessError) as error:
+                return self._json({'error': str(error)}, 400)
 
         if route == "/api/kdt/create":
             try:
@@ -1917,11 +2239,18 @@ class Handler(BaseHTTPRequestHandler):
                 s = sessions.create(
                     self.workroot, req.get("models"), req.get("provider", ""),
                     project_parent=req.get("project_parent"),
+                    project_name=req.get("project_name"),
                 )
             except (ValueError, OSError) as e:
                 return self._json({"error": str(e)}, 400)
             calibration.ensure_project(sessions.project_path(self.workroot, s))
             return self._json(sessions.for_client(self.workroot, s))
+
+        if route.startswith("/api/session/") and route.endswith("/stop"):
+            sid = route.split("/")[3]
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            return self._json(_stop_agent_run(sid))
 
         if route.startswith("/api/session/") and route.endswith("/open"):
             sid = route.split("/")[3]
@@ -2110,64 +2439,20 @@ class Handler(BaseHTTPRequestHandler):
         """Join a shared software install to one chat's scenario directories."""
         project = Path(project).resolve()
         shared = self._config(ki)
-        # Keep project-owned bindings that an agent deliberately resolved for
-        # this scientific case.  Older code regenerated every role on refresh,
-        # so a legacy model whose runnable deck lived under outputs/ could run
-        # successfully while the data panel kept checking an empty
-        # inputs/static placeholder.  Only scenario/data roles are eligible,
-        # and only when their resolved path remains inside this project.  The
-        # verified shared software roles below can never be overridden here.
-        project_overrides: dict[str, Path] = {}
-        try:
-            saved = paths.KissConfig.load(project)
-            for role in ("data", "forcing", "obs", "static", "outputs",
-                         "outputs_disk1", "data_ki", "forcing_rechunked"):
-                value = saved.roles.get(role)
-                if value is None:
-                    continue
-                resolved = Path(value).expanduser().resolve()
-                if resolved == project or resolved.is_relative_to(project):
-                    project_overrides[role] = resolved
-        except (FileNotFoundError, OSError, ValueError):
-            pass
         # Migrate workspaces created by older desktop builds where the model
         # binary could be verified while GeoForge's own shared Python library
         # was never copied into place.
         repo_root = getattr(self, "repo_root", None)
         if repo_root is not None:
             setup_flow.prepare_common(shared, repo_root)
-        cfg = paths.KissConfig.default(project)
-        cfg.python = shared.python
-        cfg.relocation = "none"
-        cfg.roles.update({
-            "binaries": shared.roles["binaries"],
-            "python_env": shared.roles["python_env"],
-            "ki_tools_common": shared.roles["ki_tools_common"],
-            "data": project / "inputs",
-            "forcing": project / "inputs" / "forcing",
-            "obs": project / "inputs" / "observations",
-            "static": project / "inputs" / "static",
-            "data_ki": project / "inputs",
-            "forcing_rechunked": project / "inputs" / "forcing" / "rechunked",
-            "outputs": project / "outputs" / ki.name,
-            "outputs_disk1": project / "outputs" / ki.name,
-            "ki_root": project / "models",
-            "server_root": project,
-            # Several ported KIs use KISSPATH_HOME as the parent of their
-            # installed scientific software (for example HOME/DSSAT).  A chat
-            # has its own cwd, inputs and outputs, but it does not get a second
-            # copy of that software.  Keep HOME joined to the verified shared
-            # install or materialisation rewrites a healthy binary into the
-            # project folder and preflight falsely reports it missing.
-            "home": shared.roles["home"],
-        })
-        cfg.roles.update(project_overrides)
+        cfg = project_paths.model_config(project, ki.name, shared)
         for role in ("data", "forcing", "obs", "static", "outputs",
                      "forcing_rechunked"):
             cfg.roles[role].mkdir(parents=True, exist_ok=True)
         return cfg
 
-    def _session_workspace(self, project: Path, ki):
+    def _session_workspace(self, project: Path, ki, *, cfg=None,
+                           write_project_config: bool = True):
         """Materialise one KI against this chat's data and output folders.
 
         Scientific software is expensive and belongs to the shared verified
@@ -2176,7 +2461,7 @@ class Handler(BaseHTTPRequestHandler):
         every session.
         """
         project = Path(project).resolve()
-        cfg = self._session_config(project, ki)
+        cfg = cfg if cfg is not None else self._session_config(project, ki)
 
         model_home = project / "models" / ki.name
         live = model_home / "ki"
@@ -2192,10 +2477,33 @@ class Handler(BaseHTTPRequestHandler):
         shared_live = Path(self._config(ki).root) / "ki"
         _copy_missing_assets(shared_live, live)
         (model_home / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
-        # The project-level file is what a model process or agent launched at
-        # the project root discovers by walking upward.
-        (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+        # Root discovery must not select whichever KI happened to be prepared
+        # last. Model tools explicitly use their own config at dispatch.
+        if write_project_config and project_paths.can_write_project_config(project, [ki.name]):
+            neutral = project_paths.project_config(project, python=install.runtime_python())
+            (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
         return type(ki)(name=ki.name, root=live), cfg
+
+    def _session_workspaces(self, project: Path, kis):
+        """Resolve a selected batch before replacing its legacy root config.
+
+        A global legacy config can belong to the LAST selected KI. Resolving
+        and materializing each KI in sequence used to neutralize that config
+        after the first KI, losing the later owner's custom scenario roles.
+        Keep the original root config until all resolutions/materializations
+        succeed; each KI still owns its existing per-KI config, not a registry.
+        """
+        project = Path(project).resolve()
+        prepared = [(ki, self._session_config(project, ki)) for ki in kis]
+        if not prepared:
+            return []
+        resolved = [self._session_workspace(project, ki, cfg=cfg,
+                                           write_project_config=False)
+                    for ki, cfg in prepared]
+        if project_paths.can_write_project_config(project, [ki.name for ki, _ in resolved]):
+            neutral = project_paths.project_config(project, python=install.runtime_python())
+            (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
+        return resolved
 
     # --- install -----------------------------------------------------------
     def _stream_init(self, req) -> None:
@@ -2498,13 +2806,36 @@ verification are different states; never claim this test verified the KI."""
                 full = system + "\n\n[TASK]\n" + task
                 extra = [str(live_ki.root), str(root), *external_grants]
                 runtime_events: dict = {}
-                stream = providers.run(
-                    prov, full, root, extra_dirs=extra, cfg=cfg,
-                    ki_root=live_ki.root, pol=pol, model=llm,
-                    runtime_events=runtime_events,
-                )
-                for piece in _with_heartbeats(stream):
-                    heartbeat() if piece is None else emit(piece)
+                run_kw = dict(extra_dirs=extra, cfg=cfg, ki_root=live_ki.root, pol=pol,
+                              model=llm, runtime_events=runtime_events)
+                # Continue the CLI's own setup conversation after the user's action:
+                # a fresh process only gets a one-paragraph hint and redoes the
+                # diagnosis and install steps it already ran (user report 2026-09-18).
+                stored = setup_flow.cli_session(root, prov.name)
+                state: dict = {}
+                resumed_ok = False
+                if resumed and stored and prov.can_resume():
+                    short = setup_flow.resume_message(resumed, root)
+                    held: list[str] = []
+                    for piece in _with_heartbeats(providers.run(
+                            prov, short, root, resume=stored, session_out=state, **run_kw)):
+                        if piece is None:
+                            heartbeat(); continue
+                        if not state.get("produced"):
+                            held.append(piece); continue
+                        for earlier in held:
+                            emit(earlier)
+                        held.clear()
+                        emit(piece)
+                    resumed_ok = bool(state.get("produced"))
+                    if not resumed_ok:
+                        state = {}      # the CLI dropped that session: start over below
+                if not resumed_ok:
+                    stream = providers.run(prov, full, root, session_out=state, **run_kw)
+                    for piece in _with_heartbeats(stream):
+                        heartbeat() if piece is None else emit(piece)
+                if state.get("session_id") and state.get("returncode") == 0:
+                    setup_flow.remember_cli_session(root, prov.name, state["session_id"])
                 permission_event = runtime_events.get("permission")
                 if (isinstance(permission_event, dict) and
                         permission_event.get("provider") == "kimi"):
@@ -2519,6 +2850,7 @@ verification are different states; never claim this test verified the KI."""
                     )
 
             if installation_only:
+                cfg = _installation_config_after_setup(cfg)
                 harvested = {}
                 harvested_path = (self.repo_root / "kiss" / "manifests" /
                                   "_harvested_produces.json")
@@ -2754,7 +3086,7 @@ verification are different states; never claim this test verified the KI."""
                 "You are GeoForge KI Studio's single KI-authoring agent. "
                 "Follow the desktop KDT contract exactly, ground every claim in "
                 "the supplied source, and keep all writes inside the workspace. "
-                "Do not use or claim access to HydroCraft server paths or datasets."
+                "Do not use or claim access to private GeoForge server paths or datasets."
             )
             cfg = paths.KissConfig.default(root)
             cfg.python = install.runtime_python(cfg.python)
@@ -3014,7 +3346,7 @@ verification are different states; never claim this test verified the KI."""
             sessions.append_message(self.workroot, s,
                                     {"role": "user", "text": text,
                                      "attachments": attachments})
-            if s.get("title") in ("New session", "", None):
+            if not s.get("project_name") and s.get("title") in ("New session", "", None):
                 s["title"] = text[:48]
             sessions.save(self.workroot, s)
             project = sessions.project_path(self.workroot, s)
@@ -3026,15 +3358,17 @@ verification are different states; never claim this test verified the KI."""
             # click (approve / modify) and moves the state; the generic handler below
             # must not mark it "ready" first.
             flow_pending = None
-            if pending and str(pending.get("id", "")).startswith(flowrun.APPROVAL_REQUEST_ID_PREFIX):
+            if pending and str(pending.get("id", "")) in (flowrun.BLOCKED_REQUEST_ID, acquire.MANUAL_REQUEST_ID) \
+                    or pending and str(pending.get("id", "")).startswith(flowrun.APPROVAL_REQUEST_ID_PREFIX):
+                # flow-owned choice cards (plan approval, acquisition blocked) are consumed by
+                # flowrun.pre(); the generic handler must not mark them answered first
                 flow_pending, pending = pending, None
             if pending and pending.get("status") == "waiting":
                 options = {str(item.get("id")): item
                            for item in pending.get("options") or []
                            if isinstance(item, dict) and item.get("id")}
-                if (action and str(action.get("request_id")) == str(pending.get("id"))
-                        and str(action.get("option_id")) in options):
-                    resolved_action = options[str(action.get("option_id"))]
+                resolved_action = setup_flow.choice_response(pending, action)
+                if resolved_action is not None:
                     option_id = str(resolved_action.get("id"))
                     if option_id == "enable_https":
                         saved_posture, approved = policy.Policy.load_approved(project)
@@ -3081,11 +3415,17 @@ verification are different states; never claim this test verified the KI."""
                             project,
                             f"The user selected {label}." + (f" {note}" if note else ""),
                         )
-                elif not options:
+                elif (not options and action is None and pending.get("kind") != "choice"
+                      and not pending.get("plan_review")):
                     # A free-form request has no structured choice; the reply
                     # itself is the handoff. Requests with options stay open
                     # when the user clicks “Ask me”, instead of being cleared.
-                    setup_flow.resume(project, "The user replied in the project chat.")
+                    # A manual download stays open until the files are really
+                    # there: a question in the chat must not make the link vanish.
+                    if pending.get("kind") == "download" and not setup_flow.download_placed(pending):
+                        pass
+                    else:
+                        setup_flow.resume(project, "The user replied in the project chat.")
             agent_text = sessions.message_text({"text": text,
                                                 "attachments": attachments})
         want = s.get("provider") or settings.load().get("default_provider") or ""
@@ -3142,7 +3482,8 @@ verification are different states; never claim this test verified the KI."""
         # Collect the streamed reply so the transcript survives the turn.
         buf: list[str] = []
         self._open_stream()
-        runtime_events: dict = {"provider": want, "project": str(project)}
+        runtime_events: dict = {"provider": want, "project": str(project),
+                                "_handle": api.TurnHandle()}
         _register_agent_run(sid, runtime_events)
 
         def out(piece: str) -> bool:
@@ -3206,9 +3547,33 @@ verification are different states; never claim this test verified the KI."""
                                         setup_ok=_setup_ok(names))
                     if res.message:
                         out("\n\n" + res.message)
+                    if (failure is None and flow_turn.kind == "execution"
+                            and flowrun.current_state(project) == "REPLAN_REQUIRED"):
+                        # The agent asked for a plan change mid-run.  Start the
+                        # re-planning turn now instead of waiting for the user to
+                        # repeat the request; the corrected plan still needs approval.
+                        reason = flowrun.replan_reason_from(
+                            "".join(buf)) or "the agent reported REPLAN_REQUIRED during execution"
+                        out("\n\nGeoForge is starting the re-planning turn with the agent's "
+                            "reason. The corrected plan will need your approval again.\n\n")
+                        replan_turn = self._chat_with_models(
+                            names, want, history + "\nUSER: " + agent_text,
+                            out, project, llm, prior=prior, bare_task=agent_text,
+                            skill_names=skill_names, mcp_names=mcp_names,
+                            session=s, cli_state=cli_state, runtime_events=runtime_events,
+                            flow_pre=flowrun.Pre(names=list(names), replan_reason=reason))
+                        if replan_turn is not None:
+                            res = flowrun.after(project, replan_turn, "".join(buf),
+                                                provider_note=flowrun.describe_policy(replan_turn),
+                                                setup_ok=_setup_ok(names))
+                            if res.message:
+                                out("\n\n" + res.message)
                     rejected_revisions = set()
+                    repair_round = 0
                     while failure is None and flowrun.claim_planning_repair(res, rejected_revisions):
-                        out("\n\nGeoForge is returning the validation errors to the agent. "
+                        repair_round += 1
+                        out(f"\n\nGeoForge is returning the validation errors to the agent "
+                            f"(plan repair round {repair_round}). "
                             "Still planning only; nothing has been approved or run.\n\n")
                         repair_turn = self._chat_with_models(
                             names, want, history + "\nUSER: " + agent_text,
@@ -3389,12 +3754,62 @@ verification are different states; never claim this test verified the KI."""
             pname = _avail0[0].name if _avail0 else ""
         gated = flow_pre is not None and flow_pre.gated
         auto_turn = None
+        question_handoff = ""
+        database_mode = settings.database_access_mode()
         if gated:
             try:
-                auto_turn = flowrun.auto_turn(project, kind, pname)
+                auto_turn = flowrun.auto_turn(
+                    project, kind, pname,
+                    database_access_mode=database_mode)
             except Exception as e:  # noqa: BLE001 — FlowDenied or a flow failure: say so, run nothing
                 out(f"[GeoForge: {e}]")
                 return
+            if kind == "cli" and auto_turn.wrappers.get("request_user_action"):
+                question_handoff = (
+                    "\n[QUESTION HANDOFF] To ask the next unresolved intake question, run "
+                    f"`{auto_turn.wrappers['request_user_action']} '<JSON>'` from this chat project. "
+                    "JSON fields: kind='choice', title, message, options (id, label, description, "
+                    "response), allow_note=true. Ask ONE question, offer an evidence-based default "
+                    "when available, then stop and wait. A question in prose alone creates no "
+                    "answer card. This command cannot approve a plan or grant permissions.\n")
+            if database_mode == "direct" and kind == "api":
+                intake_database_rules = (
+                    "[GEOFORGE DATABASE — READ-ONLY INTAKE SEARCH]\n"
+                    "GeoForge Desktop provides a configured database query interface through the "
+                    "search_catalogue tool (describe_dataset and a few estimate_clip calls are allowed "
+                    "too). Use it when real catalogue availability "
+                    "could change the KI choice, study period, data choice, or the one material "
+                    "question you ask. Report exact dataset ids and metadata returned by the "
+                    "tool. The token remains inside GeoForge Desktop. Search only: do not "
+                    "download during intake. Datasets with delivery 'manual' are available too: "
+                    "after plan approval GeoForge hands the download to the user; never call them "
+                    "unavailable or a dead end.\n")
+            elif database_mode == "direct" and auto_turn.wrappers.get("obs_search"):
+                intake_database_rules = (
+                    "[GEOFORGE DATABASE — READ-ONLY INTAKE SEARCH]\n"
+                    "GeoForge Desktop provides a configured database query interface through this exact "
+                    f"Desktop command: `{auto_turn.wrappers['obs_search']} <keywords>` "
+                    "(optional --bbox minlon,minlat,maxlon,maxlat --start YYYY-MM-DD --end YYYY-MM-DD "
+                    "--variable name --limit N). Use it when real catalogue availability could "
+                    "change the KI choice, study period, data choice, or the one material "
+                    "question you ask. Report exact dataset ids and returned metadata. Do not "
+                    "hunt for an MCP connector, Python package, cache, or private server path; "
+                    "do not download during intake. Datasets with delivery 'manual' are available "
+                    "too: after plan approval GeoForge hands the download to the user; never call "
+                    "them unavailable or a dead end.\n")
+            elif database_mode == "off":
+                intake_database_rules = (
+                    "[GEOFORGE DATABASE: DISABLED]\n"
+                    "The user disabled database access. Do not search for a connector or infer "
+                    "that catalogue records exist.\n")
+            else:
+                intake_database_rules = (
+                    "[GEOFORGE DATABASE: CACHED MODE]\n"
+                    "Live catalogue search is not available during intake. Do not hunt for a "
+                    "connector; the host will provide its cached catalogue during planning.\n")
+            if database_mode != "off":
+                intake_database_rules += obs_access.DATA_DISCOVERY_RULES
+            intake_database_rules += flowrun.database_hint_for(task, database_mode)
             intake_rules = (
                 "[TASK UNDERSTANDING — NO EXECUTION]\n"
                 "The user's message is a scientific goal, not a command-line model selector. "
@@ -3404,7 +3819,8 @@ verification are different states; never claim this test verified the KI."""
                 "the study area, time period, physical process, requested outputs and scenario. "
                 "Ask only a question whose answer would materially change the model, data or "
                 "experiment. If such a fact is missing, summarize what you understood and ask that "
-                "question now. Do not download, prepare inputs, install, plan or run anything.\n"
+                "question now. A read-only GeoForge Database search described below is allowed; "
+                "do not download, prepare inputs, install, plan or run anything.\n"
                 "For a direct API call, use report_project_progress with selected_kis and an intake "
                 "object. For a CLI response, end with one invisible marker exactly like this: "
                 "<!-- GEOFORGE_INTAKE {\"selected_kis\":[\"KI name\"],"
@@ -3417,28 +3833,34 @@ verification are different states; never claim this test verified the KI."""
             )
         else:
             intake_rules = ""
+            intake_database_rules = ""
         local_status = {ki.name: self._status_for(ki) for ki in self.catalog}
         project_rules = SESSION_PROJECT_RULES.format(project=project)
         run_rules = projectrun.prompt_block(project)
         # Auto-KI is allowed to remember the model selected by the agent's
-        # truthful project-progress report. On later turns, materialise one
-        # verified selected KI so the direct API and calibration tool operate
+        # truthful project-progress report. On later turns, materialise the
+        # verified selected KIs together so the direct API/calibration tools operate
         # on the real session KI instead of a synthetic catalogue root.
         active_kis = []
         active_cfg = None
+        verified_kis = []
         for name in projectrun.load(project).get("selected_kis") or []:
             try:
                 selected = self._ki(name)
             except KeyError:
                 continue
             if self._status_for(selected).get("can_run"):
-                try:
-                    selected, selected_cfg = self._session_workspace(project, selected)
-                    if active_cfg is None:
-                        active_cfg = selected_cfg
-                except Exception:
-                    pass
+                verified_kis.append(selected)
             active_kis.append(selected)
+        try:
+            materialized = self._session_workspaces(project, verified_kis)
+        except Exception as e:
+            out(f"[could not prepare selected KI workspaces: {e}]")
+            return
+        resolved_by_name = {ki.name: (ki, cfg) for ki, cfg in materialized}
+        active_kis = [resolved_by_name.get(ki.name, (ki, None))[0] for ki in active_kis]
+        if len(active_kis) == 1 and active_kis[0].name in resolved_by_name:
+            active_cfg = resolved_by_name[active_kis[0].name][1]
         calibration_rules = calibration.prompt_block(project, active_kis)
         skill_rules = skilllib.prompt_block(skill_names)
         skill_roots = [str(root) for root in skilllib.roots() if root.is_dir()]
@@ -3455,7 +3877,8 @@ verification are different states; never claim this test verified the KI."""
             # script.  A provider receiving contradictory contracts will often skip task
             # understanding and behave like the screenshot's model-name parser.
             system = (catalogue_rules + "\n\n" + project_rules + "\n\n" + run_rules +
-                      "\n\n" + intake_rules + "\n\n" + RESPONSE_PRESENTATION_RULES +
+                      "\n\n" + intake_rules + "\n\n" + intake_database_rules + question_handoff +
+                      "\n\n" + RESPONSE_PRESENTATION_RULES +
                       "\n\n" + language_rules)
             full = (system + f"\nmodels_root: {self.catalog.models_dir}"
                     + "\n\n[TASK]\n" + task)
@@ -3494,7 +3917,8 @@ verification are different states; never claim this test verified the KI."""
                 api.run(prov, ki, cfg, system, bare_task or task,
                         model=llm, history=prior,
                         project_mode=True,
-                        flow=(auto_turn.session if auto_turn is not None else None)),
+                        flow=(auto_turn.session if auto_turn is not None else None),
+                        handle=(runtime_events or {}).get("_handle")),
                 out,
             )
             return
@@ -3535,9 +3959,12 @@ verification are different states; never claim this test verified the KI."""
                        session=session, cli_state=cli_state,
                        extra_dirs=[str(self.catalog.models_dir), *skill_roots,
                                    *skill_dirs,
-                                   *([str(framework)] if framework else [])],
+                                   *([str(framework)] if framework else []),
+                                   *flowrun.wrapper_access_roots(
+                                       auto_turn.wrappers if auto_turn is not None else {})],
                        cfg=cfg, pol=pol, model=llm,
                        runtime_events=runtime_events,
+                       extra_env=self._agent_runtime_env(project),
                        flow_policy=(auto_turn.policy if auto_turn is not None else None))
 
     def _chat_with_models(self, names, want, task, out, project: Path, llm=None,
@@ -3590,7 +4017,11 @@ verification are different states; never claim this test verified the KI."""
                 resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
         else:
             wd = project
-            resolved_with_cfg = [self._session_workspace(project, k) for k in kis]
+            try:
+                resolved_with_cfg = self._session_workspaces(project, kis)
+            except Exception as e:
+                out(f"[could not prepare selected KI workspaces: {e}]")
+                return
             resolved = [item[0] for item in resolved_with_cfg]
             cfg = resolved_with_cfg[0][1]
         project_rules = SESSION_PROJECT_RULES.format(project=project)
@@ -3617,12 +4048,25 @@ verification are different states; never claim this test verified the KI."""
         flow_turn = None
         task_extra = ""
         execute_contract = True
+        database_mode = settings.database_access_mode()
         if flow_pre is not None and flow_pre.gated and not needs_setup:
             flow_turn = flowrun.turn(project, resolved, cfg, kind, pname, self.repo_root,
-                                     bare_task or task, flow_pre.replan_reason)
+                                     bare_task or task, flow_pre.replan_reason,
+                                     database_access_mode=database_mode)
+            if flow_turn is None and flowrun.current_state(project) in ("ACQUIRING", "BLOCKED"):
+                # data acquisition is host work; no agent turn until it is complete
+                from . import acquire
+                out(flowrun._acquisition_message(acquire.status(project)))
+                return None
             if flow_turn is not None:
                 execute_contract = flow_turn.execute
                 task_extra = "\n\n" + flow_turn.extra_prompt
+                if flow_turn.kind == "planning" and database_mode == "snapshot":
+                    # Snapshot mode is the explicit offline/cached alternative to the live
+                    # Desktop-owned query adapter. A failed refresh is materialized so the
+                    # Agent must report the outage rather than inventing availability.
+                    database_snapshot = obs_access.prepare_catalogue_snapshot(project)
+                    task_extra += "\n\n" + obs_access.planning_snapshot_prompt(database_snapshot)
                 if setup_deferred:
                     task_extra += ("\n\n[SOFTWARE NOT VERIFIED YET] This KI's software is not installed/"
                                    "verified on this machine. Plan anyway; GeoForge runs the setup after "
@@ -3635,12 +4079,15 @@ verification are different states; never claim this test verified the KI."""
                     session_rules = (
                         f"[PLANNING PROJECT] Inspect existing files under {project}. "
                         "No input preparation, downloads, installation, preflight execution or model runs. "
-                        "Write only the TWO draft paths specified in PLAN HANDOFF. "
+                        "Write only the TWO draft paths specified in PLAN HANDOFF, plus the exact "
+                        "QUESTION FALLBACK path if that fallback is provided for this turn. "
                         "Do not write setup-request.json or project-agent-status.json; "
                         "GeoForge handles validation, progress and the approval card.\n\n" +
                         software_status_rules + "\n\n" + language_rules + "\n\n" + RESPONSE_PRESENTATION_RULES)
         elif flow_pre is not None and flow_pre.gated and needs_setup:
-            flow_turn = flowrun.setup_turn(project, resolved, cfg, kind, pname)
+            flow_turn = flowrun.setup_turn(
+                project, resolved, cfg, kind, pname,
+                database_access_mode=database_mode)
         if kind == "api":
             prov = api.PROVIDERS.get(pname)
             if prov is None:
@@ -3681,7 +4128,8 @@ verification are different states; never claim this test verified the KI."""
                     # cannot publish the ensuing run, provenance, or plot to
                     # the session that requested it.
                     project_mode=True,
-                    flow=(flow_turn.session if flow_turn is not None else None)),
+                    flow=(flow_turn.session if flow_turn is not None else None),
+                    handle=(runtime_events or {}).get("_handle")),
                 out,
             )
             if needs_setup:
@@ -3712,6 +4160,11 @@ verification are different states; never claim this test verified the KI."""
         grants = ([str(k.root) for k in resolved] +
                   [str(project), *skill_roots, *skill_dirs] +
                   paths.bound_prefixes(cfg))
+        if flow_turn is not None:
+            # Allow only the tiny Desktop-owned launcher used by receipt and
+            # live database adapters. This makes direct DB search callable in
+            # Kimi scoped mode without opening ~/.kiss or the user's home.
+            grants.extend(flowrun.wrapper_access_roots(flow_turn.wrappers))
         framework = calibration.framework_root()
         if framework:
             grants.append(str(framework))
@@ -3793,6 +4246,7 @@ verification are different states; never claim this test verified the KI."""
                        session=session, cli_state=cli_state,
                        extra_dirs=grants, cfg=cfg, ki_root=ki.root,
                        pol=pol, model=llm, runtime_events=runtime_events,
+                       extra_env=self._agent_runtime_env(project),
                        flow_policy=flow_policy)
         if flow_turn is not None:
             flow_turn.provider_succeeded = bool(completed and completed.get("returncode") == 0)
@@ -3973,7 +4427,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
     else:
-        s, binary = install.acquire(man, prefix, cfg.python, env=network_env)
+        s, binary = install.acquire(man, prefix, cfg.python, env=network_env, ki=ki)
     result.binary = binary
     for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
         emit(f"      {note}\n")
@@ -4033,6 +4487,16 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
              "diagnostics.\n")
 
 
+class GeoForgeHTTPServer(ThreadingHTTPServer):
+    """Bind without reverse DNS, which can stall offline/proxied Macs."""
+
+    def server_bind(self):
+        TCPServer.server_bind(self)
+        # HTTPServer's default calls socket.getfqdn(). The local UI uses its
+        # bound numeric address; DNS is neither needed nor a readiness gate.
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
           workroot: Path | None = None, host: str = "127.0.0.1",
           auto_update: bool = False) -> int:
@@ -4061,6 +4525,8 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
     Handler.workroot = Path(workroot or Path.home() / "kiss").expanduser()
     Handler.workroot.mkdir(parents=True, exist_ok=True)
     Handler.csrf_token = secrets.token_urlsafe(32)
+    Handler.agent_database_token = secrets.token_urlsafe(32)
+    Handler.agent_question_secret = secrets.token_bytes(32)
 
     if auto_update:
         def activate(snapshot: Path) -> None:
@@ -4079,8 +4545,13 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
     else:
         Handler.ki_update_manager = None
 
-    srv = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://127.0.0.1:{port}/"
+    srv = GeoForgeHTTPServer((host, port), Handler)
+    actual_port = int(srv.server_port)
+    Handler.agent_database_url = (
+        f"http://127.0.0.1:{actual_port}/api/agent/obs/catalogue")
+    Handler.agent_flow_url = (
+        f"http://127.0.0.1:{actual_port}/api/agent/flow-command")
+    url = f"http://127.0.0.1:{actual_port}/"
     if host not in ("127.0.0.1", "localhost"):
         # The GUI has no authentication: whoever reaches this port can install
         # models and drive an agent with the server user's rights. Say so at
@@ -4097,6 +4568,18 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
     print(f"  {url}\n  workdir root: {Handler.workroot}\nCtrl-C to stop.")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+
+    def _catalogue_refresh_loop() -> None:
+        # Keep one app-level copy of the GeoForge Database catalogue current.
+        # A missing token or an unreachable server is recorded in the copy,
+        # never raised here.
+        while True:
+            try:
+                obs_access.refresh_catalogue()
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(obs_access.CATALOGUE_STORE_TTL)
+    threading.Thread(target=_catalogue_refresh_loop, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -29,6 +29,8 @@ import shutil
 import subprocess
 import sys
 import tomllib
+
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -77,6 +79,19 @@ MISSING_RUNTIME = (
 def _runtime_gap(out: str) -> str:
     """Name the missing runtime a probe just reported, if it reported one."""
     low = out.lower()
+    # Official HYPE 5.35.0 treats the first unknown argument as the simulation
+    # directory (data.f90:11113), then appends info.txt (data.f90:11431).
+    # Its --version probe therefore reaches a missing case configuration after
+    # printing the real model banner. Do not exempt arbitrary missing .txt files.
+    if re.search(r"(?m)^\s*hype version 5\.35\.0\s*$", low):
+        low = re.sub(
+            r"(?m)^fortran runtime error: cannot open file '--versioninfo\.txt': no such file or directory\s*$",
+            "", low)
+    # A Fortran namelist is project input, not an interpreter or shared library.
+    # Strip only this precise runtime diagnostic; retain every other error line.
+    low = re.sub(
+        r"(?m)^fortran runtime error: cannot open file '[^'\n]*\.(?:nam|nml)': no such file or directory\s*$",
+        "", low)
     for needle, why in MISSING_RUNTIME:
         if needle in low:
             return why
@@ -129,6 +144,15 @@ class Verdict:
     needs_binary: bool = True
     detail: str = ""
     python: str = ""
+    probe_command: list[str] = field(default_factory=list)
+    probe_output: str = ""
+    probe_returncode: int | None = None
+    probe_timed_out: bool = False
+    probe_runtime_assets: list[dict] = field(default_factory=list)
+    probe_created_paths: list[str] = field(default_factory=list)
+    implementation_id: str = ""
+    installation_scope: str = ""
+    official_upstream_verified: bool | None = None
 
     @property
     def usable(self) -> bool:
@@ -174,7 +198,13 @@ class Verdict:
                 "linked": self.linked, "responds": self.responds,
                 "kind": self.kind, "missing": self.missing,
                 "detail": self.detail, "python": self.python,
-                "summary": self.summary()}
+                "summary": self.summary(), "probe_command": self.probe_command,
+                "probe_output": self.probe_output, "probe_returncode": self.probe_returncode,
+                "probe_timed_out": self.probe_timed_out,
+                "probe_created_paths": self.probe_created_paths,
+                "implementation_id": self.implementation_id,
+                "installation_scope": self.installation_scope,
+                "official_upstream_verified": self.official_upstream_verified}
 
 
 # ---------------------------------------------------------------- locating
@@ -296,128 +326,103 @@ def declared_dirs(ki) -> list[str]:
 
 
 def declared_imports(ki) -> list[str]:
-    """Modules the KI's preflight requires, from its own ``check_import`` calls.
-
-    125 of the 127 KIs declare imports and 56 declare no executable at all: for
-    a model shipped as a Python package, importing it *is* running it. Judging
-    those on a binary they never claimed to have would paint every one of them
-    red while they work perfectly.
-    """
+    """Read literal import contracts, including simple loops, without running preflight."""
     pre = getattr(ki, "preflight", None)
     if not pre or not Path(pre).is_file():
         return []
-    text = Path(pre).read_text(encoding="utf-8", errors="replace")
-    seen, out = set(), []
-    # Contract preflights are not all generated from the same template.  Some
-    # take ``checks`` or ``python_path`` before ``module``; some call the helper
-    # ``check_python_import``/``check_import_with_python``.  Read the helper's
-    # own signature so labels and interpreter paths are never mistaken for
-    # module names.
     try:
-        tree = ast.parse(text)
+        tree = ast.parse(Path(pre).read_text(encoding="utf-8", errors="replace"))
     except SyntaxError:
-        return out
-    module_indexes: dict[str, int] = {}
-    critical_indexes: dict[str, int] = {}
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if "import" not in node.name:
-            continue
-        params = [arg.arg for arg in node.args.args]
-        if "module" in params:
-            module_indexes[node.name] = params.index("module")
-            if "critical" in params:
-                critical_indexes[node.name] = params.index("critical")
-    constants: dict[str, str] = {}
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            value = _static_path(node.value, constants)
-            if value is not None:
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        constants[target.id] = value
-            # Some hand-written preflights keep required imports in a named
-            # module-level list and loop over it inside a custom checker rather
-            # than calling a conventional check_import helper. That list is a
-            # deterministic declaration too (LISFLOOD is the real case).
-            target_names = [target.id for target in node.targets
-                            if isinstance(target, ast.Name)]
-            declares_modules = any(
-                "IMPORT" in name.upper() and "MODULE" in name.upper()
-                for name in target_names
-            )
-            if declares_modules and isinstance(node.value, (ast.List, ast.Tuple)):
-                for item in node.value.elts:
-                    module = item.value if isinstance(item, ast.Constant) else None
-                    if (isinstance(module, str) and
-                            re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module) and
-                            module not in seen):
-                        seen.add(module)
-                        out.append(module)
+        return []
+    signatures = {"check_import": (0, None)}
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        name = (node.func.id if isinstance(node.func, ast.Name) else
-                node.func.attr if isinstance(node.func, ast.Attribute) else "")
-        index = module_indexes.get(name)
-        if index is None:
-            continue
-        critical = next((kw.value for kw in node.keywords
-                         if kw.arg == "critical"), None)
-        critical_index = critical_indexes.get(name)
-        if (critical is None and critical_index is not None and
-                len(node.args) > critical_index):
-            critical = node.args[critical_index]
-        if isinstance(critical, ast.Constant) and critical.value is False:
-            continue
-        keyword = next((kw.value for kw in node.keywords if kw.arg == "module"), None)
-        value_node = keyword if keyword is not None else (
-            node.args[index] if len(node.args) > index else None)
-        module = _static_path(value_node, constants) if value_node is not None else None
-        if module and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
-            if module not in seen:
-                seen.add(module)
-                out.append(module)
-    # Resolve the common ``for module in ('numpy', ...): check_import(...,
-    # module)`` form.  Only loops whose body calls a recognised import helper
-    # are considered, so unrelated lists of filenames or labels stay out.
-    for loop in (n for n in ast.walk(tree) if isinstance(n, ast.For)):
-        if not isinstance(loop.target, ast.Name):
-            continue
-        values = loop.iter.elts if isinstance(loop.iter, (ast.Tuple, ast.List)) else []
-        modules = [v.value for v in values
-                   if isinstance(v, ast.Constant) and isinstance(v.value, str)]
-        if len(modules) != len(values):
-            continue
-        uses_module = False
-        for call in (n for stmt in loop.body for n in ast.walk(stmt)
-                     if isinstance(n, ast.Call)):
-            name = (call.func.id if isinstance(call.func, ast.Name) else
-                    call.func.attr if isinstance(call.func, ast.Attribute) else "")
-            index = module_indexes.get(name)
-            if index is not None and len(call.args) > index:
-                critical = next((kw.value for kw in call.keywords
-                                 if kw.arg == "critical"), None)
-                critical_index = critical_indexes.get(name)
-                if (critical is None and critical_index is not None and
-                        len(call.args) > critical_index):
-                    critical = call.args[critical_index]
-                if isinstance(critical, ast.Constant) and critical.value is False:
-                    continue
-                uses_module |= (isinstance(call.args[index], ast.Name) and
-                                call.args[index].id == loop.target.id)
-        if uses_module:
-            for module in modules:
-                if (module not in seen and
-                        re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module)):
-                    seen.add(module)
-                    out.append(module)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and "import" in node.name:
+            params = [arg.arg for arg in node.args.args if arg.arg not in {"self", "cls"}]
+            if "module" in params:
+                signatures[node.name] = (params.index("module"),
+                                         params.index("critical") if "critical" in params else None)
+    seen, out = set(), []
+    # Some KIs declare their mandatory runtime imports as a module-level list
+    # and check them through subprocess helpers rather than check_import calls.
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and any(
+                isinstance(target, ast.Name) and "IMPORT" in target.id and "MODULE" in target.id
+                for target in statement.targets):
+            try:
+                modules = ast.literal_eval(statement.value)
+            except (ValueError, TypeError, SyntaxError):
+                continue
+            if isinstance(modules, (list, tuple)):
+                for mod in modules:
+                    if isinstance(mod, str) and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", mod) and mod not in seen:
+                        seen.add(mod)
+                        out.append(mod)
+
+    def literal(node, env):
+        if isinstance(node, ast.Name):
+            return env.get(node.id)
+        try:
+            return ast.literal_eval(node)
+        except (ValueError, TypeError, SyntaxError):
+            return None
+
+    def bind(target, value, env):
+        if isinstance(target, ast.Name):
+            env[target.id] = value
+        elif isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (tuple, list)):
+            if len(target.elts) == len(value):
+                for child, item in zip(target.elts, value):
+                    bind(child, item, env)
+
+    def scan(node, env):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            local = dict(env)
+            for arg in node.args.args:
+                local.pop(arg.arg, None)
+            for statement in node.body:
+                scan(statement, local)
+            return
+        if isinstance(node, ast.Assign):
+            value = literal(node.value, env)
+            for target in node.targets:
+                bind(target, value, env)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            bind(node.target, literal(node.value, env), env)
+        elif isinstance(node, ast.For):
+            values = literal(node.iter, env)
+            if isinstance(values, (list, tuple)):
+                for value in values:
+                    local = dict(env)
+                    bind(node.target, value, local)
+                    for statement in node.body:
+                        scan(statement, local)
+                for statement in node.orelse:
+                    scan(statement, dict(env))
+                return
+        elif isinstance(node, ast.Call) and (getattr(node.func, "id", None) or getattr(node.func, "attr", None)) in signatures:
+            name = getattr(node.func, "id", None) or node.func.attr
+            argument_index, critical_index = signatures[name]
+            critical = next((kw.value for kw in node.keywords if kw.arg == "critical"), None)
+            if critical is None and critical_index is not None and len(node.args) > critical_index:
+                critical = node.args[critical_index]
+            if critical is not None and literal(critical, env) is False:
+                return
+            argument = next((kw.value for kw in node.keywords if kw.arg == "module"), None)
+            if argument is None and len(node.args) > argument_index:
+                argument = node.args[argument_index]
+            mod = literal(argument, env)
+            if isinstance(mod, str) and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", mod) and mod not in seen:
+                seen.add(mod)
+                out.append(mod)
+        for child in ast.iter_child_nodes(node):
+            scan(child, env)
+
+    scan(tree, {})
     return out
 
-
-def missing_imports(mods: list[str], python: str, cwd: Path | None = None) -> list[str]:
-    """Which of these modules this interpreter cannot find. One probe, not N."""
+def missing_imports(mods: list[str], python: str, cwd: Path | None = None,
+                    env: dict[str, str] | None = None) -> list[str]:
+    """Import the declared modules; discovery alone does not prove they load."""
     if not mods:
         return []
     # find_spec imports parent packages, and packages print things: pysteps
@@ -430,18 +435,21 @@ def missing_imports(mods: list[str], python: str, cwd: Path | None = None) -> li
         common = cwd.parent / "ki_tools_common"
         if common.is_dir():
             local_paths.append(str(common))
-    probe = ("import sys,importlib.util as u\n"
+    probe = ("import sys,importlib\n"
              "sys.path[:0] = %r\n"
              "for m in %r:\n"
              "    try:\n"
-             "        ok = u.find_spec(m) is not None\n"
+             "        importlib.import_module(m)\n"
              "    except Exception:\n"
-             "        ok = False\n"
-             "    if not ok:\n"
-             "        print('%s' + m)" % (local_paths, mods, _MARK))
+             "        print('%s' + m)\n"
+             "print('__GEOFORGE_IMPORT_PROBE_DONE__')\n" % (local_paths, mods, _MARK))
+    env = dict(os.environ if env is None else env)
+    env.setdefault("MPLBACKEND", "Agg")
+    env.setdefault("SDL_VIDEODRIVER", "dummy")
+    env.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
     try:
         from .paths import with_python_runtime
-        env = with_python_runtime(python)
+        env = with_python_runtime(python, env)
         # Import probes are non-interactive. Packages such as SimFire import
         # pygame/matplotlib at module scope and otherwise fail on a perfectly
         # valid headless desktop/server session before model code is reached.
@@ -451,11 +459,11 @@ def missing_imports(mods: list[str], python: str, cwd: Path | None = None) -> li
         r = subprocess.run([python, "-c", probe], capture_output=True, text=True,
                            timeout=180, cwd=str(cwd) if cwd else None, env=env)
     except (OSError, subprocess.TimeoutExpired):
-        # An interpreter that cannot start has not proved any import. Returning
-        # an empty list here made a broken recorded python path look perfect.
+        return list(mods)
+    if r.returncode or "__GEOFORGE_IMPORT_PROBE_DONE__" not in r.stdout.splitlines():
         return list(mods)
     return [ln.split(_MARK, 1)[1].strip() for ln in r.stdout.splitlines()
-            if _MARK in ln]
+            if ln.startswith(_MARK)]
 
 
 def _package_module(man) -> str:
@@ -531,10 +539,12 @@ def select_python(cfg, configured: str, modules: list[str], cwd: Path | None = N
     so the final error names its *actual remaining dependencies* instead of
     falling back to a system Python that lacks the model package itself.
     """
+    from .paths import with_ki_tools_common
+    env = with_ki_tools_common(cfg) if cfg is not None else None
     best = configured
     best_missing = list(modules)
     for candidate in _python_candidates(cfg, configured):
-        missing = missing_imports(modules, candidate, cwd)
+        missing = missing_imports(modules, candidate, cwd, env=env)
         if not modules or not missing:
             return candidate
         if len(missing) < len(best_missing):
@@ -548,6 +558,10 @@ def find_binary(ki, man=None, cfg=None, harvested: dict | None = None) -> Path |
     lang = str((getattr(ki, "meta", None) or {}).get("language") or "").lower()
     if man is not None and getattr(man, "acquire", None) and getattr(man.acquire, "produces", None) and cfg is not None:
         cands.append(cfg.roles["binaries"] / (man.install_dir or ki.name) / man.acquire.produces)
+        # An explicit native product is authoritative even before it exists.
+        # Falling back to upstream setup tooling can falsely certify a failed build.
+        if str(getattr(man, "binary_type", "")).strip().lower() in {"mach-o", "macho", "elf", "pe"}:
+            return cands[0]
     rel = (harvested or {}).get(ki.name)
     if rel and cfg is not None:
         cands.append(cfg.roles["binaries"] / ki.name / rel)
@@ -585,16 +599,9 @@ def find_binary(ki, man=None, cfg=None, harvested: dict | None = None) -> Path |
                 native.append(candidate)
     cands = native
 
-    if lang in COMPILED:
-        interpreter_names = {
-            "python", "python3", "python.exe", "python3.exe",
-            "rscript", "rscript.exe",
-        }
-        model_candidates = [c for c in cands
-                            if c.name.lower() not in interpreter_names]
-        if model_candidates:
-            cands = model_candidates
-
+    # Interpreter startup does not establish a model installation in any language.
+    cands = [c for c in cands if not re.fullmatch(
+        r"(?:python(?:\d+(?:\.\d+)*)?|rscript|r|julia(?:-?\d+(?:\.\d+)*)?|java|node|nodejs|octave(?:-cli)?)(?:\.exe)?", c.name.lower())]
     for c in cands:
         if c.is_file():
             return c
@@ -673,6 +680,11 @@ def _interpreter(p: Path, python: str | None = None) -> list[str] | None:
             if parts[0].endswith("env") and len(parts) > 1:
                 parts = parts[1:]
             exe = shutil.which(parts[0]) or (parts[0] if Path(parts[0]).exists() else None)
+            if python and re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", Path(parts[0]).name):
+                # pip console scripts often have no .py suffix. Keep the
+                # selected workspace environment even with a stale shebang.
+                selected = shutil.which(python) or (python if Path(python).is_file() else None)
+                return [selected] + parts[1:] if selected else None
             if exe and not (python and "python" in Path(exe).name):
                 return [exe] + parts[1:]
     argv = INTERPRETERS.get(p.suffix)
@@ -742,6 +754,29 @@ def _probe_julia_project(ki, cfg, timeout: int) -> tuple[bool, str]:
     loaded = ", ".join(packages) if packages else "Julia"
     return True, f"Julia project loads {loaded} via {julia}"
 
+def _ki_script(p: Path, ki) -> bool:
+    """Recognize a KI helper, including a copy relocated as an install product.
+
+    A compiled model's orchestration script can print argparse help without
+    ever loading its engine. That is not evidence that the engine was built.
+    Installed upstream entry points outside the KI remain eligible for probing.
+    """
+    root = getattr(ki, "root", None)
+    if root is None:
+        return False
+    root = Path(root).resolve()
+    if p.resolve().is_relative_to(root):
+        return True
+    try:
+        content = p.read_bytes()
+        for helper in (root / "tools").rglob("*"):
+            if (helper.is_file() and helper.stat().st_size == len(content)
+                    and helper.read_bytes() == content):
+                return True
+    except OSError:
+        pass
+    return False
+
 
 # ---------------------------------------------------------------- linkage
 
@@ -756,7 +791,7 @@ def _missing_libs(p: Path) -> list[str]:
     return [ln.split("=>")[0].strip() for ln in r.stdout.splitlines() if "not found" in ln]
 
 
-def _missing_imports(p: Path, python: str) -> list[str]:
+def _missing_imports(p: Path, python: str, env: dict[str, str] | None = None) -> list[str]:
     """Top-level imports a script needs that this interpreter cannot find.
 
     The script's own directory goes on the path first: models routinely import
@@ -771,28 +806,166 @@ def _missing_imports(p: Path, python: str) -> list[str]:
                    for m in _IMPORT_RE.finditer(src)} - _STDLIB)
     if not mods:
         return []
-    probe = ("import sys,importlib.util as u;sys.path.insert(0,%r);"
-             "print('\\n'.join(m for m in %r if u.find_spec(m) is None))"
-             % (str(p.parent), mods))
-    try:
-        r = subprocess.run([python, "-c", probe], capture_output=True,
-                           text=True, timeout=90, cwd=str(p.parent))
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    return missing_imports(mods, python, p.parent, env=env)
 
 
 # ---------------------------------------------------------------- execution
 
 def _ran(rc: int) -> bool:
-    """Did the process actually execute?
+    """Only a normal process exit can establish a successful startup probe.
 
-    A non-negative code means the program ran and chose it — including codes
-    above 127, which several models use (APSIM exits 131, CAM-chem 233).
-    Python reports a signal death as a *negative* code; that still proves the
-    binary loaded and executed instructions, which is the question here.
+    A signal may be a loader/security rejection or resource kill before main.
+    Models may choose positive nonzero exits when project inputs are absent.
     """
-    return rc is not None
+    return rc is not None and rc >= 0
+
+
+def _check_r_package(v, contract, man, cfg, timeout, env):
+    from . import rpackage
+    v.kind = "R package (native Fortran)"
+    v.needs_binary = True
+    try:
+        c = rpackage.validate(contract)
+        root = Path(cfg.root).resolve()
+        prefix = (root if c.get("library_root", "model") == "workspace" else
+                  rpackage.scoped(Path(cfg.roles["binaries"]) / man.install_dir, root, root))
+        library = rpackage.scoped(prefix / c["library"], root, root)
+        binary = rpackage.scoped(library / c["name"] / c["dll"], root, root)
+        v.binary = str(binary)
+        v.present = binary.is_file()
+        if not v.present:
+            v.detail = f"missing installed R package library: {binary}"
+            return v
+        native = {"Darwin": "macho", "Linux": "elf", "Windows": "pe"}.get(platform.system())
+        v.shaped = _file_kind(binary) == native
+        if not v.shaped:
+            v.detail = "R package DLL is not native to this platform"
+            return v
+        runtime = shutil.which("Rscript")
+        if not runtime:
+            v.detail = "Rscript runtime is unavailable"
+            return v
+        v.probe_command = [runtime, *rpackage.probe_args(library, c)]
+        clean_env = {k: val for k, val in (env or os.environ).items()
+                     if not any(secret in k.upper() for secret in
+                                ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
+        with tempfile.TemporaryDirectory(prefix="kiss-r-package-probe-") as empty:
+            result = subprocess.run(v.probe_command, cwd=empty, env=clean_env,
+                                    stdin=subprocess.DEVNULL, capture_output=True,
+                                    text=True, timeout=min(timeout, 25))
+        v.probe_output = (result.stdout + result.stderr)[-12000:]
+        v.probe_returncode = result.returncode
+        v.linked = v.responds = result.returncode == 0 and rpackage.MARK in result.stdout.splitlines()
+        v.detail = (f"{c['name']} {c['version']} loads its workspace DLL and registered Fortran routine"
+                    if v.responds else "R package native-load/version/symbol verification failed")
+    except subprocess.TimeoutExpired:
+        v.probe_timed_out = True
+        v.detail = "R package import timed out"
+    except (ValueError, KeyError, TypeError, AttributeError, OSError) as e:
+        v.detail = f"invalid/unavailable R package installation: {e}"
+    return v
+
+
+def _check_julia_package(v, contract, cfg, timeout, env):
+    from . import jpackage
+    v.kind = "Julia package"
+    v.needs_binary = True
+    try:
+        c = jpackage.validate(contract)
+        root = Path(cfg.root).resolve()
+        project, depot, runtime = [jpackage.scoped(root / c[k],root,root)
+                                    for k in ("project","depot","runtime")]
+        v.present = (project / "Project.toml").is_file() and runtime.is_file() and depot.is_dir()
+        if not v.present:
+            v.detail = "Julia project, workspace depot or runtime missing"
+            return v
+        v.probe_command = [str(runtime), *jpackage.args(project,depot,c)]
+        clean_env = {k: val for k, val in (env or os.environ).items()
+                     if not any(secret in k.upper() for secret in
+                                ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
+        clean_env.update(jpackage.startup_env(depot))
+        with tempfile.TemporaryDirectory(prefix="kiss-julia-package-probe-") as empty:
+            result = subprocess.run(v.probe_command,cwd=empty,env=clean_env,
+                                    stdin=subprocess.DEVNULL,capture_output=True,
+                                    text=True,timeout=jpackage.IMPORT_TIMEOUT_SECONDS)
+        v.probe_output = (result.stdout+result.stderr)[-12000:]
+        v.probe_returncode = result.returncode
+        lines=result.stdout.splitlines()
+        if result.returncode == 0 and jpackage.MARK in lines:
+            index=lines.index(jpackage.MARK)
+            module=jpackage.scoped(lines[index+1],root,root)
+            if depot not in module.parents or not module.is_file():
+                raise ValueError("Julia module file outside workspace depot or absent")
+            v.binary=str(module)
+            v.shaped=v.linked=v.responds=True
+        v.detail=(f"{c['name']} {c['version']} loads from workspace with verified UUID and bindings"
+                  if v.responds else "Julia package load/version/UUID verification failed")
+    except subprocess.TimeoutExpired:
+        v.probe_timed_out=True
+        v.detail="Julia package import timed out"
+    except (ValueError,KeyError,TypeError,AttributeError,OSError,IndexError) as e:
+        v.detail=f"invalid/unavailable Julia package installation: {e}"
+    return v
+
+
+def _check_octave_package(v,contract,cfg,timeout,env):
+    from . import octpackage
+    v.kind="Octave toolbox (47 MARRMoT classes)"
+    v.needs_binary=True
+    try:
+        c=octpackage.validate(contract); root=Path(cfg.root).resolve()
+        runtime,source,packages=[octpackage.scoped(root/c[k],root,root)
+                                for k in ("runtime","source","package_registry_root")]
+        base=source/"MARRMoT/Models/Model files/MARRMoT_model.m"
+        v.binary=str(base)
+        v.present=runtime.is_file() and base.is_file() and (packages/"package-list").is_file()
+        if not v.present:
+            v.detail="Octave runtime, pinned model source or package registry missing"
+            return v
+        native={"Darwin":"macho","Linux":"elf","Windows":"pe"}.get(platform.system())
+        if _file_kind(runtime)!=native:
+            v.detail="Octave runtime is not a native executable for this platform"
+            return v
+        octpackage.verify_source(source,c,root)
+        clean_env={k:val for k,val in (env or os.environ).items()
+                   if not any(x in k.upper() for x in ("API_KEY","TOKEN","SECRET","PASSWORD","CREDENTIAL"))}
+        clean_env.pop("OCTAVE_PATH",None)
+        clean_env.update(OCTAVE_HOME=str(runtime.parent.parent),
+                         OCTAVE_EXEC_HOME=str(runtime.parent.parent),
+                         OPENBLAS_NUM_THREADS="1",OMP_NUM_THREADS="1")
+        with tempfile.TemporaryDirectory(prefix="kiss-octave-probe-",dir=root) as empty:
+            script=Path(empty)/"load_toolbox.m"; script.write_text(octpackage.PROBE)
+            v.probe_command=[str(runtime),*octpackage.probe_args(script,source,packages,c)]
+            result=subprocess.run(v.probe_command,cwd=empty,env=clean_env,stdin=subprocess.DEVNULL,
+                                  capture_output=True,text=True,timeout=min(timeout,25))
+        v.probe_output=result.stdout[-16000:]+result.stderr[-2000:]
+        v.probe_returncode=result.returncode
+        lines=result.stdout.splitlines()
+        if result.returncode==0 and octpackage.MARK in lines:
+            records=[line.split(" ",2) for line in lines if line.startswith("CLASS_OK ")]
+            if len(records)!=47 or len({x[1] for x in records})!=47:
+                raise ValueError("incomplete/duplicate Octave class receipt")
+            for _,name,path in records:
+                if name not in c["classes"]:
+                    raise ValueError("unexpected Octave model class")
+                actual=octpackage.scoped(path,root,root)
+                expected=(source/"MARRMoT/Models/Model files"/(name+".m")).resolve()
+                if actual!=expected:
+                    raise ValueError("Octave class loaded from wrong source")
+            natives=[line[len("NATIVE_OK "):] for line in lines if line.startswith("NATIVE_OK ")]
+            if len(natives)!=1:
+                raise ValueError("missing native optim module receipt")
+            module=octpackage.scoped(natives[0],root,root)
+            if packages not in module.parents or _file_kind(module)!=native:
+                raise ValueError("optim module is not native or outside workspace package directory")
+            v.shaped=v.linked=v.responds=True
+        v.detail=("47 pinned MARRMoT model classes and native optim module load from workspace; no model execution"
+                  if v.responds else "Octave toolbox/native optim package load verification failed")
+    except subprocess.TimeoutExpired:
+        v.probe_timed_out=True; v.detail="Octave toolbox load timed out"
+    except (ValueError,KeyError,TypeError,AttributeError,OSError,UnicodeError,IndexError) as e:
+        v.detail=f"invalid/unavailable Octave toolbox installation: {e}"
+    return v
 
 
 def check(ki, man=None, cfg=None, harvested: dict | None = None,
@@ -808,14 +981,46 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
     # of, and a missing module explains a binary failure more often than the
     # other way round.
     mods = declared_imports(ki)
+    if getattr(man, "python_script", None) is not None:
+        # These six bundled contracts list importable distribution names.
+        # Their preflight extraction is incomplete (HEC_HMS yields no imports).
+        for dep in man.python_deps:
+            if not isinstance(dep, str) or not re.fullmatch(r"[A-Za-z_]\w*", dep):
+                v.imports_ok = False
+                v.detail = "Invalid dependency module in bundled Python contract"
+                return v
+            if dep not in mods:
+                mods.append(dep)
     package_module = _package_module(man)
     if package_module and package_module not in mods:
         mods.append(package_module)
     py = select_python(cfg, py, mods, getattr(ki, "root", None))
     v.python = py
+    from .paths import with_ki_tools_common
+    probe_env = with_ki_tools_common(cfg) if cfg is not None else None
+    if cfg is not None:
+        from .paths import with_python_runtime
+        probe_env = with_python_runtime(py, probe_env)
     if mods:
-        v.missing = missing_imports(mods, py, getattr(ki, "root", None))
+        v.missing = missing_imports(mods, py, getattr(ki, "root", None), env=probe_env)
         v.imports_ok = not v.missing
+
+    script_contract = getattr(man, "python_script", None)
+    if script_contract is not None:
+        from . import python_script
+        return python_script.check(v, ki, script_contract, cfg, py, probe_env, timeout)
+
+    o_contract = getattr(man, "octave_package", None)
+    if o_contract is not None:
+        return _check_octave_package(v,o_contract,cfg,timeout,probe_env)
+
+    j_contract = getattr(man, "julia_package", None)
+    if j_contract is not None:
+        return _check_julia_package(v, j_contract, cfg, timeout, probe_env)
+
+    r_contract = getattr(man, "r_package", None)
+    if r_contract is not None:
+        return _check_r_package(v, r_contract, man, cfg, timeout, probe_env)
 
     lang = str((getattr(ki, "meta", None) or {}).get("language") or "").lower()
     b = find_binary(ki, man, cfg, harvested)
@@ -824,9 +1029,12 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
     # turning it into <binaries>/<model>/<module> caused a false red after a
     # completely successful install (COSIPY is the real case).
     # A pip-delivered model may wrap a C/Fortran core (SWMM/pyswmm). The
-    # acquisition strategy, not the implementation language, determines that
-    # importing the promised package is the runnable contract.
-    python_package = bool(package_module)
+    # A hybrid manifest must explicitly promise the Python-delivered engine.
+    # A plain Python dependency cannot stand in for a compiled model binary.
+    manifest_type = str(getattr(man, "binary_type", "") or "").lower()
+    python_package = bool(package_module) and (
+        lang == "python" or (not lang and "python" in manifest_type)
+        or ("python" in manifest_type and "+" in manifest_type))
     v.needs_binary = (not python_package and
                       (b is not None or bool(declared(ki)) or lang in COMPILED))
 
@@ -893,6 +1101,17 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
         v.kind = "julia package"
         return v
 
+    if v.kind == "script" and str(getattr(man, "binary_type", "")).strip().lower() in {"mach-o", "macho", "elf", "pe"}:
+        v.detail = "The manifest requires a native executable; a setup script cannot prove that product is installed."
+        return v
+
+    if v.kind == "script" and lang in COMPILED and _ki_script(b, ki):
+        v.detail = (f"a {lang} model requires its installed engine; {b} is a KI "
+                    "helper script, whose help output does not verify the engine. "
+                    "Declare the actual upstream executable or verify an explicitly "
+                    "supported installed package entry point.")
+        return v
+
     argv0: list[str]
     native = {"Linux": "elf", "Darwin": "macho", "Windows": "pe"}.get(platform.system(), "elf")
     if v.kind == "script":
@@ -933,27 +1152,75 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
     else:
         v.linked = True
         if b.suffix == ".py":
-            scan = _missing_imports(b, py)
+            scan = _missing_imports(b, py, env=probe_env)
 
     rc = None
-    for flag in PROBE_FLAGS:
+    strict_version = {"PISM": ("-version", r"(?m)^PISM \(2\.3\.0(?:-|\))"),
+                      "BIOME_BGC": ("-V", r"(?m)^BiomeBGC version 4\.2 \("),
+                      "PHREEQC": ("--version", r"\bPHREEQC-3\.8\.6\b")}.get(v.model)
+    for flag in ((strict_version[0],) if strict_version else PROBE_FLAGS):
         argv = argv0 + ([flag] if flag else [])
+        v.probe_command = argv
         try:
-            from .paths import with_python_runtime
-            r = subprocess.run(
-                argv, capture_output=True, text=True, timeout=timeout,
-                errors="replace", cwd=str(b.parent), stdin=subprocess.DEVNULL,
-                env=with_python_runtime(py),
-            )
-        except subprocess.TimeoutExpired:
-            # A model that starts solving instead of printing help is running.
-            v.responds = True
-            v.detail = f"ran — still working after {timeout}s ({flag or 'no arguments'})"
+            # Several models ignore help/version flags and read a default namelist.
+            # Do not let an installation probe pick up a bundled scientific case.
+            with tempfile.TemporaryDirectory(prefix="geoforge-startup-") as probe_dir:
+                from .native_probe import stage_runtime_assets
+                contract = getattr(man, "native_probe", None)
+                if contract is not None and v.kind not in ("elf", "macho", "pe"):
+                    raise ValueError("runtime assets require an actual native executable")
+                v.probe_runtime_assets = stage_runtime_assets(
+                    contract, getattr(cfg, "root", Path(probe_dir)), Path(probe_dir), v.model)
+                # PHREEQC's version-only branch must not create model output.
+                # Inspect before TemporaryDirectory cleanup, including on timeout.
+                before_paths = ({p.relative_to(probe_dir).as_posix()
+                                 for p in Path(probe_dir).rglob("*")}
+                                if v.model == "PHREEQC" else set())
+                try:
+                    r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                                       errors="replace", cwd=probe_dir, stdin=subprocess.DEVNULL,
+                                       env=probe_env)
+                finally:
+                    if v.model == "PHREEQC":
+                        v.probe_created_paths = sorted(
+                            {p.relative_to(probe_dir).as_posix()
+                             for p in Path(probe_dir).rglob("*")} - before_paths)
+        except subprocess.TimeoutExpired as exc:
+            v.probe_timed_out = True
+            chunks = [part.decode("utf-8", errors="replace") if isinstance(part, bytes) else (part or "")
+                      for part in (exc.stdout, exc.stderr)]
+            v.probe_output = "\n".join(chunks)[-8000:]
+            # An input-prompt loop (or an unintended calculation) can keep a
+            # process alive indefinitely. Neither establishes startup readiness.
+            v.responds = False
+            v.detail = f"Startup probe timed out after {timeout}s ({flag or 'no arguments'})"
             return v
-        except OSError as e:
+        except (OSError, ValueError) as e:
+            v.linked = False
             v.detail = f"could not execute: {e}"
             return v
         rc, out = r.returncode, (r.stdout + r.stderr).strip()
+        v.probe_returncode = rc
+        v.probe_output = out[-8000:]
+        if strict_version:
+            if v.model == "PHREEQC" and v.probe_created_paths:
+                v.responds = False
+                v.detail = "PHREEQC version probe created unexpected files or directories"
+                return v
+            v.responds = rc == 0 and bool(re.search(strict_version[1], out))
+            v.detail = (v.model + " native version verified" if v.responds
+                        else "Native version probe failed or reported a different model/version")
+            return v
+        from .native_probe import telemac_case_boundary
+        if telemac_case_boundary(v.model, out, rc, v.probe_runtime_assets):
+            v.responds = True
+            v.detail = "TELEMAC2D 9.1 loads its verified dictionary and reaches missing scientific steering T2DCAS"
+            return v
+        from .native_probe import ctsm_case_boundary
+        if v.kind in ("elf", "macho") and cfg is not None and ctsm_case_boundary(v.model, b, cfg.root, out, rc):
+            v.responds = True
+            v.detail = f"Native {v.model} loads its libraries and reaches drv_in case namelist in the SHA-verified CMEPS driver"
+            return v
         gap = _runtime_gap(out) if rc != 0 else ""
         marker = getattr(man, "startup_marker", "") if man else ""
         if (gap == "an interpreter or helper is missing" and

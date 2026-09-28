@@ -1,3 +1,5 @@
+> **macOS installation-only override:** Use `kiss.macos.arm64.yaml` and `docs/install.macos.md`. Adapt the exact Windows manifest source pin, apply the native CLI patch, then build `KISSPATH_BINARIES/TOPMODEL/run_bmi`. Probe `--help` or `--version` in an empty directory; bare execution with case inputs runs a simulation. Do not count crashes or a source checkout as installation.
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

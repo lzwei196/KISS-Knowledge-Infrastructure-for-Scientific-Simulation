@@ -83,7 +83,7 @@ def test_unicode_absolute_claude_paths_and_planning_contract(tmp_path):
     assert policy.claude_path(project) == expected
     assert policy.claude_path(r"C:\Users\User Name\项目") == "//c/Users/User Name/项目"
     pp = policy.for_state(states.State.PLANNING, "claude", project, {})
-    assert "dontAsk" in pp.argv_delta and "Bash(" not in " ".join(pp.argv_delta)
+    assert "dontAsk" not in pp.argv_delta and "dontAsk" in pp.argv_extra and "Bash(" not in " ".join(pp.argv_delta)
     pj, inv = documents()
     pj.update(summary="bad draft", coupling=[None])
     text = contracts.planning_block({}, pj, inv, project, replan_reason="missing input ID")
@@ -121,3 +121,21 @@ def test_duplicate_step_ids_and_bad_paths_are_rejected(tmp_path):
     pj["steps"].append(dict(pj["steps"][0]))
     assert any("unique" in e for e in plan.validate(pj, inv, ["VIC"]))
     assert not is_ki_tool(tmp_path, "bad\x00path.py")
+
+
+def test_declared_model_binary_is_a_tool(tmp_path):
+    from ki_tools_common.flow.tools import is_declared_binary
+    root = tmp_path / "KI"
+    root.mkdir()
+    exe = tmp_path / "binaries" / "vic_classic.exe"
+    exe.parent.mkdir()
+    exe.write_text("#!/bin/sh\necho vic\n")
+    exe.chmod(0o755)
+    assert not is_ki_tool(root, exe)                       # nothing declared yet
+    (root / "knowledge_infrastructure.yaml").write_text(
+        f"model:\n  binary:\n    path: {exe}\n    type: ELF\n")
+    assert is_ki_tool(root, exe) and is_declared_binary(root, exe)
+    other = tmp_path / "binaries" / "other"
+    other.write_text("#!/bin/sh\n")
+    other.chmod(0o755)
+    assert not is_ki_tool(root, other)                     # declared paths only

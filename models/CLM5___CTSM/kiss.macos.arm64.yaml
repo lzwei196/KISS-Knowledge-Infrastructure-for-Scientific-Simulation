@@ -1,0 +1,44 @@
+kiss_manifest_version: 1
+model: CLM5___CTSM
+binary_type: Mach-O
+verified: unverified
+install_dir: CTSM
+acquire:
+  strategy: build
+  repo: https://github.com/ESCOMP/CTSM.git
+  ref: dae706a769a04ff13def0a909930c899a265368a
+  commands:
+  - python3 ../../ki/tools/build_ctsm_native.py .
+  produces: ki-build/cesm.exe
+python_deps:
+- numpy
+- pandas
+- xarray
+- matplotlib
+- netCDF4
+- PyYAML
+system_deps:
+- git
+- cmake
+- make
+- gfortran
+notes: >-
+  Source-audited build candidate, not a verified installed model. Official CTSM
+  ctsm5.4.054 has pinned CIME 6.5.5 and ccs_config_cesm1.0.88, including a Darwin
+  homebrew machine definition. A CIME Python import or create_newcase script is
+  not the CTSM native model. The declared product is an actual compiled CESM case
+  executable with CLM50 satellite-phenology land physics.
+agent_hint: >-
+  Run the trusted named build helper python3 ../../ki/tools/build_ctsm_native.py . from binaries/CTSM. It performs only official source acquisition, case build configuration and compilation, never case execution. CTSM_NATIVE_RUNTIME and CTSM_BUILD_PYTHON name genuine preprovisioned dependencies. Do not call case.setup/case.build directly through the model invocation guard. Do not switch to legacy CESM2.2.2 or accept create_newcase as the model. Read docs/macos_build_only.md. Complete the native case build after acquisition.
+  Source checkout and official native dependencies are authorized software work.
+  Scientific forcing/surface/initial-condition downloads and all case execution
+  remain forbidden. There is no demonstrated dataset requirement for compilation:
+  CIME's --build selection explicitly skips namelist generation. Use the upstream
+  homebrew machine with its Intel-era /usr/local prefixes adapted to /opt/homebrew
+  and all output/data roots inside the workspace. Do not write into HOME. Create a
+  one-task I2000Clm50SpRsGs case, use EXEROOT=<source>/ki-build, and build actual
+  native libraries and cpl target. Provide genuine matching ESMF/NUOPC, MPICH and
+  netCDF development libraries; never replace ESMF with its Python module or mix
+  incompatible compiler/MPI modules. Keep any blocker grounded in actual compiler
+  output. Source-backed configuration edits are permitted; no physics edits or
+  test bypasses. Probe cesm.exe only in an empty directory with bounded runtime.

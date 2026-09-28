@@ -1,0 +1,222 @@
+diff --git a/utils/build/autogen-for-glint-and-glad-in-build-dir b/utils/build/autogen-for-glint-and-glad-in-build-dir
+index 88e456c..5b571c7 100755
+--- a/utils/build/autogen-for-glint-and-glad-in-build-dir
++++ b/utils/build/autogen-for-glint-and-glad-in-build-dir
+@@ -36,14 +36,14 @@ cp $CISM_SOURCE_DIR/libglint/glint_vars.def .
+ cp $CISM_SOURCE_DIR/libglint/glint_mbal_vars.def .
+ cp $CISM_SOURCE_DIR/libglad/glad_vars.def .
+ cp $CISM_SOURCE_DIR/libglad/glad_mbal_vars.def .
+-python2 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glint_vars.def ncdf_template.F90.in
+-python2 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glint_mbal_vars.def ncdf_template.F90.in
+-python2 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glad_vars.def ncdf_template.F90.in
+-python2 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glad_mbal_vars.def ncdf_template.F90.in
++python3 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glint_vars.def ncdf_template.F90.in
++python3 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glint_mbal_vars.def ncdf_template.F90.in
++python3 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glad_vars.def ncdf_template.F90.in
++python3 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glad_mbal_vars.def ncdf_template.F90.in
+ 
+ #echo "  --creating eis_io.F90"
+ #cp $CISM_SOURCE_DIR/example-drivers/eis/src/eis_vars.def .
+-#python2 ../../../utils/build/generate_ncvars.py eis_vars.def ncdf_template.F90.in
++#python3 ../../../utils/build/generate_ncvars.py eis_vars.def ncdf_template.F90.in
+ 
+ echo "  --deleting temporary .def files and template file"
+ rm *.def
+diff --git a/utils/build/autogenerate-in-build-dir b/utils/build/autogenerate-in-build-dir
+index ab55901..e1b770d 100755
+--- a/utils/build/autogenerate-in-build-dir
++++ b/utils/build/autogenerate-in-build-dir
+@@ -33,11 +33,11 @@ cp $CISM_SOURCE_DIR/libglimmer/ncdf_template.F90.in .
+ # Use python scripts
+ echo "  --creating glide_io.F90"
+ cp $CISM_SOURCE_DIR/libglide/glide_vars.def .
+-python2 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glide_vars.def ncdf_template.F90.in
++python3 $CISM_SOURCE_DIR/utils/build/generate_ncvars.py glide_vars.def ncdf_template.F90.in
+ 
+ #echo "  --creating eis_io.F90"
+ #cp $CISM_SOURCE_DIR/example-drivers/eis/src/eis_vars.def .
+-#python2 ../../../utils/build/generate_ncvars.py eis_vars.def ncdf_template.F90.in
++#python3 ../../../utils/build/generate_ncvars.py eis_vars.def ncdf_template.F90.in
+ 
+ echo "  --deleting temporary .def files and template file"
+ rm *.def
+diff --git a/utils/build/generate_ncvars.py b/utils/build/generate_ncvars.py
+index 1b285b3..2e39b0c 100755
+--- a/utils/build/generate_ncvars.py
++++ b/utils/build/generate_ncvars.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python2
++#!/usr/bin/env python3
+ 
+ # Copyright (C) 2005-2018
+ # Glimmer-CISM contributors - see AUTHORS file for list of contributors
+@@ -23,7 +23,7 @@
+ 
+ # python script used to generate source code files given a variable definition file
+ 
+-import ConfigParser, sys, time, string,re, os.path
++import configparser, sys, time, string,re, os.path
+ 
+ NOATTRIB = ['name','dimensions','dimlen','data','factor','load','hot','type','average','coordinates']
+ dimensions = {}
+@@ -40,7 +40,7 @@ def is_dimvar(var):
+     this is assumed to be the case if no time dim is present
+     """
+ 
+-    if len(string.split(var['dimensions'],',')) == 1 and 'dimlen' in var:
++    if len(var['dimensions'].split(',')) == 1 and 'dimlen' in var:
+         return True
+     else:
+         return False
+@@ -68,8 +68,8 @@ class Variables(dict):
+         dict.__init__(self)
+ 
+         # reading variable configuration file
+-        vars = ConfigParser.ConfigParser()
+-        vars.readfp(open(filename))
++        vars = configparser.ConfigParser(strict=False, interpolation=None)
++        vars.read_file(open(filename))
+ 
+         self.__have_avg = False
+ 
+@@ -147,7 +147,7 @@ class PrintVars:
+ 
+         filename: name of file to be processed."""
+         if os.path.basename(filename) != self.canhandle:
+-            raise NotImplementedError, 'Can only handle %s'%self.canhandle
++            raise NotImplementedError('Can only handle %s'%self.canhandle)
+ 
+         self.infile = open(filename,'r')
+         if outname==None:
+@@ -169,7 +169,7 @@ class PrintVars:
+     def print_var(self, var):
+         """Template for writing single variable"""
+ 
+-        raise NotImplementedError, 'You should use one of the derived classes'
++        raise NotImplementedError('You should use one of the derived classes')
+ 
+     def write(self,vars):
+         """Merge file with definitions"""
+@@ -177,10 +177,10 @@ class PrintVars:
+         self.print_warning()
+         for l in self.infile.readlines():
+             for token in self.handletoken:
+-                if string.find(l,token) is not -1:
++                if l.find(token) != -1:
+                     break
+-            if string.find(l,token) is not -1:
+-                for v in vars.keys():
++            if l.find(token) != -1:
++                for v in list(vars.keys()):
+                     self.handletoken[token](vars[v])
+             else:
+                 self.stream.write("%s"%l)
+@@ -244,13 +244,13 @@ class PrintNC_template(PrintVars):
+ 
+         self.print_warning()
+         for l in self.infile.readlines():
+-            for k in module.keys():
++            for k in list(module.keys()):
+                 l = l.replace(k.upper(),module[k])
+             for token in self.handletoken:
+-                if string.find(l,token) is not -1:
++                if l.find(token) != -1:
+                     break
+-            if string.find(l,token) is not -1:
+-                for v in vars.keys():
++            if l.find(token) != -1:
++                for v in list(vars.keys()):
+                     self.handletoken[token](vars[v])
+             elif '!GENVAR_DIMS!' in l:
+                 self.print_dimensions()
+@@ -275,7 +275,7 @@ class PrintNC_template(PrintVars):
+     def print_vardef(self,var):
+         """Write single variable block to stream for ncdf_file."""
+ 
+-        dims = string.split(var['dimensions'],',')
++        dims = var['dimensions'].split(',')
+         dims.reverse()
+         dimstring = dimid(dims[0].strip())
+         for d in dims[1:]:
+@@ -340,7 +340,7 @@ class PrintNC_template(PrintVars):
+     def print_dimensions(self):
+         """Set up dimensions."""
+ 
+-        dims = dimensions.keys()
++        dims = list(dimensions.keys())
+         dims.sort()
+         # generate list of dimension ids
+         for d in dims:
+@@ -361,7 +361,7 @@ class PrintNC_template(PrintVars):
+     def print_checkdims(self):
+         """Produce code for checking dimension sizes"""
+ 
+-        dims = dimensions.keys()
++        dims = list(dimensions.keys())
+         dims.sort()
+         for d in dims:
+             if dimensions[d]!='-1':
+@@ -380,7 +380,7 @@ class PrintNC_template(PrintVars):
+ 
+         # skip variables associated with dimension 
+         if not is_dimvar(var):
+-            dims = string.split(var['dimensions'],',')
++            dims = var['dimensions'].split(',')
+             dims.reverse()
+             for i in range(0,len(dims)):
+                 dims[i] = dims[i].strip()
+@@ -452,7 +452,7 @@ class PrintNC_template(PrintVars):
+ 
+         if 'load' in var:
+             if var['load'].lower() in ['1','true','t']:
+-                dims = string.split(var['dimensions'],',')
++                dims = var['dimensions'].split(',')
+                 dims.reverse()
+                 for i in range(0,len(dims)):
+                     dims[i] = dims[i].strip()
+@@ -535,7 +535,7 @@ class PrintNC_template(PrintVars):
+     def print_var_accessor(self,var):
+         """Write accessor function to stream."""
+ 
+-        dims = string.split(var['dimensions'],',')
++        dims = var['dimensions'].split(',')
+         dimlen = len(dims)-1
+         if dimlen>0:
+             dimstring = ", dimension(:"+",:"*(dimlen-1)+")"
+@@ -616,12 +616,12 @@ class PrintNC_template(PrintVars):
+ def usage():
+     """Short help message."""
+ 
+-    print 'Usage generate_ncvars.py vardef [outfile0.in [,... [,outfileN.in]]]'
+-    print 'generate source code files given a variable definition file'
+-    print ''
+-    print 'vardef: file containing variable definition'
+-    print 'outfile.in: output template to be processed'
+-    print 'print variables if no templates are given'
++    print('Usage generate_ncvars.py vardef [outfile0.in [,... [,outfileN.in]]]')
++    print('generate source code files given a variable definition file')
++    print('')
++    print('vardef: file containing variable definition')
++    print('outfile.in: output template to be processed')
++    print('print variables if no templates are given')
+ 
+ HandleFile={}
+ HandleFile['ncdf_template.F90.in'] = PrintNC_template
+@@ -636,12 +636,12 @@ if __name__ == '__main__':
+     vars = Variables(sys.argv[1])
+ 
+     if len(sys.argv) == 2:
+-        for v in vars.keys():
+-            print v
++        for v in list(vars.keys()):
++            print(v)
+             for o in vars[v]:
+-                print '%s: %s'%(o, vars[v][o])
+-            print ''
+-            print module
++                print('%s: %s'%(o, vars[v][o]))
++            print('')
++            print(module)
+     else:
+         for f in sys.argv[2:]:
+             base_f = os.path.basename(f)

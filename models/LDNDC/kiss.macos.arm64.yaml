@@ -1,0 +1,23 @@
+kiss_manifest_version: 1
+model: LDNDC
+binary_type: Mach-O
+verified: observed
+install_dir: ldndc/ldndc-1.37.mac64
+acquire:
+  strategy: download
+  url: https://ldndc.imk-ifu.kit.edu/ldndc/downloads/public/packages/mac64/ldndc-1.37.mac64.2026-03-03.tar.bz2
+  sha256: 6b0bd740ae1cbecf2c92c412f58466c6f88aa3bb0c71c60c48070e8f214566ce
+  produces: bin/ldndc
+python_deps: [numpy, pandas, rasterio]
+agent_hint: >-
+  Official publicly downloadable LandscapeDNDC1.37 revision12193 is genuine
+  native macOS arm64; no login or contact form is required for this versioned URL.
+  Run tools/install_ldndc_macos.py from the installation workspace for fresh
+  SHA256-verified download and software-only extraction. Preserve bin/, Lresources,
+  LICENSE, revision and ldndc.conf. Do not execute upstream install.sh, which writes
+  HOME; do not extract projects, examples, parameter datasets or dotfiles.
+  Native --version exits0 with LandscapeDNDC 1.37 (revision 12193) before model
+  input loading; only system libraries are linked. Preserve KIT license: crabmeat
+  restrictions differ from the scientific model collection. This is installation
+  scope, not scientific data readiness. Linux paths and HOME udunits requirements
+  in the legacy science preflight do not apply to this native version-only probe.

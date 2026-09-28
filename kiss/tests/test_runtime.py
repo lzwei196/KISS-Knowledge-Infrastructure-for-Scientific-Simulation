@@ -375,6 +375,135 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertGreaterEqual(status["event_silence_seconds"], 94)
         self.assertEqual(status["pid"], 31415)
 
+    def test_live_agent_snapshot_reports_in_process_api_turn_as_running(self):
+        events = {"provider": "api:deepseek"}
+        gui._register_agent_run("status-api-test", events)
+        try:
+            status = gui._agent_run_snapshot("status-api-test")
+            self.assertEqual(status["state"], "running")
+            events["finished_at"] = time.time()
+            self.assertEqual(gui._agent_run_snapshot("status-api-test")["state"], "finished")
+        finally:
+            gui._LIVE_AGENT_RUNS.pop("status-api-test", None)
+
+    def test_streamed_openai_tool_call_deltas_are_reassembled(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"role":"assistant","content":"Let me "}}]}\n',
+            b'data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function",'
+            b'"function":{"name":"run_ki_tool","arguments":"{\\"tool"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"_path\\":1}"}}]},'
+            b'"finish_reason":"tool_calls"}]}\n',
+            b'data: [DONE]\n',
+        ]
+
+        class Response:
+            closed = False
+
+            def __iter__(self):
+                return iter(lines)
+
+            def close(self):
+                Response.closed = True
+
+        handle = api.TurnHandle()
+        with mock.patch.object(api, "_open", return_value=Response()) as opened:
+            data = api._post("https://api.example/chat", {}, {"model": "m"},
+                             provider="deepseek", wire="openai", handle=handle)
+        self.assertTrue(opened.call_args.args[2]["stream"])
+        message = data["choices"][0]["message"]
+        self.assertEqual(message["content"], "Let me ")
+        self.assertNotIn("reasoning_content", message)
+        self.assertEqual(message["tool_calls"][0]["id"], "c1")
+        self.assertEqual(json.loads(message["tool_calls"][0]["function"]["arguments"]),
+                         {"tool_path": 1})
+        self.assertIsNotNone(handle.last_chunk_at)
+        self.assertTrue(Response.closed)
+
+    def test_streamed_anthropic_blocks_are_reassembled(self):
+        events = [
+            {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hi"}},
+            {"type": "content_block_start", "index": 1,
+             "content_block": {"type": "tool_use", "id": "t1", "name": "read_file", "input": {}}},
+            {"type": "content_block_delta", "index": 1,
+             "delta": {"type": "input_json_delta", "partial_json": "{\"path\": "}},
+            {"type": "content_block_delta", "index": 1,
+             "delta": {"type": "input_json_delta", "partial_json": "\"a.txt\"}"}},
+            {"type": "message_stop"},
+        ]
+        data = api._assemble_anthropic(iter(events))
+        self.assertEqual(data["content"][0], {"type": "text", "text": "Hi"})
+        self.assertEqual(data["content"][1]["input"], {"path": "a.txt"})
+
+    def test_stop_closes_the_live_api_stream_and_ends_the_turn(self):
+        class Response:
+            closed = False
+
+            def __iter__(self):
+                yield b'data: {"choices":[{"delta":{"content":"x"}}]}\n'
+                raise ConnectionError("closed")
+
+            def close(self):
+                Response.closed = True
+
+        events = {"provider": "api:deepseek", "_handle": api.TurnHandle()}
+        gui._register_agent_run("stop-test", events)
+        try:
+            with mock.patch.object(api, "_open", return_value=Response()):
+                handle = events["_handle"]
+                real_attach = handle.attach
+
+                def attach_then_stop(response):
+                    real_attach(response)
+                    self.assertTrue(gui._stop_agent_run("stop-test")["stopped"])
+
+                with mock.patch.object(handle, "attach", side_effect=attach_then_stop):
+                    with self.assertRaisesRegex(api.ToolError, "stopped by the user"):
+                        api._post("https://api.example/chat", {}, {}, provider="deepseek",
+                                  wire="openai", handle=handle)
+            self.assertTrue(Response.closed)
+            self.assertFalse(gui._stop_agent_run("no-such-session")["stopped"])
+        finally:
+            gui._LIVE_AGENT_RUNS.pop("stop-test", None)
+
+    def test_truncated_tool_arguments_name_the_output_limit(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function",'
+            b'"function":{"name":"write_plan","arguments":"{\\"plan\\": {\\"goal"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n',
+            b'data: [DONE]\n',
+        ]
+
+        class Response:
+            def __iter__(self):
+                return iter(lines)
+
+            def close(self):
+                pass
+
+        prov = SimpleNamespace(name="deepseek", base_url="https://api.example/chat", wire="openai")
+        with mock.patch.object(api, "_open", return_value=Response()) as opened:
+            _text, calls, _raw = api._openai_turn(prov, "m", "sys", [], [], "key")
+        self.assertEqual(opened.call_args.args[2]["max_tokens"], api.MAX_OUTPUT_TOKENS)
+        self.assertIn("output limit", calls[0][2]["_vendor_argument_error"])
+
+    def test_post_does_not_retry_a_timed_out_generation(self):
+        import urllib.error
+
+        class Opener:
+            calls = 0
+
+            def open(self, req, timeout=None):
+                Opener.calls += 1
+                raise urllib.error.URLError(TimeoutError("timed out"))
+
+        with mock.patch.object(api.urllib.request, "build_opener", return_value=Opener()), \
+             mock.patch.object(api.time, "sleep"):
+            with self.assertRaisesRegex(api.ToolError, "still generating"):
+                api._post("https://api.example/chat", {}, {}, provider="deepseek")
+        self.assertEqual(Opener.calls, 1)
+
     def test_missing_alias_and_duplicate_workdir_are_not_passed_to_cli(self):
         provider = providers.Provider(
             name="kimi", binary="kimi", argv=["kimi", "-p", "{prompt}"],
@@ -1011,7 +1140,9 @@ print(MARKER, len(text), implementation.__file__)
             )
             ki = SimpleNamespace(name="PythonKI", preflight=preflight)
 
-            self.assertEqual(runnable.find_binary(ki), expected)
+            # An interpreter path, even a real Windows venv launcher, is not a
+            # model binary. Import/script contracts verify Python KIs instead.
+            self.assertIsNone(runnable.find_binary(ki))
 
     def test_runnable_reads_import_module_from_preflight_signature(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1097,7 +1228,7 @@ print(MARKER, len(text), implementation.__file__)
             )
 
     def test_missing_import_probe_uses_headless_environment(self):
-        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        completed = subprocess.CompletedProcess([], 0, stdout="__GEOFORGE_IMPORT_PROBE_DONE__\n", stderr="")
         with mock.patch.object(
                 runnable.subprocess, "run", return_value=completed) as run:
             self.assertEqual(
@@ -1138,7 +1269,7 @@ print(MARKER, len(text), implementation.__file__)
 
     @unittest.skipUnless(os.name == "nt", "Windows conda activation layout")
     def test_runnable_probe_activates_recorded_conda_python(self):
-        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        completed = subprocess.CompletedProcess([], 0, stdout="__GEOFORGE_IMPORT_PROBE_DONE__\n", stderr="")
         with tempfile.TemporaryDirectory() as td:
             prefix = Path(td) / "env"
             python = prefix / "python.exe"
@@ -1379,7 +1510,7 @@ print(MARKER, len(text), implementation.__file__)
                 meta={"language": "c"},
             )
             man = Manifest(
-                model="SWMM", acquire=Acquire(
+                model="SWMM", binary_type="Python+C", acquire=Acquire(
                     strategy="pip", package="pyswmm", produces="pyswmm",
                 ),
             )
@@ -1462,7 +1593,7 @@ class ProxySettingsTests(unittest.TestCase):
                  "https": "http://127.0.0.1:7897"}):
             self.assertEqual(
                 set(settings.masked()["proxy_providers"]),
-                {"network:github", "cli:claude", "cli:codex"})
+                {"network:github", "network:obs", "cli:claude", "cli:codex"})
             settings.update({"proxy_providers": ["cli:kimi", "api:anthropic"]})
             self.assertEqual(
                 set(settings.masked()["proxy_providers"]),
@@ -1570,6 +1701,16 @@ class KimiSecurityTests(unittest.TestCase):
             self.assertEqual(settings.masked()["kimi_security_mode"], "full")
             with self.assertRaisesRegex(ValueError, "unknown Kimi security mode"):
                 settings.update({"kimi_security_mode": "everything"})
+
+    def test_database_access_mode_defaults_direct_and_rejects_unknown_modes(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch("kiss_cli.obs_access.token_configured", return_value=False):
+            self.assertEqual(settings.masked()["database_access_mode"], "direct")
+            settings.update({"database_access_mode": "snapshot"})
+            self.assertEqual(settings.masked()["database_access_mode"], "snapshot")
+            with self.assertRaisesRegex(ValueError, "unknown database access mode"):
+                settings.update({"database_access_mode": "raw-token"})
 
 
 class ClipboardTests(unittest.TestCase):
@@ -2028,10 +2169,11 @@ class SessionProjectTests(unittest.TestCase):
             deck = project / "outputs" / "Demo" / "case-one"
             deck.mkdir(parents=True)
             (deck / "INPUT.DAT").write_text("ready")
-            saved = paths.KissConfig.load(project)
+            model_home = project / "models" / ki.name
+            saved = paths.KissConfig.load(model_home)
             saved.roles["static"] = deck
             saved.roles["binaries"] = project / "untrusted-binaries"
-            (project / paths.CONFIG_NAME).write_text(saved.dumps())
+            (model_home / paths.CONFIG_NAME).write_text(saved.dumps())
             rebound = gui.Handler._session_config(fake_handler, project, ki)
             self.assertEqual(rebound.roles["static"], deck)
             self.assertEqual(rebound.roles["binaries"], shared.roles["binaries"])
@@ -2082,6 +2224,9 @@ class SessionProjectTests(unittest.TestCase):
             self.assertEqual(saved.name, "weather_data.csv")
             self.assertEqual(sessions.input_files(root, session)[0]["relative_path"],
                              "inputs/uploads/weather_data.csv")
+            # an upload for one plan input lands where the plan card told the user
+            for_item = sessions.save_upload(root, session, "site.csv", b"x", item="../site_geometry")
+            self.assertEqual(for_item.parent, project / "inputs" / "user" / "site_geometry")
             message = {"role": "user", "text": "Use this weather table",
                        "attachments": ["inputs/uploads/weather_data.csv"]}
             self.assertIn("inputs/uploads/weather_data.csv",
@@ -2377,7 +2522,27 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("/api/providers?refresh=1", page)
         self.assertIn('id="s-proxy-mode"', page)
         self.assertIn('id="s-proxy-url"', page)
-        self.assertIn("Test AI & GitHub", page)
+        self.assertIn('id="s-obs-token"', page)
+        self.assertIn('id="s-obs-mode"', page)
+        self.assertIn("Direct through GeoForge Desktop (recommended)", page)
+        self.assertIn('id="s-obs-test"', page)
+        self.assertIn("Activation token", page)
+        self.assertIn("Save &amp; test database", page)
+        # settings window: sidebar pages, provider cards, catalogue browser
+        for marker in ('class="setnav"', 'data-page="ai"', 'data-page="db"', 'data-page="net"', 'data-page="perm"',
+                       'id="s-providers"', 'id="db-facets"', 'id="db-list"', "loadDatabaseBrowser", "KEY_ENV"):
+            self.assertIn(marker, page)
+        self.assertIn("/api/obs/test", page)
+        self.assertIn("/api/obs/catalogue", page)
+        self.assertIn("GeoForge Database", page)
+        self.assertIn("applicable_domains", page)
+        self.assertIn("spatial_coverage", page)
+        self.assertIn("observation download tool", page)
+        self.assertIn("renderPlanReview", page)
+        self.assertIn('id="plan-data"', page)
+        self.assertIn('id="request-done"', page)
+        self.assertIn('id="action-plan"', page)
+        self.assertIn("Test AI &amp; GitHub", page)
         self.assertIn("agent-run Git, pip, curl, and download commands", page)
         self.assertIn("/api/selfcheck?provider=", page)
         self.assertIn("refreshMachineStatus", page)
@@ -2404,7 +2569,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("has produced no tool or output event for", page)
         self.assertIn("No download, tool-call, or project-file evidence", page)
         self.assertIn("status.activity_detail", page)
-        self.assertIn("Current action:", page)
+        self.assertIn("Last observed action:", page)
         self.assertIn('id="activityevidence"', page)
         self.assertIn('id="activity-refresh"', page)
         self.assertIn("/agent-status", page)
@@ -2446,10 +2611,10 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("/view-asset?path=", page)
         self.assertIn("Build or update with Agent", page)
         self.assertIn("/data`", page)
-        self.assertIn("Add source data", page)
+        self.assertIn("Upload other files", page)
         self.assertIn("Project status", page)
         self.assertIn("Continue in chat", page)
-        self.assertIn("Project progress", page)
+        self.assertIn("progressTitle", page)          # the progress card carries the run status line
         self.assertIn("Data for this run", page)
         self.assertIn("Data sources & download record", page)
         self.assertIn("refreshSessionList", page)
@@ -2472,7 +2637,9 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("KI-declared requirements in this group include", page)
         self.assertIn("See technical data details", page)
         self.assertIn("Checked data paths", page)
-        self.assertIn("required data paths are ready", page)
+        self.assertIn("project_status", page)
+        self.assertIn("technical.lanes", page)
+        self.assertNotIn('const dataReached=', page)
         self.assertIn("datasetChecks", page)
         self.assertIn("extractWork", page)
         self.assertIn("Work details", page)
@@ -4013,7 +4180,7 @@ class AgentSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             project = root / "project"
-            ki_root = project / "models" / "Demo"
+            ki_root = project / "models" / "Demo" / "ki"
             tools = ki_root / "tools"
             tools.mkdir(parents=True)
             (project / "inputs").mkdir(parents=True)
@@ -4033,10 +4200,11 @@ class AgentSetupTests(unittest.TestCase):
                 "print('prepared-by-' + ki_tools_common.SOURCE)\n"
                 "if len(sys.argv) > 1:\n"
                 "    print('model=' + Path(sys.argv[1]).read_text())\n")
-            cfg = SimpleNamespace(
-                root=project, python=sys.executable,
-                roles={"ki_tools_common": common, "binaries": binaries})
-            ki = SimpleNamespace(root=ki_root)
+            cfg = paths.KissConfig.default(project)
+            cfg.python = sys.executable
+            cfg.roles.update(ki_tools_common=common, binaries=binaries)
+            (ki_root.parent / paths.CONFIG_NAME).write_text(cfg.dumps())
+            ki = SimpleNamespace(name="Demo", root=ki_root)
 
             wrote = api.execute_tool(
                 "write_project_file",
@@ -5230,3 +5398,91 @@ class PlatformParityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class ExternalPointerListingTests(unittest.TestCase):
+    def test_listing_does_not_open_external_project_folders(self):
+        with tempfile.TemporaryDirectory() as td:
+            workroot = Path(td) / "kiss"
+            (workroot / "sessions").mkdir(parents=True)
+            external = Path(td) / "Documents" / "2026-09-02-Run-a-real-CRHM-case--0bb6986c2c3e"
+            external.mkdir(parents=True)
+            (workroot / "sessions" / "0bb6986c2c3e.json").write_text(json.dumps({
+                "kind": "geoforge-project-pointer-v1", "id": "0bb6986c2c3e",
+                "project_root": str(external)}))
+            opened = []
+            real_load = sessions.load
+
+            def spy(root, sid):
+                opened.append(sid)
+                return real_load(root, sid)
+
+            with mock.patch.object(sessions, "load", side_effect=spy):
+                listed = sessions.list_all(workroot)
+        self.assertEqual(opened, [])
+        self.assertEqual(listed[0]["id"], "0bb6986c2c3e")
+        self.assertTrue(listed[0]["external"])
+        self.assertEqual(listed[0]["title"], "Run a real CRHM case")
+
+
+
+class DownloadRequestTests(unittest.TestCase):
+    def test_download_request_counts_as_placed_only_when_files_exist(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "inputs" / "raw" / "cmfd"
+            req = {"kind": "download", "expected_path": str(target)}
+            self.assertFalse(setup.download_placed(req))          # folder absent
+            target.mkdir(parents=True)
+            self.assertFalse(setup.download_placed(req))          # empty folder
+            (target / ".DS_Store").write_bytes(b"x")
+            self.assertFalse(setup.download_placed(req))          # junk only
+            (target / "Prec" ).mkdir()
+            (target / "Prec" / "prec_1989.nc").write_bytes(b"data")
+            self.assertTrue(setup.download_placed(req))
+            self.assertFalse(setup.download_placed({"kind": "download"}))
+
+    def test_partial_hidden_and_symlink_payloads_do_not_resume_download(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "cmfd"
+            target.mkdir()
+            req = {"kind": "download", "expected_path": str(target)}
+            for name in ("forcing.nc.part", "forcing.nc.crdownload", "forcing.nc.tmp"):
+                (target / name).write_bytes(b"incomplete")
+            hidden = target / ".cache"
+            hidden.mkdir()
+            (hidden / "data.nc").write_bytes(b"cache")
+            outside = Path(td) / "other.nc"
+            outside.write_bytes(b"unrelated")
+            (target / "linked.nc").symlink_to(outside)
+            self.assertFalse(setup.download_placed(req))
+            self.assertFalse(setup.download_placed({"expected_path": str(target / "forcing.nc.part")}))
+            (target / "forcing.nc").write_bytes(b"delivered")
+            self.assertTrue(setup.download_placed(req))
+
+
+class SetupSessionResumeTests(unittest.TestCase):
+    """User report 2026-09-18: after a user action the setup agent restarted from scratch
+    because every retry spawned a fresh CLI process. The workspace now remembers the CLI's
+    own session id and the retry continues it with a short message."""
+
+    def test_setup_workspace_remembers_and_returns_the_cli_session(self):
+        from kiss_cli import setup as setup_flow
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.assertIsNone(setup_flow.cli_session(root, "claude"))
+            setup_flow.remember_cli_session(root, "claude", "abc-123")
+            setup_flow.remember_cli_session(root, "kimi", "k-9")
+            self.assertEqual(setup_flow.cli_session(root, "claude"), "abc-123")
+            self.assertEqual(setup_flow.cli_session(root, "kimi"), "k-9")
+            (root / setup_flow.CLI_SESSION_FILE).write_text("not json")
+            self.assertIsNone(setup_flow.cli_session(root, "claude"))
+
+    def test_resume_message_continues_instead_of_restarting(self):
+        from kiss_cli import setup as setup_flow
+        with tempfile.TemporaryDirectory() as td:
+            msg = setup_flow.resume_message({"user_note": "installed gfortran", "resume_hint": "rerun make"}, Path(td))
+            self.assertIn("installed gfortran", msg)
+            self.assertIn("rerun make", msg)
+            self.assertIn("Do not re-read the KI", msg)
+            self.assertNotIn("[TASK]", msg)

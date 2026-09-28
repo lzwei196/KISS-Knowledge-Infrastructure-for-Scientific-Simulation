@@ -1,0 +1,12 @@
+kiss_manifest_version: 1
+model: PyMT
+binary_type: Python
+verified: unverified
+install_dir: PyMT
+acquire:
+  strategy: pip
+  package: pymt==1.3.2
+  produces: pymt.framework
+python_deps: [setuptools<81]
+notes: Installation contract verifies the official PyMT modeling framework and native dependencies; individual BMI model plugins and scientific runs are separate. Native conda-forge1.3.2 environment with Python3.11 and numpy1.x was provisioned and imports locally passed; fresh DS verification pending.
+agent_hint: Preserve the preprovisioned genuine workspace conda environment containing pymt1.3.2, native ESMF/esmpy and UDUNITS. Do not widen dependency constraints or replace compiled components. setuptools<81 supplies required pkg_resources. Verify pymt.framework, pymt.units and esmpy imports, plus pip check. This is framework readiness only; do not claim BMI model plugins installed or run simulations.

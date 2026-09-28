@@ -1,3 +1,16 @@
+> **macOS installation route (2026-09-09)**
+>
+> Use `kiss.macos.arm64.yaml` and `docs/macos_native_installation.md`. The Mac
+> native implementation is explicitly corrected to OpenHydroQual v2.0.7,
+> e24ea5eebcc0d2894b779adfdfc7ea78bd9a4ce2: v2.0.4 does not contain the declared
+> OHQLibTest build target. Historical 2.0.4 scientific descriptions below are
+> retained; scientific equivalence is not claimed. Build the real OHQLib engine
+> and OHQLibTest using the supplied hash-guarded platform helper. Patched bounded
+> --help/--version are installation probes; do not execute scripts, datasets or
+> scientific preflight in installation-only mode. Local native compile/load
+> checks passed; upstream Matrix_arma arithmetic recursion warnings are documented
+> in the Mac installation note and remain outside scientific validation.
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

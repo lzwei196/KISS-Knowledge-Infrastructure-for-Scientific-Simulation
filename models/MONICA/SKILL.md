@@ -718,3 +718,8 @@ detached dir (2026-08-22 v6/v7). Every KI-tool call (stage 0 and the parser incl
 stdout JSON object with `status: success` AND its output file, else `tools_failed` + RuntimeError — no silent fallback;
 `tools_used` lists only the KI tools / `ki_tools_common` functions the process actually invoked, and
 `tools_reused_from_cache` counts the cached tool outputs a resumed run consumed instead (2026-08-22 v8).
+
+
+## macOS installation
+
+Use MACOS_INSTALL.md and kiss.macos.arm64.yaml for the exact native3.6.56 build. The Mac product is KISSPATH_BINARIES/MONICA/ki-build/monica-run. Only help/version startup is part of installation verification.

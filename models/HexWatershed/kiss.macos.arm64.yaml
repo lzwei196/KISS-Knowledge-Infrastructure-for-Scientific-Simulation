@@ -1,0 +1,19 @@
+kiss_manifest_version: 1
+model: HexWatershed
+binary_type: Mach-O
+verified: unverified
+install_dir: HexWatershed/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/pnnl/hexwatershed.git
+  ref: d15063425aee2b287e815041657d6842384760c7
+  commands:
+  - python3 ../../../../ki/tools/prepare_hexwatershed_source.py .
+  - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+  - cmake --build build --parallel 2
+  produces: build/hexwatershed
+python_deps: [pyflowline, numpy, pandas, geopandas, rasterio, GDAL==3.12.3]
+system_deps: [git, cmake, clang, gdal]
+reference_case: build/hexwatershed --help
+notes: Staged Mac recipe from observed build log; independent baseline failed due missing executable contract. Exact-source build patch guards absent documentation CMake and preserves GDAL3 const spatial-reference ownership. Must validate clean build, repeated setup behavior, host GDAL Python version pairing and DS retry before publishing.
+agent_hint: Require real GDAL Python bindings matched to the native GDAL library. Preserve the official C++ product and use startup only from empty cwd. Do not substitute another HexWatershed implementation or Python wrapper.

@@ -485,3 +485,8 @@ Use these as physically informed starting points when no site-specific calibrati
 
 *Built using the Knowledge Dissection Toolkit v1.0 (Zhang et al., Nature, under review).*
 *Part of the HydroCraft multi-model simulation platform by the Jianyun Zhang Research Group, Hohai University.*
+
+
+## macOS native installation
+
+On Apple Silicon use `kiss.macos.arm64.yaml` and `docs/macos_install.md`. Build the pinned original4.2 C source into the existing `biome-bgc/bgc-src/bgc` location. Verify the actual native model with `-V`; interpreter availability is insufficient. Installation checks do not execute this document's scientific workflows.

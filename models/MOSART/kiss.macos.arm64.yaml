@@ -1,0 +1,12 @@
+kiss_manifest_version: 1
+model: MOSART
+binary_type: Python
+verified: unverified
+install_dir: MOSART
+acquire:
+  strategy: pip
+  package: mosartwmpy==0.6.2
+  produces: mosartwmpy.model
+python_deps: [setuptools<81]
+notes: Verifies the KI-declared PNNL MOSART-WM Python implementation, not a standalone Fortran MOSART binary. The baseline acquired0.6.2; KI descriptive1.0.x label is not a verified distribution version. Fresh import verification pending.
+agent_hint: Install official mosartwmpy0.6.2 with full dependencies and setuptools<81 for pkg_resources. Verify mosartwmpy.model.Model can be imported without instantiation, run pip check, preserve workspace interpreter. No simulation or scientific input acquisition.

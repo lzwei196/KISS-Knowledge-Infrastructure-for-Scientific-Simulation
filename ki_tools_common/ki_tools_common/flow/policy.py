@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .states import State, Capability, Enforcement, allowed
@@ -30,7 +30,9 @@ SUPPORTED_PROVIDERS = ("claude", "codex", "kimi", "api")
 NOT_OFFERED = ("gemini", "qwen")
 
 # chat's plan-only set (CPM L237) — Claude Code tool names
-PLAN_ONLY_BASE_TOOLS = ("WebSearch", "WebFetch", "TodoWrite")
+# No bare Read/Glob/Grep (kimi R2 #1: a bare Read reads the whole disk, including the
+# receipt-signing key); reads are granted path-scoped by _read_grants.
+PLAN_ONLY_BASE_TOOLS = ("WebSearch", "WebFetch", "TodoWrite", "Skill")
 
 PLAN_FILES = ("runs/plan.json", "runs/data-inventory.json")
 ALWAYS_PROTECTED = ("runs/flow-state.json", "runs/approval.json", ".geoforge")
@@ -40,17 +42,23 @@ EXEC_WRITABLE = ("inputs", "outputs", "artifacts", "references", "calibration/ca
                  "calibration/kis", "runs/logs", "runs/notes")
 
 # desktop API-provider tool names (kiss_cli/api.py tool_schemas L115-489) allowed per state
+# GeoForge Database tools: one job each (FLOW-TARGET-2026-09-17 step 1). The old
+# multi-mode search_observation_data stays until the data proposal folds into the plan.
+DATABASE_API_TOOLS = frozenset({"search_catalogue", "describe_dataset", "estimate_clip"})
 _BASE_API = frozenset({"read_ki_file", "list_ki_files", "list_skills", "read_skill",
                        "search_diagnostics", "list_project_files", "read_project_file",
-                       "report_project_progress", "request_user_action"})
+                       "report_project_progress", "request_user_action"}) | DATABASE_API_TOOLS
 API_TOOLS_BY_STATE: dict[State, frozenset[str]] = {s: _BASE_API for s in State}
 API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan"}
 API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan"}
+# Data comes in during ACQUIRING (host-driven); EXECUTING keeps fetch_data for public URLs.
 API_TOOLS_BY_STATE[State.EXECUTING] = _BASE_API | {"run_preflight", "write_project_file", "run_ki_tool", "run_calibration",
-                                                   "fetch_data", "create_project_plot", "publish_project_view"}
+                                                   "fetch_data",
+                                                   "create_project_plot", "publish_project_view",
+                                                   "request_replan"}
 for _s in (State.VERIFYING, State.COMPLETED, State.FAILED_VALIDATION):
     API_TOOLS_BY_STATE[_s] = _BASE_API | {"create_project_plot", "publish_project_view"}
-API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_preflight", "run_builtin_setup", "list_work_files",
+API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_builtin_setup", "list_work_files",
                                                        "read_work_file", "write_work_file",
                                                        "run_setup_command", "publish_setup_output"}
 
@@ -153,9 +161,13 @@ class ProviderPolicy:
     enforcement: Enforcement
     planning_worktree: bool        # codex/kimi PLANNING: run in a throwaway copy, harvest plan files
     note: str
+    # Desktop-only launcher flags that are NOT part of the tool wall (the web asserts
+    # argv_delta is exactly `--allowedTools …` with no --permission-mode). The desktop
+    # appends these after argv_delta; the web ignores them.
+    argv_extra: list[str] = field(default_factory=list)
 
 
-_CLAUDE_DROP = ("--dangerously-skip-permissions", "--permission-mode", "--tools", "--allowedTools")
+_CLAUDE_DROP = ("--dangerously-skip-permissions", "--permission-mode")
 _TOOL_RE = re.compile(r"^(?P<name>[A-Za-z]+)\((?P<arg>.*)\)$")
 
 
@@ -176,7 +188,7 @@ def _assert_key_dir_unreadable(tools: list[str]) -> None:
 def _read_grants(paths: list[Path]) -> list[str]:
     out = []
     for p in paths:
-        p = claude_path(p).rstrip("/")
+        p = claude_path(_res(Path(p))).rstrip("/")
         out += [f"Read({p}/**)", f"Glob({p}/**)", f"Grep({p}/**)"]
     return out
 
@@ -193,13 +205,18 @@ def claude_path(path: Path | str) -> str:
     return "/" + p if p.startswith("/") and not p.startswith("//") else p
 
 
-def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str) -> list[str]:
+def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str,
+                           wrappers: dict | None = None) -> list[str]:
+    del python  # strict preflight is host-owned; non-RUN_MODEL agents get no Bash surface
     tools = list(PLAN_ONLY_BASE_TOOLS)
-    # Read code and previous reports: even --help/preflight may have side effects.
     tools += _read_grants(list(ki_roots.values()) + [Path(project)])
     for rel in PLAN_FILES:
-        p = claude_path(Path(project) / rel)
+        p = claude_path(_res(Path(project) / rel))      # same realpath rule as the read grants
         tools += [f"Write({p})", f"Edit({p})"]
+    if wrappers and wrappers.get("obs_search"):
+        tools.append(f"Bash({wrappers['obs_search']}:*)")
+    if wrappers and wrappers.get("request_user_action"):
+        tools.append(f"Bash({wrappers['request_user_action']}:*)")
     return tools
 
 
@@ -225,8 +242,8 @@ def _claude_executing_tools(project: Path, ki_roots: dict[str, Path],
         # Write/Edit/Bash/NotebookEdit/Agent from the base are NOT carried over
     _assert_key_dir_unreadable(kept)
     for rel in EXEC_WRITABLE:
-        p = claude_path(project / rel)
-        kept += [f"Write({p}/**)", f"Edit({p}/**)"]
+        target = claude_path(_res(project / rel))
+        kept += [f"Write({target}/**)", f"Edit({target}/**)"]
     for cmd in (wrappers or {}).values():
         kept.append(f"Bash({cmd}:*)")
     # belt and braces: nothing kept may touch a protected path
@@ -268,13 +285,13 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
 
     if provider == "claude":
         if planning:
-            tools = _claude_planning_tools(project, ki_roots, python)
+            tools = _claude_planning_tools(project, ki_roots, python, wrappers)
             _assert_key_dir_unreadable(tools)
-            return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools),
-                                  "--permission-mode", "dontAsk", "--tools",
-                                  "Read,Glob,Grep,Write,Edit,WebSearch,WebFetch,TodoWrite"], _CLAUDE_DROP,
+            return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools)], _CLAUDE_DROP,
                                   Enforcement.EXACT, False,
-                                  "read-only tool wall + the two plan files (CPM L237-259 pattern)")
+                                  "read-only tool wall + the two plan files (CPM L237-259 pattern)",
+                                  argv_extra=["--permission-mode", "dontAsk", "--tools",
+                                              "Read,Glob,Grep,Write,Edit,Bash,WebSearch,WebFetch,TodoWrite"])
         if state == State.EXECUTING:
             if not wrappers:
                 raise ValueError("EXECUTING on claude needs the receipt wrappers (run_tool, fetch)")
@@ -284,11 +301,19 @@ def for_state(state: State, provider: str, project: Path, ki_roots: dict[str, Pa
                                   "reads from the base grants; writes only under the project's "
                                   "output subtrees; Bash only through the receipt wrappers")
         tools = _read_grants([Path(project)] + list(ki_roots.values()))
+        # RESOLVING_KIS is read-only, but a catalogue search is also read-only
+        # and may be needed to choose the right KI or ask the right question.
+        # ``auto_turn`` passes only obs_search here; it never passes the run,
+        # fetch, or download wrappers before planning is approved.
+        if state is State.RESOLVING_KIS and wrappers and wrappers.get("obs_search"):
+            tools.append(f"Bash({wrappers['obs_search']}:*)")
+        if state is State.RESOLVING_KIS and wrappers and wrappers.get("request_user_action"):
+            tools.append(f"Bash({wrappers['request_user_action']}:*)")
         return ProviderPolicy(provider, state, ["--allowedTools", ",".join(tools)], _CLAUDE_DROP,
                               Enforcement.EXACT, False, "read-only")
 
     # codex / kimi: no per-command allowlist (kiss_cli/policy.py codex_args L288-300)
-    drop = ("--dangerously-bypass-approvals-and-sandbox", "--yolo", "--sandbox")
+    drop = ("--dangerously-bypass-approvals-and-sandbox", "--yolo")
     if planning:
         return ProviderPolicy(provider, state, ["--sandbox", "workspace-write"] if provider == "codex" else [],
                               drop, Enforcement.APPROXIMATE, True,

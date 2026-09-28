@@ -1,0 +1,13 @@
+kiss_manifest_version: 1
+model: SHAW
+binary_type: Mach-O
+verified: unverified
+install_dir: shaw
+acquire:
+  strategy: download
+  url: https://www.ars.usda.gov/ARSUserFiles/20520500/SHAW/303/Shaw303.zip
+  produces: shaw303
+python_deps: [numpy, pandas, matplotlib, scipy]
+system_deps: [gfortran, curl]
+notes: Official public USDA SHAW 3.03 Fortran source; archive also includes Windows binaries and scientific cases, which are not Mac installation products. Source SHA256 b10bb45c984d7f9c1831f722fcd5a27f1d091ff08da4b6d838d2bcd51066a1fe. Archive hash has not been audited.
+agent_hint: Read docs/install.macos.md. USDA full ZIP downloads are very slow; prefer KI tools/fetch_shaw_build_source.py with the workspace Python to retrieve only the exact audited Fortran member using HTTP Range and verify its SHA256. From workspace root pass binaries/shaw/Shaw303.for. Compile gfortran -std=legacy -ffixed-line-length-none -fallow-argument-mismatch -O2 binaries/shaw/Shaw303.for -o binaries/shaw/shaw303. Product must be <workspace>/binaries/shaw/shaw303. Do not run Windows executable, beta CO2 variant or bundled cases. No source patches needed. Closed-stdin startup displays Version 3.0.3 then EOF at the input filename prompt; retain native receipt and do not create scientific input files to force success.

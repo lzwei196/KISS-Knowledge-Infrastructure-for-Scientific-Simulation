@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 from http.cookiejar import CookieJar
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import signal
+import platform
 import stat
 import socket
 import subprocess
@@ -18,10 +21,52 @@ import threading
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPCookieProcessor, ProxyHandler, Request, build_opener
 
 
-OPENER = build_opener(HTTPCookieProcessor(CookieJar()))
+OPENER = build_opener(ProxyHandler({}), HTTPCookieProcessor(CookieJar()))
+
+
+def preserve_native_evidence(target: Path, evidence: Path, model: str) -> None:
+    """Retain bounded provenance, never follow a product outside its workspace."""
+    target = target.resolve()
+    installation = target / "installation-test.json"
+    if not installation.is_file() or not installation.resolve().is_relative_to(target):
+        return
+    try:
+        result = json.loads(installation.read_text())
+        if not isinstance(result, dict):
+            return
+        raw = result.get("binary")
+        if not raw:
+            return
+        binary = Path(raw)
+        if not binary.is_absolute():
+            return
+        binary = binary.resolve()
+        if not binary.is_relative_to(target) or not binary.is_file():
+            return
+        digest = hashlib.sha256()
+        with binary.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence / "native-product.json").write_text(json.dumps({
+            "path": str(binary), "relative_path": binary.relative_to(target).as_posix(),
+            "size_bytes": binary.stat().st_size, "sha256": digest.hexdigest(),
+            "source": "independently resolved installation-test executable; identity hash only",
+        }, indent=2))
+        known = target / "binaries/PHREEQC/source/phreeqc-3.8.6-17100"
+        receipt = known / "macos-build-receipt.json"
+        if (model == "PHREEQC" and binary == (known / "build/phreeqc").resolve()
+                and receipt.is_file() and not receipt.is_symlink()
+                and receipt.resolve().is_relative_to(known.resolve())
+                and receipt.stat().st_size <= 65536):
+            # This helper-authored record is provenance, not an independent source audit.
+            shutil.copy2(receipt, evidence / "helper-macos-build-receipt.json")
+    except (OSError, ValueError, TypeError):
+        # Evidence enrichment must not invalidate an already recorded test result.
+        return
 
 
 def http_json(url: str, payload: dict | None = None, timeout: float = 30) -> dict:
@@ -38,8 +83,9 @@ def free_port() -> int:
 
 
 class Server:
-    def __init__(self, repo: Path, workroot: Path):
+    def __init__(self, repo: Path, workroot: Path, executable: Path | None = None):
         self.repo, self.workroot = repo, workroot
+        self.executable = executable
         self.proc: subprocess.Popen | None = None
         self.base = ""
 
@@ -49,22 +95,24 @@ class Server:
         log = self.workroot.parent / "server.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         stream = log.open("ab")
-        cmd = [sys.executable, str(self.repo / "kiss" / "kiss_entry.py"),
-               "gui", "--no-browser", "--port", str(port),
+        entry = ([str(self.executable)] if self.executable else
+                 [sys.executable, str(self.repo / "kiss" / "kiss_entry.py")])
+        cmd = [*entry, "gui", "--no-browser", "--port", str(port),
                "--workroot", str(self.workroot)]
         self.proc = subprocess.Popen(cmd, cwd=self.repo / "kiss", stdout=stream,
-                                     stderr=subprocess.STDOUT)
-        deadline = time.time() + 30
+                                     stderr=subprocess.STDOUT, start_new_session=os.name != "nt")
+        stream.close()
+        deadline = time.time() + 90
         while time.time() < deadline:
             if self.proc.poll() is not None:
                 raise RuntimeError(f"GeoForge server exited with {self.proc.returncode}; see {log}")
             try:
-                http_json(self.base + "/api/models", timeout=2)
+                http_json(self.base + "/api/models", timeout=30)
                 return
             except (OSError, ValueError):
                 time.sleep(.25)
         self.stop()
-        raise TimeoutError("GeoForge server did not become ready in 30 seconds")
+        raise TimeoutError("GeoForge server did not become ready in 90 seconds")
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
@@ -81,11 +129,18 @@ class Server:
                 except subprocess.TimeoutExpired:
                     self.proc.kill()
             else:
-                self.proc.terminate()
                 try:
+                    os.killpg(self.proc.pid, signal.SIGTERM)
                     self.proc.wait(10)
                 except subprocess.TimeoutExpired:
-                    self.proc.kill()
+                    pass
+                except ProcessLookupError:
+                    pass
+                finally:
+                    try:
+                        os.killpg(self.proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                     self.proc.wait(5)
         self.proc = None
 
@@ -172,7 +227,7 @@ def classify(state: dict, transport: str, installation: dict | None = None) -> s
         return "installed"
     if request.get("status") == "waiting":
         return "needs-user"
-    if transport == "timeout":
+    if transport in {"timeout", "request-error"}:
         return "timeout"
     return "failed"
 
@@ -180,7 +235,8 @@ def classify(state: dict, transport: str, installation: dict | None = None) -> s
 def write_csv(path: Path, rows: list[dict]) -> None:
     fields = ["model", "result", "seconds", "software_state", "request_kind",
               "request_title", "request_detail", "expected_path",
-              "resolved_binary", "error", "finished_at"]
+              "resolved_binary", "error", "finished_at", "implementation_id",
+              "installation_scope", "official_upstream_verified"]
     with path.open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
         writer.writeheader(); writer.writerows(rows)
@@ -188,17 +244,26 @@ def write_csv(path: Path, rows: list[dict]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=Path("_stress_deepseek_windows_20260827"))
+    parser.add_argument("--root", type=Path, default=Path(
+        "_stress_deepseek_windows" if os.name == "nt" else "_stress_deepseek_macos"))
+    parser.add_argument("--installs-root", type=Path, help="dedicated disposable installation directory; evidence remains under --root")
     parser.add_argument("--timeout-minutes", type=int, default=60)
     parser.add_argument("--limit", type=int, help="smoke-test only the first N pending KIs")
     parser.add_argument("--models", nargs="+",
                         help="run only these KI names (useful for targeted regressions)")
     parser.add_argument("--cleanup", action="store_true",
                         help="remove each dedicated install after its result is safely recorded")
+    parser.add_argument("--executable", type=Path, help="test this compiled GeoForge executable")
     args = parser.parse_args()
+    if args.timeout_minutes <= 0:
+        parser.error("--timeout-minutes must be positive")
+    if args.executable:
+        args.executable = args.executable.resolve()
+        if not args.executable.is_file():
+            parser.error("compiled executable does not exist")
     repo = Path(__file__).resolve().parents[1]
-    root = args.root.resolve(); workroot = root / "installs"
-    root.mkdir(parents=True, exist_ok=True); workroot.mkdir(exist_ok=True)
+    root = args.root.resolve(); workroot = (args.installs_root or root / "installs").resolve()
+    root.mkdir(parents=True, exist_ok=True); workroot.mkdir(parents=True, exist_ok=True)
     jsonl, csv_path = root / "results.jsonl", root / "results.csv"
     rows = []
     if jsonl.exists():
@@ -206,7 +271,7 @@ def main() -> int:
             try: rows.append(json.loads(line))
             except ValueError: pass
     done = {row["model"] for row in rows}
-    server = Server(repo, workroot)
+    server = Server(repo, workroot, args.executable)
     try:
         server.start()
         models = [item["name"] for item in http_json(server.base + "/api/models")]
@@ -223,12 +288,17 @@ def main() -> int:
         if args.limit is not None: pending = pending[:args.limit]
         print(f"DeepSeek KI stress: {len(done)}/127 recorded; running {len(pending)}", flush=True)
         for index, model in enumerate(pending, len(done) + 1):
+            if (root / "PAUSE_AFTER_MODEL").exists():
+                print("Paused at model boundary by PAUSE_AFTER_MODEL", flush=True)
+                break
+            if shutil.disk_usage(root).free < 12 * 1024**3:
+                raise RuntimeError("Less than 12 GiB free: stopped before starting another install")
             started = time.time(); target = workroot / model
             print(f"[{index}/127] {model}: setup starting", flush=True)
             try:
                 http_json(server.base + "/api/setup-location", {"model": model, "path": str(target)})
                 transport, detail = run_setup(server.base, model, args.timeout_minutes * 60)
-                if transport == "timeout":
+                if transport in {"timeout", "request-error"}:
                     server.stop(); server.start()
                 state = http_json(server.base + "/api/setup/" + quote(model), timeout=30)
                 installation_path = target / "installation-test.json"
@@ -261,6 +331,12 @@ def main() -> int:
                        "agent_tail": agent_tail,
                        "error": (error or detail)[-2000:],
                        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+                # Preserve the independently checked product identity. A declared
+                # Python variant is not evidence of an official upstream install.
+                for key in ("implementation_id", "installation_scope",
+                            "official_upstream_verified"):
+                    if key in (installation or {}):
+                        row[key] = installation[key]
             except Exception as exc:
                 row = {"model": model, "result": "harness-error",
                        "seconds": round(time.time() - started, 1), "software_state": "",
@@ -277,10 +353,20 @@ def main() -> int:
                     server.start()
                 except Exception as restart_exc:
                     row["error"] += f"; server restart failed: {restart_exc!r}"
+            row["platform"] = platform.system()
+            row["architecture"] = platform.machine()
             with jsonl.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(row, ensure_ascii=False) + "\n")
             rows.append(row); write_csv(csv_path, rows)
             print(f"[{index}/127] {model}: {row['result']} ({row['seconds']}s)", flush=True)
+            # Retain the complete evidence before deleting this disposable install.
+            evidence = root / "evidence" / model
+            evidence.mkdir(parents=True, exist_ok=True)
+            for name in ("installation-test.json", "setup-agent.log", "kiss.toml"):
+                source = target / name
+                if source.is_file():
+                    shutil.copy2(source, evidence / name)
+            preserve_native_evidence(target, evidence, model)
             if args.cleanup:
                 cleanup_error = cleanup_target(target, workroot)
                 if cleanup_error:

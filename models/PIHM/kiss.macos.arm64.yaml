@@ -1,0 +1,18 @@
+kiss_manifest_version: 1
+model: PIHM
+binary_type: Mach-O
+verified: unverified
+install_dir: MM-PIHM
+acquire:
+  strategy: build
+  repo: https://github.com/PSUmodeling/MM-PIHM.git
+  ref: 18422d0b016af52ccc59d027c9ba995551a36a06
+  commands:
+  - make cvode
+  - make pihm
+  produces: pihm
+python_deps: [numpy, pandas, netCDF4]
+system_deps: [git, cmake, make, clang, gfortran]
+reference_case: pihm --version
+notes: Same official main commit as prior Mac build; independent baseline lacked executable declaration. Native CVODE and pihm must be rebuilt and independently verified before observed status.
+agent_hint: Build bundled CVODE first then the official pihm target. Exact product <workspace>/binaries/MM-PIHM/pihm. Do not clone into workspace root or merely record a different discovery path. Verify native Mach-O startup and KI imports; no simulations or input acquisition.

@@ -1,0 +1,19 @@
+kiss_manifest_version: 1
+model: PCR_GLOBWB_2
+binary_type: Python
+verified: unverified
+install_dir: PCR_GLOBWB_2/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/UU-Hydro/PCR-GLOBWB_model.git
+  ref: e5ae4b2465073c4075e2bd5eb7e3388596b65290
+  produces: model/pcrglobwb.py
+python_deps: [numpy, netCDF4, six, pcraster]
+system_deps: [git]
+reference_case: python model/pcrglobwb.py
+notes: Official develop source pinned on 2026-09-08. The genuine core module imports the model classes and dependencies without constructing a model or reading scientific inputs. Local import with PCRaster4.4.3 and Python3.11 passed; fresh DS verification pending.
+agent_hint: Use the preprovisioned workspace conda Python environment with genuine native PCRaster/GDAL. Preserve venv/bin/python and verify sys.prefix. Do not try to pip-build PCRaster when it is already installed by conda. Install six and all KI dependencies. The product is the upstream model/pcrglobwb.py module, not the Python interpreter. Load its official PCRGlobWB class without instantiating it; importing that module is an installation check only. Do not run deterministic_runner.py or construct model objects because these require scientific configuration and inputs. Preserve upstream source unchanged. Record actual source pin, interpreter and imports.
+
+# IMPORTANT: install_dir is relative to the binaries role, not workspace root.
+# Exact product: <workspace>/binaries/PCR_GLOBWB_2/source/repo/model/pcrglobwb.py.
+# Run builtin setup for acquisition, or clone to that exact source directory.

@@ -650,6 +650,126 @@ def _safe_tool_activity(line: str, cwd: Path | None = None) -> tuple[str, str] |
     return name[:100], text[:260]
 
 
+class _CLIActivityTracker:
+    """Observed tool lifecycle, separate from transport/usage events.
+
+    Only a result bearing a known call ID finishes that call. Unknown shapes
+    remain observations, not invented completion. This is presentation state;
+    it neither authorises nor retries a tool, and completion is not success.
+    """
+
+    def __init__(self) -> None:
+        self.active: dict[str, dict] = {}
+        self.seen: set[str] = set()
+        self.unidentified: dict | None = None
+
+    def observe(self, line: str, process: dict, cwd: Path, now: float) -> None:
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            return
+        if not isinstance(event, dict):
+            return
+        calls: list[tuple[object, str, object]] = []
+        results: list[str] = []
+        message = event.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and block.get("name"):
+                    calls.append((block.get("id"), str(block["name"]), block.get("input") or {}))
+                elif (event.get("type") == "user" and block.get("type") == "tool_result"
+                      and isinstance(block.get("tool_use_id"), str)):
+                    results.append(block["tool_use_id"])
+        # Kimi's existing assistant/tool_calls start shape is an observation,
+        # not a lifecycle we can finish: its result shape is not inferred here.
+        # Codex currently emits text, not lifecycle JSON.
+        if event.get("role") == "assistant":
+            for call in event.get("tool_calls") or []:
+                if not isinstance(call, dict):
+                    continue
+                fn = call.get("function")
+                if isinstance(fn, dict) and fn.get("name"):
+                    calls.append((None, str(fn["name"]), fn.get("arguments") or {}))
+                elif call.get("name"):
+                    calls.append((None, str(call["name"]),
+                                  call.get("input") or call.get("arguments") or {}))
+        if event.get("type") in ("tool_use", "tool_call") and event.get("name"):
+            calls.append((None, str(event["name"]),
+                          event.get("input") or event.get("arguments") or {}))
+
+        changed = False
+        for call_id in results:
+            completed = self.active.pop(call_id, None)
+            if completed is not None:
+                process.update(last_activity_name=completed["name"],
+                               last_activity_detail=completed["detail"])
+                changed = True
+        for call_id, name, arguments in calls:
+            identified = isinstance(call_id, str) and bool(call_id)
+            if identified and call_id in self.seen:
+                continue
+            # Reuse the same bounded redaction as existing visible commands;
+            # never retain raw arguments or result contents in status state.
+            safe = _safe_tool_activity(json.dumps({
+                "type": "tool_use", "name": name, "input": arguments,
+            }), cwd)
+            if safe is None:
+                continue
+            action = {"name": safe[0], "detail": safe[1], "started_at": now}
+            process.update(last_activity_name=safe[0], last_activity_detail=safe[1])
+            if identified:
+                self.seen.add(call_id)
+                self.active[call_id] = action
+            else:
+                self.unidentified = action
+            changed = True
+        if not changed:
+            return
+        process["last_work_at"] = now
+        action = next(reversed(self.active.values()), None) if self.active else self.unidentified
+        if action is not None:
+            process.update(activity=action["name"], activity_detail=action["detail"],
+                           activity_started_at=action["started_at"],
+                           activity_state="tool_running" if self.active else "unknown")
+        else:
+            process.update(activity=None, activity_detail=None,
+                           activity_started_at=None, activity_state="tool_finished")
+
+    def responding(self, process: dict, now: float, *, preserve_observation: bool = False) -> None:
+        process["last_work_at"] = now
+        if self.active or preserve_observation:
+            return
+        self.unidentified = None
+        if process.get("activity_state") != "responding":
+            process["activity_started_at"] = now
+        process.update(activity="responding", activity_detail=None, activity_state="responding")
+
+
+def _stream_text_is_work(line: str) -> bool:
+    """Only recognised assistant text advances the meaningful-work clock.
+
+    The tolerant display parser can also expose other vendors' text fields;
+    a heartbeat, usage summary or echoed user text is not an agent action.
+    """
+    try:
+        event = json.loads(line)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(event, dict):
+        return False
+    if event.get("role") == "assistant":
+        return True
+    message = event.get("message")
+    if isinstance(message, dict):
+        return event.get("type") == "assistant" or message.get("role") == "assistant"
+    kind = event.get("type")
+    return kind in ("content_block_delta", "text_delta", "text") or (
+        not kind and isinstance(event.get("text"), str))
+
+
 def _session_id_from_stream_json(line: str) -> str | None:
     """The id this CLI would need to resume the conversation later.
 
@@ -696,6 +816,7 @@ def _strip_flags(argv: list[str], flags: tuple[str, ...]) -> list[str]:
 
 def run(provider: Provider, prompt: str, cwd: Path,
         *, extra_dirs: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
         cfg=None, ki_root: Path | None = None, pol=None,
         model: str | None = None,
         timeout: int | None = None,
@@ -782,8 +903,14 @@ def run(provider: Provider, prompt: str, cwd: Path,
     argv = provider.build(prompt, extra_dirs=cli_extra_dirs, model=model,
                           resume=resume)
     from .settings import with_provider_proxy
-    env = with_provider_proxy(f"cli:{provider.name}",
-                              {**os.environ, **provider.env})
+    # ``extra_env`` carries process-local capabilities owned by Desktop (for
+    # example the loopback GeoForge Database adapter).  It is deliberately
+    # passed only to this child instead of being written to settings or the
+    # user's shell environment.
+    env = with_provider_proxy(
+        f"cli:{provider.name}",
+        {**os.environ, **provider.env, **(extra_env or {})},
+    )
     if cfg is not None:
         from .paths import with_ki_tools_common
         env = with_ki_tools_common(cfg, env)
@@ -814,7 +941,11 @@ def run(provider: Provider, prompt: str, cwd: Path,
                 # the flow state's argv replaces the base mapping (plan v3 B6/B7)
                 drop = tuple(getattr(flow_policy, "drop_flags", ()) or ())
                 base_kept = _strip_flags(extra_args, drop + ("--allowedTools",))
-                extra_args = base_kept + list(getattr(flow_policy, "argv_delta", []) or [])
+                # argv_delta is the exact tool wall (shared with the web, which asserts it
+                # carries no --permission-mode); argv_extra holds the desktop-only launcher
+                # flags (non-interactive permission mode, the fixed tool set).
+                extra_args = (base_kept + list(getattr(flow_policy, "argv_delta", []) or [])
+                              + list(getattr(flow_policy, "argv_extra", []) or []))
                 argv = _strip_flags(argv, drop)
                 enforcement = _pol.Enforcement(getattr(flow_policy, "enforcement").value)
             argv = argv + extra_args
@@ -907,7 +1038,10 @@ def run(provider: Provider, prompt: str, cwd: Path,
             "started_at": now,
             "last_event_at": None,
             "last_output_at": None,
+            "last_work_at": None,
             "activity": "starting",
+            "activity_state": "unknown",
+            "activity_started_at": None,
         }
 
     # Written from a thread, not inline: a prompt larger than the pipe buffer
@@ -930,17 +1064,17 @@ def run(provider: Provider, prompt: str, cwd: Path,
                          daemon=True, name="kiss-prompt-stdin").start()
 
     produced = False
+    activity_tracker = _CLIActivityTracker()
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             process_event = ((runtime_events or {}).get("process")
                              if runtime_events is not None else None)
+            now = time.time()
             if isinstance(process_event, dict):
-                process_event["last_event_at"] = time.time()
+                process_event["last_event_at"] = now
             if provider.output == "stream-json":
-                tool_activity = _safe_tool_activity(line, cwd)
-                if isinstance(process_event, dict) and tool_activity:
-                    process_event["activity"] = tool_activity[0]
-                    process_event["activity_detail"] = tool_activity[1]
+                if isinstance(process_event, dict):
+                    activity_tracker.observe(line, process_event, cwd, now)
                 if session_out is not None and not session_out.get("session_id"):
                     sid = _session_id_from_stream_json(line)
                     if sid:
@@ -948,13 +1082,13 @@ def run(provider: Provider, prompt: str, cwd: Path,
                 text = _text_from_stream_json(line)
                 if text:
                     if isinstance(process_event, dict):
-                        process_event["last_output_at"] = time.time()
-                        tool = re.search(r"\[\[GEOF_TOOL:([^\]]+)\]\]", text)
-                        if tool:
-                            process_event["activity"] = tool.group(1)
-                        else:
-                            process_event["activity"] = "responding"
-                            process_event.pop("activity_detail", None)
+                        process_event["last_output_at"] = now
+                        if (_stream_text_is_work(line) and
+                                re.sub(r"\[\[GEOF_TOOL:[^\]]+\]\]", "", text).strip()):
+                            activity_tracker.responding(
+                                process_event, now,
+                                preserve_observation=bool(_safe_tool_activity(line, cwd)),
+                            )
                     produced = True
                     if session_out is not None:
                         # Flagged the instant real output exists, not at exit:
@@ -964,8 +1098,9 @@ def run(provider: Provider, prompt: str, cwd: Path,
                     yield text
             else:
                 if isinstance(process_event, dict):
-                    process_event["last_output_at"] = time.time()
-                    process_event["activity"] = "responding"
+                    process_event["last_output_at"] = now
+                    if line.strip():
+                        activity_tracker.responding(process_event, now)
                 produced = True
                 if session_out is not None:
                     session_out["produced"] = True
@@ -997,6 +1132,10 @@ def run(provider: Provider, prompt: str, cwd: Path,
                 process_event["state"] = "exited"
                 process_event["returncode"] = rc
                 process_event["ended_at"] = time.time()
+                if process_event.get("activity_state") == "tool_running":
+                    # Exit is not a result for every pending tool. Preserve
+                    # the last observation without claiming it is still live.
+                    process_event["activity_state"] = "unknown"
         if rc != 0:
             tail = ""
             if provider.stdout_only:

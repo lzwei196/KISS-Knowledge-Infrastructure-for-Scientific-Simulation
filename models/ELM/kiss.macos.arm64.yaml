@@ -1,0 +1,37 @@
+kiss_manifest_version: 1
+model: ELM
+binary_type: Mach-O
+verified: unverified
+install_dir: ELM
+acquire:
+  strategy: build
+  repo: https://github.com/E3SM-Project/E3SM.git
+  ref: 399d4301138617088dd93214123d6c025e061302
+  commands:
+  - python3 ../../ki/tools/build_elm_native.py .
+  produces: ki-build/e3sm.exe
+python_deps:
+- numpy
+- pandas
+- xarray
+- matplotlib
+- netCDF4
+- PyYAML
+system_deps:
+- git
+- cmake
+- make
+- gfortran
+notes: >-
+  Official E3SM v3.0.0 ELM land model, pinned software submodules and native coupled
+  executable. A CIME script, Python import or isolated component test is not the
+  installed native model. Installation testing is separate from scientific validation.
+agent_hint: >-
+  Read docs/macos_build_only.md and run the trusted named build helper from
+  binaries/ELM. Preprovision genuine MPICH/netCDF native development libraries
+  and Python 3.11 through workspace elm-build-config.json (native_runtime and
+  build_python keys), or explicit --runtime/--python helper arguments. Do not
+  substitute another E3SM version or accept create_newcase as the executable.
+  The helper disables component namelist generation, configures only software,
+  compiles support libraries then all native components and links e3sm.exe.
+  No case execution, scientific dataset download or numerical source changes.

@@ -1,0 +1,28 @@
+kiss_manifest_version: 1
+model: LPJ_GUESS
+binary_type: Python
+verified: observed
+install_dir: LPJ_GUESS
+acquire:
+  strategy: bundled
+  produces: tools/run_lpjguess.py
+python_script:
+  implementation_id: lpj-guess-analytic
+  path: tools/run_lpjguess.py
+  sha256: 44b7677f4294f26257f58f5d690d6b6751aa7eb32d79ed5324d9863e42a16c04
+python_deps:
+- numpy
+- pandas
+- scipy
+notes: Installs the declared lpj-guess-analytic Python implementation (HydroCraft analytic reimplementation).
+  This is not installation of the official upstream LPJ_GUESS application and does not establish
+  algorithmic equivalence. The original scientific runner bytes are unchanged. Fresh DS installation
+  passed the source-bound declared-variant contract on 2026-09-09. Official upstream installation
+  remains unverified.
+agent_hint: Read docs/install.macos.md. Use the actual bundled ki/tools/run_lpjguess.py in the workspace;
+  do not create a replacement runner, copy a stub, or choose the Python interpreter as model product.
+  Install genuine listed dependencies into the workspace venv. The fixed python_script gate verifies
+  implementation identity and runner SHA256, then requires --help exit0 in an empty directory with
+  no created paths. Do not run --version (unsupported), construct model objects, call simulation/calibration
+  functions, invoke scientific preflight checks, or create/download input data. No official upstream
+  application is required for this explicitly declared variant contract.

@@ -1,0 +1,14 @@
+kiss_manifest_version: 1
+model: DHSVM
+binary_type: Mach-O
+verified: unverified
+install_dir: DHSVM
+acquire:
+  strategy: build
+  repo: https://github.com/pnnl/DHSVM-PNNL.git
+  ref: 4108ab931f903f540b3c63c3c1d659bc9cc17368
+  produces: build/DHSVM/sourcecode/DHSVM
+python_deps: [numpy, pandas, xarray, netCDF4, geopandas, shapely, matplotlib]
+system_deps: [git, cmake, clang, netcdf]
+notes: Official v3.2 source pin and core native product declared after baseline discovery failure. Native build compatibility requires review; earlier blanket warning suppression is not an accepted repair recipe.
+agent_hint: Build the genuine core DHSVM CMake target, preserving exact product <workspace>/binaries/DHSVM/build/DHSVM/sourcecode/DHSVM. Review legacy-C errors against upstream corrections before changing source. In particular DHSVMChannel.c has an assignment/comparison precedence defect; do not merely suppress integer-to-pointer errors and claim correctness. Record precise minimal compatibility diff and scope. Optional preprocessing utilities need separate checks; no simulations, Chiwawa examples or scientific input downloads.

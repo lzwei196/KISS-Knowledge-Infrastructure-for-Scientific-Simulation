@@ -1,0 +1,23 @@
+package:
+  name: GeoForge_Database
+  version: "1.0"
+  kind: task_workflow
+  domain: data access
+summary:
+  total_tools: 1
+  total_diagnostic_triplets: 15
+validation:
+  tier: structural_and_live_adapter
+security:
+  persistent_token_owner: GeoForge Desktop
+  agent_access: process-local read-only capability
+  writes_project_data: false
+workflow:
+  stages:
+    - id: scope_query
+      document: docs/s1_scope_query.md
+    - id: search_catalogue
+      document: docs/s2_search_catalogue.md
+      tool: tools/search_catalogue.py
+    - id: report_selection
+      document: docs/s3_report_selection.md

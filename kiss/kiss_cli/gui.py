@@ -1691,10 +1691,16 @@ class Handler(BaseHTTPRequestHandler):
             })
 
         if route == "/api/project-location":
-            return self._json({
-                "default_parent": str(sessions.default_project_parent(self.workroot)),
-                "creates_child_folder": True,
-            })
+            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            try:
+                location = sessions.project_location(
+                    self.workroot,
+                    project_name=(query.get("project_name") or [None])[0],
+                    project_parent=(query.get("project_parent") or [None])[0],
+                )
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json(location)
 
         if route.startswith("/api/session/") and route.endswith("/artifact"):
             sid = route.split("/")[3]
@@ -2123,6 +2129,7 @@ class Handler(BaseHTTPRequestHandler):
                 s = sessions.create(
                     self.workroot, req.get("models"), req.get("provider", ""),
                     project_parent=req.get("project_parent"),
+                    project_name=req.get("project_name"),
                 )
             except (ValueError, OSError) as e:
                 return self._json({"error": str(e)}, 400)
@@ -3190,7 +3197,7 @@ verification are different states; never claim this test verified the KI."""
             sessions.append_message(self.workroot, s,
                                     {"role": "user", "text": text,
                                      "attachments": attachments})
-            if s.get("title") in ("New session", "", None):
+            if not s.get("project_name") and s.get("title") in ("New session", "", None):
                 s["title"] = text[:48]
             sessions.save(self.workroot, s)
             project = sessions.project_path(self.workroot, s)

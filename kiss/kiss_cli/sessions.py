@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import threading
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -88,14 +89,52 @@ def _slug(title: str) -> str:
     return value or "chat"
 
 
+def _project_name(value: str) -> str:
+    """Validate a display name; folder spelling is separately handled by _slug."""
+    if not isinstance(value, str):
+        raise ValueError("project name must be a string")
+    if any(unicodedata.category(char).startswith("C") for char in value):
+        raise ValueError("project name must not contain control characters")
+    name = value.strip()
+    if not name or len(name) > 120:
+        raise ValueError("project name must contain 1 to 120 characters")
+    if not any(char.isalnum() for char in name):
+        raise ValueError("project name must contain a letter or number")
+    return name
+
+
 def _folder_name(s: dict) -> str:
     try:
         stamp = time.strftime("%Y-%m-%d", time.localtime(float(s.get("created", 0))))
     except (TypeError, ValueError, OverflowError):
         stamp = time.strftime("%Y-%m-%d")
-    title = s.get("title")
-    label = "new-session" if title in (None, "", "New session") else _slug(title)
+    title = s.get("project_name") or s.get("title")
+    label = ("new-session" if not s.get("project_name") and title in (None, "", "New session")
+             else _slug(title))
     return f"{stamp}-{label}--{s['id']}"
+
+
+def project_location(workroot: Path, project_name: str | None = None,
+                     project_parent: str | Path | None = None) -> dict:
+    """Preview a named child project without creating the parent or any files.
+
+    The ID is allocated only when the project is created; the preview retains
+    its placeholder so two equally named projects never share a folder.
+    """
+    created = time.time()
+    name = _project_name(project_name) if project_name is not None else (
+        "Project " + time.strftime("%Y-%m-%d %H%M%S", time.localtime(created)))
+    default_parent = (Path(workroot).expanduser().resolve() / "projects").resolve()
+    parent = Path(project_parent).expanduser() if project_parent else default_parent
+    if not parent.is_absolute():
+        raise ValueError("project location must be an absolute folder path")
+    parent = parent.resolve()
+    if parent.exists() and not parent.is_dir():
+        raise ValueError(f"project location is not a folder: {parent}")
+    child = _folder_name({"id": "{id}", "created": created, "project_name": name})
+    return {"default_parent": str(default_parent), "project_name": name,
+            "project_parent": str(parent), "project_path_preview": str(parent / child),
+            "creates_child_folder": True}
 
 
 def _safe_recorded_project(workroot: Path, s: dict) -> Path | None:
@@ -208,7 +247,7 @@ def _ensure_project(workroot: Path, s: dict) -> Path:
         raise ValueError(f"invalid session id {sid!r}")
     root = Path(workroot).resolve()
     current = _find_project(root, sid, s)
-    meaningful_title = s.get("title") not in (None, "", "New session")
+    meaningful_title = bool(s.get("project_name")) or s.get("title") not in (None, "", "New session")
 
     if current is None:
         requested = s.get("project_parent")
@@ -279,10 +318,13 @@ def _seed_full_transcript(project: Path, s: dict) -> None:
 
 
 def create(workroot: Path, models: list[str] | None = None,
-           provider: str = "", project_parent: str | Path | None = None) -> dict:
+           provider: str = "", project_parent: str | Path | None = None,
+           project_name: str | None = None) -> dict:
     s = {"id": uuid.uuid4().hex[:12], "title": "New session",
          "created": time.time(), "models": models or [], "provider": provider,
          "skills": [], "mcps": [], "messages": [], "message_count": 0}
+    if project_name is not None:
+        s["project_name"] = s["title"] = _project_name(project_name)
     if project_parent:
         s["project_parent"] = str(project_parent)
     save(workroot, s)
@@ -351,11 +393,14 @@ def save(workroot: Path, s: dict) -> None:
     if project.parent != default_parent:
         pointer = _legacy_path(root, s["id"])
         pointer_tmp = pointer.with_suffix(".tmp")
-        pointer_tmp.write_text(json.dumps({
+        pointer_doc = {
             "kind": _PROJECT_POINTER_KIND,
             "id": s["id"],
             "project_root": str(project),
-        }, indent=1, ensure_ascii=False), encoding="utf-8")
+        }
+        if isinstance(s.get("title"), str) and s["title"].strip():
+            pointer_doc["title"] = s["title"]
+        pointer_tmp.write_text(json.dumps(pointer_doc, indent=1, ensure_ascii=False), encoding="utf-8")
         pointer_tmp.replace(pointer)
 
 
@@ -415,8 +460,11 @@ def list_all(workroot: Path) -> list[dict]:
                 name = Path(root).name
                 title = name.rsplit("--", 1)[0]
                 title = title[11:] if len(title) > 11 and title[:10].count("-") == 2 else title
+                saved_title = s.get("title")
+                title = (saved_title if isinstance(saved_title, str) and saved_title.strip()
+                         else title.replace("-", " ").strip() or "?")
                 seen.add(sid)
-                out.append({"id": sid, "title": title.replace("-", " ").strip() or "?",
+                out.append({"id": sid, "title": title,
                             "created": p.stat().st_mtime, "models": [], "skills": [], "mcps": [],
                             "n": 0, "project_path": root, "external": True})
                 continue

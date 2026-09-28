@@ -461,6 +461,8 @@
     "Search skills…": "搜索技能…",
     "Optional note for the agent": "给 Agent 的可选说明"
     ,"New project chat": "新建项目对话"
+    ,"Project name": "项目名称"
+    ,"Project folder (created automatically)": "项目文件夹（自动创建）"
     ,"Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.": "每个对话都有独立的项目文件夹，用来保存记忆、输入、模型运行、输出和图表。"
     ,"Create the project inside": "在此位置创建项目"
     ,"Choose…": "选择…"

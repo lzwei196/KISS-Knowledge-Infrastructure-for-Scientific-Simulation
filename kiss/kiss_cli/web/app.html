@@ -431,9 +431,13 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <button class="modal-x" data-modal-close aria-label="Close" title="Close">✕</button>
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="mark">▣</span><h2 style="margin:0">New project chat</h2></div>
     <div style="color:var(--fg-2)">Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.</div>
+    <label for="project-name">Project name</label>
+    <input id="project-name" autocomplete="off" maxlength="120" style="width:100%">
     <label for="project-parent">Create the project inside</label>
     <div style="display:flex;gap:7px"><input id="project-parent" autocomplete="off" spellcheck="false" style="flex:1"><button id="project-browse">Choose…</button></div>
-    <div class="hint" id="project-location-note" style="margin:6px 0 0">You may type a new folder path. GeoForge creates it, then creates this chat's named project folder inside it. Existing files are not changed.</div>
+    <label for="project-path-preview">Project folder (created automatically)</label>
+    <output id="project-path-preview" aria-live="polite" style="display:block;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere;font-size:12px"></output>
+    <div class="hint" id="project-location-note" style="margin:6px 0 0">Edit the suggested name or keep it. GeoForge creates the folder automatically, including missing parent folders. {id} becomes a unique ID so projects with the same name stay separate. Existing files are not changed.</div>
     <div class="hint" id="project-location-error" style="margin:7px 0 0;color:var(--block)"></div>
     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
       <button class="primary" id="project-create">Create chat</button>
@@ -1162,37 +1166,82 @@ async function maybeShowAction(id){
   const key=`${id}:${request.id||request.title}:${request.created_at||""}`;if(SEEN_ACTIONS.has(key))return;
   if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
 }
-let PROJECT_PICK_RESOLVE=null,LAST_PROJECT_ERROR="";
+let PROJECT_PICK_RESOLVE=null,LAST_PROJECT_ERROR="",PROJECT_PREVIEW_SEQ=0,PROJECT_PREVIEW_TIMER=null;
 function finishProjectPicker(value){
+  clearTimeout(PROJECT_PREVIEW_TIMER);PROJECT_PREVIEW_SEQ++;
   $("#sessionpick").classList.remove("open");
   const resolve=PROJECT_PICK_RESOLVE;PROJECT_PICK_RESOLVE=null;
   if(resolve)resolve(value);
 }
-function chooseProjectLocation(){
-  if(PROJECT_PICK_RESOLVE)return Promise.resolve(null);
-  $("#project-parent").value=PROJECT_LOCATION.default_parent||"";
-  $("#project-location-error").textContent=LAST_PROJECT_ERROR;LAST_PROJECT_ERROR="";
-  $("#project-location-note").textContent=chineseUI()?"可以直接输入尚不存在的文件夹路径。GeoForge 会先创建该路径，再在其中新建本次对话的项目文件夹；不会更改已有文件。":"You may type a new folder path. GeoForge creates it, then creates this chat's named project folder inside it. Existing files are not changed.";
-  $("#sessionpick").classList.add("open");
-  return new Promise(resolve=>{PROJECT_PICK_RESOLVE=resolve;setTimeout(()=>$("#project-parent").focus(),0);});
+function suggestedProjectName(){
+  // A draft belongs to the new project only when no existing chat is open.
+  const draft=!CUR?$("#msg").value.trim().split(/\r?\n/)[0]:"";
+  const suggestion=[...draft.replace(/\p{C}/gu," ").replace(/\s+/g," ").trim()].slice(0,80).join("");
+  if(/[\p{L}\p{N}]/u.test(suggestion))return suggestion;
+  const now=new Date(),pad=n=>String(n).padStart(2,"0");
+  return `${chineseUI()?"新项目":"Project"} ${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 }
-async function createSessionAt(projectParent){
-  const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({provider:$("#prov").value,project_parent:projectParent})});
-  const created=await r0.json().catch(()=>({}));
-  if(!r0.ok){
-    LAST_PROJECT_ERROR=created.error||`Could not create the project (${r0.status})`;
+function projectChoice(){
+  return {project_name:$("#project-name").value.trim(),project_parent:$("#project-parent").value.trim()};
+}
+async function refreshProjectPreview(){
+  const seq=++PROJECT_PREVIEW_SEQ,choice=projectChoice();
+  $("#project-create").disabled=!choice.project_name||!choice.project_parent;
+  if($("#project-create").disabled){
+    $("#project-path-preview").textContent=chineseUI()?"填写项目名称和保存位置后，将自动生成路径。":"Enter a project name and location to preview its folder.";
+    return;
+  }
+  $("#project-path-preview").textContent=chineseUI()?"正在生成项目路径…":"Preparing project path…";
+  try{
+    // The server owns path naming on both macOS and Windows. Previewing does
+    // not create directories or allocate a session.
+    const response=await fetch("/api/project-location?"+new URLSearchParams(choice));
+    const data=await response.json();
+    if(seq!==PROJECT_PREVIEW_SEQ||!PROJECT_PICK_RESOLVE)return;
+    if(!response.ok)throw new Error(data.error||"Could not preview project folder");
+    $("#project-path-preview").textContent=data.project_path_preview;
+  }catch(error){
+    if(seq===PROJECT_PREVIEW_SEQ&&PROJECT_PICK_RESOLVE)
+      $("#project-path-preview").textContent=(chineseUI()?"无法预览路径：":"Could not preview folder: ")+(error.message||String(error));
+  }
+}
+function scheduleProjectPreview(){
+  clearTimeout(PROJECT_PREVIEW_TIMER);PROJECT_PREVIEW_SEQ++;
+  $("#project-location-error").textContent="";
+  const choice=projectChoice();
+  $("#project-create").disabled=!choice.project_name||!choice.project_parent;
+  $("#project-path-preview").textContent=chineseUI()?"正在生成项目路径…":"Preparing project path…";
+  PROJECT_PREVIEW_TIMER=setTimeout(refreshProjectPreview,150);
+}
+function chooseProjectLocation(previous=null){
+  if(PROJECT_PICK_RESOLVE)return Promise.resolve(null);
+  $("#project-name").value=previous?previous.project_name:suggestedProjectName();
+  $("#project-parent").value=previous?previous.project_parent:PROJECT_LOCATION.default_parent||"";
+  $("#project-location-error").textContent=LAST_PROJECT_ERROR;LAST_PROJECT_ERROR="";
+  $("#project-location-note").textContent=chineseUI()?"项目名称已自动填写，可以修改。GeoForge 会自动创建项目文件夹及尚不存在的上级文件夹；{id} 将替换为唯一编号，同名项目也不会混在一起，不会更改已有文件。":"Edit the suggested name or keep it. GeoForge creates the folder automatically, including missing parent folders. {id} becomes a unique ID so projects with the same name stay separate. Existing files are not changed.";
+  $("#sessionpick").classList.add("open");
+  return new Promise(resolve=>{PROJECT_PICK_RESOLVE=resolve;refreshProjectPreview();setTimeout(()=>{$("#project-name").focus();$("#project-name").select();},0);});
+}
+async function createSessionAt(choice){
+  try{
+    const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({provider:$("#prov").value,...choice})});
+    const created=await r0.json().catch(()=>({}));
+    if(!r0.ok)throw new Error(created.error||`Could not create the project (${r0.status})`);
+    SESSIONS.unshift({id:created.id,title:created.title,models:[],skills:[],mcps:[],n:0,created:created.created,
+                      project_path:created.project_path});
+    return created;
+  }catch(error){
+    LAST_PROJECT_ERROR=error.message||String(error);
     return null;
   }
-  SESSIONS.unshift({id:created.id,title:created.title,models:[],skills:[],mcps:[],n:0,created:created.created,
-                    project_path:created.project_path});
-  return created;
 }
 async function ensureSession(){
   if(CUR) return CUR;
+  let choice=null;
   while(!CUR){
-    const parent=await chooseProjectLocation();if(parent===null)return null;
-    const created=await createSessionAt(parent);if(!created)continue;
+    choice=await chooseProjectLocation(choice);if(choice===null)return null;
+    const created=await createSessionAt(choice);if(!created)continue;
     CUR=created;drawSessions();
   }
   return CUR;
@@ -1354,8 +1403,8 @@ $("#prov").addEventListener("change",drawLLM);
 document.querySelectorAll("#kindtog button").forEach(b=>b.onclick=()=>{
   KIND=b.dataset.k; localStorage.setItem("kiss.kind",KIND); drawProviders();});
 $("#newsess").onclick=async()=>{
-  let created=null;
-  while(!created){const parent=await chooseProjectLocation();if(parent===null)return;created=await createSessionAt(parent);}
+  let created=null,choice=null;
+  while(!created){choice=await chooseProjectLocation(choice);if(choice===null)return;created=await createSessionAt(choice);}
   if(CUR)DRAFTS.set(CUR.id,$("#msg").value);
   CUR=created;$("#msg").value="";renderAttachments();await openSession(created.id);
 };
@@ -1363,11 +1412,15 @@ $("#activity-new").onclick=()=>$("#newsess").click();
 $("#activity-refresh").onclick=()=>refreshAgentStatus();
 $("#activity-stop").onclick=async()=>{if(!CUR||!CUR.id)return;const b=$("#activity-stop");b.disabled=true;try{await fetch(`/api/session/${CUR.id}/stop`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})}finally{setTimeout(()=>{b.disabled=false},3000)}};
 $("#project-create").onclick=()=>{
-  const value=$("#project-parent").value.trim();
-  if(!value){$("#project-location-error").textContent=chineseUI()?"请选择或输入一个文件夹。":"Choose or enter a folder.";return;}
-  finishProjectPicker(value);
+  const choice=projectChoice();
+  if(!choice.project_name){$("#project-location-error").textContent=chineseUI()?"请填写项目名称。":"Enter a project name.";$("#project-name").focus();return;}
+  if(!choice.project_parent){$("#project-location-error").textContent=chineseUI()?"请选择或输入一个文件夹。":"Choose or enter a folder.";return;}
+  finishProjectPicker(choice);
 };
-$("#project-default").onclick=()=>{$("#project-parent").value=PROJECT_LOCATION.default_parent||"";$("#project-location-error").textContent="";};
+$("#project-name").addEventListener("input",scheduleProjectPreview);
+$("#project-parent").addEventListener("input",scheduleProjectPreview);
+$("#project-name").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing&&e.keyCode!==229){e.preventDefault();$("#project-create").click();}});
+$("#project-default").onclick=()=>{$("#project-parent").value=PROJECT_LOCATION.default_parent||"";scheduleProjectPreview();};
 $("#project-cancel").onclick=()=>finishProjectPicker(null);
 $("#project-browse").onclick=async()=>{
   $("#project-location-error").textContent="";
@@ -1378,7 +1431,7 @@ $("#project-browse").onclick=async()=>{
   }
   try{
     const picked=await nativeApi.choose_project_parent($("#project-parent").value||PROJECT_LOCATION.default_parent||"");
-    if(picked)$("#project-parent").value=picked;
+    if(picked){$("#project-parent").value=picked;scheduleProjectPreview();}
   }catch(error){$("#project-location-error").textContent=chineseUI()?"无法打开文件夹选择器，请直接输入路径。":"Could not open the folder picker; enter the path directly.";}
 };
 $("#action-later").onclick=closeActionPicker;

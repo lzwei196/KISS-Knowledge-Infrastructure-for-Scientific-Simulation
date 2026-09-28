@@ -6,6 +6,15 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Source update — named project folders (2026-09-28, not yet compiled)
+
+- The new-chat dialog now suggests an editable project name: the unsent request's first line for a new chat, or a dated default. It does not borrow text from an existing conversation.
+- The folder preview uses the same server-side naming logic as creation. Creating the chat creates missing parent folders and the named project layout automatically; `{id}` is replaced by a unique session ID to keep equally named projects separate.
+- Name and location edits update the preview; failed creation preserves both entries for retry. Explicit project names and paths stay stable after the first message. Existing unnamed sessions retain their previous auto-title behavior.
+- Naming/path creation remains in the existing session module; the UI requests its preview rather than duplicating filesystem naming rules. External-project sidebar titles preserve the original name without opening protected project folders.
+- Verification: 193 focused tests passed on the final source (including 59 new naming/dialog cases and three localhost tests). The broader Desktop run passed 1,051 tests and 123 subtests, skipped one, and hit three sandbox-only socket-bind failures; those three passed on the permitted rerun. Chinese IME submission and draft-suggestion normalization were added and verified after that broader run. No live provider, scientific simulation, native GUI acceptance, or new compiled build is claimed.
+- 新建对话自动填写可修改的项目名称，并预览将自动创建的路径；同名项目保持独立，创建失败保留输入，已有对话不迁移。本条为源码更新，尚未重新编译或发布。
+
 ## mac-version checkpoint — 2026-09-28 (planner test build, not a new release)
 
 ### English

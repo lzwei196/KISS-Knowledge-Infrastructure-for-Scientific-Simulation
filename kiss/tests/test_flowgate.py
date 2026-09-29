@@ -805,3 +805,58 @@ def test_two_items_on_one_manual_dataset_make_one_download_row(tmp_path, monkeyp
     (dest / "a.nc").write_bytes(b"x")
     result = acquire.run(project)
     assert result["status"] == "done" and {v["status"] for v in result["items"].values()} == {"done"}
+
+
+# ── Issue #6a: the agent's download tool may fetch only planned inputs Desktop does not acquire ──
+
+def _approved_fetch_session(tmp_path, monkeypatch, **item):
+    import io
+    import urllib.request
+    ki = _ki(tmp_path)
+    project, fs = _session(tmp_path, ki, [
+        ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
+    pj, inv = _plan(ki)
+    inv["items"][0].update(item)
+    fs.write_plan(pj, inv)
+    fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
+    calls = []
+
+    class _Resp(io.BytesIO):
+        status = 200
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        return _Resp(b"lat,lon,t2m\n")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    return project, fs, calls
+
+
+@pytest.mark.parametrize("delivery", ["served", "subset", "manual"])
+def test_agent_cannot_overwrite_an_input_desktop_acquires(tmp_path, monkeypatch, delivery):
+    """Reproduced: an agent 'refresh' of forcing replaced Desktop's signed CMFD receipt."""
+    _project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch, dataset_id="cmfd_v1", delivery=delivery)
+    with pytest.raises(flowgate.FlowDenied, match="GeoForge acquires"):
+        fs.fetch("https://example.org/other.nc", "forcing")
+    assert calls == []
+
+
+def test_agent_cannot_download_under_an_unplanned_item(tmp_path, monkeypatch):
+    project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch)
+    with pytest.raises(flowgate.FlowDenied, match="not in the approved data inventory"):
+        fs.fetch("https://example.org/x.csv", "ghost")
+    assert calls == [] and not (project / "inputs" / "raw" / "ghost").exists()
+
+
+def test_agent_cannot_replace_an_input_the_user_provides(tmp_path, monkeypatch):
+    _project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch, decision="user", needs_user=True)
+    with pytest.raises(flowgate.FlowDenied, match="the user provides"):
+        fs.fetch("https://example.org/x.csv", "forcing")
+    assert calls == []
+
+
+def test_a_planned_public_source_is_still_fetched_and_receipted(tmp_path, monkeypatch):
+    """NASA POWER-style inputs have no catalogue delivery: this route stays open for them."""
+    project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch)
+    info = fs.fetch("https://power.larc.nasa.gov/api/x.csv", "forcing", filename="power.csv")
+    assert calls and (project / info["path"]).read_bytes() == b"lat,lon,t2m\n"

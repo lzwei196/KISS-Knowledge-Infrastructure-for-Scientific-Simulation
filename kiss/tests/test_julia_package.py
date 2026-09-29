@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-from kiss_cli import api, jpackage, runnable
+from kiss_cli import api, execution, jpackage, runnable
 
 C=dict(name='Wflow',uuid='d48b7d99-76e7-47ae-b1d5-ff0c1cf9a818',version='1.1.0-dev',project='project',depot='depot',runtime='bin/julia',symbols=['Model','run'])
 
@@ -50,7 +50,7 @@ class JuliaPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             r=Path(d).resolve()
             cfg=SimpleNamespace(root=r,roles={'binaries':r/'binaries'},python=sys.executable)
-            with patch.object(api.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'ok','')):
+            with patch.object(execution,'run_process',return_value=execution.ProcessRun('succeeded',0,'ok','')):
                 result=api.execute_tool('run_setup_command',{'argv':['julia',*jpackage.args(r/'project',r/'depot',C)]},SimpleNamespace(root=r/'ki'),cfg,setup_mode=True,setup_context={'installation_only':True})
                 self.assertIn('exit_code=0',result)
 
@@ -71,7 +71,7 @@ class JuliaPackageTests(unittest.TestCase):
             root=Path(td).resolve()
             cfg=SimpleNamespace(root=root,roles={'binaries':root/'binaries'},python=sys.executable)
             stdout=jpackage.MARK+'\n'+str(root/'depot/package/src.jl')+'\n'
-            with patch.object(api.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout,'x'*60000)) as run:
+            with patch.object(execution,'run_process',return_value=execution.ProcessRun('succeeded',0,stdout,'x'*60000)) as run:
                 result=api.execute_tool('run_setup_command',{'argv':['julia',*jpackage.args(root/'project',root/'depot',C)],'env':{'JULIA_DEPOT_PATH':'/tmp/wrong','JULIA_LOAD_PATH':'@global'}},SimpleNamespace(root=root/'ki'),cfg,setup_mode=True,setup_context={'installation_only':True})
                 self.assertIn(jpackage.MARK,result)
                 self.assertIn('x'*100,result)

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-from kiss_cli import api, rpackage, runnable
+from kiss_cli import api, execution, rpackage, runnable
 
 CONTRACT = dict(name='airGR', version='1.7.8', library='library', dll='libs/airGR.so',
                 fortran_symbol='frun_gr4j', function='RunModel_GR4J')
@@ -33,7 +33,7 @@ class RPackageTests(unittest.TestCase):
             root = Path(d).resolve()
             cfg = SimpleNamespace(root=root, roles={'binaries':root/'binaries'}, python=sys.executable)
             ki = SimpleNamespace(root=root/'ki')
-            with patch.object(api.subprocess, 'run', return_value=subprocess.CompletedProcess([],0,rpackage.MARK,'')) as run:
+            with patch.object(execution, 'run_process', return_value=execution.ProcessRun('succeeded',0,rpackage.MARK,'')) as run:
                 result = api.execute_tool('run_setup_command',
                     {'argv':['Rscript', *rpackage.probe_args(root/'library',CONTRACT)]},
                     ki,cfg,setup_mode=True,setup_context={'installation_only':True})

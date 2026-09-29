@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 OP_RULES = """[operational]
-- LONG JOBS: launch detached (setsid nohup ... &) and WAIT in the same turn; ending the turn kills the run.
+- LONG JOBS: launch detached (setsid nohup ... &; plain nohup ... & where setsid is absent, as on macOS) and WAIT in the same turn; ending the turn kills the run.
 - NEVER launch the same generation job twice concurrently (duplicate writers corrupt outputs).
 - After each stage: verify the output exists and values are plausible BEFORE the next stage.
 - Use a UNIQUE output dir per run; check for prior outputs before re-running (no duplicates).

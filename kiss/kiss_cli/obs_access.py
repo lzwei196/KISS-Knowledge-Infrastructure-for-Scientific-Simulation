@@ -186,6 +186,25 @@ def token_configured() -> bool:
     return bool(token())
 
 
+AUTH_ERRORS = frozenset({"missing_token", "invalid_token", "expired_token", "revoked_token"})
+
+
+def effective_mode(mode: str) -> str:
+    """Database access as agents and cards may use it: the setting, but 'off' unless the
+    Database is activated — a token, and the server not rejecting it. An old cached catalogue
+    must not reactivate a disabled or unauthorised integration. Reads only this process's
+    token state and the cached catalogue: never a Keychain prompt, never the network.
+    Settings and project-data availability indicators use this same effective mode;
+    their separate "configured" field records token presence, not authorization."""
+    if mode == "off":
+        return "off"
+    state = token_state()
+    store = load_catalogue() or {}
+    if state in ("missing", "error") or str((store.get("error") or {}).get("code") or "") in AUTH_ERRORS:
+        return "off"
+    return mode if state == "configured" or store.get("ok") else "off"
+
+
 def token_state() -> str:
     """Non-blocking view of the credential: never opens a Keychain prompt.
 
@@ -663,8 +682,7 @@ def refresh_catalogue(*, client: Client | None = None, force: bool = False,
     if not force and previous:
         age = now.timestamp() - float(previous.get("generated_at_epoch") or 0)
         error_code = str((previous.get("error") or {}).get("code") or "")
-        auth_error = error_code in {
-            "missing_token", "invalid_token", "expired_token", "revoked_token"}
+        auth_error = error_code in AUTH_ERRORS
         budget = max(0, int(ttl)) if previous.get("ok") else (0 if auth_error else 60)
         if 0 <= age <= budget:
             return previous

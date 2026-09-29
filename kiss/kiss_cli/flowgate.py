@@ -273,6 +273,9 @@ class FlowSession:
             run_facts={"errored": exit_code != 0, "output_nonempty": any(
                 p.is_file() and p.stat().st_size > 0 for p in outputs)},
             physical=physical)
+        if execution_status == "stopped":
+            # The user's Stop is its own outcome: neither passed nor failed, the step is still to do.
+            validation["status"] = "stopped"
         # Validation may take time; do not attach this attempt to a later approval.
         if expected_approval_sha256 is not None and (self.approval_status() != "OK" or
                 self.flow.approval.approval_id(self.flow.approval.read(self.project)) != expected_approval_sha256):
@@ -321,6 +324,19 @@ class FlowSession:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("https", "http"):
             raise FlowDenied("fetch_data accepts http(s) URLs only")
+        # Issue #6a: only a planned input Desktop does not bring in itself. A download under a
+        # catalogue item replaced Desktop's signed receipt; one under an unplanned id was bound.
+        from .acquire import ACQUIRABLE
+        item = next((it for it in (self.inventory or {}).get("items") or []
+                     if isinstance(it, dict) and str(it.get("id")) == item_id), None)
+        if item is None:
+            raise FlowDenied(f"{item_id!r} is not in the approved data inventory; "
+                             "downloads are for planned inputs only")
+        if item.get("delivery") in ACQUIRABLE:
+            raise FlowDenied(f"GeoForge acquires {item_id!r} itself from the GeoForge Database "
+                             "and keeps its receipt; do not download a replacement")
+        if str(item.get("decision") or "").lower() in {"user", "provide", "you"}:
+            raise FlowDenied(f"the user provides {item_id!r}; use their file, do not download one")
         safe_item = "".join(c if c.isalnum() or c in "-_." else "_" for c in item_id)[:80]
         dest_dir = self.project / "inputs" / "raw" / safe_item
         dest_dir.mkdir(parents=True, exist_ok=True)

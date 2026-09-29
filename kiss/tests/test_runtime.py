@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, install_locations, kimi_security, mcp, observatory, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, runnable, sessions, settings, setup, shellenv, skilllib, software_audit, tls
+from kiss_cli import api, app as desktop_app, calibration, execution, clipboard, gui, harness_runtime, install, install_locations, kimi_security, mcp, observatory, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, runnable, sessions, settings, setup, shellenv, skilllib, software_audit, tls
 from kiss_cli.catalog import Catalog
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
@@ -630,7 +630,7 @@ class ProviderHealthTests(unittest.TestCase):
                 roles={"binaries": root / "binaries"},
             )
             with mock.patch.object(
-                    api.subprocess, "run",
+                    api.subprocess, "Popen",
                     side_effect=PermissionError(13, "Permission denied", str(tool))):
                 output = api.execute_tool(
                     "run_setup_command",
@@ -2689,8 +2689,8 @@ class AgentSetupTests(unittest.TestCase):
                 root=root, python=sys.executable,
                 roles={"binaries": root / "binaries"},
             )
-            completed = subprocess.CompletedProcess(
-                ["git", "--version"], 0, stdout="git version test\n", stderr="")
+            completed = execution.ProcessRun(
+                "succeeded", 0, stdout="git version test\n", stderr="")
 
             def routed(provider, env):
                 self.assertEqual(provider, "api:deepseek")
@@ -2698,7 +2698,7 @@ class AgentSetupTests(unittest.TestCase):
 
             with mock.patch.object(
                     settings, "with_provider_proxy", side_effect=routed) as route, \
-                 mock.patch.object(api.subprocess, "run", return_value=completed) as run:
+                 mock.patch.object(execution, "run_process", return_value=completed) as run:
                 result = api.execute_tool(
                     "run_setup_command", {"argv": ["git", "--version"]},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -2725,9 +2725,9 @@ class AgentSetupTests(unittest.TestCase):
                 root=work, python=sys.executable,
                 roles={"binaries": work / "binaries"},
             )
-            completed = subprocess.CompletedProcess(
-                ["file", str(binary)], 0, stdout="model: executable\n", stderr="")
-            with mock.patch.object(api.subprocess, "run", return_value=completed):
+            completed = execution.ProcessRun(
+                "succeeded", 0, stdout="model: executable\n", stderr="")
+            with mock.patch.object(execution, "run_process", return_value=completed):
                 result = api.execute_tool(
                     "run_setup_command", {"argv": ["file", str(binary)]},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -3241,9 +3241,9 @@ class AgentSetupTests(unittest.TestCase):
                     ki, cfg, setup_mode=True, setup_context=context,
                 )
             with mock.patch.object(
-                    api.subprocess, "run",
-                    return_value=subprocess.CompletedProcess(
-                        [str(model), "--version"], 0, stdout="DART 11.24.1", stderr="")):
+                    execution, "run_process",
+                    return_value=execution.ProcessRun(
+                        "succeeded", 0, stdout="DART 11.24.1", stderr="")):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": [str(model), "--version"]},
                     ki, cfg, setup_mode=True, setup_context=context,
@@ -3269,9 +3269,9 @@ class AgentSetupTests(unittest.TestCase):
             context = {"installation_only": True}
 
             with mock.patch.object(
-                    api.subprocess, "run",
-                    return_value=subprocess.CompletedProcess(
-                        [str(build), "nompi"], 0, stdout="built", stderr="")):
+                    execution, "run_process",
+                    return_value=execution.ProcessRun(
+                        "succeeded", 0, stdout="built", stderr="")):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": [str(build), "nompi"]},
                     ki, cfg, setup_mode=True, setup_context=context,

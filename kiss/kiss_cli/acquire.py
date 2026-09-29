@@ -10,6 +10,7 @@ proof lives in the signed data receipts. Nothing here edits the plan files.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -17,6 +18,9 @@ from pathlib import Path
 from . import obs_access, obs_subset, setup as setup_flow
 
 STATUS_FILE = Path(".geoforge/acquisition.json")
+REPLAN_FILE = Path(".geoforge/acquisition-replan.json")
+MANUAL_DETAILS_FILE = Path(".geoforge/manual-download-details.json")
+INTENT_LOCK = threading.RLock()  # only intent publication/admission, never network I/O
 ACQUIRABLE = ("served", "subset", "manual")
 MANUAL_REQUEST_ID = "flow-manual-download"
 
@@ -68,6 +72,46 @@ def _write(project: Path, doc: dict) -> dict:
     return doc
 
 
+def _current_approval(project: Path, flow, approval: str) -> bool:
+    return approval == flow.approval.approval_id(flow.approval.read(project))
+
+
+def _write_pass(project: Path, flow, approval: str, doc: dict) -> dict:
+    # A concurrently issued approval may already have its own status. Never replace
+    # it with an old pass; the caller rejects this result's old identity as stale.
+    return _write(project, doc) if _current_approval(project, flow, approval) else doc
+
+
+def replan_intent(project: Path) -> dict:
+    """The host's durable user request; not itself authority to mutate Flow."""
+    try:
+        value = json.loads((Path(project) / REPLAN_FILE).read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def replan_requested(project: Path, approval: str) -> bool:
+    intent = replan_intent(project)
+    return bool(approval and intent.get("status") == "queued"
+                and intent.get("approval_sha256") == approval)
+
+
+class _ReplanQueued(Exception):
+    pass
+
+
+def _admit_request(project: Path, approval: str) -> None:
+    """Reserve the current request after preparation, atomically with Modify.
+
+    Once admitted, this one request may finish even if Modify arrives next.
+    No later request is admitted, and this short lock is never held on the network.
+    """
+    with INTENT_LOCK:
+        if replan_requested(project, approval):
+            raise _ReplanQueued
+
+
 def _rebind_existing(project: Path, flow, item: dict, approval: str) -> dict | None:
     """Explicit host recovery, only after shared evidence proves the same request."""
     found = flow.receipts.find_download(project, item, approval_sha256=approval, recover=True,
@@ -102,6 +146,7 @@ def _served(project: Path, flow, item: dict, approval: str, client=None) -> dict
     existing = _rebind_existing(project, flow, item, approval)
     if existing:
         return existing
+    _admit_request(project, approval)
     result = (client or obs_access.Client()).download(dataset_id, project)
     if not result.get("served"):
         # the catalogue says manual after all: hand it over instead of failing
@@ -132,6 +177,37 @@ def _manual_row(project: Path, item: dict, info: dict) -> dict:
             "url": url, "code": info.get("baidu_pwd"),
             "path_in_share": info.get("path_in_share"),
             "expected_path": str(info.get("destination") or _manual_destination(project, item))}
+
+
+def _manual_details(project: Path, approval: str) -> dict:
+    """Private recovery cache; links/codes must never enter the acquisition result."""
+    try:
+        doc = json.loads((Path(project) / MANUAL_DETAILS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(doc, dict) or doc.get("approval_sha256") != approval:
+        return {}
+    return doc.get("items") if isinstance(doc.get("items"), dict) else {}
+
+
+def _save_manual_details(project: Path, approval: str, details: dict, item: dict, row: dict) -> None:
+    details[str(item["id"])] = row
+    obs_access._atomic_json(Path(project) / MANUAL_DETAILS_FILE,
+                            {"approval_sha256": approval, "items": details})
+
+
+def _saved_manual_row(project: Path, item: dict, entry: dict, details: dict) -> dict:
+    """Recover only this approved item's allowlisted display fields, never a fresh link."""
+    row = details.get(str(item["id"]))
+    if not isinstance(row, dict) or row.get("item_id") != item.get("id") \
+            or row.get("dataset_id") != item.get("dataset_id"):
+        row = {}
+    return _manual_row(project, item, {
+        "baidu_url": row.get("url"), "baidu_pwd": row.get("code"),
+        "name": row.get("name"), "size": row.get("size"),
+        "path_in_share": row.get("path_in_share"),
+        "destination": entry.get("expected_path") or row.get("expected_path"),
+    })
 
 
 def _placed_receipt(project: Path, flow, item: dict, row: dict, approval: str) -> dict | None:
@@ -169,6 +245,8 @@ def _manual_card(project: Path, rows: list[dict]) -> bool:
     lines = []
     for r in rows:
         lines.append(f"{r['name']} ({obs_access.size_label(r.get('size')) or 'size not reported'}) -> {r['expected_path']}")
+        if not r.get("url"):
+            lines.append("  Download link is not saved. Send a chat message to refresh the manual download instructions.")
         if r.get("code"):
             lines.append(f"  extraction code: {r['code']}")
         if r.get("path_in_share"):
@@ -192,12 +270,14 @@ def _manual_card(project: Path, rows: list[dict]) -> bool:
     return True
 
 
-def run(project: Path, *, client=None) -> dict:
+def run(project: Path, *, client=None, automatic_only: bool = False) -> dict:
     """One idempotent pass over every approved input. Safe after a restart.
 
     Returns {'status': done|pending|waiting|failed, 'items': {id: {...}}}.
     pending = a server clip is still processing; waiting = the user must place files;
     failed = at least one item cannot be acquired (the rest are still attempted).
+    Background ticks use automatic_only: they do not treat a file appearing
+    during a manual copy as the user's completed handoff.
     """
     project = Path(project).resolve()
     flow = _flow()
@@ -211,9 +291,15 @@ def run(project: Path, *, client=None) -> dict:
     # A new approval or a replan that dropped/renamed an item must not inherit its old verdict.
     old_items = doc.get("items") or {} if doc.get("approval_sha256") == approval else {}
     items = {k: v for k, v in old_items.items() if k in keep}
+    details = {k: v for k, v in _manual_details(project, approval).items() if k in keep}
     doc.update(approval_sha256=approval, status="running", items=items)
     manual_rows = []
     for item in wanted:
+        # A user may queue a plan change while the current transfer is in flight.
+        # Its valid receipt is retained, but no later input/job is started.
+        if replan_requested(project, approval):
+            doc["status"] = "pending"
+            return _write_pass(project, flow, approval, doc)
         iid = str(item["id"])
         entry = items.get(iid) or {}
         entry.update(delivery=item.get("delivery"), dataset_id=item.get("dataset_id"))
@@ -222,8 +308,19 @@ def run(project: Path, *, client=None) -> dict:
             entry.update(status="done", receipt=str(found.path), error=None)
             items[iid] = entry
             continue
+        if automatic_only and (item.get("delivery") == "manual" or entry.get("status") == "waiting"):
+            # A tick never signs a manual file, not even a replacement for one the user
+            # handed off: without an intact receipt it waits, with its card, for a new handoff.
+            entry.update(status="waiting", expected_path=entry.get("expected_path") or
+                         str(_manual_destination(project, item)))
+            card = setup_flow.request(project)
+            if not (card and card.get("status") == "waiting" and card.get("id") == MANUAL_REQUEST_ID):
+                manual_rows.append((item, _saved_manual_row(project, item, entry, details)))
+            items[iid] = entry
+            continue
         try:
             if item.get("delivery") == "subset" and item.get("acquisition_id"):
+                _admit_request(project, approval)
                 info = obs_subset.advance_approved(project, item["acquisition_id"], client=client)
                 if info.get("receipt"):
                     entry.update(status="done", receipt=info["receipt"], path=info.get("path"), error=None)
@@ -245,6 +342,7 @@ def run(project: Path, *, client=None) -> dict:
                         "them as a local input and validate them.") from None
                 if out["status"] == "waiting":
                     row = _manual_row(project, item, out["manual"])
+                    _save_manual_details(project, approval, details, item, row)
                     manual_rows.append((item, row))
                     entry.update(status="waiting", expected_path=row["expected_path"], error=None)
                 else:
@@ -256,13 +354,21 @@ def run(project: Path, *, client=None) -> dict:
                 if placed:
                     entry.update(status="done", receipt=placed["receipt"], path=placed["path"], error=None)
                 else:
+                    _admit_request(project, approval)
                     info = (client or obs_access.Client()).download(str(item.get("dataset_id") or ""), project)
                     row = _manual_row(project, item, info)
+                    _save_manual_details(project, approval, details, item, row)
                     manual_rows.append((item, row))
                     entry.update(status="waiting", expected_path=row["expected_path"], error=None)
+        except _ReplanQueued:
+            doc["status"] = "pending"
+            return _write_pass(project, flow, approval, doc)
         except (obs_access.ObsAccessError, OSError, ValueError, KeyError) as error:
             entry.update(status="failed", error=str(error))
         items[iid] = entry
+    if replan_requested(project, approval):
+        doc["status"] = "pending"
+        return _write_pass(project, flow, approval, doc)
     states = {e.get("status") for e in items.values()}
     if "failed" in states:
         overall = "failed"
@@ -272,6 +378,9 @@ def run(project: Path, *, client=None) -> dict:
         overall = "pending"
     else:
         overall = "done"
+    doc["status"] = overall
+    if not _current_approval(project, flow, approval):
+        return doc  # no stale card, activity summary or status write for another plan
     if manual_rows:
         # Several plan items may pin one dataset: one download, one row.
         unique, seen = [], set()
@@ -288,5 +397,4 @@ def run(project: Path, *, client=None) -> dict:
             from . import projectrun
             projectrun.report(project, {"status": "working", "summary": "Approved data received"},
                               source="flow")
-    doc["status"] = overall
-    return _write(project, doc)
+    return _write_pass(project, flow, approval, doc)

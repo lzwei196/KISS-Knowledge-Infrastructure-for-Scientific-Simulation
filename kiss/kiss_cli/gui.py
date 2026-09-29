@@ -17,6 +17,7 @@ two ever disagree, that is a bug in the GUI.
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import hmac
 import json
@@ -35,7 +36,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
+from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -283,6 +284,7 @@ def _database_status() -> dict:
         "configured": state == "configured" or (state == "unknown" and bool(store.get("ok"))),
         "token_state": state,
         "mode": mode,
+        "effective_mode": obs_access.effective_mode(mode),
         "catalogue_ok": bool(store.get("ok")),
         "records": len(store.get("datasets") or []),
         "served": sum(1 for d in store.get("datasets") or [] if d.get("delivery") == "served"),
@@ -308,22 +310,48 @@ def _catalogue_query(query: dict) -> dict:
     }
 
 
+def _user_stopped(events: dict | None) -> bool:
+    handle = (events or {}).get("_handle")
+    return bool(handle is not None and handle.stopped.is_set())
+
+
 def _stop_agent_run(session_id: str) -> dict:
-    """Stop the live turn of one session: close the API stream or end the CLI."""
+    """Stop the live turn of one session: its KI tool runs, the API stream or the CLI.
+
+    The marker reaches receipted tool runs in any process (API thread, CLI run-tool);
+    the stopped handle keeps chained turns and CLI replays from starting."""
+    from . import execution
     with _LIVE_AGENT_RUNS_LOCK:
         live = _LIVE_AGENT_RUNS.get(session_id)
-        handle = live.get("_handle") if live else None
-        proc = live.get("_process_handle") if live else None
-    if live is None:
+    if live is None or live.get("finished_at"):
         return {"ok": False, "stopped": False, "reason": "no live turn"}
-    if handle is not None:
-        handle.stop()
+    if live.get("project"):
+        try:
+            execution.request_stop(Path(live["project"]))
+        except OSError:
+            pass
+    if live.get("_handle") is not None:
+        live["_handle"].stop()
+    # Read after stop(): providers.run stores its process before checking the handle,
+    # so a CLI spawned during this call is ended here or there.
+    proc = live.get("_process_handle")
     if proc is not None and getattr(proc, "poll", lambda: 0)() is None:
         try:
-            proc.terminate()
+            execution.terminate_tree(proc)          # the CLI and every command it started
         except OSError:
             pass
     return {"ok": True, "stopped": True}
+
+
+def _stop_everything() -> None:
+    """The Desktop is quitting: end every live turn and every tool process it started."""
+    from . import execution
+    with _LIVE_AGENT_RUNS_LOCK:
+        live = [sid for sid, events in _LIVE_AGENT_RUNS.items() if not events.get("finished_at")]
+    for sid in live:
+        _stop_agent_run(sid)
+    execution.kill_live_processes()
+    execution.wait_for_stops()
 
 
 def _agent_run_snapshot(session_id: str) -> dict:
@@ -985,11 +1013,29 @@ class Handler(BaseHTTPRequestHandler):
             if (cwd != workroot and workroot not in cwd.parents and
                     registered_external is None):
                 raise ValueError("command cwd is outside the GeoForge project root")
+            from . import cli, execution
+            try:
+                parsed = cli.build_parser().parse_args(argv)
+            except SystemExit:
+                raise ValueError("invalid Agent flow command arguments") from None
+            explicit = getattr(parsed, "project", None)
+            project = (Path(explicit).expanduser().resolve() if explicit else next(
+                (path for path in (cwd, *cwd.parents) if (path / "runs" / "flow-state.json").is_file()), None))
+            if project is not None and (
+                    (cwd != project and project not in cwd.parents) or
+                    (project != workroot and workroot not in project.parents and
+                     sessions.registered_project_for_path(workroot, project) is None)):
+                raise ValueError("command project is outside its authorized project workspace")
+            turn_id = str(request.get("turn_id") or "")
+            owner = str(request.get("turn_project") or "")
+            if (project is None or not turn_id or not owner or Path(owner).resolve() != project
+                    or execution.stop_requested(project, turn_id=turn_id)):
+                return self._json({"ok": False, "returncode": 130, "stdout": "",
+                                   "stderr": "Stopped or stale Agent turn; no command was launched."})
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, OSError) as error:
             return self._json({"ok": False, "error": "invalid_request",
                                "message": str(error)}, 400)
 
-        import subprocess as _subprocess
         if getattr(sys, "frozen", False):
             command = [sys.executable, *argv]
             env = None
@@ -999,18 +1045,20 @@ class Handler(BaseHTTPRequestHandler):
             package_root = str(Path(__file__).resolve().parents[1])
             env["PYTHONPATH"] = package_root + (
                 os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        env = execution.turn_environment(project, turn_id=turn_id, env=env)
+        env["KISS_PROJECT"] = str(project)
         try:
-            result = _subprocess.run(
-                command, cwd=str(cwd), env=env, capture_output=True,
-                text=True, errors="replace",
+            result = execution.run_process(
+                command, cwd=cwd, env=env, timeout=None,
+                project=project, turn_id=turn_id, graceful_stop=True,
             )
         except OSError as error:
             return self._json({"ok": False, "error": "launch_failed",
                                "message": str(error)}, 500)
-        return self._json({"ok": result.returncode == 0,
-                           "returncode": result.returncode,
+        return self._json({"ok": result.status == "succeeded",
+                           "returncode": 130 if result.status == "stopped" else result.returncode,
                            "stdout": result.stdout[-100000:],
-                           "stderr": result.stderr[-30000:]})
+                           "stderr": (result.stderr + ("\n" + result.detail if result.detail else ""))[-30000:]})
 
     def _shipped_manifest(self, name: str) -> Path:
         """Manifest paired with the currently active, validated KI snapshot."""
@@ -1148,7 +1196,7 @@ class Handler(BaseHTTPRequestHandler):
         # A project that is fetching its approved data advances on every panel poll,
         # so a server clip finishes without the user having to type anything.
         try:
-            flowrun.poll_acquisition(project, setup_ok=self._setup_ok_for(s))
+            flowrun.poll_acquisition(project, setup_ok=self._setup_ok_for(s), automatic_only=True)
         except Exception:  # noqa: BLE001
             pass
         run_state = projectrun.load(
@@ -2136,6 +2184,29 @@ class Handler(BaseHTTPRequestHandler):
             calibration.ensure_project(sessions.project_path(self.workroot, s))
             return self._json(sessions.for_client(self.workroot, s))
 
+        if route.startswith("/api/session/") and route.endswith("/acquire"):
+            # An explicit, same-origin host command, separate from read-only
+            # status. It advances approved downloads without invoking an agent.
+            sid = route.split("/")[3]
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            s = sessions.load(self.workroot, sid)
+            if not s:
+                return self._json({"error": "no such session"}, 404)
+            project = sessions.project_path(self.workroot, s)
+            activity = _agent_run_snapshot(sid)
+            progress = project_status.snapshot(project, activity=activity)["progress"]
+            acquisition = progress.get("acquisition") or {}
+            advanced = None
+            if (progress.get("flow_state") == "ACQUIRING" and acquisition.get("active")
+                    and any(row.get("status") == "pending" for row in acquisition.get("automatic") or [])):
+                advanced = flowrun.poll_acquisition(
+                    project, setup_ok=self._setup_ok_for(s), automatic_only=True)
+                if advanced is not None:
+                    progress = project_status.snapshot(project, activity=activity)["progress"]
+            return self._json({"run": progress, "acquisition": progress.get("acquisition"),
+                               "advanced": advanced})
+
         if route.startswith("/api/session/") and route.endswith("/stop"):
             sid = route.split("/")[3]
             if not sessions.valid_id(sid):
@@ -2451,11 +2522,16 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- agent-guided setup -------------------------------------------------
     def _record_agent_preflight(self, ki, live_ki, cfg, root: Path, emit,
-                                *, check=None) -> bool:
+                                *, check=None, project=None, stop=None, turn_id=None) -> bool:
         """Turn the agent's final preflight into the one verification truth."""
         import time as _time
 
-        check = check or install.run_preflight(live_ki, cfg.python, cfg)
+        check = check or install.run_preflight(live_ki, cfg.python, cfg,
+                                               project=project, stop=stop, turn_id=turn_id)
+        from . import execution
+        if ((stop is not None and stop()) or
+                (project is not None and execution.stop_requested(project, turn_id=turn_id))):
+            check = install.Step("preflight", False, "Stopped by the user; verification was interrupted.")
         emit(f"\nGeoForge final check: {'PASS' if check.ok else 'FAIL'}\n")
         if check.detail:
             emit(check.detail.rstrip() + "\n")
@@ -3262,6 +3338,11 @@ verification are different states; never claim this test verified the KI."""
                         # policy. Archive the popup so the retry can proceed.
                         setup_flow.clear_request(project)
                     else:
+                        if pending.get("kind") == "choice":
+                            try:   # issue #3: the request file is archived by the next question
+                                plan_review.record_interview_answer(project, pending, resolved_action, note=note)
+                            except plan_review.AnswersUnreadable:
+                                pass   # approval refuses on this store and names the path
                         setup_flow.resume(
                             project,
                             f"The user selected {label}." + (f" {note}" if note else ""),
@@ -3296,6 +3377,13 @@ verification are different states; never claim this test verified the KI."""
             except KeyError:
                 return False
 
+        # Registered before the flow runs: a Stop right after sending reaches this
+        # turn, not the previous finished one.
+        runtime_events: dict = {"provider": want, "project": str(project),
+                                "_handle": api.TurnHandle()}
+        started_turn = projectrun.begin_turn(project, text, names)
+        runtime_events["_turn_id"] = started_turn["turn_id"]
+        _register_agent_run(sid, runtime_events)
         try:
             flow_pre = flowrun.pre(
                 project, text, names, self.catalog,
@@ -3308,6 +3396,7 @@ verification are different states; never claim this test verified the KI."""
             self._open_stream()
             self._chunk(f"[GeoForge flow error: {type(e).__name__}: {e}]")
             projectrun.finish_turn(project, failed=str(e))
+            runtime_events.update(state="finished", finished_at=time.time())
             self._end_stream()
             return
         if flow_pre is not None and flow_pre.message:
@@ -3318,6 +3407,7 @@ verification are different states; never claim this test verified the KI."""
                 sessions.append_message(self.workroot, cur, {"role": "assistant", "text": flow_pre.message})
                 sessions.save(self.workroot, cur)
             projectrun.finish_turn(project, request=None)
+            runtime_events.update(state="finished", finished_at=time.time())
             self._end_stream()
             return
         if flow_pre is not None and flow_pre.gated and flow_pre.names:
@@ -3328,14 +3418,9 @@ verification are different states; never claim this test verified the KI."""
                     cur["models"] = names
                     sessions.save(self.workroot, cur)
                     s = cur
-        projectrun.begin_turn(project, text, names)
-
         # Collect the streamed reply so the transcript survives the turn.
         buf: list[str] = []
         self._open_stream()
-        runtime_events: dict = {"provider": want, "project": str(project),
-                                "_handle": api.TurnHandle()}
-        _register_agent_run(sid, runtime_events)
 
         def out(piece: str) -> bool:
             now = time.time()
@@ -3349,6 +3434,9 @@ verification are different states; never claim this test verified the KI."""
         cli_state: dict = {}
         flow_turn = None
         try:
+            if _user_stopped(runtime_events):
+                out("\n[stopped by the user]\n")
+                return
             prior = [dict(message, text=sessions.message_text(message))
                      for message in s["messages"][:-1][-20:]]
             if names:
@@ -3364,7 +3452,7 @@ verification are different states; never claim this test verified the KI."""
                                 skill_names=skill_names, mcp_names=mcp_names,
                                 session=s, cli_state=cli_state,
                                 runtime_events=runtime_events, flow_pre=flow_pre)
-                if flow_pre is not None and flow_pre.gated:
+                if flow_pre is not None and flow_pre.gated and not _user_stopped(runtime_events):
                     # A validated task-intake handoff (not a model-name match) becomes the
                     # flow's selection.  Only then may a separate planning turn start.
                     chosen = flowrun.promote_auto_choice(project, self.catalog, "".join(buf))
@@ -3398,7 +3486,7 @@ verification are different states; never claim this test verified the KI."""
                                         setup_ok=_setup_ok(names))
                     if res.message:
                         out("\n\n" + res.message)
-                    if (failure is None and flow_turn.kind == "execution"
+                    if (failure is None and not _user_stopped(runtime_events) and flow_turn.kind == "execution"
                             and flowrun.current_state(project) == "REPLAN_REQUIRED"):
                         # The agent asked for a plan change mid-run.  Start the
                         # re-planning turn now instead of waiting for the user to
@@ -3421,7 +3509,8 @@ verification are different states; never claim this test verified the KI."""
                                 out("\n\n" + res.message)
                     rejected_revisions = set()
                     repair_round = 0
-                    while failure is None and flowrun.claim_planning_repair(res, rejected_revisions):
+                    while (failure is None and not _user_stopped(runtime_events)
+                           and flowrun.claim_planning_repair(res, rejected_revisions)):
                         repair_round += 1
                         out(f"\n\nGeoForge is returning the validation errors to the agent "
                             f"(plan repair round {repair_round}). "
@@ -3440,11 +3529,10 @@ verification are different states; never claim this test verified the KI."""
                     if res.retry_planning and res.revision in rejected_revisions:
                         out("\n\nPlanning repair stopped because the same draft failed in the same way. "
                             "The draft and validation details are saved; nothing was approved or run.")
-                    if res.continue_now and failure is None:
-                        # auto-approved (nothing needed the user): start the execution
+                    if res.continue_now and failure is None and not _user_stopped(runtime_events):
+                        # setup finished after the user's approval: start the execution
                         # turn now, in a FRESH agent session with the run contract
-                        out("\n\n---\n**Plan auto-approved** (no decision needed from you). "
-                            "Starting the run in a new session…\n\n")
+                        out(f"\n\n---\n**{flowrun.RUN_AFTER_SETUP}**\n\n")
                         exec_turn = self._chat_with_models(
                             names, want, history + "\nUSER: " + agent_text,
                             out, project, llm, prior=prior, bare_task=agent_text,
@@ -3578,6 +3666,8 @@ verification are different states; never claim this test verified the KI."""
                 if cli_state is not None:
                     self._remember_cli_session(cli_state, prov, state, fingerprint)
                 return state
+            if _user_stopped(run_kw.get("runtime_events")):
+                return None                     # silent because the user stopped it, not a stale id
             state = {}                          # stale id, nothing shown — replay
 
         if not _forward_chat_stream(
@@ -3606,7 +3696,7 @@ verification are different states; never claim this test verified the KI."""
         gated = flow_pre is not None and flow_pre.gated
         auto_turn = None
         question_handoff = ""
-        database_mode = settings.database_access_mode()
+        database_mode = obs_access.effective_mode(settings.database_access_mode())
         if gated:
             try:
                 auto_turn = flowrun.auto_turn(
@@ -3682,6 +3772,7 @@ verification are different states; never claim this test verified the KI."""
                 "Set ready_for_planning=true only when missing is empty and the next turn can build "
                 "a meaningful plan. GeoForge validates the handoff and owns the transition."
             )
+            intake_rules += "\n" + auto_turn.session.flow.contracts.study_design_questions()
         else:
             intake_rules = ""
             intake_database_rules = ""
@@ -3729,6 +3820,7 @@ verification are different states; never claim this test verified the KI."""
             # understanding and behave like the screenshot's model-name parser.
             system = (catalogue_rules + "\n\n" + project_rules + "\n\n" + run_rules +
                       "\n\n" + intake_rules + "\n\n" + intake_database_rules + question_handoff +
+                      plan_review.settled_answers_block(project) +
                       "\n\n" + RESPONSE_PRESENTATION_RULES +
                       "\n\n" + language_rules)
             full = (system + f"\nmodels_root: {self.catalog.models_dir}"
@@ -3765,6 +3857,8 @@ verification are different states; never claim this test verified the KI."""
             _forward_chat_stream(
                 api.run(prov, ki, cfg, system, bare_task or task,
                         model=llm, history=prior,
+                        setup_context={"project_root": project,
+                                       "_turn_id": (runtime_events or {}).get("_turn_id")},
                         project_mode=True,
                         flow=(auto_turn.session if auto_turn is not None else None),
                         handle=(runtime_events or {}).get("_handle")),
@@ -3897,7 +3991,7 @@ verification are different states; never claim this test verified the KI."""
         flow_turn = None
         task_extra = ""
         execute_contract = True
-        database_mode = settings.database_access_mode()
+        database_mode = obs_access.effective_mode(settings.database_access_mode())
         if flow_pre is not None and flow_pre.gated and not needs_setup:
             flow_turn = flowrun.turn(project, resolved, cfg, kind, pname, self.repo_root,
                                      bare_task or task, flow_pre.replan_reason,
@@ -3971,7 +4065,8 @@ verification are different states; never claim this test verified the KI."""
                     model=llm, history=prior,
                     setup_mode=needs_setup,
                     setup_context={"run_builtin": run_builtin,
-                                   "project_root": project} if needs_setup else None,
+                                   "project_root": project,
+                                   "_turn_id": (runtime_events or {}).get("_turn_id")},
                     # The API agent must retain chat-project tools while it
                     # repairs software; otherwise a successful installation
                     # cannot publish the ensuing run, provenance, or plot to
@@ -3981,9 +4076,11 @@ verification are different states; never claim this test verified the KI."""
                     handle=(runtime_events or {}).get("_handle")),
                 out,
             )
-            if needs_setup:
+            if needs_setup and not _user_stopped(runtime_events):
                 ok = self._record_agent_preflight(
-                    ki, run_ki, cfg, setup_wd, lambda _piece: True)
+                    ki, run_ki, cfg, setup_wd, lambda _piece: True,
+                    project=project, stop=lambda: _user_stopped(runtime_events),
+                    turn_id=(runtime_events or {}).get("_turn_id"))
                 if ok and flow_turn is not None:
                     flowrun.setup_verified(project, resolved, cfg)
             return flow_turn
@@ -4099,9 +4196,11 @@ verification are different states; never claim this test verified the KI."""
                        flow_policy=flow_policy)
         if flow_turn is not None:
             flow_turn.provider_succeeded = bool(completed and completed.get("returncode") == 0)
-        if needs_setup:
+        if needs_setup and not _user_stopped(runtime_events):
             ok = self._record_agent_preflight(
-                ki, resolved[0], cfg, setup_wd, lambda _piece: True)
+                ki, resolved[0], cfg, setup_wd, lambda _piece: True,
+                project=project, stop=lambda: _user_stopped(runtime_events),
+                turn_id=(runtime_events or {}).get("_turn_id"))
             if ok and flow_turn is not None:
                 flowrun.setup_verified(project, resolved, cfg)
         return flow_turn
@@ -4210,7 +4309,32 @@ verification are different states; never claim this test verified the KI."""
 
 def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
                 *, provider_id: str = "",
-                installation_only: bool = False) -> None:
+                installation_only: bool = False, project=None,
+                stop=None, turn_id=None) -> None:
+    """Run installation under the owning chat's cancellation scope."""
+    from contextlib import nullcontext
+    context = (nullcontext() if install._CANCELLATION.get() is not None else
+               install.cancellation_context(project or root, stop=stop, turn_id=turn_id))
+    try:
+        with context:
+            return _run_install(ki, man, root, emit, repo_root,
+                                provider_id=provider_id, installation_only=installation_only)
+    except install.InstallStopped as exc:
+        root.mkdir(parents=True, exist_ok=True)
+        status_path = root / "status.json"
+        try:
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            status = {}
+        status.update(model=ki.name, ok=False, verified_at=None,
+                      installation_ready=False, interrupted=True, checked_at=time.time(),
+                      primary_error={"name": "interrupted", "detail": str(exc)})
+        status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+        emit(f"\n{ki.name} installation stopped by the user. Partial files were retained.\n")
+
+
+def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
+                 *, provider_id: str = "", installation_only: bool = False) -> None:
     """The same six steps as ``kiss init``, streamed line by line."""
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
@@ -4230,11 +4354,13 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
     result = install.InstallResult(model=ki.name)
 
     def step(label: str, s):
+        install.check_cancelled()
         result.add(s)
         emit(f"  {label:<22} {s.mark}\n")
         if not s.ok and s.detail:
             for ln in s.detail.strip().splitlines()[:8]:
                 emit(f"      {ln}\n")
+        install.check_cancelled()
         return s
 
     # Materialise, then operate on the working copy — identical to `kiss init`.
@@ -4242,6 +4368,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
     # KISSPATH_* placeholders still in place, so the GUI and the CLI disagreed
     # about what "installed" meant.
     live = root / "ki"
+    install.check_cancelled()
     mrep = port.materialise(ki.root, live, cfg)
     ok = not mrep.unresolved and not mrep.corrupted
     result.add(install.Step(
@@ -4260,6 +4387,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
              "private tooling; those instructions cannot be followed\n")
     ki = type(ki)(name=ki.name, root=live)
 
+    install.check_cancelled()
     step(f"[2/{total}] python env", install.ensure_python_env(cfg))
     cfg_file.write_text(cfg.dumps(), encoding="utf-8")
 
@@ -4276,13 +4404,16 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
     else:
+        install.check_cancelled()
         s, binary = install.acquire(man, prefix, cfg.python, env=network_env, ki=ki)
     result.binary = binary
+    install.check_cancelled()
     for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
         emit(f"      {note}\n")
     step(f"[6/{total}] acquire", s)
     if man.depends_on:
         emit(f"      couples with: {', '.join(man.depends_on)}\n")
+    install.check_cancelled()
     if installation_only:
         verdict = runnable.check(ki, man, cfg, timeout=25, python=cfg.python)
         step(f"[7/{total}] runnable", install.Step(
@@ -4300,6 +4431,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         else:
             preflight = install.run_preflight(ki, cfg.python, cfg)
         step("[8/8] preflight", preflight)
+    install.check_cancelled()
     written = handoff.write(ki, result, man, cfg, root)
     emit(f"  {'      agent handoff':<22} ok ({len(written)} files)\n\n")
 
@@ -4309,8 +4441,9 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
     checked_at = __import__("time").time()
     primary = next((s for s in result.steps if not s.ok and not s.skipped),
                    next((s for s in result.steps if not s.ok), None))
+    install.check_cancelled()
     (root / "status.json").write_text(_json.dumps({
-        "model": ki.name, "ok": result.ok, "checked_at": checked_at,
+        "model": ki.name, "ok": result.ok, "checked_at": checked_at, "interrupted": False,
         "verified_at": checked_at if result.ok and not installation_only else None,
         "installation_only": installation_only,
         "installation_ready": result.ok if installation_only else None,
@@ -4321,9 +4454,11 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
                    "detail": s.detail[:4000], "commands": s.commands[:20]}
                   for s in result.steps],
     }, indent=2), encoding="utf-8")
+    install.check_cancelled()
     install_locations.record(
         ki.name, root, cfg, ki_root=ki.root,
         verified=result.ok and not installation_only)
+    install.check_cancelled()
 
     if result.ok and installation_only:
         emit(f"{ki.name} is installed and responds on this machine. "
@@ -4420,8 +4555,11 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
                 pass
             time.sleep(obs_access.CATALOGUE_STORE_TTL)
     threading.Thread(target=_catalogue_refresh_loop, daemon=True).start()
+    atexit.register(_stop_everything)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
+    finally:
+        _stop_everything()          # tools and CLIs run in sessions of their own: Ctrl-C misses them
     return 0

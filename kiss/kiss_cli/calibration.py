@@ -16,14 +16,12 @@ from __future__ import annotations
 import contextlib
 import importlib
 import importlib.metadata
-import io
 import json
 import os
 import re
 import shlex
 import shutil
 import sys
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -53,7 +51,6 @@ BACKEND_MODULES = (
     "pymoo.util.ref_dirs",
 )
 ALGORITHMS = frozenset(("dds", "sceua", "dream", "nsga2", "nsga3", "moead"))
-_RUN_LOCK = threading.Lock()
 
 
 def _valid_framework(path: Path) -> bool:
@@ -429,7 +426,8 @@ def run_project(*, project: Path, ki_name: str, ki_path: Path,
                 obs_shape_by_var: dict[str, str], budget: int | None = None,
                 seed: int = 0, algorithm: str | None = None,
                 expected_case_id: str | None = None,
-                determining_metric: str | None = None) -> dict:
+                determining_metric: str | None = None,
+                stop=None, turn_id=None) -> dict:
     """Run one real calibration using GeoForge's bundled Python runtime.
 
     This is deliberately a native harness operation.  API models call it as a
@@ -438,6 +436,14 @@ def run_project(*, project: Path, ki_name: str, ki_path: Path,
     """
     project = Path(project).resolve()
     ki_path = Path(ki_path).resolve()
+    from . import execution
+    # Capture once, before preparation: a new user turn cannot revive this one.
+    env = execution.turn_environment(project, turn_id=turn_id)
+    def stopped():
+        return (stop is not None and stop()) or execution.stop_requested(project, env=env)
+    if stopped():
+        return {"report": {"status": "stopped", "promotable": False,
+                           "reason": "Stopped by the user before calibration started."}}
     status = framework_status()
     if not status.get("ready"):
         missing = [name for name, item in status.get("dependencies", {}).items()
@@ -478,40 +484,28 @@ def run_project(*, project: Path, ki_name: str, ki_path: Path,
     report_path = run_dir / "report.json"
     log_path = run_dir / "engine.log"
 
-    root = framework_root()
-    assert root is not None
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    engine = importlib.import_module("calibration_kit.calib")
-
-    # The framework currently selects an algorithm through KDT_CALIB_ALGO.
-    # Protect that process-global setting from overlapping chat calibrations.
-    previous_algorithm = os.environ.get("KDT_CALIB_ALGO")
-    stream = io.StringIO()
-    try:
-        with _RUN_LOCK, contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            if algorithm:
-                os.environ["KDT_CALIB_ALGO"] = algorithm
-            elif previous_algorithm is None:
-                os.environ.pop("KDT_CALIB_ALGO", None)
-            report = engine.calibrate(
-                str(runtime_ki), str(run_dir), shapes,
-                budget=int(budget) if budget is not None else None,
-                seed=int(seed), determining_metric=determining_metric,
-                expected_case_id=expected_case_id,
-            )
-    except Exception as exc:
-        report = {
-            "status": "engine_error", "promotable": False,
-            "reason": f"{type(exc).__name__}: {exc}",
-        }
-    finally:
-        if previous_algorithm is None:
-            os.environ.pop("KDT_CALIB_ALGO", None)
-        else:
-            os.environ["KDT_CALIB_ALGO"] = previous_algorithm
-
-    log_path.write_text(stream.getvalue(), encoding="utf-8")
+    request_path = run_dir / "engine-request.json"
+    engine_report = run_dir / "engine-report.json"
+    request_path.write_text(json.dumps({
+        "project": str(project),
+        "runtime_ki": str(runtime_ki), "run_dir": str(run_dir), "shapes": shapes,
+        "budget": int(budget) if budget is not None else None, "seed": int(seed),
+        "algorithm": algorithm, "determining_metric": determining_metric,
+        "expected_case_id": expected_case_id,
+    }), encoding="utf-8")
+    env = with_framework_env(env)
+    if not getattr(sys, "frozen", False):
+        package_root = str(Path(__file__).resolve().parents[1])
+        env["PYTHONPATH"] = package_root + os.pathsep + env.get("PYTHONPATH", "")
+    process = execution.run_process(
+        worker_command(request_path), cwd=project, env=env, timeout=None,
+        project=project, stop=stopped, turn_id=turn_id)
+    report = _worker_report(process, engine_report, stopped=stopped())
+    log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+    log += process.stdout + process.stderr
+    if process.detail:
+        log += "\n" + process.detail
+    log_path.write_text(log, encoding="utf-8")
     payload = {
         "run_id": run_id,
         "ki": ki_name,
@@ -530,8 +524,62 @@ def run_project(*, project: Path, ki_name: str, ki_path: Path,
         **payload,
         "report_path": str(report_path.relative_to(project)),
         "log_path": str(log_path.relative_to(project)),
-        "log_tail": stream.getvalue()[-12000:],
+        "log_tail": log[-12000:],
     }
+
+
+def worker_command(request_path: Path) -> list[str]:
+    """Use the same bundled executable or source interpreter as the public CLI."""
+    prefix = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "kiss_cli"]
+    return [*prefix, "_calibration-worker", str(request_path)]
+
+
+def _worker_report(process, path: Path, *, stopped=False) -> dict:
+    # Cancellation wins even when the worker wrote a success just before Stop.
+    if stopped or process.status in {"stopped", "interrupted"}:
+        return {"status": "stopped", "promotable": False,
+                "reason": "Stopped by the user; calibration did not complete."}
+    try:
+        if process.status != "succeeded":
+            raise ValueError(process.detail or f"calibration worker {process.status}")
+        report = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(report, dict) or not isinstance(report.get("status"), str):
+            raise ValueError("calibration worker returned no valid report")
+        return report
+    except (OSError, ValueError) as exc:
+        return {"status": "engine_error", "promotable": False, "reason": str(exc)}
+
+
+def run_worker(request_path: Path) -> int:
+    """Private child entry point; all optimizer/model work stays in its process tree."""
+    request = json.loads(Path(request_path).read_text(encoding="utf-8"))
+    from . import execution
+    if execution.stop_requested(Path(request["project"])):
+        return 130
+    run_dir = Path(request["run_dir"])
+    root = framework_root()
+    if root is None:
+        raise RuntimeError("calibration framework source is missing")
+    sys.path.insert(0, str(root))
+    if request.get("algorithm"):
+        os.environ["KDT_CALIB_ALGO"] = request["algorithm"]
+    else:
+        os.environ.pop("KDT_CALIB_ALGO", None)
+    with (run_dir / "engine.log").open("w", encoding="utf-8", buffering=1) as log:
+        with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+            try:
+                engine = importlib.import_module("calibration_kit.calib")
+                report = engine.calibrate(
+                    request["runtime_ki"], str(run_dir), request["shapes"],
+                    budget=request.get("budget"), seed=request["seed"],
+                    determining_metric=request.get("determining_metric"),
+                    expected_case_id=request.get("expected_case_id"))
+            except Exception as exc:
+                report = {"status": "engine_error", "promotable": False,
+                          "reason": f"{type(exc).__name__}: {exc}"}
+    (run_dir / "engine-report.json").write_text(
+        json.dumps(report, default=str), encoding="utf-8")
+    return 0
 
 
 def load_project(project: Path) -> dict:

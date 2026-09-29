@@ -804,7 +804,8 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
 def _user_only_file(path: Path, project_root: Path) -> bool:
     """Request cards (current and archived) carry Baidu links and extraction codes for the
     user's eyes only; agents never read them."""
-    return path.name.startswith("setup-request") and path.suffix == ".json"
+    return ((path.name.startswith("setup-request") and path.suffix == ".json") or
+            (path.name == "manual-download-details.json" and path.parent.name == ".geoforge"))
 
 
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
@@ -832,6 +833,13 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     project_root = Path(
         (setup_context or {}).get("project_root") or workroot
     ).resolve()
+    turn_handle = (setup_context or {}).get("_handle")
+    stop = turn_handle.stopped.is_set if turn_handle is not None else None
+    turn_id = (setup_context or {}).get("_turn_id")
+    from . import execution
+    if ((stop is not None and stop()) or
+            execution.stop_requested(project_root, turn_id=turn_id)):
+        raise ToolError("Stopped by the user; no further tool work may start in this turn.")
     progress_root = project_root
 
     # A chat owns its scenario files, but the scientific software is installed
@@ -907,7 +915,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if bool((setup_context or {}).get("installation_only")):
             raise ToolError("Full preflight is outside installation-only scope; use the declared import and executable startup checks.")
         from . import install as _install
-        step = _install.run_preflight(ki, cfg.python, cfg)
+        step = _install.run_preflight(ki, cfg.python, cfg, project=project_root,
+                                      stop=stop, turn_id=turn_id)
         return f"{'PASS' if step.ok else 'FAIL'}\n{step.detail}"
 
     if name == "search_diagnostics":
@@ -1064,7 +1073,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             result = execute_ki_tool(
                 flow=flow, cfg=tool_cfg, project=project_root, ki=tool_ki_name, ki_root=requested_tool_root,
                 tool=script, arguments=arguments, cwd=cwd, plan_step_id=args.get("plan_step_id"),
-                python_tool=not binary, timeout=timeout, provider_id=provider_id)
+                python_tool=not binary, timeout=timeout, provider_id=provider_id,
+                stop=stop, turn_id=turn_id)
         except FlowDenied as e:
             raise ToolError(str(e)) from None
         headline = (f"exit_code={result.exit_code}" if result.exit_code is not None
@@ -1102,6 +1112,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 budget=args.get("budget"),
                 seed=int(args.get("seed") or 0),
                 determining_metric=args.get("determining_metric") or None,
+                stop=stop, turn_id=turn_id,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             raise ToolError(str(exc)) from None
@@ -1128,7 +1139,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     cwd=project_root, started_at=calib_started, finished_at=time.time(),
                     exit_code=0 if str(report.get("status") or "").lower() in ("ok", "success", "completed", "done") else 1,
                     before=calib_before, plan_step_id=args.get("plan_step_id"),
-                    stdout_tail=str(result.get("log_tail") or ""))
+                    stdout_tail=str(result.get("log_tail") or ""),
+                    execution_status=("stopped" if report.get("status") in {"stopped", "interrupted"} else None))
             except FlowDenied as e:
                 raise ToolError(str(e)) from None
         return json.dumps(summary, indent=2, ensure_ascii=False, default=str)
@@ -1336,19 +1348,27 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         callback = (setup_context or {}).get("run_builtin")
         if not callable(callback):
             raise ToolError("the built-in setup runner is unavailable")
-        return str(callback())[-60000:]
+        from . import install as _install
+        try:
+            with _install.cancellation_context(project_root, stop=stop, turn_id=turn_id):
+                return str(callback())[-60000:]
+        except _install.InstallStopped as exc:
+            return str(exc)
 
     if setup_mode and name == "list_work_files":
         base = _inside_work(args.get("subdir") or ".")
         if not base.is_dir():
             raise ToolError(f"no such workspace directory: {args.get('subdir')}")
-        names = sorted(str(f.relative_to(workroot)) for f in base.rglob("*") if f.is_file())
+        names = sorted(str(f.relative_to(workroot)) for f in base.rglob("*")
+                       if f.is_file() and not _user_only_file(f, project_root))
         return "\n".join(names[:800]) or "(empty)"
 
     if setup_mode and name == "read_work_file":
         p = _inside_work(args.get("path") or "")
         if not p.is_file():
             raise ToolError(f"no such workspace file: {args.get('path')}")
+        if _user_only_file(p, project_root):
+            raise ToolError("that file contains private user-only request details")
         return p.read_text(encoding="utf-8", errors="replace")[:60000]
 
     if setup_mode and name == "write_work_file":
@@ -1515,25 +1535,32 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                          and argv[1] in _INSTALL_ONLY_PROBE_FLAGS)
         if isolate_probe:
             timeout = min(timeout, 25)
+        from . import execution
         try:
             directory = (tempfile.TemporaryDirectory(prefix="startup-probe-", dir=str(workroot))
                          if isolate_probe else nullcontext(str(cwd)))
             with directory as execution_cwd:
-                proc = subprocess.run(
+                # Its own session, tree-killed on timeout, ended by the chat's Stop.
+                proc = execution.run_process(
                     argv, cwd=execution_cwd, env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
-                    capture_output=True, text=True, errors="replace", timeout=timeout,
+                    timeout=timeout, project=project_root,
+                    stop=stop, turn_id=turn_id,
                     stdin=subprocess.DEVNULL if isolate_probe else None,
                 )
-        except subprocess.TimeoutExpired as e:
-            tail = "".join(part.decode("utf-8", errors="replace") if isinstance(part, bytes) else (part or "")
-                           for part in (e.stdout, e.stderr))[-12000:]
-            return f"TIMEOUT after {timeout}s\n{tail}"
         except OSError as e:
+            proc = execution.ProcessRun("not_launched", None, error=e)
+        tail = (proc.stdout + proc.stderr)[-12000:]
+        if proc.status == "not_launched":
             # A non-executable script, missing command, or platform launch
             # error is normal repair-loop evidence.  Let the model see it and
             # choose another invocation (usually ``python3 script.py``)
             # instead of aborting the entire API turn.
-            return f"FAILED_TO_START: {type(e).__name__}: {e}"
+            return f"FAILED_TO_START: {type(proc.error).__name__}: {proc.error}"
+        if proc.status == "timed_out":
+            return f"TIMEOUT after {timeout}s\n{tail}"
+        if proc.status == "stopped":
+            return ("STOPPED by the user before the command started" if proc.process_started is False
+                    else f"STOPPED by the user; the command and everything it started were signalled.\n{tail}")
         output = proc.stdout[-25000:] + "\n" + proc.stderr[-25000:]
         if isolate_probe:
             output = "Startup probe used an empty workspace directory (no bundled case inputs).\n" + output
@@ -1959,6 +1986,12 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     model_id = prov.models.get(want, want)
     tool_context = dict(setup_context or {})
     tool_context.setdefault("provider_id", f"api:{prov.name}")
+    tool_context["_handle"] = handle
+    if "_turn_id" not in tool_context:
+        from . import execution
+        project = tool_context.get("project_root") or getattr(cfg, "root", None)
+        if project is not None:
+            tool_context["_turn_id"] = execution.current_turn_id(Path(project))
     tools = tool_schemas(ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow)
     # Prior turns travel as REAL messages, not flattened into one user blob
     # with USER:/YOU: markers — the vendor's own multi-turn handling is the

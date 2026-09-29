@@ -36,6 +36,7 @@ import secrets
 import time
 import fcntl
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 RECEIPT_DIR = ".geoforge/receipts"
@@ -899,6 +900,14 @@ def find_download(project: Path, item: dict, *, approval_sha256: str = "",
                default=None)
 
 
+def _finished_at(run: dict) -> float:
+    """Parsed, so a UTC-offset change between attempts cannot reorder them."""
+    try:
+        return datetime.strptime(run["finished_at"], "%Y-%m-%dT%H:%M:%S%z").timestamp()
+    except (KeyError, TypeError, ValueError):
+        return float("-inf")
+
+
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
@@ -908,7 +917,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     """Machine-readable summary the UI shows and COMPLETED requires. Trusts ONLY receipts
     that verify AND are bound to the current approval (`approval_sha256 == the signed
     approval issuance's unique signature`), name a selected KI and a planned step. COMPLETED needs every
-    executable planned step to have a passed receipt and no unreceipted artifacts.
+    executable planned step's latest bound attempt to have passed, and no unreceipted artifacts.
 
     `enforcement` = how the EXECUTING provider was contained (flow.policy Enforcement value).
     kimi #2: the HMAC key lives in the user's config dir; a provider whose agent runs as the
@@ -971,10 +980,31 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         else:
             rejected.append({"path": str(result.path), "why": result.reason})
 
-    receipted_outputs = set()
-    for d in bound_runs:
+    # Every attempt keeps its receipt, but each step stands on its LATEST bound attempt and each
+    # output file on the latest attempt that wrote it. So a retry supersedes a failure, a later
+    # failure counts again, and a file only a failed attempt wrote is not vouched for by a pass.
+    # ponytail: ordered by signed wall-clock finished_at (same second: failed > other > passed);
+    # a backwards clock step between attempts could reorder them. Add a signed attempt counter
+    # to record_run if that ever matters.
+    status = lambda d: (d.get("validation") or {}).get("status")  # noqa: E731
+    rank = {"passed": 0, "failed": 2}
+    attempts = sorted(bound_runs, key=lambda d: (_finished_at(d), rank.get(status(d), 1)))
+    latest: dict[str, dict] = {}
+    writer: dict[str, tuple[dict, str | None]] = {}
+    for d in attempts:
+        latest[str(d.get("plan_step_id"))] = d
         for o in d.get("outputs") or []:
-            receipted_outputs.add(o.get("path"))
+            writer[o.get("path")] = (d, o.get("sha256"))
+    receipted_outputs = {path for path, (d, _) in writer.items() if status(d) == "passed"}
+    # A pass is stale when a file it read has since been rewritten by another attempt
+    # (e.g. it consumed the partial output of an upstream attempt that was then retried).
+    stale_steps = sorted(sid for sid, d in latest.items() if status(d) == "passed" and any(
+        i.get("path") in writer and writer[i["path"]][0] is not d and writer[i["path"]][1] != i.get("sha256")
+        for i in d.get("inputs") or []))
+    superseded = [{"plan_step_id": d.get("plan_step_id"), "run_id": d.get("run_id"),
+                   "finished_at": d.get("finished_at"), "command": d.get("command")}
+                  for d in attempts if status(d) == "failed"
+                  and status(latest[str(d.get("plan_step_id"))]) == "passed"]
     for d in bound_dl:
         for o in (d.get("raw_files") or []) + (d.get("processed_files") or []):
             receipted_outputs.add(o.get("path"))
@@ -989,8 +1019,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                 if rel not in receipted_outputs:
                     unreceipted.append(rel)
 
-    passed_steps = {str(d.get("plan_step_id")) for d in bound_runs
-                    if (d.get("validation") or {}).get("status") == "passed"}
+    passed_steps = {sid for sid, d in latest.items() if status(d) == "passed" and sid not in stale_steps}
     # codex R2 #2: a planned 'download' step is satisfied by a bound download receipt that
     # names it and whose raw files all exist (no missing entries)
     for d in bound_dl:
@@ -998,7 +1027,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         if sid in steps and (steps[sid] or {}).get("kind") == "download" and \
                 (d.get("raw_files") or []) and not any(f.get("missing") for f in d.get("raw_files") or []):
             passed_steps.add(sid)
-    failed_any = any((d.get("validation") or {}).get("status") == "failed" for d in bound_runs)
+    failed_any = any(status(d) == "failed" for d in latest.values())
     missing_steps = sorted(exec_steps - passed_steps)
     complete = bool(bound_runs) and not missing_steps and not unreceipted and not failed_any
     return {
@@ -1009,7 +1038,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         "rejected_receipts": rejected,
         "unreceipted_artifacts": unreceipted[:200],
         "executable_steps": sorted(exec_steps), "steps_passed": sorted(passed_steps),
-        "steps_missing": missing_steps,
+        "steps_missing": missing_steps, "stale_steps": stale_steps,
+        "superseded_failures": superseded,
         "validation": "failed" if failed_any else ("passed" if complete else "incomplete"),
         "receipts_verified": complete,
         "runs": [{"run_id": d.get("run_id"), "ki": d.get("ki"), "exit_code": d.get("exit_code"),

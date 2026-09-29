@@ -100,7 +100,7 @@ An earlier broad run collected an older assertion while the new cleanup test was
 
 ## Remaining limits and follow-ups
 
-1. **Retry-history completion policy is unchanged.** Shared final evidence still uses any bound failed historical run to block completion, even if a later attempt passes. A future change must define explicit supersession while preserving history; this checkpoint does not erase or ignore failures. This is source-confirmed, not a new end-to-end retry-completion acceptance claim.
+1. **Superseded 2026-09-28:** a step now stands on its latest bound attempt; see DESKTOP_CHANGELOG "completion after a retry". Original note: **Retry-history completion policy is unchanged.** Shared final evidence still uses any bound failed historical run to block completion, even if a later attempt passes. A future change must define explicit supersession while preserving history; this checkpoint does not erase or ignore failures. This is source-confirmed, not a new end-to-end retry-completion acceptance claim.
 2. **No live-provider or GUI/build acceptance yet.** DS and Kimi wrapper behavior was exercised through local interfaces, not real model conversations. C5 still needs compiled Mac checks and coordinated server validation.
 3. **No process-tree monitoring guarantee.** Cleanup addresses the launched tool. Nested model processes and Windows inherited-pipe/reader-thread behavior need dedicated checks; Windows was not tested here.
 4. **Receipts are observations, not model-success certificates.** Exit zero, launched entrypoint or a written receipt does not establish successful scientific simulation. Existing output validation remains authoritative.

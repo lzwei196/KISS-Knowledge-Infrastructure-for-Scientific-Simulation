@@ -13,18 +13,19 @@ from types import SimpleNamespace
 import pytest
 
 from kiss_cli import acquire, execution, flowgate, flowrun, obs_access, obs_subset, plan_review, setup as setup_flow
+from ._acquisition_fixtures import approved_result as _acq_result
 
 
 @pytest.fixture
 def review_project(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
-    catalogue = {"datasets": [
+    catalogue = {"ok": True, "datasets": [     # a fetched catalogue, as load_catalogue returns it
         {"id": "source_a", "name": "Source A", "delivery": "served"},
         {"id": "source_b", "name": "Source B", "delivery": "served"},
     ]}
     monkeypatch.setattr(obs_access, "load_catalogue", lambda: copy.deepcopy(catalogue))
     monkeypatch.setattr(obs_access, "refresh_catalogue", lambda *a, **k: copy.deepcopy(catalogue))
-    monkeypatch.setattr(acquire, "run", lambda *a, **k: {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, **k: _acq_result(project, {"status": "done", "items": {}}))
     project = tmp_path / "project"
     (project / "runs").mkdir(parents=True)
     ki_root = tmp_path / "kis" / "M"
@@ -216,7 +217,7 @@ def test_failed_approval_refresh_retains_pending_review_without_starting_work(re
 
     monkeypatch.setattr(obs_subset, "refresh_inventory", fail_refresh)
     monkeypatch.setattr(obs_subset, "approve_inventory", lambda *a, **k: calls.append("remote_jobs") or [])
-    monkeypatch.setattr(acquire, "run", lambda *a, **k: calls.append("acquire") or {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, **k: calls.append("acquire") or _acq_result(project, {"status": "done", "items": {}}))
     error = None
     result = None
     try:
@@ -306,7 +307,7 @@ def test_failed_refresh_retains_scientific_answer_and_retry_signs_its_provenance
 
     monkeypatch.setattr(obs_subset, "refresh_inventory", refresh)
     monkeypatch.setattr(obs_subset, "approve_inventory", lambda *a, **k: events.append("jobs") or [])
-    monkeypatch.setattr(acquire, "run", lambda *a, **k: events.append("acquire") or {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, **k: events.append("acquire") or _acq_result(project, {"status": "done", "items": {}}))
     result = _click(env, card, choices={"routing": "cama"})
     assert result.message and "refresh" in result.message.lower()
     assert events == ["refresh"]
@@ -335,7 +336,7 @@ def test_first_card_cannot_start_acquisition_after_another_review_is_issued(revi
     assert latest["id"] != first["id"]
     events = []
     monkeypatch.setattr(obs_subset, "approve_inventory", lambda *a, **k: events.append("jobs") or [])
-    monkeypatch.setattr(acquire, "run", lambda *a, **k: events.append("acquire") or {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, **k: events.append("acquire") or _acq_result(project, {"status": "done", "items": {}}))
 
     # A delayed click may carry the entire original card; it cannot consent to
     # the newer inventory just because a newer host review now exists.
@@ -412,7 +413,7 @@ def test_estimate_io_failure_through_real_refresh_wrapper_reissues_unsigned(revi
 
     monkeypatch.setattr(obs_subset, "refresh_estimate", fail_estimate)
     monkeypatch.setattr(obs_subset, "approve_inventory", lambda *a, **k: events.append("jobs") or [])
-    monkeypatch.setattr(acquire, "run", lambda *a, **k: events.append("acquire") or {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, **k: events.append("acquire") or _acq_result(project, {"status": "done", "items": {}}))
     result = _click(env, first)
     assert "changed since you reviewed" in result.message
     assert "temporarily unreadable" in result.message
@@ -444,7 +445,7 @@ def test_answers_corrupted_during_estimate_are_rechecked_before_signing(review_p
 
     monkeypatch.setattr(obs_subset, "refresh_inventory", corrupt_during_refresh)
     monkeypatch.setattr(obs_subset, "approve_inventory", lambda *a, **k: events.append("jobs") or [])
-    monkeypatch.setattr(acquire, "run", lambda *a, **k: events.append("acquire") or {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, **k: events.append("acquire") or _acq_result(project, {"status": "done", "items": {}}))
     result = _click(env, card, choices={"routing": "cama"})
     assert result.message and "saved answers cannot be read" in result.message
     assert events == ["refresh"]
@@ -452,3 +453,221 @@ def test_answers_corrupted_during_estimate_are_rechecked_before_signing(review_p
     assert answers_path.read_text(encoding="utf-8") == "{broken-during-estimate"
     assert not (env.project / "runs" / "approval.json").exists()
     assert flowrun.current_state(env.project) == "WAITING_FOR_USER"
+
+
+# ── Issue #4: a file the user places for a "you provide" input is bound to it at approval ──
+
+def _needs_upload(plan, inventory):
+    inventory["items"].append({
+        "id": "site", "required_by": ["M"], "status": "missing", "decision": "user",
+        "acceptable_sources": [], "local_paths": [], "agent_resolvable": False, "needs_user": True,
+    })
+    plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["site"]
+
+
+def _upload(env, name="harbin_yield_2003_2005.csv", body="year,yield\n2003,6.1\n"):
+    folder = env.project / "inputs" / "user" / "site"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_text(body, encoding="utf-8")
+    return f"inputs/user/site/{name}"
+
+
+def test_a_you_provide_input_with_nothing_uploaded_blocks_approval(review_project):
+    """Reproduced: the approval signed site = KI default "user" with no file at all."""
+    env = review_project
+    card = _draft(env, revise=_needs_upload)
+    result = _click(env, card)
+    assert not (env.project / "runs" / "approval.json").exists()
+    assert "site" in result.message and "inputs/user/site" in result.message
+
+
+def test_an_uploaded_file_is_bound_shown_and_signed_as_the_users(review_project):
+    env = review_project
+    card = _draft(env, revise=_needs_upload)
+    rel = _upload(env)
+    result = _click(env, card)
+    assert rel in result.message                           # bound, card re-issued: nothing signed yet
+    assert not (env.project / "runs" / "approval.json").exists()
+    reissued = setup_flow.request(env.project)
+    assert rel in reissued["message"]                      # the card you approve names the file
+    _plan, inventory = flowgate.load().plan.read_artifacts(env.project)
+    site = next(it for it in inventory["items"] if it["id"] == "site")
+    assert site["local_paths"] == [rel] and site["status"] == "ready"
+    result = _click(env, json.loads(json.dumps(reissued)))
+    assert result.message is None
+    record = _approval(env)["decisions"]["item:site"]
+    digest = flowgate.load().receipts.sha256_file(env.project / rel)
+    assert record["source"] == "user" and record["value"] == rel
+    assert digest[:12] in record["rationale"]
+
+
+def test_an_upload_replaced_after_binding_is_rebound_before_signing(review_project):
+    env = review_project
+    card = _draft(env, revise=_needs_upload)
+    rel = _upload(env)
+    _click(env, card)
+    _upload(env, body="year,yield\n2003,5.9\n")            # corrected file, same name
+    result = _click(env, json.loads(json.dumps(setup_flow.request(env.project))))
+    assert rel in result.message and not (env.project / "runs" / "approval.json").exists()
+    _click(env, json.loads(json.dumps(setup_flow.request(env.project))))
+    digest = flowgate.load().receipts.sha256_file(env.project / rel)
+    assert digest[:12] in _approval(env)["decisions"]["item:site"]["rationale"]
+
+
+def test_an_upload_removed_after_binding_blocks_approval(review_project):
+    env = review_project
+    card = _draft(env, revise=_needs_upload)
+    rel = _upload(env)
+    _click(env, card)  # first click binds the file and issues the review naming it
+    (env.project / rel).unlink()
+    result = _click(env, setup_flow.request(env.project))
+    assert not (env.project / "runs" / "approval.json").exists()
+    assert flowrun.current_state(env.project) == "WAITING_FOR_USER"
+    assert "inputs/user/site" in result.message
+    assert "upload:site" not in plan_review.load_user_answers(env.project)
+    _plan, inventory = flowgate.load().plan.read_artifacts(env.project)
+    site = next(it for it in inventory["items"] if it["id"] == "site")
+    assert site["local_paths"] == [] and site["status"] == "missing"
+    # Re-uploading uses the same binding/review cycle and remains approvable.
+    _upload(env)
+    _click(env, setup_flow.request(env.project))
+    _click(env, setup_flow.request(env.project))
+    assert _approval(env)["decisions"]["item:site"]["source"] == "user"
+
+
+@pytest.mark.parametrize("change", ["delete", "replace"])
+def test_upload_changes_during_estimate_refresh_are_checked_before_signing(review_project, monkeypatch, change):
+    env = review_project
+    card = _draft(env, revise=_needs_upload)
+    rel = _upload(env)
+    _click(env, card)
+
+    def change_file_during_refresh(*args, **kwargs):
+        if change == "delete":
+            (env.project / rel).unlink()
+        else:
+            (env.project / rel).write_text("year,yield\n2003,5.9\n", encoding="utf-8")
+        return {}
+
+    monkeypatch.setattr(obs_subset, "refresh_inventory", change_file_during_refresh)
+    result = _click(env, setup_flow.request(env.project))
+    assert not (env.project / "runs" / "approval.json").exists()
+    assert flowrun.current_state(env.project) == "WAITING_FOR_USER"
+    answers = plan_review.load_user_answers(env.project)
+    if change == "delete":
+        assert "upload:site" not in answers and "inputs/user/site" in result.message
+    else:
+        digest = flowgate.load().receipts.sha256_file(env.project / rel)
+        assert answers["upload:site"]["sha256"][rel] == digest and rel in result.message
+
+
+def test_an_agent_named_missing_path_does_not_satisfy_you_provide(review_project):
+    env = review_project
+
+    def missing_path(plan, inventory):
+        _needs_upload(plan, inventory)
+        inventory["items"][-1]["local_paths"] = ["inputs/user/site/missing.csv"]
+
+    card = _draft(env, revise=missing_path)
+    result = _click(env, card)
+    assert not (env.project / "runs" / "approval.json").exists()
+    assert flowrun.current_state(env.project) == "WAITING_FOR_USER"
+    assert "inputs/user/site" in result.message
+
+
+def test_an_upload_symlink_cannot_bind_a_file_outside_its_input_folder(review_project):
+    env = review_project
+    card = _draft(env, revise=_needs_upload)
+    unrelated = env.project / "unrelated.csv"
+    unrelated.write_text("year,yield\n2003,6.1\n", encoding="utf-8")
+    upload_folder = env.project / "inputs" / "user" / "site"
+    upload_folder.mkdir(parents=True)
+    (upload_folder / "site.csv").symlink_to(unrelated)
+    result = _click(env, card)
+    assert "outside its input folder" in result.message
+    assert not (env.project / "runs" / "approval.json").exists()
+    assert "upload:site" not in plan_review.load_user_answers(env.project)
+
+
+def test_local_paths_written_by_the_agent_are_not_credited_to_the_user(tmp_path):
+    inv = {"items": [{"id": "site", "decision": "user", "needs_user": True,
+                      "local_paths": ["inputs/user/site/x.csv"], "status": "ready"}]}
+    recs, _ = plan_review.decision_records(flowrun._flow(), {}, inv, {})
+    assert recs["item:site"]["source"] != "user"
+
+
+def test_a_binding_failure_notice_ends_with_the_approval_it_belongs_to(review_project, monkeypatch):
+    """Issue #6b: after Modify the plan, a fresh plan still said "Data needs attention"."""
+    from kiss_cli import project_status
+    env = review_project
+    card = _draft(env)
+
+    def binding_fails(project):
+        raise ValueError("the selected scope changed")
+
+    monkeypatch.setattr(obs_subset, "bind_approved", binding_fails)
+    _click(env, card)
+    snap = project_status.snapshot(env.project)
+    assert snap["plan_data"]["binding_status"]["status"] == "needs_review"     # its approval: shown
+    assert snap["data_summary"]["label"] == "Data needs attention"
+    flowgate.load().approval.revoke(env.project, "user asked to modify the plan")
+    snap = project_status.snapshot(env.project)
+    assert snap["plan_data"]["binding_status"] == {}
+    assert snap["data_summary"]["label"] != "Data needs attention"
+
+
+# ── DB gating: nothing from the GeoForge Database while access is off or not activated ──
+
+def _db_off_draft(env, revise):
+    flowrun.pre(env.project, "Run M for 2003", ["M"], [env.ki], None, None)
+    turn = flowrun.turn(env.project, [env.ki], env.cfg, "api", "deepseek", None, "Run M for 2003",
+                        database_access_mode="off")
+    plan, inventory = turn.session.flow.plan.read_artifacts(env.project)
+    for step in plan["steps"]:
+        step["kind"] = "run"
+        step["tool"] = str(env.ki.root / "tools" / "run.py")
+    for item in inventory["items"]:
+        item.update(status="resolved", needs_user=False)
+    plan["scientific_choices"] = []
+    revise(plan, inventory)
+    assert turn.session.write_plan(plan, inventory) == []
+    return flowrun.after(env.project, turn, "The draft is ready for review.", setup_ok=True)
+
+
+def test_database_off_refuses_a_plan_that_pins_a_database_dataset(review_project):
+    def pins(plan, inventory):
+        inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "resolved",
+                                   "acceptable_sources": [], "chosen_source": "source_a",
+                                   "dataset_id": "source_a", "local_paths": [],
+                                   "agent_resolvable": True, "needs_user": False})
+        plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["forcing"]
+
+    result = _db_off_draft(review_project, pins)
+    assert result.request is None and result.retry_planning
+    assert "forcing" in result.message and "GeoForge Database access is off" in result.message
+
+
+def test_database_off_card_offers_no_cached_database_records(review_project):
+    def lists_cached_ids(plan, inventory):
+        inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "missing",
+                                   "acceptable_sources": [], "local_paths": [],
+                                   "agent_resolvable": True, "needs_user": False})
+        plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["forcing"]
+        plan["scientific_choices"].append({"id": "select-data", "kind": "data_source", "item": "forcing",
+                                           "options": ["source_a", "source_b"], "picked": "source_a",
+                                           "high_impact": True})
+
+    result = _db_off_draft(review_project, lists_cached_ids)
+    assert result.request is not None
+    assert result.request["plan_review"]["data_choices"] == []
+
+
+def test_a_reissued_card_follows_the_database_setting_not_direct(review_project, monkeypatch):
+    from kiss_cli import settings
+    env = review_project
+    card = _draft(env, with_data=True, revise=_needs_upload)
+    assert card["plan_review"]["data_choices"]                     # activated: records shown
+    monkeypatch.setattr(settings, "database_access_mode", lambda *a: "off")
+    _upload(env)
+    _click(env, card)                                              # binds the upload → re-issue
+    assert setup_flow.request(env.project)["plan_review"]["data_choices"] == []

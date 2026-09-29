@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
-from kiss_cli import api
+from kiss_cli import api, execution
 
 class BoundedStartupProbeTests(unittest.TestCase):
     def test_native_help_cannot_inherit_stdin_or_a_build_timeout(self):
@@ -16,7 +16,7 @@ class BoundedStartupProbeTests(unittest.TestCase):
             binary.chmod(0o755)
             cfg = SimpleNamespace(root=root, python='/usr/bin/python3', roles={'binaries': binary.parent})
             ki = SimpleNamespace(root=root / 'ki', name='fixture')
-            with mock.patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'usage', '')) as run:
+            with mock.patch.object(execution, 'run_process', return_value=execution.ProcessRun('succeeded', 0, 'usage', '')) as run:
                 api.execute_tool('run_setup_command', {'argv': [str(binary), '--help'], 'timeout_seconds': 1800}, ki, cfg, setup_mode=True, setup_context={'installation_only': True})
             self.assertEqual(run.call_args.kwargs['timeout'], 25)
             self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)

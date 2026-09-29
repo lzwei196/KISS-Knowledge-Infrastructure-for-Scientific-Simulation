@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import cli, flowrun, gui, projectrun, sessions, setup as setup_flow
+from kiss_cli import cli, execution, flowrun, gui, projectrun, sessions, setup as setup_flow
 
 
 QUESTION = {
@@ -79,7 +79,11 @@ def project_case(tmp_path, monkeypatch):
     monkeypatch.setattr(flowrun, "_launcher_path", lambda: launcher)
     monkeypatch.setattr(flowrun, "_database_launcher_path", lambda: None)
     monkeypatch.delenv("KISS_PROJECT", raising=False)
-    return SimpleNamespace(project=project, workroot=workroot, ki=ki, cfg=cfg, launcher=launcher)
+    turn_id = execution.begin_turn(project)
+    monkeypatch.setenv("GEOFORGE_TURN_ID", turn_id)
+    monkeypatch.setenv("GEOFORGE_TURN_PROJECT", str(project))
+    return SimpleNamespace(project=project, workroot=workroot, ki=ki, cfg=cfg,
+                           launcher=launcher, turn_id=turn_id)
 
 
 def _bridge(case, body, capability="test-capability", question_capability=None):
@@ -142,7 +146,8 @@ def test_native_question_crosses_real_transport_and_pauses_without_plan_submissi
     cwd = turn.planning_worktree or case.project
     rc, requests = _run_helper(case, cwd, monkeypatch)
     assert rc == 0, capsys.readouterr().err
-    assert requests == [{"argv": ["ask-question", json.dumps(QUESTION)], "cwd": str(cwd)}]
+    assert requests == [{"argv": ["ask-question", json.dumps(QUESTION)], "cwd": str(cwd),
+                         "turn_id": case.turn_id, "turn_project": str(case.project)}]
     question = setup_flow.request(case.project)
     assert question["status"] == "waiting" and question["title"] == QUESTION["title"]
     if cwd != case.project:

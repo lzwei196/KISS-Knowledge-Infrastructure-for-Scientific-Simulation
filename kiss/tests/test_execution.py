@@ -7,10 +7,12 @@ contract tests, not scientific-model or live-provider tests.
 from __future__ import annotations
 
 import copy
+import os
 import io
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,7 +26,7 @@ def _isolated_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
 
 
-def _project(tmp_path, *, python_tool=True):
+def _project(tmp_path, *, python_tool=True, source=None):
     project = (tmp_path / "project").resolve()
     root = project / "models" / "M" / "ki"
     (root / "tools").mkdir(parents=True)
@@ -34,7 +36,7 @@ def _project(tmp_path, *, python_tool=True):
     (root / "dag.yaml").write_text(
         "outputs:\n- var: discharge\n  validation_rank: 1\n  unit: m3/s\n")
     tool = root / "tools" / ("run.py" if python_tool else "run.sh")
-    tool.write_text("print('local execution fixture')\n" if python_tool
+    tool.write_text(source or "print('local execution fixture')\n" if python_tool
                     else "#!/bin/sh\nprintf 'local execution fixture'\n")
     cfg = paths.KissConfig.default(project)
     cfg.python = Path(sys.executable)
@@ -421,6 +423,132 @@ def test_cli_adapter_keeps_no_deadline_instead_of_adopting_direct_default(
     assert len(_receipt_docs(ctx)) == 1
 
 
+_SLOW_TOOL = """import os, subprocess, sys, time
+child = subprocess.Popen(["sleep", "30"])
+open(sys.argv[1], "w").write(f"{os.getpid()} {child.pid}")
+time.sleep(30)
+"""
+
+# A model the tool starts in a session of its own (setsid, a daemonising solver),
+# either still holding the tool's stdout ("pipe") or writing to a log ("log").
+_SESSION_TOOL = """import os, subprocess, sys
+out = None if sys.argv[2] == "pipe" else subprocess.DEVNULL
+child = subprocess.Popen(["sleep", "30"], start_new_session=True, stdout=out, stderr=out)
+open(sys.argv[1], "w").write(f"{os.getpid()} {child.pid}")
+child.wait()
+"""
+
+_OUTPUT_TOOL = ("import pathlib\np = pathlib.Path('outputs'); p.mkdir(exist_ok=True)\n"
+                "(p / 'q.csv').write_text('t,q\\n1,0.5\\n2,1.2\\n3,0.8\\n')\n")
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _run_slow_tool(ctx, *, timeout, stop_after=None, extra=()):
+    import threading
+    pidfile = ctx.project / "runs" / "pids.txt"
+    box = {}
+    worker = threading.Thread(target=lambda: box.update(result=_execute(
+        ctx, arguments=[str(pidfile), *extra], timeout=timeout)))
+    started = time.time()
+    worker.start()
+    while not pidfile.exists() or not pidfile.read_text():
+        assert time.time() - started < 10, "fixture tool never started"
+        time.sleep(0.05)
+    pids = [int(p) for p in pidfile.read_text().split()]
+    if stop_after is not None:
+        time.sleep(stop_after)
+        execution.request_stop(ctx.project)
+    worker.join(timeout=15)
+    assert not worker.is_alive(), "Stop did not end the tool attempt"
+    deadline = time.time() + 5
+    while any(map(_alive, pids)) and time.time() < deadline:
+        time.sleep(0.05)
+    return box["result"], pids, time.time() - started
+
+
+def _evidence(ctx):
+    return ctx.flow.flow.receipts.evidence(ctx.project, ctx.flow.plan, ctx.flow.approval_doc,
+                                           inventory=ctx.flow.inventory)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
+def test_stop_ends_a_running_tool_and_the_model_processes_it_started(tmp_path):
+    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    result, pids, elapsed = _run_slow_tool(ctx, timeout=None, stop_after=0.2)   # CLI: no deadline
+    assert elapsed < 10 and not any(map(_alive, pids))
+    assert result.status == "stopped" and "stopped by the user" in result.detail.lower()
+    assert "signalled" in result.detail
+    [receipt] = _receipt_docs(ctx)
+    # Stopped is its own outcome: not passed, not failed, so the step is simply still to do.
+    assert receipt["execution_status"] == "stopped" and receipt["validation"]["status"] == "stopped"
+    ev = _evidence(ctx)
+    assert ev["validation"] == "incomplete" and ev["steps_missing"] == ["M:run"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
+def test_timeout_does_not_leave_the_model_child_running(tmp_path):
+    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    result, pids, _ = _run_slow_tool(ctx, timeout=1)
+    assert result.status == "timed_out" and not any(map(_alive, pids))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
+@pytest.mark.parametrize("how", ["stop", "timeout"])
+@pytest.mark.parametrize("stdout", ["pipe", "log"])
+def test_a_model_in_its_own_session_is_ended_with_its_tool(tmp_path, how, stdout):
+    ctx = _project(tmp_path, source=_SESSION_TOOL)
+    result, pids, elapsed = _run_slow_tool(
+        ctx, timeout=None if how == "stop" else 1, stop_after=0.2 if how == "stop" else None,
+        extra=[stdout])
+    assert not any(map(_alive, pids)), "the model outlived the Stop or timeout"
+    assert elapsed < 12 and result.status == ("stopped" if how == "stop" else "timed_out")
+
+
+def test_a_stop_refuses_new_attempts_until_the_next_turn_begins(tmp_path, monkeypatch):
+    from kiss_cli import projectrun
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    assert _execute(ctx).status == "succeeded" and _evidence(ctx)["validation"] == "passed"
+    execution.request_stop(ctx.project)
+    launches = []
+    real_popen = subprocess.Popen
+    monkeypatch.setattr(execution.subprocess, "Popen",
+                        lambda *a, **k: launches.append(a) or real_popen(*a, **k))
+    with pytest.raises(flowgate.FlowDenied, match="stopped by the user; no process was launched"):
+        _execute(ctx)
+    # A refused launch is not an attempt: no receipt, and the step that passed still stands.
+    assert launches == [] and len(_receipt_docs(ctx)) == 1
+    assert _evidence(ctx)["validation"] == "passed"
+    projectrun.begin_turn(ctx.project, "continue")          # the user's next message
+    assert not (ctx.project / execution.STOP_MARKER).exists()
+    assert _execute(ctx).status == "succeeded" and len(_receipt_docs(ctx)) == 2
+
+
+def test_a_stop_during_preparation_launches_nothing(tmp_path, monkeypatch):
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    launches = []
+    real_popen, real_snapshot = subprocess.Popen, flowgate._snapshot
+
+    def snapshot_then_stop(*args, **kwargs):
+        taken = real_snapshot(*args, **kwargs)
+        execution.request_stop(ctx.project)                 # the click lands mid-preparation
+        return taken
+
+    monkeypatch.setattr(flowgate, "_snapshot", snapshot_then_stop)
+    monkeypatch.setattr(execution.subprocess, "Popen",
+                        lambda *a, **k: launches.append(a) or real_popen(*a, **k))
+    with pytest.raises(flowgate.FlowDenied, match="no process was launched"):
+        _execute(ctx)
+    assert launches == [] and _receipt_docs(ctx) == []
+    assert not (ctx.project / "outputs").exists()
+
+
 @pytest.mark.parametrize("adapter", ["api", "cli"])
 def test_requested_ki_uses_its_runtime_not_first_or_last_model(
         tmp_path, monkeypatch, adapter):
@@ -515,3 +643,76 @@ def test_model_child_and_host_agree_on_moved_and_relative_roles(tmp_path):
     result = json.loads(child.stdout)
     assert result == {"root": str(project), "forcing": str(host.roles["forcing"]),
                       "outputs": str(host.roles["outputs"])}
+
+
+def _run_tool_process(ctx, *args, pythonpath=(), new_session=False):
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([*map(str, pythonpath),
+        str(Path(execution.__file__).parents[1]), str(Path(execution.__file__).parents[2] / "ki_tools_common")])}
+    return subprocess.Popen([sys.executable, "-m", "kiss_cli", "run-tool", "--step", "M:run",
+                             "--project", str(ctx.project), "M", "tools/run.py", "--", *map(str, args)],
+                            env=env, cwd=str(ctx.project), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            start_new_session=new_session)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
+@pytest.mark.parametrize("user_stop", [True, False])
+def test_sigterm_to_a_direct_cli_run_tool_still_ends_the_model_and_receipts_it(tmp_path, user_stop):
+    # Stop SIGTERMs the agent CLI's process tree; a source-build run-tool is inside it.
+    import signal
+    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    pidfile = ctx.project / "runs" / "pids.txt"
+    proc = _run_tool_process(ctx, pidfile)
+    deadline = time.time() + 20
+    while not pidfile.exists() or not pidfile.read_text():
+        assert time.time() < deadline and proc.poll() is None, proc.communicate()
+        time.sleep(0.05)
+    pids = [int(p) for p in pidfile.read_text().split()]
+    if user_stop:
+        execution.request_stop(ctx.project)         # _stop_agent_run writes it before signalling
+    proc.send_signal(signal.SIGTERM)
+    proc.wait(15)
+    deadline = time.time() + 5
+    while any(map(_alive, pids)) and time.time() < deadline:
+        time.sleep(0.05)
+    assert not any(map(_alive, pids)), "the model outlived its supervisor"
+    [receipt] = _receipt_docs(ctx)
+    assert receipt["execution_status"] == ("stopped" if user_stop else "interrupted")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="signals are POSIX")
+@pytest.mark.parametrize("how", ["direct", "tree"])
+def test_sigterm_while_the_receipt_is_written_does_not_lose_a_finished_run(tmp_path, how):
+    import signal
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    slow = tmp_path / "slowreceipt"; slow.mkdir()
+    (slow / "sitecustomize.py").write_text(
+        "import time\nfrom kiss_cli import flowgate\n_orig = flowgate.FlowSession.record_tool_run\n"
+        "def slow(self, **kw):\n    (kw['cwd'] / 'runs' / 'recording.flag').touch()\n"
+        "    time.sleep(2)\n    return _orig(self, **kw)\n"
+        "flowgate.FlowSession.record_tool_run = slow\n")
+    proc = _run_tool_process(ctx, pythonpath=[slow], new_session=how == "tree")
+    flag, deadline = ctx.project / "runs" / "recording.flag", time.time() + 20
+    while not flag.exists():
+        assert time.time() < deadline and proc.poll() is None, proc.communicate()
+        time.sleep(0.02)
+    # The tool has finished; its receipt is being written. The GUI's tree Stop
+    # must allow this cleanup as well as a direct SIGTERM to the source CLI.
+    if how == "tree":
+        execution.terminate_tree(proc)
+    else:
+        proc.send_signal(signal.SIGTERM)
+    out, err = proc.communicate(timeout=20)
+    [receipt] = _receipt_docs(ctx)
+    assert receipt["execution_status"] == "succeeded" and proc.returncode == 0, err
+
+
+def test_run_tool_started_after_a_stop_launches_nothing(tmp_path):
+    # The compiled app bridges run-tool into a Desktop child outside the CLI's tree:
+    # a Stop that lands while it starts up must still keep the model from running.
+    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    pidfile = ctx.project / "runs" / "pids.txt"
+    execution.request_stop(ctx.project)
+    proc = _run_tool_process(ctx, pidfile)
+    out, err = proc.communicate(timeout=30)
+    assert proc.returncode == 3 and b"stopped by the user" in err
+    assert not pidfile.exists() and _receipt_docs(ctx) == []

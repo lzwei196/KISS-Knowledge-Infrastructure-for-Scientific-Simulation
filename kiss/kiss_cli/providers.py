@@ -817,6 +817,21 @@ def run(provider: Provider, prompt: str, cwd: Path,
     Never raises for a non-zero exit: the exit status and any stderr tail are
     yielded as text so the user sees what went wrong instead of a blank panel.
     """
+    handle = (runtime_events or {}).get("_handle")
+    turn_project = (runtime_events or {}).get("project")
+    turn_id = (runtime_events or {}).get("_turn_id")
+    if turn_project:
+        from .execution import current_turn_id
+        turn_id = turn_id if turn_id is not None else current_turn_id(Path(turn_project))
+
+    def turn_stopped():
+        from .execution import stop_requested
+        return bool((handle is not None and handle.stopped.is_set()) or (
+            turn_project and stop_requested(Path(turn_project), turn_id=turn_id)))
+
+    if turn_stopped():
+        yield "[stopped by the user]"          # a Stop during preparation: never spawn
+        return
     health = provider.health()
     if not health.installed:
         yield f"[{provider.label} is not installed — `{provider.binary}` not on PATH]"
@@ -886,6 +901,9 @@ def run(provider: Provider, prompt: str, cwd: Path,
         f"cli:{provider.name}",
         {**os.environ, **provider.env, **(extra_env or {})},
     )
+    if turn_project:
+        from .execution import turn_environment
+        env = turn_environment(Path(turn_project), turn_id=turn_id, env=env)
     if cfg is not None:
         from .paths import with_ki_tools_common
         env = with_ki_tools_common(cfg, env)
@@ -974,10 +992,21 @@ def run(provider: Provider, prompt: str, cwd: Path,
     spawn: dict = {}
     if os.name == "nt":
         spawn["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    else:
+        # Its own process group, so Stop reaches the shell commands the agent started too.
+        spawn["start_new_session"] = True
 
     # stderr goes to a spool file, never a PIPE: an unread PIPE fills at ~64KB
     # and a chatty CLI (codex logs its chrome there) then blocks forever.
     err_spool = tempfile.TemporaryFile(mode="w+", errors="replace")
+    if turn_stopped():
+        err_spool.close()
+        if kimi_profile is not None:
+            from .kimi_security import cleanup, cleanup_home
+            cleanup(kimi_profile)
+            cleanup_home(kimi_home)
+        yield "[stopped by the user]"
+        return
     try:
         proc = subprocess.Popen(
             argv, cwd=str(cwd), env=env,
@@ -1018,6 +1047,10 @@ def run(provider: Provider, prompt: str, cwd: Path,
             "activity_state": "unknown",
             "activity_started_at": None,
         }
+        if turn_stopped():
+            # Stored first, checked second: a Stop that read no process to end is caught here.
+            from .execution import terminate_tree
+            terminate_tree(proc)
 
     # Written from a thread, not inline: a prompt larger than the pipe buffer
     # blocks the writer until the child drains it, and the child cannot be
@@ -1111,7 +1144,9 @@ def run(provider: Provider, prompt: str, cwd: Path,
                     # Exit is not a result for every pending tool. Preserve
                     # the last observation without claiming it is still live.
                     process_event["activity_state"] = "unknown"
-        if rc != 0:
+        if rc != 0 and handle is not None and handle.stopped.is_set():
+            yield "\n\n[stopped by the user]"
+        elif rc != 0:
             tail = ""
             if provider.stdout_only:
                 err_spool.seek(0)

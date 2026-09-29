@@ -359,6 +359,17 @@ def cmd_run_tool(args) -> int:
     argv = list(args.argv)
     if argv and argv[0] == "--":
         argv = argv[1:]
+    import signal
+    import threading
+    from .execution import LIVE_PROCESSES
+    if threading.current_thread() is threading.main_thread():
+        # Stop SIGTERMs the agent CLI's process tree, which a direct run-tool is in.
+        # While the tool runs, end like Ctrl-C: its tree is killed and the attempt receipted.
+        # Before launch the stop marker refuses it; after exit the finished run keeps its receipt.
+        def interrupt(*_):
+            if LIVE_PROCESSES:
+                raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, interrupt)
     try:
         result = execute_ki_tool(
             flow=fs, cfg=cfg, project=project, ki=args.ki, ki_root=ki_root,
@@ -377,7 +388,7 @@ def cmd_run_tool(args) -> int:
         print("[RECEIPT] " + json.dumps(result.receipt, ensure_ascii=False))
     if result.exit_code is not None:
         return result.exit_code
-    return {"timed_out": 124, "interrupted": 130}.get(result.status, 1)
+    return {"timed_out": 124, "interrupted": 130, "stopped": 130}.get(result.status, 1)
 
 
 def cmd_fetch(args) -> int:
@@ -482,6 +493,16 @@ def cmd_harness_status(args) -> int:
 def cmd_calibrate(args) -> int:
     """Run the fixed engine through the app/CLI's own Python environment."""
     from . import calibration
+    import signal
+    import threading
+    from .execution import LIVE_PROCESSES
+    if threading.current_thread() is threading.main_thread():
+        # A provider's Stop signals this wrapper and the engine tree. Keep the
+        # wrapper alive long enough to persist the interrupted calibration report.
+        def interrupt(*_):
+            if LIVE_PROCESSES:
+                raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, interrupt)
 
     try:
         obs_shapes = json.loads(args.obs_shapes_json)
@@ -518,7 +539,18 @@ def cmd_calibrate(args) -> int:
         "log_path": result.get("log_path"),
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
+    if report.get("status") in {"stopped", "interrupted"}:
+        return 130
     return 0 if report.get("status") not in ("engine_error", "backend_unavailable") else 2
+
+
+def cmd_calibration_worker(args) -> int:
+    from . import calibration
+    return calibration.run_worker(args.request_path)
+
+
+def cmd_install_download_worker(args) -> int:
+    return install.run_download_worker(args.request_path)
 
 
 # --- wiring -----------------------------------------------------------------
@@ -656,6 +688,12 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--expected-case-id")
     q.add_argument("--determining-metric")
     q.set_defaults(fn=cmd_calibrate)
+    q = sub.add_parser("_calibration-worker", help=argparse.SUPPRESS)
+    q.add_argument("request_path", type=Path)
+    q.set_defaults(fn=cmd_calibration_worker)
+    q = sub.add_parser("_install-download-worker", help=argparse.SUPPRESS)
+    q.add_argument("request_path", type=Path)
+    q.set_defaults(fn=cmd_install_download_worker)
     return p
 
 

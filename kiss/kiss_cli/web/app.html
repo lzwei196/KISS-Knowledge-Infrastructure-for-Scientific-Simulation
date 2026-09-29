@@ -293,6 +293,8 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .planreview{display:grid;gap:10px;margin:4px 0 2px}.planreview .prsec{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--surface)}.planreview h4{margin:0 0 6px;font-size:12px;letter-spacing:.02em;color:var(--fg-2);text-transform:uppercase}.planreview .prgoal{font-size:13.5px;line-height:1.5;color:var(--fg)}.planreview .prmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.planreview .prtag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--fg-2)}.planreview .prgroup{margin:6px 0 0}.planreview .prgroup b{font-size:12px}.planreview .prgroup ul{margin:3px 0 0;padding-left:18px;font-size:12px;line-height:1.45}.planreview .prgroup code{font-size:11px}.planreview .pr-auto b{color:var(--ok)}.planreview .pr-manual b{color:var(--warn)}.planreview .pr-missing b{color:var(--block)}.planreview .pr-gen b,.planreview .pr-other b{color:var(--fg-3)}.planreview ol.prsteps{margin:0;padding-left:20px;font-size:12px;line-height:1.5}.planreview ol.prsteps code{font-size:11px}.planreview .prkind{font-size:10.5px;padding:1px 6px;border-radius:6px;background:var(--raised);border:1px solid var(--line);margin-left:5px;color:var(--fg-3)}.planreview .prblock{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--surface))}.planreview .prblock ul{margin:2px 0 0;padding-left:18px;font-size:12px}.planreview details{font-size:12px;color:var(--fg-3)}.planreview details pre{white-space:pre-wrap;font-size:11.5px;margin:6px 0 0;color:var(--fg-2)}
 .projectbtn.run-working{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}.projectbtn.run-waiting{color:var(--warn);border-color:var(--warn)}
 .projectbtn.run-complete{color:var(--ok);border-color:var(--ok)}.projectbtn.run-failed{color:var(--block);border-color:var(--block)}
+.acquisitionnote{padding:10px 12px;margin:0 0 8px;border:1px solid var(--line);border-radius:12px;background:var(--brand-50);font-size:12px;line-height:1.5}
+.acquisitionnote[hidden]{display:none}.acquisitionnote b{display:block}.acquisitionnote p{margin:4px 0;white-space:pre-line;overflow-wrap:anywhere}.acquisitionnote small{color:var(--fg-2)}.acquisitionnote button{float:right;padding:4px 8px;font-size:11px;margin-left:8px}
 #opendata[data-state]:not([data-state=""])::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;background:currentColor;vertical-align:middle}
 #opendata[data-state="working"]::after{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.25}}
 .ki-update-toast{position:fixed;right:18px;bottom:18px;z-index:40;width:min(390px,calc(100vw - 36px));padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--raised);box-shadow:0 16px 45px rgba(20,28,40,.16);display:none}.ki-update-toast.open{display:block}.ki-update-toast b{display:block;margin-bottom:3px}.ki-update-toast small{display:block;color:var(--fg-2);line-height:17px}.ki-update-actions{display:flex;gap:7px;margin-top:10px}.ki-update-actions button{padding:5px 9px;font-size:12px}
@@ -331,6 +333,13 @@ textarea:focus{outline:none;border-color:var(--brand)}
   </header>
   <div id="chat"></div>
   <footer>
+    <div class="acquisitionnote" id="acquisition-note" hidden role="status" aria-live="polite">
+      <button id="acquisition-open">Project status</button>
+      <button id="acquisition-start" class="primary" hidden>Start the approved run</button>
+      <b id="acquisition-title"></b>
+      <p id="acquisition-automatic"></p><p id="acquisition-manual"></p>
+      <small id="acquisition-execution"></small>
+    </div>
     <div class="composerbox" id="dropzone">
       <div class="attachlist" id="attachlist"></div>
       <div class="composer">
@@ -746,7 +755,7 @@ function runStateText(run){
   return zh?"就绪":"Ready";
 }
 function drawRunStatus(run=RUN){
-  RUN=run||null;const b=$("#opendata"),label=$("#runlabel");if(!b||!label)return;
+  RUN=run||null;drawAcquisitionStatus(RUN);const b=$("#opendata"),label=$("#runlabel");if(!b||!label)return;
   // The button name never changes; the state is the colored dot and the tooltip.
   label.textContent=runButtonLabel();
   b.dataset.state=RUN&&RUN.goal?String(RUN.status||"ready"):"";
@@ -760,8 +769,80 @@ function drawRunStatus(run=RUN){
 }
 async function refreshRun(id=CUR&&CUR.id){
   if(!id)return null;
-  const r=await fetch(`/api/session/${id}/run`);if(!r.ok)return null;
-  const run=await r.json();if(CUR&&CUR.id===id)drawRunStatus(run);return run;
+  const r=await fetch(`/api/session/${id}/run`);if(!r.ok){if(r.status===404)ACQUISITION_TRACKED.delete(id);return null;}
+  const run=await r.json();rememberAcquisition(id,run);if(CUR&&CUR.id===id)drawRunStatus(run);return run;
+}
+const ACQUISITION_TRACKED=new Map(),ACQUISITION_POLLING=new Set(),ACQUISITION_REFRESHING=new Set();
+let ACQUISITION_READ_AT=0;
+function automaticAcquisitionPending(run){
+  return run?.flow_state==="ACQUIRING"&&run.acquisition?.active===true&&
+    (run.acquisition.automatic||[]).some(row=>row.status==="pending");
+}
+function rememberAcquisition(id,run){
+  if(automaticAcquisitionPending(run))ACQUISITION_TRACKED.set(id,run);
+  else ACQUISITION_TRACKED.delete(id);
+}
+function drawAcquisitionStatus(run,error=""){
+  const box=$("#acquisition-note");if(!box)return;
+  const ready=run?.ready_to_start===true;
+  const acq=run?.flow_state==="ACQUIRING"&&run.acquisition?.active?run.acquisition:ready?{}:null;
+  box.hidden=!acq;if(!acq)return;
+  const zh=chineseUI(),automatic=acq.automatic||[],manual=acq.manual||[];
+  const labels=zh?{queued:"服务器排队中",running:"服务器正在裁剪",ready:"裁剪就绪，待下载",downloading:"正在下载并校验",pending:"自动获取中",done:"文件已获取",unconfirmed:"回执待确认",failed:"获取失败"}:
+    {queued:"Server queued",running:"Server subsetting",ready:"Subset ready to download",downloading:"Downloading and checking files",pending:"Automatic acquisition pending",done:"Files acquired",unconfirmed:"Receipt check pending",failed:"Acquisition failed"};
+  const kind=ready?(run.flow_state==="SETUP_REQUIRED"?"setup":"ready"):automatic.length&&manual.length?"mixed":manual.length?"manual":"automatic";
+  const [title,footer]=({
+    mixed:zh?["数据准备 · 自动获取与手动下载分别进行","手动下载不会阻止自动获取。文件复制完成后请在项目状态中确认；所需输入齐全前不会执行模型。"]:
+      ["Data preparation · automatic and manual downloads are independent","Manual downloads do not block automatic acquisition. Confirm in Project status after copying finishes; model execution waits for all required inputs."],
+    automatic:zh?["数据准备 · 正在获取已批准的数据","模型执行会等待全部获取回执。"]:
+      ["Data preparation · fetching approved data","Model execution waits for acquisition receipts."],
+    manual:zh?["数据准备 · 需要手动下载","放好文件后请在项目状态中确认；所需输入齐全前不会执行模型。"]:
+      ["Data preparation · manual download needed","Place the files, then confirm in Project status; model execution waits for all required inputs."],
+    ready:zh?["已获取批准的数据 · 运行尚未开始","准备好后开始已批准的运行；之后仍需准备 KI 输入并完成科学检查。"]:
+      ["Approved data acquired · run not started","Start the approved run when you are ready; KI input preparation and scientific checks still follow."],
+    setup:zh?["已获取批准的数据 · 需要先配置软件","开始已批准的运行会先配置科学软件；之后仍需准备 KI 输入并完成科学检查。"]:
+      ["Approved data acquired · software setup needed","Starting the approved run sets up the scientific software first; KI input preparation and scientific checks still follow."],
+  })[kind];
+  $("#acquisition-title").textContent=title;
+  const start=$("#acquisition-start");start.hidden=!ready;start.disabled=false;start.textContent=zh?"开始已批准的运行":"Start the approved run";
+  $("#acquisition-automatic").textContent=automatic.map(row=>{
+    const state=row.status==="pending"?(row.job_status||"pending"):row.status;
+    return `${zh?"自动":"Automatic"}: ${row.dataset_id||row.id} — ${labels[state]||labels.pending}`;
+  }).join("\n");
+  $("#acquisition-manual").textContent=manual.map(row=>`${zh?"需要你手动下载":"Manual download needed"}: ${row.dataset_id||row.id}`).join("\n");
+  $("#acquisition-execution").textContent=error||footer;
+}
+async function advanceAcquisition(id){
+  if(ACQUISITION_POLLING.has(id)||DATA_ACTIONS.has(id)||sessionBusy(id))return;
+  ACQUISITION_POLLING.add(id);
+  try{
+    const response=await fetch(`/api/session/${id}/acquire`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    if(response.status===404){ACQUISITION_TRACKED.delete(id);return;}
+    if(!response.ok)throw new Error("acquisition status unavailable");
+    const result=await response.json(),run=result.run;
+    if(!run)throw new Error("missing acquisition status");
+    rememberAcquisition(id,run);
+    if(CUR?.id===id)drawRunStatus(run);
+  }catch(_error){
+    if(CUR?.id===id)drawAcquisitionStatus(ACQUISITION_TRACKED.get(id),chineseUI()?
+      "暂时无法更新获取状态，将自动重试；当前显示的是上次观测结果。":"Could not update acquisition status; retrying automatically. Showing the last observed result.");
+  }finally{ACQUISITION_POLLING.delete(id);}
+}
+async function refreshAcquisitionProgress(){
+  // Keep progressing after the provider turn ends, even with both panels
+  // closed. Remember already-started projects when the user changes chats.
+  for(const id of ACQUISITION_TRACKED.keys())advanceAcquisition(id).catch(()=>{});
+  const id=CUR?.id;
+  // A tracked chat's /acquire result above already carries and draws its status.
+  if(!id||document.hidden||ACQUISITION_REFRESHING.has(id)||ACQUISITION_TRACKED.has(id))return;
+  // Read the visible chat's status while it acquires; otherwise (ready to start included,
+  // which only the user changes) a slow fallback discovers acquisitions started elsewhere.
+  if(RUN?.flow_state!=="ACQUIRING"&&Date.now()-ACQUISITION_READ_AT<30000)return;
+  ACQUISITION_READ_AT=Date.now();
+  ACQUISITION_REFRESHING.add(id);
+  // A slow status scan in the visible chat must not hold up other projects.
+  refreshRun(id).then(run=>{if(automaticAcquisitionPending(run))return advanceAcquisition(id);})
+    .catch(()=>{}).finally(()=>ACQUISITION_REFRESHING.delete(id));
 }
 function drawViewStatus(view=VIEW){
   VIEW=view||null;const button=$("#openview"),label=$("#viewlabel");if(!button||!label)return;
@@ -917,6 +998,7 @@ async function openSession(id){
   $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
   renderAttachments();
   drawProviders();
+  drawRunStatus(null);                 // never show the previous chat's status or banner
   await refreshRun(id);
   await refreshViewStatus(id);
   if($("#viewpanel").classList.contains("open"))await refreshProjectView(false);
@@ -1118,7 +1200,7 @@ function renderPlanReview(r,rawMessage){
   const steps=(r.steps||[]).map(s=>`<li><b>${esc(s.id||"")}</b><span class="prkind">${esc(s.kind||"")}</span>${toolText(s)}${s.env&&s.env.length?` <span class="prtag">env ${s.env.length}</span>`:""}</li>`).join("");
   const delivLabel={served:zh?"直接下载":"direct download",manual:zh?"网盘手动下载":"Baidu manual download",subset:zh?"服务器裁剪":"server clip"};
   const dataChoices=(r.data_choices||[]).length?`<div class="prsec" id="pr-data-choices"><h4>${zh?"数据来源，你来选":"Data sources, your pick"} · ${r.data_choices.length}</h4><div class="hint" style="margin:0 0 6px">${zh?"Agent 在 GeoForge 数据库里为每项输入找到的候选，推荐项已选中。改选后批准，GeoForge 会自动改用你选的数据。":"Candidates the agent found in the GeoForge Database for each input; the recommendation is preselected. Change a pick and approve; GeoForge re-pins the data itself."}</div>${r.data_choices.map(c=>`<div class="prgroup"><b><code>${esc(c.item)}</code></b>${c.rationale?`<small style="display:block;color:var(--muted)">${esc(c.rationale)}</small>`:""}<div style="display:grid;gap:4px;margin-top:4px">${c.options.map(o=>`<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="radio" name="dc-${esc(c.id)}" data-choice="${esc(c.id)}" value="${esc(o.dataset_id)}" ${o.dataset_id===c.picked?"checked":""} style="width:auto;margin-top:4px"><span><code>${esc(o.dataset_id)}</code>${o.name?` · ${esc(o.name)}`:""}<small style="display:block">${esc(delivLabel[o.delivery]||o.delivery||"")}${o.size_label?` · ${esc(o.size_label)}`:""}${o.period?` · ${esc((o.period[0]||"")+"–"+(o.period[1]||""))}`:""}${o.dataset_id===c.picked?` · ${zh?"推荐":"recommended"}`:""}</small></span></label>`).join("")}</div></div>`).join("")}</div>`:"";
-  const decisions=(r.decisions||[]).filter(c=>c.high_impact).map(c=>`<li>${esc(c.kind||c.id||"")}: ${esc((c.options||[]).join(" / "))}${c.picked?` → <b>${esc(String(c.picked))}</b>`:""} ${c.decided?`<span class="prtag">${zh?"已决定":"decided"}</span>`:`<span class="prtag" style="color:var(--warn)">${zh?"待你决定":"needs you"}</span>`}</li>`).join("");
+  const decisions=(r.decisions||[]).filter(c=>c.high_impact).map(c=>`<li>${esc(c.kind||c.id||"")}: ${esc((c.options||[]).join(" / "))}${c.picked?` → <b>${esc(String(c.picked))}</b>`:""} ${c.decided?`<span class="prtag">${zh?"已决定":"decided"}</span>`:`<span class="prtag" style="color:var(--warn)">${zh?"待你决定":"needs you"}</span>`}${c.answered?`<small style="display:block;color:var(--muted)">${zh?"来自你的回答：":"From your answer: "}${esc(c.answered)}</small>`:""}</li>`).join("");
   const blockers=(r.blockers||[]).length?`<div class="prsec prblock"><h4>${zh?"等待你处理":"Waiting on you"}</h4><ul>${r.blockers.map(b=>`<li>${esc(b)}</li>`).join("")}</ul></div>`:"";
   const notReady=(r.not_ready||[]).length?`<div class="prsec prblock"><h4>${zh?"尚不能执行":"Not ready to execute yet"}</h4><ul>${r.not_ready.map(b=>`<li>${esc(b)}</li>`).join("")}</ul></div>`:"";
   return `<div class="planreview">
@@ -1409,6 +1491,15 @@ $("#newsess").onclick=async()=>{
   CUR=created;$("#msg").value="";renderAttachments();await openSession(created.id);
 };
 $("#activity-new").onclick=()=>$("#newsess").click();
+$("#acquisition-open").onclick=()=>$("#opendata").click();
+$("#acquisition-start").onclick=async()=>{
+  // One fixed chat message per click; a draft the user was typing comes back after it.
+  const start=$("#acquisition-start"),id=CUR?.id,draft=$("#msg").value;
+  if(!id||sessionBusy(id))return;
+  start.disabled=true;
+  await sendDataPanelPrompt(chineseUI()?"开始已批准的运行。":"Start the approved run.");
+  if(draft.trim()&&!DRAFTS.get(id)){DRAFTS.set(id,draft);if(CUR?.id===id)$("#msg").value=draft;}
+};
 $("#activity-refresh").onclick=()=>refreshAgentStatus();
 $("#activity-stop").onclick=async()=>{if(!CUR||!CUR.id)return;const b=$("#activity-stop");b.disabled=true;try{await fetch(`/api/session/${CUR.id}/stop`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})}finally{setTimeout(()=>{b.disabled=false},3000)}};
 $("#project-create").onclick=()=>{
@@ -1892,7 +1983,7 @@ async function refreshData(){
   $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
   if(r.ok){const sid=CUR.id;refreshSubsets(sid).catch(e=>{$("#subset-note").textContent=e.message;});$("#subset-estimate").onclick=async()=>{const button=$("#subset-estimate");button.disabled=true;$("#subset-note").textContent=chineseUI()?"正在估算…":"Estimating…";try{await subsetAction(sid,"estimate",{request:{dataset_id:$("#subset-dataset").value.trim(),bbox:$("#subset-bbox").value.split(",").map(Number),variables:$("#subset-variables").value.split(",").map(s=>s.trim()).filter(Boolean),start:$("#subset-start").value,end:$("#subset-end").value}});await refreshSubsets(sid);$("#subset-note").textContent="";}catch(e){$("#subset-note").textContent=e.message;}finally{button.disabled=false;}};}
   const obsSearch=$("#obs-search"),obsQuery=$("#obs-query");
-  drawDatabaseStatus("#obs-status").then(()=>{const pill=$("#obs-pill");if(!pill)return;fetch("/api/obs/status",{cache:"no-store"}).then(r=>r.json()).then(st=>{pill.textContent=!st.configured?(chineseUI()?"未配置":"Not set up"):st.mode==="off"?(chineseUI()?"已关闭":"Off"):st.stale?(chineseUI()?"过期":"Stale"):(chineseUI()?"本地目录":"Local copy");pill.className="statuspill "+(st.configured&&st.mode!=="off"&&!st.stale?"ok":"warn");}).catch(()=>{});});
+  drawDatabaseStatus("#obs-status").then(()=>{const pill=$("#obs-pill");if(!pill)return;fetch("/api/obs/status",{cache:"no-store"}).then(r=>r.json()).then(st=>{pill.textContent=!st.configured?(chineseUI()?"未配置":"Not set up"):st.mode==="off"?(chineseUI()?"已关闭":"Off"):st.effective_mode==="off"?(chineseUI()?"不可用":"Unavailable"):st.stale?(chineseUI()?"过期":"Stale"):(chineseUI()?"本地目录":"Local copy");pill.className="statuspill "+(st.configured&&st.mode!=="off"&&st.effective_mode!=="off"&&!st.stale?"ok":"warn");}).catch(()=>{});});
   if(obsSearch)obsSearch.onclick=searchObservationCatalogue;
   if(obsQuery)obsQuery.onkeydown=event=>{if(event.key==="Enter"){event.preventDefault();searchObservationCatalogue();}};
   document.querySelectorAll("#databody .data-resolve").forEach(button=>button.onclick=async()=>{
@@ -2188,6 +2279,7 @@ function databaseStatusText(st){
   const zh=chineseUI();
   if(!st||!st.configured)return zh?"未配置 Token：Agent 无法检索 GeoForge 数据库。":"No token: the Agent cannot search GeoForge Database.";
   if(st.mode==="off")return zh?"已关闭：Agent 不会检索数据库。":"Disabled: the Agent will not search the database.";
+  if(st.effective_mode==="off")return (zh?"访问不可用：当前 Token 未获授权，Agent 无法检索 GeoForge 数据库。":"Access unavailable: the token is not authorized, so the Agent cannot search GeoForge Database.")+(st.error?" "+st.error:"");
   const when=st.generated_at?new Date(st.generated_at):null,mins=when?Math.max(0,Math.round((Date.now()-when.getTime())/60000)):null;
   const synced=mins===null?(zh?"尚未同步":"not synced yet"):mins<1?(zh?"刚刚同步":"synced just now"):(zh?`${mins} 分钟前同步`:`synced ${mins} min ago`);
   const copy=st.catalogue_ok||st.records?(zh?`本地目录 ${st.records} 条（${st.served} 条可直接下载）· ${synced}${st.stale?" · 已过期："+st.error:""}`:`local catalogue: ${st.records} records (${st.served} direct download) · ${synced}${st.stale?" · stale: "+st.error:""}`):(zh?`目录未下载${st.error?"："+st.error:""}`:`catalogue not downloaded${st.error?": "+st.error:""}`);
@@ -2197,9 +2289,9 @@ function databaseStatusText(st){
 async function drawDatabaseStatus(selector){
   const el=$(selector);if(!el)return;
   try{const st=await (await fetch("/api/obs/status",{cache:"no-store"})).json();el.textContent=databaseStatusText(st);el.style.whiteSpace="pre-line";
-    const pill=$("#s-obs-pill");if(pill){const zh=chineseUI();const ok=st.configured&&st.mode!=="off"&&(st.catalogue_ok||st.records);
+    const pill=$("#s-obs-pill");if(pill){const zh=chineseUI();const ok=st.configured&&st.mode!=="off"&&st.effective_mode!=="off"&&(st.catalogue_ok||st.records);
       pill.className="statuspill "+(ok?(st.stale?"warn":"ok"):"warn");
-      pill.textContent=!st.configured?(zh?"未配置":"Not configured"):st.mode==="off"?(zh?"已关闭":"Off"):ok?(zh?"已连接":"Connected"):(zh?"未同步":"Not synced");}}
+      pill.textContent=!st.configured?(zh?"未配置":"Not configured"):st.mode==="off"?(zh?"已关闭":"Off"):st.effective_mode==="off"?(zh?"不可用":"Unavailable"):ok?(zh?"已连接":"Connected"):(zh?"未同步":"Not synced");}}
   catch(_e){el.textContent="";}
 }
 // ── database browser: what the catalogue holds, from the local copy ──
@@ -2373,6 +2465,7 @@ if(localStorage.getItem("kiss-dark")==="1"||
   document.body.setAttribute("data-dark","");
 setInterval(updateActivityUI,1000);
 setInterval(refreshSessionList,5000);
+setInterval(()=>refreshAcquisitionProgress().catch(()=>{}),5000);
 
 setInterval(()=>{if(!CUR)return;if($("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});else refreshViewStatus().catch(()=>{});},5000);
 $("#ki-update-view").onclick=()=>location.href="/library?updates=1";

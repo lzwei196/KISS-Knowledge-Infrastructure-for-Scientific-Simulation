@@ -784,6 +784,27 @@ def test_temp_files_live_under_protected_tree_and_evidence_scans_all_writable_tr
     assert "artifacts/handmade.png" in receipts.evidence(tmp_path, pj, a)["unreceipted_artifacts"]
 
 
+def test_declared_inputs_and_host_bookkeeping_are_not_unvouched_outputs(tmp_path):
+    # Every desktop chat gets calibration/framework.json at creation, and a plan's own input
+    # files sit in inputs/; counting either as an unreceipted result made COMPLETED unreachable.
+    ki = _fake_ki(tmp_path); pj, _ = _write_plan(tmp_path, ki)
+    ctx = FlowContext(project=tmp_path); ctx.move("task_received")
+    a = approval.approve(tmp_path, by="auto")
+    for rel in ("calibration/framework.json", "artifacts/project-view.json", "inputs/user/met/met.txt",
+                "inputs/other/undeclared.txt", "outputs/result.csv"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x", encoding="utf-8")
+    inventory = {"items": [
+        {"id": "met", "status": "ready", "local_paths": ["inputs/user/met/met.txt"]},
+        # A result cannot be laundered by listing it as an input outside inputs/.
+        {"id": "res", "status": "ready", "local_paths": [str(tmp_path / "outputs" / "result.csv")]},
+    ]}
+    left = receipts.evidence(tmp_path, pj, a, inventory=inventory)["unreceipted_artifacts"]
+    assert "calibration/framework.json" not in left and "artifacts/project-view.json" not in left
+    assert "inputs/user/met/met.txt" not in left
+    assert "inputs/other/undeclared.txt" in left and "outputs/result.csv" in left
+
+
 def test_validate_accepts_extensionless_executable_tool(tmp_path, monkeypatch):
     ki = _fake_ki(tmp_path)
     exe = ki / "tools" / "run_model"; exe.write_text("#!/bin/sh\necho hi\n"); os.chmod(exe, 0o755)

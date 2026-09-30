@@ -514,8 +514,8 @@ reported as `no cited threshold`; no threshold is inferred or substituted.
 |------|---------|-------|--------|
 | `convert_forcing_to_fsm2.py` | Convert ERA5/MSWX/NASA POWER/generic CSV → FSM2 met file | CSV with met variables | FSM2 ASCII met file |
 | `convert_soil_params.py` | Derive FSM2 soil params from HWSD clay/sand | `--latlon LAT LON` (HWSD raster), `--fractions`, or `--texture` | Namelist &params block |
-| `run_fsm2.py` | Compile and execute FSM2 | Source dir + namelist | Output files + binary |
-| `parse_fsm2_output.py` | Parse ASCII output → CSV | FSM2 output files | CSV with headers |
+| `run_fsm2.py` | Compile and execute FSM2; with `--run-dir` it copies the namelist's relative `met_file` there first | Source dir + namelist | Output files + binary |
+| `parse_fsm2_output.py` | Parse ASCII output → CSV; `--metrics` peak SWE / peak depth / melt-out per point, `--plot` depth+SWE figure | FSM2 output files | CSV with headers, metrics CSV, SVG/PNG |
 
 **`convert_forcing_to_fsm2.py` derivations** (added 2026-08-21; without them the
 documented "reanalysis → FSM2" recipe cannot be completed with KI tools alone):
@@ -558,6 +558,20 @@ bash compil.sh
 # 3. View results
 # Output files: Alptal_flux.txt, Alptal_stat.txt, Alptal_subc.txt
 ```
+
+**The official example inside a project** (one receipted run, then one receipted parse):
+
+```bash
+# Run from a short project folder: the forcing named in the namelist is copied there first.
+python {KI}/tools/run_fsm2.py --run-only --binary <installed FSM2.exe> <installed repo>     <installed repo>/nlst_Alptal.txt --run-dir outputs/fsm2_alptal
+# Both points of a multi-point run, variable-major as FSM2_OUTPUT.F90 writes them:
+python {KI}/tools/parse_fsm2_output.py outputs/fsm2_alptal --runid Alptal_ --npnts 2     -o outputs/fsm2_alptal/series.csv --metrics outputs/fsm2_alptal/metrics.csv     --plot outputs/fsm2_alptal/snow.svg --labels open,forest
+```
+
+Melt-out in `--metrics` is the first timestep after the SWE peak with snow depth 0; if
+the pack remains at the last record, the status says so and no date is invented.
+Do not use `--point` on files parsed before 2026-09-30: older parser versions assigned
+multi-point columns point-major and mislabelled every variable after the first.
 
 
 ## Forcing a point column from a reanalysis grid cell (PROPOSED protocol)

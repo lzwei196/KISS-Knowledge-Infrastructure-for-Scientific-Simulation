@@ -938,6 +938,12 @@ def _finished_at(run: dict) -> float:
         return float("-inf")
 
 
+#: Files the host itself writes (not agent or model results): the calibration manifest every
+#: desktop project gets at creation, and the Project View manifest the host validates and
+#: renders when the agent publishes it through its own tool (presentation, not data).
+HOST_BOOKKEEPING = frozenset({"calibration/framework.json", "artifacts/project-view.json"})
+
+
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
@@ -1038,6 +1044,21 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     for d in bound_dl:
         for o in (d.get("raw_files") or []) + (d.get("processed_files") or []):
             receipted_outputs.add(o.get("path"))
+    # Inputs the approved inventory names under inputs/ are the plan's data, not results, and
+    # the host's own calibration manifest is written at project creation: neither is an
+    # unvouched output. Only inputs/ paths count, so a result cannot be declared into this set.
+    root = project.resolve()
+    declared_inputs = set(HOST_BOOKKEEPING)
+    for item in (inventory or {}).get("items") or []:
+        for raw in (item.get("local_paths") or []) if isinstance(item, dict) else []:
+            try:
+                path = Path(str(raw))
+                rel = (path.resolve() if path.is_absolute() else (root / path).resolve()) \
+                    .relative_to(root).as_posix()
+            except (OSError, ValueError):
+                continue
+            if rel.startswith("inputs/"):
+                declared_inputs.add(rel)
     unreceipted: list[str] = []
     for sub in output_dirs:
         base = project / sub
@@ -1045,8 +1066,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
             continue
         for p in base.rglob("*"):
             if p.is_file() and p.suffix.lower() in artifact_suffixes:
-                rel = p.resolve().relative_to(project.resolve()).as_posix()
-                if rel not in receipted_outputs:
+                rel = p.resolve().relative_to(root).as_posix()
+                if rel not in receipted_outputs and rel not in declared_inputs:
                     unreceipted.append(rel)
 
     passed_steps = {sid for sid, d in latest.items() if status(d) == "passed" and sid not in stale_steps}

@@ -6,6 +6,15 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Windows end-to-end test fixes — 2026-09-30 (FSM2 Alptal, compiled app)
+
+- **Projects can reach "Completed" again.** GeoForge's own files (the calibration manifest every chat gets, and the Project View it renders) and the plan's declared input files were counted as unverified results, so no real project could finish, and the notice asked users to remove their own inputs. Only real results without a passing run record now block completion.
+- **FSM2 two-point output is labelled correctly.** The KI's parser put one variable's values under another's name for multi-point runs (so "SWE" held flux values); it now follows FSM2's output order, refuses a column-count mismatch, and checks every point. It also computes peak SWE, peak depth and melt-out (`--metrics`) and draws the depth/SWE figure (`--plot`); `run_fsm2.py` copies the case's forcing into the run folder, so the official example runs inside a project in one step.
+- **A started chat keeps its AI after a restart.** An API chat reopened right after launch showed a local CLI and its next message was silently dropped; it now shows and uses the AI it was started with.
+- The plan check now names the `local_paths` field when an input is marked ready without a file.
+- End-to-end on Windows with DeepSeek: a fresh chat planned, installed (first run), ran the real `FSM2.exe` and finished **Completed** with every step receipted. Details: [Windows FSM2 end-to-end report](docs/WINDOWS_E2E_FSM2_2026-09-30.md).
+- Windows 端到端测试（FSM2 Alptal 官方算例）：修复项目永远无法“完成”的问题（宿主自身文件和已声明的输入被误判为未核实结果）；修复 FSM2 多点输出列错位，并新增峰值 SWE／融雪日期计算和作图；重启后已开始的对话保持原先的 AI。
+
 ## Windows v0.6.54 mac-sync build — 2026-09-30 (local validation build)
 
 - Merged the mac 2026-09-28/29 fix round (`bc78825`: downloads continue without Project Status open, Stop covers the whole turn, interview answers kept and credited, uploads bound at Approve, GeoForge Database used only when activated, study period and validation asked separately so a KI example's period is no longer proposed as the project's scope). The entries below describe that work.

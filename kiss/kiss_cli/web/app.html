@@ -913,9 +913,12 @@ function drawProviders(){
   // holding a CLI provider — the switch snapped back and looked broken.
   const cur=CUR&&CUR.provider;
   const sid=CUR&&CUR.id;
-  if(sid!==KIND_SYNCED_FOR){
+  // Only count the session as synced once its provider's kind is known: on a
+  // fresh start the chat renders before provider detection finishes, and
+  // marking it synced then left a started API chat showing (and sending) a CLI.
+  if(sid!==KIND_SYNCED_FOR&&(!cur||kindOf(cur))){
     KIND_SYNCED_FOR=sid;
-    if(cur&&kindOf(cur)) KIND=kindOf(cur);
+    if(cur) KIND=kindOf(cur);
   }
   const mine=PROV.providers.filter(p=>p.kind===KIND);
   const usableHere=mine.filter(p=>p.usable);

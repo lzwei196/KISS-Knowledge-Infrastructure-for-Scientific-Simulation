@@ -12,6 +12,7 @@ Steps:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -187,6 +188,29 @@ def compile_fsm2(
 # Run
 # ---------------------------------------------------------------------------
 
+def stage_forcing(namelist_file: str, run_dir: str) -> str | None:
+    """Copy the namelist's relative ``met_file`` into ``run_dir`` when it is not there.
+
+    FSM2 opens ``met_file`` relative to its working directory, and the name is
+    a character(len=70) field, so a case is run from a short run directory
+    rather than by rewriting the namelist with a long absolute path. Running
+    the official example (or any case) in a project folder therefore needs
+    its forcing beside it; the namelist itself is piped on stdin.
+    """
+    text = Path(namelist_file).read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"^\s*met_file\s*=\s*['\"]([^'\"]+)['\"]", text, re.IGNORECASE | re.MULTILINE)
+    if not match or Path(match.group(1)).is_absolute():
+        return None
+    source = Path(namelist_file).parent / match.group(1)
+    target = Path(run_dir) / match.group(1)
+    if target.exists() or not source.is_file():
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    print(f"Staged forcing: {source} -> {target}")
+    return str(target)
+
+
 def run_fsm2(
     binary: str,
     namelist_file: str,
@@ -216,12 +240,14 @@ def run_fsm2(
 
     binary = str(Path(binary).resolve())
     namelist_file = str(Path(namelist_file).resolve())
+    Path(run_dir).mkdir(parents=True, exist_ok=True)
+    stage_forcing(namelist_file, run_dir)
 
     if not os.access(binary, os.X_OK):
         os.chmod(binary, 0o755)
 
     # Read namelist content
-    namelist_content = Path(namelist_file).read_text()
+    namelist_content = Path(namelist_file).read_text(encoding="utf-8")
 
     print(f"Running: {binary} < {namelist_file}")
     print(f"Working directory: {run_dir}")

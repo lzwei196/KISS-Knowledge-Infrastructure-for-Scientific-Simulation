@@ -906,10 +906,12 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
             return v
         v.shaped, argv0 = True, interp + [str(b)]
     elif v.kind == "pe" and platform.system() != "Windows":
-        if not shutil.which("wine"):
+        from . import wine
+        launcher = wine.find()
+        if not launcher:
             v.detail = "Windows binary and wine is not installed"
             return v
-        v.shaped, argv0 = True, ["wine", str(b)]
+        v.shaped, argv0 = True, [launcher, str(b)]
     elif v.kind in ("elf", "macho", "pe"):
         if v.kind != native:
             v.detail = f"{v.kind} binary on {platform.system()} — built for another platform"

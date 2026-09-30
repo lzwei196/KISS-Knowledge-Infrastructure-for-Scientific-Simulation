@@ -294,7 +294,7 @@ def _data_summary(plan: dict, inv: dict, project: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def _data_choices(plan: dict, inv: dict) -> list[dict]:
+def _data_choices(plan: dict, inv: dict, project: Path | None = None) -> list[dict]:
     """The candidates the agent considered per input, with catalogue facts, for the card.
 
     This is the missing step the user asked for: what the database holds for each input,
@@ -303,6 +303,8 @@ def _data_choices(plan: dict, inv: dict) -> list[dict]:
     store = obs_access.load_catalogue() or {}
     by_id = {str(d.get("id")): d for d in store.get("datasets") or [] if d.get("id")}
     items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
+    from . import obs_subset
+    estimated = obs_subset.estimated_datasets(project) if project is not None else set()
     out = []
     for c in plan.get("scientific_choices") or []:
         if not isinstance(c, dict) or c.get("kind") != "data_source":
@@ -331,6 +333,8 @@ def _data_choices(plan: dict, inv: dict) -> list[dict]:
                               period=[scope.get("start"), scope.get("end")]
                               if scope.get("start") or scope.get("end") else None,
                               bbox=scope.get("bbox"))
+            elif option["delivery"] == "manual" and project is not None and str(ds) not in estimated:
+                option["clip_checked"] = False      # bug #3: whole-product size; clipping unknown
             options.append(option)
         if not options:
             continue
@@ -803,7 +807,7 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
                  for c in plan.get("scientific_choices") or [] if isinstance(c, dict)
                  and c.get("kind") != "data_source"]
     # DB gating: no cached Database records on the card while access is off or not activated
-    data_choices = [] if fs.database_access_mode == "off" else _data_choices(plan, inv)
+    data_choices = [] if fs.database_access_mode == "off" else _data_choices(plan, inv, fs.project)
     review = {"goal": plan.get("goal"), "kis": list(plan.get("selected_kis") or []),
               "coupling": edges, "study_area": intent.get("study_area"), "period": intent.get("period"),
               "data": input_groups(plan, inv, fs.project), "steps": steps, "decisions": decisions,

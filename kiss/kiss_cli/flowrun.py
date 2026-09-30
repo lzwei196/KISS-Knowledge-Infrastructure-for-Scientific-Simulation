@@ -1010,6 +1010,24 @@ def _plan_versions(root: Path) -> dict:
     return versions
 
 
+_SOURCE_FIELDS = ("dataset_id", "delivery", "chosen_source", "decision", "local_paths", "ki_default")
+
+
+def _unsourced(plan: dict, inv: dict) -> list[str]:
+    """Bug #2 (live Mac test, 2026-09-29): 'resolved' means a source is known (plan.derive).
+    An input marked resolved or ready that names none, and that no step produces, would show
+    on the card as "prepared during the run" while nothing can actually supply it."""
+    produced = {str(o) for st in plan.get("steps") or [] if isinstance(st, dict)
+                for o in st.get("outputs") or []}
+    bare = [str(it.get("id")) for it in inv.get("items") or [] if isinstance(it, dict)
+            and it.get("status") in ("resolved", "ready") and str(it.get("id")) not in produced
+            and not any(it.get(k) for k in _SOURCE_FIELDS)]
+    return [f"{iid} is marked resolved but names no source. Set dataset_id and delivery for "
+            "GeoForge Database data, chosen_source for a public source or method, local_paths for "
+            "an existing file, the step that produces it, or the KI default with its evidence; "
+            "if no source is known yet, mark it missing and ask the user." for iid in bare]
+
+
 def _planning_failure(project: Path, t: Turn, errors: list[str], *, repair: bool = False) -> "Result":
     message = "Plan was not submitted for approval:\n- " + "\n- ".join(errors[:30])
     (project / "runs" / "plan-validation.txt").write_text(message, encoding="utf-8")
@@ -1111,7 +1129,7 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             return _planning_failure(project, t, ["Both plan files must contain valid JSON objects."], repair=True)
         if api_submission and api_submission != (flow.plan.sha256(pj), flow.plan.sha256(inv)):
             return _planning_failure(project, t, ["The files changed after write_plan submitted them. Submit the current revision again."])
-        errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots)
+        errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots) + _unsourced(pj, inv)
         if errs:
             return _planning_failure(project, t, errs, repair=True)
         if fs.database_access_mode == "off":
@@ -1312,6 +1330,19 @@ def request_planning_question(project: Path, payload: dict) -> dict:
     # Never silently discard valid candidates through an older request normalizer.
     if len(normalized["options"]) != len(options):
         raise ValueError("the request renderer cannot preserve all options; no question was saved")
+    # Bug #3: say which whole-product offers were never checked for clipping in this project
+    from . import obs_subset
+    shown = " ".join([normalized["message"]] + [f"{o.get('label', '')} {o.get('description', '')}"
+                                                 for o in normalized["options"]])
+    unchecked = obs_subset.unchecked_whole_products(project, shown)
+    if unchecked:
+        ids = ", ".join(unchecked)
+        normalized["message"] += ("\n\nGeoForge 提示：本项目尚未检查 " + ids + " 能否按你的研究区裁剪，所列大小为整包大小；"
+                                  "如考虑该选项，请让 Agent 先检查能否裁剪。"
+                                  if re.search(r"[\u4e00-\u9fff]", shown) else
+                                  "\n\nGeoForge note: clipping to your study area has not been checked in this "
+                                  f"project for {ids}. Sizes shown for it are the whole product; if you are "
+                                  "considering it, ask the agent to check whether it can be clipped.")
     with _QUESTION_LOCKS_LOCK:
         lock = _QUESTION_LOCKS.setdefault(str(project), threading.Lock())
     with lock:

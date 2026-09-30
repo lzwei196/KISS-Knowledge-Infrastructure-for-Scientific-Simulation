@@ -151,8 +151,9 @@ def run(workspace, *, timeout: int = 600) -> dict:
             except OSError:
                 pass
 
+    # Windows runs the PE32 binary itself; every other host goes through Wine.
     proc = subprocess.run(
-        ["wine", f"./{BINARY_NAME}"],
+        [f"./{BINARY_NAME}"] if os.name == "nt" else ["wine", f"./{BINARY_NAME}"],
         cwd=str(ws),
         capture_output=True,
         text=True,

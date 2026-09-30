@@ -671,3 +671,56 @@ def test_a_reissued_card_follows_the_database_setting_not_direct(review_project,
     _upload(env)
     _click(env, card)                                              # binds the upload → re-issue
     assert setup_flow.request(env.project)["plan_review"]["data_choices"] == []
+
+
+# ── Bug #2 (live Mac test, 2026-09-29): inputs marked resolved with no source reached the card ──
+
+def _submit(env, revise):
+    flowrun.pre(env.project, "Run M for 2003", ["M"], [env.ki], None, None)
+    turn = flowrun.turn(env.project, [env.ki], env.cfg, "api", "deepseek", None, "Run M for 2003")
+    plan, inventory = turn.session.flow.plan.read_artifacts(env.project)
+    for step in plan["steps"]:
+        step["kind"] = "run"
+        step["tool"] = str(env.ki.root / "tools" / "run.py")
+    for item in inventory["items"]:
+        item.update(status="resolved", needs_user=False)
+    plan["scientific_choices"] = []
+    revise(plan, inventory)
+    assert turn.session.write_plan(plan, inventory) == []
+    return flowrun.after(env.project, turn, "The draft is ready for review.", setup_ok=True)
+
+
+def _stripped(item_id):
+    # exactly the shape the live DeepSeek plan left for its CMFD forcing
+    return {"id": item_id, "status": "resolved", "needs_user": False, "agent_resolvable": True,
+            "required_by": ["M"]}
+
+
+def test_a_resolved_input_with_no_source_goes_back_to_the_agent(review_project):
+    def strip(plan, inventory):
+        inventory["items"].append(_stripped("cmfd_3hr_point_2003"))
+        plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["cmfd_3hr_point_2003"]
+
+    result = _submit(review_project, strip)
+    assert result.request is None and result.retry_planning
+    assert "cmfd_3hr_point_2003" in result.message and "names no source" in result.message
+
+
+@pytest.mark.parametrize("source", [
+    {"dataset_id": "source_a", "delivery": "served"}, {"chosen_source": "NASA POWER daily API"},
+    {"decision": "the user's station file"}, {"ki_default": {"source_kind": "parameter"}},
+])
+def test_a_resolved_input_that_names_its_source_is_accepted(review_project, source):
+    def sourced(plan, inventory):
+        inventory["items"].append({**_stripped("forcing"), **source})
+        plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["forcing"]
+
+    assert _submit(review_project, sourced).request is not None
+
+
+def test_an_input_produced_by_a_step_needs_no_other_source(review_project):
+    def produced(plan, inventory):
+        inventory["items"].append(_stripped("crop_object"))
+        plan["steps"][0]["outputs"] = list(plan["steps"][0].get("outputs") or []) + ["crop_object"]
+
+    assert _submit(review_project, produced).request is not None

@@ -36,7 +36,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
+from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls, wine
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -1112,6 +1112,15 @@ class Handler(BaseHTTPRequestHandler):
                             "APEX0806 binary this KI actually runs."),
                         "setup_kind": setup_kind,
                     }
+                primary_error = st.get("primary_error")
+                tools = install.check_system_deps(list(getattr(man, "system_deps", None) or []))
+                if ok and not tools.ok:
+                    # A verification is only as current as the tools it needed: APEX kept
+                    # "Verified" for weeks after its Wine disappeared (2026-09-13).
+                    ok = False
+                    primary_error = {"name": "system-deps", "detail": (
+                        f"{tools.detail}. These were present when this was verified; "
+                        "run setup again.")}
                 return {
                     "state": "verified" if ok else "failed",
                     "label": "Verified on this machine" if ok else "Verification failed",
@@ -1120,7 +1129,7 @@ class Handler(BaseHTTPRequestHandler):
                     "verified_at": st.get("verified_at") if ok else None,
                     "software_version": st.get("software_version"),
                     "steps": st.get("steps", []),
-                    "primary_error": st.get("primary_error"),
+                    "primary_error": primary_error,
                     "setup_kind": setup_kind,
                 }
             except Exception:
@@ -1967,6 +1976,19 @@ class Handler(BaseHTTPRequestHandler):
             if n > 300 * 1024 * 1024:
                 return self._json({"error": "zip larger than 300 MB"}, 413)
             return self._import_ki_bytes(self.rfile.read(n))
+        if route == "/api/runtime/wine/install":
+            # The setup card's "Install Wine" button: the only caller of wine.install().
+            if n:
+                self.rfile.read(n)
+            self._open_stream()
+            try:
+                result = wine.install(self._chunk)
+                if not result["ok"]:
+                    self._chunk(f"Wine was not installed: {result['detail']}\n")
+                self._chunk(f"[wine-install:{'ok' if result['ok'] else 'failed'}]\n")
+            except Exception as error:
+                self._chunk(f"Wine install failed: {type(error).__name__}: {error}\n[wine-install:failed]\n")
+            return self._end_stream()
         if route == "/api/kdt/install":
             # This is a long network operation, so stream visible stages and
             # keep the response alive exactly like model setup.
@@ -2676,6 +2698,29 @@ class Handler(BaseHTTPRequestHandler):
                     ki, live_ki, cfg, root, emit, check=initial_check)
                 emit(f"\n{ki.name} is already verified and ready to use.\n")
                 return
+            if (not installation_only and wine.needed() and wine.can_install() and wine.find() is None
+                    and "wine" in (getattr(self._manifest(ki), "system_deps", None) or [])):
+                # GeoForge provides Wine; no agent turn fetches one. On 2026-09-30 an agent did,
+                # into the model folder, and re-pointed /opt/homebrew/bin/wine to it.
+                setup_flow.request_for_wine(root, ki.name)
+                emit(f"\n{ki.name} runs a Windows program and needs Wine. Click Install Wine for "
+                     "GeoForge beside this log; setup continues by itself afterwards.\n")
+                return
+            # Bug #1: the user's existing installation is read-only for setup. Whatever the
+            # provider, a setup that changed it is not verified (see install_changed below).
+            installation_before = install_locations.fingerprint(existing_paths) if existing_paths else None
+
+            def install_changed() -> install.Step | None:
+                if installation_before is None:
+                    return None
+                changed = install_locations.changes(
+                    installation_before, install_locations.fingerprint(existing_paths))
+                if not changed:
+                    return None
+                return install.Step("preflight", False, (
+                    "Setup changed files in your existing installation, which it must only read:\n  "
+                    + "\n  ".join(changed[:20]) + (f"\n  … and {len(changed) - 20} more" if len(changed) > 20 else "")
+                    + "\nNot verified. Check or restore those files, then run setup again."))
             if installation_only:
                 instructions = f"""[INSTALLATION-ONLY TEST CONTRACT]
 Install the official {ki.name} software and its runtime dependencies. Never
@@ -2817,11 +2862,13 @@ verification are different states; never claim this test verified the KI."""
                     install_locations.record(
                         ki.name, root, cfg, ki_root=live_ki.root,
                         verified=False)
+                tampered = install_changed()
                 report = dict(verdict.__dict__)
                 report.update({
                     "model": ki.name,
                     "installation_only": True,
-                    "usable": verdict.usable,
+                    "usable": verdict.usable and tampered is None,
+                    "existing_installation_changed": tampered.detail if tampered else None,
                     "state": verdict.state,
                     "summary": verdict.summary(),
                     "checked_at": time.time(),
@@ -2830,6 +2877,9 @@ verification are different states; never claim this test verified the KI."""
                     json.dumps(report, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8",
                 )
+                if tampered is not None:
+                    emit(f"\nInstallation probe failed: {tampered.detail}\n")
+                    return
                 if verdict.usable:
                     setup_flow.clear_request(root)
                     emit("\nInstallation probe passed: the official software "
@@ -2839,7 +2889,10 @@ verification are different states; never claim this test verified the KI."""
                     emit(f"\nInstallation probe failed: {verdict.summary()}\n")
                 return
 
-            self._record_agent_preflight(ki, live_ki, cfg, root, emit)
+            self._record_agent_preflight(ki, live_ki, cfg, root, emit, check=install_changed())
+            if (wine.needed() and wine.can_install() and wine.find() is None
+                    and "wine" in (getattr(self._manifest(ki), "system_deps", None) or [])):
+                setup_flow.request_for_wine(root, ki.name)    # Desktop's card, not an agent's guess
             handoff_req = setup_flow.request(root)
             if not handoff_req:
                 # Machine-wide package changes are intentionally outside the

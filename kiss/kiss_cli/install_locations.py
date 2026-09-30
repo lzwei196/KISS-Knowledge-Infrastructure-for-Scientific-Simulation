@@ -23,6 +23,43 @@ INDEX_FILE = "_install-locations.json"
 RECORD_FILE = ".geoforge-install.json"
 SCHEMA_VERSION = 2
 INSTALL_MODES = {"new", "existing"}
+FINGERPRINT_LIMIT = 200_000
+
+
+def fingerprint(roots: list[str]) -> dict:
+    """What an existing installation looks like before setup touches it (bug #1, 2026-09-29).
+
+    {path: (size, mtime_ns, mode)} from lstat, without following symlinks; bytecode caches
+    are skipped because Python regenerates them. A file named as a candidate stands for its
+    folder, as the setup grants do. Past FINGERPRINT_LIMIT entries the check stops and
+    says so rather than hanging on a huge prefix."""
+    seen: dict = {}
+    for raw in roots:
+        base = Path(raw).expanduser()
+        base = base.parent if base.is_file() else base
+        for folder, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for name in files:
+                path = os.path.join(folder, name)
+                try:
+                    st = os.lstat(path)
+                except OSError:
+                    continue
+                seen[path] = (st.st_size, st.st_mtime_ns, st.st_mode)
+                if len(seen) >= FINGERPRINT_LIMIT:
+                    # ponytail: stops at 200k files; hash a manifest of the KI's own files if
+                    # huge prefixes (full conda envs) are commonly chosen as the install
+                    seen["…"] = "truncated"
+                    return seen
+    return seen
+
+
+def changes(before: dict, after: dict) -> list[str]:
+    """Readable list of what setup changed inside the existing installation."""
+    out = [f"{p} (changed)" for p in sorted(set(before) & set(after)) if before[p] != after[p]]
+    out += [f"{p} (deleted)" for p in sorted(set(before) - set(after))]
+    out += [f"{p} (new)" for p in sorted(set(after) - set(before))]
+    return sorted(out)
 
 
 def _key(model: str) -> str:

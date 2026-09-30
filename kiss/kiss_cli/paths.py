@@ -285,7 +285,8 @@ def with_ki_tools_common(cfg: KissConfig, env: dict[str, str] | None = None) -> 
     direct-API tools, preflight scripts, and their descendants all see the same
     materialised ``ki_tools_common`` copy.
     """
-    out = dict(os.environ if env is None else env)
+    from . import wine
+    out = wine.env(dict(os.environ if env is None else env))   # GeoForge's own Wine, when installed
     common = Path(getattr(cfg, "roles", {}).get("ki_tools_common", "")).expanduser()
     if not common.is_dir():
         return out

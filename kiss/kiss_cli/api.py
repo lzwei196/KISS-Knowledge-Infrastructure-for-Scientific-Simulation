@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import http.client
 import ssl
+import functools
 import json
 import os
 import re
@@ -808,6 +809,72 @@ def _user_only_file(path: Path, project_root: Path) -> bool:
             (path.name == "manual-download-details.json" and path.parent.name == ".geoforge"))
 
 
+def _setup_scratch_roots() -> list[Path]:
+    """Places any build legitimately writes besides its workspace: temp and package caches."""
+    import tempfile
+    home = Path.home()
+    return [Path(os.path.realpath(p)) for p in (
+        tempfile.gettempdir(), "/private/tmp", "/private/var/folders",
+        home / "Library" / "Caches", home / ".cache", home / ".npm",
+        home / ".cargo" / "registry", home / ".cargo" / "git", home / "go" / "pkg")]
+
+
+@functools.lru_cache(maxsize=1)
+def _os_sandbox_ok() -> bool:
+    if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").exists():
+        return False
+    try:
+        return subprocess.run(["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                              capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _setup_sandbox(argv: list[str], write_roots: list[Path]) -> tuple[list[str], str]:
+    """The argument checks see only a command line; a workspace script they allow can write
+    anywhere (2026-09-30: an agent re-pointed /opt/homebrew/bin/wine that way). On macOS the
+    kernel enforces the workspace boundary for the whole process tree. Returns (argv, note)."""
+    if sys.platform != "darwin":
+        return argv, ""
+    if not _os_sandbox_ok():
+        # ponytail: fails open where sandbox-exec cannot apply (GeoForge itself sandboxed);
+        # the note makes that visible instead of silently weaker
+        return argv, "Note: OS sandbox unavailable here; only the command-line checks applied.\n"
+    roots = [*write_roots, *_setup_scratch_roots()]
+    allowed = " ".join(f"(subpath {json.dumps(os.path.realpath(r))})" for r in roots)
+    profile = ("(version 1)(allow default)"
+               f"(deny file-write* (require-not (require-any {allowed} (subpath \"/dev\"))))")
+    return ["/usr/bin/sandbox-exec", "-p", profile, *argv], ""
+
+
+_SETUP_READERS = frozenset({"ls", "cat", "grep", "head", "tail", "file", "otool", "which", "nm",
+                            "uname", "sw_vers", "awk", "pkg-config", "nc-config", "nf-config",
+                            "gdal-config"})
+_FIND_WRITES = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0",
+                          "-fprintf", "-fls"})
+
+
+def _writes_existing_install(argv: list[str], hits: set[int], runs_existing: bool) -> bool:
+    """May this setup command write where `hits` (argv indexes inside the user's existing
+    installation) point? Readers, programs being run, and copy/link sources only read."""
+    name, args = Path(argv[0]).name, argv[1:]
+    if name in _SETUP_READERS:
+        return False
+    if name == "sed":
+        return any(a == "--in-place" or (a.startswith("-") and not a.startswith("--") and "i" in a[1:])
+                   for a in args)
+    if name == "find":
+        return any(a in _FIND_WRITES for a in args)
+    if name in ("cp", "ln"):
+        positional = [i for i, a in enumerate(argv) if i and not a.startswith("-")]
+        if name == "ln" and len(positional) == 1:
+            return False            # `ln -s SOURCE` links into the current (workspace) directory
+        return bool(positional) and positional[-1] in hits      # only the destination is written
+    if runs_existing or (re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", name) and args[:2] != ["-m", "pip"]):
+        return False                # running a program: its path arguments are its inputs
+    return True
+
+
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                  setup_context: dict | None = None,
                  project_mode: bool = False, flow=None) -> str:
@@ -1471,19 +1538,27 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 return
             candidate = Path(value)
             resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
-            allowed_workspace = any(
+            own = any(
                 resolved == base or base in resolved.parents
-                for base in (workroot, root,
-                             Path(cfg.roles.get("binaries", workroot)).resolve(),
-                             *external_roots)
-            )
+                for base in (workroot, root, Path(cfg.roles.get("binaries", workroot)).resolve()))
+            existing = any(resolved == base or base in resolved.parents for base in external_roots)
             allowed_system = any(
                 resolved == base or base in resolved.parents for base in readable_system_roots)
-            if not allowed_workspace and not allowed_system:
+            if not own and not existing and not allowed_system:
                 raise ToolError(f"command path escapes the setup workspace: {value}")
+            return existing and not own
 
-        for token in argv[1:]:
-            check_path_token(token)
+        # Bug #1: the user's existing installation is read-only. A path into it (named directly
+        # or reached through a workspace symlink) may be read, copied or linked from, never written.
+        existing_hits = {i for i, token in enumerate(argv[1:], 1) if check_path_token(token)}
+        runs_existing = "/" in argv[0] and any(
+            base == Path(argv[0]).resolve() or base in Path(argv[0]).resolve().parents for base in external_roots)
+        if existing_hits and _writes_existing_install(argv, existing_hits, runs_existing):
+            raise ToolError(
+                "the existing installation is read-only during setup: "
+                + ", ".join(argv[i] for i in sorted(existing_hits))
+                + ". Copy what you need into the setup workspace and change the copy, or link to "
+                "the installed file from the workspace.")
         if Path(argv[0]).name in ("python", "python3") or Path(argv[0]).resolve() == Path(cfg.python).resolve():
             if "-c" in argv:
                 raise ToolError("inline Python is unavailable; write a workspace script and run it")
@@ -1511,6 +1586,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         }
         from .paths import with_ki_tools_common
         child_env = with_ki_tools_common(cfg, child_env)
+        if external_roots:
+            child_env["PYTHONDONTWRITEBYTECODE"] = "1"    # no caches written into the user's install
         if provider_id:
             from .settings import with_provider_proxy
             child_env = with_provider_proxy(provider_id, child_env)
@@ -1535,14 +1612,16 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                          and argv[1] in _INSTALL_ONLY_PROBE_FLAGS)
         if isolate_probe:
             timeout = min(timeout, 25)
-        from . import execution
+        from . import execution, wine
+        launch, sandbox_note = _setup_sandbox(argv, [
+            workroot, root, Path(cfg.roles.get("binaries", workroot)).resolve(), wine.home() / "prefix"])
         try:
             directory = (tempfile.TemporaryDirectory(prefix="startup-probe-", dir=str(workroot))
                          if isolate_probe else nullcontext(str(cwd)))
             with directory as execution_cwd:
                 # Its own session, tree-killed on timeout, ended by the chat's Stop.
                 proc = execution.run_process(
-                    argv, cwd=execution_cwd, env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
+                    launch, cwd=execution_cwd, env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
                     timeout=timeout, project=project_root,
                     stop=stop, turn_id=turn_id,
                     stdin=subprocess.DEVNULL if isolate_probe else None,
@@ -1561,7 +1640,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if proc.status == "stopped":
             return ("STOPPED by the user before the command started" if proc.process_started is False
                     else f"STOPPED by the user; the command and everything it started were signalled.\n{tail}")
-        output = proc.stdout[-25000:] + "\n" + proc.stderr[-25000:]
+        output = sandbox_note + proc.stdout[-25000:] + "\n" + proc.stderr[-25000:]
         if isolate_probe:
             output = "Startup probe used an empty workspace directory (no bundled case inputs).\n" + output
         return f"exit_code={proc.returncode}\n{output}"

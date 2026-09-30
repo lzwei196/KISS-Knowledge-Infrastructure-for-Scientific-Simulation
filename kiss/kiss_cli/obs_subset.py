@@ -88,6 +88,30 @@ def request_body(value):
     return result
 
 
+def estimated_datasets(project) -> set[str]:
+    """Dataset ids this project holds a saved clip estimate for (clippable or not)."""
+    folder = Path(project) / '.geoforge' / 'subsets'
+    out: set[str] = set()
+    for f in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+        try:
+            doc = json.loads(f.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        ds = (doc.get('request') or {}).get('dataset_id') if isinstance(doc, dict) else None
+        if ds and isinstance(doc.get('estimate'), dict):
+            out.add(str(ds))
+    return out
+
+
+def unchecked_whole_products(project, text: str) -> list[str]:
+    """Bug #3: 'manual' Database products named in `text` with no saved clip estimate here.
+    The catalogue lists them at whole-product size; only an estimate says if they can be clipped."""
+    store = obs.load_catalogue() or {}
+    manual = {str(d['id']) for d in store.get('datasets') or [] if d.get('id') and d.get('delivery') == 'manual'}
+    named = {ds for ds in manual if re.search(rf'(?<![\w.-]){re.escape(ds)}(?![\w.-])', text or '')}
+    return sorted(named - estimated_datasets(project))
+
+
 def _root(project):
     root = Path(project).resolve() / '.geoforge' / 'subsets'
     if not root.resolve().is_relative_to(Path(project).resolve()):

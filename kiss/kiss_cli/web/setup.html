@@ -261,11 +261,13 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
     const upload=(["download","licence"].includes(req.kind))?`<div class="upload"><input id="userfile" type="file"><button id="upload">Give file to agent</button></div>`:"";
     const managedNote=managed?`<div class="managed-permission">${isZh()?"GeoForge 可以安全地为这个模型工作区授予权限。无需打开终端或修改 Claude 的全局设置。":"GeoForge can safely grant this inside the model workspace. You do not need Terminal or a global Claude settings change."}</div>`:"";
     const report=String(req.message||"").length>650?`<details class="request-details"><summary>${isZh()?"查看完整技术报告":"View the full technical report"}</summary><div class="request-report">${esc(req.message)}</div></details>`:"";
-    const resumeLabel=managed?(isZh()?"允许此模型并继续":"Allow for this model — continue"):"I've done this — continue";
+    const hostWine=req.host_action==="install_wine";
+    const resumeLabel=managed?(isZh()?"允许此模型并继续":"Allow for this model — continue"):hostWine?(isZh()?"我已自行安装 Wine — 继续":"I installed Wine myself — continue"):"I've done this — continue";
+    const wineButton=hostWine?`<button class="primary" id="installwine">${isZh()?"为 GeoForge 安装 Wine":"Install Wine for GeoForge"}</button>`:"";
     $("#need").innerHTML=`<div class="request"><div class="label">${esc((req.kind||'ACTION').toUpperCase())}</div><h4>${esc(req.title)}</h4><p>${esc(requestSummary(req))}</p>${managedNote}${link}${path}
       ${command}${upload}
-      ${report}<input id="note" type="text" placeholder="Optional note for the agent"><div class="controls"><button class="primary" id="resume">${esc(resumeLabel)}</button><button id="askhelp">I can't do this — help me</button></div></div>`;
-    $("#resume").onclick=resumeAgent;$("#askhelp").onclick=chatForHelp;if($("#upload"))$("#upload").onclick=uploadFile;if($("#copycommand"))$("#copycommand").onclick=async()=>{await GeoForgeClipboard.write(req.command);$("#copycommand").textContent="Copied"};$("#start").disabled=true;
+      ${report}<input id="note" type="text" placeholder="Optional note for the agent"><div class="controls">${wineButton}<button ${hostWine?"":'class="primary" '}id="resume">${esc(resumeLabel)}</button><button id="askhelp">I can't do this — help me</button></div></div>`;
+    $("#resume").onclick=resumeAgent;$("#askhelp").onclick=chatForHelp;if($("#installwine"))$("#installwine").onclick=installWine;if($("#upload"))$("#upload").onclick=uploadFile;if($("#copycommand"))$("#copycommand").onclick=async()=>{await GeoForgeClipboard.write(req.command);$("#copycommand").textContent="Copied"};$("#start").disabled=true;
   }else if(att){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Action needed";
     $("#need").innerHTML=`<div class="request"><div class="label">${esc((att.kind||'RETRY').toUpperCase())}</div><h4>${esc(att.title)}</h4><p>${esc(att.message)}</p><div class="controls"><button class="primary" id="retry">${esc(att.action_label||'Continue repair')}</button><button id="askhelp">Ask what went wrong</button></div></div>`;
@@ -289,6 +291,13 @@ async function startAgent(discoverExisting=false){if(busy)return;if(!await saveI
   catch(e){const zh=window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
     rawLog+="\n"+(zh?"实时显示连接已中断。Agent 会在后台继续；此页面将从保存的日志中刷新状态。":"The live display was interrupted. The agent will continue in the background; this page will refresh from its saved log.")+"\n";log.textContent=presentSetupLog(rawLog)}
   busy=false;$("#runstate").textContent="";drawActivity();await loadState();}
+async function installWine(){const button=$("#installwine");button.disabled=true;const log=$(".log");let text="";log.textContent="";
+  try{const r=await fetch("/api/runtime/wine/install",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`)}const rd=r.body.getReader(),dec=new TextDecoder();
+    for(;;){const{done,value}=await rd.read();if(done)break;text+=dec.decode(value,{stream:true});log.textContent=text;log.scrollTop=log.scrollHeight;}}
+  catch(e){text+="\n"+e.message;log.textContent=text}
+  if(text.includes("[wine-install:ok]"))return resumeAgent();
+  button.disabled=false;}
 async function resumeAgent(){await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note:$("#note").value})});await loadState();startAgent();}
 async function chatForHelp(){
   const block=(STATE.request&&STATE.request.status==="waiting")?STATE.request:(STATE.attention||{}),sw=STATE.software||{},primary=sw.primary_error||{};

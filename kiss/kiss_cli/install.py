@@ -147,7 +147,9 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
 
 
 def check_system_deps(deps: list[str]) -> Step:
-    missing = [d for d in deps if shutil.which(d) is None]
+    from . import wine
+    missing = [d for d in deps if not (
+        (not wine.needed() or wine.find()) if d == "wine" else shutil.which(d))]
     if missing:
         return Step("system-deps", False,
                     f"not on PATH: {', '.join(missing)} — install them with your package manager")
@@ -432,7 +434,8 @@ def _acq_build(man, prefix, python, env=None):
 
 
 def _acq_wine(man, prefix, python, env=None):
-    if shutil.which("wine") is None:
+    from . import wine
+    if wine.needed() and wine.find() is None:
         return Step("acquire[wine]", False,
                     "wine is not installed — required to run this model's Windows binary"), None
     a = man.acquire

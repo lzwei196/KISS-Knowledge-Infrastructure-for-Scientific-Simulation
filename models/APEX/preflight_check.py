@@ -171,26 +171,33 @@ def check_binary(checks: list[dict]) -> None:
 
 
 def check_wine_and_start(checks: list[dict]) -> None:
-    wine = shutil.which("wine")
-    add_check(
-        checks,
-        kind="binary",
-        subject="wine",
-        critical=True,
-        status=wine is not None,
-        fix=f"Install Wine or put it on PATH so APEX0806.exe can run; see {DIAGNOSTICS}.",
-    )
-    if wine is None or not BINARY.is_file():
+    if os.name == "nt":
+        launcher = []                     # Windows runs APEX0806.exe itself; no Wine
+    else:
+        wine = shutil.which("wine")
+        add_check(
+            checks,
+            kind="binary",
+            subject="wine",
+            critical=True,
+            status=wine is not None,
+            fix=("Install Wine (in GeoForge Desktop on a Mac: the setup page's Install Wine button) "
+                 f"or put it on PATH so APEX0806.exe can run; see {DIAGNOSTICS}."),
+        )
+        if wine is None:
+            return
+        launcher = [wine]
+    if not BINARY.is_file():
         return
 
     try:
         proc = subprocess.run(
-            [wine, str(BINARY)],
+            [*launcher, str(BINARY)],
             cwd=tempfile.gettempdir(),
             input="\n",
             capture_output=True,
             text=True,
-            timeout=6,
+            timeout=45,          # Wine's first start in a fresh prefix takes well over 6 s
         )
         output = (proc.stdout or "") + (proc.stderr or "")
         started = (
@@ -201,10 +208,9 @@ def check_wine_and_start(checks: list[dict]) -> None:
         )
         fix = f"`wine {BINARY}` did not reach APEX startup; inspect Wine/APEX errors and {DIAGNOSTICS}."
     except subprocess.TimeoutExpired as exc:
-        output = ((exc.stdout or b"") if isinstance(exc.stdout, bytes) else (exc.stdout or ""))
-        output += ((exc.stderr or b"") if isinstance(exc.stderr, bytes) else (exc.stderr or ""))
-        if isinstance(output, bytes):
-            output = output.decode(errors="replace")
+        # stdout and stderr can each be bytes, text or None; joining them raw crashed here
+        output = "".join(part.decode(errors="replace") if isinstance(part, bytes) else (part or "")
+                         for part in (exc.stdout, exc.stderr))
         started = "APEXRUN.DAT IS MISSING" in output or "Fortran Pause" in output
         fix = f"`wine {BINARY}` timed out before recognizable startup; inspect Wine/APEX errors and {DIAGNOSTICS}."
     except Exception as exc:  # noqa: BLE001 - report every blocker, do not crash.

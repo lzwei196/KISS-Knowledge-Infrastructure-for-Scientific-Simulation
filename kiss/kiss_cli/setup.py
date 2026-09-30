@@ -334,6 +334,9 @@ def request_for_system_dependencies(root: Path, software: dict) -> dict | None:
     match = re.search(r"not on PATH:\s*(.+?)(?:\s+[—-]\s+|$)", detail)
     missing = [item.strip() for item in match.group(1).split(",")] if match else []
     missing = [item for item in missing if item]
+    from . import wine
+    if "wine" in missing and wine.can_install():
+        return request_for_wine(root)
 
     brew_packages = {
         "git": "git", "cmake": "cmake", "make": "make", "gmake": "make",
@@ -359,6 +362,31 @@ def request_for_system_dependencies(root: Path, software: dict) -> dict | None:
         "command": command,
         "resume_hint": "Re-check the system tools, build the official source, and run preflight again.",
     })
+
+
+def request_for_wine(root: Path, model: str = "") -> dict:
+    """Desktop's own card for a missing Wine on a Mac. Its button runs wine.install() on the host.
+
+    Replaces an agent's card (on 2026-09-30 one proposed `brew install --cask wine-stable`, which
+    Homebrew disabled on 2026-09-01). `host_action` is set here only: request_user() never copies
+    it from a payload, so no agent can create this button."""
+    from . import wine
+    clear_request(root)
+    doc = request_user(root, {
+        "kind": "permission",
+        "title": f"Install Wine to run {model or 'this model'}'s Windows program",
+        "message": (
+            f"{model or 'This model'} runs a Windows program. On a Mac that needs Wine, and Wine is "
+            f"not installed. GeoForge can install WineHQ {wine.VERSION} ({wine.SIZE_LABEL}, checksum-"
+            "verified) into its own folder: no administrator password, nothing changed in "
+            "Applications or Homebrew. Homebrew's Wine package no longer installs (disabled on "
+            "1 Sep 2026)."),
+        "resume_hint": "Wine is now installed for GeoForge and on PATH. Re-run the KI preflight; "
+                       "do not download or install Wine again.",
+    })
+    doc["host_action"] = "install_wine"
+    (Path(root) / REQUEST_FILE).write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    return doc
 
 
 def safe_upload_name(name: str) -> str:

@@ -29,7 +29,16 @@ Source tests ran on Windows 11 with Python 3.11 under the real cp936 locale (no 
 
 - Desktop suite (`kiss/tests`): **1,449 passed, 35 skipped, 288 subtests passed, 0 failed** (329 s), on the committed tree. The 0.6.54 parity build recorded 1,182 passed under UTF-8 mode.
 - Shared package (`ki_tools_common/tests` and `ki_tools_common/ki_tools_common/tests`): **326 passed, 7 skipped, 0 failed**. Skips are unavailable server references and POSIX-only cases; they are not counted as passes. `tests/test_debug_framework.py` is a standalone script, not a pytest module, and is not included.
-- Packaged, installed and uninstall checks: recorded in `release-0.6.54-20260930/Windows-release-validation.json` beside the installer.
+- Frozen bundle (built from `dacc126` with PyInstaller 6.22.2): **passed** — 127 KIs, 127 Windows notes, 23 recipes, python311.dll, harness/Flow/calibration imports, 11 HTTP routes, both console-bridge modes without Python on PATH, and the Unicode bridge against a local fixture. The real windowed exe was also given a failing `_install-download-worker` request: it exited with status 1 and a traceback in 0.3 s instead of opening a dialog.
+- Installer: silent install into a test folder whose path contains a space (exit 0), the same smoke check on the installed copy (passed), installed executable and registration version 0.6.54, all **4,789 installed files SHA-256-identical** to the portable bundle, silent uninstall (exit 0) removing the executable, registration and folder. The installer always creates its Start Menu shortcut; the uninstaller removed it. No existing GeoForge installation was present or touched.
+- Raw evidence (local, git-ignored): `release-0.6.54-20260930/` holds `Windows-release-validation.json`, both smoke reports, the JUnit XML of both suites, the PyInstaller/Inno Setup build logs, the install/uninstall logs and `validate-final.ps1`, which reproduces the installer check.
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `GeoForge-Desktop-Setup-v0.6.54-Windows-x64.exe` | 129,385,385 | `6ba1d4530a5175b386bf22e78e680fddaec1274a28a0265d129f94a8a507e653` |
+| `GeoForge-Desktop-v0.6.54-Windows-x64.zip` | 188,204,213 | `544e75963fc863fcdf310af483e781d4e2d4d99a2b942d21e4d320f73c0ba00e` |
+
+To publish (not done): push `windows-version`, tag `windows-v0.6.54` (the `windows-` prefix keeps the older multi-platform `v*` workflow from firing), and upload both files, `SHA256SUMS-Windows.txt` and `Windows-release-validation.json` to the GitHub release.
 
 ## Known limits
 

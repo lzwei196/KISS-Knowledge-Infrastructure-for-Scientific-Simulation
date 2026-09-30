@@ -45,7 +45,23 @@ kiss/.pyinstaller-*/
 /output/
 /kiss/product-book/
 *.log
-/.parity-check-20260928/
-/build-0.6.54-20260928/
-/dist-0.6.54-20260928/
-/release-0.6.54-20260928/
+
+# Windows release builds, installers, packaged archives and scratch runs at
+# the root. Directory patterns end in '/' so release-manifest.json stays tracked.
+/dist-*/
+/build-*/
+/release-*/
+/installer-output/
+/_stress_*/
+/_s_*/
+/_e2e_*/
+/_kdt_*/
+/_release_test_*/
+/_smoke_*/
+/*.zip
+/*.tar.gz
+/PET0.*
+/SHA256SUMS-Windows.txt
+/.parity-*
+/l/
+/r/

@@ -10,9 +10,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, catalog, cli, gui, ki_updates, software_audit, setup
+from kiss_cli import api, catalog, cli, execution, gui, ki_updates, software_audit, setup
 from kiss_cli.manifest import Manifest
 
+
+
+def _process_run(completed):
+    """A recorded subprocess result as the shared launcher reports it."""
+    return execution.ProcessRun(
+        "succeeded" if completed.returncode == 0 else "failed",
+        completed.returncode, completed.stdout or "", completed.stderr or "",
+        process_started=True)
 
 class InstallExperienceTests(unittest.TestCase):
     def test_bundled_ki_records_cover_catalogue_and_recipe_copies_agree(self):
@@ -56,7 +64,7 @@ class InstallExperienceTests(unittest.TestCase):
             cfg = SimpleNamespace(root=root, python=sys.executable,
                                   roles={"binaries": root / "binaries"})
             completed = subprocess.CompletedProcess([], 0, stdout="installed", stderr="")
-            with mock.patch.object(api, "_run_subprocess_tree", return_value=completed) as run:
+            with mock.patch.object(execution, "run_process", return_value=_process_run(completed)) as run:
                 api.execute_tool("run_setup_command", {"argv": [str(pacman), "-S",
                     "--noconfirm", "make"]}, SimpleNamespace(root=ki_root), cfg,
                     setup_mode=True, setup_context={"installation_only": True})
@@ -123,21 +131,22 @@ class InstallExperienceTests(unittest.TestCase):
                 self.assertEqual((destination / name).read_text(), content)
 
     def test_timeout_returns_even_if_descendant_keeps_output_pipes(self):
-        process = mock.Mock(pid=54321)
+        process = mock.MagicMock(spec=subprocess.Popen)
+        process.pid, process.returncode = 54321, None
+        process.stdout = process.stderr = None
         process.communicate.side_effect = [
             subprocess.TimeoutExpired(["build"], 1),
             subprocess.TimeoutExpired(["build"], 5, output=b"build reached link"),
-            subprocess.TimeoutExpired(["build"], 2, stderr=b"still open"),
         ]
-        with mock.patch.object(api.subprocess, "Popen", return_value=process), \
-             mock.patch.object(api, "_terminate_process_tree") as terminate:
-            with self.assertRaises(subprocess.TimeoutExpired) as caught:
-                api._run_subprocess_tree(["build"], cwd=".", env={}, timeout=1)
-        terminate.assert_called_once_with(process)
-        self.assertEqual(caught.exception.output, "build reached link")
-        self.assertIn("Output pipes remained open", caught.exception.stderr)
+        with mock.patch.object(execution.subprocess, "Popen", return_value=process),              mock.patch("kiss_cli.processes.terminate_process_tree") as terminate,              mock.patch.object(execution, "kill_tree"):
+            run = execution.run_process(["build"], cwd=".", env={}, timeout=1)
+        if os.name == "nt":
+            terminate.assert_called_once_with(process)
+        self.assertEqual(run.status, "timed_out")
+        self.assertEqual(run.stdout, "build reached link")
+        self.assertIn("could not be fully collected", run.detail)
         self.assertEqual([call.kwargs["timeout"] for call in
-                          process.communicate.call_args_list], [1, 5, 2])
+                          process.communicate.call_args_list], [1, 5])
 
 
 if __name__ == "__main__":

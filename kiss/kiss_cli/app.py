@@ -199,7 +199,9 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
         # in the user's default browser, as the Linux launcher already does.
         port = _free_port()
         from . import windows_tray
-        windows_tray.start(f"http://127.0.0.1:{port}/")
+        # Tray Exit leaves through os._exit, which skips serve()'s cleanup:
+        # hand it the same stop that ends live turns and launched workers.
+        windows_tray.start(f"http://127.0.0.1:{port}/", on_exit=gui._stop_everything)
         return gui.serve(
             models_dir=models_dir, port=port, open_browser=True,
             workroot=workroot, auto_update=True,

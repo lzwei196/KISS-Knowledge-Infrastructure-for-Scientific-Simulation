@@ -34,6 +34,26 @@ class Response:
     inventory: dict | None = None
 
 
+def _database_approval_block(inventory: dict) -> str | None:
+    """An issued review is not evidence of current Database activation.
+
+    Read only the host's cached activation state; never open Keychain or refresh
+    the catalogue from a consent check. Public/user inputs do not need the DB.
+    """
+    from . import obs_access, settings
+    from .acquire import ACQUIRABLE
+
+    pinned = [str(item.get("id")) for item in inventory.get("items") or []
+              if isinstance(item, dict) and
+              (item.get("dataset_id") or item.get("delivery") in ACQUIRABLE)]
+    if pinned and obs_access.effective_mode(settings.database_access_mode()) == "off":
+        return ("GeoForge Database access is off or not activated, but this plan still needs it for "
+                + ", ".join(pinned) + ". Nothing was approved or downloaded. "
+                "Activate the Database in Settings and approve again, or choose “Modify the plan” "
+                "to use public sources or your own files. Your saved choices are retained.")
+    return None
+
+
 def respond(project: Path, *, action: dict | None, pending: dict | None,
             ki_roots: dict[str, Path], note: str = "") -> Response:
     """Resolve one click against the host's persisted, issued review.
@@ -97,12 +117,18 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
     from . import obs_access, obs_subset
 
     def reissue(reasons: list[str]) -> None:
-        fs = flowgate.FlowSession.open(project, ki_roots, database_access_mode="direct")
+        from . import settings
+        fs = flowgate.FlowSession.open(project, ki_roots, database_access_mode=obs_access.effective_mode(
+            settings.database_access_mode()))       # the setting, never an assumed "direct"
         provider_note = str((pending.get("plan_review") or {}).get("tool_policy") or "")
         issue(project, fs, pj, inv, provider_note, extra_why=reasons)
 
     repinned = apply_data_choices(pj, inv, picks)
     apply_choice_picks(pj, picks)  # same-click scientific picks survive any re-review
+    if blocked := _database_approval_block(inv):
+        flow.plan.write_artifacts(project, pj, inv)
+        reissue([blocked])       # suppress cached DB options without fetching anything
+        return Response("waiting", message=blocked)
     try:
         if repinned:
             errors = obs_access.stamp_inventory(inv, project=project)
@@ -113,14 +139,24 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
             stamp_errors = obs_access.stamp_inventory(inv, project=project) if changed else []
             for error in stamp_errors:
                 changed.setdefault("inventory", []).append(error)
+        # Remote estimates may take time: bind the files that remain after that
+        # work, so a deletion/replacement during refresh cannot sign old evidence.
+        bound = bind_uploads(project, pj, inv)
+    except AnswersUnreadable as error:
+        return Response("waiting", message=f"Your saved answers cannot be read ({error}). "
+                        "Fix or remove that file, then approve again.")
     except (obs_access.ObsAccessError, OSError) as error:
         return Response("waiting", message=f"The plan review could not refresh its data: {error}. "
                         "Approval has not started any work. Your saved choices are retained; try the review again.")
 
-    if repinned:
+    if repinned or bound:
+        # the user approves the card that names what will run, never a silent rebinding
+        said = ((["data re-pinned to your choice: " + ", ".join(repinned)] if repinned else [])
+                + (["your file is now named as the input: " + "; ".join(bound)] if bound else []))
         flow.plan.write_artifacts(project, pj, inv)
-        reissue(["data re-pinned to your choice: " + ", ".join(repinned)] + errors)
-        return Response("waiting", message="Data re-pinned to your choice: " + ", ".join(repinned)
+        reissue(said + (errors if repinned else
+                        [f"{item}: {'; '.join(reasons)}" for item, reasons in changed.items()]))
+        return Response("waiting", message=". ".join(s[0].upper() + s[1:] for s in said)
                         + ". The updated card is in the chat; approve it to start.")
 
     if changed:
@@ -142,12 +178,22 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
     if blocking:
         flow.plan.write_artifacts(project, pj, inv)
         reissue(["still waiting on your decision: " + ", ".join(blocking[:8])])
+        uploads = [f"inputs/user/{display_input_id(i)}/" for i in flow.decisions.open_inputs(records)
+                   if str((records.get(i) or {}).get("value") or "").startswith("upload it to")]
         return Response("waiting", message="These still need your decision before anything runs: "
-                        + ", ".join(blocking[:8]) + ". Pick a data source on the card where one is offered; "
+                        + ", ".join(blocking[:8]) + ". "
+                        + (f"Upload your file with the Upload button on the card (it goes to "
+                           f"{', '.join(uploads[:8])}). " if uploads else "")
+                        + "Pick a data source on the card where one is offered; "
                         "for anything else choose “Modify the plan” and say what to use.")
 
     # This revision is inside the hash shared Flow signs. Never mutate inventory
     # after signing; clip job creation and binding belong to the turn driver.
+    # Settings/credential state may have changed during the remote estimate.
+    if blocked := _database_approval_block(inv):
+        flow.plan.write_artifacts(project, pj, inv)
+        reissue([blocked])
+        return Response("waiting", message=blocked)
     pj["decision_revision"] = flow.decisions.revision_of(records)
     flow.plan.write_artifacts(project, pj, inv)
     if flow.approval.check(project) != "OK":
@@ -235,6 +281,11 @@ def _data_summary(plan: dict, inv: dict, project: Path | None = None) -> str:
         for r in g["run"]:
             counts[r["how"]] = counts.get(r["how"], 0) + 1
         lines.append("  ⚙ the run prepares itself (" + ", ".join(f"{n} {kinds[k]}" for k, n in counts.items()) + ")")
+        for r in g["run"]:      # every card names the uploaded file the approval will bind (issue #4)
+            mine = [p for p in by_id.get(str(r["id"]), {}).get("local_paths") or []
+                    if str(p).startswith("inputs/user/")]
+            if r["how"] == "on_disk" and mine:
+                lines.append(f"    {r['id']} ← your file {', '.join(mine[:3])}")
     for it in inv.get("items") or []:
         res = ((it or {}).get("catalogue") or {}).get("resolution") or {}
         if isinstance(it, dict) and res.get("spatial_filter_applied") is False:
@@ -331,6 +382,7 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
 
 
 ANSWERS_FILE = "user-answers.json"          # under .geoforge/ — policy.ALWAYS_PROTECTED
+INTERVIEW_NS = "interview"                  # planning-question clicks; `question:` is taken by open questions
 
 
 def _answers_path(project: Path) -> Path:
@@ -435,13 +487,135 @@ def record_user_answers(project: Path, baseline: dict | None, picks: dict | None
         answers[f"choice:{cid}"] = {"value": value, "at": stamp, "item": item_of.get(cid)}
         if item_of.get(cid):
             answers[f"item:{item_of[cid]}"] = {"value": value, "at": stamp}
+    _save_answers(project, answers)
+    return answers
+
+
+def record_interview_answer(project: Path, pending: dict, resolved: dict, *, note: str = "") -> None:
+    """Save one click on a planning-question card as `interview:<card id>` (issue #3).
+
+    The click used to live only in the request file, which the next question archives, so an
+    interview answer never reached the signed approval. Host-written, like approval picks."""
+    value = str(resolved.get("response") if resolved.get("id") == "__custom_answer__"
+                else resolved.get("label") or resolved.get("id") or "").strip()
+    if not value:
+        return
+    answers = load_user_answers(project)
+    answers[f"{INTERVIEW_NS}:{pending.get('id')}"] = {
+        "value": value, "question": str(pending.get("title") or "")[:160],
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    if note.strip() and resolved.get("id") != "__custom_answer__":
+        answers[f"{INTERVIEW_NS}:{pending.get('id')}"]["note"] = note.strip()
+    _save_answers(project, answers)
+
+
+def _interview(answers: dict) -> dict:
+    return {k: v for k, v in answers.items() if k.startswith(INTERVIEW_NS + ":") and isinstance(v, dict)}
+
+
+def _interview_answer_text(answer: dict) -> str:
+    return str(answer.get("value")) + (f" (your note: {answer['note']})" if answer.get("note") else "")
+
+
+def settled_answers_block(project: Path) -> str:
+    """Every interview answer, for each planning/intake turn. The chat replay keeps only the last
+    20 messages, so early answers fell out of view and a replan could re-ask or override them."""
+    try:
+        answers = _interview(load_user_answers(project))
+    except AnswersUnreadable as error:
+        return (f"\n[ANSWERS THE USER ALREADY GAVE] The saved answers cannot be read ({error}). "
+                "Tell the user; do not assume they answered nothing.\n")
+    if not answers:
+        return ""
+    lines = [f"  {k} — {v.get('question') or '(question)'} → {_interview_answer_text(v)}"
+             for k, v in answers.items()]
+    return ("\n[ANSWERS THE USER ALREADY GAVE — SETTLED] The user answered these questions during "
+            "this project. Treat each as decided: do not ask it again, and do not replace it with a "
+            "KI example, worked-example period or your own default. If new evidence makes one of "
+            "them unworkable, say why and ask about that one only. When a scientific_choice in your "
+            "plan comes from one of these answers, set its `answered_by` to the listed id.\n"
+            + "\n".join(lines) + "\n")
+
+
+def cited_answers(plan: dict, answers: dict) -> dict[str, str]:
+    """choice id → "question → answer" for each choice whose `answered_by` names a real interview
+    answer. The plan is agent-writable: only the host store makes a citation count."""
+    found = _interview(answers or {})
+    out = {}
+    for c in (plan or {}).get("scientific_choices") or []:
+        rec = found.get(str(c.get("answered_by") or "")) if isinstance(c, dict) else None
+        if rec and c.get("id"):
+            out[str(c["id"])] = f"{rec.get('question') or '(question)'} → {_interview_answer_text(rec)}"
+    return out
+
+
+_USER_PROVIDES = {"user", "provide", "you"}    # the decision words flow.declared.classify reads
+
+
+def _user_provides(item: dict) -> bool:
+    return str(item.get("decision") or "").lower() in _USER_PROVIDES
+
+
+def bind_uploads(project: Path, plan: dict, inv: dict) -> list[str]:
+    """Issue #4: at the Approve click, name the files the user placed in inputs/user/<id>/ as that
+    input (the folder the card's Upload button writes to). Their hashes go in the host answer store,
+    so signing can tell this binding from local_paths the agent wrote. Mutates `inv`; returns
+    "id → paths" for each input whose binding changed, so the caller re-issues the card."""
+    project = Path(project)
+    answers = load_user_answers(project)
+    provide = {str(r["id"]) for r in input_groups(plan, inv, project)["you"] if r["how"] == "provide"}
+    sha256_file = flowgate.load().receipts.sha256_file
+    changed = []
+    answers_changed = False
+    for it in inv.get("items") or []:
+        iid = str((it or {}).get("id") or "") if isinstance(it, dict) else ""
+        key = f"upload:{iid}"
+        if not iid or not (_user_provides(it) or iid in provide or key in answers):
+            continue
+        folder = project / "inputs" / "user" / iid
+        try:
+            upload_root = (project / "inputs" / "user").resolve()
+            upload_root.relative_to(project.resolve())
+            folder.resolve().relative_to(upload_root)
+        except ValueError:
+            raise OSError(f"The upload folder for {iid} is outside this project's inputs/user folder") from None
+        files = sorted(p for p in folder.rglob("*") if p.is_file() and not p.name.startswith(".")) \
+            if folder.is_dir() else []
+        if not files:
+            previous = answers.pop(key, None)
+            if previous is not None:
+                answers_changed = True
+                if it.get("local_paths") == previous.get("paths"):
+                    it["local_paths"] = []
+                it["status"], it["needs_user"] = "missing", True
+            continue
+        for path in files:
+            try:
+                path.resolve().relative_to(folder.resolve())
+            except ValueError:
+                raise OSError(f"An uploaded file for {iid} points outside its input folder") from None
+        paths = [p.relative_to(project).as_posix() for p in files]
+        # ponytail: hashes every file on each Approve click; fine for tables and site files,
+        # key on (size, mtime) first if multi-GB uploads become common
+        digests = {rel: sha256_file(p) for rel, p in zip(paths, files)}
+        if it.get("local_paths") == paths and (answers.get(key) or {}).get("sha256") == digests:
+            continue
+        it["local_paths"], it["status"] = paths, "ready"
+        answers[key] = {"value": ", ".join(paths), "paths": paths, "sha256": digests,
+                        "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+        changed.append(f"{iid} → {', '.join(paths)}")
+    if changed or answers_changed:
+        _save_answers(project, answers)
+    return changed
+
+
+def _save_answers(project: Path, answers: dict) -> None:
     p = _answers_path(project)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps({"schema": 1, "answers": answers}, indent=2, ensure_ascii=False),
                    encoding="utf-8")
     tmp.replace(p)
-    return answers
 
 
 # Fixed tags at the front of `rationale`: the disclosure splits on the tag, never on wording.
@@ -509,7 +683,20 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
             invalid.append("an inventory item has no id")
             continue
         iid = str(it["id"])
-        concrete = (it.get("dataset_id") or it.get("chosen_source") or it.get("decision")
+        upload = answers.get(f"upload:{iid}")
+        if isinstance(upload, dict) and upload.get("paths") and it.get("local_paths") == upload["paths"]:
+            # bound by the host at the Approve click (bind_uploads), not merely named by the agent
+            digests = ", ".join(str(d)[:12] for d in (upload.get("sha256") or {}).values())
+            _add("item", iid, "user", str(upload["value"]),
+                 f"your file in inputs/user/{iid} (sha256 {digests}), named on the card you approved")
+            continue
+        # Only a current host binding can satisfy "you provide". A path/source string
+        # written by the agent is not evidence that the required upload exists.
+        if _user_provides(it):
+            _add("item", iid, "open", f"upload it to inputs/user/{iid}/")
+            continue
+        decision = it.get("decision")
+        concrete = (it.get("dataset_id") or it.get("chosen_source") or decision
                     or (", ".join(str(p) for p in it.get("local_paths") or []) or None))
         answered = _answer("item", iid)
         if answered and str(answered) != str(concrete or ""):
@@ -527,6 +714,7 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
                  str(kd.get("default_source") or kd.get("source_kind") or it.get("strategy")
                      or "the KI prepares it per its SKILL.md"), _KI_DEFAULT_WHY)
 
+    interview = cited_answers(plan, answers)     # `answered_by` counts only if the host saved it
     for c in plan.get("scientific_choices") or []:
         if not isinstance(c, dict):
             continue
@@ -544,6 +732,9 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
                 answered = None     # answered for another item; the id was rebound (review A5 #1)
         if answered:
             _add("choice", cid, "user", answered, "you chose this on the approval card")
+        elif cid in interview and (c.get("decision") or c.get("picked")):
+            _add("choice", cid, "user", str(c.get("decision") or c.get("picked")),
+                 "you answered this in the interview: " + interview[cid])
         elif c.get("decision"):
             if c.get("kind") == "data_source":
                 shown_val = displayed_choice.get(cid)
@@ -602,12 +793,17 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
                       "tool": Path(tool).name if tool else None,
                       "env": sorted((st.get("env") or {}).keys()),
                       "inputs": list(st.get("inputs") or []), "outputs": list(st.get("outputs") or [])})
+    try:
+        cited = cited_answers(plan, load_user_answers(fs.project))
+    except AnswersUnreadable:
+        cited = {}      # the Approve click refuses an unreadable store; the card just omits citations
     decisions = [{"id": c.get("id"), "kind": c.get("kind"), "options": list(c.get("options") or []),
                   "picked": c.get("decision") or c.get("picked"), "decided": bool(c.get("decision")),
-                  "high_impact": bool(c.get("high_impact"))}
+                  "high_impact": bool(c.get("high_impact")), "answered": cited.get(str(c.get("id")))}
                  for c in plan.get("scientific_choices") or [] if isinstance(c, dict)
                  and c.get("kind") != "data_source"]
-    data_choices = _data_choices(plan, inv)
+    # DB gating: no cached Database records on the card while access is off or not activated
+    data_choices = [] if fs.database_access_mode == "off" else _data_choices(plan, inv)
     review = {"goal": plan.get("goal"), "kis": list(plan.get("selected_kis") or []),
               "coupling": edges, "study_area": intent.get("study_area"), "period": intent.get("period"),
               "data": input_groups(plan, inv, fs.project), "steps": steps, "decisions": decisions,

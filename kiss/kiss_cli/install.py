@@ -10,13 +10,18 @@ mandatory execution policy, and it is the whole point of the project.
 from __future__ import annotations
 
 import os
+import contextlib
+import contextvars
+import json
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.request
 import zipfile
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import tls
@@ -24,6 +29,37 @@ from .manifest import Manifest
 
 
 _IMPORT_PATH_MARKER = "__GEOFORGE_IMPORT_PATH__="
+_CANCELLATION = contextvars.ContextVar("installation_cancellation", default=None)
+
+
+class InstallStopped(RuntimeError):
+    """The owning chat stopped this installation; no subsequent step may run."""
+
+
+@contextlib.contextmanager
+def cancellation_context(project=None, *, stop=None, turn_id=None):
+    if project is not None and turn_id is None:
+        from . import execution
+        inherited = execution.turn_environment(project)
+        if execution.stop_requested(project, env=inherited):
+            raise InstallStopped("Stopped by the user; installation was interrupted.")
+        turn_id = inherited.get(execution.TURN_ID_ENV)
+    token = _CANCELLATION.set((project, stop, turn_id))
+    try:
+        check_cancelled()
+        yield
+    finally:
+        _CANCELLATION.reset(token)
+
+
+def check_cancelled():
+    context = _CANCELLATION.get()
+    if context is not None:
+        from . import execution
+        project, stop, turn_id = context
+        if ((stop is not None and stop()) or
+                (project is not None and execution.stop_requested(project, turn_id=turn_id))):
+            raise InstallStopped("Stopped by the user; installation was interrupted.")
 
 
 def _marked_import_path(output: str) -> Path | None:
@@ -80,6 +116,25 @@ class InstallResult:
 def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
          env: dict | None = None) -> tuple[int, str]:
     """Run a command, returning (rc, combined output). Never raises on failure."""
+    check_cancelled()
+    context = _CANCELLATION.get()
+    if context is not None:
+        from . import execution
+        project, stop, turn_id = context
+        # Windows: the exact command line Popen(shell=True) builds. A list would
+        # go through list2cmdline, whose \" escapes cmd.exe does not understand,
+        # splitting quoted manifest arguments such as CC="gcc -fcommon".
+        argv = (f'{os.environ.get("COMSPEC", "cmd.exe")} /c "{cmd}"' if os.name == "nt"
+                else ["/bin/sh", "-c", cmd]) if isinstance(cmd, str) else cmd
+        result = execution.run_process(
+            argv, cwd=cwd or Path.cwd(), env={**os.environ, **(env or {})},
+            timeout=timeout, project=project, stop=stop, turn_id=turn_id)
+        if result.status in {"stopped", "interrupted"}:
+            raise InstallStopped(result.detail or "Stopped by the user")
+        check_cancelled()
+        rc = result.returncode if result.returncode is not None else (
+            124 if result.status == "timed_out" else 127)
+        return rc, (result.stdout + result.stderr + ("\n" + result.detail if result.detail else ""))[-8000:]
     shell = isinstance(cmd, str)
     try:
         p = subprocess.run(
@@ -164,12 +219,16 @@ def _acq_pip(man, prefix, python, env=None):
                 commands=[" ".join(cmd)]), location
 
 
-def _acq_download(man, prefix, python, env=None):
+def _acq_download(man, prefix, python, env=None, *, partial_path=None):
+    if _CANCELLATION.get() is not None:
+        return _managed_download(man, prefix, python, env)
     a = man.acquire
     if not a.url:
         return Step("acquire[download]", False, "manifest has no url"), None
     dest = prefix / Path(a.url).name
+    partial = partial_path or dest.with_name(dest.name + "." + uuid.uuid4().hex + ".part")
     try:
+        check_cancelled()
         if not dest.exists():
             req = urllib.request.Request(a.url, headers={"User-Agent": "geoforge-desktop"})
             proxy = ((env or {}).get("HTTPS_PROXY") or
@@ -181,15 +240,34 @@ def _acq_download(man, prefix, python, env=None):
                     {"http": proxy, "https": proxy} if proxy else {}),
                 urllib.request.HTTPSHandler(context=tls.context()),
             )
+            # The supervising worker can end a blocked read without shortening
+            # the supported server timeout. Publish only a complete transfer.
             with opener.open(req, timeout=1800) as src, \
-                    dest.open("wb") as out:
-                shutil.copyfileobj(src, out)
+                    partial.open("wb") as out:
+                while True:
+                    check_cancelled()
+                    chunk = src.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            check_cancelled()
+            partial.replace(dest)
+    except InstallStopped:
+        raise
     except Exception as e:
+        check_cancelled()
         return Step("acquire[download]", False, f"{a.url}: {e}"), None
+    finally:
+        partial.unlink(missing_ok=True)
 
     if a.sha256:
         import hashlib
-        got = hashlib.sha256(dest.read_bytes()).hexdigest()
+        digest = hashlib.sha256()
+        with dest.open("rb") as downloaded:
+            while chunk := downloaded.read(1024 * 1024):
+                check_cancelled()
+                digest.update(chunk)
+        got = digest.hexdigest()
         if got != a.sha256:
             return Step("acquire[download]", False,
                         f"checksum mismatch: expected {a.sha256[:16]}… got {got[:16]}…"), None
@@ -198,11 +276,15 @@ def _acq_download(man, prefix, python, env=None):
     if dest.suffix == ".zip":
         is_archive = True
         with zipfile.ZipFile(dest) as z:
-            z.extractall(prefix)
+            for member in z.infolist():
+                check_cancelled()
+                z.extract(member, prefix)
     elif ".tar" in dest.suffixes or dest.suffix in (".tgz", ".gz", ".bz2", ".xz"):
         is_archive = True
         with tarfile.open(dest) as t:
-            t.extractall(prefix)
+            for member in t:
+                check_cancelled()
+                t.extract(member, prefix)
 
     binary = prefix / a.produces if a.produces else None
     # Release assets commonly include their version in the download filename
@@ -218,6 +300,79 @@ def _acq_download(man, prefix, python, env=None):
     if binary:
         binary.chmod(binary.stat().st_mode | 0o111)
     return Step("acquire[download]", True, f"from {a.url}"), binary
+
+
+def download_worker_command(request_path: Path) -> list[str]:
+    prefix = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "kiss_cli"]
+    return [*prefix, "_install-download-worker", str(request_path)]
+
+
+@contextlib.contextmanager
+def scratch_directory(prefix: str, dir):
+    """A temporary directory whose cleanup never replaces the real outcome.
+
+    On Windows a just-terminated process, an AV scanner, or a surviving
+    descendant whose cwd is inside it keeps it from being deleted. Even
+    TemporaryDirectory(ignore_cleanup_errors=True) then recurses until
+    RecursionError on the Python 3.11 the Windows build ships (gh-79325), so
+    remove it best effort there. POSIX keeps TemporaryDirectory unchanged.
+    """
+    import tempfile
+    if os.name != "nt":
+        with tempfile.TemporaryDirectory(prefix=prefix, dir=dir) as path:
+            yield path
+        return
+    path = tempfile.mkdtemp(prefix=prefix, dir=dir)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _managed_download(man, prefix, python, env):
+    """Keep blocking HTTP, checksum and extraction outside the Desktop thread."""
+    from . import execution
+    check_cancelled()
+    project, stop, turn_id = _CANCELLATION.get()
+    with scratch_directory(".download-", prefix) as temporary:
+        worker_dir = Path(temporary)
+        request_path = worker_dir / "request.json"
+        request_path.write_text(json.dumps({"project": str(project) if project is not None else None,
+                                           "acquire": asdict(man.acquire),
+                                           "prefix": str(prefix), "python": python}), encoding="utf-8")
+        child_env = {**os.environ, **(env or {})}
+        if project is not None:
+            child_env = execution.turn_environment(project, turn_id=turn_id, env=child_env)
+        if not getattr(sys, "frozen", False):
+            child_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) + os.pathsep + child_env.get("PYTHONPATH", "")
+        result = execution.run_process(download_worker_command(request_path),
+            cwd=prefix, env=child_env, timeout=None, project=project, stop=stop, turn_id=turn_id)
+        if result.status in {"stopped", "interrupted"}:
+            raise InstallStopped(result.detail or "Stopped by the user")
+        check_cancelled()
+        try:
+            if result.status != "succeeded":
+                raise ValueError(result.detail or result.stderr[-2000:] or "download worker failed")
+            payload = json.loads((worker_dir / "result.json").read_text(encoding="utf-8"))
+            step = Step(**payload["step"])
+            return step, Path(payload["binary"]) if payload.get("binary") else None
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return Step("acquire[download]", False, f"download worker did not complete: {exc}"), None
+
+
+def run_download_worker(request_path: Path) -> int:
+    from .manifest import Acquire
+    from . import execution
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    project = request.get("project") or os.environ.get(execution.TURN_PROJECT_ENV)
+    if project and execution.stop_requested(Path(project)):
+        return 130
+    man = Manifest(model="download", acquire=Acquire.from_dict(request["acquire"]))
+    step, binary = _acq_download(man, Path(request["prefix"]), request["python"],
+                                 env=os.environ, partial_path=request_path.parent / "archive.part")
+    (request_path.parent / "result.json").write_text(json.dumps({
+        "step": asdict(step), "binary": str(binary) if binary else None}), encoding="utf-8")
+    return 0
 
 
 def _acq_build(man, prefix, python, env=None):
@@ -357,21 +512,27 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
         try:
             link.symlink_to(target, target_is_directory=True)
             return
-        except OSError as symlink_error:
+        except OSError:
             if os.name != "nt":
                 raise
         # Directory junctions are available to ordinary Windows users, unlike
-        # symlinks on machines where Developer Mode is disabled. ``mklink`` is
-        # a cmd builtin, so invoke that one fixed builtin without shell=True.
-        command = f'mklink /J "{link}" "{target}"'
-        completed = subprocess.run(
-            ["cmd.exe", "/d", "/s", "/c", command],
-            capture_output=True, text=True, errors="replace",
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
-        )
-        if completed.returncode != 0 or not link.is_dir():
-            detail = (completed.stderr or completed.stdout).strip()
-            raise OSError(detail or str(symlink_error))
+        # symlinks on machines where Developer Mode is disabled. CPython's own
+        # CreateJunction needs no cmd.exe: ``mklink`` through a list argv got
+        # its quotes escaped as \" (cmd rejected every path), and a shell string
+        # would still expand %VAR% inside a folder name.
+        import _winapi
+        existed = os.path.lexists(link)
+        try:
+            _winapi.CreateJunction(str(target), str(link))
+        except OSError:
+            # It makes the directory before turning it into a junction; never
+            # leave a plain empty folder where the alias should be.
+            if not existed:
+                with contextlib.suppress(OSError):
+                    link.rmdir()
+            raise
+        if not link.is_dir():
+            raise OSError(f"junction {link} -> {target} was not created")
 
     def resolve(decl: str) -> Path | None:
         if decl.startswith("KISSPATH_"):
@@ -532,7 +693,7 @@ def place_agent_install(man: Manifest, binary: Path | None,
     return (expected if expected.is_file() else binary), notes
 
 
-def run_preflight(ki, python: str, cfg=None) -> Step:
+def run_preflight(ki, python: str, cfg=None, *, project=None, stop=None, turn_id=None) -> Step:
     """Run the KI's own preflight_check.py, inside the sandbox when configured."""
     if not ki.preflight:
         return Step("preflight", False, "this KI ships no preflight_check.py")
@@ -545,7 +706,13 @@ def run_preflight(ki, python: str, cfg=None) -> Step:
     if cfg is not None:
         from .paths import with_ki_tools_common, with_python_runtime
         env = with_python_runtime(python, with_ki_tools_common(cfg, {}))
-    rc, out = _run(argv, cwd=ki.root, timeout=600, env=env)
+    try:
+        context = (contextlib.nullcontext() if _CANCELLATION.get() is not None else
+                   cancellation_context(project or getattr(cfg, "root", None), stop=stop, turn_id=turn_id))
+        with context:
+            rc, out = _run(argv, cwd=ki.root, timeout=600, env=env)
+    except InstallStopped as exc:
+        return Step("preflight", False, str(exc), commands=[" ".join(argv)])
     tail = "\n".join(out.strip().splitlines()[-25:])
     return Step("preflight", rc == 0, tail, commands=[" ".join(argv)])
 

@@ -142,7 +142,7 @@ def test_saved_plan_does_not_overwrite_an_unanswered_question(planning, provider
     assert turn.session.flow.plan.read_artifacts(turn.planning_worktree or planning.project) == (plan, inventory)
     assert turn.session.flow.plan.read_artifacts(planning.project) == original
     if turn.planning_worktree:
-        metadata = json.loads((planning.project / ".geoforge/planning-last.json").read_text())
+        metadata = json.loads((planning.project / ".geoforge/planning-last.json").read_text(encoding="utf-8"))
         assert metadata == {"draft_root": str(turn.planning_worktree)}
 
 

@@ -83,7 +83,7 @@ def _invoke(adapter, ctx, capsys, *, arguments=(), step="M:run", setup_context=N
 
 
 def _receipts(ctx):
-    docs = [json.loads(path.read_text()) for path in
+    docs = [json.loads(path.read_text(encoding="utf-8")) for path in
             (ctx.project / ".geoforge" / "receipts" / "model-runs").glob("*.json")]
     assert all(ctx.flow.flow.receipts.verify(ctx.project, doc) for doc in docs)
     return docs
@@ -168,7 +168,7 @@ def test_missing_interpreter_returns_a_signed_not_launched_attempt(tmp_path, cap
     assert receipt["exit_code"] is None and receipt["process_started"] is False
     assert receipt["binary_actually_ran"] is False
     assert receipt["validation"]["status"] == "failed"
-    assert "Could not launch KI tool" in Path(receipt["stdout_log"]).read_text()
+    assert "Could not launch KI tool" in Path(receipt["stdout_log"]).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("adapter", ["direct", "cli"])
@@ -222,7 +222,7 @@ def test_child_gets_sanitized_environment_and_signed_step_values(
         step_env={"MODEL_OUTPUT": "${PROJECT}/outputs/env.json", "MODEL_KI_ROOT": "${KI_ROOT}"})
     output, errors = _invoke(adapter, ctx, capsys)
     assert output.startswith("exit_code=0") and not errors
-    observed = json.loads((ctx.project / "outputs" / "env.json").read_text())
+    observed = json.loads((ctx.project / "outputs" / "env.json").read_text(encoding="utf-8"))
     # KISS_ROOT selects the exact KI config; tool cwd remains the project.
     assert observed == {"keys": [], "ordinary": "retained", "root": str(ctx.ki.root.parent),
                         "ki": str(ctx.ki.root), "cwd": str(ctx.project)}

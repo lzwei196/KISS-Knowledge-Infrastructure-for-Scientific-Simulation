@@ -258,8 +258,8 @@ def verify(model: str, manifest_path: Path, models_dir: Path, workdir: Path,
             [str(pkg_parent)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
     cmd += ["--models", str(models_dir), "init", model, "-w", str(workdir)]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
-                           cwd=str(pkg_parent), env=env)
+        p = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
+                           timeout=3600, cwd=str(pkg_parent), env=env)
     except subprocess.TimeoutExpired:
         return False, "install exceeded one hour"
     out = p.stdout + p.stderr

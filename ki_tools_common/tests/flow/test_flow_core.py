@@ -348,7 +348,7 @@ def test_receipts_require_binding_sign_verify_and_reject_forgery(tmp_path):
                             finished_at=2, exit_code=0, inputs=[], outputs=[out], plan_step_id="M:run",
                             approval_sha256="")
     rp = _run(tmp_path, out, a)
-    doc = json.loads(rp.read_text())
+    doc = json.loads(rp.read_text(encoding="utf-8"))
     assert receipts.verify(tmp_path, doc) and doc["binary_actually_ran"] and doc["output_files_count"] == 1
     doc["exit_code"] = 1
     assert not receipts.verify(tmp_path, doc)
@@ -387,6 +387,85 @@ def test_evidence_binds_to_current_approval_steps_and_artifacts(tmp_path):
     pj["goal"] = "v2"; plan.write_artifacts(tmp_path, pj, inv); a2 = approval.approve(tmp_path, by="auto")
     ev = receipts.evidence(tmp_path, pj, a2)
     assert ev["runs_bound"] == 0 and ev["receipts_verified"] is False
+
+
+def test_retry_supersedes_a_failed_attempt_but_keeps_history(tmp_path):
+    ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki); a = approval.approve(tmp_path, by="auto")
+    out = tmp_path / "outputs" / "q.csv"; out.parent.mkdir(); out.write_text("t,q\n1,0.5\n2,1.2\n3,0.9\n")
+    tool = str(tmp_path / "M" / "tools" / "run.py")
+
+    def attempt(finished, errored, target=out):
+        v = receipts.validate_outputs(ki, [target], run_facts={"errored": errored, "output_nonempty": True})
+        receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3",
+                            command=["/usr/bin/python3", tool, target.name], cwd=str(tmp_path),
+                            started_at=finished - 1, finished_at=finished, exit_code=1 if errored else 0,
+                            inputs=[], outputs=[target], plan_step_id="M:run",
+                            approval_sha256=approval.approval_id(a), validation=v)
+        return receipts.evidence(tmp_path, pj, a)
+
+    ev = attempt(1001, errored=True)
+    assert ev["validation"] == "failed" and ev["receipts_verified"] is False
+    ev = attempt(2001, errored=False)                   # the agent's retry passes: the step now stands
+    assert ev["validation"] == "passed" and ev["receipts_verified"] is True
+    assert ev["runs_bound"] == 2 and sorted(r["validation"] for r in ev["runs"]) == ["failed", "passed"]
+    [hidden] = ev["superseded_failures"]                # disclosed, never silently dropped
+    assert hidden["plan_step_id"] == "M:run" and hidden["command"][-1] == "q.csv"
+    ev = attempt(3001, errored=True)                    # a later failure counts again (outputs may be clobbered)
+    assert ev["validation"] == "failed" and ev["receipts_verified"] is False
+    attempt(4001, errored=False)
+    ev = attempt(4001, errored=True)                    # same-second tie fails closed
+    assert ev["validation"] == "failed" and ev["runs_bound"] == 5
+    # A file only a failed attempt wrote is not vouched for by a later pass of other files.
+    broken = tmp_path / "outputs" / "q_full.csv"; broken.write_text("t,q\n1,nan\n")
+    attempt(5001, errored=True, target=broken)
+    ev = attempt(6001, errored=False)
+    assert ev["steps_missing"] == [] and "outputs/q_full.csv" in ev["unreceipted_artifacts"]
+    assert ev["validation"] == "incomplete" and ev["receipts_verified"] is False
+    broken.unlink()
+    assert receipts.evidence(tmp_path, pj, a)["validation"] == "passed"
+
+
+def test_a_result_built_on_a_superseded_partial_file_is_stale(tmp_path):
+    ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki)
+    tool = str(tmp_path / "M" / "tools" / "run.py")
+    pj["steps"].insert(0, {"id": "M:prep", "ki": "M", "tool": tool, "kind": "process",
+                           "inputs": [], "outputs": ["forcing"], "status": "planned"})
+    plan.write_artifacts(tmp_path, pj, inv); a = approval.approve(tmp_path, by="auto")
+    forcing = tmp_path / "outputs" / "forcing.csv"; forcing.parent.mkdir()
+    q = tmp_path / "outputs" / "q.csv"
+
+    def attempt(step, finished, errored, out, inputs=()):
+        v = receipts.validate_outputs(ki, [out], run_facts={"errored": errored, "output_nonempty": True})
+        receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3", command=["/usr/bin/python3", tool],
+                            cwd=str(tmp_path), started_at=finished - 1, finished_at=finished,
+                            exit_code=1 if errored else 0, inputs=list(inputs), outputs=[out],
+                            plan_step_id=step, approval_sha256=approval.approval_id(a), validation=v)
+        return receipts.evidence(tmp_path, pj, a)
+
+    forcing.write_text("t,q\n1,0.5\n")                  # prep crashes half way through
+    attempt("M:prep", 1001, True, forcing)
+    q.write_text("t,q\n1,0.5\n2,1.2\n3,0.9\n")          # run reads the partial file and "passes"
+    attempt("M:run", 2001, False, q, inputs=[forcing])
+    forcing.write_text("t,q\n1,0.5\n2,1.2\n3,0.9\n")    # prep retried: the forcing run read is gone
+    ev = attempt("M:prep", 3001, False, forcing)
+    assert ev["steps_missing"] == ["M:run"] and ev["stale_steps"] == ["M:run"]
+    assert ev["validation"] == "incomplete" and ev["receipts_verified"] is False
+    ev = attempt("M:run", 4001, False, q, inputs=[forcing])   # rerun on the good forcing
+    assert ev["validation"] == "passed" and ev["stale_steps"] == []
+    ev = attempt("M:prep", 5001, False, forcing)              # identical rewrite invalidates nothing
+    assert ev["validation"] == "passed"
+
+
+def test_same_second_failure_beats_a_warning_whatever_the_file_order(tmp_path):
+    ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki); a = approval.approve(tmp_path, by="auto")
+    out = tmp_path / "outputs" / "q.csv"; out.parent.mkdir(); out.write_text("t,q\n1,0.5\n2,1.2\n")
+    tool = str(tmp_path / "M" / "tools" / "run.py")
+    for rid, status in (("a_failed", "failed"), ("z_warning", "warning"), ("0_warning", "warning")):
+        receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3", command=["/usr/bin/python3", tool],
+                            cwd=str(tmp_path), started_at=1, finished_at=2, exit_code=0, inputs=[],
+                            outputs=[out], plan_step_id="M:run", approval_sha256=approval.approval_id(a),
+                            run_id=rid, validation={"status": status, "checks": []})
+    assert receipts.evidence(tmp_path, pj, a)["validation"] == "failed"
 
 
 def test_validate_outputs_rank1_aliases_all_zero_and_unaffirmed(tmp_path):
@@ -630,7 +709,7 @@ def test_failed_can_replan_and_coupling_graph_keeps_agent_todo(tmp_path):
     assert transition(State.FAILED_VALIDATION, "replan") is State.REPLAN_REQUIRED
     import yaml
     plan.emit_coupling_graph({"models": ["A"], "plans": []}, tmp_path / "g.yaml")
-    g = yaml.safe_load((tmp_path / "g.yaml").read_text())
+    g = yaml.safe_load((tmp_path / "g.yaml").read_text(encoding="utf-8"))
     assert "_TODO_for_agent" in g and "_TODO_for_execution" in g
 
 

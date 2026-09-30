@@ -210,7 +210,7 @@ def _triplet_count(ki) -> int:
                         return len(raw[key])
             return len(raw) if isinstance(raw, list) else 0
         return len(re.findall(r"^#{2,4}\s+|^\s*-\s+symptom\s*:",
-                              path.read_text(errors="replace"), re.MULTILINE))
+                              path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE))
     except (OSError, ValueError):
         return 0
 

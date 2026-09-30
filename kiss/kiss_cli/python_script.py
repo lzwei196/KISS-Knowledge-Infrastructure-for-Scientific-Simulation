@@ -50,7 +50,8 @@ def check(v, ki, contract, cfg, python, env=None, timeout=25):
         if cfg is None or not path.resolve().is_relative_to(Path(cfg.root).resolve()):
             raise ValueError('Declared runner must be in the configured workspace')
         runtime = subprocess.run([python, '-c', 'import json,sys;print(json.dumps([sys.prefix,sys.base_prefix]))'],
-                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, env=env, timeout=10)
+                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, errors='replace',
+                                 env=env, timeout=10)
         if runtime.returncode:
             raise ValueError('Workspace Python did not start')
         prefix, base = json.loads(runtime.stdout)
@@ -65,7 +66,7 @@ def check(v, ki, contract, cfg, python, env=None, timeout=25):
             try:
                 result = subprocess.run(v.probe_command, cwd=cwd, env=env,
                                         stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                        timeout=min(max(timeout, 1), 25))
+                                        errors='replace', timeout=min(max(timeout, 1), 25))
                 v.probe_returncode = result.returncode
                 v.probe_output = (result.stdout + '\n' + result.stderr).strip()[-16000:]
             except subprocess.TimeoutExpired as exc:

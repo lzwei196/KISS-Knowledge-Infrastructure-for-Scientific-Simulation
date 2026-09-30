@@ -327,7 +327,7 @@ C0–C4 source work is complete. Next is C5: integration and compiled Mac verifi
 
 C1 deliberately preserves existing manual-placement issuance semantics: it signs what is present as a new manual acquisition. Unlike served-data recovery, this can re-sign existing placed bytes after a changed request. A fresh manual-placement confirmation/replacement policy remains an explicit follow-up, not a claim that exact-request recovery rules already cover every acquisition path.
 
-C2 deliberately preserves shared final-evidence retry-history semantics: any bound failed historical run still blocks completion, even if a later permitted attempt passes. Defining explicit supersession without deleting history is a separate follow-up; no automatic retry or success promotion was introduced.
+(Superseded 2026-09-28 by the latest-attempt rule in shared receipts.evidence.) C2 deliberately preserved shared final-evidence retry-history semantics: any bound failed historical run still blocks completion, even if a later permitted attempt passes. Defining explicit supersession without deleting history is a separate follow-up; no automatic retry or success promotion was introduced.
 
 C3 preserves the current review UI and on-disk formats. It additionally refuses unshown/off-menu mutations and keeps a pending review on handled refresh failures. No cross-process transaction lock, crash-proof multi-file guarantee or compiled/live-provider acceptance is implied.
 

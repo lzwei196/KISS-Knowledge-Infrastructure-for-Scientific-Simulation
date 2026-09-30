@@ -4,7 +4,9 @@ The desktop app ships a known-good KI snapshot so it always starts offline.
 On each desktop launch this module checks the platform branch of GeoForge's
 public repository.  A changed library is downloaded into a versioned staging
 directory, checked with the same deterministic package verifier used by the
-Library import screen, and only then made active.
+Library import screen, and only then made active.  On Windows, a snapshot
+that would remove the Windows installation notes or recipes from the current
+library is reported as ``kept`` and not activated.
 
 Updates never touch chat projects, installed scientific software, input data,
 or user-imported KIs.  Old snapshots remain available while a running request
@@ -30,7 +32,7 @@ from typing import Callable
 from urllib.parse import quote, urlsplit
 
 from . import doctor, firstrun, settings, tls
-from .catalog import Catalog
+from .catalog import KI, Catalog, installation_platform
 
 
 REPOSITORY = "lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation"
@@ -74,8 +76,13 @@ def _atomic_json(path: Path, value: dict) -> None:
     temp.replace(path)
 
 
-def active_library_root() -> Path | None:
-    """Return the last activated snapshot, never a path supplied by JSON."""
+def active_library_root(reference: Path | None = None) -> Path | None:
+    """Return the last activated snapshot, never a path supplied by JSON.
+
+    With ``reference`` (the library bundled with this build), a Windows
+    snapshot that lacks installation guidance the reference ships is not
+    used: an older updater could activate one without the guard below.
+    """
     home = update_root()
     active = str(_read_json(home / "state.json").get("active_snapshot") or "")
     if not active or not all(c in "0123456789abcdef-" for c in active.lower()):
@@ -88,8 +95,70 @@ def active_library_root() -> Path | None:
         return None
     if ((candidate / "models").is_dir() and
             any((candidate / "models").glob("*/SKILL.md"))):
+        if (reference is not None and _guards_guidance() and
+                _lost_guidance(Path(reference), candidate)):
+            return None
         return candidate
     return None
+
+
+PLATFORM_LABELS = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
+
+
+def _guards_guidance() -> bool:
+    """Whether a snapshot may be refused for dropping install guidance.
+
+    Windows only: its notes and recipes live on the Windows branch, which the
+    canonical main library does not carry.  macOS and Linux keep activating
+    main as before; their gap belongs to the mac side, not this branch.
+    """
+    return installation_platform() == "windows"
+
+
+def _platform_guidance(library_root: Path) -> dict[str, set[str]]:
+    """This platform's installation notes and recipe per KI.
+
+    Resolved through ``catalog.KI`` so the check follows exactly the files the
+    installer reads on this machine.  A recipe renamed between
+    ``kiss.<platform>.yaml`` and ``kiss.<platform>.<arch>.yaml`` still counts.
+    """
+    platform = installation_platform()
+    models = library_root / "models"
+    out: dict[str, set[str]] = {}
+    if not platform or not models.is_dir():
+        return out
+    for path in models.iterdir():
+        if not (path / "SKILL.md").is_file():
+            continue
+        ki = KI(path.name, path)
+        kinds = out.setdefault(path.name, set())
+        if ki.installation_notes:
+            kinds.add(f"docs/install.{platform}.md")
+        manifest = ki.manifest
+        if manifest is not None and manifest.name != "kiss.yaml":
+            kinds.add(f"{platform} install recipe")
+    return out
+
+
+def _lost_guidance(before: Path, after: Path) -> list[str]:
+    """Guidance ``before`` ships for a KI that ``after`` keeps but without it.
+
+    File presence is compared rather than commit ancestry: it needs no
+    network, and platform notes live on platform branches that the canonical
+    library branch does not contain, so "newer" is not "complete".  A KI
+    removed upstream takes its notes with it and is reported as removed.
+    """
+    old = _platform_guidance(before)
+    new = _platform_guidance(after)
+    return sorted(f"{name}: {kind}" for name, kinds in old.items()
+                  if name in new for kind in kinds - new[name])
+
+
+def _guidance_fingerprint(library_root: Path) -> str:
+    rows = sorted(f"{name}: {kind}" for name, kinds in
+                  _platform_guidance(library_root).items() for kind in kinds)
+    return hashlib.sha256(
+        "\n".join([installation_platform(), *rows]).encode("utf-8")).hexdigest()
 
 
 def _file_digest(path: Path) -> str:
@@ -370,6 +439,27 @@ class UpdateManager:
                     "detail": finding.detail} for finding in warnings[:20]]
         return len(catalog), len(warnings), preview
 
+    def _refusal(self, revision: str, reference: str, lost: list[str]) -> dict:
+        platform = installation_platform()
+        label = PLATFORM_LABELS.get(platform, platform)
+        examples = ", ".join(lost[:5]) + (", …" if len(lost) > 5 else "")
+        return {
+            # Not "error": nothing failed, and the window must not blame the
+            # network or validation for a deliberate decision.
+            "state": "kept",
+            "summary": (f"GeoForge kept the current KI library because the "
+                        f"repository version would remove {label} installation "
+                        "guidance."),
+            "error": (f"The {self.branch} snapshot lacks {len(lost)} {label} "
+                      "installation notes or recipes that the current library "
+                      f"ships ({examples}), so it was not activated. Updates "
+                      "resume once the repository carries them."),
+            "refused": {"revision": revision, "reference": reference, "lost": lost},
+            # Nothing changed; do not show an earlier update's lists under it.
+            "added": [], "updated": [], "removed": [], "changes": [],
+            "warning_count": 0,
+        }
+
     def _run(self) -> None:
         checked_at = time.time()
         try:
@@ -377,7 +467,8 @@ class UpdateManager:
             route = self._proxy_url() or "direct"
             state_path = update_root() / "state.json"
             state = _read_json(state_path)
-            if (state.get("revision") == revision and active_library_root() is not None):
+            if (state.get("revision") == revision and
+                    active_library_root(self.current_library_root) is not None):
                 self._set(
                     state="up_to_date", checked_at=checked_at,
                     active_revision=revision,
@@ -385,8 +476,23 @@ class UpdateManager:
                     network_route=route, source_commit=self._source_commit,
                     added=[], updated=[], removed=[], changes=[],
                     unchanged_count=int(state.get("package_count") or 0),
+                    error=None, refused=None,
                 )
                 return
+            guard = _guards_guidance()
+            reference = ""
+            if guard:
+                # The same revision checked against the same library would be
+                # refused again; do not download ~90 MB on every launch to see it.
+                reference = _guidance_fingerprint(self.current_library_root)
+                refused = self.status().get("refused") or {}
+                if (refused.get("revision") == revision and
+                        refused.get("reference") == reference):
+                    self._set(checked_at=checked_at, network_route=route,
+                              source_commit=self._source_commit,
+                              **self._refusal(revision, reference,
+                                              list(refused.get("lost") or [])))
+                    return
 
             home = update_root()
             home.mkdir(parents=True, exist_ok=True)
@@ -397,6 +503,16 @@ class UpdateManager:
             try:
                 self._download(archive)
                 self._extract(archive, incoming)
+                # Windows install notes and recipes live only on the Windows
+                # branch; a main snapshot without them would silently take
+                # this machine's installation guidance away.
+                lost = (_lost_guidance(self.current_library_root, incoming)
+                        if guard else [])
+                if lost:
+                    self._set(checked_at=checked_at, network_route=route,
+                              source_commit=self._source_commit,
+                              **self._refusal(revision, reference, lost))
+                    return
                 package_count, warning_count, warnings = self._validate(incoming)
                 diff = _library_diff(self.current_library_root, incoming)
                 snapshot = home / "snapshots" / revision
@@ -428,7 +544,8 @@ class UpdateManager:
                     checked_at=checked_at, active_revision=revision,
                     network_route=route, source_commit=self._source_commit,
                     summary=summary, package_count=package_count,
-                    warning_count=warning_count, warnings=warnings, **diff)
+                    warning_count=warning_count, warnings=warnings,
+                    error=None, refused=None, **diff)
             finally:
                 archive.unlink(missing_ok=True)
                 if incoming.exists():

@@ -28,8 +28,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import flowgate, plan_review, projectrun, setup as setup_flow
+from .acquire import INTENT_LOCK as _ACQ_INTENT_LOCK
 
 APPROVAL_REQUEST_ID_PREFIX = plan_review.APPROVAL_REQUEST_ID_PREFIX
+# continue_now follows only setup finishing AFTER the user approved (after() below): never "auto"
+RUN_AFTER_SETUP = "Software verified. Starting your approved plan in a new session…"
 REPLAN_MARKER = "REPLAN_REQUIRED"
 INTAKE_MARKER = "GEOFORGE_INTAKE"
 _INTAKE_PATTERN = re.compile(
@@ -130,7 +133,9 @@ def main():
             print("GeoForge question command is unavailable outside its owning project session.", file=sys.stderr)
             return 3
         headers["X-GeoForge-Question-Token"] = question_token
-    body = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}).encode("utf-8")
+    body = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
+                       "turn_id": os.environ.get("GEOFORGE_TURN_ID", ""),
+                       "turn_project": os.environ.get("GEOFORGE_TURN_PROJECT", "")}).encode("utf-8")
     request = urllib.request.Request(
         endpoint, data=body, method="POST",
         headers=headers,
@@ -268,6 +273,16 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
     ctx = flow.states.FlowContext.load(project)
     S = flow.states.State
 
+    # A queued acquisition change never starts an agent from its background tick.
+    # Hand the saved user instruction to this next ordinary chat turn exactly once.
+    with _ACQ_INTENT_LOCK:
+        reason = _take_acquisition_replan(flow, ctx, project)
+        uncertain = _uncertain_acquisition_replan(flow, ctx, project)
+    if reason:
+        return Pre(names=list(ctx.selected_kis or names), replan_reason=reason)
+    if uncertain:
+        return Pre(names=list(ctx.selected_kis or names), message=uncertain)
+
     # Plan Review owns the consent transaction; only its approved result starts data work.
     chosen = set(ctx.selected_kis or names)
     review = plan_review.respond(project, action=action, pending=pending, note=note,
@@ -291,6 +306,7 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
         except (ValueError, OSError, KeyError):
             obs_access._atomic_json(Path(project) / '.geoforge/data-binding-status.json', {
                 'status': 'needs_review',
+                'approval': flow.approval.approval_id(flow.approval.read(project)),   # issue #6b
                 'message': 'Data binding failed: check the selected acquisition scope and intact file evidence. '
                            'Approval was saved, but dependent steps remain blocked.'})
         ctx.move("approved", {"approval": flow.approval.check(project)})
@@ -324,13 +340,13 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
         from . import acquire
         if action and str(action.get("request_id")) == acquire.MANUAL_REQUEST_ID \
                 and str(action.get("option_id")) == "modify":
-            # the manual-download card's "change the plan": drop the approval, replan now
-            setup_flow.clear_request(project)
-            flow.approval.revoke(project, "user asked to modify the plan while data was pending")
-            ctx.move("modify")
-            projectrun.set_stage(project, display_stage(flow, ctx.state), "Revising the plan")
-            return Pre(names=list(ctx.selected_kis or names), replan_reason=note or text or "user asked for changes")
+            return _request_acquisition_replan(flow, ctx, project, names,
+                                               note or text or "user asked for changes")
         result = acquire_then_continue(flow, ctx, project, setup_ok)
+        with _ACQ_INTENT_LOCK:
+            reason = _take_acquisition_replan(flow, ctx, project)
+        if reason:
+            return Pre(names=list(ctx.selected_kis or names), replan_reason=reason)
         if result["status"] == "done":
             return Pre(names=list(ctx.selected_kis or names), message=None)
         return Pre(names=list(ctx.selected_kis or names), message=_acquisition_message(result))
@@ -418,12 +434,37 @@ def acquire_then_continue(flow, ctx, project: Path, setup_ok: bool) -> dict:
     (server clip still processing), waiting (user must place files) or failed (BLOCKED).
     Serialized per project with the panel poll so two passes never overlap."""
     with _acq_lock(project):
+        if _reload(flow, ctx, project) is not flow.states.State.ACQUIRING:
+            from . import acquire
+            return acquire.status(project)          # a background pass already moved it on
         return _acquire_pass(flow, ctx, project, setup_ok)
 
 
-def _acquire_pass(flow, ctx, project: Path, setup_ok: bool) -> dict:
+def _reload(flow, ctx, project: Path):
+    """Adopt the Flow state on disk in the caller's context; another writer may have moved it."""
+    ctx.__dict__.update(flow.states.FlowContext.load(project).__dict__)
+    return ctx.state
+
+
+def _acquire_pass(flow, ctx, project: Path, setup_ok: bool, *, automatic_only: bool = False) -> dict:
     from . import acquire
-    result = acquire.run(project)
+    with _ACQ_INTENT_LOCK:
+        if _apply_acquisition_replan(flow, ctx, project):
+            return {"status": "replanning", "items": acquire.status(project).get("items") or {}}
+    result = acquire.run(project, automatic_only=True) if automatic_only else acquire.run(project)
+    # This short lock only serializes intent publication with the final state commit;
+    # network transfers never hold it. The long acquisition lock still owns all writes.
+    with _ACQ_INTENT_LOCK:
+        if _apply_acquisition_replan(flow, ctx, project):
+            return dict(result, status="replanning")
+        return _finish_acquire_pass(flow, ctx, project, setup_ok, result)
+
+
+def _finish_acquire_pass(flow, ctx, project: Path, setup_ok: bool, result: dict) -> dict:
+    # Never write a stale state back over a change made while the pass ran.
+    if _reload(flow, ctx, project) is not flow.states.State.ACQUIRING or flow.approval.check(project) != "OK" \
+            or result.get("approval_sha256") != flow.approval.approval_id(flow.approval.read(project)):
+        return {"status": "stale", "items": {}}
     state = result["status"]
     if state == "done":
         ctx.move("acquired", {"data_receipted": True})
@@ -435,9 +476,13 @@ def _acquire_pass(flow, ctx, project: Path, setup_ok: bool) -> dict:
     else:
         waiting = [k for k, v in result["items"].items() if v.get("status") == "waiting"]
         pending = [k for k, v in result["items"].items() if v.get("status") == "pending"]
+        summary = []
+        if pending:
+            summary.append("Fetching approved data: " + ", ".join(pending))
+        if waiting:
+            summary.append("Waiting for you to place: " + ", ".join(waiting))
         projectrun.set_stage(project, display_stage(flow, ctx.state),
-                             ("Waiting for you to place: " + ", ".join(waiting)) if waiting
-                             else ("Fetching approved data: " + ", ".join(pending)))
+                             ". ".join(summary) + ". Model execution has not started.")
     ctx.save()
     return result
 
@@ -458,13 +503,99 @@ _ACQ_RUN_LOCKS: dict[str, threading.Lock] = {}
 ACQ_POLL_SECONDS = 8.0
 
 
+def _apply_acquisition_replan(flow, ctx, project: Path) -> bool:
+    """Called only by the acquisition lock owner with the short intent lock held."""
+    from . import acquire, obs_access
+    intent = acquire.replan_intent(project)
+    if intent.get("status") != "queued":
+        return False
+    state = _reload(flow, ctx, project)
+    approval = flow.approval.approval_id(flow.approval.read(project))
+    if state is not flow.states.State.ACQUIRING or not approval \
+            or intent.get("approval_sha256") != approval or flow.approval.check(project) != "OK":
+        # A later approval must never inherit an earlier user's queued revocation.
+        intent["status"] = "stale"
+        obs_access._atomic_json(Path(project) / acquire.REPLAN_FILE, intent)
+        return False
+    setup_flow.clear_request(project)
+    flow.approval.revoke(project, "user asked to modify the plan while data was pending")
+    ctx.move("modify")
+    intent.update(status="applied", applied_flow_updated_at=ctx.updated_at)
+    obs_access._atomic_json(Path(project) / acquire.REPLAN_FILE, intent)
+    projectrun.set_stage(project, display_stage(flow, ctx.state), "Plan change saved; ready to revise")
+    projectrun.report(project, {"status": "waiting_for_user", "blocker": None,
+                               "summary": "Plan change saved. Send a message to revise the plan; no run has started."},
+                      source="flow")
+    return True
+
+
+def _take_acquisition_replan(flow, ctx, project: Path) -> str:
+    """Consume a completed deferred change, never a stale note from another Flow state."""
+    from . import acquire, obs_access
+    intent = acquire.replan_intent(project)
+    if intent.get("status") != "applied":
+        return ""
+    _reload(flow, ctx, project)
+    if ctx.state is not flow.states.State.PLANNING \
+            or ctx.updated_at != intent.get("applied_flow_updated_at"):
+        return ""
+    intent["status"] = "consumed"
+    obs_access._atomic_json(Path(project) / acquire.REPLAN_FILE, intent)
+    return str(intent.get("reason") or "user asked for changes")
+
+
+def _uncertain_acquisition_replan(flow, ctx, project: Path) -> str:
+    """Do not silently lose the note if a crash interrupted the final intent write.
+
+    Without the recorded resulting Flow timestamp, an unrelated replan is also
+    possible. Display the saved instruction for confirmation; never act on it.
+    """
+    from . import acquire, obs_access
+    intent = acquire.replan_intent(project)
+    if intent.get("status") != "queued" or ctx.state is not flow.states.State.PLANNING \
+            or flow.approval.read(project):
+        return ""
+    intent["status"] = "needs_confirmation"
+    obs_access._atomic_json(Path(project) / acquire.REPLAN_FILE, intent)
+    return ("The project is back in planning, but an interrupted update left this saved plan-change "
+            "request unconfirmed: " + str(intent.get("reason") or "user asked for changes")
+            + ". Please confirm or restate the change before I revise the plan. No run has started.")
+
+
+def _request_acquisition_replan(flow, ctx, project: Path, names: list[str], reason: str) -> Pre:
+    from . import acquire, obs_access
+    with _ACQ_INTENT_LOCK:
+        state = _reload(flow, ctx, project)
+        approval = flow.approval.approval_id(flow.approval.read(project))
+        if state is not flow.states.State.ACQUIRING or not approval or flow.approval.check(project) != "OK":
+            return Pre(names=list(ctx.selected_kis or names),
+                       message="Acquisition has changed. Check Project status before changing the plan.")
+        obs_access._atomic_json(Path(project) / acquire.REPLAN_FILE, {
+            "status": "queued", "approval_sha256": approval, "reason": reason,
+            "requested_at": time.time(),
+        })
+        lock = _acq_lock(project)
+        if lock.acquire(blocking=False):
+            try:
+                _apply_acquisition_replan(flow, ctx, project)
+                saved_reason = _take_acquisition_replan(flow, ctx, project)
+                if saved_reason:
+                    return Pre(names=list(ctx.selected_kis or names), replan_reason=saved_reason)
+            finally:
+                lock.release()
+        return Pre(names=list(ctx.selected_kis or names), message=(
+            "Your plan change is saved. The current transfer may finish, but no next input or model run "
+            "will start. GeoForge will return the project to planning when that transfer ends. "
+            "Then send a message to revise the plan using your saved request."))
+
+
 def _acq_lock(project: Path) -> threading.Lock:
     # ponytail: one lock per project for the process lifetime; the dict never shrinks
     with _ACQ_POLL_LOCK:
         return _ACQ_RUN_LOCKS.setdefault(str(Path(project).resolve()), threading.Lock())
 
 
-def poll_acquisition(project: Path, setup_ok: bool) -> str | None:
+def poll_acquisition(project: Path, setup_ok: bool, *, automatic_only: bool = False) -> str | None:
     """Advance an ACQUIRING project from a status poll (no user message needed).
 
     Rate-limited per project and never overlapping a chat-driven pass; safe to call
@@ -487,7 +618,7 @@ def poll_acquisition(project: Path, setup_ok: bool) -> str | None:
         ctx = flow.states.FlowContext.load(project)   # re-read under the lock
         if ctx.state is not flow.states.State.ACQUIRING:
             return None
-        return _acquire_pass(flow, ctx, project, setup_ok)["status"]
+        return _acquire_pass(flow, ctx, project, setup_ok, automatic_only=automatic_only)["status"]
     except Exception:  # noqa: BLE001 — a poll must never break the panel
         return None
     finally:
@@ -497,15 +628,32 @@ def poll_acquisition(project: Path, setup_ok: bool) -> str | None:
 def _acquisition_message(result: dict) -> str:
     state = result.get("status")
     items = result.get("items") or {}
-    if state == "waiting":
-        rows = [f"`{v.get('expected_path')}`" for v in items.values() if v.get("status") == "waiting"]
-        return ("**GeoForge needs you:** place the Baidu Pan dataset(s) at " + ", ".join(rows)
-                + ". The link and extraction code are in **Project status**. Then click "
-                "**Files are in place, continue**. Nothing runs until the files are there.")
-    if state == "pending":
-        rows = [f"{k} ({v.get('job_status')})" for k, v in items.items() if v.get("status") == "pending"]
-        return ("**GeoForge is fetching the approved data:** " + ", ".join(rows)
-                + ". Send any message to check again; the run starts when every input has a receipt.")
+    if state == "replanning":
+        return "Plan change saved. Send a message to revise the plan; no run has started."
+    if state == "stale":
+        return ("The acquisition state or approved plan changed during this pass. "
+                "Check Project status before continuing; this result cannot start a run.")
+    if state in {"waiting", "pending"}:
+        sections = []
+        automatic = []
+        for key, item in items.items():
+            if item.get("status") == "pending":
+                job = item.get("job_status")
+                label = job if isinstance(job, str) and job in {"queued", "running", "ready", "downloading"} else "pending"
+                automatic.append(f"{key} (last reported: {label})")
+        if automatic:
+            sections.append("**GeoForge is fetching the approved data:** " + ", ".join(automatic)
+                            + ". Automatic acquisition is separate from the manual inputs below. "
+                            "The run starts when every input has a receipt; if automatic acquisition "
+                            "finishes last, click **Start the approved run**.")
+        manual = [f"`{v.get('expected_path')}`" for v in items.values() if v.get("status") == "waiting"]
+        if manual:
+            sections.append("**GeoForge needs you:** place the selected manual dataset(s) at "
+                            + ", ".join(manual) + ". The links and extraction codes are in **Project status**. "
+                            "Then click **Files are in place, continue**.")
+        sections.append("Model execution has not started; required source data must be acquired first. "
+                        "KI input preparation and scientific checks still remain after acquisition.")
+        return "\n\n".join(sections)
     return "**Some approved data could not be fetched.** Use the card in the chat to retry or modify the plan."
 
 
@@ -619,6 +767,7 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
             extra += "\n" + obs_access.study_hint_block(
                 store.get("datasets") or [], goal, known.get("study_area"),
                 known.get("understanding"), known.get("process"))
+        extra += plan_review.settled_answers_block(project)   # outlives the 20-message chat window
         extra += ("\n[PLAN HANDOFF] If a planning decision needs the user, issue ONE request_user_action "
                   "(API tool, or the exact CLI QUESTION HANDOFF command above) "
                   "and stop for the user's answer. Ask before rewriting either full draft; "
@@ -965,6 +1114,17 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots)
         if errs:
             return _planning_failure(project, t, errs, repair=True)
+        if fs.database_access_mode == "off":
+            # DB gating: an old cached catalogue must not put Database data in a plan the
+            # user cannot acquire (access off or not activated)
+            from .acquire import ACQUIRABLE
+            pinned = [str(it.get("id")) for it in inv.get("items") or [] if isinstance(it, dict)
+                      and (it.get("dataset_id") or it.get("delivery") in ACQUIRABLE)]
+            if pinned:
+                return _planning_failure(project, t, [
+                    f"GeoForge Database access is off or not activated, but {', '.join(pinned)} "
+                    "pins a Database dataset. Use a public source, the user's own file or a KI "
+                    "method instead, or tell the user that this input needs the Database."], repair=True)
         # Every pinned GeoForge Database id becomes a verified fact on the item
         # (delivery, size, coverage) before the user sees the card.
         from . import obs_access
@@ -1004,7 +1164,23 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             fs.move("run_finished")
             fs.move("validated", {"receipts_verified": True, "validation": "passed"})
             projectrun.set_stage(project, display_stage(flow, fs.state), "Completed — every step has a verified receipt")
+            retried = ev.get("superseded_failures") or []
+            if retried:
+                # A passing retry supersedes a failure; the user still sees that it happened.
+                runs = "; ".join(f"{f.get('plan_step_id')} (`{' '.join(map(str, (f.get('command') or [])[-3:]))}`)"
+                                 for f in retried[:5])
+                return Result(message=(
+                    f"**Completed.** {len(retried)} earlier failed attempt{'s were' if len(retried) > 1 else ' was'} "
+                    f"superseded by a passing retry: {runs}. They stay in the run history (runs/evidence.json)."))
         else:
+            from .execution import stop_requested
+            if stop_requested(project):
+                # The user's Stop: resumable as it is, never rerun on its own.
+                projectrun.set_stage(project, display_stage(flow, state),
+                                     "Stopped by you — send a message to continue")
+                projectrun.report(project, {"status": "idle", "summary":
+                                  "Stopped by you — send a message to continue"}, source="flow")
+                return Result()
             missing = ev.get("steps_missing") or []
             done = len(ev.get("steps_passed") or [])
             projectrun.set_stage(project, display_stage(flow, state),
@@ -1019,6 +1195,18 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
                     "extraction code are in **Project status**. Place the files at "
                     f"`{pending.get('expected_path') or 'the path shown there'}`, then click "
                     "**Files are in place, continue** or reply here. The run waits until then."))
+            stale = ev.get("stale_steps") or []
+            unvouched = ev.get("unreceipted_artifacts") or []
+            if stale or (unvouched and not missing):
+                why = []
+                if stale:
+                    why.append("these steps passed on input files that were rewritten afterwards; rerun them: "
+                               + ", ".join(stale))
+                if unvouched:
+                    why.append("these files are not vouched for by a passing receipted run (left by a failed "
+                               "attempt or written outside run-tool); regenerate or remove them: "
+                               + ", ".join(f"`{f}`" for f in unvouched[:10]))
+                return Result(message="**GeoForge verification:** not complete yet — " + "; ".join(why) + ".")
             # The agent's prose is not evidence.  Say in the chat what the receipts say,
             # so a turn that describes work it never ran is contradicted right there.
             if t.started_at and (reply or "").strip() and _receipts_since(project, t.started_at) == 0:
@@ -1175,16 +1363,97 @@ def wrapper_access_roots(wrappers: dict | None) -> list[str]:
     return roots
 
 
-def _windows_bridge_command(mode: str) -> str:
+class WindowsLauncherPathError(RuntimeError):
+    """A launcher target that cmd.exe cannot be pointed at from a batch file."""
+
+
+# cmd.exe decodes a .cmd file in the console's *current* code page, which agents
+# change: Codex and Claude Code's PowerShell switch to 65001 before every command,
+# while a fresh console uses the OEM page (cp936 on Chinese Windows).  So a
+# launcher body is pure ASCII.  A non-ASCII target is named by its 8.3 alias, or
+# through an ASCII-named junction beside the launcher: cmd.exe expands %~dp0
+# itself, in Unicode, whatever the code page.
+_WINDOWS_BATCH_ENCODING = "ascii"
+_WINDOWS_TARGET_LINK = "geoforge-target"
+
+
+def _windows_short_path(path: str) -> str:
+    """The 8.3 alias of an existing ``path``; ``path`` itself when it has none."""
+    import ctypes
+    from ctypes import wintypes
+    # A private kernel32 handle, so these argtypes never leak to other callers.
+    get = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+    get.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    get.restype = wintypes.DWORD
+    size = get(path, None, 0)
+    if not size:
+        return path
+    buffer = ctypes.create_unicode_buffer(size)
+    written = get(path, buffer, size)
+    return buffer.value if 0 < written < size else path
+
+
+def _ensure_junction(link: Path, target: Path) -> bool:
+    """Point the junction ``link`` at directory ``target``; never touch a real folder."""
+    import os as _os
+    import stat as _stat
+    try:
+        import _winapi
+        wanted = _os.path.normcase(_os.path.realpath(target))
+        try:
+            info = _os.lstat(link)
+        except FileNotFoundError:
+            info = None
+        if info is not None:
+            if getattr(info, "st_reparse_tag", 0) != _stat.IO_REPARSE_TAG_MOUNT_POINT:
+                return False                  # a real file or folder: not ours to replace
+            if _os.path.normcase(_os.path.realpath(link)) == wanted:
+                return True
+            _os.rmdir(link)                   # removes the junction only, never its target
+        _winapi.CreateJunction(str(target), str(link))
+        return True
+    except (ImportError, OSError):
+        return False
+
+
+def _windows_batch_path(path: Path | str, launcher_dir: Path | None = None) -> str:
+    """Spell ``path`` in ASCII so cmd.exe reads it intact under any code page."""
+    import os as _os
+    text = str(path)
+    if _os.name != "nt" or text.isascii():
+        return text
+    short = _windows_short_path(text)
+    if short.isascii():
+        return short
+    target = Path(text)
+    # A venv's python.exe finds pyvenv.cfg one folder up, so link the venv root
+    # and keep Scripts\ below the junction; anything else links its own folder.
+    root = target.parent.parent if (target.parent.parent / "pyvenv.cfg").is_file() else target.parent
+    below = target.relative_to(root)
+    if (launcher_dir is not None and below.as_posix().isascii() and
+            _ensure_junction(Path(launcher_dir) / _WINDOWS_TARGET_LINK, root)):
+        return f"%~dp0{_WINDOWS_TARGET_LINK}\\{below}"
+    raise WindowsLauncherPathError(
+        f"GeoForge cannot create its Windows agent launcher: {text} contains "
+        "non-ASCII characters, the drive provides no 8.3 short name for it, and "
+        f"no junction could be created in {launcher_dir}. Move GeoForge (or the "
+        "Python it runs) to a folder whose path uses only English letters and "
+        "digits, or enable 8.3 names on that drive.")
+
+
+def _windows_bridge_command(mode: str, launcher_dir: Path | None = None) -> str:
     """Use the packaged console bridge; a system Python is not a prerequisite."""
     import sys
     if getattr(sys, "frozen", False):
         helper = Path(sys.executable).parent / "geoforge-agent-bridge.exe"
         if not helper.is_file():
             raise OSError("Bundled geoforge-agent-bridge.exe is missing")
-        return f'"{helper}" {mode}'
+        return f'"{_windows_batch_path(helper, launcher_dir)}" {mode}'
     script = "geoforge-flow.py" if mode == "flow" else "geoforge-db.py"
-    return f'"{sys.executable}" "%~dp0{script}"'
+    # UTF-8 stdio like the frozen bridge: agents read these pipes as UTF-8, and a
+    # cp936 pipe cannot even encode every character a result may carry.
+    # %~dp0 is expanded by cmd.exe itself, so only the interpreter path is spelt here.
+    return f'"{_windows_batch_path(sys.executable, launcher_dir)}" -X utf8 "%~dp0{script}"'
 
 
 def _launcher_path() -> Path | None:
@@ -1209,18 +1478,20 @@ def _launcher_path() -> Path | None:
                 _os.chmod(d, 0o755)
             except OSError:
                 pass
+            encoding = "utf-8"
             if _os.name == "nt":
                 script = d / "geoforge-flow.py"
                 p = d / "geoforge-flow.cmd"
-                body = '@echo off\n' + _windows_bridge_command("flow") + ' %*\n'
+                body = '@echo off\n' + _windows_bridge_command("flow", d) + ' %*\n'
+                encoding = _WINDOWS_BATCH_ENCODING
                 if (not script.is_file() or
                         script.read_text(encoding="utf-8", errors="replace") != _FLOW_HELPER):
                     script.write_text(_FLOW_HELPER, encoding="utf-8")
             else:
                 p = d / "geoforge-flow"
                 body = _FLOW_HELPER
-            if not p.is_file() or p.read_text(encoding="utf-8", errors="replace") != body:
-                p.write_text(body, encoding="utf-8")
+            if not p.is_file() or p.read_text(encoding=encoding, errors="replace") != body:
+                p.write_text(body, encoding=encoding)
             if _os.name != "nt":
                 p.chmod(0o755)
             return p
@@ -1270,13 +1541,14 @@ def _database_launcher_path() -> Path | None:
             if _os.name == "nt":
                 script = directory / "geoforge-db.py"
                 launcher = directory / "geoforge-db.cmd"
-                body = '@echo off\n' + _windows_bridge_command("database") + ' %*\n'
+                body = '@echo off\n' + _windows_bridge_command("database", directory) + ' %*\n'
                 if (not script.is_file() or
                         script.read_text(encoding="utf-8", errors="replace") != helper_body):
                     script.write_text(helper_body, encoding="utf-8")
                 if (not launcher.is_file() or
-                        launcher.read_text(encoding="utf-8", errors="replace") != body):
-                    launcher.write_text(body, encoding="utf-8")
+                        launcher.read_text(encoding=_WINDOWS_BATCH_ENCODING,
+                                           errors="replace") != body):
+                    launcher.write_text(body, encoding=_WINDOWS_BATCH_ENCODING)
             else:
                 launcher = directory / "geoforge-db"
                 if (not launcher.is_file() or

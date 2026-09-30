@@ -39,7 +39,7 @@ def test_two_models_do_not_inherit_first_outputs_or_last_runtime(tmp_path):
     (package / "SKILL.md").write_text("output=KISSPATH_OUTPUTS/result.nc\n")
     live = project / "models" / "B" / "ki"
     port.materialise(package, live, b)
-    text = (live / "SKILL.md").read_text()
+    text = (live / "SKILL.md").read_text(encoding="utf-8")
     assert (project / "outputs" / "B" / "result.nc").as_posix() in text
     assert str(project / "outputs" / "A") not in text
 

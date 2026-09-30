@@ -75,10 +75,11 @@ const send=async()=>sent.push({text:$('#msg').value, action:PENDING_ACTIONS.get(
     open:$('#actionpick').classList.contains('open')}));
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
+    # Node always writes UTF-8; the locale default (GBK on Chinese Windows) cannot decode it.
     result = subprocess.run(
         [NODE, "-e", program],
         input=json.dumps({"request": request, "operation": operation, "selection": selection, "note": note}),
-        capture_output=True, text=True, check=True, timeout=10,
+        capture_output=True, text=True, encoding="utf-8", check=True, timeout=10,
     )
     return json.loads(result.stdout)
 
@@ -98,7 +99,7 @@ def test_final_review_keeps_every_input_in_expandable_groups():
                "\nconst rows=Array.from({length:12},(_,i)=>({id:'input-'+i,how:'provide'}));"
                "process.stdout.write(renderPlanReview({data:{total:24,fetch:rows,you:rows,run:[]}},''));")
     html = subprocess.run([NODE, "-e", program], capture_output=True, text=True,
-                          check=True, timeout=10).stdout
+                          encoding="utf-8", check=True, timeout=10).stdout
     assert html.count("Show remaining 4 inputs") == 2
     assert html.count("<code>input-11</code>") == 2
     assert html.count("<code>input-0</code>") == 2

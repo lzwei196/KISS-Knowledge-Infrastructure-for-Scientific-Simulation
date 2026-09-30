@@ -456,8 +456,10 @@ def missing_imports(mods: list[str], python: str, cwd: Path | None = None,
         env.setdefault("SDL_VIDEODRIVER", "dummy")
         env.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
         env.setdefault("MPLBACKEND", "Agg")
+        # Locale decoding like the child's own stdout; a stray byte from an
+        # import-time banner must not escape as an uncaught UnicodeDecodeError.
         r = subprocess.run([python, "-c", probe], capture_output=True, text=True,
-                           timeout=180, cwd=str(cwd) if cwd else None, env=env)
+                           errors="replace", timeout=180, cwd=str(cwd) if cwd else None, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return list(mods)
     if r.returncode or "__GEOFORGE_IMPORT_PROBE_DONE__" not in r.stdout.splitlines():
@@ -742,7 +744,8 @@ def _probe_julia_project(ki, cfg, timeout: int) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             [str(julia), f"--project={project}", "-e", code],
-            capture_output=True, text=True, errors="replace", timeout=timeout,
+            # Julia writes UTF-8 whatever the Windows code page is.
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
             cwd=str(project), env=env,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
@@ -850,9 +853,11 @@ def _check_r_package(v, contract, man, cfg, timeout, env):
                      if not any(secret in k.upper() for secret in
                                 ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
         with tempfile.TemporaryDirectory(prefix="kiss-r-package-probe-") as empty:
+            # R >= 4.2 is UTF-8 native on Windows too, so its pipes are UTF-8, not cp936.
             result = subprocess.run(v.probe_command, cwd=empty, env=clean_env,
                                     stdin=subprocess.DEVNULL, capture_output=True,
-                                    text=True, timeout=min(timeout, 25))
+                                    text=True, encoding="utf-8", errors="replace",
+                                    timeout=min(timeout, 25))
         v.probe_output = (result.stdout + result.stderr)[-12000:]
         v.probe_returncode = result.returncode
         v.linked = v.responds = result.returncode == 0 and rpackage.MARK in result.stdout.splitlines()
@@ -885,9 +890,11 @@ def _check_julia_package(v, contract, cfg, timeout, env):
                                 ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
         clean_env.update(jpackage.startup_env(depot))
         with tempfile.TemporaryDirectory(prefix="kiss-julia-package-probe-") as empty:
+            # Julia prints UTF-8 on every platform; the module path it reports is compared below.
             result = subprocess.run(v.probe_command,cwd=empty,env=clean_env,
                                     stdin=subprocess.DEVNULL,capture_output=True,
-                                    text=True,timeout=jpackage.IMPORT_TIMEOUT_SECONDS)
+                                    text=True,encoding="utf-8",errors="replace",
+                                    timeout=jpackage.IMPORT_TIMEOUT_SECONDS)
         v.probe_output = (result.stdout+result.stderr)[-12000:]
         v.probe_returncode = result.returncode
         lines=result.stdout.splitlines()
@@ -934,10 +941,12 @@ def _check_octave_package(v,contract,cfg,timeout,env):
                          OCTAVE_EXEC_HOME=str(runtime.parent.parent),
                          OPENBLAS_NUM_THREADS="1",OMP_NUM_THREADS="1")
         with tempfile.TemporaryDirectory(prefix="kiss-octave-probe-",dir=root) as empty:
-            script=Path(empty)/"load_toolbox.m"; script.write_text(octpackage.PROBE)
+            script=Path(empty)/"load_toolbox.m"; script.write_text(octpackage.PROBE,encoding="utf-8")
             v.probe_command=[str(runtime),*octpackage.probe_args(script,source,packages,c)]
+            # Octave prints its UTF-8 strings unconverted; the class paths are compared below.
             result=subprocess.run(v.probe_command,cwd=empty,env=clean_env,stdin=subprocess.DEVNULL,
-                                  capture_output=True,text=True,timeout=min(timeout,25))
+                                  capture_output=True,text=True,encoding="utf-8",errors="replace",
+                                  timeout=min(timeout,25))
         v.probe_output=result.stdout[-16000:]+result.stderr[-2000:]
         v.probe_returncode=result.returncode
         lines=result.stdout.splitlines()

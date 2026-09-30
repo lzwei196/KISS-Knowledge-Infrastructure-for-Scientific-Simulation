@@ -74,12 +74,13 @@ def test_bridge_forwards_unicode_question_and_refuses_unavailable_session(monkey
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows child-tree cleanup")
 def test_shared_execution_stops_child_tree():
-    child = mock.Mock(pid=12345)
+    child = mock.MagicMock(spec=subprocess.Popen)
+    child.pid = 12345
     child.communicate.return_value = ("last output", "")
     with mock.patch("kiss_cli.processes.terminate_process_tree") as terminate:
-        output, detail = execution._stop_process(child)
+        stdout, stderr, detail = execution._stop_process(child)
     terminate.assert_called_once_with(child)
-    assert output == "last output" and not detail
+    assert stdout == "last output" and stderr == "" and not detail
     child.communicate.assert_called_once_with(timeout=5)
 
 
@@ -99,11 +100,80 @@ PROV.providers=[{name:'api:deepseek',label:'DeepSeek'},{name:'cli:codex',label:'
 assert.match(settingsProviderOptions('api:deepseek'), /value="api:deepseek" selected>DeepSeek/);
 assert.equal((settingsProviderOptions('api:deepseek').match(/value="api:deepseek"/g)||[]).length,1);
 """
-    result = subprocess.run([shutil.which("node"), "-e", script], capture_output=True, text=True)
+    result = subprocess.run([shutil.which("node"), "-e", script], capture_output=True, text=True,
+                            encoding="utf-8")
     assert result.returncode == 0, result.stderr
     startup = page[page.index("[STATUS,PROV]=await Promise.all"):page.index("},750);")]
     assert "drawLocalSettings()" in startup
     assert "drawProxyProviderSettings()" in startup
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows sharing violations")
+def test_a_new_turn_waits_out_a_watcher_reading_the_generation(tmp_path):
+    import threading
+    first = execution.begin_turn(tmp_path)
+    # Python opens without FILE_SHARE_DELETE: replacing the file fails until closed.
+    reader = open(tmp_path / execution.TURN_FILE, encoding="utf-8")
+    threading.Timer(0.2, reader.close).start()
+    try:
+        second = execution.begin_turn(tmp_path)
+    finally:
+        reader.close()
+    assert execution.current_turn_id(tmp_path) == second != first
+
+
+def test_turn_rotation_retries_only_windows_sharing_violations_and_is_bounded(tmp_path):
+    with mock.patch.object(Path, "replace", side_effect=PermissionError(13, "denied")) as replace, \
+         mock.patch.object(execution.time, "sleep") as sleep:
+        with pytest.raises(PermissionError):
+            execution.begin_turn(tmp_path)
+    # POSIX rename is not blocked by readers: a PermissionError is real at once.
+    assert replace.call_count == (40 if os.name == "nt" else 1)
+    assert sleep.call_count == replace.call_count - 1
+
+
+def test_an_unlaunchable_command_line_is_named_in_full(tmp_path):
+    missing = str(tmp_path / "no-such-build-tool")
+    line = f"{missing} CC=gcc"                              # a Windows command-line string
+    run = execution.run_process(line, cwd=tmp_path, env=dict(os.environ), timeout=5)
+    assert run.status == "not_launched" and repr(line) in run.detail
+    run = execution.run_process([missing, "CC=gcc"], cwd=tmp_path, env=dict(os.environ), timeout=5)
+    assert run.status == "not_launched" and repr(missing) in run.detail
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows tray")
+def test_tray_exit_stops_everything_first_and_exits_even_if_that_fails(monkeypatch):
+    from kiss_cli import windows_tray
+    calls = []
+    monkeypatch.setattr(windows_tray.os, "_exit", lambda code: calls.append(("exit", code)))
+    windows_tray._exit(lambda: calls.append("stop"))
+    windows_tray._exit(mock.Mock(side_effect=RuntimeError("cleanup failed")))
+    windows_tray._exit(None)
+    assert calls == ["stop", ("exit", 0), ("exit", 0), ("exit", 0)]
+
+
+def test_frozen_windows_app_gives_the_tray_exit_the_desktop_stop(monkeypatch, tmp_path):
+    import kiss_cli
+    from kiss_cli import app, gui
+    tray = SimpleNamespace(start=mock.Mock())
+    monkeypatch.setitem(sys.modules, "webview", None)       # the frozen Windows path
+    monkeypatch.setitem(sys.modules, "kiss_cli.windows_tray", tray)
+    monkeypatch.setattr(kiss_cli, "windows_tray", tray, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gui, "serve", mock.Mock(return_value=0))
+    assert app.run_app(tmp_path) == 0
+    assert tray.start.call_args.kwargs["on_exit"] is gui._stop_everything
+
+
+def test_long_job_rule_uses_nohup_on_windows_even_with_a_foreign_setsid():
+    from kiss_cli import prompt
+    with mock.patch.object(prompt.shutil, "which", return_value=r"C:\msys64\usr\bin\setsid.exe"):
+        assert prompt._long_job_detach() == ("nohup" if os.name == "nt" else "setsid nohup")
+    with mock.patch.object(prompt.shutil, "which", return_value=None):
+        assert prompt._long_job_detach() == "nohup"
+    assert ("setsid" in prompt.HEADLESS_LONG_JOB_RULE) == (
+        bool(shutil.which("setsid")) and os.name != "nt")
 
 
 @pytest.mark.parametrize("name", ["python.exe", "Rscript.exe", "julia.exe", "node.exe",

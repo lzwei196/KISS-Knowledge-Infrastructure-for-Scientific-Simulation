@@ -98,7 +98,7 @@ def test_bundled_catalogue_matches_its_manifest():
     manifest = data / "MANIFEST.json"
     if not manifest.is_file():
         pytest.skip("server uses its live catalogue; no desktop snapshot present")
-    entries = json.loads(manifest.read_text())["files"]
+    entries = json.loads(manifest.read_text(encoding="utf-8"))["files"]
     assert entries
     for relative, expected in entries.items():
         path = (data / relative).resolve()

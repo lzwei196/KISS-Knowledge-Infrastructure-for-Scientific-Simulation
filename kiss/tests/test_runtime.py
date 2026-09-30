@@ -17,11 +17,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, install_locations, kimi_security, mcp, observatory, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, runnable, sessions, settings, setup, shellenv, skilllib, software_audit, tls
+from kiss_cli import api, app as desktop_app, calibration, execution, clipboard, gui, harness_runtime, install, install_locations, kimi_security, mcp, observatory, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, runnable, sessions, settings, setup, shellenv, skilllib, software_audit, tls
 from kiss_cli.catalog import Catalog
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
+
+
+def _process_run(completed):
+    """A recorded subprocess result as the shared launcher reports it."""
+    return execution.ProcessRun(
+        "succeeded" if completed.returncode == 0 else "failed",
+        completed.returncode, completed.stdout or "", completed.stderr or "",
+        process_started=True)
 
 class ProviderHealthTests(unittest.TestCase):
     def setUp(self):
@@ -629,7 +637,7 @@ class ProviderHealthTests(unittest.TestCase):
                 roles={"binaries": root / "binaries"},
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree",
+                    api.subprocess, "Popen",
                     side_effect=PermissionError(13, "Permission denied", str(tool))):
                 output = api.execute_tool(
                     "run_setup_command",
@@ -706,8 +714,8 @@ print(MARKER, len(text), implementation.__file__)
 
     def test_pyinstaller_specs_collect_harness_as_python_not_only_data(self):
         source = Path(__file__).parents[1]
-        mac = (source / "GeoForgeDesktop.spec").read_text()
-        generic = (source / "KISS.spec").read_text()
+        mac = (source / "GeoForgeDesktop.spec").read_text(encoding="utf-8")
+        generic = (source / "KISS.spec").read_text(encoding="utf-8")
         for spec in (mac, generic):
             self.assertIn("ki_tools_common.harness.ki_harness", spec)
             self.assertIn("ki_tools_common.harness.ki_attention", spec)
@@ -770,9 +778,12 @@ print(MARKER, len(text), implementation.__file__)
                 binary.parent.mkdir(parents=True, exist_ok=True)
                 binary.write_text("test executable")
                 binary.chmod(0o755)
+            # UTF-8 stdio only, so the "—" lines decode exactly; the preflight's
+            # own file IO still runs under the real locale (no -X utf8).
             result = subprocess.run(
                 [sys.executable, str(live / "preflight_check.py")],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env=dict(os.environ, PYTHONIOENCODING="utf-8"),
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("SOFTWARE PREFLIGHT PASSED", result.stdout)
@@ -1741,7 +1752,7 @@ class ClipboardTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_native_window_keeps_pywebview_edit_menu_on_main_thread(self):
-        source = (Path(__file__).parents[1] / "kiss_cli" / "app.py").read_text()
+        source = (Path(__file__).parents[1] / "kiss_cli" / "app.py").read_text(encoding="utf-8")
         self.assertIn("webview.settings['SHOW_DEFAULT_MENUS'] = True", source)
         self.assertIn("webview.start()", source)
         self.assertNotIn("webview.start(_install_edit_menu)", source)
@@ -1784,7 +1795,7 @@ class SessionProjectTests(unittest.TestCase):
             self.assertEqual(project.parent, selected.resolve())
             self.assertTrue(project.name.endswith(f"--{session['id']}"))
             pointer = json.loads(
-                (root / "sessions" / f"{session['id']}.json").read_text())
+                (root / "sessions" / f"{session['id']}.json").read_text(encoding="utf-8"))
             self.assertEqual(pointer["project_root"], str(project))
             loaded = sessions.load(root, session["id"])
             self.assertEqual(sessions.project_path(root, loaded), project)
@@ -1845,7 +1856,7 @@ class SessionProjectTests(unittest.TestCase):
                     "name": "DSSAT", "x": [2010, 2011], "y": [8338, 8102],
                 }],
             }, output)
-            self.assertIn("<svg", output.read_text())
+            self.assertIn("<svg", output.read_text(encoding="utf-8"))
             self.assertIn("artifacts/yield.svg", gui._artifact_state(project))
             resolved, ctype = gui._resolve_artifact(
                 root, session["id"], "artifacts/yield.svg")
@@ -1865,7 +1876,7 @@ class SessionProjectTests(unittest.TestCase):
                     {"name": "LAI", "x": [0, 1], "y": [0, 4], "axis": "right"},
                 ],
             }, output)
-            svg = output.read_text()
+            svg = output.read_text(encoding="utf-8")
             self.assertIn("LAI (right axis)", svg)
             self.assertIn("rotate(90)", svg)
             self.assertNotIn("-960", svg)
@@ -1968,7 +1979,7 @@ class SessionProjectTests(unittest.TestCase):
                     ],
                 }, SimpleNamespace(root=ki_root), cfg, project_mode=True,
             )
-            svg = (project / "artifacts" / "growth.svg").read_text()
+            svg = (project / "artifacts" / "growth.svg").read_text(encoding="utf-8")
             self.assertIn("created growth.svg", result)
             self.assertIn("Leaf area (right axis)", svg)
             self.assertIn("160", svg)
@@ -1989,7 +2000,7 @@ class SessionProjectTests(unittest.TestCase):
                     root, session, {"role": "user", "text": f"message {i}"})
             sessions.save(root, session)
             loaded = sessions.load(root, session["id"])
-            archived = (project / "memory" / "transcript.jsonl").read_text().splitlines()
+            archived = (project / "memory" / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
 
             self.assertEqual(len(loaded["messages"]), sessions.MAX_MESSAGES)
             self.assertEqual(loaded["message_count"], sessions.MAX_MESSAGES + 5)
@@ -2084,7 +2095,7 @@ class SessionProjectTests(unittest.TestCase):
 
             self.assertTrue(legacy.exists())
             self.assertTrue((project / "session.json").exists())
-            self.assertIn("old message", (project / "memory" / "transcript.jsonl").read_text())
+            self.assertIn("old message", (project / "memory" / "transcript.jsonl").read_text(encoding="utf-8"))
 
     def test_delete_archives_project_instead_of_erasing_files(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2153,7 +2164,7 @@ class SessionProjectTests(unittest.TestCase):
             run_ki, cfg = gui.Handler._session_workspace(fake_handler, project, ki)
             project = project.resolve()
 
-            materialised = (run_ki.root / "SKILL.md").read_text()
+            materialised = (run_ki.root / "SKILL.md").read_text(encoding="utf-8")
             self.assertEqual(cfg.roles["binaries"], shared.roles["binaries"])
             self.assertEqual(cfg.roles["home"], shared.roles["home"])
             self.assertEqual(cfg.roles["forcing"], project / "inputs" / "forcing")
@@ -2173,7 +2184,7 @@ class SessionProjectTests(unittest.TestCase):
             saved = paths.KissConfig.load(model_home)
             saved.roles["static"] = deck
             saved.roles["binaries"] = project / "untrusted-binaries"
-            (model_home / paths.CONFIG_NAME).write_text(saved.dumps())
+            (model_home / paths.CONFIG_NAME).write_text(saved.dumps(), encoding="utf-8")
             rebound = gui.Handler._session_config(fake_handler, project, ki)
             self.assertEqual(rebound.roles["static"], deck)
             self.assertEqual(rebound.roles["binaries"], shared.roles["binaries"])
@@ -2182,7 +2193,7 @@ class SessionProjectTests(unittest.TestCase):
             # shared paths and newly shipped tools reach existing projects.
             (run_ki.root / "SKILL.md").write_text("stale generated copy\n")
             refreshed, _ = gui.Handler._session_workspace(fake_handler, project, ki)
-            self.assertNotIn("stale", (refreshed.root / "SKILL.md").read_text())
+            self.assertNotIn("stale", (refreshed.root / "SKILL.md").read_text(encoding="utf-8"))
 
     def test_session_overlay_reuses_missing_local_assets_without_replacing_code(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2484,7 +2495,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("os._exit(0)", source)
 
     def test_environment_selfcheck_proves_the_harness_before_providers(self):
-        source = (Path(__file__).parents[1] / "kiss_cli" / "gui.py").read_text()
+        source = (Path(__file__).parents[1] / "kiss_cli" / "gui.py").read_text(encoding="utf-8")
         self.assertIn("[1/6] KI harness contract", source)
         self.assertIn("harness_runtime.status", source)
 
@@ -2493,12 +2504,12 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Do not ask them to approve the work again", gui.SCOPE_FIRST_RULES)
 
     def test_cli_model_picker_has_native_default_and_starts_disabled(self):
-        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
+        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text(encoding="utf-8")
         self.assertIn("CLI default", page)
         self.assertIn("Auto KI", page)
 
     def test_chat_stream_hides_keepalives_and_explains_real_disconnects(self):
-        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
+        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text(encoding="utf-8")
         self.assertIn('replaceAll("\\u200b","")', page)
         self.assertIn("GEOFORGE_INTAKE", page)
         self.assertIn('(?:-->|$)/g,"")', page)
@@ -2512,7 +2523,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn('<script src="/i18n.js"></script>', page)
         self.assertIn('data-language-toggle', page)
         self.assertIn('GeoForgeI18n.isChineseText(text)', page)
-        bridge = (Path(__file__).parents[1] / "kiss_cli" / "web" / "clipboard.js").read_text()
+        bridge = (Path(__file__).parents[1] / "kiss_cli" / "web" / "clipboard.js").read_text(encoding="utf-8")
         self.assertIn("/api/clipboard", bridge)
         self.assertIn("contextmenu", bridge)
         self.assertIn("e.metaKey||e.ctrlKey", bridge)
@@ -2593,14 +2604,14 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertNotIn("MCPPICK=new Set(), busy=false", page)
         self.assertIn("/api/skills", page)
         self.assertIn("/skill-name", page)
-        self.assertIn("create_project_plot", (Path(__file__).parents[1] / "kiss_cli" / "api.py").read_text())
+        self.assertIn("create_project_plot", (Path(__file__).parents[1] / "kiss_cli" / "api.py").read_text(encoding="utf-8"))
         self.assertIn("chat-artifact", page)
         self.assertIn("/artifact?path=", page)
         self.assertIn("renderMarkdownTables", page)
         self.assertIn(".md-table", page)
         self.assertIn("Some providers double-escape Markdown", page)
         self.assertIn("AUTOMATIC SKILL USE AND INLINE RESULTS", gui.AUTOMATIC_SKILL_RULES)
-        self.assertIn("SKILLS SELECTED BY THE USER", gui.SESSION_PROJECT_RULES + skilllib.prompt_block([]) + (Path(__file__).parents[1] / "kiss_cli" / "skilllib.py").read_text())
+        self.assertIn("SKILLS SELECTED BY THE USER", gui.SESSION_PROJECT_RULES + skilllib.prompt_block([]) + (Path(__file__).parents[1] / "kiss_cli" / "skilllib.py").read_text(encoding="utf-8"))
         self.assertIn('id="datapanel"', page)
         self.assertIn('id="viewpanel"', page)
         self.assertIn('id="openview" disabled', page)
@@ -2646,7 +2657,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("USER-FACING RESPONSE", gui.RESPONSE_PRESENTATION_RULES)
         self.assertIn("SIMPLIFIED CHINESE", gui.response_language_rules("请运行这个模型"))
         self.assertIn("latest message", gui.response_language_rules("Run this model"))
-        locale = (Path(__file__).parents[1] / "kiss_cli" / "web" / "i18n.js").read_text()
+        locale = (Path(__file__).parents[1] / "kiss_cli" / "web" / "i18n.js").read_text(encoding="utf-8")
         self.assertIn('"New chat": "新建对话"', locale)
         self.assertIn('"Data for this run": "本次运行的数据"', locale)
         self.assertIn('"Resolve with agent": "让 Agent 解决"', locale)
@@ -2662,7 +2673,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Configure for Codex", page)
 
     def test_library_is_for_browse_import_and_verification(self):
-        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "library.html").read_text()
+        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "library.html").read_text(encoding="utf-8")
         self.assertIn("Browse, import, and verify KIs", page)
         self.assertIn("Check &amp; Import", page)
         self.assertIn("KI package check", page)
@@ -2710,7 +2721,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertTrue(all(isinstance(phase["node_ids"], list)
                             for phase in detail["story"]["phases"]))
         page = (Path(__file__).parents[1] / "kiss_cli" / "web" /
-                "observatory.html").read_text()
+                "observatory.html").read_text(encoding="utf-8")
         self.assertIn("14 scientific domains", page)
         self.assertIn("/api/observatory", page)
         self.assertIn("Scientific coupling", page)
@@ -2729,7 +2740,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertNotIn('SESSIONS[0]?.id', page)
 
     def test_agent_setup_has_a_separate_human_handoff_page(self):
-        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "setup.html").read_text()
+        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "setup.html").read_text(encoding="utf-8")
         self.assertIn("The agent reads this KI and its KDT diagnostics", page)
         self.assertIn("/api/setup-agent", page)
         self.assertIn("/api/setup-resume", page)
@@ -2766,7 +2777,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("discover_existing", page)
         self.assertIn("will not overwrite the existing software", page)
         self.assertNotIn('req.expected_path||["download","licence"]', page)
-        chat = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
+        chat = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text(encoding="utf-8")
         self.assertIn("kiss.draft.", chat)
 
 
@@ -3011,15 +3022,15 @@ class InstallLocationTests(unittest.TestCase):
             live = workspace / "ki"
             live.mkdir(parents=True)
             cfg = paths.KissConfig.default(workspace)
-            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps())
+            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
 
             value = install_locations.record(
                 "VIC", workspace, cfg, ki_root=live, verified=True)
 
             outer = json.loads(
-                (workspace / install_locations.RECORD_FILE).read_text())
+                (workspace / install_locations.RECORD_FILE).read_text(encoding="utf-8"))
             inner = json.loads(
-                (live / install_locations.RECORD_FILE).read_text())
+                (live / install_locations.RECORD_FILE).read_text(encoding="utf-8"))
             self.assertEqual(outer, inner)
             self.assertEqual(outer["workspace"], str(workspace.resolve()))
             self.assertEqual(outer["binaries"], str(cfg.roles["binaries"]))
@@ -3060,7 +3071,7 @@ class InstallLocationTests(unittest.TestCase):
             install_locations.record("Demo", workspace, cfg, verified=True)
 
             saved = json.loads(
-                (workspace / install_locations.RECORD_FILE).read_text())
+                (workspace / install_locations.RECORD_FILE).read_text(encoding="utf-8"))
             self.assertEqual(saved["installation_mode"], "existing")
             self.assertEqual(saved["existing_path"], str(existing))
             self.assertTrue(saved["verified"])
@@ -3141,7 +3152,7 @@ class InstallStatusTests(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.write_text("compiled model")
             cfg = paths.KissConfig.default(workspace)
-            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps())
+            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
             (workspace / "status.json").write_text(json.dumps({
                 "model": "VIC", "ok": True,
                 "steps": [{"name": "preflight", "ok": True,
@@ -3192,7 +3203,7 @@ class InstallStatusTests(unittest.TestCase):
                  mock.patch.object(gui.handoff, "write", return_value=[]):
                 gui.run_install(ki, man, root / "work", emitted.append, root)
 
-            status = json.loads((root / "work" / "status.json").read_text())
+            status = json.loads((root / "work" / "status.json").read_text(encoding="utf-8"))
             self.assertEqual(status["primary_error"]["name"], "acquire[build]")
             self.assertIn("no such tag", status["primary_error"]["detail"])
             preflight = next(s for s in status["steps"] if s["name"] == "preflight")
@@ -3212,7 +3223,7 @@ class AgentSetupTests(unittest.TestCase):
 
             target = setup.prepare_common(cfg, root / "repo")
 
-            installed = (target / "ki_tools_common" / "__init__.py").read_text()
+            installed = (target / "ki_tools_common" / "__init__.py").read_text(encoding="utf-8")
             # Replacements are embedded in Python source, so paths use forward
             # slashes even on Windows (native backslashes could become escapes).
             self.assertIn(cfg.roles["outputs"].as_posix(), installed)
@@ -3259,54 +3270,71 @@ class AgentSetupTests(unittest.TestCase):
             self.assertIn("installation has not failed", shown["message"])
             self.assertIn("AI Settings", shown["message"])
 
-    def test_subprocess_runner_is_noninteractive_and_kills_tree_on_timeout(self):
-        class TimedOutProcess:
-            pid = 43210
-            returncode = -1
+    def test_shared_runner_is_noninteractive_and_kills_tree_on_timeout(self):
+        process = mock.MagicMock(spec=subprocess.Popen)
+        process.pid, process.returncode = 43210, None
+        process.stdout = process.stderr = None
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["build"], 1),
+            ("partial stdout", "partial stderr"),
+        ]
+        with mock.patch.object(execution.subprocess, "Popen", return_value=process) as popen,              mock.patch("kiss_cli.processes.terminate_process_tree") as terminate,              mock.patch.object(execution, "kill_tree") as posix_tree:
+            run = execution.run_process(["build"], cwd=".", env={}, timeout=1)
 
-            def __init__(self):
-                self.communications = 0
-
-            def communicate(self, timeout=None):
-                self.communications += 1
-                if self.communications == 1:
-                    raise subprocess.TimeoutExpired(["build"], timeout)
-                return "partial stdout", "partial stderr"
-
-            def kill(self):
-                return None
-
-        process = TimedOutProcess()
-        with mock.patch.object(api.subprocess, "Popen", return_value=process) as popen, \
-             mock.patch.object(api, "_terminate_process_tree") as terminate:
-            with self.assertRaises(subprocess.TimeoutExpired) as caught:
-                api._run_subprocess_tree(
-                    ["build"], cwd=".", env={}, timeout=1)
-
-        terminate.assert_called_once_with(process)
-        self.assertEqual(caught.exception.output, "partial stdout")
-        self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(run.status, "timed_out")
+        self.assertEqual(run.stdout, "partial stdout")
         if os.name == "nt":
+            terminate.assert_called_once_with(process)
+            self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
             self.assertEqual(
                 popen.call_args.kwargs["creationflags"],
                 getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
             )
         else:
+            posix_tree.assert_called_once()
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows process trees")
+    def test_windows_timeout_kills_the_pinned_snapshot_not_a_taskkill_walk(self):
+        from kiss_cli import processes
+        order = mock.Mock()
+        process = SimpleNamespace(pid=54321, kill=order.kill)
+        order.descendants.side_effect = [[(11, 1000)], [(12, 1001)]]
+        with mock.patch.object(processes, "_windows_creation_time", return_value=777), \
+             mock.patch.object(processes, "windows_descendants", order.descendants), \
+             mock.patch.object(processes, "terminate_snapshot", order.terminate), \
+             mock.patch.object(processes.subprocess, "run") as taskkill:
+            processes.terminate_process_tree(process)
+
+        # Snapshot, then our own handle, then whatever the root started meanwhile,
+        # pinned to the root's creation time; taskkill never walks parent PIDs.
+        self.assertEqual(order.mock_calls, [
+            mock.call.descendants(54321, strict=True),
+            mock.call.kill(),
+            mock.call.descendants(54321, root_created=777),
+            mock.call.terminate([(11, 1000), (12, 1001)]),
+        ])
+        taskkill.assert_not_called()
 
     @unittest.skipUnless(os.name == "nt", "Windows taskkill process trees")
     def test_windows_timeout_uses_taskkill_tree_force(self):
+        # Only when no process snapshot can be taken at all.
+        from kiss_cli import processes
         process = SimpleNamespace(pid=54321, kill=mock.Mock())
         completed = subprocess.CompletedProcess([], 0)
-        with mock.patch.object(
-                api.subprocess, "run", return_value=completed) as taskkill:
-            api._terminate_process_tree(process)
+        with mock.patch.object(processes, "_windows_creation_time", return_value=None), \
+             mock.patch.object(processes, "windows_descendants",
+                               side_effect=OSError("no process table")), \
+             mock.patch.object(
+                processes.subprocess, "run", return_value=completed) as taskkill:
+            processes.terminate_process_tree(process)
 
         command = taskkill.call_args.args[0]
         self.assertEqual(command[-4:], ["/PID", "54321", "/T", "/F"])
         self.assertIs(taskkill.call_args.kwargs["stdin"], subprocess.DEVNULL)
         self.assertIs(taskkill.call_args.kwargs["stdout"], subprocess.DEVNULL)
         self.assertIs(taskkill.call_args.kwargs["stderr"], subprocess.DEVNULL)
+        process.kill.assert_not_called()
 
     def test_api_setup_command_inherits_its_provider_proxy(self):
         with tempfile.TemporaryDirectory() as td:
@@ -3317,8 +3345,8 @@ class AgentSetupTests(unittest.TestCase):
                 root=root, python=sys.executable,
                 roles={"binaries": root / "binaries"},
             )
-            completed = subprocess.CompletedProcess(
-                ["git", "--version"], 0, stdout="git version test\n", stderr="")
+            completed = execution.ProcessRun(
+                "succeeded", 0, stdout="git version test\n", stderr="")
 
             def routed(provider, env):
                 self.assertEqual(provider, "api:deepseek")
@@ -3326,7 +3354,7 @@ class AgentSetupTests(unittest.TestCase):
 
             with mock.patch.object(
                     settings, "with_provider_proxy", side_effect=routed) as route, \
-                 mock.patch.object(api, "_run_subprocess_tree", return_value=completed) as run:
+                 mock.patch.object(execution, "run_process", return_value=completed) as run:
                 result = api.execute_tool(
                     "run_setup_command", {"argv": ["git", "--version"]},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -3353,9 +3381,9 @@ class AgentSetupTests(unittest.TestCase):
                 root=work, python=sys.executable,
                 roles={"binaries": work / "binaries"},
             )
-            completed = subprocess.CompletedProcess(
-                ["file", str(binary)], 0, stdout="model: executable\n", stderr="")
-            with mock.patch.object(api, "_run_subprocess_tree", return_value=completed):
+            completed = execution.ProcessRun(
+                "succeeded", 0, stdout="model: executable\n", stderr="")
+            with mock.patch.object(execution, "run_process", return_value=completed):
                 result = api.execute_tool(
                     "run_setup_command", {"argv": ["file", str(binary)]},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -3797,7 +3825,7 @@ class AgentSetupTests(unittest.TestCase):
                     None, ki, ki, SimpleNamespace(python=sys.executable),
                     root, lambda _piece: True,
                 )
-            status = json.loads((root / "status.json").read_text())
+            status = json.loads((root / "status.json").read_text(encoding="utf-8"))
             self.assertTrue(ok)
             self.assertTrue(status["ok"])
             self.assertTrue(status["agent_setup"])
@@ -4203,7 +4231,7 @@ class AgentSetupTests(unittest.TestCase):
             cfg = paths.KissConfig.default(project)
             cfg.python = sys.executable
             cfg.roles.update(ki_tools_common=common, binaries=binaries)
-            (ki_root.parent / paths.CONFIG_NAME).write_text(cfg.dumps())
+            (ki_root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
             ki = SimpleNamespace(name="Demo", root=ki_root)
 
             wrote = api.execute_tool(
@@ -4361,7 +4389,7 @@ class AgentSetupTests(unittest.TestCase):
                 [str(tool), "-m", "venv", "venv39"], 0,
                 stdout="created", stderr="",
             )
-            with mock.patch.object(api, "_run_subprocess_tree", return_value=completed) as run:
+            with mock.patch.object(execution, "run_process", return_value=_process_run(completed)) as run:
                 output = api.execute_tool(
                     "run_setup_command", {
                         "argv": ["binaries\\tools\\python.exe", "-m", "venv", "venv39"],
@@ -4385,7 +4413,7 @@ class AgentSetupTests(unittest.TestCase):
             )
             completed = subprocess.CompletedProcess(
                 ["git", "--version"], 0, stdout="ok", stderr="")
-            with mock.patch.object(api, "_run_subprocess_tree", return_value=completed) as run:
+            with mock.patch.object(execution, "run_process", return_value=_process_run(completed)) as run:
                 output = api.execute_tool(
                     "run_setup_command", {
                         "argv": ["git", "--version"],
@@ -4427,9 +4455,9 @@ class AgentSetupTests(unittest.TestCase):
                     ki, cfg, setup_mode=True, setup_context=context,
                 )
             with mock.patch.object(
-                    api, "_run_subprocess_tree",
-                    return_value=subprocess.CompletedProcess(
-                        [str(model), "--version"], 0, stdout="DART 11.24.1", stderr="")):
+                    execution, "run_process",
+                    return_value=execution.ProcessRun(
+                        "succeeded", 0, stdout="DART 11.24.1", stderr="")):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": [str(model), "--version"]},
                     ki, cfg, setup_mode=True, setup_context=context,
@@ -4476,9 +4504,9 @@ class AgentSetupTests(unittest.TestCase):
             context = {"installation_only": True}
 
             with mock.patch.object(
-                    api, "_run_subprocess_tree",
-                    return_value=subprocess.CompletedProcess(
-                        [str(build), "nompi"], 0, stdout="built", stderr="")):
+                    execution, "run_process",
+                    return_value=execution.ProcessRun(
+                        "succeeded", 0, stdout="built", stderr="")):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": [str(build), "nompi"]},
                     ki, cfg, setup_mode=True, setup_context=context,
@@ -4511,7 +4539,7 @@ class AgentSetupTests(unittest.TestCase):
                 stdout="generated", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command",
                     {"argv": [str(generator), "-d", str(grammar)]},
@@ -4534,7 +4562,7 @@ class AgentSetupTests(unittest.TestCase):
                 stdout="win_bison 2.5.25", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command",
                     {"argv": ["win_bison.exe", "--version"]},
@@ -4559,7 +4587,7 @@ class AgentSetupTests(unittest.TestCase):
                 [str(make), "all"], 0, stdout="built", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command",
                     {"argv": [str(make), "all"]},
@@ -4588,7 +4616,7 @@ class AgentSetupTests(unittest.TestCase):
                 stdout="extracted", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command",
                     {"argv": [str(extractor), "x", str(installer)]},
@@ -4615,7 +4643,7 @@ class AgentSetupTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 argv, 0, stdout="created", stderr="")
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {
                         "argv": argv,
@@ -4668,7 +4696,7 @@ class AgentSetupTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 argv, 0, stdout="installed", stderr="")
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": argv},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -4710,7 +4738,7 @@ class AgentSetupTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 argv, 0, stdout="digest  msys2-base.tar.xz", stderr="")
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": argv},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -4750,7 +4778,7 @@ class AgentSetupTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 argv, 0, stdout="built", stderr="")
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": argv},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -4764,7 +4792,7 @@ class AgentSetupTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {"argv": [str(bash), str(script)]},
                     SimpleNamespace(root=ki_root), cfg, setup_mode=True,
@@ -4811,7 +4839,7 @@ class AgentSetupTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 ["git", "--version"], 0, stdout="git version", stderr="")
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {
                         "argv": ["git", "--version"],
@@ -5010,7 +5038,7 @@ class AgentSetupTests(unittest.TestCase):
                 stdout="compiled", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command", {
                         "argv": [str(compiler), "-Iinclude", "-c", str(source)],
@@ -5036,7 +5064,7 @@ class AgentSetupTests(unittest.TestCase):
                 stdout="Python 3.9.13", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 output = api.execute_tool(
                     "run_setup_command",
                     {"argv": [str(python), "--version"]},
@@ -5068,7 +5096,7 @@ class AgentSetupTests(unittest.TestCase):
                 0, stdout="generated", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed):
+                    execution, "run_process", return_value=_process_run(completed)):
                 result = api.execute_tool(
                     "run_setup_command", {
                         "argv": [sys.executable, str(generator),
@@ -5094,7 +5122,7 @@ class AgentSetupTests(unittest.TestCase):
                 [str(binary), "--help"], 0, stdout="usage", stderr="",
             )
             with mock.patch.object(
-                    api, "_run_subprocess_tree", return_value=completed) as run:
+                    execution, "run_process", return_value=_process_run(completed)) as run:
                 output = api.execute_tool(
                     "run_setup_command", {
                         "argv": [str(binary), "--help"],
@@ -5334,7 +5362,7 @@ class PlatformParityTests(unittest.TestCase):
             self.assertEqual(setup._install_command(["gfortran"]), "")
 
     def test_prompt_does_not_call_them_mac_tools_on_other_platforms(self):
-        source = Path(setup.__file__).read_text()
+        source = Path(setup.__file__).read_text(encoding="utf-8")
         self.assertNotIn("Mac tools", source)
         self.assertIn("system tools", source)
 

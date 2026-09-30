@@ -4,9 +4,16 @@ Without this, a test that reaches ``obs_access.search_catalogue`` would read the
 activation token from the macOS Keychain, page the live catalogue, and write the
 app-level store under Application Support.
 """
+import platform
+
 import pytest
 
 from kiss_cli import obs_access
+
+# On Windows the first platform.uname() in a process shells out to ``ver``
+# through subprocess.Popen. Warm the cache now, so tests that replace Popen
+# with a fixture count only the launches the code under test makes.
+platform.uname()
 
 
 @pytest.fixture(autouse=True)

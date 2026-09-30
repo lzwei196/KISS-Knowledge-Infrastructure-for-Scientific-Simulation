@@ -141,6 +141,35 @@ def test_final_handoff_waits_for_settled_choices_and_preserves_prior_answers(pla
     assert (plan, inventory) == before
 
 
+@pytest.mark.parametrize("mode", ["off", "snapshot", "direct"])
+def test_period_and_validation_are_separate_evidence_based_decisions(planning_case, mode):
+    # The regression is missing instructions delivered to the agent, not a
+    # claim that a provider will obey the contract without a live acceptance run.
+    text = contracts.planning_block(*planning_case, database_access_mode=mode)
+    for rule in (
+        "[STUDY DESIGN — ONE DECISION]",
+        "Ask the simulation period separately from the validation method/source",
+        "Never bundle a date range and an evaluation dataset into one option",
+        "A KI worked example is not a date-range recommendation",
+        "Do not infer earliest/latest available years from an example",
+        "requested period, forcing coverage, observation coverage and spin-up",
+        "Offer a custom period",
+        "do not silently shorten the simulation to the observation overlap",
+        "national/regional statistics are not site-scale validation",
+        "If coverage has not been checked, say it is unverified",
+    ):
+        assert rule in text
+
+
+@pytest.mark.parametrize("mode", ["off", "disabled", "snapshot", "direct"])
+def test_study_design_does_not_turn_database_metadata_into_consent(planning_case, mode):
+    text = contracts.planning_block(*planning_case, database_access_mode=mode)
+    assert "Offer GeoForge Database candidates only when the host says access is activated" in text
+    assert "Public-source and user-provided alternatives remain valid without Database access" in text
+    assert "Manual delivery does not change scientific coverage" in text
+    assert "Do not fetch data to answer this question" in text
+
+
 @pytest.mark.parametrize("database_mode,wrappers", [
     ("disabled", None),
     ("snapshot", None),

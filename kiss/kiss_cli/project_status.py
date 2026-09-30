@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import copy
+import os
 import threading
 import time
 import os
@@ -88,10 +89,21 @@ def _evidence_stamp(project: Path, flow) -> tuple:
                 if isinstance(item, dict) and item.get("path"):
                     p = Path(item["path"])
                     files.add(p if p.is_absolute() else project / p)
+    # Unreceipted work in progress under inputs/ is not evidence yet and may still be
+    # growing: the host's dot-prefixed temp downloads (.subset-*, *.part) and a manual
+    # copy waiting for the user's handoff. Receipted files were added above.
+    waiting = tuple(str(project / str(entry["expected_path"])) + os.sep
+                    for entry in _dict(acquire.status(project).get("items")).values()
+                    if isinstance(entry, dict) and entry.get("status") == "waiting" and entry.get("expected_path"))
     for sub in ("inputs", "outputs", "artifacts", "calibration"):
         folder = project / sub
-        if folder.is_dir():
-            files.update(p for p in folder.rglob("*") if p.is_file())
+        if not folder.is_dir():
+            continue
+        paths = folder.rglob("*")
+        if sub == "inputs":
+            cut = len(str(folder))
+            paths = (p for p in paths if not (str(p) + os.sep).startswith(waiting) and os.sep + "." not in str(p)[cut:])
+        files.update(p for p in paths if p.is_file())
     return tuple(_file_stamp(path) for path in sorted(files))
 
 
@@ -133,12 +145,17 @@ def _read(path: Path) -> dict:
         return {}
 
 
-def _age(timestamp, now: float) -> int | None:
+def _time(timestamp) -> float:
     try:
         stamp = float(timestamp)
-        return max(0, int(now - stamp)) if math.isfinite(stamp) and stamp > 0 else None
     except (TypeError, ValueError, OverflowError):
-        return None
+        return 0.0
+    return stamp if math.isfinite(stamp) and stamp > 0 else 0.0
+
+
+def _age(timestamp, now: float) -> int | None:
+    stamp = _time(timestamp)
+    return max(0, int(now - stamp)) if stamp else None
 
 
 def _observation(source: str, timestamp, now: float, summary: str) -> dict:
@@ -146,7 +163,57 @@ def _observation(source: str, timestamp, now: float, summary: str) -> dict:
             "summary": summary}
 
 
-def _data_summary(pd: dict | None) -> dict:
+def _acquisition_progress(acquisition: dict, *, state: str, approval: str,
+                          plan_data: dict | None) -> dict:
+    """Small current-approval display; never infer scientific readiness.
+
+    Exceptions can contain credentials or signed download URLs. This summary
+    uses fixed error messages, known state labels and inventory identifiers;
+    raw errors, remote URLs, extraction codes and job responses are not copied.
+    """
+    counts = {"automatic_pending": 0, "automatic_failed": 0,
+              "automatic_acquired": 0, "manual_waiting": 0}
+    result = {"active": False, "status": None, "automatic": [], "manual": [], "counts": counts}
+    if state != "ACQUIRING" or approval != "OK" or not acquisition:
+        return result
+    result["active"] = True
+    overall = acquisition.get("status")
+    result["status"] = overall if isinstance(overall, str) and overall in {
+        "running", "pending", "waiting", "failed", "done"} else "unknown"
+    by_id = {str(row.get("id")): row for row in (plan_data or {}).get("items") or []}
+    for iid, entry in _dict(acquisition.get("items")).items():
+        row = by_id.get(str(iid))
+        if not row or not isinstance(entry, dict):
+            continue
+        base = {"id": row["id"], "dataset_id": row.get("dataset_id")}
+        if entry.get("status") == "waiting":
+            path = entry.get("expected_path")
+            # Only host filesystem locations belong here, never remote links.
+            path = path if isinstance(path, str) and "://" not in path else None
+            result["manual"].append({**base, "status": "waiting", "expected_path": path})
+            counts["manual_waiting"] += 1
+        elif row.get("delivery") in {"served", "subset"}:
+            status = entry.get("status")
+            error = "Acquisition failed; inspect the data request details." if entry.get("error") else None
+            job = entry.get("job_status")
+            job = job if isinstance(job, str) and job in {"queued", "running", "ready", "downloading"} else None
+            if row.get("status") == "acquired":
+                status, job, error = "done", None, None
+                counts["automatic_acquired"] += 1
+            elif status == "failed":
+                counts["automatic_failed"] += 1
+                job = None
+            elif status == "done":
+                status, job = "unconfirmed", None
+                error = "Delivery was recorded, but a current acquisition receipt is not confirmed."
+            else:
+                status = "pending"
+                counts["automatic_pending"] += 1
+            result["automatic"].append({**base, "status": status, "job_status": job, "error": error})
+    return result
+
+
+def _data_summary(pd: dict | None, acquisition: dict | None = None) -> dict:
     rows = (pd or {}).get("items") or []
     counts = (pd or {}).get("counts") or {}
     available = sum(counts.get(s, 0) for s in ("present_unverified", "acquired", "produced"))
@@ -155,6 +222,9 @@ def _data_summary(pd: dict | None) -> dict:
     binding_failed = _dict((pd or {}).get("binding_status")).get("status") == "needs_review"
     if bad or coverage_gap or binding_failed:
         severity, label = "block", "Data needs attention"
+    elif (_dict((acquisition or {}).get("counts")).get("automatic_pending")
+          and _dict((acquisition or {}).get("counts")).get("manual_waiting")):
+        severity, label = "warn", "Fetching data automatically; other inputs need you"
     elif counts.get("waiting_for_you"):
         severity, label = "warn", "Waiting for your input"
     elif available:
@@ -193,14 +263,23 @@ def _technical(preparation: dict, plans: list, summary: dict) -> dict:
 
 def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dict,
               request: dict | None, proof: dict, approval: str, acquisition: dict,
-              activity: dict, errors: list, observed_at, now: float) -> dict:
+              activity: dict, errors: list, observed_at, now: float,
+              acquisition_progress: dict, data_acquired: bool) -> dict:
     active = activity.get("state") == "running" and activity.get("process_alive") is True
     complete = (state == "COMPLETED" and approval == "OK"
                 and proof.get("receipts_verified") is True and proof.get("validation") == "passed")
     needs_approval = state in {"APPROVED", "ACQUIRING", "EXECUTING", "VERIFYING", "COMPLETED",
                                "SETUP_REQUIRED", "SETUP_RUNNING", "SETUP_VERIFIED"}
+    ready = False
     if errors:
         status, summary, actor = "failed", "Project evidence is unreadable; inspect status details.", "user"
+    elif (request and request.get("kind") == "download"
+          and acquisition_progress["counts"]["automatic_pending"]
+          and acquisition_progress["counts"]["manual_waiting"]):
+        automatic = ", ".join(str(r["id"]) for r in acquisition_progress["automatic"] if r["status"] == "pending")
+        manual = ", ".join(str(r["id"]) for r in acquisition_progress["manual"])
+        status, actor = "working", "host_and_user"
+        summary = f"Fetching approved data: {automatic}. Also waiting for you to place: {manual}. Model execution has not started."
     elif request:
         status, summary, actor = "waiting_for_user", str(request.get("title") or "One thing needs you"), "user"
     elif needs_approval and approval != "OK":
@@ -221,6 +300,15 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
         status, summary, actor = "working", "Agent turn active; this alone does not prove model progress.", "agent"
     elif report.get("status") == "failed":
         status, summary, actor = "failed", "The agent reported a problem; scientific outcome is unconfirmed.", "agent"
+    elif (state in {"EXECUTING", "SETUP_REQUIRED"} and data_acquired
+          and activity.get("state") not in {"running", "finishing"}
+          and _time(report.get("updated_at")) <= _time(observed_at)):
+        # Acquisition finished in the background: no turn or report since Flow moved on.
+        # Only a user message starts the run (or the software setup it needs first).
+        ready, status, actor = True, "waiting_for_user", "user"
+        summary = ("Approved data acquired; the run has not started. Use Start the approved run."
+                   if state == "EXECUTING" else "Approved data acquired; the scientific software must "
+                   "be set up first. Use Start the approved run.")
     else:
         status, summary, actor = "idle", "Project unfinished; no active agent turn is observed.", "agent"
         if state in {"", "NEW"} and not report.get("goal") and not plan.get("goal"):
@@ -231,6 +319,7 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
               "flow_state": state or None, "science_complete": complete,
               "next_actor": actor, "source": "Flow and signed evidence" if state else "Unverified project report",
               "observed_at": observed_at, "age_seconds": _age(observed_at, now),
+              "acquisition": acquisition_progress, "ready_to_start": ready,
               "reported_status": report.get("status"), "reported_summary": report.get("summary"),
               "errors": errors}
     result.pop("blocker", None)
@@ -287,18 +376,22 @@ def snapshot(project: Path, *, report: dict | None = None, plans: list | None = 
                 project, flow, pj, inv, approval, ctx.enforcement.value, now)
     except Exception as error:  # unreadable/corrupt proof is unknown, never success
         errors.append(f"{type(error).__name__}: {error}")
-    pd = None
+    pd, acquired = None, False
     if flow and isinstance(pj, dict) and isinstance(inv, dict):
         try:
             pd = _plan_data(project, flow, pj, inv, proof, request, acquisition, downloads)
+            acquired = {str(i["id"]) for i in acquire.needed(pj, inv, project)} <= {
+                str(r["id"]) for r in pd["items"] if r["status"] == "acquired"}
         except Exception as error:
             errors.append(f"Data status unavailable: {type(error).__name__}: {error}")
-    summary = _data_summary(pd)
+    acquisition_progress = _acquisition_progress(acquisition, state=state, approval=approval, plan_data=pd)
+    summary = _data_summary(pd, acquisition_progress)
     if errors:
         summary.update(severity="block", label="Status evidence needs inspection")
     progress = _progress(report, state=state, stage=stage, selected=selected, plan=pj or {},
                          request=request, proof=proof, approval=approval, acquisition=acquisition,
-                         activity=activity, errors=errors, observed_at=observed_at, now=now)
+                         activity=activity, errors=errors, observed_at=observed_at, now=now,
+                         acquisition_progress=acquisition_progress, data_acquired=acquired)
     observations = []
     if observed_at:
         observations.append(_observation("Flow state", observed_at, now, state))
@@ -420,4 +513,11 @@ def _plan_data(project: Path, flow, pj: dict, inv: dict, proof: dict,
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     binding_status = obs_access._read_snapshot(project / '.geoforge/data-binding-status.json') or {}
+    if binding_status.get("status") == "needs_review":
+        # Issue #6b: the notice belongs to the approval it was written under. After a revoke or a
+        # new approval it is stale. A notice from before the stamp shows only while approval holds.
+        current = (flow.approval.approval_id(flow.approval.read(project))
+                   if flow.approval.check(project) == "OK" else None)
+        if current is None or binding_status.get("approval", current) != current:
+            binding_status = {}
     return {"items": rows, "counts": counts, "total": len(rows), 'binding_status': binding_status}

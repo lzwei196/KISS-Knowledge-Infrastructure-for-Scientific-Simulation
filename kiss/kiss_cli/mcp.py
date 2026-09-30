@@ -105,7 +105,8 @@ def configure_github_for_codex() -> dict:
         raise OSError("Install the official github-mcp-server binary or Docker first")
     result = subprocess.run(
         [codex, "mcp", "add", "github", "--", *server],
-        capture_output=True, text=True, timeout=60, errors="replace",
+        # Codex writes UTF-8, not the Windows ANSI code page.
+        capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace",
     )
     if result.returncode:
         detail = (result.stderr or result.stdout).strip()[-1000:]

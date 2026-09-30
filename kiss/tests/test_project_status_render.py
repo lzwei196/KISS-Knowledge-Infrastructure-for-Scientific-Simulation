@@ -71,9 +71,10 @@ vm.runInContext(extract('const sizeLabel=','let SUBSET_TIMER=null;'),context);
 
 
 def evaluate(data=None, **extra):
+    # Node always writes UTF-8; the locale default (GBK on Chinese Windows) cannot decode it.
     completed = subprocess.run(
         [NODE, "-e", RUNNER, str(PAGE)],
-        input=json.dumps({"data": data, **extra}), text=True,
+        input=json.dumps({"data": data, **extra}), text=True, encoding="utf-8",
         capture_output=True, check=True, timeout=15,
     )
     return json.loads(completed.stdout)

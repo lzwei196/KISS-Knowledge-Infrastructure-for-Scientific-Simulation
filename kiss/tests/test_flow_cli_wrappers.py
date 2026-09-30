@@ -72,7 +72,7 @@ def test_run_tool_refused_before_approval_and_writes_receipt_after(tmp_path, cap
     out = capsys.readouterr().out
     assert rc == 0 and "[RECEIPT]" in out
     summary = json.loads(out.split("[RECEIPT] ", 1)[1].strip().splitlines()[0])
-    rec = json.loads(Path(summary["receipt"]).read_text())
+    rec = json.loads(Path(summary["receipt"]).read_text(encoding="utf-8"))
     assert rec["plan_step_id"] == step and rec["exit_code"] == 0 and summary["validation"] == "passed"
     # a tool outside tools/ or a step not in the plan is refused
     assert cli.main(["run-tool", "--step", step, "M", "SKILL.md"]) == 3
@@ -108,7 +108,7 @@ def test_run_tool_uses_only_environment_from_the_approved_step(
     monkeypatch.setenv("TEST_API_KEY", "must-not-leak")
     rc = cli.main(["run-tool", "--step", step["id"], "M", "tools/env.py"])
     assert rc == 0 and "[RECEIPT]" in capsys.readouterr().out
-    observed = json.loads((project / "outputs" / "env.json").read_text())
+    observed = json.loads((project / "outputs" / "env.json").read_text(encoding="utf-8"))
     assert observed == {"ki": str(ki.root.resolve()), "secret": False}
 
 

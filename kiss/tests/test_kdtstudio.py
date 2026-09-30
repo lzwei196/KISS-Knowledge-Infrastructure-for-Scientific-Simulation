@@ -51,7 +51,7 @@ class KdtStudioTests(unittest.TestCase):
         self.assertTrue(root.resolve().is_relative_to(self.parent.resolve()))
         self.assertEqual(kdtstudio.job(created["id"])["model_name"], "My Model")
         self.assertEqual(kdtstudio.job(created["id"])["ki_kind"], "process_model")
-        path_contract = json.loads((root / "runs" / "desktop-paths.json").read_text())
+        path_contract = json.loads((root / "runs" / "desktop-paths.json").read_text(encoding="utf-8"))
         self.assertEqual(path_contract["workspace"], str(root))
         self.assertEqual(path_contract["kdt_engine"], str(self.engine.resolve()))
         with self.assertRaises(ValueError):
@@ -241,9 +241,9 @@ class KdtStudioTests(unittest.TestCase):
         )
         created = self._create(ki_kind="task_workflow")
         result = kdtstudio.run_probe(created["id"])
-        report = json.loads((Path(result["root"]) / "probe" / "probe_report.json").read_text())
+        report = json.loads((Path(result["root"]) / "probe" / "probe_report.json").read_text(encoding="utf-8"))
         self.assertEqual(Path(report["source_root"]), Path(result["root"]) / "probe" / "source")
-        scaffold = json.loads((Path(result["candidate"]) / "knowledge_infrastructure.yaml").read_text())
+        scaffold = json.loads((Path(result["candidate"]) / "knowledge_infrastructure.yaml").read_text(encoding="utf-8"))
         self.assertEqual(scaffold["package"]["kind"], "task_workflow")
         names = [stage["name"] for stage in scaffold["pipeline"]["stages"]]
         self.assertEqual(names, ["Inspect inputs", "Execute task", "Validate outputs"])
@@ -322,8 +322,8 @@ class KdtStudioTests(unittest.TestCase):
 
         adaptation = kdtstudio.adapt_for_desktop(created["id"])
         desktop = Path(adaptation["path"])
-        self.assertEqual((candidate / "dag.yaml").read_text(), bare_dag)
-        projected = (desktop / "dag.yaml").read_text()
+        self.assertEqual((candidate / "dag.yaml").read_text(encoding="utf-8"), bare_dag)
+        projected = (desktop / "dag.yaml").read_text(encoding="utf-8")
         self.assertIn("template_version: '3.5'", projected)
         self.assertIn("processes:", projected)
         self.assertIn("nodes: []", projected)

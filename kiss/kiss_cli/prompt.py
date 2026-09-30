@@ -28,6 +28,7 @@ loudly: silently weakening every agent is not an acceptable release fallback.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 #: Unit and configuration traps that fail *silently* — the model accepts the
@@ -79,12 +80,18 @@ you. Ending your turn while a job you launched is still running KILLS the run.
   3. If that call times out you GET CONTROL BACK — repeat the loop, do not stop.
 """
 
-#: ``setsid`` is not present on Windows — not in Git Bash either, which is the
-#: shell the agent CLIs use there. Emitting it made step 1 of every long run
-#: die with "setsid: command not found", and this app exists to run long jobs.
-#: ``nohup`` plus ``&`` already survives the parent on Windows.
-HEADLESS_LONG_JOB_RULE = _HEADLESS_LONG_JOB_TEMPLATE.format(
-    detach="nohup" if os.name == "nt" else "setsid nohup")
+def _long_job_detach() -> str:
+    # Windows: an MSYS2/Cygwin setsid.exe on the Desktop's PATH is not the
+    # agent's Git Bash (foreign msys runtime), and cannot detach a Windows
+    # process tree anyway; plain nohup is the verified rule there.
+    return "nohup" if os.name == "nt" or not shutil.which("setsid") else "setsid nohup"
+
+
+#: ``setsid`` is not present on Windows (not in Git Bash either) or macOS.
+#: Emitting it made step 1 of every long run die with "setsid: command not
+#: found", and this app exists to run long jobs. ``nohup`` plus ``&`` already
+#: survives the parent; Stop reaches receipted runs through their own marker.
+HEADLESS_LONG_JOB_RULE = _HEADLESS_LONG_JOB_TEMPLATE.format(detach=_long_job_detach())
 
 
 def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, str | None]:

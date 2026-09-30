@@ -178,7 +178,7 @@ def build_indexes(roots: DataRoots) -> dict:
     # 1. forcing_providers/*.yaml — canonical_id → provider list
     for f in sorted(roots.forcing_providers.glob("*.yaml")):
         try:
-            d = _yaml().safe_load(f.read_text())
+            d = _yaml().safe_load(f.read_text(encoding="utf-8"))
         except Exception:
             continue
         pid = d.get("provider_id") or f.stem
@@ -200,7 +200,7 @@ def build_indexes(roots: DataRoots) -> dict:
     if roots.data_ki and roots.data_ki.is_dir():
         for f in sorted(roots.data_ki.glob("*/card.yaml")):
             try:
-                d = _yaml().safe_load(f.read_text())
+                d = _yaml().safe_load(f.read_text(encoding="utf-8"))
             except Exception:
                 continue
             ident = d.get("identity", {})
@@ -225,7 +225,7 @@ def build_indexes(roots: DataRoots) -> dict:
     # 3. cards/*_ata_card.yaml — canonical_id → producer model list
     for f in sorted(roots.cards.glob("*_ata_card.yaml")):
         try:
-            d = _yaml().safe_load(f.read_text())
+            d = _yaml().safe_load(f.read_text(encoding="utf-8"))
         except Exception:
             continue
         m = d.get("identity", {}).get("model_id") or f.stem.replace("_ata_card", "")
@@ -260,7 +260,7 @@ def build_indexes(roots: DataRoots) -> dict:
     matrix_file = roots.coupling_matrix
     if matrix_file and matrix_file.exists():
         try:
-            mat = _yaml().safe_load(matrix_file.read_text())
+            mat = _yaml().safe_load(matrix_file.read_text(encoding="utf-8"))
             for etype, info in (mat.get("edge_types") or {}).items():
                 for ex in (info.get("examples") or []):
                     edge = ex.get("edge", "")
@@ -622,7 +622,8 @@ def emit_coupling_graph(plan: dict, output_path: Path) -> None:
         "_TODO_for_execution": ("the above is done in the EXECUTING turn, never in planning"),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(_yaml().safe_dump(out, default_flow_style=False, sort_keys=False))
+    output_path.write_text(_yaml().safe_dump(out, default_flow_style=False, sort_keys=False),
+                           encoding="utf-8")
 
 
 def derive_full_plan(models: list[str], intent: dict, roots: DataRoots,
@@ -668,7 +669,7 @@ def _dag_steps(model_id: str, ki_root: Path | None) -> list[dict]:
         p = Path(ki_root) / "dag.yaml"
         if p.is_file():
             try:
-                dag = _yaml().safe_load(p.read_text(errors="ignore")) or {}
+                dag = _yaml().safe_load(p.read_text(encoding="utf-8", errors="ignore")) or {}
             except Exception:
                 dag = None
     procs = (dag or {}).get("processes") or []

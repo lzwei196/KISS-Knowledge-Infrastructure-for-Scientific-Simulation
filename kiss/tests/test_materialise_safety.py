@@ -62,4 +62,4 @@ def test_refresh_regular_destination_still_copies_and_rewrites(tmp_path):
     cfg = paths.KissConfig.default(tmp_path / "project")
     result = port.materialise(source, destination, cfg)
     assert result.files_written == 1
-    assert (destination / "SKILL.md").read_text() == f"output={cfg.roles['outputs'].as_posix()}/result.nc\n"
+    assert (destination / "SKILL.md").read_text(encoding="utf-8") == f"output={cfg.roles['outputs'].as_posix()}/result.nc\n"

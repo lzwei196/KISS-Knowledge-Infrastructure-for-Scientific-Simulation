@@ -93,60 +93,6 @@ class TurnHandle:
                 pass
 
 
-from .processes import terminate_process_tree as _terminate_process_tree
-
-
-def _run_subprocess_tree(
-        command: list[str], *, cwd: str, env: dict[str, str],
-        timeout: int) -> subprocess.CompletedProcess[str]:
-    """Run one non-interactive command with bounded process-tree cleanup."""
-    popen_options = {
-        "cwd": cwd,
-        "env": env,
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-        "errors": "replace",
-    }
-    if os.name == "nt":
-        # taskkill /T follows the parent/child tree by PID and does not need a
-        # console process group. CREATE_NEW_PROCESS_GROUP cannot be combined
-        # reliably with CREATE_NO_WINDOW on supported Python/Windows builds.
-        popen_options["creationflags"] = getattr(
-            subprocess, "CREATE_NO_WINDOW", 0)
-    else:
-        popen_options["start_new_session"] = True
-    proc = subprocess.Popen(command, **popen_options)
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _terminate_process_tree(proc)
-        try:
-            stdout, stderr = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired as cleanup_timeout:
-            try:
-                proc.kill()
-            except OSError:
-                pass
-            # A detached descendant can retain inherited pipe handles even
-            # after the direct child is dead. Never turn the timeout handler
-            # into another unbounded wait for EOF.
-            try:
-                stdout, stderr = proc.communicate(timeout=2)
-            except subprocess.TimeoutExpired as final_timeout:
-                stdout = final_timeout.output or cleanup_timeout.output or ""
-                stderr = final_timeout.stderr or cleanup_timeout.stderr or ""
-                if isinstance(stdout, bytes):
-                    stdout = stdout.decode(errors="replace")
-                if isinstance(stderr, bytes):
-                    stderr = stderr.decode(errors="replace")
-                stderr += "\nOutput pipes remained open after process-tree cleanup."
-        raise subprocess.TimeoutExpired(
-            command, timeout, output=stdout, stderr=stderr) from None
-    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
-
-
 @dataclass
 class ApiProvider:
     """One API endpoint and how to authenticate to it."""
@@ -772,7 +718,8 @@ class ToolError(Exception):
     pass
 
 
-def _safe_relative_file_listing(base: Path, root: Path, limit: int) -> list[str]:
+def _safe_relative_file_listing(base: Path, root: Path, limit: int,
+                                exclude=None) -> list[str]:
     """List a large agent workspace without failing on one transient path.
 
     Scientific source trees contain deep generated directories, junctions and
@@ -787,9 +734,11 @@ def _safe_relative_file_listing(base: Path, root: Path, limit: int) -> list[str]
             followlinks=False):
         dirs.sort()
         for filename in sorted(files):
+            path = Path(directory) / filename
             try:
-                names.append(
-                    (Path(directory) / filename).relative_to(root).as_posix())
+                if exclude is not None and exclude(path):
+                    continue
+                names.append(path.relative_to(root).as_posix())
             except (OSError, ValueError):
                 continue
             if len(names) >= limit:
@@ -1309,7 +1258,8 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
 def _user_only_file(path: Path, project_root: Path) -> bool:
     """Request cards (current and archived) carry Baidu links and extraction codes for the
     user's eyes only; agents never read them."""
-    return path.name.startswith("setup-request") and path.suffix == ".json"
+    return ((path.name.startswith("setup-request") and path.suffix == ".json") or
+            (path.name == "manual-download-details.json" and path.parent.name == ".geoforge"))
 
 
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
@@ -1337,6 +1287,13 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     project_root = Path(
         (setup_context or {}).get("project_root") or workroot
     ).resolve()
+    turn_handle = (setup_context or {}).get("_handle")
+    stop = turn_handle.stopped.is_set if turn_handle is not None else None
+    turn_id = (setup_context or {}).get("_turn_id")
+    from . import execution
+    if ((stop is not None and stop()) or
+            execution.stop_requested(project_root, turn_id=turn_id)):
+        raise ToolError("Stopped by the user; no further tool work may start in this turn.")
     progress_root = project_root
     if (bool((setup_context or {}).get("installation_only")) and name in {
             "run_preflight", "run_ki_tool", "run_calibration",
@@ -1420,7 +1377,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if bool((setup_context or {}).get("installation_only")):
             raise ToolError("Full preflight is outside installation-only scope; use the declared import and executable startup checks.")
         from . import install as _install
-        step = _install.run_preflight(ki, cfg.python, cfg)
+        step = _install.run_preflight(ki, cfg.python, cfg, project=project_root,
+                                      stop=stop, turn_id=turn_id)
         return f"{'PASS' if step.ok else 'FAIL'}\n{step.detail}"
 
     if name == "search_diagnostics":
@@ -1584,7 +1542,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             result = execute_ki_tool(
                 flow=flow, cfg=tool_cfg, project=project_root, ki=tool_ki_name, ki_root=requested_tool_root,
                 tool=script, arguments=arguments, cwd=cwd, plan_step_id=args.get("plan_step_id"),
-                python_tool=not binary, timeout=timeout, provider_id=provider_id)
+                python_tool=not binary, timeout=timeout, provider_id=provider_id,
+                stop=stop, turn_id=turn_id)
         except FlowDenied as e:
             raise ToolError(str(e)) from None
         headline = (f"exit_code={result.exit_code}" if result.exit_code is not None
@@ -1622,6 +1581,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 budget=args.get("budget"),
                 seed=int(args.get("seed") or 0),
                 determining_metric=args.get("determining_metric") or None,
+                stop=stop, turn_id=turn_id,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             raise ToolError(str(exc)) from None
@@ -1648,7 +1608,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     cwd=project_root, started_at=calib_started, finished_at=time.time(),
                     exit_code=0 if str(report.get("status") or "").lower() in ("ok", "success", "completed", "done") else 1,
                     before=calib_before, plan_step_id=args.get("plan_step_id"),
-                    stdout_tail=str(result.get("log_tail") or ""))
+                    stdout_tail=str(result.get("log_tail") or ""),
+                    execution_status=("stopped" if report.get("status") in {"stopped", "interrupted"} else None))
             except FlowDenied as e:
                 raise ToolError(str(e)) from None
         return json.dumps(summary, indent=2, ensure_ascii=False, default=str)
@@ -1856,19 +1817,28 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         callback = (setup_context or {}).get("run_builtin")
         if not callable(callback):
             raise ToolError("the built-in setup runner is unavailable")
-        return str(callback())[-60000:]
+        from . import install as _install
+        try:
+            with _install.cancellation_context(project_root, stop=stop, turn_id=turn_id):
+                return str(callback())[-60000:]
+        except _install.InstallStopped as exc:
+            return str(exc)
 
     if setup_mode and name == "list_work_files":
         base = _inside_work(args.get("subdir") or ".")
         if not base.is_dir():
             raise ToolError(f"no such workspace directory: {args.get('subdir')}")
-        names = _safe_relative_file_listing(base, workroot, 800)
+        names = _safe_relative_file_listing(
+            base, workroot, 800,
+            exclude=lambda f: _user_only_file(f, project_root))
         return "\n".join(names) or "(empty)"
 
     if setup_mode and name == "read_work_file":
         p = _inside_work(args.get("path") or "")
         if not p.is_file():
             raise ToolError(f"no such workspace file: {args.get('path')}")
+        if _user_only_file(p, project_root):
+            raise ToolError("that file contains private user-only request details")
         return _read_text_page(
             p, args.get("start_line", 1), args.get("line_count", 1000))
 
@@ -2189,31 +2159,43 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             except (OSError, subprocess.TimeoutExpired, ValueError):
                 pass
         from contextlib import nullcontext
-        import tempfile
         isolate_probe = (bool((setup_context or {}).get("installation_only"))
                          and Path(argv[0]).is_absolute() and len(argv) == 2
                          and argv[1] in _INSTALL_ONLY_PROBE_FLAGS)
         if isolate_probe:
             timeout = min(timeout, 25)
+        from . import execution
+        from .install import scratch_directory
+        proc = None
         try:
-            directory = (tempfile.TemporaryDirectory(prefix="startup-probe-", dir=str(workroot))
+            directory = (scratch_directory("startup-probe-", str(workroot))
                          if isolate_probe else nullcontext(str(cwd)))
             with directory as execution_cwd:
-                proc = _run_subprocess_tree(
-                    argv, cwd=execution_cwd,
-                    env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
-                    timeout=timeout,
+                # Its own session, tree-killed on timeout, ended by the chat's Stop.
+                # (On Windows, run_process also closes stdin for every launch.)
+                proc = execution.run_process(
+                    argv, cwd=execution_cwd, env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
+                    timeout=timeout, project=project_root,
+                    stop=stop, turn_id=turn_id,
+                    stdin=subprocess.DEVNULL if isolate_probe else None,
                 )
-        except subprocess.TimeoutExpired as e:
-            tail = "".join(part.decode("utf-8", errors="replace") if isinstance(part, bytes) else (part or "")
-                           for part in (e.stdout, e.stderr))[-12000:]
-            return f"TIMEOUT after {timeout}s\n{tail}"
         except OSError as e:
+            # Only a failure before the launch is FAILED_TO_START; a probe that
+            # ran keeps its collected result whatever its directory cleanup did.
+            if proc is None:
+                proc = execution.ProcessRun("not_launched", None, error=e)
+        tail = (proc.stdout + proc.stderr)[-12000:]
+        if proc.status == "not_launched":
             # A non-executable script, missing command, or platform launch
             # error is normal repair-loop evidence.  Let the model see it and
             # choose another invocation (usually ``python3 script.py``)
             # instead of aborting the entire API turn.
-            return f"FAILED_TO_START: {type(e).__name__}: {e}"
+            return f"FAILED_TO_START: {type(proc.error).__name__}: {proc.error}"
+        if proc.status == "timed_out":
+            return f"TIMEOUT after {timeout}s\n{tail}"
+        if proc.status == "stopped":
+            return ("STOPPED by the user before the command started" if proc.process_started is False
+                    else f"STOPPED by the user; the command and everything it started were signalled.\n{tail}")
         output = proc.stdout[-25000:] + "\n" + proc.stderr[-25000:]
         if isolate_probe:
             output = "Startup probe used an empty workspace directory (no bundled case inputs).\n" + output
@@ -2639,6 +2621,12 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     model_id = prov.models.get(want, want)
     tool_context = dict(setup_context or {})
     tool_context.setdefault("provider_id", f"api:{prov.name}")
+    tool_context["_handle"] = handle
+    if "_turn_id" not in tool_context:
+        from . import execution
+        project = tool_context.get("project_root") or getattr(cfg, "root", None)
+        if project is not None:
+            tool_context["_turn_id"] = execution.current_turn_id(Path(project))
     tools = tool_schemas(
         ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow,
         installation_only=bool(tool_context.get("installation_only")),

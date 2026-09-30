@@ -21,6 +21,7 @@ from pathlib import Path
 STATE_FILE = "project-run.json"
 EVENTS_FILE = "project-events.jsonl"
 AGENT_FILE = "project-agent-status.json"
+STOPPED_SUMMARY = "Stopped by you — send a message to continue"
 
 STAGES = (
     "understanding", "choosing_ki", "software", "researching",
@@ -234,6 +235,7 @@ def _event(project: Path, kind: str, state: dict) -> None:
 
 def load(project: Path, *, goal: str = "", selected_kis: list[str] | None = None) -> dict:
     """Load the current run and safely adopt a native agent's latest report."""
+    from .execution import stop_requested
     path = _path(project, STATE_FILE)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -241,6 +243,12 @@ def load(project: Path, *, goal: str = "", selected_kis: list[str] | None = None
         raw = None
     valid_state = isinstance(raw, dict)
     state = _normalise(raw, _new(goal, selected_kis))
+    if stop_requested(project):
+        # A late CLI progress file cannot turn a stopped project back into
+        # "working" or hide the explicit Stop while the user has not resumed.
+        state.update(status="idle", summary=STOPPED_SUMMARY)
+        state.pop("blocker", None)
+        return state if valid_state and state == raw else _write(project, state)
     agent_path = _path(project, AGENT_FILE)
     try:
         agent = json.loads(agent_path.read_text(encoding="utf-8"))
@@ -255,12 +263,15 @@ def load(project: Path, *, goal: str = "", selected_kis: list[str] | None = None
 
 
 def begin_turn(project: Path, message: str, selected_kis: list[str] | None = None) -> dict:
+    from . import execution
+    turn_id = execution.begin_turn(project)
     state = load(project, goal=message, selected_kis=selected_kis)
     if not state.get("goal"):
         state["goal"] = _short(message, 1000)
     if selected_kis:
         state["selected_kis"] = list(dict.fromkeys(selected_kis))[:20]
     state.update({
+        "turn_id": turn_id,
         "status": "working",
         "summary": "Understanding your request" if state["stage"] == "understanding"
         else STAGE_LABELS[state["stage"]],
@@ -320,8 +331,12 @@ def select_kis(project: Path, names: list[str]) -> dict:
 
 def finish_turn(project: Path, *, request: dict | None = None,
                 failed: str | None = None) -> dict:
+    from .execution import stop_requested
     state = load(project)
-    if request and request.get("status") == "waiting":
+    if stop_requested(project):
+        state.update({"status": "idle", "summary": STOPPED_SUMMARY})
+        state.pop("blocker", None)
+    elif request and request.get("status") == "waiting":
         state.update({
             "status": "waiting_for_user",
             "summary": _short(request.get("title") or "One thing needs you", 500),

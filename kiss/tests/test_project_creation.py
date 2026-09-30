@@ -58,7 +58,7 @@ def test_explicit_name_preview_matches_creation_with_missing_external_parent(tmp
     assert project == Path(preview["project_path_preview"].replace("{id}", session["id"]))
     assert project.parent == parent.resolve()
     assert (project / "inputs" / "uploads").is_dir()
-    assert (project / "README.md").read_text().startswith(f"# {name.strip()}\n")
+    assert (project / "README.md").read_text(encoding="utf-8").startswith(f"# {name.strip()}\n")
     loaded = sessions.load(workroot, session["id"])
     assert loaded["project_name"] == name.strip()
     assert sessions.project_path(workroot, loaded) == project
@@ -79,7 +79,7 @@ def test_external_pointer_keeps_exact_title_without_opening_project(tmp_path, mo
     session = sessions.create(workroot, project_parent=parent, project_name=name)
     project = sessions.project_path(workroot, session)
     pointer = workroot / "sessions" / f"{session['id']}.json"
-    assert json.loads(pointer.read_text())["title"] == name
+    assert json.loads(pointer.read_text(encoding="utf-8"))["title"] == name
     real_read = Path.read_text
 
     def no_external_read(path, *args, **kwargs):

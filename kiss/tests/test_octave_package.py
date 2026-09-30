@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-from kiss_cli import api, octpackage, runnable
+from kiss_cli import api, execution, octpackage, runnable
 
 CLASSES=[f'm_{i:02d}_fixture' for i in range(1,48)]
 FILES={'MARRMoT/Models/Model files/'+n+'.m':hashlib.sha256(n.encode()).hexdigest() for n in CLASSES+['MARRMoT_model']}
@@ -68,6 +68,6 @@ class OctavePackageTests(unittest.TestCase):
     def test_setup_api_accepts_exact_probe(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d).resolve();script=fixture(root);cfg=SimpleNamespace(root=root,roles={'binaries':root/'binaries'},python=sys.executable)
-            with patch.object(api,'_run_subprocess_tree',return_value=subprocess.CompletedProcess([],0,'ok','')):
+            with patch.object(execution,'run_process',return_value=execution.ProcessRun('succeeded',0,'ok','')):
                 result=api.execute_tool('run_setup_command',{'argv':['octave-cli',*octpackage.probe_args(script,root/'source',root/'packages',C)]},SimpleNamespace(root=root/'ki'),cfg,setup_mode=True,setup_context={'installation_only':True})
                 self.assertIn('exit_code=0',result)

@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
 from kiss_cli import api, flowgate, flowrun, plan_review, gui, obs_access, projectrun, sessions, setup as setup_flow  # noqa: E402
+from ._acquisition_fixtures import approved_result as _acq_result
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +56,7 @@ def test_pre_ungated_for_small_talk_and_gated_for_science(tmp_path):
     r = flowrun.pre(project, "run VIC–CaMa flood at Bengbu 2003-2005", [], cat, None, None,
                     couplings_dir=None)
     assert r.gated and r.names == [] and r.message is None
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "RESOLVING_KIS"
     assert projectrun.load(project)["stage"] == "understanding"
     reply = ('<!-- GEOFORGE_INTAKE {"selected_kis":["VIC","CaMa_Flood"],'
@@ -63,7 +64,7 @@ def test_pre_ungated_for_small_talk_and_gated_for_science(tmp_path):
              '"study_area":"Bengbu","period":"2003-2005","process":"rainfall-runoff and routing",'
              '"scenario":"baseline","requested_outputs":["discharge"],"missing":[]} -->')
     assert flowrun.promote_auto_choice(project, cat, reply) == ["VIC", "CaMa_Flood"]
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "PLANNING" and st["selected_kis"] == ["VIC", "CaMa_Flood"]
     assert projectrun.load(project)["selected_kis"] == ["VIC", "CaMa_Flood"]
 
@@ -72,14 +73,14 @@ def test_unknown_model_is_clarified_by_agent_intake_not_host_regex(tmp_path):
     project = _project(tmp_path); cat = [_ki(tmp_path, "VIC")]
     r = flowrun.pre(project, "run VIC-CaMa flood", [], cat, None, None)
     assert r.message is None and r.names == []
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "RESOLVING_KIS"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "RESOLVING_KIS"
     reply = ('I can use VIC, but CaMa is not in this library. Should I continue with VIC only? '
              '<!-- GEOFORGE_INTAKE {"selected_kis":["VIC"],"ready_for_planning":false,'
              '"understanding":"VIC-CaMa flood study","study_area":"","period":"",'
              '"process":"rainfall-runoff and routing","scenario":"",'
              '"requested_outputs":["discharge"],"missing":["whether VIC-only is acceptable"]} -->')
     assert flowrun.promote_auto_choice(project, cat, reply) == []
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "RESOLVING_KIS"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "RESOLVING_KIS"
 
 
 def test_private_intake_marker_is_removed_from_saved_chat_text():
@@ -99,7 +100,7 @@ def test_pre_accepts_crhm_embedded_in_chinese_scientific_request(tmp_path):
     r = flowrun.pre(project, "我想要用CRHM模拟中国高寒区融雪径流", [], cat,
                     None, None)
     assert r.gated and r.names == [] and r.message is None
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "RESOLVING_KIS"
     reply = ('我理解为使用 CRHM 研究中国高寒区融雪径流。请给出模拟时段和具体流域。 '
              '<!-- GEOFORGE_INTAKE {"selected_kis":["CRHM"],"ready_for_planning":false,'
@@ -124,7 +125,7 @@ def test_pinned_ki_does_not_treat_dataset_acronyms_as_unknown_models(tmp_path):
     )
 
     assert result.gated and result.names == ["AquaCrop"]
-    state = json.loads((project / "runs" / "flow-state.json").read_text())
+    state = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert state["state"] == "PLANNING"
     assert state["selected_kis"] == ["AquaCrop"]
 
@@ -141,7 +142,7 @@ def test_pinned_ki_is_not_expanded_by_negated_models_or_alias_collisions(tmp_pat
     )
 
     assert result.gated and result.names == ["VIC"]
-    state = json.loads((project / "runs" / "flow-state.json").read_text())
+    state = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert state["state"] == "PLANNING"
     assert state["selected_kis"] == ["VIC"]
 
@@ -202,11 +203,11 @@ def test_planning_turn_then_user_approval_then_execution_and_evidence(tmp_path):
     res = flowrun.after(project, t, "I wrote the plan.", setup_ok=True)
     # never auto-approved: the card waits for the user even when nothing needs deciding
     assert res.request is not None and res.continue_now is False
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "WAITING_FOR_USER"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "WAITING_FOR_USER"
     _approve(project, ki, res)
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "EXECUTING" and (project / "runs" / "approval.json").exists()
-    assert json.loads((project / "runs" / "approval.json").read_text())["approved_by"] == "user"
+    assert json.loads((project / "runs" / "approval.json").read_text(encoding="utf-8"))["approved_by"] == "user"
     # execution turn: run contract, receipts required
     t2 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
     assert t2.execute is True and "STAGE GROUNDING" in t2.extra_prompt and "TOOLS (validated)" in t2.extra_prompt
@@ -216,9 +217,9 @@ def test_planning_turn_then_user_approval_then_execution_and_evidence(tmp_path):
                            flow=t2.session)
     assert "[RECEIPT]" in out
     res = flowrun.after(project, t2, "done", setup_ok=True)
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "COMPLETED", st
-    ev = json.loads((project / "runs" / "evidence.json").read_text())
+    ev = json.loads((project / "runs" / "evidence.json").read_text(encoding="utf-8"))
     assert ev["receipts_verified"] and ev["validation"] == "passed"
     assert projectrun.load(project)["stage"] == "results"
 
@@ -231,7 +232,7 @@ def test_high_impact_choice_shows_the_approval_card_and_click_approves(tmp_path)
     assert res.request and res.request["id"].startswith(flowrun.APPROVAL_REQUEST_ID_PREFIX)
     assert {o["id"] for o in res.request["options"]} == {"approve", "modify"}
     assert "You decide" in res.request["message"] and "forcing_source" in res.request["message"]
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "WAITING_FOR_USER"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "WAITING_FOR_USER"
     assert projectrun.load(project)["status"] == "waiting_for_user"
     pending = setup_flow.request(project)
     assert pending and pending["id"] == res.request["id"]
@@ -239,9 +240,9 @@ def test_high_impact_choice_shows_the_approval_card_and_click_approves(tmp_path)
     r = flowrun.pre(project, "Approved. Start the execution.", ["M"], [ki],
                     {"request_id": pending["id"], "option_id": "approve", "note": "use cmfd"}, pending,
                     note="use cmfd", setup_ok=True)
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "EXECUTING" and r.message is None
-    a = json.loads((project / "runs" / "approval.json").read_text())
+    a = json.loads((project / "runs" / "approval.json").read_text(encoding="utf-8"))
     assert a["approved_by"] == "user"
     # the signed approval now carries WHO decided each input (flow.decisions), the note included
     assert a["decisions"]["note"]["value"] == "use cmfd" and a["decisions"]["note"]["source"] == "user"
@@ -258,7 +259,7 @@ def test_modify_click_goes_back_to_planning_with_the_note(tmp_path):
     r = flowrun.pre(project, "Please revise the plan.", ["M"], [ki],
                     {"request_id": pending["id"], "option_id": "modify", "note": "use MSWX"}, pending, note="use MSWX")
     assert r.replan_reason == "use MSWX"
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "PLANNING"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "PLANNING"
     t = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "revise", replan_reason="use MSWX")
     assert "[RE-PLAN]" in t.extra_prompt and "use MSWX" in t.extra_prompt
 
@@ -270,12 +271,12 @@ def test_approval_without_verified_software_goes_to_setup(tmp_path):
     res = flowrun.after(project, t, "plan written", setup_ok=False)
     assert res.continue_now is False
     _approve(project, ki, res, setup_ok=False)
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "SETUP_REQUIRED"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "SETUP_REQUIRED"
     st = flowrun.setup_turn(project, [ki], _cfg(project), "cli", "claude")
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "SETUP_RUNNING"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "SETUP_RUNNING"
     flowrun.setup_verified(project, [ki], _cfg(project))
     # codex R2 #2: verification resumes straight into EXECUTING (APPROVED is passed through)
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "EXECUTING"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "EXECUTING"
 
 
 def test_executing_turn_detects_drift_and_replan_marker(tmp_path):
@@ -286,7 +287,7 @@ def test_executing_turn_detects_drift_and_replan_marker(tmp_path):
     # the agent says it needs another model → re-plan
     t2 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
     flowrun.after(project, t2, "I cannot do this: REPLAN_REQUIRED: routing needs CaMa_Flood", setup_ok=True)
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "REPLAN_REQUIRED"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "REPLAN_REQUIRED"
     assert not (project / "runs" / "approval.json").exists()
 
 
@@ -361,7 +362,7 @@ def test_auto_turn_is_read_only_and_refuses_ungateable_providers(monkeypatch, tm
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     project = _project(tmp_path)
     flowrun.pre(project, "simulate the flood at Bengbu", [], [], None, None)   # nothing resolved
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "RESOLVING_KIS"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "RESOLVING_KIS"
     t = flowrun.auto_turn(project, "api", "deepseek")
     assert "run_ki_tool" not in t.session.api_tools() and "write_plan" not in t.session.api_tools()
     assert "report_project_progress" in t.session.api_tools()
@@ -385,6 +386,7 @@ def test_auto_turn_is_read_only_and_refuses_ungateable_providers(monkeypatch, tm
 def test_gated_auto_api_receives_only_the_task_intake_contract(monkeypatch, tmp_path):
     """The API path used to drop the appended intake prompt and retain conflicting
     execution rules.  Exercise the actual Handler seam so this cannot regress silently."""
+    monkeypatch.setattr(obs_access, "token_state", lambda: "configured")   # Database activated
     project = _project(tmp_path)
     ki = _ki(tmp_path, "CRHM")
     ki.meta = {"reference": "Cold Regions Hydrological Model"}
@@ -423,6 +425,7 @@ def test_gated_auto_api_receives_only_the_task_intake_contract(monkeypatch, tmp_
 
 
 def test_gated_auto_kimi_receives_live_database_command_and_narrow_grant(monkeypatch, tmp_path):
+    monkeypatch.setattr(obs_access, "token_state", lambda: "configured")   # Database activated
     project = _project(tmp_path)
     ki = _ki(tmp_path, "VIC")
     ki.meta = {"reference": "VIC"}
@@ -473,6 +476,7 @@ def test_gated_auto_kimi_receives_live_database_command_and_narrow_grant(monkeyp
 
 
 def test_pinned_planning_receives_host_database_snapshot_in_snapshot_mode(monkeypatch, tmp_path):
+    monkeypatch.setattr(obs_access, "token_state", lambda: "configured")   # Database activated
     project = _project(tmp_path)
     ki = _ki(tmp_path, "VIC")
     ki.meta = {}
@@ -550,9 +554,9 @@ def test_wrapper_commands_have_no_spaces_in_the_executable_path(monkeypatch, tmp
     assert " " not in base or command.startswith("'"), w
     if " " not in base:
         assert Path(base).is_file()
-        assert "GeoForge Desktop.app" not in Path(base).read_text()
+        assert "GeoForge Desktop.app" not in Path(base).read_text(encoding="utf-8")
         helper = Path(base).with_suffix(".py") if os.name == "nt" else Path(base)
-        assert "GEOFORGE_AGENT_FLOW_URL" in helper.read_text()
+        assert "GEOFORGE_AGENT_FLOW_URL" in helper.read_text(encoding="utf-8")
 
 
 def test_provider_refusal_for_gemini_and_qwen():
@@ -568,8 +572,18 @@ def test_setup_verified_resumes_into_executing_and_continues(tmp_path):
     _approve(project, ki, res, setup_ok=False)                          # SETUP_REQUIRED
     st = flowrun.setup_turn(project, [ki], _cfg(project), "cli", "claude")
     flowrun.setup_verified(project, [ki], _cfg(project))
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "EXECUTING"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "EXECUTING"
     assert flowrun.after(project, st, "installed", setup_ok=True).continue_now is True
+
+
+def test_the_run_after_setup_is_announced_as_the_users_approval_not_auto(tmp_path):
+    """Issue #5: continue_now only follows the user's own approval (setup finished after it),
+    yet the chat said "Plan auto-approved (no decision needed from you)"."""
+    import inspect
+    assert "auto-approved" not in flowrun.RUN_AFTER_SETUP.lower()
+    assert "your approved plan" in flowrun.RUN_AFTER_SETUP
+    src = inspect.getsource(gui)
+    assert "Plan auto-approved" not in src and "flowrun.RUN_AFTER_SETUP" in src
 
 
 def test_auto_choice_is_promoted_into_the_flow(tmp_path):
@@ -582,7 +596,7 @@ def test_auto_choice_is_promoted_into_the_flow(tmp_path):
                                            "process": "rainfall-runoff", "scenario": "baseline",
                                            "requested_outputs": ["discharge"], "missing": []}})
     assert flowrun.promote_auto_choice(project, cat) == ["VIC"]
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "PLANNING" and st["selected_kis"] == ["VIC"]
     assert flowrun.promote_auto_choice(project, cat) == ["VIC"]           # idempotent
 
@@ -630,10 +644,10 @@ def test_launcher_never_embeds_the_frozen_executable(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "executable", str(tmp_path / "GeoForge Desktop v2"))
     w2 = flowrun.wrapper_commands()["run_tool"].rsplit(" run-tool", 1)[0]
     launcher = Path(shlex.split(w2)[0])
-    body = launcher.read_text()
+    body = launcher.read_text(encoding="utf-8")
     assert w1 == w2 and str(tmp_path / "GeoForge Desktop v2") not in body
     helper = launcher.with_suffix(".py") if os.name == "nt" else launcher
-    assert "GEOFORGE_AGENT_FLOW_URL" in helper.read_text()
+    assert "GEOFORGE_AGENT_FLOW_URL" in helper.read_text(encoding="utf-8")
     assert launcher.is_relative_to(tmp_path / "home")          # user-owned dir, never $TMPDIR
 
 
@@ -651,6 +665,7 @@ def test_wrapper_access_root_is_only_the_narrow_launcher_directory(tmp_path):
 def test_database_ki_helper_uses_only_process_local_desktop_capability(
         monkeypatch, tmp_path):
     """The helper must not exec the app bundle or read a persistent DB token."""
+    from kiss_cli import execution
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     token = "one-process-capability"
@@ -675,15 +690,19 @@ def test_database_ki_helper_uses_only_process_local_desktop_capability(
                "GEOFORGE_AGENT_DATABASE_TOKEN": token}
         env.update({key: os.environ[key] for key in ("SystemRoot", "WINDIR", "PYTHONUTF8")
                     if key in os.environ})
+        # The Windows launcher runs the helper with -X utf8 (POSIX Python writes
+        # UTF-8 too), so decode as UTF-8, not the locale codec (GBK on cp936).
         result = subprocess.run(
             [str(helper), "--query", "Bengbu 51080", "--limit", "5"],
-            capture_output=True, text=True, env=env, timeout=10)
+            capture_output=True, text=True, encoding="utf-8", env=env, timeout=10)
         assert result.returncode == 0
         assert json.loads(result.stdout) == expected
 
         projects = tmp_path / "projects"
         project = projects / "session-1"
         project.mkdir(parents=True)
+        turn_id = projectrun.begin_turn(project, "Fetch approved inputs")["turn_id"]
+        (project / "runs" / "flow-state.json").write_text("{}")
         gui.Handler.workroot = projects
         flow_endpoint = (f"http://127.0.0.1:{server.server_port}"
                          "/api/agent/flow-command")
@@ -692,14 +711,15 @@ def test_database_ki_helper_uses_only_process_local_desktop_capability(
 
         def fake_run(command, **kwargs):
             launched.update(command=command, kwargs=kwargs)
-            return SimpleNamespace(returncode=0, stdout="[RECEIPT] {}\n", stderr="")
+            return execution.ProcessRun("succeeded", 0, stdout="[RECEIPT] {}\n")
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(execution, "run_process", fake_run)
         flow_request = urllib.request.Request(
             flow_endpoint,
             data=json.dumps({
                 "argv": ["fetch", "https://example.test/data", "--item", "forcing"],
                 "cwd": str(project),
+                "turn_id": turn_id, "turn_project": str(project),
             }).encode(),
             method="POST",
             headers={"X-GeoForge-Agent-Token": token,
@@ -710,13 +730,16 @@ def test_database_ki_helper_uses_only_process_local_desktop_capability(
         assert flow_result["returncode"] == 0
         assert launched["command"][-4:] == [
             "fetch", "https://example.test/data", "--item", "forcing"]
-        assert launched["kwargs"]["cwd"] == str(project)
+        assert Path(launched["kwargs"]["cwd"]) == project
+        assert launched["kwargs"]["env"][execution.TURN_ID_ENV] == turn_id
 
         # A project chosen outside the default workroot is accepted only when
         # the Desktop's local session pointer binds that exact --<id> folder.
         sid = "abcdef012345"
         external = tmp_path / "external" / f"2026-test--{sid}"
         external.mkdir(parents=True)
+        external_turn = projectrun.begin_turn(external, "Fetch approved inputs")["turn_id"]
+        (external / "runs" / "flow-state.json").write_text("{}")
         pointer = projects / "sessions" / f"{sid}.json"
         pointer.parent.mkdir(parents=True)
         pointer.write_text(json.dumps({
@@ -729,6 +752,7 @@ def test_database_ki_helper_uses_only_process_local_desktop_capability(
             data=json.dumps({
                 "argv": ["fetch", "https://example.test/external", "--item", "forcing"],
                 "cwd": str(external),
+                "turn_id": external_turn, "turn_project": str(external),
             }).encode(),
             method="POST",
             headers={"X-GeoForge-Agent-Token": token,
@@ -737,7 +761,7 @@ def test_database_ki_helper_uses_only_process_local_desktop_capability(
         with urllib.request.urlopen(external_request, timeout=5) as response:
             external_result = json.load(response)
         assert external_result["returncode"] == 0
-        assert launched["kwargs"]["cwd"] == str(external)
+        assert Path(launched["kwargs"]["cwd"]) == external
 
         unregistered = tmp_path / "external" / "not-a-project"
         unregistered.mkdir()
@@ -804,7 +828,7 @@ def test_worktree_handoff_preserves_reviewed_plan_even_if_unchanged(tmp_path, ch
     t.session.flow.plan.write_artifacts(wt, pj, inv)
     result = flowrun.after(project, t, "saved both")
     assert result.request and result.message == ""
-    assert json.loads((project / "runs/plan.json").read_text()) == pj
+    assert json.loads((project / "runs/plan.json").read_text(encoding="utf-8")) == pj
     assert wt.is_dir()  # preserve submitted evidence
 
 
@@ -818,7 +842,7 @@ def test_concurrent_original_edit_is_not_overwritten(tmp_path):
     t.session.flow.plan.write_artifacts(project, pj, inv)
     result = flowrun.after(project, t, "saved")
     assert "original plan changed" in result.message and not result.request
-    assert json.loads((project / "runs/plan.json").read_text())["goal"] == "user concurrent edit"
+    assert json.loads((project / "runs/plan.json").read_text(encoding="utf-8"))["goal"] == "user concurrent edit"
 
 
 def test_review_card_cannot_approve_a_changed_inventory(tmp_path):
@@ -893,7 +917,7 @@ def test_rejected_worktree_is_reused_then_validated_without_resetting_agent_work
     t2.provider_succeeded = True
     result = flowrun.after(project, t2, "repaired")
     assert result.request and not result.continue_now
-    assert json.loads((project / "runs/plan.json").read_text())["goal"] == pj["goal"]
+    assert json.loads((project / "runs/plan.json").read_text(encoding="utf-8"))["goal"] == pj["goal"]
     assert not (project / ".geoforge/planning-last.json").exists()
 
 
@@ -914,7 +938,7 @@ def test_partial_save_returns_to_agent_but_identical_failure_stops_repair(tmp_pa
     for attempt in range(2):
         t = flowrun.turn(project, [ki], _cfg(project), "cli", "kimi", None, "planning only")
         p = t.planning_worktree / "runs/plan.json"
-        p.write_text(p.read_text())
+        p.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
         t.provider_succeeded = True
         result = flowrun.after(project, t, "I saved both (but actually only one)")
         assert result.retry_planning and "data-inventory.json" in result.message
@@ -1006,7 +1030,7 @@ def test_approval_card_carries_a_structured_plan_review(tmp_path):
     assert set(review["data"]) == {"total", "fetch", "you", "run"}
     assert review["decisions"][0]["kind"] == "forcing_source" and review["decisions"][0]["decided"] is False
     assert review["blockers"]                      # the undecided high-impact choice
-    saved = json.loads((project / "setup-request.json").read_text())
+    saved = json.loads((project / "setup-request.json").read_text(encoding="utf-8"))
     assert saved["plan_review"]["steps"] == review["steps"]
 
 
@@ -1017,11 +1041,11 @@ def test_failed_validation_resumes_as_an_execution_turn(tmp_path):
     _approve(project, ki, flowrun.after(project, t, "planned", setup_ok=True))
     t2 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
     t2.session.move("run_finished"); t2.session.move("validation_failed")   # a step's output failed checks
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "FAILED_VALIDATION"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "FAILED_VALIDATION"
     # the user's next message reruns under the same approval (pre → rerun → ACQUIRING → EXECUTING)
     pre = flowrun.pre(project, "fix S1 and continue", ["M"], [ki], None, None)
     assert pre.message is None
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "EXECUTING"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "EXECUTING"
     t3 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "fix S1 and continue")
     assert t3.kind == "execution" and t3.execute is True
 
@@ -1049,6 +1073,7 @@ def test_execution_turn_without_receipts_is_contradicted_in_chat(tmp_path):
 
 def test_plan_data_status_reports_each_input_from_receipts_not_prose(tmp_path, monkeypatch):
     from kiss_cli import setup as setup_flow
+    _activate_database_fixture(monkeypatch)
     monkeypatch.setattr(obs_access, "refresh_catalogue", lambda: {"datasets": [
         {"id": "cmfd_x", "delivery": "manual"}]})
     project = _project(tmp_path); ki = _ki(tmp_path, "M")
@@ -1064,7 +1089,7 @@ def test_plan_data_status_reports_each_input_from_receipts_not_prose(tmp_path, m
     assert t.session.write_plan(pj, inv) == []
     from kiss_cli import acquire
     monkeypatch.setattr(acquire, "run", lambda project, client=None:      # no network in this test
-                        {"status": "waiting", "items": {"cmfd_x": {"status": "waiting"}}})
+                        _acq_result(project, {"status": "waiting", "items": {"cmfd_x": {"status": "waiting"}}}))
     _approve(project, ki, flowrun.after(project, t, "planned", setup_ok=True))
     pd = flowrun.plan_data_status(project)
     assert pd is not None and pd["total"] == len(pd["items"])
@@ -1076,10 +1101,10 @@ def test_plan_data_status_reports_each_input_from_receipts_not_prose(tmp_path, m
     assert [i["status"] for i in pd["items"] if i["id"] == "cmfd_x"] == ["waiting_for_you"]
     # while the host waits for the files the project is in ACQUIRING: no agent turn, and any
     # message answers with the reminder that points to Project status (never the link itself)
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "ACQUIRING"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "ACQUIRING"
     assert flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go") is None
     monkeypatch.setattr(acquire, "run", lambda project, client=None:
-                        {"status": "waiting", "items": {"cmfd_x": {"status": "waiting", "expected_path": str(project / "inputs/raw/cmfd")}}})
+                        _acq_result(project, {"status": "waiting", "items": {"cmfd_x": {"status": "waiting", "expected_path": str(project / "inputs/raw/cmfd")}}}))
     pre = flowrun.pre(project, "which step are we at?", ["M"], [ki], None, None)
     assert "GeoForge needs you" in pre.message and "Project status" in pre.message
     assert "pan.baidu" not in pre.message
@@ -1109,12 +1134,12 @@ def test_plan_data_status_rejects_forged_deleted_and_changed_downloads(tmp_path,
     assert status() == "present_unverified"
     inv["items"][0].pop("requirements")
     assert status() == "acquired"
-    original = receipt.read_text()
+    original = receipt.read_text(encoding="utf-8")
     forged = json.loads(original)
     forged["source"] = "tampered"
     receipt.write_text(json.dumps(forged))
     assert status() == "present_unverified"
-    receipt.write_text(original)
+    receipt.write_text(original, encoding="utf-8")
     payload.write_bytes(b"different bytes")
     assert status() == "present_unverified"
     payload.unlink()
@@ -1171,6 +1196,13 @@ def test_data_actions_distinguish_manual_agent_and_coverage_gap(tmp_path, monkey
 # Step 2 (FLOW-TARGET-2026-09-17): one card approves the plan and its server clips.
 
 
+def _activate_database_fixture(monkeypatch):
+    """Successful Database acquisition fixtures explicitly model activation."""
+    from kiss_cli import settings
+    monkeypatch.setattr(settings, "database_access_mode", lambda: "direct")
+    monkeypatch.setattr(obs_access, "token_state", lambda: "configured")
+
+
 def _clip_client(*responses):
     from .test_obs_access import Opener, json_response
     from kiss_cli.obs_access import Client
@@ -1185,6 +1217,7 @@ _EST = {"subsettable": True, "estimated_output_bytes": 4096, "over_output_cap": 
 
 def _plan_with_clip(tmp_path, ki, project, monkeypatch, *refresh_responses):
     from kiss_cli import obs_subset, obs_access
+    _activate_database_fixture(monkeypatch)
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
     # the catalogue lookup for non-clip items must not touch the network
     monkeypatch.setattr(obs_access, "refresh_catalogue", lambda *a, **k: {"datasets": []})
@@ -1228,7 +1261,7 @@ def test_card_shows_clip_and_approval_starts_the_job(tmp_path, monkeypatch):
     t, est = _plan_with_clip(tmp_path, ki, project, monkeypatch, _EST, _EST)
     res = flowrun.after(project, t, "plan written", setup_ok=True)
     assert res.request and "forcing ← cmfd_china_daily_010 (server clip, 4 KB, 2 files)" in res.request["message"]
-    inv = json.loads((project / "runs" / "data-inventory.json").read_text())
+    inv = json.loads((project / "runs" / "data-inventory.json").read_text(encoding="utf-8"))
     item = next(i for i in inv["items"] if i["id"] == "forcing")
     assert item["acquisition_id"] == est["id"]
     assert item["estimate_summary"]["processing_version"] == "obs_subset/3"
@@ -1237,10 +1270,10 @@ def test_card_shows_clip_and_approval_starts_the_job(tmp_path, monkeypatch):
                         lambda project, ident, client=None, inspection=False, expected=None:
                         created.append((ident, inspection)) or {"status": "queued"})
     from kiss_cli import acquire
-    monkeypatch.setattr(acquire, "run", lambda project, client=None: {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, client=None: _acq_result(project, {"status": "done", "items": {}}))
     pre = _approve(project, ki, res)
     assert pre.message is None and created == [(est["id"], False)]
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "EXECUTING"
 
 
@@ -1251,12 +1284,12 @@ def test_changed_clip_at_approval_reissues_the_card_unsigned(tmp_path, monkeypat
     res = flowrun.after(project, t, "plan written", setup_ok=True)
     pre = _approve(project, ki, res)
     assert pre.message and "changed since you reviewed" in pre.message and "source_version v1 -> v2" in pre.message
-    st = json.loads((project / "runs" / "flow-state.json").read_text())
+    st = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
     assert st["state"] == "WAITING_FOR_USER"
     assert not (project / "runs" / "approval.json").exists()
-    card = json.loads((project / "setup-request.json").read_text())
+    card = json.loads((project / "setup-request.json").read_text(encoding="utf-8"))
     assert card["id"].startswith(flowrun.APPROVAL_REQUEST_ID_PREFIX) and "40 MB" in card["message"]
-    inv = json.loads((project / "runs" / "data-inventory.json").read_text())
+    inv = json.loads((project / "runs" / "data-inventory.json").read_text(encoding="utf-8"))
     item = next(i for i in inv["items"] if i["id"] == "forcing")
     assert item["estimate_summary"]["bytes"] == 40 * 1024**2
 
@@ -1266,7 +1299,7 @@ def test_changed_clip_at_approval_reissues_the_card_unsigned(tmp_path, monkeypat
 
 
 def _state(project):
-    return json.loads((project / "runs" / "flow-state.json").read_text())["state"]
+    return json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"]
 
 
 def _approved_plan(tmp_path, monkeypatch):
@@ -1282,7 +1315,7 @@ def test_pending_clip_holds_the_project_in_acquiring_until_the_poll_finishes_it(
     project, ki, res = _approved_plan(tmp_path, monkeypatch)
     passes = iter([{"status": "pending", "items": {"forcing": {"status": "pending", "job_status": "running"}}},
                    {"status": "done", "items": {"forcing": {"status": "done", "receipt": "r"}}}])
-    monkeypatch.setattr(acquire, "run", lambda project, client=None: next(passes))
+    monkeypatch.setattr(acquire, "run", lambda project, client=None: _acq_result(project, next(passes)))
     pre = _approve(project, ki, res)
     assert _state(project) == "ACQUIRING" and "fetching the approved data" in pre.message
     # no agent turn while acquiring
@@ -1299,7 +1332,7 @@ def test_manual_wait_then_files_in_place_message_continues(tmp_path, monkeypatch
     project, ki, res = _approved_plan(tmp_path, monkeypatch)
     passes = iter([{"status": "waiting", "items": {"forcing": {"status": "waiting", "expected_path": "/p/inputs/x"}}},
                    {"status": "done", "items": {"forcing": {"status": "done", "receipt": "r"}}}])
-    monkeypatch.setattr(acquire, "run", lambda project, client=None: next(passes))
+    monkeypatch.setattr(acquire, "run", lambda project, client=None: _acq_result(project, next(passes)))
     pre = _approve(project, ki, res)
     assert _state(project) == "ACQUIRING" and "GeoForge needs you" in pre.message and "/p/inputs/x" in pre.message
     # the user's "files are in place" message re-runs the pass and the run starts
@@ -1312,7 +1345,7 @@ def test_failed_acquisition_blocks_with_retry_and_modify(tmp_path, monkeypatch):
     project, ki, res = _approved_plan(tmp_path, monkeypatch)
     passes = iter([{"status": "failed", "items": {"forcing": {"status": "failed", "error": "HTTP 503"}}},
                    {"status": "done", "items": {"forcing": {"status": "done", "receipt": "r"}}}])
-    monkeypatch.setattr(acquire, "run", lambda project, client=None: next(passes))
+    monkeypatch.setattr(acquire, "run", lambda project, client=None: _acq_result(project, next(passes)))
     pre = _approve(project, ki, res)
     assert _state(project) == "BLOCKED" and "could not be fetched" in pre.message
     card = setup_flow.request(project)
@@ -1329,7 +1362,7 @@ def test_failed_acquisition_modify_revokes_and_replans(tmp_path, monkeypatch):
     from kiss_cli import acquire, setup as setup_flow
     project, ki, res = _approved_plan(tmp_path, monkeypatch)
     monkeypatch.setattr(acquire, "run", lambda project, client=None:
-                        {"status": "failed", "items": {"forcing": {"status": "failed", "error": "gone"}}})
+                        _acq_result(project, {"status": "failed", "items": {"forcing": {"status": "failed", "error": "gone"}}}))
     _approve(project, ki, res)
     card = setup_flow.request(project)
     pre = flowrun.pre(project, "Please revise the plan.", ["M"], [ki],
@@ -1344,7 +1377,7 @@ def test_manual_card_modify_replans_while_acquiring(tmp_path, monkeypatch):
     from kiss_cli import acquire, setup as setup_flow
     project, ki, res = _approved_plan(tmp_path, monkeypatch)
     monkeypatch.setattr(acquire, "run", lambda project, client=None:
-                        {"status": "waiting", "items": {"forcing": {"status": "waiting"}}})
+                        _acq_result(project, {"status": "waiting", "items": {"forcing": {"status": "waiting"}}}))
     _approve(project, ki, res)
     assert _state(project) == "ACQUIRING"
     pre = flowrun.pre(project, "请修改计划：hwsd 用服务器裁剪", ["M"], [ki],
@@ -1358,7 +1391,7 @@ def test_message_while_blocked_reissues_the_card(tmp_path, monkeypatch):
     from kiss_cli import acquire, setup as setup_flow
     project, ki, res = _approved_plan(tmp_path, monkeypatch)
     monkeypatch.setattr(acquire, "run", lambda project, client=None:
-                        {"status": "failed", "items": {"forcing": {"status": "failed", "error": "gone"}}})
+                        _acq_result(project, {"status": "failed", "items": {"forcing": {"status": "failed", "error": "gone"}}}))
     _approve(project, ki, res)
     setup_flow.resume(project, "dismissed")           # the generic handler marked it answered
     assert setup_flow.request(project)["status"] != "waiting"
@@ -1377,7 +1410,7 @@ def test_plan_submitted_before_a_dropped_connection_still_reaches_the_card(tmp_p
     t.provider_succeeded = False                         # the turn ended in a transport error afterwards
     res = flowrun.after(project, t, "", setup_ok=True)
     assert res.request and res.request["id"].startswith(flowrun.APPROVAL_REQUEST_ID_PREFIX)
-    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "WAITING_FOR_USER"
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "WAITING_FOR_USER"
 
 
 def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_path, monkeypatch):
@@ -1391,7 +1424,7 @@ def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_pa
         {"id": "risma_on2", "name": "RISMA ON2", "delivery": "served", "size": 47_000},
     ]})
     monkeypatch.setattr(obs_access, "refresh_catalogue", lambda *a, **k: obs_access.load_catalogue())
-    monkeypatch.setattr(acquire, "run", lambda project, client=None: {"status": "done", "items": {}})
+    monkeypatch.setattr(acquire, "run", lambda project, client=None: _acq_result(project, {"status": "done", "items": {}}))
     project = _project(tmp_path); ki = _ki(tmp_path, "M")
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     t = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "run M for 2003")
@@ -1419,10 +1452,10 @@ def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_pa
                       res.request)
     assert "re-pinned to your choice: forcing" in pre.message
     assert not (project / "runs" / "approval.json").exists()
-    inv2 = json.loads((project / "runs" / "data-inventory.json").read_text())
+    inv2 = json.loads((project / "runs" / "data-inventory.json").read_text(encoding="utf-8"))
     item = next(i for i in inv2["items"] if i["id"] == "forcing")
     assert item["dataset_id"] == "risma_on2" and item["delivery"] == "served"
-    card = json.loads((project / "setup-request.json").read_text())
+    card = json.loads((project / "setup-request.json").read_text(encoding="utf-8"))
     assert card["plan_review"]["data_choices"][0]["picked"] == "risma_on2"
     # approving the re-issued card with the same pick signs and moves on
     pre = flowrun.pre(project, "Approved.", ["M"], [ki],
@@ -1439,8 +1472,8 @@ def test_approval_records_who_decided_each_input_and_the_plan_carries_the_revisi
     res = flowrun.after(project, t, "planned", setup_ok=True)
     pre = _approve(project, ki, res)
     assert pre.message is None
-    approval = json.loads((project / "runs" / "approval.json").read_text())
-    plan = json.loads((project / "runs" / "plan.json").read_text())
+    approval = json.loads((project / "runs" / "approval.json").read_text(encoding="utf-8"))
+    plan = json.loads((project / "runs" / "plan.json").read_text(encoding="utf-8"))
     recs = approval["decisions"]
     assert plan["decision_revision"] and len(plan["decision_revision"]) == 16
     # the planner's recommendation is disclosed, never recorded as the user's own choice
@@ -1464,14 +1497,14 @@ def test_a_high_impact_choice_with_no_candidate_refuses_to_start_and_is_named(tm
     assert "routing" in (pre.message or "") and "need your decision" in (pre.message or "")
     assert not (project / "runs" / "approval.json").exists()
     # the user picks on the re-issued card: it signs, and the pick is recorded as THEIRS
-    card = json.loads((project / "setup-request.json").read_text())
+    card = json.loads((project / "setup-request.json").read_text(encoding="utf-8"))
     pre = flowrun.pre(project, "Approved.", ["M"], [ki],
                       {"request_id": card["id"], "option_id": "approve", "choices": {"routing": "cama"}}, card)
     assert pre.message is None
-    recs = json.loads((project / "runs" / "approval.json").read_text())["decisions"]
+    recs = json.loads((project / "runs" / "approval.json").read_text(encoding="utf-8"))["decisions"]
     assert recs["choice:routing"]["source"] == "user" and recs["choice:routing"]["value"] == "cama"
     # the user's answer is host-written, outside anything the agent may edit
-    assert json.loads((project / ".geoforge" / "user-answers.json").read_text())["answers"]["choice:routing"]["value"] == "cama"
+    assert json.loads((project / ".geoforge" / "user-answers.json").read_text(encoding="utf-8"))["answers"]["choice:routing"]["value"] == "cama"
 
 
 def test_an_input_with_nothing_to_fall_back_on_is_recorded_open(tmp_path):
@@ -1726,6 +1759,7 @@ def test_a_reissued_card_shows_the_non_data_pick_the_user_made(tmp_path):
     class _FS:
         project = tmp_path
         flow = flowrun._flow()
+        database_access_mode = "direct"
     card = plan_review._card(flowrun._flow(), _FS(), plan, {"items": []}, "note")
     assert card["plan_review"]["decisions"][0]["picked"] == "cama"
 
@@ -1882,3 +1916,66 @@ def test_legacy_untagged_accepted_rationale_still_reads_as_accepted():
     assert plan_review.is_accepted_suggestion(plan_review._LEGACY_SUGGESTION_WHY)
     assert plan_review.is_accepted_suggestion(plan_review._SUGGESTION_WHY)
     assert not plan_review.is_accepted_suggestion(plan_review._KI_DEFAULT_WHY)
+
+
+def _executing(tmp_path):
+    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+    flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
+    _approve(project, ki, flowrun.after(project, _drive_planning(tmp_path, ki, project), "planned", setup_ok=True))
+    t = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
+    run = lambda args: api.execute_tool(  # noqa: E731
+        "run_ki_tool", {"tool_path": "tools/run.py", "arguments": args,
+                        "plan_step_id": t.session.plan["steps"][0]["id"]},
+        ki, _cfg(project), project_mode=True, flow=t.session)
+    return project, t, run
+
+
+def test_a_corrected_retry_completes_and_the_superseded_failure_is_disclosed(tmp_path):
+    import time
+    project, t, run = _executing(tmp_path)
+    assert "exit_code=1" in run([])                  # the agent forgot the output path
+    time.sleep(1.1)
+    run(["outputs/q.csv"])                            # and retried correctly
+    res = flowrun.after(project, t, "done", setup_ok=True)
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "COMPLETED"
+    assert "1 earlier failed attempt" in res.message and "run history" in res.message
+
+
+def test_incomplete_turn_names_stale_steps_and_unvouched_files(tmp_path, monkeypatch):
+    project, t, run = _executing(tmp_path)
+    run(["outputs/q.csv"])
+    (project / "outputs" / "q_full.csv").write_text("t,q\n1,nan\n")
+    res = flowrun.after(project, t, "done", setup_ok=True)
+    assert "outputs/q_full.csv" in res.message and "not vouched for" in res.message
+    real = type(t.session).evidence
+    monkeypatch.setattr(type(t.session), "evidence", lambda self, **kw: {
+        **real(self, **kw), "stale_steps": ["M:run"], "steps_missing": ["M:run"]})
+    res = flowrun.after(project, t, "done", setup_ok=True)
+    assert "M:run" in res.message and "rewritten" in res.message
+
+
+def test_a_stopped_run_is_resumable_not_a_failed_validation(tmp_path):
+    from kiss_cli import execution, project_status
+    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+    (ki.root / "tools" / "run.py").write_text(
+        "import sys, time, pathlib\ntime.sleep(20)\npathlib.Path(sys.argv[1]).write_text('t,q\\n1,0.5\\n')\n")
+    flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
+    _approve(project, ki, flowrun.after(project, _drive_planning(tmp_path, ki, project), "planned", setup_ok=True))
+    t = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
+    box = {}
+    worker = threading.Thread(target=lambda: box.update(out=api.execute_tool(
+        "run_ki_tool", {"tool_path": "tools/run.py", "arguments": ["outputs/q.csv"],
+                        "plan_step_id": t.session.plan["steps"][0]["id"]},
+        ki, _cfg(project), project_mode=True, flow=t.session)))
+    worker.start()
+    import time
+    time.sleep(1.5)
+    execution.request_stop(project)                         # the user's Stop
+    worker.join(15)
+    assert not worker.is_alive()
+    res = flowrun.after(project, t, "[DeepSeek stopped by the user]", setup_ok=True)
+    assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "EXECUTING"
+    assert projectrun.load(project)["summary"] == "Stopped by you — send a message to continue"
+    assert not res.message and not res.continue_now
+    progress = project_status.snapshot(project, activity={"state": "idle"})["progress"]
+    assert progress["status"] != "failed"

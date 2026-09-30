@@ -139,6 +139,32 @@ def test_real_chat_records_explicit_custom_answer_without_approval(chat, answer,
     assert chat.reached[0][0][5] is None  # not a Flow approval click
 
 
+def test_real_chat_saves_the_clicked_answer_for_later_turns(chat):
+    """Issue #3: the click used to live only in the request file, which the next question archives."""
+    from kiss_cli import plan_review
+    pending = question()
+    chat.submit(pending, "Source 3", {"request_id": pending["id"], "option_id": "source-3"})
+    rec = plan_review.load_user_answers(chat.project)["interview:planning-question"]
+    assert rec["value"] == "Source 3" and rec["question"] == pending["title"]
+
+
+def test_real_chat_saves_a_custom_answer_for_later_turns(chat):
+    from kiss_cli import plan_review
+    pending = question()
+    chat.submit(pending, "2003–2005", custom_action(pending, "2003–2005"))
+    assert plan_review.load_user_answers(chat.project)["interview:planning-question"]["value"] == "2003–2005"
+
+
+def test_real_chat_keeps_the_note_on_an_option_answer(chat):
+    from kiss_cli import plan_review
+    pending = question()
+    chat.submit(pending, "Source 3, for validation only", {
+        "request_id": pending["id"], "option_id": "source-3", "note": "for validation only"})
+    answer = plan_review.load_user_answers(chat.project)["interview:planning-question"]
+    assert answer["value"] == "Source 3" and answer["note"] == "for validation only"
+    assert "for validation only" in plan_review.settled_answers_block(chat.project)
+
+
 @pytest.mark.parametrize("options", [[], question()["options"]])
 def test_ask_about_choices_prose_leaves_the_question_pending(chat, options):
     pending = question(options=options)

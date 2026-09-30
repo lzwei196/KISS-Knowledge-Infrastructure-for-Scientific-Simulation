@@ -2,16 +2,16 @@
   "schema_version": 1,
   "product": "GeoForge Desktop",
   "version": "0.6.54",
-  "release_date": "2026-09-28",
+  "release_date": "2026-09-30",
   "source": {
     "branch": "windows-version",
-    "code_commit": "fbed40b08f2d7c552c5c332a912b5a65f3d8855c",
+    "code_commit": "420958db5e529f116cd29992266f0f8c9f126d99",
     "repository": "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation",
     "release_tag": "windows-v0.6.54",
-    "commit_scope": "code_commit identifies the Windows baseline; integrated_mac_commit pins the imported source. Integration and local validation are documented in docs/WINDOWS_MAC_PARITY_2026-09-28.md. No published release is implied.",
-    "integrated_mac_commit": "963164e8598d6c40ad6e0932dabecabd633d7acf",
+    "commit_scope": "code_commit identifies the Windows baseline this build merges onto; integrated_mac_commit pins the imported mac source. Integration, Windows fixes and local validation are documented in docs/WINDOWS_MAC_SYNC_2026-09-30.md. No published release is implied.",
+    "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
-    "build_label": "windows-mac-parity-20260928"
+    "build_label": "windows-mac-sync-20260930"
   },
   "ki_library": {
     "package_count": 127,
@@ -29,6 +29,12 @@
     "windows_platform_recipes": 23
   },
   "changes": [
+    {
+      "id": "windows-september-30-mac-sync",
+      "area": "desktop-runtime",
+      "summary": "Import the mac September 28-29 fix round (downloads continue in the background, Stop covers the whole turn, interview answers kept, uploads bound at approval, GeoForge Database only when activated, study period asked separately). Windows: Stop ends the whole process tree and tray Exit stops running work; UTF-8 file handling fixes for Chinese Windows; ASCII agent launchers; robust installer quoting and background workers; KI library updates cannot remove Windows installation guidance.",
+      "user_action": "None. If a KI library update is refused, the current library stays in use; the notice explains why."
+    },
     {
       "id": "windows-september-28-mac-parity",
       "area": "desktop-runtime",
@@ -67,7 +73,9 @@
     },
     {
       "id": "one-time-database-token-on-macos",
-      "platforms": ["macos"],
+      "platforms": [
+        "macos"
+      ],
       "area": "desktop-runtime",
       "summary": "The GeoForge Database token is kept in a private 0600 file under the user's Application Support directory on macOS instead of the login Keychain, whose access list is bound to each build's ad-hoc code signature and prompted on every update. One migration read on first start, then no more consent dialogs.",
       "user_action": "Allow the Keychain read one last time when this version first starts; later versions will not ask."
@@ -342,10 +350,16 @@
     }
   },
   "validation": {
-    "status": "Windows source regression passed; packaged acceptance results are recorded separately in the evidence document",
-    "source_tests": {"desktop_passed": 1181, "desktop_skipped": 7, "desktop_subtests_passed": 286, "shared_passed": 313, "shared_skipped": 6, "final_windows_focused_passed": 15},
-    "evidence_document": "docs/WINDOWS_MAC_PARITY_2026-09-28.md",
-    "known_upstream_limits": "Upstream documents unresolved scientific planning and data-source approval consistency issues. This parity build is not certification of every model workflow or calibration."
+    "status": "Windows source regression passed under the real GBK locale (no UTF-8 mode); packaged and installer acceptance results are recorded in the evidence document",
+    "source_tests": {
+      "desktop_passed": 1449,
+      "desktop_skipped": 35,
+      "desktop_subtests_passed": 288,
+      "shared_passed": 326,
+      "shared_skipped": 7
+    },
+    "evidence_document": "docs/WINDOWS_MAC_SYNC_2026-09-30.md",
+    "known_upstream_limits": "No live provider, authenticated database download, model simulation or calibration acceptance is part of this build. Windows process-tree Stop is verified with real local processes; agents' detached (nohup) jobs whose parent already exited are not reached."
   },
   "agent_update_protocol": [
     "Read release-manifest.json before changing an installation.",

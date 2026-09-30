@@ -7,6 +7,7 @@ import os
 import threading
 import webbrowser
 from ctypes import wintypes
+from typing import Callable
 
 
 WM_DESTROY = 0x0002
@@ -47,8 +48,25 @@ class _NotifyIconData(ctypes.Structure):
     ]
 
 
-def start(url: str) -> threading.Thread | None:
-    """Show a tray icon whose double-click reopens *url*. Never blocks startup."""
+def _exit(on_exit: Callable[[], object] | None) -> None:
+    """Leave the process, first ending what the Desktop launched.
+
+    ``os._exit`` skips atexit, and Windows does not end a parent's children:
+    without ``on_exit`` calibration workers and agent CLIs outlive the app.
+    """
+    if on_exit is not None:
+        try:
+            on_exit()
+        except Exception:  # noqa: BLE001 — exit regardless; cleanup is best effort
+            pass
+    os._exit(0)
+
+
+def start(url: str, on_exit: Callable[[], object] | None = None) -> threading.Thread | None:
+    """Show a tray icon whose double-click reopens *url*. Never blocks startup.
+
+    ``on_exit`` runs when the user chooses Exit, before the process ends.
+    """
     if not hasattr(ctypes, "windll"):
         return None
 
@@ -110,7 +128,7 @@ def start(url: str) -> threading.Thread | None:
                         # gui.serve() owns the main thread and has no external
                         # shutdown handle. End this self-contained local server
                         # after removing its icon; settings writes are atomic.
-                        os._exit(0)
+                        _exit(on_exit)
                 return 0
             if message == WM_DESTROY:
                 shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(data))

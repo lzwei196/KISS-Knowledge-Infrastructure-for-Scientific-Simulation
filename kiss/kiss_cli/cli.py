@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import sys
@@ -276,7 +277,7 @@ def cmd_recipe(args) -> int:
     harvested = {}
     hp = repo_root / "kiss" / "manifests" / "_harvested_produces.json"
     if hp.exists():
-        harvested = _json.loads(hp.read_text())
+        harvested = _json.loads(hp.read_text(encoding="utf-8"))
     res = recipe.gather(ki, harvested)
     if args.json:
         print(_json.dumps({
@@ -329,6 +330,32 @@ def _flow_ki_root(project: Path, name: str, args) -> Path:
     return Path(_catalog(args).get(name).root)
 
 
+#: Errors main() already reports as ``kiss: <message>`` with exit status 2.
+_REPORTED_ERRORS = (KeyError, FileNotFoundError, NotADirectoryError, ValueError)
+
+
+def _worker_entry(handler):
+    """Answer a crash with a traceback on stderr and exit status 1.
+
+    These commands run as children of the Desktop, which waits with no timeout.
+    In the windowed frozen Windows exe an uncaught exception becomes
+    PyInstaller's modal traceback dialog nobody sees, so the child never exits.
+    """
+    @functools.wraps(handler)
+    def run(args) -> int:
+        try:
+            return handler(args)
+        except _REPORTED_ERRORS:
+            raise
+        except Exception:
+            if sys.stderr is not None:
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+            return 1
+    return run
+
+
+@_worker_entry
 def cmd_run_tool(args) -> int:
     """Run one KI tool for an APPROVED plan step and write the signed receipt (plan v3 B7).
     This is the only way a CLI agent's run can count; anything run outside it has no receipt."""
@@ -360,6 +387,17 @@ def cmd_run_tool(args) -> int:
     argv = list(args.argv)
     if argv and argv[0] == "--":
         argv = argv[1:]
+    import signal
+    import threading
+    from .execution import LIVE_PROCESSES
+    if threading.current_thread() is threading.main_thread():
+        # Stop SIGTERMs the agent CLI's process tree, which a direct run-tool is in.
+        # While the tool runs, end like Ctrl-C: its tree is killed and the attempt receipted.
+        # Before launch the stop marker refuses it; after exit the finished run keeps its receipt.
+        def interrupt(*_):
+            if LIVE_PROCESSES:
+                raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, interrupt)
     try:
         result = execute_ki_tool(
             flow=fs, cfg=cfg, project=project, ki=args.ki, ki_root=ki_root,
@@ -378,7 +416,7 @@ def cmd_run_tool(args) -> int:
         print("[RECEIPT] " + json.dumps(result.receipt, ensure_ascii=False))
     if result.exit_code is not None:
         return result.exit_code
-    return {"timed_out": 124, "interrupted": 130}.get(result.status, 1)
+    return {"timed_out": 124, "interrupted": 130, "stopped": 130}.get(result.status, 1)
 
 
 def cmd_fetch(args) -> int:
@@ -467,9 +505,11 @@ def cmd_harness_status(args) -> int:
         flow = flowgate.load()
         status["flow_ready"] = True
         status["flow_source"] = str(getattr(flow, "__file__", ""))
+        # The modules flowgate.load() imports; keep the two lists identical.
         status["flow_modules"] = [
             "states", "resolve", "plan", "approval", "contracts",
-            "receipts", "policy", "tools", "build_data",
+            "receipts", "policy", "tools", "build_data", "declared",
+            "decisions", "ki_inputs",
         ]
     except flowgate.FlowUnavailable as error:
         status["flow_ready"] = False
@@ -483,6 +523,16 @@ def cmd_harness_status(args) -> int:
 def cmd_calibrate(args) -> int:
     """Run the fixed engine through the app/CLI's own Python environment."""
     from . import calibration
+    import signal
+    import threading
+    from .execution import LIVE_PROCESSES
+    if threading.current_thread() is threading.main_thread():
+        # A provider's Stop signals this wrapper and the engine tree. Keep the
+        # wrapper alive long enough to persist the interrupted calibration report.
+        def interrupt(*_):
+            if LIVE_PROCESSES:
+                raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, interrupt)
 
     try:
         obs_shapes = json.loads(args.obs_shapes_json)
@@ -519,7 +569,20 @@ def cmd_calibrate(args) -> int:
         "log_path": result.get("log_path"),
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
+    if report.get("status") in {"stopped", "interrupted"}:
+        return 130
     return 0 if report.get("status") not in ("engine_error", "backend_unavailable") else 2
+
+
+@_worker_entry
+def cmd_calibration_worker(args) -> int:
+    from . import calibration
+    return calibration.run_worker(args.request_path)
+
+
+@_worker_entry
+def cmd_install_download_worker(args) -> int:
+    return install.run_download_worker(args.request_path)
 
 
 # --- wiring -----------------------------------------------------------------
@@ -658,6 +721,12 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--expected-case-id")
     q.add_argument("--determining-metric")
     q.set_defaults(fn=cmd_calibrate)
+    q = sub.add_parser("_calibration-worker", help=argparse.SUPPRESS)
+    q.add_argument("request_path", type=Path)
+    q.set_defaults(fn=cmd_calibration_worker)
+    q = sub.add_parser("_install-download-worker", help=argparse.SUPPRESS)
+    q.add_argument("request_path", type=Path)
+    q.set_defaults(fn=cmd_install_download_worker)
     return p
 
 
@@ -681,7 +750,7 @@ def cmd_verify(args) -> int:
     hp = repo_root / "kiss" / "manifests" / "_harvested_produces.json"
     if hp.exists():
         try:
-            harvested = _json.loads(hp.read_text())
+            harvested = _json.loads(hp.read_text(encoding="utf-8"))
         except ValueError:
             pass
 
@@ -793,6 +862,19 @@ def _rescue_run_options(args) -> None:
 def main(argv: list[str] | None = None) -> int:
     import sys as _sys
 
+    if getattr(_sys, "frozen", False) and os.name == "nt":
+        # The frozen exe ignores PYTHONIOENCODING, so its pipes use the locale
+        # code page (cp936) strictly. Tool output decoded with U+FFFD must not
+        # raise UnicodeEncodeError once its receipt is already written. The
+        # encoding stays what run_process decodes with; the windowed app has
+        # no streams at all (None). stderr is normally backslashreplace, which
+        # cannot raise and keeps diagnostics exact, so only a strict one changes.
+        for stream in (_sys.stdout, _sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is not None and (
+                    stream is _sys.stdout or getattr(stream, "errors", "") == "strict"):
+                reconfigure(errors="replace")
+
     # Before anything looks for agent CLIs or API keys: a double-clicked app
     # gets launchd's bare PATH, not the user's shell PATH.
     from . import shellenv
@@ -810,9 +892,15 @@ def main(argv: list[str] | None = None) -> int:
         _rescue_run_options(args)
         if args.argv and args.argv[0] == "--":
             args.argv = args.argv[1:]
+    handler = args.fn
+    if (getattr(_sys, "frozen", False) and os.name == "nt"
+            and args.cmd not in {"app", "gui"}):
+        # Every other command of the windowed exe runs as a child the Desktop
+        # or an agent waits on; a crash must exit, not raise a modal dialog.
+        handler = _worker_entry(handler)
     try:
-        return args.fn(args)
-    except (KeyError, FileNotFoundError, NotADirectoryError, ValueError) as e:
+        return handler(args)
+    except _REPORTED_ERRORS as e:
         print(f"kiss: {e}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

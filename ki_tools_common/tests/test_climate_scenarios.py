@@ -312,5 +312,5 @@ def test_provenance_write_roundtrip(tmp_path):
     out_path = p.write(tmp_path / "manifest.json")
     assert out_path.exists()
     import json
-    loaded = json.loads(out_path.read_text())
+    loaded = json.loads(out_path.read_text(encoding="utf-8"))
     assert loaded["run_id"] == p.run_id()

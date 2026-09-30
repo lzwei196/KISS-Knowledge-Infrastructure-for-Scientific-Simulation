@@ -258,7 +258,7 @@ def couplings_for(ids: list[str], couplings_dir: Path | str, one_end: bool = Fal
                     "variables": [], "partner_missing": (None if both else (tgt if src in want else src))}
             try:
                 import yaml as _y
-                cfg = _y.safe_load(yml.read_text(errors="ignore")) or {}
+                cfg = _y.safe_load(yml.read_text(encoding="utf-8", errors="ignore")) or {}
                 edge["variables"] = [e.get("canonical_id") for e in (cfg.get("forward_edges") or [])
                                      if isinstance(e, dict) and e.get("canonical_id")]
                 edge["edge_type"] = ((cfg.get("metadata") or {}).get("edge_type"))

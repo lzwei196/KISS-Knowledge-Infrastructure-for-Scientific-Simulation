@@ -35,7 +35,7 @@ def _setup(tmp_path, monkeypatch):
     legacy.roles["static"] = project / "outputs" / "B" / "legacy-deck"
     legacy.roles["static"].mkdir(parents=True)
     (legacy.roles["static"] / "INPUT.DAT").write_text("user case data")
-    (project / paths.CONFIG_NAME).write_text(legacy.dumps())
+    (project / paths.CONFIG_NAME).write_text(legacy.dumps(), encoding="utf-8")
     return handler, project, kis, installs, legacy
 
 
@@ -52,7 +52,7 @@ def test_batch_preserves_legacy_b_deck_for_both_selected_orders(tmp_path, monkey
     assert configs["A"].roles["static"] == project / "inputs" / "static"
     assert configs["B"].roles["static"] == legacy.roles["static"]
     for ki, cfg in resolved:
-        text = (ki.root / "SKILL.md").read_text()
+        text = (ki.root / "SKILL.md").read_text(encoding="utf-8")
         assert (cfg.roles["outputs"] / "result.nc").as_posix() in text
         assert (cfg.roles["static"] / "INPUT.DAT").as_posix() in text
     neutral = paths.KissConfig.load(project)
@@ -175,7 +175,7 @@ def test_ambiguous_legacy_root_is_retained_without_blocking_exact_model_configs(
     legacy.roles["binaries"] = project / "unknown-install"
     legacy.python = "unknown-legacy-python"
     path = project / paths.CONFIG_NAME
-    path.write_text(legacy.dumps())
+    path.write_text(legacy.dumps(), encoding="utf-8")
     before = path.read_bytes()
     resolved = handler._session_workspaces(project, [kis["A"], kis["B"]])
     assert path.read_bytes() == before
@@ -190,7 +190,7 @@ def test_neutral_root_custom_binding_is_not_lost_on_refresh(tmp_path, monkeypatc
     neutral = project_paths.project_config(project, python=sys.executable)
     neutral.roles["survey"] = project / "inputs" / "user-survey"
     path = project / paths.CONFIG_NAME
-    path.write_text(neutral.dumps())
+    path.write_text(neutral.dumps(), encoding="utf-8")
     before = path.read_bytes()
     if batch:
         handler._session_workspaces(project, [kis["A"], kis["B"]])

@@ -87,7 +87,7 @@ def test_project_snapshot_is_immediate_and_retains_cache_age_and_completeness(ca
     store, payload = cache
     before = store.read_bytes()
     path = obs_access.prepare_catalogue_snapshot(tmp_path / "project")
-    snapshot = json.loads(path.read_text())
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
     assert snapshot["datasets"] == payload["datasets"]
     assert snapshot["generated_at_epoch"] == payload["generated_at_epoch"]
     assert snapshot["total"] == 7 and snapshot["returned"] == 5 and snapshot["truncated"] is True
@@ -106,7 +106,7 @@ def test_existing_project_snapshot_is_usable_when_app_cache_is_missing(cache, tm
     store.unlink()
     result = obs_access.prepare_catalogue_snapshot(project)
     assert result == path
-    snapshot = json.loads(path.read_text())
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
     assert snapshot["datasets"] == payload["datasets"] and snapshot["stale"] is True
 
 
@@ -115,7 +115,7 @@ def test_project_snapshot_does_not_hide_known_authentication_failure(cache, tmp_
     payload.update(ok=False, stale=True, error={"code": "expired_token", "message": "Fixture token expired"})
     obs_access._atomic_json(store, payload)
     path = obs_access.prepare_catalogue_snapshot(tmp_path / "project")
-    snapshot = json.loads(path.read_text())
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
     assert snapshot["ok"] is False and snapshot["error"] == payload["error"]
     assert snapshot["stale"] is True and snapshot["datasets"] == payload["datasets"]
     prompt = obs_access.planning_snapshot_prompt(path)
@@ -153,9 +153,9 @@ def test_forced_project_snapshot_refreshes_even_with_populated_cache(cache, monk
 
     monkeypatch.setattr(obs_access, "Client", Server)
     path = obs_access.prepare_catalogue_snapshot(tmp_path / "project", force=True)
-    snapshot = json.loads(path.read_text())
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
     assert calls and snapshot["datasets"][0]["id"] == "fresh-record"
-    assert json.loads(store.read_text())["etag"] == "fixture-v2"
+    assert json.loads(store.read_text(encoding="utf-8"))["etag"] == "fixture-v2"
 
 
 def test_explicit_refresh_entrypoint_still_refreshes(cache):
@@ -169,4 +169,4 @@ def test_explicit_refresh_entrypoint_still_refreshes(cache):
 
     result = obs_access.refresh_catalogue(client=Server(), force=True)
     assert calls and result["datasets"][0]["id"] == "new-record"
-    assert json.loads(store.read_text())["etag"] == "fixture-v3"
+    assert json.loads(store.read_text(encoding="utf-8"))["etag"] == "fixture-v3"

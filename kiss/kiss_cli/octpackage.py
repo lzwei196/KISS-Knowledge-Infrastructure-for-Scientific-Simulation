@@ -61,7 +61,7 @@ def guard(args,cwd,root):
     if len(args)!=9 or args[:4]!=FLAGS:
         raise ValueError("Octave permits only the fixed toolbox load probe")
     script=scoped(args[4],cwd,root)
-    if not script.is_file() or script.stat().st_size>16000 or script.read_text()!=PROBE:
+    if not script.is_file() or script.stat().st_size>16000 or script.read_text(encoding="utf-8")!=PROBE:
         raise ValueError("Octave probe script is not the exact trusted loader")
     scoped(args[5],cwd,root); scoped(args[6],cwd,root)
     classes_valid(args[7].split(","))

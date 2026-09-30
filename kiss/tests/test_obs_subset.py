@@ -242,7 +242,7 @@ def test_subset_binds_to_approved_inventory_without_mutating_plan(tmp_path, monk
     paths = s.bind_approved(project, ident)
     assert len(paths) == 1
     assert (project / 'runs/data-inventory.json').read_bytes() == before
-    receipt = json.loads(Path(paths[0]).read_text())
+    receipt = json.loads(Path(paths[0]).read_text(encoding="utf-8"))
     assert receipt['selection_sha256'] == fs.flow.receipts.selection_sha256(fs.inventory['items'][0])
     assert receipt['acquisition']['files'][0]['time_range'] == ['1989-01-01', '1989-12-31']
     assert receipt['acquisition']['files'][0]['crs_source'] == 'declared'

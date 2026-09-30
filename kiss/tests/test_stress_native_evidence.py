@@ -20,7 +20,7 @@ class NativeEvidenceTests(unittest.TestCase):
             (source/'macos-build-receipt.json').write_text('{"source_changes": {}}')
             (root/'installation-test.json').write_text(json.dumps({'binary': str(binary)}))
             stress.preserve_native_evidence(root,evidence,'PHREEQC')
-            record=json.loads((evidence/'native-product.json').read_text())
+            record=json.loads((evidence/'native-product.json').read_text(encoding="utf-8"))
             self.assertEqual(record['sha256'],hashlib.sha256(binary.read_bytes()).hexdigest())
             self.assertEqual(record['size_bytes'],binary.stat().st_size)
             self.assertEqual((evidence/'helper-macos-build-receipt.json').read_text(),'{"source_changes": {}}')

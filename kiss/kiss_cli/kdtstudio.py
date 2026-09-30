@@ -141,7 +141,7 @@ def _git_head(root: Path) -> str | None:
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=15, check=True,
+            capture_output=True, text=True, errors="replace", timeout=15, check=True,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -187,11 +187,11 @@ def install_engine(emit: Callable[[str], object] | None = None) -> dict:
             checkout = Path(td) / "checkout"
             subprocess.run(
                 ["git", "clone", "--filter=blob:none", "--no-checkout", REPOSITORY, str(checkout)],
-                capture_output=True, text=True, timeout=600, check=True,
+                capture_output=True, text=True, errors="replace", timeout=600, check=True,
             )
             subprocess.run(
                 ["git", "-C", str(checkout), "checkout", "--detach", REVIEWED_COMMIT],
-                capture_output=True, text=True, timeout=120, check=True,
+                capture_output=True, text=True, errors="replace", timeout=120, check=True,
             )
             if not _engine_valid(checkout):
                 raise RuntimeError("the downloaded KDT checkout is missing required engine files")

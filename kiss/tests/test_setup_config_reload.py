@@ -11,7 +11,7 @@ class SetupConfigReloadTests(unittest.TestCase):
             updated = paths.KissConfig.default(root)
             updated.python = str(root / 'venv2/bin/python')
             updated.roles['python_env'] = root / 'venv2'
-            (root / 'kiss.toml').write_text(updated.dumps())
+            (root / 'kiss.toml').write_text(updated.dumps(), encoding="utf-8")
             loaded = gui._installation_config_after_setup(old)
             self.assertEqual(loaded.python, updated.python)
             self.assertEqual(loaded.roles['python_env'], root / 'venv2')
@@ -22,6 +22,6 @@ class SetupConfigReloadTests(unittest.TestCase):
             root = Path(directory).resolve()
             old = paths.KissConfig.default(root)
             changed = paths.KissConfig.default(root / 'other')
-            (root / 'kiss.toml').write_text(changed.dumps())
+            (root / 'kiss.toml').write_text(changed.dumps(), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, 'workspace root'):
                 gui._installation_config_after_setup(old)

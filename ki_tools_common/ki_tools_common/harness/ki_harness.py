@@ -139,7 +139,7 @@ def manifest(ki_path) -> dict:
     if dagf.is_file():
         try:
             import yaml as _y
-            _d = _y.safe_load(dagf.read_text(errors="ignore")) or {}
+            _d = _y.safe_load(dagf.read_text(encoding="utf-8", errors="ignore")) or {}
             for o in (_d.get("outputs") or []):
                 if not isinstance(o, dict):
                     continue
@@ -166,7 +166,8 @@ def run_preflight(ki_path, timeout: int = 300) -> dict:
     pf = ki / "preflight_check.py"
     if not pf.is_file():
         raise KiHarnessError(f"no preflight_check.py at {ki}")
-    r = subprocess.run([PROJECT_PY, str(pf)], capture_output=True, text=True,
+    # the KI's own script prints in the child's locale; a stray byte must not crash the parse
+    r = subprocess.run([PROJECT_PY, str(pf)], capture_output=True, text=True, errors="replace",
                        timeout=timeout, cwd=str(ki))
     out = (r.stdout or "") + (r.stderr or "")
     m = re.search(r"\{.*\}", out, re.S)
@@ -218,7 +219,7 @@ def contract(ki_path, *, execute: bool = True, target_var: str | None = None,
 
     # POLICY + PROTOCOL --------------------------------------------------------------------------
     if skill.is_file():
-        txt = skill.read_text(errors="ignore")
+        txt = skill.read_text(encoding="utf-8", errors="ignore")
         pol = _policy_excerpt(txt)
         if pol:
             lines.append(pol)

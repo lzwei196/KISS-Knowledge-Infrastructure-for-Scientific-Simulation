@@ -128,7 +128,7 @@ def test_kimi_helpers_forward_describe_via_host_capability(monkeypatch, capsys, 
     if embedded:
         source = flowrun._DATABASE_HELPER
     else:
-        source = (Path(__file__).parents[1] / 'system_kis/GeoForge_Database/tools/search_catalogue.py').read_text()
+        source = (Path(__file__).parents[1] / 'system_kis/GeoForge_Database/tools/search_catalogue.py').read_text(encoding="utf-8")
     scope = {'__name__': 'test_describe_helper'}
     exec(compile(source, '<database-helper>', 'exec'), scope)
     monkeypatch.setenv('GEOFORGE_AGENT_DATABASE_URL', 'http://127.0.0.1:12345/api/agent/obs/catalogue')

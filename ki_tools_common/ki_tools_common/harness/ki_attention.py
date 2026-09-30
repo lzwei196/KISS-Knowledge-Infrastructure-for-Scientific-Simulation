@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 OP_RULES = """[operational]
-- LONG JOBS: launch detached (setsid nohup ... &) and WAIT in the same turn; ending the turn kills the run.
+- LONG JOBS: launch detached (setsid nohup ... &; plain nohup ... & where setsid is absent, as on macOS) and WAIT in the same turn; ending the turn kills the run.
 - NEVER launch the same generation job twice concurrently (duplicate writers corrupt outputs).
 - After each stage: verify the output exists and values are plausible BEFORE the next stage.
 - Use a UNIQUE output dir per run; check for prior outputs before re-running (no duplicates).
@@ -50,7 +50,7 @@ def _safe_yaml(p: Path):
     if yaml is None or not p.is_file():
         return None
     try:
-        return yaml.safe_load(p.read_text(errors="ignore"))
+        return yaml.safe_load(p.read_text(encoding="utf-8", errors="ignore"))
     except Exception:
         return "PARSE_ERROR"
 
@@ -115,7 +115,7 @@ def _prep_digest(ki: Path, lines: list):
     for name in ("input_preparation.md", "filename_grammar.md", "variables_and_units.md"):
         p = ki / "docs" / name
         if p.is_file():
-            first = next((l.strip() for l in p.read_text(errors="ignore").splitlines()
+            first = next((l.strip() for l in p.read_text(encoding="utf-8", errors="ignore").splitlines()
                           if l.strip() and not l.startswith("#")), "")
             hits.append(f"- docs/{name}: {first[:140]}  -> READ IT before preparing inputs")
     if hits:
@@ -164,7 +164,7 @@ def _verified_pointers(ki: Path, missing: list):
     if not sk.is_file():
         missing.append("SKILL.md MISSING — no protocol; do not improvise a pipeline")
         return
-    txt = sk.read_text(errors="ignore")
+    txt = sk.read_text(encoding="utf-8", errors="ignore")
     refs = set(re.findall(r"(?:docs|diagnostics|tools|workflow|examples)/[A-Za-z0-9_.\-/]+"
                           r"\.(?:md|yaml|yml|py|json|rst|txt)", txt))
     broken = sorted(r for r in refs if not (ki / r).exists())[:8]

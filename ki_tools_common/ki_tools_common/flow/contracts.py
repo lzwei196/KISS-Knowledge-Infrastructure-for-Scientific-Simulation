@@ -77,7 +77,7 @@ def discipline(ki_count: int = 1) -> str:
 
 
 PROGRESS_LONG_JOBS = (
-    "[LONG JOBS] Launch anything long detached (setsid nohup … &) and WAIT for it in this same "
+    "[LONG JOBS] Launch anything long detached (setsid nohup … &; plain nohup … & where setsid is absent, as on macOS) and WAIT for it in this same "
     "turn with a bounded until-loop; ending the turn while a job runs kills the run, and "
     "'done' is judged by receipts, not by your last message.\n"
 )
@@ -86,6 +86,37 @@ PROGRESS_LONG_JOBS = (
 # ---------------------------------------------------------------------------
 # Planning turn
 # ---------------------------------------------------------------------------
+
+def study_design_questions() -> str:
+    """Shared intake/planning guidance, not a scientific validator or consent gate."""
+    return (
+        "[STUDY DESIGN — ONE DECISION]\n"
+        "Ask the simulation period separately from the validation method/source. Never bundle "
+        "a date range and an evaluation dataset into one option. Use the user's already-stated "
+        "period; otherwise ask this one question with a justified recommendation when evidence "
+        "supports one. Offer a custom period, including a single season/year or multiple years "
+        "when scientifically applicable. A KI worked example is not a date-range recommendation. "
+        "Do not infer earliest/latest available years from an example, a filename or a sample. "
+        "Briefly distinguish requested period, forcing coverage, observation coverage and spin-up. "
+        "Cite the checked metadata/file and its temporal resolution behind any proposed range. "
+        "If coverage has not been checked, say it is unverified; never invent a limit. "
+        "A simulation can span more years than its evaluation data: do not silently shorten the "
+        "simulation to the observation overlap. If coverage conflicts with the user's choice, "
+        "explain the gap and ask about that change only.\n"
+        "Ask validation as its own later decision if it remains unresolved. Distinguish local "
+        "observations from aggregate comparisons: national/regional statistics are not site-scale "
+        "validation. Explain the spatial scale, available period and what the proposed comparison "
+        "can and cannot establish. A run without observational validation may be offered only "
+        "when the KI permits it, with its scientific limitations explicit; do not weaken a "
+        "required check or claim that such a run is validated.\n"
+        "Offer GeoForge Database candidates only when the host says access is activated and "
+        "the provided catalogue/query actually contains them. Public-source and user-provided "
+        "alternatives remain valid without Database access. Manual delivery does not change "
+        "scientific coverage; explain the later download handoff separately. Use cached metadata "
+        "first and identify stale/incomplete coverage. Do not fetch data to answer this question. "
+        "Ask one unresolved decision, then wait; a source/period answer is not plan approval.\n"
+    )
+
 
 _PLAN_SCHEMA_NOTE = (
     "[PLAN FILES — WRITE EXACTLY THESE]\n"
@@ -204,6 +235,7 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
     coupling = plan.get("coupling") if isinstance(plan.get("coupling"), list) else []
     lines = [
         f"[MODE: PLANNING — design the run for {names}; NO execution]",
+        study_design_questions(),
         "[THREE PHASES] Planning settles the scientific choices with the user; no downloads or "
         "input preparation. After the user approves the settled plan, acquisition does "
         "download/import only (including approved server subsets). KI execution then inspects "

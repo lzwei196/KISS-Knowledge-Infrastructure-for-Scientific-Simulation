@@ -130,7 +130,7 @@ def test_approved_catalogue_download_is_fetched_by_the_host_and_receipted(tmp_pa
     monkeypatch.setattr(obs_access, "Client", FakeClient)
     result = acquire.run(project)
     assert result["status"] == "done" and result["items"]["forcing"]["status"] == "done"
-    receipt = json.loads(Path(result["items"]["forcing"]["receipt"]).read_text())
+    receipt = json.loads(Path(result["items"]["forcing"]["receipt"]).read_text(encoding="utf-8"))
     assert receipt["item_id"] == "forcing" and receipt["plan_step_id"] == "M:run"
     assert receipt["approval_sha256"] == fs.approval_id
     # idempotent: a second pass reuses the receipt and downloads nothing
@@ -166,7 +166,7 @@ def test_manual_catalogue_credentials_go_to_private_card_and_placed_files_get_a_
     result = acquire.run(project)
     assert result["status"] == "waiting" and result["items"]["forcing"]["status"] == "waiting"
     assert "p4ss" not in json.dumps(result) and "pan.baidu.com" not in json.dumps(result)
-    request = json.loads((project / "setup-request.json").read_text())
+    request = json.loads((project / "setup-request.json").read_text(encoding="utf-8"))
     assert request["kind"] == "download" and request["id"] == acquire.MANUAL_REQUEST_ID
     assert "p4ss" in request["message"] and request["rows"][0]["code"] == "p4ss"
     assert Path(request["rows"][0]["expected_path"]).as_posix().endswith("inputs/observations/large-1")
@@ -175,7 +175,7 @@ def test_manual_catalogue_credentials_go_to_private_card_and_placed_files_get_a_
     (dest / "part1.nc").write_bytes(b"data-a"); (dest / "part2.nc").write_bytes(b"data-b")
     result = acquire.run(project)
     assert result["status"] == "done"
-    receipt = json.loads(Path(result["items"]["forcing"]["receipt"]).read_text())
+    receipt = json.loads(Path(result["items"]["forcing"]["receipt"]).read_text(encoding="utf-8"))
     assert receipt["source"].startswith("manual placement")
     assert sorted(f["path"] for f in receipt["raw_files"]) == [
         "inputs/observations/large-1/part1.nc", "inputs/observations/large-1/part2.nc"]
@@ -184,9 +184,9 @@ def test_manual_catalogue_credentials_go_to_private_card_and_placed_files_get_a_
     ev = fs.evidence()
     assert not [a for a in ev.get("unreceipted_artifacts") or [] if a.startswith("inputs/observations/large-1/")]
     # a swapped file invalidates the old receipt; the next pass signs the new content
-    first = json.loads(Path(result["items"]["forcing"]["receipt"]).read_text())
+    first = json.loads(Path(result["items"]["forcing"]["receipt"]).read_text(encoding="utf-8"))
     (dest / "part1.nc").write_bytes(b"tampered")
-    second = json.loads(Path(acquire.run(project)["items"]["forcing"]["receipt"]).read_text())
+    second = json.loads(Path(acquire.run(project)["items"]["forcing"]["receipt"]).read_text(encoding="utf-8"))
     assert second["raw_files"][0]["sha256"] != first["raw_files"][0]["sha256"]
 
 
@@ -233,7 +233,7 @@ def test_run_ki_tool_in_executing_writes_a_receipt_and_validates(tmp_path):
     assert out.startswith("exit_code=0") and "[RECEIPT]" in out
     summary = json.loads(out.splitlines()[1].split("[RECEIPT] ", 1)[1])
     assert summary["validation"] == "passed" and "outputs/q.csv" in summary["outputs"]
-    rec = json.loads(Path(summary["receipt"]).read_text())
+    rec = json.loads(Path(summary["receipt"]).read_text(encoding="utf-8"))
     assert fs.flow.receipts.verify(project, rec) and rec["plan_step_id"] == "M:run" and rec["exit_code"] == 0
     ev = fs.evidence()
     assert ev["receipts_verified"] is True and ev["validation"] == "passed" and ev["steps_missing"] == []
@@ -268,7 +268,7 @@ def test_direct_api_tool_gets_approved_step_environment_only(tmp_path, monkeypat
         "run_ki_tool", {"tool_path": "tools/env.py", "plan_step_id": "M:run"},
         ki, _cfg(project), project_mode=True, flow=fs)
     assert output.startswith("exit_code=0")
-    observed = json.loads((project / "outputs" / "env.json").read_text())
+    observed = json.loads((project / "outputs" / "env.json").read_text(encoding="utf-8"))
     assert observed == {"root": str(ki.root.resolve()), "secret": False}
 
 
@@ -489,7 +489,7 @@ def test_renamed_item_after_replan_reuses_verified_files_without_redownload(tmp_
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     result = acquire.run(project)
     assert result["status"] == "done" and FakeClient.calls == 1          # no second download
-    receipt = json.loads(Path(result["items"]["forcing_v2"]["receipt"]).read_text())
+    receipt = json.loads(Path(result["items"]["forcing_v2"]["receipt"]).read_text(encoding="utf-8"))
     assert receipt["item_id"] == "forcing_v2" and receipt["approval_sha256"] == fs.approval_id
     assert receipt["raw_files"][0]["path"] == ".geoforge/downloads/obs-1/obs-1.zip"
 
@@ -527,7 +527,7 @@ def test_rebind_survives_a_lost_transport_archive(tmp_path, monkeypatch):
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     result = acquire.run(project)
     assert result["status"] == "done" and FakeClient.calls == 1
-    receipt = json.loads(Path(result["items"]["forcing_v2"]["receipt"]).read_text())
+    receipt = json.loads(Path(result["items"]["forcing_v2"]["receipt"]).read_text(encoding="utf-8"))
     assert receipt["transform_tool"] == "rebound_extracted_files"
     assert receipt["raw_files"][0]["path"] == "inputs/observations/obs-1/forcing.nc"
     assert fs.flow.receipts.find_download(project, inv['items'][0]) is not None
@@ -650,7 +650,7 @@ def test_served_rebind_rejects_missing_selection_fingerprint(tmp_path, rename, a
         request_url="https://example.test/obs-1/download", http_status=200,
         raw_files=[raw], processed_files=[out], transform_tool="verified_zip_extract",
         approval_sha256=fs.approval_id, plan_step_id="M:run")
-    legacy = json.loads(receipt.read_text())
+    legacy = json.loads(receipt.read_text(encoding="utf-8"))
     assert fs.flow.receipts.verify(project, legacy) and not legacy["selection_sha256"]
     original_receipt = receipt.read_bytes()
     if archive_missing:
@@ -693,7 +693,7 @@ def test_manual_path_with_the_real_client_signs_placed_files(tmp_path, monkeypat
     second = acquire.run(project)
     assert second["status"] == "done" and len(opener.requests) == 1      # no second server call
     assert setup_flow.request(project) is None
-    receipt = json.loads(Path(second["items"]["forcing"]["receipt"]).read_text())
+    receipt = json.loads(Path(second["items"]["forcing"]["receipt"]).read_text(encoding="utf-8"))
     assert receipt["raw_files"][0]["path"] == "inputs/observations/large-1/a.nc"
 
 
@@ -811,3 +811,58 @@ def test_two_items_on_one_manual_dataset_make_one_download_row(tmp_path, monkeyp
     (dest / "a.nc").write_bytes(b"x")
     result = acquire.run(project)
     assert result["status"] == "done" and {v["status"] for v in result["items"].values()} == {"done"}
+
+
+# ── Issue #6a: the agent's download tool may fetch only planned inputs Desktop does not acquire ──
+
+def _approved_fetch_session(tmp_path, monkeypatch, **item):
+    import io
+    import urllib.request
+    ki = _ki(tmp_path)
+    project, fs = _session(tmp_path, ki, [
+        ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
+    pj, inv = _plan(ki)
+    inv["items"][0].update(item)
+    fs.write_plan(pj, inv)
+    fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
+    calls = []
+
+    class _Resp(io.BytesIO):
+        status = 200
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        return _Resp(b"lat,lon,t2m\n")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    return project, fs, calls
+
+
+@pytest.mark.parametrize("delivery", ["served", "subset", "manual"])
+def test_agent_cannot_overwrite_an_input_desktop_acquires(tmp_path, monkeypatch, delivery):
+    """Reproduced: an agent 'refresh' of forcing replaced Desktop's signed CMFD receipt."""
+    _project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch, dataset_id="cmfd_v1", delivery=delivery)
+    with pytest.raises(flowgate.FlowDenied, match="GeoForge acquires"):
+        fs.fetch("https://example.org/other.nc", "forcing")
+    assert calls == []
+
+
+def test_agent_cannot_download_under_an_unplanned_item(tmp_path, monkeypatch):
+    project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch)
+    with pytest.raises(flowgate.FlowDenied, match="not in the approved data inventory"):
+        fs.fetch("https://example.org/x.csv", "ghost")
+    assert calls == [] and not (project / "inputs" / "raw" / "ghost").exists()
+
+
+def test_agent_cannot_replace_an_input_the_user_provides(tmp_path, monkeypatch):
+    _project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch, decision="user", needs_user=True)
+    with pytest.raises(flowgate.FlowDenied, match="the user provides"):
+        fs.fetch("https://example.org/x.csv", "forcing")
+    assert calls == []
+
+
+def test_a_planned_public_source_is_still_fetched_and_receipted(tmp_path, monkeypatch):
+    """NASA POWER-style inputs have no catalogue delivery: this route stays open for them."""
+    project, fs, calls = _approved_fetch_session(tmp_path, monkeypatch)
+    info = fs.fetch("https://power.larc.nasa.gov/api/x.csv", "forcing", filename="power.csv")
+    assert calls and (project / info["path"]).read_bytes() == b"lat,lon,t2m\n"

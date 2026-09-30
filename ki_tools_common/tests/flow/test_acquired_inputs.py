@@ -59,7 +59,7 @@ def _inspect(project, item=None, *, approval="new-approval"):
 
 
 def _replace_signed(project, path, **fields):
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     doc.update(fields)
     path.write_text(json.dumps(receipts.sign(project, doc)))
 
@@ -174,13 +174,13 @@ def test_same_item_recovery_preserves_verifiable_original_receipt(project):
     from kiss_cli import acquire
 
     path, raw, _output = _record(project)
-    original = json.loads(path.read_text())
+    original = json.loads(path.read_text(encoding="utf-8"))
     raw.unlink()
     result = acquire._rebind_existing(
         project, SimpleNamespace(receipts=receipts), _item(), "new-approval",
     )
     assert result is not None and result["status"] == "done"
-    recovered = json.loads(path.read_text())
+    recovered = json.loads(path.read_text(encoding="utf-8"))
     previous = recovered["recovery"]["previous_receipt"]
     assert previous == original and receipts.verify(project, previous)
     assert recovered["recovery"]["original_raw_files"] == original["raw_files"]
@@ -293,7 +293,7 @@ def test_valid_signature_does_not_make_wrong_kind_a_download(project):
 
 def test_unverified_receipt_is_never_reusable(project):
     path, _raw, _output = _record(project)
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     doc["request_url"] = "https://example.test/changed"
     path.write_text(json.dumps(doc))
     result, = _inspect(project)

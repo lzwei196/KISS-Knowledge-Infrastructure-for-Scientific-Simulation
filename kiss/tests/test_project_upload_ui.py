@@ -68,8 +68,9 @@ vm.runInContext(page.slice(page.indexOf('let UPLOAD_ITEM='),page.indexOf('$("#pa
 
 
 def upload(**kwargs):
+    # Node always writes UTF-8; the locale default (GBK on Chinese Windows) cannot decode it.
     result = subprocess.run([NODE, "-e", RUNNER, str(PAGE)], input=json.dumps(kwargs),
-                            capture_output=True, text=True, check=True, timeout=10)
+                            capture_output=True, text=True, encoding="utf-8", check=True, timeout=10)
     parsed = json.loads(result.stdout)
     assert parsed["sendCalls"] == 0, "An upload must not send a message or continue a run"
     return parsed

@@ -124,7 +124,7 @@ def test_resolver_uses_documented_query_and_persists_only_real_public_children(m
     assert record["resolution"]["delivery_extent"] == [70,15,140,55]
     assert obs_access.stamp_inventory({"items": [{"id": "bad", "dataset_id": parent + "__unicorn_9999"}]})
     cached = list((obs_access.catalogue_store_path().parent / "resolved").glob("*.json"))
-    assert cached and "PRIVATE" not in cached[0].read_text()
+    assert cached and "PRIVATE" not in cached[0].read_text(encoding="utf-8")
 
 
 def test_resolver_rejects_partial_or_foreign_results():
@@ -292,14 +292,14 @@ def test_snapshot_is_provider_neutral_and_records_unavailability(tmp_path):
 
     path = obs_access.prepare_catalogue_snapshot(
         tmp_path, client=MissingTokenClient(), force=True)
-    payload = json.loads(path.read_text())
+    payload = json.loads(path.read_text(encoding="utf-8"))
     prompt = obs_access.planning_snapshot_prompt(path)
 
     assert path == tmp_path / ".geoforge/database/catalogue.json"
     assert payload["ok"] is False and payload["error"]["code"] == "missing_token"
     assert "HOST-OWNED DATA SERVICE" in prompt
     assert "never invent availability" in prompt
-    assert "private-token" not in path.read_text()
+    assert "private-token" not in path.read_text(encoding="utf-8")
 
     class ConfiguredClient:
         def catalogue(self, **_kwargs):
@@ -310,7 +310,7 @@ def test_snapshot_is_provider_neutral_and_records_unavailability(tmp_path):
     # Adding a token must take effect on the next plan; an earlier auth failure
     # is never held in the normal catalogue cache.
     obs_access.prepare_catalogue_snapshot(tmp_path, client=ConfiguredClient())
-    refreshed = json.loads(path.read_text())
+    refreshed = json.loads(path.read_text(encoding="utf-8"))
     assert refreshed["ok"] is True and refreshed["datasets"][0]["id"] == "cmfd-cell-1"
 
 
@@ -443,7 +443,7 @@ def test_settings_only_returns_masked_observation_token(tmp_path, monkeypatch):
     assert stored["value"] == "secret-value"
     assert shown["obs_token_configured"] is True
     assert shown["obs_activation_token"].startswith("…")
-    assert "secret-value" not in (tmp_path / "settings.json").read_text()
+    assert "secret-value" not in (tmp_path / "settings.json").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------- app-level store + local search

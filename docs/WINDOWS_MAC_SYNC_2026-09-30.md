@@ -38,6 +38,8 @@ Source tests ran on Windows 11 with Python 3.11 under the real cp936 locale (no 
 | `GeoForge-Desktop-Setup-v0.6.54-Windows-x64.exe` | 129,385,385 | `6ba1d4530a5175b386bf22e78e680fddaec1274a28a0265d129f94a8a507e653` |
 | `GeoForge-Desktop-v0.6.54-Windows-x64.zip` | 188,204,213 | `544e75963fc863fcdf310af483e781d4e2d4d99a2b942d21e4d320f73c0ba00e` |
 
+**Superseded:** the package below was rebuilt from `b443c16` after the end-to-end test fixes; see `WINDOWS_E2E_FSM2_2026-09-30.md` for the current artifacts.
+
 To publish (not done): push `windows-version`, tag `windows-v0.6.54` (the `windows-` prefix keeps the older multi-platform `v*` workflow from firing), and upload both files, `SHA256SUMS-Windows.txt` and `Windows-release-validation.json` to the GitHub release.
 
 ## Known limits

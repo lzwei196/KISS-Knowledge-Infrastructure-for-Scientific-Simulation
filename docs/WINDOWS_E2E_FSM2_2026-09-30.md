@@ -48,3 +48,14 @@ These match an independent calculation from the raw `Alptal_stat.txt`. The open 
 - Other models, the GeoForge Database, CLI agents (Codex/Claude/Kimi) and calibration were not exercised.
 - Installation was tested in run 1 only; run 2 reused the verified install in the same workspace.
 - Run 1's first execution left `Alptal_*` output files in the installed FSM2 source folder (`fsm2\binaries\FSM2\source\repo`); they are harmless and were left for inspection.
+
+## Release package (built from `b443c16`)
+
+Frozen smoke check passed (127 KIs, 127 Windows notes, 23 recipes, 11 routes, harness/Flow/calibration). Silent install into a folder with a space, installed smoke check, executable and registration version 0.6.54, all 4,789 installed files SHA-256-identical to the bundle, silent uninstall; installer and uninstaller exit 0. Evidence: `release-0.6.54-20260930/Windows-release-validation.json` (local, git-ignored).
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `GeoForge-Desktop-Setup-v0.6.54-Windows-x64.exe` | 129,393,193 | `7c31536f1b1b42777440047ed083ac543f49655a0b74ee35ec3824e38fc8c415` |
+| `GeoForge-Desktop-v0.6.54-Windows-x64.zip` | 188,209,335 | `8d2c30daea73f77aea5ab3c3859ef330b8495738d65ef9c6bfdc7636dc64897f` |
+
+These supersede the package listed in `WINDOWS_MAC_SYNC_2026-09-30.md` (kept locally as `release-0.6.54-20260930-superseded-dacc126`). Not pushed, tagged or published.

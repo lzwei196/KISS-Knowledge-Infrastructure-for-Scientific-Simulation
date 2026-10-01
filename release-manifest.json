@@ -5,14 +5,14 @@
   "release_date": "2026-10-02",
   "source": {
     "branch": "windows-version",
-    "code_commit": "96409ba3bcbf64322ca7a8eba4ba8e2bf32df535",
+    "code_commit": "3bf10f2e1de0720a5c5c5b2c46825f9051606579",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
     "release_tag": "windows-v0.6.55",
-    "commit_scope": "Windows 0.6.55 release preparation from the October 1 tested changes, with updated usage guides and calibration-kit validation. Final source identity and release validation are recorded before publication.",
+    "commit_scope": "Application code, Windows model fixes, tests and offline guides are pinned to this commit. Subsequent release commits change audit metadata and reports only. The exact tagged build commit is recorded in Windows-release-validation.json.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
     "build_label": "windows-0.6.55-20261002",
-    "working_tree": true
+    "working_tree": false
   },
   "ki_library": {
     "package_count": 127,
@@ -30,6 +30,18 @@
     "windows_platform_recipes": 23
   },
   "changes": [
+    {
+      "id": "windows-offline-usage-guides",
+      "area": "documentation",
+      "summary": "The Usage menu serves English and Chinese quick starts, full manuals and calibration guides from the installed application, as HTML and PDF. Each quick start is exactly three pages: agent setup, KI/model setup and an approved official SHAW run.",
+      "user_action": "Open Usage guide in the sidebar; select the quick start, full manual or calibration guide."
+    },
+    {
+      "id": "windows-calibration-approval-and-packaging",
+      "area": "calibration",
+      "summary": "Calibration binds the project adapter and contract hashes, algorithm, requested budget, seed, observation shapes, metric and case identity before approval. Runtime copies use the reviewed bytes, receipts verify finite results and independent holdout acceptance, and changed settings require review. Windows bundles include SPOTPY RAM storage and hide evaluation subprocess consoles.",
+      "user_action": "Review the calibration step and its exact settings. A completed optimizer with a rejected or missing holdout is not scientific completion. Sampler initialization and batches can exceed the requested evaluation budget."
+    },
     {
       "id": "windows-october-1-live-model-tests",
       "area": "model-installation-and-execution",
@@ -369,17 +381,24 @@
     }
   },
   "validation": {
-    "status": "Windows source regression passed under the real GBK locale (no UTF-8 mode); packaged and installer acceptance results are recorded in the evidence document",
+    "status": "Final source suites passed with unchanged source hashes under the actual Windows cp936 locale (UTF-8 mode off). Packaged, native calibration and installer acceptance are recorded separately in the release validation asset.",
     "source_tests": {
-      "desktop_passed": 1451,
+      "desktop_passed": 1727,
       "desktop_skipped": 35,
-      "desktop_subtests_passed": 288,
-      "shared_passed": 327,
+      "desktop_subtests_passed": 337,
+      "shared_passed": 371,
       "shared_skipped": 7
     },
-    "evidence_document": "docs/WINDOWS_MAC_SYNC_2026-09-30.md",
-    "known_upstream_limits": "No live provider, authenticated database download, model simulation or calibration acceptance is part of this build. Windows process-tree Stop is verified with real local processes; agents' detached (nohup) jobs whose parent already exited are not reached.",
-    "end_to_end": "Compiled Windows app, DeepSeek API: FSM2 official Alptal example planned, installed, run on the real FSM2.exe and COMPLETED with cryptographic receipts (docs/WINDOWS_E2E_FSM2_2026-09-30.md)"
+    "source_files_hashed": 363,
+    "evidence_documents": [
+      "docs/WINDOWS_RELEASE_0.6.55_2026-10-02.md",
+      "docs/WINDOWS_CALIBRATION_2026-10-02.md",
+      "docs/WINDOWS_E2E_CRHM_VIC_SHAW_2026-10-01.md"
+    ],
+    "release_evidence_asset": "Windows-release-validation.json",
+    "end_to_end": "Real CRHM Bad Lake, VIC Stehekin and SHAW Trial examples reached Completed with bound, verified receipts in the October 1 Desktop tests. DeepSeek installations required documented assistance. Their fixes are included in 0.6.55.",
+    "calibration": "SHAW publisher-reference recovery: DDS requested 60 optimizer evaluations, 64 native model calls including objective probe, holdout and baseline. A known scale of 1.0 was recovered as 1.003065602989716, with training NSE 0.999984131952621 and held-out NSE 0.9999879435189971. All six optimizer backends also completed synthetic fixture tests. See the calibration report for final packaged and approval-lifecycle evidence.",
+    "known_upstream_limits": "Reference recovery is not calibration against field observations. No authenticated GeoForge Database transfer or all-model scientific acceptance is claimed. Detached Git Bash process supervision and general CLI setup command enforcement remain limited; see the known-issues report."
   },
   "agent_update_protocol": [
     "Read release-manifest.json before changing an installation.",

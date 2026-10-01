@@ -125,9 +125,20 @@ Three ways in, depending on what you want to do.
 
 ### 1. The desktop application — no Python required
 
-GeoForge Desktop runs these packages with an agent on your own machine. Download
-it from [releases](../../releases): everything travels inside the download,
-including all the model packages.
+GeoForge Desktop runs these packages with an agent on your own machine. Desktop
+source, dependencies, builds, and installers now live in separate platform repositories:
+
+| Platform | Source and development | Installers and release notes |
+|---|---|---|
+| macOS | [GeoForge-Desktop-macOS](https://github.com/lzwei196/GeoForge-Desktop-macOS) | [macOS releases](https://github.com/lzwei196/GeoForge-Desktop-macOS/releases) |
+| Windows | [GeoForge-Desktop-Windows](https://github.com/lzwei196/GeoForge-Desktop-Windows) | [Windows releases](https://github.com/lzwei196/GeoForge-Desktop-Windows/releases) |
+| Linux | [GeoForge-Desktop-Linux](https://github.com/lzwei196/GeoForge-Desktop-Linux) | [Linux releases](https://github.com/lzwei196/GeoForge-Desktop-Linux/releases) |
+
+**KISS remains the shared KI library and Harness source.** Desktop KI updates
+continue to use this repository's `main` branch, not a platform fork. Historical
+platform branches/tags remain for provenance; new Desktop development belongs in
+the corresponding platform repository. Historical installers are archived copies,
+not new builds of today's source. See [the migration policy](docs/PLATFORM-REPOSITORIES.md).
 
 The manual walks one model from project creation to calibration, in
 [English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf),
@@ -140,8 +151,8 @@ For pointing your own agent at a package. Python 3.8 or newer; the clone is
 about 145 MB.
 
 ```bash
-git clone https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation.git
-cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation
+git clone https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation.git
+cd KISS-Knowledge-Infrastructure-for-Scientific-Simulation
 
 pip install -e ki_tools_common/     # the shared library, and the KI harness
 
@@ -309,7 +320,7 @@ ki = Catalog.discover().get("SWAT+").root
 
 ## Related resources
 
-- **Desktop application:** GeoForge Desktop runs these packages with an agent on your own machine — see the [releases](../../releases) and the manual in [English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf), [简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf) or [bilingual](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf)
+- **Desktop application:** platform-specific [macOS](https://github.com/lzwei196/GeoForge-Desktop-macOS/releases), [Windows](https://github.com/lzwei196/GeoForge-Desktop-Windows/releases), and [Linux](https://github.com/lzwei196/GeoForge-Desktop-Linux/releases) downloads; historical manuals in [English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf), [简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf), or [bilingual](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf).
 - **KI catalogue and execution environment:** [GeoForge](https://app.geoforgehhu.com)
 - **Knowledge Dissection Toolkit:** [KDT-single](https://github.com/lzwei196/KDT-single)
 - **Paper:** [KISS — Knowledge Infrastructure for Scientific Simulation: A Scaffolding for Agentic Earth Science](https://arxiv.org/abs/2605.17856)

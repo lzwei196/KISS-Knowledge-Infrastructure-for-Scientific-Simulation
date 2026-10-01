@@ -66,6 +66,10 @@ Run `20261002-014732-b685c41f` completed the native fit and the approved plotter
 
 The independent final audit recomputed default/fitted calibration and holdout metrics from the actual native output tables, verified the six original uploaded files remained unchanged, verified approved/runtime/archived adapter hashes, and checked that the plot used `train_metrics.__kdt__.native_run` rather than the final baseline evaluation directory. The figure was visually inspected: actual nonuniform depths, dates and physical units are readable.
 
+The provider's closing prose contains two inaccuracies that are not adopted as evidence: holdout error is not “20 times smaller than training” (the audited RMSE values are 0.010623 and 0.011098 °C), and the delivered profile figure shows the fitted simulation rather than a reference overlay. The persisted numeric report, independent calculations and actual figure take precedence over those descriptions.
+
+After final public packaging, the actual release executable and its bundled SHAW KI completed another DDS-60 worker run in a separate benchmark project (`20261002-015928-bfb3d0b7`, 20.515 seconds). All 64 native calls again exited zero with console handles zero, and the independently recomputed metrics and fitted parameter exactly matched the approved Desktop result. The completed Desktop project was left untouched. The tested public executable SHA-256 is `6a45b3d9c9b4dc0098210cbd3b3a027f7688df1b32d43b019666e0033a3f04ba`.
+
 Local evidence root: `D:/GeoForge-Calibration-20261002/`.
 
 - `case-provenance.json`, original `calibration/cases/shaw-trial/upstream-provenance.json`: official source and immutable input/reference hashes.
@@ -77,6 +81,8 @@ Local evidence root: `D:/GeoForge-Calibration-20261002/`.
 - `final-desktop/preapproval-adapter-audit.json`: exact source/contract comparison before approval.
 - `final-desktop/frozen-six-backends.json`: all six backends using the final packaged worker.
 - `final-desktop/final-verification.json`, `final-desktop/audit_final.py`: completed Desktop status, three HMAC checks, all current receipt hashes, independent native metric calculations, preserved inputs, console handles and fitted-plot provenance.
+- `D:/GeoForge-Release-20261002/calibration-independent-audit.json`: a second read-only review passed 24 checks, including HMACs, approval binding, all receipt hashes, 64 native runs with complete finite profiles, metrics and actual completion state.
+- `public-release-worker-verification.json`, `public-release-worker-result.json`: final public executable's separate genuine native DDS recovery and zero-console verification.
 - `D:/GeoForge-Release-20261002/ui-verification/calibration-review-{en,zh-CN}.png` and `calibration-review-hashes-en.png`: the actual issued review card in both languages and expanded hash details.
 
 Raw provider configuration and credentials remain private and are excluded from release evidence. This acceptance does not establish field-observation validation, an all-model calibration sweep, long-run posterior convergence or a hard optimizer budget cap. Public installer validation and release hashes belong to the release record rather than the scientific calibration result.

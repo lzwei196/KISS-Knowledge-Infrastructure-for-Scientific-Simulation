@@ -1119,7 +1119,10 @@ class Handler(BaseHTTPRequestHandler):
                         "setup_kind": setup_kind,
                     }
                 primary_error = st.get("primary_error")
-                tools = install.check_system_deps(list(getattr(man, "system_deps", None) or []))
+                needs = list(getattr(man, "system_deps", None) or [])
+                if "wine" not in needs and wine.required_by(ki, man):
+                    needs.append("wine")        # declared in the KI's own file, not a manifest
+                tools = install.check_system_deps(needs)
                 if ok and not tools.ok:
                     # A verification is only as current as the tools it needed: APEX kept
                     # "Verified" for weeks after its Wine disappeared (2026-09-13).
@@ -2713,8 +2716,8 @@ class Handler(BaseHTTPRequestHandler):
                     ki, live_ki, cfg, root, emit, check=initial_check)
                 emit(f"\n{ki.name} is already verified and ready to use.\n")
                 return
-            if (not installation_only and wine.needed() and wine.can_install() and wine.find() is None
-                    and "wine" in (getattr(self._manifest(ki), "system_deps", None) or [])):
+            if (not installation_only and wine.can_install() and wine.find() is None
+                    and wine.required_by(ki, self._manifest(ki))):
                 # GeoForge provides Wine; no agent turn fetches one. On 2026-09-30 an agent did,
                 # into the model folder, and re-pointed /opt/homebrew/bin/wine to it.
                 setup_flow.request_for_wine(root, ki.name)
@@ -2905,8 +2908,7 @@ verification are different states; never claim this test verified the KI."""
                 return
 
             self._record_agent_preflight(ki, live_ki, cfg, root, emit, check=install_changed())
-            if (wine.needed() and wine.can_install() and wine.find() is None
-                    and "wine" in (getattr(self._manifest(ki), "system_deps", None) or [])):
+            if wine.can_install() and wine.find() is None and wine.required_by(ki, self._manifest(ki)):
                 setup_flow.request_for_wine(root, ki.name)    # Desktop's card, not an agent's guess
             handoff_req = setup_flow.request(root)
             if not handoff_req:

@@ -103,8 +103,9 @@ def validate_inputs(exe_path: str, dnd_files: list[str],
         wine_path = shutil.which("wine")
         if wine_path is None:
             errors.append(
-                "Wine is required on Linux but not found in PATH. "
-                "Install with: sudo apt install wine"
+                "Wine is required to run DNDC95.exe on this system but was not found in PATH. "
+                + ("In GeoForge Desktop, use Install Wine on the setup page."
+                   if platform.system() == "Darwin" else "Install with: sudo apt install wine")
             )
 
     if errors:

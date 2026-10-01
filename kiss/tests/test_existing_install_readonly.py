@@ -65,7 +65,8 @@ def ws(tmp_path, monkeypatch):
 ])
 def test_setup_cannot_write_into_the_existing_installation(ws, argv):
     argv = [a.replace("{ext}", str(ws.ext)) for a in argv]
-    with pytest.raises(api.ToolError, match="read-only during setup"):
+    # `find … -delete` is refused one step earlier, as a command that launches or deletes
+    with pytest.raises(api.ToolError, match="read-only during setup|blocks find"):
         ws.call(*argv)
     assert ws.ran == [] and ws.runner.read_text() == "original\n"
 
@@ -79,8 +80,7 @@ def test_setup_cannot_write_into_the_existing_installation(ws, argv):
     ["sed", "-n", "1p", "{ext}/ki/run_and_score.py"],
     ["find", "{ext}", "-name", "*.py"],
     ["file", "{ext}/bin/model"],
-    ["{ext}/bin/model", "--version"],                          # running the installed program
-    ["python3", "{ext}/ki/run_and_score.py", "--help"],
+    ["{ext}/bin/model", "--version"],                          # probing the installed program
 ])
 def test_setup_can_still_read_copy_link_and_run_the_existing_installation(ws, argv):
     argv = [a.replace("{ext}", str(ws.ext)) for a in argv]
@@ -89,7 +89,7 @@ def test_setup_can_still_read_copy_link_and_run_the_existing_installation(ws, ar
 
 
 def test_setup_commands_do_not_write_bytecode_into_the_installation(ws):
-    ws.call("python3", str(ws.ext / "ki" / "run_and_score.py"))
+    ws.call(str(ws.exe), "--version")
     assert ws.envs[0].get("PYTHONDONTWRITEBYTECODE") == "1"
 
 

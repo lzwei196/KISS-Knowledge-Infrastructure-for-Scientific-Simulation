@@ -688,8 +688,13 @@ _INSTALL_ONLY_BUILD_NAMES = (
 
 
 def _guard_installation_only_command(argv: list[str], cwd: Path,
-                                     workroot: Path) -> None:
+                                     workroot: Path, existing_roots: tuple[Path, ...] = ()) -> None:
     """Enforce the bounded installation command policy.
+
+    Applied to every setup turn, not only the installation test: setup installs and verifies
+    software, it never runs the model (Windows known issue 3; Mac 2026-10-01, when a setup
+    agent ran the FSM2 example and left results in the software folder). `existing_roots`
+    are the user's existing installations: their programs may be probed, not run on a case.
 
     This is a defence-in-depth policy aid around the setup allowlist, not an
     operating-system sandbox.  Reject allowlisted programs with known
@@ -720,6 +725,8 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
             raise ToolError(str(e)) from e
         return
 
+    if command == "find" and not any(arg in _FIND_WRITES for arg in args):
+        return                      # looking for files launches nothing
     if command in {"awk", "find"}:
         raise ToolError(
             f"installation-only mode blocks {command}; it can launch arbitrary "
@@ -789,7 +796,8 @@ def _guard_installation_only_command(argv: list[str], cwd: Path,
         return
 
     resolved = Path(argv[0]).resolve()
-    in_workspace = resolved == workroot or workroot in resolved.parents
+    in_workspace = any(resolved == base or base in resolved.parents
+                       for base in (workroot, *existing_roots))
     if in_workspace:
         if any(word in command for word in _INSTALL_ONLY_BUILD_NAMES):
             return
@@ -1519,9 +1527,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         cwd = _inside_work(args.get("cwd") or ".")
         if not cwd.is_dir():
             raise ToolError(f"command directory does not exist: {args.get('cwd')}")
-        if (bool((setup_context or {}).get("installation_only"))
-                or Path(argv[0]).name.lower() in {"r", "rscript", "julia", "octave", "octave-cli"}):
-            _guard_installation_only_command(argv, cwd, workroot)
+        _guard_installation_only_command(argv, cwd, workroot, tuple(external_roots))
         # Reject path arguments that escape the workspace. This is not a
         # shell, but programs such as cp, curl and git still accept output
         # paths of their own. Compiler/system include flags are allowed only
@@ -1607,14 +1613,13 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 pass
         from contextlib import nullcontext
         import tempfile
-        isolate_probe = (bool((setup_context or {}).get("installation_only"))
-                         and Path(argv[0]).is_absolute() and len(argv) == 2
+        isolate_probe = (Path(argv[0]).is_absolute() and len(argv) == 2
                          and argv[1] in _INSTALL_ONLY_PROBE_FLAGS)
         if isolate_probe:
             timeout = min(timeout, 25)
-        from . import execution, wine
+        from . import execution
         launch, sandbox_note = _setup_sandbox(argv, [
-            workroot, root, Path(cfg.roles.get("binaries", workroot)).resolve(), wine.home() / "prefix"])
+            workroot, root, Path(cfg.roles.get("binaries", workroot)).resolve()])
         try:
             directory = (tempfile.TemporaryDirectory(prefix="startup-probe-", dir=str(workroot))
                          if isolate_probe else nullcontext(str(cwd)))

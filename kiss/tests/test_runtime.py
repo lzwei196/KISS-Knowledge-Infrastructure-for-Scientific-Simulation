@@ -622,7 +622,7 @@ class ProviderHealthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             ki_root = root / "ki"
-            tool = ki_root / "tools" / "run.py"
+            tool = ki_root / "tools" / "build.py"     # a build helper: setup may launch it (not a model run)
             tool.parent.mkdir(parents=True)
             tool.write_text("print('ok')")
             cfg = SimpleNamespace(

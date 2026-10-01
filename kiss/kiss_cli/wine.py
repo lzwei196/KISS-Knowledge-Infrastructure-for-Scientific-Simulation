@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,24 @@ def needed() -> bool:
     return sys.platform != "win32"
 
 
+def required_by(ki, manifest=None) -> bool:
+    """Does this KI's model need Wine on this host? Declared in its Desktop manifest
+    (`system_deps: [wine]` or a PE32 `binary_type`) or in the KI's own
+    knowledge_infrastructure.yaml (`binary.type: PE32_wine`). Only APEX has a manifest;
+    DLBreach, DNDC, EPIC and HEC_RAS say it in the KI file."""
+    if not needed():
+        return False
+    if "wine" in (getattr(manifest, "system_deps", None) or []):
+        return True
+    if str(getattr(manifest, "binary_type", "") or "").upper().startswith("PE32"):
+        return True
+    try:
+        text = (Path(ki.root) / "knowledge_infrastructure.yaml").read_text(encoding="utf-8", errors="replace")
+    except (OSError, AttributeError, TypeError):
+        return False
+    return bool(re.search(r"^\s*type:\s*[\"']?PE\w*wine", text, re.M | re.I))
+
+
 def can_install() -> bool:
     """GeoForge installs Wine itself only on macOS (the pinned build is a macOS bundle)."""
     return sys.platform == "darwin"
@@ -58,14 +77,16 @@ def find() -> str | None:
 
 
 def env(base: dict[str, str]) -> dict[str, str]:
-    """Put GeoForge's Wine on PATH for every child process, with its own prefix."""
+    """Put GeoForge's Wine on PATH for every child process.
+
+    WINEPREFIX is deliberately left alone: each KI decides its own. HEC_RAS installs HEC-RAS
+    in a prefix inside its workspace and uses it only when none is already set."""
     out = dict(base)
     if not (managed_bin() / "wine").is_file():
         return out
     parts = [p for p in out.get("PATH", "").split(os.pathsep) if p]
     if str(managed_bin()) not in parts:
         out["PATH"] = os.pathsep.join([str(managed_bin()), *parts])
-    out.setdefault("WINEPREFIX", str(home() / "prefix"))
     out.setdefault("WINEDEBUG", "-all")
     return out
 

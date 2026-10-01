@@ -62,8 +62,9 @@ def _fmt_steps(result) -> str:
 
 def _fmt_remaining(result, man) -> str:
     if result.ok:
-        return ("Nothing outstanding — `preflight_check.py` passes. "
-                "Run the reference case to confirm scientific output, then proceed.")
+        return ("Nothing outstanding — `preflight_check.py` passes. Setup is complete. "
+                "Do not run the model, its examples or a reference case here: scientific runs "
+                "happen in a project, after the user approves a plan.")
     out = ["The automated installer could not finish. Outstanding work:", ""]
     for s in result.failures:
         out.append(f"### {s.name}")
@@ -217,6 +218,10 @@ software's real preflight passes or a person must do something you cannot.
 5. Run `{cfg.python} {ki.root / 'preflight_check.py'}` after every meaningful fix.
 6. Keep repairing and retrying in this same task. Never claim success until
    preflight passes, and never substitute a fake or simplified model.
+7. Setup installs and verifies software only. Never run the model on an example,
+   a reference case or a simulation, and never produce results during setup.
+   GeoForge runs the preflight itself; scientific runs happen later, in a
+   project, after the user approves a plan.
 
 The user selected `{dest}` as this model's installation workspace. The local
 path contract is recorded in `{dest / '.geoforge-install.json'}` and

@@ -33,8 +33,9 @@ def ws(tmp_path, monkeypatch):
     cfg = SimpleNamespace(root=work, python=sys.executable, roles={"binaries": work / "binaries"})
 
     def run(script: str) -> str:
-        (work / "step.py").write_text(script)
-        return api.execute_tool("run_setup_command", {"argv": [sys.executable, "step.py"]},
+        # setup may run only build helpers and root-level inspection scripts, hence the name
+        (work / "check_step.py").write_text(script)
+        return api.execute_tool("run_setup_command", {"argv": [sys.executable, "check_step.py"]},
                                 SimpleNamespace(root=work / "ki"), cfg, setup_mode=True)
 
     return SimpleNamespace(work=work, outside=outside, run=run)

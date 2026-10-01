@@ -6,6 +6,17 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Source update — setup does not run the model; every Wine KI gets the Wine handling (2026-10-02, not yet compiled)
+
+- **Setup installs and verifies software; it does not run the model.** With a direct-API agent, every setup turn now has the command rules that only the installation test had: no model, example or reference-case run, no test or run targets of build systems, and a built program (or one in your existing installation) may only be probed with a single `--help` or `--version`. Building, package installation, inspection and the KI preflight are unchanged. Before, a setup agent ran the FSM2 example and the APEX reference case during setup and left results in the software folder (Windows known issue 3; seen on Mac).
+- **Wine handling for every KI that runs a Windows program.** DLBreach, DNDC, EPIC and HEC_RAS declare this in their own KI file and have no Desktop manifest, so only APEX got the Install Wine card and the "verified" recheck. All five are now recognised.
+- **GeoForge no longer sets a Wine prefix for every process.** HEC_RAS keeps HEC-RAS in a prefix inside its own workspace and uses it only when none is set; the default added on 2026-09-30 would have pointed it at the wrong folder.
+- DNDC's "Wine not found" message no longer tells a Mac user to use `apt`.
+- The setup instructions no longer tell the agent to "run the reference case" once preflight passes; they now say setup installs and verifies only. The plan card's data-source section says each option states whether it comes from the GeoForge Database, instead of saying all candidates were found there.
+- Verification: 34 new tests; Desktop 1,405 passed, 1 skipped, 123 subtests; shared Flow 147 passed, 5 skipped. Not yet tried with a live agent.
+- Still relying on the agent's instructions, not on code: CLI setup agents (Claude Code, Codex, Kimi) run their own commands, so these rules and the macOS sandbox do not apply to them.
+- 安装阶段只安装和校验软件，不再运行模型、算例或参考案例（API 类 Agent 由代码强制）；所有运行 Windows 程序的 KI（APEX、DLBreach、DNDC、EPIC、HEC_RAS）都会得到“安装 Wine”卡片和“已验证”复查；GeoForge 不再为所有进程统一设置 Wine 前缀，以免影响 HEC_RAS。
+
 ## Source update — second FSM2 run: false re-pin, and failures that changed nothing (2026-10-01, not yet compiled)
 
 A second end-to-end run of the FSM2 Alptal example (DeepSeek, real UI) after the data-source fix below.

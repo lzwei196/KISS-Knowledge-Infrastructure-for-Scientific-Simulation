@@ -60,11 +60,13 @@ def test_find_prefers_geoforges_wine_then_path_and_ignores_a_dangling_link(home,
     assert wine.find() == str(managed)
 
 
-def test_every_child_process_gets_geoforges_wine_and_its_own_prefix(home):
+def test_every_child_process_gets_geoforges_wine_and_no_imposed_prefix(home):
     _managed(home)
     env = paths.with_ki_tools_common(SimpleNamespace(roles={}), {"PATH": "/usr/bin"})
     assert env["PATH"].split(os.pathsep)[0] == str(wine.managed_bin())
-    assert env["WINEPREFIX"] == str(wine.home() / "prefix")
+    # Each KI decides its own Wine prefix: HEC_RAS keeps one inside its workspace and uses it
+    # only when WINEPREFIX is not already set, so GeoForge must not set one for everybody.
+    assert "WINEPREFIX" not in env
 
 
 def test_no_wine_on_path_is_added_before_it_is_installed(home):
@@ -233,3 +235,74 @@ def test_apex_preflight_gives_a_cold_wine_start_time_to_finish():
     pre = _apex_preflight()
     import inspect
     assert "timeout=6," not in inspect.getsource(pre.check_wine_and_start)
+
+
+# ── Every KI whose own file says its model is a Windows program gets the Wine handling,
+#    not only APEX (the one KI with a Desktop manifest): DLBreach, DNDC, EPIC, HEC_RAS ──
+
+def _ki_dir(tmp_path, binary_type):
+    root = tmp_path / "models" / "WinModel"
+    root.mkdir(parents=True)
+    (root / "knowledge_infrastructure.yaml").write_text(
+        f"model: WinModel\nruntime:\n  binary:\n    path: KISSPATH_BINARIES/x/model.exe\n    type: {binary_type}\n")
+    return SimpleNamespace(name="WinModel", root=root, meta={})
+
+
+def test_a_ki_that_declares_a_windows_program_needs_wine_without_any_manifest(tmp_path, monkeypatch):
+    no_manifest = SimpleNamespace(system_deps=[], binary_type="")
+    assert wine.required_by(_ki_dir(tmp_path, "PE32_wine"), no_manifest)
+    assert not wine.required_by(_ki_dir(tmp_path / "b", "ELF"), no_manifest)
+    assert wine.required_by(_ki_dir(tmp_path / "c", "ELF"), SimpleNamespace(system_deps=["wine"], binary_type=""))
+    monkeypatch.setattr(wine, "needed", lambda: False)                    # on Windows it runs natively
+    assert not wine.required_by(_ki_dir(tmp_path / "d", "PE32_wine"), no_manifest)
+
+
+def test_the_real_wine_kis_are_all_recognised():
+    repo = Path(gui.__file__).resolve().parents[2]
+    no_manifest = SimpleNamespace(system_deps=[], binary_type="")
+    for name in ("APEX", "DLBreach", "DNDC", "EPIC", "HEC_RAS"):
+        assert wine.required_by(SimpleNamespace(root=repo / "models" / name), no_manifest), name
+    for name in ("VIC", "FSM2", "DSSAT"):
+        assert not wine.required_by(SimpleNamespace(root=repo / "models" / name), no_manifest), name
+
+
+def test_the_badge_and_the_install_card_cover_a_wine_ki_without_a_manifest(home, monkeypatch):
+    import sys as _sys
+    from kiss_cli import api, prompt
+    monkeypatch.setattr(wine, "can_install", lambda: True)
+    ki = _ki_dir(home, "PE32_wine")
+    work = home / "ws2"
+    work.mkdir()
+    (work / "status.json").write_text(json.dumps({"ok": True, "verified_at": 1755800000, "steps": []}))
+    (work / "CLAUDE.md").write_text("setup contract")
+    handler = object.__new__(gui.Handler)
+    handler.workroot, handler.repo_root = home, home
+    handler.catalog = SimpleNamespace(models_dir=home / "models")
+    handler._ki = lambda name: ki
+    handler._validate_binding = lambda *a, **k: None
+    handler._workdir = lambda _ki: work
+    handler._manifest = lambda _ki: SimpleNamespace(verified="unverified", acquire=None, system_deps=[], binary_type="")
+    status = handler._status_for(ki)
+    assert status["can_run"] is False and "wine" in status["primary_error"]["detail"]
+
+    monkeypatch.setattr(install, "run_preflight", lambda *a, **k: install.Step("preflight", False, "[FAIL] wine"))
+    monkeypatch.setattr(gui.install_locations, "info", lambda *a, **k: {"installation_mode": "new"})
+    monkeypatch.setattr(setup_flow, "prepare", lambda *a, **k: (ki, SimpleNamespace(python=_sys.executable)))
+    monkeypatch.setattr(prompt, "compose", lambda *a, **k: "system")
+
+    def agent(*a, **k):
+        pytest.fail("no setup agent before Wine is installed")
+        yield ""
+
+    monkeypatch.setattr(api, "run", agent)
+    monkeypatch.setitem(api.PROVIDERS, "deepseek", SimpleNamespace(name="deepseek"))
+    handler._open_stream = handler._end_stream = lambda: None
+    handler._chunk = lambda text: True
+    handler._stream_agent_setup({"model": "WinModel", "provider": "api:deepseek"})
+    assert setup_flow.request(work)["host_action"] == "install_wine"
+
+
+def test_dndc_tells_a_mac_user_where_to_get_wine():
+    repo = Path(gui.__file__).resolve().parents[2]
+    source = (repo / "models" / "DNDC" / "tools" / "run_dndc.py").read_text(encoding="utf-8")
+    assert "Wine is required on Linux" not in source and "Darwin" in source

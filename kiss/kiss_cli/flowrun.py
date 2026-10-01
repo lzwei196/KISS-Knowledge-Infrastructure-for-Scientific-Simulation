@@ -688,6 +688,15 @@ class Turn:
     question_handoff_closed: bool = False  # an ended question turn cannot later submit its old drafts
 
 
+def _command_gist(command, limit: int = 90) -> str:
+    """The tail of a recorded command on one short line, for chat messages.
+
+    Agents pass whole Python snippets through ``-c``; quoted verbatim they
+    buried the "Completed." verdict under screens of code."""
+    text = " ".join(" ".join(map(str, (command or [])[-3:])).split()).replace("`", "'")
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 def _receipts_since(project: Path, since: float) -> int:
     """Signed receipts (runs and downloads) written after *since*."""
     count = 0
@@ -1167,7 +1176,7 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             retried = ev.get("superseded_failures") or []
             if retried:
                 # A passing retry supersedes a failure; the user still sees that it happened.
-                runs = "; ".join(f"{f.get('plan_step_id')} (`{' '.join(map(str, (f.get('command') or [])[-3:]))}`)"
+                runs = "; ".join(f"{f.get('plan_step_id')} (`{_command_gist(f.get('command'))}`)"
                                  for f in retried[:5])
                 return Result(message=(
                     f"**Completed.** {len(retried)} earlier failed attempt{'s were' if len(retried) > 1 else ' was'} "

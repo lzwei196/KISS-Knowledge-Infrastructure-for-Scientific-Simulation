@@ -19,7 +19,7 @@ acquire:
   system_deps: [git, gfortran]
 
 system_deps: [git, gfortran]
-python_deps: [numpy, pandas]
+python_deps: [numpy, pandas, matplotlib]
 reference_case: FSM2.exe
 
 notes: >-
@@ -63,4 +63,6 @@ agent_hint: >-
   namelist reader and proves startup. Do not run a simulation or KI preflight
   during installation-only setup. Install numpy and pandas into one recorded
   interpreter and require both imports plus pip check; Python alone is not
-  the FSM2 installation product.
+  the FSM2 installation product. Also install matplotlib there: the KI's
+  parse_fsm2_output.py --plot imports it, and without it a planned plot step
+  fails (seen on Windows 2026-10-01).

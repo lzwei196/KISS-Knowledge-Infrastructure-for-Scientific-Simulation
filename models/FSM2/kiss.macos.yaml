@@ -13,6 +13,7 @@ acquire:
 python_deps:
 - numpy
 - pandas
+- matplotlib
 system_deps:
 - git
 - gfortran

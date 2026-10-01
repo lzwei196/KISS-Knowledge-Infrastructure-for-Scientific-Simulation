@@ -1979,3 +1979,10 @@ def test_a_stopped_run_is_resumable_not_a_failed_validation(tmp_path):
     assert not res.message and not res.continue_now
     progress = project_status.snapshot(project, activity={"state": "idle"})["progress"]
     assert progress["status"] != "failed"
+
+
+def test_superseded_attempts_are_named_on_one_short_line():
+    snippet = ["python.exe", "tools/run.py", "-c", "import pathlib\nrows=[l.split() for l in open('m.txt')]\n" + "x" * 300]
+    gist = flowrun._command_gist(snippet)
+    assert "\n" not in gist and len(gist) <= 90 and gist.endswith("…")
+    assert flowrun._command_gist(["python", "tools/run.py", "--help"]) == "python tools/run.py --help"

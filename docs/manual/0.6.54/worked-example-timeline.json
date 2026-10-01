@@ -1,0 +1,69 @@
+{
+  "session": "0b4a8ee60840",
+  "timeline": [
+    {
+      "at": "2026-10-01T03:01:26.689Z",
+      "minutes": 0.1,
+      "what": "chat ready",
+      "session": "0b4a8ee60840"
+    },
+    {
+      "at": "2026-10-01T03:02:00.027Z",
+      "minutes": 0.7,
+      "what": "request sent"
+    },
+    {
+      "at": "2026-10-01T03:02:19.842Z",
+      "minutes": 1,
+      "what": "flow state",
+      "title": "PLANNING"
+    },
+    {
+      "at": "2026-10-01T03:02:45.360Z",
+      "minutes": 1.5,
+      "what": "question 1",
+      "title": "FSM2 physics options for the Alptal example run"
+    },
+    {
+      "at": "2026-10-01T03:03:03.567Z",
+      "minutes": 1.8,
+      "what": "answered",
+      "title": "FSM2 physics options for the Alptal example run"
+    },
+    {
+      "at": "2026-10-01T03:04:39.742Z",
+      "minutes": 3.4,
+      "what": "flow state",
+      "title": "WAITING_FOR_USER"
+    },
+    {
+      "at": "2026-10-01T03:04:44.956Z",
+      "minutes": 3.4,
+      "what": "approval card",
+      "title": "Approve the plan?"
+    },
+    {
+      "at": "2026-10-01T03:05:02.175Z",
+      "minutes": 3.7,
+      "what": "answered",
+      "title": "Approve the plan?"
+    },
+    {
+      "at": "2026-10-01T03:05:07.203Z",
+      "minutes": 3.8,
+      "what": "flow state",
+      "title": "EXECUTING"
+    },
+    {
+      "at": "2026-10-01T03:05:50.153Z",
+      "minutes": 4.5,
+      "what": "flow state",
+      "title": "COMPLETED"
+    },
+    {
+      "at": "2026-10-01T03:05:55.159Z",
+      "minutes": 4.6,
+      "what": "completed"
+    }
+  ]
+}

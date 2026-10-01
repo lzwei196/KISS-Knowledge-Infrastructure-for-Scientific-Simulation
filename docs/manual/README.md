@@ -1,5 +1,27 @@
 # GeoForge Desktop user manual
 
+## 0.6.54 (current)
+
+A new A4 manual for GeoForge Desktop 0.6.54, written against the Windows build
+`windows-v0.6.54` with notes for macOS, with screenshots from the real app.
+It covers installation, connecting an AI, the GeoForge Database, installing a
+scientific model, a complete worked example (FSM2, Alptal) from request to
+**Completed**, project files, the other tools, and troubleshooting with the
+known issues of 0.6.54.
+
+- [English manual (PDF)](./0.6.54/GeoForge-Desktop-Manual-EN-v0.6.54.pdf)
+- [简体中文手册（PDF）](./0.6.54/GeoForge-Desktop-Manual-ZH-CN-v0.6.54.pdf)
+
+Source, screenshots and the build and capture tools: [0.6.54/README.md](./0.6.54/README.md).
+
+## 0.6.54（当前版本）
+
+全新的 A4 手册，按 Windows 版 `windows-v0.6.54` 编写，并说明 macOS 上的差异，截图全部来自真实应用。
+内容包括安装、连接 AI、GeoForge 数据库、安装科学模型、一个从提出请求到 **Completed** 的完整示例
+（FSM2，Alptal）、项目文件、其他工具，以及故障排除和 0.6.54 的已知问题。
+
+## Older editions
+
 The complete GeoForge Desktop manual is available as an A4 PDF in three
 editions. It follows one scientific-model case from project creation through
 KI selection, data preparation, user handoffs, model execution, results, and

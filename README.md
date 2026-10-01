@@ -59,13 +59,12 @@ A complete walkthrough of the desktop app, following one scientific model from
 project creation through KI selection, data preparation, the points where it
 hands back to you, execution, results, and calibration.
 
-- [English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf)
-- [简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf)
-- [Bilingual / 中英合订版](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf)
+- [English](docs/manual/0.6.54/GeoForge-Desktop-Manual-EN-v0.6.54.pdf)
+- [简体中文](docs/manual/0.6.54/GeoForge-Desktop-Manual-ZH-CN-v0.6.54.pdf)
 
-These document the v0.6.24 interface. Later releases add per-requirement data
-questions and clearer setup and permission handoffs, but the workflow is the
-same.
+These document 0.6.54 (Windows build `windows-v0.6.54`, with macOS notes) and
+follow the FSM2 Alptal example from request to **Completed**. Earlier editions
+are listed in [docs/manual](docs/manual/README.md).
 
 ## Before the first run
 

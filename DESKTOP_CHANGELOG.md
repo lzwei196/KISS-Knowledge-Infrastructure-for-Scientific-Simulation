@@ -6,6 +6,19 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Source update — Windows fixes adopted; help calls and failed runs handled (2026-10-01, not yet compiled)
+
+Compared with `windows-version` (which had merged the Mac round `bc788256`) and tested end to end on a Mac: FSM2 official Alptal 2004–2005 example, DeepSeek API, real UI ([record](docs/issues/E2E-FSM2-MAC-2026-10-01.md)).
+
+- **A project can now reach Completed** (from windows-version `b443c168`). The completion check counted two files the app itself writes into every project (`calibration/framework.json`, `artifacts/project-view.json`) and the plan's own input files under `inputs/` as unvouched results, so no Desktop project could complete. Confirmed on Mac: no project on this machine had ever reached Completed.
+- **Also from Windows** (`b443c168`, `a6b100be`): a restarted API chat no longer shows a CLI agent and drops its next message; the verdict of the run that starts right after software setup is shown; a closed or reloaded browser tab no longer ends the running turn; archiving a chat whose folder is in use says why; the FSM2 output parser labels multi-point columns correctly and FSM2 declares matplotlib.
+- **A help call is not an attempt of a plan step** (found by the Mac test; Windows lists it as open). After the real FSM2 run passed, the agent called `run_fsm2.py --help`; that was recorded as a failed attempt of the same step and failed the whole project. A help or version call that names no outputs is now listed under "probes" in `runs/evidence.json` and not counted. A real attempt that produces nothing still fails.
+- **A failed validation is explained in the chat** (found by the Mac test). The chat showed only the agent's "validation passed" while the project was failed. It now says which step failed, the command, and the failed checks.
+- Result of the Mac test after these fixes: Completed, with both steps passed and nothing unvouched; peak SWE 348.2 and 155.7 kg m⁻² and melt-out on 2005-04-05 and 2005-03-27, the same as the Windows run.
+- Seen on Mac too, still open: a data-source choice the card never showed is signed into the approval (Windows issue 1, high); the setup agent runs the model's example during setup (Windows issue 3); the card lists a choice you already answered as "defaults to … unless you pick another".
+- Verification: Desktop 1,378 passed, 1 skipped, 123 subtests; shared Flow 146 passed, 5 skipped.
+- 对照 Windows 分支并在 Mac 上用真实界面完成 FSM2 官方 Alptal 算例的端到端测试：采纳 Windows 的修复后项目可以到达“已完成”（此前应用自身写入的两个文件被误判为未受认证的输出）；`--help` 调用不再算作步骤的一次失败尝试；验证失败时对话中会说明是哪个步骤、哪条命令、哪些检查未通过。Mac 与 Windows 的结果一致。
+
 ## Source update — setup commands sandboxed on macOS; Wine offered before the agent starts (2026-09-30)
 
 - **Setup commands run inside the macOS sandbox.** With a direct-API agent (such as DeepSeek), every setup command and everything it starts can write only to the model's workspace, temp folders and package caches (pip, npm, cargo, go). Before, only the command line was checked, so an agent refused a write could put the same write into a script in its workspace and run that; on 2026-09-30 an agent re-pointed `/opt/homebrew/bin/wine` and created `~/.wine` this way. The kernel now blocks that, including through links in the workspace. If the sandbox cannot apply, the setup log says so.

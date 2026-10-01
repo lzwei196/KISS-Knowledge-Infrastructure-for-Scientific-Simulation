@@ -908,6 +908,23 @@ def _finished_at(run: dict) -> float:
         return float("-inf")
 
 
+_PROBE_FLAGS = frozenset({"--help", "-h", "--version", "-V"})
+
+
+def _is_probe(run: dict) -> bool:
+    """2026-10-01 (FSM2, Mac and Windows): after a passing run an agent called
+    `run_fsm2.py --help` through the receipted runner; with no outputs it failed validation,
+    became the step's latest attempt and failed the project. Only a help/version call that
+    names no outputs is exempt: a real attempt that produced nothing still fails the step."""
+    return not run.get("outputs") and any(str(c) in _PROBE_FLAGS for c in run.get("command") or [])
+
+
+#: Files the host itself writes (not agent or model results): the calibration manifest every
+#: desktop project gets at creation, and the Project View manifest the host validates and
+#: renders when the agent publishes it through its own tool (presentation, not data).
+HOST_BOOKKEEPING = frozenset({"calibration/framework.json", "artifacts/project-view.json"})
+
+
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
@@ -988,7 +1005,11 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     # to record_run if that ever matters.
     status = lambda d: (d.get("validation") or {}).get("status")  # noqa: E731
     rank = {"passed": 0, "failed": 2}
-    attempts = sorted(bound_runs, key=lambda d: (_finished_at(d), rank.get(status(d), 1)))
+    # A help/version call that named no outputs asks about the tool; it is not an attempt of
+    # the step. Kept and disclosed under "probes", never counted (see _is_probe).
+    probes = [d for d in bound_runs if _is_probe(d)]
+    attempts = sorted((d for d in bound_runs if not _is_probe(d)),
+                      key=lambda d: (_finished_at(d), rank.get(status(d), 1)))
     latest: dict[str, dict] = {}
     writer: dict[str, tuple[dict, str | None]] = {}
     for d in attempts:
@@ -1008,6 +1029,21 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     for d in bound_dl:
         for o in (d.get("raw_files") or []) + (d.get("processed_files") or []):
             receipted_outputs.add(o.get("path"))
+    # Inputs the approved inventory names under inputs/ are the plan's data, not results, and
+    # the host's own calibration manifest is written at project creation: neither is an
+    # unvouched output. Only inputs/ paths count, so a result cannot be declared into this set.
+    root = project.resolve()
+    declared_inputs = set(HOST_BOOKKEEPING)
+    for item in (inventory or {}).get("items") or []:
+        for raw in (item.get("local_paths") or []) if isinstance(item, dict) else []:
+            try:
+                path = Path(str(raw))
+                rel = (path.resolve() if path.is_absolute() else (root / path).resolve()) \
+                    .relative_to(root).as_posix()
+            except (OSError, ValueError):
+                continue
+            if rel.startswith("inputs/"):
+                declared_inputs.add(rel)
     unreceipted: list[str] = []
     for sub in output_dirs:
         base = project / sub
@@ -1015,8 +1051,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
             continue
         for p in base.rglob("*"):
             if p.is_file() and p.suffix.lower() in artifact_suffixes:
-                rel = p.resolve().relative_to(project.resolve()).as_posix()
-                if rel not in receipted_outputs:
+                rel = p.resolve().relative_to(root).as_posix()
+                if rel not in receipted_outputs and rel not in declared_inputs:
                     unreceipted.append(rel)
 
     passed_steps = {sid for sid, d in latest.items() if status(d) == "passed" and sid not in stale_steps}
@@ -1040,6 +1076,14 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         "executable_steps": sorted(exec_steps), "steps_passed": sorted(passed_steps),
         "steps_missing": missing_steps, "stale_steps": stale_steps,
         "superseded_failures": superseded,
+        "probes": [{"plan_step_id": d.get("plan_step_id"), "run_id": d.get("run_id"),
+                    "command": d.get("command")} for d in probes],
+        # why each failing step fails, so a driver can say it instead of pointing at a file
+        "failed_steps": [{"plan_step_id": sid, "run_id": d.get("run_id"), "command": d.get("command"),
+                          "failed_checks": [str(c.get("detail") or c.get("check")) for c in
+                                            (d.get("validation") or {}).get("checks") or []
+                                            if not c.get("ok")]}
+                         for sid, d in sorted(latest.items()) if status(d) == "failed"],
         "validation": "failed" if failed_any else ("passed" if complete else "incomplete"),
         "receipts_verified": complete,
         "runs": [{"run_id": d.get("run_id"), "ki": d.get("ki"), "exit_code": d.get("exit_code"),

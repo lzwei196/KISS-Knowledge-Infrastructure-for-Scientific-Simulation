@@ -867,7 +867,12 @@ function drawSessions(){
   document.querySelectorAll(".sess .del").forEach(b=>b.onclick=async ev=>{
     ev.stopPropagation();
     if(!confirm("Archive this chat? Its local project files will be kept.")) return;
-    await fetch(`/api/session/${b.dataset.id}/delete`,{method:"POST",body:"{}"});
+    const r=await fetch(`/api/session/${b.dataset.id}/delete`,{method:"POST",body:"{}"}).catch(()=>null);
+    const d=r?await r.json().catch(()=>({})):{};
+    if(!r||!r.ok){
+      alert(chineseUI()?"无法归档这个对话：项目文件夹中的某个文件正被其他程序打开（例如文件资源管理器、Excel 或编辑器）。请关闭后重试。"
+                       :(d.error||"GeoForge could not archive this chat. Close any program that has a file of this project open and try again."));
+      return;}
     if(CUR&&CUR.id===b.dataset.id) CUR=null;
     await loadAll();});
 }
@@ -905,9 +910,12 @@ function drawProviders(){
   // holding a CLI provider — the switch snapped back and looked broken.
   const cur=CUR&&CUR.provider;
   const sid=CUR&&CUR.id;
-  if(sid!==KIND_SYNCED_FOR){
+  // Only count the session as synced once its provider's kind is known: on a
+  // fresh start the chat renders before provider detection finishes, and
+  // marking it synced then left a started API chat showing (and sending) a CLI.
+  if(sid!==KIND_SYNCED_FOR&&(!cur||kindOf(cur))){
     KIND_SYNCED_FOR=sid;
-    if(cur&&kindOf(cur)) KIND=kindOf(cur);
+    if(cur) KIND=kindOf(cur);
   }
   const mine=PROV.providers.filter(p=>p.kind===KIND);
   const usableHere=mine.filter(p=>p.usable);

@@ -425,6 +425,33 @@ def test_retry_supersedes_a_failed_attempt_but_keeps_history(tmp_path):
     assert receipts.evidence(tmp_path, pj, a)["validation"] == "passed"
 
 
+def test_a_help_call_after_a_passing_run_is_not_an_attempt_of_the_step(tmp_path):
+    """Mac e2e 2026-10-01 (FSM2 Alptal, DeepSeek): the real run passed, then the agent ran
+    `run_fsm2.py --help`; that receipt named no outputs, failed validation, became the step's
+    latest attempt and turned the whole project to FAILED_VALIDATION."""
+    ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki); a = approval.approve(tmp_path, by="auto")
+    out = tmp_path / "outputs" / "q.csv"; out.parent.mkdir(); out.write_text("t,q\n1,0.5\n2,1.2\n3,0.9\n")
+    tool = str(tmp_path / "M" / "tools" / "run.py")
+
+    def record(finished, args, outputs, facts):
+        v = receipts.validate_outputs(ki, outputs, run_facts=facts)
+        receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3",
+                            command=["/usr/bin/python3", tool, *args], cwd=str(tmp_path),
+                            started_at=finished - 1, finished_at=finished, exit_code=0,
+                            inputs=[], outputs=outputs, plan_step_id="M:run",
+                            approval_sha256=approval.approval_id(a), validation=v)
+        return receipts.evidence(tmp_path, pj, a)
+
+    record(1001, ["q.csv"], [out], {"errored": False, "output_nonempty": True})
+    ev = record(2001, ["--help"], [], {"errored": False, "output_nonempty": False})
+    assert ev["validation"] == "passed" and ev["steps_missing"] == []
+    [probe] = ev["probes"]                               # kept and disclosed, not counted
+    assert probe["plan_step_id"] == "M:run" and probe["command"][-1] == "--help"
+    # A real attempt that produced nothing still fails the step: only help/version calls are exempt.
+    ev = record(3001, ["q.csv"], [], {"errored": False, "output_nonempty": False})
+    assert ev["validation"] == "failed"
+
+
 def test_a_result_built_on_a_superseded_partial_file_is_stale(tmp_path):
     ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki)
     tool = str(tmp_path / "M" / "tools" / "run.py")
@@ -780,6 +807,27 @@ def test_temp_files_live_under_protected_tree_and_evidence_scans_all_writable_tr
     assert not list((tmp_path / "runs").glob("*.tmp")) and (tmp_path / ".geoforge" / "tmp").is_dir()
     stray = tmp_path / "artifacts" / "handmade.png"; stray.parent.mkdir(); stray.write_bytes(b"x")
     assert "artifacts/handmade.png" in receipts.evidence(tmp_path, pj, a)["unreceipted_artifacts"]
+
+
+def test_declared_inputs_and_host_bookkeeping_are_not_unvouched_outputs(tmp_path):
+    # Every desktop chat gets calibration/framework.json at creation, and a plan's own input
+    # files sit in inputs/; counting either as an unreceipted result made COMPLETED unreachable.
+    ki = _fake_ki(tmp_path); pj, _ = _write_plan(tmp_path, ki)
+    ctx = FlowContext(project=tmp_path); ctx.move("task_received")
+    a = approval.approve(tmp_path, by="auto")
+    for rel in ("calibration/framework.json", "artifacts/project-view.json", "inputs/user/met/met.txt",
+                "inputs/other/undeclared.txt", "outputs/result.csv"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x", encoding="utf-8")
+    inventory = {"items": [
+        {"id": "met", "status": "ready", "local_paths": ["inputs/user/met/met.txt"]},
+        # A result cannot be laundered by listing it as an input outside inputs/.
+        {"id": "res", "status": "ready", "local_paths": [str(tmp_path / "outputs" / "result.csv")]},
+    ]}
+    left = receipts.evidence(tmp_path, pj, a, inventory=inventory)["unreceipted_artifacts"]
+    assert "calibration/framework.json" not in left and "artifacts/project-view.json" not in left
+    assert "inputs/user/met/met.txt" not in left
+    assert "inputs/other/undeclared.txt" in left and "outputs/result.csv" in left
 
 
 def test_validate_accepts_extensionless_executable_tool(tmp_path):

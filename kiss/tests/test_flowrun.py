@@ -1926,6 +1926,18 @@ def test_a_corrected_retry_completes_and_the_superseded_failure_is_disclosed(tmp
     assert "1 earlier failed attempt" in res.message and "run history" in res.message
 
 
+def test_a_failed_validation_is_explained_in_the_chat(tmp_path):
+    """Mac e2e 2026-10-01: the project went to FAILED_VALIDATION while the chat showed only the
+    agent's "validation passed"; GeoForge's own verdict was never written there."""
+    project, t, run = _executing(tmp_path)
+    assert "exit_code=1" in run([])                  # the step's only attempt fails
+    res = flowrun.after(project, t, "All steps passed validation.", setup_ok=True)
+    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "FAILED_VALIDATION"
+    step = t.session.plan["steps"][0]["id"]
+    assert res.message.startswith("**GeoForge verification:** failed") and step in res.message
+    assert "run.py" in res.message                   # which command, on one short line
+
+
 def test_incomplete_turn_names_stale_steps_and_unvouched_files(tmp_path, monkeypatch):
     project, t, run = _executing(tmp_path)
     run(["outputs/q.csv"])
@@ -1964,3 +1976,10 @@ def test_a_stopped_run_is_resumable_not_a_failed_validation(tmp_path):
     assert not res.message and not res.continue_now
     progress = project_status.snapshot(project, activity={"state": "idle"})["progress"]
     assert progress["status"] != "failed"
+
+
+def test_superseded_attempts_are_named_on_one_short_line():
+    snippet = ["python.exe", "tools/run.py", "-c", "import pathlib\nrows=[l.split() for l in open('m.txt')]\n" + "x" * 300]
+    gist = flowrun._command_gist(snippet)
+    assert "\n" not in gist and len(gist) <= 90 and gist.endswith("…")
+    assert flowrun._command_gist(["python", "tools/run.py", "--help"]) == "python tools/run.py --help"

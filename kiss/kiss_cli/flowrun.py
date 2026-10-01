@@ -688,6 +688,15 @@ class Turn:
     question_handoff_closed: bool = False  # an ended question turn cannot later submit its old drafts
 
 
+def _command_gist(command, limit: int = 90) -> str:
+    """The tail of a recorded command on one short line, for chat messages.
+
+    Agents pass whole Python snippets through ``-c``; quoted verbatim they
+    buried the "Completed." verdict under screens of code."""
+    text = " ".join(" ".join(map(str, (command or [])[-3:])).split()).replace("`", "'")
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 def _receipts_since(project: Path, since: float) -> int:
     """Signed receipts (runs and downloads) written after *since*."""
     count = 0
@@ -1178,6 +1187,16 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             fs.move("run_finished"); fs.move("validation_failed")
             projectrun.set_stage(project, display_stage(flow, fs.state),
                                  "A run failed validation — see runs/evidence.json")
+            # The agent's own summary is not the verdict (2026-10-01: it said "validation passed"
+            # while the project was FAILED_VALIDATION and the chat showed nothing else).
+            failing = "; ".join(
+                f"{f.get('plan_step_id')} (`{_command_gist([Path(str(c)).name if '/' in str(c) else c for c in (f.get('command') or [])[1:]])}`): "
+                + (", ".join(f.get("failed_checks")[:3]) or "no passing validation")
+                for f in (ev.get("failed_steps") or [])[:5])
+            return Result(message=(
+                "**GeoForge verification:** failed. The latest run of each of these steps did not "
+                f"pass its checks: {failing or 'see runs/evidence.json'}. Earlier passing attempts "
+                "of a step no longer count once a later attempt fails; rerun the step to continue."))
         elif ev["receipts_verified"] and ev["validation"] == "passed":
             fs.move("run_finished")
             fs.move("validated", {"receipts_verified": True, "validation": "passed"})
@@ -1185,7 +1204,7 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             retried = ev.get("superseded_failures") or []
             if retried:
                 # A passing retry supersedes a failure; the user still sees that it happened.
-                runs = "; ".join(f"{f.get('plan_step_id')} (`{' '.join(map(str, (f.get('command') or [])[-3:]))}`)"
+                runs = "; ".join(f"{f.get('plan_step_id')} (`{_command_gist(f.get('command'))}`)"
                                  for f in retried[:5])
                 return Result(message=(
                     f"**Completed.** {len(retried)} earlier failed attempt{'s were' if len(retried) > 1 else ' was'} "

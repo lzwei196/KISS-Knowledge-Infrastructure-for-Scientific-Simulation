@@ -846,7 +846,8 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
             errs.append(f"inventory item {it.get('id')!r} needs the user but is marked resolved "
                         f"with no decision")
         if it.get("status") == "ready" and not it.get("local_paths"):
-            errs.append(f"inventory item {it.get('id')!r} is 'ready' but names no local file")
+            errs.append(f"inventory item {it.get('id')!r} is 'ready' but names no local file "
+                        f"(set \"local_paths\": [\"<existing path>\", ...])")
     steps = [s for s in (plan.get("steps") or [])]
     for idx, st in enumerate(steps):
         if not isinstance(st, dict):

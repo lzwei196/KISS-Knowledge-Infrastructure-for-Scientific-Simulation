@@ -467,6 +467,12 @@ def _agent_run_snapshot(session_id: str) -> dict:
     }
 
 
+# What writing to a browser that has gone raises: BrokenPipe/ConnectionReset on
+# macOS and Linux, ConnectionAbortedError (WinError 10053) on Windows when a tab
+# is reloaded or closed, ValueError once the socket file is closed.
+_CLIENT_GONE = (ConnectionError, ValueError)
+
+
 def _forward_chat_stream(stream, out, interval: float = 5.0) -> bool:
     """Forward a provider stream while keeping the embedded browser attached."""
     for piece in _with_heartbeats(stream, interval=interval):
@@ -2257,7 +2263,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if route.startswith("/api/session/") and route.endswith("/delete"):
             sid = route.split("/")[3]
-            return self._json({"ok": sessions.delete(self.workroot, sid)})
+            try:
+                return self._json({"ok": sessions.delete(self.workroot, sid)})
+            except OSError as error:
+                # Windows will not move a folder while another program (File
+                # Explorer, Excel, an editor, a running model) has a file in it
+                # open. Say so instead of dropping the connection silently.
+                return self._json({"ok": False, "error": (
+                    "GeoForge could not archive this chat: a file in its project "
+                    "folder is open in another program. Close it and try again. "
+                    f"({type(error).__name__}: {error})")}, 409)
 
         if route.startswith("/api/session/") and route.endswith("/update"):
             sid = route.split("/")[3]
@@ -2399,14 +2414,14 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"%X\r\n" % len(data) + data + b"\r\n")
             self.wfile.flush()
             return True
-        except (BrokenPipeError, ConnectionResetError):
+        except _CLIENT_GONE:
             return False
 
     def _end_stream(self) -> None:
         try:
             self.wfile.write(b"0\r\n\r\n")
             self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
+        except _CLIENT_GONE:
             pass
 
     def _config(self, ki) -> paths.KissConfig:
@@ -3475,13 +3490,22 @@ verification are different states; never claim this test verified the KI."""
         buf: list[str] = []
         self._open_stream()
 
+        browser = {"attached": True}
+
         def out(piece: str) -> bool:
             now = time.time()
             runtime_events["last_transport_at"] = now
             if piece != CHAT_KEEPALIVE:
                 buf.append(piece)
                 runtime_events["last_visible_output_at"] = now
-            return self._chunk(piece)
+            # A reloaded or closed browser tab is not a Stop. The agent keeps
+            # working either way, so keep collecting: the saved reply and the
+            # flow's plan/receipt checks then see the whole turn, and the
+            # reopened chat shows it. Only the Stop button ends a turn.
+            if browser["attached"] and not self._chunk(piece):
+                browser["attached"] = False
+                runtime_events["browser_detached_at"] = now
+            return True
 
         failure = None
         cli_state: dict = {}
@@ -3594,9 +3618,14 @@ verification are different states; never claim this test verified the KI."""
                             runtime_events=runtime_events,
                             flow_pre=flowrun.Pre(names=list(names)))
                         if exec_turn is not None:
-                            flowrun.after(project, exec_turn, "".join(buf),
-                                          provider_note=flowrun.describe_policy(exec_turn),
-                                          setup_ok=_setup_ok(names))
+                            # Its verdict ("Completed." or "GeoForge verification: not
+                            # complete yet — …") is the user's only explanation of
+                            # where the run stands; dropping it left "Ready to continue".
+                            res = flowrun.after(project, exec_turn, "".join(buf),
+                                                provider_note=flowrun.describe_policy(exec_turn),
+                                                setup_ok=_setup_ok(names))
+                            if res.message:
+                                out("\n\n" + res.message)
             except Exception as e:  # noqa: BLE001
                 out(f"\n[GeoForge flow: could not close the turn — {type(e).__name__}: {e}]")
             generated = [rel for rel, state in _artifact_state(project).items()

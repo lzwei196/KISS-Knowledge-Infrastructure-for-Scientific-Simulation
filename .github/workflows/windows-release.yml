@@ -1,0 +1,75 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to receive the Windows assets
+        required: true
+        default: windows-v0.6.47
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --quiet pyinstaller truststore certifi -e kiss -r kiss/requirements-calibration.txt
+          choco install innosetup -y --no-progress
+
+      - name: Build the self-contained desktop folder
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --distpath dist-windows --workpath build-windows kiss/GeoForgeDesktopWindows.spec
+          $version = python -c "import tomllib;print(tomllib.load(open('kiss/pyproject.toml','rb'))['project']['version'])"
+          $bundle = "dist-windows/GeoForge Desktop $version Windows"
+          if (!(Test-Path "$bundle/_internal/python311.dll")) { throw 'python311.dll missing' }
+          if ((Get-ChildItem "$bundle/_internal/models" -Directory).Count -ne 127) { throw 'expected 127 KI packages' }
+          if (!(Select-String -LiteralPath "$bundle/_internal/kiss_cli/web/app.html" -Pattern 'Enable Kimi with full computer access' -Quiet)) { throw 'Windows Kimi setting missing' }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BUNDLE=$bundle" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build and test the installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          & $iscc "/DAppVersion=$env:APP_VERSION" "/DSourceDir=$((Resolve-Path $env:BUNDLE).Path)" "/DOutputDir=$((Get-Location).Path)/installer-output" kiss/installer/GeoForgeDesktopWindows.iss
+          $installer = (Resolve-Path "installer-output/GeoForge-Desktop-Setup-v$env:APP_VERSION-Windows-x64.exe").Path
+          $testDir = Join-Path $env:RUNNER_TEMP 'GeoForge-release-test'
+          $process = Start-Process $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',("/DIR=$testDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "installer exited $($process.ExitCode)" }
+          if (!(Test-Path "$testDir/_internal/python311.dll")) { throw 'installed Python DLL missing' }
+          if ((Get-ChildItem "$testDir/_internal/models" -Directory).Count -ne 127) { throw 'installed KI count is not 127' }
+          $uninstall = Join-Path $testDir 'unins000.exe'
+          $process = Start-Process $uninstall -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "uninstaller exited $($process.ExitCode)" }
+
+      - name: Package portable build
+        shell: pwsh
+        run: |
+          Compress-Archive -Path $env:BUNDLE -DestinationPath "GeoForge-Desktop-v$env:APP_VERSION-Windows-x64.zip" -CompressionLevel Optimal
+          Get-FileHash "installer-output/GeoForge-Desktop-Setup-v$env:APP_VERSION-Windows-x64.exe","GeoForge-Desktop-v$env:APP_VERSION-Windows-x64.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content SHA256SUMS-Windows.txt
+
+      - name: Attach assets to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.tag }}" \
+            "installer-output/GeoForge-Desktop-Setup-v${APP_VERSION}-Windows-x64.exe" \
+            "GeoForge-Desktop-v${APP_VERSION}-Windows-x64.zip" \
+            SHA256SUMS-Windows.txt --clobber

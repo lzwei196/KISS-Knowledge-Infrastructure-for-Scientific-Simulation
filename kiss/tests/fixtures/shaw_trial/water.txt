@@ -1,0 +1,10 @@
+
+                                       SUMMARY OF WATER BALANCE
+
+                                                              CHANGE IN STORAGE
+                               PRECIP          PLANT   ------------------------------  DEEP                   LATERAL   SINK    CUM.
+ DAY HR  YR   PRECIP  SNOWMELT INTRCP    ET    TRANSP  CANOPY   SNOW  RESIDUE   SOIL   PERC   RUNOFF   PONDED OUTFLOW   TERM     ET    ERROR
+                 MM      MM      MM      MM      MM      MM      MM      MM      MM      MM      MM      MM      MM      MM      MM      MM
+ 338 24   86    0.00    0.00    0.00    0.02    0.00    0.00    0.00   -0.00    2.67   -2.69    0.00    0.00    0.00    0.00     0.0    0.00
+ 339 24   86    9.10    1.17    2.42    0.06    0.00   -0.00    5.26    0.01   10.42   -9.07    0.00    0.00    0.00    0.00     0.1    0.00
+ 350 24   86    0.00    0.00    1.24    0.11    0.00    0.00    0.09   -0.00    3.53   -3.64    0.00    0.00    0.00    0.00     4.0    0.00

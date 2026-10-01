@@ -1,0 +1,11 @@
+
+                                                               SUMMARY OF SURFACE ENERGY BALANCE
+
+
+              INCOMING                NET SOLAR RADIATION BY MATERIAL                               NET LONG-WAVE RADIATION BY MATERIAL
+               SOLAR   REFLECTED ------------------------------------------  INCOMING OUTGOING   -----------------------------------------
+ DAY HR  YR   ON SLOPE   SOLAR   CANOPY     SNOW   RESIDUE    SOIL    TOTAL  LONGWAVE LONGWAVE   CANOPY    SNOW   RESIDUE    SOIL    TOTAL  SENSIBLE  LATENT    SOIL
+                 W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2     W/M2
+ 338 13   86    161.3     29.4    102.0      0.0     27.5      2.4    131.9    291.9    331.1    -31.7      0.0    -11.8      4.4    -39.2    -71.5     -1.4     11.5
+ 338 14   86    133.6     24.3     84.3      0.0     23.0      2.0    109.3    292.8    329.2    -26.0      0.0    -13.9      3.5    -36.4    -65.3     -2.5      9.6
+ 350 24   86      0.0      0.0      0.0      0.0      0.0      0.0      0.0    276.9    297.5    -12.3     -8.2      0.0      0.0    -20.4      6.7      4.0     -9.6

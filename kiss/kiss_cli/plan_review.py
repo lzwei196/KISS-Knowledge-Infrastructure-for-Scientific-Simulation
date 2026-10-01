@@ -54,6 +54,34 @@ def _database_approval_block(inventory: dict) -> str | None:
     return None
 
 
+def _approval_ki_roots(project: Path, ki_roots: dict[str, Path]) -> dict[str, Path]:
+    """Use the same per-KI workspace that planning and execution authorize.
+
+    The chat driver enters approval before rematerializing its catalogue KIs.
+    A reviewed absolute tool already belongs to models/<KI>/ki, not the bundled
+    catalogue root. Resolve only that exact namespace through the execution
+    config guard; never infer a trusted root from the plan's tool path.
+    """
+    from . import project_paths
+    from .paths import CONFIG_NAME
+
+    project = Path(project).resolve()
+    resolved = {}
+    for name, catalog_root in ki_roots.items():
+        home = project_paths._model_home(project, name)
+        materialized = home / "ki"
+        config = home / CONFIG_NAME
+        if (materialized.exists() or materialized.is_symlink()
+                or config.exists() or config.is_symlink()):
+            # Reject absent/cross-model configs and aliased foreign projects
+            # exactly as actual tool dispatch does. This is read-only.
+            project_paths.execution_config(project, name, materialized)
+            resolved[name] = materialized
+        else:
+            resolved[name] = Path(catalog_root)
+    return resolved
+
+
 def respond(project: Path, *, action: dict | None, pending: dict | None,
             ki_roots: dict[str, Path], note: str = "") -> Response:
     """Resolve one click against the host's persisted, issued review.
@@ -101,6 +129,13 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         return Response("waiting", message=f"Your saved answers cannot be read ({error}). "
                         "Fix or remove that file, then approve again.")
 
+    # Older cards could recommend one source while the inventory pinned another.
+    # Neither an omitted choice nor a checked radio authorizes that contradiction.
+    if errors := flow.plan.data_source_errors(pj, inv):
+        setup_flow.clear_request(project)
+        ctx.move("modify")
+        return Response("replan", replan_reason="The data-source choices need revision: " + "; ".join(errors))
+
     # Admission applies to plan mutations AND provenance. The agent's plan may
     # contain unrendered choices/options; those are not permissions from the user.
     baseline = review["baseline"]
@@ -123,8 +158,25 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         provider_note = str((pending.get("plan_review") or {}).get("tool_policy") or "")
         issue(project, fs, pj, inv, provider_note, extra_why=reasons)
 
-    repinned = apply_data_choices(pj, inv, picks)
+    rows = (displayed.get("plan_review") or {}).get("data_choices") or []
+    repinned = apply_data_choices(pj, inv, picks, rows=rows)
     apply_choice_picks(pj, picks)  # same-click scientific picks survive any re-review
+    external_changes = [str(row.get("item")) for row in rows
+                        if str(row.get("item")) in repinned
+                        and any(option.get("dataset_id") == picks.get(str(row.get("id")))
+                                and option.get("delivery") == "external"
+                                for option in row.get("options") or [])]
+    choice_errors = flow.plan.data_source_errors(pj, inv)
+    if external_changes or choice_errors:
+        # A provider can need different preparation tools, units or parameters.
+        # Preserve the actual answer, then have the planner revise those steps.
+        flow.plan.write_artifacts(project, pj, inv)
+        setup_flow.clear_request(project)
+        ctx.move("modify")
+        reason = ("Use your selected external source for " + ", ".join(external_changes)
+                  + "; revise its input preparation and show the updated plan for approval."
+                  if external_changes else "The data-source choices need revision: " + "; ".join(choice_errors))
+        return Response("replan", replan_reason=reason)
     if blocked := _database_approval_block(inv):
         flow.plan.write_artifacts(project, pj, inv)
         reissue([blocked])       # suppress cached DB options without fetching anything
@@ -148,6 +200,12 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
     except (obs_access.ObsAccessError, OSError) as error:
         return Response("waiting", message=f"The plan review could not refresh its data: {error}. "
                         "Approval has not started any work. Your saved choices are retained; try the review again.")
+
+    if errors := flow.plan.data_source_errors(pj, inv):
+        flow.plan.write_artifacts(project, pj, inv)
+        setup_flow.clear_request(project)
+        ctx.move("modify")
+        return Response("replan", replan_reason="The data-source choices need revision: " + "; ".join(errors))
 
     if repinned or bound:
         # the user approves the card that names what will run, never a silent rebinding
@@ -174,7 +232,12 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         return Response("waiting", message=f"Your saved answers cannot be read ({error}). "
                         "Fix or remove that file, then approve again.")
     records, invalid = decision_records(flow, pj, inv, answers, baseline=baseline)
-    blocking = [display_input_id(i) for i in flow.decisions.open_inputs(records)] + invalid
+    if invalid:
+        flow.plan.write_artifacts(project, pj, inv)
+        setup_flow.clear_request(project)
+        ctx.move("modify")
+        return Response("replan", replan_reason="The approval decisions need revision: " + "; ".join(invalid))
+    blocking = [display_input_id(i) for i in flow.decisions.open_inputs(records)]
     if blocking:
         flow.plan.write_artifacts(project, pj, inv)
         reissue(["still waiting on your decision: " + ", ".join(blocking[:8])])
@@ -194,6 +257,17 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         flow.plan.write_artifacts(project, pj, inv)
         reissue([blocked])
         return Response("waiting", message=blocked)
+    try:
+        execution_roots = _approval_ki_roots(project, ki_roots)
+    except (OSError, ValueError) as error:
+        return Response("waiting", message=f"The selected KI workspace is not ready for approval: {error}. "
+                        "Refresh its project workspace and review again; no execution was approved.")
+    if errors := flow.plan.validate(pj, inv, list(execution_roots), execution_roots,
+                                    for_execution=True, project=project):
+        flow.plan.write_artifacts(project, pj, inv)
+        setup_flow.clear_request(project)
+        ctx.move("modify")
+        return Response("replan", replan_reason="The plan is not ready to execute: " + "; ".join(errors))
     pj["decision_revision"] = flow.decisions.revision_of(records)
     flow.plan.write_artifacts(project, pj, inv)
     if flow.approval.check(project) != "OK":
@@ -248,7 +322,7 @@ def input_groups(plan: dict, inv: dict, project: Path | None = None) -> dict:
 
     groups = {"fetch": [], "you": [], "run": []}
     for it in items:
-        verdict = flow.declared.classify(it, declared, produced)
+        verdict = flow.declared.classify(it, declared, produced, project=project)
         groups[verdict["group"]].append(_row(it, verdict))
     return {"total": len(items), **groups}
 
@@ -294,7 +368,7 @@ def _data_summary(plan: dict, inv: dict, project: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def _data_choices(plan: dict, inv: dict) -> list[dict]:
+def _data_choices(plan: dict, inv: dict, *, database_enabled: bool = True) -> list[dict]:
     """The candidates the agent considered per input, with catalogue facts, for the card.
 
     This is the missing step the user asked for: what the database holds for each input,
@@ -312,8 +386,16 @@ def _data_choices(plan: dict, inv: dict) -> list[dict]:
         options = []
         for ds in c.get("options") or []:
             rec = by_id.get(str(ds))
+            # A selected Database id remains a Database source even if a later
+            # catalogue refresh no longer lists it. Its reviewed stamp is a fact.
+            if rec is None and str(item.get("dataset_id") or "") == str(ds):
+                rec = dict(item.get("catalogue") or {}, delivery=item.get("delivery"))
+            if rec is not None and not database_enabled:
+                continue
             if rec is None:
-                continue                # invented ids never reach the user
+                options.append({"dataset_id": str(ds), "name": None, "delivery": "external",
+                                "size": None, "size_label": "", "period": None, "bbox": None})
+                continue
             option = {"dataset_id": str(ds), "name": rec.get("name"), "delivery": rec.get("delivery"),
                       "size": rec.get("size"), "size_label": obs_access.size_label(rec.get("size")),
                       "period": [rec.get("start_date"), rec.get("end_date")] if rec.get("start_date") else None,
@@ -334,7 +416,8 @@ def _data_choices(plan: dict, inv: dict) -> list[dict]:
             options.append(option)
         if not options:
             continue
-        picked = str(c.get("decision") or c.get("picked") or items.get(item_id, {}).get("dataset_id") or "")
+        picked = str(c.get("decision") or c.get("picked") or item.get("dataset_id")
+                     or item.get("chosen_source") or item.get("decision") or "")
         out.append({"id": str(c.get("id")), "item": item_id, "picked": picked,
                     "rationale": str(c.get("rationale") or ""), "options": options})
     return out
@@ -354,9 +437,12 @@ def apply_choice_picks(plan: dict, choices: dict) -> list[str]:
     return done
 
 
-def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
+def apply_data_choices(plan: dict, inv: dict, choices: dict, *, rows: list | None = None) -> list[str]:
     """The user's picks from the card: re-pin the items, clear stale stamps. Returns changed item ids."""
     changed = []
+    external = {(str(row.get("id")), str(option.get("dataset_id")))
+                for row in (rows if rows is not None else _data_choices(plan, inv))
+                for option in row.get("options") or [] if option.get("delivery") == "external"}
     items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
     for c in plan.get("scientific_choices") or []:
         if not isinstance(c, dict) or c.get("kind") != "data_source":
@@ -366,16 +452,23 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
             continue
         item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
         item = items.get(item_id)
-        if item is None or item.get("dataset_id") == pick:
-            c["decision"], c["decision_source"] = pick, "user"
+        if item is None:
             continue
         c["decision"], c["decision_source"] = pick, "user"
         c["picked"] = pick
+        if str(item.get("dataset_id") or item.get("chosen_source") or item.get("decision") or "") == pick:
+            continue
         item["decision_source"] = "user"
-        for key in ("acquisition_id", "acquisition_request_sha256", "acquisition_offer", "estimate_summary", "catalogue"):
+        for key in ("acquisition_id", "acquisition_request_sha256", "acquisition_offer", "estimate_summary", "catalogue",
+                    "decision"):
             item.pop(key, None)
-        item["dataset_id"] = pick
+        if (str(c.get("id")), pick) in external:
+            item.pop("dataset_id", None)
+        else:
+            item["dataset_id"] = pick
         item["chosen_source"] = pick
+        item["local_paths"] = []
+        item["status"] = "missing"
         item.pop("delivery", None)
         changed.append(item_id)
     return changed
@@ -649,6 +742,8 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
     Returns (records, invalid); the caller refuses the approval while either blocks.
     """
     answers = answers or {}
+    if errors := flow.plan.data_source_errors(plan, inv):
+        return {}, errors
     built: list[dict] = []
     invalid: list[str] = []
     seen: set[str] = set()
@@ -715,6 +810,7 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
                      or "the KI prepares it per its SKILL.md"), _KI_DEFAULT_WHY)
 
     interview = cited_answers(plan, answers)     # `answered_by` counts only if the host saved it
+    items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
     for c in plan.get("scientific_choices") or []:
         if not isinstance(c, dict):
             continue
@@ -722,6 +818,20 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
             invalid.append("a scientific choice has no id")
             continue
         cid = str(c["id"])
+        if c.get("kind") == "data_source" and not (c.get("decision") or c.get("picked")):
+            item_id = str(c.get("item") or cid.replace("data:", "", 1))
+            item = items.get(item_id, {})
+            source = item.get("dataset_id") or item.get("chosen_source") or item.get("decision")
+            if source:
+                saved = answers.get(f"choice:{cid}") or {}
+                if _answer("choice", cid) == source and saved.get("item") in (None, item_id):
+                    _add("choice", cid, "user", str(source), "you chose this on the approval card")
+                else:
+                    why = _SUGGESTION_WHY if displayed_choice.get(cid) == str(source) else _KI_DEFAULT_WHY
+                    _add("choice", cid, "ki_default", str(source), why)
+            else:
+                _add("choice", cid, "open", "data_source: " + ", ".join(c.get("options") or []))
+            continue
         answered = _answer("choice", cid)
         if answered and str(answered) != str(c.get("decision") or c.get("picked") or ""):
             answered = None     # the plan moved on since the user answered (review A #3)
@@ -761,6 +871,22 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
 
     invalid += [f"{r['input_id']}: {why}" for r in built
                 for ok, why in [flow.decisions.validate_record(r)] if not ok]
+    by_id = {record["input_id"]: record for record in built}
+    for choice in plan.get("scientific_choices") or []:
+        if not isinstance(choice, dict) or choice.get("kind") != "data_source":
+            continue
+        cid = str(choice.get("id") or "")
+        item_id = str(choice.get("item") or cid.replace("data:", "", 1))
+        chosen, item = by_id.get(f"choice:{cid}"), by_id.get(f"item:{item_id}")
+        if (chosen and item and chosen["source"] != "open" and item["source"] != "open"
+                and chosen["value"] != item["value"]):
+            # Host-bound uploads take precedence over the inventory's source
+            # string. Cross-check the actual records, not just those strings.
+            invalid.append(f"data-source choice {cid!r} records {chosen['value']!r}, but input "
+                           f"{item_id!r} records {item['value']!r}; revise the source choice "
+                           "to name the input that will run")
+    if invalid:
+        return {}, invalid
     return flow.decisions.fold_payloads(built), invalid
 
 
@@ -793,6 +919,17 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
                       "tool": Path(tool).name if tool else None,
                       "env": sorted((st.get("env") or {}).keys()),
                       "inputs": list(st.get("inputs") or []), "outputs": list(st.get("outputs") or [])})
+        if isinstance(st.get("calibration"), dict):
+            steps[-1]["calibration"] = dict(st["calibration"])
+            if not flow.plan.calibration_step_errors(st, fs.project):
+                import yaml
+                try:
+                    contract = yaml.safe_load(Path(st["calibration"]["contract_path"]).read_text(encoding="utf-8"))
+                    steps[-1]["calibration_parameters"] = [
+                        {k: parameter[k] for k in ("name", "range", "default", "unit") if k in parameter}
+                        for parameter in contract.get("parameters", []) if isinstance(parameter, dict)]
+                except (OSError, ValueError, AttributeError, yaml.YAMLError):
+                    steps[-1]["calibration_parameters"] = []
     try:
         cited = cited_answers(plan, load_user_answers(fs.project))
     except AnswersUnreadable:
@@ -803,7 +940,7 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
                  for c in plan.get("scientific_choices") or [] if isinstance(c, dict)
                  and c.get("kind") != "data_source"]
     # DB gating: no cached Database records on the card while access is off or not activated
-    data_choices = [] if fs.database_access_mode == "off" else _data_choices(plan, inv)
+    data_choices = _data_choices(plan, inv, database_enabled=fs.database_access_mode != "off")
     review = {"goal": plan.get("goal"), "kis": list(plan.get("selected_kis") or []),
               "coupling": edges, "study_area": intent.get("study_area"), "period": intent.get("period"),
               "data": input_groups(plan, inv, fs.project), "steps": steps, "decisions": decisions,
@@ -833,6 +970,8 @@ def issue(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
     from . import obs_access
     flow = fs.flow
     project = Path(project)
+    if errors := flow.plan.data_source_errors(pj, inv):
+        raise ValueError("Cannot issue an inconsistent data-source review: " + "; ".join(errors))
     # The approval UI is bound to exactly the reviewed pair, not just a plan filename.
     receipt = {"plan_sha256": flow.plan.sha256(pj), "inventory_sha256": flow.plan.sha256(inv),
                "turn": turn_id, "submitted_at": time.time()}
@@ -856,7 +995,8 @@ def issue(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
             + (f" ({obs_access.size_label((it.get('catalogue') or {}).get('size'))})"
                if (it.get('catalogue') or {}).get('size') else "")
             for it in manual[:6]))
-    ready = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots, for_execution=True)
+    ready = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots,
+                               for_execution=True, project=fs.project)
     card = _card(flow, fs, pj, inv, provider_note)
     if why:
         card["message"] += "\n\nWaiting on you\n  " + "\n  ".join(why[:8])

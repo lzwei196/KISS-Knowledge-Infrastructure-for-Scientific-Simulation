@@ -170,6 +170,15 @@ crhm [-t ISO|YYYYMMDD] [-f STD|OBS] [-o output.txt] [-p 100] [--obs_file_directo
 | plot_crhm_results | s5 | `tools/s5_execution/plot_crhm_results.py` | Generate diagnostic plots (SWE, discharge, etc.) |
 | merge_crhm_vic | s6 | `tools/s6_vic_coupling/merge_crhm_vic.py` | Combine CRHM + VIC results for comparison |
 
+**Authentic upstream examples:** `run_crhm.py --run_dir <project>/outputs/CRHM/badlake`
+stages the original `.prj` and genuine `.obs` files, rewrites only the copied
+Observations paths, and runs with that directory as CWD so model logs stay with
+the run. For Bad Lake, pass `--prj_path <source>/crhmcode/prj/badlake.prj`,
+`--obs_dir <source>/crhmcode/obs`, `--output_path <project>/outputs/CRHM/badlake/badlake_output.txt`,
+`--crhm_exe <installed-executable>` and `--time_format ISO`. Declare staging and
+execution as one run step, then parse via a separate step. Validation tools do
+not copy or stage files. See `docs/s5_execution_skill.md` for the full contract.
+
 ### Parameter Derivation Pipeline (NEW, 2026-04-11)
 
 The S4 stage now has a two-step parameter derivation pipeline based on Fang et al. (2013):

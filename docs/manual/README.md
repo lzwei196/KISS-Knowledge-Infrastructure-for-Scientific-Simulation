@@ -1,6 +1,22 @@
 # GeoForge Desktop user manual
 
-## 0.6.54 (current)
+## 0.6.55 (current Windows edition / 当前 Windows 版本)
+
+The app's **Guide / 使用指南** menu includes three offline guides, each in English and Simplified Chinese:
+
+| Guide / 文档 | English | 简体中文 |
+|---|---|---|
+| Quickstart — exactly three pages / 快速上手，恰好三页 | [PDF](./0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](./0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual / 完整使用手册 | [PDF](./0.6.55/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](./0.6.55/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide / 参数校准指南 | [PDF](./0.6.55/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](./0.6.55/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
+
+The three quickstart pages cover agent setup, KI setup, and a real SHAW example using public official inputs. The full manual preserves the detailed FSM2 walkthrough and adds verified Windows SHAW, VIC and CRHM runs. The calibration guide explains model adapters, defensible train/holdout protocols and the tested native SHAW reference-recovery benchmark. Reference recovery is not field-observation validation.
+
+三页快速指南分别介绍 Agent 配置、KI 配置及使用公开官方输入完成真实 SHAW 运行。完整手册保留详细 FSM2 实例，补充 Windows 上已验证的 SHAW、VIC 和 CRHM 运行。校准指南说明适配器、训练/留出方案及真实原生 SHAW 参考恢复测试；参考恢复不等同于实测观测验证。
+
+See [sources, build instructions and scope](./0.6.55/README.md). Windows release: [`windows-v0.6.55`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.55).
+
+## 0.6.54 (previous Windows edition)
 
 A new A4 manual for GeoForge Desktop 0.6.54, written against the Windows build
 `windows-v0.6.54` with notes for macOS, with screenshots from the real app.
@@ -14,7 +30,7 @@ known issues of 0.6.54.
 
 Source, screenshots and the build and capture tools: [0.6.54/README.md](./0.6.54/README.md).
 
-## 0.6.54（当前版本）
+## 0.6.54（上一 Windows 版本）
 
 全新的 A4 手册，按 Windows 版 `windows-v0.6.54` 编写，并说明 macOS 上的差异，截图全部来自真实应用。
 内容包括安装、连接 AI、GeoForge 数据库、安装科学模型、一个从提出请求到 **Completed** 的完整示例
@@ -31,7 +47,7 @@ calibration.
 - [简体中文手册](./GeoForge-Desktop-Manual-ZH-CN-v0.6.47.pdf)
 - [Bilingual / 中英合订版](./GeoForge-Desktop-Manual-Bilingual-v0.6.47.pdf)
 
-These PDFs document the v0.6.47 interface and remain the long-form guide for the current workflow.
+These PDFs document the historical v0.6.47 interface and workflow.
 They include provider-specific proxy routing, Kimi project permissions, automatic
 KI updates from main, selectable model installation folders, KI Studio/KDT gates,
 live agent states, dynamic Project View, calibration, and the detailed APEX case.

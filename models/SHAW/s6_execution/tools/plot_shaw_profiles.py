@@ -13,12 +13,15 @@ Usage:
     python plot_shaw_profiles.py \
         --workdir /path/to/shaw/run \
         --output /path/to/output/shaw_profiles.png \
-        [--start_year 2005] [--end_year 2005]
+        [--depths 0 0.05 0.10 0.15 0.20 0.30 0.50 0.70 1.00 1.25 1.50]
 """
 
 import argparse
 import sys
 from pathlib import Path
+
+from parse_shaw_output import (parse_profile_file, parse_frost_file, parse_water_file,
+                               parse_energy_file, read_profile_depths)
 
 try:
     import matplotlib
@@ -34,141 +37,44 @@ except ImportError:
 
 
 def read_profile_data(filepath):
-    """Read SHAW profile output (temp.out or moist.out)."""
-    times = []
-    profiles = []
-
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or any(c.isalpha() for c in line[:10]):
-                continue
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            try:
-                jday = int(parts[0])
-                hour = int(parts[1])
-                year = int(parts[2])
-                year = year + (1900 if year > 50 else 2000)
-                values = [float(v) for v in parts[3:]]
-
-                dt = datetime(year, 1, 1) + timedelta(days=jday - 1, hours=hour)
-                times.append(dt)
-                profiles.append(values)
-            except (ValueError, IndexError):
-                continue
-
-    return times, profiles
+    """Read the same date/node layout used by CSV export."""
+    rows = parse_profile_file(filepath)
+    return ([datetime.fromisoformat(row["datetime"]) for row in rows],
+            [[value for key, value in row.items() if key.startswith("value_node")] for row in rows])
 
 
 def read_frost_data(filepath):
-    """Read frost.out data."""
-    times = []
-    frost_depths = []
-    thaw_depths = []
-    snow_depths = []
-
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or any(c.isalpha() for c in line[:10]):
-                continue
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            try:
-                jday = int(parts[0])
-                if len(parts) >= 7:
-                    hour = int(parts[1])
-                    year = int(parts[2])
-                    frost = float(parts[3])
-                    thaw = float(parts[4])
-                    snow = float(parts[5])
-                else:
-                    hour = 12
-                    year = int(parts[1])
-                    frost = float(parts[2])
-                    thaw = float(parts[3])
-                    snow = float(parts[4]) if len(parts) > 4 else 0.0
-
-                year = year + (1900 if year > 50 else 2000)
-                dt = datetime(year, 1, 1) + timedelta(days=jday - 1, hours=hour)
-                times.append(dt)
-                frost_depths.append(frost)
-                thaw_depths.append(thaw)
-                snow_depths.append(snow)
-            except (ValueError, IndexError):
-                continue
-
-    return times, frost_depths, thaw_depths, snow_depths
+    rows = parse_frost_file(filepath)
+    return ([datetime.fromisoformat(row["datetime"]) for row in rows],
+            [row["frost_depth_cm"] for row in rows], [row["thaw_depth_cm"] for row in rows],
+            [row["snow_depth_cm"] for row in rows])
 
 
 def read_water_data(filepath):
-    """Read water.out data."""
-    times = []
-    data = {'rain': [], 'snow': [], 'et': [], 'runoff': [], 'drainage': []}
-
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or any(c.isalpha() for c in line[:10]):
-                continue
-            parts = line.split()
-            if len(parts) < 6:
-                continue
-            try:
-                jday = int(parts[0])
-                year = int(parts[1])
-                year = year + (1900 if year > 50 else 2000)
-                dt = datetime(year, 1, 1) + timedelta(days=jday - 1)
-                times.append(dt)
-                data['rain'].append(float(parts[2]))
-                data['snow'].append(float(parts[3]) if len(parts) > 3 else 0)
-                data['et'].append(float(parts[4]) if len(parts) > 4 else 0)
-                data['runoff'].append(float(parts[5]) if len(parts) > 5 else 0)
-                data['drainage'].append(float(parts[6]) if len(parts) > 6 else 0)
-            except (ValueError, IndexError):
-                continue
-
-    return times, data
+    rows = parse_water_file(filepath)
+    columns = {"precip": "precip_mm", "snowmelt": "snowmelt_mm", "et": "et_mm",
+               "runoff": "runoff_mm", "drainage": "drainage_mm"}
+    return ([datetime.fromisoformat(row["datetime"]) for row in rows],
+            {key: [row[column] for row in rows] for key, column in columns.items()})
 
 
 def read_energy_data(filepath):
-    """Read energy.out data."""
-    times = []
-    data = {'rnet': [], 'sensible': [], 'latent': [], 'ground': []}
+    rows = parse_energy_file(filepath)
+    return ([datetime.fromisoformat(row["datetime"]) for row in rows],
+            {key: [row[key + "_wm2"] for row in rows] for key in ("rnet", "sensible", "latent", "ground")})
 
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or any(c.isalpha() for c in line[:10]):
-                continue
-            parts = line.split()
-            if len(parts) < 6:
-                continue
-            try:
-                jday = int(parts[0])
-                if len(parts) > 7:
-                    hour = int(parts[1])
-                    year = int(parts[2])
-                    idx = 3
-                else:
-                    hour = 12
-                    year = int(parts[1])
-                    idx = 2
 
-                year = year + (1900 if year > 50 else 2000)
-                dt = datetime(year, 1, 1) + timedelta(days=jday - 1, hours=hour)
-                times.append(dt)
-                data['rnet'].append(float(parts[idx]))
-                data['sensible'].append(float(parts[idx + 1]))
-                data['latent'].append(float(parts[idx + 2]))
-                data['ground'].append(float(parts[idx + 3]))
-            except (ValueError, IndexError):
-                continue
-
-    return times, data
+def _profile_depths(filepath, node_count, depths=None):
+    """Use measured node depths in meters, never a fabricated uniform grid."""
+    values = read_profile_depths(filepath) if depths is None else depths
+    if not len(values):
+        raise ValueError(f"{filepath}: no soil-depth header; supply --depths in meters")
+    result = np.asarray(values, dtype=float)
+    if result.ndim != 1 or len(result) != node_count:
+        raise ValueError(f"{filepath}: depths must contain exactly {node_count} node values")
+    if not np.all(np.isfinite(result)) or np.any(result < 0) or np.any(np.diff(result) <= 0):
+        raise ValueError(f"{filepath}: depths must be finite, nonnegative, and strictly increasing in meters")
+    return result
 
 
 def plot_all(workdir, output_path, depths=None):
@@ -196,10 +102,7 @@ def plot_all(workdir, output_path, depths=None):
         if times and profiles:
             ax = axes[ax_idx, 0]
             n_nodes = len(profiles[0])
-            if depths is None:
-                depths_arr = np.linspace(0, 4.0, n_nodes)
-            else:
-                depths_arr = np.array(depths[:n_nodes])
+            depths_arr = _profile_depths(workdir / 'temp.out', n_nodes, depths)
 
             profile_array = np.array(profiles)
             im = ax.pcolormesh(
@@ -217,7 +120,7 @@ def plot_all(workdir, output_path, depths=None):
             ax.invert_yaxis()
             ax.set_ylabel('Depth (m)')
             ax.set_title('Soil Temperature (C) — black line = 0C (frost boundary)')
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d\n%Y'))
             plt.colorbar(im, ax=ax, label='Temperature (C)')
             ax_idx += 1
 
@@ -227,10 +130,7 @@ def plot_all(workdir, output_path, depths=None):
         if times and profiles:
             ax = axes[ax_idx, 0]
             n_nodes = len(profiles[0])
-            if depths is None:
-                depths_arr = np.linspace(0, 4.0, n_nodes)
-            else:
-                depths_arr = np.array(depths[:n_nodes])
+            depths_arr = _profile_depths(workdir / 'moist.out', n_nodes, depths)
 
             profile_array = np.array(profiles)
             im = ax.pcolormesh(
@@ -240,7 +140,7 @@ def plot_all(workdir, output_path, depths=None):
             ax.invert_yaxis()
             ax.set_ylabel('Depth (m)')
             ax.set_title('Soil Water Content (m3/m3)')
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d\n%Y'))
             plt.colorbar(im, ax=ax, label='Water Content (m3/m3)')
             ax_idx += 1
 
@@ -255,7 +155,7 @@ def plot_all(workdir, output_path, depths=None):
             ax.set_ylabel('Depth (cm)')
             ax.set_title('Frost Depth, Thaw Depth, and Snow Depth')
             ax.legend(loc='best')
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d\n%Y'))
             ax.axhline(0, color='gray', linestyle='-', linewidth=0.5)
             ax_idx += 1
 
@@ -264,16 +164,15 @@ def plot_all(workdir, output_path, depths=None):
         times, wdata = read_water_data(str(workdir / 'water.out'))
         if times:
             ax = axes[ax_idx, 0]
-            ax.bar(times, wdata['rain'], color='blue', alpha=0.5, label='Rain', width=1)
-            ax.bar(times, wdata['snow'], bottom=wdata['rain'], color='cyan',
-                   alpha=0.5, label='Snow', width=1)
+            ax.bar(times, wdata['precip'], color='blue', alpha=0.5, label='Precipitation', width=1)
+            ax.plot(times, wdata['snowmelt'], color='cyan', label='Snowmelt')
             ax.plot(times, wdata['et'], 'g-', linewidth=1, label='ET')
             ax.plot(times, wdata['runoff'], 'r-', linewidth=1, label='Runoff')
             ax.plot(times, wdata['drainage'], 'k--', linewidth=1, label='Drainage')
             ax.set_ylabel('Water (mm)')
             ax.set_title('Water Balance')
             ax.legend(loc='best', ncol=5, fontsize=8)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d\n%Y'))
             ax_idx += 1
 
     # 5. Energy balance
@@ -289,7 +188,7 @@ def plot_all(workdir, output_path, depths=None):
             ax.set_title('Surface Energy Balance')
             ax.legend(loc='best', ncol=4, fontsize=8)
             ax.axhline(0, color='gray', linestyle='-', linewidth=0.5)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d\n%Y'))
             ax_idx += 1
 
     plt.tight_layout()
@@ -308,9 +207,15 @@ def main():
                         help="Directory with SHAW output files")
     parser.add_argument("--output", type=str, required=True,
                         help="Output image path")
+    parser.add_argument("--depths", type=float, nargs="+",
+                        help="Explicit soil-node depths in meters, one per column; "
+                             "by default read each profile's DY/DAY HR YR depth header")
 
     args = parser.parse_args()
-    plot_all(args.workdir, args.output)
+    try:
+        plot_all(args.workdir, args.output, args.depths)
+    except ValueError as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":

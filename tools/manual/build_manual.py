@@ -1,10 +1,10 @@
-"""Build the GeoForge Desktop manual (HTML and PDF) from its Markdown source.
+"""Build the GeoForge Desktop guides (HTML and PDF) from Markdown source.
 
-    python tools/manual/build_manual.py [--version 0.6.54] [--langs en,zh-CN] [--no-pdf]
+    python tools/manual/build_manual.py --version 0.6.55 --install-web-guides
 
-Source: docs/manual/<version>/src/<lang>/NN-*.md and images/<lang>/*.png.
-Output: docs/manual/<version>/GeoForge-Desktop-Manual-<LANG>-v<version>.html/.pdf
-The PDF is printed by headless Chrome or Edge; no other tools are needed.
+Sources: docs/manual/<version>/{src,quickstart,calibration}/<lang>/NN-*.md.
+Output: docs/manual/<version>/GeoForge-Desktop-<KIND>-<LANG>-v<version>.html/.pdf
+PDFs use headless Chrome or Edge; quickstart page counts use PyMuPDF or pypdf.
 """
 from __future__ import annotations
 
@@ -26,6 +26,11 @@ REPO = Path(__file__).resolve().parents[2]
 TITLES = {
     "en": ("GeoForge Desktop", "User manual", "Contents", "Version"),
     "zh-CN": ("GeoForge 桌面版", "使用手册", "目录", "版本"),
+}
+KINDS = {
+    "manual": ("Manual", {"en": "User manual", "zh-CN": "使用手册"}),
+    "quickstart": ("Quickstart", {"en": "Quickstart · 3 pages", "zh-CN": "快速上手 · 3 页"}),
+    "calibration": ("Calibration", {"en": "Calibration guide", "zh-CN": "参数校准指南"}),
 }
 CSS = """
 @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
@@ -60,6 +65,23 @@ blockquote.caution { border-left-color: var(--warn); background: #fff6e9; }
 blockquote.todo { border-left-color: #b03a2e; background: #fdecea; }
 a { color: var(--accent); }
 @media screen { body { max-width: 860px; margin: 0 auto; padding: 24px; } .cover { height: auto; padding: 60px 0; } }
+"""
+QUICKSTART_CSS = """
+@page { size:A4; margin:12mm 14mm; }
+body { font-size:10.2pt; line-height:1.42; }
+section.chapter { page-break-before:auto; break-after:page; }
+section.chapter:last-child { break-after:auto; }
+h1 { font-size:23pt; margin:0 0 3mm; }
+h2 { font-size:13pt; margin:4mm 0 2mm; }
+h3 { font-size:11pt; margin:3mm 0 1mm; }
+p { margin:2mm 0; } li { margin:1.5mm 0; }
+ul,ol { margin:2mm 0; padding-left:6mm; }
+img { max-height:58mm; max-width:100%; object-fit:contain; }
+table { font-size:9pt; } code { font-size:9pt; }
+.page-kicker { color:#2f6fe4; font-weight:600; letter-spacing:.05em; margin-bottom:2mm; }
+.page-footer { border-top:1px solid #dde3ea; margin-top:4mm; padding-top:2mm; color:#5b6675; font-size:8.5pt; }
+blockquote { padding:2mm 3mm; margin:2mm 0; }
+@media screen { section.chapter { border-bottom:1px solid #dde3ea; padding:16px 0 28px; } }
 """
 
 
@@ -113,26 +135,37 @@ def chapter_html(md_text: str, image_root: Path) -> tuple[str, str]:
     return title, body
 
 
-def build(version: str, lang: str, pdf: bool) -> list[Path]:
+def build(version: str, lang: str, pdf: bool, kind: str = "manual") -> list[Path]:
     root = REPO / "docs" / "manual" / version
-    src = sorted((root / "src" / lang).glob("[0-9][0-9]-*.md"))
+    source_root = root / "src" / lang if kind == "manual" else root / kind / lang
+    src = sorted(source_root.glob("[0-9][0-9]-*.md"))
     if not src:
-        raise SystemExit(f"no chapters in {root / 'src' / lang}")
-    name, subtitle, contents, ver_word = TITLES.get(lang, TITLES["en"])
+        raise SystemExit(f"no chapters in {source_root}")
+    name, _, contents, ver_word = TITLES.get(lang, TITLES["en"])
+    filename_kind, subtitles = KINDS[kind]
+    subtitle = subtitles.get(lang, subtitles["en"])
+    if kind == "quickstart" and len(src) != 3:
+        raise SystemExit("quickstart must have exactly three source pages")
     chapters = []
     for i, path in enumerate(src):
         title, body = chapter_html(path.read_text(encoding="utf-8"), root / "images" / lang)
         chapters.append((f"ch{i:02d}", title, body))
     toc = "".join(f'<li><a href="#{cid}">{html.escape(t)}</a></li>' for cid, t, _ in chapters)
+    front = (f'<div class="cover"><h1>{name}</h1><div class="sub">{subtitle}</div>'
+             f'<div class="ver">{ver_word} {version} · Windows</div></div>'
+             f'<div class="toc"><h2>{contents}</h2><ul>{toc}</ul></div>')
+    if kind == "quickstart":
+        front = ""
+        chapters = [(cid, title, f'<div class="page-kicker">GEOFORGE DESKTOP {version} / {i + 1} OF 3</div>' + body
+                     + f'<div class="page-footer">{html.escape(subtitle)} · {i + 1} / 3 · GeoForge {version}</div>')
+                    for i, (cid, title, body) in enumerate(chapters)]
     doc = (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><title>{name} · {subtitle}</title>'
-           f"<style>{CSS}</style></head><body>"
-           f'<div class="cover"><h1>{name}</h1><div class="sub">{subtitle}</div>'
-           f'<div class="ver">{ver_word} {version} · Windows &amp; macOS</div></div>'
-           f'<div class="toc"><h2>{contents}</h2><ul>{toc}</ul></div>'
+           f"<style>{CSS}{QUICKSTART_CSS if kind == 'quickstart' else ''}</style></head><body>"
+           + front
            + "".join(f'<section class="chapter" id="{cid}">{body}</section>' for cid, _, body in chapters)
            + "</body></html>")
     tag = {"en": "EN", "zh-CN": "ZH-CN"}.get(lang, lang)
-    out_html = root / f"GeoForge-Desktop-Manual-{tag}-v{version}.html"
+    out_html = root / f"GeoForge-Desktop-{filename_kind}-{tag}-v{version}.html"
     out_html.write_text(doc, encoding="utf-8")
     outputs = [out_html]
     if pdf:
@@ -152,18 +185,39 @@ def build(version: str, lang: str, pdf: bool) -> list[Path]:
         finally:
             shutil.rmtree(profile, ignore_errors=True)
         outputs.append(out_pdf)
+        if kind == "quickstart":
+            try:
+                import pymupdf
+                with pymupdf.open(out_pdf) as document:
+                    count = len(document)
+            except ImportError:
+                from pypdf import PdfReader
+                count = len(PdfReader(out_pdf).pages)
+            if count != 3:
+                raise SystemExit(f"quickstart must be exactly 3 PDF pages, got {count}: {out_pdf}")
     return outputs
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--version", default="0.6.54")
+    parser.add_argument("--version", default="0.6.55")
     parser.add_argument("--langs", default="en,zh-CN")
     parser.add_argument("--no-pdf", action="store_true")
+    parser.add_argument("--kinds", default="manual,quickstart,calibration")
+    parser.add_argument("--install-web-guides", action="store_true",
+                        help="Copy final self-contained HTML/PDFs into the bundled offline guide folder")
     args = parser.parse_args()
     for lang in args.langs.split(","):
-        for path in build(args.version, lang.strip(), not args.no_pdf):
-            print(f"{path}  ({path.stat().st_size // 1024} KB)")
+        for kind in args.kinds.split(","):
+            kind = kind.strip()
+            if kind not in KINDS:
+                parser.error(f"unknown guide kind: {kind}")
+            for path in build(args.version, lang.strip(), not args.no_pdf, kind):
+                print(f"{path}  ({path.stat().st_size // 1024} KB)")
+                if args.install_web_guides:
+                    destination = REPO / "kiss/kiss_cli/web/guides" / f"{kind}-{lang.strip()}{path.suffix}"
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, destination)
 
 
 if __name__ == "__main__":

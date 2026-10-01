@@ -1,0 +1,585 @@
+--- a/vic/drivers/classic/Makefile
++++ b/vic/drivers/classic/Makefile
+@@ -18,7 +18,11 @@
+ VICPATH = ../../vic_run
+ 
+ # Set SHELL = your shell here
++ifeq ($(OS),Windows_NT)
++SHELL = cmd.exe
++else
+ SHELL = /bin/bash
++endif
+ 
+ # Set CC = your compiler here
+ ifndef CC
+@@ -26,7 +30,13 @@
+ endif
+ 
+ GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags)
++ifeq ($(OS),Windows_NT)
++MAKE = mingw32-make
++HOSTNAME := windows
++else
++MAKE = make
+ HOSTNAME := $(shell uname -n)
++endif
+ 
+ # Set the log level
+ # To turn off warning statements, set LOG_LVL >= 30
+@@ -39,19 +49,20 @@
+ LOG_LVL = 5
+ 
+ # set include
+-INCLUDES = -I ${DRIVERPATH}/include -I $(SHAREDPATH)/include -I ${VICPATH}/include
++INCLUDES = -I ${DRIVERPATH}/include -I $(SHAREDPATH)/include -I ${VICPATH}/include -include vic_compat_win.h
+ 
+ # Uncomment for normal optimized code flags (fastest run option)
+ #CFLAGS  = -O3 -Wall -Wno-unused
+ # LIBRARY = -lm
+ 
+ # Uncomment to include debugging information
+-CFLAGS  =  ${INCLUDES} -g -Wall -Wextra -std=c99 \
++CFLAGS  =  ${INCLUDES} -g -Wall -Wextra -std=c99 -fcommon \
+ 					 -DLOG_LVL=$(LOG_LVL) \
+ 					 -DGIT_VERSION=\"$(GIT_VERSION)\" \
+ 					 -DUSERNAME=\"$(USER)\" \
+ 					 -DHOSTNAME=\"$(HOSTNAME)\"
+-LIBRARY = -lm
++EXTRA_SRCS = ./include/strptime_mingw.c
++LIBRARY = -lm -lws2_32
+ 
+ # Uncomment to include execution profiling information
+ #CFLAGS  = ${INCLUDES} -O3 -pg -Wall -Wno-unused -DLOG_LVL=$(LOG_LVL)
+@@ -82,25 +93,25 @@
+ OBJS = $(SRCS:%.o=%.c)
+ 
+ all:
+-	make depend
+-	make model
++	$(MAKE) depend
++	$(MAKE) model
+ 
+ default:
+-	make depend
+-	make model
++	$(MAKE) depend
++	$(MAKE) model
+ 
+ full:
+-	make clean
+-	make depend
+-	make tags
+-	make model
++	$(MAKE) clean
++	$(MAKE) depend
++	$(MAKE) tags
++	$(MAKE) model
+ 
+ clean::
+-	\rm -f core log
+-	\rm -rf ${COMPEXE}${EXT} ${COMPEXE}${EXT}.dSYM
++	-rm -f core log
++	-rm -rf ${COMPEXE}${EXT} ${COMPEXE}${EXT}.dSYM
+ 
+ model: $(OBJS)
+-	$(CC) -o ${COMPEXE}${EXT} $(OBJS) $(CFLAGS) $(LIBRARY)
++	$(CC) -o ${COMPEXE}${EXT} $(OBJS) $(EXTRA_SRCS) $(CFLAGS) $(LIBRARY)
+ 
+ # -------------------------------------------------------------
+ # tags
+@@ -110,7 +121,7 @@
+ TAGS:	$(SRCS) $(HDRS)
+ 	etags $(SRCS) $(HDRS)
+ clean::
+-	\rm -f TAGS
++	-rm -f TAGS
+ 
+ 
+ # -------------------------------------------------------------
+@@ -121,4 +132,4 @@
+ 	$(CC) $(CFLAGS) -M $(SRCS) > $@
+ 
+ clean::
+-	\rm -f .depend
++	-rm -f .depend
+--- /dev/null
++++ b/vic/drivers/classic/include/execinfo.h
+@@ -0,0 +1,6 @@
++#ifndef EXECINFO_H
++#define EXECINFO_H
++/* MinGW has no <execinfo.h>.  VIC uses backtrace() only for crash logging.
++ * Forward to the workspace-local shim, which supplies no-op stubs. */
++#include <vic_compat_win.h>
++#endif
+--- /dev/null
++++ b/vic/drivers/classic/include/pwd.h
+@@ -0,0 +1,6 @@
++#ifndef PWD_H
++#define PWD_H
++/* MinGW has no <pwd.h>.  VIC only needs getpwuid()/getuid() for log
++ * attribution.  Forward to the workspace-local shim. */
++#include <vic_compat_win.h>
++#endif
+--- /dev/null
++++ b/vic/drivers/classic/include/strptime_mingw.c
+@@ -0,0 +1,292 @@
++/******************************************************************************
++ * @section DESCRIPTION
++ *
++ * strptime() implementation for MinGW.
++ *
++ * MinGW-w64 provides strftime() but not strptime(), which VIC uses in
++ * strpdmy() (shared_all/src/vic_time.c) to parse the date line of a model
++ * state file.
++ *
++ * This implements the subset of POSIX strptime() that VIC relies on:
++ *   %Y  four-digit year          %m  month [01-12]
++ *   %d  day of month [01-31]     %H  hour   [00-23]
++ *   %M  minute [00-59]           %S  second [00-60]
++ *   %j  day of year [001-366]
++ * plus literal characters and %%.
++ *
++ * Fields are written into struct tm with the same conventions as glibc:
++ * tm_year is years since 1900 and tm_mon is 0-11, so callers that pre-seed
++ * tm_mon/tm_mday/tm_hour/tm_min/tm_sec still see POSIX behaviour.
++ *
++ * This is a platform-completeness shim only; no VIC scientific logic changes.
++ *****************************************************************************/
++
++#include <time.h>
++#include <string.h>
++#include <ctype.h>
++
++#ifndef VIC_HAVE_STRPTIME
++
++char *strptime(const char *s, const char *format, struct tm *tm)
++{
++    const char *sp;
++    const char *fp;
++    int         n;
++    int         val;
++
++    if ((s == NULL) || (format == NULL) || (tm == NULL)) {
++        return NULL;
++    }
++
++    sp = s;
++    fp = format;
++
++    while (*fp != '\0') {
++        /* Skip whitespace in the format: match any run of whitespace. */
++        if (isspace((unsigned char) *fp)) {
++            while (isspace((unsigned char) *fp)) {
++                fp++;
++            }
++            while (isspace((unsigned char) *sp)) {
++                sp++;
++            }
++            continue;
++        }
++
++        if (*fp != '%') {
++            if (*fp != *sp) {
++                return NULL;
++            }
++            fp++;
++            sp++;
++            continue;
++        }
++
++        /* We are at a '%' conversion. */
++        fp++;
++        if (*fp == '\0') {
++            return NULL;
++        }
++
++        /* Optional width limit, e.g. %04d style is not used by VIC, but
++         * accept and ignore digits/flags so real-world formats still parse. */
++        while (*fp == '0' || *fp == 'E' || *fp == 'O') {
++            fp++;
++        }
++
++        switch (*fp) {
++        case '%':
++            if (*sp != '%') {
++                return NULL;
++            }
++            sp++;
++            break;
++
++        case 'Y':
++            /* Four-digit year. */
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 4)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if (n == 0) {
++                return NULL;
++            }
++            tm->tm_year = val - 1900;
++            break;
++
++        case 'y':
++            /* Two-digit year: POSIX maps 69-99 -> 1969-1999, 00-68 -> 2000-2068. */
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 2)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if (n == 0) {
++                return NULL;
++            }
++            tm->tm_year = (val < 69) ? val + 100 : val;
++            break;
++
++        case 'm':
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 2)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if ((n == 0) || (val < 1) || (val > 12)) {
++                return NULL;
++            }
++            tm->tm_mon = val - 1;
++            break;
++
++        case 'd':
++        case 'e':
++            n = 0;
++            val = 0;
++            while (isspace((unsigned char) *sp) && (*fp == 'e')) {
++                sp++;
++            }
++            while (isdigit((unsigned char) *sp) && (n < 2)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if ((n == 0) || (val < 1) || (val > 31)) {
++                return NULL;
++            }
++            tm->tm_mday = val;
++            break;
++
++        case 'H':
++        case 'k':
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 2)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if ((n == 0) || (val > 23)) {
++                return NULL;
++            }
++            tm->tm_hour = val;
++            break;
++
++        case 'M':
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 2)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if ((n == 0) || (val > 59)) {
++                return NULL;
++            }
++            tm->tm_min = val;
++            break;
++
++        case 'S':
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 2)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if ((n == 0) || (val > 61)) {
++                return NULL;
++            }
++            tm->tm_sec = val;
++            break;
++
++        case 'j':
++            /* Day of year [001-366].  VIC seeds tm_mon/tm_mday before calling,
++             * so derive month/day from the ordinal the same way glibc does. */
++            n = 0;
++            val = 0;
++            while (isdigit((unsigned char) *sp) && (n < 3)) {
++                val = val * 10 + (*sp - '0');
++                sp++;
++                n++;
++            }
++            if ((n == 0) || (val < 1) || (val > 366)) {
++                return NULL;
++            }
++            tm->tm_yday = val - 1;
++            break;
++
++        case 'b':
++        case 'B':
++        case 'h':
++        {
++            /* Abbreviated or full month name. */
++            static const char *names[12] = {
++                "January", "February", "March", "April", "May", "June",
++                "July", "August", "September", "October", "November", "December"
++            };
++            int i;
++            int matched = -1;
++
++            for (i = 0; i < 12; i++) {
++                size_t len = ((*fp == 'b') || (*fp == 'h')) ? 3u : strlen(names[i]);
++                size_t k;
++
++                for (k = 0; k < len; k++) {
++                    if (tolower((unsigned char) sp[k]) !=
++                        tolower((unsigned char) names[i][k])) {
++                        break;
++                    }
++                }
++                if (k == len) {
++                    matched = i;
++                    sp += len;
++                    break;
++                }
++            }
++            if (matched < 0) {
++                return NULL;
++            }
++            tm->tm_mon = matched;
++            break;
++        }
++
++        case 'a':
++        case 'A':
++            /* Weekday name: consume it, VIC derives weekday itself. */
++        {
++            static const char *days[7] = {
++                "Sunday", "Monday", "Tuesday", "Wednesday",
++                "Thursday", "Friday", "Saturday"
++            };
++            int i;
++            int matched = -1;
++
++            for (i = 0; i < 7; i++) {
++                size_t len = (*fp == 'a') ? 3u : strlen(days[i]);
++                size_t k;
++
++                for (k = 0; k < len; k++) {
++                    if (tolower((unsigned char) sp[k]) !=
++                        tolower((unsigned char) days[i][k])) {
++                        break;
++                    }
++                }
++                if (k == len) {
++                    matched = i;
++                    sp += len;
++                    break;
++                }
++            }
++            if (matched < 0) {
++                return NULL;
++            }
++            break;
++        }
++
++        case 'n':
++        case 't':
++            while (isspace((unsigned char) *sp)) {
++                sp++;
++            }
++            break;
++
++        default:
++            /* Unsupported conversion: fail loudly rather than mis-parse. */
++            return NULL;
++        }
++
++        fp++;
++    }
++
++    return (char *) sp;
++}
++
++#endif /* VIC_HAVE_STRPTIME */
+--- /dev/null
++++ b/vic/drivers/classic/include/sys/time.h
+@@ -0,0 +1,8 @@
++#ifndef VIC_WIN_SYS_TIME_H
++#define VIC_WIN_SYS_TIME_H
++/* MinGW has no <sys/time.h>.  VIC needs only gettimeofday() (timing.c).
++ * Let MinGW's own <time.h> define `struct timeval`, then take the shim's
++ * gettimeofday() declaration. */
++#include <time.h>
++#include <vic_compat_win.h>
++#endif
+--- /dev/null
++++ b/vic/drivers/classic/include/vic_compat_win.h
+@@ -0,0 +1,154 @@
++/******************************************************************************
++ * @section DESCRIPTION
++ *
++ * Windows/MinGW portability shim for VIC 5.1.0.
++ *
++ * VIC's headers unconditionally include POSIX-only headers that MinGW-w64 does
++ * not provide: <pwd.h>, <sys/time.h> and <execinfo.h>.  This shim supplies the
++ * declarations VIC actually needs so that the *unmodified* upstream sources
++ * compile with a MinGW gcc toolchain.
++ *
++ * It is force-included with -include before every translation unit, and
++ * wrapper headers named pwd.h / sys/time.h / execinfo.h sit earlier on the
++ * include path so those system includes resolve here instead of failing.
++ *
++ * Only OS-level facilities that MinGW genuinely lacks are shimmed.  Where
++ * MinGW already supplies a type (notably `struct timeval`, defined in MinGW's
++ * own <_timeval.h>) that definition is used rather than redefined.
++ *
++ * No model algorithm, constant or scientific default is changed.
++ *****************************************************************************/
++
++#ifndef VIC_COMPAT_WIN_H
++#define VIC_COMPAT_WIN_H
++
++#ifdef _WIN32
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++#include <windows.h>
++#include <sys/types.h>
++
++/* ---------------------------------------------------------------------------
++ * uid_t / gid_t.
++ *
++ * MinGW defines pid_t but not the POSIX user/group ids.  VIC uses them only as
++ * opaque handles for the log/timing attribution below.
++ * ------------------------------------------------------------------------- */
++typedef int uid_t;
++typedef int gid_t;
++
++/* ---------------------------------------------------------------------------
++ * <pwd.h> replacement.
++ *
++ * vic_log.c calls getpwuid(getuid())->pw_name to tag log output with the user
++ * name.  MinGW has no passwd database, so return an empty string and let VIC
++ * fall back to its own default.
++ * ------------------------------------------------------------------------- */
++struct passwd {
++    char  *pw_name;
++    char  *pw_passwd;
++    uid_t  pw_uid;
++    gid_t  pw_gid;
++    char  *pw_gecos;
++    char  *pw_dir;
++    char  *pw_shell;
++};
++
++static inline uid_t getuid(void)
++{
++    return (uid_t) 0;
++}
++
++static inline uid_t geteuid(void)
++{
++    return (uid_t) 0;
++}
++
++static inline struct passwd *getpwuid(uid_t uid)
++{
++    static struct passwd pw;
++
++    (void) uid;
++    pw.pw_name = (char *) "";
++    pw.pw_passwd = (char *) "";
++    pw.pw_gecos = (char *) "";
++    pw.pw_dir = (char *) "";
++    pw.pw_shell = (char *) "";
++    pw.pw_uid = (uid_t) 0;
++    pw.pw_gid = (gid_t) 0;
++    return &pw;
++}
++
++/* ---------------------------------------------------------------------------
++ * <sys/time.h> replacement.
++ *
++ * MinGW supplies `struct timeval` via <_timeval.h> (pulled in by <time.h>), so
++ * only gettimeofday() -- used by timing.c -- needs supplying.
++ * ------------------------------------------------------------------------- */
++static inline int gettimeofday(struct timeval *tv, void *tz)
++{
++    (void) tz;
++    if (tv != NULL) {
++        tv->tv_sec = (long) time(NULL);
++        tv->tv_usec = 0;
++    }
++    return 0;
++}
++
++/* ---------------------------------------------------------------------------
++ * <execinfo.h> replacement.
++ *
++ * vic_log.h includes <execinfo.h> and vic_log.c implements print_trace() via
++ * backtrace()/backtrace_symbols().  MinGW provides neither, so supply no-op
++ * stubs.  The crash backtrace is unavailable on this platform: that affects
++ * diagnostics only, never the simulation.
++ * ------------------------------------------------------------------------- */
++static inline int backtrace(void **buffer, int size)
++{
++    (void) buffer;
++    (void) size;
++    return 0;
++}
++
++static inline char **backtrace_symbols(void *const *buffer, int size)
++{
++    (void) buffer;
++    (void) size;
++    return NULL;
++}
++
++static inline void backtrace_symbols_fd(void *const *buffer, int size, int fd)
++{
++    (void) buffer;
++    (void) size;
++    (void) fd;
++}
++
++/* ---------------------------------------------------------------------------
++ * POSIX <unistd.h> pieces that MinGW's unistd.h does not provide.
++ * ------------------------------------------------------------------------- */
++#if !defined(_SSIZE_T_DEFINED) && !defined(_SSIZE_T_DEFINED_)
++#define _SSIZE_T_DEFINED
++typedef intptr_t ssize_t;
++#endif
++
++#ifndef STDIN_FILENO
++#define STDIN_FILENO  0
++#define STDOUT_FILENO 1
++#define STDERR_FILENO 2
++#endif
++
++/* Some VIC sources reference these POSIX status macros. */
++#ifndef EXIT_SUCCESS
++#define EXIT_SUCCESS 0
++#endif
++#ifndef EXIT_FAILURE
++#define EXIT_FAILURE 1
++#endif
++
++#endif /* _WIN32 */
++
++#endif /* VIC_COMPAT_WIN_H */

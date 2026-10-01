@@ -127,6 +127,10 @@ SHAW simulates coupled heat, water, and solute transfer through a vertical soil-
 
 ## 4. Build Instructions
 
+On Windows, follow the observed native build and four-DLL runtime recipe in
+[`docs/install.windows.md`](docs/install.windows.md). Use `shaw303.exe`; a source
+directory named `Shaw303` collides with an extensionless alias on Windows.
+
 The binary is already compiled at `KISSPATH_BINARIES/shaw/shaw303`.
 
 ```bash
@@ -143,6 +147,17 @@ Known build issue: gfortran 10+ requires legacy argument-mismatch compatibility,
 ## 5. Execution
 
 Always run `python preflight_check.py` in this KI directory before debugging a model run.
+
+To preserve an existing case exactly, run
+`python s6_execution/tools/run_shaw.py --workdir <run> --inp_file Trial.303.inp --shaw_exe <native-executable>`.
+If the original files were uploaded elsewhere, add `--stage_from <input-directory>`;
+the wrapper stages the control and its referenced inputs byte for byte into `<run>`.
+Keep the four input files referenced by that control in the run directory. This
+preserves its weather timestep, output frequencies, and PEST settings. If creating
+a new control from four separate file arguments, use `--mtstep 0` for hourly
+weather (`--mtstep 1` is daily). Use a fresh output directory for the official Trial.
+Preflight checks software readiness; the wrapper validates the selected project's
+inputs and requires fresh output through its requested end date.
 
 ```bash
 cd /path/to/input/files

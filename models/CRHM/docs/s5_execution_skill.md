@@ -23,6 +23,7 @@ Run the CRHM executable with the configured .prj file, capture output, and parse
 | prj_path | file | s4_parameter_config | Validated .prj project file |
 | output_path | file | User choice | Output file path |
 | obs_dir | directory | s2_observation_data | Observation file directory (optional) |
+| run_dir | directory | Project outputs | Optional staging and execution directory; all raw output must stay inside it |
 
 ## Procedure
 
@@ -53,6 +54,56 @@ python tools/s5_execution/run_crhm.py \
 **Expected result**: Exit code 0, non-empty output file.
 
 **If exit code non-zero**: See dt_008 (runtime error), dt_014 (module crash).
+
+The execution tool sets `TZ=UTC0` for the CRHM child process. Upstream mixes
+`mktime` with `gmtime` in its date conversion, so inheriting the computer's
+timezone changes model time calculations and SWE, not just printed timestamps.
+CRHM input dates are model civil timestamps; this override makes date arithmetic
+independent of the host. It does **not** convert a station's geographical timezone
+or change the forcing timestamps. The parent process environment is preserved.
+Direct native invocations must set the same child environment for reproducibility.
+On the official Bad Lake 1973 example, UTC0 yields 8,760 hourly records from
+1973-01-01 01:00 through 1974-01-01 00:00. The uncorrected UTC+8 host run differed
+by up to 6.69605 mm SWE; shifting its output labels cannot repair that result.
+
+### Run the authentic upstream Bad Lake example
+
+Use the installed source's `crhmcode/prj/badlake.prj` and
+`crhmcode/obs/Badlake73_76.obs`. The upstream project contains an obsolete
+absolute observation path. The execution tool can stage both authentic inputs
+and run them in one receipted step:
+
+```bash
+python tools/s5_execution/run_crhm.py \
+  --crhm_exe <installed-crhm-executable> \
+  --prj_path <installed-source>/crhmcode/prj/badlake.prj \
+  --obs_dir <installed-source>/crhmcode/obs \
+  --run_dir <project>/outputs/CRHM/badlake \
+  --output_path <project>/outputs/CRHM/badlake/badlake_output.txt \
+  --time_format ISO --progress 100
+```
+
+`--run_dir` copies the project to `run_dir/badlake.prj` and its observations to
+`run_dir/obs/`, then rewrites **only the Observations path lines** in the copied
+project. The original files and every other project byte, including scientific
+parameters, dates, modules and Display_Variable, remain unchanged. With staging,
+`--obs_dir` resolves each listed observation by filename even if the project
+names an obsolete absolute path. Without it, absolute source paths must exist
+and relative source paths are resolved against the original project's directory.
+Missing sources stop staging before any files are copied; no forcing is generated.
+
+The subprocess runs with `cwd=run_dir`, so `crhmRun.log` and other relative model
+artifacts stay there. The output path must be inside `run_dir`; the directory
+must not contain the original project or observations. Declare staging copies,
+model logs and raw output as products of this **same run step**. Neither
+`validate_obs_file.py` nor `validate_prj.py` copies these files, and they must not
+be presented as staging tools. Follow the run with the existing parser using
+`--output_format csv` and a separate receipted parsing step.
+
+The original Bad Lake project displays SWE for three HRUs. Report the actual
+time range, row count and per-HRU SWE extrema; this is an execution benchmark,
+not calibration or validation against observed SWE. Without `--run_dir`, the
+tool retains its existing working-directory behavior.
 
 ### Step 3: Verify output
 

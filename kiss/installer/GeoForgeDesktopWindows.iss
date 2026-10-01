@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.6.54"
+  #define AppVersion "0.6.55"
 #endif
 #ifndef SourceDir
   #error SourceDir must point to the packaged "GeoForge Desktop <version> Windows" folder
@@ -11,7 +11,7 @@
 #define AppName "GeoForge Desktop"
 #define AppExe "GeoForge Desktop.exe"
 #define AppPublisher "KISS — Knowledge Infrastructure for Scientific Simulation"
-#define AppUrl "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation"
+#define AppUrl "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation"
 
 [Setup]
 AppId={{7E81E664-31FA-4D50-A606-980056B3D08A}

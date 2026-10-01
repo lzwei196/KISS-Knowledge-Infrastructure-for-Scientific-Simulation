@@ -819,6 +819,7 @@ def test_failed_cli_with_saved_files_cannot_offer_approval(tmp_path):
 def test_worktree_handoff_preserves_reviewed_plan_even_if_unchanged(tmp_path, changed):
     project = _project(tmp_path); ki = _ki(tmp_path, "M")
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
+    _drive_planning(tmp_path, ki, project)  # a reviewed draft already has executable tools
     t = flowrun.turn(project, [ki], _cfg(project), "cli", "kimi", None, "run M for 2003")
     wt = t.planning_worktree
     assert str(wt / "runs/plan.json") in t.extra_prompt
@@ -837,6 +838,8 @@ def test_concurrent_original_edit_is_not_overwritten(tmp_path):
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     t = flowrun.turn(project, [ki], _cfg(project), "cli", "codex", None, "run M for 2003")
     pj, inv = t.session.flow.plan.read_artifacts(t.planning_worktree)
+    for step in pj["steps"]:
+        step["tool"] = str(ki.root / "tools" / "run.py")
     t.session.flow.plan.write_artifacts(t.planning_worktree, pj, inv)
     pj["goal"] = "user concurrent edit"
     t.session.flow.plan.write_artifacts(project, pj, inv)
@@ -901,6 +904,8 @@ def test_rejected_worktree_is_reused_then_validated_without_resetting_agent_work
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     t = flowrun.turn(project, [ki], _cfg(project), "cli", "kimi", None, "planning only")
     pj, inv = t.session.flow.plan.read_artifacts(t.planning_worktree)
+    for step in pj["steps"]:
+        step["tool"] = str(ki.root / "tools" / "run.py")
     pj["goal"] = "Agent's carefully reviewed draft"
     pj["steps"][0]["inputs"] = ["missing-reference"]
     t.session.flow.plan.write_artifacts(t.planning_worktree, pj, inv)
@@ -1444,7 +1449,8 @@ def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_pa
     res = flowrun.after(project, t, "planned", setup_ok=True)
     choices = res.request["plan_review"]["data_choices"]
     assert len(choices) == 1 and choices[0]["picked"] == "agrometeo_quebec"
-    assert [o["dataset_id"] for o in choices[0]["options"]] == ["agrometeo_quebec", "risma_on2"]   # invented id dropped
+    assert [o["dataset_id"] for o in choices[0]["options"]] == ["agrometeo_quebec", "risma_on2", "made_up_id"]
+    assert choices[0]["options"][-1]["delivery"] == "external"   # no catalogue facts invented
     assert choices[0]["options"][0]["delivery"] == "manual" and choices[0]["options"][1]["size_label"] == "46 KB"
     # the user picks the served candidate instead: re-pin, card comes back unsigned
     pre = flowrun.pre(project, "Approved.", ["M"], [ki],
@@ -1785,17 +1791,18 @@ def test_the_baseline_comes_from_the_plan_not_the_card(tmp_path, monkeypatch):
     assert bl["suggested"] == {"data:forcing": "a", "data:dem": "d1", "routing": "lohmann"}
     assert bl["item_of"] == {"data:forcing": "forcing", "data:dem": "dem"}
     assert bl["options"] == {"data:forcing": ["a", "b"], "data:dem": ["d1"], "routing": ["lohmann", "cama"]}
-    # a pre-selection the radios never showed counts as nothing shown (codex B4 #1)
+    # External recommendations remain visible even without a catalogue record.
     gone = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
                                     "options": ["a", "removed"], "picked": "removed"}]}
-    assert plan_review.suggestion_baseline(gone, inv)["suggested"] == {"data:forcing": ""}
+    assert plan_review.suggestion_baseline(gone, inv)["suggested"] == {"data:forcing": "removed"}
     recs, _ = plan_review.decision_records(flowrun._flow(), gone, {"items": [{"id": "forcing", "dataset_id": "removed"}]}, {})
-    assert recs["item:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
+    assert recs["item:forcing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
     # the rows the card rendered give the same baseline as a fresh catalogue read (B4 #4)
     from kiss_cli.plan_review import _data_choices
     assert plan_review.suggestion_baseline(plan, inv, rows=_data_choices(plan, inv)) == bl
     hidden = {"scientific_choices": [{"id": "data:x", "kind": "data_source", "item": "x", "options": ["invented"]}]}
-    assert plan_review.suggestion_baseline(hidden, {"items": [{"id": "x"}]}) == {"suggested": {}, "item_of": {}, "options": {}}
+    assert plan_review.suggestion_baseline(hidden, {"items": [{"id": "x"}]}) == {
+        "suggested": {"data:x": ""}, "item_of": {"data:x": "x"}, "options": {"data:x": ["invented"]}}
     project2 = _project(tmp_path / "p2")
     answers = plan_review.record_user_answers(project2, bl, {"routing": "not-offered"})
     assert answers == {}                                             # off-menu pick never stored (kimi B2 #3)
@@ -1813,7 +1820,6 @@ def test_an_accepted_recommendation_is_disclosed_as_accepted_not_as_a_protocol_d
     plan = {"scientific_choices": [
         {"id": "data:forcing", "kind": "data_source", "item": "forcing", "options": ["a", "b"], "picked": "a", "decision": "a"},
         {"id": "data:shown_by_pin", "kind": "data_source", "item": "pinned", "options": ["a"]},   # no picked: shown via dataset_id
-        {"id": "data:hidden", "kind": "data_source", "item": "forcing", "options": ["invented"], "picked": "b", "decision": "b"},
         {"id": "routing", "kind": "routing", "options": ["x", "y"], "picked": "x", "decision": "x", "high_impact": True},
         {"id": "quiet", "kind": "tuning", "options": ["p", "q"], "decision": "p"}]}          # not high-impact: not rendered
     inv = {"items": [{"id": "forcing", "dataset_id": "a"}, {"id": "dem", "dataset_id": "d1"}, {"id": "pinned", "dataset_id": "a"}]}
@@ -1822,22 +1828,19 @@ def test_an_accepted_recommendation_is_disclosed_as_accepted_not_as_a_protocol_d
     assert recs["item:pinned"]["rationale"].startswith(plan_review._SUGGESTION_TAG)     # shown by its pin (B2 #2)
     assert recs["item:dem"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
     assert recs["choice:routing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
-    assert recs["choice:data:hidden"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)   # never rendered (B2 #3)
     assert recs["choice:quiet"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)         # never rendered
     # a suggestion with no decision yet: accepted only where the card rendered it (B3 #1)
     plan2 = {"scientific_choices": [
         {"id": "routing", "kind": "routing", "options": ["x", "y"], "picked": "x", "high_impact": True},
-        {"id": "quiet", "kind": "tuning", "options": ["p", "q"], "picked": "p"},
-        {"id": "data:hidden", "kind": "data_source", "item": "h", "options": ["invented"], "picked": "b"}]}
+        {"id": "quiet", "kind": "tuning", "options": ["p", "q"], "picked": "p"}]}
     recs2, _ = plan_review.decision_records(flowrun._flow(), plan2, {"items": [{"id": "h"}]}, {})
     assert recs2["choice:routing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
-    # a suggestion the radios never displayed (not among the rendered options) is not accepted (B5 #2)
+    # A data recommendation without a matching inventory source cannot be signed.
     plan3 = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
                                      "options": ["a", "removed"], "picked": "removed"}]}
-    recs3b, _ = plan_review.decision_records(flowrun._flow(), plan3, {"items": [{"id": "forcing"}]}, {})
-    assert recs3b["choice:data:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
+    recs3b, invalid = plan_review.decision_records(flowrun._flow(), plan3, {"items": [{"id": "forcing"}]}, {})
+    assert recs3b == {} and invalid
     assert recs2["choice:quiet"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
-    assert recs2["choice:data:hidden"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
     # the ISSUED baseline decides, not today's catalogue (B3 #2): a row that was not shown at
     # issue stays a KI default even if the catalogue now knows its options
     issued = {"suggested": {}, "item_of": {}, "options": {}}
@@ -1939,6 +1942,21 @@ def test_a_corrected_retry_completes_and_the_superseded_failure_is_disclosed(tmp
     res = flowrun.after(project, t, "done", setup_ok=True)
     assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "COMPLETED"
     assert "1 earlier failed attempt" in res.message and "run history" in res.message
+
+
+def test_a_help_probe_after_success_does_not_fail_the_project(tmp_path):
+    project, t, run = _executing(tmp_path)
+    assert '"validation": "passed"' in run(["outputs/q.csv"])
+
+    with pytest.raises(api.ToolError, match="Help/version probes are not plan-step executions"):
+        run(["--help"])
+
+    flowrun.after(project, t, "done", setup_ok=True)
+    state = json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))
+    evidence = json.loads((project / "runs" / "evidence.json").read_text(encoding="utf-8"))
+    assert state["state"] == "COMPLETED"
+    assert evidence["receipts_verified"] and evidence["runs_total"] == 1
+    assert not (project / "--help").exists()
 
 
 def test_incomplete_turn_names_stale_steps_and_unvouched_files(tmp_path, monkeypatch):

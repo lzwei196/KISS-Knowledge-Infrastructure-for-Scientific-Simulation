@@ -161,7 +161,8 @@ class Verdict:
         A model with a Fortran core that also needs numpy is usable only when
         both are in place, so neither half can be waived.
         """
-        if not self.imports_ok:
+        if not self.imports_ok or (self.probe_returncode is not None and
+                                   not _ran(self.probe_returncode)):
             return False
         if not self.needs_binary:
             return True                 # a Python-package KI: imports are the model
@@ -814,13 +815,48 @@ def _missing_imports(p: Path, python: str, env: dict[str, str] | None = None) ->
 
 # ---------------------------------------------------------------- execution
 
-def _ran(rc: int) -> bool:
+def _ran(rc: int | None) -> bool:
     """Only a normal process exit can establish a successful startup probe.
 
     A signal may be a loader/security rejection or resource kill before main.
-    Models may choose positive nonzero exits when project inputs are absent.
+    Windows subprocess returns unsigned NTSTATUS values for loader errors and
+    crashes; other callers may expose their signed 32-bit equivalent. Neither
+    proves readiness, even when the process printed a model banner first.
+    Models may choose ordinary nonzero exits when project inputs are absent.
     """
-    return rc is not None and rc >= 0
+    return (isinstance(rc, int) and 0 <= rc < 0x80000000 and
+            rc != 0x40000015)  # STATUS_FATAL_APP_EXIT has informational severity
+
+
+_WINDOWS_LOADER_FAILURES = {
+    0xC000007B: "STATUS_INVALID_IMAGE_FORMAT (invalid executable or DLL format)",
+    0xC0000135: "STATUS_DLL_NOT_FOUND (a required DLL could not be loaded)",
+    0xC0000138: "STATUS_ORDINAL_NOT_FOUND (a required DLL ordinal is missing)",
+    0xC0000139: "STATUS_ENTRYPOINT_NOT_FOUND (a required DLL entry point is missing)",
+    0xC0000142: "STATUS_DLL_INIT_FAILED (a required DLL failed to initialize)",
+}
+
+
+def _failed_probe(v: Verdict, rc: int) -> None:
+    """Retain the process evidence and stop before any banner-based exception."""
+    v.responds = False
+    # Small negative return codes are POSIX signals, not signed NTSTATUS.
+    if rc == 0x40000015 or -0x80000000 <= rc < -255 or 0x80000000 <= rc <= 0xFFFFFFFF:
+        status = rc & 0xFFFFFFFF
+        cause = _WINDOWS_LOADER_FAILURES.get(status)
+        v.detail = f"Startup probe failed with Windows status 0x{status:08X}"
+        if cause:
+            v.linked = False
+            v.missing = [cause]
+            v.detail += f": {cause}"
+        elif status == 0x40000015:
+            v.detail += ": STATUS_FATAL_APP_EXIT (fatal application exit)"
+        else:
+            v.detail += " (process crash or abnormal termination)"
+    elif rc < 0:
+        v.detail = f"Startup probe terminated by signal {-rc}"
+    else:
+        v.detail = f"Startup probe failed with abnormal exit {rc}"
 
 
 def _check_r_package(v, contract, man, cfg, timeout, env):
@@ -1211,6 +1247,9 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
         rc, out = r.returncode, (r.stdout + r.stderr).strip()
         v.probe_returncode = rc
         v.probe_output = out[-8000:]
+        if not _ran(rc):
+            _failed_probe(v, rc)
+            return v
         if strict_version:
             if v.model == "PHREEQC" and v.probe_created_paths:
                 v.responds = False
@@ -1245,10 +1284,7 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
             return v
         if _ran(rc):
             v.responds = True
-            if rc < 0:
-                v.detail = f"ran and crashed on probe (signal {-rc}) — loads and executes"
-            else:
-                v.detail = (out.splitlines() or [f"exit {rc}, no output"])[0].strip()[:160]
+            v.detail = (out.splitlines() or [f"exit {rc}, no output"])[0].strip()[:160]
             return v
     v.detail = f"exit {rc}"
     return v
@@ -1275,7 +1311,14 @@ def load(workroot: Path, ki_name: str, max_age: float = 86400.0) -> dict | None:
     try:
         if time.time() - p.stat().st_mtime > max_age:
             return None
-        return json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        # Old Windows verifiers treated unsigned loader/crash statuses as a
+        # successful exit. Discard such cached passes so existing installs can
+        # be checked again without waiting for their normal cache expiry.
+        rc = data.get("probe_returncode")
+        if (data.get("state") == "ready" or data.get("usable")) and rc is not None and not _ran(rc):
+            return None
+        return data
     except (OSError, ValueError):
         return None
 

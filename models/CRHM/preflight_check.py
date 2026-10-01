@@ -16,8 +16,21 @@ from pathlib import Path
 MODEL_ID = "CRHM"
 KI_DIR = Path(__file__).resolve().parent
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
-PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
-CRHM_EXE = Path("KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm")
+# Materialization resolves this to kiss.python, including Windows venvs.
+PYTHON_ENV = Path("KISSPATH_PYTHON")
+
+
+def native_binary(root, platform=None):
+    """Find the documented Windows install or the existing Linux build."""
+    platform = sys.platform if platform is None else platform
+    windows = root / "crhm" / "bin" / "crhm.exe"
+    linux = root / "crhmcode" / "crhmcode" / "build" / "crhm"
+    candidates = ([windows, linux.with_suffix(".exe"), linux]
+                  if platform == "win32" else [linux, root / "crhm" / "bin" / "crhm"])
+    return next((path for path in candidates if path.is_file()), candidates[0])
+
+
+CRHM_EXE = native_binary(Path("KISSPATH_BINARIES"))
 
 TOOL_FILES = [
     "tools/calib_run.py",
@@ -141,8 +154,11 @@ def check_binary_starts():
         result = subprocess.run([str(CRHM_EXE), "-h"], cwd=str(KI_DIR),
                                 capture_output=True, text=True, timeout=10)
         output = f"{result.stdout}\n{result.stderr}"
-        ok = "crhm [options] PROJECT_FILE" in output or "PROJECT_FILE" in output
-        detail = f"exit {result.returncode}; usage text not detected"
+        # CRHM deliberately returns 1 for -h. A banner preceding a crash must
+        # not pass (Windows NTSTATUS may be reported signed or unsigned).
+        usage = "crhm [options] PROJECT_FILE" in output or "PROJECT_FILE" in output
+        ok = result.returncode in (0, 1) and usage
+        detail = f"exit {result.returncode}; expected normal help exit (0/1) and usage text"
     except Exception as exc:
         ok = False
         detail = f"{type(exc).__name__}: {exc}"

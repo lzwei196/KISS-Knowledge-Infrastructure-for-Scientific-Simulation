@@ -195,6 +195,19 @@ class FlowSession:
                                          "Complete its approved data download before running this step.")
         return step
 
+    def check_calibration_step(self, plan_step_id: str | None, ki: str,
+                               runner: Path, binding: dict) -> dict:
+        """Bind the native calibration call to the adapter and settings reviewed by the user."""
+        step = self.check_step_tool(plan_step_id, ki, runner)
+        if step.get("kind") != "calibrate" or not isinstance(step.get("calibration"), dict):
+            raise FlowDenied("run_calibration requires an approved typed calibration step")
+        if errors := self.flow.plan.calibration_step_errors(step, self.project):
+            raise FlowDenied("; ".join(errors))
+        if self.flow.plan.sha256(binding) != self.flow.plan.sha256(step["calibration"]):
+            raise FlowDenied("calibration adapter or invocation differs from the approved plan; "
+                             "revise and re-approve before running")
+        return step
+
     def request_replan(self, reason: str) -> str:
         """EXECUTING -> REPLAN_REQUIRED in the middle of a turn.
 
@@ -234,7 +247,8 @@ class FlowSession:
                         expected_approval_sha256: str | None = None,
                         execution_status: str | None = None,
                         process_started: bool | None = None,
-                        input_arguments: list[str] | None = None) -> dict:
+                        input_arguments: list[str] | None = None,
+                        calibration_result: dict | None = None) -> dict:
         """Write the signed run receipt + validation for one tool/model run and return a
         small summary for the agent. Receipts are bound to the current approval; an
         unapproved run cannot get one (the tool proxy refuses earlier, but never trust it)."""
@@ -249,8 +263,33 @@ class FlowSession:
             raise FlowDenied("run_ki_tool needs plan_step_id (the plan step this run executes)")
         if not any(str(s.get("id")) == str(plan_step_id) for s in (self.plan or {}).get("steps") or []):
             raise FlowDenied(f"plan_step_id {plan_step_id!r} is not a step of the approved plan")
-        after = _snapshot(self.project)
+        kind = self.step_kind(plan_step_id)
+        subs = ("inputs", "outputs", "artifacts", "runs/logs")
+        if kind == "calibrate":
+            subs += ("calibration/runs",)
+        after = _snapshot(self.project, subs=subs)
         outputs = _changed(before, after)
+        step = next(s for s in self.plan["steps"] if str(s.get("id")) == str(plan_step_id))
+        typed_calibration = kind == "calibrate" and isinstance(step.get("calibration"), dict)
+        if typed_calibration:
+            if not isinstance(calibration_result, dict):
+                raise FlowDenied("typed calibration needs the native engine's result for its receipt")
+            # The runtime copy is generated execution material, not numeric model
+            # output. Hash it alongside every raw evaluation artifact so nothing
+            # under calibration/ is hidden by a broad bookkeeping exemption.
+            from . import calibration
+            run_id = str(calibration_result.get("run_id") or "")
+            runtime = self.project.resolve() / "calibration" / "runtime" / calibration._slug(ki) / run_id
+            runtime_named = self.project / str(calibration_result.get("runtime_ki") or "")
+            runtime_bound = bool(run_id and Path(run_id).name == run_id
+                                 and runtime_named.resolve() == runtime and runtime.is_dir())
+            if runtime_bound:
+                for path in runtime.rglob("*"):
+                    if path.is_file():
+                        if not path.resolve().is_relative_to(runtime):
+                            raise FlowDenied("calibration runtime contains a file outside its project directory")
+                        if path not in outputs:
+                            outputs.append(path)
         inputs = []
         # The caller knows which tokens are arguments (binary commands have no
         # interpreter prefix). Resolve relative paths against the child's cwd.
@@ -266,13 +305,31 @@ class FlowSession:
         logs_dir.mkdir(parents=True, exist_ok=True)
         log = logs_dir / f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}_{secrets.token_hex(6)}.log"
         log.write_text(stdout_tail, encoding="utf-8", errors="replace")
-        kind = self.step_kind(plan_step_id)
         physical = kind in ("run", "route", "calibrate")
-        validation = r.validate_outputs(
-            ki_root, outputs,
-            run_facts={"errored": exit_code != 0, "output_nonempty": any(
-                p.is_file() and p.stat().st_size > 0 for p in outputs)},
-            physical=physical)
+        if typed_calibration:
+            validation = calibration.validate_receipt_result(calibration_result, step["calibration"])
+            report_path = self.project / str(calibration_result.get("report_path") or "")
+            fresh_report = (report_path.resolve().is_relative_to(self.project.resolve() / "calibration" / "runs")
+                            and report_path in outputs and report_path.is_file())
+            validation["checks"].append({"check": "fresh_calibration_report", "ok": fresh_report,
+                                         "detail": str(report_path), "level": "fail"})
+            try:
+                persisted = json.loads(report_path.read_text(encoding="utf-8")) if fresh_report else {}
+                report_matches = (persisted.get("report") == calibration_result.get("report")
+                                  and persisted.get("approved_binding") == step["calibration"])
+            except (OSError, ValueError, AttributeError):
+                report_matches = False
+            validation["checks"].extend([
+                {"check": "calibration_report_matches_result", "ok": report_matches, "level": "fail"},
+                {"check": "calibration_runtime_bound", "ok": runtime_bound, "level": "fail"}])
+            if exit_code != 0 or not fresh_report or not report_matches or not runtime_bound:
+                validation["status"] = "failed"
+        else:
+            validation = r.validate_outputs(
+                ki_root, outputs,
+                run_facts={"errored": exit_code != 0, "output_nonempty": any(
+                    p.is_file() and p.stat().st_size > 0 for p in outputs)},
+                physical=physical)
         if execution_status == "stopped":
             # The user's Stop is its own outcome: neither passed nor failed, the step is still to do.
             validation["status"] = "stopped"
@@ -296,9 +353,35 @@ class FlowSession:
                 "failed_checks": [c["check"] for c in validation["checks"] if not c["ok"]][:12]}
 
     # ---------------------------------------------------------------- plan files (api.py write_plan)
+    def prepare_calibration_steps(self, plan: dict) -> list[str]:
+        """Resolve partial typed requests before review; never replace stale supplied hashes."""
+        from . import calibration
+        errors = []
+        for step in plan.get("steps") or []:
+            if not isinstance(step, dict) or "calibration" not in step:
+                continue
+            supplied = step.get("calibration")
+            if (step.get("kind") != "calibrate" or not isinstance(supplied, dict)
+                    or set(supplied) - self.flow.plan.CALIBRATION_FIELDS):
+                errors.append(f"step {step.get('id')!r}: invalid typed calibration binding")
+                continue
+            try:
+                binding, _snapshot = calibration.prepare_invocation(
+                    self.project, str(step.get("ki") or ""), supplied)
+                for key in ("contract_path", "contract_sha256", "runner_sha256", "expected_case_id"):
+                    if key in supplied and supplied[key] != binding[key]:
+                        raise ValueError(f"supplied calibration {key} does not match the project adapter")
+                step["calibration"] = binding
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                errors.append(f"step {step.get('id')!r}: {error}")
+        return errors
+
     def write_plan(self, plan: dict, inventory: dict) -> list[str]:
         """Validate and write the two plan files. Returns validation errors (empty = written)."""
-        errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots)
+        if isinstance(plan, dict) and (errors := self.prepare_calibration_steps(plan)):
+            return errors
+        errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots,
+                                      for_review=True, project=self.project)
         if errs:
             return errs
         from . import obs_subset

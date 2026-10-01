@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import sys
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -86,6 +87,70 @@ def _click(env, card, *, option="approve", choices=None, shown=None):
 
 def _approval(env):
     return json.loads((env.project / "runs" / "approval.json").read_text(encoding="utf-8"))
+
+
+def _materialized_review_env(env):
+    from kiss_cli.paths import KissConfig
+
+    live = env.project / "models" / "M" / "ki"
+    shutil.copytree(env.ki.root, live)
+    cfg = KissConfig.default(env.project)
+    cfg.python = sys.executable
+    (live.parent / "kiss.toml").write_text(cfg.dumps(), encoding="utf-8")
+    return SimpleNamespace(project=env.project, ki=SimpleNamespace(name="M", root=live),
+                           cfg=cfg, catalogue=env.catalogue)
+
+
+def test_catalogue_approval_accepts_reviewed_materialized_tools(review_project):
+    """Live chat plans against its local KI but Approve enters with catalogue KIs."""
+    live = _materialized_review_env(review_project)
+    card = _draft(live)
+    result = _click(review_project, card)
+    assert result.message is None and not result.replan_reason
+    flow = flowgate.load()
+    assert flow.approval.check(live.project) == "OK"
+    assert flow.states.FlowContext.load(live.project).state is flow.states.State.EXECUTING
+    plan, _ = flow.plan.read_artifacts(live.project)
+    assert plan["steps"][0]["tool"] == str(live.ki.root / "tools" / "run.py")
+
+
+@pytest.mark.parametrize("location", ["foreign_project", "another_ki"])
+def test_materialized_approval_rejects_tool_from_other_workspace(review_project, tmp_path, location):
+    live = _materialized_review_env(review_project)
+    foreign = ((tmp_path / "other-project" / "models" / "M" / "ki") if location == "foreign_project"
+               else live.project / "models" / "OtherKI" / "ki")
+    shutil.copytree(review_project.ki.root, foreign)
+    # Simulate an older issued review whose resolver supplied a foreign root.
+    # The current approval resolver must not derive authority from that plan.
+    stale = SimpleNamespace(project=live.project, ki=SimpleNamespace(name="M", root=foreign),
+                            cfg=live.cfg, catalogue=live.catalogue)
+    card = _draft(stale)
+    result = _click(review_project, card)
+    assert "not a runnable" in result.replan_reason
+    assert not (live.project / "runs" / "approval.json").exists()
+
+
+def test_materialized_approval_requires_exact_execution_config(review_project):
+    live = _materialized_review_env(review_project)
+    card = _draft(live)
+    (live.ki.root.parent / "kiss.toml").unlink()
+    result = _click(review_project, card)
+    assert "no model-specific kiss.toml" in result.message
+    assert not (live.project / "runs" / "approval.json").exists()
+
+
+def test_materialized_approval_rejects_aliased_ki_root(review_project, tmp_path):
+    live = _materialized_review_env(review_project)
+    card = _draft(live)
+    foreign = tmp_path / "foreign-ki"
+    live.ki.root.rename(foreign)
+    try:
+        live.ki.root.symlink_to(foreign, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks unavailable on this host")
+    result = _click(review_project, card)
+    assert "does not match this project's selected model workspace" in result.message
+    assert not (live.project / "runs" / "approval.json").exists()
 
 
 def test_disk_loaded_review_retains_issued_baseline_when_catalogue_changes(review_project):
@@ -235,24 +300,14 @@ def test_failed_approval_refresh_retains_pending_review_without_starting_work(re
 
 
 @pytest.mark.parametrize("attack", [
-    "off_menu_data", "catalogue_hidden_option", "unshown_data_choice", "low_impact_choice", "unknown_choice",
+    "off_menu_data", "low_impact_choice", "unknown_choice",
 ])
 def test_unshown_or_off_menu_picks_cannot_change_the_reviewed_selection(review_project, attack):
     env = review_project
     picks = {"select-data": "not_offered"}
 
     def revise(plan, inventory):
-        if attack == "catalogue_hidden_option":
-            plan["scientific_choices"][-1]["options"].append("not_in_catalogue")
-            picks["select-data"] = "not_in_catalogue"
-        elif attack == "unshown_data_choice":
-            plan["scientific_choices"].append({
-                "id": "hidden-data", "kind": "data_source", "item": "forcing",
-                "options": ["unlisted_a", "unlisted_b"], "picked": "unlisted_a", "high_impact": True,
-            })
-            picks.clear()
-            picks["hidden-data"] = "unlisted_b"
-        elif attack == "low_impact_choice":
+        if attack == "low_impact_choice":
             plan["scientific_choices"].append({
                 "id": "quiet", "kind": "tuning", "options": ["original", "changed"],
                 "picked": "original", "high_impact": False,
@@ -649,17 +704,20 @@ def test_database_off_refuses_a_plan_that_pins_a_database_dataset(review_project
 
 def test_database_off_card_offers_no_cached_database_records(review_project):
     def lists_cached_ids(plan, inventory):
-        inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "missing",
+        inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "resolved",
+                                   "chosen_source": "NASA POWER",
                                    "acceptable_sources": [], "local_paths": [],
                                    "agent_resolvable": True, "needs_user": False})
         plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["forcing"]
         plan["scientific_choices"].append({"id": "select-data", "kind": "data_source", "item": "forcing",
-                                           "options": ["source_a", "source_b"], "picked": "source_a",
+                                           "options": ["source_a", "source_b", "NASA POWER"], "picked": "NASA POWER",
                                            "high_impact": True})
 
     result = _db_off_draft(review_project, lists_cached_ids)
     assert result.request is not None
-    assert result.request["plan_review"]["data_choices"] == []
+    row = result.request["plan_review"]["data_choices"][0]
+    assert row["picked"] == "NASA POWER"
+    assert [(option["dataset_id"], option["delivery"]) for option in row["options"]] == [("NASA POWER", "external")]
 
 
 def test_a_reissued_card_follows_the_database_setting_not_direct(review_project, monkeypatch):
@@ -671,3 +729,168 @@ def test_a_reissued_card_follows_the_database_setting_not_direct(review_project,
     _upload(env)
     _click(env, card)                                              # binds the upload → re-issue
     assert setup_flow.request(env.project)["plan_review"]["data_choices"] == []
+
+
+@pytest.mark.parametrize("choices", [None, {}, {"select-data": "source_a"}])
+def test_legacy_review_cannot_sign_source_different_from_recommendation(review_project, monkeypatch, choices):
+    env = review_project
+    card = _draft(env, with_data=True)
+    flow = flowgate.load()
+    plan, inventory = flow.plan.read_artifacts(env.project)
+    item = next(item for item in inventory["items"] if item["id"] == "forcing")
+    item.update(dataset_id="source_b", chosen_source="source_b")
+    flow.plan.write_artifacts(env.project, plan, inventory)
+    # Model a card genuinely issued by the old version for a divergent inventory;
+    # its valid persisted hashes cannot make the scientific selections agree.
+    receipt_path = env.project / "runs/plan-review.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["inventory_sha256"] = flow.plan.sha256(inventory)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("An inconsistent review must not refresh, acquire or sign")
+
+    monkeypatch.setattr(obs_subset, "refresh_inventory", forbidden)
+    monkeypatch.setattr(acquire, "run", forbidden)
+    monkeypatch.setattr(flow.approval, "approve", forbidden)
+    result = _click(env, card, choices=choices)
+    assert "data-source choices need revision" in result.replan_reason
+    assert flowrun.current_state(env.project) == "PLANNING"
+    assert not (env.project / "runs/approval.json").exists()
+
+
+def test_external_source_is_visible_and_can_be_accepted_without_submitted_choices(review_project):
+    env = review_project
+
+    def external(plan, inventory):
+        item = next(item for item in inventory["items"] if item["id"] == "forcing")
+        item.pop("dataset_id")
+        item["chosen_source"] = "NASA POWER"
+        plan["scientific_choices"][-1].update(options=["NASA POWER"], picked="NASA POWER")
+
+    card = _draft(env, with_data=True, revise=external)
+    row = card["plan_review"]["data_choices"][0]
+    assert row["picked"] == "NASA POWER"
+    assert row["options"][0]["delivery"] == "external"
+    assert row["options"][0]["size"] is None
+    assert _click(env, card).message is None
+    records = _approval(env)["decisions"]
+    for key in ("item:forcing", "choice:select-data"):
+        assert records[key]["value"] == "NASA POWER"
+        assert plan_review.is_accepted_suggestion(records[key]["rationale"])
+
+
+def test_inventory_recommendation_without_explicit_pick_is_accepted(review_project):
+    env = review_project
+    card = _draft(env, with_data=True,
+                  revise=lambda plan, inventory: plan["scientific_choices"][-1].pop("picked"))
+    assert card["plan_review"]["data_choices"][0]["picked"] == "source_a"
+    assert _click(env, card).message is None
+    records = _approval(env)["decisions"]
+    assert records["choice:select-data"]["value"] == records["item:forcing"]["value"] == "source_a"
+    assert plan_review.is_accepted_suggestion(records["choice:select-data"]["rationale"])
+
+
+def test_unresolved_data_choice_is_open_even_if_marked_low_impact():
+    plan = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
+                                    "options": ["NASA POWER"], "high_impact": False}]}
+    records, invalid = plan_review.decision_records(flowgate.load(), plan, {"items": [{"id": "forcing"}]})
+    assert invalid == []
+    assert records["choice:data:forcing"]["source"] == "open"
+
+
+def test_conflicting_choices_for_same_input_replan_without_data_work(review_project, monkeypatch):
+    env = review_project
+
+    def another_choice(plan, inventory):
+        plan["scientific_choices"].append(dict(plan["scientific_choices"][-1], id="another-data"))
+
+    card = _draft(env, with_data=True, revise=another_choice)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Conflicting choices must be reconciled before data work or signing")
+
+    monkeypatch.setattr(obs_access, "stamp_inventory", forbidden)
+    monkeypatch.setattr(obs_subset, "refresh_inventory", forbidden)
+    monkeypatch.setattr(acquire, "run", forbidden)
+    result = _click(env, card, choices={"select-data": "source_b", "another-data": "source_a"})
+    assert "data-source choices need revision" in result.replan_reason
+    assert flowrun.current_state(env.project) == "PLANNING"
+    assert not (env.project / "runs/approval.json").exists()
+    assert plan_review.load_user_answers(env.project)["choice:select-data"]["value"] == "source_b"
+
+
+def test_bound_upload_cannot_sign_a_different_data_source(review_project):
+    env = review_project
+    card = _draft(env, with_data=True)
+    paths = ["inputs/user/forcing/weather.csv"]
+    uploaded = env.project / paths[0]
+    uploaded.parent.mkdir(parents=True)
+    uploaded.write_text("weather fixture", encoding="utf-8")
+    plan_review._save_answers(env.project, {
+        "upload:forcing": {"value": paths[0], "paths": paths, "sha256": {paths[0]: "old digest"}}})
+    result = _click(env, card)   # bind the upload, then require review of its actual files
+    assert "file is now named" in result.message
+    result = _click(env, setup_flow.request(env.project))
+    assert "approval decisions need revision" in result.replan_reason
+    assert "source_a" in result.replan_reason and paths[0] in result.replan_reason
+    assert "revise the source choice" in result.replan_reason
+    assert flowrun.current_state(env.project) == "PLANNING"
+    assert not (env.project / "runs/approval.json").exists()
+
+
+def test_changed_external_source_preserves_answer_and_requires_revised_preparation(review_project, monkeypatch):
+    env = review_project
+
+    def external_option(plan, inventory):
+        plan["scientific_choices"][-1]["options"].append("NASA POWER")
+        item = next(item for item in inventory["items"] if item["id"] == "forcing")
+        item["local_paths"] = ["inputs/downloaded/old_source.csv"]
+
+    card = _draft(env, with_data=True, revise=external_option)
+    assert card["plan_review"]["data_choices"][0]["options"][-1]["delivery"] == "external"
+    # The displayed source classification survives a catalogue change too.
+    env.catalogue["datasets"].append({"id": "NASA POWER", "delivery": "served"})
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("An external source change must revise preparation before any data work")
+
+    monkeypatch.setattr(obs_access, "stamp_inventory", forbidden)
+    monkeypatch.setattr(obs_subset, "refresh_inventory", forbidden)
+    monkeypatch.setattr(acquire, "run", forbidden)
+    result = _click(env, card, choices={"select-data": "NASA POWER", "routing": "cama"})
+    assert "selected external source" in result.replan_reason
+    assert flowrun.current_state(env.project) == "PLANNING"
+    assert not (env.project / "runs/approval.json").exists()
+    plan, inventory = flowgate.load().plan.read_artifacts(env.project)
+    item = next(item for item in inventory["items"] if item["id"] == "forcing")
+    assert item["chosen_source"] == "NASA POWER"
+    assert not item.get("dataset_id") and not item.get("delivery") and not item.get("catalogue")
+    assert item["local_paths"] == []
+    assert plan["scientific_choices"][-1]["decision"] == "NASA POWER"
+    answers = plan_review.load_user_answers(env.project)
+    assert answers["choice:select-data"]["value"] == answers["item:forcing"]["value"] == "NASA POWER"
+    assert answers["choice:routing"]["value"] == "cama"
+
+
+@pytest.mark.parametrize("damage", ["different_source", "off_menu", "missing_item"])
+def test_decision_records_and_issue_refuse_contradictory_source(review_project, damage):
+    env = review_project
+    _draft(env, with_data=True)
+    flow = flowgate.load()
+    plan, inventory = flow.plan.read_artifacts(env.project)
+    choice = plan["scientific_choices"][-1]
+    if damage == "different_source":
+        choice["picked"] = "source_b"
+    elif damage == "off_menu":
+        choice["picked"] = "not_offered"
+    else:
+        choice["item"] = "missing_input"
+    records, invalid = plan_review.decision_records(flow, plan, inventory,
+        {"choice:select-data": {"value": choice["picked"]}, "item:forcing": {"value": "source_a"}})
+    assert invalid and records == {}
+    fs = flowgate.FlowSession.open(env.project, {"M": env.ki.root})
+    before = (env.project / "runs/plan-review.json").read_bytes()
+    with pytest.raises(ValueError, match="inconsistent data-source review"):
+        plan_review.issue(env.project, fs, plan, inventory, "fixture")
+    assert (env.project / "runs/plan-review.json").read_bytes() == before

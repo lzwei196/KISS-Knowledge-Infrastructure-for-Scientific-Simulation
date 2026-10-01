@@ -290,6 +290,7 @@ def test_run_ki_tool_refuses_a_step_with_no_approved_tool(tmp_path):
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     pj, inv = _plan(ki); pj["steps"][0]["tool"] = None; pj["steps"][0]["kind"] = "check"
+    pj["steps"][0]["outputs"] = []  # an informational check is valid, but cannot run an unapproved tool
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
@@ -298,6 +299,31 @@ def test_run_ki_tool_refuses_a_step_with_no_approved_tool(tmp_path):
             "run_ki_tool", {"tool_path": "tools/run.py", "arguments": ["outputs/q.csv"],
                             "plan_step_id": "M:run"},
             ki, _cfg(project), project_mode=True, flow=fs)
+
+
+@pytest.mark.parametrize("kind,outputs", [
+    ("run", []), ("check", ["outputs/balance.csv"]), ("report", ["mass_balance"]),
+])
+def test_write_plan_refuses_steps_that_cannot_produce_receipted_results(tmp_path, kind, outputs):
+    ki = _ki(tmp_path)
+    project, fs = _session(tmp_path, ki, [
+        ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
+    pj, inv = _plan(ki)
+    pj["steps"][0].update(tool=None, kind=kind, outputs=outputs)
+    errors = fs.write_plan(pj, inv)
+    assert any("no tool" in error for error in errors)
+    assert not (project / "runs" / "plan.json").exists()
+    assert not hasattr(fs, "plan_submission")
+
+
+def test_write_plan_allows_review_to_resolve_input_choices(tmp_path):
+    ki = _ki(tmp_path)
+    _project, fs = _session(tmp_path, ki, [
+        ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
+    pj, inv = _plan(ki)
+    inv["items"][0].update(status="missing", chosen_source=None, needs_user=True)
+    assert fs.write_plan(pj, inv) == []
+    assert fs.plan_submission
 
 
 def test_run_ki_tool_refused_when_approved_tool_bytes_drift(tmp_path):

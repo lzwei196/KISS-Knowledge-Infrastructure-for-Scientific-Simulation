@@ -75,7 +75,7 @@ def _cached_sha256(path: Path) -> str:
     return h
 
 
-def _tool_hashes(plan: dict) -> dict[str, dict[str, str]]:
+def _tool_hashes(plan: dict, project: Path | None = None) -> dict[str, dict[str, str]]:
     """Hash every executable named by the plan at approval time. Tools must be absolute
     (plan.validate refuses relative ones): the approval is checked from other processes
     whose cwd is not the project."""
@@ -91,6 +91,13 @@ def _tool_hashes(plan: dict) -> dict[str, dict[str, str]]:
         if not step_id or not path.is_file():
             raise FileNotFoundError(f"cannot approve: step {step_id!r} tool does not exist: {path}")
         result[step_id] = {"path": str(path), "sha256": _cached_sha256(path)}
+        if "calibration" in step:
+            from .plan import calibration_step_errors
+            if errors := calibration_step_errors(step, project):
+                raise ValueError("; ".join(errors))
+            binding = step["calibration"]
+            result[step_id].update(contract_path=binding["contract_path"],
+                                   contract_sha256=binding["contract_sha256"])
     return result
 
 
@@ -107,7 +114,7 @@ def approve(project: Path, decisions: dict | None = None, by: str = "user") -> d
         "schema_version": SCHEMA_VERSION,
         "plan_sha256": sha256(plan),
         "data_inventory_sha256": sha256(inv),
-        "tool_sha256": _tool_hashes(plan),
+        "tool_sha256": _tool_hashes(plan, project),
         "approved_by": by,
         "approved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         # Distinguishes revoke/re-approve cycles even within the same second.  The
@@ -170,8 +177,8 @@ def check(project: Path) -> str:
     if list(plan.get("selected_kis") or []) != list(doc.get("selected_kis") or []):
         return "DRIFT"
     try:
-        hashes = _tool_hashes(plan)
-    except FileNotFoundError:
+        hashes = _tool_hashes(plan, project)
+    except (FileNotFoundError, ValueError):
         return "DRIFT"                      # a tool the plan names is gone (or not absolute)
     except OSError as e:
         # A transient read error (mount hiccup, EIO) must never become a verdict: the web

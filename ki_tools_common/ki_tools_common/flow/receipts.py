@@ -683,6 +683,12 @@ def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[fl
         return None, None, f"unreadable ({type(e).__name__})"
 
 
+def _diagnostic_stream_log(path: Path) -> bool:
+    """Recognize explicit stdout/stderr captures, never generic model .log files."""
+    name = path.name.lower()
+    return name in {"stdout.log", "stderr.log"} or name.endswith((".stdout.log", ".stderr.log"))
+
+
 def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None = None,
                      run_facts: dict | None = None, physical: bool = True) -> dict:
     """Return {"status": passed|failed|warning, "checks": [...]}.
@@ -692,6 +698,8 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
     physical=False: skip the rank-1 "physically required positive values" rule — for
     preparation-step outputs (forcing files, parameter decks) that are not the model's
     headline output. Model-run / routing / calibration steps keep physical=True.
+    Explicit stdout/stderr .log captures remain receipt-hashed artifacts, but are
+    diagnostic text (possibly empty), never numerical model-result evidence.
     """
     checks: list[dict] = []
 
@@ -721,6 +729,10 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
         p = Path(out)
         if not p.is_file():
             add(f"exists:{p.name}", False, str(p)); continue
+        if _diagnostic_stream_log(p):
+            add(f"diagnostic_log:{p.name}", True,
+                f"{p.stat().st_size} bytes; retained as evidence, excluded from numeric result checks")
+            continue
         if p.stat().st_size == 0:
             add(f"non_empty:{p.name}", False, "0 bytes"); continue
         add(f"exists_non_empty:{p.name}", True, f"{p.stat().st_size} bytes")
@@ -1049,6 +1061,13 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     # unvouched output. Only inputs/ paths count, so a result cannot be declared into this set.
     root = project.resolve()
     declared_inputs = set(HOST_BOOKKEEPING)
+    # Calibration cases are prepared inputs in their own project namespace.
+    # Only inputs consumed by a typed calibration step qualify, never a plan's
+    # produced items or arbitrary files somewhere under calibration/.
+    produced = {item for step in steps.values() for item in step.get("outputs") or []}
+    calibration_inputs = {item for step in steps.values()
+                          if step.get("kind") == "calibrate" and isinstance(step.get("calibration"), dict)
+                          for item in step.get("inputs") or []} - produced
     for item in (inventory or {}).get("items") or []:
         for raw in (item.get("local_paths") or []) if isinstance(item, dict) else []:
             try:
@@ -1059,6 +1078,13 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                 continue
             if rel.startswith("inputs/"):
                 declared_inputs.add(rel)
+            elif item.get("id") in calibration_inputs and rel.startswith("calibration/cases/"):
+                declared_inputs.add(rel)
+                resolved = root / rel
+                if resolved.is_dir():
+                    for child in resolved.rglob("*"):
+                        if child.is_file() and child.resolve().is_relative_to(resolved):
+                            declared_inputs.add(child.resolve().relative_to(root).as_posix())
     unreceipted: list[str] = []
     for sub in output_dirs:
         base = project / sub

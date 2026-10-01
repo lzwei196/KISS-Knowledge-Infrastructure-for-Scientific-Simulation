@@ -49,8 +49,8 @@ _BASE_API = frozenset({"read_ki_file", "list_ki_files", "list_skills", "read_ski
                        "search_diagnostics", "list_project_files", "read_project_file",
                        "report_project_progress", "request_user_action"}) | DATABASE_API_TOOLS
 API_TOOLS_BY_STATE: dict[State, frozenset[str]] = {s: _BASE_API for s in State}
-API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan"}
-API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan"}
+API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan", "write_calibration_adapter"}
+API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan", "write_calibration_adapter"}
 # Data comes in during ACQUIRING (host-driven); EXECUTING keeps fetch_data for public URLs.
 API_TOOLS_BY_STATE[State.EXECUTING] = _BASE_API | {"run_preflight", "write_project_file", "run_ki_tool", "run_calibration",
                                                    "fetch_data",
@@ -65,6 +65,7 @@ API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_builtin_setup", "lis
 # tool name -> capability it needs (checked again inside execute_tool, plan v3 B4)
 API_TOOL_CAPABILITY: dict[str, Capability] = {
     "write_plan": Capability.WRITE_PLAN_FILES,
+    "write_calibration_adapter": Capability.WRITE_CALIBRATION_ADAPTER,
     "write_project_file": Capability.WRITE_PROJECT,
     "run_ki_tool": Capability.RUN_MODEL,
     "run_calibration": Capability.RUN_MODEL,

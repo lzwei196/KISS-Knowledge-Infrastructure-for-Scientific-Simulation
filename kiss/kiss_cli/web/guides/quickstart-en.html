@@ -1,0 +1,160 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>GeoForge Desktop · Quickstart · 3 pages</title><style>
+@page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+:root { --ink:#1d2530; --mute:#5b6675; --line:#dde3ea; --accent:#2f6fe4; --warn:#a15c00; --soft:#f4f7fb; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  color: var(--ink); font-size: 10.5pt; line-height: 1.55; margin: 0; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+.cover h1 { font-size: 34pt; margin: 0 0 4mm; } .cover .sub { font-size: 16pt; color: var(--mute); }
+.cover .ver { margin-top: 14mm; color: var(--mute); }
+.toc { page-break-after: always; } .toc h2 { border: 0; }
+.toc ul { list-style: none; padding-left: 0; } .toc li { margin: 2mm 0; font-size: 11.5pt; }
+.toc a { color: var(--ink); text-decoration: none; }
+section.chapter { page-break-before: always; }
+h1 { font-size: 21pt; margin: 0 0 4mm; color: var(--ink); }
+h2 { font-size: 14pt; margin: 7mm 0 2mm; padding-bottom: 1mm; border-bottom: 1px solid var(--line); }
+h3 { font-size: 11.5pt; margin: 5mm 0 1.5mm; }
+p, li { orphans: 3; widows: 3; }
+img { max-width: 100%; max-height: 150mm; display: block; margin: 3mm auto 1.5mm; border: 1px solid var(--line);
+  border-radius: 6px; page-break-inside: avoid; }
+code { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: 9.5pt; background: var(--soft);
+  padding: 0 1.2mm; border-radius: 3px; }
+pre { background: var(--soft); padding: 3mm; border-radius: 5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+pre code { padding: 0; background: none; }
+table { border-collapse: collapse; width: 100%; margin: 3mm 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 1.6mm 2.2mm; text-align: left; vertical-align: top; }
+th { background: var(--soft); }
+blockquote { margin: 3mm 0; padding: 2.4mm 3.5mm; border-left: 3px solid var(--accent); background: var(--soft);
+  border-radius: 0 5px 5px 0; page-break-inside: avoid; }
+blockquote p { margin: 0.5mm 0; }
+blockquote.caution { border-left-color: var(--warn); background: #fff6e9; }
+blockquote.todo { border-left-color: #b03a2e; background: #fdecea; }
+a { color: var(--accent); }
+@media screen { body { max-width: 860px; margin: 0 auto; padding: 24px; } .cover { height: auto; padding: 60px 0; } }
+
+@page { size:A4; margin:12mm 14mm; }
+body { font-size:10.2pt; line-height:1.42; }
+section.chapter { page-break-before:auto; break-after:page; }
+section.chapter:last-child { break-after:auto; }
+h1 { font-size:23pt; margin:0 0 3mm; }
+h2 { font-size:13pt; margin:4mm 0 2mm; }
+h3 { font-size:11pt; margin:3mm 0 1mm; }
+p { margin:2mm 0; } li { margin:1.5mm 0; }
+ul,ol { margin:2mm 0; padding-left:6mm; }
+img { max-height:58mm; max-width:100%; object-fit:contain; }
+table { font-size:9pt; } code { font-size:9pt; }
+.page-kicker { color:#2f6fe4; font-weight:600; letter-spacing:.05em; margin-bottom:2mm; }
+.page-footer { border-top:1px solid #dde3ea; margin-top:4mm; padding-top:2mm; color:#5b6675; font-size:8.5pt; }
+blockquote { padding:2mm 3mm; margin:2mm 0; }
+@media screen { section.chapter { border-bottom:1px solid #dde3ea; padding:16px 0 28px; } }
+</style></head><body><section class="chapter" id="ch00"><div class="page-kicker">GEOFORGE DESKTOP 0.6.55 / 1 OF 3</div><h1 id="1-set-up-the-agent">1 Set up the agent</h1>
+<p><strong>Goal:</strong> connect an AI before starting a scientific project. This Windows guide uses DeepSeek API, the provider used in the verified example on page 3.</p>
+<h2 id="connect-deepseek">Connect DeepSeek</h2>
+<ol>
+<li>Open GeoForge Desktop. Click <strong>Settings → AI services</strong>.</li>
+<li>In <strong>DeepSeek (API)</strong>, click <strong>Get a key</strong>. Create a key in your own provider account; return to GeoForge and paste it into <strong>Paste API key</strong>.</li>
+<li>Select <strong>Use by default</strong>, then <strong>Save</strong>. Click <strong>Test AI &amp; GitHub</strong>. A saved key alone does not prove that the connection works.</li>
+<li>When the AI test succeeds, close Settings. The sidebar should show <strong>AI ready</strong>. If it fails, read the test error and check the provider account and <strong>Network &amp; proxy</strong> settings.</li>
+</ol>
+<blockquote>
+<p><strong>Keep credentials private.</strong> Enter API keys only in Settings. Never put an API key or GeoForge Database token in chat, a screenshot, or a project file. The Database is optional and is not needed for this example.</p>
+</blockquote>
+<h2 id="start-the-project">Start the project</h2>
+<ol>
+<li>Click <strong>＋ New chat</strong>. Name it <code>SHAW official Trial</code> and choose a project parent folder, for example <code>D:\GeoForge\projects</code>. In Windows browser mode, paste the folder path.</li>
+<li>Before the first message, select <strong>API → DeepSeek (API) → deepseek-chat</strong> in the chat header.</li>
+<li>Click <strong>Auto KI</strong>, search <code>SHAW</code>, select it and click <strong>Apply</strong>. Continue with page 2.</li>
+</ol>
+<p>The project folder holds this chat's inputs, results and run records. Model software has a separate installation folder and can be reused by other projects.</p>
+<h2 id="prefer-a-local-cli">Prefer a local CLI?</h2>
+<p>Install and sign in to a supported CLI such as Claude Code or OpenAI Codex using its own instructions. In <strong>Settings → AI services</strong>, click <strong>Recheck local CLIs</strong>; select <strong>Local</strong> and that agent before the first chat message. This is an alternative connection path; the worked example was tested with DeepSeek API.</p>
+<p><strong>Checkpoint:</strong> AI test passed; the new chat shows the intended AI and SHAW. Once the first message is sent, start a new chat to change its AI or KI.</p><div class="page-footer">Quickstart · 3 pages · 1 / 3 · GeoForge 0.6.55</div></section><section class="chapter" id="ch01"><div class="page-kicker">GEOFORGE DESKTOP 0.6.55 / 2 OF 3</div><h1 id="2-set-up-the-ki-and-model">2 Set up the KI and model</h1>
+<p><strong>Goal:</strong> make the genuine SHAW 3.03 program usable. A KI is the model's instructions and tools; it is not the installed scientific program.</p>
+<h2 id="install-or-check-the-software">Install or check the software</h2>
+<ol>
+<li>Open <strong>KI Library</strong>, search <code>SHAW</code> and select it. Choose <strong>DeepSeek (API)</strong> and click <strong>Set up with agent</strong>.</li>
+<li>On <strong>Agent setup</strong>, keep <strong>Install or build a new copy</strong>. Use a short writable folder, for example <code>D:\GeoForge\models\SHAW</code>, and click <strong>Use this location</strong> if you change it.</li>
+<li>Select <code>deepseek-chat</code> and click <strong>Start agent setup</strong>. Keep the app open. Downloads and compilation may take several minutes; read any <strong>Needs you</strong> request.</li>
+<li>Wait for GeoForge's final verification. If it fails, read <strong>Verification</strong> and use <strong>Continue repair</strong>. Do not treat an agent's “installed” message or a printed version banner as proof.</li>
+</ol>
+<p>Already have SHAW? Select <strong>Use software already installed</strong>, paste its executable path, choose <strong>Use path</strong>, then <strong>Verify existing software</strong>. Keep its required runtime DLLs with the executable.</p>
+<p>For a GNU Fortran build, ask the setup agent to check <code>libgfortran-5.dll</code>, <code>libgcc_s_seh-1.dll</code>, <code>libwinpthread-1.dll</code> and <code>libquadmath-0.dll</code> from the same compiler, plus <code>matplotlib</code> in the KI's Python environment. The current KI instructions and preflight cover these dependencies.</p>
+<blockquote>
+<p><strong>What passed means:</strong> the software can start and its required environment is available. It does not yet prove that a scientific case ran correctly. Page 3 runs and checks the actual model.</p>
+</blockquote>
+<h2 id="obtain-the-authentic-trial-inputs">Obtain the authentic Trial inputs</h2>
+<p>Download the USDA-ARS <a href="https://www.ars.usda.gov/ARSUserFiles/20520500/SHAW/303/Shaw303.zip">official Shaw303.zip</a>. Open its <strong><code>Shaw303/</code> folder</strong> and extract these five files (not the precomputed files in <code>Output/Trial/</code>):</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Trial.303.inp</code></td>
+<td>Original control and output choices</td>
+</tr>
+<tr>
+<td><code>Trial.30.sit</code></td>
+<td>Site and soil parameters</td>
+</tr>
+<tr>
+<td><code>Trial.30.wea</code></td>
+<td>Weather forcing</td>
+</tr>
+<tr>
+<td><code>Trial.moi</code></td>
+<td>Initial moisture</td>
+</tr>
+<tr>
+<td><code>Trial.tem</code></td>
+<td>Initial temperature</td>
+</tr>
+</tbody>
+</table>
+<p>Return to your SHAW chat. Use <strong>＋ Files</strong> to attach the five files. If the review asks for an input, use that row's <strong>Upload files</strong> so the file is bound to the plan. Preserve the filenames, contents and control flags.</p>
+<p><strong>Checkpoint:</strong> software verification passed; all five original inputs are available. Setup may require assistance: the verified Windows installation needed a compiler runtime repair. Never replace the model with invented calculations or example output.</p><div class="page-footer">Quickstart · 3 pages · 2 / 3 · GeoForge 0.6.55</div></section><section class="chapter" id="ch02"><div class="page-kicker">GEOFORGE DESKTOP 0.6.55 / 3 OF 3</div><h1 id="3-run-approve-and-check-results">3 Run, approve and check results</h1>
+<p><strong>Goal:</strong> reproduce the publisher's SHAW Trial with the real model. This is a forward example check, not calibration against field observations.</p>
+<h2 id="send-this-request">Send this request</h2>
+<blockquote>
+<p>Run the authentic SHAW 3.03 Trial using my five uploaded original files. Preserve every scientific input and control flag. Stage the inputs in this project, run the installed native SHAW through the KI tool, export CSVs and plot the soil profiles. Do not use GeoForge Database, generate forcing or calibrate parameters. Report the actual row counts and dates; check temperature/moisture 301 each, liquid 14, energy 300, water 13 and frost 48, ending 1986-12-17 00:00.</p>
+</blockquote>
+<h2 id="review-before-execution">Review before execution</h2>
+<ol>
+<li>Answer the planning cards, one at a time. Use their buttons to save your choice.</li>
+<li>On <strong>Approve the plan?</strong>, check SHAW only, the five authentic inputs, and executable steps for <strong>run → parse → plot</strong>. Confirm where the files will be written and that no calibration is proposed.</li>
+<li>If anything differs, select <strong>Modify the plan</strong>. Otherwise select <strong>Approve and start</strong> and <strong>Continue with this choice</strong>. Approve only the exact plan shown.</li>
+<li>Keep the app running. Open <strong>◇ Project status</strong> to see setup, execution and checking. A changed plan or tool may require a new review; a previous approval does not cover it.</li>
+</ol>
+<h2 id="what-the-verified-example-produced">What the verified example produced</h2>
+<table>
+<thead>
+<tr>
+<th>Raw table</th>
+<th style="text-align: right;">Rows</th>
+<th>Check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Temperature / moisture</td>
+<td style="text-align: right;">301 each</td>
+<td>11 soil nodes</td>
+</tr>
+<tr>
+<td>Liquid water / energy</td>
+<td style="text-align: right;">14 / 300</td>
+<td>Complete reference period</td>
+</tr>
+<tr>
+<td>Water balance / frost</td>
+<td style="text-align: right;">13 / 48</td>
+<td>Correct physical columns and units</td>
+</tr>
+</tbody>
+</table>
+<p>All six tables end at <strong>1986-12-17 00:00</strong>; the initial temperature/moisture profiles start at <strong>1986-12-04 12:00</strong>. The verified run matched the publisher's numeric values at printed precision and produced five CSVs plus a genuine plot.</p>
+<p><strong>Finish check:</strong> GeoForge must say <strong>Completed</strong>, with passing run records for all three steps. Open the CSVs and plot in <strong>Results</strong>. An AI claim of success, old files, or a warning/failed run record is not completion. Ask the agent to repair and rerun the affected approved step; do not delete your inputs.</p>
+<p>For calibration, use <strong>Guide → Calibration guide</strong>. For other workflows and troubleshooting, open <strong>Full user manual</strong>. Both can be read offline from the same menu.</p><div class="page-footer">Quickstart · 3 pages · 3 / 3 · GeoForge 0.6.55</div></section></body></html>

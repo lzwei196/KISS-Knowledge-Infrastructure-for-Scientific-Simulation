@@ -1409,6 +1409,23 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/":
             return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
 
+        if route.startswith("/guide/"):
+            # Fixed aliases keep offline documentation available in frozen builds
+            # without exposing arbitrary paths under the web directory.
+            match = re.fullmatch(r"/guide/(manual|quickstart|calibration)/(en|zh-CN)\.(html|pdf)", route)
+            if not match:
+                return self._json({"error": "unknown usage guide"}, 404)
+            kind, language, extension = match.groups()
+            guide = PAGE.parent / "guides" / f"{kind}-{language}.{extension}"
+            if not guide.is_file():
+                message = ("<h1>使用指南未随此版本打包</h1><p>请重新安装完整的 GeoForge Desktop 安装包。</p>"
+                           if language == "zh-CN" else
+                           "<h1>This guide is missing from the app</h1>"
+                           "<p>Please reinstall the complete GeoForge Desktop package.</p>")
+                return self._send(503, message.encode("utf-8"), "text/html; charset=utf-8")
+            content_type = "application/pdf" if extension == "pdf" else "text/html; charset=utf-8"
+            return self._send(200, guide.read_bytes(), content_type)
+
         if route == "/library":
             # read_bytes() on a missing file raised straight out of the
             # handler, so the frozen Mac app — which shipped app.html but not
@@ -4151,6 +4168,14 @@ verification are different states; never claim this test verified the KI."""
                     ki, self._manifest(ki), setup_wd, self.repo_root,
                     self.catalog.models_dir)
                 setup_contract = (setup_wd / "CLAUDE.md").read_text(encoding="utf-8")
+                setup_contract += (
+                    "\n\n[PROJECT SOFTWARE SETUP]\n"
+                    "Install or repair the software and its dependencies only. Use bounded "
+                    "startup or import probes; do not run examples, simulations, data "
+                    "preparation, calibration or result-generation tools. Do not write "
+                    "scientific outputs into the shared software folder or this project. "
+                    "GeoForge runs the real preflight after this turn, then starts a "
+                    "separate execution turn for the approved plan.")
             except Exception as e:
                 out(f"[could not prepare the {ki.name} setup workspace: {e}]")
                 return
@@ -4257,7 +4282,11 @@ verification are different states; never claim this test verified the KI."""
                     # turned the user-facing answer into a terminal transcript.
                     return True
 
-                run_install(ki, self._manifest(ki), setup_wd, capture, self.repo_root)
+                run_install(
+                    ki, self._manifest(ki), setup_wd, capture, self.repo_root,
+                    installation_only=True, project=project,
+                    stop=lambda: _user_stopped(runtime_events),
+                    turn_id=(runtime_events or {}).get("_turn_id"))
                 return "".join(captured)
 
             _forward_chat_stream(
@@ -4267,11 +4296,10 @@ verification are different states; never claim this test verified the KI."""
                     setup_mode=needs_setup,
                     setup_context={"run_builtin": run_builtin,
                                    "project_root": project,
+                                   "installation_only": needs_setup,
                                    "_turn_id": (runtime_events or {}).get("_turn_id")},
-                    # The API agent must retain chat-project tools while it
-                    # repairs software; otherwise a successful installation
-                    # cannot publish the ensuing run, provenance, or plot to
-                    # the session that requested it.
+                    # Keep project context for status and user requests. Scientific
+                    # tools become available in the separate execution turn.
                     project_mode=True,
                     flow=(flow_turn.session if flow_turn is not None else None),
                     handle=(runtime_events or {}).get("_handle")),
@@ -4342,7 +4370,6 @@ verification are different states; never claim this test verified the KI."""
         if needs_setup:
             _grant_setup_execution(pol, cfg)
             pol.add("read", project, "this chat's local project")
-            pol.add("write", project, "scenario inputs, runs, outputs, and artifacts")
         for extra_ki in kis[1:]:
             extra = policy.Policy.derive(extra_ki, self._manifest(extra_ki), cfg)
             for grant in extra.all_grants():

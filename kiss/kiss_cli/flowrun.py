@@ -217,6 +217,7 @@ def _explicit_positive_model_mention(text: str, model: str) -> bool:
     Catalogue resolution deliberately has fuzzy aliases, which is useful in Auto-KI
     mode but unsafe for expanding a pinned selection: ``grid cell`` has matched
     Cell2Fire, and ``do not invoke CaMa-Flood`` still contains a literal model name.
+    Paths/filenames and VIC's classic driver are references, not another KI.
     """
     parts = [p for p in re.split(r"[^A-Za-z0-9]+", model) if p]
     if not parts:
@@ -231,6 +232,35 @@ def _explicit_positive_model_mention(text: str, model: str) -> bool:
     for alias in aliases:
         for match in re.finditer(r"(?<![A-Za-z0-9])" + alias + r"(?![A-Za-z0-9])",
                                  text, re.I):
+            # A catalogue id embedded in an input filename, native executable
+            # path or URL does not request that model. Keep coupling names such
+            # as VIC-CaMa_Flood eligible, and do not mistake sentence punctuation
+            # ("run CLASSIC.") for a filename extension.
+            start, end = match.span()
+            while start > 0 and not text[start - 1].isspace():
+                start -= 1
+            while end < len(text) and not text[end].isspace():
+                end += 1
+            token = text[start:end]
+            if "/" in token or "\\" in token or re.search(r"\w\.\w", token):
+                continue
+            before = text[max(0, match.start() - 80):match.start()]
+            after = text[match.end():match.end() + 80]
+            # Explaining terminology is not a request to add a model, even
+            # when the term is itself a catalogue id. A later explicit
+            # request ("also run CLASSIC") still gets its own match.
+            if (re.search(r"\b(?:word|term|name|label|token|phrase)\s+[\"'`‘“]*$", before, re.I)
+                    or re.match(r"[\"'`’”]*\s+(?:here\s+)?(?:describes|denotes|means|refers\s+to)\b",
+                                after, re.I)):
+                continue
+            if model.upper() == "CLASSIC":
+                vic_driver = (
+                    re.search(r"\bVIC(?:\s+v?\d+(?:\.\d+)*)?(?:['’]s)?"
+                              r"(?:\s+(?:with|using|the))*[\s(:_-]*$", before, re.I)
+                    or re.match(r"\s+driver\s+(?:for|of|in)\s+VIC\b", after, re.I)
+                )
+                if vic_driver:
+                    continue
             if not negation.search(text[max(0, match.start() - 48):match.start()]):
                 return True
     return False
@@ -1120,7 +1150,9 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             return _planning_failure(project, t, ["Both plan files must contain valid JSON objects."], repair=True)
         if api_submission and api_submission != (flow.plan.sha256(pj), flow.plan.sha256(inv)):
             return _planning_failure(project, t, ["The files changed after write_plan submitted them. Submit the current revision again."])
-        errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots)
+        errs = fs.prepare_calibration_steps(pj)
+        errs.extend(flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots,
+                                       for_review=True, project=project))
         if errs:
             return _planning_failure(project, t, errs, repair=True)
         if fs.database_access_mode == "off":
@@ -1147,6 +1179,12 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         stamp_errors = obs_access.stamp_inventory(inv, project=project)
         if stamp_errors:
             return _planning_failure(project, t, stamp_errors, repair=True)
+        # Catalogue stamping can normalize source ids. Review the final data
+        # shown on the card, including its agreement with scientific choices.
+        errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots, for_review=True,
+                                  project=project)
+        if errs:
+            return _planning_failure(project, t, errs, repair=True)
         if t.planning_worktree and _plan_versions(project) != t.project_before:
             return _planning_failure(project, t, ["The original plan changed while planning. Both revisions are preserved; review and resubmit instead of overwriting."])
         flow.plan.write_artifacts(project, pj, inv)

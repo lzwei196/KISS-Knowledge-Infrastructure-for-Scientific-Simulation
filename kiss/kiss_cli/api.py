@@ -171,6 +171,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                  installation_only: bool = False) -> list[dict]:
     """``flow`` (a flowgate.FlowSession) filters the list by the project's flow state
     (plan v3 B4): the agent never sees a tool it may not call in this state."""
+    installation_only = installation_only or (setup_mode and flow is not None)
     tools = [
         {
             "name": "read_ki_file",
@@ -295,8 +296,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "tool_path": {"type": "string", "description": "path below tools/ of the KI, "
-                                  "or the absolute path of the model binary the KI declares",
-                                  "description": "Python file relative to the KI root and below a tools/ directory"},
+                                  "or the absolute path of the model binary the KI declares"},
                     "arguments": {"type": "array", "items": {"type": "string"}},
                     "cwd": {"type": "string",
                             "description": "relative project working directory; defaults to project root"},
@@ -311,6 +311,21 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 }, "required": ["tool_path"]},
             },
             {
+                "name": "write_calibration_adapter",
+                "description": (
+                    "Planning only. Prepare a selected KI's project calibration contract and "
+                    "Python runner for review. Writes only calibration/kis/<KI>/calibration.yaml "
+                    "and tools/calib_run.py; executes nothing. The contract must invoke the "
+                    "Python interpreter followed by {ki_path}/tools/calib_run.py. Use the real "
+                    "model KI, explicit parameter bounds, observation provenance and independent "
+                    "holdout. Then submit a kind=calibrate plan step for approval."),
+                "input_schema": {"type": "object", "additionalProperties": False, "properties": {
+                    "ki": {"type": "string", "description": "One of this project's selected KIs."},
+                    "contract": {"type": "object", "description": "The calibration.yaml contract as an object."},
+                    "runner_source": {"type": "string", "description": "Full Python source of tools/calib_run.py."},
+                }, "required": ["ki", "contract", "runner_source"]},
+            },
+            {
                 "name": "run_calibration",
                 "description": (
                     "Run this KI's project calibration adapter through GeoForge's "
@@ -318,7 +333,9 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "inside the app, not the user's system Python. Use only after "
                     "the real model, observations, adapter, and holdout definition "
                     "are ready. The full report and engine log are saved in the "
-                    "chat project's calibration/runs directory."
+                    "chat project's calibration/runs directory. Approval requires kind=calibrate, "
+                    "tool=the absolute project adapter runner path, and calibration={algorithm, "
+                    "budget, seed, determining_metric, obs_shape_by_var}; the host fills bound hashes."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "obs_shape_by_var": {
@@ -332,8 +349,11 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "algorithm": {"type": "string", "enum": [
                         "dds", "sceua", "dream", "nsga2", "nsga3", "moead"]},
                     "budget": {"type": "integer", "minimum": 1, "maximum": 10000},
-                    "seed": {"type": "integer"},
+                    "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
                     "determining_metric": {"type": "string"},
+                    "plan_step_id": {"type": "string", "description":
+                        "The approved kind=calibrate step, bound to this project's adapter, "
+                        "contract, algorithm, budget, seed, target shapes and metric."},
                 }, "required": ["obs_shape_by_var"]},
             },
             {
@@ -519,7 +539,8 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "Apply one exact, bounded text replacement inside an "
                     "existing setup-workspace file. Use this for a small "
                     "source/build portability patch when rewriting the whole "
-                    "file would be unsafe. The old text must match exactly."
+                    "file would be unsafe. The old text must match exactly "
+                    "apart from LF/CRLF line endings; replacement lines keep the matched file's newline style."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "path": {"type": "string"},
@@ -693,7 +714,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
     out = list({tool["name"]: tool for tool in tools}.values())
     if installation_only:
         forbidden = {
-            "run_preflight", "run_ki_tool", "run_calibration",
+            "run_preflight", "run_ki_tool", "run_calibration", "write_calibration_adapter",
             "create_project_plot", "publish_project_view", "fetch_data",
             "publish_setup_output",
         }
@@ -758,6 +779,38 @@ def _read_text_page(path: Path, start_line: object = 1,
         raise ToolError("start_line must be >= 1 and line_count must be 1..2000")
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
     return "".join(lines[start - 1:start - 1 + count])[:60000]
+
+
+def _replace_workspace_text(text: str, old: str, new: str, expected: int) -> str:
+    """Match the reader's logical newlines without rewriting untouched bytes.
+
+    Count LF and CRLF matches together: an exact CRLF match must not conceal
+    a second, logically identical LF match. Each replacement uses its matched
+    span's first newline, or the surrounding line's newline for inline edits.
+    """
+    pattern = re.compile(r"\r?\n".join(re.escape(part) for part in old.replace("\r\n", "\n").split("\n")))
+    found = pattern.finditer(text)
+    matches = list(itertools.islice(found, expected + 1))
+    actual = len(matches) + sum(1 for _ in found)
+    if actual != expected:
+        raise ToolError(
+            f"expected {expected} exact match(es), found {actual}; "
+            "read the relevant page and retry with more context"
+        )
+    logical_new = new.replace("\r\n", "\n")
+    pieces = []
+    previous = 0
+    for match in matches:
+        ending = re.search(r"\r?\n", match.group()) or re.search(r"\r?\n", text[match.end():])
+        if ending:
+            newline = ending.group()
+        else:
+            last = text.rfind("\n", 0, match.start())
+            newline = "\r\n" if last > 0 and text[last - 1] == "\r" else "\n" if last >= 0 else os.linesep
+        pieces.extend((text[previous:match.start()], logical_new.replace("\n", newline)))
+        previous = match.end()
+    pieces.append(text[previous:])
+    return "".join(pieces)
 
 
 _INSTALL_ONLY_PROBE_FLAGS = {"--version", "-version", "-V", "-v", "--help", "-h"}
@@ -1271,6 +1324,10 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     against the project's flow state before it runs (the schema filter is not trusted on
     its own), writes obey ``flow.write_allowed``, model/tool runs and downloads write
     signed receipts, and agent progress reports cannot move the stage."""
+    if setup_mode and flow is not None:
+        # Project setup has the same command limits as standalone installation.
+        # The host runs preflight and starts a separate, receipted execution turn.
+        setup_context = {**(setup_context or {}), "installation_only": True}
     if flow is not None:
         from .flowgate import FlowDenied
         try:
@@ -1296,11 +1353,11 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         raise ToolError("Stopped by the user; no further tool work may start in this turn.")
     progress_root = project_root
     if (bool((setup_context or {}).get("installation_only")) and name in {
-            "run_preflight", "run_ki_tool", "run_calibration",
+            "run_preflight", "run_ki_tool", "run_calibration", "write_calibration_adapter",
             "create_project_plot", "publish_project_view", "fetch_data",
             "publish_setup_output"}):
         raise ToolError(
-            f"{name} is unavailable during an installation-only test; use "
+            f"{name} is unavailable during installation-only setup; use "
             "only a cheap executable startup or declared import probe"
         )
 
@@ -1556,32 +1613,54 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         detail = f"\n{result.detail}" if result.exit_code is not None and result.detail else ""
         return f"{headline}\n{receipt}{result.output}{detail}{error}"
 
+    if project_mode and name == "write_calibration_adapter":
+        from . import calibration as _calibration
+        from .flowgate import FlowDenied
+        if flow is None or flow.state.value not in {"PLANNING", "REPLAN_REQUIRED"}:
+            raise ToolError("Calibration adapter preparation is available only during project planning")
+        if set(args) != {"ki", "contract", "runner_source"} or not isinstance(args.get("ki"), str) or not args["ki"]:
+            raise ToolError("Provide only the selected ki, contract and runner_source")
+        try:
+            selected_name, _ = flow.ki_root_for(args["ki"], root)
+            return json.dumps(_calibration.write_adapter(project_root, selected_name,
+                args["contract"], args["runner_source"]), ensure_ascii=False)
+        except (FlowDenied, OSError, RuntimeError, TypeError, ValueError, SyntaxError) as exc:
+            raise ToolError(str(exc)) from None
+
     if project_mode and name == "run_calibration":
         from . import calibration as _calibration
         calib_before = None
         calib_started = time.time()
+        # Materialize missing adapter copies before resolving the bytes the
+        # reviewer authorized. Existing project-owned adapters are preserved.
+        _calibration.ensure_project(project_root, [ki])
+        try:
+            binding, adapter_snapshot = _calibration.prepare_invocation(project_root, ki.name, args)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise ToolError(str(exc)) from None
+        expected_approval = None
+        approved_step = None
         if flow is not None:
             from . import flowgate as _fg
             from .flowgate import FlowDenied
             try:
-                flow.check_step_tool(args.get("plan_step_id"), getattr(ki, "name", root.name), None)
+                approved_step = flow.check_calibration_step(
+                    args.get("plan_step_id"), ki.name, adapter_snapshot.runner_path, binding)
+                expected_approval = flow.approval_id
             except FlowDenied as e:
                 raise ToolError(str(e)) from None
-            calib_before = _fg._snapshot(project_root, subs=("inputs", "outputs", "artifacts", "calibration"))
-        # Ensure the adapter copy exists before building the generated runtime
-        # KI. `ki` is already the session-materialised package in pinned chats.
-        _calibration.ensure_project(project_root, [ki])
+            calib_before = _fg._snapshot(project_root, subs=("inputs", "outputs", "artifacts", "runs/logs", "calibration/runs"))
         try:
             result = _calibration.run_project(
                 project=project_root,
                 ki_name=ki.name,
                 ki_path=root,
-                obs_shape_by_var=args.get("obs_shape_by_var") or {},
-                algorithm=args.get("algorithm") or None,
-                budget=args.get("budget"),
-                seed=int(args.get("seed") or 0),
-                determining_metric=args.get("determining_metric") or None,
-                stop=stop, turn_id=turn_id,
+                obs_shape_by_var=binding["obs_shape_by_var"],
+                algorithm=binding["algorithm"], budget=binding["budget"], seed=binding["seed"],
+                determining_metric=binding["determining_metric"],
+                expected_case_id=binding["expected_case_id"],
+                stop=stop, turn_id=turn_id, adapter_snapshot=adapter_snapshot,
+                approved_binding=binding if flow is not None else None,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             raise ToolError(str(exc)) from None
@@ -1602,12 +1681,21 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             from .flowgate import FlowDenied
             try:
                 _kname = getattr(ki, "name", root.name)
+                input_paths = [str(adapter_snapshot.contract_path), str(adapter_snapshot.runner_path)]
+                for item in (flow.inventory or {}).get("items") or []:
+                    if item.get("id") in (approved_step or {}).get("inputs", []):
+                        input_paths.extend(str(p) for p in item.get("local_paths") or [])
                 summary["receipt"] = flow.record_tool_run(
                     ki=_kname, ki_root=root,
-                    command=["geoforge-calibration", _kname, str(args.get("algorithm") or "default")],
+                    command=["geoforge-calibration", _kname, binding["algorithm"],
+                             "--budget", str(binding["budget"]), "--seed", str(binding["seed"]),
+                             "--adapter", str(adapter_snapshot.runner_path)],
                     cwd=project_root, started_at=calib_started, finished_at=time.time(),
                     exit_code=0 if str(report.get("status") or "").lower() in ("ok", "success", "completed", "done") else 1,
                     before=calib_before, plan_step_id=args.get("plan_step_id"),
+                    expected_approval_sha256=expected_approval,
+                    input_arguments=input_paths,
+                    calibration_result=result,
                     stdout_tail=str(result.get("log_tail") or ""),
                     execution_status=("stopped" if report.get("status") in {"stopped", "interrupted"} else None))
             except FlowDenied as e:
@@ -1913,13 +2001,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             text = raw.decode("utf-8", errors="strict")
         except UnicodeDecodeError as error:
             raise ToolError("replace_work_text requires a UTF-8 text file") from error
-        actual = text.count(old)
-        if actual != expected:
-            raise ToolError(
-                f"expected {expected} exact match(es), found {actual}; "
-                "read the relevant page and retry with more context"
-            )
-        updated = text.replace(old, new, expected)
+        updated = _replace_workspace_text(text, old, new, expected)
         p.write_text(updated, encoding="utf-8", newline="")
         return (
             f"replaced {expected} exact match(es) in "
@@ -2620,6 +2702,8 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         return
     model_id = prov.models.get(want, want)
     tool_context = dict(setup_context or {})
+    if setup_mode and flow is not None:
+        tool_context["installation_only"] = True
     tool_context.setdefault("provider_id", f"api:{prov.name}")
     tool_context["_handle"] = handle
     if "_turn_id" not in tool_context:
@@ -2658,7 +2742,9 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     while max_steps is None or step < max_steps:
         if flow is not None and step:
             # A request_replan in the previous step changes what is allowed now.
-            tools = tool_schemas(ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow)
+            tools = tool_schemas(
+                ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow,
+                installation_only=bool(tool_context.get("installation_only")))
         step += 1
         if handle is not None and handle.stopped.is_set():
             yield f"\n[{prov.label} stopped by the user]"

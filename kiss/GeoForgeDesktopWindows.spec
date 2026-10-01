@@ -58,6 +58,7 @@ for distribution in ("numpy", "PyYAML", "spotpy", "pymoo", "moocore"):
 calibration_binaries = collect_dynamic_libs("pymoo")
 calibration_hidden = [
     "numpy", "scipy", "yaml", "spotpy",
+    "spotpy.database.ram",
     "pymoo.core.problem", "pymoo.optimize",
     "pymoo.algorithms.moo.nsga2", "pymoo.algorithms.moo.nsga3",
     "pymoo.algorithms.moo.moead", "pymoo.util.ref_dirs",

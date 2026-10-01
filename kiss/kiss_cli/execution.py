@@ -495,6 +495,17 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     if flow is not None:
         approval_id = _fresh_approval(flow, project)
         step = flow.check_step_tool(plan_step_id, ki, tool)
+        # Help/version-only calls do not execute the approved scientific step.
+        # Refuse them before launch instead of recording a failed attempt with
+        # no outputs, which would supersede that step's successful execution.
+        # Do not run an unreceipted probe here: model binaries can ignore these
+        # flags and execute normally. Mixed/other arguments remain real attempts.
+        if arguments and all(arg in {"--help", "-h", "--version", "-version", "-V"}
+                             for arg in arguments):
+            raise flowgate.FlowDenied(
+                "Help/version probes are not plan-step executions; no process was launched "
+                "and no execution receipt was written. Read the KI tool source or its "
+                "documentation for usage, then run the approved step with its real inputs.")
         approved_env = flow.approved_step_environment(step, ki_root)
     # The chat config may belong to its first KI; CLI root discovery used to
     # pick the last one. Resolve the actual step's runtime at this common seam.

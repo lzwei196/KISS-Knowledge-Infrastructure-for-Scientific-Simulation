@@ -32,6 +32,7 @@ Inputs:
   --prj_path:      Path to .prj project file
   --output_path:   Output file path
   --obs_dir:       Observation file directory (optional)
+  --run_dir:       Stage original .prj/.obs here and run in this directory (optional)
   --progress:      Progress update interval in days (default: 100)
   --time_format:   Output time format: ISO, MS, YYYYMMDD (default: YYYYMMDD)
 
@@ -49,6 +50,8 @@ import logging
 import argparse
 import subprocess
 import time
+import math
+import shutil
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -61,6 +64,10 @@ def parse_args():
     parser.add_argument("--prj_path", type=str, required=True, help="Path to .prj file")
     parser.add_argument("--output_path", type=str, required=True, help="Output file path")
     parser.add_argument("--obs_dir", type=str, default="", help="Observation file directory")
+    parser.add_argument("--run_dir", type=str, default="",
+                        help="Stage the project and its observations here, changing only observation paths; "
+                             "run here with output_path inside this directory. With staging, obs_dir "
+                             "resolves each observation by basename, including obsolete absolute paths.")
     parser.add_argument("--progress", type=int, default=100, help="Progress interval (days)")
     parser.add_argument("--time_format", type=str, default="YYYYMMDD",
                         choices=["ISO", "MS", "YYYYMMDD"], help="Output time format")
@@ -105,8 +112,92 @@ def read_prj_obs_paths(prj_path):
     return paths
 
 
-def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format):
+def _observation_lines(data):
+    """Locate path lines without decoding/reformatting the scientific project."""
+    lines = data.splitlines(keepends=True)
+    headers = [i for i, line in enumerate(lines) if line.strip() == b"Observations:"]
+    if len(headers) != 1:
+        raise ValueError("Staging requires exactly one Observations section in the project")
+    indices = []
+    for i in range(headers[0] + 1, len(lines)):
+        value = lines[i].strip()
+        if not value or value.startswith(b"#"):
+            if indices:
+                break
+            continue
+        if value.endswith(b":"):
+            break
+        indices.append(i)
+    if not indices:
+        raise ValueError("The project's Observations section contains no files to stage")
+    return lines, indices
+
+
+def stage_inputs(prj_path, run_dir, obs_dir=""):
+    """Copy authentic inputs; change only Observations path bytes in the copy.
+
+    An explicit obs_dir selects same-named genuine source files even when an
+    upstream example contains its author's obsolete absolute Windows paths.
+    Resolve every source and destination before writing anything.
+    """
+    source_prj, run_dir = Path(prj_path).resolve(), Path(run_dir).resolve()
+    source_data = source_prj.read_bytes()
+    lines, indices = _observation_lines(source_data)
+    staged_prj = run_dir / source_prj.name
+    if source_prj == run_dir or run_dir in source_prj.parents:
+        raise ValueError("run_dir must not contain the original project")
+    observations = []
+    destinations = {}
+    for i in indices:
+        raw = os.fsdecode(lines[i].strip()).strip('"')
+        basename = raw.replace("\\", "/").rsplit("/", 1)[-1]
+        if not basename or basename in (".", ".."):
+            raise ValueError(f"Invalid observation path: {raw!r}")
+        source = Path(obs_dir).resolve() / basename if obs_dir else Path(raw)
+        if not source.is_absolute():
+            source = source_prj.parent / source
+        source = source.resolve()
+        if not source.is_file():
+            raise ValueError(f"Observation file not found: {source}; supply --obs_dir with the genuine upstream files")
+        target = run_dir / "obs" / basename
+        target.resolve().relative_to(run_dir)
+        if target.is_symlink() or (target.exists() and target.stat().st_nlink > 1):
+            raise ValueError("A staged observation path must not be a symbolic link or hard link")
+        key = str(target).casefold()
+        if key in destinations and destinations[key] != source:
+            raise ValueError(f"Different observation files have the same staging filename: {basename}")
+        if run_dir in source.parents:
+            raise ValueError("run_dir must not contain an original observation file")
+        destinations[key] = source
+        observations.append((i, source, target))
+    staged_prj.resolve().relative_to(run_dir)
+    if staged_prj.is_symlink() or (staged_prj.exists() and staged_prj.stat().st_nlink > 1):
+        raise ValueError("The staged project path must not be a symbolic link or hard link")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for i, source, target in observations:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        line = lines[i]
+        ending = b"\r\n" if line.endswith(b"\r\n") else b"\n" if line.endswith(b"\n") else b""
+        prefix = line[:len(line) - len(line.lstrip(b" \t"))]
+        lines[i] = prefix + os.fsencode(str(target)) + ending
+    staged_prj.write_bytes(b"".join(lines))
+    logger.info("Staged original project and %d observation file(s) in %s", len(observations), run_dir)
+    return staged_prj
+
+
+def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format, run_dir=""):
     """Run CRHM and capture output."""
+    crhm_exe, prj_path, output_path = (Path(p).resolve() for p in (crhm_exe, prj_path, output_path))
+    cwd = None
+    if run_dir:
+        cwd = Path(run_dir).resolve()
+        output_path.relative_to(cwd)
+        prj_path = stage_inputs(prj_path, cwd, obs_dir)
+        if output_path == prj_path or (cwd / "obs") in output_path.parents:
+            raise ValueError("output_path must not overwrite the staged project or observations")
+        obs_dir = ""       # staged observation paths are absolute; CRHM must not prefix them
+    before = output_path.stat() if output_path.exists() else None
     # Build command
     cmd = [
         str(crhm_exe),
@@ -141,12 +232,21 @@ def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format):
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Execute
+    # Upstream uses both mktime and gmtime for model civil dates. Inheriting
+    # the host timezone changes timestep/solar calculations as well as labels.
+    # UTC0 makes that arithmetic consistent; it does not convert forcing from
+    # a station's geographical timezone. Restrict the override to this child.
+    model_env = os.environ.copy()
+    model_env["TZ"] = "UTC0"
     start_time = time.time()
     try:
         result = subprocess.run(
             cmd,
+            cwd=str(cwd) if cwd is not None else None,
+            env=model_env,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=3600,  # 1 hour max
         )
     except subprocess.TimeoutExpired:
@@ -175,6 +275,13 @@ def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format):
         logger.error(f"Full stderr: {result.stderr}")
         sys.exit(2)
 
+    if before and output_path.exists():
+        after = output_path.stat()
+        if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) == (
+                before.st_size, before.st_mtime_ns, before.st_ctime_ns):
+            logger.error("CRHM did not replace the previous output file: %s", output_path)
+            sys.exit(3)
+
     logger.info(f"CRHM completed in {elapsed:.1f} seconds")
 
     return str(output_path)
@@ -192,9 +299,19 @@ def validate_outputs(output_path):
         # errors="replace": CRHM writes Latin-1 degree signs in the units row
         # (e.g. hru_t "(ºC)" = byte 0xBA), which crashes a strict-UTF-8 read.
         with open(p, encoding="utf-8", errors="replace") as f:
-            first_lines = [f.readline() for _ in range(5)]
-        if len(first_lines) < 3:
-            errors.append("Output file has fewer than 3 lines")
+            first_lines = [f.readline() for _ in range(3)]
+        if any(not line.strip() for line in first_lines):
+            errors.append("Output file must contain variable and units headers plus a data row")
+        else:
+            header = first_lines[0].strip().split("\t")
+            row = first_lines[2].strip().split("\t")
+            try:
+                numeric = len(header) > 1 and len(row) == len(header) and all(
+                    math.isfinite(float(value)) for value in row[1:])
+            except ValueError:
+                numeric = False
+            if not numeric:
+                errors.append("Output has no complete, finite numeric data row after its two STD headers")
         # STD format: line 1 = variable names, line 2 = units
         logger.info(f"Output header: {first_lines[0].strip()[:100]}...")
 
@@ -214,7 +331,7 @@ if __name__ == "__main__":
     try:
         output_path = process(
             args.crhm_exe, args.prj_path, args.output_path,
-            args.obs_dir, args.progress, args.time_format
+            args.obs_dir, args.progress, args.time_format, args.run_dir
         )
     except SystemExit:
         raise

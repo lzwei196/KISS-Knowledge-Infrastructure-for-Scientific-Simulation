@@ -125,20 +125,28 @@ def match(item: dict, declared: tuple[dict, ...]) -> dict | None:
     return None
 
 
-def classify(item: dict, declared: tuple[dict, ...], produced: set[str]) -> dict:
+def classify(item: dict, declared: tuple[dict, ...], produced: set[str], *,
+             project: Path | None = None) -> dict:
     """Host verdict for one item: {'group': fetch|you|run, 'how': ..., 'declared': {...}|None}."""
     delivery = item.get("delivery")
     d = match(item, declared)
     dec = None if d is None else {k: d.get(k) for k in ("name", "category", "unit", "source_kind", "format", "notes", "default_tool")}
     exact = dec if (d and d.get("name") == str(item.get("id"))) else None
+    # Planned output paths name where files will be written; they are not
+    # evidence that those files already exist, even on a repeat run.
+    if str(item.get("id")) in produced:
+        return {"group": "run", "how": "generated", "declared": dec}
     if delivery in {"served", "subset"}:
         return {"group": "fetch", "how": "clip" if delivery == "subset" else "served", "declared": exact}
     if delivery == "manual":
         return {"group": "you", "how": "manual", "declared": exact}
-    if item.get("status") == "ready" or item.get("local_paths"):
+    paths = item.get("local_paths") or []
+    on_disk = item.get("status") == "ready"
+    if project is not None:
+        on_disk = on_disk and bool(paths) and all(
+            (Path(project) / str(path)).exists() for path in paths)
+    if on_disk:
         return {"group": "run", "how": "on_disk", "declared": dec}
-    if str(item.get("id")) in produced:
-        return {"group": "run", "how": "generated", "declared": dec}
     kind = (d or {}).get("source_kind", "")
     decision = str(item.get("decision") or "").lower()
     if decision in {"user", "provide", "you"}:

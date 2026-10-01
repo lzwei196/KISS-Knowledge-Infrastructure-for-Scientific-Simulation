@@ -1,6 +1,6 @@
 [project]
 name = "kiss-ki"
-version = "0.6.54"
+version = "0.6.55"
 description = "Installer and agent handoff for KISS Knowledge Infrastructure packages"
 requires-python = ">=3.11"
 dependencies = [
@@ -26,4 +26,4 @@ build-backend = "setuptools.build_meta"
 packages = ["kiss_cli"]
 
 [tool.setuptools.package-data]
-kiss_cli = ["web/*.html", "web/*.svg", "web/*.js"]
+kiss_cli = ["web/*.html", "web/*.svg", "web/*.js", "web/guides/*.html", "web/guides/*.pdf"]

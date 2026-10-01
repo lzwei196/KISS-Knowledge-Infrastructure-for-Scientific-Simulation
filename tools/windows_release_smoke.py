@@ -170,6 +170,25 @@ def check(bundle: Path, report: dict) -> None:
             routes = ["/", "/setup", "/library", "/i18n.js", "/clipboard.js"]
             for route in routes:
                 assert len(fetch(route)) > 100, f"Empty asset: {route}"
+            # These guides must work without GitHub or any network provider.
+            guide_routes = []
+            for kind in ("manual", "quickstart", "calibration"):
+                for language in ("en", "zh-CN"):
+                    for extension in ("html", "pdf"):
+                        route = f"/guide/{kind}/{language}.{extension}"
+                        with opener.open(f"http://127.0.0.1:{port}{route}", timeout=10) as response:
+                            content = response.read()
+                            content_type = response.headers.get_content_type()
+                        expected = internal / "kiss_cli" / "web" / "guides" / f"{kind}-{language}.{extension}"
+                        assert content == expected.read_bytes(), f"Guide payload mismatch: {route}"
+                        if extension == "pdf":
+                            assert content_type == "application/pdf" and content.startswith(b"%PDF-"), route
+                        else:
+                            assert content_type == "text/html", route
+                            assert manifest["version"] in content.decode("utf-8"), route
+                        assert len(content) > 1000, f"Incomplete guide: {route}"
+                        guide_routes.append(route)
+            report["offline_usage_guides"] = {"passed": True, "routes": guide_routes}
             models = json.loads(fetch("/api/models"))
             assert {m["name"] for m in models} == {p.name for p in packages}
             assert "KI HARNESS v1" in fetch("/api/prompt/MODFLOW6")

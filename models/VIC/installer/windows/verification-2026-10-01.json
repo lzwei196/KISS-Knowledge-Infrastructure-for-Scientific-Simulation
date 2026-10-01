@@ -1,0 +1,563 @@
+{
+  "date": "2026-10-01",
+  "scope": "Independent real native execution and basic I/O integrity; not a Desktop approval receipt, calibration, or observation-skill validation.",
+  "model": {
+    "repository": "https://github.com/UW-Hydro/VIC",
+    "tag": "5.1.0",
+    "commit": "14a371a8dbee7ea834152f8ac65e2d6d54a9c30a",
+    "binary_sha256": "4c3335cea13f98174a0fcf667ade2691939f32ac6889cd98795ab05fed465fd1",
+    "compiler": "TDM-GCC 10.3.0 Windows x64"
+  },
+  "inputs": {
+    "sample_repository": "https://github.com/UW-Hydro/VIC_sample_data",
+    "sample_commit": "997fc6bdc423cba72dac7895098d636172179967",
+    "period": {
+      "start": "1949-01-01",
+      "end": "1949-01-10",
+      "steps_per_day": 24
+    },
+    "cells": 16,
+    "resolution_degrees": 0.125,
+    "source_files": [
+      {
+        "path": "official/classic/Stehekin/forcings/README.md",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/README.md",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 751,
+        "sha256": "366d5c737c7c94ea6207750be299ea230318949bfeacb686bfc1671ac64c9b11",
+        "git_blob_sha1": "ffc79c98a37841a6087be52fa292ef4fe7d10816",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.1875_-120.6875",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.1875_-120.6875",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16404,
+        "sha256": "04526eb48ab90e017e94e3a647a2290a619b15a6d69f689d513e59d8908b9f98",
+        "git_blob_sha1": "80116097fb0153afa7a63df2bde1e818bda59014",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.1875_-120.8125",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.1875_-120.8125",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16395,
+        "sha256": "e78d98f9dc214ab97a6d2b4a00ee084e5fd0392fdc966fcadef3a38cf3767d04",
+        "git_blob_sha1": "b4043e33fd81d62e0f45c0def384bb0629072f14",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.1875_-120.9375",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.1875_-120.9375",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16415,
+        "sha256": "000c1b70be2e699c4153e453a61bc6d34abf5bbda0d1272705c72781e30e0c62",
+        "git_blob_sha1": "93bd9f04691a2cdd6fbacf68100e2f0f19a6bf43",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.3125_-120.5625",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.3125_-120.5625",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16442,
+        "sha256": "ecf8181ec8f210b93de7711485845cdbd07ad72429612aba926e7f73dcaef4a2",
+        "git_blob_sha1": "6d85fac7bc621d6109088478821fb21274312ff5",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.3125_-120.6875",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.3125_-120.6875",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16399,
+        "sha256": "3f9c015a7babc4dca4b1777ff209b84100d129f47dd6d40de27a0dfe308c0d0f",
+        "git_blob_sha1": "8d5c74c6b97f61398b865765bf4b451384acff9d",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.3125_-120.8125",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.3125_-120.8125",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16422,
+        "sha256": "ddc96df778a2a7e9af4f51969b79ad199b5bcbd4132cd86babedcb43cb84c720",
+        "git_blob_sha1": "f834e75af740f4a858fd3db2688e7dfabe57d9dc",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.3125_-120.9375",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.3125_-120.9375",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16412,
+        "sha256": "9874fd80b90e465a2cd3ead7fb4b7559c36516b43eb5b15d99e9f3c8255e2543",
+        "git_blob_sha1": "87ba213179374f80452cc901cd2765c87bb2e9c6",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.3125_-121.0625",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.3125_-121.0625",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16418,
+        "sha256": "bf1f2f28b0b100d93eb14bdf6fa378051d0f3595367d578b413706595e2202ad",
+        "git_blob_sha1": "36ef3439e61db2bd8a9753c6592297d41b53bd0a",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.4375_-120.5625",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.4375_-120.5625",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16444,
+        "sha256": "4e9bd96e7ae3dcaaf66739b93ef35bf76796182e56cbf6e15418cad8d6f41980",
+        "git_blob_sha1": "88d1d15903d3d82dbee720e1ac40123a23b63615",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.4375_-120.6875",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.4375_-120.6875",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16443,
+        "sha256": "b07f289dc97f7b2ffa936f3a5cb069cc468b011d5cc10fb73400f6d3b8135df3",
+        "git_blob_sha1": "eb384d6a13312dd53a924f9c9ec51c6b2b60944b",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.4375_-120.8125",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.4375_-120.8125",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16413,
+        "sha256": "58bfc767c838bf01ed830e1dd73196bfaa09bd5515fdf257060f2bab97b69060",
+        "git_blob_sha1": "c61db9481a873a4459d206dd8b839e7d0a12c8b2",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.4375_-120.9375",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.4375_-120.9375",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16414,
+        "sha256": "d670416122deb01200fd22b160339ff383baec635d25f6be6b03c6d62dab6404",
+        "git_blob_sha1": "3a4b7618e3e9abcd201579276f7ea9e90b635777",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.4375_-121.0625",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.4375_-121.0625",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16416,
+        "sha256": "45ccca892206c407004f47af2766f81305afda65daf29caa4479e7224739b0e2",
+        "git_blob_sha1": "ed9b2589e4f15757cff7b0f80e1727ddc4968c62",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.5625_-120.6875",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.5625_-120.6875",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16447,
+        "sha256": "30fb52afb1dd6316e45b393793d677bbf166524cb28904527523d949458705a7",
+        "git_blob_sha1": "f23815859d1edf3523d891fdd1aa44a38602c426",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.5625_-120.8125",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.5625_-120.8125",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16425,
+        "sha256": "ec15c014717346bdb5f3dccfc9fe848484afabe1a66f0500bffbfaa4a64a1d81",
+        "git_blob_sha1": "bab299153ebf46371791e0a549ccac1314b7739f",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/forcings/full_data_48.5625_-120.9375",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/forcings/full_data_48.5625_-120.9375",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 16425,
+        "sha256": "da36ecfbe81d4ebb6faeecef93bf47e632b5f99b2df911625d3db3bd0441e13d",
+        "git_blob_sha1": "9331140d8a0b753f6a3b44b86966d39caa14f2be",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/parameters/Stehekin_snowbands.txt",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/parameters/Stehekin_snowbands.txt",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 1689,
+        "sha256": "dd3279045b8c1bffc03889cb0c2f48f0afd759ca92007905092b22a27cb51b8c",
+        "git_blob_sha1": "36d42a2f52aae22204ddee4b629644fc16d418a4",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/parameters/Stehekin_soil.txt",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/parameters/Stehekin_soil.txt",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 6130,
+        "sha256": "9f473d8a6d25d92cd6cec9464391d6fd72fa08c4c633991ecfa0a409b9e704ff",
+        "git_blob_sha1": "418d76e5e6aed226cef244bb997a69dfb5b63e06",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/parameters/Stehekin_veglib.txt",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/parameters/Stehekin_veglib.txt",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 3938,
+        "sha256": "e049248df69628ae3b5adb169f378e531a1287828b6c22f4c13a35356b639262",
+        "git_blob_sha1": "62909bbd214702b7f0044f1080c0daee1524304d",
+        "unmodified": true
+      },
+      {
+        "path": "official/classic/Stehekin/parameters/Stehekin_vegparam.txt",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/classic/Stehekin/parameters/Stehekin_vegparam.txt",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 12128,
+        "sha256": "cef90663e95154324c0e118481aba29e7dd085fc93f359f69914e4422db6b8cf",
+        "git_blob_sha1": "7a7f040066c6ffd1ab2bc3775c1260c55a044027",
+        "unmodified": true
+      },
+      {
+        "path": "official/docs/Stehekin.md",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC_sample_data/997fc6bdc423cba72dac7895098d636172179967/docs/Stehekin.md",
+        "source_revision": "997fc6bdc423cba72dac7895098d636172179967",
+        "bytes": 4839,
+        "sha256": "c6f79a4327b10ea5955a8408739adc6a8c78fb997c1d00c1e5d7a37fe85f1d22",
+        "git_blob_sha1": "eebf86ff44f75c339a744220f653e0fa1825e6d6",
+        "unmodified": true
+      },
+      {
+        "path": "official/global_param.classic.STEHE.feb.txt",
+        "source_url": "https://raw.githubusercontent.com/UW-Hydro/VIC/14a371a8dbee7ea834152f8ac65e2d6d54a9c30a/tests/examples/global_param.classic.STEHE.feb.txt",
+        "source_revision": "14a371a8dbee7ea834152f8ac65e2d6d54a9c30a",
+        "source_tag": "5.1.0",
+        "bytes": 1388,
+        "sha256": "c9dbbdda77a2afc1e6575b01109584cb59f7aeabf0864dc743ff1bc04fc07b5f",
+        "unmodified": true
+      }
+    ]
+  },
+  "native_runs": [
+    {
+      "config": "LF",
+      "elapsed_seconds": 4.755944999866188,
+      "returncode": 0,
+      "checks_passed": true,
+      "check_count": 197,
+      "output_groups": {
+        "fluxes": 16,
+        "snow": 16,
+        "snowband": 16
+      }
+    },
+    {
+      "config": "CRLF plus blank lines",
+      "elapsed_seconds": 4.7202188996598125,
+      "returncode": 0,
+      "checks_passed": true,
+      "check_count": 197,
+      "output_groups": {
+        "fluxes": 16,
+        "snow": 16,
+        "snowband": 16
+      }
+    }
+  ],
+  "output_comparison": {
+    "outputs_compared": 48,
+    "lf_crlf_outputs_byte_identical": true
+  },
+  "invalid_config": {
+    "returncode": 1,
+    "access_violation": false,
+    "error_visible": true,
+    "unknown_config_warning": false,
+    "binary_sha256": "4c3335cea13f98174a0fcf667ade2691939f32ac6889cd98795ab05fed465fd1"
+  },
+  "fresh_source_reproduction": {
+    "source_files_compared": 12,
+    "reproduces_tested_build_sources": true
+  },
+  "outputs": [
+    {
+      "path": "fluxes_48.1875_-120.6875.txt",
+      "bytes": 2997,
+      "sha256": "8145bf6a1cb2e597f0c298dff61e51b97bcefc4d8c8a1d2f2924f0e70eb09ca2",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.1875_-120.8125.txt",
+      "bytes": 2993,
+      "sha256": "c1340547589bab7d7cc2bd4da48acce120d399955bc71eb35991713457b6ea71",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.1875_-120.9375.txt",
+      "bytes": 3001,
+      "sha256": "690d08d037df7be9037fd31cb3b7744abbf54178e6dd9a507baac25eaedb8649",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.3125_-120.5625.txt",
+      "bytes": 2997,
+      "sha256": "c15019a97a2e460a811dcc8f33bd20ea3e64730f417ebb791894b3c7e2ade91c",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.3125_-120.6875.txt",
+      "bytes": 2998,
+      "sha256": "e7c3622e4856ddbc8284da9670271264a87f8bd5722975349ded5809970bff67",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.3125_-120.8125.txt",
+      "bytes": 2998,
+      "sha256": "6365749ab6e23a56d21b481ee01fb035860b0602681efa2e084283354218160e",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.3125_-120.9375.txt",
+      "bytes": 2995,
+      "sha256": "152a138662d10b5696433ddded944f08a8c3bb4bb5165f4ac88846c55b3398a2",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.3125_-121.0625.txt",
+      "bytes": 3006,
+      "sha256": "8511587bddd9c7b03c269f8827bef98e29e6cfa0bfd7694be437f6ead1d814ba",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.4375_-120.5625.txt",
+      "bytes": 2996,
+      "sha256": "89631d63dd3ca3d95071b6b40783ba76915e4feeec069cb21d21ce0fd80f24ad",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.4375_-120.6875.txt",
+      "bytes": 2996,
+      "sha256": "202a5fc277771ee1feb307f91a640c355b4d2125eec069c68e706595a426860b",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.4375_-120.8125.txt",
+      "bytes": 2997,
+      "sha256": "a10f5a53fc5a5523a5f3d673fe30a12e057b3857ea1c189dea5261635e4b719c",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.4375_-120.9375.txt",
+      "bytes": 3001,
+      "sha256": "513c97b768eea298e48e8811ac855de62b1cfd941138ff05730954a5a0fd9c54",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.4375_-121.0625.txt",
+      "bytes": 3001,
+      "sha256": "c5cadad36f689c190d05e47f011426102a54c4c9f3537935eba551cb778ca2c3",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.5625_-120.6875.txt",
+      "bytes": 2996,
+      "sha256": "89e3f17b6778f607752148e2f6dd55ea6cb01026a5c93c6dad3a421d03433fd6",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.5625_-120.8125.txt",
+      "bytes": 3004,
+      "sha256": "520fb1ab436101e6b21dd24f462fcc406d11266ee2e944c8936d9acf27ff63b5",
+      "rows": 10
+    },
+    {
+      "path": "fluxes_48.5625_-120.9375.txt",
+      "bytes": 3005,
+      "sha256": "b713b4cd1b529fc6b6b53b53607dd00c55524bf398af122c455a5ceb41d8d87f",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.1875_-120.6875.txt",
+      "bytes": 1553,
+      "sha256": "fd37fadb7a1b17e82a1275c4be49c21060984e767a19dc8bf5f345b17f2dd697",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.1875_-120.8125.txt",
+      "bytes": 1552,
+      "sha256": "b0a4b5ebecf5a55cb48c2d554d6ec2be36634ef70d1f5c27179037aa44806e7f",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.1875_-120.9375.txt",
+      "bytes": 1559,
+      "sha256": "85b5e961a1869aa250ad98f6da3623da3033e41b617ae529e3d5e97a27bd9de2",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.3125_-120.5625.txt",
+      "bytes": 1561,
+      "sha256": "bae4e57e5dd962f60ddfcc0cf7c2349fb7ce916782e1b7d5e8b94b267dc9b1df",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.3125_-120.6875.txt",
+      "bytes": 1557,
+      "sha256": "46af0bc9101bb1759103d2ab2d2fe7d1ffb359fa4d2b4ff1d1c7303126e1b4c5",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.3125_-120.8125.txt",
+      "bytes": 1560,
+      "sha256": "4f891ae13b9c55c1d57eb6a19ff1437682649fdfbd439049bf26449fcfd20913",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.3125_-120.9375.txt",
+      "bytes": 1559,
+      "sha256": "270719b9e32dff8aa6265d1434665ceda48341e7c88f26855995353cc0c888ff",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.3125_-121.0625.txt",
+      "bytes": 1572,
+      "sha256": "423d829b3f32cef4cea6f3a2c19544a0c63cc63835d14dc97644b45ebec3227d",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.4375_-120.5625.txt",
+      "bytes": 1559,
+      "sha256": "40229a756205dc876953d89e2c0b7c34bf9377bafb79706ce82437d1f02d97c9",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.4375_-120.6875.txt",
+      "bytes": 1561,
+      "sha256": "dace509bbe8e01df7a09672103466efaa4c83fffa6560df20bac60b96dbca082",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.4375_-120.8125.txt",
+      "bytes": 1561,
+      "sha256": "26f68965559503f1bfc0dbfe2a9a4a8305b10cb8db9297dc492aa617b2c1fd67",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.4375_-120.9375.txt",
+      "bytes": 1563,
+      "sha256": "5287b2735bd77b615fc14d9150e095511fb3f57e4b51ab2d8f0f04ef96659d08",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.4375_-121.0625.txt",
+      "bytes": 1566,
+      "sha256": "97bf18d867e22284c505bb1a13295e05b4256f878281308396e0acd7b08bcc5d",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.5625_-120.6875.txt",
+      "bytes": 1561,
+      "sha256": "af7705f6b18bd074115ea47f14854cb5ef2f2b99cdd2e450f92dd77eb2073f59",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.5625_-120.8125.txt",
+      "bytes": 1564,
+      "sha256": "37a199145a0f22a6a81de8792e4747f2862edf71be84ecffdd5ef1ba2e2f50b4",
+      "rows": 10
+    },
+    {
+      "path": "snow_48.5625_-120.9375.txt",
+      "bytes": 1566,
+      "sha256": "7b89047481f95ecba8a99da9b8ea8de2ff7e5d2b94ef2606aa36cc182c2fb041",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.1875_-120.6875.txt",
+      "bytes": 7073,
+      "sha256": "bf01217c6ebc6394e9ed827c93450168d57bb1806cc6afc478f2fd13a3e2a293",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.1875_-120.8125.txt",
+      "bytes": 6992,
+      "sha256": "fdf2c2d92a53851fcb7c00b931e60dbd33f5bb2593193f67ac0ff3c4857779d4",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.1875_-120.9375.txt",
+      "bytes": 6973,
+      "sha256": "6c0dc5ab76eb06f7ea72c0b556beb6f488f085bd59ecc7cbc3fa29533148b587",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.3125_-120.5625.txt",
+      "bytes": 7109,
+      "sha256": "43f7751191ab3cdbc59863ebe283ee8eddf7ce2b6ce1d49f497a19030d9b9a20",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.3125_-120.6875.txt",
+      "bytes": 7091,
+      "sha256": "52508af36b0a5404b52b3b5d4e312a9013c977334f99f86e4a3d92e13f838e55",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.3125_-120.8125.txt",
+      "bytes": 7119,
+      "sha256": "28217f5560eb015b775816c55943fe002b90c38e39ebd1c564ff9eed9fbb2ea8",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.3125_-120.9375.txt",
+      "bytes": 7050,
+      "sha256": "45f9389a54d6fe5baec24d72e39a3ba229ca56a1d0e5af41d0ee92dae49b2488",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.3125_-121.0625.txt",
+      "bytes": 7097,
+      "sha256": "a0a4d19c5bf712cd296678bbfdb3dd61bc90a465fc943836d4a2fc8f552b5df6",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.4375_-120.5625.txt",
+      "bytes": 7029,
+      "sha256": "a7f06c88dfa9b97dcec7c9b27944a8d8da64edf25bb1db8b1606ecdd6864e8c0",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.4375_-120.6875.txt",
+      "bytes": 6968,
+      "sha256": "b61c4b816067bf0184afb67b86cc3ef26ec7fa99caddc532117bf1f266fa3a07",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.4375_-120.8125.txt",
+      "bytes": 7039,
+      "sha256": "a1aa1a2ecc3806b1279034fc84035c45615683e872a675c077ae183ca3242d07",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.4375_-120.9375.txt",
+      "bytes": 7059,
+      "sha256": "9ba0e2d6914f59014c13d68f4a5f223dda53c8bc5994a65d27ea0f5c39e3d68c",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.4375_-121.0625.txt",
+      "bytes": 7066,
+      "sha256": "408fe4781860507a0acd07381574a56fc4db1072b6baf8cce981242425e70552",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.5625_-120.6875.txt",
+      "bytes": 6963,
+      "sha256": "25b9bfde1a3a8e4e6300ee0c1befb843c938961bfc09c58ab9d88f07a32252c2",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.5625_-120.8125.txt",
+      "bytes": 6971,
+      "sha256": "d50e830927ce783f7ece246190f2581df1580d0ddbe0153d15a0c4f77841ce94",
+      "rows": 10
+    },
+    {
+      "path": "snowband_48.5625_-120.9375.txt",
+      "bytes": 7061,
+      "sha256": "85e7ae4345dd35ff7933faf76c6066464f481218c3a736b5f2770882a92ac3d9",
+      "rows": 10
+    }
+  ],
+  "local_evidence_directory": "D:\\GFVerify1001\\VIC"
+}

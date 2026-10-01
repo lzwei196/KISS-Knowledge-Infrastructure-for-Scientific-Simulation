@@ -695,7 +695,7 @@ def test_validate_for_execution_requires_tools_and_resolved_inputs(tmp_path):
     assert plan.validate(pj, _INV, ["M"], {"M": ki}) == []                       # planning: ok
     errs = plan.validate(pj, _INV, ["M"], {"M": ki}, for_execution=True)         # approval: not ready
     assert any("has no tool" in e for e in errs)
-    inv = json.loads(json.dumps(_INV)); inv["items"][0]["status"] = "missing"
+    inv = json.loads(json.dumps(_INV)); inv["items"][0].update(status="missing", chosen_source=None)
     errs = plan.validate(_good_plan(ki), inv, ["M"], {"M": ki}, for_execution=True)
     assert any("still missing" in e for e in errs)
     model_run = _good_plan(ki, tool=False)

@@ -3455,7 +3455,7 @@ class AgentSetupTests(unittest.TestCase):
             }
             self.assertNotIn("run_preflight", names)
             self.assertIn("run_builtin_setup", names)
-            with self.assertRaisesRegex(api.ToolError, "installation-only test"):
+            with self.assertRaisesRegex(api.ToolError, "installation-only setup"):
                 api.execute_tool(
                     "run_preflight", {}, SimpleNamespace(root=ki_root), cfg,
                     setup_mode=True,
@@ -4070,6 +4070,10 @@ class AgentSetupTests(unittest.TestCase):
         choice_tool = next(tool for tool in combined_tools
                            if tool["name"] == "request_user_action")
         self.assertIn("options", choice_tool["input_schema"]["properties"])
+        run_tool = next(tool for tool in combined_tools if tool["name"] == "run_ki_tool")
+        description = run_tool["input_schema"]["properties"]["tool_path"]["description"]
+        self.assertIn("absolute path of the model binary", description)
+        self.assertIn("tools/", description)
 
     def test_api_install_turn_keeps_setup_and_project_roots_separate(self):
         with tempfile.TemporaryDirectory() as td:
@@ -4902,6 +4906,72 @@ class AgentSetupTests(unittest.TestCase):
                     )
             finally:
                 outside.unlink(missing_ok=True)
+
+    def test_setup_multiline_replacement_roundtrips_windows_written_and_read_text(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            cfg = SimpleNamespace(root=root, python=sys.executable,
+                                  roles={"binaries": root / "binaries"})
+
+            def call(name, **args):
+                return api.execute_tool(name, args, SimpleNamespace(root=ki_root), cfg,
+                                        setup_mode=True, setup_context={"installation_only": True})
+
+            content = "// café 中文\na = 1\nb = 2\nafter\n"
+            # Windows write_work_file itself translates LF to CRLF. Supply
+            # CRLF explicitly on other hosts to exercise the same disk bytes.
+            native_content = content if os.name == "nt" else content.replace("\n", "\r\n")
+            call("write_work_file", path="source.c", content=native_content)
+            self.assertEqual((root / "source.c").read_bytes(), content.replace("\n", "\r\n").encode())
+            read = call("read_work_file", path="source.c")
+            self.assertEqual(read, content)
+            old = "\n".join(read.splitlines()[1:3])
+            call("replace_work_text", path="source.c", old=old, new="a = 3\nb = 4\nc = 5")
+            expected = content.replace(old, "a = 3\nb = 4\nc = 5").replace("\n", "\r\n").encode()
+            self.assertEqual((root / "source.c").read_bytes(), expected)
+
+    def test_setup_multiline_replacement_preserves_mixed_untouched_bytes_and_local_endings(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            source = root / "source.c"
+            prefix = "\ufeff// 中文\r\nleft\n".encode()
+            source.write_bytes(prefix + b"old\r\ncall\r\nseparator\nold\ncall\ntail\r\n")
+            cfg = SimpleNamespace(root=root, python=sys.executable,
+                                  roles={"binaries": root / "binaries"})
+            api.execute_tool("replace_work_text", {
+                "path": "source.c", "old": "old\ncall", "new": "new\r\nvalue", "expected_count": 2,
+            }, SimpleNamespace(root=ki_root), cfg, setup_mode=True,
+                setup_context={"installation_only": True})
+            self.assertEqual(source.read_bytes(),
+                             prefix + b"new\r\nvalue\r\nseparator\nnew\nvalue\ntail\r\n")
+
+    def test_setup_replacement_counts_both_newline_styles_before_any_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            source = root / "source.c"
+            original = b"old\r\ncall\r\nseparator\nold\ncall\n"
+            source.write_bytes(original)
+            cfg = SimpleNamespace(root=root, python=sys.executable,
+                                  roles={"binaries": root / "binaries"})
+            for old, count in (("old\ncall", 2), ("old\r\ncall", 2), ("old \ncall", 0)):
+                with self.subTest(old=old), self.assertRaisesRegex(api.ToolError, f"found {count}"):
+                    api.execute_tool("replace_work_text", {
+                        "path": "source.c", "old": old, "new": "changed\ncall", "expected_count": 1,
+                    }, SimpleNamespace(root=ki_root), cfg, setup_mode=True,
+                        setup_context={"installation_only": True})
+                self.assertEqual(source.read_bytes(), original)
+
+    def test_setup_inline_replacement_uses_surrounding_lines_newline(self):
+        self.assertEqual(api._replace_workspace_text("prefix\nold\r\ntail\n", "old", "new\nline", 1),
+                         "prefix\nnew\r\nline\r\ntail\n")
+        self.assertEqual(api._replace_workspace_text("prefix\r\nold", "old", "new\nline", 1),
+                         "prefix\r\nnew\r\nline")
 
     def test_installation_agent_cannot_write_dependency_shims_to_site_packages(self):
         with tempfile.TemporaryDirectory() as td:

@@ -6,6 +6,37 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## v0.6.55 — Windows usage guides, model fixes and calibration verification
+
+- Includes the October 1 approval, setup, execution and model fixes tested below with real CRHM, VIC and SHAW examples.
+- Usage guides are available offline from the app, including separate English and Chinese three-page quick starts: connect an agent, install a KI, and complete an official example.
+- Calibration now binds the exact project adapter, contract and invocation to the plan review. API and CLI runs use the same approval checks and signed run records; changed settings require a new review. Planning can prepare the selected KI's two adapter files without running them.
+- The Windows package includes SPOTPY's dynamically loaded RAM result writer. Model evaluation subprocesses inherit the application's hidden-console policy. A completed optimizer with a missing or rejected independent holdout cannot establish scientific completion.
+- Real SHAW publisher-reference recovery and synthetic tests of all six optimizer backends exercise the calibration kit. Requested evaluation budgets are distinguished from actual optimizer evaluations and extra model calls. These are software tests, not validation against field observations.
+- Final release checks and their limits are recorded in the [0.6.55 release report](docs/WINDOWS_RELEASE_0.6.55_2026-10-02.md) and [calibration report](docs/WINDOWS_CALIBRATION_2026-10-02.md). The dated entries below retain their original validation scope as history.
+
+## Windows CRHM / VIC / SHAW verification — 2026-10-01 (local validation build)
+
+- Real native official examples now run after documented installation repairs: CRHM Bad Lake, VIC Stehekin and SHAW Trial. Initial blocked/crashing/false-ready installations remain recorded; these are not claimed as unattended install successes.
+- CRHM, VIC and SHAW now reach **Completed** in the rebuilt Desktop with DeepSeek, `science_complete=true` and verified signed receipts. Independent audits confirm genuine Bad Lake, Stehekin and Trial outputs and preservation of original scientific inputs. SHAW completed in a fresh session; earlier failed attempts and misleading agent claims remain preserved.
+- Windows startup verification rejects loader/crash exits and stale false-ready records. CRHM and SHAW can stage uploaded original inputs into their run directories without rewriting the scientific case.
+- VIC's Windows config cursor/newline handling and error reporting are repaired on official final 5.1.0. SHAW's output columns, units, dates, completion checks and soil-depth plots follow the official reference files.
+- CRHM's native run exposed timezone-dependent dates and SWE values. The runner now fixes the child timezone; two different ambient timezones produce byte-identical native example results.
+- VIC's classic-driver wording and filenames no longer add the separate CLASSIC model. Approval accepts the selected project's materialized KI tools while rejecting foreign workspaces, and review cards distinguish planned outputs from files already on disk.
+- SHAW now finds its managed Windows binaries, checks matplotlib, and answers the native overwrite prompt on authorized reruns while still requiring fresh, complete output. Two native repeat tests and the final three-step Desktop run pass. Stale or failed receipts still block completion even when the agent claims success.
+- Explicit stdout/stderr log files remain hashed run evidence without being parsed as numeric model results. Missing, empty or invalid scientific outputs still block completion.
+- Final full source suites after all code fixes froze: Desktop **1,633 passed, 35 skipped, 337 subtests**; shared Flow **190 passed, 5 skipped**. Source hashes stayed unchanged throughout. Earlier 169 approval and 65 SHAW focused tests overlap this coverage and are not additional full suites.
+- Evidence and remaining scope: [model verification report](docs/WINDOWS_E2E_CRHM_VIC_SHAW_2026-10-01.md). No public release, installer installation/uninstallation, authenticated Database transfer or calibration acceptance is claimed.
+
+## Windows continuation fixes — 2026-10-01 (local validation build)
+
+- Approval now checks that data-source choices agree with the actual inventory. External sources remain visible; changing to one returns the plan for revision and fresh review.
+- Unexecutable steps and tool-less steps declaring results must be corrected before approval. Required input decisions must be resolved before signing.
+- Help/version-only probes through the scientific run wrapper are refused before launch, so they cannot replace a successful step's receipt. Real failed reruns still invalidate that step.
+- API project setup uses the installation-only command restrictions and isolated, bounded startup probes. The host runs preflight before starting a separate execution turn.
+- Includes the preceding source fixes for disconnected browser tabs, post-setup verdicts, archive error messages, concise completion reports and the FSM2 matplotlib dependency.
+- Scope, test results and remaining issues: [continuation report](docs/issues/WINDOWS-CONTINUATION-2026-10-01.md). The published `windows-v0.6.54` release is unchanged.
+
 ## Windows end-to-end test fixes — 2026-09-30 (FSM2 Alptal, compiled app)
 
 - **Projects can reach "Completed" again.** GeoForge's own files (the calibration manifest every chat gets, and the Project View it renders) and the plan's declared input files were counted as unverified results, so no real project could finish, and the notice asked users to remove their own inputs. Only real results without a passing run record now block completion.

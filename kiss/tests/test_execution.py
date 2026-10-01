@@ -716,3 +716,86 @@ def test_run_tool_started_after_a_stop_launches_nothing(tmp_path):
     out, err = proc.communicate(timeout=30)
     assert proc.returncode == 3 and b"stopped by the user" in err
     assert not pidfile.exists() and _receipt_docs(ctx) == []
+
+
+@pytest.mark.parametrize("adapter,arguments", [
+    ("api", ["--help"]), ("cli", ["--help"]),
+    ("api", ["--version"]), ("cli", ["--version"]),
+    ("direct", ["-h"]), ("direct", ["-V"]),
+    ("direct", ["-version"]), ("direct", ["--help", "--version"]),
+])
+def test_help_probe_never_launches_or_supersedes_a_passed_step(
+        tmp_path, monkeypatch, capsys, adapter, arguments):
+    from kiss_cli import api, cli
+
+    # The fixture ignores options and would produce results even for --help.
+    # A probe must be refused before launch, not run outside receipt tracking.
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    passed = _execute(ctx)
+    assert passed.receipt["validation"] == "passed"
+    evidence = ctx.flow.evidence()
+    assert evidence["receipts_verified"]
+    receipts = _receipt_docs(ctx)
+    monkeypatch.setattr(execution, "run_process", lambda *a, **kw: pytest.fail("probe launched"))
+
+    if adapter == "api":
+        with pytest.raises(api.ToolError, match="Help/version probes are not plan-step executions"):
+            api.execute_tool("run_ki_tool", {
+                "tool_path": "tools/run.py", "plan_step_id": "M:run", "arguments": arguments,
+            }, SimpleNamespace(name="M", root=ctx.root), ctx.cfg,
+                project_mode=True, flow=ctx.flow)
+    elif adapter == "cli":
+        assert cli.cmd_run_tool(SimpleNamespace(
+            project=str(ctx.project), step="M:run", ki="M", tool="tools/run.py",
+            argv=["--", *arguments])) == 3
+        assert "Help/version probes are not plan-step executions" in capsys.readouterr().err
+    else:
+        with pytest.raises(flowgate.FlowDenied, match="no process was launched"):
+            _execute(ctx, arguments=arguments)
+
+    assert _receipt_docs(ctx) == receipts
+    assert ctx.flow.evidence() == evidence
+
+
+def test_help_probe_cannot_complete_an_unexecuted_step(tmp_path):
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    with pytest.raises(flowgate.FlowDenied, match="Help/version probes"):
+        _execute(ctx, arguments=["--help"])
+    assert _receipt_docs(ctx) == []
+    evidence = ctx.flow.evidence()
+    assert not evidence["receipts_verified"] and evidence["steps_missing"] == ["M:run"]
+    assert not (ctx.project / "outputs").exists()
+
+
+@pytest.mark.parametrize("arguments", [[], ["--audit"], ["-v"],
+                                     ["--help", "inputs/config.json"], ["--", "--help"]])
+def test_a_real_failed_retry_without_outputs_still_supersedes_a_pass(tmp_path, arguments):
+    ctx = _project(tmp_path, source="import sys\nif sys.argv[1:] != ['produce']:\n    sys.exit(2)\n" + _OUTPUT_TOOL)
+    assert _execute(ctx, arguments=["produce"]).receipt["validation"] == "passed"
+    assert ctx.flow.evidence()["receipts_verified"]
+
+    failed = _execute(ctx, arguments=arguments)
+
+    assert failed.exit_code == 2 and failed.receipt["validation"] == "failed"
+    assert failed.receipt["outputs"] == []
+    assert len(_receipt_docs(ctx)) == 2
+    evidence = ctx.flow.evidence()
+    assert not evidence["receipts_verified"] and evidence["validation"] == "failed"
+    assert evidence["steps_missing"] == ["M:run"]
+
+
+def test_help_probe_does_not_restore_tampered_execution_evidence(tmp_path):
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    result = _execute(ctx)
+    receipt_path = Path(result.receipt["receipt"])
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["exit_code"] = 8
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(flowgate.FlowDenied, match="Help/version probes"):
+        _execute(ctx, arguments=["--help"])
+
+    evidence = ctx.flow.evidence()
+    assert not evidence["receipts_verified"] and evidence["runs_bound"] == 0
+    assert evidence["rejected_receipts"][0]["why"] == "signature"
+    assert evidence["unreceipted_artifacts"]

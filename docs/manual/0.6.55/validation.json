@@ -1,0 +1,187 @@
+{
+  "version": "0.6.55",
+  "validated_utc": "2026-10-01T17:52:01.480640+00:00",
+  "status": "passed",
+  "guide_kinds": 3,
+  "languages": [
+    "en",
+    "zh-CN"
+  ],
+  "pdf_count": 6,
+  "bundled_file_count": 12,
+  "quickstart_pages_per_language": 3,
+  "render_engine": "Poppler pdftoppm",
+  "pdf_page_and_bounds_check": "PyMuPDF",
+  "visual_review": {
+    "method": "All six PDFs rendered; all manual pages reviewed on contact sheets, all quickstart and calibration pages reviewed, changed final pages rechecked at useful magnification.",
+    "result": "No clipping, overlap, missing glyphs or unintended blank pages observed. Chinese manual page 86 is a genuine screenshot-only page.",
+    "render_artifacts": "tmp/pdfs/0.6.55/final-render/"
+  },
+  "scope": [
+    "Full manual preserves genuine 0.6.54 FSM2 screenshots with a version note; Guide screenshots are from 0.6.55.",
+    "Quickstart is reproducible from the public SHAW archive and five unchanged Trial inputs.",
+    "Calibration reports real native reference recovery, not field-observation validation.",
+    "The native comparison figure was supplied by the independent calibration audit.",
+    "All 12 offline files byte-match their source HTML/PDF artifacts."
+  ],
+  "outputs": [
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Manual-EN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/manual-en.html",
+      "route": "/guide/manual/en.html",
+      "bytes": 15926806,
+      "sha256": "fd9950205a7bc530b6f53d21c86ab23440edd88f245a3dabcfd22425711bad21",
+      "self_contained_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Manual-EN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/manual-en.pdf",
+      "route": "/guide/manual/en.pdf",
+      "bytes": 10355846,
+      "sha256": "2c09211176bab3552dfce83e5cc82e422a6596851e18e7057bb74ba5e3c36177",
+      "pages": 153,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Manual-EN-v0.6.55.pdf"
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/manual-zh-CN.html",
+      "route": "/guide/manual/zh-CN.html",
+      "bytes": 15260512,
+      "sha256": "0183da121881ae450b1c3eb64dc76dc54cacadebffa9ce2e30f5a47ca191d263",
+      "self_contained_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/manual-zh-CN.pdf",
+      "route": "/guide/manual/zh-CN.pdf",
+      "bytes": 10638230,
+      "sha256": "70d5a9a16acd1760c3f8e726510563a1b2fe8aff08ed53abdb2877dbf75f5b21",
+      "pages": 151,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "image_only_pages": [
+        86
+      ],
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf"
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-en.html",
+      "route": "/guide/quickstart/en.html",
+      "bytes": 12914,
+      "sha256": "01a55b9f6a79abfd6ac88cf6fe6afcf4f34a491c26d8b555774c452a4700ac0f",
+      "self_contained_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-en.pdf",
+      "route": "/guide/quickstart/en.pdf",
+      "bytes": 141307,
+      "sha256": "69492ba6ad9555acf2f07396fddb357cde262eb608960577122c6026047e9d74",
+      "pages": 3,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf"
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-zh-CN.html",
+      "route": "/guide/quickstart/zh-CN.html",
+      "bytes": 12695,
+      "sha256": "0b101ef59bca146616d838866645b9ea7a593fdcf6f14b950609f1da5a0b12cf",
+      "self_contained_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-zh-CN.pdf",
+      "route": "/guide/quickstart/zh-CN.pdf",
+      "bytes": 362678,
+      "sha256": "a58af885f512d24c17f2b6187f1f701b1e9e77f13851ed687061c0c24cc4488f",
+      "pages": 3,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf"
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Calibration-EN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/calibration-en.html",
+      "route": "/guide/calibration/en.html",
+      "bytes": 226429,
+      "sha256": "c50fcc3eea5a5d21299697c36dd2081177df892d1b1cb2a9746685050e01c5cf",
+      "self_contained_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/calibration-en.pdf",
+      "route": "/guide/calibration/en.pdf",
+      "bytes": 303626,
+      "sha256": "b73c4397e21b36cb359ddd2878b4b1f10ae91bf7b351eccf22913dfd78cb12c9",
+      "pages": 10,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf"
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/calibration-zh-CN.html",
+      "route": "/guide/calibration/zh-CN.html",
+      "bytes": 224801,
+      "sha256": "9dd9118f944767f94960052ea167022a37a1291b61ed2ebd22d3daf0af25e0d8",
+      "self_contained_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/calibration-zh-CN.pdf",
+      "route": "/guide/calibration/zh-CN.pdf",
+      "bytes": 587946,
+      "sha256": "2df90d6b760d160663567bd9f0fb76c8b9d02e3a75ee22f5dfbcf92635f53ed8",
+      "pages": 9,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf"
+    }
+  ],
+  "source_sha256": {
+    "docs/manual/0.6.55/src/en/00-quick-start.md": "19f5644b96cb26b4d6677beabdf3a6944b2f69ac6adb98660da051fad65861c2",
+    "docs/manual/0.6.55/src/en/01-install.md": "c8ba428f68d51a27a450db7edd7892b5090e71bb94da65beaf8b65bae18e236d",
+    "docs/manual/0.6.55/src/en/02-connect-ai.md": "67eadedcccae9ec38b824d3c6aef10520642bf76d3eebd53f37e26adf70bdb05",
+    "docs/manual/0.6.55/src/en/03-database.md": "92a26293bec39c78ebfb5bdcca13f7a71d10ab6bb28e46269f7320bf037a02e5",
+    "docs/manual/0.6.55/src/en/04-install-model.md": "aafe5fb1ed76ee430da2abe7f03e27920d4ea53fb4cd315d6491ebf62e7958ad",
+    "docs/manual/0.6.55/src/en/05-first-project.md": "c848611ebeb5370e4f293c864c2756923627d885ea6f299cb53decfcf4f808f4",
+    "docs/manual/0.6.55/src/en/06-project-files.md": "5971016ade401dea6d042f3cdd0b385ddbff7f9f2bcc68265d410521b522dbbf",
+    "docs/manual/0.6.55/src/en/07-more-tools.md": "a93453fc0a349c47fd742ac38ccbfc653990e044eb26ad9847948dcdaaaf1eb7",
+    "docs/manual/0.6.55/src/en/08-language-appearance.md": "e88893f2898b64c12b6e25d9ed2c5444a684be0da5bce62950d47761f1d393d4",
+    "docs/manual/0.6.55/src/en/09-troubleshooting.md": "b2bfe81661219c53219844252abc38cbad41aac94e350a76e912dc2f938f67dd",
+    "docs/manual/0.6.55/src/en/10-calibration.md": "e7068c62c24fc905c68cb68977d2894327a8424039a8c679a40a605cf842969e",
+    "docs/manual/0.6.55/src/en/11-verified-examples.md": "0cca93383fea5dd2047d4da4ce1319511827c619826e41b1bbbe8b858e0c57c7",
+    "docs/manual/0.6.55/src/zh-CN/00-quick-start.md": "1008b77e1d57dc05575965ddbc366d25678af5552ace29669bc2e288ea1b3f04",
+    "docs/manual/0.6.55/src/zh-CN/01-install.md": "f30b0496fd0f744e6e3d4f49b2c8164915077c4d235456608e79d69593a852da",
+    "docs/manual/0.6.55/src/zh-CN/02-connect-ai.md": "aa280aec885fa847f4ad0759c2940d3e866ea184147d76cde3eaed6e5ea3e1d7",
+    "docs/manual/0.6.55/src/zh-CN/03-database.md": "a75e3737118eb15ba743985051f554df1627b50d47a43638994f46c95ee34cac",
+    "docs/manual/0.6.55/src/zh-CN/04-install-model.md": "a9e82aabb10eeb2b3f7d90b750443e4b9710f1fea07a5959816a8743ea1a2dd7",
+    "docs/manual/0.6.55/src/zh-CN/05-first-project.md": "8a659b494c51161b013ee651ca099625880f3628b510940ab260ecb406492bcd",
+    "docs/manual/0.6.55/src/zh-CN/06-project-files.md": "abe9ca2bff58047c6bdd01b8a7c45f5298048318e79806c02cfe8fb2fbd19563",
+    "docs/manual/0.6.55/src/zh-CN/07-more-tools.md": "b65f68f1364207496d8fe389d49f0c0f51ef7f6818c32bfac5f27cf5302e8a47",
+    "docs/manual/0.6.55/src/zh-CN/08-language-appearance.md": "08f5abf4840f919e07f9a5c3a48b2b896db59340cd6fc4c6a53547762b7de5dd",
+    "docs/manual/0.6.55/src/zh-CN/09-troubleshooting.md": "6ec183bc71124238ba8843ed41d0a438e5faf8da252e8d83bd8be2570a42acdf",
+    "docs/manual/0.6.55/src/zh-CN/10-calibration.md": "5c1e1990039d9e631832b8349fc9b0857b51cdbccb2207bc53323e2f6db2fec0",
+    "docs/manual/0.6.55/src/zh-CN/11-verified-examples.md": "7951eb06a99d350e62d670c0a08df4f29d8f8a338174d63ef440f1d2ff834d78",
+    "docs/manual/0.6.55/quickstart/en/01-agent.md": "f66d196820b898935d881c9840d46866a636597a47164fc5233ae016f1db77a5",
+    "docs/manual/0.6.55/quickstart/en/02-ki.md": "f6499b0ef9835ab24bb0f52fe973adab29e213a52472c52a43120d5b815bb3ec",
+    "docs/manual/0.6.55/quickstart/en/03-run.md": "6fa7d10e826d16549477afc46d81a82650c1a875d6f0930d94017b7e3e08ee46",
+    "docs/manual/0.6.55/quickstart/zh-CN/01-agent.md": "c3e6253186947570d89addc5400c58874d3b6a2509df05070dc93d11ce0b37b7",
+    "docs/manual/0.6.55/quickstart/zh-CN/02-ki.md": "8e2640d6f5470deb04224fb856e2dd042c1ad213835d83749931782834b7de82",
+    "docs/manual/0.6.55/quickstart/zh-CN/03-run.md": "dc9c5d9d1e78c87a64ba749ae07bc46a98bbd12173d31d8b32e4b7eda54f61c0",
+    "docs/manual/0.6.55/calibration/en/01-workflow.md": "48c0ca68e420b50e5bada11bf156322eb167c7b06bf794a4752b1c7fb0567af7",
+    "docs/manual/0.6.55/calibration/en/02-protocol.md": "9fbbf10923f481f5c5befaef7427474e9c92e09ff5653f123930e4f4cfaa58e8",
+    "docs/manual/0.6.55/calibration/en/03-evidence.md": "50fdf4868a6ae722cbd67ae7f065b8c8053ea29d3b3670745b92a58d86161bef",
+    "docs/manual/0.6.55/calibration/en/04-tested-example.md": "42dd3c0b3e2f4149c65341a974a288b8d31ed57a235d694129b149cb32eb33f9",
+    "docs/manual/0.6.55/calibration/zh-CN/01-workflow.md": "b2986cc0502f0cb067f29f57bde0be898b65cbc50a874b27b83bd7d69833ace0",
+    "docs/manual/0.6.55/calibration/zh-CN/02-protocol.md": "4b079a27df1328170335d2ed9fb4700469609af9a08aaaebd687333db854ac45",
+    "docs/manual/0.6.55/calibration/zh-CN/03-evidence.md": "ed777addba14caba6e21b7aac47668e4fab665895567d0c97cc25fbab5ae5acb",
+    "docs/manual/0.6.55/calibration/zh-CN/04-tested-example.md": "205f2815f43e36fb90bdd240fda4f5720a8d62f54dea4f20d9914e14fa7bb7b9",
+    "tools/manual/build_manual.py": "af90be8fc574bccf2146869aa91f9588f989838fc41ed9dcd2bafc8fc90b0f8a"
+  }
+}

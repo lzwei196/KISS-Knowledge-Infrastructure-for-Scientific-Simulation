@@ -1,0 +1,160 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>GeoForge 桌面版 · 快速上手 · 3 页</title><style>
+@page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+:root { --ink:#1d2530; --mute:#5b6675; --line:#dde3ea; --accent:#2f6fe4; --warn:#a15c00; --soft:#f4f7fb; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  color: var(--ink); font-size: 10.5pt; line-height: 1.55; margin: 0; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+.cover h1 { font-size: 34pt; margin: 0 0 4mm; } .cover .sub { font-size: 16pt; color: var(--mute); }
+.cover .ver { margin-top: 14mm; color: var(--mute); }
+.toc { page-break-after: always; } .toc h2 { border: 0; }
+.toc ul { list-style: none; padding-left: 0; } .toc li { margin: 2mm 0; font-size: 11.5pt; }
+.toc a { color: var(--ink); text-decoration: none; }
+section.chapter { page-break-before: always; }
+h1 { font-size: 21pt; margin: 0 0 4mm; color: var(--ink); }
+h2 { font-size: 14pt; margin: 7mm 0 2mm; padding-bottom: 1mm; border-bottom: 1px solid var(--line); }
+h3 { font-size: 11.5pt; margin: 5mm 0 1.5mm; }
+p, li { orphans: 3; widows: 3; }
+img { max-width: 100%; max-height: 150mm; display: block; margin: 3mm auto 1.5mm; border: 1px solid var(--line);
+  border-radius: 6px; page-break-inside: avoid; }
+code { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: 9.5pt; background: var(--soft);
+  padding: 0 1.2mm; border-radius: 3px; }
+pre { background: var(--soft); padding: 3mm; border-radius: 5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+pre code { padding: 0; background: none; }
+table { border-collapse: collapse; width: 100%; margin: 3mm 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 1.6mm 2.2mm; text-align: left; vertical-align: top; }
+th { background: var(--soft); }
+blockquote { margin: 3mm 0; padding: 2.4mm 3.5mm; border-left: 3px solid var(--accent); background: var(--soft);
+  border-radius: 0 5px 5px 0; page-break-inside: avoid; }
+blockquote p { margin: 0.5mm 0; }
+blockquote.caution { border-left-color: var(--warn); background: #fff6e9; }
+blockquote.todo { border-left-color: #b03a2e; background: #fdecea; }
+a { color: var(--accent); }
+@media screen { body { max-width: 860px; margin: 0 auto; padding: 24px; } .cover { height: auto; padding: 60px 0; } }
+
+@page { size:A4; margin:12mm 14mm; }
+body { font-size:10.2pt; line-height:1.42; }
+section.chapter { page-break-before:auto; break-after:page; }
+section.chapter:last-child { break-after:auto; }
+h1 { font-size:23pt; margin:0 0 3mm; }
+h2 { font-size:13pt; margin:4mm 0 2mm; }
+h3 { font-size:11pt; margin:3mm 0 1mm; }
+p { margin:2mm 0; } li { margin:1.5mm 0; }
+ul,ol { margin:2mm 0; padding-left:6mm; }
+img { max-height:58mm; max-width:100%; object-fit:contain; }
+table { font-size:9pt; } code { font-size:9pt; }
+.page-kicker { color:#2f6fe4; font-weight:600; letter-spacing:.05em; margin-bottom:2mm; }
+.page-footer { border-top:1px solid #dde3ea; margin-top:4mm; padding-top:2mm; color:#5b6675; font-size:8.5pt; }
+blockquote { padding:2mm 3mm; margin:2mm 0; }
+@media screen { section.chapter { border-bottom:1px solid #dde3ea; padding:16px 0 28px; } }
+</style></head><body><section class="chapter" id="ch00"><div class="page-kicker">GEOFORGE DESKTOP 0.6.55 / 1 OF 3</div><h1 id="1-配置-agent">1 配置 Agent</h1>
+<p><strong>目标：</strong> 先连接 AI，再开始科学项目。本 Windows 指南使用 DeepSeek API；第 3 页的真实示例也由这个接口完成。</p>
+<h2 id="连接-deepseek">连接 DeepSeek</h2>
+<ol>
+<li>打开 GeoForge Desktop，点击 <strong>设置 → AI 服务</strong>。</li>
+<li>在 <strong>DeepSeek (API)</strong> 卡片上点击 <strong>获取密钥</strong>，在你自己的服务商账户里创建 API 密钥。返回 GeoForge，把密钥粘贴到卡片的密钥输入框。</li>
+<li>选中 <strong>默认使用</strong>，点击 <strong>保存</strong>，再点击 <strong>测试 AI 与 GitHub</strong>。保存成功不等于连接成功。</li>
+<li>AI 测试通过后关闭设置。侧栏应显示 <strong>AI 就绪</strong>。若失败，先读测试错误，再检查服务商账户及 <strong>网络与代理</strong> 设置。</li>
+</ol>
+<blockquote>
+<p><strong>保护凭据。</strong> API 密钥只填在设置中。不要把 API 密钥或 GeoForge 数据库 Token 发到聊天、截图或项目文件里。本例不需要 GeoForge 数据库。</p>
+</blockquote>
+<h2 id="新建项目">新建项目</h2>
+<ol>
+<li>点击 <strong>＋ 新建对话</strong>，命名为 <code>SHAW official Trial</code>。选择项目父文件夹，例如 <code>D:\GeoForge\projects</code>。Windows 浏览器模式下直接粘贴路径。</li>
+<li>在第一条消息发出前，在对话顶部选择 <strong>API → DeepSeek (API) → deepseek-chat</strong>。</li>
+<li>点击 <strong>自动选择 KI</strong>，搜索 <code>SHAW</code>，选中后点击 <strong>应用</strong>，然后继续第 2 页。</li>
+</ol>
+<p>项目文件夹保存这个对话的输入、结果和运行记录。模型软件有独立的安装文件夹，可以被后续项目复用。</p>
+<h2 id="也可以使用本地-cli">也可以使用本地 CLI</h2>
+<p>按 Claude Code 或 OpenAI Codex 等 CLI 自己的说明完成安装和登录。在 <strong>设置 → AI 服务</strong> 中点击 <strong>重新检查本地 CLI</strong>；在第一条消息前选择 <strong>本地</strong> 和对应 Agent。这是另一种连接方式；本指南的完整示例使用 DeepSeek API 验证。</p>
+<p><strong>检查点：</strong> AI 测试通过；新对话显示正确的 AI 和 SHAW。第一条消息发出后，要更换 AI 或 KI，请新建对话。</p><div class="page-footer">快速上手 · 3 页 · 1 / 3 · GeoForge 0.6.55</div></section><section class="chapter" id="ch01"><div class="page-kicker">GEOFORGE DESKTOP 0.6.55 / 2 OF 3</div><h1 id="2-配置-ki-与模型软件">2 配置 KI 与模型软件</h1>
+<p><strong>目标：</strong> 让真正的 SHAW 3.03 程序能在本机运行。KI 是模型的知识、说明和工具，不等于已经安装好的科学模型程序。</p>
+<h2 id="安装或验证软件">安装或验证软件</h2>
+<ol>
+<li>打开 <strong>KI 库</strong>，搜索并选择 <code>SHAW</code>。选择 <strong>DeepSeek (API)</strong>，点击 <strong>使用 Agent 设置</strong>。</li>
+<li>在 <strong>Agent 设置</strong> 中保留 <strong>安装或编译新的副本</strong>。建议用简短、可写的路径，例如 <code>D:\GeoForge\models\SHAW</code>；修改后点击 <strong>使用此位置</strong>。</li>
+<li>选择 <code>deepseek-chat</code>，点击 <strong>开始 Agent 设置</strong>。保持应用运行；下载和编译可能需要几分钟，留意 <strong>需要你</strong> 中的要求。</li>
+<li>等 GeoForge 的最终验证。失败时先读 <strong>验证</strong>，再用 <strong>继续修复</strong>。Agent 说“安装好了”，或程序只打印了版本号，都不能证明安装通过。</li>
+</ol>
+<p>已有 SHAW？选择 <strong>使用已经安装的软件</strong>，粘贴可执行文件路径，点击 <strong>使用此路径</strong>，再点击 <strong>验证已有软件</strong>。保留可执行文件所需的运行库 DLL。</p>
+<p>若使用 GNU Fortran 编译，请让设置 Agent 核对同一编译器自带的 <code>libgfortran-5.dll</code>、<code>libgcc_s_seh-1.dll</code>、<code>libwinpthread-1.dll</code>、<code>libquadmath-0.dll</code>，以及 KI Python 环境中的 <code>matplotlib</code>。当前 KI 安装说明和预检包含这些依赖。</p>
+<blockquote>
+<p><strong>通过代表什么？</strong> 软件能启动，所需环境可用。它还不证明某个科学算例正确运行。第 3 页将执行并核对真正的模型。</p>
+</blockquote>
+<h2 id="准备真实的-trial-输入">准备真实的 Trial 输入</h2>
+<p>下载 USDA-ARS 的 <a href="https://www.ars.usda.gov/ARSUserFiles/20520500/SHAW/303/Shaw303.zip">官方 Shaw303.zip</a>，打开其中的 <strong><code>Shaw303/</code> 文件夹</strong>，提取这五个文件，不要把 <code>Output/Trial/</code> 下的参考输出当作运行输入：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Trial.303.inp</code></td>
+<td>原始控制选项与输出列表</td>
+</tr>
+<tr>
+<td><code>Trial.30.sit</code></td>
+<td>场地和土壤参数</td>
+</tr>
+<tr>
+<td><code>Trial.30.wea</code></td>
+<td>气象驱动</td>
+</tr>
+<tr>
+<td><code>Trial.moi</code></td>
+<td>初始含水量</td>
+</tr>
+<tr>
+<td><code>Trial.tem</code></td>
+<td>初始温度</td>
+</tr>
+</tbody>
+</table>
+<p>回到 SHAW 对话，用 <strong>＋ 文件</strong> 附上这五个文件。若审阅卡片要求提供某项输入，请用该输入行的 <strong>上传文件</strong>，把文件与计划关联。保留原文件名、内容和控制选项。</p>
+<p><strong>检查点：</strong> 软件验证通过，五个原始输入已准备好。安装可能需要协助：本次 Windows 验证曾修复缺失的编译器运行库。不能用自编公式、虚构驱动或现成输出替代模型运行。</p><div class="page-footer">快速上手 · 3 页 · 2 / 3 · GeoForge 0.6.55</div></section><section class="chapter" id="ch02"><div class="page-kicker">GEOFORGE DESKTOP 0.6.55 / 3 OF 3</div><h1 id="3-批准运行并核对结果">3 批准运行并核对结果</h1>
+<p><strong>目标：</strong> 用真实模型复现发布者的 SHAW Trial。这是官方示例的正向检验，不是利用实测观测进行校准。</p>
+<h2 id="发送这个请求">发送这个请求</h2>
+<blockquote>
+<p>请用我上传的五个原始文件运行 SHAW 3.03 官方 Trial。保留全部科学输入和控制选项。将输入准备到本项目，用 KI 工具运行本机原生 SHAW，导出 CSV 并绘制土壤剖面。不用 GeoForge 数据库，不生成驱动，不校准参数。报告实际行数和时段；核对温度和含水量各 301 行、液态水 14 行、能量 300 行、水量 13 行、冻土 48 行，结束于 1986-12-17 00:00。</p>
+</blockquote>
+<h2 id="先审阅再运行">先审阅，再运行</h2>
+<ol>
+<li>逐一回答规划卡片，用卡片上的按钮保存选择。</li>
+<li>在 <strong>Approve the plan?</strong>（是否批准计划）中检查：只用 SHAW；输入是五个真实文件；<strong>运行 → 解析 → 作图</strong> 均有可执行工具。确认输出位置，且没有提出校准。</li>
+<li>不符合时选 <strong>Modify the plan</strong>（修改计划）；符合时选 <strong>Approve and start</strong>（批准并开始），再点击 <strong>Continue with this choice</strong>（按此选择继续）。只批准眼前这份具体计划。</li>
+<li>保持应用运行。打开 <strong>◇ 项目状态</strong> 查看配置、执行和检查。计划或工具发生变化时可能需要重新审阅，原批准不会自动涵盖变化。</li>
+</ol>
+<h2 id="已验证的示例结果">已验证的示例结果</h2>
+<table>
+<thead>
+<tr>
+<th>原始结果表</th>
+<th style="text-align: right;">行数</th>
+<th>核对内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>温度 / 含水量</td>
+<td style="text-align: right;">各 301</td>
+<td>11 个土壤节点</td>
+</tr>
+<tr>
+<td>液态水 / 能量</td>
+<td style="text-align: right;">14 / 300</td>
+<td>完整参考时段</td>
+</tr>
+<tr>
+<td>水量平衡 / 冻土</td>
+<td style="text-align: right;">13 / 48</td>
+<td>物理列和单位正确</td>
+</tr>
+</tbody>
+</table>
+<p>六张表均结束于 <strong>1986-12-17 00:00</strong>；初始温度和含水量剖面从 <strong>1986-12-04 12:00</strong> 开始。本次真实运行在输出的打印精度上与官方数值一致，另有五个 CSV 和真实绘图。</p>
+<p><strong>完成检查：</strong> GeoForge 必须显示 <strong>已完成</strong>，三个步骤都要有通过的运行记录。到 <strong>结果</strong> 打开 CSV 和图。AI 说成功、目录里有旧文件，或运行记录仍是警告/失败，都不等于完成。请 Agent 修复并重新运行受影响的已批准步骤，不要删除自己的输入。</p>
+<p>需要校准时，打开 <strong>使用指南 → 参数校准指南</strong>；其他流程和排错看 <strong>完整使用手册</strong>。两个指南都能从同一菜单离线阅读。</p><div class="page-footer">快速上手 · 3 页 · 3 / 3 · GeoForge 0.6.55</div></section></body></html>

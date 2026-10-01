@@ -4,7 +4,7 @@ Preflight check for SHAW v3.03.
 
 Run this before model execution. It verifies the compiled SHAW executables,
 the Python environment used by HydroCraft tooling, the KI metadata/tool files,
-and baseline data paths needed by the workflows.
+and reports optional example/data paths. Project inputs are validated before a run.
 """
 
 import json
@@ -17,16 +17,44 @@ from pathlib import Path
 
 MODEL_ID = "SHAW"
 HYDROCRAFT_ROOT = Path("KISSPATH_ROOT")
+BINARY_DIR = Path("KISSPATH_BINARIES") / "shaw"
 KI_DIR = Path(__file__).resolve().parent
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
-PYTHON_ENV = HYDROCRAFT_ROOT / "python_env" / "bin" / "python"
+# The materializer maps this interpreter token to the configured venv, including
+# Scripts/python.exe on Windows. Deriving root/python_env bypassed that mapping.
+PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
 
-# Canonical binary path projected into knowledge_infrastructure.yaml from the
-# models DB. The report subject for this check is its realpath for drift checks.
-MANIFEST_BINARY = HYDROCRAFT_ROOT / "model" / "shaw" / "shaw"
+
+def native_binary(path):
+    """A Windows PE may have an .exe suffix beside a same-named source folder."""
+    if sys.platform == "win32" and path.suffix.lower() != ".exe":
+        candidate = path.with_name(path.name + ".exe")
+        if candidate.is_file():
+            return candidate
+    return path
+
+
+def installed_binary(name):
+    """Windows installs use the configured shared binary role, not project data."""
+    legacy = native_binary(HYDROCRAFT_ROOT / "model" / "shaw" / name)
+    if sys.platform != "win32":
+        return legacy
+    candidates = [BINARY_DIR / (name + ".exe")]
+    if name == "shaw":
+        candidates.append(BINARY_DIR / "shaw303.exe")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    # Retain existing standalone installations; never search arbitrary roots.
+    return legacy if legacy.is_file() else candidates[0]
+
+
+# Prefer GeoForge's managed Windows software directory. The old Linux and
+# standalone installation layout remains a fallback, separate from project data.
+MANIFEST_BINARY = installed_binary("shaw")
 
 # The execution helper defaults to this symlink, so verify it too.
-TOOL_DEFAULT_BINARY = HYDROCRAFT_ROOT / "model" / "shaw" / "shaw303"
+TOOL_DEFAULT_BINARY = installed_binary("shaw303")
 
 SHAW_DIST_DIR = HYDROCRAFT_ROOT / "model" / "shaw" / "Shaw303"
 
@@ -141,6 +169,7 @@ def check_binary_starts(path, label):
             text=True,
             capture_output=True,
             timeout=3,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
     except subprocess.TimeoutExpired:
         fix = f"SHAW hung during startup; inspect stdin handling and {TRIPLETS}."
@@ -154,7 +183,11 @@ def check_binary_starts(path, label):
         return False
 
     output = (result.stdout or "") + (result.stderr or "")
-    ok = "Simultaneous Heat And Water" in output and "Enter the file" in output
+    eof = "end of file" in output.lower() or "end-of-file" in output.lower()
+    # GNU Fortran returns 2 and the upstream Intel binary returns 24 for stdin
+    # EOF. A banner printed before a crash is not a working startup probe.
+    normal_exit = result.returncode == 0 or (result.returncode in (2, 24) and eof)
+    ok = normal_exit and "Simultaneous Heat And Water" in output and "Enter the file" in output
     status = "pass" if ok else "fail"
     if not ok:
         fix = f"Expected SHAW banner/prompt not seen; rebuild with compile.sh and review {TRIPLETS}."
@@ -176,6 +209,7 @@ def check_import_with_python(module, label):
             text=True,
             capture_output=True,
             timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
         status = "pass" if result.returncode == 0 else "fail"
         if result.returncode != 0:
@@ -221,6 +255,7 @@ def main():
     check_file(PYTHON_ENV, "HydroCraft Python interpreter", kind="binary", critical=True, executable=True)
     for module in [
         "numpy",
+        "matplotlib",
         "ki_tools_common",
         "ki_tools_common.soil_utils",
         "ki_tools_common.load_forcing",
@@ -259,10 +294,12 @@ def main():
         check_file(KI_DIR / relpath, relpath, critical=True, nonempty=True)
     print()
 
-    print("SHAW distribution input checks")
-    check_dir(SHAW_DIST_DIR, "SHAW v3.03 distribution", critical=True)
+    print("Optional SHAW example input checks (project inputs are checked before each run)")
+    # Installation establishes usable software. These are upstream demonstration
+    # inputs, not required data for every project, and setup must not invent them.
+    check_dir(SHAW_DIST_DIR, "SHAW v3.03 distribution", critical=False)
     for filename in ["Trial.303.inp", "Trial.30.sit", "Trial.30.wea", "Trial.moi", "Trial.tem"]:
-        check_file(SHAW_DIST_DIR / filename, f"SHAW example {filename}", critical=True, nonempty=True)
+        check_file(SHAW_DIST_DIR / filename, f"SHAW example {filename}", critical=False, nonempty=True)
     print()
 
     print("Common HydroCraft data checks")

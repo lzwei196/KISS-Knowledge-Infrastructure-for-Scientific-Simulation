@@ -521,8 +521,9 @@ def cmd_harness_status(args) -> int:
 
 
 def cmd_calibrate(args) -> int:
-    """Run the fixed engine through the app/CLI's own Python environment."""
-    from . import calibration
+    """Run the same approved, receipted native operation used by the Desktop API."""
+    from . import api, flowgate, project_paths
+    from .catalog import KI
     import signal
     import threading
     from .execution import LIVE_PROCESSES
@@ -538,40 +539,29 @@ def cmd_calibrate(args) -> int:
         obs_shapes = json.loads(args.obs_shapes_json)
     except json.JSONDecodeError as exc:
         raise ValueError(f"--obs-shapes-json is not valid JSON: {exc}") from None
-    # Local coding agents invoke this command directly. Materialise the KI's
-    # small adapter here as well as in the API tool path, so the command is
-    # self-contained and does not depend on an earlier UI refresh.
-    calibration.ensure_project(
-        Path(args.project),
-        [SimpleNamespace(name=args.model, root=Path(args.ki_path))],
-    )
-    result = calibration.run_project(
-        project=args.project,
-        ki_name=args.model,
-        ki_path=args.ki_path,
-        obs_shape_by_var=obs_shapes,
-        budget=args.budget,
-        seed=args.seed,
-        algorithm=args.algorithm,
-        expected_case_id=args.expected_case_id,
-        determining_metric=args.determining_metric,
-    )
-    report = result.get("report") if isinstance(result.get("report"), dict) else {}
-    summary = {
-        "run_id": result.get("run_id"),
-        "status": report.get("status"),
-        "promotable": report.get("promotable"),
-        "backend": report.get("backend"),
-        "best_loss": report.get("best_loss"),
-        "best_params": report.get("best_params"),
-        "reason": report.get("reason"),
-        "report_path": result.get("report_path"),
-        "log_path": result.get("log_path"),
-    }
+    if not getattr(args, "plan_step_id", None):
+        raise ValueError("--plan-step-id is required: calibrations execute an approved plan step")
+    project = Path(args.project).expanduser().resolve()
+    expected_root = project_paths._model_home(project, args.model) / "ki"
+    ki_root = Path(args.ki_path).expanduser().resolve()
+    if ki_root != expected_root:
+        raise ValueError("--ki-path must be this project's materialized KI workspace")
+    cfg = project_paths.execution_config(project, args.model, expected_root)
+    fs = flowgate.FlowSession.open(project, {args.model: ki_root}, python=cfg.python)
+    if args.expected_case_id is not None:
+        step = next((step for step in (fs.plan or {}).get("steps", [])
+                     if step.get("id") == args.plan_step_id), {})
+        if args.expected_case_id != (step.get("calibration") or {}).get("expected_case_id"):
+            raise ValueError("--expected-case-id differs from the approved calibration case")
+    summary = json.loads(api.execute_tool(
+        "run_calibration", {"plan_step_id": args.plan_step_id, "obs_shape_by_var": obs_shapes,
+                            "algorithm": args.algorithm, "budget": args.budget, "seed": args.seed,
+                            "determining_metric": args.determining_metric},
+        KI(args.model, ki_root), cfg, project_mode=True, flow=fs))
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
-    if report.get("status") in {"stopped", "interrupted"}:
+    if summary.get("status") in {"stopped", "interrupted"}:
         return 130
-    return 0 if report.get("status") not in ("engine_error", "backend_unavailable") else 2
+    return 0 if (summary.get("receipt") or {}).get("validation") == "passed" else 2
 
 
 @_worker_entry
@@ -712,6 +702,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="materialised KI root containing dag.yaml and calibration.yaml")
     q.add_argument("--project", required=True, type=Path,
                    help="chat project that owns calibration inputs and results")
+    q.add_argument("--plan-step-id", required=True,
+                   help="approved typed calibration step; execution writes a signed receipt")
     q.add_argument("--obs-shapes-json", required=True,
                    help='JSON mapping, e.g. {"Q":"point_time_series"}')
     q.add_argument("--algorithm", choices=sorted((

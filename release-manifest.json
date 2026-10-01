@@ -1,17 +1,18 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.54",
-  "release_date": "2026-09-30",
+  "version": "0.6.55",
+  "release_date": "2026-10-02",
   "source": {
     "branch": "windows-version",
-    "code_commit": "420958db5e529f116cd29992266f0f8c9f126d99",
-    "repository": "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.54",
-    "commit_scope": "code_commit identifies the Windows baseline this build merges onto; integrated_mac_commit pins the imported mac source. Integration, Windows fixes and local validation are documented in docs/WINDOWS_MAC_SYNC_2026-09-30.md. No published release is implied.",
+    "code_commit": "96409ba3bcbf64322ca7a8eba4ba8e2bf32df535",
+    "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
+    "release_tag": "windows-v0.6.55",
+    "commit_scope": "Windows 0.6.55 release preparation from the October 1 tested changes, with updated usage guides and calibration-kit validation. Final source identity and release validation are recorded before publication.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
-    "build_label": "windows-mac-sync-20260930"
+    "build_label": "windows-0.6.55-20261002",
+    "working_tree": true
   },
   "ki_library": {
     "package_count": 127,
@@ -29,6 +30,18 @@
     "windows_platform_recipes": 23
   },
   "changes": [
+    {
+      "id": "windows-october-1-live-model-tests",
+      "area": "model-installation-and-execution",
+      "summary": "Live DeepSeek installation and official-case tests for CRHM, VIC and SHAW exposed Windows startup false positives, CRLF setup-edit failures, CRHM staging and timezone dependence, VIC input-stream portability faults and SHAW output-column errors. Corrected model selection, approval tool-root validation and future-output display accompany the runtime and KI repairs. See docs/WINDOWS_E2E_CRHM_VIC_SHAW_2026-10-01.md for measured scope and remaining limitations.",
+      "user_action": "Recheck existing Windows installations and re-parse SHAW water, energy and frost outputs before relying on results from the old parser."
+    },
+    {
+      "id": "windows-october-1-plan-execution-fixes",
+      "area": "plan-approval-and-execution",
+      "summary": "Refuse mismatched data-source decisions and unexecutable plans before approval; show external source choices and re-review changed external sources; prevent help/version probes from overwriting scientific run evidence; apply installation-only command limits during API project setup. Includes the prior session's browser-disconnect, post-setup verdict, archive feedback and FSM2 matplotlib fixes.",
+      "user_action": "Review the corrected plan card. External source changes require replanning and a fresh approval. Existing invalid plans must be revised."
+    },
     {
       "id": "windows-september-30-e2e-fixes",
       "area": "agent-runtime",

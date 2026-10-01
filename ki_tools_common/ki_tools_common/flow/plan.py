@@ -791,13 +791,124 @@ def sha256(obj: Any) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
+def data_source_errors(plan: dict, inventory: dict) -> list[str]:
+    """Keep a displayed data-source choice and its governed input in agreement.
+
+    A choice may inherit its recommendation from the input, but cannot approve
+    a different source from the one acquisition and execution will consume.
+    This helper also protects approval of reviews written by older versions.
+    """
+    if not isinstance(plan, dict) or not isinstance(inventory, dict):
+        return ["plan.json and data-inventory.json must be JSON objects"]
+    choices, items = plan.get("scientific_choices", []), inventory.get("items", [])
+    if not isinstance(choices, list) or not isinstance(items, list):
+        return ["scientific choices and inventory items must be arrays"]
+    by_id = {str(it.get("id")): it for it in items if isinstance(it, dict)}
+    errors: list[str] = []
+    for choice in choices:
+        if not isinstance(choice, dict) or choice.get("kind") != "data_source":
+            continue
+        cid = str(choice.get("id") or "")
+        item_id = str(choice.get("item") or cid.replace("data:", "", 1))
+        prefix = f"data-source choice {cid!r}"
+        item = by_id.get(item_id)
+        if item is None:
+            errors.append(f"{prefix} names input {item_id!r} which is not in the data inventory")
+            continue
+        options = choice.get("options")
+        if (not isinstance(options, list) or not options or
+                any(not isinstance(value, str) or not value.strip() for value in options)):
+            errors.append(f"{prefix} options must be a nonempty array of source strings")
+            continue
+        for field in ("decision", "picked"):
+            value = choice.get(field)
+            if value not in (None, "") and (not isinstance(value, str) or value not in options):
+                errors.append(f"{prefix} {field} {value!r} is not among its options")
+        if choice.get("decision") and choice.get("picked") and choice["decision"] != choice["picked"]:
+            errors.append(f"{prefix} decision and picked recommendation disagree")
+        source = item.get("dataset_id") or item.get("chosen_source") or item.get("decision")
+        picked = choice.get("decision") or choice.get("picked") or source
+        if not picked:
+            # No recommendation yet: the user may select one on the review card.
+            continue
+        if not isinstance(picked, str) or picked not in options:
+            errors.append(f"{prefix} selected source {picked!r} is not among its options")
+        if picked != source:
+            errors.append(f"{prefix} selects {picked!r} but input {item_id!r} uses {source!r}; "
+                          "make the choice and input name the same source")
+    return errors
+
+
+CALIBRATION_FIELDS = frozenset((
+    "contract_path", "contract_sha256", "runner_sha256", "algorithm", "budget", "seed",
+    "determining_metric", "obs_shape_by_var", "expected_case_id"))
+
+
+def calibration_step_errors(step: dict, project: Path | None, *, check_files: bool = True) -> list[str]:
+    """Validate the exact project adapter and invocation used by the native engine.
+
+    This is a typed operation, not permission to execute arbitrary project files.
+    The host resolves defaults and stamps the binding before the review card.
+    """
+    binding = step.get("calibration")
+    if not isinstance(binding, dict):
+        return ["calibration must be an object"]
+    errors = []
+    if step.get("kind") != "calibrate":
+        errors.append("calibration binding requires kind 'calibrate'")
+    if set(binding) != CALIBRATION_FIELDS:
+        errors.append("calibration binding must contain exactly: " + ", ".join(sorted(CALIBRATION_FIELDS)))
+    if binding.get("algorithm") not in ("dds", "sceua", "dream", "nsga2", "nsga3", "moead"):
+        errors.append("calibration algorithm is not supported")
+    budget = binding.get("budget")
+    if type(budget) is not int or not 1 <= budget <= 10000:
+        errors.append("calibration budget must be an integer from 1 to 10000")
+    seed = binding.get("seed")
+    if type(seed) is not int or not 0 <= seed < 2**32:
+        errors.append("calibration seed must be an integer from 0 to 4294967295")
+    for field in ("determining_metric", "expected_case_id"):
+        value = binding.get(field)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            errors.append(f"calibration {field} must be a nonempty string or null")
+    shapes = binding.get("obs_shape_by_var")
+    if (not isinstance(shapes, dict) or not shapes or
+            any(not isinstance(k, str) or not k.strip() or not isinstance(v, str) or not v.strip()
+                for k, v in shapes.items())):
+        errors.append("calibration obs_shape_by_var must map nonempty variable names to observation shapes")
+    for field in ("contract_sha256", "runner_sha256"):
+        if not isinstance(binding.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", binding[field]):
+            errors.append(f"calibration {field} must be a lowercase SHA-256 digest")
+    if project is None:
+        return errors + ["calibration validation requires the current project directory"]
+    root = Path(project).resolve()
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(step.get("ki") or "")).strip("-.")[:100] or "KI"
+    adapter = root / "calibration" / "kis" / slug
+    for field, raw, expected, hash_field in (
+            ("tool", step.get("tool"), adapter / "tools" / "calib_run.py", "runner_sha256"),
+            ("contract_path", binding.get("contract_path"), adapter / "calibration.yaml", "contract_sha256")):
+        try:
+            if not isinstance(raw, str) or not Path(raw).is_absolute() or Path(raw).resolve() != expected:
+                errors.append(f"calibration {field} must name the exact project adapter file {expected}")
+                continue
+            if check_files:
+                actual = hashlib.sha256(expected.read_bytes()).hexdigest()
+                if actual != binding.get(hash_field):
+                    errors.append(f"calibration {field} changed since review; prepare and approve the revised plan")
+        except (OSError, ValueError) as error:
+            errors.append(f"calibration {field} is not readable: {error}")
+    return errors
+
+
 def validate(plan: dict, inventory: dict, selected_kis: list[str],
-             ki_roots: dict[str, Path] | None = None, *, for_execution: bool = False) -> list[str]:
+             ki_roots: dict[str, Path] | None = None, *, for_execution: bool = False,
+             for_review: bool = False, project: Path | None = None) -> list[str]:
     """Return a list of problems (empty = valid). Plan v3 A3 rules.
 
-    for_execution=True (kimi #10): the readiness check run at approval time — every
-    executable step must name a tool (planning may leave it null), and every inventory item
-    a step consumes must be 'resolved' or 'ready' (or carry a user decision)."""
+    Drafts may leave tools unassigned. for_review=True requires runnable steps
+    and a receipt path for declared outputs, while still allowing input decisions
+    on the review card. for_execution=True additionally requires each consumed
+    input to be resolved, chosen for acquisition, or produced earlier in the plan.
+    """
     ki_roots = ki_roots or {}
     errs: list[str] = []
     if not isinstance(plan, dict) or not isinstance(inventory, dict):
@@ -879,21 +990,30 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         if any(not isinstance(st.get(k), list) or
                any(not isinstance(v, str) for v in st[k]) for k in ("inputs", "outputs")):
             errs.append(f"step {st.get('id')!r} inputs and outputs must be arrays of strings"); continue
-        if for_execution and not tool and (st.get("kind") or "process") in (
+        if (for_review or for_execution) and not tool and (st.get("kind") or "process") in (
                 "process", "run", "model_run", "calibrate", "route", "couple", "prepare"):
             errs.append(f"step {st.get('id')!r} has no tool — not ready to execute")
+        if (for_review or for_execution) and not tool and st.get("outputs") and st.get("kind") != "download":
+            errs.append(f"step {st.get('id')!r} declares outputs but has no tool to record them; "
+                        "assign a KI tool, or remove the outputs if this is an informational step")
         if for_execution:
             by_id = {str(it.get("id")): it for it in items if isinstance(it, dict)}
             # An input produced by an earlier step of this plan is not a gap:
             # the pipeline itself creates it before the consumer runs.
-            produced_earlier = {str(o) for prev in steps[:idx]
-                                if isinstance(prev, dict) for o in prev.get("outputs") or []}
+            produced_earlier = {o for prev in steps[:idx] if isinstance(prev, dict)
+                                and isinstance(prev.get("outputs"), list)
+                                and (prev.get("tool") or prev.get("kind") == "download")
+                                for o in prev["outputs"] if isinstance(o, str)}
             for inp in st.get("inputs") or []:
                 it = by_id.get(str(inp))
                 if (it and it.get("status") == "missing" and not it.get("decision")
+                        and not (it.get("dataset_id") or it.get("chosen_source") or it.get("local_paths"))
                         and str(inp) not in produced_earlier):
                     errs.append(f"step {st.get('id')!r} input {inp!r} is still missing")
-        if tool:
+        if "calibration" in st:
+            errs.extend(f"step {st.get('id')!r}: {problem}"
+                        for problem in calibration_step_errors(st, project))
+        elif tool:
             root = ki_roots.get(ki)
             if root is None:
                 errs.append(f"step {st.get('id')!r}: cannot check tool {tool!r} — no KI root for {ki!r}")
@@ -922,6 +1042,7 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
     for edge in plan.get("coupling", []):
         if not isinstance(edge, dict) or ("edge_id" in edge and not isinstance(edge["edge_id"], str)):
             errs.append("coupling entries must be objects with a string edge_id when provided")
+    errs.extend(data_source_errors(plan, inventory))
     return errs
 
 

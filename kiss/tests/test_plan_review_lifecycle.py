@@ -832,3 +832,18 @@ def test_the_card_does_not_call_an_answered_choice_a_default(review_project):
 
     card = _submit(env, answered).request
     assert not any("routing" in line and "defaults to" in line for line in card["plan_review"]["blockers"])
+
+
+def test_approving_the_preselected_external_source_is_not_a_repin(review_project):
+    """Mac FSM2 rerun 2026-10-01: the browser sends the pre-checked radio with Approve. The
+    input described its source in words ("shipped example forcing …"), the option was an id,
+    and accepting the recommendation was treated as a change and the card re-issued."""
+    env = review_project
+    card = _submit(env, lambda p, i: _forcing(
+        p, i, item={"chosen_source": "Shipped example forcing in the installed source tree"},
+        choice={"options": ["source_tree_shipped_forcing"], "picked": "source_tree_shipped_forcing"})).request
+    before = (env.project / "runs" / "data-inventory.json").read_text(encoding="utf-8")
+    result = _click(env, card, choices={"select-data": "source_tree_shipped_forcing"})
+    assert result.message is None                                  # approved, no re-issue
+    assert (env.project / "runs" / "data-inventory.json").read_text(encoding="utf-8") == before
+    assert _approval(env)["decisions"]["choice:select-data"]["value"] == "source_tree_shipped_forcing"

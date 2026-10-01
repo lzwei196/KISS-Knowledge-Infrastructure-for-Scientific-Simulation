@@ -911,6 +911,19 @@ def _finished_at(run: dict) -> float:
 _PROBE_FLAGS = frozenset({"--help", "-h", "--version", "-V"})
 
 
+def _outputs_present(project: Path, run: dict) -> bool:
+    """Every file a passing attempt wrote still exists at its recorded size. The run snapshot
+    sees changed files, not deleted ones, so a deletion must not hide behind "changed nothing"."""
+    for entry in run.get("outputs") or []:
+        path = Path(project) / str(entry.get("path") or "")
+        try:
+            if not path.is_file() or (entry.get("bytes") is not None and path.stat().st_size != entry["bytes"]):
+                return False
+        except OSError:
+            return False
+    return True
+
+
 def _is_probe(run: dict) -> bool:
     """2026-10-01 (FSM2, Mac and Windows): after a passing run an agent called
     `run_fsm2.py --help` through the receipted runner; with no outputs it failed validation,
@@ -1012,8 +1025,17 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                       key=lambda d: (_finished_at(d), rank.get(status(d), 1)))
     latest: dict[str, dict] = {}
     writer: dict[str, tuple[dict, str | None]] = {}
+    idle: list[dict] = []
     for d in attempts:
-        latest[str(d.get("plan_step_id"))] = d
+        sid = str(d.get("plan_step_id"))
+        stands = latest.get(sid)
+        if (status(d) == "failed" and not d.get("outputs") and stands is not None
+                and status(stands) == "passed" and _outputs_present(project, stands)):
+            # An attempt's outputs are the files that changed while it ran. One that changed
+            # nothing cannot have damaged the pass that stands; it is kept and disclosed.
+            idle.append(d)
+            continue
+        latest[sid] = d
         for o in d.get("outputs") or []:
             writer[o.get("path")] = (d, o.get("sha256"))
     receipted_outputs = {path for path, (d, _) in writer.items() if status(d) == "passed"}
@@ -1024,7 +1046,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         for i in d.get("inputs") or []))
     superseded = [{"plan_step_id": d.get("plan_step_id"), "run_id": d.get("run_id"),
                    "finished_at": d.get("finished_at"), "command": d.get("command")}
-                  for d in attempts if status(d) == "failed"
+                  for d in attempts if status(d) == "failed" and not any(d is i for i in idle)
                   and status(latest[str(d.get("plan_step_id"))]) == "passed"]
     for d in bound_dl:
         for o in (d.get("raw_files") or []) + (d.get("processed_files") or []):
@@ -1078,6 +1100,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         "superseded_failures": superseded,
         "probes": [{"plan_step_id": d.get("plan_step_id"), "run_id": d.get("run_id"),
                     "command": d.get("command")} for d in probes],
+        "idle_failures": [{"plan_step_id": d.get("plan_step_id"), "run_id": d.get("run_id"),
+                           "finished_at": d.get("finished_at"), "command": d.get("command")} for d in idle],
         # why each failing step fails, so a driver can say it instead of pointing at a file
         "failed_steps": [{"plan_step_id": sid, "run_id": d.get("run_id"), "command": d.get("command"),
                           "failed_checks": [str(c.get("detail") or c.get("check")) for c in

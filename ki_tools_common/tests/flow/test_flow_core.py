@@ -447,8 +447,38 @@ def test_a_help_call_after_a_passing_run_is_not_an_attempt_of_the_step(tmp_path)
     assert ev["validation"] == "passed" and ev["steps_missing"] == []
     [probe] = ev["probes"]                               # kept and disclosed, not counted
     assert probe["plan_step_id"] == "M:run" and probe["command"][-1] == "--help"
-    # A real attempt that produced nothing still fails the step: only help/version calls are exempt.
-    ev = record(3001, ["q.csv"], [], {"errored": False, "output_nonempty": False})
+
+
+def test_a_failed_attempt_that_changed_no_file_does_not_cancel_an_earlier_pass(tmp_path):
+    """Mac e2e rerun 2026-10-01: the parse step passed with its three outputs; seconds later the
+    agent sent `parse_fsm2_output.py -c "<python>"` through the receipted runner. It exited 2,
+    changed no file, became the step's latest attempt and failed the project. An attempt's
+    outputs are the files that changed while it ran, so "no outputs" cannot have damaged the
+    pass. The original reason for "a later failure counts" (it may have overwritten the good
+    outputs) still holds for any failure that did change a file."""
+    ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki); a = approval.approve(tmp_path, by="auto")
+    out = tmp_path / "outputs" / "q.csv"; out.parent.mkdir(); out.write_text("t,q\n1,0.5\n2,1.2\n3,0.9\n")
+    tool = str(tmp_path / "M" / "tools" / "run.py")
+
+    def record(finished, args, outputs, errored):
+        v = receipts.validate_outputs(ki, outputs, run_facts={"errored": errored, "output_nonempty": bool(outputs)})
+        receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3",
+                            command=["/usr/bin/python3", tool, *args], cwd=str(tmp_path),
+                            started_at=finished - 1, finished_at=finished, exit_code=2 if errored else 0,
+                            inputs=[], outputs=outputs, plan_step_id="M:run",
+                            approval_sha256=approval.approval_id(a), validation=v)
+        return receipts.evidence(tmp_path, pj, a)
+
+    ev = record(1001, ["-c", "print(1)"], [], errored=True)
+    assert ev["validation"] == "failed"                  # with no pass to stand on, it is the step's result
+    record(2001, ["q.csv"], [out], errored=False)
+    ev = record(3001, ["-c", "print(1)"], [], errored=True)
+    assert ev["validation"] == "passed" and ev["steps_missing"] == []
+    assert [f["command"][-1] for f in ev["idle_failures"]] == ["print(1)"]      # disclosed, not hidden
+    assert ev["superseded_failures"][0]["finished_at"] != ev["idle_failures"][0]["finished_at"]
+    # The snapshot cannot see a deleted file: if the pass's output is gone, the failure counts.
+    out.unlink()
+    ev = receipts.evidence(tmp_path, pj, a)
     assert ev["validation"] == "failed"
 
 

@@ -6,6 +6,16 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Source update — second FSM2 run: false re-pin, and failures that changed nothing (2026-10-01, not yet compiled)
+
+A second end-to-end run of the FSM2 Alptal example (DeepSeek, real UI) after the data-source fix below.
+
+- **Approving the preselected external source is not a change.** The browser sends the pre-checked option with Approve; for a source outside the Database the input describes its source in words, so the app treated accepting the recommendation as a re-pin and re-issued the card. Fixed; found by this run.
+- **A failed attempt that changed no file does not cancel an earlier pass of the same step.** The parse step passed; seconds later the agent sent its own Python check through the model runner with bad arguments (exit 2, nothing written), and that failed the project. An attempt's outputs are the files that changed while it ran, so such an attempt cannot have damaged the earlier result. It is kept and listed under `idle_failures` in `runs/evidence.json` and named in the chat. A failure that did change a file still counts, and so does one after which the earlier pass's output files are missing. This refines the "latest attempt counts" rule of 2026-09-28.
+- **Command excerpts in chat messages show file names**, not truncated absolute paths.
+- Result: the same project reached Completed with no rerun; peak SWE 348.2 and 155.7 kg m⁻², the same as the first run and as Windows.
+- 第二次 FSM2 端到端测试：批准预选的非数据库来源不再被误判为“改选”；未改动任何文件的失败尝试不再推翻同一步骤此前已通过的结果（仍记录并在对话中说明），改动了文件的失败仍然计入；对话中的命令摘要显示文件名而非被截断的绝对路径。
+
 ## Source update — the approval signs the data you saw (2026-10-01, not yet compiled)
 
 Fixes the high-rated issue shared with Windows (its known issue 1): a plan names the data for an input twice, in the data list (which drives the download) and in the "data source" choice (which the card shows and the approval signs), and nothing checked that the two agree.

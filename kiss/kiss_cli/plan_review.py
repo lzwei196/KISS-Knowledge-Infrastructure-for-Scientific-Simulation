@@ -422,7 +422,12 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
             continue
         item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
         item = items.get(item_id)
-        if item is None or pick == str(item.get("dataset_id") or item.get("chosen_source") or ""):
+        shown = str(c.get("decision") or c.get("picked") or "")
+        # Nothing to re-pin when the pick is what the input already is. An external source has
+        # no id on the item (only a description), so accepting the shown recommendation is
+        # the same data: the browser sends that pre-checked radio with every Approve.
+        if (item is None or pick == str(item.get("dataset_id") or item.get("chosen_source") or "")
+                or (pick not in catalogue and not item.get("dataset_id") and pick == shown)):
             c["decision"], c["decision_source"] = pick, "user"
             continue
         c["decision"], c["decision_source"] = pick, "user"

@@ -693,7 +693,10 @@ def _command_gist(command, limit: int = 90) -> str:
 
     Agents pass whole Python snippets through ``-c``; quoted verbatim they
     buried the "Completed." verdict under screens of code."""
-    text = " ".join(" ".join(map(str, (command or [])[-3:])).split()).replace("`", "'")
+    # An absolute path says where the project lives, not what ran: keep its file name.
+    tail = [Path(tok).name if re.match(r"^(/|[A-Za-z]:[\\/])", tok) and len(tok.split()) == 1 else tok
+            for tok in map(str, (command or [])[-3:])]
+    text = " ".join(" ".join(tail).split()).replace("`", "'")
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
@@ -1203,13 +1206,22 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             fs.move("validated", {"receipts_verified": True, "validation": "passed"})
             projectrun.set_stage(project, display_stage(flow, fs.state), "Completed — every step has a verified receipt")
             retried = ev.get("superseded_failures") or []
-            if retried:
-                # A passing retry supersedes a failure; the user still sees that it happened.
-                runs = "; ".join(f"{f.get('plan_step_id')} (`{_command_gist(f.get('command'))}`)"
-                                 for f in retried[:5])
-                return Result(message=(
-                    f"**Completed.** {len(retried)} earlier failed attempt{'s were' if len(retried) > 1 else ' was'} "
-                    f"superseded by a passing retry: {runs}. They stay in the run history (runs/evidence.json)."))
+            idle = ev.get("idle_failures") or []
+            if retried or idle:
+                # A passing retry supersedes a failure, and a failed attempt that changed no
+                # file does not cancel a pass; the user still sees that either happened.
+                def gist(found):
+                    return "; ".join(f"{f.get('plan_step_id')} (`{_command_gist(f.get('command'))}`)"
+                                     for f in found[:5])
+                notes = []
+                if retried:
+                    notes.append(f"{len(retried)} earlier failed attempt{'s were' if len(retried) > 1 else ' was'} "
+                                 f"superseded by a passing retry: {gist(retried)}.")
+                if idle:
+                    notes.append(f"{len(idle)} later attempt{'s' if len(idle) > 1 else ''} failed without "
+                                 f"changing any file and {'do' if len(idle) > 1 else 'does'} not count: {gist(idle)}.")
+                return Result(message="**Completed.** " + " ".join(notes)
+                              + " They stay in the run history (runs/evidence.json).")
         else:
             from .execution import stop_requested
             if stop_requested(project):

@@ -1933,6 +1933,18 @@ def test_a_corrected_retry_completes_and_the_superseded_failure_is_disclosed(tmp
     assert "1 earlier failed attempt" in res.message and "run history" in res.message
 
 
+def test_a_later_failure_that_changed_nothing_does_not_undo_a_completed_step(tmp_path):
+    """Mac e2e rerun 2026-10-01, through the real runner: pass, then a call with bad arguments."""
+    import time
+    project, t, run = _executing(tmp_path)
+    run(["outputs/q.csv"])                            # the step passes and writes its output
+    time.sleep(1.1)
+    assert "exit_code=1" in run([])                  # a later call fails before writing anything
+    res = flowrun.after(project, t, "done", setup_ok=True)
+    assert json.loads((project / "runs" / "flow-state.json").read_text())["state"] == "COMPLETED"
+    assert "failed without changing any file" in res.message and "run history" in res.message
+
+
 def test_a_failed_validation_is_explained_in_the_chat(tmp_path):
     """Mac e2e 2026-10-01: the project went to FAILED_VALIDATION while the chat showed only the
     agent's "validation passed"; GeoForge's own verdict was never written there."""

@@ -234,25 +234,17 @@ def test_failed_approval_refresh_retains_pending_review_without_starting_work(re
     assert result.message and "unavailable" in result.message.lower()
 
 
-@pytest.mark.parametrize("attack", [
-    "off_menu_data", "catalogue_hidden_option", "unshown_data_choice", "low_impact_choice", "unknown_choice",
-])
+# Two earlier cases are gone by design (issue #1, 2026-10-01): an option outside the catalogue
+# is now SHOWN as external (test_a_source_outside_the_database_is_shown_…), and a second
+# data-source choice that disagrees with its pinned input is refused at submission
+# (test_a_choice_that_disagrees_with_its_input_goes_back_to_the_agent).
+@pytest.mark.parametrize("attack", ["off_menu_data", "low_impact_choice", "unknown_choice"])
 def test_unshown_or_off_menu_picks_cannot_change_the_reviewed_selection(review_project, attack):
     env = review_project
     picks = {"select-data": "not_offered"}
 
     def revise(plan, inventory):
-        if attack == "catalogue_hidden_option":
-            plan["scientific_choices"][-1]["options"].append("not_in_catalogue")
-            picks["select-data"] = "not_in_catalogue"
-        elif attack == "unshown_data_choice":
-            plan["scientific_choices"].append({
-                "id": "hidden-data", "kind": "data_source", "item": "forcing",
-                "options": ["unlisted_a", "unlisted_b"], "picked": "unlisted_a", "high_impact": True,
-            })
-            picks.clear()
-            picks["hidden-data"] = "unlisted_b"
-        elif attack == "low_impact_choice":
+        if attack == "low_impact_choice":
             plan["scientific_choices"].append({
                 "id": "quiet", "kind": "tuning", "options": ["original", "changed"],
                 "picked": "original", "high_impact": False,
@@ -648,7 +640,22 @@ def test_database_off_refuses_a_plan_that_pins_a_database_dataset(review_project
 
 
 def test_database_off_card_offers_no_cached_database_records(review_project):
-    def lists_cached_ids(plan, inventory):
+    def external_with_a_cached_alternative(plan, inventory):
+        inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "resolved",
+                                   "acceptable_sources": [], "local_paths": [], "chosen_source": "nasa_power",
+                                   "agent_resolvable": True, "needs_user": False})
+        plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["forcing"]
+        plan["scientific_choices"].append({"id": "select-data", "kind": "data_source", "item": "forcing",
+                                           "options": ["nasa_power", "source_a"], "picked": "nasa_power",
+                                           "high_impact": True})
+
+    result = _db_off_draft(review_project, external_with_a_cached_alternative)
+    [row] = result.request["plan_review"]["data_choices"]
+    assert [o["dataset_id"] for o in row["options"]] == ["nasa_power"]      # the cached record is not offered
+
+
+def test_database_off_refuses_a_choice_that_recommends_a_database_record(review_project):
+    def recommends_cached(plan, inventory):
         inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "missing",
                                    "acceptable_sources": [], "local_paths": [],
                                    "agent_resolvable": True, "needs_user": False})
@@ -657,9 +664,8 @@ def test_database_off_card_offers_no_cached_database_records(review_project):
                                            "options": ["source_a", "source_b"], "picked": "source_a",
                                            "high_impact": True})
 
-    result = _db_off_draft(review_project, lists_cached_ids)
-    assert result.request is not None
-    assert result.request["plan_review"]["data_choices"] == []
+    result = _db_off_draft(review_project, recommends_cached)
+    assert result.request is None and "select-data" in result.message
 
 
 def test_a_reissued_card_follows_the_database_setting_not_direct(review_project, monkeypatch):
@@ -724,3 +730,105 @@ def test_an_input_produced_by_a_step_needs_no_other_source(review_project):
         plan["steps"][0]["outputs"] = list(plan["steps"][0].get("outputs") or []) + ["crop_object"]
 
     assert _submit(review_project, produced).request is not None
+
+
+# ── Issue #1 (Windows known issue 1; seen on Mac 2026-10-01): the data list decides what is
+#    downloaded, the data-source choice is what the card shows and the approval signs ──
+
+def _forcing(plan, inventory, *, item, choice):
+    inventory["items"].append({"id": "forcing", "required_by": ["M"], "status": "resolved",
+                               "acceptable_sources": [], "local_paths": [],
+                               "agent_resolvable": True, "needs_user": False, **item})
+    plan["steps"][0]["inputs"] = list(plan["steps"][0].get("inputs") or []) + ["forcing"]
+    plan["scientific_choices"].append({"id": "select-data", "kind": "data_source", "item": "forcing",
+                                       "high_impact": True, **choice})
+
+
+def test_a_choice_that_disagrees_with_its_input_goes_back_to_the_agent(review_project):
+    """The reproduced shape: the choice recommends NASA POWER, the data list pins CMFD."""
+    result = _submit(review_project, lambda p, i: _forcing(
+        p, i, item={"dataset_id": "source_a", "chosen_source": "source_a"},
+        choice={"options": ["nasa_power", "source_a"], "picked": "nasa_power"}))
+    assert result.request is None and result.retry_planning
+    assert "select-data" in result.message and "nasa_power" in result.message and "source_a" in result.message
+
+
+def test_a_pick_that_is_not_one_of_its_options_goes_back_to_the_agent(review_project):
+    result = _submit(review_project, lambda p, i: _forcing(
+        p, i, item={"dataset_id": "source_a", "chosen_source": "source_a"},
+        choice={"options": ["source_a", "source_b"], "picked": "source_c"}))
+    assert result.request is None and "not one of its options" in result.message
+
+
+def _external_first(p, i):
+    _forcing(p, i, item={"chosen_source": "nasa_power"},
+             choice={"options": ["nasa_power", "source_a"], "picked": "nasa_power"})
+
+
+def test_a_source_outside_the_database_is_shown_selected_and_signed_as_accepted(review_project):
+    env = review_project
+    card = _submit(env, _external_first).request
+    [row] = card["plan_review"]["data_choices"]
+    shown = {o["dataset_id"]: o["delivery"] for o in row["options"]}
+    assert shown == {"nasa_power": "external", "source_a": "served"} and row["picked"] == "nasa_power"
+    assert _click(env, card).message is None                       # plain Approve, nothing sent
+    records = _approval(env)["decisions"]
+    assert records["choice:select-data"]["value"] == "nasa_power"
+    assert plan_review.is_accepted_suggestion(records["choice:select-data"]["rationale"])
+    assert records["item:forcing"]["value"] == "nasa_power"
+
+
+def test_picking_the_database_option_over_an_external_one_repins_the_input(review_project):
+    env = review_project
+    card = _submit(env, _external_first).request
+    assert "re-pinned" in _click(env, card, choices={"select-data": "source_a"}).message
+    _plan, inventory = flowgate.load().plan.read_artifacts(env.project)
+    forcing = next(it for it in inventory["items"] if it["id"] == "forcing")
+    assert forcing["dataset_id"] == "source_a"
+    assert setup_flow.request(env.project)["plan_review"]["data_choices"][0]["picked"] == "source_a"
+
+
+def test_picking_an_external_option_does_not_pin_it_as_a_database_dataset(review_project):
+    env = review_project
+    card = _submit(env, lambda p, i: _forcing(
+        p, i, item={"dataset_id": "source_a", "chosen_source": "source_a"},
+        choice={"options": ["source_a", "nasa_power"], "picked": "source_a"})).request
+    assert "re-pinned" in _click(env, card, choices={"select-data": "nasa_power"}).message
+    _plan, inventory = flowgate.load().plan.read_artifacts(env.project)
+    forcing = next(it for it in inventory["items"] if it["id"] == "forcing")
+    assert not forcing.get("dataset_id") and forcing["chosen_source"] == "nasa_power"
+
+
+def test_a_data_source_decision_with_no_options_is_shown_and_not_called_a_ki_default(review_project):
+    """Mac FSM2 run: `output_data_use` was signed as a "KI protocol default" and never shown."""
+    env = review_project
+
+    def optionless(plan, inventory):
+        plan["scientific_choices"].append({"id": "output_data_use", "kind": "data_source",
+                                           "picked": "Shipped example files only", "high_impact": True})
+
+    card = _submit(env, optionless).request
+    assert "output_data_use" in [d["id"] for d in card["plan_review"]["decisions"]]
+    _click(env, card)
+    record = _approval(env)["decisions"]["choice:output_data_use"]
+    assert plan_review.is_accepted_suggestion(record["rationale"])
+
+
+def test_signing_refuses_a_choice_that_differs_from_its_input():
+    plan = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
+                                    "options": ["source_a", "source_b"], "decision": "source_b"}]}
+    inv = {"items": [{"id": "forcing", "dataset_id": "source_a"}]}
+    _recs, invalid = plan_review.decision_records(flowrun._flow(), plan, inv, {})
+    assert any("data:forcing" in problem and "source_a" in problem for problem in invalid)
+
+
+def test_the_card_does_not_call_an_answered_choice_a_default(review_project):
+    env = review_project
+    plan_review.record_interview_answer(env.project, {"id": "q1", "title": "Scope?"}, {"id": "a", "label": "lohmann"})
+
+    def answered(plan, inventory):
+        plan["scientific_choices"].append({"id": "routing", "kind": "routing_scheme", "options": ["lohmann", "cama"],
+                                           "picked": "lohmann", "high_impact": True, "answered_by": "interview:q1"})
+
+    card = _submit(env, answered).request
+    assert not any("routing" in line and "defaults to" in line for line in card["plan_review"]["blockers"])

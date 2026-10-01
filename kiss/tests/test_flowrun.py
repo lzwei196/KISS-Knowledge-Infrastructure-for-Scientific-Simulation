@@ -1429,7 +1429,9 @@ def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_pa
     res = flowrun.after(project, t, "planned", setup_ok=True)
     choices = res.request["plan_review"]["data_choices"]
     assert len(choices) == 1 and choices[0]["picked"] == "agrometeo_quebec"
-    assert [o["dataset_id"] for o in choices[0]["options"]] == ["agrometeo_quebec", "risma_on2"]   # invented id dropped
+    # an id outside the catalogue is no longer dropped: it is shown, labelled external (issue #1)
+    assert [(o["dataset_id"], o["delivery"] == "external") for o in choices[0]["options"]] == [
+        ("agrometeo_quebec", False), ("risma_on2", False), ("made_up_id", True)]
     assert choices[0]["options"][0]["delivery"] == "manual" and choices[0]["options"][1]["size_label"] == "46 KB"
     # the user picks the served candidate instead: re-pin, card comes back unsigned
     pre = flowrun.pre(project, "Approved.", ["M"], [ki],
@@ -1772,15 +1774,20 @@ def test_the_baseline_comes_from_the_plan_not_the_card(tmp_path, monkeypatch):
     assert bl["options"] == {"data:forcing": ["a", "b"], "data:dem": ["d1"], "routing": ["lohmann", "cama"]}
     # a pre-selection the radios never showed counts as nothing shown (codex B4 #1)
     gone = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
-                                    "options": ["a", "removed"], "picked": "removed"}]}
+                                    "options": ["a", "b"], "picked": "removed"}]}
     assert plan_review.suggestion_baseline(gone, inv)["suggested"] == {"data:forcing": ""}
     recs, _ = plan_review.decision_records(flowrun._flow(), gone, {"items": [{"id": "forcing", "dataset_id": "removed"}]}, {})
     assert recs["item:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
+    # an option outside the catalogue is shown as external, so its pre-selection WAS shown (issue #1)
+    external = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
+                                        "options": ["a", "nasa_power"], "picked": "nasa_power"}]}
+    assert plan_review.suggestion_baseline(external, inv)["suggested"] == {"data:forcing": "nasa_power"}
     # the rows the card rendered give the same baseline as a fresh catalogue read (B4 #4)
     from kiss_cli.plan_review import _data_choices
     assert plan_review.suggestion_baseline(plan, inv, rows=_data_choices(plan, inv)) == bl
     hidden = {"scientific_choices": [{"id": "data:x", "kind": "data_source", "item": "x", "options": ["invented"]}]}
-    assert plan_review.suggestion_baseline(hidden, {"items": [{"id": "x"}]}) == {"suggested": {}, "item_of": {}, "options": {}}
+    assert plan_review.suggestion_baseline(hidden, {"items": [{"id": "x"}]}) == {
+        "suggested": {"data:x": ""}, "item_of": {"data:x": "x"}, "options": {"data:x": ["invented"]}}
     project2 = _project(tmp_path / "p2")
     answers = plan_review.record_user_answers(project2, bl, {"routing": "not-offered"})
     assert answers == {}                                             # off-menu pick never stored (kimi B2 #3)
@@ -1818,7 +1825,7 @@ def test_an_accepted_recommendation_is_disclosed_as_accepted_not_as_a_protocol_d
     assert recs2["choice:routing"]["rationale"].startswith(plan_review._SUGGESTION_TAG)
     # a suggestion the radios never displayed (not among the rendered options) is not accepted (B5 #2)
     plan3 = {"scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
-                                     "options": ["a", "removed"], "picked": "removed"}]}
+                                     "options": ["a", "b"], "picked": "removed"}]}
     recs3b, _ = plan_review.decision_records(flowrun._flow(), plan3, {"items": [{"id": "forcing"}]}, {})
     assert recs3b["choice:data:forcing"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)
     assert recs2["choice:quiet"]["rationale"].startswith(plan_review._KI_DEFAULT_TAG)

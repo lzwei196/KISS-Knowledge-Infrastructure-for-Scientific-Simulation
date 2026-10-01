@@ -6,6 +6,19 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Source update — the approval signs the data you saw (2026-10-01, not yet compiled)
+
+Fixes the high-rated issue shared with Windows (its known issue 1): a plan names the data for an input twice, in the data list (which drives the download) and in the "data source" choice (which the card shows and the approval signs), and nothing checked that the two agree.
+
+- **A plan whose data-source choice disagrees with its input goes back to the agent**, as does one whose pick is not among its own options. Example: the choice recommends NASA POWER while the data list pins CMFD. Before, the card hid the recommendation, and Approve signed both and downloaded CMFD.
+- **Sources outside the GeoForge Database are shown, not dropped.** They appear as selectable options labelled "not from the GeoForge Database", with the recommendation preselected. Picking one re-pins the input to it without writing it in as a Database dataset.
+- **A data-source choice with nothing to pick from is listed with the other decisions**, so the card shows everything the approval signs, and it is recorded as "recommendation accepted", not "KI protocol default".
+- **Signing refuses a mismatch** as a last check.
+- A choice you already answered in the interview is no longer listed as "defaults to … unless you pick another".
+- With the Database off, the card still shows external sources and no cached Database records; a choice that recommends a Database record is refused.
+- Verification: 9 new tests through the real plan submission and Approve click; 5 older tests updated where they encoded "options outside the catalogue are hidden". Checked against the real plan from the 2026-10-01 FSM2 run, which would now go back to the agent once (its data-source choice picked a value that was not one of its options and governed no input). Desktop 1,385 passed, 1 skipped, 123 subtests; shared Flow 146 passed, 5 skipped. Not yet tried with a live agent.
+- 修复与 Windows 共有的高优先级问题：计划中“数据来源”选项与数据清单不一致时退回 Agent；GeoForge 数据库之外的来源会显示为可选项（标注“非 GeoForge 数据库来源”）而不再被隐藏；没有可选项的数据来源决定会与其他决定一并显示；签署前再次检查两者一致。
+
 ## Source update — Windows fixes adopted; help calls and failed runs handled (2026-10-01, not yet compiled)
 
 Compared with `windows-version` (which had merged the Mac round `bc788256`) and tested end to end on a Mac: FSM2 official Alptal 2004–2005 example, DeepSeek API, real UI ([record](docs/issues/E2E-FSM2-MAC-2026-10-01.md)).

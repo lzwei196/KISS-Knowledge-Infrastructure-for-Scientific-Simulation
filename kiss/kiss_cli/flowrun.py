@@ -1138,7 +1138,8 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             return _planning_failure(project, t, ["Both plan files must contain valid JSON objects."], repair=True)
         if api_submission and api_submission != (flow.plan.sha256(pj), flow.plan.sha256(inv)):
             return _planning_failure(project, t, ["The files changed after write_plan submitted them. Submit the current revision again."])
-        errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots) + _unsourced(pj, inv)
+        errs = (flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots) + _unsourced(pj, inv)
+                + plan_review.data_choice_errors(pj, inv))
         if errs:
             return _planning_failure(project, t, errs, repair=True)
         if fs.database_access_mode == "off":

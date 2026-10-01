@@ -294,7 +294,52 @@ def _data_summary(plan: dict, inv: dict, project: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def _data_choices(plan: dict, inv: dict, project: Path | None = None) -> list[dict]:
+def _shown_as_decision(choice: dict, data_rows: set[str]) -> bool:
+    """A data-source choice with nothing to pick from has no data row; it is listed with the
+    other decisions so the card shows everything the approval signs (issue #1)."""
+    return choice.get("kind") != "data_source" or str(choice.get("id")) not in data_rows
+
+
+def _catalogue_ids() -> set[str]:
+    from . import obs_access
+    return {str(d.get("id")) for d in (obs_access.load_catalogue() or {}).get("datasets") or [] if d.get("id")}
+
+
+def data_choice_errors(plan: dict, inv: dict) -> list[str]:
+    """The data list decides what is downloaded; the data-source choice is what the card shows
+    and the approval signs. They must agree (Windows known issue 1; seen on Mac 2026-10-01: a
+    plan recommended NASA POWER in the choice while the data list pinned CMFD, the card hid the
+    recommendation, and Approve signed both)."""
+    catalogue = _catalogue_ids()
+    items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
+    errors = []
+    for c in plan.get("scientific_choices") or []:
+        if not isinstance(c, dict) or c.get("kind") != "data_source" or not c.get("id"):
+            continue
+        cid = str(c["id"])
+        value = str(c.get("decision") or c.get("picked") or "")
+        options = [str(o) for o in c.get("options") or []]
+        if value and options and value not in options:
+            errors.append(f"data-source choice {cid!r} picks {value!r}, which is not one of its options "
+                          f"({', '.join(options[:6])})")
+        item_id = str(c.get("item") or cid.replace("data:", "", 1))
+        item = items.get(item_id)
+        if item is None:
+            if options:
+                errors.append(f"data-source choice {cid!r} governs {item_id!r}, which is not in the data inventory. "
+                              "Set its `item` to the inventory input it decides, or give it another kind if it "
+                              "is not about one input's source")
+            continue
+        pinned = str(item.get("dataset_id") or "")
+        if value and (pinned or value in catalogue) and value != pinned:
+            now = pinned or str(item.get("chosen_source") or "no GeoForge Database dataset")
+            errors.append(f"data-source choice {cid!r} says {value!r} but inventory item {item_id!r} is "
+                          f"{now!r}. The item decides what is downloaded: make the two the same")
+    return errors
+
+
+def _data_choices(plan: dict, inv: dict, project: Path | None = None, *,
+                  database: bool = True) -> list[dict]:
     """The candidates the agent considered per input, with catalogue facts, for the card.
 
     This is the missing step the user asked for: what the database holds for each input,
@@ -315,7 +360,13 @@ def _data_choices(plan: dict, inv: dict, project: Path | None = None) -> list[di
         for ds in c.get("options") or []:
             rec = by_id.get(str(ds))
             if rec is None:
-                continue                # invented ids never reach the user
+                # A source outside the GeoForge Database (NASA POWER, the user's own file …).
+                # It used to be dropped, which hid the plan's own recommendation (issue #1).
+                options.append({"dataset_id": str(ds), "name": None, "delivery": "external",
+                                "size": None, "size_label": "", "period": None, "bbox": None})
+                continue
+            if not database:
+                continue                # Database off or not activated: no catalogue records
             option = {"dataset_id": str(ds), "name": rec.get("name"), "delivery": rec.get("delivery"),
                       "size": rec.get("size"), "size_label": obs_access.size_label(rec.get("size")),
                       "period": [rec.get("start_date"), rec.get("end_date")] if rec.get("start_date") else None,
@@ -361,6 +412,7 @@ def apply_choice_picks(plan: dict, choices: dict) -> list[str]:
 def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
     """The user's picks from the card: re-pin the items, clear stale stamps. Returns changed item ids."""
     changed = []
+    catalogue = _catalogue_ids()
     items = {str(it.get("id")): it for it in inv.get("items") or [] if isinstance(it, dict)}
     for c in plan.get("scientific_choices") or []:
         if not isinstance(c, dict) or c.get("kind") != "data_source":
@@ -370,7 +422,7 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
             continue
         item_id = str(c.get("item") or str(c.get("id") or "").replace("data:", "", 1))
         item = items.get(item_id)
-        if item is None or item.get("dataset_id") == pick:
+        if item is None or pick == str(item.get("dataset_id") or item.get("chosen_source") or ""):
             c["decision"], c["decision_source"] = pick, "user"
             continue
         c["decision"], c["decision_source"] = pick, "user"
@@ -378,7 +430,10 @@ def apply_data_choices(plan: dict, inv: dict, choices: dict) -> list[str]:
         item["decision_source"] = "user"
         for key in ("acquisition_id", "acquisition_request_sha256", "acquisition_offer", "estimate_summary", "catalogue"):
             item.pop(key, None)
-        item["dataset_id"] = pick
+        if pick in catalogue:
+            item["dataset_id"] = pick
+        else:
+            item.pop("dataset_id", None)      # an external source is not a Database dataset
         item["chosen_source"] = pick
         item.pop("delivery", None)
         changed.append(item_id)
@@ -443,7 +498,7 @@ def suggestion_baseline(plan: dict, inv: dict, rows: list | None = None) -> dict
         options[str(row["id"])] = opts
     for c in (plan or {}).get("scientific_choices") or []:
         # the UI lists only high-impact decisions (web/app.html renderPlanReview)
-        if isinstance(c, dict) and c.get("id") and c.get("kind") != "data_source" and c.get("high_impact"):
+        if isinstance(c, dict) and c.get("id") and _shown_as_decision(c, set(item_of)) and c.get("high_impact"):
             suggested[str(c["id"])] = str(c.get("decision") or c.get("picked") or "")
             options[str(c["id"])] = [str(o) for o in c.get("options") or []]
     return {"suggested": suggested, "item_of": item_of, "options": options}
@@ -665,7 +720,10 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
     _item_of = dict(baseline.get("item_of") or {})       # (codex review B3 #2): what the card
     _sugg = dict(baseline.get("suggested") or {})        # showed, not today's catalogue
     displayed_choice = {cid: _sugg.get(cid, "") for cid in _item_of}
-    displayed_item = {item: _sugg.get(cid, "") for cid, item in _item_of.items()}
+    displayed_item: dict[str, str] = {}
+    for cid, item in _item_of.items():      # two rows on one input: an empty one hides nothing
+        if _sugg.get(cid) or item not in displayed_item:
+            displayed_item[item] = _sugg.get(cid, "")
     displayed_decision = {cid for cid in _sugg if cid not in _item_of}   # rendered non-data choices
 
     def _add(ns: str, raw_id: str, source: str, value, why: str = "") -> None:
@@ -740,16 +798,16 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
             _add("choice", cid, "user", str(c.get("decision") or c.get("picked")),
                  "you answered this in the interview: " + interview[cid])
         elif c.get("decision"):
-            if c.get("kind") == "data_source":
+            if c.get("kind") == "data_source" and cid in _item_of:
                 shown_val = displayed_choice.get(cid)
-            else:
+            else:       # incl. a data-source choice with no options, listed with the decisions
                 shown_val = _sugg.get(cid) if cid in displayed_decision else None
             why = _SUGGESTION_WHY if shown_val is not None and shown_val == str(c["decision"]) else _KI_DEFAULT_WHY
             _add("choice", cid, "ki_default", str(c["decision"]), why)
         elif c.get("picked"):
             # a suggestion with no decision: accepted only if the card actually rendered it
             # (codex review B3 #1); otherwise the plan carried it and the user never saw it
-            shown_val = displayed_choice.get(cid) if c.get("kind") == "data_source" \
+            shown_val = displayed_choice.get(cid) if c.get("kind") == "data_source" and cid in _item_of \
                 else (_sugg.get(cid) if cid in displayed_decision else None)
             accepted = shown_val is not None and shown_val == str(c["picked"])   # value, not row (B5 #2)
             _add("choice", cid, "ki_default", str(c["picked"]), _SUGGESTION_WHY if accepted else _KI_DEFAULT_WHY)
@@ -765,6 +823,7 @@ def decision_records(flow, plan: dict, inv: dict, answers: dict | None = None,
 
     invalid += [f"{r['input_id']}: {why}" for r in built
                 for ok, why in [flow.decisions.validate_record(r)] if not ok]
+    invalid += data_choice_errors(plan, inv)       # never sign a choice that differs from its input
     return flow.decisions.fold_payloads(built), invalid
 
 
@@ -801,13 +860,14 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
         cited = cited_answers(plan, load_user_answers(fs.project))
     except AnswersUnreadable:
         cited = {}      # the Approve click refuses an unreadable store; the card just omits citations
+    # DB gating: no cached Database records on the card while access is off or not activated
+    data_choices = _data_choices(plan, inv, fs.project, database=fs.database_access_mode != "off")
+    data_rows = {str(row["id"]) for row in data_choices}
     decisions = [{"id": c.get("id"), "kind": c.get("kind"), "options": list(c.get("options") or []),
                   "picked": c.get("decision") or c.get("picked"), "decided": bool(c.get("decision")),
                   "high_impact": bool(c.get("high_impact")), "answered": cited.get(str(c.get("id")))}
                  for c in plan.get("scientific_choices") or [] if isinstance(c, dict)
-                 and c.get("kind") != "data_source"]
-    # DB gating: no cached Database records on the card while access is off or not activated
-    data_choices = [] if fs.database_access_mode == "off" else _data_choices(plan, inv, fs.project)
+                 and _shown_as_decision(c, data_rows)]
     review = {"goal": plan.get("goal"), "kis": list(plan.get("selected_kis") or []),
               "coupling": edges, "study_area": intent.get("study_area"), "period": intent.get("period"),
               "data": input_groups(plan, inv, fs.project), "steps": steps, "decisions": decisions,
@@ -844,11 +904,16 @@ def issue(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
     # `may_auto_approve` answers "could this be approved with no user at all"; the desktop always
     # asks the user, and approving ACCEPTS a shown recommendation. Saying "undecided" about a
     # choice the click will accept made the card contradict the approval rule (kimi review #6).
+    try:
+        answered = set(cited_answers(pj, load_user_answers(project)))
+    except AnswersUnreadable:
+        answered = set()
     _suggested = {str(c.get("id")) for c in pj.get("scientific_choices") or []
                   if isinstance(c, dict) and c.get("picked") and not c.get("decision")}
     why = [w for w in why if not any(f"{cid!r}" in str(w) for cid in _suggested)]
     for c in pj.get("scientific_choices") or []:
-        if isinstance(c, dict) and str(c.get("id")) in _suggested and c.get("high_impact"):
+        if (isinstance(c, dict) and str(c.get("id")) in _suggested and c.get("high_impact")
+                and str(c.get("id")) not in answered):     # the user already answered it
             why.append(f"{c.get('kind') or 'choice'} {c.get('id')}: defaults to "
                        f"{c.get('picked')} unless you pick another")
     why = list(extra_why or []) + list(why)

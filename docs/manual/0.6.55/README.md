@@ -2,6 +2,8 @@
 
 Windows release: [`windows-v0.6.55`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.55).
 
+These guides are also bundled with [Windows 0.6.56](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56), whose installer and portable app include the illustrated quickstart revision. The 0.6.55 guide edition still describes the unchanged application workflow.
+
 The quickstart was revised on 2026-10-02 into an illustrated SHAW Trial walkthrough. Both languages retain exactly three pages, with real 0.6.55 screenshots for DeepSeek settings, SHAW setup and completed execution, plus a temperature preview drawn from the verified native run. The Chinese edition uses the Chinese interface and chart labels. The release's supplemental `Quickstart-Illustrated` downloads contain this revision; the original installer and portable package retain their original bundled guides.
 
 | Guide | English | 简体中文 |

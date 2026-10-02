@@ -1,6 +1,8 @@
 # GeoForge Desktop user manual
 
-## 0.6.55 (current Windows edition / 当前 Windows 版本)
+## 0.6.55 guide edition, bundled with Windows 0.6.56 / Windows 0.6.56 内置手册
+
+Windows [0.6.56](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56) includes the October 2 illustrated quickstarts in both the installer and portable app. The guide edition remains 0.6.55 because the documented application workflow is unchanged.
 
 The app's **Guide / 使用指南** menu includes three offline guides, each in English and Simplified Chinese:
 
@@ -14,7 +16,7 @@ The three quickstart pages cover agent setup, KI setup, and a real SHAW example 
 
 三页快速指南分别介绍 Agent 配置、KI 配置及使用公开官方输入完成真实 SHAW 运行。完整手册保留详细 FSM2 实例，补充 Windows 上已验证的 SHAW、VIC 和 CRHM 运行。校准指南说明适配器、训练/留出方案及真实原生 SHAW 参考恢复测试；参考恢复不等同于实测观测验证。
 
-See [sources, build instructions and scope](./0.6.55/README.md). Windows release: [`windows-v0.6.55`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.55).
+See [sources, build instructions and scope](./0.6.55/README.md). Current Windows release: [`windows-v0.6.56`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56).
 
 ## 0.6.54 (previous Windows edition)
 

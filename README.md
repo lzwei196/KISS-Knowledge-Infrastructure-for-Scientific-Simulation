@@ -5,124 +5,117 @@
 <h1 align="center">GeoForge Desktop</h1>
 
 <p align="center">
-  <b>Run Earth-system models by asking for what you want.</b><br>
-  127 scientific models, each packaged with the knowledge an AI agent needs to install and drive it.
+  <b>An agent-driven graphical workspace for scientific models and tools.</b><br>
+  Plan, prepare data, run professional software and inspect results through Knowledge Infrastructure.
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Windows-x64-blue">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black">
-  <img src="https://img.shields.io/badge/models-127-orange">
+  <img src="https://img.shields.io/badge/model_KIs-127-orange">
   <img src="https://img.shields.io/badge/License-MIT-green">
 </p>
 
----
+GeoForge Desktop brings the project, agent, scientific tools, data access and run
+records into one graphical workspace. Describe your study, review the proposed
+inputs and plan, then let the agent operate the real model through its
+**Knowledge Infrastructure (KI)**: model-specific tools, staged instructions,
+checks and diagnostic guidance. You can follow progress, resolve missing inputs
+and inspect the resulting files and plots in the same application.
 
-Running a hydrology or land-surface model normally means a week of compiler
-flags, NetCDF versions and undocumented input formats before the first
-timestep. GeoForge Desktop puts an agent in front of that work. You describe
-the task; it picks the model, sets it up on your machine, and runs it.
+The app runs on your computer; on Windows, its interface opens in your browser
+and model tools execute locally. AI providers and online data services connect
+over the network. The library contains **127 model KI packages**, including
+MODFLOW 6, WRF-Hydro, SWAT+, VIC and SUMMA. A KI supplies operational knowledge;
+it does not mean that the model is already installed or scientifically validated
+for your study.
 
-The models are real: MODFLOW 6, WRF-Hydro, SWAT+, VIC, TOPMODEL, SUMMA,
-ADCIRC, and 120 more — the same binaries the research groups publish, not
-reimplementations.
+| In the workspace | What you can do |
+|---|---|
+| **Chat and Project status** | Choose an agent and KI, review a plan, follow approved execution and inspect recorded outputs. |
+| **KI Library and KI Observatory** | Find models, check their setup state on this machine and explore the workflow each KI describes. |
+| **KI Studio with KDT** | Have an agent build a model or task/workflow KI from your source and supporting material; inspect its checks before importing it. The reviewed KDT engine is installed separately. |
+| **GeoForge Database** | Activate this optional integration with a Database token for built-in catalogue search and reviewed data retrieval. Some files require manual delivery. |
+| **Calibration** | Run a real model through its adapter, review parameter bounds and the fitting/holdout protocol, then examine scores and run evidence. |
 
-## Install
+Data access and software checks help prepare a run. They do not establish that
+the data are suitable, that a generated KI is scientifically valid, or that the
+model predicts your study site accurately.
 
-**macOS (Apple Silicon)** — download from
-[Releases](../../releases/latest):
+## Download and install
+
+### Windows x64 — 0.6.56
+
+Download from the [**Windows 0.6.56 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56):
+
+- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Setup-v0.6.56-Windows-x64.exe)
+- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-v0.6.56-Windows-x64.zip)
+- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/SHA256SUMS-Windows.txt)
+
+No separate Python installation is needed for the desktop application. Model
+binaries, compilers and model-specific environments may still need setup. Open
+**KI Library → Set up with agent** and check the final verification result;
+installation can require your help.
+
+### macOS Apple Silicon
+
+Use the separate [macOS v0.6.54 release](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/v0.6.54).
+Its build and documentation may differ from Windows. The app is not notarised:
 
 ```bash
 unzip GeoForge-Desktop-macos-arm64.app.zip
-xattr -dr com.apple.quarantine "GeoForge Desktop.app"   # unsigned build
+xattr -dr com.apple.quarantine "GeoForge Desktop.app"   # after checking the download
 open "GeoForge Desktop.app"
 ```
 
-The `xattr` line is needed because the app is not yet notarised by Apple.
-Without it macOS refuses to open it.
+### Run from source
 
-**Everything else** — run from source. Works on Linux, macOS and Windows:
+For Linux, Intel Macs or development, use Python 3.11 or newer:
 
 ```bash
-git clone https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation.git
-cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation
-pip install -e kiss/
-kiss gui            # opens the same interface in your browser
+git clone https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation.git
+cd KISS-Knowledge-Infrastructure-for-Scientific-Simulation
+git switch windows-version       # this Desktop implementation
+pip install -e kiss/ -e ki_tools_common/
+kiss gui                         # opens the local graphical interface
 ```
 
-> Intel Macs: not in the current release. GitHub's Intel runners have been
-> unavailable for hours at a time, so those builds are best-effort and the
-> release ships without one rather than waiting. Build from source meanwhile.
+## Illustrated quickstart and guides
 
-## The manual
+The **three-page quickstart** follows one real SHAW example: **connect DeepSeek
+→ set up the KI and model → approve the run and inspect outputs**. It includes
+actual interface screenshots and a preview of the verified model output, in
+both English and Simplified Chinese.
 
-A complete walkthrough of the desktop app, following one scientific model from
-project creation through KI selection, data preparation, the points where it
-hands back to you, execution, results, and calibration.
+| Guide | English | 简体中文 |
+|---|---|---|
+| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
 
-- [English](docs/manual/0.6.54/GeoForge-Desktop-Manual-EN-v0.6.54.pdf)
-- [简体中文](docs/manual/0.6.54/GeoForge-Desktop-Manual-ZH-CN-v0.6.54.pdf)
+The app's **Guide / 使用指南** menu opens the same guides as offline HTML or PDF.
+These are the updated **0.6.55 guide edition**, included with Windows 0.6.56;
+the document filenames retain that edition number. [Guide sources and earlier
+editions](docs/manual/README.md) are also available in the repository.
 
-These document 0.6.54 (Windows build `windows-v0.6.54`, with macOS notes) and
-follow the FSM2 Alptal example from request to **Completed**. Earlier editions
-are listed in [docs/manual](docs/manual/README.md).
+## Your first project
 
-## Before the first run
+1. Connect an agent in **Settings → AI services**: use an authenticated local
+   CLI, or save and test an API key. Select **Local** or **API**, its provider and
+   model before the first message in a chat.
+2. Create a chat and select a KI with **Auto KI**, or let the agent help choose
+   one. Use **KI Library** to install and verify any missing model software.
+3. Describe the scientific task and supply your files, or review proposed data
+   sources. GeoForge Database access is optional; official examples and your own
+   data can be used without a Database token.
+4. Review the inputs, parameters, outputs and executable steps. Approve the
+   concrete plan, then follow **Project status** and open the project folder to
+   inspect outputs. A changed plan or tool can require a new review.
 
-GeoForge needs *one* of these to think with. It checks on startup and tells
-you what it found.
-
-| | |
-|---|---|
-| **An agent CLI you already use** | `claude`, `codex`, `gemini`, `kimi` or `qwen` — nothing to configure |
-| **An API key** | Anthropic, OpenAI, DeepSeek or OpenRouter — paste it into ⚙ Settings |
-
-Switch between the two with the **CLI / API** button in the menu bar, and pick
-the provider and model per session.
-
-## Using it
-
-Sessions live on the left, like any chat app. Describe what you want:
-
-> *"Simulate groundwater drawdown from a well field over ten years."*
-
-With **Models: Auto**, GeoForge reads the catalogue and chooses — MODFLOW 6
-here. Pin a model yourself if you would rather decide.
-
-**KISS Library** (top right) is the other half: every model, its setup state,
-and a green or red dot.
-
-- **Green** — the model runs on this machine. Verified by executing it, not by
-  checking that a file exists.
-- **Red** — it does not run, and the reason is stated: a missing shared
-  library, an absent .NET runtime, a binary built for another architecture.
-
-Press **Install** and the agent does the setup. For a model with no recipe yet
-it reads the KI's documentation, searches upstream for build instructions,
-proposes a recipe, and then *runs it* — a proposal that fails to install is
-discarded, never recorded.
-
-## Verifying an install
-
-The question "is this model usable" is answered by four tests, in order:
-
-```
-$ kiss verify MODFLOW6
-  runs   MODFLOW6   runnable (elf) — mf6: 6.6.1 02/10/2025
-```
-
-That version string came out of the binary. The four tests are **present**
-(the file is there), **shaped** (right architecture for this machine),
-**linked** (every shared library and import resolves) and **responds** (it
-actually executes).
-
-What counts as runnable depends on the model, and the check knows the
-difference: 87 of the 127 are compiled and need a working binary, while 36 are
-Python packages where importing *is* running.
-
-Twenty-nine packages declare neither a binary nor an import for the checker to
-test. Those report **`cannot verify`** — not green. A check that examines
-nothing would always pass, and a green light that means "nothing was tested"
-is worse than an honest gap.
+GeoForge's completion checks use recorded execution and output validation; an
+agent's message saying “done” is not sufficient. A passing installation check
+only establishes the checked runtime requirements. Scientific suitability and
+validation remain specific to your model, data and research question.
 
 ## The literature
 
@@ -267,8 +260,7 @@ from kiss_cli.catalog import Catalog
 ki = Catalog.discover().get("SWAT+").root
 ```
 
-The toolkit that writes these packages from a model's source is a separate
-project: [**KDT-single**](https://github.com/lzwei196/KDT-single).
+[**KDT-single**](https://github.com/lzwei196/KDT-single) is the separate knowledge-dissection engine used by Desktop **KI Studio** to help author new KI packages. Desktop installs a reviewed engine revision and keeps the source and authoring workspace separate from the imported KI.
 
 ## Terminal use
 
@@ -283,13 +275,12 @@ kiss papers WRF_Hydro        # the literature behind it
 kiss doctor                  # what would stop a KI working elsewhere
 ```
 
-## Honest status
+## Validation scope
 
-- **127** model packages, **123** with a full `dag.yaml` contract
-- **19** installs have a recorded, executed recipe. The other 108 go through
-  the agent, which works but is slower and can fail
-- macOS builds are **unsigned** — hence the `xattr` step
-- Apple Silicon only in the current release
+- The Desktop catalogue contains **127 model KI packages**; they are not all installed or verified on every platform.
+- Windows acceptance includes assisted setup and actual native SHAW, VIC and CRHM example runs. The calibration test recovers a publisher reference parameter; it is not field-observation validation.
+- Setup can require compiler/runtime repairs, licensed software, protected downloads or other user input. Check the selected KI on your own machine.
+- Windows x64 and macOS Apple Silicon have separate releases. The builds are unsigned; use the matching release files and checksums.
 
 ## Digging deeper
 

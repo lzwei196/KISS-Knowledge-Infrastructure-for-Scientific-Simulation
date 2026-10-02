@@ -5,10 +5,10 @@
   "release_date": "2026-10-02",
   "source": {
     "branch": "windows-version",
-    "code_commit": "c5c745625a0bf89ce3404a765526789902a218e6",
+    "code_commit": "28f3e1425f12640998183603ee3120cebc73d9ed",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
     "release_tag": "windows-v0.6.56",
-    "commit_scope": "Application implementation is unchanged from application_code_commit. Illustrated guide contents are pinned by code_commit until the final release preparation commit is recorded. Version metadata, README and release checks are updated for 0.6.56. The exact tagged build commit is recorded in Windows-release-validation.json.",
+    "commit_scope": "Application implementation is unchanged from application_code_commit. code_commit pins the version bump, illustrated guides and release checks. Later commits change source pointers, README and audit reports only. Windows-release-validation.json records the build commit and exact release tag commit.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
     "build_label": "windows-0.6.56-20261002",

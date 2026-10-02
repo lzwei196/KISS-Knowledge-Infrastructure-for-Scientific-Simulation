@@ -99,6 +99,22 @@ DEFAULT_CULTIVARS = {
 }
 
 # Default management parameters per crop
+# Fertiliser writer constants (declared 2026-09-24; before this they were hidden in the writer body).
+# Legacy path (fert_n + fert_date_offset): FERT_SPLIT_AT_PLANTING of the N at planting, the rest at planting +
+# offset days; offset 0 = EVERYTHING at planting in one row (before 2026-09-24 the second row was silently dropped
+# when the offset was 0, so wheat, whose default offset is 0, received 40 % of the requested N).
+# Events path (management['fertilizer_events']): the user's own dated rows, written verbatim.
+FERT_SPLIT_AT_PLANTING = 0.4
+FERT_CODE = "FE005"          # urea
+FERT_APPL = "AP002"          # broadcast, incorporated
+FERT_DEPTH_CM = 10
+FERT_MAX_EVENTS = 9000       # DSSAT NAPPL (ModuleDefs.for): IPFERT stops reading FERTILIZERS rows beyond this, silently
+# Application methods DSSAT actually places (Fert_Place.for SELECT CASE (METFER)): 1,3,11 surface; 2,4,12-18
+# incorporated to FERDEPTH; 7,8,9,19,20 banded/point at FERDEPTH; 5 in floodwater. Any other code (e.g. AP006,
+# AP010) only warns and places NOTHING, while NICM still counts it, so the writer refuses it.
+FERT_SUPPORTED_METHODS = {1, 2, 3, 4, 5, 7, 8, 9} | set(range(11, 21))
+FERT_INCORPORATED_METHODS = {2, 4} | set(range(12, 19))     # depth must lie inside the soil profile (Fert_Place.for:761)
+
 DEFAULT_MANAGEMENT = {
     "MZ": {"ppop": 7.2, "plrs": 76, "pldp": 5, "fert_n": 120, "fert_date_offset": 30},
     "WH": {"ppop": 350, "plrs": 20, "pldp": 4, "fert_n": 100, "fert_date_offset": 0},
@@ -320,6 +336,85 @@ def _generate_dssatpro(workdir: str) -> str:
 # FileX Generation (Pitfall #3: WSTA code alignment, #4: CUL column align)
 # ==========================================================================
 
+def _n_fertilizer_codes() -> dict:
+    """{FMCD: True if the code carries N} read from DSSAT's own table StandardData/FERCH048.SDA (NO3% + NH4% + Urea%
+    > 0). A positive N amount on a code without N (e.g. FE014 triple superphosphate) applies nothing in DSSAT
+    (FertType_mod.for warns only), so the writer refuses it."""
+    cache = getattr(_n_fertilizer_codes, "_cache", None)
+    if cache is not None:
+        return cache
+    table = {}
+    path = DSSAT_STANDARD_DATA / "FERCH048.SDA"
+    try:
+        for ln in open(path, errors="replace"):
+            if re.match(r"^FE\d{3}\s", ln):
+                parts = ln.split()
+                nums = [float(x) for x in parts if re.match(r"^-?\d+(\.\d+)?$", x)]
+                table[parts[0]] = sum(nums[:3]) > 0 if len(nums) >= 3 else False
+    except OSError:
+        table = {}
+    _n_fertilizer_codes._cache = table
+    return table
+
+
+def _soil_profile_depth_cm(soil_path, soil_id: str):
+    """Bottom depth (cm) of the named profile in a .SOL file = the largest SLB of its layer rows; None if not found."""
+    try:
+        depth, inside, in_layers = None, False, False
+        for ln in open(soil_path, errors="replace"):
+            if ln.startswith("*"):
+                inside = ln[1:].split()[:1] == [str(soil_id).strip()]; in_layers = False
+                continue
+            if not inside:
+                continue
+            if ln.startswith("@") and "SLB" in ln.split()[:3]:
+                in_layers = True; continue
+            if ln.startswith("@"):
+                in_layers = False; continue
+            if in_layers and ln.strip():
+                try:
+                    depth = max(depth or 0.0, float(ln.split()[0]))
+                except ValueError:
+                    pass
+        return depth
+    except OSError:
+        return None
+
+
+def _fert_amount_text(amt: float) -> str:
+    """FAMN is a 5-character F5.0 field: whole amounts as integers, fractional ones with one decimal; anything that
+    does not fit (>= 1000 with a fraction, > 99999) is refused rather than silently truncated."""
+    txt = f"{int(round(amt)):>5d}" if float(amt) == int(round(amt)) else f"{amt:>5.1f}"
+    if len(txt) > 5:
+        raise ValueError(f"fertiliser amount {amt} does not fit DSSAT's 5-character FAMN field (use a whole number above 999)")
+    return txt
+
+
+def _fert_row(when: int, amt: float, fmcd: str, facd: str, dep: int, name: str) -> str:
+    """One FERTILIZERS row in DSSAT's fixed columns (IPMAN.for format 60: I3,I5,1X,A5,1X,A5,6(1X,F5.0),1X,A5):
+    FDATE [3:8], FMCD [9:14], FACD [15:20], FDEP [21:26], FAMN [27:32]. Whole amounts print as integers (byte-identical
+    to the old writer), fractional amounts with one decimal."""
+    for label, txt in (("fmcd", fmcd), ("facd", facd), ("name", name)):
+        if re.search(r"[\r\n\x00-\x1f]", str(txt)):
+            raise ValueError(f"fertiliser {label} {txt!r} contains a control character or line break")
+    amt_txt = _fert_amount_text(amt)
+    return f" 1 {when:>5d} {fmcd:<5s} {facd:<5s} {dep:>5d} {amt_txt}     0     0     0     0   -99 {name}"
+
+
+def _check_written_n(fert_lines: list, requested: float, expected_rows=None) -> float:
+    """Read the FAMN column back from the text DSSAT will parse: every row must equal its (already rounded) amount
+    exactly and the rows must sum to the request; otherwise refuse."""
+    parsed = [float(l[27:32]) for l in fert_lines]
+    if expected_rows is not None:
+        for got, want in zip(parsed, expected_rows):
+            if abs(got - float(want)) > 1e-9:
+                raise ValueError(f"fertiliser row written as {got:g} kg N/ha but {want:g} was intended (field overflow?)")
+    written = sum(parsed)
+    if abs(written - float(requested)) > 1e-6:
+        raise ValueError(f"fertiliser rows written sum to {written:g} kg N/ha but {requested:g} was requested")
+    return written
+
+
 def _generate_filex(
     crop: str,
     cultivar: str,
@@ -414,6 +509,105 @@ def _generate_filex(
     else:
         fert_yyddd = planting_yyddd
 
+    # ------------------------------------------------------------------
+    # Fertiliser rows. Two doors (2026-09-24, revised after the codex review):
+    #   management['fertilizer_events'] = [{'yyddd'|'date'|'dap': ..., 'n_kgha': ..., 'fmcd'?, 'facd'?, 'depth_cm'?,
+    #       'name'?}, ...] or (when, n_kgha) tuples -> written as given (amounts kept to 0.1 kg N/ha, the FAMN field is
+    #       read as F5.0 so decimals are legal), sorted by CALENDAR date (with IFERI='R' DSSAT applies a row only on
+    #       its own day and EXITs the loop at the first future date, Fert_Place.for:341-346; YYDDD does not sort
+    #       across 1999/2000), dates must be valid, on or after the
+    #       simulation start (IPMAN.for:559 rejects earlier reported dates) and inside the simulated years;
+    #       pre-plant dates are allowed. An EMPTY list means 'no application' (fert_n is ignored either way).
+    #   otherwise fert_n + fert_date_offset, byte-identical to the pre-2026-09-24 writer when offset > 0:
+    #       round(fert_n*0.4) at planting, the rest at planting + offset; offset 0 -> ONE row with everything at
+    #       planting (before, that row was silently dropped: wheat's default offset is 0 -> 40 % N).
+    # ------------------------------------------------------------------
+    fert_events = management.get("fertilizer_events")
+    fert_rows = []                       # (yyddd, kg N float, fmcd, facd, depth cm int, name), sorted by date
+    sim_start_dt = _yyddd_to_date(sdate_yyddd)
+    if fert_events is not None:
+        dated = []
+        for _i, ev in enumerate(fert_events):
+            if isinstance(ev, dict):
+                when = ev.get("yyddd", ev.get("date"))
+                dap = ev.get("dap", ev.get("days_after_planting"))      # 'days_after_planting' = get_schedule's name
+                if when is None and dap is not None:
+                    if pdate_dt is None:
+                        raise ValueError("fertilizer_events with 'dap' need a valid planting date")
+                    if float(dap) != int(float(dap)):
+                        raise ValueError(f"fertilizer_events[{_i}]: dap must be a whole number of days, got {dap!r}")
+                    when = _date_to_yyddd(pdate_dt + timedelta(days=int(float(dap))))
+                amt = ev.get("n_kgha", ev.get("famn"))
+                fmcd = str(ev.get("fmcd", FERT_CODE)); facd = str(ev.get("facd", FERT_APPL))
+                dep = int(round(float(ev.get("depth_cm", FERT_DEPTH_CM)))); name = str(ev.get("name", "event"))
+            else:
+                seq = list(ev) if not isinstance(ev, (str, bytes)) else []
+                if len(seq) < 2 or len(seq) > 3:
+                    raise ValueError(f"fertilizer_events[{_i}]: a tuple event is (when, n_kgha) or (when, n_kgha, fmcd), got {ev!r}")
+                when, amt = seq[0], seq[1]
+                fmcd = str(seq[2]) if len(seq) == 3 else FERT_CODE
+                facd, dep, name = FERT_APPL, FERT_DEPTH_CM, "event"
+            if isinstance(when, str):
+                when = _date_to_yyddd(when)
+            if when is None or amt is None:
+                raise ValueError(f"fertilizer_events[{_i}]: needs a date (yyddd/date/dap) and n_kgha")
+            if float(when) != int(float(when)):
+                raise ValueError(f"fertilizer_events[{_i}]: date {when!r} must be a whole YYDDD number")
+            amt_f = float(amt)
+            if not (amt_f >= 0) or amt_f > 99999 or not (0 <= dep <= 99999):
+                raise ValueError(f"fertilizer_events[{_i}]: amount {amt} / depth {dep} out of range")
+            when_dt = _yyddd_to_date(int(when))
+            if when_dt is None or when_dt.timetuple().tm_yday != int(when) % 1000:
+                raise ValueError(f"fertilizer_events[{_i}]: {when} is not a valid YYDDD date (day {int(when) % 1000} does not exist in that year)")
+            if sim_start_dt is not None and when_dt < sim_start_dt:
+                raise ValueError(f"fertilizer_events[{_i}]: {when} is before the simulation start {sdate_yyddd} (DSSAT rejects it)")
+            if when_dt.year > end_year:
+                raise ValueError(f"fertilizer_events[{_i}]: {when} is after the last simulated year {end_year}")
+            m = re.fullmatch(r"AP(\d{3})", facd[:5].upper())
+            if not m or int(m.group(1)) not in FERT_SUPPORTED_METHODS:
+                raise ValueError(f"fertilizer_events[{_i}]: application method {facd!r} is not placed by DSSAT "
+                                 f"(Fert_Place.for warns and applies nothing); supported: AP{sorted(FERT_SUPPORTED_METHODS)}")
+            if int(m.group(1)) in FERT_INCORPORATED_METHODS and float(amt) > 0:
+                prof = management.get("_soil_profile_depth_cm")
+                if not prof:
+                    raise ValueError(f"fertilizer_events[{_i}]: incorporated method {facd!r} needs the soil profile depth, "
+                                     "which could not be read from the .SOL file for this soil_id (check the id matches "
+                                     "a '*<id>' profile line); DSSAT loses N below the profile (Fert_Place.for:761)")
+                if dep > float(prof):
+                    raise ValueError(f"fertilizer_events[{_i}]: incorporation depth {dep} cm exceeds the soil profile "
+                                     f"({float(prof):g} cm from the .SOL file); DSSAT would lose part of the N (Fert_Place.for:761)")
+            ncodes = _n_fertilizer_codes()
+            if amt_f > 0 and not ncodes:                       # fail closed: no table, no way to know the code carries N
+                raise ValueError(f"fertilizer_events[{_i}]: cannot verify fertiliser code {fmcd!r}: "
+                                 f"{DSSAT_STANDARD_DATA / 'FERCH048.SDA'} is missing or unreadable")
+            if amt_f > 0 and not ncodes.get(fmcd[:5].upper(), False):
+                raise ValueError(f"fertilizer_events[{_i}]: {amt_f} kg N with code {fmcd!r}, which carries no nitrogen in "
+                                 f"FERCH048.SDA (or is unknown); DSSAT would apply nothing")
+            dated.append((when_dt, int(when), round(amt_f, 1), fmcd[:5], facd[:5], dep, name))
+        if len(dated) > FERT_MAX_EVENTS:
+            raise ValueError(f"{len(dated)} fertilizer_events; DSSAT reads at most {FERT_MAX_EVENTS} (NAPPL) and drops the rest silently")
+        dated.sort(key=lambda r: r[0])
+        fert_rows = [r[1:] for r in dated]
+        fert_total = round(sum(r[1] for r in fert_rows), 1)
+    else:
+        if fert_date_offset < 0:
+            raise ValueError(f"fert_date_offset must be >= 0 (0 = everything at planting), got {fert_date_offset}")
+        if fert_date_offset > 0 and float(fert_n) > 0:
+            side_dt = _yyddd_to_date(fert_yyddd)
+            if side_dt is None or side_dt.year > end_year:
+                raise ValueError(f"sidedress date {fert_yyddd} (planting + {fert_date_offset} d) falls after the last simulated year {end_year}")
+        fert_total = float(fert_n)
+        if fert_n > 0:
+            n_at_plant = int(round(fert_n * FERT_SPLIT_AT_PLANTING))     # the pre-2026-09-24 arithmetic, unchanged
+            n_at_side = int(round(fert_n)) - n_at_plant
+            if fert_date_offset > 0:
+                fert_rows = [(planting_yyddd, n_at_plant, FERT_CODE, FERT_APPL, FERT_DEPTH_CM, "Planting urea")]
+                if n_at_side > 0:
+                    fert_rows.append((fert_yyddd, n_at_side, FERT_CODE, FERT_APPL, FERT_DEPTH_CM, "Sidedress urea"))
+            else:
+                fert_rows = [(planting_yyddd, n_at_plant + n_at_side, FERT_CODE, FERT_APPL, FERT_DEPTH_CM, "Planting urea")]
+            fert_total = float(n_at_plant + n_at_side)
+
     # Harvest last day (auto-management)
     hlast_yyddd = _to_yyddd(start_year, 365)
 
@@ -441,7 +635,7 @@ def _generate_filex(
     lines.append("*TREATMENTS                        -------------FACTOR LEVELS------------")
     lines.append("@N R O C TNAME.................... CU FL SA IC MP MI MF MR MC MT ME MH SM")
     # Determine if we have fertilizer and irrigation
-    has_fert = fert_n > 0
+    has_fert = (fert_total > 0) if fert_events is not None else (fert_n > 0)   # legacy semantics kept for byte-identity
     mf_val = 1 if has_fert else 0
     tname = f"DEFAULT {crop_info[2].upper()[:18]}"
     lines.append(f" 1 1 0 0 {tname:<25s}  1  1  0  1  1{mi_val:>3d}{mf_val:>3d}  0  0  0  0  0  1")
@@ -508,22 +702,14 @@ def _generate_filex(
         lines.append(f" 1 {_yyddd:>5d} {_irop:<5s}{_irval:>6.0f}")
     lines.append("")
 
-    # Fertilizer
+    # Fertilizer: one row per event (fert_rows built above), FERTI = R (reported dates)
     if has_fert:
         lines.append("*FERTILIZERS (INORGANIC)")
         lines.append("@F FDATE  FMCD  FACD  FDEP  FAMN  FAMP  FAMK  FAMC  FAMO  FOCD FERNAME")
-        # Split fertilizer: 40% at planting, 60% at offset.
-        # Both halves MUST be int: fert_n commonly arrives as a float from
-        # ki_tools_common.fertilizer (NPKGRIDS returns e.g. 193.1), and the
-        # ':>3d' formats below raise "Unknown format code 'd' for object of
-        # type 'float'" on a float. Round rather than truncate so the split
-        # still sums to round(fert_n).
-        n_at_plant = int(round(fert_n * 0.4))
-        n_at_side = int(round(fert_n)) - n_at_plant
-        lines.append(f" 1 {planting_yyddd:>5d} FE005 AP002    10   {n_at_plant:>3d}     0     0     0     0   -99 Planting urea")
-        if n_at_side > 0 and fert_date_offset > 0:
-            lines.append(f" 1 {fert_yyddd:>5d} FE005 AP002    10   {n_at_side:>3d}     0     0     0     0   -99 Sidedress urea")
+        fert_lines = [_fert_row(_when, _amt, _fmcd, _facd, _dep, _name) for _when, _amt, _fmcd, _facd, _dep, _name in fert_rows]
+        lines.extend(fert_lines)
         lines.append("")
+        _check_written_n(fert_lines, fert_total, [r[1] for r in fert_rows])
 
     # Simulation controls
     sname = f"{experiment_name[:30]}"
@@ -821,7 +1007,10 @@ def create_workdir(
         If provided, creates the workdir at this path. Otherwise uses /tmp.
     **management_kwargs
         Override default management: ppop, plrs, pldp, fert_n,
-        fert_date_offset, irrigation_events (list of (yyddd, mm) tuples).
+        fert_date_offset (>= 0; 0 = all N at planting in one row), fertilizer_events
+        (the user's own dated N rows: [{'yyddd'|'date'|'dap'|'days_after_planting', 'n_kgha',
+        'fmcd'?, 'facd'?, 'depth_cm'?, 'name'?}] or (when, n_kgha[, fmcd]) tuples; overrides
+        fert_n/fert_date_offset; [] = no application), irrigation_events (list of (yyddd, mm) tuples).
 
         irrigation : {'none', 'auto', 'events'}, optional
             Explicit irrigation regime, so an ensemble can express a RAINFED
@@ -1095,6 +1284,9 @@ def create_workdir(
     if crop in DEFAULT_MANAGEMENT:
         mgmt.update(DEFAULT_MANAGEMENT[crop])
     mgmt.update(management_kwargs)
+    _prof_depth = _soil_profile_depth_cm(soil_dst_main, str(soil_id).strip()) if os.path.isfile(soil_dst_main) else None
+    if _prof_depth:
+        mgmt["_soil_profile_depth_cm"] = _prof_depth
 
     # ------------------------------------------------------------------
     # Generate FileX

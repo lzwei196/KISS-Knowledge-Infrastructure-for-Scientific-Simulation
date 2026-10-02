@@ -284,12 +284,31 @@ python tools/s3_soil_setup/validate_soil_profile.py            /path/SOIL.SOL
 
 | Key | Meaning | Where to get it |
 |---|---|---|
-| `fert_n`, `fert_date_offset` | total N kg/ha, split 40% at planting / 60% sidedress | `ki_tools_common.fertilizer.get_fertilizer_rates` (NPKGRIDS v1.08) |
+| `fert_n`, `fert_date_offset` | total N kg/ha, split 40% at planting / 60% at planting + offset days; **offset 0 = everything at planting in one row** (wheat and soybean defaults are 0) | rate: `ki_tools_common.fertilizer.get_fertilizer_rates` (NPKGRIDS v1.08); timing: `ki_tools_common.fertilizer.get_schedule` (declared rule, weather-driven) and pass the result as `fertilizer_events` |
+| `fertilizer_events` | `[{'yyddd'\|'date'\|'dap': ..., 'n_kgha': ..., 'fmcd'?, 'facd'?, 'depth_cm'?, 'name'?}, ...]` or `[(yyddd, n_kgha), ...]` — the user's own dated N rows (kg N/ha, not product; kept to 0.1 kg), one FERTILIZERS row each, sorted by calendar date; dates must be valid, on/after the simulation start and within the simulated years (pre-plant is fine); an EMPTY list = no application; overrides `fert_n`/`fert_date_offset`; the writer reads its own rows back and refuses if they do not sum to the request | field records, or `ki_tools_common.fertilizer.get_schedule(...)` (needs daily weather for the weather-driven timing, otherwise it labels a calendar fallback): pass each event's `days_after_planting` (accepted as `dap`) and `n_kgha`, and map `material` to an FMCD code (`urea` -> `FE005`). A row dated outside the simulated window is skipped by DSSAT without any error, so check `NICM` in Summary.OUT against the request after the run |
 | `planting_date` (YYDDD) | sowing | `ki_tools_common.crop_calendar.get_planting_harvest` — but in the Huang-Huai belt (32–35N) the GGCMI *global* maize calendar returns late May; maize there is the SUMMER crop after winter wheat, so clamp to DOY ≈ 165 (see China crop calendar below) |
 | `ppop`, `plrs` | plants/m², row spacing cm | China maize: ~6.0 plants/m² at **60 cm** rows, not the 76 cm US default |
 | `irrigation` | `"rainfed"` (default, non-rice) / `"auto"` / `"reported"` | set `"auto"` for any IRRIGATED site |
 | `irr_ithrl`, `irr_amt`, `irr_imdep`, `irr_eff` | automatic-irrigation trigger %, mm applied, depth cm, efficiency | NCP supplemental: `irr_ithrl=40, irr_amt=40` (rice paddy default is 80/50) |
 | `irrigation_events` | `[(yyddd, mm), ...]` explicit dated events → `IRRIG=R`, `MI=1` | single-season runs only — a multi-season (`NYERS>1`) run needs `irrigation="auto"`, since fixed calendar dates exist for the first season only |
+
+> **Trap (fixed 2026-09-24):** the writer wrote the sidedress row only when `fert_date_offset > 0`. Wheat's
+> default offset is 0, so every wheat run that relied on the defaults (or passed `fert_n` without an offset)
+> silently received **40 % of the requested N**.
+> Now offset 0 writes one row with the whole amount, `fertilizer_events` is the door for real schedules, the
+> constants are declared at the top of the writer (`FERT_SPLIT_AT_PLANTING`, `FERT_CODE`, `FERT_APPL`,
+> `FERT_DEPTH_CM`, `FERT_MAX_EVENTS`), and the writer refuses to continue if the rows it wrote do not sum to the
+> requested N. The writer now REFUSES (ValueError) instead of silently under-applying: a negative
+> `fert_date_offset`; a sidedress date after the last simulated year; more than 9,000 events (DSSAT's NAPPL,
+> the rest were dropped silently); an invalid or fractional date; a positive N amount on a fertiliser code that
+> carries no nitrogen in `FERCH048.SDA` (e.g. FE014 triple superphosphate: DSSAT applies nothing); an amount that
+> does not fit the 5-character FAMN field; a line break in an event's text; an application method DSSAT does not
+> place (`FERT_SUPPORTED_METHODS`, from `Fert_Place.for`); an incorporated event deeper than the soil profile, or any
+> incorporated event when the profile depth cannot be read from the `.SOL` for this `soil_id` (DSSAT loses N below the
+> profile, `Fert_Place.for:761`). Positive-offset output is
+> byte-identical to the old writer for amounts below 1000 kg.
+> Note: DSSAT's automatic fertiliser mode (`IFERI='A'`, AUTOMATIC MANAGEMENT NITROGEN row) is dead code in
+> this build (`Fert_Place.for:568-612` commented out): it passes validation and applies nothing. Do not use it.
 
 > **Trap (fixed 2026-08-10):** before this, `irrigation_events` was accepted, documented
 > and then **silently discarded**, and `IRRIG` was hard-wired to `N` for every non-rice

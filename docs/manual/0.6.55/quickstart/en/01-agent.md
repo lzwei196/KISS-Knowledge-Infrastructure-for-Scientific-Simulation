@@ -1,26 +1,23 @@
-# 1 Set up the agent
+# 1 Connect the agent for our SHAW example
 
-**Goal:** connect an AI before starting a scientific project. This Windows guide uses DeepSeek API, the provider used in the verified example on page 3.
+**Example:** run the official SHAW 3.03 Trial, then open its soil-profile plot. These three pages take you through **connect AI → set up SHAW → approve, run and check**. Use GeoForge Desktop 0.6.55 on Windows.
 
 ## Connect DeepSeek
 
-1. Open GeoForge Desktop. Click **Settings → AI services**.
-2. In **DeepSeek (API)**, click **Get a key**. Create a key in your own provider account; return to GeoForge and paste it into **Paste API key**.
-3. Select **Use by default**, then **Save**. Click **Test AI & GitHub**. A saved key alone does not prove that the connection works.
-4. When the AI test succeeds, close Settings. The sidebar should show **AI ready**. If it fails, read the test error and check the provider account and **Network & proxy** settings.
+1. Open **Settings → AI services**. Find **DeepSeek (API)** and click **Get a key** to create a key in your own provider account.
+2. Return to GeoForge, paste the key into **Paste API key**, select **Use by default**, then click **Save**.
+3. Click **Test AI & GitHub**. Continue when the **AI** connection test passes. If it fails, read the error and check your provider account or **Network & proxy**.
 
-> **Keep credentials private.** Enter API keys only in Settings. Never put an API key or GeoForge Database token in chat, a screenshot, or a project file. The Database is optional and is not needed for this example.
+![DeepSeek connection settings in the real application](../../images/en/quickstart-01-agent.png){: .agent-shot }
 
-## Start the project
+*DeepSeek in **Settings → AI services**: the saved key is masked and **Use by default** is selected. Never share the key.*
 
-1. Click **＋ New chat**. Name it `SHAW official Trial` and choose a project parent folder, for example `D:\GeoForge\projects`. In Windows browser mode, paste the folder path.
-2. Before the first message, select **API → DeepSeek (API) → deepseek-chat** in the chat header.
-3. Click **Auto KI**, search `SHAW`, select it and click **Apply**. Continue with page 2.
+## Create the example project
 
-The project folder holds this chat's inputs, results and run records. Model software has a separate installation folder and can be reused by other projects.
+4. Close Settings. Click **＋ New chat**, name it `SHAW official Trial`, choose a project parent folder such as `D:\GeoForge\projects`, then click **Create chat**.
+5. Before sending a message, select **API → DeepSeek (API) → deepseek-chat** in the chat header.
+6. Click **Auto KI**, search `SHAW`, select it and click **Apply**. Continue to page 2.
 
-## Prefer a local CLI?
+**Expected result:** the AI test passes and the new chat uses DeepSeek and SHAW. This example needs no GeoForge Database token. Keep all credentials in Settings.
 
-Install and sign in to a supported CLI such as Claude Code or OpenAI Codex using its own instructions. In **Settings → AI services**, click **Recheck local CLIs**; select **Local** and that agent before the first chat message. This is an alternative connection path; the worked example was tested with DeepSeek API.
-
-**Checkpoint:** AI test passed; the new chat shows the intended AI and SHAW. Once the first message is sent, start a new chat to change its AI or KI.
+Already use a local CLI? Connect it through **Recheck local CLIs**, then choose **Local** before the first message. This worked example uses DeepSeek API; see the full manual for CLI setup.

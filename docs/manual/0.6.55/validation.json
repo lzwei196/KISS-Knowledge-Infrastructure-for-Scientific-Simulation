@@ -1,6 +1,6 @@
 {
   "version": "0.6.55",
-  "validated_utc": "2026-10-01T17:52:01.480640+00:00",
+  "validated_utc": "2026-10-02T00:44:08.023745+00:00",
   "status": "passed",
   "guide_kinds": 3,
   "languages": [
@@ -15,14 +15,21 @@
   "visual_review": {
     "method": "All six PDFs rendered; all manual pages reviewed on contact sheets, all quickstart and calibration pages reviewed, changed final pages rechecked at useful magnification.",
     "result": "No clipping, overlap, missing glyphs or unintended blank pages observed. Chinese manual page 86 is a genuine screenshot-only page.",
-    "render_artifacts": "tmp/pdfs/0.6.55/final-render/"
+    "render_artifacts": "tmp/pdfs/0.6.55/final-render/",
+    "quickstart_revision": {
+      "pages_reviewed": 6,
+      "status": "passed",
+      "result": "All six final pages inspected individually. No clipping, overlap, blank pages or missing glyphs observed.",
+      "render_artifacts": "tmp/pdfs/0.6.55/illustrated-final/"
+    }
   },
   "scope": [
     "Full manual preserves genuine 0.6.54 FSM2 screenshots with a version note; Guide screenshots are from 0.6.55.",
     "Quickstart is reproducible from the public SHAW archive and five unchanged Trial inputs.",
     "Calibration reports real native reference recovery, not field-observation validation.",
     "The native comparison figure was supplied by the independent calibration audit.",
-    "All 12 offline files byte-match their source HTML/PDF artifacts."
+    "All 12 offline files byte-match their source HTML/PDF artifacts.",
+    "Illustrated quickstart screenshots and CSV preview checked in the 2026-10-02 documentation revision; original release artifacts retain their earlier edition."
   ],
   "outputs": [
     {
@@ -70,39 +77,57 @@
       "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.html",
       "bundled": "kiss/kiss_cli/web/guides/quickstart-en.html",
       "route": "/guide/quickstart/en.html",
-      "bytes": 12914,
-      "sha256": "01a55b9f6a79abfd6ac88cf6fe6afcf4f34a491c26d8b555774c452a4700ac0f",
-      "self_contained_images": true
+      "bytes": 131614,
+      "sha256": "29ce1b5fe70889ff457e3ebfd700504c80d45a331055ac1d0571d1712b7b82b2",
+      "self_contained_images": true,
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "image_count": 4,
+      "lossless_png_images": true
     },
     {
       "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf",
       "bundled": "kiss/kiss_cli/web/guides/quickstart-en.pdf",
       "route": "/guide/quickstart/en.pdf",
-      "bytes": 141307,
-      "sha256": "69492ba6ad9555acf2f07396fddb357cde262eb608960577122c6026047e9d74",
+      "bytes": 230482,
+      "sha256": "b09247dc5eabca80cf97eb0e0ab2bb5ba26414ce6516ae7555aa37af51127389",
       "pages": 3,
       "out_of_page_text_blocks": 0,
       "visual_review": "passed",
-      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf"
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-Illustrated-EN-v0.6.55.pdf",
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "images_per_page": [
+        1,
+        1,
+        2
+      ]
     },
     {
       "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.html",
       "bundled": "kiss/kiss_cli/web/guides/quickstart-zh-CN.html",
       "route": "/guide/quickstart/zh-CN.html",
-      "bytes": 12695,
-      "sha256": "0b101ef59bca146616d838866645b9ea7a593fdcf6f14b950609f1da5a0b12cf",
-      "self_contained_images": true
+      "bytes": 124921,
+      "sha256": "2204a16aea978373d9dd4d0e15ea507012b32d8bcb95518352fdf4d423d1f307",
+      "self_contained_images": true,
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "image_count": 4,
+      "lossless_png_images": true
     },
     {
       "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf",
       "bundled": "kiss/kiss_cli/web/guides/quickstart-zh-CN.pdf",
       "route": "/guide/quickstart/zh-CN.pdf",
-      "bytes": 362678,
-      "sha256": "a58af885f512d24c17f2b6187f1f701b1e9e77f13851ed687061c0c24cc4488f",
+      "bytes": 437512,
+      "sha256": "3e812e3f2bb9425dc0eb4867d73318fac0bbcc7675d98bd180095e915e952add",
       "pages": 3,
       "out_of_page_text_blocks": 0,
       "visual_review": "passed",
-      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf"
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-Illustrated-ZH-CN-v0.6.55.pdf",
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "images_per_page": [
+        1,
+        1,
+        2
+      ]
     },
     {
       "source": "docs/manual/0.6.55/GeoForge-Desktop-Calibration-EN-v0.6.55.html",
@@ -168,12 +193,12 @@
     "docs/manual/0.6.55/src/zh-CN/09-troubleshooting.md": "6ec183bc71124238ba8843ed41d0a438e5faf8da252e8d83bd8be2570a42acdf",
     "docs/manual/0.6.55/src/zh-CN/10-calibration.md": "5c1e1990039d9e631832b8349fc9b0857b51cdbccb2207bc53323e2f6db2fec0",
     "docs/manual/0.6.55/src/zh-CN/11-verified-examples.md": "7951eb06a99d350e62d670c0a08df4f29d8f8a338174d63ef440f1d2ff834d78",
-    "docs/manual/0.6.55/quickstart/en/01-agent.md": "f66d196820b898935d881c9840d46866a636597a47164fc5233ae016f1db77a5",
-    "docs/manual/0.6.55/quickstart/en/02-ki.md": "f6499b0ef9835ab24bb0f52fe973adab29e213a52472c52a43120d5b815bb3ec",
-    "docs/manual/0.6.55/quickstart/en/03-run.md": "6fa7d10e826d16549477afc46d81a82650c1a875d6f0930d94017b7e3e08ee46",
-    "docs/manual/0.6.55/quickstart/zh-CN/01-agent.md": "c3e6253186947570d89addc5400c58874d3b6a2509df05070dc93d11ce0b37b7",
-    "docs/manual/0.6.55/quickstart/zh-CN/02-ki.md": "8e2640d6f5470deb04224fb856e2dd042c1ad213835d83749931782834b7de82",
-    "docs/manual/0.6.55/quickstart/zh-CN/03-run.md": "dc9c5d9d1e78c87a64ba749ae07bc46a98bbd12173d31d8b32e4b7eda54f61c0",
+    "docs/manual/0.6.55/quickstart/en/01-agent.md": "f4dfc1a991e69eef857eca8a8e8cb969ba48b1db487f2c33feaa1f7ddb8ff265",
+    "docs/manual/0.6.55/quickstart/en/02-ki.md": "7f7c0cae29444170c311fcd661006bbb07280cc5af9fb1ca424028c1df681c57",
+    "docs/manual/0.6.55/quickstart/en/03-run.md": "ffb99f8db501bc24aa516d54e4d3a15b79cd606c489afe541b8f8e97a3ee9c1e",
+    "docs/manual/0.6.55/quickstart/zh-CN/01-agent.md": "1fbc4ee2594e442f3019fec04b262faf304f279b38a8a826dbf0b4bdb31d1e60",
+    "docs/manual/0.6.55/quickstart/zh-CN/02-ki.md": "095c4a64baacf0b626f92c6c6e4616224d317e36a84c606fcbcb7331f551a727",
+    "docs/manual/0.6.55/quickstart/zh-CN/03-run.md": "70cea19bc143aa5a2d5677b837b828957baf09cc0885b96b81584e05950747ba",
     "docs/manual/0.6.55/calibration/en/01-workflow.md": "48c0ca68e420b50e5bada11bf156322eb167c7b06bf794a4752b1c7fb0567af7",
     "docs/manual/0.6.55/calibration/en/02-protocol.md": "9fbbf10923f481f5c5befaef7427474e9c92e09ff5653f123930e4f4cfaa58e8",
     "docs/manual/0.6.55/calibration/en/03-evidence.md": "50fdf4868a6ae722cbd67ae7f065b8c8053ea29d3b3670745b92a58d86161bef",
@@ -182,6 +207,20 @@
     "docs/manual/0.6.55/calibration/zh-CN/02-protocol.md": "4b079a27df1328170335d2ed9fb4700469609af9a08aaaebd687333db854ac45",
     "docs/manual/0.6.55/calibration/zh-CN/03-evidence.md": "ed777addba14caba6e21b7aac47668e4fab665895567d0c97cc25fbab5ae5acb",
     "docs/manual/0.6.55/calibration/zh-CN/04-tested-example.md": "205f2815f43e36fb90bdd240fda4f5720a8d62f54dea4f20d9914e14fa7bb7b9",
-    "tools/manual/build_manual.py": "af90be8fc574bccf2146869aa91f9588f989838fc41ed9dcd2bafc8fc90b0f8a"
+    "tools/manual/build_manual.py": "dac336b93ddac4d3f1472a6858b5b4d54a1e2756592b4548c2fea102c8be3aac"
+  },
+  "original_release_validated_utc": "2026-10-01T17:52:01.480640+00:00",
+  "documentation_revision": "illustrated-2026-10-02",
+  "documentation_revision_scope": "Documentation-only illustrated revision. Current source-tree offline guides contain this revision. The original published Windows 0.6.55 installer, portable ZIP, release tag and original guide assets remain unchanged and retain the original edition. Supplemental Illustrated PDFs are published separately. Application and model tests were not rerun for this documentation-only revision.",
+  "quickstart_revision_validation": "quickstart-illustrated-validation.json",
+  "image_sha256": {
+    "docs/manual/0.6.55/images/en/quickstart-01-agent.png": "d678131e6c5a16706d20f54be535ef391237ce19ad9239cf83dc34e432ac4c1e",
+    "docs/manual/0.6.55/images/en/quickstart-02-ki.png": "312fb7ab9058b9199134ca60ac7280386cb66c7d35193cbf47125ec9fc585065",
+    "docs/manual/0.6.55/images/en/quickstart-03-run.png": "66bc191531199443eecff6e498361ea9b1f9ec3a141af1e2932d6cc3f95847fe",
+    "docs/manual/0.6.55/images/en/quickstart-04-result.png": "f33588a31383e5c7ab25c4f1f6366865282041fa4925453061493bd3799744cc",
+    "docs/manual/0.6.55/images/zh-CN/quickstart-01-agent.png": "d1c84aff0019f697152f4d7e107c3970b5af8d99e271bc29f01b3117aa75386c",
+    "docs/manual/0.6.55/images/zh-CN/quickstart-02-ki.png": "a251341bfe00053a6d3d6edd23f40395e7d1dc04f32064ab492531e88fac1231",
+    "docs/manual/0.6.55/images/zh-CN/quickstart-03-run.png": "ae63b5fe4c1dd4a8c7070b911e23e0412c135592da1c758f7306975ba5781be1",
+    "docs/manual/0.6.55/images/zh-CN/quickstart-04-result.png": "f45b3841bed4729e7ebc7b385d51e81bbe4b27a6775b4c31a29c00f47ae5db8d"
   }
 }

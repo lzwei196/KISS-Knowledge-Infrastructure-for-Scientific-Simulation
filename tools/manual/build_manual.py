@@ -77,6 +77,11 @@ h3 { font-size:11pt; margin:3mm 0 1mm; }
 p { margin:2mm 0; } li { margin:1.5mm 0; }
 ul,ol { margin:2mm 0; padding-left:6mm; }
 img { max-height:58mm; max-width:100%; object-fit:contain; }
+img.agent-shot { width:110mm; max-height:none; }
+img.ki-shot { width:100%; max-height:none; }
+img.completion-shot { width:130mm; max-height:none; }
+img.result-shot { width:100%; max-height:none; }
+section.chapter > p > em { font-size:8.6pt; color:var(--mute); }
 table { font-size:9pt; } code { font-size:9pt; }
 .page-kicker { color:#2f6fe4; font-weight:600; letter-spacing:.05em; margin-bottom:2mm; }
 .page-footer { border-top:1px solid #dde3ea; margin-top:4mm; padding-top:2mm; color:#5b6675; font-size:8.5pt; }
@@ -89,7 +94,10 @@ EMBED_WIDTH = 1600   # px; screenshots are captured at 2560 px, which only bloat
 
 
 def image_data(path: Path) -> tuple[str, bytes]:
-    """The image as embedded: downscaled to EMBED_WIDTH and stored as JPEG (which PDF printing keeps as is) when Pillow is available."""
+    """Embed quickstart PNGs losslessly; downscale other images to JPEG when Pillow is available."""
+    # Small UI captures need lossless text edges when readers zoom the quickstart.
+    if path.name.startswith("quickstart-") and path.suffix.lower() == ".png":
+        return "image/png", path.read_bytes()
     try:
         from PIL import Image
     except ImportError:
@@ -156,7 +164,9 @@ def build(version: str, lang: str, pdf: bool, kind: str = "manual") -> list[Path
              f'<div class="toc"><h2>{contents}</h2><ul>{toc}</ul></div>')
     if kind == "quickstart":
         front = ""
-        chapters = [(cid, title, f'<div class="page-kicker">GEOFORGE DESKTOP {version} / {i + 1} OF 3</div>' + body
+        chapters = [(cid, title, '<div class="page-kicker">' +
+                     (f'GEOFORGE 桌面版 {version} / 第 {i + 1} 页，共 3 页' if lang == "zh-CN" else
+                      f'GEOFORGE DESKTOP {version} / {i + 1} OF 3') + '</div>' + body
                      + f'<div class="page-footer">{html.escape(subtitle)} · {i + 1} / 3 · GeoForge {version}</div>')
                     for i, (cid, title, body) in enumerate(chapters)]
     doc = (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><title>{name} · {subtitle}</title>'

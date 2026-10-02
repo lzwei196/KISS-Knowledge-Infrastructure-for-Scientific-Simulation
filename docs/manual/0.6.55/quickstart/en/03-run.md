@@ -1,28 +1,27 @@
-# 3 Run, approve and check results
+# 3 Run the example and inspect outputs
 
-**Goal:** reproduce the publisher's SHAW Trial with the real model. This is a forward example check, not calibration against field observations.
+This is a real SHAW forward example, not calibration against field observations.
 
-## Send this request
+## Send this request with the five files
 
-> Run the authentic SHAW 3.03 Trial using my five uploaded original files. Preserve every scientific input and control flag. Stage the inputs in this project, run the installed native SHAW through the KI tool, export CSVs and plot the soil profiles. Do not use GeoForge Database, generate forcing or calibrate parameters. Report the actual row counts and dates; check temperature/moisture 301 each, liquid 14, energy 300, water 13 and frost 48, ending 1986-12-17 00:00.
+> Run the official SHAW 3.03 Trial using my five uploaded files. Preserve all scientific inputs and control flags. Run native SHAW through its KI: raw files in `outputs/SHAW/trial/`, CSVs in `outputs/SHAW/csv/`, soil-profile plot at `outputs/SHAW/shaw_profiles.png`. No Database, generated forcing or calibration. Check raw rows: temperature/moisture 301 each, liquid 14, energy 300, water 13, frost 48; all end at 1986-12-17 00:00.
 
-## Review before execution
+## Review and start
 
-1. Answer the planning cards, one at a time. Use their buttons to save your choice.
-2. On **Approve the plan?**, check SHAW only, the five authentic inputs, and executable steps for **run → parse → plot**. Confirm where the files will be written and that no calibration is proposed.
-3. If anything differs, select **Modify the plan**. Otherwise select **Approve and start** and **Continue with this choice**. Approve only the exact plan shown.
-4. Keep the app running. Open **◇ Project status** to see setup, execution and checking. A changed plan or tool may require a new review; a previous approval does not cover it.
+1. Answer the planning cards. On **Approve the plan?**, check SHAW, five inputs, output locations and **run → parse → plot**.
+2. Choose **Modify the plan** if needed. Otherwise select **Approve and start**, then **Continue with this choice**.
+3. Keep GeoForge running. Open **◇ Project status**; wait for **Project complete** and passing records for all three steps.
 
-## What the verified example produced
+![Verified completion of the actual SHAW Trial](../../images/en/quickstart-03-run.png){: .completion-shot }
 
-| Raw table | Rows | Check |
-|---|---:|---|
-| Temperature / moisture | 301 each | 11 soil nodes |
-| Liquid water / energy | 14 / 300 | Complete reference period |
-| Water balance / frost | 13 / 48 | Correct physical columns and units |
+*The real completed Trial project, as reported by GeoForge.*
 
-All six tables end at **1986-12-17 00:00**; the initial temperature/moisture profiles start at **1986-12-04 12:00**. The verified run matched the publisher's numeric values at printed precision and produced five CSVs plus a genuine plot.
+## Open the files
 
-**Finish check:** GeoForge must say **Completed**, with passing run records for all three steps. Open the CSVs and plot in **Results**. An AI claim of success, old files, or a warning/failed run record is not completion. Ask the agent to repair and rerun the affected approved step; do not delete your inputs.
+4. Click **▣ Folder**. Open `outputs/SHAW/csv/` and the generated `shaw_profiles.png`. Check the dates, row counts and 11 soil nodes.
 
-For calibration, use **Guide → Calibration guide**. For other workflows and troubleshooting, open **Full user manual**. Both can be read offline from the same menu.
+![Temperature CSV preview from the verified Trial](../../images/en/quickstart-04-result.png){: .result-shot }
+
+*Temperature CSV preview from the verified Trial. This guide preview uses actual data; the app's full plot has five panels.*
+
+**If incomplete:** ask the agent to diagnose and rerun the named failed step. An AI success message alone does not prove completion.

@@ -2,6 +2,8 @@
 
 Windows release: [`windows-v0.6.55`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.55).
 
+The quickstart was revised on 2026-10-02 into an illustrated SHAW Trial walkthrough. Both languages retain exactly three pages, with real 0.6.55 screenshots for DeepSeek settings, SHAW setup and completed execution, plus a temperature preview drawn from the verified native run. The Chinese edition uses the Chinese interface and chart labels. The release's supplemental `Quickstart-Illustrated` downloads contain this revision; the original installer and portable package retain their original bundled guides.
+
 | Guide | English | 简体中文 |
 |---|---|---|
 | Exactly three pages: agent setup, KI setup, real SHAW run | [Quickstart PDF](./GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [快速上手 PDF](./GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
@@ -16,6 +18,7 @@ Matching self-contained HTML files are generated beside each PDF. The app's **Gu
 - `quickstart/<language>/`: exactly three source files, one per PDF page.
 - `calibration/<language>/`: separate calibration guide, also included in the full manual.
 - `images/<language>/`: genuine app screenshots. The detailed FSM2 walkthrough preserves the 0.6.54 screenshots with an edition note; `07-guide.png` was captured from the 0.6.55 interface.
+- `images/<language>/quickstart-01-agent.png` through `quickstart-03-run.png`: focused captures from the actual 0.6.55 application, with the API key masked. `quickstart-04-result.png` is a guide preview of the completed Trial's temperature CSV, not a screenshot of the app's full five-panel plot.
 - `STYLE.md`: editorial rules. Prior editions remain intact in their own folders.
 
 The SHAW quickstart uses the public official archive and five original Trial inputs. The calibration benchmark targets the publisher's reference temperature output; it does **not** use field observations or establish predictive scientific skill.

@@ -1,0 +1,222 @@
+{
+  "version": "0.6.55",
+  "revision": "illustrated-2026-10-02",
+  "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+  "status": "passed",
+  "scope": "Documentation-only illustrated revision. Current source-tree offline guides contain this revision. The original published Windows 0.6.55 installer, portable ZIP, release tag and original guide assets remain unchanged and retain the original edition. Supplemental Illustrated PDFs are published separately. Application and model tests were not rerun for this documentation-only revision.",
+  "pdf_count": 2,
+  "pages_per_language": 3,
+  "languages": [
+    "en",
+    "zh-CN"
+  ],
+  "source_and_offline_bundle_byte_equivalence": true,
+  "render_engine": "Poppler pdftoppm at 110 dpi",
+  "pdf_checks": "PyMuPDF page count, text bounds, markers and images",
+  "visual_review": {
+    "pages_reviewed": 6,
+    "status": "passed",
+    "result": "All six final pages inspected individually. No clipping, overlap, blank pages or missing glyphs observed.",
+    "render_artifacts": "tmp/pdfs/0.6.55/illustrated-final/"
+  },
+  "capture_provenance": {
+    "application_version": "0.6.55",
+    "release_executable_sha256": "6a45b3d9c9b4dc0098210cbd3b3a027f7688df1b32d43b019666e0033a3f04ba",
+    "method": "Browser screenshots of the actual frozen desktop application server in English and Chinese; key field masked by the application.",
+    "scenes": [
+      "Settings / AI services / DeepSeek card",
+      "SHAW agent setup with verified installation",
+      "Completed official Trial project status"
+    ],
+    "project_id": "297b675cdb4c",
+    "scientific_run_reused": true,
+    "scientific_inputs_and_outputs_modified": false
+  },
+  "images": [
+    {
+      "path": "docs/manual/0.6.55/images/en/quickstart-01-agent.png",
+      "sha256": "d678131e6c5a16706d20f54be535ef391237ce19ad9239cf83dc34e432ac4c1e",
+      "pixels": [
+        344,
+        154
+      ],
+      "kind": "actual_application_capture"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/en/quickstart-02-ki.png",
+      "sha256": "312fb7ab9058b9199134ca60ac7280386cb66c7d35193cbf47125ec9fc585065",
+      "pixels": [
+        815,
+        335
+      ],
+      "kind": "actual_application_capture"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/en/quickstart-03-run.png",
+      "sha256": "66bc191531199443eecff6e498361ea9b1f9ec3a141af1e2932d6cc3f95847fe",
+      "pixels": [
+        511,
+        78
+      ],
+      "kind": "actual_application_capture"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/en/quickstart-04-result.png",
+      "sha256": "f33588a31383e5c7ab25c4f1f6366865282041fa4925453061493bd3799744cc",
+      "pixels": [
+        1500,
+        450
+      ],
+      "kind": "plot_from_native_output_csv"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/zh-CN/quickstart-01-agent.png",
+      "sha256": "d1c84aff0019f697152f4d7e107c3970b5af8d99e271bc29f01b3117aa75386c",
+      "pixels": [
+        344,
+        154
+      ],
+      "kind": "actual_application_capture"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/zh-CN/quickstart-02-ki.png",
+      "sha256": "a251341bfe00053a6d3d6edd23f40395e7d1dc04f32064ab492531e88fac1231",
+      "pixels": [
+        815,
+        335
+      ],
+      "kind": "actual_application_capture"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/zh-CN/quickstart-03-run.png",
+      "sha256": "ae63b5fe4c1dd4a8c7070b911e23e0412c135592da1c758f7306975ba5781be1",
+      "pixels": [
+        511,
+        78
+      ],
+      "kind": "actual_application_capture"
+    },
+    {
+      "path": "docs/manual/0.6.55/images/zh-CN/quickstart-04-result.png",
+      "sha256": "f45b3841bed4729e7ebc7b385d51e81bbe4b27a6775b4c31a29c00f47ae5db8d",
+      "pixels": [
+        1500,
+        450
+      ],
+      "kind": "plot_from_native_output_csv"
+    }
+  ],
+  "result_preview": {
+    "purpose": "Guide preview drawn from actual native-output CSV; not the app full five-panel plot.",
+    "source_sha256": "0ac69dbf05fe429def12ea0d56e0910e0fc4f40664535b6234dd97292829b339",
+    "matches_prior_signed_run_csv_audit": true,
+    "original_csv_unchanged": true,
+    "raw_temperature_sha256": "c8051a3e2f1f7ad93667e7541266c4a5083937be7b212629cc7abb41eb21fc05",
+    "rows": 301,
+    "first": "1986-12-04T12:00:00",
+    "last": "1986-12-17T00:00:00",
+    "regular_hourly": true,
+    "depth_source": "Native temp.out header; node columns checked value-for-value against all raw rows.",
+    "series": [
+      {
+        "depth_m": 0.1,
+        "node": 3,
+        "column": "temp_C_node3",
+        "minimum_C": 0.8,
+        "maximum_C": 3.4,
+        "first_C": 2.8,
+        "last_C": 0.8,
+        "all_301_values_match_native_raw": true
+      },
+      {
+        "depth_m": 0.5,
+        "node": 7,
+        "column": "temp_C_node7",
+        "minimum_C": 4.0,
+        "maximum_C": 6.2,
+        "first_C": 6.2,
+        "last_C": 4.0,
+        "all_301_values_match_native_raw": true
+      },
+      {
+        "depth_m": 1.5,
+        "node": 11,
+        "column": "temp_C_node11",
+        "minimum_C": 8.4,
+        "maximum_C": 9.4,
+        "first_C": 9.4,
+        "last_C": 8.4,
+        "all_301_values_match_native_raw": true
+      }
+    ],
+    "source_project": "2026-10-01-SHAW-final-official-Trial-verification--297b675cdb4c",
+    "source_csv_relative_to_project": "outputs/SHAW/csv/shaw_soil_temperature.csv"
+  },
+  "outputs": [
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-en.html",
+      "route": "/guide/quickstart/en.html",
+      "bytes": 131614,
+      "sha256": "29ce1b5fe70889ff457e3ebfd700504c80d45a331055ac1d0571d1712b7b82b2",
+      "self_contained_images": true,
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "image_count": 4,
+      "lossless_png_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-en.pdf",
+      "route": "/guide/quickstart/en.pdf",
+      "bytes": 230482,
+      "sha256": "b09247dc5eabca80cf97eb0e0ab2bb5ba26414ce6516ae7555aa37af51127389",
+      "pages": 3,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-Illustrated-EN-v0.6.55.pdf",
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "images_per_page": [
+        1,
+        1,
+        2
+      ]
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.html",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-zh-CN.html",
+      "route": "/guide/quickstart/zh-CN.html",
+      "bytes": 124921,
+      "sha256": "2204a16aea978373d9dd4d0e15ea507012b32d8bcb95518352fdf4d423d1f307",
+      "self_contained_images": true,
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "image_count": 4,
+      "lossless_png_images": true
+    },
+    {
+      "source": "docs/manual/0.6.55/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf",
+      "bundled": "kiss/kiss_cli/web/guides/quickstart-zh-CN.pdf",
+      "route": "/guide/quickstart/zh-CN.pdf",
+      "bytes": 437512,
+      "sha256": "3e812e3f2bb9425dc0eb4867d73318fac0bbcc7675d98bd180095e915e952add",
+      "pages": 3,
+      "out_of_page_text_blocks": 0,
+      "visual_review": "passed",
+      "release_url": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.55/GeoForge-Desktop-Quickstart-Illustrated-ZH-CN-v0.6.55.pdf",
+      "validated_utc": "2026-10-02T00:44:08.023745+00:00",
+      "images_per_page": [
+        1,
+        1,
+        2
+      ]
+    }
+  ],
+  "source_sha256": {
+    "docs/manual/0.6.55/quickstart/en/01-agent.md": "f4dfc1a991e69eef857eca8a8e8cb969ba48b1db487f2c33feaa1f7ddb8ff265",
+    "docs/manual/0.6.55/quickstart/en/02-ki.md": "7f7c0cae29444170c311fcd661006bbb07280cc5af9fb1ca424028c1df681c57",
+    "docs/manual/0.6.55/quickstart/en/03-run.md": "ffb99f8db501bc24aa516d54e4d3a15b79cd606c489afe541b8f8e97a3ee9c1e",
+    "docs/manual/0.6.55/quickstart/zh-CN/01-agent.md": "1fbc4ee2594e442f3019fec04b262faf304f279b38a8a826dbf0b4bdb31d1e60",
+    "docs/manual/0.6.55/quickstart/zh-CN/02-ki.md": "095c4a64baacf0b626f92c6c6e4616224d317e36a84c606fcbcb7331f551a727",
+    "docs/manual/0.6.55/quickstart/zh-CN/03-run.md": "70cea19bc143aa5a2d5677b837b828957baf09cc0885b96b81584e05950747ba",
+    "tools/manual/build_manual.py": "dac336b93ddac4d3f1472a6858b5b4d54a1e2756592b4548c2fea102c8be3aac"
+  }
+}

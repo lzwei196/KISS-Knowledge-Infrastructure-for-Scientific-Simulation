@@ -21,6 +21,14 @@ import urllib.request
 import yaml
 
 
+def guide_edition(manifest: dict) -> str:
+    """Documentation can retain its reviewed edition across app-only releases."""
+    edition = manifest.get("guides", {}).get("edition", manifest["version"])
+    if not isinstance(edition, str) or not edition.strip():
+        raise AssertionError("The release manifest must name a nonempty guide edition")
+    return edition
+
+
 def stop(process: subprocess.Popen) -> None:
     if process.poll() is None:
         subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
@@ -42,6 +50,7 @@ def check(bundle: Path, report: dict) -> None:
             raise AssertionError(f"Required release file missing: {path}")
     manifest = json.loads((internal / "release-manifest.json").read_text("utf-8"))
     report["version"] = manifest["version"]
+    expected_guide_edition = guide_edition(manifest)
     packages = sorted(p for p in (internal / "models").iterdir() if p.is_dir())
     assert len(packages) == 127, f"Expected 127 KI directories, got {len(packages)}"
     assert all((p / "SKILL.md").is_file() for p in packages)
@@ -185,10 +194,12 @@ def check(bundle: Path, report: dict) -> None:
                             assert content_type == "application/pdf" and content.startswith(b"%PDF-"), route
                         else:
                             assert content_type == "text/html", route
-                            assert manifest["version"] in content.decode("utf-8"), route
+                            assert expected_guide_edition in content.decode("utf-8"), route
                         assert len(content) > 1000, f"Incomplete guide: {route}"
                         guide_routes.append(route)
-            report["offline_usage_guides"] = {"passed": True, "routes": guide_routes}
+            report["offline_usage_guides"] = {
+                "passed": True, "edition": expected_guide_edition, "routes": guide_routes,
+            }
             models = json.loads(fetch("/api/models"))
             assert {m["name"] for m in models} == {p.name for p in packages}
             assert "KI HARNESS v1" in fetch("/api/prompt/MODFLOW6")

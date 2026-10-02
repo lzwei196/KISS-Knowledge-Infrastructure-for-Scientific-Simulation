@@ -1,18 +1,19 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.55",
+  "version": "0.6.56",
   "release_date": "2026-10-02",
   "source": {
     "branch": "windows-version",
-    "code_commit": "3bf10f2e1de0720a5c5c5b2c46825f9051606579",
+    "code_commit": "c5c745625a0bf89ce3404a765526789902a218e6",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.55",
-    "commit_scope": "Application code, Windows model fixes, tests and offline guides are pinned to this commit. Subsequent release commits change audit metadata and reports only. The exact tagged build commit is recorded in Windows-release-validation.json.",
+    "release_tag": "windows-v0.6.56",
+    "commit_scope": "Application implementation is unchanged from application_code_commit. Illustrated guide contents are pinned by code_commit until the final release preparation commit is recorded. Version metadata, README and release checks are updated for 0.6.56. The exact tagged build commit is recorded in Windows-release-validation.json.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
-    "build_label": "windows-0.6.55-20261002",
-    "working_tree": false
+    "build_label": "windows-0.6.56-20261002",
+    "working_tree": false,
+    "application_code_commit": "3bf10f2e1de0720a5c5c5b2c46825f9051606579"
   },
   "ki_library": {
     "package_count": 127,
@@ -30,6 +31,12 @@
     "windows_platform_recipes": 23
   },
   "changes": [
+    {
+      "id": "windows-illustrated-quickstart-bundle",
+      "area": "documentation-and-packaging",
+      "summary": "Package the illustrated three-page SHAW quickstarts in English and Chinese into the Windows installer and portable app. Real app screenshots and a verified native CSV preview accompany agent setup, KI installation, plan approval and output inspection. The repository README explains KI, KDT and data access and links the Windows downloads.",
+      "user_action": "Open Guide / 使用指南 and choose Quick start. The PDF and HTML editions are available offline."
+    },
     {
       "id": "windows-offline-usage-guides",
       "area": "documentation",
@@ -381,23 +388,25 @@
     }
   },
   "validation": {
-    "status": "Final source suites passed with unchanged source hashes under the actual Windows cp936 locale (UTF-8 mode off). Packaged, native calibration and installer acceptance are recorded separately in the release validation asset.",
-    "source_tests": {
+    "status": "Documentation and packaging update; new focused checks, frozen bundle checks and clean installer acceptance are recorded in Windows-release-validation.json. Scientific engine and model tools are unchanged.",
+    "prior_release": "windows-v0.6.55",
+    "prior_release_source_tests": {
       "desktop_passed": 1727,
       "desktop_skipped": 35,
       "desktop_subtests_passed": 337,
       "shared_passed": 371,
       "shared_skipped": 7
     },
-    "source_files_hashed": 363,
+    "prior_release_source_files_hashed": 363,
+    "source_test_scope": "Prior full suite results are historical evidence, not fresh 0.6.56 runs. Fresh focused tests and package checks are reported in the release validation asset.",
     "evidence_documents": [
       "docs/WINDOWS_RELEASE_0.6.55_2026-10-02.md",
       "docs/WINDOWS_CALIBRATION_2026-10-02.md",
       "docs/WINDOWS_E2E_CRHM_VIC_SHAW_2026-10-01.md"
     ],
     "release_evidence_asset": "Windows-release-validation.json",
-    "end_to_end": "Real CRHM Bad Lake, VIC Stehekin and SHAW Trial examples reached Completed with bound, verified receipts in the October 1 Desktop tests. DeepSeek installations required documented assistance. Their fixes are included in 0.6.55.",
-    "calibration": "SHAW publisher-reference recovery: DDS requested 60 optimizer evaluations, 64 native model calls including objective probe, holdout and baseline. A known scale of 1.0 was recovered as 1.003065602989716, with training NSE 0.999984131952621 and held-out NSE 0.9999879435189971. All six optimizer backends also completed synthetic fixture tests. See the calibration report for final packaged and approval-lifecycle evidence.",
+    "end_to_end": "Unchanged CRHM, VIC and SHAW implementation inherits the dated October 1 acceptance evidence. No new AI-provider turn or native scientific run was performed for this documentation release.",
+    "calibration": "Calibration implementation is unchanged. See the 0.6.55 reference-recovery and six-backend validation report; this release freshly checks frozen calibration readiness only.",
     "known_upstream_limits": "Reference recovery is not calibration against field observations. No authenticated GeoForge Database transfer or all-model scientific acceptance is claimed. Detached Git Bash process supervision and general CLI setup command enforcement remain limited; see the known-issues report."
   },
   "agent_update_protocol": [
@@ -418,5 +427,11 @@
     ],
     "evidence": "docs/WINDOWS_INSTALL_STRESS_2026-09-07.json",
     "scope": "Installation outcomes, not certification that all scientific workflows or calibrations pass."
+  },
+  "guides": {
+    "edition": "0.6.55",
+    "quickstart_revision": "illustrated-2026-10-02",
+    "validation": "docs/manual/0.6.55/validation.json",
+    "scope": "The unchanged scientific workflow uses the 0.6.55 guide edition, including the October 2 illustrated quickstart revision, now bundled in the 0.6.56 installer and portable app."
   }
 }

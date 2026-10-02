@@ -6,6 +6,14 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## v0.6.56 — Windows illustrated quickstarts and desktop introduction
+
+- The installer and portable app now include the illustrated English and Chinese quickstarts in the offline Guide menu. Each is three pages: connect DeepSeek, install and verify SHAW, then approve and inspect the official Trial run.
+- Guides include actual application screenshots, a copyable example request, and a soil-temperature preview from the verified native run. The guides retain their 0.6.55 edition because the scientific workflow and application implementation are unchanged.
+- The repository README explains the Desktop, KI, KDT and data-access roles and links directly to the Windows release, installer, portable ZIP and guides.
+- This is a documentation and packaging update. New bundle and installer checks are recorded in the 0.6.56 release validation asset; the CRHM, VIC, SHAW and calibration evidence remains the dated 0.6.55 verification linked below.
+- Windows 安装包和便携版内置中英文三页图文快速上手，覆盖 DeepSeek 连接、SHAW 安装验证及官方 Trial 算例的审批、运行与结果检查。README 新增桌面版定位与下载入口。科学模型和运行实现未变，手册保留 0.6.55 版次。
+
 ## v0.6.55 — Windows usage guides, model fixes and calibration verification
 
 - Includes the October 1 approval, setup, execution and model fixes tested below with real CRHM, VIC and SHAW examples.

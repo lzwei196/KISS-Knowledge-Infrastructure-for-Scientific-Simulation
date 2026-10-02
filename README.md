@@ -7,7 +7,7 @@
 ![3,000 benchmark trials](https://img.shields.io/badge/agent_trials-3%2C000-2f855a)
 ![MIT License](https://img.shields.io/badge/license-MIT-d97706)
 
-[Explore the live catalogue](https://app.geoforgehhu.com) · [Build KI with KDT](https://github.com/lzwei196/KDT-single) · [Read the paper](https://arxiv.org/abs/2605.17856)
+[Explore the live catalogue](https://app.geoforgehhu.com) · [Build KI with KDT](https://github.com/lzwei196/KDT-single) · [Read the paper](https://arxiv.org/abs/2605.17856) · [Desktop for Windows](#geoforge-desktop)
 
 <p align="center">
   <img src="docs/assets/knowledge-infrastructure-overview.png" width="100%" alt="Knowledge dissection converts model source code, documentation, examples, and datasets into a Knowledge Infrastructure package with three layers: validated modelling operators, staged domain protocols, and diagnostic recovery mechanisms. An agent uses these layers to constrain actions, check plausibility, and recover from failures." />
@@ -123,16 +123,50 @@ The cross-domain corpus supports the paper's central premise that operational ex
 
 Three ways in, depending on what you want to do.
 
-### 1. The desktop application — no Python required
+<a id="geoforge-desktop"></a>
 
-GeoForge Desktop runs these packages with an agent on your own machine. Download
-it from [releases](../../releases): everything travels inside the download,
-including all the model packages.
+### 1. GeoForge Desktop — an agent-driven graphical workspace
 
-The manual walks one model from project creation to calibration, in
-[English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf),
-[简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf) or
-[bilingual](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf).
+GeoForge Desktop brings the project, agent, professional scientific tools and
+run records into one graphical workspace. You describe a task and review its
+plan; the agent operates the original model through **KI tools, staged
+instructions and diagnostic guidance**. Follow progress, resolve missing inputs
+and inspect the resulting files and plots in the application.
+
+The app and model tools run on your own machine. Windows opens the local
+interface in your browser; AI providers and online data services connect over
+the network. The Desktop catalogue contains **127 model KI packages**, distinct
+from the paper's frozen **119-package evaluation**. A package's presence is not
+proof that its software is installed or that its results are scientifically
+valid for your study.
+
+- **KI Library and KI Observatory** help you find models, check local setup and inspect their workflows.
+- **KI Studio with KDT** lets an agent build a model or task/workflow KI from source and supporting material. Install the reviewed KDT engine separately, inspect the checks and choose whether to import the KI. Structural checks do not establish scientific validity.
+- **Optional GeoForge Database integration** provides built-in catalogue search and reviewed retrieval after activation with a Database token. Some datasets require manual delivery; retrieved data still need model-specific suitability checks.
+- **Calibration** executes the actual model through its adapter and records parameters, scores and holdout checks. Reference-recovery benchmarks are not field-observation validation.
+
+**Windows x64 0.6.56:** [release notes and assets](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56) · [installer](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Setup-v0.6.56-Windows-x64.exe) · [portable ZIP](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-v0.6.56-Windows-x64.zip) · [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/SHA256SUMS-Windows.txt).
+
+The desktop application includes its own Python runtime and KI packages. Model
+binaries, compilers and model-specific environments may still need installation;
+use **KI Library → Set up with agent** and check verification. Setup can require
+assistance. The separate [macOS Apple Silicon v0.6.54 release](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/v0.6.54)
+remains available; platform builds can differ.
+
+**Start with the illustrated three-page SHAW example:** connect DeepSeek,
+set up the KI and software, then approve the run and inspect real outputs.
+Both languages include actual interface screenshots and a verified output
+preview. The following updated **0.6.55 guide edition** is included in Windows
+0.6.56; filenames retain the document edition number.
+
+| Guide | English | 简体中文 |
+|---|---|---|
+| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
+
+Inside Desktop, **Guide / 使用指南** opens the same documents as offline HTML or
+PDF. These replace the older 0.6.24 manuals as the current Desktop starting point.
 
 ### 2. The library and harness — to drive a KI from your own code
 
@@ -309,7 +343,7 @@ ki = Catalog.discover().get("SWAT+").root
 
 ## Related resources
 
-- **Desktop application:** GeoForge Desktop runs these packages with an agent on your own machine — see the [releases](../../releases) and the manual in [English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf), [简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf) or [bilingual](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf)
+- **Desktop application:** [GeoForge Desktop overview and bilingual guides](#geoforge-desktop) · [Windows 0.6.56 downloads](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56)
 - **KI catalogue and execution environment:** [GeoForge](https://app.geoforgehhu.com)
 - **Knowledge Dissection Toolkit:** [KDT-single](https://github.com/lzwei196/KDT-single)
 - **Paper:** [KISS — Knowledge Infrastructure for Scientific Simulation: A Scaffolding for Agentic Earth Science](https://arxiv.org/abs/2605.17856)

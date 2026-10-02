@@ -7,7 +7,7 @@
 ![3,000 benchmark trials](https://img.shields.io/badge/agent_trials-3%2C000-2f855a)
 ![MIT License](https://img.shields.io/badge/license-MIT-d97706)
 
-[Explore the live catalogue](https://app.geoforgehhu.com) · [Build KI with KDT](https://github.com/lzwei196/KDT-single) · [Read the paper](https://arxiv.org/abs/2605.17856) · [Desktop for Windows](#geoforge-desktop)
+[Explore the live catalogue](https://app.geoforgehhu.com) · [Build KI with KDT](https://github.com/lzwei196/KDT-single) · [Read the paper](https://arxiv.org/abs/2605.17856) · [Desktop Windows](#desktop-windows) · [Desktop Linux](#desktop-linux) · [Desktop Mac](#desktop-mac)
 
 <p align="center">
   <img src="docs/assets/knowledge-infrastructure-overview.png" width="100%" alt="Knowledge dissection converts model source code, documentation, examples, and datasets into a Knowledge Infrastructure package with three layers: validated modelling operators, staged domain protocols, and diagnostic recovery mechanisms. An agent uses these layers to constrain actions, check plausibility, and recover from failures." />
@@ -145,13 +145,16 @@ valid for your study.
 - **Optional GeoForge Database integration** provides built-in catalogue search and reviewed retrieval after activation with a Database token. Some datasets require manual delivery; retrieved data still need model-specific suitability checks.
 - **Calibration** executes the actual model through its adapter and records parameters, scores and holdout checks. Reference-recovery benchmarks are not field-observation validation.
 
+<!-- desktop-windows:start -->
+
+#### Desktop Windows
+
 **Windows x64 0.6.56:** [release notes and assets](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56) · [installer](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Setup-v0.6.56-Windows-x64.exe) · [portable ZIP](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-v0.6.56-Windows-x64.zip) · [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/SHA256SUMS-Windows.txt).
 
-The desktop application includes its own Python runtime and KI packages. Model
+The Windows desktop application includes its own Python runtime and KI packages. Model
 binaries, compilers and model-specific environments may still need installation;
 use **KI Library → Set up with agent** and check verification. Setup can require
-assistance. The separate [macOS Apple Silicon v0.6.54 release](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/v0.6.54)
-remains available; platform builds can differ.
+assistance.
 
 **Start with the illustrated three-page SHAW example:** connect DeepSeek,
 set up the KI and software, then approve the run and inspect real outputs.
@@ -165,8 +168,38 @@ preview. The following updated **0.6.55 guide edition** is included in Windows
 | Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
 | Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
 
-Inside Desktop, **Guide / 使用指南** opens the same documents as offline HTML or
-PDF. These replace the older 0.6.24 manuals as the current Desktop starting point.
+Inside Windows Desktop, **Guide / 使用指南** opens the same documents as offline
+HTML or PDF. These replace the older 0.6.24 manuals as the current Windows
+Desktop starting point.
+
+<!-- desktop-windows:end -->
+
+<!-- desktop-linux:start -->
+<!-- Linux maintainer: replace this block with verified release/download links,
+supported systems, installation steps and platform guides. Keep the Desktop Linux
+heading so the #desktop-linux navigation link stays valid. -->
+
+#### Desktop Linux
+
+**Platform update pending.** This section is reserved for Linux downloads,
+installation instructions and platform-specific guides.
+
+<!-- desktop-linux:end -->
+
+<!-- desktop-mac:start -->
+<!-- Mac maintainer: replace this block with verified release/download links,
+supported architectures, installation steps and platform guides. Keep the Desktop
+Mac heading so the #desktop-mac navigation link stays valid. -->
+
+#### Desktop Mac
+
+**Platform update pending.** Updated Mac downloads, installation instructions
+and platform-specific guides will be added here.
+
+The previous [macOS Apple Silicon v0.6.54 release](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/v0.6.54)
+remains available. Its build and documentation may differ from the Windows release.
+
+<!-- desktop-mac:end -->
 
 ### 2. The library and harness — to drive a KI from your own code
 
@@ -343,7 +376,7 @@ ki = Catalog.discover().get("SWAT+").root
 
 ## Related resources
 
-- **Desktop application:** [GeoForge Desktop overview and bilingual guides](#geoforge-desktop) · [Windows 0.6.56 downloads](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56)
+- **Desktop application:** [GeoForge Desktop overview](#geoforge-desktop) · [Desktop Windows](#desktop-windows) · [Desktop Linux](#desktop-linux) · [Desktop Mac](#desktop-mac)
 - **KI catalogue and execution environment:** [GeoForge](https://app.geoforgehhu.com)
 - **Knowledge Dissection Toolkit:** [KDT-single](https://github.com/lzwei196/KDT-single)
 - **Paper:** [KISS — Knowledge Infrastructure for Scientific Simulation: A Scaffolding for Agentic Earth Science](https://arxiv.org/abs/2605.17856)

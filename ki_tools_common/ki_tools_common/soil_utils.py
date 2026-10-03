@@ -254,13 +254,125 @@ def lookup_hwsd(lat: float, lon: float,
             df = pd.read_csv(csv_path, low_memory=False)
             row = df[df['MU_GLOBAL'] == mu_id]
             if len(row) > 0:
-                r = row.iloc[0]
+                # An HWSD map unit is a MIXTURE of soil components, each with a SHARE (%).
+                # 84.2% of map units list more than one. Selecting by CSV row order (`.iloc[0]`)
+                # returned a component that is NOT the dominant one for 232 map units — 1.44% of
+                # map units, but 2.47% of global LAND AREA (the affected units are larger than
+                # average). 163 of those 232 change a returned field; where it hits, the gap is
+                # material: sand median 18.5 points, p90 41, max 55. Measured 2026-09-11 on
+                # HWSD_DATA.csv (47,732 rows / 16,108 units) and hwsd.bil sampled every 8th cell.
+                #
+                # A further 66 units have a TIE for largest share. Those are a determinism problem,
+                # not a correctness one — neither component is more dominant — so they are excluded
+                # from the figures above and settled here by the SEQ tie-break.
+                #
+                # Selection is explicit rather than sorted: `sort_values` is not a documented
+                # stability guarantee across multiple columns, so the result could depend on pandas
+                # internals. Deterministic by construction, independent of CSV row order.
+                #
+                # AND it must prefer a component that HAS DATA. Measured 2026-09-11: for 176
+                # multi-component units (1.30%) the LARGEST-share component has no usable topsoil
+                # texture, and in 173 of those another component does. Taking max SHARE blindly
+                # returns nothing for those, and the loader below then falls through to this
+                # function's generic defaults (40/40/20) — silently WORSE than the row-order bug
+                # this fix exists to repair. So: dominant AMONG THE USABLE.
+                _T = ('T_SAND', 'T_SILT', 'T_CLAY')
+
+                def _usable(_r):
+                    """Does this component carry a real texture?
+
+                    ZERO IS A VALID FRACTION. A sandy soil genuinely is 93/0/7, and 151 such rows
+                    across 121 map units exist in this CSV. An earlier version of this check used
+                    `> 0` and threw all of them away as 'no data' (codex, 2026-09-11). The real test
+                    is that all three fractions are present, non-negative, and close on 100 — which
+                    accepts 93/0/7 and rejects the 108 all-zero placeholder rows.
+                    """
+                    _vals = []
+                    for _f in _T:
+                        _v = pd.to_numeric(pd.Series([_r.get(_f)]), errors='coerce').iloc[0]
+                        if not (pd.notna(_v) and _v >= 0):
+                            return False
+                        _vals.append(float(_v))
+                    return 95.0 <= sum(_vals) <= 105.0
+
+                def _pick(_df):
+                    """Max SHARE, tie-break min SEQ, final tie-break lowest CSV index.
+
+                    The last step matters: without it the function ends in `.iloc[0]` whenever
+                    SHARE ties and SEQ is absent or duplicated, so the answer would depend on row
+                    order — which is the very bug being fixed. The CSV index is immutable per row,
+                    so this is deterministic by construction, not merely deterministic on this file.
+                    """
+                    if 'SHARE' in _df.columns:
+                        _s = pd.to_numeric(_df['SHARE'], errors='coerce')
+                        if _s.notna().any():
+                            _df = _df[_s == _s.max()]
+                    if 'SEQ' in _df.columns and len(_df) > 1:
+                        _q = pd.to_numeric(_df['SEQ'], errors='coerce')
+                        if _q.notna().any():
+                            _df = _df[_q == _q.min()]
+                    return _df.loc[[min(_df.index)]].iloc[0] if len(_df) else None
+
+                # The DOMINANT component is the map unit's identity and is reported as such,
+                # whether or not it carries a texture.
+                _dom = _pick(row)
+                _pool = row[row.apply(_usable, axis=1)] if len(row) else row
+                _src = _pick(_pool) if len(_pool) else None
+
+                # codex 2026-09-11, and this is the substantive objection to an earlier version:
+                # falling back to "the largest component that has data" can promote a MINOR soil to
+                # represent the whole map unit — in this CSV that means 57 units where a >=80%
+                # component is replaced by a <=20% one. Silently substituting a generic default is
+                # also wrong. So do neither silently: take the best available texture AND record
+                # plainly where it came from, so a caller can see a 10% soil standing in for a 90%
+                # one and decide for itself.
+                if _src is None:
+                    _src, _from_dom = _dom, None          # nothing usable anywhere
+                    _rule = 'dominant component; NO usable texture in this map unit'
+                else:
+                    _from_dom = bool(_dom is not None and _src.name == _dom.name)
+                    _rule = ('dominant component (max SHARE, tie-break min SEQ, then lowest row index)'
+                             if _from_dom else
+                             'largest component WITH usable texture — NOT the dominant component')
+                r = _src
+                _dom_share = (float(_dom['SHARE']) if _dom is not None and 'SHARE' in row.columns
+                              and pd.notna(_dom.get('SHARE')) else None)
+                _src_share = (float(r['SHARE']) if r is not None and 'SHARE' in row.columns
+                              and pd.notna(r.get('SHARE')) else None)
+                result['hwsd_component'] = {
+                    'share_pct': _src_share,
+                    'dominant_share_pct': _dom_share,
+                    'texture_from_dominant': _from_dom,
+                    'seq': (int(r['SEQ']) if r is not None and 'SEQ' in row.columns
+                            and pd.notna(r.get('SEQ')) else None),
+                    'n_components': int(len(row)),
+                    'n_usable_components': int(len(_pool)),
+                    'selected_by': _rule,
+                    'quality': ('ok' if _from_dom else
+                                ('no_texture_in_map_unit' if _from_dom is None
+                                 else 'texture_from_minor_component')),
+                }
+                if _from_dom is False and _dom_share and _src_share and _dom_share >= 4 * _src_share:
+                    warnings.warn(
+                        f"HWSD MU={mu_id}: texture taken from a {_src_share:.0f}% component because "
+                        f"the dominant {_dom_share:.0f}% component has none. The returned soil does "
+                        f"not represent most of this map unit (see result['hwsd_component']).")
+                # PRE-EXISTING BUG, found by codex 2026-09-11 and confirmed: the old rule was
+                # `val > 0`, which silently DROPPED a valid zero and left this function's generic
+                # default in its place. A real 93/0/7 soil came back as sand 93, silt 40 (the
+                # default), clay 7 — a texture summing to 140%. Zero is meaningful for a texture
+                # fraction and for organic carbon; it is not meaningful for pH or bulk density,
+                # where 0 marks a missing value. So the rule is per field.
+                _ZERO_OK = {'T_SAND', 'T_SILT', 'T_CLAY', 'T_OC', 'S_SAND', 'S_SILT', 'S_CLAY'}
                 for col, key in [('T_SAND', 'sand'), ('T_SILT', 'silt'), ('T_CLAY', 'clay'),
                                  ('T_OC', 'oc'), ('T_PH_H2O', 'ph'), ('T_REF_BULK_DENSITY', 'bulk_density'),
                                  ('S_SAND', 'sub_sand'), ('S_SILT', 'sub_silt'), ('S_CLAY', 'sub_clay')]:
                     val = r.get(col)
-                    if val is not None and not (isinstance(val, float) and math.isnan(val)) and val > 0:
-                        result[key] = float(val)
+                    if val is None or (isinstance(val, float) and math.isnan(val)):
+                        continue
+                    val = float(val)
+                    if val > 0 or (val == 0 and col in _ZERO_OK):
+                        result[key] = val
         except Exception as e:
             warnings.warn(f"HWSD CSV lookup failed for MU={mu_id}: {e}")
 

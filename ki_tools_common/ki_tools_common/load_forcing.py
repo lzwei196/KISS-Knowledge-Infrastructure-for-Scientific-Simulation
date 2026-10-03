@@ -31,7 +31,13 @@ GSWP3_DECADES = [(1971, 1980), (1981, 1990), (1991, 2000), (2001, 2010), (2011, 
 
 # NASA POWER API
 NASA_POWER_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point"
-NASA_POWER_PARAMS = "T2M,PRECTOTCORR,ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN,WS2M,QV2M,PS"
+# WS10M is requested alongside WS2M for the SAME reason the daily endpoint does
+# (see the WS10M block in _load_nasa_power): POWER's WS2M is derived with a fixed
+# surface-roughness assumption and goes anomalously low (annual means well under
+# 1 m/s) over forested/rough cells, which starves turbulent exchange in any
+# surface-energy-balance model. The hourly loader used to request WS2M only,
+# silently handing those near-zero winds to callers.
+NASA_POWER_PARAMS = "T2M,PRECTOTCORR,ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN,WS2M,WS10M,QV2M,PS"
 # Daily endpoint (used by load_daily_forcing). NASA POWER DAILY data starts at
 # 1981-01-01 (vs HOURLY which only starts 2001-01-01), so the daily loader MUST
 # use this endpoint to honor the documented 1981+ coverage. It also returns
@@ -144,10 +150,35 @@ def load_hourly_forcing(source, lat, lon, start_year, end_year, forcing_dir=None
         raise ValueError(f"Unknown source '{source}'. Choose from: cmfd, mswx, nasa_power")
 
 
+def _open_nc(path):
+    """Open a NetCDF file whichever HDF5 library the process loaded first.
+
+    python_env holds two copies of the HDF5 library: one inside the netCDF4
+    wheel and one inside the h5py wheel. The copy loaded first is the only one
+    that can open a file afterwards. A tool that imports xarray alone gets
+    h5py's copy (xarray's backend scan imports h5netcdf), so the default
+    netCDF4 engine fails with "OSError: [Errno -101] NetCDF: HDF error"; a tool
+    that imported netCDF4 first gets the opposite, and engine="h5netcdf" fails
+    in H5DSget_num_scales. Trying h5netcdf and then the default engine opens
+    the file in both cases. Measured 2026-10-02 on CMFD and MSWX files.
+
+    Raises OSError naming both failures when neither engine opens the file.
+    """
+    import xarray as xr
+    errors = []
+    for eng in ("h5netcdf", None):
+        try:
+            return xr.open_dataset(path, engine=eng) if eng else xr.open_dataset(path)
+        except Exception as exc:
+            errors.append("%s engine: %s: %s"
+                          % (eng or "default", type(exc).__name__, exc))
+    raise OSError("Cannot open NetCDF file %s (%s)" % (path, "; ".join(errors)))
+
+
 def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
     """Load CMFD or MSWX 3-hourly data without daily aggregation."""
     try:
-        import xarray as xr
+        import xarray  # noqa: F401  (availability check; _open_nc does the opening)
     except ImportError:
         raise ImportError("xarray required for sub-daily loading. pip install xarray")
 
@@ -199,7 +230,7 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
                 fpath = os.path.join(fdir, subdir, f"{prefix}_{year}.nc")
                 if not os.path.isfile(fpath):
                     raise FileNotFoundError(f"MSWX file not found: {fpath}")
-                ds = xr.open_dataset(fpath)
+                ds = _open_nc(fpath)
                 dvar = list(ds.data_vars)
                 lat_dim = "lat" if "lat" in ds.dims else "latitude"
                 lon_dim = "lon" if "lon" in ds.dims else "longitude"
@@ -239,45 +270,61 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
             "timestep_seconds": ts_seconds,
         }
 
+    # Find every monthly file first, so a wrong folder or a year outside the
+    # store stops here with the missing names instead of returning an empty or
+    # gap-filled series (an empty one used to surface two tools later as
+    # "zero-size array to reduction operation").
+    missing_dirs = [sub for sub, _ in var_map.values()
+                    if not os.path.isdir(os.path.join(fdir, sub))]
+    if missing_dirs:
+        raise FileNotFoundError(
+            "CMFD sub-daily: %s has no %s folder(s). forcing_dir must be the "
+            "folder that directly holds Temp/, Prec/, SRad/, LRad/, Wind/, "
+            "SHum/ and Pres/." % (fdir, ", ".join(missing_dirs)))
+    month_files, missing = {}, []
+    for year in range(start_year, end_year + 1):
+        for month in range(1, 13):
+            for var_key, (subdir, prefix) in var_map.items():
+                files = sorted(globmod.glob(
+                    os.path.join(fdir, subdir, "*_%d%02d.nc" % (year, month))))
+                if files:
+                    month_files[(year, month, var_key)] = files[0]
+                else:
+                    missing.append("%s/*_%d%02d.nc" % (subdir, year, month))
+    if missing:
+        raise FileNotFoundError(
+            "CMFD sub-daily: %d of %d monthly files not found under %s for "
+            "%d-%d (first: %s). Nothing was loaded."
+            % (len(missing), len(missing) + len(month_files), fdir,
+               start_year, end_year, ", ".join(missing[:4])))
+
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
             month_data = {}
             for var_key, (subdir, prefix) in var_map.items():
-                pattern = os.path.join(fdir, subdir, f"*{year}{month:02d}*")
-                files = sorted(globmod.glob(pattern))
-                if not files:
-                    continue
-                ds = xr.open_dataset(files[0])
-                dvar = list(ds.data_vars)
+                fpath = month_files[(year, month, var_key)]
+                ds = _open_nc(fpath)
+                dvar = prefix if prefix in ds.data_vars else list(ds.data_vars)[0]
                 lats = ds['lat'].values if 'lat' in ds else ds['latitude'].values
                 lons = ds['lon'].values if 'lon' in ds else ds['longitude'].values
                 li = int(np.argmin(np.abs(lats - lat)))
                 lo = int(np.argmin(np.abs(lons - lon)))
-                month_data[var_key] = ds[dvar[0]][:, li, lo].values
-                if var_key == "temp" and len(all_dates) == 0 or True:
-                    # Build timestamps
-                    if 'time' in ds:
-                        pass  # We'll generate from year/month/step
+                month_data[var_key] = ds[dvar][:, li, lo].values
                 ds.close()
 
-            if "temp" not in month_data:
-                continue
-
             n_steps = len(month_data["temp"])
+            for var_key, v in month_data.items():
+                if len(v) != n_steps:
+                    raise ValueError(
+                        "CMFD sub-daily %d-%02d: %s has %d steps, temp has %d (%s)"
+                        % (year, month, var_key, len(v), n_steps,
+                           month_files[(year, month, var_key)]))
             for i in range(n_steps):
                 day = i // 8
                 hour = (i % 8) * 3
-                try:
-                    dt = datetime(year, month, 1) + timedelta(days=day, hours=hour)
-                except ValueError:
-                    break
-                all_dates.append(dt)
-
+                all_dates.append(datetime(year, month, 1) + timedelta(days=day, hours=hour))
                 for var_key in var_map:
-                    if var_key in month_data and i < len(month_data[var_key]):
-                        all_vars[var_key].append(float(month_data[var_key][i]))
-                    else:
-                        all_vars[var_key].append(np.nan)
+                    all_vars[var_key].append(float(month_data[var_key][i]))
 
     # Unit conversions
     temp = np.array(all_vars["temp"])
@@ -375,6 +422,8 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
 
     all_dates, all_temp, all_prec, all_srad = [], [], [], []
     all_lrad, all_wind, all_shum, all_pres = [], [], [], []
+    all_wind2 = []
+    used_ws2m = False
 
     for year in range(start_year, end_year + 1):
         params = {
@@ -401,6 +450,7 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
         swd = pd.get("ALLSKY_SFC_SW_DWN", {})
         lwd = pd.get("ALLSKY_SFC_LW_DWN", {})
         ws = pd.get("WS2M", {})
+        ws10 = pd.get("WS10M", {})
         qv = pd.get("QV2M", {})
         ps = pd.get("PS", {})
 
@@ -419,7 +469,16 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
             all_prec.append(max(0, _v(prec, key) / prec_div))
             all_srad.append(_v(swd, key))  # Already W/m²
             all_lrad.append(_v(lwd, key))
-            all_wind.append(_v(ws, key))
+            # Prefer the 10 m anemometer wind, exactly as the daily loader does;
+            # fall back to WS2M only when 10 m is missing.
+            w2 = _v(ws, key)
+            w10 = _v(ws10, key)
+            all_wind2.append(w2)
+            if np.isnan(w10):
+                used_ws2m = True
+                all_wind.append(w2)
+            else:
+                all_wind.append(w10)
             all_shum.append(_v(qv, key) / 1000.0)  # g/kg → kg/kg
             all_pres.append(_v(ps, key) * 1000.0)   # kPa → Pa
 
@@ -431,6 +490,10 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
                   f"{prec_div:g}); hourly/daily total {year}: "
                   f"{'not checked' if _ratio is None else f'{_ratio:.3f}'}", flush=True)
 
+    # wind_height_m tells a caller which measurement height `wind_ms` is at, so
+    # models that need it (FSM2 zU, SUMMA mHeight, ...) do not have to guess.
+    wind_height = 2.0 if used_ws2m else 10.0
+
     return {
         "dates": np.array(all_dates, dtype="datetime64[s]"),
         "precip_mm": np.array(all_prec, dtype=np.float64),
@@ -438,6 +501,8 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
         "srad_wm2": np.array(all_srad, dtype=np.float64),
         "lrad_wm2": np.array(all_lrad, dtype=np.float64),
         "wind_ms": np.array(all_wind, dtype=np.float64),
+        "wind2_ms": np.array(all_wind2, dtype=np.float64),
+        "wind_height_m": wind_height,
         "shum_kgkg": np.array(all_shum, dtype=np.float64),
         "pres_pa": np.array(all_pres, dtype=np.float64),
         "timestep_seconds": 3600,
@@ -810,6 +875,46 @@ def _mswx_varname(fpath):
             if getattr(v, "shape", None) and len(v.shape) == 3:
                 return k
     raise ValueError(f"No 3-D data variable in {fpath}")
+
+
+def load_mswx_year_box(forcing_dir, year, var_subdir, lats, lons):
+    """Read one MSWX (variable, year) over the bounding box of a 2-D cell grid
+    in ONE decompression pass, nearest-neighbor mapped onto the cells.
+
+    The annual MSWX files are gzip-chunked one GLOBAL slab per timestep, so
+    any spatial subset costs a full-file decompression; reading the whole
+    year's box at once is the only efficient access (same rationale as
+    _load_mswx_points). Added 2026-08-23 for gridded consumers (ParFlow/CLM
+    forcing conversion) so model KIs stop reimplementing this read.
+
+    Parameters: lats/lons are equal-shape 2-D arrays of cell-center
+    coordinates. Returns (arr, units): arr float32 with shape
+    (n_source_steps,) + lats.shape in NATIVE store units (caller converts;
+    3-hourly store => 2920/2928 steps), units = the file's own units attr.
+    Raises on a missing file or NaN cells -- no silent fill.
+    """
+    import h5py
+    lats = np.asarray(lats)
+    lons = np.asarray(lons)
+    fpath = os.path.join(forcing_dir, var_subdir, f"{var_subdir}_{year}.nc")
+    if not os.path.isfile(fpath):
+        raise FileNotFoundError(f"MSWX source missing: {fpath}")
+    vname = _mswx_varname(fpath)
+    with h5py.File(fpath, "r") as f:
+        units = f[vname].attrs.get("units", b"")
+        units = units.decode() if isinstance(units, bytes) else str(units)
+    glat, glon = _mswx_grid(forcing_dir, year)
+    r_idx = np.abs(glat[None, :] - lats.ravel()[:, None]).argmin(axis=1)
+    c_idx = np.abs(glon[None, :] - lons.ravel()[:, None]).argmin(axis=1)
+    r0, r1 = int(r_idx.min()), int(r_idx.max()) + 1
+    c0, c1 = int(c_idx.min()), int(c_idx.max()) + 1
+    box = _mswx_read_box((fpath, vname, r0, r1, c0, c1))
+    ext = box[:, r_idx - r0, c_idx - c0].reshape((box.shape[0],) + lats.shape)
+    if np.isnan(ext).any():
+        raise ValueError(
+            f"MSWX {var_subdir} {year}: {int(np.isnan(ext).sum())} NaN cells "
+            "after extraction -- domain touches fill-value cells; refusing silent fill")
+    return ext, units
 
 
 def _load_mswx_points(latlons, start_year, end_year, forcing_dir=None,

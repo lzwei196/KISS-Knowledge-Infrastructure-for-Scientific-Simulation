@@ -65,7 +65,7 @@
 |---|-----------|--------|-------------------|-------|
 | 36 | wflow to CaMa-Flood (unrouted runoff) | DONE | wflow_to_cama.py (170 lines); dt_w025 double-counting warning | Yearly NetCDF output |
 | 37 | wflow recharge to MODFLOW | DONE | wflow_recharge_to_modflow.py (110 lines) | mm/day to m/day conversion |
-| 38 | VIC forcing shared with wflow | DONE | convert_forcing_to_wflow.py handles VIC ASCII | Custom naming pattern (dt_w028) |
+| 38 | VIC forcing shared with wflow | REMOVED 2026-10-02 | forcing is read straight from the data source (`--source`) | VIC forcing files are not a wflow input |
 | 39 | wflow vs VIC comparison | DONE | compare_with_vic.py (250 lines) | NSE, PBIAS, KGE metrics |
 | 40 | wflow_sediment to SWAT+ loading | TODO | Listed in coupling table but marked "(manual)" | No tool |
 | 41 | OGGM glacier to wflow | TODO | Listed in coupling table but marked "(manual)" | No tool |

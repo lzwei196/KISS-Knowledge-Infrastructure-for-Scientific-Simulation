@@ -42,8 +42,8 @@ Inputs:
   --hru_config:    HRU configuration JSON
   --module_chain:  Module chain JSON
   --obs_path:      Path to .obs file
-  --start_date:    YYYY M D
-  --end_date:      YYYY M D
+  --start_date:    "YYYY M D" as one quoted argument (YYYY-MM-DD also accepted)
+  --end_date:      "YYYY M D" as one quoted argument (YYYY-MM-DD also accepted)
   --output_path:   Output .prj file
 
 Exit codes:
@@ -59,6 +59,7 @@ import re
 import json
 import logging
 import argparse
+import math
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -67,6 +68,11 @@ logger = logging.getLogger(__name__)
 # Default parameter values by module
 # Format: {module: {param: {default, min, max, description, unit}}}
 DEFAULT_PARAMS = {
+    "global": {
+        "Time_Offset": {"default": 0.0, "min": -12.0, "max": 12.0,
+                        "unit": "h", "per_hru": True, "optional": True,
+                        "description": "Clock time minus mean solar time"},
+    },
     "basin": {
         "basin_area": {"default": 100.0, "min": 0, "max": 1e12, "unit": "km2",
                        "description": "Total basin area"},
@@ -332,7 +338,14 @@ DEFAULT_PARAMS = {
 # pbsmSnobal silently runs on binary defaults -- fetch 1000 m for every HRU and
 # distrib 0, i.e. no inter-HRU drift transport at all -- discarding the derived
 # land-cover fetch/Ht and the exposure-based distrib that derive_parameters.py
-# computed. Additive: no chain shipped today contains pbsmSnobal.
+# computed. The 'prairie_reduced' preset uses pbsmSnobal since 2026-10-02
+# (select_modules.py, triplet dt_v012). Verified that day with the real binary:
+# changing `pbsmSnobal Ht` 0.15 -> 0.001 and `pbsmSnobal fetch` 300 / 1000 /
+# 5000 changes hru_subl and Drift_out, so the binary reads these lines. Lines
+# written as `pbsm fetch` / `pbsm Ht` are NOT seen by pbsmSnobal (CRHM resolves
+# "<Module> <param>" then "Shared <param>"), and overrides must be keyed
+# "pbsmSnobal <param>" -- a "pbsm <param>" override on this chain is rejected
+# below as targeting a module that is not in the chain.
 MODULE_PARAM_ALIAS = {"pbsm": "PBSM", "pbsmSnobal": "PBSM"}
 
 
@@ -423,8 +436,15 @@ def parse_args():
     parser.add_argument("--hru_config", type=str, required=True, help="HRU config JSON")
     parser.add_argument("--module_chain", type=str, required=True, help="Module chain JSON")
     parser.add_argument("--obs_path", type=str, required=True, help="Path to .obs file")
-    parser.add_argument("--start_date", type=str, required=True, help="Start date YYYY M D")
-    parser.add_argument("--end_date", type=str, required=True, help="End date YYYY M D")
+    parser.add_argument("--obs_utc_offset", type=float, default=None,
+                        help="Observation clock offset from UTC in hours; 0 for UTC. "
+                             "Defaults to build_obs metadata when present. Aligns solar geometry using HRU longitude.")
+    parser.add_argument("--start_date", type=str, required=True,
+                        help="Start date as ONE quoted argument of three numbers, "
+                             "'YYYY M D', e.g. --start_date \"2003 10 1\". "
+                             "YYYY-MM-DD is also accepted and rewritten to that form.")
+    parser.add_argument("--end_date", type=str, required=True,
+                        help="End date, same form as --start_date, e.g. \"2004 9 30\".")
     parser.add_argument("--output_path", type=str, required=True, help="Output .prj file")
     parser.add_argument("--output_vars", type=str, default="",
                         help="Comma-separated output variables (e.g., SWE,snowmelt,outflow)")
@@ -437,6 +457,17 @@ def parse_args():
     parser.add_argument("--derived_params", type=str, default="",
                         help="JSON from derive_parameters.py (overrides defaults)")
     return parser.parse_args()
+
+
+def normalise_date(date_str):
+    """'YYYY-MM-DD' or 'YYYY/MM/DD' -> the 'YYYY M D' form CRHM's Dates block needs.
+
+    Anything else is returned unchanged for validate_inputs() to judge.
+    """
+    m = re.fullmatch(r"\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s*", date_str or "")
+    if m:
+        return f"{int(m.group(1))} {int(m.group(2))} {int(m.group(3))}"
+    return date_str
 
 
 def validate_inputs(hru_config, module_chain, obs_path, start_date, end_date, output_path):
@@ -452,8 +483,10 @@ def validate_inputs(hru_config, module_chain, obs_path, start_date, end_date, ou
     # Validate date format
     for date_str, label in [(start_date, "start"), (end_date, "end")]:
         parts = date_str.strip().split()
-        if len(parts) != 3:
-            errors.append(f"{label}_date must be 'YYYY M D' format, got: {date_str}")
+        if len(parts) != 3 or not all(x.isdigit() for x in parts):
+            errors.append(f"{label}_date must be three numbers 'YYYY M D' passed as one "
+                          f"quoted argument (e.g. \"2003 10 1\") or YYYY-MM-DD, "
+                          f"got: {date_str!r}")
     if errors:
         for e in errors:
             logger.error(e)
@@ -461,7 +494,7 @@ def validate_inputs(hru_config, module_chain, obs_path, start_date, end_date, ou
     logger.info("Input validation passed.")
 
 
-def process(hru_config_path, module_chain_path, obs_path, start_date, end_date, output_path, output_vars, derived_params_path="", param_overrides=None):
+def process(hru_config_path, module_chain_path, obs_path, start_date, end_date, output_path, output_vars, derived_params_path="", param_overrides=None, obs_utc_offset=None):
     """Generate .prj file."""
     with open(hru_config_path) as f:
         hru_config = json.load(f)
@@ -480,6 +513,40 @@ def process(hru_config_path, module_chain_path, obs_path, start_date, end_date, 
     nhru = hru_config["nhru"]
     modules = mod_config["module_chain"]
     hrus = hru_config["hrus"]
+
+    # JSON supplied by a caller may predate selector fixes. Validate it again
+    # before producing a runnable project; also reject unsafe observation files.
+    import importlib.util
+    tools_root = Path(__file__).resolve().parents[1]
+    for name, relative, value in (
+        ("_crhm_chain_guard", "s3_module_selection/select_modules.py", modules),
+        ("_crhm_obs_guard", "s2_observation_data/validate_obs_file.py", obs_path),
+    ):
+        spec = importlib.util.spec_from_file_location(name, tools_root / relative)
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        errors = ([e for e in guard.validate_chain(value, allow_later=True) if e.startswith("ERROR")]
+                  if name == "_crhm_chain_guard" else guard.process(value)["errors"])
+        if errors:
+            raise ValueError("Cannot create CRHM project: " + "; ".join(errors[:10]))
+
+    # The direct loaders return UTC. Preserve their timestamps and align the
+    # global module's solar geometry: ClassGlobal.cpp uses solar noon at
+    # clock hour 12 + Time_Offset, hence offset = clock UTC offset - lon/15.
+    meta_path = Path(str(obs_path) + ".meta.json")
+    if obs_utc_offset is None and meta_path.exists():
+        obs_utc_offset = json.loads(meta_path.read_text()).get("clock_utc_offset_hours")
+    if obs_utc_offset is not None and "global" in modules and "global Time_Offset" not in overrides:
+        if not math.isfinite(float(obs_utc_offset)) or not -12 <= float(obs_utc_offset) <= 14:
+            raise ValueError("Observation UTC offset must be finite and between -12 and 14 hours")
+        offsets = []
+        for hru in hrus:
+            lon = hru.get("center_lon", hru.get("mean_lon", hru.get("longitude", hru_config.get("longitude"))))
+            if lon is None or not math.isfinite(float(lon)) or not -180 <= float(lon) <= 360:
+                raise ValueError("Known observation clock requires a valid longitude for every HRU")
+            offsets.append(round((float(obs_utc_offset) - float(lon) / 15.0 + 12) % 24 - 12, 8))
+        overrides["global Time_Offset"] = offsets
+        logger.info("Solar timing: observation clock UTC%+g, global Time_Offset=%s", float(obs_utc_offset), offsets)
 
     lines = []
 
@@ -527,6 +594,7 @@ def process(hru_config_path, module_chain_path, obs_path, start_date, end_date, 
         'basin': '02/24/12', 'global': '12/19/19', 'obs': '04/17/18',
         'calcsun': '10/01/13', 'Slope_Qsi': '07/14/11', 'walmsley_wind': '06/21/07',
         'intcp': '02/24/15', 'pbsm': '11/20/17', 'PBSM': '11/20/17',
+        'pbsmSnobal': '01/05/17',   # NewModules.cpp:210
         'albedo': '08/11/11', 'ebsm': '01/18/16', 'SnobalCRHM': '01/18/16',
         'netall': '04/04/22', 'crack': '04/04/22', 'PrairieInfil': '04/04/22',
         'GreenAmpt': '04/04/22', 'evap': '03/18/22',
@@ -728,7 +796,13 @@ def process(hru_config_path, module_chain_path, obs_path, start_date, end_date, 
         # These MUST include the module name prefix (CRHM ignores entries without it)
         # Validated against working belly_river_v6.prj
         routing_mod = "Netroute" if "Netroute" in modules else "REWroute" if "REWroute" in modules else None
-        snow_mod = "SnobalCRHM" if "SnobalCRHM" in modules else "ebsm" if "ebsm" in modules else None
+        # The module that DECLARES SWE: SnobalCRHM on a Snobal chain, pbsm on an
+        # ebsm chain (ebsm only melts pbsm's pack; Classpbsm.cpp:74). "ebsm SWE"
+        # was written here before: the binary logs "Unknown Variable ebsm SWE"
+        # and the default output had no SWE column at all. The validated basin
+        # .prj files write "pbsm SWE".
+        snow_mod = ("SnobalCRHM" if "SnobalCRHM" in modules
+                    else "pbsm" if "pbsm" in modules else None)
         hru_all = " ".join(str(i+1) for i in range(nhru))
         if routing_mod:
             lines.append(f"{routing_mod} basinflow 1")
@@ -792,6 +866,8 @@ def _load_overrides(spec):
 if __name__ == "__main__":
     args = parse_args()
     logger.info(f"Running tool: {os.path.basename(__file__)}")
+    args.start_date = normalise_date(args.start_date)
+    args.end_date = normalise_date(args.end_date)
 
     validate_inputs(args.hru_config, args.module_chain, args.obs_path,
                     args.start_date, args.end_date, args.output_path)
@@ -799,7 +875,7 @@ if __name__ == "__main__":
     try:
         output_path = process(args.hru_config, args.module_chain, args.obs_path,
                               args.start_date, args.end_date, args.output_path, args.output_vars,
-                              args.derived_params, _load_overrides(args.param_overrides))
+                              args.derived_params, _load_overrides(args.param_overrides), args.obs_utc_offset)
     except Exception as e:
         logger.error(f"Processing failed: {e}")
         import traceback

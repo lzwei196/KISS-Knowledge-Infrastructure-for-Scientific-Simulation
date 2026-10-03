@@ -21,7 +21,7 @@ pipeline:
   - s6_groundwater_skill
   - s9_runoff_options_skill
 tools:
-  count: 17
+  count: 16
   files:
   - tools/calib_run.py
   - tools/run_wrfhydro_full_pipeline.py
@@ -37,7 +37,6 @@ tools:
   - tools/s5_soil_properties/build_soil_properties.py
   - tools/s6_groundwater/build_groundwater.py
   - tools/s8_forcing/cmfd_to_ldasin.py
-  - tools/s8_forcing/convert_forcing_to_ldasin.py
   - tools/s8_forcing/nasa_power_to_ldasin.py
   - tools/s9_namelists/generate_namelists.py
 inputs:

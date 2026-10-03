@@ -9,19 +9,19 @@ Consult this file FIRST when CRHM misbehaves.
 
 **Symptom**: SWE accumulates indefinitely, never melting completely in summer. Sublimation is near zero. ET is unrealistically low. No error message.
 
-**Diagnosis**: VIC forcing provides specific humidity (0.001–0.02 kg/kg). CRHM expects relative humidity (0–100%). If specific humidity is written directly to the .obs file, CRHM interprets 0.005 as 0.005% RH — essentially bone-dry atmosphere. All sublimation and evaporation go to zero. Snow accumulates without limit. The simulation completes without error, making this extremely difficult to detect.
+**Diagnosis**: The forcing sources provide specific humidity (0.001–0.02 kg/kg). CRHM expects relative humidity (0–100%). If specific humidity is written directly to the .obs file, CRHM interprets 0.005 as 0.005% RH — essentially bone-dry atmosphere. All sublimation and evaporation go to zero. Snow accumulates without limit. The simulation completes without error, making this extremely difficult to detect.
 
-**Remedy**: Convert specific humidity to relative humidity using Tetens formula: `RH = (q*P / (0.622*es)) * 100`. Check max RH in .obs file — if max < 1.0, units are wrong. `convert_vic_to_obs.py` handles conversion automatically.
+**Remedy**: Convert specific humidity to relative humidity using Tetens formula: `RH = (q*P / (0.622*es)) * 100`. Check max RH in .obs file — if max < 1.0, units are wrong. `build_obs.py` handles conversion automatically.
 
 ---
 
-### dt_002 — Precipitation rate vs accumulation mismatch
+### dt_002 — Precipitation written under the wrong variable or as a rate
 
-**Symptom**: Simulated discharge peaks are 3–8x too high. Flooding occurs in every month, not just spring melt. Annual water balance shows more output water than input precipitation.
+**Symptom**: Discharge and the yearly water balance do not fit the precipitation the source really has: far too much water in every month, or far too little.
 
-**Diagnosis**: VIC forcing provides precipitation per timestep (e.g., mm per 3 hours). CRHM expects precipitation rate in mm/day. If 3-hourly accumulation is passed directly, CRHM receives 8 timesteps per day, each interpreted as mm/d, effectively multiplying daily precipitation by 8.
+**Diagnosis**: CRHM has two precipitation observations (ClassObs.cpp:83,85): `ppt` = daily precipitation in mm/d, `p` = interval precipitation in mm per step. Sub-daily forcing must be written as `p 1 (mm)`, the amount in the step, unchanged. Multiplying it up to a daily rate and writing it as `p` gives 8x too much for 3-hourly data; declaring sub-daily amounts as `ppt` makes CRHM use one value per day and lose the rest.
 
-**Remedy**: If CRHM reads sub-daily, pass mm/timestep. If CRHM reads daily, SUM the sub-daily values. The conversion depends on CRHM's own timestep setting. Verify daily total precipitation matches known climatology for the basin.
+**Remedy**: Build the .obs with `build_obs.py`; never multiply by 24/timestep_hours; check `precip_mm_by_year` in `basin.obs.meta.json` against the source's yearly total. Full text in `triplets.yaml`.
 
 ---
 
@@ -31,7 +31,7 @@ Consult this file FIRST when CRHM misbehaves.
 
 **Diagnosis**: CRHM .obs header must have exact format: variable name, space, column count (integer), space, unit in parentheses. Example: `t 1 (C)`. Common mistakes: missing column count, using tab instead of space, unit without parentheses, or variable name with spaces. Data columns (after `YYYY M D H 0`) must equal the sum of all N values.
 
-**Remedy**: Each variable line: `varname N (unit)`. Computed variables: `$varname formula (unit) description`. Use `convert_vic_to_obs.py` to generate correctly formatted headers.
+**Remedy**: Each variable line: `varname N (unit)`. Computed variables: `$varname formula (unit) description`. Use `build_obs.py` to generate correctly formatted headers.
 
 ---
 

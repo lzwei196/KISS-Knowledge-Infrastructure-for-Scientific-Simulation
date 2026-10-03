@@ -14,14 +14,14 @@ Before starting this stage, verify:
 
 - [ ] DIS package exists with correct grid geometry (S2 complete)
 - [ ] Aquifer type is known (unconfined, confined, or layered)
-- [ ] Hydraulic conductivity data available (from HWSD, pump tests, literature, or VIC soil params)
+- [ ] Hydraulic conductivity data available (from HWSD, GLHYMPS, pump tests, or literature)
 - [ ] Storage parameters available if running transient simulation
 
 ## Inputs
 
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
-| k_values | config | geology/HWSD/VIC | Hydraulic conductivity (m/day) per layer |
+| k_values | config | geology/HWSD/GLHYMPS | Hydraulic conductivity (m/day) per layer |
 | k33_values | config | geology | Vertical K (m/day), often K/10 |
 | icelltype | config | aquifer type | 0=confined, 1=convertible for each layer |
 | ss_values | config | geology | Specific storage (1/m) per layer |
@@ -44,9 +44,20 @@ This prevents oscillation when cells wet and dry repeatedly.
 
 ### Step 2: Assign Hydraulic Conductivity
 
-**From HWSD/VIC soil data** (for shallow aquifers):
-- VIC Ksat is in mm/day -> divide by 1000 for m/day
-- Typical values: sand 1-100 m/day, silt 0.01-1 m/day, clay 0.0001-0.01 m/day
+**From HWSD soil data** (for the shallow Layer 1), straight from the soil source:
+```bash
+python tools/s3/assign_k_from_glhymps.py --grid_nc <case>/grid.nc \
+    --glhymps_shp data/groundwater/glhymps/GLHYMPS.shp --nlayers 2 \
+    --layer1_k hwsd --output_dir <case>/layers
+```
+- The grid NetCDF comes from `tools/s2/create_grid_from_basin.py` (S2).
+- Per active cell: `ki_tools_common.soil_utils.lookup_hwsd` -> HWSD topsoil texture -> Saxton-Rawls
+  Ksat (cm/hr) x 0.24 = m/day (soil K) -> x 100 for aquifer K (dt_v004) -> clipped to 0.1-50 m/day.
+- An active cell where HWSD has no soil (sea, water body, no texture) is refused (exit 4, list in
+  `layer1_hwsd_no_soil.json`), never filled. Set `mask=0` for it in the grid NetCDF, or use
+  `--layer1_k alluvial_default` (1.0 m/day, SKILL.md fact #10).
+- `k_summary.json` records `k_layer1_source`, the active-cell K1 range and the texture counts.
+- Typical soil values: sand 1-100 m/day, silt 0.01-1 m/day, clay 0.0001-0.01 m/day
 
 **From literature** (for deeper aquifers):
 
@@ -120,10 +131,10 @@ Set variables:
 
 ## Common Pitfalls
 
-> **PITFALL**: Using K from VIC soil params without unit conversion
-> VIC Ksat is in mm/day. MODFLOW expects m/day. Using mm/day directly gives K values 1000x too high, causing unrealistically fast groundwater flow and convergence problems.
-> **Do this instead**: Divide VIC Ksat by 1000: K_m_day = K_mm_day / 1000.
-> See diagnostic triplet dt_mf6_010.
+> **PITFALL**: Taking Layer-1 K from another model's soil file
+> Another model's setup file (e.g. a VIC soil parameter file) has its own column layout and units; reading Ksat from it gave K off by orders of magnitude with no error.
+> **Do this instead**: `assign_k_from_glhymps.py --layer1_k hwsd` (HWSD direct, x100, clipped) or `--layer1_k alluvial_default`. Keep units straight: Saxton-Rawls Ksat is cm/hr (x 0.24 = m/day); MODFLOW expects m/day.
+> See diagnostic triplets dt_mf6_010 and dt_v004.
 
 > **PITFALL**: All layers confined (ICELLTYPE=0) when water table is present
 > If the water table fluctuates within a layer but ICELLTYPE=0, MODFLOW uses the full layer thickness for transmissivity regardless of actual saturation. This overestimates flow.
@@ -137,4 +148,4 @@ Set variables:
 ---
 
 *This skill document is part of the modflow6-knowledge-infrastructure package.*
-*Stage 3 of 9 | Tools used: build_npf_package, build_sto_package | Related triplets: dt_mf6_009, dt_mf6_010*
+*Stage 3 of 9 | Tools used: assign_k_from_glhymps, build_npf_package, build_sto_package | Related triplets: dt_mf6_009, dt_mf6_010, dt_v004*

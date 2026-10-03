@@ -170,6 +170,26 @@ def process(args):
 
             results["timeseries"].append(summary)
 
+    # v5 writes its time series as CSV already (tsr_<n>_seg<segment>.csv, header
+    # JDAY,DLT(s),ELWS(m),T2(C),...): read as it is, nothing is rewritten
+    for tsr_csv in sorted(run_dir.glob("tsr_*_seg*.csv")):
+        df = pd.read_csv(tsr_csv, skipinitialspace=True)
+        df.columns = [c.strip() for c in df.columns]
+        df = df.loc[:, [c for c in df.columns if c and not c.startswith("Unnamed")]]
+        if not df.empty:
+            summary = {
+                "file": str(tsr_csv),
+                "n_timesteps": len(df),
+                "columns": list(df.columns),
+                "csv_output": str(tsr_csv),
+            }
+            if "JDAY" in df.columns:
+                summary["jday_range"] = [float(df["JDAY"].min()), float(df["JDAY"].max())]
+            if "T2(C)" in df.columns:
+                summary["t2_c_min_mean_max"] = [float(df["T2(C)"].min()), float(df["T2(C)"].mean()),
+                                                float(df["T2(C)"].max())]
+            results["timeseries"].append(summary)
+
     # Parse spreadsheet files
     for spr_file in sorted(run_dir.glob("spr_*.opt")):
         df = parse_spreadsheet_file(str(spr_file))

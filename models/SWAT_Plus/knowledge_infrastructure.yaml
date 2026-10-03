@@ -26,7 +26,7 @@ pipeline:
   - s8_model_execution_skill
   - s9_output_parsing_skill
 tools:
-  count: 40
+  count: 39
   files:
   - tools/calib_run.py
   - tools/s1/build_channel_topology.py
@@ -44,7 +44,6 @@ tools:
   - tools/s3/generate_weather_stations.py
   - tools/s3/prepare_weather_files.py
   - tools/s3/validate_weather_data.py
-  - tools/s3/vic_forcing_to_swatplus.py
   - tools/s4/build_soils_database.py
   - tools/s4/hwsd_to_swatplus_soil.py
   - tools/s4/validate_soil_properties.py
@@ -179,5 +178,5 @@ summary:
   total_tools: 40
   total_stage_docs: 9
   total_diagnostic_triplets: 61
-  generated: '2026-08-24'
+  generated: '2026-09-01'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

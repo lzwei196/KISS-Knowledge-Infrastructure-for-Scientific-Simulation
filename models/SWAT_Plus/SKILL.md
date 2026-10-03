@@ -67,7 +67,6 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s3/generate_weather_stations.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/generate_weather_stations.py --help` |
 | `tools/s3/prepare_weather_files.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/prepare_weather_files.py --help` |
 | `tools/s3/validate_weather_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/validate_weather_data.py --help` |
-| `tools/s3/vic_forcing_to_swatplus.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/vic_forcing_to_swatplus.py --help` |
 | `tools/s4/build_soils_database.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_soils_database.py --help` |
 | `tools/s4/hwsd_to_swatplus_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/hwsd_to_swatplus_soil.py --help` |
 | `tools/s4/validate_soil_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/validate_soil_properties.py --help` |
@@ -92,7 +91,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s9/parse_basin_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/parse_basin_output.py --help` |
 | `tools/s9/parse_channel_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/parse_channel_output.py --help` |
 
-*40 public tools; `_`-prefixed helpers and packaging files excluded.*
+*39 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -103,8 +102,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 SWAT+ forcing tools are in `tools/s3/` in this KI:
-- `tools/s3/prepare_weather_files.py` — Converts CMFD/MSWX/CSV to SWAT+ weather files (.pcp, .tmp, .slr, .hmd, .wnd) with unit conversions (K→°C, W/m²→MJ/m²/d, specific humidity→RH)
-- `tools/s3/vic_forcing_to_swatplus.py` — Converts VIC 3-hourly forcing to SWAT+ daily weather format
+- `tools/s3/prepare_weather_files.py` — THE weather tool: reads `cmfd` / `mswx` / `nasa_power` straight from the source through the shared loader (`load_daily_forcing_points`) and writes SWAT+ weather files (.pcp, .tmp, .slr, .hmd, .wnd) with unit conversions (K→°C, W/m²→MJ/m²/d, specific humidity→RH)
 - `tools/s3/generate_weather_stations.py` — Creates weather-sta.cli and **weather-wgn.cli**
 - `tools/s3/validate_weather_data.py` — QC weather files (Tmax≥Tmin, Tmax≠Tmin, precip≥0, solar 0-40 MJ/m²)
 
@@ -218,6 +216,13 @@ python tools/s3/validate_weather_data.py weather/          # 0 silent_errors req
 cp weather/* TxtInOut/
 python tools/s3/generate_weather_stations.py TxtInOut/pcp.cli "$COORDS" "$COORDS" TxtInOut
 
+# ⚠️ ROUTING METHOD: codes.bsn rte_cha MUST stay 0 (the official SWAT+ default; the generator
+#      now writes 0). rte_cha=1 (rev59 Muskingum) delayed the Huaibin 61-channel outlet by
+#      ~3+ WEEKS with volume intact — invisible to PBIAS/water-balance checks, uncalibratable
+#      (every speed lever pinned and still late), and small decks (Xixian, 33 ch) can PASS
+#      while big networks fail, so validation on a headwater proves nothing here (dt_054).
+#      Existing decks: fix codes.bsn col 8 AND delete _calib_pristine* so it rebuilds.
+
 # S7 — config. configure_print_prt edits print.prt IN PLACE; never regenerate it (dt_041).
 python tools/s7/configure_time_sim.py 2003-01-01 2023-12-31 TxtInOut 3
 
@@ -255,7 +260,7 @@ SWAT2012-style `wgn.wgn`. Per station: a header line (`name lat lon elev rain_yr
 header, then 12 monthly rows. `generate_weather_stations.py` now computes those 14 statistics from
 the station's own weather files instead of writing constants.
 
-**The generated topology is a VIC-grid surrogate**: every subbasin channel routes directly into
+**Without `--subbasin_shp` the generated topology is a rectangular-grid surrogate, not a flow network**: every subbasin channel routes directly into
 `cha1`, which routes to nothing. `cha1` is therefore the outlet regardless of the (misleading,
 cumulative-looking) `area` column in `channel.con`. `extract_discharge.py` detects this from
 `channel.con` topology — do not override with `--outlet_gis_id`.

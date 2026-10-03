@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-End-to-end LDNDC GHG simulation pipeline for Bengbu basin using VIC forcing.
+End-to-end LDNDC GHG simulation pipeline for Bengbu basin, forcing straight from the data source.
 
-Converts VIC forcing → LDNDC climate, extracts HWSD soil → site.xml,
+Builds the LDNDC climate file from CMFD / MSWX / NASA POWER (S4 tool), extracts HWSD soil → site.xml,
 generates management (wheat-maize rotation), runs LDNDC, and parses output.
 
 Usage:
     python run_ldndc_bengbu_ghg.py
     python run_ldndc_bengbu_ghg.py --lat 32.94 --lon 117.35
-    python run_ldndc_bengbu_ghg.py --forcing_file /path/to/vic_forcing_file
+    python run_ldndc_bengbu_ghg.py --forcing_source cmfd --forcing_dir /path/to/Data_forcing_03hr_010deg
 """
 
 import argparse
@@ -32,14 +32,10 @@ LDNDC_BIN = LDNDC_BASE / "bin" / "ldndc"
 PROJECTS_DIR = LDNDC_BASE / "projects"
 HWSD_RASTER = PROJECT_ROOT / "data" / "soil" / "HWSD_RASTER" / "hwsd.bil"
 HWSD_MDB = PROJECT_ROOT / "data" / "forcing" / "huaihe_raw" / "soil" / "HWSD.mdb"
-VIC_FORCING_DIR = (
-    PROJECT_ROOT
-    / "outputs"
-    / "bengbu_2000-2005_025deg"
-    / "vic_temp"
-    / "forcing"
-    / "forcing_final"
-)
+# Forcing comes straight from the data source through this KI's S4 tool.
+CMFD_DIR = PROJECT_ROOT / "data" / "forcing" / "Data_forcing_03hr_010deg"
+S4_CLIMATE_TOOL = Path(__file__).resolve().parent / "s4_climate_prep" / "convert_forcing_to_ldndc_climate.py"
+FORCING_SOURCES = ("cmfd", "mswx", "nasa_power")
 
 # Simulation defaults
 DEFAULT_LAT = 32.94
@@ -47,7 +43,6 @@ DEFAULT_LON = 117.35
 DEFAULT_ELEVATION = 20.0
 START_YEAR = 2000
 END_YEAR = 2005
-STEPS_PER_DAY = 8  # VIC 3-hourly = 8 steps/day
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,132 +51,40 @@ logging.basicConfig(
 logger = logging.getLogger("ldndc_bengbu")
 
 
-# ── 1. Find nearest VIC forcing file ──────────────────────────────────────
-def find_nearest_forcing(forcing_dir: Path, lat: float, lon: float) -> Path:
-    """Find the VIC forcing file closest to the target lat/lon."""
-    best_file = None
-    best_dist = float("inf")
-    # Auto-detect prefix from directory contents (e.g. bengbu_0.25deg_ or longpan_0.25deg_)
-    prefix = "bengbu_0.25deg_"
-    detected = [f.name for f in forcing_dir.iterdir() if "_0.25deg_" in f.name]
-    if detected:
-        prefix = detected[0].split("_0.25deg_")[0] + "_0.25deg_"
-
-    for f in forcing_dir.iterdir():
-        if not f.name.startswith(prefix):
-            continue
-        parts = f.name[len(prefix) :].split("_")
-        if len(parts) != 2:
-            continue
-        try:
-            flat, flon = float(parts[0]), float(parts[1])
-        except ValueError:
-            continue
-        dist = (flat - lat) ** 2 + (flon - lon) ** 2
-        if dist < best_dist:
-            best_dist = dist
-            best_file = f
-
-    if best_file is None:
-        raise FileNotFoundError(
-            f"No VIC forcing files found in {forcing_dir} with prefix {prefix}"
-        )
-    logger.info(
-        f"Nearest forcing file: {best_file.name} (distance={math.sqrt(best_dist):.4f} deg)"
-    )
-    return best_file
-
-
-# ── 2. Convert VIC forcing → LDNDC climate.txt ───────────────────────────
-def vic_forcing_to_ldndc_climate(
-    forcing_file: Path,
+# ── 1-2. Build LDNDC climate.txt straight from the data source ─────────────
+def build_climate_from_source(
+    source: str,
+    forcing_dir,
     output_path: Path,
     lat: float,
     lon: float,
     elevation: float,
     start_year: int,
+    end_year: int,
 ) -> None:
     """
-    Convert VIC 3-hourly 7-column forcing to LDNDC daily climate.txt.
-
-    VIC columns: TEMP(C), PRECIP(mm/step), PRESSURE(kPa), SWDOWN(W/m2),
-                 LWDOWN(W/m2), VP(kPa), WIND(m/s)
+    Build the LDNDC daily climate.txt for (lat, lon) with the S4 tool
+    (s4_climate_prep/convert_forcing_to_ldndc_climate.py), which reads the
+    source through ki_tools_common.load_forcing.
 
     LDNDC columns: prec(mm/d), tavg(C), tmax(C), tmin(C), grad(W/m2), wind(m/s)
     """
-    logger.info(f"Reading VIC forcing: {forcing_file}")
-    data = np.loadtxt(forcing_file)
-    total_steps = data.shape[0]
-    ndays = total_steps // STEPS_PER_DAY
-    logger.info(f"Total steps: {total_steps}, days: {ndays}")
-
-    if total_steps % STEPS_PER_DAY != 0:
-        logger.warning(
-            f"Steps ({total_steps}) not divisible by {STEPS_PER_DAY}; truncating."
-        )
-        data = data[: ndays * STEPS_PER_DAY]
-
-    # Reshape to (ndays, steps_per_day, 7)
-    daily = data.reshape(ndays, STEPS_PER_DAY, 7)
-
-    # Aggregate to daily
-    temp_all = daily[:, :, 0]       # already Celsius
-    precip_all = daily[:, :, 1]     # mm per 3-hour step
-    sw_all = daily[:, :, 3]         # W/m2 shortwave
-    wind_all = daily[:, :, 6]       # m/s
-
-    tavg = temp_all.mean(axis=1)
-    tmin = temp_all.min(axis=1)
-    tmax = temp_all.max(axis=1)
-    prec = precip_all.sum(axis=1)  # sum over day
-    grad = sw_all.mean(axis=1)     # mean daily shortwave (W/m2)
-    wind = wind_all.mean(axis=1)
-
-    # Compute annual statistics for header
-    annual_precip = prec.sum() / (ndays / 365.25)
-    temp_avg = tavg.mean()
-    # Temperature amplitude: half the range between warmest and coldest monthly means
-    monthly_means = []
-    start_date = date(start_year, 1, 1)
-    for m in range(1, 13):
-        mask = []
-        for d in range(ndays):
-            dt = start_date + timedelta(days=d)
-            if dt.month == m:
-                mask.append(d)
-        if mask:
-            monthly_means.append(tavg[mask].mean())
-    temp_amplitude = (max(monthly_means) - min(monthly_means)) / 2.0 if monthly_means else 15.0
-
-    # Write LDNDC climate.txt
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        f.write("%global\n")
-        f.write(f'\ttime = "{start_year}-01-01/1"\n')
-        f.write("\n")
-        f.write("%climate\n")
-        f.write("\tid = 0\n")
-        f.write("\n")
-        f.write("%attributes\n")
-        f.write(f'\televation = "{elevation:.1f}"\n')
-        f.write(f'\tlatitude = "{lat:.2f}"\n')
-        f.write(f'\tlongitude = "{lon:.2f}"\n')
-        f.write(f'\tannual precipitation = "{annual_precip:.1f}"\n')
-        f.write(f'\ttemperature average = "{temp_avg:.2f}"\n')
-        f.write(f'\ttemperature amplitude = "{temp_amplitude:.0f}"\n')
-        f.write("\n")
-        f.write("%data\n")
-        f.write("prec\ttavg\ttmax\ttmin\tgrad\twind\n")
-        for i in range(ndays):
-            f.write(
-                f"{prec[i]:.2f}\t{tavg[i]:.2f}\t{tmax[i]:.2f}\t{tmin[i]:.2f}\t"
-                f"{grad[i]:.2f}\t{wind[i]:.2f}\n"
-            )
-
-    logger.info(
-        f"Climate file written: {output_path} ({ndays} days, "
-        f"annual precip={annual_precip:.0f} mm, tavg={temp_avg:.1f} C)"
-    )
+    cmd = [
+        sys.executable, str(S4_CLIMATE_TOOL), source, str(forcing_dir),
+        str(lat), str(lon), f"{start_year}-01-01", f"{end_year}-12-31",
+        str(output_path), str(elevation),
+    ]
+    logger.info(f"Building climate from {source}: {' '.join(cmd[1:])}")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0 or not output_path.exists():
+        logger.error(res.stdout[-2000:])
+        logger.error(res.stderr[-2000:])
+        raise RuntimeError(
+            f"S4 climate tool failed for source {source} (exit {res.returncode})"
+        )
+    last = [ln for ln in res.stdout.strip().splitlines() if ln.strip()]
+    logger.info(f"Climate file written: {output_path} ({last[-1] if last else ''})")
 
 
 # ── 3. Extract HWSD soil → LDNDC site.xml ────────────────────────────────
@@ -882,22 +785,23 @@ def parse_yearly_output(output_dir: Path) -> dict:
 # ── Main ──────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        description="Run LDNDC GHG simulation for Bengbu using VIC forcing"
+        description="Run LDNDC GHG simulation for Bengbu, forcing straight from the data source"
     )
     parser.add_argument("--lat", type=float, default=DEFAULT_LAT, help="Latitude")
     parser.add_argument("--lon", type=float, default=DEFAULT_LON, help="Longitude")
     parser.add_argument("--elevation", type=float, default=DEFAULT_ELEVATION, help="Elevation (m)")
     parser.add_argument(
-        "--forcing_file",
+        "--forcing_source",
         type=str,
-        default=None,
-        help="Path to VIC forcing file (auto-detected if not set)",
+        default="cmfd",
+        choices=FORCING_SOURCES,
+        help="Data source of the weather (default cmfd)",
     )
     parser.add_argument(
         "--forcing_dir",
         type=str,
-        default=str(VIC_FORCING_DIR),
-        help="Directory with VIC forcing files",
+        default=str(CMFD_DIR),
+        help="Root folder of the forcing source (default: the CMFD 3-hourly store)",
     )
     parser.add_argument("--start_year", type=int, default=START_YEAR)
     parser.add_argument("--end_year", type=int, default=END_YEAR)
@@ -917,18 +821,11 @@ def main():
     logger.info(f"Period: {start_year}-{end_year}")
     logger.info("=" * 60)
 
-    # ── Step 1: Find forcing file ──
-    if args.forcing_file:
-        forcing_file = Path(args.forcing_file)
-        if not forcing_file.exists():
-            logger.error(f"Forcing file not found: {forcing_file}")
-            sys.exit(1)
-    else:
-        forcing_dir = Path(args.forcing_dir)
-        if not forcing_dir.exists():
-            logger.error(f"Forcing directory not found: {forcing_dir}")
-            sys.exit(1)
-        forcing_file = find_nearest_forcing(forcing_dir, lat, lon)
+    # ── Step 1: Check the forcing source ──
+    forcing_dir = Path(args.forcing_dir)
+    if not forcing_dir.exists():
+        logger.error(f"Forcing directory not found: {forcing_dir}")
+        sys.exit(1)
 
     # ── Set up project directory (unique per lat/lon/year to allow parallel runs) ──
     scen_suffix = f"_{args.scenario_tag}" if args.scenario_tag else ""
@@ -938,10 +835,11 @@ def main():
     project_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Step 2: Convert VIC forcing → LDNDC climate ──
-    logger.info("\n--- Step 2: Convert VIC forcing to LDNDC climate ---")
+    # ── Step 2: Build the LDNDC climate file from the data source ──
+    logger.info(f"\n--- Step 2: Build LDNDC climate from {args.forcing_source} ---")
     climate_path = project_dir / "bengbu_climate.txt"
-    vic_forcing_to_ldndc_climate(forcing_file, climate_path, lat, lon, elevation, start_year)
+    build_climate_from_source(args.forcing_source, forcing_dir, climate_path, lat, lon,
+                              elevation, start_year, end_year)
 
     # ── Step 3: Extract HWSD soil → site.xml ──
     logger.info("\n--- Step 3: Extract HWSD soil data ---")

@@ -23,17 +23,18 @@ pipeline:
   - s5_execution_skill
   - s6_vic_coupling_skill
 tools:
-  count: 15
+  count: 16
   files:
   - tools/calib_run.py
   - tools/s1_basin_setup/create_hru_config.py
-  - tools/s2_observation_data/convert_vic_to_obs.py
+  - tools/s2_observation_data/build_obs.py
   - tools/s2_observation_data/netcdf_safe.py
   - tools/s2_observation_data/screen_swe_obs.py
   - tools/s2_observation_data/validate_obs_file.py
   - tools/s3_module_selection/select_modules.py
   - tools/s4_parameter_config/create_prj_file.py
   - tools/s4_parameter_config/derive_parameters.py
+  - tools/s4_parameter_config/migrate_project_clock.py
   - tools/s4_parameter_config/validate_prj.py
   - tools/s5_execution/check_water_balance.py
   - tools/s5_execution/parse_crhm_output.py
@@ -121,8 +122,8 @@ validation:
     best_kge: 0.827
     best_r: 0.856
 summary:
-  total_tools: 15
+  total_tools: 16
   total_stage_docs: 6
-  total_diagnostic_triplets: 34
-  generated: '2026-08-15'
+  total_diagnostic_triplets: 38
+  generated: '2026-10-03'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

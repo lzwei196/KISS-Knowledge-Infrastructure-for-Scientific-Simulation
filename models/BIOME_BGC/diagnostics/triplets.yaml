@@ -159,7 +159,7 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: Precipitation provided in mm/day instead of cm/day
-    explanation: BIOME-BGC expects precipitation in CM per day. CMFD/MSWX and VIC provide mm. Forgetting
+    explanation: BIOME-BGC expects precipitation in CM per day. CMFD/MSWX/NASA POWER/FLUXNET provide mm. Forgetting
       to divide by 10 gives 10x too much water, inflating GPP/NPP. The model runs without any error.
     affected_components:
     - s3_meteorological_forcing
@@ -236,7 +236,7 @@
     - Met file columns 3-5 (Tmax, Tmin, Tday) must be in Celsius
     - If values are >100, they are likely Kelvin
     - Subtract 273.15 from each
-    prevention: convert_forcing_to_bgc.py auto-detects Kelvin (>100) and converts
+    prevention: convert_forcing_to_bgc.py takes deg C from the shared loader and stops when a temperature is outside -90..60 deg C
   severity: silent
   failure_domain: unit_conversion
 - id: dt_011
@@ -514,7 +514,7 @@
     - VIC soil water -> routing/discharge (authoritative)
     - BIOME-BGC soil water -> internal carbon process control only
     - Do NOT replace VIC soil water with BIOME-BGC values
-    prevention: 'Document the coupling as one-way: VIC forcing -> BIOME-BGC (diagnostic)'
+    prevention: 'BIOME-BGC is run next to VIC as a diagnostic carbon model; its weather comes from the data source (convert_forcing_to_bgc.py --source ...), not from VIC forcing files'
   severity: degraded
   failure_domain: coupling
 - id: dt_025
@@ -567,7 +567,7 @@
     description: Model runs cleanly and the GPP seasonal cycle is right (r ~0.9) but GPP/NPP/LAI/ET are biased LOW by roughly 30-60% at every site; summer met column 8 (srad) values are ~150-300 W/m2 at mid-latitudes instead of the 400-550 W/m2 seen in the bundled Missoula MTCLIM file
     detection_method: value_comparison
   diagnosis:
-    root_cause: Shortwave radiation written as the 24-h mean (what VIC/CMFD/MSWX/NASA POWER/FLUXNET daily products carry) while BIOME-BGC's met column 8 is metv.swavgfd, the DAYLIGHT-AVERAGE shortwave flux density
+    root_cause: Shortwave radiation written as the 24-h mean (what CMFD/MSWX/NASA POWER/FLUXNET daily products carry) while BIOME-BGC's met column 8 is metv.swavgfd, the DAYLIGHT-AVERAGE shortwave flux density
     explanation: metarr_init.c reads column 8 into metarr->swavgfd, documented in bgc_struct.h as "(W/m2) daylight
       avg shortwave flux density" and in bgc_users_guide.pdf (met file item 8) as "the daylight average shortwave
       radiant flux density"; MTCLIM produces exactly that. radtrans.c turns it into PAR per unit leaf area, and
@@ -585,3 +585,132 @@
     prevention: convert_forcing_to_bgc.py reports srad_basis and srad_daylight_avg_range_Wm2 in its JSON; a max > 1200 W/m2 raises a warning
   severity: silent
   failure_domain: unit_conversion
+- id: dt_028
+  symptom:
+    description: 'convert_forcing_to_bgc.py stops with "argument --source: invalid choice: ''vic''", or an old recipe hands it a VIC 7-column forcing file; with the tool as it was before 2026-10-03 the met file from a platform VIC forcing file had air temperature in the rain column and pressure in the Tmin column, with no error'
+    error_pattern: "argument --source: invalid choice: 'vic'"
+    detection_method: log_match
+  diagnosis:
+    root_cause: The only route for a gridded source was --source vic (the default), a reader of VIC forcing files that took the columns as PREC TMAX TMIN WIND QAIR SW LW while the platform VIC files are AIR_TEMP PREC PRESSURE SWDOWN LWDOWN VP WIND
+    explanation: BIOME-BGC input must be built from the data source by this KI's own tool, not from another
+      model's input files (owner rule 2026-10-02). The VIC reader also counted dates from 1 Jan of start_year
+      whatever the file started with. The VIC route is removed for good; it must not be put back.
+    affected_components:
+    - s3_meteorological_forcing
+  remedy:
+    action: Read the weather straight from the source with --source cmfd|mswx|nasa_power --lat --lon (shared loader) or --source fluxnet --forcing_file (tower file)
+    tool_to_run: convert_forcing_to_bgc
+    manual_steps:
+    - 'China point: --source cmfd --forcing_dir <CMFD store> --lat <lat> --lon <lon>'
+    - 'Any point: --source nasa_power (network) or --source mswx --forcing_dir KISSPATH_FORCING (slow)'
+    - Never write a script that turns VIC forcing, soil or vegetation files into BIOME-BGC input
+    prevention: The tool has no VIC reader; generate_site_ini.py and select_ecophysiology.py take plain numbers / a PFT and read no VIC setup file
+  severity: silent
+  failure_domain: config_format
+- id: dt_029
+  symptom:
+    description: 'convert_forcing_to_bgc.py exits 2 with "does not give one value per day", "missing/non-finite value(s)" or "is outside ... wrong unit or bad value in the source"; no met file and no summary are written. Before 2026-10-03 the documents told the agent to call load_daily_forcing (or netcdf_utils.load_cmfd_daily_all, which does not exist) and then this tool, which had no way to take the loader output'
+    error_pattern: 'nothing written'
+    detection_method: log_match
+  diagnosis:
+    root_cause: The source does not cover every day of start_year..end_year at this point, has a gap or a non-finite value, or gives a value in the wrong unit
+    explanation: The direct route feeds the loader output (dates, temp_max_c, temp_min_c, precip_mm, shum_kgkg,
+      pres_pa, srad_wm2) into the daily-record path and makes up nothing. It checks one value per calendar
+      day from 1 Jan start_year to 31 Dec end_year, finite values, and physical ranges, before any file
+      is opened. NASA POWER daily starts in 1981 (HTTP 422 before that); CMFD is China only.
+    affected_components:
+    - s3_meteorological_forcing
+  remedy:
+    action: Pick a source and a period that the source fully covers; do not fill or patch the series by hand
+    tool_to_run: convert_forcing_to_bgc
+    manual_steps:
+    - Read the message - it names the variable and the first bad day
+    - Shorten the period or switch --source (cmfd / mswx / nasa_power)
+    - Check <output>.summary.json (mean annual precipitation, mean temperature) against the site climate after a good run
+    prevention: Use only convert_forcing_to_bgc.py for the met file; do not call the loader yourself and write the file by hand
+  severity: fatal
+  failure_domain: config_format
+- id: dt_030
+  symptom:
+    description: 'Line 2 of a FLUXNET-made met file written before 2026-10-03 reads "Generated from VIC forcing: FULLSET_DD.csv" although no VIC file was used'
+    error_pattern: 'Generated from VIC forcing'
+    detection_method: file_check
+  diagnosis:
+    root_cause: The met header text was fixed in the tool for every input
+    explanation: 'The four header lines are skipped by the model (met_header_lines = 4), so the numbers were
+      never touched. Since 2026-10-03 every route writes the true origin on line 2 - the tower route
+      "Generated from FLUXNET tower file: <file>", the direct routes "Generated from <source> via
+      ki_tools_common.load_forcing, lat lon period". A tower met file made before that date still carries
+      the old words; only that header line differs.'
+    affected_components:
+    - s3_meteorological_forcing
+  remedy:
+    action: Read the origin of a met file from line 2 (files made from 2026-10-03 on), or from the tool's JSON (fluxnet_source / source) and <met>.summary.json
+    tool_to_run: convert_forcing_to_bgc
+    manual_steps:
+    - 'Older tower met file: the file named on line 2 is the FLUXNET file; the words "VIC forcing" are wrong'
+    - 'Comparing an old and a new tower met file: they differ on header line 2 only'
+    prevention: Fixed in the tool on 2026-10-03 (owner decision)
+  severity: degraded
+  failure_domain: config_format
+- id: dt_031
+  symptom:
+    description: VPD in the met file does not match VPD recomputed from the source humidity and pressure; the gap grows with site elevation (about 1 percent of vapour pressure per 85 m)
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Air pressure was a fixed --pressure 101325 Pa although CMFD, MSWX and NASA POWER all give surface pressure
+    explanation: ea = q*P/(0.622+0.378*q). With sea-level pressure at a high site ea is too large and VPD
+      too small, so stomata stay more open than they should. The direct route now uses the source pressure
+      of each day; the --pressure option is gone. At DK-Sor (40 m) the effect is small (mean VPD 171.1 Pa
+      with the source pressure, 169.1 Pa with 101325 Pa); at 3000 m pressure is about 70000 Pa.
+    affected_components:
+    - s3_meteorological_forcing
+  remedy:
+    action: Rebuild the met file with --source cmfd|mswx|nasa_power; VPD is es(Tday) minus ea from the day's specific humidity and the source's own pressure
+    tool_to_run: convert_forcing_to_bgc
+    manual_steps:
+    - Check mean_pressure_pa in the tool JSON / summary against the site elevation
+    prevention: The tool stops when the source pressure is missing or outside 30000-110000 Pa
+  severity: silent
+  failure_domain: unit_conversion
+- id: dt_032
+  symptom:
+    description: 'An agent following an old copy of the quick start (SKILL.md step 2) or of docs/s3_meteorological_forcing_skill.md looks for a VIC forcing file ("--forcing_file <vic_forcing_file>", prerequisite "VIC forcing files exist"), finds none for the site, and either stops or runs the VIC forcing pipeline for a model that is not being used'
+    error_pattern: '--forcing_file is required for --source fluxnet'
+    detection_method: log_match
+  diagnosis:
+    root_cause: The quick start and the S3 stage document named a VIC forcing file as the only weather input
+    explanation: Both documents now show the direct call (--source nasa_power|cmfd|mswx --lat --lon, or --source
+      fluxnet --forcing_file <FULLSET_DD.csv>). --forcing_file is a FLUXNET tower file only; the direct
+      sources take no file, only the point and, for cmfd / mswx, the store root in --forcing_dir.
+    affected_components:
+    - s3_meteorological_forcing
+  remedy:
+    action: Follow the current S3 document - give --source, --lat, --lon and the period; no VIC forcing file is needed or accepted
+    tool_to_run: convert_forcing_to_bgc
+    manual_steps:
+    - 'Run: convert_forcing_to_bgc.py --source nasa_power --lat <lat> --lon <lon> --start_year <y0> --end_year <y1> --output <met>'
+    - Read <met>.summary.json and compare mean annual precipitation and mean temperature with the site climate
+    prevention: --source is required and has no default, so a call copied from an old recipe fails at once instead of reading the wrong file
+  severity: degraded
+  failure_domain: config_format
+- id: dt_033
+  symptom:
+    description: Reads of KISSPATH_FORCING hang and processes sit in D state (cannot be killed) after several MSWX readers ran at the same time
+    detection_method: file_check
+  diagnosis:
+    root_cause: The MSWX store is on an exfat disk that wedges under parallel reads, and the shared MSWX reader fans its per-file reads out over up to 8 processes
+    explanation: convert_forcing_to_bgc.py --source mswx makes the shared reader run ONE file at a time and
+      reads only the five variables it needs (P, Tair, SWd, spechum, Pres). One variable-year is a full
+      file decompression (minutes), so nine years take hours; NASA POWER takes about 2 s per year.
+    affected_components:
+    - s3_meteorological_forcing
+  remedy:
+    action: Run one MSWX conversion at a time, inside the detached runner; for a quick point run use --source nasa_power
+    tool_to_run: convert_forcing_to_bgc
+    manual_steps:
+    - Never start two tools that read KISSPATH_FORCING at the same time
+    - Do not call load_daily_forcing('mswx', ...) yourself - it reads in parallel
+    prevention: The tool swaps the process pool for a serial one while the MSWX loader runs
+  severity: fatal
+  failure_domain: runtime

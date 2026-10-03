@@ -4,10 +4,15 @@
 
 Prepare all forcing inputs for SFINCS: precipitation (rainfall), river discharge boundaries (from CaMa-Flood), and optionally tidal/surge boundaries for coastal domains. This is the most error-prone stage due to **unit conversions**.
 
+The rainfall tool requires every requested timestep in order; gaps, duplicate
+times, partial windows, missing values, and negative precipitation are refused.
+The uniform ASCII rainfall series is held as one value per timestep, so memory
+does not grow as the number of timesteps multiplied by the number of grid cells.
+
 ## Prerequisites
 
 - grid_info.json from s1_domain
-- For rainfall: CMFD/MSWX forcing data or VIC forcing ASCII files
+- For rainfall: the CMFD store (China) or the MSWX store (global), read straight from the source
 - For river BC: CaMa-Flood output (outflw.nc and/or sfcelv.nc)
 - For tidal BC: FES2014 tidal model (not yet integrated — future)
 
@@ -16,7 +21,7 @@ Prepare all forcing inputs for SFINCS: precipitation (rainfall), river discharge
 | Input | Type | Source | Required |
 |-------|------|--------|----------|
 | grid_info.json | JSON | s1_domain | Yes |
-| Forcing directory | directory | VIC forcing or CMFD/MSWX | For rainfall |
+| Forcing directory | directory | root of the CMFD or MSWX store | For rainfall |
 | CaMa-Flood output dir | directory | CaMa-Flood run | For river BC |
 | Start/end dates | string | User | Yes |
 
@@ -24,7 +29,7 @@ Prepare all forcing inputs for SFINCS: precipitation (rainfall), river discharge
 
 ### A. Precipitation Forcing
 
-1. **Run tool**: `prepare_sfincs_rainfall.py --forcing_dir <dir> --grid_info <json> --start_date <date> --end_date <date> --source <cmfd|mswx|vic_ascii> --output_dir <dir>`
+1. **Run tool**: `prepare_sfincs_rainfall.py --forcing_dir <dir> --grid_info <json> --start_date <date> --end_date <date> --source <cmfd|mswx> --output_dir <dir>` (`--source` is required; the tool reads the store through the shared loader at the domain centre)
 
 2. **CRITICAL UNIT CONVERSION**:
 
@@ -32,7 +37,6 @@ Prepare all forcing inputs for SFINCS: precipitation (rainfall), river discharge
 |--------|-----------|-------------|------------|
 | CMFD | mm/3hr | mm/hr | **divide by 3** |
 | MSWX | mm/3hr | mm/hr | **divide by 3** |
-| VIC ASCII (precip column) | mm/3hr | mm/hr | **divide by 3** |
 | Climate models (kg/m2/s) | m/s | mm/hr | **multiply by 3,600,000** |
 | mm/day | mm/day | mm/hr | **divide by 24** |
 

@@ -302,10 +302,10 @@ python tools/s3_roughness/build_sfincs_roughness.py \
 
 # 4. Prepare rainfall forcing
 python tools/s4_forcing/prepare_sfincs_rainfall.py \
-  --forcing_dir outputs/chaohe_run/vic_temp/forcing/forcing_final \
+  --forcing_dir data/forcing/Data_forcing_03hr_010deg \
   --grid_info outputs/sfincs_test/grid_info.json \
   --start_date 2003-07-01 --end_date 2003-09-30 \
-  --source vic_ascii \
+  --source cmfd \
   --output_dir outputs/sfincs_test/
 
 # 5. Generate configuration

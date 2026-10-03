@@ -377,7 +377,6 @@ See `diagnostics/triplets.yaml` for 18 diagnostic triplets covering:
 ## Model Couplings
 
 See `docs/model_couplings.yaml` for data flows between AquaCrop-OSPy and:
-- **VIC**: Weather forcing (7 vars) -> AquaCrop DataFrame (4 vars + ET0)
 - **VIC**: Soil moisture -> InitialWaterContent
 - **HWSD**: Sand/Clay/OrgMat -> `add_layer_from_texture()`
 - **CaMa-Flood**: Flood depth/duration -> AquaCrop GroundWater object for mechanistic waterlogging stress — **IMPLEMENTED** via `apply_cama_flood.py` (s6_field_management). Validation: Bengbu maize 1985: 14.18 t/ha (no flood) -> 4.28 t/ha (with flood, -69.8%). 177 flood days from CaMa-Flood.

@@ -362,16 +362,10 @@ This is the primary reason LDNDC exists in HydroCraft. No other model in the pla
 ## 8. MULTI-MODEL COUPLING
 
 ### 8.1 VIC Climate Forcing to LDNDC
-- **Status**: DONE
-- **Tool**: `vic_to_ldndc_climate.py`
-- **Coupling**: VIC 7-col sub-daily forcing -> LDNDC climate.txt (daily, K->C, VP->RH, sum precip)
-- **Validated**: Bengbu, Chaohu, Longpan, Wangjiaba basins
+- **Status**: REMOVED 2026-10-02. LDNDC climate is built straight from the data source (S4 `convert_forcing_to_ldndc_climate.py`).
 
 ### 8.2 VIC Soil to LDNDC Site
-- **Status**: DONE
-- **Tool**: `vic_soil_to_ldndc_site.py`
-- **Coupling**: VIC SOIL_PARAM (53 cols, 3 layers) -> LDNDC site.xml (5-10 layers). BD kg/m3->g/cm3. Supplemented by HWSD for pH and corg.
-- **Validated**: Multiple basins
+- **Status**: REMOVED 2026-10-02. LDNDC soil is built straight from HWSD (S2 `hwsd_to_ldndc_soil.py`).
 
 ### 8.3 VIC Soil Moisture to LDNDC Initial Conditions
 - **Status**: DONE

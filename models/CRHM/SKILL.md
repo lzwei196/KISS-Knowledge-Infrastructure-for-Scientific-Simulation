@@ -27,17 +27,16 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (15 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (16 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (34 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (38 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
-| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -50,13 +49,14 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 |---|---|
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
 | `tools/s1_basin_setup/create_hru_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_basin_setup/create_hru_config.py --help` |
-| `tools/s2_observation_data/convert_vic_to_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/convert_vic_to_obs.py --help` |
+| `tools/s2_observation_data/build_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/build_obs.py --help` |
 | `tools/s2_observation_data/netcdf_safe.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/netcdf_safe.py --help` |
 | `tools/s2_observation_data/screen_swe_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/screen_swe_obs.py --help` |
 | `tools/s2_observation_data/validate_obs_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/validate_obs_file.py --help` |
 | `tools/s3_module_selection/select_modules.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_module_selection/select_modules.py --help` |
 | `tools/s4_parameter_config/create_prj_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/create_prj_file.py --help` |
 | `tools/s4_parameter_config/derive_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/derive_parameters.py --help` |
+| `tools/s4_parameter_config/migrate_project_clock.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/migrate_project_clock.py --help` |
 | `tools/s4_parameter_config/validate_prj.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/validate_prj.py --help` |
 | `tools/s5_execution/check_water_balance.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/check_water_balance.py --help` |
 | `tools/s5_execution/parse_crhm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/parse_crhm_output.py --help` |
@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s5_execution/run_crhm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/run_crhm.py --help` |
 | `tools/s6_vic_coupling/merge_crhm_vic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_vic_coupling/merge_crhm_vic.py --help` |
 
-*15 public tools; `_`-prefixed helpers and packaging files excluded.*
+*16 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -73,9 +73,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Build the weather input straight from the forcing source with `build_obs.py`, the only weather tool of this KI.**
 CRHM forcing tools are in `tools/s2_observation_data/` in this KI:
-- `tools/s2_observation_data/convert_vic_to_obs.py` — Converts VIC/CMFD forcing to CRHM .obs format (handles specific humidity→RH, unit conversions, physical bounds validation)
+- `tools/s2_observation_data/build_obs.py` — THE tool. `--source cmfd|mswx|nasa_power` (no default) read through the shared loader `ki_tools_common.load_forcing.load_hourly_forcing`; `--lat --lon` for one point or `--basin_shp` for the mean over every grid cell in the basin (cmfd); `--source table` for a dataset that has no reader yet (you write a standard table, see `docs/s2_observation_data_skill.md` Step 2c). Converts specific humidity→RH, refuses missing values and wrong units instead of filling them, and writes `<obs>.meta.json` with the yearly precipitation and `forcing_elev_m` (pass that to `derive_parameters.py --forcing_elev_m`).
 - `tools/s2_observation_data/validate_obs_file.py` — Validates CRHM .obs format (header, variables, bounds, date continuity)
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
@@ -146,11 +146,11 @@ crhm [-t ISO|YYYYMMDD] [-f STD|OBS] [-o output.txt] [-p 100] [--obs_file_directo
 | Stage | Name | Skill Document | Key Tools |
 |-------|------|----------------|-----------|
 | s1 | HRU Basin Setup | `docs/s1_basin_setup_skill.md` | `create_hru_config.py` |
-| s2 | Observation Data | `docs/s2_observation_data_skill.md` | `convert_vic_to_obs.py`, `validate_obs_file.py` |
+| s2 | Observation Data | `docs/s2_observation_data_skill.md` | `build_obs.py`, `validate_obs_file.py` |
 | s3 | Module Selection | `docs/s3_module_selection_skill.md` | `select_modules.py` |
 | s4 | Parameter Config | `docs/s4_parameter_config_skill.md` | `create_prj_file.py`, `validate_prj.py` |
 | s5 | Execution | `docs/s5_execution_skill.md` | `run_crhm.py`, `parse_crhm_output.py`, `plot_crhm_results.py` |
-| s6 | VIC Coupling | `docs/s6_vic_coupling_skill.md` | `convert_vic_to_obs.py`, `merge_crhm_vic.py` |
+| s6 | VIC Coupling (combine / compare RESULTS of the two models) | `docs/s6_vic_coupling_skill.md` | `merge_crhm_vic.py` |
 
 **Dependencies**: s1 and s2 can run in parallel. s3 depends on s1. s4 depends on s1+s3. s5 depends on s2+s4. s6 depends on s5.
 
@@ -158,8 +158,8 @@ crhm [-t ISO|YYYYMMDD] [-f STD|OBS] [-o output.txt] [-p 100] [--obs_file_directo
 
 | Tool | Stage | Script Path | Purpose |
 |------|-------|-------------|---------|
-| create_hru_config | s1 | `tools/s1_basin_setup/create_hru_config.py` | Generate HRU definitions from DEM + land cover |
-| convert_vic_to_obs | s2 | `tools/s2_observation_data/convert_vic_to_obs.py` | Convert VIC forcing to CRHM .obs format |
+| create_hru_config | s1 | `tools/s1_basin_setup/create_hru_config.py` | Generate HRU definitions from DEM + land cover; `--single_hru --lat --lon --elevation_m --area_km2 --land_cover` for one user-described site with no rasters |
+| **build_obs** | **s2** | `tools/s2_observation_data/build_obs.py` | Build the .obs straight from the forcing source (cmfd / mswx / nasa_power / a standard table); one point or a basin mean |
 | validate_obs_file | s2 | `tools/s2_observation_data/validate_obs_file.py` | Check .obs format, units, gaps |
 | select_modules | s3 | `tools/s3_module_selection/select_modules.py` | Configure module chain by landscape type (auto-detect from HRU config) |
 | **derive_parameters** | **s4** | `tools/s4_parameter_config/derive_parameters.py` | **NEW** — Derive all module params from HWSD + DEM + Fang et al. (2013) |
@@ -189,6 +189,16 @@ python tools/s4_parameter_config/create_prj_file.py \
   --output_path outputs/<run>/crhm/basin.prj \
   --derived_params outputs/<run>/crhm/derived_params.json
 ```
+
+`derive_parameters.py` STOPS (exit 1, nothing written) when a real input is
+missing and a built-in value would be used instead: no basin coordinates
+(it used to fall back to 50 N, −115 E) or no HWSD map unit at the site (it used
+to return loam: soil_type 4, soil_moist_max 451, gw_max 400). Pass
+`--allow_defaults` to accept them; the output JSON then lists them under
+`defaults_used`. `create_prj_file.py` dates are ONE quoted argument,
+`--start_date "2005 1 1"` (`2005-01-01` is also accepted). `run_crhm.py
+--obs_dir` is only for a `.prj` whose obs path is relative to that directory;
+CRHM joins the two strings as they are.
 
 `derive_parameters.py` derives parameters for ALL 15 mountain modules:
 
@@ -275,7 +285,7 @@ module's parameter as `<Module> <param>` first, then `Shared <param>`. Basin
 geometry — `basin_area`, `hru_area`, `hru_elev`, `hru_lat`, `hru_GSL`,
 `hru_ASL` — is read independently by MANY modules (Netroute, obs, pbsm, …), so
 it MUST be declared with the `Shared` prefix, exactly as the shipped
-`prj/badlake.prj` and every validated basin .prj do. Writing `basin hru_area`
+`crhmcode/prj/badlake.prj` (in the CRHM SOURCE tree, not in this KI) and every validated basin .prj do. Writing `basin hru_area`
 instead leaves Netroute on its default `hru_area = [1] km²` → basinflow comes
 out basin-area-fold too small (NSE pinned at −1.0, PBIAS ≈ −100%), and `obs`
 never sees `hru_elev` → no lapse-rate elevation banding (all HRUs identical).
@@ -284,16 +294,23 @@ never sees `hru_elev` → no lapse-rate elevation banding (all HRUs identical).
 
 ## .obs File Format
 
+This is the form `build_obs.py` writes, and the only one this KI uses:
+
 ```
-Station data converted from VIC
+CRHM forcing from cmfd at (29.59, 89.13) 1970-2013     <- exactly ONE description line (dt_020)
 t 1 (C)
+p 1 (mm)                                               <- precipitation IN THE STEP (ClassObs.cpp:85)
 rh 1 (%)
 u 1 (m/s)
-ppt 1 (mm/d)
 Qsi 1 (W/m^2)
-$ea ea(t, rh) (kPa) vapour pressure
-2000 1 1 1 0 -15.50 81.50 3.10 0.00 0.00
+Qli 1 (W/m^2)
+############################################           <- must be there (dt_v001)
+1970 1 1 0 0 -17.20 0.000 24.2 1.07 0.00 160.00
 ```
+
+There is NO air-pressure variable in a CRHM `.obs`: a line `p 1 (kPa)` is read as
+precipitation. `ppt (mm/d)` is the DAILY precipitation variable and is only for a
+daily-step file; sub-daily amounts go in `p`, unchanged.
 
 ## Module Chain Concept
 
@@ -301,16 +318,26 @@ Pre-built chains by landscape type:
 
 | Landscape | Chain | Key Feature |
 |-----------|-------|-------------|
-| **Prairie** | basin > global > obs > PBSM > PrairieInfil > Soil > Netroute | Blowing snow transport |
-| **Mountain** | basin > global > obs > Slope_Qsi > SnobalCRHM > GreenAmpt > Soil > Netroute | Slope radiation correction |
-| **Forest** | basin > global > obs > CRHMCanopy > SnobalCRHM > GreenAmpt > Soil > Netroute | Canopy interception/sublimation |
-| **Arctic** | basin > global > obs > PBSM > SnobalCRHM > PrairieInfil > Soil > REWroute | Permafrost + blowing snow |
+| `--basin_type` | Chain | Status |
+|-----------|-------|-------------|
+| **mountain_reduced** | basin > global > obs > calcsun > intcp > pbsm > albedo > ebsm > netall > crack > evap > Soil > Netroute | VALIDATED — every validated basin below |
+| **mountain** | the same + Slope_Qsi + walmsley_wind | runs; needs per-HRU slope/aspect and Walmsley terms |
+| **prairie_reduced** | basin > global > obs > calcsun > intcp > **pbsmSnobal** > albedo > **SnobalCRHM** > netall > crack > evap > Soil > Netroute | RUNS, NOT a validated pass (Hulunbuir SWE NSE −0.46). Auto-selected for flat, open sites |
+| **prairie_ebsm_legacy** | basin > global > obs > calcsun > intcp > pbsm > albedo > ebsm > netall > crack > evap > Soil > Netroute | runs; no mid-winter sublimation sink |
+| prairie, forest, mixed, arctic | — | REFUSED by `select_modules.py`: no melt module (prairie) or module names the CLI binary does not register (`CRHMCanopy`, `CRHMCanopyClearing`, `PBSM`, `PrairieInfil`, `REWroute`); they never ran with this binary |
+
+**SnobalCRHM must be paired with `pbsmSnobal`, never plain `pbsm` (dt_v012).**
+SnobalCRHM reads `hru_drift`/`hru_subl`, which only `pbsmSnobal` declares; with
+`pbsm` the binary segfaults at "0% complete." (exit −11, two-row output, no
+message). Parameter lines and overrides on that chain are keyed
+`pbsmSnobal fetch / Ht / distrib`; output variables are `pbsmSnobal hru_subl`,
+`hru_drift`, `Drift_out`, `cumSubl` and `SnobalCRHM SWE`, `E_s_int`.
 
 ## Critical Domain Knowledge
 
 ### The #1 Silent Error: Humidity Unit Conversion
 
-VIC uses **specific humidity** (kg/kg, values ~0.001-0.02). CRHM expects **relative humidity** (%, values 0-100). If you pass specific humidity directly, CRHM interprets the atmosphere as 0.001-0.02% RH (bone dry). All sublimation goes to zero. SWE accumulates forever. **The model runs to completion with no error.** Always use `convert_vic_to_obs.py` which applies the Tetens formula conversion.
+The forcing sources give **specific humidity** (kg/kg, values ~0.001-0.02). CRHM expects **relative humidity** (%, values 0-100). If you pass specific humidity directly, CRHM interprets the atmosphere as 0.001-0.02% RH (bone dry). All sublimation goes to zero. SWE accumulates forever. **The model runs to completion with no error.** Always use `build_obs.py` which applies the Tetens formula conversion.
 
 **Detection**: If max(RH) in .obs file < 1.0, the units are wrong.
 
@@ -332,15 +359,18 @@ PBSM is only valid for wind-exposed terrain (prairie, tundra, alpine above treel
 
 ## Unit Conversion Table
 
-| Variable | VIC Unit | CRHM Unit | Conversion | Silent if Wrong? |
-|----------|----------|-----------|------------|------------------|
-| Temperature | C | C | None | No |
-| Humidity | kg/kg (specific) | % (relative) | Tetens formula | **YES** |
-| Precipitation | mm/timestep | mm/d | *24/timestep_hours | **YES** |
-| Wind | m/s | m/s | None | No |
-| SW radiation | W/m2 | W/m2 | None | No |
-| LW radiation | W/m2 | W/m2 | None | No |
-| Pressure | kPa | kPa | None | No |
+From the standard forcing series (what `ki_tools_common.load_forcing` returns) to the `.obs`.
+`build_obs.py` does all of it; this table is for checking, not for doing by hand.
+
+| Variable | Standard series | CRHM `.obs` | Conversion | Silent if Wrong? |
+|----------|-----------------|-------------|------------|------------------|
+| Temperature | `temp_c`, C | `t` (C) | None | No |
+| Humidity | `shum_kgkg`, kg/kg (specific) | `rh` (%) | `e = q p / (0.622 + 0.378 q)`, `RH = e / es(T) * 100` | **YES** (dt_001) |
+| Precipitation | `precip_mm`, mm in the step | `p` (mm in the step) | **None.** Do NOT turn it into mm/d | **YES** (dt_002) |
+| Wind | `wind_ms`, m/s | `u` (m/s) | None | No |
+| SW radiation | `srad_wm2`, W/m2 | `Qsi` (W/m^2) | None | No |
+| LW radiation | `lrad_wm2`, W/m2 | `Qli` (W/m^2) | None | No |
+| Pressure | `pres_pa`, Pa | not written | used only inside the humidity conversion | **YES** if written as `p` |
 
 ## Error Handling
 
@@ -361,8 +391,9 @@ bash install_crhm.sh
 # 2. Create HRUs
 python tools/s1_basin_setup/create_hru_config.py --dem_path dem.tif --landcover_path lc.tif --shapefile_path basin.shp --output_dir out/hru
 
-# 3. Convert VIC forcing
-python tools/s2_observation_data/convert_vic_to_obs.py --forcing_dir vic_forcing/ --grid_nc grid.nc --output_path out/basin.obs --start_year 2000 --end_year 2010
+# 3. Build the weather input straight from the source (basin mean; use --lat --lon for one point)
+python tools/s2_observation_data/build_obs.py --source cmfd --basin_shp basin.shp --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg --start_year 2000 --end_year 2010 --output_path out/basin.obs
+#    then read out/basin.obs.meta.json: check the yearly precipitation, note forcing_elev_m for derive_parameters.py
 
 # 4. Select modules (prairie example)
 python tools/s3_module_selection/select_modules.py --basin_type prairie --output_path out/modules.json
@@ -468,7 +499,7 @@ basin → global → obs → calcsun → Slope_Qsi → walmsley_wind → intcp �
 
 1. **.obs header**: NO `####` line before variable declarations — causes infinite loop (dt_v001)
 2. **pbsm required**: Without it, CRHM segfaults on wildcard SWE search (dt_v002)
-3. **NASA POWER precip ÷24**: Hourly values are mm/day rate, not mm/hr (dt_v004)
+3. **NASA POWER hourly precip units CHANGED (dt_v013)**: until about 2026-06 hourly values were a mm/day rate (÷24 was right); since then the API returns mm/hour. The loader now reads the unit from the response and checks the yearly total against the daily product. Never pass `--precip_scale 24`.
 4. **Mountain precip scaling**: NASA POWER underestimates by ~40% in Rockies — scale ×1.7
 5. **GW parameters**: gwKstorage=50-80, gwLag=500-1000, gw_K=2-5 for sustained winter baseflow
 6. **Wind amplification**: Walmsley A=4.0 for alpine ridges (NASA POWER wind is 3.5x too low)
@@ -582,7 +613,7 @@ Bow WB note); runoff coef Q/P 0.71 matches obs 0.67, units clean.
 1. **NASA POWER underestimates precip in INTERIOR BC too — scale ×1.7 (same as the
    Rockies).** Diagnostic that forces this: compute obs runoff depth (mean Q ×
    86400 × 365 / area) BEFORE running. At 08LG048 obs runoff = 683 mm/yr but raw
-   NASA POWER P = 603 mm/yr → runoff coef > 1.0, physically impossible. `convert_vic_to_obs.py
+   NASA POWER P = 603 mm/yr → runoff coef > 1.0, physically impossible. `build_obs.py
    --precip_scale 1.7` lifts P to 1025 mm/yr → coef 0.67 (realistic for a snowmelt
    basin). ALWAYS check runoff-coef-implied precip deficit before trusting raw POWER.
 
@@ -632,7 +663,7 @@ the `_nse/_kge/_pbias/_r` helpers directly. Record the override periods in
 — it returns `FAIL: Unable to detect data source` on a built CRHM `.obs` (NASA POWER
 origin). For CRHM runs, validate units directly on the `.obs`: `t` in [-50,45] °C,
 `max(rh) > 1.0` (the #1 silent humidity bug, see above), `p` ≤ ~50 mm/hr with annual
-total physically plausible, `u` ≥ 0 m/s, `Qsi` ≤ ~1100 W/m². `convert_vic_to_obs.py`
+total physically plausible, `u` ≥ 0 m/s, `Qsi` ≤ ~1100 W/m². `build_obs.py`
 already enforces these bounds at write time.
 
 ### Validated Mountain Basin — Similkameen River above Goodfellow Creek (HYDAT 08NL070)
@@ -657,7 +688,7 @@ runoff=616 mm/yr → with realistic montane ET ~550 mm the implied P≈1170 look
 yet the run came out PBIAS +62% because CRHM's energy-limited Granger ET only removed
 ~220 mm — so the EXCESS had to be shed as precip. Lever used: `obs ClimChng_flag=1`
 + `ClimChng_precip=0.75` (a clean in-.prj multiplier; equivalent to re-running
-`convert_vic_to_obs.py --precip_scale 0.75`). **Do NOT assume POWER always under-
+`build_obs.py --precip_scale 0.75`). **Do NOT assume POWER always under-
 catches in the mountains — check PBIAS sign after the first run and scale precip to
 zero it.** Pair this with `Shared inhibit_evap=0` (the Coldwater/St.Mary template
 ships `inhibit_evap=1`, which suppresses ET and inflates volume; setting it 0 0 0
@@ -727,7 +758,7 @@ Also: the HYDAT station lat/lon can sit a cell or two off the mapped channel
 recovered the correct outlet.
 
 **TOOL BUG FIXED — validate_obs_file.py mislabeled 'p' as pressure and required
-'ppt'.** CRHM's obs module (and the canonical `convert_vic_to_obs.py`, and every
+'ppt'.** CRHM's obs module (and the canonical `build_obs.py`, and every
 validated .obs in outputs/) names precipitation **`p`** (mm). `validate_obs_file.py`
 hard-required a `ppt` declaration AND carried `PHYSICAL_BOUNDS["p"]=(30,110)` as
 *pressure (kPa)* — so it raised a CRITICAL "precip 'ppt' not declared" error and
@@ -1174,10 +1205,16 @@ closed on such a chain instead of emitting it.
 **4. Use `prairie_reduced`, never the legacy `prairie` chain.** The legacy
 4-process chain (`PBSM > PrairieInfil > Soil > Netroute`) is UNVALIDATED and has
 no energy-balance melt at all — no `albedo`, no `netall`, no `ebsm` — which is
-fatal when SWE is the scored variable. `prairie_reduced` is the SAME validated
-13-module chain the mountain basins use; once `Slope_Qsi`/`walmsley_wind` are
-gone that chain is landscape-neutral. Auto-detection now routes flat+open
-domains (relief < 500 m, open fraction > 50%) to it. `select_modules.py`'s
+fatal when SWE is the scored variable. Auto-detection routes flat+open
+domains (relief < 500 m, open fraction > 50%) to `prairie_reduced`.
+**History, read before reusing any Hulunbuir number below:** until 2026-07-25
+`prairie_reduced` WAS the validated 13-module chain (pbsm + ebsm), and every
+Hulunbuir result in this file was made with it; that chain is now called
+`prairie_ebsm_legacy`. On 2026-07-26 the preset's melt module was switched to
+SnobalCRHM with `pbsm` left in place, which segfaults (dt_v012). Since
+2026-10-02 the preset is `pbsmSnobal` + `SnobalCRHM`: it runs, but its only SWE
+score so far (Hulunbuir retest 2026-07-26: NSE −0.46, KGE 0.20, r 0.73) is not
+a pass. `select_modules.py`'s
 `MODULE_DB` also gained the nine modules it was missing (`calcsun`, `intcp`,
 `pbsm`, `albedo`, `ebsm`, `netall`, `crack`, `evap`, `walmsley_wind`) — before
 that, `chain_validation` reported the VALIDATED chain as eight "Unknown module"
@@ -1315,6 +1352,7 @@ the reference:
 
     crhmcode/prj/badlake.prj:51-52    Ht = 0.05  0.25  0.6
     crhmcode/prj/smithcreek.prj:447   Ht = 0.001 0.12 0.4 0.7 0.001 6 1.5 ...
+    (both files are in the CRHM SOURCE tree, <crhmcode>/crhmcode/prj/, not in this KI)
 
 Every blowing-snow SOURCE HRU in both is **0.001-0.12 m**. Grazed / dormant
 Eurasian steppe belongs in that same 0.02-0.10 m band. 0.3 m is taller than any

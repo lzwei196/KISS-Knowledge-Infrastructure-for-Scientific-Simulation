@@ -58,11 +58,11 @@ crhm [-t ISO|YYYYMMDD] [-f STD|OBS] [-o output.txt] [-p 100] [--obs_file_directo
 | Stage | Name | Skill Document | Key Tools |
 |-------|------|----------------|-----------|
 | s1 | HRU Basin Setup | `docs/s1_basin_setup_skill.md` | `create_hru_config.py` |
-| s2 | Observation Data | `docs/s2_observation_data_skill.md` | `convert_vic_to_obs.py`, `validate_obs_file.py` |
+| s2 | Observation Data | `docs/s2_observation_data_skill.md` | `build_obs.py`, `validate_obs_file.py` |
 | s3 | Module Selection | `docs/s3_module_selection_skill.md` | `select_modules.py` |
 | s4 | Parameter Config | `docs/s4_parameter_config_skill.md` | `create_prj_file.py`, `validate_prj.py` |
 | s5 | Execution | `docs/s5_execution_skill.md` | `run_crhm.py`, `parse_crhm_output.py`, `plot_crhm_results.py` |
-| s6 | VIC Coupling | `docs/s6_vic_coupling_skill.md` | `convert_vic_to_obs.py`, `merge_crhm_vic.py` |
+| s6 | VIC Coupling | `docs/s6_vic_coupling_skill.md` | `merge_crhm_vic.py` (compares CRHM and VIC results) |
 
 **Dependencies**: s1 and s2 can run in parallel. s3 depends on s1. s4 depends on s1+s3. s5 depends on s2+s4. s6 depends on s5.
 
@@ -71,7 +71,7 @@ crhm [-t ISO|YYYYMMDD] [-f STD|OBS] [-o output.txt] [-p 100] [--obs_file_directo
 | Tool | Stage | Script Path | Purpose |
 |------|-------|-------------|---------|
 | create_hru_config | s1 | `tools/s1_basin_setup/create_hru_config.py` | Generate HRU definitions from DEM + land cover |
-| convert_vic_to_obs | s2 | `tools/s2_observation_data/convert_vic_to_obs.py` | Convert VIC forcing to CRHM .obs format |
+| build_obs | s2 | `tools/s2_observation_data/build_obs.py` | Build the CRHM .obs straight from the forcing source (cmfd, mswx, nasa_power, or a standard table) |
 | validate_obs_file | s2 | `tools/s2_observation_data/validate_obs_file.py` | Check .obs format, units, gaps |
 | select_modules | s3 | `tools/s3_module_selection/select_modules.py` | Configure module chain by landscape type |
 | create_prj_file | s4 | `tools/s4_parameter_config/create_prj_file.py` | Generate .prj project file |
@@ -151,7 +151,7 @@ Pre-built chains by landscape type:
 
 ### The #1 Silent Error: Humidity Unit Conversion
 
-VIC uses **specific humidity** (kg/kg, values ~0.001-0.02). CRHM expects **relative humidity** (%, values 0-100). If you pass specific humidity directly, CRHM interprets the atmosphere as 0.001-0.02% RH (bone dry). All sublimation goes to zero. SWE accumulates forever. **The model runs to completion with no error.** Always use `convert_vic_to_obs.py` which applies the Tetens formula conversion.
+The forcing sources give **specific humidity** (kg/kg, values ~0.001-0.02). CRHM expects **relative humidity** (%, values 0-100). If you pass specific humidity directly, CRHM interprets the atmosphere as 0.001-0.02% RH (bone dry). All sublimation goes to zero. SWE accumulates forever. **The model runs to completion with no error.** Always use `build_obs.py`, which does the conversion to relative humidity.
 
 **Detection**: If max(RH) in .obs file < 1.0, the units are wrong.
 
@@ -202,8 +202,8 @@ bash install_crhm.sh
 # 2. Create HRUs
 python tools/s1_basin_setup/create_hru_config.py --dem_path dem.tif --landcover_path lc.tif --shapefile_path basin.shp --output_dir out/hru
 
-# 3. Convert VIC forcing
-python tools/s2_observation_data/convert_vic_to_obs.py --forcing_dir vic_forcing/ --grid_nc grid.nc --output_path out/basin.obs --start_year 2000 --end_year 2010
+# 3. Build the .obs straight from the forcing source (see docs/s2_observation_data_skill.md)
+python tools/s2_observation_data/build_obs.py --source cmfd --lat <lat> --lon <lon> --forcing_dir <cmfd store> --output_path out/basin.obs --start_year 2000 --end_year 2010
 
 # 4. Select modules (prairie example)
 python tools/s3_module_selection/select_modules.py --basin_type prairie --output_path out/modules.json

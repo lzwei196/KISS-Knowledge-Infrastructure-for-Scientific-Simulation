@@ -30,7 +30,7 @@ s1_domain (define_lambert_domain.py)
     |         |         |
     |         |         +---> s7_spatial_metadata (validation)
     |         |
-    |         +---> s8_forcing (convert_forcing_to_ldasin.py)
+    |         +---> s8_forcing (cmfd_to_ldasin.py / nasa_power_to_ldasin.py)
     |
     +---> s9_namelists (generate_namelists.py)  <-- depends on s3,s4,s5,s6,s8
               |
@@ -235,30 +235,32 @@ s1_domain (define_lambert_domain.py)
 
 ---
 
-### s8: Forcing Conversion to LDASIN
+### s8: Forcing to LDASIN
 
-**Tool**: `convert_forcing_to_ldasin.py` (556 lines)
+**Tools** (both read the forcing source directly; there is no tool that turns another model's forcing files into LDASIN):
+- `cmfd_to_ldasin.py` — China, CMFD 0.1 deg 3-hourly store
+- `nasa_power_to_ldasin.py` — global, NASA POWER hourly (from 2001)
 
-**Inputs**: forcing_dir, grid_nc, geo_em, domain_json, output_dir, start_date, end_date
+**Inputs**: `--cmfd_dir` (CMFD tool), `--geo_em`, `--domain_json`, `--output_dir`, `--start_date`, `--end_date`
 **Outputs**: `FORCING/YYYYMMDDHH.LDASIN_DOMAIN1` files (one per hour)
 
-**Unit conversion table**:
+**Unit conversion table** (CMFD):
 
-| VIC column | VIC unit | WRF-Hydro variable | WRF-Hydro unit | Conversion |
-|------------|----------|--------------------|-----------------|-----------:|
-| Col 0: Temperature | deg C | T2D | K | +273.15 |
-| Col 1: Precipitation | mm/3hr | RAINRATE | mm/s = kg/m^2/s | /10800 |
-| Col 2: Pressure | kPa | PSFC | Pa | *1000 |
-| Col 3: Shortwave | W/m^2 | SWDOWN | W/m^2 | direct |
-| Col 4: Longwave | W/m^2 | LWDOWN | W/m^2 | direct |
-| Col 5: Vapor pressure | kPa | Q2D | kg/kg | q=0.622*e/(p-0.378*e) |
-| Col 6: Wind speed | m/s | U2D, V2D | m/s | wind*cos(45), wind*sin(45) |
+| CMFD variable | Unit | WRF-Hydro variable | Unit | Conversion |
+|---------------|------|--------------------|------|-----------:|
+| temp | K | T2D | K | direct (+ elevation correction) |
+| prec | kg/m^2/s (a rate) | RAINRATE | mm/s = kg/m^2/s | direct |
+| pres | Pa | PSFC | Pa | direct (+ elevation correction) |
+| srad | W/m^2 | SWDOWN | W/m^2 | direct, capped at 1361 |
+| lrad | W/m^2 | LWDOWN | W/m^2 | direct |
+| shum | kg/kg | Q2D | kg/kg | direct |
+| wind | m/s | U2D, V2D | m/s | wind * 0.7071 each |
 
-**Temporal interpolation**: VIC 3-hourly to hourly
+**Temporal interpolation**: 3-hourly to hourly
 - Linear interpolation: T2D, PSFC, LWDOWN, Q2D, U2D, V2D
 - Step (piecewise constant): RAINRATE, SWDOWN
 
-**Spatial interpolation**: scipy.interpolate.griddata (linear + nearest fill) from VIC lat/lon cells to LCC grid
+**Spatial interpolation**: one step, from the 0.1 deg source grid to the LCC grid (RegularGridInterpolator)
 
 **Validation**:
 - T2D > 200 K
@@ -266,7 +268,7 @@ s1_domain (define_lambert_domain.py)
 - PSFC > 10000 Pa
 - File count = N_days * 24
 
-**If it fails**: See dt_005 (no forcing data), dt_011 (RAINRATE units), dt_012 (VP->Q2D)
+**If it fails**: See dt_005 (no forcing data), dt_011 (RAINRATE units)
 
 ---
 
@@ -346,7 +348,7 @@ s1_domain (define_lambert_domain.py)
 | s5_soil_properties | build_soil_properties | planned | - |
 | s6_groundwater | build_groundwater | planned | - |
 | s7_spatial_metadata | - | planned | dt_002 |
-| s8_forcing | convert_forcing_to_ldasin | planned | dt_005, dt_011, dt_012 |
+| s8_forcing | cmfd_to_ldasin, nasa_power_to_ldasin | planned | dt_005, dt_011, dt_012 |
 | s9_namelists | generate_namelists | planned | dt_013, dt_014 |
 | s10_execution | run_wrfhydro | planned | dt_004 |
 | s11_output | - | planned | - |

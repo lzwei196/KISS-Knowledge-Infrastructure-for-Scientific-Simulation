@@ -3,7 +3,7 @@
 Knowledge Infrastructure — Validated Tool
 Tool ID:      convert_forcing_to_ldndc_climate
 Stage:        s4_climate_prep
-Description:  Convert CMFD/MSWX/NASA POWER/VIC forcing to LDNDC climate.txt format.
+Description:  Convert CMFD/MSWX/NASA POWER/FLUXNET forcing to LDNDC climate.txt format.
               Handles unit conversions: K->C, sub-daily->daily aggregation,
               specific humidity->RH, vapor pressure->RH.
 
@@ -14,7 +14,7 @@ CRITICAL: Precipitation must be SUMMED across sub-daily timesteps, not averaged.
           See diagnostic triplet dt_014.
 
 Inputs:
-  - forcing_source: cmfd, mswx, nasa_power, vic_forcing, fluxnet
+  - forcing_source: cmfd, mswx, nasa_power, fluxnet, fluxnet_fullset
   - forcing_path: Path to forcing data directory or file
   - lat, lon: Grid cell coordinates (decimal degrees)
   - start_date, end_date: Simulation period (YYYY-MM-DD)
@@ -22,8 +22,8 @@ Inputs:
   - elevation: Site elevation in meters (optional, default 0)
 
 Outputs:
-  - LDNDC climate.txt in simple tab-separated format (compatible with format="txt")
-  - Columns: date, tavg, tmin, tmax, prec, wind, rh, glob
+  - LDNDC climate.txt in the native %data block format (see process())
+  - Columns: prec, tavg, tmax, tmin, grad, wind (one row per day, no date column)
 
 Exit codes: 0=success, 1=input error, 2=processing error, 3=output error
 """
@@ -41,8 +41,8 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # INPUTS (set via argv or directly)
 # ---------------------------------------------------------------------------
-FORCING_SOURCE = ""     # cmfd, mswx, nasa_power, vic_forcing, fluxnet
-FORCING_PATH = ""       # Directory (cmfd/mswx) or file (vic_forcing/fluxnet)
+FORCING_SOURCE = ""     # cmfd, mswx, nasa_power, fluxnet, fluxnet_fullset
+FORCING_PATH = ""       # Directory (cmfd/mswx) or file (fluxnet)
 LAT = 0.0
 LON = 0.0
 START_DATE = ""         # YYYY-MM-DD
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 def validate_inputs():
     errors = []
-    valid_sources = ["cmfd", "mswx", "nasa_power", "vic_forcing", "fluxnet", "fluxnet_fullset"]
+    valid_sources = ["cmfd", "mswx", "nasa_power", "fluxnet", "fluxnet_fullset"]
     if FORCING_SOURCE not in valid_sources:
         errors.append(f"Unknown forcing_source: {FORCING_SOURCE}. Must be one of: {valid_sources}")
     if not FORCING_PATH:
@@ -102,33 +102,6 @@ def _load_via_ki_tools_common(source, lat, lon, start_year, end_year, forcing_di
     from ki_tools_common.load_forcing import load_daily_forcing
     data = load_daily_forcing(source, lat, lon, start_year, end_year, forcing_dir=forcing_dir)
     return data
-
-
-def _load_vic_forcing(forcing_file, steps_per_day=8):
-    """Load VIC 3-hourly forcing file (7-column ASCII).
-
-    VIC columns: TEMP(C), PRECIP(mm/step), PRESSURE(kPa), SWDOWN(W/m2),
-                 LWDOWN(W/m2), VP(kPa), WIND(m/s)
-    """
-    data = np.loadtxt(forcing_file)
-    nsteps = data.shape[0]
-    ndays = nsteps // steps_per_day
-    if nsteps % steps_per_day != 0:
-        logger.warning(f"Steps ({nsteps}) not divisible by {steps_per_day}; truncating.")
-        data = data[:ndays * steps_per_day]
-    daily = data.reshape(ndays, steps_per_day, 7)
-
-    return {
-        "ndays": ndays,
-        "tavg": daily[:, :, 0].mean(axis=1),
-        "tmin": daily[:, :, 0].min(axis=1),
-        "tmax": daily[:, :, 0].max(axis=1),
-        "prec": daily[:, :, 1].sum(axis=1),
-        "glob": daily[:, :, 3].mean(axis=1),
-        "wind": daily[:, :, 6].mean(axis=1),
-        # Compute RH from VP and temperature
-        "vp_kpa": daily[:, :, 5].mean(axis=1),
-    }
 
 
 def _load_fluxnet_erai(forcing_file):
@@ -188,10 +161,6 @@ def _collect_daily_arrays(start_year, end_year):
             np.maximum(0, df["WS_ERA"].fillna(2.0).values),
         )
 
-    if FORCING_SOURCE == "vic_forcing":
-        vic = _load_vic_forcing(FORCING_PATH)
-        return (vic["ndays"], vic["prec"], vic["tavg"], vic["tmax"],
-                vic["tmin"], vic["glob"], vic["wind"])
 
     elif FORCING_SOURCE == "fluxnet":
         df = _load_fluxnet_erai(FORCING_PATH)

@@ -25,13 +25,12 @@ pipeline:
   - s7_physics_comparison_skill
   - s8_routing_skill
 tools:
-  count: 19
+  count: 18
   files:
   - tools/calib_run.py
   - tools/s1_domain_setup/create_gru_hru.py
   - tools/s1_domain_setup/create_local_attributes.py
   - tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py
-  - tools/s2_forcing_prep/convert_vic_forcing_to_summa.py
   - tools/s3_decisions/configure_decisions.py
   - tools/s4_parameters/set_trial_parameters.py
   - tools/s5_initial_conditions/create_initial_conditions.py

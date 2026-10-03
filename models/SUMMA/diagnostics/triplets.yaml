@@ -101,22 +101,24 @@
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: VIC precipitation units (mm/timestep) divided by wrong time interval.
-    explanation: 'VIC forcing uses mm per timestep. For 3-hourly data, the timestep is 10800 seconds.
-      SUMMA expects kg/m2/s (= mm/s). The correct conversion is: pptrate = VIC_precip / 10800. If you
+    root_cause: Precipitation in the step (mm) divided by the wrong time interval.
+    explanation: 'The forcing sources give precipitation as mm in the step (or already as a rate). For
+      3-hourly data the step is 10800 seconds, for hourly data 3600. SUMMA expects kg/m2/s (= mm/s). The
+      correct conversion is: pptrate = precip_mm / step_seconds. If you
       divide by 86400 (daily), the precipitation is 8x too low. If you divide by 3600 (hourly when data
       is 3-hourly), precipitation is 3x too high. This is the same unit trap (cm_004) that hit VIC routing
       and CaMa-Flood.
 
       '
     affected_components:
-    - convert_vic_forcing_to_summa.py
+    - build_summa_forcing_from_reanalysis.py (pptrate, data_step)
     - Forcing NetCDF pptrate variable
   remedy:
-    action: Verify DATA_STEP matches the actual VIC forcing timestep (10800 for 3-hourly, 3600 for hourly).
-    tool_to_run: convert_vic_forcing_to_summa
+    action: Verify data_step matches the source's real timestep (10800 for 3-hourly cmfd / mswx, 3600 for hourly
+      nasa_power).
+    tool_to_run: build_summa_forcing_from_reanalysis
     manual_steps:
-    - 'Check VIC forcing file: count rows per day (8 = 3-hourly, 24 = hourly)'
+    - 'Check the forcing file: count steps per day (8 = 3-hourly, 24 = hourly) and read the data_step variable'
     - Set DATA_STEP = 10800 for 3-hourly, 3600 for hourly
     - 'After conversion, check: mean pptrate should be ~1e-5 to 1e-4 kg/m2/s for temperate climates'
     prevention: Always verify forcing precipitation rate after conversion. Mean annual precip ~500-2000
@@ -134,23 +136,24 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: 'Air pressure in wrong units: kPa instead of Pa.'
-    explanation: 'VIC forcing stores air pressure in kPa. SUMMA expects Pa. If you forget the *1000 conversion,
+    explanation: 'SUMMA expects air pressure in Pa. The shared loader gives Pa; a hand-made file often carries
+      kPa. If pressure is written in kPa,
       air pressure is 101.325 instead of 101325. This causes the energy balance to fail catastrophically
       because saturation vapor pressure, psychrometric constant, and Penman-Monteith ET all depend on
       air pressure. The error is subtle: SUMMA may run for a few timesteps before NaN propagates.
 
       '
     affected_components:
-    - convert_vic_forcing_to_summa.py airpres variable
+    - build_summa_forcing_from_reanalysis.py airpres variable
     - SUMMA energy balance solver
   remedy:
-    action: Multiply VIC pressure by 1000 when converting to SUMMA format.
-    tool_to_run: convert_vic_forcing_to_summa
+    action: Write air pressure in Pa (the forcing tool does; a value near 100 means kPa).
+    tool_to_run: build_summa_forcing_from_reanalysis
     manual_steps:
     - 'Check forcing: ncdump -v airpres forcing.nc | head -20'
     - Values should be ~80000-105000 Pa, NOT 80-105 (kPa)
     - If in kPa, multiply by 1000 and regenerate
-    prevention: The convert_vic_forcing_to_summa tool handles this automatically. Never bypass it.
+    prevention: The build_summa_forcing_from_reanalysis tool handles this automatically. Never bypass it.
   severity: fatal
   cross_references:
   - dt_003
@@ -174,11 +177,11 @@
     - Attributes NetCDF hruId variable
   remedy:
     action: Regenerate forcing files from scratch using the current attributes file.
-    tool_to_run: convert_vic_forcing_to_summa
+    tool_to_run: build_summa_forcing_from_reanalysis
     manual_steps:
     - ncdump -v hruId attributes.nc | tail -5
     - ncdump -v hruId forcing_YYYY.nc | tail -5
-    - If different, re-run convert_vic_forcing_to_summa.py with current attributes
+    - If different, re-run build_summa_forcing_from_reanalysis.py with current attributes
     prevention: Always regenerate forcing AFTER finalizing GRU/HRU structure. Never reuse forcing from
       a different domain setup.
   severity: fatal
@@ -396,7 +399,7 @@
     - 'ncdump -v airpres forcing.nc | tail -5  # should be ~60000-105000 Pa'
     - 'If spechum > 1: divide by 1000 (was g/kg)'
     - 'If airpres < 1000: multiply by 1000 (was kPa)'
-    prevention: Use convert_vic_forcing_to_summa.py which handles all unit conversions.
+    prevention: Use build_summa_forcing_from_reanalysis.py which handles all unit conversions.
   severity: silent
   cross_references:
   - dt_003
@@ -410,8 +413,8 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: Partial forcing coverage -- some HRUs have missing or fill-value forcing data.
-    explanation: 'When VIC forcing files do not cover all HRUs (e.g., a coastal cell partially over water),
-      the forcing conversion fills those HRUs with default values. If the default is the fill value (-9999),
+    explanation: 'When the forcing source does not cover all HRUs (e.g., a coastal cell over water, or an
+      HRU outside the source''s area), a hand-made forcing file can carry fill values for those HRUs. If the default is the fill value (-9999),
       SUMMA propagates NaN through the energy balance. This often happens at basin edges where the grid
       intersects the basin boundary.
 
@@ -426,7 +429,8 @@
     - python -c "from netCDF4 import Dataset; ds=Dataset('forcing.nc'); print(ds.variables['pptrate'][-1,:])"
     - If any values are -9999 or NaN, identify those HRUs
     - Either remove those HRUs from attributes or ensure forcing has valid data
-    prevention: After grid generation, verify every HRU has corresponding VIC forcing data.
+    prevention: Build the forcing with build_summa_forcing_from_reanalysis.py - it stops on a missing value
+      instead of writing one - and check every HRU lies inside the source's area.
   severity: degraded
   cross_references: []
 - id: dt_014
@@ -665,46 +669,6 @@
   cross_references:
   - dt_009
   - dt_020
-- id: dt_023
-  stage: s2_forcing_prep
-  failure_domain: unit_conversion
-  symptom:
-    description: 'All forcing values are physically wrong: precip ~100 mm/day, temperature ~50°C, pressure
-      ~2500 Pa, wind ~160 m/s. SUMMA may still run but output is meaningless.'
-    error_pattern: unrealistic forcing|pptrate mean > 10|airtemp mean > 320
-    detection_method: output_check
-  diagnosis:
-    root_cause: VIC forcing column order mismatch. HydroCraft VIC uses AIR_TEMP,PREC,PRESSURE,SWDOWN,LWDOWN,VP,WIND
-      (7 cols) but converter assumed PREC,TMAX,TMIN,WIND,SW,LW,PRESSURE,QAIR (8 cols).
-    explanation: 'HydroCraft''s forcing_1d.py + process_forcing.py produce VIC forcing in the order defined
-      by the global_param FORCE_TYPE directives. The standard HydroCraft order is AIR_TEMP(°C), PREC(mm/3hr),
-      PRESSURE(kPa), SWDOWN(W/m²), LWDOWN(W/m²), VP(kg/kg), WIND(m/s). The SUMMA converter originally
-      assumed the "classic" 8-column VIC order which puts PREC first. This caused every column to be misassigned:
-      temperature was treated as precip, pressure as temperature (then +273.15), etc. The resulting forcing
-      looked structurally valid (correct NetCDF format, correct units attributes) but the VALUES were
-      wrong by factors of 40-200x. This is a SILENT error because SUMMA still runs to completion with
-      garbage forcing.
-
-      '
-    affected_components:
-    - convert_vic_forcing_to_summa.py column mapping
-    - VIC global_param FORCE_TYPE order
-  remedy:
-    action: Use --column_order hydrocraft (default) for HydroCraft VIC forcing. Always verify forcing
-      with a sanity check after conversion.
-    tool_to_run: ''
-    manual_steps:
-    - 'Check: python3 -c "from netCDF4 import Dataset; import numpy as np; ds=Dataset(''forcing_YYYY.nc'');
-      print(''P='', np.nanmean(ds[''pptrate''][:])*86400, ''mm/day, T='', np.nanmean(ds[''airtemp''][:])-273.15,
-      ''°C'')"'
-    - 'Expected: P=1-5 mm/day, T=10-20°C (temperate), P=99000-103000 Pa, SW=100-250 W/m², LW=250-400 W/m²'
-    - If values are far off, the column order is wrong
-    prevention: Converter now defaults to 'hydrocraft' column order. Added --column_order flag. Always
-      run sanity check on forcing after conversion.
-  severity: silent
-  cross_references:
-  - dt_003
-  - cm_001
 - id: dt_026
   stage: s4_parameters
   failure_domain: parameter_format
@@ -1122,8 +1086,8 @@
       the list, having never read a single forcing record.
     context: "SUMMA resolves the forcing file list and the forcing data it names against TWO DIFFERENT\
       \ directories:\n  ffile_info.f90:86   infile = trim(SETTINGS_PATH)//trim(FORCING_FILELIST)\n  ffile_info.f90:120\
-      \  the .nc names inside the list resolve against FORCING_PATH\nThe s2 builders (build_summa_forcing_from_reanalysis.py,\
-      \ convert_vic_forcing_to_summa.py) are only ever given --output_dir, so they write forcingFileList.txt\
+      \  the .nc names inside the list resolve against FORCING_PATH\nThe s2 builder (build_summa_forcing_from_reanalysis.py)\
+      \ is only ever given --output_dir, so it writes forcingFileList.txt\
       \ beside the .nc files they produce -- i.e. into forcingPath, which is the one place SUMMA will\
       \ not look for it. Nothing between s2 and s6 knows both paths, so the mismatch survives all the\
       \ way to the run gate.\n"

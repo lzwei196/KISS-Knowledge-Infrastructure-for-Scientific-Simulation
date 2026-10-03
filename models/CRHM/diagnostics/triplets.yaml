@@ -19,7 +19,7 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: Specific humidity (kg/kg) passed as relative humidity (%) in .obs file
-    explanation: 'VIC forcing provides specific humidity (values 0.001-0.02 kg/kg). CRHM expects relative
+    explanation: 'The forcing sources provide specific humidity (values 0.001-0.02 kg/kg). CRHM expects relative
       humidity (values 0-100%). If specific humidity is written directly to the .obs file, CRHM interprets
       0.005 as 0.005% RH -- essentially bone-dry atmosphere. All sublimation and evaporation go to zero.
       Snow accumulates without limit because the atmosphere cannot remove any moisture. The simulation
@@ -27,18 +27,18 @@
 
       '
     affected_components:
-    - convert_vic_to_obs.py
+    - build_obs.py (standard_to_obs)
     - PBSM module (sublimation)
     - SnobalCRHM module (latent heat)
     - Soil module (ET)
   remedy:
     action: Convert specific humidity to relative humidity using Tetens formula
-    tool_to_run: convert_vic_to_obs
+    tool_to_run: build_obs
     manual_steps:
     - 'Check max RH in .obs file: if max < 1.0, units are wrong'
     - 'Apply conversion: RH = (q*P / (0.622*es)) * 100'
     - Verify RH values are 0-100%, not 0-1 or 0-0.02
-    prevention: Always use convert_vic_to_obs.py which handles conversion automatically
+    prevention: Always build the .obs with build_obs.py, which does the conversion; never write the rh column by hand
   severity: silent
   cross_references:
   - dt_009
@@ -53,29 +53,39 @@
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Precipitation rate vs accumulation mismatch
-    explanation: 'VIC forcing provides precipitation per timestep (e.g., mm per 3 hours). CRHM expects
-      precipitation rate in mm/day. If 3-hourly accumulation is passed directly, CRHM receives 8 timesteps
-      per day, each interpreted as mm/d, effectively multiplying daily precipitation by 8. Annual precipitation
-      appears reasonable per-line but integrates to 8x too much.
+    root_cause: 'Precipitation written under the wrong variable or as a rate: `p` is mm in the step, `ppt`
+      is mm per day'
+    explanation: 'CRHM has TWO precipitation observations (ClassObs.cpp:83,85): `ppt` = DAILY precipitation
+      in mm/d, and `p` = INTERVAL precipitation in mm per step. Sub-daily forcing gives mm per step, so
+      it must be declared `p 1 (mm)` and written unchanged. Two ways to get it wrong, both silent: (1)
+      multiplying the step amount up to a daily rate (x 24/timestep_hours) and writing it as `p`: CRHM
+      adds `p` every step, so 3-hourly data gives 8x too much rain; (2) declaring sub-daily amounts as
+      `ppt`: CRHM takes ONE value per day for `ppt` (declobsfunc FIRST, ClassObs.cpp:163) and spreads
+      it over the day''s steps (ClassObs.cpp:401-409), so only the first step''s amount of each day is
+      used and the rest of the day''s rain is lost. [Corrected 2026-10-02: the earlier text said ''CRHM
+      expects mm/day'' and told the reader to multiply by 24/timestep; that is wrong for the `p` variable
+      this KI writes.]
 
       '
     affected_components:
-    - convert_vic_to_obs.py
+    - build_obs.py (standard_to_obs)
     - All downstream modules (infiltration, runoff, SWE)
   remedy:
-    action: Convert precipitation from mm/timestep to mm/d rate
-    tool_to_run: convert_vic_to_obs
+    action: Write sub-daily precipitation as `p 1 (mm)`, the amount in the step, unchanged
+    tool_to_run: build_obs
     manual_steps:
-    - Multiply precipitation by 24/timestep_hours
-    - 'For 3-hourly VIC: multiply by 24/3 = 8 to get daily rate'
-    - 'Wait -- that makes it 8x larger? No: VIC value is already per 3h, not per day'
-    - 'CORRECT: If CRHM reads sub-daily, pass mm/timestep. If CRHM reads daily, SUM the sub-daily values'
-    - The conversion depends on CRHM's own timestep setting
-    prevention: Verify daily total precipitation matches known climatology for the basin
+    - 'head -8 basin.obs: the precipitation line must be `p 1 (mm)`'
+    - 'Sum the p column over a year (or read precip_mm_by_year in basin.obs.meta.json): it must equal
+      the source''s yearly total'
+    - Never multiply by 24/timestep_hours for `p`
+    - Use `ppt (mm/d)` only for a daily-step .obs
+    prevention: Build the .obs with build_obs.py and check precip_mm_by_year in its meta file against
+      the known yearly total for the place
   severity: silent
   cross_references:
   - dt_001
+  verified: '2026-10-02 against ClassObs.cpp:83-85 and a real run: CRHM hru_p summed to 1,394 mm/yr =
+    the forcing''s own total (Bengbu cell, p written per 3-h step)'
 - id: dt_003
   stage: s2_observation_data
   failure_domain: parameter_format
@@ -104,7 +114,7 @@
     - 'Computed variables: ''$varname formula (unit) description'''
     - Column count N must be integer >= 1
     - Data columns (after YYYY M D H 0) must equal sum of all N values
-    prevention: Use convert_vic_to_obs.py to generate correctly formatted headers
+    prevention: Use build_obs.py to generate correctly formatted headers
   severity: fatal
   cross_references: []
 - id: dt_004
@@ -766,7 +776,7 @@
     affected_components:
     - Netroute gwwhereto / whereto cascade (create_prj_file.py, derive_parameters.py)
     - water-balance accounting (was hand-rolled; now check_water_balance.py)
-    - precip scaling (convert_vic_to_obs --precip_scale)
+    - precip scaling (build_obs --precip_scale)
   remedy:
     action: '(1) Use tools/s5_execution/check_water_balance.py to compute a closed balance from model
       output (hru_p for P, ALL storage states incl Sd, and terminal routing storage from crhmRun.log)
@@ -823,7 +833,7 @@
       readNC) -- a "basin hru_area" line is visible ONLY to the basin module. Netroute silently falls
       back to its default hru_area=[1] km2, so runinflow = soil_runoff * 1 instead of * (real km2), and
       the obs module never sees hru_elev, so no lapse-rate elevation banding is applied. Both shipped
-      examples (prj/badlake.prj) and every validated basin .prj declare basin_area, hru_area, hru_elev,
+      examples (crhmcode/prj/badlake.prj, in the CRHM SOURCE tree, not in the KI) and every validated basin .prj declare basin_area, hru_area, hru_elev,
       hru_lat, hru_GSL, hru_ASL under "Shared".
   remedy:
     action: create_prj_file.py now emits all "basin"-module geometry params with the "Shared" prefix (and
@@ -1148,3 +1158,183 @@
   - dt_006
   verified: 2026-07-27 (Hulunbuir steppe SWE case; cumSubl/cumhru_snow = 1.40%, E_StubHt<=0.01 on 2.18%
     of snow-covered steps for the Ht=0.3 m HRUs)
+- id: dt_v012
+  stage: s3_module_selection
+  failure_domain: dependency_mismatch
+  symptom:
+    description: 'CRHM prints its banner (Project file / Observation file / Program Version 4.7_16), then
+      "Running simulation..." and "0% complete.", and dies with a SEGMENTATION FAULT: exit code -11 (139
+      from a shell), empty stderr, and an output file holding only the two header rows (112-124 bytes for
+      a one-HRU project, ~6 kB for 15 HRUs). No missing-variable message. The chain contains SnobalCRHM
+      together with plain pbsm (or with no blowing-snow module at all). The shipped example badlake.prj
+      runs fine on the same binary, so it looks like a forcing, date or build problem - it is none of those.
+
+      '
+    error_pattern: exit -11|Segmentation fault|0% complete\.|output file contains only the two header rows
+    detection_method: exit_code
+  diagnosis:
+    root_cause: SnobalCRHM is paired with plain pbsm. SnobalCRHM reads hru_drift and hru_subl, which only
+      pbsmSnobal declares; the unresolved pointers stay NULL and the first timestep dereferences them
+    explanation: 'ClassSnobalCRHM.cpp:170-171 declgetvar("*", "hru_drift", ...) and ("*", "hru_subl", ...)
+      and uses both every timestep at :316-317 (ClassSnobalX.cpp:158-159 does the same). The only modules
+      that DECLARE those two names are pbsmSnobal (ClasspbsmSnobal.cpp:74,76) and WQ_pbsmSnobal. Plain pbsm
+      declares Subl and Drift instead (Classpbsm.cpp:76,78). A declgetvar that finds no declarer leaves the
+      pointer at its initial NULL (ClassSnobalCRHM.h:57-58) and CRHM reports nothing. Second fault in the
+      same pairing: pbsm and SnobalCRHM each declare their own SWE (Classpbsm.cpp:74, ClassSnobalCRHM.cpp:95),
+      so even if it ran the chain would carry two snowpacks fed the same snowfall. pbsmSnobal keeps no pack:
+      it writes into the Snobal SWE / z_s / rho (ClasspbsmSnobal.cpp:130-132), which is also why pbsmSnobal
+      without SnobalCRHM cannot run. CRHM''s own registered model "Prairie using Qsi and Snobal" (NewModules.cpp:278)
+      is basin, global, obs, calcsun, intcp, longVt, netall, pbsmSnobal, albedo, evap, SnobalCRHM#2, ...
+      History: the prairie_reduced preset was switched from ebsm to SnobalCRHM on 2026-07-26 with pbsm left
+      in place, on the false note "pbsm still supplies hru_drift/hru_subl"; a retest the same day showed
+      the crash (Hulunbuir RETEST_A, header-only output) and a clean run with pbsmSnobal (RETEST_B), but
+      the preset was not corrected until 2026-10-02. select_modules.py did not catch it because its dependency
+      check skips every hru_* name as "provided by obs". Not the same as dt_v006 (missing canopy module):
+      same symptom, different missing variable.
+
+      '
+    affected_components:
+    - select_modules.py LANDSCAPE_CHAINS["prairie_reduced"] (auto-selected for flat, open sites)
+    - select_modules.py validate_chain (hru_* names were never checked)
+    - any hand-built chain that puts SnobalCRHM next to pbsm / PBSM
+  remedy:
+    action: Use pbsmSnobal, never plain pbsm, whenever SnobalCRHM is the snowpack. Re-run select_modules.py;
+      the prairie_reduced preset is now basin > global > obs > calcsun > intcp > pbsmSnobal > albedo > SnobalCRHM
+      > netall > crack > evap > Soil > Netroute and validate_chain refuses the bad pairings
+    tool_to_run: tools/s3_module_selection/select_modules.py
+    manual_steps:
+    - In a hand-edited .prj change the Modules line "pbsm CRHM 11/20/17" to "pbsmSnobal CRHM 01/05/17" AND
+      rename the parameter lines "pbsm fetch / Ht / distrib" to "pbsmSnobal fetch / Ht / distrib"; lines
+      left under the pbsm prefix are not read by pbsmSnobal, which then runs on its built-in defaults
+    - Key overrides as "pbsmSnobal <param>"; create_prj_file.py rejects "pbsm <param>" on this chain
+    - Keep albedo BEFORE SnobalCRHM in the Modules list, as in CRHM's registered model; the .prj order
+      is the execution order and SnobalCRHM-before-albedo gives a different result
+    - Output variables differ from pbsm - ask for "pbsmSnobal hru_subl", "pbsmSnobal hru_drift", "pbsmSnobal
+      Drift_out", "pbsmSnobal cumSubl"; the pack is "SnobalCRHM SWE" and its own sublimation is "SnobalCRHM
+      E_s_int" (negative = loss)
+    - A blowing-snow sublimation of exactly 0 on this chain is usually dt_v011 (Ht above the snow depth
+      keeps blowing snow switched off), not a wiring fault - check Prob and z_s before anything else
+    - To stay on the old melt-only physics instead, select prairie_ebsm_legacy (pbsm + ebsm); it runs but
+      has no mid-winter sublimation sink
+    prevention: Never hand-assemble a Snobal chain; select_modules.py validate_chain now fails closed on SnobalCRHM
+      without pbsmSnobal, on pbsm next to SnobalCRHM, on pbsmSnobal without SnobalCRHM, and on module names
+      the binary does not register
+  format_spec_violated: CRHM module dependency contract (declvar/declgetvar)
+  canonical_intent: canonical
+  severity: fatal
+  cross_references:
+  - dt_v006
+  - dt_v011
+  verified: '2026-10-02 on the server (crhmcode b6f7e70, Program Version 4.7_16), one-HRU crop-stubble site
+    at 49.17 N 125.23 E, NASA POWER 2003-2004: pbsm + SnobalCRHM -> exit -11, 2 rows, 112 bytes; pbsmSnobal
+    + SnobalCRHM -> exit 0, 17,522 rows. pbsmSnobal reads its own parameter lines: with Ht 0.001 m, fetch
+    300 / 1000 / 5000 m gave hru_subl 1.86 / 2.99 / 4.31 mm and Drift_out 3.71 / 1.54 / 0.29 mm; with the
+    land-cover Ht 0.15 m (snow depth never above 0.054 m) blowing snow stayed off and hru_subl was 0, while
+    SnobalCRHM E_s_int removed 20.9 mm of 110 mm snowfall. Also seen 2026-07-26 at Hulunbuir (RETEST_A crash,
+    RETEST_B ran; SWE score of RETEST_B NSE -0.46, KGE 0.20 - the chain runs, it is not a validated pass).
+    Same crash reported from a Mac build (crhmcode 5fe48ed) on 2026-10-02.'
+  added_by_run: CRHM_handoff_20261002_nenjiang_single_hru
+- id: dt_v013
+  stage: s2_observation_data
+  failure_domain: unit_conversion
+  symptom:
+    description: 'A .obs built from NASA POWER HOURLY data has a precipitation total about 24 times too
+      small (41 mm in two years at 49.17 N 125.23 E instead of ~990 mm). Every tool exits 0. CRHM runs
+      and produces almost no snow, soil recharge or flow.
+
+      '
+    error_pattern: P_total=\d{1,2} mm
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: The NASA POWER hourly API changed the unit of PRECTOTCORR from a mm/day rate to mm/hour,
+      and the shared loader still divided every hourly value by 24
+    explanation: 'ki_tools_common/load_forcing.py divided hourly PRECTOTCORR by 24 ("mm/day rate -> mm
+      per hour"). That was right when it was written: a .obs built on 2026-06-08 for the Bow basin point
+      (51.1722 N, -115.5718 E) starts 2005-01-01 with 0.045, 0.050, 0.033 mm, i.e. raw values 1.08, 1.20,
+      0.79, and the validated basins got realistic yearly totals (Bow 917 mm in 2005). On 2026-10-02 the
+      API (v2.10.2) returns 0.05, 0.05, 0.03 for the same hours, labels them "mm/hour", and the January
+      2005 hourly sum (66.42) equals the daily product''s sum (66.24). Dividing by 24 now loses 96% of
+      the precipitation.
+
+      '
+    affected_components:
+    - ki_tools_common/load_forcing.py _load_nasa_power_hourly (shared by about 40 KI tools)
+    - build_obs.py --source nasa_power
+  remedy:
+    action: The loader now takes the divisor from the unit the response declares (mm/hour -> 1, mm/day
+      -> 24), refuses an unknown unit, and compares the first year's hourly total with the daily product
+    tool_to_run: tools/s2_observation_data/build_obs.py
+    manual_steps:
+    - Rebuild any NASA POWER hourly .obs made between about 2026-06 and 2026-10-02 and check its yearly
+      precipitation total against the daily product or a gauge
+    - Do NOT pass --precip_scale 24 to repair it; the tool refuses a scale of 10 or more
+    - Forcing files of the validated basins built before the change are correct as stored; rebuilding
+      them before this fix would have given 24 times less precipitation
+    prevention: Read units from the data, not from memory of what the service used to return; the loader
+      fails closed on an unknown unit and on an hourly/daily total mismatch
+  severity: silent
+  verified: '2026-10-02: API units field mm/hour; Bow point raw values compared with the 2026-06-08 stored
+    .obs; Nenjiang 2003 hourly/daily total ratio 0.997 after the fix.'
+  added_by_run: CRHM_handoff_20261002_nenjiang_single_hru
+- id: dt_v014
+  stage: s2_observation_data
+  failure_domain: silent_error
+  symptom:
+    description: 'A basin run finishes cleanly, but its precipitation (and so its runoff volume) is that
+      of ONE grid cell, not of the basin: the .obs was built with --lat/--lon at the basin centre. Nothing
+      looks wrong in the file. The meta file says "mode: point".
+
+      '
+    error_pattern: '"mode": "point"'
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: One forcing grid cell was used to stand for a whole basin
+    explanation: 'CRHM takes ONE weather series and spreads it over the HRUs by elevation (obs_elev, lapse_rate).
+      For a basin much larger than a forcing cell, the centre cell is a sample of one. Measured on the
+      Yarlung Tsangpo at Nuxia (205,000 km2): the centre CMFD cell had 550 mm in 1970, the area mean of
+      the 1,944 cells inside the basin 660 mm (cells range 321 to 3,067 mm); centre cell elevation 5,103
+      m, mean cell elevation 4,870 m. The elevation matters as much as the amount: obs_elev must be the
+      elevation the series stands for, or every HRU is lapsed from the wrong height.
+
+      '
+    affected_components:
+    - tools/s2_observation_data/build_obs.py (--lat/--lon versus --basin_shp)
+    - derive_parameters.py --forcing_elev_m (obs_elev)
+  remedy:
+    action: Build the .obs as the basin mean and pass its forcing elevation on
+    tool_to_run: tools/s2_observation_data/build_obs.py
+    manual_steps:
+    - 'build_obs.py --source cmfd --basin_shp <basin polygon> --start_year .. --end_year .. --output_path
+      basin.obs (mean over every grid cell whose centre is inside the polygon)'
+    - Read basin.obs.meta.json - check precip_mm_by_year against what is known for the basin
+    - Pass forcing_elev_m from the meta file to derive_parameters.py --forcing_elev_m
+    - Use --lat/--lon only for a plot, a station, or a basin no larger than a cell or two
+    prevention: The meta file records the mode (point / basin_mean / table), the number of cells and the
+      forcing elevation; read it before stage s4
+  severity: silent
+  cross_references:
+  - dt_002
+  verified: '2026-10-02, CMFD 1970, Yarlung Tsangpo at Nuxia: centre cell 550 mm, basin mean of 1,944 cells
+    660 mm. Basin-mean .obs checked row by row against the weighted mean of single-cell reads (6-cell
+    box).'
+  added_by_run: CRHM_direct_forcing_20261002
+
+- id: dt_utc_solar_clock_20261003
+  stage: s4_parameter_config
+  failure_domain: silent_error
+  symptom:
+    description: UTC forcing runs without an error, but global solar geometry is centered on clock noon
+      rather than solar noon.
+  diagnosis:
+    root_cause: Legacy observation files have no clock metadata and legacy projects omit global Time_Offset
+      or leave it zero. This is independent of module-chain compatibility and of VIC.
+  remedy:
+    action: For new inputs keep build_obs.py metadata with the observations. For an existing project with
+      a known observation clock, use tools/s4_parameter_config/migrate_project_clock.py with explicit
+      --obs_utc_offset and --longitudes, and rerun the new project. The helper preserves all other parameters
+      and weather data, rejects incompatible module chains and invalid weather, and never overwrites old
+      projects. Unknown station time must not be assumed UTC.
+    verification: At longitude 90 E, UTC Time_Offset is -6 h; the actual binary shifts the solar peak
+      six clock hours earlier. Ten existing multiyear projects were migrated and rerun with finite data
+      on 2026-10-03.
+  added_by_run: ki_fully_resolve_20261003

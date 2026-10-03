@@ -8,12 +8,13 @@
 
 SWMM models urban drainage at the neighborhood-to-city scale (0.01-100 km2). HydroCraft's VIC and CaMa-Flood models operate at watershed scale (100-1,000,000 km2). Coupling these models enables integrated rural-urban flood modeling: rural watershed runoff entering urban areas, urban drainage discharging to rivers, and river flooding backwater-flooding urban outfalls.
 
-This stage implements four coupling pathways between SWMM and HydroCraft:
+This stage implements three coupling pathways between SWMM and HydroCraft:
 
 1. **VIC to SWMM Inflow**: Rural surface runoff entering the urban drainage network
 2. **CaMa-Flood to SWMM Outfall BC**: River stage controlling drainage outfall boundary conditions
 3. **SWMM to CaMa-Flood Lateral**: Urban drainage discharge entering river channels
-4. **VIC Forcing to SWMM Rainfall**: Shared meteorological forcing for consistency
+
+Rainfall is not a coupling. For the same rain as an upstream VIC run, build the SWMM rain from the same data source (CMFD / MSWX / NASA POWER) with `tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py` (stage S3), not from VIC's forcing files.
 
 All couplings involve unit conversions and datum transformations that are SILENT ERROR sources — flow magnitudes wrong by orders of magnitude or water levels with wrong datum produce physically plausible but incorrect results with no error messages.
 
@@ -84,7 +85,7 @@ python tools/s7_model_coupling/convert_vic_runoff_to_swmm_inflow.py \
 **Temporal disaggregation**: VIC produces daily values. SWMM may run at 5-minute timestep. The tool disaggregates daily values to sub-daily using either:
 - Uniform distribution (simple: spread daily value evenly)
 - SCS temporal distribution (more realistic: daily pattern following SCS curve)
-- Hourly VIC forcing (if VIC was run with hourly output, NASA POWER)
+- Hourly VIC output (if VIC was run with hourly output)
 
 **Spatial mapping**: Each VIC grid cell maps to one or more SWMM junction nodes. Multiple VIC cells can contribute to the same junction (summed) or one VIC cell can be split among multiple junctions (area-weighted).
 

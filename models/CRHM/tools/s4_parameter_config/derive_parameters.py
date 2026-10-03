@@ -100,11 +100,38 @@ ROOTING_DEPTH = {
 }
 
 
+# Every place this run used a built-in value because the real input was not
+# there. main() refuses to write the output while this list is non-empty unless
+# --allow_defaults is given, and then records the list in the output JSON.
+DEFAULTS_USED = []
+
+
 def lookup_soil_type(lat, lon):
-    """Get CRHM soil_type index from HWSD."""
+    """Get CRHM soil_type index from HWSD.
+
+    lookup_hwsd() does not fail when the HWSD raster / table is missing or the
+    point has no map unit: it warns and returns a generic 40/40/20 soil with
+    mu_id 0, which classifies as loam and reads exactly like a real answer
+    (soil_type 4, soil_moist_max 451, gw_max 400). A real hit carries the
+    'hwsd_component' record; its absence is the fallback, and it is noted in
+    DEFAULTS_USED.
+    """
     try:
         from ki_tools_common.soil_utils import lookup_hwsd
         soil = lookup_hwsd(lat, lon)
+        comp = (soil or {}).get('hwsd_component') or {}
+        if not soil or not comp or not soil.get('mu_id'):
+            DEFAULTS_USED.append(
+                f"soil at ({lat}, {lon}): HWSD gave no map unit (raster or table "
+                f"missing, or no soil at this point); built-in loam used "
+                f"(soil_type 4)")
+        elif (comp.get('quality') == 'no_texture_in_map_unit'
+              or comp.get('n_usable_components') == 0):
+            # the map unit exists but none of its components carries a texture:
+            # lookup_hwsd leaves its generic 40/40/20 in place (soil_utils.py)
+            DEFAULTS_USED.append(
+                f"soil at ({lat}, {lon}): HWSD map unit {soil.get('mu_id')} has no "
+                f"component with a texture; built-in loam used (soil_type 4)")
         if soil and 'texture' in soil:
             texture = soil['texture'].lower().strip()
             crhm_type = USDA_TO_CRHM.get(texture, 4)  # default loam
@@ -112,6 +139,9 @@ def lookup_soil_type(lat, lon):
         return 4, soil  # default loam
     except Exception as e:
         warnings.warn(f"HWSD lookup failed at ({lat}, {lon}): {e}")
+        DEFAULTS_USED.append(
+            f"soil at ({lat}, {lon}): HWSD lookup failed ({e}); built-in loam "
+            f"used (soil_type 4)")
         return 4, {}  # default loam
 
 
@@ -603,6 +633,12 @@ def main():
     parser.add_argument('--forcing_elev_m', type=float, default=None,
                         help='Elevation of the forcing grid cell / station (m). '
                              'Becomes obs_elev. Default: lowest HRU elevation.')
+    parser.add_argument('--allow_defaults', action='store_true',
+                        help='Accept built-in values when a real input is missing '
+                             '(no basin coordinates -> 50 N, -115 E; no HWSD soil '
+                             '-> loam). Without this flag the tool stops with exit '
+                             'code 1 instead. The defaults used are written to the '
+                             'output JSON under "defaults_used".')
     args = parser.parse_args()
 
     with open(args.hru_config) as f:
@@ -613,9 +649,13 @@ def main():
     basin_area = cfg['basin_area_km2']
 
     # Determine basin center for HWSD fallback
-    # Priority: CLI args > HRU config lat/lon > shapefile centroid
+    # Priority: CLI args > per-HRU lat/lon > the basin centroid s1 records at
+    # the top of the HRU config ("latitude" / "longitude")
     if args.basin_lat is not None and args.basin_lon is not None:
         default_lat, default_lon = args.basin_lat, args.basin_lon
+    elif (not any(h.get('center_lat', h.get('mean_lat')) is not None for h in hrus)
+          and cfg.get('latitude') is not None and cfg.get('longitude') is not None):
+        default_lat, default_lon = float(cfg['latitude']), float(cfg['longitude'])
     else:
         # Try to compute from HRU centroids if available
         hru_lats = [h.get('center_lat', h.get('mean_lat')) for h in hrus]
@@ -633,6 +673,10 @@ def main():
             warnings.warn(f"No HRU lat/lon found and --basin_lat/lon not provided. "
                           f"Using default ({default_lat}, {default_lon}) for HWSD lookup. "
                           f"This WILL give wrong soil types! Pass --basin_lat --basin_lon.")
+            DEFAULTS_USED.append(
+                f"basin location: no --basin_lat/--basin_lon and no coordinates in "
+                f"the HRU config; ({default_lat}, {default_lon}) used for the soil "
+                f"lookup")
 
     print(f"Deriving parameters for {nhru} HRUs, basin area {basin_area:.1f} km²")
     print(f"  HWSD lookup location: ({default_lat:.2f}, {default_lon:.2f})")
@@ -735,7 +779,24 @@ def main():
         'routing': routing,
     }
 
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    if DEFAULTS_USED:
+        uniq = list(dict.fromkeys(DEFAULTS_USED))
+        if not args.allow_defaults:
+            print("\nERROR: a real input was missing and a built-in value would "
+                  "have been used instead:", file=sys.stderr)
+            for d in uniq:
+                print(f"  - {d}", file=sys.stderr)
+            print("Nothing was written. Give the missing input (--basin_lat / "
+                  "--basin_lon; HWSD under <root>/data/soil/), or re-run with "
+                  "--allow_defaults to accept these values.", file=sys.stderr)
+            sys.exit(1)
+        print("\nWARNING: --allow_defaults: built-in values were used:")
+        for d in uniq:
+            print(f"  - {d}")
+        result['defaults_used'] = uniq
+
+    # abspath: a bare file name has dirname '' and os.makedirs('') raises
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, 'w') as f:
         json.dump(result, f, indent=2)
 

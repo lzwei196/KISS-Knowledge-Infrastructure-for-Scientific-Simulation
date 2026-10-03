@@ -24,7 +24,7 @@ pipeline:
   - s6_execution
   - s7_vic_coupling
 tools:
-  count: 13
+  count: 12
   files:
   - s1_site_setup/tools/create_site_file.py
   - s2_weather_prep/tools/convert_forcing_to_shaw.py
@@ -37,7 +37,6 @@ tools:
   - s6_execution/tools/run_shaw.py
   - s6_execution/tools/shaw_frost_analysis.py
   - s6_execution/tools/validate_shaw_inputs.py
-  - s7_vic_coupling/tools/vic_to_shaw_soil.py
   - tools/s1_site_setup/setup_shaw_from_template.py
 inputs:
   forcing:
@@ -144,6 +143,6 @@ validation:
 summary:
   total_tools: 13
   total_stage_docs: 7
-  total_diagnostic_triplets: 33
-  generated: '2026-08-15'
+  total_diagnostic_triplets: 37
+  generated: '2026-10-02'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

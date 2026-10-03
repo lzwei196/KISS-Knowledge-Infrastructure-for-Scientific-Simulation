@@ -51,7 +51,7 @@ Cross-referencing the manual TOC, source code (.cpp/.h files), and KI coverage:
 | Multi-model emulation (8 templates) | Full -- s0 tool + skill doc | Excellent |
 | Process algorithm library (120+) | Full -- s4 skill doc catalogs by category | Good |
 | .rvi/.rvp/.rvh/.rvt/.rvc file generation | Full -- tools s0-s5 | Validated |
-| Forcing conversion (CMFD/MSWX/NASA POWER) | Full -- s3 tool + adapter | Validated (Bengbu) |
+| Forcing straight from the source (CMFD/MSWX/NASA POWER), point or basin-polygon mean | Full -- s3 tool via ki_tools_common.load_forcing | Validated (Tangnaihai, CMFD, 1206 cells) |
 | Basin/HRU construction (3 strategies) | Full -- s1 tool | Validated |
 | Multi-model ensemble comparison | Full -- s8 tool | Validated (5-model Bengbu) |
 | DDS calibration | Full -- s9 tool + skill doc | Documented |
@@ -111,7 +111,7 @@ Cross-referencing the manual TOC, source code (.cpp/.h files), and KI coverage:
 | 1 | select_model_template.py | ~330 | s0 | Partial | err_009/dt_028: generic template generation places params wrong; workaround = hand-crafted templates |
 | 2 | build_rvh_from_shapefile.py | ~380 | s1 | Yes | err_001: 13-col format discovered and fixed |
 | 3 | build_rvp_parameters.py | ~320 | s2 | Yes | err_007/008: CSV parsing + column index fixed |
-| 4 | convert_forcing_to_rvt.py | ~430 | s3 | Yes | err_005/006: column mapping + grid NC format fixed |
+| 4 | convert_forcing_to_rvt.py | ~690 | s3 | Yes | 2026-10-03: direct routes only (point, points, basin polygon mean) through ki_tools_common.load_forcing; observation .rvt; refuses gaps (dt_rav_046-049) |
 | 5 | generate_rvc_initial.py | ~120 | s5 | Yes | err_004: minimal .rvc creation works |
 | 6 | run_raven.py | ~290 | s6 | Yes | Stable |
 | 7 | parse_raven_output.py | ~310 | s7 | Yes | Stable |

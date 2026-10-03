@@ -33,6 +33,15 @@ Inputs:
                        terrain so HRUs are pure land-cover units.
   --output_dir:        Output directory
 
+Single-HRU mode (no rasters): for one flat, uniform site described by the user
+(a field, a plot, a station). Give ALL of
+  --single_hru --lat --lon --elevation_m --area_km2 --land_cover
+and --output_dir. --land_cover is a CRHM class id 1-9 or its name (see
+CRHM_LANDCOVER_CLASSES: open_prairie, crop_stubble, shrub, deciduous_forest,
+coniferous_forest, wetland, water, bare_ground, alpine_tundra). Nothing is
+defaulted: a missing value is an input error. --dem_path / --landcover_path /
+--shapefile_path / --bbox are not used and may not be combined with it.
+
 Outputs:
   hru_config.json -- HRU definitions with areas, elevations, land cover.
                      Each HRU carries TWO fetch fields:
@@ -199,6 +208,26 @@ def parse_args():
                              "the domain into their band's dominant class (default 0 = off). "
                              "Prevents sliver HRUs when using a 30 m fine-class product.")
     parser.add_argument("--n_elevation_bands", type=int, default=5, help="Number of elevation bands")
+    parser.add_argument("--single_hru", action="store_true",
+                        help="Write ONE HRU from values given on the command line instead "
+                             "of reading rasters. Needs --lat --lon --elevation_m "
+                             "--area_km2 --land_cover and --output_dir; none has a default.")
+    parser.add_argument("--lat", type=float, default=None, help="[single_hru] site latitude (deg N)")
+    parser.add_argument("--lon", type=float, default=None, help="[single_hru] site longitude (deg E)")
+    parser.add_argument("--elevation_m", type=float, default=None,
+                        help="[single_hru] site elevation (m)")
+    parser.add_argument("--area_km2", type=float, default=None, help="[single_hru] HRU area (km2)")
+    parser.add_argument("--land_cover", type=str, default=None,
+                        help="[single_hru] CRHM land-cover class id 1-9 or name: "
+                             + ", ".join(f"{k}={v['name']}" for k, v in
+                                         sorted(CRHM_LANDCOVER_CLASSES.items()) if k <= 9))
+    parser.add_argument("--veg_height_m", type=float, default=None,
+                        help="[single_hru] optional: vegetation height (m) instead of the "
+                             "land-cover table value. For blowing snow this should be the "
+                             "WINTER exposed height (SKILL.md, PBSM RULE 1).")
+    parser.add_argument("--fetch_m", type=float, default=None,
+                        help="[single_hru] optional: landscape fetch (m) instead of the "
+                             "land-cover table value.")
     parser.add_argument("--output_dir", type=str, help="Output directory")
     parser.add_argument("--equal_area_bands", action="store_true",
                         help="Place elevation-band edges at AREA quantiles (hypsometric "
@@ -217,7 +246,8 @@ def validate_inputs(dem_path, landcover_path, shapefile_path, output_dir):
     errors = []
 
     if not dem_path or not Path(dem_path).exists():
-        errors.append(f"DEM file not found: {dem_path}")
+        errors.append(f"DEM file not found: {dem_path!r}. For one flat, uniform site "
+                      f"with no rasters use --single_hru (see --help).")
 
     if not landcover_path or not Path(landcover_path).exists():
         errors.append(f"Land cover file not found: {landcover_path}")
@@ -235,6 +265,97 @@ def validate_inputs(dem_path, landcover_path, shapefile_path, output_dir):
         sys.exit(1)
 
     logger.info("Input validation passed.")
+
+
+def resolve_single_land_cover(spec):
+    """--land_cover (CRHM class id 1-9 or name) -> (class_id, property dict)."""
+    native = {k: v for k, v in CRHM_LANDCOVER_CLASSES.items() if k <= 9}
+    text = str(spec).strip()
+    if text.isdigit() and int(text) in native:
+        return int(text), native[int(text)]
+    for k, v in native.items():
+        if v["name"] == text.lower():
+            return k, v
+    raise ValueError(
+        f"--land_cover '{spec}' is not a CRHM class id 1-9 or name. Choose one of: "
+        + ", ".join(f"{k}={v['name']}" for k, v in sorted(native.items())))
+
+
+def process_single_hru(lat, lon, elevation_m, area_km2, land_cover, output_dir,
+                       veg_height_m=None, fetch_m=None):
+    """One user-described HRU -> hru_config.json, same fields as the raster path."""
+    errors = []
+    if lat is None or not (-90.0 <= lat <= 90.0):
+        errors.append(f"--lat must be given, between -90 and 90 (got {lat})")
+    if lon is None or not (-180.0 <= lon <= 360.0):
+        errors.append(f"--lon must be given, between -180 and 360 (got {lon})")
+    if elevation_m is None or not (-500.0 <= elevation_m <= 9000.0):
+        errors.append(f"--elevation_m must be given, between -500 and 9000 (got {elevation_m})")
+    if area_km2 is None or not area_km2 > 0:
+        errors.append(f"--area_km2 must be given and > 0 (got {area_km2})")
+    if not land_cover:
+        errors.append("--land_cover must be given (CRHM class id 1-9 or name)")
+    if veg_height_m is not None and not (0.0 <= veg_height_m <= 100.0):
+        errors.append(f"--veg_height_m must be between 0 and 100 (got {veg_height_m})")
+    if fetch_m is not None and not fetch_m > 0:
+        errors.append(f"--fetch_m must be > 0 (got {fetch_m})")
+    lc_id = lc = None
+    if land_cover:
+        try:
+            lc_id, lc = resolve_single_land_cover(land_cover)
+        except ValueError as exc:
+            errors.append(str(exc))
+    if not output_dir:
+        errors.append("--output_dir must be given")
+    if errors:
+        for e in errors:
+            logger.error(e)
+        sys.exit(1)
+
+    elev = round(float(elevation_m), 1)
+    hru = {
+        "hru_id": 1,
+        "elevation_band": 0,
+        "elevation_band_range_m": [elev, elev],
+        "mean_elevation_m": elev,
+        "land_cover_class": lc_id,
+        "land_cover_name": lc["name"],
+        "area_km2": round(float(area_km2), 4),
+        "veg_height_m": lc["veg_height_m"] if veg_height_m is None else float(veg_height_m),
+        "fetch_m": lc["fetch_m"] if fetch_m is None else float(fetch_m),
+        "has_canopy": lc["canopy"],
+        "center_lat": round(float(lat), 4),
+        "center_lon": round(float(lon), 4),
+    }
+    hru["pbsm_fetch_m"] = pbsm_fetch(hru["fetch_m"])
+    if hru["pbsm_fetch_m"] != hru["fetch_m"]:
+        logger.warning("pbsm_fetch_m %s differs from fetch_m %s: CRHM declares fetch "
+                       "<%d to %d> m.", hru["pbsm_fetch_m"], hru["fetch_m"],
+                       PBSM_FETCH_MIN, PBSM_FETCH_MAX)
+    config = {
+        "nhru": 1,
+        "basin_area_km2": hru["area_km2"],
+        "elevation_range_m": [elev, elev],
+        "n_elevation_bands": 1,
+        "hrus": [hru],
+        "crhm_dimensions": {"nhru": 1, "nlay": 1, "nobs": 1},
+        "crhm_hru_areas_km2": [hru["area_km2"]],
+        "crhm_hru_elevations_m": [elev],
+        "band_scheme": "single_hru",
+        "landcover_scheme": "crhm",
+        "domain_kind": "single_hru_user_described",
+        "latitude": hru["center_lat"],
+        "longitude": hru["center_lon"],
+        "source": "values given on the command line (--single_hru); no raster was read",
+    }
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    output_file = out / "hru_config.json"
+    with open(output_file, "w") as f:
+        json.dump(config, f, indent=2)
+    logger.info("Created 1 HRU from user values: %s, %.4f km2, %.1f m, (%.4f, %.4f)",
+                lc["name"], hru["area_km2"], elev, hru["center_lat"], hru["center_lon"])
+    return str(output_file)
 
 
 def write_region_geojson(bbox, output_dir):
@@ -624,6 +745,29 @@ if __name__ == "__main__":
     output_dir = args.output_dir or OUTPUT_DIR
 
     logger.info(f"Running tool: {os.path.basename(__file__)}")
+
+    single_only = {"--lat": args.lat, "--lon": args.lon, "--elevation_m": args.elevation_m,
+                   "--area_km2": args.area_km2, "--land_cover": args.land_cover,
+                   "--veg_height_m": args.veg_height_m, "--fetch_m": args.fetch_m}
+    if args.single_hru:
+        clash = [n for n, v in (("--dem_path", dem_path), ("--landcover_path", landcover_path),
+                                ("--shapefile_path", shapefile_path), ("--bbox", args.bbox))
+                 if v]
+        if clash:
+            logger.error("--single_hru reads no raster; do not combine it with %s",
+                         ", ".join(clash))
+            sys.exit(1)
+        output_path = process_single_hru(args.lat, args.lon, args.elevation_m, args.area_km2,
+                                         args.land_cover, output_dir,
+                                         veg_height_m=args.veg_height_m, fetch_m=args.fetch_m)
+        validate_outputs(output_path)
+        print(json.dumps({"status": "success", "output": output_path}))
+        sys.exit(0)
+    stray = [n for n, v in single_only.items() if v is not None]
+    if stray:
+        logger.error("%s only apply with --single_hru (they are ignored by the raster "
+                     "path)", ", ".join(stray))
+        sys.exit(1)
 
     # A REGION domain (--bbox) has no catchment polygon; synthesise the
     # rectangle and use it as the clip boundary for every downstream step.

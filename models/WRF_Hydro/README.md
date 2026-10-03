@@ -72,8 +72,7 @@ netCDF4, numpy, scipy, geopandas, rasterio, pyproj, whitebox
 | 5 | Soil properties | `build_soil_properties.py` (302 lines) | SOILPARM + MPTABLE lookup |
 | 6 | Groundwater/ancillary | `build_groundwater.py` (416 lines) | GWBASINS, GWBUCKPARM, hydro2dtbl, metadata |
 | 7 | Spatial metadata | (validation only) | Verify x/y resolution attributes |
-| 8 | Forcing conversion | `convert_forcing_to_ldasin.py` (556 lines) | VIC 3hr -> hourly LDASIN on LCC |
-| 8b | Forcing (direct CMFD) | `cmfd_to_ldasin.py` (790 lines) | CMFD -> hourly LDASIN directly (no VIC intermediate) |
+| 8 | Forcing (direct CMFD) | `cmfd_to_ldasin.py` (790 lines) | CMFD -> hourly LDASIN directly (no VIC intermediate) |
 | 9 | Namelist generation | `generate_namelists.py` (384 lines) | namelist.hrldas + hydro.namelist |
 | 10 | Execution | `run_wrfhydro.py` (291 lines) | MPI run + output collection |
 | 11 | Output processing | (manual/future tool) | Discharge extraction from CHRTOUT |
@@ -107,8 +106,7 @@ Stages 3, 4, 5, 6 can run in parallel after stage 2 (geo_em). Stage 8 (forcing) 
 | `build_fulldom_hires` | s4 | `tools/s4_fulldom/build_fulldom_hires.py` | 492 | Build routing domain with WhiteboxTools D8 + Strahler |
 | `build_soil_properties` | s5 | `tools/s5_soil_properties/build_soil_properties.py` | 302 | Soil/veg params from SOILPARM.TBL + MPTABLE.TBL |
 | `build_groundwater` | s6 | `tools/s6_groundwater/build_groundwater.py` | 416 | GWBASINS, GWBUCKPARM, hydro2dtbl, spatial metadata |
-| `convert_forcing_to_ldasin` | s8 | `tools/s8_forcing/convert_forcing_to_ldasin.py` | 556 | VIC 3hr ASCII -> hourly LDASIN NetCDF on LCC grid |
-| `cmfd_to_ldasin` | s8b | `tools/s8_forcing/cmfd_to_ldasin.py` | 790 | CMFD 3hr NetCDF -> hourly LDASIN directly (no VIC) |
+| `cmfd_to_ldasin` | s8 | `tools/s8_forcing/cmfd_to_ldasin.py` | 790 | CMFD 3hr NetCDF -> hourly LDASIN directly (no VIC) |
 | `generate_namelists` | s9 | `tools/s9_namelists/generate_namelists.py` | 384 | Generate namelist.hrldas + hydro.namelist |
 | `run_wrfhydro` | s10 | `tools/s10_execution/run_wrfhydro.py` | 291 | MPI execution wrapper with preflight + JSON summary |
 | `run_wrfhydro_full_pipeline` | all | `tools/run_wrfhydro_full_pipeline.py` | 438 | End-to-end pipeline wrapper (stages 1-10) |
@@ -376,7 +374,6 @@ Default Zmax=50m fills instantly — pure pass-through. Increase to 200-500m for
 ## Model Coupling
 
 See `docs/model_couplings.yaml` for:
-- VIC forcing -> WRF-Hydro LDASIN (3-hourly to hourly, unit conversions)
 - CMFD -> WRF-Hydro LDASIN (direct, no VIC intermediate) via `cmfd_to_ldasin.py`
 - WRF-Hydro -> CaMa-Flood (SFCRNOFF + UGDRNOFF as alternative runoff source)
 
@@ -406,14 +403,7 @@ python tools/s6_groundwater/build_groundwater.py --geo_em DOMAIN/geo_em.d01.nc -
 
 # 7. Validate spatial metadata (add resolution attribute if missing)
 
-# 8. Convert forcing (choose one):
-# Option A: From VIC forcing files
-python tools/s8_forcing/convert_forcing_to_ldasin.py \
-  --forcing_dir vic_forcing/ --grid_nc basin_grid.nc \
-  --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json \
-  --output_dir FORCING/ --start_date 2001-01-01 --end_date 2001-01-07
-
-# Option B: Direct from CMFD (no VIC intermediate)
+# 8. Build forcing straight from the source (CMFD here; nasa_power_to_ldasin.py outside China)
 python tools/s8_forcing/cmfd_to_ldasin.py \
   --cmfd_dir data/forcing/Data_forcing_03hr_010deg \
   --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json \
@@ -450,7 +440,7 @@ knowledge_infrastructure/
     s4_fulldom/build_fulldom_hires.py
     s5_soil_properties/build_soil_properties.py
     s6_groundwater/build_groundwater.py
-    s8_forcing/convert_forcing_to_ldasin.py
+    s8_forcing/nasa_power_to_ldasin.py
     s8_forcing/cmfd_to_ldasin.py
     s9_namelists/generate_namelists.py
     s10_execution/run_wrfhydro.py

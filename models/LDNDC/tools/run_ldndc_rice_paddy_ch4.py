@@ -35,22 +35,13 @@ LDNDC_BIN = LDNDC_BASE / "bin" / "ldndc"
 PROJECTS_DIR = LDNDC_BASE / "projects"
 HWSD_RASTER = PROJECT_ROOT / "data" / "soil" / "HWSD_RASTER" / "hwsd.bil"
 HWSD_MDB = PROJECT_ROOT / "data" / "forcing" / "huaihe_raw" / "soil" / "HWSD.mdb"
-VIC_FORCING_DIR = (
-    PROJECT_ROOT
-    / "outputs"
-    / "bengbu_2000-2005_025deg"
-    / "vic_temp"
-    / "forcing"
-    / "forcing_final"
-)
 
 # Simulation defaults — SE China rice paddy
-DEFAULT_LAT = 32.125   # Nearest VIC forcing to SE China
+DEFAULT_LAT = 32.125   # SE China rice paddy (Huai basin)
 DEFAULT_LON = 117.375
 DEFAULT_ELEVATION = 15.0
 START_YEAR = 2000
 END_YEAR = 2005
-STEPS_PER_DAY = 8  # VIC 3-hourly
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,8 +54,9 @@ logger = logging.getLogger("ldndc_rice_ch4")
 # Import shared functions from the bengbu pipeline
 sys.path.insert(0, str(Path(__file__).parent))
 from run_ldndc_bengbu_ghg import (
-    find_nearest_forcing,
-    vic_forcing_to_ldndc_climate,
+    build_climate_from_source,
+    CMFD_DIR,
+    FORCING_SOURCES,
     get_hwsd_soil,
     write_site_xml,
     write_airchem,
@@ -316,8 +308,8 @@ def main():
     parser.add_argument("--lat", type=float, default=DEFAULT_LAT)
     parser.add_argument("--lon", type=float, default=DEFAULT_LON)
     parser.add_argument("--elevation", type=float, default=DEFAULT_ELEVATION)
-    parser.add_argument("--forcing_file", type=str, default=None)
-    parser.add_argument("--forcing_dir", type=str, default=str(VIC_FORCING_DIR))
+    parser.add_argument("--forcing_source", type=str, default="cmfd", choices=FORCING_SOURCES)
+    parser.add_argument("--forcing_dir", type=str, default=str(CMFD_DIR))
     parser.add_argument("--start_year", type=int, default=START_YEAR)
     parser.add_argument("--end_year", type=int, default=END_YEAR)
     parser.add_argument("--dry_run", action="store_true")
@@ -335,12 +327,11 @@ def main():
     logger.info(f"Period: {start_year}-{end_year}")
     logger.info("=" * 60)
 
-    # ── Step 1: Find forcing file ──
-    if args.forcing_file:
-        forcing_file = Path(args.forcing_file)
-    else:
-        forcing_dir = Path(args.forcing_dir)
-        forcing_file = find_nearest_forcing(forcing_dir, lat, lon)
+    # ── Step 1: Check the forcing source ──
+    forcing_dir = Path(args.forcing_dir)
+    if not forcing_dir.exists():
+        logger.error(f"Forcing directory not found: {forcing_dir}")
+        sys.exit(1)
 
     # ── Set up project directory ──
     run_tag = f"rice_paddy_{lat:.4f}_{lon:.4f}_{start_year}"
@@ -349,10 +340,11 @@ def main():
     project_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Step 2: Convert VIC forcing → LDNDC climate ──
-    logger.info("\n--- Step 2: Convert VIC forcing to LDNDC climate ---")
+    # ── Step 2: Build the LDNDC climate file from the data source ──
+    logger.info(f"\n--- Step 2: Build LDNDC climate from {args.forcing_source} ---")
     climate_path = project_dir / "rice_climate.txt"
-    vic_forcing_to_ldndc_climate(forcing_file, climate_path, lat, lon, elevation, start_year)
+    build_climate_from_source(args.forcing_source, forcing_dir, climate_path, lat, lon,
+                              elevation, start_year, end_year)
 
     # ── Step 3: Extract HWSD soil → site.xml ──
     logger.info("\n--- Step 3: Extract HWSD soil data ---")

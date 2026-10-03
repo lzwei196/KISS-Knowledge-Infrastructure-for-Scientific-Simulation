@@ -22,7 +22,7 @@ CRHM_EXE = Path("KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm")
 TOOL_FILES = [
     "tools/calib_run.py",
     "tools/s1_basin_setup/create_hru_config.py",
-    "tools/s2_observation_data/convert_vic_to_obs.py",
+    "tools/s2_observation_data/build_obs.py",
     "tools/s2_observation_data/netcdf_safe.py",
     "tools/s2_observation_data/screen_swe_obs.py",
     "tools/s2_observation_data/validate_obs_file.py",

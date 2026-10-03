@@ -44,7 +44,7 @@ s0: Template Selection ─┬─> s1: Basin/HRU Setup ─┬─> s2: Parameters 
 1. `select_model_template.py` — Choose HBV-EC (default) or another template
 2. `build_rvh_from_shapefile.py` — Build HRU definition from shapefile + DEM
 3. `build_rvp_parameters.py` — Build parameter file (reads class names from .rvh)
-4. `convert_forcing_to_rvt.py` — Convert forcing with unit corrections
+4. `convert_forcing_to_rvt.py` — Build the forcing .rvt straight from CMFD / MSWX / NASA POWER (`--forcing_source`; `--basin_shp` basin mean, `--points_csv`, or `--lat --lon`), with unit corrections and the observation .rvt
 5. `generate_rvc_initial.py` — Set initial conditions
 6. `validate_raven_inputs.py` — Cross-check all files
 7. `run_raven.py` — Execute Raven
@@ -69,7 +69,7 @@ Steps 1-9 (ensemble), then:
 | Template selection | <1s | Configuration only |
 | HRU setup | 5-30s | DEM extraction |
 | Parameters | <1s | Text file generation |
-| Forcing conversion | 10s-5min | Depends on period and grid cells |
+| Forcing conversion | 2-25 min | CMFD basin mean about 100 s per year; one CMFD point about 3 min per year |
 | Initial conditions | <1s | Text file generation |
 | Validation | <1s | File parsing |
 | Single Raven run | 5-60s | Depends on HRUs and period |

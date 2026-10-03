@@ -1,7 +1,7 @@
 # ============================================================================
 # CE-QUAL-W2 Diagnostic Triplets
-# 25 triplets across 6 failure domains
-# Silent errors: 14/25 (56%)
+# 32 triplets across 8 failure domains
+# Silent errors: 18/32 (56%)
 # ============================================================================
 
 - id: dt_001
@@ -88,23 +88,22 @@
     error_pattern: ""
     detection_method: value_comparison
   diagnosis:
-    root_cause: "Wind direction in degrees but model version expects radians (or vice versa)"
+    root_cause: "Wind direction (PHI) written in degrees; the v5 binary on this server reads it in radians"
     explanation: >
-      CE-QUAL-W2 v4.x typically uses wind direction in degrees (0-360). Some v3.x
-      versions use radians (0-2*pi). Providing degrees when radians are expected (or
-      vice versa) causes the wind-driven circulation to be in the wrong direction,
-      affecting surface mixing and temperature patterns.
-    affected_components: [convert_met_to_w2, w2_con.npt]
+      The v5 binary (model/ce_qual_w2/bin/w2_v5) takes the PHI column of the met file in
+      RADIANS (0 to 2*pi); the shipped DeGray example holds values such as 4.72. A value of
+      270 written as degrees is read as 270 radians, which turns the wind-driven circulation
+      to a wrong direction and changes surface mixing and temperature patterns. No error is raised.
+    affected_components: [convert_met_to_w2, met file]
   remedy:
-    action: "Check WDIC card in w2_con.npt; v4.x uses degrees, v3.x may use radians"
-    tool_to_run: ""
+    action: "Write PHI in radians. convert_met_to_w2.py takes --wind_dir_deg in degrees and writes radians"
+    tool_to_run: convert_met_to_w2
     manual_steps:
-      - "Check model version documentation for wind direction units"
-      - "If wind direction values are all 0-6.28, model expects degrees — multiply by 180/pi"
-    prevention: "Default to 270 degrees (westerly) when wind direction is not available"
+      - "Look at the PHI column: values between 0 and 6.28 are radians (right for v5)"
+      - "Values up to 360 are degrees: multiply by pi/180"
+      - "The forcing sources have no wind direction: the tool writes one stated constant (default 270 deg = 4.712 rad)"
+    prevention: "Build the met file with convert_met_to_w2.py only"
   severity: silent
-  cross_references: [dt_001]
-
 - id: dt_005
   stage: s3_met_forcing
   failure_domain: unit_conversion
@@ -632,3 +631,186 @@
     prevention: "generate_w2_control.py always includes output cards with sensible defaults"
   severity: silent
   cross_references: []
+
+- id: dt_026
+  stage: s3_met_forcing
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "The met file could only be made from VIC forcing files (--vic_forcing_dir); with both folders given the VIC route won"
+    error_pattern: "unrecognized arguments: --vic_forcing_dir"
+    detection_method: tool_error
+  diagnosis:
+    root_cause: "convert_met_to_w2.py built CE-QUAL-W2 input out of another model's input files"
+    explanation: >
+      Until 2026-10-03 the only working route of the met tool read VIC forcing files, and
+      SKILL.md (quick start, coupling table) and the s3 stage document steered to it. That
+      means running VIC's preparation for a model that is not VIC. Owner rule 2026-10-02: a
+      KI builds its input straight from the data source with its own tool. The VIC reader
+      and the option are removed and are not to be put back. Coupling on RESULTS
+      (a runoff RESULT fed in as inflow with convert_inflow_to_w2.py) is a different thing and stays.
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "Name the source: --source cmfd|mswx|nasa_power --lat --lon --start_year --end_year [--forcing_dir]"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "Do not pass --vic_forcing_dir; it no longer exists"
+      - "Read <output>.summary.json to see the source, the step and what was estimated"
+    prevention: "--source is required and has no default; the tool reads through ki_tools_common.load_forcing.load_hourly_forcing only"
+  severity: fatal
+  cross_references: [dt_027, dt_030]
+
+- id: dt_027
+  stage: s3_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: "Met file with air temperature 0, dew point near 3.8 C (vapour pressure 0.8 kPa), wind 2.0 m/s or short-wave 0 at every step"
+    error_pattern: "No forcing data found in"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "The old direct reader (read_cmfd_mswx_forcing) could not read the stores and filled made-up values for a missing column"
+    explanation: >
+      It looked for *{year}*.nc at the top of the folder only (CMFD and MSWX keep one
+      sub-folder per variable), opened files with no engine inside try/except that hid
+      every failure, selected by lat/lon names, looked for a vapour-pressure column the
+      sources do not have (they give specific humidity), had no Kelvin to Celsius step,
+      and wrote constants when a column was missing: TAIR 0, VP 0.8 kPa, WIND 2.0, SW 0.
+      A constant in a met file is a made-up value and gives a wrong lake with no error.
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "Rebuild the met file with the current tool (--source ...); it stops with an error instead of filling"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "Check a met file of unknown origin for columns that never change"
+      - "A missing or non-finite value, an uneven time axis or a period not fully covered must stop the tool with nothing written"
+    prevention: "check_standard_series() and check_period_covered() run before the file is opened; the file is written under a temporary name and renamed"
+  severity: silent
+  cross_references: [dt_002, dt_026]
+
+- id: dt_028
+  stage: s3_met_forcing
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "NASA POWER was named in the met tool's title but there was no code for it"
+    error_pattern: ""
+    detection_method: tool_error
+  diagnosis:
+    root_cause: "A source named in the documents without a reader"
+    explanation: >
+      The tool header said CMFD/MSWX/NASA POWER; only folders could be given. NASA POWER is
+      now read through load_hourly_forcing (hourly, 2001 onward; a year before that is
+      refused by the loader and nothing is written).
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "--source nasa_power --lat --lon --start_year --end_year (no --forcing_dir)"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "Use nasa_power only when no local store covers the place and period (network fetch)"
+    prevention: "The --source choices are exactly the sources the shared loader reads"
+  severity: fatal
+  cross_references: [dt_026]
+
+- id: dt_029
+  stage: s3_met_forcing
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "A tool loads an old copy of ki_tools_common (missing functions, old loader behaviour)"
+    error_pattern: "sys.path.insert(0, \"KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect\")"
+    detection_method: tool_error
+  diagnosis:
+    root_cause: "convert_met_to_w2.py put KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect first on sys.path"
+    explanation: >
+      That folder can hold an older copy of ki_tools_common, which then wins over the
+      installed package (KISSPATH_KI_TOOLS_COMMON). The line is
+      removed; the tool imports the installed package.
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "Do not add toolkit folders to sys.path in a KI tool; run it with KISSPATH_PYTHON_ENV/bin/python"
+    tool_to_run: ""
+    manual_steps:
+      - "python -c 'import ki_tools_common; print(ki_tools_common.__file__)' must print the models/ki_tools_common path"
+    prevention: "No sys.path edit in convert_met_to_w2.py"
+  severity: silent
+  cross_references: []
+
+- id: dt_030
+  stage: s3_met_forcing
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "SKILL.md said: call load_daily_forcing, then convert_met_to_w2.py — the tool could not take the loader's output; CAPABILITY_INVENTORY said CMFD/MSWX met forcing DONE"
+    error_pattern: ""
+    detection_method: manual_review
+  diagnosis:
+    root_cause: "A recipe that could not be followed, and a status that was not true"
+    explanation: >
+      The tool had no argument for a loaded series, and daily data is the wrong step for a
+      model that needs the daily cycle. The real Wangjiaba case made its met file by hand.
+      The tool now calls load_hourly_forcing itself (3 h for cmfd/mswx, 1 h for nasa_power);
+      the agent does not call the loader first.
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "Run convert_met_to_w2.py with --source; do not call the loader by hand and do not write the met file by hand"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "See docs/s3_met_forcing_skill.md"
+    prevention: "SKILL.md, the stage document and the capability list now describe the one route that exists"
+  severity: degraded
+  cross_references: [dt_026]
+
+- id: dt_031
+  stage: s3_met_forcing
+  failure_domain: parameter_format
+  symptom:
+    description: "v5 binary given a met file in the old tool's form: 10-character columns, '$' on the first two lines, wind direction 270"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "The met file form did not match what the v5 binary reads, and PHI was written in degrees"
+    explanation: >
+      w2_v5 (time-varying-data.f90) reads the first character of the met file: '$' means
+      CSV (skip 3 header lines in all, then comma or blank separated rows); anything else
+      means fixed 8-character columns after 3 header lines (the DeGray example met.npt).
+      The old tool wrote '$' with 2 header lines and 10-character columns, so the first
+      data row was skipped as a header. PHI is in RADIANS (the model uses
+      cos(PHI - PHI0); the DeGray file holds 4.37-5.24): 270 read as radians is a
+      different direction. JDAY is local standard time (the model works out the sun from
+      it); the sources are in UTC, so UTC stamps shift the day cycle by the time zone
+      (6 h at DeGray). With SROC OFF in the control file the model ignores the SRO column
+      and computes short-wave from CLOUD.
+    affected_components: [convert_met_to_w2, generate_w2_control]
+  remedy:
+    action: "Use the current tool: v5 CSV form, 3 header lines, PHI in radians, JDAY in local standard time (UTC offset int(lon/15) h)"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "head -4 met file: line 1 starts with '$', line 3 is JDAY,TAIR,TDEW,WIND,PHI,CLOUD,SRO, line 4 is the first data row"
+      - "PHI must be between 0 and 6.29"
+      - "The sources have no wind direction: the summary says which constant was written"
+      - "Set SROC ON in the control file to make the model use the SRO column"
+    prevention: "convert_met_to_w2.py writes the v5 CSV form and says in <output>.summary.json what was estimated"
+  severity: silent
+  cross_references: [dt_004, dt_005]
+
+- id: dt_032
+  stage: s10_execution
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "run_w2.py stops in preflight on a v5 case; parse_w2_output.py finds no time series"
+    error_pattern: "w2_con.npt not found in run directory"
+    detection_method: tool_error
+  diagnosis:
+    root_cause: "The run and parse tools knew only the v4.x file names"
+    explanation: >
+      The v5 binary on this server reads w2_con.csv and writes tsr_<n>_seg<segment>.csv,
+      snp.opt, spr.csv; its .w2l file is binary, not a log; stop reasons go to w2.err.
+      run_w2.py asked for w2_con.npt, so the shipped DeGray example could not be run through
+      the KI. Both tools now take either form. w2_con.csv also names the files of options
+      that are switched off (lpr.npt, pre_br1.npt, ...): those are warnings, not errors.
+    affected_components: [run_w2, parse_w2_output]
+  remedy:
+    action: "Run run_w2.py --run_dir <dir with w2_con.csv and the inputs>; read tsr_*_seg*.csv (column T2(C))"
+    tool_to_run: run_w2
+    manual_steps:
+      - "Copy the example's input files into a run folder; outputs of an earlier run in the example folder prove nothing"
+      - "A non-empty w2.err after the run is the stop reason"
+    prevention: "run_w2.py removes an old w2.err before the run and reads it after"
+  severity: fatal
+  cross_references: [dt_025]

@@ -425,16 +425,17 @@ known_issues:
     or COMPLEX'
   severity: degraded
 - id: dt_mf6_010
-  symptom: Groundwater flow velocities are unrealistically fast. Water table responds too quickly to recharge.
-    Heads equilibrate almost instantly. No error from MODFLOW.
-  diagnosis: Hydraulic conductivity from VIC soil parameters used without unit conversion. VIC Ksat is
-    in mm/day; MODFLOW expects m/day (1000x smaller).; VIC's Ksat parameter is stored in mm/day in the
-    soil parameter file. MODFLOW expects K in the model's length/time units (m/day if LENGTH_UNITS=meters).
-    Using V
-  remedy: 'Divide VIC Ksat by 1000 to convert mm/day to m/day.; build_npf_package; [''K_m_day = VIC_Ksat_mm_day
-    / 1000.0'', ''Verify K range: sand 1-100 m/day, silt 0.01-1, clay 0.0001-0.01'', ''If K > 100 m/day
-    for non-gravel materials, units are likely wrong'']; Include unit conversion in all VIC-to-MODFLOW
-    parame'
+  symptom: Layer-1 hydraulic conductivity was taken from the VIC soil parameter file (SOIL_PARAM_COMPLETE.txt)
+    through assign_k_from_glhymps.py --soil_param. No error; K1 can be off by orders of magnitude (wrong
+    column, mm/day read as m/day) and flow is unrealistically fast or the water table backs up.
+  diagnosis: 'The old --soil_param route made MODFLOW''s Layer-1 K out of another model''s SETUP file.
+    It read Ksat from column index 8 of the VIC soil file (the code itself said "column ~8 (varies)"),
+    divided by 1000, and did not apply the dt_v004 aquifer scale.; Owner rule 2026-10-02: a model KI builds
+    its input '
+  remedy: 'Take Layer-1 K straight from the soil source: assign_k_from_glhymps.py --layer1_k hwsd (HWSD
+    through ki_tools_common.soil_utils.lookup_hwsd -> texture -> Saxton-Rawls Ksat cm/hr x 0.24 = m/day,
+    x 100 per dt_v004, clipped 0.1-50 m/day), or --layer1_k alluvial_default (1.0 m/day, SKILL.md fact
+    #10).; '
   severity: silent
 - id: dt_mf6_011
   symptom: Many cells are immediately dry at simulation start. Model may converge but with large areas
@@ -537,14 +538,15 @@ known_issues:
 - id: dt_v004
   symptom: Convergence failure on first timestep with reasonable recharge but very low K (~0.01 m/day).
     Water backs up.
-  diagnosis: 'HWSD soil Ksat underestimates regional aquifer K by ~100x; HWSD/VIC Ksat is for shallow
+  diagnosis: 'HWSD soil Ksat underestimates regional aquifer K by ~100x; HWSD soil Ksat is for shallow
     soil (~0.01 m/day for clay). Regional aquifer K for alluvial plains is 1-15 m/day. Using soil K directly
     prevents lateral drainage.
 
     ; [''s3_layer_properties'', ''NPF package'']'
   remedy: 'Scale HWSD Ksat by ~100x. Use GLHYMPS for deep layers when available.; assign_k_from_glhymps;
     [''K_aquifer = K_HWSD * 100, clipped to 0.1-50 m/day'', ''Layer 2: K/3. Layer 3: K/30'']; Always use
-    assign_k_from_glhymps with correct scaling.'
+    assign_k_from_glhymps with correct scaling (--layer1_k hwsd applies the x100 and the 0.1-50 m/day
+    clip).'
   severity: silent
 - id: dt_v005
   symptom: DRN outflow 10^13 m3/day, 200% budget discrepancy. Conductance C = K * delr * delc gives ~10^8
@@ -568,3 +570,28 @@ known_issues:
     [''Check array shape: if arr.ndim == 2, it needs expansion'', ''For strt: strt_3d = np.broadcast_to(strt_2d,
     (nlay, nrow, ncol)).copy()'', ''For sy: sy_3d = np.stack([sy_2d] * nlay)'', ''Verify: assert arr'
   severity: fatal
+- id: dt_mf6_018
+  symptom: build_layers_from_global.py / assign_k_from_glhymps.py / build_riv_from_cama.py need --grid_nc,
+    and their usage examples pointed at outputs/<basin>/vic_temp/grid/basin_grid.nc. With no VIC run for
+    the basin the file does not exist; run scripts wrote their own grid NetCDF inline instead.
+  diagnosis: The grid NetCDF came from VIC's setup pipeline and the KI had no tool of its own to write
+    it. create_grid_from_basin.py only printed a JSON summary and wrote no NetCDF.; The s2/s3/s4 tools
+    only need the cell-centre lat/lon axes and an active mask. Taking them from VIC's basin_grid.nc made
+    MODFLOW de
+  remedy: Write the grid with tools/s2/create_grid_from_basin.py (--box LON_MIN LON_MAX LAT_MIN LAT_MAX
+    --nrow N --ncol M, or --shapefile basin.shp --cell_deg D / --cell_m M) and pass its --out_nc as --grid_nc.;
+    create_grid_from_basin; ['python tools/s2/create_grid_from_basin.py --box -0.445 0.355 44.534 45.1
+  severity: fatal
+- id: dt_mf6_019
+  symptom: 'SKILL.md''s validated-setup table listed "Grid: VIC 0.25deg basin_grid.nc" and "K (Layer 1):
+    HWSD via VIC soil params", so an agent copying the validated chain ran (or looked for) VIC''s setup
+    to make MODFLOW''s grid and K.'
+  diagnosis: The validated Bengbu chain was first built on top of VIC's setup files and the table recorded
+    those files as the source of the grid and of Layer-1 K.; The table is the first thing an agent copies.
+    Sources in it must be the data sources themselves (grid from the basin outline or a lat/lon box, K
+    from
+  remedy: 'Use the table rows as now written: Grid = create_grid_from_basin.py (basin shapefile or lat/lon
+    box); K (Layer 1) = assign_k_from_glhymps.py --layer1_k hwsd (HWSD x100) or the 1.0 m/day alluvial
+    default.; create_grid_from_basin; [''Build the grid NetCDF with create_grid_from_basin.py'', ''Build
+    K with '
+  severity: silent

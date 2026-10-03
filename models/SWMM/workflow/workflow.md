@@ -54,7 +54,7 @@ S4 (LID Setup) ─── depends on S1 ──► feeds into S5                  
 **Key output**: Network definition (junctions, conduits, outfalls, cross-sections)
 
 #### S3: Rainfall Forcing (4 tools)
-- Create rainfall time series from gauge data, VIC forcing, or design storms
+- Create rainfall time series from gauge data, a gridded source (CMFD / MSWX / NASA POWER, `build_rain_timeseries_from_source`), or design storms
 - Define rain gages with FORMAT (INTENSITY or VOLUME) and INTERVAL
 - Assign rain gages to subcatchments
 - Validate FORMAT/INTERVAL match data convention
@@ -108,9 +108,10 @@ S4 (LID Setup) ─── depends on S1 ──► feeds into S5                  
 |-------|-------|-------|
 | S1 | delineate_subcatchments, classify_land_use, compute_subcatchment_params, validate_subcatchments | 4 |
 | S2 | create_drainage_network, import_network_from_gis, define_cross_sections, validate_network_connectivity | 4 |
-| S3 | create_rain_timeseries, convert_vic_forcing_to_swmm, generate_design_storm, validate_rainfall_input | 4 |
+| S3 | build_rain_timeseries_from_source, create_rain_timeseries, generate_design_storm, scale_cmip6_rainfall_to_swmm, validate_rainfall_input | 5 |
 | S4 | create_lid_control, assign_lid_to_subcatchment, validate_lid_params | 3 |
 | S5 | assemble_inp_file, configure_simulation_options, validate_inp_file | 3 |
 | S6 | run_swmm, extract_results, check_continuity_errors | 3 |
 | S7 | convert_vic_runoff_to_swmm_inflow, convert_cama_stage_to_outfall_bc, convert_swmm_outflow_to_cama_lateral, validate_coupling_water_balance | 4 |
-| **Total** | | **25** |
+| City model (all stages) | run_city_swmm | 1 |
+| **Total** | | **27** |

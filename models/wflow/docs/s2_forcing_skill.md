@@ -6,22 +6,23 @@ Convert CMFD/MSWX meteorological forcing to wflow NetCDF format with correct uni
 
 ## Prerequisites
 
-- Stage s1 complete (staticmaps.nc or grid_nc exists for grid definition)
-- Forcing data available: CMFD (China), MSWX (global), or VIC ASCII forcing files
+- Stage s1 complete (staticmaps.nc exists for grid definition)
+- Forcing data available: CMFD (China) or MSWX (global), read straight from the data store
 - Python packages: xarray, netCDF4, numpy, pandas
 
 ## Inputs
 
 | Name | Type | Source | Description |
 |------|------|--------|-------------|
-| forcing_dir | directory | VIC pipeline | Pre-processed VIC ASCII forcing files |
-| grid_nc or staticmaps.nc | file | s1 | Grid definition for spatial alignment |
+| source | name | s0 config | `cmfd`, `mswx`, `nasa_power` or `gswp3` (`--source`) |
+| forcing_dir | directory | data store | Root folder of the source (CMFD: `data/forcing/Data_forcing_03hr_010deg`) |
+| staticmaps.nc | file | s1 | Grid definition for spatial alignment |
 | start_year, end_year | int | s0 config | Simulation period |
 
 ## Procedure
 
-1. **Select forcing source**: VIC ASCII files (easiest — already processed), or raw CMFD/MSWX
-2. Run `convert_forcing_to_wflow.py` with appropriate source
+1. **Select forcing source**: CMFD inside China, MSWX elsewhere
+2. Run `convert_forcing_to_wflow.py --source <source> --forcing_dir <dataset root> --staticmaps_nc <staticmaps.nc>`
 3. **Verify units immediately after conversion**:
    - Mean daily precip: 1-10 mm/day for most basins (check: `ncdump -v precip forcing.nc | tail`)
    - Temperature range: -30 to 45 degC (if > 200, still in Kelvin — dt_w002)

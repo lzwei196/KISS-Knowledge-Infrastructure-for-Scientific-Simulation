@@ -1,12 +1,3 @@
-# ========================================================================
-# WRF_Hydro Diagnostic Triplets
-# ========================================================================
-# 48 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
-# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
-# container only. The two-shape ambiguity is what let the self-improve overlay read
-# a corpus as empty and overwrite it.
-# ========================================================================
-
 - id: dt_001
   stage: s4_fulldom
   failure_domain: parameter_format
@@ -348,26 +339,27 @@
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: RAINRATE in LDASIN files is in mm/3hr instead of mm/s. The VIC forcing precipitation column
-      (mm per 3-hour period) was written directly to LDASIN without dividing by 10800 seconds.
-    explanation: 'WRF-Hydro expects RAINRATE in mm/s (= kg/m^2/s). VIC forcing provides precipitation
-      as accumulated amount per 3-hour interval (mm/3hr). If the raw VIC value (e.g., 3.0 mm/3hr) is written
+    root_cause: RAINRATE in LDASIN files is in mm per 3-hour step instead of mm/s. A precipitation amount
+      per step was written directly to LDASIN without dividing by the step seconds (10800).
+    explanation: 'WRF-Hydro expects RAINRATE in mm/s (= kg/m^2/s). Some sources and hand-made series give
+      precipitation as the amount in a 3-hour step (mm/3hr). If such a value (e.g., 3.0 mm/3hr) is written
       as 3.0 mm/s to LDASIN, that equals 10800 mm/hr or 259,200 mm/day — equivalent to extreme rainfall
       every second. The model may still run for a few timesteps before numerical instability crashes it,
       or it may complete with completely unrealistic output.
 
       '
     affected_components:
-    - convert_forcing_to_ldasin.py RAINRATE conversion
+    - cmfd_to_ldasin.py RAINRATE conversion
     - LDASIN RAINRATE variable
   remedy:
-    action: Divide VIC precipitation by source_timestep_seconds (10800 for 3-hourly) to get mm/s
-    tool_to_run: convert_forcing_to_ldasin
+    action: Divide a per-step precipitation amount by the step seconds (10800 for 3-hourly) to get mm/s; CMFD is already a rate and needs no division
+    tool_to_run: cmfd_to_ldasin
     manual_steps:
     - 'Verify: RAINRATE in first LDASIN file should be < 0.01 mm/s for normal conditions'
     - If RAINRATE > 0.1 mm/s everywhere, the division was likely missing
-    - 'Fix: RAINRATE = precip_mm3hr / 10800.0'
-    prevention: convert_forcing_to_ldasin.py uses precip_mm3hr_to_mmps() which divides by 10800
+    - 'Fix for a per-step series: RAINRATE = precip_mm_per_step / step_seconds (10800 for 3-hourly)'
+    prevention: cmfd_to_ldasin.py avoids the trap - it reads the CMFD prec RATE (kg/m^2/s) and writes it
+      as RAINRATE unchanged
   severity: silent
   cross_references:
   - dt_012
@@ -380,9 +372,9 @@
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Vapor pressure (kPa) from VIC forcing was passed directly as Q2D (specific humidity, kg/kg)
+    root_cause: Humidity given as vapor pressure (kPa) was passed directly as Q2D (specific humidity, kg/kg)
       in LDASIN files without conversion.
-    explanation: 'VIC forcing column 5 is vapor pressure in kPa (typical values: 0.5-3.0 kPa). WRF-Hydro
+    explanation: 'A humidity series in vapor pressure has typical values 0.5-3.0 kPa. WRF-Hydro
       expects Q2D as specific humidity in kg/kg (typical values: 0.002-0.020). The conversion requires:
       q = 0.622 * e_Pa / (Psfc_Pa - 0.378 * e_Pa), where e_Pa = VP_kPa * 1000. Passing kPa values directly
       as kg/kg gives specific humidity ~100-1000x too high, which Noah-MP interprets as near-saturated
@@ -390,18 +382,19 @@
 
       '
     affected_components:
-    - convert_forcing_to_ldasin.py Q2D conversion
+    - cmfd_to_ldasin.py Q2D conversion
     - LDASIN Q2D variable
     - Noah-MP surface energy balance
   remedy:
     action: 'Convert VP (kPa) to specific humidity (kg/kg) using the formula: q = 0.622 * e / (p - 0.378
       * e)'
-    tool_to_run: convert_forcing_to_ldasin
+    tool_to_run: cmfd_to_ldasin
     manual_steps:
     - 'Verify: Q2D in first LDASIN file should be 0.001-0.025 kg/kg'
     - If Q2D > 0.1, vapor pressure was not converted
     - 'Fix: e_Pa = vp_kPa * 1000; q = 0.622 * e_Pa / (psfc_Pa - 0.378 * e_Pa)'
-    prevention: convert_forcing_to_ldasin.py uses vapor_pressure_to_specific_humidity() function
+    prevention: cmfd_to_ldasin.py avoids the trap - it reads CMFD shum, which is already specific humidity
+      (kg/kg), and writes it as Q2D unchanged
   severity: silent
   cross_references:
   - dt_011
@@ -607,8 +600,8 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: Forcing PSFC and T2D spatially interpolated without elevation correction
-    explanation: 'VIC 0.25° forcing is interpolated to 1km LCC grid using scipy.griddata without adjusting
-      for elevation difference between source (25km average ~300m) and target (1km cells, 0-1955m). Mountain
+    explanation: 'Coarse source forcing interpolated to the 1km LCC grid without adjusting for the elevation
+      difference between the source cells (a cell-average height) and the target (1km cells, 0-1955m). Mountain
       cells at 1955m receive sea-level pressure (101 kPa) instead of correct ~80 kPa. T2D is 10.7°C too
       warm at mountaintops. This causes 20% overestimation of air density → amplified heat fluxes → energy
       divergence.
@@ -618,12 +611,14 @@
     - s8_forcing
   remedy:
     action: 'After spatial interpolation, apply: T2D -= 0.0065*Δz, PSFC *= exp(-g*Δz/(R*Tv))'
-    tool_to_run: convert_forcing_to_ldasin
+    tool_to_run: cmfd_to_ldasin
     manual_steps:
-    - Compute Δz = HGT_1km - HGT_vic_interpolated
+    - Compute Δz = HGT_1km - (source-grid elevation interpolated to the LCC grid)
     - T2D_corrected = T2D - 0.0065 * Δz (lapse rate 6.5 K/km)
     - PSFC_corrected = PSFC * exp(-9.80665 * Δz / (287 * Tv))
-    prevention: convert_forcing_to_ldasin.py now applies elevation correction automatically
+    prevention: cmfd_to_ldasin.py applies the correction by default - it estimates the CMFD cell elevation
+      from pressure and temperature, regrids it (cmfd_hgt_interp) and corrects T2D and PSFC by Δz; --no_elev_correct
+      turns it off
   severity: silent
   cross_references: []
   verified: '2026-03-20'
@@ -692,30 +687,28 @@
   stage: s8_forcing
   failure_domain: unit_conversion
   symptom:
-    description: CMFD precip units documentation misleading — raw CMFD is kg/m2/s (rate), but VIC pipeline
-      multiplies by 10800 to get mm/3hr, creating false impression that CMFD native units are mm/3hr.
+    description: CMFD precipitation unit is easy to get wrong — raw CMFD is kg/m2/s (a rate), not mm per
+      3-hour step.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: CMFD precipitation is an instantaneous rate in kg/m2/s. The VIC forcing pipeline multiplies
-      by 10800 to produce mm/3hr accumulation. When converting VIC forcing to WRF-Hydro LDASIN, the mm/3hr
-      must be divided back by 10800 to get mm/s for RAINRATE.
-    explanation: 'Unit chain: CMFD (kg/m2/s) x 10800 -> VIC (mm/3hr) / 10800 -> LDASIN (mm/s). If one
-      skips the second division, RAINRATE is 10800x too high. The cmfd_to_ldasin.py tool avoids this confusion
-      by reading CMFD rate directly.
+    root_cause: CMFD precipitation is a rate in kg/m2/s, which is RAINRATE (mm/s) as it stands. Multiplying
+      or dividing it by 10800 on the way to LDASIN is the error.
+    explanation: 'CMFD (kg/m2/s) -> LDASIN RAINRATE (mm/s): no conversion. A series that was turned into
+      mm per 3-hour step on the way must be divided by 10800 again, or RAINRATE is 10800x too high. The
+      cmfd_to_ldasin.py tool reads the CMFD rate directly.
 
       '
     affected_components:
-    - convert_forcing_to_ldasin.py
     - cmfd_to_ldasin.py
     - LDASIN RAINRATE
   remedy:
-    action: Divide VIC mm/3hr by 10800 for RAINRATE. Or use cmfd_to_ldasin.py for direct conversion.
-    tool_to_run: convert_forcing_to_ldasin
+    action: Use cmfd_to_ldasin.py, which writes the CMFD rate as RAINRATE unchanged.
+    tool_to_run: cmfd_to_ldasin
     manual_steps:
     - 'Verify: RAINRATE < 0.01 mm/s for normal conditions'
     - If RAINRATE > 0.1 everywhere, the /10800 division was missed
-    prevention: Both forcing converters handle the division correctly
+    prevention: The forcing tools read the source rate directly
   severity: silent
   cross_references:
   - dt_011
@@ -980,7 +973,8 @@
     - s1_domain
     - s9_namelists
   remedy:
-    action: Use 0.1° for Chinese basins < 50,000 km². For storm peaks, tune REFKDT parameter in soil_properties.nc
+    action: Use 0.1° for Chinese basins < 50,000 km². For storm peaks, tune REFKDT at its LIVE address
+      (soil_properties.nc only on a -DSPATIAL_SOIL build, else GENPARM.TBL — see dt_v043)
     tool_to_run: ''
     manual_steps:
     - 'Resolution: --dx_deg 0.1 for basins < 50,000 km²'
@@ -1027,31 +1021,32 @@
   stage: s8_forcing
   failure_domain: unit_conversion
   symptom:
-    description: SWDOWN extrapolated to 1026+ W/m2 at grid edges by scipy.griddata — exceeds solar constant
-      (1361 W/m2). Combined with 3-hour step-function temporal interpolation, causes sustained overheating
+    description: SWDOWN far too high at the edges of the LCC grid after spatial interpolation (first seen as
+      1026+ W/m2 next to 200-400 W/m2 cells). Combined with 3-hour step-function temporal interpolation, causes sustained overheating
       and Noah-MP energy balance instability.
     error_pattern: SWDOWN.*1[0-9]{3}
     detection_method: value_comparison
   diagnosis:
-    root_cause: scipy.griddata extrapolates beyond input range at domain edges where VIC grid does not
+    root_cause: Spatial interpolation extrapolates at domain edges where the source grid subset does not
       fully cover the WRF-Hydro LCC domain
-    explanation: 'When the WRF-Hydro LCC domain extends beyond the VIC grid coverage, scipy.griddata with
-      method=''linear'' extrapolates, producing SWDOWN values exceeding the physical maximum. For Bengbu
+    explanation: 'When the WRF-Hydro LCC domain extends beyond the source cells that were read, a linear
+      interpolator extrapolates, producing SWDOWN values exceeding the physical maximum. For Bengbu
       1km domain, edge cells received SWDOWN=1026 W/m2 when surrounding cells were 200-400 W/m2. Combined
       with 3-hour constant blocks (not truly hourly interpolation), sustained high radiation caused Noah-MP
       TG to exceed 600K. Physical max is 1361 W/m2 (solar constant at top of atmosphere).
 
       '
     affected_components:
-    - convert_forcing_to_ldasin.py
+    - cmfd_to_ldasin.py
     - LDASIN_DOMAIN1 SWDOWN
   remedy:
     action: Cap SWDOWN at 1361 W/m2 after spatial interpolation
-    tool_to_run: convert_forcing_to_ldasin
+    tool_to_run: cmfd_to_ldasin
     manual_steps:
-    - 'After griddata interpolation: swdown = np.clip(swdown, 0, 1361.0)'
+    - 'After regridding: swdown = np.clip(swdown, 0, 1361.0)'
     - 'Check edge cells specifically: if any SWDOWN > 800 at high latitudes, likely extrapolation'
-    prevention: convert_forcing_to_ldasin.py and cmfd_to_ldasin.py both clip SWDOWN post-interpolation
+    prevention: cmfd_to_ldasin.py reads CMFD with a buffer around the domain (--buffer_deg, default 1.0) and
+      clips SWDOWN to 0-1361 after regridding
   severity: degraded
   cross_references:
   - dt_v005
@@ -1183,10 +1178,17 @@
   symptom:
     description: 'IndexError: REFKDT not found when trying to read/modify geo_em.d01.nc'
   diagnosis:
-    root_cause: 'REFKDT is in soil_properties.nc, NOT geo_em.d01.nc. This is the #1 parameter location
-      confusion.'
+    root_cause: 'REFKDT is never in geo_em.d01.nc. Which of the two REAL addresses is live depends on
+      a BUILD FLAG, not on the namelist: with -DSPATIAL_SOIL it is DOMAIN/soil_properties.nc; WITHOUT
+      it (see dt_v043) that file is never opened and REFKDT comes from the GENPARM.TBL scalar REFKDT_DATA
+      (module_sf_noahmpdrv.F:1177-1197). Same for SLOPE (GENPARM.TBL SLOPE_DATA) and SMCMAX (SOILPARM.TBL
+      by texture class). Writing the inert address succeeds, reads back clean, and changes nothing.'
   remedy:
-    action: Read/write REFKDT from DOMAIN/soil_properties.nc, not geo_em.d01.nc
+    action: FIRST establish which build you have — `nm module_NoahMP_hrldas_driver.o | grep read_3d_soil`
+      returns nothing when the spatial read was not compiled (nm on the EXE is misleading; the subroutine
+      is linked regardless). Then write REFKDT to DOMAIN/soil_properties.nc on a SPATIAL_SOIL build, or
+      to GENPARM.TBL REFKDT_DATA otherwise. Never conclude the parameter is dead from a bitwise-zero sensitivity
+      — that means the wrong address (dt_v043).
   severity: critical
 - id: dt_v036
   stage: s4_fulldom
@@ -1470,3 +1472,48 @@
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
   added_by_run: WRF_Hydro_retry1
+- id: dt_v045
+  stage: s9_calibration
+  failure_domain: silent_error
+  symptom:
+    description: 'Calibration explores smcmax_mult below ~0.88; runs complete and score normally, but
+      the soil has field capacity ABOVE porosity on part of the domain. No warning is emitted. WORSE THAN
+      SILENT: as declared the lever also gives a PHYSICALLY WRONG-SIGNED response — scaling only the LSM
+      porosity by 1.10 RAISES the 1981-1983 peak from 2416 to 5392 m3/s (max|dQ| 5285.60), when more porosity
+      should mean more storage and a LOWER peak.'
+  diagnosis:
+    root_cause: 'smcmax_mult scales porosity only (smcmax / SOILPARM MAXSMC) and leaves the dependent
+      limits smcref and smcwlt untouched, so a low multiplier inverts the required ordering smcwlt < smcref
+      < smcmax. At Wangjiaba max(smcref/smcmax)=0.8803 over land, so the KI template''s declared range
+      floor of 0.85 corrupts 10.5% of land cells (CLAY: smcref 0.4120 vs smcmax 0.3978), and hard_bounds
+      reach 0.7. The liveness probe displaces to the far range end, i.e. exactly 0.85 — the worst corner
+      — so measured sensitivity there (max|dQ| 3509 m3/s, above the basin''s own 2416 m3/s peak) conflates
+      the parameter with the invalid state. SECOND, INDEPENDENT MECHANISM (verified 2026-09-09): the warm-start
+      restart carries SMC filled against the ORIGINAL porosity (95th pct SMC/smcmax = 0.911), so shrinking
+      smcmax leaves cells supersaturated at t=0 — 346/1976 land layer-cells at 0.85, 209 (10.6%) at the
+      ordering ''valid floor'' 0.8803, 162 at 0.89, 38 at 0.95, and 4 at both 1.0 and 1.10 (those 4 pre-exist
+      in the restart file, max ratio 2.14). A downward multiplier is therefore never clean under this
+      warm start; the upward branch adds none. THIRD FACET: hydro2dtbl.nc carries its own SMCMAX1/SMCREF1/SMCWLT1
+      (bit-equal to soil_properties smcmax) which the subsurface routing reads and which smcmax_mult never
+      touches, so every multiplier leaves the LSM and the routing disagreeing about porosity. NOTE the
+      binding ratio was derived from soil_properties.nc, the file this build never opens — derive it at
+      the EFFECTIVE address or it will be wrong on the next domain. MEASURED 2026-09-09: scaling hydro2dtbl
+      SMCMAX1 by the same 1.10 (decks otherwise identical) gives max|dQ| = 1516.25 with the peak FALLING
+      to 2279.1 — the correct direction. So 71% of the apparent sensitivity is the LSM/routing porosity
+      disagreement, not the parameter. Coherent ranking at Wangjiaba: gw_coeff 1886 > gw_zmax 1650 > smcmax
+      1516 > gw_expon 1362 > mann_n_mult 419 > lksatfac 373 > ovroughrtfac 120 > retdeprtfac 5.9 — smcmax
+      is THIRD, not first.'
+  remedy:
+    action: 'SCALE hydro2dtbl.nc SMCMAX1 (and SMCREF1/SMCWLT1) TOGETHER WITH smcmax — without this the
+      lever fits an artifact and a calibration using it is invalid, which matters more than its bounds.
+      THEN: Declare the INVARIANT, not a number: cell-wise smcwlt < smcref < smcmax at the effective address,
+      AND restart_SMC <= smcmax, AND hydro2dtbl SMCMAX1/SMCREF1/SMCWLT1 coherence. Evaluate it against
+      the actual artifacts after apply_params and FAIL before the run; have the liveness probe call the
+      same validator to choose a feasible displacement. One validator, two callers. Prefer scaling smcref/smcwlt
+      (and rescaling the restart SMC) WITH smcmax — that removes the ordering and the supersaturation
+      constraints together and makes the whole declared range usable; only if that is refused, derive
+      a per-domain floor and clamp. Do NOT hard-code 0.8803: it is domain- and warm-start-specific, and
+      a hand-written bound is another fixed address of the kind that has already been wrong four times.
+      Also note the probe''s ''far end from the default'' rule picked the physically invalid corner AND
+      the weaker direction — probe BOTH feasible ends and report the larger.'
+  severity: critical

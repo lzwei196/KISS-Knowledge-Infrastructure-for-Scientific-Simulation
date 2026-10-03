@@ -12,7 +12,7 @@ Generate the BIOME-BGC initialization (.ini) file that controls all aspects of a
 
 - [ ] Meteorological data file exists (from S3: convert_forcing_to_bgc.py)
 - [ ] EPC file exists (from S2: select_ecophysiology.py)
-- [ ] Soil properties known (from HWSD or VIC soil params)
+- [ ] Soil properties known (from HWSD: `ki_tools_common.soil_utils.lookup_hwsd`)
 - [ ] Simulation period defined (start year, number of years)
 
 ## Inputs
@@ -21,7 +21,7 @@ Generate the BIOME-BGC initialization (.ini) file that controls all aspects of a
 |-------|------|--------|-------------|
 | met_file | path | S3 output | Met data file path (relative to working directory) |
 | epc_file | path | S2 output | Ecophysiology parameter file path |
-| lat | float | DEM/VIC grid | Site latitude (degrees, negative for S hemisphere) |
+| lat | float | Site / DEM | Site latitude (degrees, negative for S hemisphere) |
 | elevation | float | DEM | Site elevation (meters) |
 | soil_depth | float | HWSD | Effective rooting depth (meters, typical 0.5-3.0) |
 | sand, silt, clay | float | HWSD | Soil texture (%, must sum to 100) |

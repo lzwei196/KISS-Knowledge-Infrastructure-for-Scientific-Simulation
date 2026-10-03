@@ -50,7 +50,7 @@ inputs:
   - name: wind speed (WIND)
     unit: m/s
   - name: wind direction (PHI / WDIR)
-    unit: degrees (0-360) in v4.x+
+    unit: radians (0-2*pi) for the v5 binary on this server
   - name: cloud cover (CLOUD)
     unit: tenths (0-10)
   - name: shortwave solar radiation (SRO)
@@ -123,15 +123,11 @@ outputs:
   - ice thickness
   other: []
 validation:
-  tier: validated
-  tier_justification: 'measured: NSE=0.979, KGE=0.942, R=0.994, 5 scorecard(s)'
-  metrics:
-    best_nse: 0.9789
-    best_kge: 0.9423
-    best_r: 0.994
+  tier: tested
+  tier_justification: 'measured: 5 scorecard(s)'
 summary:
   total_tools: 16
   total_stage_docs: 6
-  total_diagnostic_triplets: 25
-  generated: '2026-08-15'
+  total_diagnostic_triplets: 32
+  generated: '2026-10-03'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

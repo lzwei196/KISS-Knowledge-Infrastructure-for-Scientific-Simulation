@@ -156,7 +156,7 @@ C2      CIRCULAR  0.8    0      0      0      1
 |-------|------|-----------|----------------|
 | S1 | Subcatchment Delineation | `delineate_subcatchments`, `classify_land_use`, `compute_subcatchment_params`, `validate_subcatchments` | `docs/s1_subcatchment_delineation_skill.md` |
 | S2 | Drainage Network | `create_drainage_network`, `import_network_from_gis`, `define_cross_sections`, `validate_network_connectivity` | `docs/s2_drainage_network_skill.md` |
-| S3 | Rainfall Forcing | `create_rain_timeseries`, `convert_vic_forcing_to_swmm`, `generate_design_storm`, `validate_rainfall_input` | `docs/s3_rainfall_forcing_skill.md` |
+| S3 | Rainfall Forcing | `create_rain_timeseries`, `build_rain_timeseries_from_source`, `generate_design_storm`, `validate_rainfall_input` | `docs/s3_rainfall_forcing_skill.md` |
 | S4 | LID Setup | `create_lid_control`, `assign_lid_to_subcatchment`, `validate_lid_params` | `docs/s4_lid_setup_skill.md` |
 | S5 | Model Assembly | `assemble_inp_file`, `configure_simulation_options`, `validate_inp_file` | `docs/s5_model_assembly_skill.md` |
 | S6 | Execution | `run_swmm`, `extract_results`, `check_continuity_errors` | `docs/s6_execution_skill.md` |
@@ -313,8 +313,8 @@ SWMM integrates with HydroCraft's VIC and CaMa-Flood models through four couplin
 ### 1. VIC Surface Runoff to SWMM Inflow (Rural-to-Urban)
 VIC grid cells surrounding the urban area produce surface runoff and baseflow. These are converted to external inflow time series at SWMM junction nodes representing the urban boundary. Use `convert_vic_runoff_to_swmm_inflow`.
 
-### 2. VIC Forcing to SWMM Rainfall (Shared Meteorology)
-Reuse VIC's meteorological forcing (CMFD, MSWX, or NASA POWER) as SWMM rainfall input for consistent precipitation across the rural-urban interface. Use `convert_vic_forcing_to_swmm`.
+### 2. Shared Rainfall Source (not VIC's forcing files)
+Read the same source VIC uses (CMFD, MSWX, or NASA POWER) straight from the source as SWMM rainfall, for consistent precipitation across the rural-urban interface. Use `build_rain_timeseries_from_source`.
 
 ### 3. CaMa-Flood Stage to SWMM Outfall BC (River Backwater)
 CaMa-Flood's river water surface elevation is used as a time-varying boundary condition at SWMM outfalls. This captures backwater effects when the receiving river floods, preventing drainage discharge and causing urban flooding. Use `convert_cama_stage_to_outfall_bc`.
@@ -327,7 +327,7 @@ SWMM outfall discharge is converted to CaMa-Flood lateral inflow, representing u
 For a fully coupled simulation:
 1. Run VIC (watershed hydrology) -- produces runoff + forcing
 2. Run CaMa-Flood (river routing) -- produces river stage at urban outfalls
-3. Convert VIC runoff + forcing to SWMM inputs
+3. Convert VIC runoff to SWMM inflow; build SWMM rainfall from the source
 4. Convert CaMa stage to SWMM outfall boundary conditions
 5. Run SWMM (urban drainage) -- produces outfall discharge
 6. (Optional) Feed SWMM outfall discharge back to CaMa-Flood as lateral inflow for a second iteration

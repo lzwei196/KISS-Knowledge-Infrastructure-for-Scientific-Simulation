@@ -1,7 +1,7 @@
 # ========================================================================
 # Raven Diagnostic Triplets
 # ========================================================================
-# 43 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# 46 triplets (2026-10-03: dt_rav_026/027 removed with the VIC forcing route, dt_rav_046-050 added). Converted 2026-08-12 from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.
@@ -82,11 +82,11 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: Temperature in Kelvin instead of Celsius. Raven expects degC.
-    explanation: 'CMFD raw temperature is in Kelvin. The VIC forcing pipeline converts to Celsius,
+    explanation: 'CMFD raw temperature is in Kelvin. ki_tools_common.load_forcing converts to Celsius;
 
-      but if raw CMFD NetCDF is read directly, temperatures of 273-310K are interpreted
+      a hand-made reader of the raw CMFD NetCDF that skips this hands 273-310 K to Raven as
 
-      as 273-310 degC, producing absurd PET and no snowmelt.
+      273-310 degC, producing absurd PET and no snowmelt.
 
       '
     affected_components:
@@ -137,9 +137,9 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: Air pressure in Pa instead of kPa
-    explanation: 'Raven expects AIR_PRES in kPa. CMFD provides Pa. The VIC pipeline
+    explanation: 'Raven expects AIR_PRES in kPa. CMFD and the shared loader (pres_pa) give Pa.
 
-      already converts to kPa, but if using raw CMFD data, 101325 Pa would be
+      convert_forcing_to_rvt.py divides by 1000; without it 101325 Pa would be
 
       interpreted as 101325 kPa (1000x too high), breaking vapor pressure calculations.
 
@@ -701,70 +701,6 @@
     - 'Include at minimum: PRECIP, TEMP_MIN, TEMP_MAX'
     - 'Preferably also: TEMP_AVE, SW_RADIA, WIND_VEL'
     - Check ForcingFunctions.csv to see what Raven generated internally
-- id: dt_rav_026
-  severity: silent
-  failure_domain: unit_conversion
-  stage: s3
-  symptom:
-    description: Forcing conversion produces 44,551 mm/yr precip and 50C mean temperature — all variables
-      mapped to wrong physical quantities
-    error_pattern: 'BOUNDS VIOLATION: PRECIP.*range.*outside expected'
-    detection_method: bounds_check
-  diagnosis:
-    root_cause: convert_forcing_to_rvt.py had wrong VIC forcing column mapping. Tool assumed column order
-      [PRECIP, TMAX, TMIN, WIND, SW, LW, PRESSURE] but actual VIC process_forcing.py output is [AIR_TEMP,
-      PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND]. Temperature was summed as precip (44x overestimate),
-      pressure was read as temperature (95 kPa -> '95 C').
-    explanation: 'The original tool was written from VIC documentation which shows a different column
-      order
-
-      than what HydroCraft''s process_forcing.py actually produces. This is a SILENT error —
-
-      Raven runs without error with any numeric forcing data, but the outputs are completely
-
-      wrong. Only the bounds-check in the tool caught this. Without bounds checking, this would
-
-      have produced 44x too much runoff with absurd temperature-driven PET.
-
-      '
-    affected_components:
-    - convert_forcing_to_rvt.py
-    - aggregate_3hourly_to_daily
-  remedy:
-    action: 'Fixed column indices in aggregate_3hourly_to_daily(): VIC col 0->TEMP, 1->PRECIP, 2->PRESSURE,
-      3->SW, 4->LW, 5->VP, 6->WIND'
-    tool_to_run: convert_forcing_to_rvt.py
-    verification: 'After fix: annual precip 1035 mm (expected 800-1100), mean temp 15.4 C (expected 14-16
-      C for Bengbu)'
-- id: dt_rav_027
-  severity: fatal
-  failure_domain: dependency_mismatch
-  stage: s3
-  symptom:
-    description: convert_forcing_to_rvt.py reports 'No grid cells found' when reading HydroCraft VIC grid
-      NetCDF
-    error_pattern: No grid cells found. Provide --grid_nc
-    detection_method: error_message
-  diagnosis:
-    root_cause: Tool reads ds.variables['lat']/['lon'] but HydroCraft VIC grid NetCDF uses 'y'/'x' with
-      a 2D 'mask' array. The bare except block swallows the KeyError.
-    explanation: 'HydroCraft''s make_basin_grid_nc.py produces grid files with variables named ''y'',
-      ''x'',
-
-      and ''mask'' (2D array). This is a valid convention but differs from the 1D lat/lon
-
-      arrays the Raven tool expected. The fallback filename parser also failed because
-
-      Bengbu forcing files have no .txt/.dat extension (VIC process_forcing.py produces
-
-      extensionless files like ''bengbu_0.25deg_31.1250_115.6250'').
-
-      '
-    affected_components:
-    - convert_forcing_to_rvt.py
-  remedy:
-    action: Added y/x + 2D mask support in grid reader. Also removed extension filter in filename parser.
-    tool_to_run: convert_forcing_to_rvt.py
 - id: dt_rav_028
   severity: fatal
   failure_domain: parameter_format
@@ -1134,3 +1070,130 @@
       and `python -c "import sys;sys.path.insert(0,''tools/s7_output'');import parse_raven_output as p;p.load_discharge_series"`.
       Do NOT trust a triplet''s ''fixed'' state or a prior result.json metric as evidence that the tool
       can reproduce it.'
+- id: dt_rav_046
+  severity: major
+  failure_domain: ki_integrity
+  stage: s3
+  symptom:
+    description: 'The Raven forcing .rvt could only be made as a basin mean by first running the VIC
+      forcing pipeline: convert_forcing_to_rvt.py without --lat/--lon read VIC 7-column ASCII forcing
+      files from --forcing_dir, with the cells from --grid_nc (VIC basin_grid.nc) or guessed from VIC
+      file names. A call with --grid_nc or a VIC forcing folder now fails.'
+    error_pattern: 'unrecognized arguments: --grid_nc|give where to read the forcing, exactly one of'
+    detection_method: error_message
+  diagnosis:
+    root_cause: 'The tool was first written on top of another model''s input files (VIC). Owner rule
+      2026-10-02: a model KI builds its input straight from the data source with its own tool; no tool
+      turns VIC input files into Raven input. The VIC ASCII reader (read_vic_forcing_file), --grid_nc,
+      the file-name cell guessing, --forcing_prefix and --timestep_hours were REMOVED on 2026-10-03,
+      together with the old triplets dt_rav_026 (VIC column order) and dt_rav_027 (VIC grid y/x), which
+      only described that route.'
+    affected_components:
+    - convert_forcing_to_rvt.py
+  remedy:
+    action: 'Build the forcing directly: convert_forcing_to_rvt.py --forcing_source cmfd|mswx|nasa_power
+      (required) with ONE of --lat --lon (one point), --points_csv (lat,lon rows) or --basin_shp (basin
+      polygon, mean over every source cell centre inside it). The tool reads only through ki_tools_common.load_forcing.
+      Do NOT restore the VIC route; comparing Raven RESULTS with VIC (tools/s10_coupling/raven_vic_comparison.py)
+      is a different thing and stays.'
+    tool_to_run: convert_forcing_to_rvt.py
+    verification: 'Tangnaihai 2010, --basin_shp, cmfd: 1206 cells, 718.8 mm, equal to the raw 3-hourly
+      store summed over the same cells (718.77 mm).'
+- id: dt_rav_047
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s3
+  symptom:
+    description: 'When no VIC file was found the old tool fell to two hand-made NetCDF readers (read_cmfd_netcdf_for_cell,
+      read_mswx_netcdf_for_cell). They either crashed with "NetCDF: HDF error", or returned precipitation
+      near zero, or silently read the wrong year.'
+    error_pattern: 'NetCDF: HDF error'
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'Three faults in the hand-made readers: (1) xr.open_dataset(path) with no engine fails
+      on this server when xarray is loaded first (two HDF5 copies in python_env; the one loaded first
+      wins); (2) CMFD precipitation was taken "as mm/3hr" although the store holds kg m-2 s-1 (a rate;
+      the x10800 per 3-hour step was missing, a factor 10800 too small); (3) the top-level glob *{var}*{year}{month}*
+      can match another year in the flat yearly layout.'
+    affected_components:
+    - convert_forcing_to_rvt.py
+  remedy:
+    action: 'Both readers were REMOVED (2026-10-03). The only reader is ki_tools_common.load_forcing (load_daily_forcing
+      / load_daily_forcing_points), which opens with h5netcdf then the default engine, converts the
+      CMFD rate to mm in the day and matches the year exactly. Never write a NetCDF forcing reader inside
+      this KI.'
+    tool_to_run: convert_forcing_to_rvt.py
+- id: dt_rav_048
+  severity: major
+  failure_domain: silent_error
+  stage: s3
+  symptom:
+    description: 'A lumped Raven model of a large basin is forced with ONE grid cell (--lat --lon at
+      the outlet or centre). The volume bias is then hidden in the calibrated parameters; at Tangnaihai
+      (121,972 km2) the CMFD cells inside the basin range from 363 to 1216 mm in 2010.'
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'The only direct route of the old tool was one point (read_point_forcing). One cell
+      for a 122,000 km2 basin is a sample of one; the basin mean existed only through VIC files.'
+    affected_components:
+    - convert_forcing_to_rvt.py
+  remedy:
+    action: 'Use --basin_shp <polygon>: the tool takes every source grid-cell centre inside the polygon
+      (it says how many), reads them in one shared pass per year with load_daily_forcing_points and
+      writes the cos(latitude)-weighted daily mean. It refuses a polygon with no cell centre inside
+      or not fully on the source grid. --points_csv gives the plain mean of chosen points. Keep --lat/--lon
+      for a basin inside one or two cells.'
+    tool_to_run: convert_forcing_to_rvt.py
+    verification: 'The summary JSON (<basin>_forcing_summary.json) gives n_points and mean_annual_precip_mm;
+      check both.'
+- id: dt_rav_049
+  severity: fatal
+  failure_domain: ki_integrity
+  stage: s3
+  symptom:
+    description: 'models/Raven/run_and_score.py fails at s3: the tool rejects --points_csv, --gauge_elev,
+      --obs_subbasin_id, --obs_start_date, --obs_end_date, and the module has no write_obs_rvt. Also:
+      the main .rvt carried ":RedirectToFile <basin>_obs.rvt" but no tool wrote that file, and the gauge
+      :Elevation was a made-up 500.0 m.'
+    error_pattern: 'unrecognized arguments: --points_csv|has no attribute .write_obs_rvt'
+    detection_method: error_message
+  diagnosis:
+    root_cause: 'An earlier improvement of the s3 tool (multi-point mean, gauge elevation, observation
+      .rvt) was used by a real case but never promoted to the canonical KI (see dt_rav_044). With orographic
+      corrections on (dt_rav_040) a gauge at 500 m for HRUs near 4000 m shifts every band''s temperature
+      by about 20 degC.'
+    affected_components:
+    - convert_forcing_to_rvt.py
+  remedy:
+    action: 'Re-landed 2026-10-03 in the canonical tool: --points_csv, --basin_shp, --gauge_elev (cmfd:
+      read from the store''s elevation field when not given; mswx / nasa_power: required, never guessed),
+      --obs_file with --obs_subbasin_id / --obs_start_date / --obs_end_date writes <basin>_obs.rvt (negative
+      values such as -99 become Raven''s blank marker -1.2345; a window with no valid value is refused),
+      and write_obs_rvt() for a second window.'
+    tool_to_run: convert_forcing_to_rvt.py
+    verification: 'grep -c "add_argument(.--basin_shp" tools/s3_forcing/convert_forcing_to_rvt.py must
+      be 1 before trusting this triplet (dt_rav_044).'
+- id: dt_rav_050
+  severity: major
+  failure_domain: protocol_gap
+  stage: s3
+  symptom:
+    description: 'An agent following SKILL.md or docs/s3_forcing_conversion_skill.md prepared VIC forcing
+      files and a VIC basin_grid.nc before it could run Raven: the quick start and the stage document
+      showed only --forcing_dir <vic forcing_final> --grid_nc <basin_grid.nc>; the words --lat, --lon,
+      point mode appeared in no document.'
+    error_pattern: null
+    detection_method: manual_review
+  diagnosis:
+    root_cause: 'The documents described the first (VIC-based) route only and were not updated when
+      the direct point route was added.'
+    affected_components:
+    - SKILL.md
+    - docs/s3_forcing_conversion_skill.md
+  remedy:
+    action: 'Documents rewritten 2026-10-03 around the direct routes (--forcing_source with --lat/--lon,
+      --points_csv or --basin_shp). Raven needs NO VIC run and NO VIC file. If any document of this
+      KI still tells you to prepare VIC forcing or basin_grid.nc for Raven input, it is stale: follow
+      the tool --help.'
+    tool_to_run: convert_forcing_to_rvt.py

@@ -11,7 +11,7 @@ Usage:
       --start_year 2000 --end_year 2010 \
       --resolution 0.25 --forcing cmfd \
       --shapefile /path/to/basin.shp \
-      --forcing_dir /path/to/vic/forcing \
+      --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
       --output_base /path/to/outputs
 
     python run_wflow_full_pipeline.py --config /path/to/wflow_config.yaml
@@ -145,8 +145,9 @@ def main():
             config = yaml.safe_load(f)
 
         forcing_args = [
+            "--source", (config.get("forcing") or {}).get("dataset") or args.forcing,
             "--forcing_dir", args.forcing_dir,
-            "--grid_nc", config["paths"]["staticmaps"],
+            "--staticmaps_nc", config["paths"]["staticmaps"],
             "--start_year", str(config["simulation"]["start_year"]),
             "--end_year", str(config["simulation"]["end_year"]),
             "--output", config["paths"]["forcing_nc"],

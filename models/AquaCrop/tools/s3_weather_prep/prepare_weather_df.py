@@ -3,13 +3,13 @@
 Knowledge Infrastructure -- Validated Tool
 Tool ID:      prepare_weather_df
 Stage:        s3_weather_prep
-Description:  Creates weather DataFrame from file or VIC output. Ensures correct
+Description:  Creates weather DataFrame from an AquaCrop text file or a CSV. Ensures correct
               column names (MinTemp, MaxTemp, Precipitation, ReferenceET, Date),
               date parsing, ET0 clipping (>= 0.1), and no missing days.
 
 Inputs:
   - source_path: Path to weather data file (string)
-  - source_type: Format: 'aquacrop_txt', 'vic_forcing', 'csv' (string)
+  - source_type: Format: 'aquacrop_txt', 'csv' (string)
   - start_date: Optional start date filter YYYY/MM/DD (string)
   - end_date: Optional end date filter YYYY/MM/DD (string)
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 SOURCE_PATH = ""              # Path to weather data file
-SOURCE_TYPE = "aquacrop_txt"  # 'aquacrop_txt', 'vic_forcing', 'csv'
+SOURCE_TYPE = "aquacrop_txt"  # 'aquacrop_txt', 'csv'
 START_DATE = None             # Optional: 'YYYY/MM/DD'
 END_DATE = None               # Optional: 'YYYY/MM/DD'
 
@@ -44,7 +44,7 @@ def validate_inputs():
     errors = []
     if not SOURCE_PATH or not Path(SOURCE_PATH).exists():
         errors.append(f"Source file not found: {SOURCE_PATH}")
-    if SOURCE_TYPE not in ('aquacrop_txt', 'vic_forcing', 'csv', 'manual'):
+    if SOURCE_TYPE not in ('aquacrop_txt', 'csv'):
         errors.append(f"Unknown source_type: {SOURCE_TYPE}")
     if errors:
         for e in errors:
@@ -116,9 +116,6 @@ def process():
         }
         weather_df = weather_df.rename(columns=rename_map)
 
-    elif SOURCE_TYPE == 'vic_forcing':
-        logger.info("VIC forcing conversion requires ET0 computation -- use compute_eto_penman_monteith tool first")
-        sys.exit(2)
 
     # Filter by date range if specified
     if START_DATE:

@@ -76,7 +76,7 @@ BIOME-BGC simulates daily carbon, nitrogen, and water fluxes through natural ter
 |------|------------|---------|
 | `generate_site_ini` | `tools/generate_site_ini.py` | Generate .ini file from structured inputs (keyword-section format) |
 | `select_ecophysiology` | `tools/select_ecophysiology.py` | Map AVHRR land cover to PFT and generate .epc file |
-| `convert_forcing_to_bgc` | `tools/convert_forcing_to_bgc.py` | Convert VIC forcing to BGC met format (mm->cm, compute VPD in Pa, compute daylen) |
+| `convert_forcing_to_bgc` | `tools/convert_forcing_to_bgc.py` | Build BGC met file straight from CMFD/MSWX/NASA POWER or a FLUXNET tower (mm->cm, compute VPD in Pa, compute daylen) |
 | `run_bgc_spinup` | `tools/run_bgc_spinup.py` | Execute spinup with -u flag, monitor convergence |
 | `run_bgc` | `tools/run_bgc.py` | Execute normal simulation with -m -a flags |
 | `parse_bgc_output` | `tools/parse_bgc_output.py` | Parse ASCII output, compute annual C budgets, physical checks |
@@ -153,10 +153,10 @@ TOOLS=KISSPATH_KI_ROOT/BIOME_BGC/knowledge_infrastructure/tools
 # 1. Select PFT and generate .epc
 python $TOOLS/select_ecophysiology.py --pft ENF --output epc/site.epc
 
-# 2. Convert VIC forcing to BGC met format
+# 2. Build the BGC met file straight from the source
 python $TOOLS/convert_forcing_to_bgc.py \
-  --forcing_file <vic_forcing_file> \
-  --lat 46.8 --start_year 2000 --end_year 2010 \
+  --source cmfd --forcing_dir <cmfd store> \
+  --lat 46.8 --lon <lon> --start_year 2000 --end_year 2010 \
   --output metdata/site.mtc43
 
 # 3. Generate spinup .ini
@@ -216,7 +216,7 @@ See `diagnostics/triplets.yaml` for 25 diagnostic triplets covering:
 ## Coupling Points
 
 ### Inbound (other models -> BIOME-BGC)
-- **VIC forcing** -> `convert_forcing_to_bgc.py` -> BGC met file
+- **Forcing source** (CMFD/MSWX/NASA POWER, or FLUXNET) -> `convert_forcing_to_bgc.py` -> BGC met file
 - **HWSD soil** -> sand/silt/clay/depth in .ini SITE section
 - **AVHRR land cover** -> `select_ecophysiology.py` -> PFT + .epc
 

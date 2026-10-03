@@ -91,7 +91,8 @@ def read_met_tair(met_file):
         for line in f:
             if line.startswith("$") or line.strip() == "":
                 continue
-            parts = line.split()
+            # the v5 met file is comma-separated (convert_met_to_w2); the old form is blank-separated
+            parts = line.replace(",", " ").split()
             if len(parts) >= 2:
                 try:
                     jdays.append(float(parts[0]))

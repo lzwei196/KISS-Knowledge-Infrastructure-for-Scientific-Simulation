@@ -8,8 +8,9 @@ Prepare or validate the mosartwmpy domain grid file, which defines the river net
 
 | Input | Format | Source | Description |
 |-------|--------|--------|-------------|
-| Grid domain file | NetCDF | NLDAS, MERIT-Hydro, custom | River network topology + geometry |
-| DEM data (optional) | GeoTIFF/NetCDF | MERIT DEM | For slope computation |
+| Grid domain file | NetCDF | NLDAS, or built by `tools/build_mosart_grid.py` | River network topology + geometry |
+| D8 triplet (`direc`/`xmask`/`frac`) | ArcASCII | MERIT Hydro via `tools/delineate_d8_from_merit.py` | Network for a new basin |
+| DEM | GeoTIFF | China 90 m DEM (`data/dem/china_dem_90m/china_dem_90m.tif`) inside China, MERIT DEM tiles (`KISSPATH_DATA/MERIT_DEM/`) elsewhere | Cell elevation for channel / hillslope slopes (`build_mosart_grid.py --dem`) |
 | River width data (optional) | NetCDF | GRWL/Allen et al. | Satellite-derived widths |
 
 ## Outputs
@@ -39,7 +40,18 @@ Prepare or validate the mosartwmpy domain grid file, which defines the river net
 
 ## Procedure
 
-1. **Obtain or create grid file** matching simulation domain
+1. **Obtain or create grid file** matching simulation domain. For a new basin, build it
+   from data sources with the KI tools (never from another model's set-up files):
+   ```bash
+   python tools/delineate_d8_from_merit.py --merit-dir KISSPATH_DATA/merit_hydro \
+       --gauge-lat 35.50 --gauge-lon 100.15 --published-area-km2 121972 --resolution 0.25 \
+       --bbox 95.0,31.5,104.0,36.5 --out-prefix d8/TNH_merit
+   python tools/build_mosart_grid.py --direc d8/TNH_merit_direc.txt --xmask d8/TNH_merit_xmask.txt \
+       --frac d8/TNH_merit_frac.txt \
+       --dem KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif \
+       --expected-area-km2 121972 --output mosart_grid.nc
+   ```
+   Use the runoff grid's resolution, and a `--bbox` that holds the whole basin.
 2. **Verify all required variables** are present
 3. **Check units**:
    - Area must be m² (not km²)
@@ -82,7 +94,13 @@ Prepare or validate the mosartwmpy domain grid file, which defines the river net
 **Diagnosis**: `rwid0` (floodplain width) is zero or absent.
 **Prevention**: Set `rwid0 = max(rwid * 5, sqrt(area))` as default.
 
-### TRAP 4: Disconnected river network
+### TRAP 4: Elevation from another model's set-up file
+**Symptom**: a run script passes `--elev-soil SOIL_PARAM_COMPLETE.txt --elev-cols 3,4,22`.
+**Diagnosis**: until 2026-10-03 the grid builder read cell elevation from the VIC soil table
+and filled missing active cells with the basin mean (made-up slopes). The option is removed.
+**Prevention**: `--dem <DEM>`; an active cell without DEM pixels stops the tool ("DEM GAP").
+
+### TRAP 5: Disconnected river network
 **Symptom**: Water accumulates in interior cells, never reaches outlets.
 **Diagnosis**: Some `dnID` values point to non-existent cells.
 **Prevention**: Run connectivity check: all paths from any cell must reach an outlet.

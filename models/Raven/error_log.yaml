@@ -142,19 +142,3 @@ errors:
     tools_affected:
       - s2_parameters/build_rvp_parameters.py (parse_rvh_classes)
     status: documented
-
-  - id: raven_e009
-    date: 2026-03-21
-    model: Raven v4.1
-    stage: s3_forcing
-    severity: medium
-    symptom: "convert_forcing_to_rvt.py cannot find grid cells"
-    root_cause: >
-      Grid NetCDF uses variable names 'x' and 'y' (from VIC grid generation),
-      but the tool looks for 'lat' and 'lon'. Also, forcing files have no
-      extension (.txt/.dat) so the fallback filename parser skips them.
-    fix: >
-      Read 'x'/'y' variables, or parse filenames without extension requirement.
-    tools_affected:
-      - s3_forcing/convert_forcing_to_rvt.py
-    status: documented

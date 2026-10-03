@@ -10,31 +10,38 @@ tool to build one. `convert_grid_parameters.py` only *validates* an existing gri
 the synthetic D8 the dissection produced over-accumulated and routed the main
 channel away from the gauge, so discharge at the gauge cell was exactly 0.
 
-This tool closes that gap. It converts a VALIDATED D8 flow-direction network — the
-same ArcInfo-ASCII `*_direc.txt` (+ `*_xmask.txt` channel length, `*_frac.txt`
-drainage fraction) that the VIC/Lohmann routing KI already builds and validates
-(`s5_routing/build_routing_param.py`) — into a mosartwmpy grid domain file with all
-20 REQUIRED_VARIABLES. Because the topology is inherited from a routing network that
-was independently confirmed at the gauge (VIC+Lohmann NSE 0.63 at Tangnaihai), the
-main channel provably reaches the gauge outlet cell — the exact property the Bengbu
-synthetic grid lacked.
+This tool closes that gap. It converts a D8 flow-direction network in the
+Lohmann ArcInfo-ASCII form — `*_direc.txt` (+ `*_xmask.txt` channel length,
+`*_frac.txt` drainage fraction), as written by `tools/delineate_d8_from_merit.py`
+from MERIT Hydro — into a mosartwmpy grid domain file with all 20
+REQUIRED_VARIABLES. The delineator gates the network on the published drainage
+area of the gauge, so the main channel reaches the gauge outlet cell — the exact
+property the Bengbu synthetic grid lacked.
 
-Direction convention (VIC/Lohmann `rout`): 1=N 2=NE 3=E 4=SE 5=S 6=SW 7=W 8=NW,
+Direction convention (Lohmann `rout`): 1=N 2=NE 3=E 4=SE 5=S 6=SW 7=W 8=NW,
 0=outside-basin, -88 (or any non-1..8 with frac>0) = basin outlet (dnID=-1).
+
+Cell elevation comes straight from a DEM (--dem): the mean of the DEM pixels whose
+centres fall inside each grid cell (China 90 m DEM
+`data/dem/china_dem_90m/china_dem_90m.tif` inside China, MERIT DEM tiles
+`KISSPATH_DATA/MERIT_DEM/` elsewhere). An ACTIVE cell with no DEM value stops the
+tool — there is no basin-mean fill. The DEM is read with `rasterio` if installed,
+else GDAL's `osgeo.gdal`; with neither, the tool stops at start-up with an
+install hint (KISSPATH_PYTHON_ENV/bin/python has both).
 
 Channel geometry is derived by downstream-area hydraulic-geometry relations
 consistent with the validated-format Bengbu grid:
     rwid  = max(30, 2.7*sqrt(A_km2))          rwid0 = 5*rwid
     rdep  = max(1.0, 0.28*A_km2**0.39)         twid  = 0.3*rwid
     rlen  = per-cell channel length from xmask (falls back to cell N-S length)
-    rslp  = max(1e-4, drop-to-downstream / rlen)   from per-cell mean elevation
+    rslp  = max(1e-4, drop-to-downstream / rlen)   from per-cell mean DEM elevation
     hslp  = max(5e-3, local elevation gradient)     tslp = max(1e-4, rslp)
     nh=0.15  nt=0.05  nr=0.035  gxr=1e-3       (Bengbu-consistent Manning/density)
 
 Usage:
     python build_mosart_grid.py \
         --direc TNH_direc.txt --xmask TNH_xmask.txt --frac TNH_frac.txt \
-        --elev-soil SOIL_PARAM_COMPLETE.txt --elev-cols 3,4,22 \
+        --dem KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif \
         --output mosart_grid.nc
 """
 
@@ -43,12 +50,25 @@ import os
 import sys
 from pathlib import Path
 
+# DEM reader: rasterio if installed, else GDAL. Chosen HERE, before numpy /
+# xarray load: on this server osgeo's _gdal fails with "cannot allocate memory
+# in static TLS block" once xarray/netCDF4 is already imported.
+try:
+    import rasterio  # noqa: F401
+    _DEM_BACKEND = 'rasterio'
+except ImportError:
+    try:
+        from osgeo import gdal, osr  # noqa: F401
+        _DEM_BACKEND = 'gdal'
+    except ImportError:
+        _DEM_BACKEND = None
+
 import numpy as np
 import xarray as xr
 
 RADIUS_EARTH = 6.37122e6  # m (mosartwmpy Parameters.radius_earth)
 
-# Lohmann/VIC direction code -> (d_i, d_j) in an ASCENDING-latitude mesh
+# Lohmann direction code -> (d_i, d_j) in an ASCENDING-latitude mesh
 # (i = latitude index increasing north, j = longitude index increasing east).
 DIR_OFFSET = {
     1: (+1, 0),   # N
@@ -97,27 +117,150 @@ def cell_area_m2(lat_deg, cellsize):
     return dx * dy
 
 
-def load_elevations(soil_path, cols):
-    """Return dict {(round(lat,3), round(lon,3)): elev} from a whitespace table.
+def dem_files(dem_args):
+    """Expand --dem arguments: a raster file, or a directory of *.tif tiles."""
+    files = []
+    for a in dem_args:
+        p = Path(a)
+        if p.is_dir():
+            files += sorted(str(f) for f in p.glob('*.tif'))
+        elif p.is_file():
+            files.append(str(p))
+        else:
+            raise SystemExit(f"[build_grid] --dem path not found: {a}")
+    if not files:
+        raise SystemExit(f"[build_grid] no DEM raster found in {dem_args}")
+    return files
 
-    cols = (lat_col, lon_col, elev_col), 1-indexed (VIC soil: 3,4,22).
+
+def dem_reader_backend():
+    """Pick the raster library used to read --dem: 'rasterio' or 'gdal'.
+
+    Either one reads the same pixels; neither importable is a hard error (no
+    made-up elevations). Called from main() BEFORE any work so a missing
+    dependency fails fast with an install hint, not a mid-run traceback.
     """
-    lc, oc, ec = [c - 1 for c in cols]
-    elev = {}
-    for line in open(soil_path):
-        p = line.split()
-        if len(p) <= max(lc, oc, ec):
-            continue
+    if _DEM_BACKEND is None:
+        raise SystemExit(
+            "[build_grid] reading --dem needs a raster library, but neither "
+            "'rasterio' nor GDAL's 'osgeo.gdal' imports in this Python "
+            f"({sys.executable}). Install one (pip install rasterio), or run "
+            "with KISSPATH_PYTHON_ENV/bin/python.")
+    return _DEM_BACKEND
+
+
+class _DemRaster:
+    """Minimal read-only DEM view shared by the rasterio and GDAL backends.
+
+    Exposes: bounds (left, bottom, right, top), transform (a, b, c, d, e, f)
+    in rasterio/affine order, height, width, epsg (int or None), crs_text,
+    read(r0, r1, c0, c1) -> 1-D float array of valid pixels (nodata removed).
+    """
+
+    def __init__(self, path, backend):
+        self.path = path
+        self.backend = backend
+        if backend == 'rasterio':
+            import rasterio
+            self._src = rasterio.open(path)
+            t = self._src.transform
+            self.transform = (t.a, t.b, t.c, t.d, t.e, t.f)
+            self.height, self.width = self._src.height, self._src.width
+            crs = self._src.crs
+            self.epsg = crs.to_epsg() if crs is not None else None
+            self.crs_text = str(crs)
+        else:
+            from osgeo import gdal, osr
+            gdal.UseExceptions()
+            self._src = gdal.Open(path)
+            gt = self._src.GetGeoTransform()
+            # GDAL (c, a, b, f, d, e) -> affine (a, b, c, d, e, f)
+            self.transform = (gt[1], gt[2], gt[0], gt[4], gt[5], gt[3])
+            self.height, self.width = self._src.RasterYSize, self._src.RasterXSize
+            self._band = self._src.GetRasterBand(1)
+            self._nodata = self._band.GetNoDataValue()
+            wkt = self._src.GetProjection()
+            self.epsg = None
+            self.crs_text = wkt or 'None'
+            if wkt:
+                srs = osr.SpatialReference(wkt=wkt)
+                srs.AutoIdentifyEPSG()
+                code = srs.GetAuthorityCode(None)
+                self.epsg = int(code) if code else None
+        a, _, c, _, e, f = self.transform
+        self.bounds = (c, f + e * self.height, c + a * self.width, f)
+
+    def read(self, r0, r1, c0, c1):
+        if self.backend == 'rasterio':
+            arr = self._src.read(1, window=((r0, r1), (c0, c1)), masked=True)
+            v = arr.compressed().astype(float)
+        else:
+            v = self._band.ReadAsArray(c0, r0, c1 - c0, r1 - r0).astype(float).ravel()
+            if self._nodata is not None:
+                v = v[v != self._nodata]
+        return v
+
+    def close(self):
+        if self.backend == 'rasterio':
+            self._src.close()
+        self._src = None
+        self._band = None
+
+
+def dem_cell_means(dem_paths, lat, lon, cs, backend=None):
+    """Mean DEM elevation over each cs x cs cell centred at (lat[i], lon[j]).
+
+    A DEM pixel counts for a cell when its CENTRE lies inside the cell. Pixels
+    equal to the raster nodata value are ignored. Pass ONE DEM product (one
+    file, or non-overlapping tiles of one product); overlapping rasters would
+    be counted twice. Returns (mean[nlat,nlon] with NaN where no pixel, count).
+    """
+    backend = backend or dem_reader_backend()
+    nlat, nlon = len(lat), len(lon)
+    tot = np.zeros((nlat, nlon))
+    cnt = np.zeros((nlat, nlon), dtype=np.int64)
+    w_all, e_all = lon[0] - cs / 2, lon[-1] + cs / 2
+    s_all, n_all = lat[0] - cs / 2, lat[-1] + cs / 2
+    for path in dem_paths:
+        src = _DemRaster(path, backend)
         try:
-            lat, lon, e = float(p[lc]), float(p[oc]), float(p[ec])
-        except ValueError:
-            continue
-        elev[(round(lat, 3), round(lon, 3))] = e
-    return elev
+            left, bottom, right, top = src.bounds
+            if right <= w_all or left >= e_all or top <= s_all or bottom >= n_all:
+                continue
+            ta, tb, tc, td, te, tf = src.transform
+            if tb != 0 or td != 0 or te >= 0:
+                raise SystemExit(f"[build_grid] DEM {path} is not a north-up "
+                                 f"lat/lon raster (transform {src.transform})")
+            if src.epsg not in (4326, None):
+                raise SystemExit(f"[build_grid] DEM {path} CRS {src.crs_text} is not "
+                                 f"EPSG:4326; the grid is in lat/lon degrees")
+            rx, ry = ta, -te
+            for i in range(nlat):
+                s0, n0 = lat[i] - cs / 2, lat[i] + cs / 2
+                # rows whose pixel centre lies in [s0, n0)
+                r0 = max(0, int(np.ceil((tf - n0) / ry - 0.5)))
+                r1 = min(src.height, int(np.ceil((tf - s0) / ry - 0.5)))
+                if r1 <= r0:
+                    continue
+                for j in range(nlon):
+                    w0, e0 = lon[j] - cs / 2, lon[j] + cs / 2
+                    c0 = max(0, int(np.ceil((w0 - tc) / rx - 0.5)))
+                    c1 = min(src.width, int(np.ceil((e0 - tc) / rx - 0.5)))
+                    if c1 <= c0:
+                        continue
+                    v = src.read(r0, r1, c0, c1)
+                    v = v[np.isfinite(v)]
+                    if v.size:
+                        tot[i, j] += v.sum()
+                        cnt[i, j] += v.size
+        finally:
+            src.close()
+    with np.errstate(invalid='ignore', divide='ignore'):
+        mean = np.where(cnt > 0, tot / np.maximum(cnt, 1), np.nan)
+    return mean, cnt
 
 
-def build_grid(direc_path, xmask_path, frac_path, output_path,
-               elev_soil=None, elev_cols=(3, 4, 22),
+def build_grid(direc_path, xmask_path, frac_path, output_path, dem,
                expected_area_km2=None, area_tol=0.10):
     direc_a, H = read_ascii_grid(direc_path)
     xmask_a, _ = read_ascii_grid(xmask_path)
@@ -138,20 +281,23 @@ def build_grid(direc_path, xmask_path, frac_path, output_path,
     direc_i = np.rint(direc).astype(int)
     active = (frac > 0) | (np.isin(direc_i, list(DIR_OFFSET))) | (direc_i == -88)
 
-    # Elevations onto the mesh
-    elev = np.full((nlat, nlon), np.nan)
-    if elev_soil:
-        emap = load_elevations(elev_soil, elev_cols)
-        for i in range(nlat):
-            for j in range(nlon):
-                e = emap.get((round(lat[i], 3), round(lon[j], 3)))
-                if e is not None:
-                    elev[i, j] = e
-    # fill missing active-cell elevations with basin mean
-    if np.isfinite(elev[active]).any():
-        elev[np.isnan(elev)] = np.nanmean(elev[active])
-    else:
-        elev[:] = 0.0
+    # Elevations onto the mesh: per-cell mean of the DEM. No fill — an active
+    # cell without DEM pixels is a hard error (a made-up elevation would set a
+    # made-up channel / hillslope slope).
+    dem_paths = dem_files(dem if isinstance(dem, (list, tuple)) else [dem])
+    elev, elev_npix = dem_cell_means(dem_paths, lat, lon, cs)
+    missing = [(float(lat[i]), float(lon[j]))
+               for i, j in zip(*np.where(active & ~np.isfinite(elev)))]
+    if missing:
+        raise SystemExit(
+            f"[build_grid] DEM GAP: {len(missing)} active cell(s) have no DEM "
+            f"value in {dem_paths}: {missing[:10]}{' ...' if len(missing) > 10 else ''}. "
+            f"Pass a DEM that covers the whole basin (China 90 m DEM inside "
+            f"China, MERIT DEM tiles elsewhere); no fill value is used.")
+    print(f"[build_grid] DEM elevation: {int(active.sum())} active cells, "
+          f"{int(elev_npix[active].min())}-{int(elev_npix[active].max())} DEM "
+          f"pixels per cell, elev {np.nanmin(elev[active]):.0f}-"
+          f"{np.nanmax(elev[active]):.0f} m (sources: {len(dem_paths)} raster(s))")
 
     # ID over the full grid (lat-major / C-order flatten), 1-based like NLDAS grids.
     ID = (np.arange(nlat * nlon).reshape(nlat, nlon) + 1).astype(np.int64)
@@ -198,11 +344,46 @@ def build_grid(direc_path, xmask_path, frac_path, output_path,
                 ii, jj = oi + di, oj + dj
                 if 0 <= ii < nlat and 0 <= jj < nlon and not active[ii, jj]:
                     e = elev[ii, jj]
+                    if not np.isfinite(e):
+                        e = np.inf      # no DEM there: only used if nothing else
                     if best is None or e < best[0]:
                         best = (e, ii, jj)
+        sacrificed_km2 = 0.0
+        if best is None:
+            # Every neighbour is active (a fine-scale delineation such as
+            # delineate_d8_from_merit.py gives the cells around the gauge a
+            # small basin fraction). Use the active HEADWATER neighbour (no cell
+            # drains into it) with the least basin area as the sink: only its own
+            # area leaves the gauge total, and the area gate below re-checks it.
+            leaf = None
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    if di == 0 and dj == 0:
+                        continue
+                    ii, jj = oi + di, oj + dj
+                    if (0 <= ii < nlat and 0 <= jj < nlon and active[ii, jj]
+                            and n_upstream(ii, jj) == 0
+                            and np.isfinite(elev[ii, jj])):
+                        a_km2 = float(np.clip(frac[ii, jj], 0, 1)
+                                      * cell_area_m2(lat[ii], cs)) / 1e6
+                        if leaf is None or (a_km2, elev[ii, jj]) < leaf[:2]:
+                            leaf = (a_km2, elev[ii, jj], ii, jj)
+            if leaf is not None:
+                sacrificed_km2, _, si, sj = leaf
+                best = (elev[si, sj], si, sj)
+                print(f"[build_grid] no inactive neighbour around the outlet; "
+                      f"headwater neighbour ({lat[si]:.3f},{lon[sj]:.3f}) becomes "
+                      f"the terminal sink, its {sacrificed_km2:,.1f} km2 no longer "
+                      f"reaches the gauge")
         if best is not None:
             _, si, sj = best
             active[si, sj] = True          # activate the sink cell
+            if not np.isfinite(elev[si, sj]):
+                raise SystemExit(
+                    f"[build_grid] DEM GAP: terminal sink cell "
+                    f"({lat[si]:.3f},{lon[sj]:.3f}) has no DEM value; the gauge "
+                    f"cell's channel slope would be made up. Pass a DEM that also "
+                    f"covers the cells around the gauge.")
             dnID[si, sj] = -1              # sink drains to ocean
             frac[si, sj] = 0.0             # no runoff generated here
             dnID[oi, oj] = ID[si, sj]      # gauge now flows THROUGH to the sink
@@ -211,11 +392,14 @@ def build_grid(direc_path, xmask_path, frac_path, output_path,
             print(f"[build_grid] outlet ({lat[oi]:.3f},{lon[oj]:.3f}) -> through-cell; "
                   f"terminal sink at ({lat[si]:.3f},{lon[sj]:.3f})")
         else:
-            scoring_cell = (float(lat[oi]), float(lon[oj]))
-            scoring_idx = (oi, oj)
-            print(f"[build_grid] WARNING: no inactive neighbour to host a sink; "
-                  f"score basin discharge at the cell UPSTREAM of "
-                  f"({lat[oi]:.3f},{lon[oj]:.3f})")
+            # The outlet would stay a dnID == -1 ocean cell whose discharge is
+            # 0 (triplet T021); recording it as the scoring cell scores zeros.
+            raise SystemExit(
+                f"[build_grid] NO SINK: outlet ({lat[oi]:.3f},{lon[oj]:.3f}) has "
+                f"no inactive neighbour and no active headwater neighbour to "
+                f"host the terminal sink, so the gauge cell cannot be a "
+                f"through-cell. Pad the direc/xmask/frac triplet with a 1-cell "
+                f"0 (NODATA) border and rebuild.")
 
     # Local area & fractional contributing area
     area = cell_area_m2(lat[:, None] * np.ones((1, nlon)), cs)
@@ -339,6 +523,11 @@ def build_grid(direc_path, xmask_path, frac_path, output_path,
     )
     ds.attrs['created_by'] = 'mosartwmpy KI build_mosart_grid (D8->domain)'
     ds.attrs['direction_source'] = str(direc_path)
+    ds.attrs['elevation_source'] = ';'.join(dem_paths) if len(dem_paths) <= 4 \
+        else f"{len(dem_paths)} tiles in {Path(dem_paths[0]).parent}"
+    ds.attrs['elevation_method'] = 'mean of DEM pixels with centre inside the cell'
+    # per-cell elevation (m) used for rslp/hslp, kept for audit
+    ds['elev'] = (['lat', 'lon'], np.where(np.isfinite(elev), elev, np.nan))
     ds.attrs['n_active_cells'] = n_active
     if scoring_cell is not None:
         # The gauge/basin-discharge cell to extract with parse_mosart_output.
@@ -368,10 +557,11 @@ def main():
     ap.add_argument('--xmask', required=True, help='ArcASCII channel-length file (m)')
     ap.add_argument('--frac', required=True, help='ArcASCII drainage-fraction file')
     ap.add_argument('--output', required=True, help='Output grid NetCDF')
-    ap.add_argument('--elev-soil', default=None,
-                    help='Whitespace table with per-cell elevation (e.g. VIC soil)')
-    ap.add_argument('--elev-cols', default='3,4,22',
-                    help='1-indexed lat,lon,elev columns in --elev-soil')
+    ap.add_argument('--dem', required=True, nargs='+',
+                    help='DEM raster(s) in EPSG:4326 for per-cell mean elevation: '
+                         'a .tif, or a directory of .tif tiles of ONE product '
+                         '(China: data/dem/china_dem_90m/china_dem_90m.tif; '
+                         'elsewhere: KISSPATH_DATA/MERIT_DEM/)')
     ap.add_argument('--expected-area-km2', type=float, default=None,
                     help='Published station drainage area; if set, hard-fail '
                          'unless scoring-cell areaTotal matches within '
@@ -380,10 +570,11 @@ def main():
                     help='Relative tolerance for --expected-area-km2 '
                          '(default 0.10)')
     args = ap.parse_args()
-    cols = tuple(int(x) for x in args.elev_cols.split(','))
+    backend = dem_reader_backend()  # fail fast if no raster library
+    print(f'[build_grid] DEM reader: {backend}')
     try:
         build_grid(args.direc, args.xmask, args.frac, args.output,
-                   args.elev_soil, cols,
+                   args.dem,
                    expected_area_km2=args.expected_area_km2,
                    area_tol=args.area_tol)
         print('[build_grid] SUCCESS')

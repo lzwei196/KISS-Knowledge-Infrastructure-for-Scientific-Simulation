@@ -313,7 +313,7 @@ Alternative: Use HydroCraft's existing AI calibration approach (as in `vic_cali_
 | `s4_process_algorithm_guide.md` | s4 | Complete reference for all 120+ algorithms: when to use each, parameter requirements, known limitations, compatibility with other algorithms |
 | `s8_model_intercomparison_skill.md` | s8 | Multi-model ensemble methodology: which metrics to compare, how to handle structural uncertainty, how to weight ensemble members, when to use blended configurations |
 | `s9_calibration_skill.md` | s9 | Calibration strategy by model structure: which parameters to calibrate, DDS settings, convergence criteria, over-fitting prevention, regionalization for ungauged basins |
-| `coupling_skill.md` | s10 | Raven-VIC comparison methodology; Raven-CaMa-Flood coupling; forcing data sharing across models |
+| `coupling_skill.md` | s10 | Raven-VIC comparison methodology; Raven-CaMa-Flood coupling |
 
 **Total**: 7 skill documents.
 
@@ -344,7 +344,6 @@ Alternative: Use HydroCraft's existing AI calibration approach (as in `vic_cali_
 | CMFD 0.1deg 3-hourly NetCDF | .rvt gauge data or NetCDF | Resample to daily or sub-daily; extract PRECIP, TEMP_MIN, TEMP_MAX (minimum); optionally WIND_VEL, REL_HUMIDITY, SW_RADIA, AIR_PRES |
 | MSWX 0.1deg 3-hourly NetCDF | .rvt gauge data or NetCDF | Same as CMFD; global coverage |
 | NASA POWER 0.5deg API | .rvt gauge data | API fetch + format conversion; hourly or daily |
-| VIC forcing ASCII files | .rvt gauge data | Parse VIC per-cell forcing; aggregate to subbasin-mean |
 
 **Critical note**: Raven states "Raven ignores units and will not do units conversion" (cheat sheet page 1). All unit conversions must happen in the conversion tool. This is a major source of silent errors.
 
@@ -372,7 +371,6 @@ This directly supports HydroCraft's multi-model philosophy and is unique to the 
 | Coupling ID | Source | Target | Variables | Transformation |
 |-------------|--------|--------|-----------|----------------|
 | c_raven_01 | CMFD/MSWX forcing | Raven .rvt | precip, temp, wind, humidity, radiation | Spatial aggregation to HRU/subbasin; temporal resampling; unit standardization |
-| c_raven_02 | VIC forcing files | Raven .rvt | 7 VIC forcing variables | Parse ASCII per-cell; aggregate to subbasin means; reformat to Raven gauge blocks |
 | c_raven_03 | HydroCraft basin shapefile | Raven .rvh | subbasin geometry, DEM, land cover, soil | Spatial analysis (intersection, zonal stats); class assignment |
 | c_raven_04 | HWSD global soil | Raven .rvp soil classes | sand/silt/clay/bulk density/Ksat | Pedotransfer functions; map to Raven soil class parameters |
 | c_raven_05 | Raven Hydrographs.csv | CaMa-Flood input | discharge (m3/s) | Point-to-grid conversion; m3/s to mm/d over subbasin area |
@@ -505,7 +503,6 @@ Not all algorithm combinations are valid. For example:
 Raven's HRU system is more flexible but also more complex than VIC's grid:
 - VIC: regular lat/lon grid, one cell = one computation unit
 - Raven: irregular HRUs grouped by land use/soil/elevation, can be lumped or semi-distributed
-- Converting a VIC grid to Raven HRUs requires decisions about aggregation
 
 **Mitigation**: Default to elevation-band HRUs (simple, works everywhere); offer lumped mode for quick runs.
 

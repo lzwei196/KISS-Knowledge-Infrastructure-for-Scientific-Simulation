@@ -156,7 +156,7 @@ Exact shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and `dia
 
 | Variable | Unit model expects | Source dataset | Source unit / note | Conversion / tool |
 |----------|-------------------|----------------|--------------------|-------------------|
-| Precipitation | mm per timestep; daily runs use mm/day | CMFD / MSWX / VIC | CMFD/MSWX are handled by the forcing loader; existing triplets warn against mm/s | `tools/s2_forcing/convert_forcing_to_wflow.py`; ensure daily totals are not left as rates |
+| Precipitation | mm per timestep; daily runs use mm/day | CMFD / MSWX | CMFD/MSWX are handled by the forcing loader; existing triplets warn against mm/s | `tools/s2_forcing/convert_forcing_to_wflow.py`; ensure daily totals are not left as rates |
 | Temperature | degC | CMFD / MSWX | K | subtract 273.15 |
 | Potential evapotranspiration | model-ready PET forcing | calculated from meteorology | PET must be provided or configured | `tools/s2_forcing/calculate_pet.py` |
 
@@ -303,7 +303,7 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging. These
 
 | Upstream model | Variable exchanged | Unit | Temporal resolution |
 |----------------|-------------------|------|---------------------|
-| VIC / shared forcing sources | Meteorological forcing | model-ready forcing units | daily in the validated runs |
+| (none: CMFD / MSWX read straight from the data source) | Meteorological forcing | model-ready forcing units | daily in the validated runs |
 | OGGM | Glacier mass balance | see coupling setup | site-specific |
 
 | Downstream model | Variable exchanged | Unit | Temporal resolution |
@@ -324,7 +324,7 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging. These
 | Period | 2003-2005 (2003 warmup) |
 | Resolution | 0.25 deg (224 cells, 16x24 grid) |
 | Forcing | CMFD 3-hourly -> daily (P, T, PET Hargreaves) |
-| Soil | HWSD via VIC soil params (KsatVer, theta_s, theta_r, expt) |
+| Soil | HWSD (KsatVer, theta_s, theta_r, expt; this March 2026 run read them from the VIC soil parameter file, today's build reads HWSD directly) |
 | DEM | china_dem_90m (resampled to 0.25 deg) |
 | Routing | Kinematic wave, daily timestep |
 | Runtime | 14 seconds (1,096 timesteps, 224 cells) |
@@ -359,7 +359,7 @@ The headline dag variable is `river discharge (q_river / river_water__volume_flo
 | Component | Source | Status | Notes |
 |-----------|--------|--------|-------|
 | Forcing | CMFD 3-hourly -> daily | validated for Bengbu | P, T, PET Hargreaves |
-| Soil | HWSD via VIC soil params | validated for Bengbu | KsatVer, theta_s, theta_r, expt |
+| Soil | HWSD, read directly by run_hydromt_build.py (the March 2026 Bengbu run took it from the VIC soil parameter file) | validated for Bengbu | KsatVer, theta_s, theta_r, expt |
 | DEM | china_dem_90m | validated for Bengbu | resampled to 0.25 deg |
 | Routing | wflow kinematic wave | validated for Bengbu | daily timestep |
 | Sediment | wflow_sediment pipeline | available | run only after SBM hydrology output exists |
@@ -390,7 +390,7 @@ These are physically informed starting points and coupling cautions, not calibra
 | Period | 2003-2005 (2003 warmup) |
 | Resolution | 0.25 deg (224 cells, 16x24 grid) |
 | Forcing | CMFD 3-hourly -> daily (P, T, PET Hargreaves) |
-| Soil | HWSD via VIC soil params (KsatVer, theta_s, theta_r, expt) |
+| Soil | HWSD (KsatVer, theta_s, theta_r, expt; this March 2026 run read them from the VIC soil parameter file, today's build reads HWSD directly) |
 | DEM | china_dem_90m (resampled to 0.25 deg) |
 | Routing | Kinematic wave (built-in), daily timestep |
 | wflow mean Q | 1,088 m3/s (2004-2005) |
@@ -682,7 +682,7 @@ Stages 0-1 are sequential. Stages 2 and 3 depend on 1. Stage 4 depends on 2+3. S
 | `build_data_catalog` | s1 | `tools/s1_hydromt/build_data_catalog.py` | 160 | HydroMT catalog -> HydroCraft data |
 | `run_hydromt_build` | s1 | `tools/s1_hydromt/run_hydromt_build.py` | 250 | Build staticmaps.nc |
 | `fetch_merit_hydro_tiles` | s1 | `tools/s1_hydromt/fetch_merit_hydro_tiles.py` | 160 | Stage MERIT-Hydro dir/upa/**elv** tiles for a bbox (resumable) — pass `--kinds dir,upa,elv` |
-| `convert_forcing_to_wflow` | s2 | `tools/s2_forcing/convert_forcing_to_wflow.py` | 320 | CMFD/MSWX/VIC -> wflow forcing.nc |
+| `convert_forcing_to_wflow` | s2 | `tools/s2_forcing/convert_forcing_to_wflow.py` | 320 | CMFD/MSWX -> wflow forcing.nc |
 | `calculate_pet` | s2 | `tools/s2_forcing/calculate_pet.py` | 220 | Hargreaves or Penman-Monteith PET |
 | `generate_wflow_toml` | s3 | `tools/s3_parameters/generate_wflow_toml.py` | 230 | wflow v1.0+ TOML generator |
 | `adjust_parameters` | s3 | `tools/s3_parameters/adjust_parameters.py` | 280 | Scale/offset calibration |
@@ -771,9 +771,9 @@ Variables `wflow_subcatch`, `wflow_ldd`, and `wflow_river` must use float64 with
 
 Naive D8 flow direction on coarse grids (0.25 deg) creates CYCLES in flat areas. wflow will crash with "One or more cycles detected in flow graph." The fix is to use priority-flood from the outlet: process cells from lowest elevation first, each drains to its lowest already-processed neighbor. This guarantees a tree structure with no cycles. Use topological sort (not elevation sort) for flow accumulation after priority-flood.
 
-### 9. VIC forcing file naming pattern needs custom parsing (dt_w028)
+### 9. Forcing comes straight from the data source
 
-HydroCraft VIC forcing files use pattern `{basin}_{res}deg_{lat}_{lon}` (e.g., `bengbu_0.25deg_31.1250_115.6250`). The `convert_forcing_to_wflow.py` tool's default pattern matching does not handle this. Parse with `parts = fname.split("_"); lat = float(parts[2]); lon = float(parts[3])`.
+Run `convert_forcing_to_wflow.py` with `--source cmfd` (or `mswx`, `nasa_power`, `gswp3`) and `--forcing_dir` set to the dataset root. VIC forcing files are not a wflow input.
 
 ### 10. Inactive cells must be NaN, not 0 (dt_w029)
 
@@ -811,11 +811,10 @@ wflow_sbm needs PET as forcing input. If PET is missing, all precipitation becom
 | # | Source | Target | Variable | Tool |
 |---|--------|--------|----------|------|
 | 1 | wflow | CaMa-Flood | Unrouted runoff | `wflow_to_cama` |
-| 2 | VIC | wflow | Forcing (shared CMFD/MSWX) | `convert_forcing_to_wflow` |
-| 3 | wflow | MODFLOW | GW recharge (m/day) | `wflow_recharge_to_modflow` |
-| 4 | wflow_sed | SWAT+ | Sediment loading | (manual) |
-| 5 | wflow | VIC | Discharge comparison | `compare_with_vic` |
-| 6 | OGGM | wflow | Glacier mass balance | (manual) |
+| 2 | wflow | MODFLOW | GW recharge (m/day) | `wflow_recharge_to_modflow` |
+| 3 | wflow_sed | SWAT+ | Sediment loading | (manual) |
+| 4 | wflow | VIC | Discharge comparison | `compare_with_vic` |
+| 5 | OGGM | wflow | Glacier mass balance | (manual) |
 
 ---
 
@@ -887,8 +886,9 @@ python tools/s1_hydromt/run_hydromt_build.py \
 
 # 3. Convert forcing
 python tools/s2_forcing/convert_forcing_to_wflow.py \
-  --forcing_dir outputs/chaohe_2000_2010_025deg/vic_temp/forcing/forcing_final \
-  --grid_nc outputs/chaohe_wflow/wflow_project/staticmaps.nc \
+  --source cmfd \
+  --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+  --staticmaps_nc outputs/chaohe_wflow/wflow_project/staticmaps.nc \
   --start_year 2000 --end_year 2010 \
   --output outputs/chaohe_wflow/wflow_project/forcing.nc
 

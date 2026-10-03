@@ -1,9 +1,12 @@
 # ============================================================================
 # Model Couplings — EPA SWMM 5.2 x HydroCraft
 # ============================================================================
-# Defines the four coupling pathways between SWMM and HydroCraft models
+# Defines the three coupling pathways between SWMM and HydroCraft models
 # (VIC, CaMa-Flood). Each coupling specifies the data flow, unit conversion,
 # temporal/spatial mapping, and validation requirements.
+# A coupling is one model's RESULTS feeding another model. Rainfall is not a
+# coupling: SWMM rain is built from the data source by
+# tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py (dt_023).
 # ============================================================================
 
 couplings:
@@ -143,47 +146,3 @@ couplings:
     tool: "convert_swmm_outflow_to_cama_lateral"
     silent_error_risk: "MEDIUM — CFS/CMS conversion error is detectable from flow magnitude"
     related_triplet: "dt_010"
-
-  # --- Coupling 4: VIC Forcing → SWMM Rainfall ---
-  - id: "vic_forcing_to_swmm_rainfall"
-    name: "VIC Forcing to SWMM Rainfall"
-    description: >
-      Reuse VIC meteorological forcing (CMFD, MSWX, or NASA POWER) as SWMM
-      rainfall input. Ensures consistent precipitation between the rural VIC
-      simulation and the urban SWMM simulation for coupled modeling.
-    source_model: "VIC 5.1.0 (forcing data)"
-    target_model: "EPA SWMM 5.2"
-    direction: "one-way (VIC forcing → SWMM)"
-
-    source_data:
-      variable: "PREC (precipitation, column 5 in VIC forcing files)"
-      units: "mm/timestep (3-hourly for CMFD/MSWX, hourly for NASA POWER)"
-      spatial: "per VIC grid cell"
-      temporal: "3-hourly or hourly"
-      file_format: "VIC forcing ASCII"
-      path_pattern: "outputs/{run}/vic_temp/forcing/forcing_final/{prefix}{lat}_{lon}"
-
-    target_data:
-      section: "[RAINGAGES] and [TIMESERIES]"
-      variable: "rainfall"
-      units: "mm (CMS) or inches (CFS), FORMAT=INTENSITY (mm/hr) or VOLUME (mm/interval)"
-      spatial: "per rain gage"
-      temporal: "3-hourly or hourly"
-      file_format: "SWMM TIMESERIES"
-
-    conversion:
-      intensity_formula: "intensity(mm/hr) = precip(mm/timestep) / timestep_hours"
-      volume_formula: "depth(mm) = precip(mm/timestep) [no conversion needed if FORMAT=VOLUME and INTERVAL matches]"
-      spatial_mapping: "nearest VIC cell to SWMM rain gage, or Thiessen polygon assignment"
-      cfs_conversion: "If FLOW_UNITS=CFS: depth_in = depth_mm / 25.4"
-
-    validation:
-      checks:
-        - "RAINGAGE FORMAT matches the conversion used (INTENSITY or VOLUME)"
-        - "RAINGAGE INTERVAL matches VIC forcing timestep"
-        - "Total rainfall depth over simulation matches VIC precipitation total"
-        - "No negative rainfall values"
-
-    tool: "convert_vic_forcing_to_swmm"
-    silent_error_risk: "HIGH — FORMAT/INTERVAL mismatch produces wrong rainfall by factor of timestep ratio"
-    related_triplet: "dt_009"

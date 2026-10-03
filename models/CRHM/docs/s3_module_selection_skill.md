@@ -48,11 +48,26 @@ python tools/s3_module_selection/select_modules.py \
 
 ### Step 3: Review module chain
 
+> **CORRECTION 2026-10-02 — the four chains listed below are the GUI-style
+> textbook chains and do NOT run with the CLI binary.** `PBSM`, `CRHMCanopy`,
+> `PrairieInfil` and `REWroute` are not names the binary registers ("Unknown
+> Module", then a segfault), and `SnobalCRHM` without `pbsmSnobal` segfaults at
+> "0% complete." (triplet dt_v012). `select_modules.py` refuses them. The chains
+> that run are:
+>
+> - `mountain_reduced` (validated): `basin > global > obs > calcsun > intcp > pbsm > albedo > ebsm > netall > crack > evap > Soil > Netroute`
+> - `prairie_reduced` (runs, not a validated pass): `basin > global > obs > calcsun > intcp > pbsmSnobal > albedo > SnobalCRHM > netall > crack > evap > Soil > Netroute`
+> - `prairie_ebsm_legacy`: the `mountain_reduced` chain, for flat open sites, without a mid-winter sublimation sink
+>
+> Rule: `SnobalCRHM` goes with `pbsmSnobal`; `ebsm` goes with `pbsm`. Never mix.
+
 The chain MUST start with: `basin > global > obs`
 
 These three modules are ALWAYS required -- they provide fundamental basin properties, radiation calculations, and observation data distribution.
 
-After these three, the chain depends on landscape:
+After these three, the chain depends on landscape. **The four chains below are
+textbook (GUI) chains kept for the reasoning only. They do NOT run with the CLI
+binary; see the correction above for the chains that do.**
 
 **Prairie chain**: `basin > global > obs > PBSM > PrairieInfil > Soil > Netroute`
 - PBSM: Blowing snow transport, sublimation (requires fetch, Ht)

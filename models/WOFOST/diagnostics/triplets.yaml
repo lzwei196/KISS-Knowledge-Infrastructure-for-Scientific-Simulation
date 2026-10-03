@@ -1,12 +1,3 @@
-# ========================================================================
-# WOFOST Diagnostic Triplets
-# ========================================================================
-# 26 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
-# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
-# container only. The two-shape ambiguity is what let the self-improve overlay read
-# a corpus as empty and overwrite it.
-# ========================================================================
-
 - id: dt_001
   stage: s1_crop_params
   failure_domain: yaml_parse_error
@@ -98,7 +89,7 @@
       and the crop barely grows.
     explanation: 'PCSE/WOFOST uses J/m2/day for irradiance (Joules, NOT kiloJoules — the PCSE documentation
       says kJ but the internal DB stores Joules, confirmed by Bengbu validation where wheat=3543 and maize=6102
-      kg/ha using J/m2/day). DSSAT uses MJ/m2/day. VIC uses W/m2 (needs ×86400 to get J/m2/day). NASA
+      kg/ha using J/m2/day). DSSAT uses MJ/m2/day. A W/m2 daily mean needs ×86400 to get J/m2/day. NASA
       POWER API uses MJ/m2/day. This is the #1 silent error in PCSE — the model runs perfectly fine with
       wrong units because it just computes very low photosynthesis. Typical J/m2/day values: winter=2e6-8e6,
       summer=15e6-35e6. Typical MJ/m2/day values: winter=2-8, summer=15-35. If your max IRRAD is < 100000,
@@ -113,7 +104,7 @@
     tool_to_run: validate_weather_data
     manual_steps:
     - 'Check: print(max(IRRAD)). If < 100000, it is in MJ or kJ — convert to J.'
-    - 'If converting from VIC W/m2: IRRAD_J = SW_Wm2 * 86400'
+    - 'If converting from a W/m2 daily mean (shared loader srad_wm2): IRRAD_J = SW_Wm2 * 86400 (CSV column: kJ = W/m2 * 86.4, written by build_pcse_weather_from_source)'
     - 'If converting from DSSAT MJ: IRRAD_J = SRAD_MJ * 1e6'
     - 'If using NASAPowerWeatherDataProvider: conversion is automatic (no fix needed)'
     - Re-run the simulation after fixing IRRAD values
@@ -134,7 +125,7 @@
   diagnosis:
     root_cause: Precipitation (RAIN) is provided in mm/day instead of cm/day. Values like 5.0 (mm) are
       interpreted as 5.0 (cm) = 50 mm. Rainfall is 10x too high, keeping the soil permanently saturated.
-    explanation: 'PCSE/WOFOST uses cm/day for precipitation, which is non-standard. VIC uses mm, DSSAT
+    explanation: 'PCSE/WOFOST uses cm/day for precipitation, which is non-standard. The weather products (shared loader precip_mm) use mm, DSSAT
       uses mm, most meteorological datasets use mm. If you pass mm values directly, every rain event is
       10x too large. The soil water balance overflows, SM stays at SM0 (saturation), CRAIRC is exceeded
       (waterlogging), and crop growth is stunted by oxygen stress. The simulation still completes because
@@ -149,7 +140,7 @@
     tool_to_run: validate_weather_data
     manual_steps:
     - 'Check: print(max(RAIN)). If > 30, it is likely in mm — divide by 10.'
-    - 'If converting from VIC mm: RAIN_cm = PREC_mm / 10.0'
+    - 'For a hand-built WeatherDataContainer only: RAIN_cm = precip_mm / 10.0. A CSVWeatherDataProvider CSV keeps mm (dt_016).'
     - 'If converting from DSSAT mm: RAIN_cm = RAIN_mm / 10.0'
     - Re-run the simulation after fixing RAIN values
     prevention: 'Always check RAIN units before simulation. Typical daily rainfall in cm: 0-5, rarely
@@ -560,8 +551,8 @@
     - 'Check internet connectivity: ping power.larc.nasa.gov'
     - 'If persistent: download NASA POWER data manually via the web interface'
     - Convert to CSV format and use CSVWeatherDataProvider instead
-    - 'For batch runs: use VIC forcing data via convert_vic_to_pcse_weather'
-    prevention: For production runs, always use local weather data (CSV or VIC forcing). Reserve NASAPowerWeatherDataProvider
+    - 'For batch runs: build the CSV files with build_pcse_weather_from_source (--source mswx or cmfd are local; --source nasa_power goes around the proxy)'
+    prevention: For production runs, always use CSV weather files built by build_pcse_weather_from_source. Reserve NASAPowerWeatherDataProvider
       for quick tests and demos only.
   severity: fatal
   cross_references:
@@ -651,30 +642,32 @@
   stage: s3_weather_prep
   failure_domain: unit_conversion
   symptom:
-    description: VIC forcing column 6 (QAIR) produces vapor pressure > 100 kPa or < 0.06 kPa
+    description: Vapour pressure in the weather file is > 100 kPa or < 0.06 kPa; pcse rejects VAP
     error_pattern: Value.*for meteo variable.*VAP.*outside allowed range
     detection_method: log_match
   diagnosis:
-    root_cause: VIC forcing column 6 is already vapor pressure (kPa), not specific humidity
-    explanation: 'The VIC process_forcing.py pipeline converts raw CMFD specific humidity to vapor pressure
-      in kPa before writing ASCII forcing. The column header looks like QAIR but the values (0.1-4.2)
-      are VP in kPa, not q in kg/kg. Applying the q*P/(0.622+0.378*q) conversion double-converts and produces
-      nonsense.
+    root_cause: The humidity column was taken as the wrong quantity (specific humidity written as kPa,
+      or a vapour pressure converted a second time)
+    explanation: 'The shared loader gives specific humidity (shum_kgkg, 0.0005-0.025) and pressure (pres_pa).
+      PCSE needs vapour pressure in kPa (0.1-4.2): e = q*p/(0.622+0.378*q), Pa / 1000. Writing q straight
+      into VAP gives values far below 0.06; applying the formula to a value that is already a vapour pressure
+      gives nonsense.
 
       '
     affected_components:
     - s3_weather_prep
   remedy:
-    action: Use VIC column 6 directly as vapor pressure in kPa. Do NOT apply specific humidity conversion.
-    tool_to_run: convert_vic_to_pcse_weather
+    action: Build the weather file with build_pcse_weather_from_source; it computes VAP from the source's
+      own specific humidity and pressure.
+    tool_to_run: build_pcse_weather_from_source
     manual_steps:
-    - 'Check VIC forcing values: if column 6 is 0.1-4.0, it is VP in kPa'
-    - If column 6 is 0.001-0.025, it is specific humidity in kg/kg
-    - 'For HydroCraft VIC forcing: always VP in kPa'
-    prevention: validate_weather_data tool checks VP range before conversion
+    - 'Check the VAP column: 0.1-4.2 is kPa (right)'
+    - If the values are 0.0005-0.025 they are specific humidity in kg/kg
+    - 'For your own station table in hPa: set WX_VAP_IS_HPA=1 for create_csv_weather_file'
+    prevention: validate_weather_data tool checks the VAP range
   severity: silent
   cross_references: []
-  verified: '2026-03-19'
+  verified: '2026-10-03'
 - id: dt_v005
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -697,13 +690,13 @@
     - s6_execution
   remedy:
     action: 'Convert: IRRAD_J = shortwave_W_m2 * 86400 (NOT * 86.4)'
-    tool_to_run: convert_vic_to_pcse_weather
+    tool_to_run: build_pcse_weather_from_source
     manual_steps:
-    - 'From W/m² (VIC): IRRAD = SW_mean * 86400 (J/m²/d)'
+    - 'From a W/m² daily mean: internal IRRAD = SW_mean * 86400 (J/m²/d); CSV column = SW_mean * 86.4 (kJ/m²/d)'
     - 'From MJ/m²/d (DSSAT): IRRAD = SRAD * 1e6 (J/m²/d)'
     - 'Validate: spring day should be 10-25 million J/m²/d (10-25 MJ)'
     - If IRRAD < 100,000, it is likely in kJ — multiply by 1000
-    prevention: convert_vic_to_pcse_weather tool uses * 86400 not * 86.4
+    prevention: build_pcse_weather_from_source writes the CSV column in kJ (W/m2 * 86.4) and the provider multiplies by 1000, which gives W/m2 * 86400 J inside the model
   severity: silent
   cross_references:
   - dt_003
@@ -726,11 +719,11 @@
     - s3_weather_prep
   remedy:
     action: 'Divide ET0 by 10 if computed in mm/day: ET0_cm = ET0_mm / 10'
-    tool_to_run: convert_vic_to_pcse_weather
+    tool_to_run: validate_weather_data
     manual_steps:
     - 'Validate: ET0 should be 0.01-1.5 cm/day for most climates'
     - If ET0 > 2.0, it is likely in mm — divide by 10
-    prevention: convert_vic_to_pcse_weather validates ET0 range 0.01-1.5 cm/d
+    prevention: CSVWeatherDataProvider computes E0/ES0/ET0 itself in cm/day; only a hand-built WeatherDataContainer needs this check
   severity: silent
   cross_references:
   - dt_v005
@@ -762,13 +755,13 @@
       '
     affected_components:
     - CSVWeatherDataProvider
-    - convert_vic_to_pcse_weather
+    - build_pcse_weather_from_source
     - Classic water balance (pcse.soil.classic_waterbalance)
   remedy:
     action: Author the CSVWeatherDataProvider RAIN column in mm/day; let the provider do the /10 -> cm.
     tool_to_run: validate_weather_data
     manual_steps:
-    - In convert_vic_to_pcse_weather.py write rain_mm = prec_mm (NOT rain_cm = prec_mm/10.0).
+    - Use build_pcse_weather_from_source (RAIN = loader precip_mm, no division).
     - Trust create_csv_weather_file.py docstring as ground truth (RAIN column = mm/day).
     - 'Sanity probe: CSVWeatherDataProvider on a row with RAIN=10.0 yields internal RAIN=1.0 cm/day.'
     - Re-run the simulation after fixing RAIN values.
@@ -790,8 +783,8 @@
       WeatherDataContainer.
   remedy:
     action: Author the CSVWeatherDataProvider RAIN column in mm/day (provider handles /10 -> cm). Likewise
-      IRRAD in kJ (x1000 -> J), VAP in kPa (x10 -> hPa). Patch convert_vic_to_pcse_weather.py (line 196
-      rain_cm=prec_mm/10.0 -> rain_mm=prec_mm) and trust create_csv_weather_file.py's docstring as ground
+      IRRAD in kJ (x1000 -> J), VAP in kPa (x10 -> hPa). Build the file with build_pcse_weather_from_source
+      (RAIN = loader precip_mm) and trust create_csv_weather_file.py's docstring as ground
       truth.
   format_spec_violated: 'docs/format_spec.yaml: weather CSV RAIN column unit = mm/day (CSVWeatherDataProvider
     internal /10)'
@@ -846,3 +839,265 @@
       pct, detrended r 0.506, first-diff r 0.611.
   added_by_run: WOFOST_real_case_20260608_obs_shape
   verified: '2026-06-08'
+- id: dt_v007
+  stage: s2_soil_params
+  failure_domain: silent_error
+  symptom:
+    description: 'WLP/WLP_CWB runs are more water-stressed than they should be: low LAI, low transpiration,
+      depressed yield, and simulated soil moisture (0.07-0.11) that cannot be matched to any observed
+      SM product. No error is raised; validate_soil_params.py passes.'
+  diagnosis:
+    root_cause: 'convert_hwsd_to_pcse_soil.py::pedotransfer_wosten() is documented as ''Wosten et al.
+      (1999)'' but implements three ad-hoc linear forms, not Wosten''s van Genuchten regressions. Output
+      is biased low across the texture triangle: WP and FC ~0.4-0.6x published values, PAW 0.53-0.97x
+      depending on texture. The tool already imports ki_tools_common.soil_utils.lookup_hwsd, which RETURNS
+      result[''hydraulics''], and discards them, keeping only the raw texture. validate_soil_params.py
+      cannot catch it because it only checks ordering (SMW < SMFCF < SM0) and a porosity ceiling — all
+      of which hold at half scale.'
+  remedy:
+    action: 'FIRST map lookup_hwsd''s returned hydraulics onto SMW/SMFCF/SM0 (wilting_point/field_capacity/saturation)
+      and correct the citation — measured effect on C01 rainfed yield: +10.5%/+42.1%/0% across three seasons.
+      SEPARATELY and non-blocking, upgrade the canonical function itself (worth a further 3-5%): it is
+      a Rawls 1982 texture-class lookup, not Saxton-Rawls, its om argument is a no-op, and it discards
+      measured bulk density; a genuine continuous Saxton-Rawls 2006 already exists in the library (DSSAT
+      convert_hwsd_to_sol.py, SWAT+ hwsd_to_swatplus_soil.py). Do NOT fix the om no-op alone: soil_utils.py:269
+      passes oc into a parameter named om (1.724x), so making om live would silently split EPIC from lookup_hwsd.
+      Add a range check against texture class to validate_soil_params.py — ordering checks cannot detect
+      a uniform bias. PP runs are unaffected (no water balance); WLP runs and anything derived from SMW/SMFCF
+      (e.g. irrigation triggers) must be re-run.'
+  severity: critical
+- id: dt_017
+  stage: s3_weather_prep
+  failure_domain: input_format
+  symptom:
+    description: 'A PCSE weather CSV made from VIC forcing files will not load (ValueError: malformed
+      node or string), or it loads after a hand fix and holds the wrong variable in a column. An old
+      note or script calls tools/s3_weather_prep/convert_vic_to_pcse_weather.py, which is no longer
+      in the KI.'
+    error_pattern: malformed node or string|convert_vic_to_pcse_weather
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'The KI used to make WOFOST weather out of another model''s input (VIC forcing files
+      + the VIC basin_grid.nc). That tool read the columns as PREC TMAX TMIN WIND SW LW VP PRESS, which
+      is not the column order of this server''s VIC forcing files, and it wrote a header with unquoted
+      text and trailing comments ("Country = VIC_grid_cell", "Longitude = -93.5; decimal degrees"), DAY
+      as YYYY-MM-DD and SNOWDEPTH -999. pcse 6.0.12 runs ast.literal_eval on each header value and stops
+      on the first unquoted word (checked 2026-10-03 with a file in that header style).'
+    explanation: 'Owner rule 2026-10-02: a model KI builds its input straight from the data source with
+      its own tool; it must not turn another model''s input files into its own. The tool was moved to
+      models/WOFOST/_removed_vic_input_tools_20261002/ on 2026-10-03. It is not to be restored.
+
+      '
+    affected_components:
+    - s3_weather_prep
+    - CSVWeatherDataProvider
+  remedy:
+    action: Build the weather file from the data source with build_pcse_weather_from_source (--source
+      cmfd|mswx|nasa_power). Do not read VIC forcing files for WOFOST.
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - 'python tools/s3_weather_prep/build_pcse_weather_from_source.py --source <cmfd|mswx|nasa_power>
+      --lat <lat> --lon <lon> --elev <m> --start_year <y0> --end_year <y1> [--forcing_dir <dir>] --output
+      weather_pcse_<lat>_<lon>.csv'
+    - Read <output>.summary.json and check annual rain and mean temperature for the site.
+    - Load it with CSVWeatherDataProvider (run_wofost_simulation does this).
+    prevention: Weather for WOFOST comes only from build_pcse_weather_from_source (products) or create_csv_weather_file
+      (your own station table). Both write the file through write_pcse_csv.
+  severity: fatal
+  cross_references:
+  - dt_018
+  - dt_021
+  verified: '2026-10-03'
+- id: dt_018
+  stage: s3_weather_prep
+  failure_domain: protocol_gap
+  symptom:
+    description: 'An agent following the stage documents finds no tool that takes CMFD / MSWX / NASA
+      POWER to a PCSE weather file, and writes its own script around load_daily_forcing (own VAP formula,
+      own CSV writer), or copies _write_generic_weather out of a run script.'
+    error_pattern: _write_generic_weather|weather_generic.csv
+    detection_method: code_review
+  diagnosis:
+    root_cause: 'Until 2026-10-03 the working direct chain (load_daily_forcing -> a small generic CSV
+      -> create_csv_weather_file.py with WX_IRRAD_IS_WM2=1) lived only inside models/WOFOST/run_and_score.py
+      and tools/calib_run.py as private _write_generic_weather / _vap_kpa copies. The stage tools had
+      no first two steps.'
+    explanation: 'The chain is now one stage tool, build_pcse_weather_from_source.py. Both run scripts
+      call it. For NASA POWER at (41.5, -93.5) 2016-2020 its file equals the old chain''s file in all
+      1827 data rows (only the Source header line differs), and pcse loads it and returns the same values.
+
+      '
+    affected_components:
+    - s3_weather_prep
+    - calib_run
+    - run_and_score
+  remedy:
+    action: Call build_pcse_weather_from_source. Do not write a private weather writer.
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - 'From Python: load the tool module and call build(source, lat, lon, elev, y0, y1, output, forcing_dir)
+      or load_source(...) + build_from_forcing(...) as tools/calib_run.py does.'
+    - 'The tool rounds the loader values as the old generic CSV did (2 decimals; VAP, RAIN 4) before
+      it converts, so results do not move.'
+    prevention: One weather tool, one writer (write_pcse_csv in create_csv_weather_file.py).
+  severity: silent
+  cross_references:
+  - dt_017
+  verified: '2026-10-03'
+- id: dt_019
+  stage: s3_weather_prep
+  failure_domain: protocol_gap
+  symptom:
+    description: 'FileNotFoundError for tools/extract_cmfd_weather.py, or ImportError: cannot import name
+      load_cmfd_daily_all from ki_tools_common.netcdf_utils.'
+    error_pattern: extract_cmfd_weather|load_cmfd_daily_all
+    detection_method: log_match
+  diagnosis:
+    root_cause: SKILL.md named a tool file and a library function that never existed in this KI / in
+      ki_tools_common.
+    explanation: 'Both names were removed from SKILL.md on 2026-10-03. The real entry points are tools/s3_weather_prep/build_pcse_weather_from_source.py
+      and ki_tools_common.load_forcing.load_daily_forcing (which the tool calls).
+
+      '
+    affected_components:
+    - SKILL.md
+  remedy:
+    action: Use build_pcse_weather_from_source with --source cmfd (and --forcing_dir).
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - 'CMFD 3-hourly store on this server: KISSPATH_DATA/forcing/Data_forcing_03hr_010deg
+      (about 50 s per point-year).'
+    - 'Checked 2026-10-03: (36.5, 116.5) 2015 = 365 days, 617 mm rain, mean 15.7 degC.'
+    prevention: List tools/ before trusting a tool name in a document.
+  severity: fatal
+  cross_references:
+  - dt_018
+  verified: '2026-10-03'
+- id: dt_020
+  stage: s3_weather_prep
+  failure_domain: unit_conversion
+  symptom:
+    description: 'Rain reaching the model is 10x too low (dry soil, low rainfed yield) after following
+      the old coupling text "RAIN = sum(PREC_3h) / 10.0  # mm -> cm" for a CSV weather file.'
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'docs/model_couplings.yaml carried coupling C1 "VIC Weather -> PCSE Weather Provider".
+      It wrote a forcing shortcut down as a model coupling, and its formula divided rain by 10 for
+      the CSV, against the CSV rule (the RAIN column is mm/day; the provider divides by 10 itself, dt_016).'
+    explanation: 'C1 was removed on 2026-10-03. Couplings on RESULTS stay (C2 HWSD soil, C3 WOFOST-DSSAT
+      ensemble, C4 WOFOST LAI to VIC vegetation). Weather is an input built from the data source, not
+      a coupling.
+
+      '
+    affected_components:
+    - docs/model_couplings.yaml
+    - CSVWeatherDataProvider
+  remedy:
+    action: Keep RAIN in mm/day in the CSV. Build the file with build_pcse_weather_from_source.
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - 'Check: the yearly sum of the RAIN column equals the site''s rain in mm (see <output>.summary.json).'
+    prevention: The unit table in workflow/workflow.md and docs/s3_weather_prep_skill.md gives CSV units
+      only.
+  severity: silent
+  cross_references:
+  - dt_016
+  - dt_004
+  verified: '2026-10-03'
+- id: dt_021
+  stage: s3_weather_prep
+  failure_domain: protocol_gap
+  symptom:
+    description: 'An agent prepares VIC forcing files first (a model that is not being run) because
+      the documents listed the VIC tool first; or preflight_check.py fails on a missing tools/s3_weather_prep/convert_vic_to_pcse_weather.py.'
+    error_pattern: convert_vic_to_pcse_weather.py.*(missing|not found)
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'SKILL.md, workflow/workflow.md and docs/s3_weather_prep_skill.md listed the VIC tool
+      first, had a "VIC Unit" column and an "Option D / Step 3: from VIC forcing"; preflight_check.py
+      and knowledge_infrastructure.yaml required the VIC tool file. The Step 2 example header in the
+      stage document was also in the style pcse cannot load.'
+    explanation: 'All of these were changed on 2026-10-03: the documents and lists name build_pcse_weather_from_source,
+      the unit tables give the shared loader''s units, and the example header is the loadable one.
+
+      '
+    affected_components:
+    - SKILL.md
+    - workflow/workflow.md
+    - docs/s3_weather_prep_skill.md
+    - preflight_check.py
+  remedy:
+    action: Follow docs/s3_weather_prep_skill.md Step 3 (build_pcse_weather_from_source). If a copy of
+      a document still tells you to use VIC forcing for WOFOST weather, it is out of date.
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - Run preflight_check.py; it now requires build_pcse_weather_from_source.py.
+    prevention: The KI has no tool that reads another model's input files.
+  severity: silent
+  cross_references:
+  - dt_017
+  verified: '2026-10-03'
+- id: dt_022
+  stage: s6_execution
+  failure_domain: silent_error
+  symptom:
+    description: 'Several points give exactly the same yield, or a point keeps old weather after its
+      CSV was rebuilt. No error.'
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'pcse CSVWeatherDataProvider keeps a pickle cache keyed on the CSV file''s BASENAME only
+      and reuses it when the cache is newer than the CSV. Weather files with the same name in different
+      folders (weather_pcse.csv per cell) can all load the first cell''s weather.'
+    explanation: 'Seen in tools/calib_run.py development: all 15 cells returned one yield. The real-case
+      runner escaped only because it rebuilt each CSV just before use.
+
+      '
+    affected_components:
+    - CSVWeatherDataProvider
+    - run_wofost_simulation
+  remedy:
+    action: Give every point its own weather file name, e.g. weather_pcse_<lat>_<lon>.csv.
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - 'Pass --output weather_pcse_<lat>_<lon>.csv (both run scripts do).'
+    - 'When in doubt load with CSVWeatherDataProvider(path, force_reload=True).'
+    prevention: Never reuse a weather file name for two points.
+  severity: silent
+  cross_references:
+  - dt_018
+  verified: '2026-10-03'
+- id: dt_023
+  stage: s3_weather_prep
+  failure_domain: data_quality
+  symptom:
+    description: 'build_pcse_weather_from_source exits with code 2 and "REFUSED, nothing written".'
+    error_pattern: REFUSED, nothing written
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'The source cannot give a complete daily record for the point and period: a missing
+      or non-finite value, a time axis that is not one row per day, a period not fully covered (NASA
+      POWER daily starts 1981 and answers HTTP 422 before that; CMFD is China only), or an impossible
+      value (negative rain / radiation / wind, humidity or pressure <= 0, TMIN > TMAX).'
+    explanation: 'The tool makes no values up. A gap filled by hand hides a source problem and moves
+      the yield without a trace. Known limit: the shared NASA POWER loader itself turns a missing rain
+      value into 0 and a missing Tmin/Tmax into Tmean before the tool sees them; the tool cannot catch
+      those.
+
+      '
+    affected_components:
+    - s3_weather_prep
+  remedy:
+    action: Read the message (it names the variable and the first bad day), then pick another source
+      or period. Do not patch the file by hand.
+    tool_to_run: build_pcse_weather_from_source
+    manual_steps:
+    - 'Outside China: --source mswx (local) or nasa_power. Before 1981: mswx (from 1979) or cmfd.'
+    - 'nasa_power needs the network; a fetch error is also reported as REFUSED. Retry once, then say
+      the source did not answer.'
+    prevention: Check <output>.summary.json after every build.
+  severity: fatal
+  cross_references:
+  - dt_017
+  verified: '2026-10-03'

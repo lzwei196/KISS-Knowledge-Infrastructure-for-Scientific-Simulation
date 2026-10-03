@@ -51,7 +51,6 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s1_domain_setup/create_gru_hru.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain_setup/create_gru_hru.py --help` |
 | `tools/s1_domain_setup/create_local_attributes.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain_setup/create_local_attributes.py --help` |
 | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --help` |
-| `tools/s2_forcing_prep/convert_vic_forcing_to_summa.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_forcing_prep/convert_vic_forcing_to_summa.py --help` |
 | `tools/s3_decisions/configure_decisions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_decisions/configure_decisions.py --help` |
 | `tools/s4_parameters/set_trial_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameters/set_trial_parameters.py --help` |
 | `tools/s5_initial_conditions/create_initial_conditions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_initial_conditions/create_initial_conditions.py --help` |
@@ -67,7 +66,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s8_routing/run_mizuroute.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_routing/run_mizuroute.py --help` |
 | `tools/s8_routing/summa_to_mizuroute.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_routing/summa_to_mizuroute.py --help` |
 
-*19 public tools; `_`-prefixed helpers and packaging files excluded.*
+*18 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -76,8 +75,12 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-SUMMA forcing tool: `convert_vic_forcing_to_summa.py` — Converts VIC forcing to SUMMA NetCDF format.
+**Build the forcing straight from the forcing source** with the KI's one forcing tool,
+`tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --source cmfd|nasa_power|mswx`
+(no default source). It reads the source through the shared loader
+`ki_tools_common.load_forcing` (sub-daily: `load_subdaily_forcing_points` for CMFD,
+`load_hourly_forcing` for NASA POWER and MSWX) at every HRU of `attributes.nc`.
+SUMMA needs sub-daily forcing; `load_daily_forcing` is not for SUMMA.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -100,7 +103,7 @@ SUMMA forcing tool: `convert_vic_forcing_to_summa.py` — Converts VIC forcing t
 | Stage | Name | Key Tool | Output |
 |-------|------|----------|--------|
 | s1 | Domain Setup (GRU/HRU) | `create_gru_hru.py`, `create_local_attributes.py` | `attributes.nc` |
-| s2 | Forcing Preparation | `convert_vic_forcing_to_summa.py` | `forcing_YYYY.nc` |
+| s2 | Forcing Preparation | `build_summa_forcing_from_reanalysis.py` | `forcing_YYYY.nc` |
 | s3 | Model Decisions | `configure_decisions.py` | `decisions.txt` |
 | s4 | Parameter Configuration | `set_trial_parameters.py` | `trialParams.nc` |
 | s5 | Initial Conditions | `create_initial_conditions.py` | `coldState.nc` |
@@ -136,8 +139,7 @@ Other dag outputs named by this KI: `scalarTotalET`, `scalarSWE`,
 |-------|------|--------|---------|
 | s1 | create_gru_hru | `tools/s1_domain_setup/create_gru_hru.py` | Create GRU/HRU structure from shapefile + DEM |
 | s1 | create_local_attributes | `tools/s1_domain_setup/create_local_attributes.py` | Generate SUMMA attributes NetCDF |
-| s2 | convert_vic_forcing_to_summa | `tools/s2_forcing_prep/convert_vic_forcing_to_summa.py` | VIC forcing -> SUMMA NetCDF with unit conversions |
-| s2 | build_summa_forcing_from_reanalysis | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | CMFD/MSWX -> SUMMA multi-HRU forcing NetCDF, sub-daily, lapse-corrected. Use when there is no VIC run to borrow forcing from |
+| s2 | build_summa_forcing_from_reanalysis | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | Forcing source (cmfd / nasa_power / mswx, through the shared loader) -> SUMMA multi-HRU forcing NetCDF, sub-daily, lapse-corrected, period-ending stamps. The only forcing tool. |
 | s3 | configure_decisions | `tools/s3_decisions/configure_decisions.py` | Generate decisions file with validation |
 | s4 | set_trial_parameters | `tools/s4_parameters/set_trial_parameters.py` | Generate trial parameters NetCDF |
 | s5 | create_initial_conditions | `tools/s5_initial_conditions/create_initial_conditions.py` | Generate cold-start initial conditions |
@@ -355,21 +357,17 @@ SUMMA output variables use **two different unit systems in the same file**:
 
 ### 4. Input Unit Conversions (Silent Error Zone)
 
-| Variable | VIC Unit | SUMMA Unit | Conversion | If wrong |
+The forcing tool does these; the table is for checking its output, not for doing by hand.
+
+| Variable | Source unit | SUMMA Unit | Conversion | If wrong |
 |----------|----------|------------|------------|----------|
-| Precipitation | mm/3hr | kg m-2 s-1 | / 10800 | Runoff 8x wrong |
+| Precipitation | mm in the step | kg m-2 s-1 | / step seconds (10800 or 3600) | Runoff 3-8x wrong |
 | Temperature | C | K | + 273.15 | Energy balance fails |
-| Pressure | kPa | Pa | * 1000 | ET 100x wrong |
+| Pressure | Pa | Pa | none (never kPa) | ET 100x wrong |
 | Shortwave | W/m² | W/m² | none | — |
 | Longwave | W/m² | W/m² | none | — |
 | Humidity | kg/kg | kg/kg | none | — |
 | Wind | m/s | m/s | none | — |
-
-**CRITICAL: VIC Column Order Mismatch (dt_023)**
-
-HydroCraft VIC forcing uses column order: `AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND` (7 cols).
-Classic VIC documentation describes: `PREC, TMAX, TMIN, WIND, SW, LW, PRESSURE, QAIR` (8 cols).
-The `convert_vic_forcing_to_summa.py` tool defaults to `--column_order hydrocraft`. Use `--column_order classic` only for non-HydroCraft VIC setups.
 
 **Always verify forcing after conversion:**
 ```python
@@ -487,15 +485,19 @@ ALL NetCDF files (attributes, forcing, coldState, trialParams) must have identic
 
 ---
 
-## VIC Coupling
+## Comparing SUMMA with another model (for example VIC)
 
-SUMMA can share forcing data with VIC through the `convert_vic_forcing_to_summa.py` tool. This enables head-to-head comparison of VIC vs SUMMA for the same basin, forcing, and period -- isolating the effect of model structure.
+A head-to-head comparison on one basin isolates the effect of model structure
+only if both models are driven by the same weather. Get that by naming the SAME
+forcing source, period and domain in each model's own forcing tool. SUMMA's
+forcing is always built by `build_summa_forcing_from_reanalysis.py` from the
+source; it is not made from the other model's forcing files.
 
-**Coupling workflow**:
-1. Run HydroCraft VIC workflow (Steps 1-7) as usual
-2. After VIC forcing is prepared, run `convert_vic_forcing_to_summa.py`
-3. Configure SUMMA domain from the same basin shapefile
-4. Run SUMMA with decisions that approximate VIC's physics
+**Comparison workflow**:
+1. Set up the SUMMA domain from the basin shapefile (s1)
+2. Build SUMMA forcing from the named source (s2)
+3. Run SUMMA with decisions that approximate the other model's physics
+4. Run the other model with its own KI, same source, period and basin
 5. Compare outputs (runoff, ET, soil moisture)
 
 ---
@@ -583,8 +585,8 @@ model/summa/bin/summa.exe
 python tools/s1_domain_setup/create_gru_hru.py --basin_shp ... --dem ... --output_dir ...
 python tools/s1_domain_setup/create_local_attributes.py --gru_hru_csv ... --output_nc ...
 
-# 2. Convert forcing
-python tools/s2_forcing_prep/convert_vic_forcing_to_summa.py --vic_forcing_dir ... --attributes_nc ...
+# 2. Build forcing straight from the source (cmfd | nasa_power | mswx)
+python tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --attributes_nc ... --source cmfd --start_year ... --end_year ... --reference_elev_nc ... --output_dir ...
 
 # 3. Configure decisions
 python tools/s3_decisions/configure_decisions.py --output ... --use_defaults

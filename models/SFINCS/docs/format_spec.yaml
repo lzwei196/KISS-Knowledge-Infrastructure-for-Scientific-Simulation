@@ -485,28 +485,6 @@ known_issues:
     as int32 array); build_sfincs_topobathy; [''Read sfincs.msk, find active cells (mask > 0)'', ''Compute
     flat 1-based indices: idx = row * mmax + col + 1'', ''Write binary: np.array([n_active], dtype=np.int32).tofi'
   severity: fatal
-- id: dt_v002
-  symptom: prepare_sfincs_rainfall.py produces negative 'precipitation' values when reading VIC forcing
-    files
-  diagnosis: 'VIC forcing column 0 is temperature, not precipitation. Code reads data[:, 0] instead of
-    data[:, 1]; VIC forcing ASCII files have 7 columns in this order: TEMP(0), PREC(1), PRESSURE(2), SW(3),
-    LW(4), VP(5), WIND(6). The original prepare_sfincs_rainfall.py had ''precip_sum += data[:, 0]  # Column
-    0 is'
-  remedy: Change data[:, 0] to data[:, 1] in the vic_ascii branch of prepare_sfincs_rainfall.py; prepare_sfincs_rainfall;
-    ['Open prepare_sfincs_rainfall.py, find the vic_ascii reading section', 'Verify column index is 1
-    (PREC), not 0 (TEMP)', 'Check output values are non-negative']; prepare_sfincs_rainfall.py
-  severity: fatal
-- id: dt_v003
-  symptom: SFINCS rainfall forcing shows wrong season — e.g., winter precipitation for a summer flood
-    event
-  diagnosis: Multi-year VIC forcing file time offset not computed — always reads from file start (year
-    2000) regardless of start_date; VIC forcing files contain the entire simulation period (e.g., 2000-2010,
-    ~80,000+ 3-hourly timesteps). When extracting a sub-period (e.g., Aug 2008), the tool must compute
-    the by
-  remedy: 'Compute day offset from VIC simulation start to target start_date, convert to timestep offset,
-    then slice: data[ts_start:ts_end, 1]; prepare_sfincs_rainfall; [''Determine VIC simulation start year
-    from forcing filename or config'', ''Calculate days_offset = (target_start - vic_start).days'', ''Calculate '
-  severity: fatal
 - id: dt_v004
   symptom: 'SFINCS log shows ''Precipitation: no'' despite netprecipfile being specified in sfincs.inp'
   diagnosis: 'SFINCS v2.3.2 netprecipfile keyword requires specific NetCDF variable naming and coordinate

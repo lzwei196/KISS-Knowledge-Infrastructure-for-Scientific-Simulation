@@ -252,7 +252,6 @@ def main():
         "s6_execution/tools/run_shaw.py",
         "s6_execution/tools/shaw_frost_analysis.py",
         "s6_execution/tools/validate_shaw_inputs.py",
-        "s7_vic_coupling/tools/vic_to_shaw_soil.py",
         "tools/s1_site_setup/setup_shaw_from_template.py",
     ]
     for relpath in tool_files:

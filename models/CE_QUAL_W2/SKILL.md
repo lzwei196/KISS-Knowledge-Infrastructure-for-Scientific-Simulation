@@ -29,14 +29,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (16 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (32 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -73,10 +73,13 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-Then convert to W2 met format using this KI's tool: `tools/s3_met_forcing/convert_met_to_w2.py`
+**Met file**: one command, `tools/s3_met_forcing/convert_met_to_w2.py --source cmfd|mswx|nasa_power --lat .. --lon .. --start_year .. --end_year .. [--forcing_dir ..] --output <run_dir>/<met file name>`.
+The tool reads the source itself through `ki_tools_common.load_forcing.load_hourly_forcing` (3-hourly for cmfd / mswx, hourly for nasa_power). Do NOT call the loader first and do NOT write the met file by hand. `--source` has no default.
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+- China: `--source cmfd`. Elsewhere: `--source mswx --forcing_dir KISSPATH_FORCING` (that disk is exfat: one reader at a time, never in parallel). `nasa_power` (network, 2001 onward) only when no local store covers the case.
+- The tool makes no value up: a missing value, an uneven time axis or a period the source does not cover stops it with nothing written.
+- Read `<output>.summary.json`: it says what was estimated (dew point from specific humidity and pressure; cloud from short-wave, one value per local day; wind direction is a constant because the sources have none; time moved from UTC to local standard time).
+- CE-QUAL-W2 input is never made from another model's input files (dt_026). Details: `docs/s3_met_forcing_skill.md`.
 
 ---
 
@@ -86,7 +89,7 @@ Then convert to W2 met format using this KI's tool: `tools/s3_met_forcing/conver
 **Model**: CE-QUAL-W2 v4.5 (2D laterally-averaged hydrodynamic and water quality)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-24
-**Stats**: 16 tools | 6 skill documents | 25 diagnostic triplets | 3,434 lines of validated Python
+**Stats**: 16 tools | 6 skill documents | 32 diagnostic triplets | 3,434 lines of validated Python
 **Validation status**: `binary_only` (pending source compilation and example validation)
 
 ---
@@ -146,6 +149,8 @@ Source:      model/ce_qual_w2/src/            (TO BE CLONED from GitHub)
 Repository:  https://github.com/EnvironmentalSystems/CE-QUAL-W2
 ```
 
+**The binary on this server is v5** (`w2_v5`). It reads `w2_con.csv` (not `w2_con.npt`), CSV or fixed-width input files, and writes `tsr_<n>_seg<segment>.csv`, `snp.opt`, `spr.csv`; stop reasons go to `w2.err` (dt_032). The shipped working case is `model/ce_qual_w2/examples/DeGray/` (1980, JDAY 64.5-358.7): copy its input files into a run folder, swap what you need (for example the met file from `convert_met_to_w2.py`, under the name the control file expects), and run `tools/s10_execution/run_w2.py --run_dir <folder>`. `generate_w2_control.py` writes the v4.x `w2_con.npt` form, which this binary does not read.
+
 ### Compilation from Source
 
 ```bash
@@ -182,14 +187,14 @@ numpy, pandas, xarray, netCDF4, geopandas, shapely, rasterio, matplotlib, scipy
 | 0 | Configuration | (manual) | Reservoir selection, period, forcing, WQ toggle |
 | 1 | Bathymetry | `build_reservoir_grid` | DEM/idealized geometry to segment-layer grid + bth_wb*.npt |
 | 2 | Branch topology | `build_branch_topology` | Multi-branch connectivity, slopes, segment ranges |
-| 3 | Met forcing | `convert_met_to_w2` | CMFD/MSWX/VIC to W2 met format (**cloud in tenths 0-10!**) |
+| 3 | Met forcing | `convert_met_to_w2` | CMFD / MSWX / NASA POWER (direct, `--source`) to W2 v5 met file (**cloud in tenths 0-10!**) |
 | 4 | Inflow | `convert_inflow_to_w2`, `generate_distributed_inflow` | CaMa/VIC discharge + temperature |
 | 5 | Outflow | `configure_w2_outflow` | Selective withdrawal, dam outlets, outflow timeseries |
 | 6 | Init conditions | `build_init_conditions` | 2D initial temperature/WQ fields |
 | 7 | Hydraulic params | `set_hydraulic_params` | AX, DX, WSC, CBHE, TSED, EXH2O auto-estimated |
 | 8 | WQ config | `configure_wq` | Constituent activation, kinetic rates, algae groups |
 | 9 | Control file | `generate_w2_control` | Assemble w2_con.npt (**8-char fixed-width!**) |
-| 10 | Execution | `run_w2` | Preflight checks, run binary, log monitoring |
+| 10 | Execution | `run_w2` | Preflight checks, run binary (`w2_con.csv` for v5, `w2_con.npt` for v4.x), read `w2.err` |
 | 11 | Output analysis | `parse_w2_output`, `plot_w2_curtain`, `plot_w2_timeseries` | Parse + visualize |
 | 12 | Calibration | `calibrate_w2` | GLUE-style against observed temperature profiles |
 | 13 | Coupling | `w2_to_cama_coupling` | Dam release to CaMa-Flood downstream |
@@ -209,7 +214,9 @@ Stage 10 depends on s9. Stages 11-13 depend on s10.
 | Variable / field | Source unit or representation | Model / coupling unit or representation | Conversion / handling | Source in this KI |
 |------------------|-------------------------------|------------------------------------------|-----------------------|-------------------|
 | Cloud cover | fraction `0-1` when supplied as a common forcing representation | tenths `0-10` | multiply by `10`; CE-QUAL-W2 reads cloud cover as tenths | `dt_001`; `convert_met_to_w2` stage notes |
-| Vapor pressure for dewpoint | kPa for CMFD | dewpoint temperature, `deg C` | `TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))` with `VP` in kPa | `dt_002`; Critical Domain Knowledge |
+| Humidity for dewpoint | specific humidity `kg/kg` + pressure `Pa` (cmfd, mswx, nasa_power through the loader) | dewpoint temperature, `deg C` | `e = q p / (0.622 + 0.378 q)`, then `TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))` with `VP` in kPa; done by `convert_met_to_w2` | `dt_002`; `dt_027` |
+| Wind direction PHI | none in the sources | radians | constant `--wind_dir_deg` (default 270) written as radians (4.712); said in the summary | `dt_031` |
+| Met time stamp | UTC in the sources | `JDAY` in local standard time | add `int(lon/15)` hours (the model's own standard-meridian rule) | `dt_031` |
 | Vapor pressure for dewpoint | Pa for ERA5 | kPa intermediate, then dewpoint temperature, `deg C` | divide by `1000`, then apply the `TDEW` formula | `dt_002`; Critical Domain Knowledge |
 | Julian day | day plus clock time | decimal `JDAY` | `day_of_year + hour/24 + minute/1440` | `dt_005`; Critical Domain Knowledge |
 | Inflow discharge | source-dependent; wrong source units such as `mm/day` are a known trap | `m^3/s` | use `tools/s4_inflow/convert_inflow_to_w2.py`; do not apply a generic factor without source area and source metadata | `dt_003`; Pipeline stage 4 |
@@ -230,9 +237,9 @@ Stage 10 depends on s9. Stages 11-13 depend on s10.
 |------|-------|-------------|------:|---------|
 | `build_reservoir_grid` | s1 | `tools/s1_bathymetry/build_reservoir_grid.py` | 310 | DEM or idealized geometry to segment-layer grid |
 | `build_branch_topology` | s2 | `tools/s2_branch_topology/build_branch_topology.py` | 150 | Branch connectivity and slopes |
-| `convert_met_to_w2` | s3 | `tools/s3_met_forcing/convert_met_to_w2.py` | 290 | CMFD/MSWX to W2 met format (VP->TDEW, cloud 0-10) |
+| `convert_met_to_w2` | s3 | `tools/s3_met_forcing/convert_met_to_w2.py` | 330 | cmfd / mswx / nasa_power to W2 v5 met file (q+p->TDEW, cloud 0-10, PHI rad, local time) |
 | `convert_inflow_to_w2` | s4 | `tools/s4_inflow/convert_inflow_to_w2.py` | 250 | CaMa/VIC to W2 inflow files (qin + tin + cin) |
-| `generate_distributed_inflow` | s4 | `tools/s4_inflow/generate_distributed_inflow.py` | 160 | Distributed tributary flow (qdt + tdt) |
+| `generate_distributed_inflow` | s4 | `tools/s4_inflow/generate_distributed_inflow.py` | 160 | SYNTHETIC distributed tributary flow (qdt + tdt), needs `--synthetic`; reads no runoff result |
 | `configure_w2_outflow` | s5 | `tools/s5_outflow/configure_w2_outflow.py` | 130 | Dam outlet config + outflow timeseries |
 | `build_init_conditions` | s6 | `tools/s6_init_conditions/build_init_conditions.py` | 130 | 2D initial T/WQ fields |
 | `set_hydraulic_params` | s7 | `tools/s7_hydraulic_params/set_hydraulic_params.py` | 100 | Auto-estimate AX, DX, WSC from geometry |
@@ -261,7 +268,7 @@ CE-QUAL-W2 reads cloud cover as 0-10. If you pass 0-1 (fraction), the model sees
 
 CE-QUAL-W2 expects dewpoint temperature (TDEW, deg C), not RH or VP directly.
 Formula: `TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))` with VP in kPa.
-VP must be in kPa (CMFD = kPa, ERA5 = Pa -> divide by 1000).
+VP must be in kPa. The forcing sources give specific humidity and pressure, not VP: `convert_met_to_w2` does `e = q p / (0.622 + 0.378 q)` first.
 
 ### 3. Julian day is DECIMAL, not integer (dt_005)
 
@@ -304,8 +311,7 @@ Otherwise the reservoir receives double the water input.
 | # | Source | Target | Variable | Tool |
 |---|--------|--------|----------|------|
 | 1 | CaMa-Flood | CE-QUAL-W2 | Upstream discharge | `convert_inflow_to_w2` |
-| 2 | VIC | CE-QUAL-W2 | Met forcing | `convert_met_to_w2` |
-| 3 | VIC | CE-QUAL-W2 | Distributed tributary runoff | `generate_distributed_inflow` |
+| 3 | VIC (or any runoff result) | CE-QUAL-W2 | Local runoff as tributary inflow | `convert_inflow_to_w2` (real series). `generate_distributed_inflow --synthetic` writes a synthetic seasonal curve only; it reads no runoff result |
 | 4 | CE-QUAL-W2 | CaMa-Flood | Dam release discharge | `w2_to_cama_coupling` |
 | 5 | CE-QUAL-W2 | CaMa-Flood | Dam release temperature | `w2_to_cama_coupling` |
 | 6 | SWAT+ | CE-QUAL-W2 | Upstream nutrient loading | (via cin_br*.npt) |
@@ -382,9 +388,10 @@ python tools/s1_bathymetry/build_reservoir_grid.py \
     --segment_length 2000 --layer_thickness 2.0 \
     --output_dir /tmp/w2_test
 
-# 2. Convert forcing to W2 met format
+# 2. Build the met file straight from the forcing source (China: cmfd)
 python tools/s3_met_forcing/convert_met_to_w2.py \
-    --vic_forcing_dir outputs/<run>/vic_temp/forcing/forcing_final \
+    --source cmfd \
+    --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
     --lat 32.54 --lon 111.51 --start_year 2005 --end_year 2010 \
     --output /tmp/w2_test/met_wb1.npt
 
@@ -421,7 +428,7 @@ python tools/s11_output_analysis/plot_w2_curtain.py \
 
 ## Diagnostic Triplets
 
-25 triplets across 8 failure domains. See `diagnostics/triplets.yaml` for full details.
+32 triplets across 8 failure domains. See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -450,8 +457,15 @@ python tools/s11_output_analysis/plot_w2_curtain.py \
 | dt_023 | fatal | runtime | NaN from bathymetry gradient instability |
 | dt_024 | fatal | runtime | NEGATIVE THICKNESS during drawdown |
 | dt_025 | **silent** | silent_error | No output despite successful completion |
+| dt_026 | fatal | dependency_mismatch | Met file made from VIC forcing files (route removed; use `--source`) |
+| dt_027 | **silent** | silent_error | Old direct reader filled made-up values (TAIR 0, VP 0.8 kPa, wind 2.0, SW 0) |
+| dt_028 | fatal | dependency_mismatch | NASA POWER named but had no reader |
+| dt_029 | **silent** | dependency_mismatch | sys.path line could load an old ki_tools_common |
+| dt_030 | degraded | dependency_mismatch | "load_daily_forcing, then the tool" recipe could not be followed |
+| dt_031 | **silent** | parameter_format | Met file form for v5: CSV with `$`, PHI in radians, JDAY local time, SRO needs SROC ON |
+| dt_032 | fatal | dependency_mismatch | run/parse tools knew only v4.x names (`w2_con.npt`, `tsr_*.opt`) |
 
-**Silent error count**: 14/25 (56%) — consistent with lake model error rates.
+**Silent error count**: 18/32 (56%) — consistent with lake model error rates.
 
 ---
 
@@ -468,7 +482,7 @@ models/CE_QUAL_W2/knowledge_infrastructure/
     s2_branch_topology/
       build_branch_topology.py    # Branch connectivity
     s3_met_forcing/
-      convert_met_to_w2.py        # CMFD/MSWX to W2 met (cloud 0-10!)
+      convert_met_to_w2.py        # cmfd/mswx/nasa_power to W2 v5 met (cloud 0-10!)
     s4_inflow/
       convert_inflow_to_w2.py     # CaMa/VIC to W2 inflow
       generate_distributed_inflow.py  # Distributed tributary flow
@@ -500,7 +514,7 @@ models/CE_QUAL_W2/knowledge_infrastructure/
     s10_execution_skill.md
     s11_output_analysis_skill.md
   diagnostics/
-    triplets.yaml                 # 25 diagnostic triplets
+    triplets.yaml                 # 32 diagnostic triplets
 
 model/ce_qual_w2/
   bin/w2_v5                     # CE-QUAL-W2 executable (TO BE COMPILED)

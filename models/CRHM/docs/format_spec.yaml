@@ -381,27 +381,27 @@ known_issues:
     in summer. Sublimation is near zero. ET is unrealistically low. No error message is produced.
 
     '
-  diagnosis: Specific humidity (kg/kg) passed as relative humidity (%) in .obs file; VIC forcing provides
-    specific humidity (values 0.001-0.02 kg/kg). CRHM expects relative humidity (values 0-100%). If specific
-    humidity is written directly to the .obs file, CRHM interprets 0.005 as 0.005% RH -- essentially bone-
-  remedy: 'Convert specific humidity to relative humidity using Tetens formula; convert_vic_to_obs; [''Check
-    max RH in .obs file: if max < 1.0, units are wrong'', ''Apply conversion: RH = (q*P / (0.622*es))
-    * 100'', ''Verify RH values are 0-100%, not 0-1 or 0-0.02'']; Always use convert_vic_to_obs.py which
-    handles c'
+  diagnosis: Specific humidity (kg/kg) passed as relative humidity (%) in .obs file; The forcing sources
+    provide specific humidity (values 0.001-0.02 kg/kg). CRHM expects relative humidity (values 0-100%).
+    If specific humidity is written directly to the .obs file, CRHM interprets 0.005 as 0.005% RH -- essentiall
+  remedy: 'Convert specific humidity to relative humidity using Tetens formula; build_obs; [''Check max
+    RH in .obs file: if max < 1.0, units are wrong'', ''Apply conversion: RH = (q*P / (0.622*es)) * 100'',
+    ''Verify RH values are 0-100%, not 0-1 or 0-0.02'']; Always build the .obs with build_obs.py, which
+    does the c'
   severity: silent
 - id: dt_002
   symptom: 'Simulated discharge peaks are 3-8x too high. Flooding occurs in every month, not just spring
     melt. Annual water balance shows more output water than input precipitation.
 
     '
-  diagnosis: Precipitation rate vs accumulation mismatch; VIC forcing provides precipitation per timestep
-    (e.g., mm per 3 hours). CRHM expects precipitation rate in mm/day. If 3-hourly accumulation is passed
-    directly, CRHM receives 8 timesteps per day, each interpreted as mm/d, effectively multiplying daily
-    prec
-  remedy: 'Convert precipitation from mm/timestep to mm/d rate; convert_vic_to_obs; [''Multiply precipitation
-    by 24/timestep_hours'', ''For 3-hourly VIC: multiply by 24/3 = 8 to get daily rate'', ''Wait -- that
-    makes it 8x larger? No: VIC value is already per 3h, not per day'', ''CORRECT: If CRHM reads sub-daily,
-    pas'
+  diagnosis: 'Precipitation written under the wrong variable or as a rate: `p` is mm in the step, `ppt`
+    is mm per day; CRHM has TWO precipitation observations (ClassObs.cpp:83,85): `ppt` = DAILY precipitation
+    in mm/d, and `p` = INTERVAL precipitation in mm per step. Sub-daily forcing gives mm per step, so
+    it must'
+  remedy: 'Write sub-daily precipitation as `p 1 (mm)`, the amount in the step, unchanged; build_obs;
+    [''head -8 basin.obs: the precipitation line must be `p 1 (mm)`'', "Sum the p column over a year (or
+    read precip_mm_by_year in basin.obs.meta.json): it must equal the source''s yearly total", ''Never
+    multiply by 2'
   severity: silent
 - id: dt_003
   symptom: 'CRHM crashes at startup with error about observation file format. Error message mentions variable
@@ -415,8 +415,8 @@ known_issues:
     ; [''.ob'
   remedy: 'Fix .obs header to match required format; validate_obs_file; ["Each variable line: ''varname
     N (unit)''", "Computed variables: ''$varname formula (unit) description''", ''Column count N must
-    be integer >= 1'', ''Data columns (after YYYY M D H 0) must equal sum of all N values'']; Use convert_vic_to_obs.py
-    t'
+    be integer >= 1'', ''Data columns (after YYYY M D H 0) must equal sum of all N values'']; Use build_obs.py
+    to generat'
   severity: fatal
 - id: dt_004
   symptom: 'CRHM crashes during initialization with error about unresolved variable reference. Error mentions
@@ -803,3 +803,50 @@ known_issues:
     winter exposed stubble/grass height (0.02-0.10 m for grazed or dormant steppe), NOT the growing-season
     veg
   severity: silent
+- id: dt_v012
+  symptom: 'CRHM prints its banner (Project file / Observation file / Program Version 4.7_16), then "Running
+    simulation..." and "0% complete.", and dies with a SEGMENTATION FAULT: exit code -11 (139 from a shell),
+    empty stderr, and an output file holding only the two header rows (112-124 bytes for a one-HRU pro'
+  diagnosis: SnobalCRHM is paired with plain pbsm. SnobalCRHM reads hru_drift and hru_subl, which only
+    pbsmSnobal declares; the unresolved pointers stay NULL and the first timestep dereferences them; ClassSnobalCRHM.cpp:170-171
+    declgetvar("*", "hru_drift", ...) and ("*", "hru_subl", ...) and uses both every time
+  remedy: Use pbsmSnobal, never plain pbsm, whenever SnobalCRHM is the snowpack. Re-run select_modules.py;
+    the prairie_reduced preset is now basin > global > obs > calcsun > intcp > pbsmSnobal > albedo > SnobalCRHM
+    > netall > crack > evap > Soil > Netroute and validate_chain refuses the bad pairings; tools/s3
+  severity: fatal
+- id: dt_v013
+  symptom: 'A .obs built from NASA POWER HOURLY data has a precipitation total about 24 times too small
+    (41 mm in two years at 49.17 N 125.23 E instead of ~990 mm). Every tool exits 0. CRHM runs and produces
+    almost no snow, soil recharge or flow.
+
+    '
+  diagnosis: 'The NASA POWER hourly API changed the unit of PRECTOTCORR from a mm/day rate to mm/hour,
+    and the shared loader still divided every hourly value by 24; ki_tools_common/load_forcing.py divided
+    hourly PRECTOTCORR by 24 ("mm/day rate -> mm per hour"). That was right when it was written: a .obs
+    built on '
+  remedy: The loader now takes the divisor from the unit the response declares (mm/hour -> 1, mm/day ->
+    24), refuses an unknown unit, and compares the first year's hourly total with the daily product; tools/s2_observation_data/build_obs.py;
+    ['Rebuild any NASA POWER hourly .obs made between about 2026-06 and 2
+  severity: silent
+- id: dt_v014
+  symptom: 'A basin run finishes cleanly, but its precipitation (and so its runoff volume) is that of
+    ONE grid cell, not of the basin: the .obs was built with --lat/--lon at the basin centre. Nothing
+    looks wrong in the file. The meta file says "mode: point".
+
+    '
+  diagnosis: 'One forcing grid cell was used to stand for a whole basin; CRHM takes ONE weather series
+    and spreads it over the HRUs by elevation (obs_elev, lapse_rate). For a basin much larger than a forcing
+    cell, the centre cell is a sample of one. Measured on the Yarlung Tsangpo at Nuxia (205,000 km2):
+    the cent'
+  remedy: Build the .obs as the basin mean and pass its forcing elevation on; tools/s2_observation_data/build_obs.py;
+    ['build_obs.py --source cmfd --basin_shp <basin polygon> --start_year .. --end_year .. --output_path
+    basin.obs (mean over every grid cell whose centre is inside the polygon)', 'Read basin.obs.
+  severity: silent
+- id: dt_utc_solar_clock_20261003
+  symptom: UTC forcing runs without an error, but global solar geometry is centered on clock noon rather
+    than solar noon.
+  diagnosis: Legacy observation files have no clock metadata and legacy projects omit global Time_Offset
+    or leave it zero. This is independent of module-chain compatibility and of VIC.
+  remedy: For new inputs keep build_obs.py metadata with the observations. For an existing project with
+    a known observation clock, use tools/s4_parameter_config/migrate_project_clock.py with explicit --obs_utc_offset
+    and --longitudes, and rerun the new project. The helper preserves all other parameters and we

@@ -10,7 +10,8 @@ SUMMA (Structure for Unifying Multiple Modeling Alternatives) is a multi-physics
         v
   s1: Domain Setup (GRU/HRU) -----> attributes.nc
         |                              |
-        |     [VIC Forcing Files]      |
+        | [Forcing source: cmfd /      |
+        |  nasa_power / mswx]          |
         |            |                 |
         v            v                 |
   s2: Forcing Prep -----> forcing_YYYY.nc
@@ -49,7 +50,7 @@ SUMMA (Structure for Unifying Multiple Modeling Alternatives) is a multi-physics
 
 ### s2_forcing_prep (Order: 2)
 **Purpose**: Convert meteorological forcing to SUMMA NetCDF format with correct units.
-**Tools**: convert_vic_forcing_to_summa
+**Tools**: build_summa_forcing_from_reanalysis (reads the forcing source through the shared loader; `--source` must be named)
 **Output**: forcing_YYYY.nc (one per year, 7 variables: pptrate, airtemp, SWRadAtm, LWRadAtm, windspd, airpres, spechum)
 **Milestone**: All 7 variables present with correct units
 **Depends on**: s1_domain_setup (needs attributes.nc for hruId)

@@ -29,14 +29,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -112,7 +112,8 @@ This section explains intent and traps; `docs/format_spec.yaml` is the contract.
 |-------|--------|----------------------|
 | D8 river network triplet | MERIT-Hydro-derived Lohmann ArcASCII `direc` / `xmask` / `frac` files | `tools/delineate_d8_from_merit.py` |
 | VIC domain bridge | Delineated `frac` grid | `tools/frac_to_basin_shp.py` |
-| MOSART grid domain | Validated D8 network plus MOSART geometry defaults/fills | `tools/build_mosart_grid.py`, then `tools/convert_grid_parameters.py --validate-only` |
+| Cell elevation (channel / hillslope slopes) | DEM: China 90 m `data/dem/china_dem_90m/china_dem_90m.tif` inside China, MERIT DEM tiles `KISSPATH_DATA/MERIT_DEM/` elsewhere (mean of the DEM pixels in each cell) | `tools/build_mosart_grid.py --dem` |
+| MOSART grid domain | MERIT D8 triplet + DEM elevation plus MOSART geometry defaults | `tools/build_mosart_grid.py --dem ... --expected-area-km2 ...`, then `tools/convert_grid_parameters.py --validate-only` |
 | Reservoir parameters | GRanD reservoir inputs and ISTARF coefficients | `create_grand_parameters` |
 | Mean monthly reservoir flow/demand | Prepared Parquet schedules | External preparation, consumed by mosartwmpy |
 
@@ -182,7 +183,7 @@ Other dag outputs: `channel_outflow`, `STORAGE_LIQ`, `WRM_STORAGE`, `WRM_SUPPLY`
 | `tools/delineate_d8_from_merit.py` | Build a Lohmann-style D8 network triplet at the target gauge | MERIT-Hydro tiles and gauge location | ArcASCII `direc`, `xmask`, `frac` |
 | `tools/frac_to_basin_shp.py` | Derive the VIC basin shapefile from the delineated `frac` grid | D8 `frac` grid | Basin shapefile for VIC |
 | `tools/convert_runoff_forcing.py` | Convert existing runoff to mosartwmpy forcing | Gridded runoff NetCDF | `QOVER` / `QDRAI` NetCDF in mm/s |
-| `tools/build_mosart_grid.py` | Build a MOSART domain grid from a validated D8 network | D8 network triplet | Full MOSART grid NetCDF |
+| `tools/build_mosart_grid.py` | Build a MOSART domain grid from a D8 network | D8 network triplet (from `delineate_d8_from_merit.py`) + DEM (`--dem`) | Full MOSART grid NetCDF (+ `elev` for audit) |
 | `tools/convert_grid_parameters.py` | Validate/fill an existing MOSART grid domain NetCDF | Grid domain NetCDF | Validated MOSART grid NetCDF |
 | `tools/run_mosartwmpy.py` | Execute the real mosartwmpy model through BMI | `config.yaml` plus prepared inputs | Monthly output NetCDF files and restarts |
 | `tools/parse_mosart_output.py` | Extract output time series for scoring or coupling | MOSART output NetCDF | CSV time series |
@@ -225,7 +226,7 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before
 | T002 | Discharge is approximately 1000x higher than expected | Runoff units are m/s but mosartwmpy expects mm/s | Convert m/s to mm/s or use `convert_runoff_forcing.py --source-units m/s` |
 | T003 | All output variables are zero or NaN | Grid mask excludes all cells, or runoff is zero at grid locations | Check active grid cells, runoff maxima, and exact lat/lon alignment |
 | T021 | River discharge is exactly 0 at the gauge cell, but a neighbouring cell carries the full basin flow | The gauge cell was made the terminal `dnID == -1` outlet | Make interior gauges through-cells; use `build_mosart_grid.py` and score at `scoring_lat` / `scoring_lon` |
-| T022 | No gridded runoff / QOVER-QDRAI file for a China basin; `convert_grid_parameters --source-type merit` produces nothing new | MOSART has no runoff-generation tool, and `convert_grid_parameters` only validates an existing grid | Run the VIC KI first, convert VIC flux to runoff forcing, and build the MOSART grid from the D8 triplet |
+| T022 | No gridded runoff / QOVER-QDRAI file for a China basin; `convert_grid_parameters --source-type merit` produces nothing new | MOSART has no runoff-generation tool, and `convert_grid_parameters` only validates an existing grid | Run the VIC KI first and convert its runoff RESULT; build MOSART's own domain with `delineate_d8_from_merit.py` + `build_mosart_grid.py --dem` |
 
 ## 10. Coupling Interfaces
 
@@ -274,7 +275,8 @@ do not transfer the streamflow PBIAS bands (`moriasi2007`, `swat_gomti2019`).
 | Component | Source | Status | Notes |
 |-----------|--------|--------|-------|
 | Runoff forcing | Upstream LSM runoff converted by `tools/convert_runoff_forcing.py` | Pipeline-supported | MOSART cannot synthesize runoff |
-| Grid topology | D8 triplet converted by `tools/build_mosart_grid.py` | Pipeline-supported | Gauge cell must be a through-cell for interior gauges |
+| Grid topology | MERIT D8 triplet (`tools/delineate_d8_from_merit.py`) converted by `tools/build_mosart_grid.py` | Pipeline-supported | Gauge cell must be a through-cell for interior gauges |
+| Cell elevation | DEM via `tools/build_mosart_grid.py --dem` | Pipeline-supported | No fill: an active cell without DEM pixels stops the tool |
 | Demand | Water-demand NetCDF or ABM | Optional / input-dependent | Active when water management is enabled |
 | Reservoirs | GRanD parameters and schedules | Optional / input-dependent | Units must be MCM and km2 at input |
 | Output parsing | `tools/parse_mosart_output.py` | Pipeline-supported | Score rank-1 discharge at the recorded scoring cell |
@@ -309,23 +311,35 @@ is a CATEGORY ERROR for MOSART: its "forcing" is runoff, not meteorology. There 
 gridded-runoff product on the server (no ERA5-Land/GSWP3/runoff in the dataset index);
 the only runoff source is to run the VIC KI over the basin first.
 
-### CHINA BASIN REAL-CASE — SOLVED via VIC->MOSART (verified 2026-07-11, MOSART @ 唐乃亥/Tangnaihai, upper Yellow R)
+### CHINA BASIN REAL-CASE — VIC runoff routed on MOSART's own domain (MOSART @ 唐乃亥/Tangnaihai, upper Yellow R; first run 2026-07-11, domain rebuilt from data sources 2026-10-03)
 
-The two blockers of the Bengbu/Bow runs are BOTH now closable:
-1. **Missing grid-builder → FIXED.** New KI tool `tools/build_mosart_grid.py` converts a
-   VALIDATED D8 flow-direction network (the ArcASCII `<STA>_direc.txt` + `<STA>_xmask.txt`
-   channel length + `<STA>_frac.txt` that the VIC/Lohmann routing KI already builds &
-   validates) into a full mosartwmpy domain grid (all 20 REQUIRED_VARIABLES). Because the
-   topology is inherited from a routing network independently confirmed at the gauge
-   (VIC+Lohmann NSE 0.63 at Tangnaihai), the main channel PROVABLY reaches the gauge — the
-   exact property the Bengbu synthetic D8 lacked. For Tangnaihai it yields 251 cells,
-   123,042 km² (+0.9% vs published 121,972), and a SINGLE outlet AT the gauge cell.
-   `convert_grid_parameters.py --validate-only` → 0 errors, 0 warnings.
-2. **Runoff exists once VIC is run.** All VIC Tangnaihai inputs (soil/veg/forcing/global
-   param) persist in `outputs/tangnaihai/vic_temp/`; re-running `vic_classic.exe -g
-   global_param_tangnaihai.txt` (~251 cells, minutes) regenerates per-cell flux, which the
-   runner grids and feeds to `convert_runoff_forcing.py` (cols 16=OUT_RUNOFF, 17=OUT_BASEFLOW,
-   mm/day, skiprows=3).
+MOSART needs two things, and they come from different places:
+1. **Its own domain, built from data sources with its own tools** (never from VIC set-up
+   files — owner rule 2026-10-02):
+   - `tools/delineate_d8_from_merit.py` → ArcASCII `direc` / `xmask` / `frac` from MERIT Hydro,
+     gated on the published drainage area (`--published-area-km2`). Give a `--bbox` that holds
+     the WHOLE basin (Tangnaihai: `95.0,31.5,104.0,36.5`); use the same resolution as the
+     runoff grid (0.25°).
+   - `tools/build_mosart_grid.py --dem <DEM> --expected-area-km2 <published>` → full
+     mosartwmpy grid (all 20 REQUIRED_VARIABLES). Cell elevation = mean of the DEM pixels in
+     the cell (China 90 m DEM inside China, MERIT DEM elsewhere); no fill.
+   - `convert_grid_parameters.py --validate-only` → 0 errors, 0 warnings.
+   Tangnaihai: 251 cells (the same cells the VIC run covers), 122,732 km² at the gauge cell
+   (+0.62% vs published 121,972), scoring cell (35.375,100.125).
+2. **Runoff = another model's RESULT** (a coupling on results). VIC Tangnaihai runoff exists
+   in `outputs/tangnaihai/vic_result/` (2005-2016, 251 cells); if missing, re-run
+   `vic_classic.exe -g outputs/tangnaihai/vic_temp/global_param_tangnaihai.txt`. The runner
+   grids flux cols 16=OUT_RUNOFF, 17=OUT_BASEFLOW (mm/day, skiprows=3) onto the MOSART mesh and
+   feeds `convert_runoff_forcing.py`. Check that EVERY MOSART cell with frac>0 has a runoff
+   value — a cell with no runoff silently routes zero.
+
+Result 2026-10-03 (same VIC runoff, new domain, not tuned; spin-up 2005-06):
+NSE 0.868 / KGE 0.868 / PBIAS +6.5% for 2007-2016 (cal 2007-11 NSE 0.914 / KGE 0.936;
+val 2012-16 NSE 0.825 / KGE 0.799 / PBIAS +11.4%), against the old VIC/Lohmann-D8 +
+VIC-soil-elevation grid NSE 0.837 / KGE 0.874 (re-scored with the same code: identical).
+The two networks share 248 of 249 runoff cells (frac differs by 0.003 on average); the VIC soil
+elevations were off the DEM cell means by RMSE 135 m (max 554 m). DEM cell means are
+smoother, so more cells sit at the hillslope floor (hslp 0.005: 57% vs 32%).
 
 **GAUGE-CELL OUTFLOW TRAP (critical, cost the Bengbu run its number):** a cell with
 `dnID == -1` is treated by mosartwmpy as the terminal OCEAN outlet, and its
@@ -337,7 +351,8 @@ discharge, and records the cell to score in grid attrs `scoring_lat`/`scoring_lo
 `parse_mosart_output.py --mode point` at THAT cell, not at the nominal lat/lon.
 
 Full pipeline & scoring live in `models/MOSART/run_and_score.py` (resumable, detached):
-VIC flux → grid runoff (convert_runoff_forcing) → build_mosart_grid → run_mosartwmpy
+VIC flux (result) → delineate_d8_from_merit → build_mosart_grid --dem → grid runoff
+(convert_runoff_forcing) → run_mosartwmpy
 (2005-2016, 3h step, WM disabled — Longyangxia reservoir is DOWNSTREAM of Tangnaihai so the
 gauge is quasi-natural) → parse+score. Spin-up 2005-06; cal 2007-11 / val 2012-16.
 
@@ -394,8 +409,9 @@ Consequence for a standalone gauge real-case (e.g. HYDAT 05BB001 Bow R. at Banff
   cold-start channel filling + only-one-month forcing. Not a calibratable real-case.
 
 To run a genuine new-basin real-case you must FIRST produce gridded runoff for the period
-(run the VIC KI over the basin), then route it here. Treat MOSART as the second stage of a
-VIC→MOSART pipeline, never standalone.
+(run an LSM such as the VIC KI over the basin), then route that RESULT here. MOSART's own
+domain still comes from its own tools (`delineate_d8_from_merit.py`, `build_mosart_grid.py --dem`),
+not from the LSM's set-up files.
 
 ### DOMAIN-CONSISTENCY TRAP — the VIC domain and the MOSART domain must be the SAME cells
 
@@ -419,7 +435,7 @@ complete.** Guard it with BOTH of:
 2. `build_mosart_grid.py --expected-area-km2 <published> [--area-tol 0.10]` — hard
    gate: the frac-weighted `areaTotal` AT THE SCORING CELL must match the published
    basin area. Exits 1 and writes no NetCDF on failure. The reference standard is
-   Tangnaihai's +0.9%; the truncated Wangjiaba domain trips it at −47.84%. The gate
+   Tangnaihai's +0.62% (MERIT triplet, 2026-10-03); the truncated Wangjiaba domain trips it at −47.84%. The gate
    deliberately does NOT fall back to `areaTotal[active].max()` when no scoring cell
    was identified — it hard-fails, because that fallback could pass a network whose
    main channel never reaches the gauge.
@@ -525,7 +541,7 @@ python -m mosartwmpy.download
 | 0a | Delineation | `delineate_d8_from_merit.py` | MERIT-Hydro D8 → Lohmann ArcASCII direc/xmask/frac at the gauge |
 | 0b | LSM domain bridge | `frac_to_basin_shp.py` | delineated frac → basin shapefile for the VIC KI's `VIC_BASIN_SHP` |
 | 1 | Runoff forcing | `convert_runoff_forcing.py` | CLM/VIC/Livneh runoff to mosartwmpy NetCDF (mm/s) |
-| 2 | Grid preparation | `build_mosart_grid.py` (+ `convert_grid_parameters.py --validate-only`) | triplet → full 20-variable domain grid, with the `--expected-area-km2` gate |
+| 2 | Grid preparation | `build_mosart_grid.py --dem` (+ `convert_grid_parameters.py --validate-only`) | triplet + DEM → full 20-variable domain grid, with the `--expected-area-km2` gate |
 | 3 | Demand preparation | (manual or ABM) | Water demand NetCDF (m3/s totalDemand) |
 | 4 | Reservoir setup | `create_grand_parameters` (CLI) | GRanD reservoir parameters + ISTARF coefficients |
 | 5 | Configuration | config.yaml | Simulation name, dates, paths, WM toggle |
@@ -708,7 +724,7 @@ Q_m_s = Q_m3s / area_m2
 | Tool | Stage | Script Path | Lines | Purpose |
 |------|-------|-------------|------:|---------|
 | `convert_runoff_forcing` | s1 | `tools/convert_runoff_forcing.py` | ~200 | VIC/CLM/generic runoff to mosartwmpy NetCDF |
-| `build_mosart_grid` | s2 | `tools/build_mosart_grid.py` | ~290 | **Build** domain grid from a validated D8 network (direc/xmask/frac) — the missing grid-builder; sets interior gauge as through-cell + records scoring cell |
+| `build_mosart_grid` | s2 | `tools/build_mosart_grid.py` | ~450 | **Build** domain grid from a D8 network (direc/xmask/frac from `delineate_d8_from_merit.py`) + DEM elevation (`--dem`); sets interior gauge as through-cell + records scoring cell |
 | `convert_grid_parameters` | s2 | `tools/convert_grid_parameters.py` | ~220 | **Validate/fill** an EXISTING grid domain NetCDF (NOT a builder; `--source-type merit` is a no-op — use `build_mosart_grid` to build) |
 | `run_mosartwmpy` | s6 | `tools/run_mosartwmpy.py` | ~180 | Execute model via BMI with validation |
 | `parse_mosart_output` | s7 | `tools/parse_mosart_output.py` | ~200 | Extract time series from output NetCDF to CSV |

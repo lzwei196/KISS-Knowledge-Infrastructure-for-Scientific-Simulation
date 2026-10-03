@@ -71,9 +71,10 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Rainfall is built straight from the precipitation source** by this KI's own tool, which reads it through
+the shared loader `ki_tools_common.load_forcing.load_hourly_forcing` (sub-daily; not `load_daily_forcing`).
 SFINCS forcing tools are in `tools/s4_forcing/` in this KI:
-- `tools/s4_forcing/prepare_sfincs_rainfall.py` — Converts CMFD/MSWX precipitation to SFINCS NetCDF rainfall (mm/3hr → mm/hr)
+- `tools/s4_forcing/prepare_sfincs_rainfall.py` — `--source cmfd|mswx` (required): CMFD or MSWX precipitation at the domain centre → ASCII `sfincs.precip` in mm/hr (mm per 3-hour step ÷ 3)
 - `tools/s4_forcing/cama_to_sfincs_boundary.py` — Converts CaMa-Flood output to SFINCS boundary conditions (water level or discharge)
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
@@ -236,8 +237,7 @@ agents must preserve when building inputs and interpreting outputs.
 
 | Variable / file | Source unit | SFINCS / KI unit | Conversion | Notes |
 |---|---|---|---|---|
-| CMFD precipitation | `kg m-2 s-1` | `mm/hr` | multiply by `3600` | Current CMFD unit trap; if max precip is below `0.01 mm/hr`, check units. |
-| VIC forcing precipitation | `mm/timestep` for 3-hourly forcing | `mm/hr` | divide by `3` | VIC ASCII precipitation is column 1, not column 0. |
+| CMFD precipitation | `kg m-2 s-1` | `mm/hr` | multiply by `3600` | Current CMFD unit trap; if max precip is below `0.01 mm/hr`, check units. The rainfall tool gets mm per step from the shared loader and divides by the step hours. |
 | SFINCS `precipfile` | `mm/hr` | `mm/hr` | none | ASCII format: `time_seconds precip_mmhr`; prefer `precipfile`, not `netprecipfile`. |
 | CaMa-Flood discharge boundary | `m3/s` | `m3/s` | none | Written as SFINCS source/discharge boundary forcing. |
 | CaMa-Flood water-level boundary | `m` | `m` | none after datum check | DEM and boundary water levels must share a vertical datum. |
@@ -271,7 +271,7 @@ metric with the reason rather than substituting a proxy score.
 
 ### Chaohe Basin Flood Test (2026-03-21)
 - **Domain**: 174x171 cells at 100m resolution, downstream Chaohe basin (40.50-40.65N, 116.60-116.80E)
-- **Event**: Aug 2-12, 2008 monsoon rainfall (88.7mm total from CMFD via VIC forcing)
+- **Event**: Aug 2-12, 2008 monsoon rainfall (88.7mm total; in this early test the CMFD rain came through VIC forcing files — that reader was removed on 2026-10-02, use `--source cmfd`)
 - **DEM**: China DEM 90m, elevation range 143-1387m
 - **Runtime**: 5.7 seconds (OpenMP, 4 threads)
 - **Max flood depth**: 7.29m (valley bottoms)
@@ -283,7 +283,7 @@ metric with the reason rather than substituting a proxy score.
 
 ### Bengbu (Huai River) Flood Test (2026-03-22) — Step 3 Validation
 - **Domain**: 384x455 = 174,720 cells at 100m resolution, Huai River floodplain near Bengbu city (32.7-33.1N, 117.1-117.5E)
-- **Event**: July 2003 monsoon flood (390mm total rainfall from CMFD via VIC forcing)
+- **Event**: July 2003 monsoon flood (390mm total rainfall; CMFD rain came through VIC forcing files in this early test — that reader was removed on 2026-10-02, use `--source cmfd`)
 - **DEM**: China DEM 90m, elevation range 3.5-310.2m (river channel to hills)
 - **Runtime**: 397 seconds (OpenMP, 4 threads)
 - **Max flood depth**: 6.99m (river channel depressions)
@@ -432,7 +432,6 @@ These non-obvious facts cause **silent failures** if violated.
 SFINCS expects precipitation rate in **mm/hr**.
 - CMFD/MSWX: mm/3hr -> divide by 3
 - Some climate models: kg/m2/s (= m/s) -> multiply by 3,600,000
-- VIC forcing ASCII: mm/timestep (3-hourly) -> divide by 3
 
 Off by 3x produces flood depths 3x too high. Off by 3.6 million produces zero flooding. Both are silent.
 
@@ -511,10 +510,6 @@ cannot run a fluvial reach at steady state. **The rule now**: coastal → `msk=2
 ### 10. Use ASCII precipitation, not NetCDF (dt_v004)
 
 The `precipfile` keyword (ASCII format: time_seconds precip_mmhr) is reliable across all SFINCS versions. The `netprecipfile` keyword (NetCDF) may silently fail to load, showing "Precipitation: no" in the log without crashing. Always prefer ASCII for precipitation.
-
-### 11. VIC forcing column order (dt_v002)
-
-VIC forcing ASCII files have columns: TEMP(0), PREC(1), PRESSURE(2), SW(3), LW(4), VP(5), WIND(6). Column 0 is temperature, NOT precipitation. This is a common confusion because many tools assume column 0 is the primary variable.
 
 ### 12. gfortran cleanup SIGABRT is not an error (dt_v006)
 
@@ -654,10 +649,10 @@ python tools/s3_roughness/build_sfincs_roughness.py \
 
 # 4. Prepare rainfall forcing
 python tools/s4_forcing/prepare_sfincs_rainfall.py \
-  --forcing_dir outputs/chaohe_run/vic_temp/forcing/forcing_final \
+  --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
   --grid_info outputs/sfincs_test/grid_info.json \
   --start_date 2003-07-01 --end_date 2003-09-30 \
-  --source vic_ascii \
+  --source cmfd \
   --output_dir outputs/sfincs_test/
 
 # 5. Generate configuration
@@ -720,8 +715,6 @@ python tools/s8_postprocess/plot_sfincs_flood_map.py \
 | ID | Severity | Domain | Summary | Error Log |
 |----|----------|--------|---------|-----------|
 | dt_v001 | **fatal** | file_format | sfincs.ind binary format wrong (full 2D grid vs header+indices) | err_006 |
-| dt_v002 | **fatal** | unit_conversion | VIC forcing col 0 is temp, not precip — wrong column read | err_007 |
-| dt_v003 | **fatal** | temporal_alignment | Multi-year VIC forcing time offset not computed | err_008 |
 | dt_v004 | degraded | file_format | NetCDF precip via netprecipfile silently fails — use ASCII | err_009 |
 | dt_v005 | **silent** | boundary_condition | mask=2 drains inland terrain at 0m water level | err_010 |
 | dt_v006 | degraded | runtime | gfortran SIGABRT after "Simulation finished" — output valid | err_004 |

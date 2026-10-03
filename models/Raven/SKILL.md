@@ -29,7 +29,7 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (11 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (43 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (46 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
@@ -37,7 +37,7 @@
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 | what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -69,8 +69,22 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-Then convert to Raven .rvt format using this KI's tool: `tools/s3_forcing/convert_forcing_to_rvt.py`
+**Data Sources**: Raven's forcing is built straight from the data source (CMFD, MSWX or NASA POWER) by this KI's
+own tool, `tools/s3_forcing/convert_forcing_to_rvt.py`. The tool reads the source only through
+`ki_tools_common.load_forcing` (`load_daily_forcing` for one point, `load_daily_forcing_points` for many
+points in one shared pass). Name the source with `--forcing_source cmfd|mswx|nasa_power` (required) and the
+place with ONE of:
+
+| Place | Use it for |
+|-------|-----------|
+| `--basin_shp <polygon>` | a basin run (the normal case): mean over every source grid-cell centre inside the polygon, cos(latitude) weights |
+| `--points_csv <lat,lon rows>` | the plain mean of chosen points |
+| `--lat --lon` | one point — only for a basin inside one or two source cells (dt_rav_048) |
+
+Raven needs no other model's files and no other model's run for its input. `--obs_file` writes the
+observation `.rvt` the main `.rvt` redirects to; `--gauge_elev` is the elevation the series stands for (cmfd:
+read from the store when not given). A missing value, an uneven time axis or a period not fully covered stops
+the tool and nothing is written. Details: `docs/s3_forcing_conversion_skill.md`.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -146,7 +160,7 @@ numpy, pandas, geopandas, rasterio, shapely, netCDF4 (all in HydroCraft venv)
 | s0 | Configuration | `select_model_template.py` | Select emulation template, generate .rvi skeleton |
 | s1 | Basin/HRU Setup | `build_rvh_from_shapefile.py` | Generate .rvh from shapefile + DEM + land cover |
 | s2 | Parameters | `build_rvp_parameters.py` | Generate .rvp with soil/veg/land use parameters |
-| s3 | Forcing | `convert_forcing_to_rvt.py` | Convert CMFD/MSWX forcing to .rvt (UNIT-CRITICAL) |
+| s3 | Forcing | `convert_forcing_to_rvt.py` | Build .rvt straight from CMFD/MSWX/NASA POWER: one point or basin mean (UNIT-CRITICAL) |
 | s4 | Model Structure | (via select_model_template.py) | Process algorithm selection in .rvi |
 | s5 | Initial Conditions | `generate_rvc_initial.py` | Generate .rvc for cold start |
 | s6 | Execution | `run_raven.py` | Run Raven.exe with preflight checks |
@@ -195,17 +209,20 @@ computed.
 
 Exact input/output shapes live in `docs/format_spec.yaml`. Raven performs no
 unit conversion on `.rvt` values, so these conversions must happen before model
-execution, normally in `tools/s3_forcing/convert_forcing_to_rvt.py`.
+execution. They are split in two: the shared loader (`ki_tools_common.load_forcing`)
+turns each source into one standard daily series; `tools/s3_forcing/convert_forcing_to_rvt.py`
+turns that series into Raven units. Do not redo a loader conversion.
 
-| Variable | Source unit | Raven unit | Conversion |
-|----------|-------------|------------|------------|
-| `PRECIP` from CMFD 3-hr | `kg/m2/s` | `mm/d` | multiply by `10800` per 3-hour step, then sum 8 steps |
-| `PRECIP` from MSWX 3-hr | `mm/3hr` | `mm/d` | sum 8 steps; no `10800` multiplier |
-| `TEMP_MIN`, `TEMP_MAX`, `TEMP_AVE` from CMFD | `K` | `degC` | subtract `273.15` |
-| `TEMP_MIN`, `TEMP_MAX`, `TEMP_AVE` from MSWX | `degC` | `degC` | none |
-| `SW_RADIA` | `W/m2` | `MJ/m2/d` | multiply by `0.0864` |
-| `AIR_PRES` | `Pa` | `kPa` | divide by `1000` |
-| `WIND_VEL` | `m/s` | `m/s` | none |
+| Variable | Source unit | Raven unit | Conversion | Done by |
+|----------|-------------|------------|------------|---------|
+| `PRECIP` from CMFD 3-hr | `kg/m2/s` (a rate) | `mm/d` | daily mean rate x `86400` | loader |
+| `PRECIP` from MSWX 3-hr | `mm/3hr` | `mm/d` | sum 8 steps | loader |
+| `TEMP_MIN`, `TEMP_MAX` from CMFD | `K` | `degC` | subtract `273.15`, daily min / max | loader |
+| `TEMP_MIN`, `TEMP_MAX` from MSWX | `degC` | `degC` | daily min / max | loader |
+| `TEMP_AVE` | — | `degC` | `(TEMP_MAX + TEMP_MIN) / 2` | s3 tool |
+| `SW_RADIA` | `W/m2` | `MJ/m2/d` | multiply by `0.0864` | s3 tool |
+| `AIR_PRES` | `Pa` | `kPa` | divide by `1000` | s3 tool |
+| `WIND_VEL` | `m/s` | `m/s` | none | — |
 
 ### 8c. Sign Conventions and Output Units
 
@@ -254,7 +271,7 @@ of tuning (dt_rav_036).
 | `select_model_template` | s0 | `tools/s0_config/select_model_template.py` | ~330 | Select from 8 templates; generate .rvi with correct processes |
 | `build_rvh_from_shapefile` | s1 | `tools/s1_basin_setup/build_rvh_from_shapefile.py` | ~380 | Generate .rvh from shapefile + DEM + AVHRR; 3 HRU strategies |
 | `build_rvp_parameters` | s2 | `tools/s2_parameters/build_rvp_parameters.py` | ~320 | Generate .rvp with soil/veg parameters and template defaults |
-| `convert_forcing_to_rvt` | s3 | `tools/s3_forcing/convert_forcing_to_rvt.py` | ~430 | Convert CMFD/MSWX to .rvt; ALL unit conversions happen here |
+| `convert_forcing_to_rvt` | s3 | `tools/s3_forcing/convert_forcing_to_rvt.py` | ~690 | Source (CMFD/MSWX/NASA POWER) -> .rvt, one point or basin mean; observation .rvt; refuses gaps |
 | `generate_rvc_initial` | s5 | `tools/s5_initial_conditions/generate_rvc_initial.py` | ~120 | Generate .rvc with climate-aware default initial conditions |
 | `run_raven` | s6 | `tools/s6_execution/run_raven.py` | ~290 | Execute Raven with preflight, error parsing, output collection |
 | `parse_raven_output` | s7 | `tools/s7_output/parse_raven_output.py` | ~310 | Parse Hydrographs.csv + Diagnostics.csv + WatershedStorage.csv |
@@ -287,14 +304,14 @@ These non-obvious facts cause silent failures. Each is a diagnostic triplet.
 
 **"Raven ignores units and will not do units conversion"** — stated explicitly on the Raven cheat sheet. This means:
 
-| Variable | CMFD/MSWX Unit | Raven Expects | Conversion | If Wrong |
+| Variable | Source Unit | Raven Expects | Conversion | If Wrong |
 |----------|---------------|---------------|------------|----------|
-| PRECIP | mm/3hr | mm/d | sum 8 timesteps | 8x too much runoff |
-| TEMP | K | degC | subtract 273.15 | absurd PET, no snowmelt |
+| PRECIP | CMFD kg/m2/s (rate); MSWX mm/3hr | mm/d | day total | near-zero or 8x runoff |
+| TEMP | CMFD K; MSWX degC | degC | subtract 273.15 (CMFD) | absurd PET, no snowmelt |
 | SW_RADIA | W/m2 | MJ/m2/d | multiply 0.0864 | extreme PET |
 | AIR_PRES | Pa | kPa | divide 1000 | broken vapor pressure |
 
-**All conversions MUST happen in `convert_forcing_to_rvt.py`.** The tool has bounds checking to catch violations.
+**All conversions happen in `ki_tools_common.load_forcing` + `convert_forcing_to_rvt.py`** — never in a hand-made reader (dt_rav_047). The tool refuses values outside the physical range and writes nothing.
 
 ### 2. Missing forcing filled with zeros silently (dt_010)
 
@@ -421,7 +438,8 @@ source KISSPATH_PYTHON_ENV/bin/activate
 
 KI=KISSPATH_KI_ROOT/Raven/knowledge_infrastructure
 
-# 1. Select template
+# 1. Select template (s0 reads the .rvh and .rvt already in --output_dir to decide PET and
+#    orographic corrections: for a mountain basin run steps 2 and 4 FIRST, then this step)
 python $KI/tools/s0_config/select_model_template.py \
     --template hbv_ec --basin_name chaohe \
     --output_dir outputs/chaohe_raven/ \
@@ -440,12 +458,17 @@ python $KI/tools/s2_parameters/build_rvp_parameters.py \
     --rvh_file outputs/chaohe_raven/chaohe.rvh \
     --output_dir outputs/chaohe_raven/
 
-# 4. Convert forcing to .rvt (CRITICAL — unit conversions happen here)
+# 4. Build forcing .rvt straight from the source (CRITICAL — unit conversions happen here)
+#    basin mean over every CMFD cell centre inside the basin polygon; also writes chaohe_obs.rvt
 python $KI/tools/s3_forcing/convert_forcing_to_rvt.py \
-    --forcing_dir outputs/chaohe_2000_2010_025deg/vic_temp/forcing/forcing_final \
-    --grid_nc outputs/chaohe_2000_2010_025deg/vic_temp/grid/basin_grid.nc \
+    --forcing_source cmfd \
+    --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+    --basin_shp data/shp/chaohe_zhangjiaofen_shp/chaohe_zhangjiaofen_boundary_shp/chaohe_zhangjiaofen_boundary.shp \
     --output_dir outputs/chaohe_raven/ --basin_name chaohe \
-    --start_year 2000 --end_year 2010 --forcing_source cmfd
+    --start_year 2000 --end_year 2010 --include_full_forcing \
+    --obs_file <gauge table with date and Q columns> --obs_subbasin_id 1 \
+    --obs_start_date 2001-01-01 --obs_end_date 2010-12-31
+#    (a basin inside one or two cells: --lat <lat> --lon <lon> instead of --basin_shp)
 
 # 5. Generate .rvc (initial conditions)
 python $KI/tools/s5_initial_conditions/generate_rvc_initial.py \
@@ -481,11 +504,13 @@ python $KI/tools/s10_coupling/raven_vic_comparison.py \
 
 ## Diagnostic Triplets
 
-25 triplets covering 7 failure domains. See `diagnostics/triplets.yaml` for full details.
+The table lists the first 25. See `diagnostics/triplets.yaml` for all of them, including the s3 forcing
+triplets dt_rav_046 to dt_rav_050 (direct forcing routes, removed VIC and hand-made readers, basin mean,
+observation .rvt and gauge elevation).
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
-| dt_001 | silent | unit_conversion | Precip mm/3hr not aggregated to mm/d — 8x overestimate |
+| dt_001 | silent | unit_conversion | Precip not a day total (mm/d) — 8x overestimate |
 | dt_002 | silent | unit_conversion | Temperature in Kelvin not Celsius — wrong PET/snow |
 | dt_003 | silent | unit_conversion | Shortwave W/m2 not MJ/m2/d — extreme PET |
 | dt_004 | silent | unit_conversion | Pressure Pa not kPa — broken vapor pressure |
@@ -516,7 +541,7 @@ python $KI/tools/s10_coupling/raven_vic_comparison.py \
 ## 11. Validated Results -- Bengbu Basin (Step 3 Production Validation)
 
 **Basin**: Bengbu (Huai River, 118,358 km2, humid subtropical monsoon)
-**Period**: 2000-01-01 to 2005-12-31, CMFD forcing (224 grid cells aggregated to basin mean)
+**Period**: 2000-01-01 to 2005-12-31, CMFD forcing (224 grid cells aggregated to basin mean; made in March 2026 by a forcing route that has since been removed — rebuild with `--basin_shp` before reusing these numbers)
 **Data**: ALL inputs from HydroCraft global datasets (CMFD forcing, China DEM 90m, AVHRR land cover)
 **Reference**: VIC 5.1.0 + Lohmann routing (mean Q = 1,509 m3/s)
 
@@ -575,11 +600,10 @@ production run below compares Raven to VIC, while the headline field bar for
 
 ### Errors Found During Validation
 
-1. **err_005 (CRITICAL)**: `convert_forcing_to_rvt.py` had WRONG VIC forcing column mapping. Tool assumed [PRECIP, TMAX, TMIN, WIND, SW, LW, PRESSURE] but actual VIC output from `process_forcing.py` is [AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND]. Caused 44,551 mm/yr precip (44x too high), temperature read as 50C (pressure column). **Fixed** by correcting column indices.
-2. **err_006 (MODERATE)**: `convert_forcing_to_rvt.py` could not read HydroCraft VIC grid NC (uses `y`/`x` with 2D mask, not `lat`/`lon`). **Fixed** by adding y/x + mask support.
-3. **err_007 (MODERATE)**: `build_rvp_parameters.py` HRU parser used `line.split()` on comma-separated .rvh files, producing wrong class names. **Fixed** by detecting and handling CSV format.
-4. **err_008 (MODERATE)**: `build_rvp_parameters.py` read column [9] (AQUIFER_PROFILE = `[NONE]`) as terrain class instead of column [10]. **Fixed** by reading correct column index.
-5. **err_009 (CRITICAL)**: `select_model_template.py` GR4J template put `GR4J_X1-X4` as `:GlobalParameter` but Raven v4.1 requires them as soil/land-use properties. Template also used `:SWCanopyCorrect` (not recognized in v4.1). **Workaround**: Used hand-crafted templates from working Chaohe run (`run_ensemble_v2.py`). Generic tools need refactoring.
+1. **err_005, err_006**: faults of an early forcing route that read another model's forcing files. That route was removed on 2026-10-03 (dt_rav_046); the forcing is now built straight from the source.
+2. **err_007 (MODERATE)**: `build_rvp_parameters.py` HRU parser used `line.split()` on comma-separated .rvh files, producing wrong class names. **Fixed** by detecting and handling CSV format.
+3. **err_008 (MODERATE)**: `build_rvp_parameters.py` read column [9] (AQUIFER_PROFILE = `[NONE]`) as terrain class instead of column [10]. **Fixed** by reading correct column index.
+4. **err_009 (CRITICAL)**: `select_model_template.py` GR4J template put `GR4J_X1-X4` as `:GlobalParameter` but Raven v4.1 requires them as soil/land-use properties. Template also used `:SWCanopyCorrect` (not recognized in v4.1). **Workaround**: Used hand-crafted templates from working Chaohe run (`run_ensemble_v2.py`). Generic tools need refactoring.
 
 ---
 
@@ -612,7 +636,7 @@ knowledge_infrastructure/
     s0_config/select_model_template.py       # Select emulation template
     s1_basin_setup/build_rvh_from_shapefile.py  # Generate .rvh
     s2_parameters/build_rvp_parameters.py    # Generate .rvp
-    s3_forcing/convert_forcing_to_rvt.py     # Convert forcing (UNIT-CRITICAL)
+    s3_forcing/convert_forcing_to_rvt.py     # Source -> .rvt, point or basin mean (UNIT-CRITICAL)
     s5_initial_conditions/generate_rvc_initial.py  # Generate .rvc
     s6_execution/run_raven.py                # Execution wrapper
     s7_output/parse_raven_output.py          # Parse output files

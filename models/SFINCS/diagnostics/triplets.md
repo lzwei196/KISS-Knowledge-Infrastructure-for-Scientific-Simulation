@@ -215,26 +215,6 @@ Consult this file FIRST when SFINCS misbehaves.
 
 ---
 
-### dt_v002 — VIC forcing column 0 is temperature, not precipitation
-
-**Symptom**: `prepare_sfincs_rainfall.py` produces negative "precipitation" values when reading VIC forcing files.
-
-**Diagnosis**: VIC forcing ASCII files have 7 columns: TEMP(0), PREC(1), PRESSURE(2), SW(3), LW(4), VP(5), WIND(6). The original code read `data[:, 0]` (temperature, can be negative in winter) instead of `data[:, 1]` (precipitation).
-
-**Remedy**: Change `data[:, 0]` to `data[:, 1]` in the vic_ascii branch. Check output values are non-negative. `prepare_sfincs_rainfall.py` (fixed) reads column 1 and validates precip >= 0.
-
----
-
-### dt_v003 — Multi-year VIC forcing time offset not computed
-
-**Symptom**: SFINCS rainfall forcing shows wrong season — e.g., winter precipitation for a summer flood event.
-
-**Diagnosis**: VIC forcing files contain the entire simulation period (e.g., 2000-2010, ~80,000+ 3-hourly timesteps). When extracting a sub-period (e.g., Aug 2008), the tool must compute the byte offset from VIC simulation start to the target start_date. The original code reads the whole file but takes only the first n_times entries without offset, so for start_date=2008-08-01 it reads Jan 2000 data instead.
-
-**Remedy**: Compute day offset from VIC simulation start to target start_date, convert to timestep offset, then slice: `data[ts_start:ts_end, 1]`. `prepare_sfincs_rainfall.py` (fixed) computes time offset from VIC start year.
-
----
-
 ### dt_v004 — netprecipfile silently fails; SFINCS runs with zero precipitation
 
 **Symptom**: SFINCS log shows `Precipitation: no` despite netprecipfile being specified in sfincs.inp.

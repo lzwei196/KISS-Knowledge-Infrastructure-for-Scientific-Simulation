@@ -22,9 +22,10 @@ s2_obs_data ──────────────────────�
 - **Milestone**: nhru > 0, total area matches basin area
 
 ### Stage 2: Observation Data (s2_observation_data)
-- **Input**: VIC forcing files or weather station data
-- **Output**: `.obs` file with CRHM-format header and data
-- **Tools**: `convert_vic_to_obs.py`, `validate_obs_file.py`
+- **Input**: a forcing source named by the user or the plan (cmfd, mswx, nasa_power), or a standard table made from a new dataset.
+- **Output**: `.obs` file with CRHM-format header and data, plus `<obs>.meta.json` (yearly precipitation, forcing elevation)
+- **Tools**: `build_obs.py`, `validate_obs_file.py`
+- **Key decision**: one point (`--lat --lon`) or basin mean (`--basin_shp`); pass `forcing_elev_m` from the meta file to stage 4
 - **Key decision**: Humidity conversion (specific -> relative), timestep
 - **Milestone**: .obs validates with no errors, no datetime gaps
 - **CRITICAL**: Humidity unit conversion (dt_001) -- #1 silent error

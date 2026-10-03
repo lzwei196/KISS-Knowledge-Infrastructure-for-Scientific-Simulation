@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Convert meteorological forcing data from external sources (CMFD, MSWX, ERA5, VIC forcing, NASA POWER) into LDNDC's tab-separated `climate.txt` format. This is the primary driver for all LDNDC processes: soil temperature, decomposition rates, ET, snow dynamics, and plant growth all depend on correct climate input.
+Convert meteorological forcing data from external sources (CMFD, MSWX, NASA POWER, FLUXNET site files) into LDNDC's tab-separated `climate.txt` format. This is the primary driver for all LDNDC processes: soil temperature, decomposition rates, ET, snow dynamics, and plant growth all depend on correct climate input.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ Convert meteorological forcing data from external sources (CMFD, MSWX, ERA5, VIC
 
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
-| forcing_source | string | User | cmfd, mswx, era5, vic_forcing, nasa_power, csv |
+| forcing_source | string | User | cmfd, mswx, nasa_power, fluxnet, fluxnet_fullset |
 | forcing_path | directory | HydroCraft data | Path to forcing data files |
 | lat, lon | number | S1 | Grid cell coordinates |
 | start_date, end_date | string | S1 | Simulation period |
@@ -30,22 +30,21 @@ Convert meteorological forcing data from external sources (CMFD, MSWX, ERA5, VIC
 ### Step 1: Convert forcing to LDNDC format
 
 ```bash
-python tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py
+python tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py \
+  <forcing_source> <forcing_path> <lat> <lon> <start YYYY-MM-DD> <end YYYY-MM-DD> <output climate.txt> [elevation_m]
+# CMFD: forcing_path = KISSPATH_DATA/forcing/Data_forcing_03hr_010deg
 ```
-
-Set all input variables before running.
 
 **Unit conversion table** (applied automatically by the tool):
 
-| Variable | CMFD unit | MSWX unit | VIC unit | LDNDC unit |
-|----------|-----------|-----------|----------|------------|
-| Temperature | K | K | K | C (subtract 273.15) |
-| Precipitation | mm/3hr | mm/3hr | mm/timestep | mm/day (sum sub-daily) |
-| SW radiation | W/m2 | W/m2 | W/m2 | W/m2 (daily mean) |
-| LW radiation | W/m2 | W/m2 | W/m2 | W/m2 (daily mean) |
-| Wind speed | m/s | m/s | m/s | m/s (daily mean) |
-| Humidity | kg/kg (specific) | % (RH) | Pa (VP) | % (RH, 0-100) |
-| Pressure | Pa | Pa | kPa | kPa (for RH calc) |
+| Variable | CMFD unit | MSWX unit | LDNDC unit |
+|----------|-----------|-----------|------------|
+| Temperature | K | C | C (CMFD: subtract 273.15) |
+| Precipitation | kg/m2/s | mm/3hr | mm/day (sum over the day) |
+| SW radiation | W/m2 | W/m2 | W/m2 (daily mean) |
+| Wind speed | m/s | m/s | m/s (daily mean) |
+
+The shared loader (`ki_tools_common.load_forcing.load_daily_forcing`) does these conversions; the tool writes `prec tavg tmax tmin grad wind`.
 
 ### Step 2: Validate climate file
 
@@ -89,7 +88,7 @@ Set `climate_file` to the generated climate.txt path.
 > See diagnostic triplet dt_005.
 
 > **PITFALL**: Sub-daily precipitation not summed
-> VIC forcing uses 3-hourly timesteps (8 per day). Daily precip must be the SUM of all sub-daily values, not a single value. Taking only one value gives 1/8 the correct precipitation.
+> CMFD and MSWX use 3-hourly timesteps (8 per day). Daily precip must be the SUM of all sub-daily values, not a single value. Taking only one value gives 1/8 the correct precipitation.
 > See diagnostic triplet dt_014.
 
 > **PITFALL**: Comma-separated instead of tab-separated

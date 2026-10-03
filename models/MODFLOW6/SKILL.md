@@ -29,7 +29,7 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (30 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
@@ -37,7 +37,7 @@
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 | what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -240,7 +240,7 @@ S1 Installation ──> S2 Grid/DIS ──> S3 NPF/STO ──> S4 Boundary Condi
 | Stage | Tool ID | Script | Purpose |
 |-------|---------|--------|---------|
 | S1 | `verify_mf6_installation` | `tools/s1/verify_mf6_installation.py` | Check mf6 and FloPy availability |
-| S2 | `create_grid_from_basin` | `tools/s2/create_grid_from_basin.py` | Basin shapefile to MODFLOW grid |
+| S2 | `create_grid_from_basin` | `tools/s2/create_grid_from_basin.py` | Grid NetCDF (lat, lon, mask) read as `--grid_nc` by the s2/s3/s4 tools, from a basin shapefile or a lat/lon box |
 | S2 | `build_dis_package` | `tools/s2/build_dis_package.py` | Create DIS package via FloPy |
 | S3 | `build_npf_package` | `tools/s3/build_npf_package.py` | Create NPF package (K, ICELLTYPE) |
 | S3 | `build_sto_package` | `tools/s3/build_sto_package.py` | Create STO package (Ss, Sy) |
@@ -260,7 +260,7 @@ S1 Installation ──> S2 Grid/DIS ──> S3 NPF/STO ──> S4 Boundary Condi
 | S9 | `plot_water_budget` | `tools/s9/plot_water_budget.py` | Budget bar chart |
 | S9 | `export_to_netcdf` | `tools/s9/export_to_netcdf.py` | Export for HydroCraft coupling |
 | S2 | `build_layers_from_global` | `tools/s2/build_layers_from_global.py` | TOP/BOTM/IDOMAIN/STRT from global rasters |
-| S3 | `assign_k_from_glhymps` | `tools/s3/assign_k_from_glhymps.py` | K/Sy from GLHYMPS 2.0 + HWSD pedotransfer |
+| S3 | `assign_k_from_glhymps` | `tools/s3/assign_k_from_glhymps.py` | K/Sy from GLHYMPS 2.0; Layer-1 K by `--layer1_k hwsd` (HWSD pedotransfer x100) or `alluvial_default` (1.0 m/day) |
 | S4 | `build_riv_from_cama` | `tools/s4/build_riv_from_cama.py` | RIV package from CaMa-Flood river network |
 | S10 | `configure_gwt` | `tools/s10_transport/configure_gwt.py` | Build GWT model (coupled or standalone) |
 | S10 | `parse_gwt_output` | `tools/s10_transport/parse_gwt_output.py` | Parse concentration output, plume analysis |
@@ -279,10 +279,11 @@ S1 Installation ──> S2 Grid/DIS ──> S3 NPF/STO ──> S4 Boundary Condi
 
 ## Automated Setup Pipeline
 
-Three new tools automate the most error-prone setup steps using the global datasets above:
+These tools automate the most error-prone setup steps using the global datasets above. All of them read the grid NetCDF written by `create_grid_from_basin` (never another model's grid file):
 
+0. **`create_grid_from_basin`** (S2) — Writes the grid NetCDF (NETCDF3_64BIT; `lat` row 0 = north, `lon`, `mask`). `--box LON_MIN LON_MAX LAT_MIN LAT_MAX --nrow N --ncol M` (all cells active) or `--shapefile basin.shp --cell_deg D` / `--cell_m M` (a cell is active when its centre is inside the basin). Example: `create_grid_from_basin.py --box -0.445 0.355 44.534 45.134 --nrow 30 --ncol 40 --out_nc <case>/grid.nc`.
 1. **`build_layers_from_global`** (S2) — Builds TOP/BOTM/IDOMAIN/STRT from DEM + depth-to-bedrock + water table depth rasters. Eliminates manual layer elevation guesswork.
-2. **`assign_k_from_glhymps`** (S3) — Assigns K/Sy from GLHYMPS 2.0 for deep layers + HWSD pedotransfer for the shallow soil layer. Handles CRS reprojection and logK decoding automatically.
+2. **`assign_k_from_glhymps`** (S3) — Assigns K/Sy from GLHYMPS 2.0 for deep layers. Layer 1: `--layer1_k hwsd` = HWSD straight from the soil source via `ki_tools_common.soil_utils.lookup_hwsd` (texture -> Saxton-Rawls Ksat cm/hr x 0.24 = m/day, x 100 per dt_v004, clipped 0.1-50 m/day; an active cell with no HWSD soil is refused with exit 4, never filled), or `--layer1_k alluvial_default` = 1.0 m/day. Handles CRS reprojection and logK decoding automatically.
 3. **`build_riv_from_cama`** (S4) — Builds RIV package from CaMa-Flood river network + discharge. Auto-clamps rbot to prevent fatal MODFLOW errors.
 
 ## Critical Domain Knowledge (Non-Obvious Facts)
@@ -305,7 +306,7 @@ Three new tools automate the most error-prone setup steps using the global datas
 
 9. **FloPy arrays must be 3D (nlay x nrow x ncol).** Common error: saving 2D arrays for `strt` or `sy`. FloPy will raise "Unable to set data layer 0. Data is not in a valid format" if you pass a 2D (nrow x ncol) array instead of 3D (nlay x nrow x ncol). Always use `np.broadcast_to()` or `np.stack()` to ensure 3D shape.
 
-10. **Layer 1 K: use VIC/HWSD soil Ksat, NOT GLHYMPS bedrock K.** GLHYMPS represents deep bedrock permeability (log-scale, often 1e-15 to 1e-12 m²). For the shallow water table layer (0-10m), VIC soil Ksat from HWSD pedotransfer is more appropriate (typically 0.1-10 m/day for alluvial basins). Tested on Wangjiaba: VIC K=1.0 m/d + Sy=0.15 gave GRACE r=0.56; GLHYMPS K=0.002 m/d + Sy=0.01 gave r=0.41. Use GLHYMPS for Layer 2-3 (deeper bedrock) only. The `assign_k_from_glhymps.py` tool does this by default — Layer 1 from HWSD, deeper from GLHYMPS — but verify the L1 values are reasonable (>0.1 m/day for alluvial, >0.01 for clay plains).
+10. **Layer 1 K: use HWSD soil Ksat or the alluvial default, NOT GLHYMPS bedrock K.** GLHYMPS represents deep bedrock permeability (log-scale, often 1e-15 to 1e-12 m²). For the shallow water table layer (0-10m), K from the HWSD pedotransfer scaled to aquifer K (dt_v004) is more appropriate (typically 0.1-10 m/day for alluvial basins). Tested on Wangjiaba: K=1.0 m/d + Sy=0.15 gave GRACE r=0.56; GLHYMPS K=0.002 m/d + Sy=0.01 gave r=0.41. Use GLHYMPS for Layer 2-3 (deeper bedrock) only. `assign_k_from_glhymps.py` does this: `--layer1_k alluvial_default` (1.0 m/day, the default) or `--layer1_k hwsd` (HWSD via `ki_tools_common.soil_utils.lookup_hwsd`, x100, clipped 0.1-50 m/day), deeper layers from GLHYMPS. Check `k_summary.json` (`k_layer1_source`, `k_layer1_active_range_mday`): >0.1 m/day for alluvial, >0.01 for clay plains. Never take K from another model's soil file (dt_mf6_010).
 
 10. **GLHYMPS CRS is Cylindrical Equal Area (meters), not WGS84.** Use geopandas bbox reprojection when doing spatial joins: reproject your WGS84 grid centroids to GLHYMPS CRS, or reproject GLHYMPS to WGS84. Direct coordinate comparison will fail silently.
 
@@ -397,10 +398,10 @@ heads = hds.get_data()
 
 | Component | Source | Status | Notes |
 |-----------|--------|--------|-------|
-| Grid | VIC 0.25deg basin_grid.nc | Validated | 16x24 grid, 224 active cells |
+| Grid | `create_grid_from_basin.py` (basin shapefile, 0.25deg cells) | Validated | 16x24 grid, 224 active cells |
 | DEM/TOP | China DEM 90m | Validated | Range: 5-1378 m |
 | Initial heads | Fan/Reinecke global WTD | Validated | WTD mean: 16.9 m, clamped to 1-5m for IC |
-| K (Layer 1) | HWSD via VIC soil params, scaled 100x | Validated | HWSD Ksat underestimates aquifer K by ~100x |
+| K (Layer 1) | HWSD soil Ksat, scaled 100x (`assign_k_from_glhymps.py --layer1_k hwsd`) | Validated | HWSD Ksat underestimates aquifer K by ~100x |
 | K (Layers 2-3) | Derived from Layer 1 K/3, K/30 | Validated | Typical depth decay factors |
 | Recharge | VIC OUT_BASEFLOW (mm/day -> m/day) | Validated | Mean: 0.578 mm/day = 0.000578 m/day |
 | Boundary (CHD) | DEM-derived (lowest 10% + edge cells) | Validated | 71 CHD cells |

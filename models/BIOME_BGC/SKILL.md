@@ -14,7 +14,7 @@
 
 > **HWSD soil lookup:** Use `from ki_tools_common.soil_utils import lookup_hwsd` to get sand/silt/clay/OC/pH for any lat/lon. Returns texture class and Saxton-Rawls hydraulic properties.
 
-> **CMFD direct reader available:** Use `from ki_tools_common.netcdf_utils import load_cmfd_daily_all` to read CMFD 3-hourly data directly. Returns daily precip (mm), temp (°C with Tmin/Tmax), radiation (W/m²), wind, humidity. Handles subdirectory search (Prec/, Temp/, etc.) and unit conversions automatically.
+> **Weather comes straight from the data source:** `tools/convert_forcing_to_bgc.py --source cmfd|mswx|nasa_power --lat <lat> --lon <lon> --start_year <y0> --end_year <y1> --output <met>` reads the product itself through `ki_tools_common.load_forcing.load_daily_forcing` and writes the met file plus `<met>.summary.json`. Do NOT call the loader yourself and do NOT build the met file from another model's input files. `--source fluxnet --forcing_file <site>/FULLSET_DD.csv` is the tower route. `--source` has no default.
 
 > **HWSD soil lookup:** Use `from ki_tools_common.soil_utils import lookup_hwsd` to get sand/silt/clay/OC/pH for any lat/lon. Returns texture class and Saxton-Rawls hydraulic properties.
 > to verify that the model binary/package and required data are available.
@@ -35,14 +35,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (3 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (33 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-26 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -69,8 +69,27 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-Then convert to BGC met format using this KI's tool: `tools/convert_forcing_to_bgc.py`
+**Data Sources**: this KI's own tool reads the source and writes the met file in one step:
+
+```bash
+# gridded / point product at the site (shared loader inside the tool)
+python tools/convert_forcing_to_bgc.py --source nasa_power \
+  --lat <lat> --lon <lon> --start_year <y0> --end_year <y1> --output metdata/site.mtc43
+python tools/convert_forcing_to_bgc.py --source cmfd --forcing_dir <CMFD store> \
+  --lat <lat> --lon <lon> --start_year <y0> --end_year <y1> --output metdata/site.mtc43   # China only
+python tools/convert_forcing_to_bgc.py --source mswx --forcing_dir KISSPATH_FORCING \
+  --lat <lat> --lon <lon> --start_year <y0> --end_year <y1> --output metdata/site.mtc43   # global, slow
+# flux tower with its own weather
+python tools/convert_forcing_to_bgc.py --source fluxnet --forcing_file <site>/FULLSET_DD.csv \
+  --lat <lat> --start_year <y0> --end_year <y1> --output metdata/site.mtc43
+```
+
+- `--source` is required. cmfd / mswx / nasa_power go through `ki_tools_common.load_forcing.load_daily_forcing` inside the tool; you do not call the loader yourself.
+- The tool takes Tmax, Tmin, precipitation (mm/day -> cm/day), specific humidity and the source's OWN surface pressure (-> VPD in Pa), and the 24-h mean shortwave (-> daylight average); Feb-29 is dropped.
+- Nothing is filled. A missing or non-finite value, an uneven time axis or a period the source does not fully cover stops the tool (exit 2) and no file is written (dt_029).
+- It also writes `<output>.summary.json` (source, point, period, mean annual precipitation, mean temperature). Compare these two numbers with the site's climate before running the model.
+- cmfd: always pass `--forcing_dir` (e.g. `KISSPATH_DATA/forcing/Data_forcing_03hr_010deg`); about 50 s per year for one point. mswx: about 15 min per year (5 variables, about 3 min each), read one file at a time (dt_033). nasa_power: network, about 2 s per year, daily data from 1981.
+- The met file is never built from another model's input files (dt_028).
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -139,12 +158,12 @@ BIOME-BGC simulates daily carbon, nitrogen, and water fluxes through natural ter
 
 | Variable | Unit model expects | Model input format | Source dataset | Source unit | Conversion |
 |----------|-------------------|--------------------|----------------|-------------|------------|
-| Tmax | deg C | daily met file column 3 | CMFD/MSWX/NASA POWER or VIC-derived forcing | deg C or K | keep deg C; subtract 273.15 if K |
-| Tmin | deg C | daily met file column 4 | CMFD/MSWX/NASA POWER or VIC-derived forcing | deg C or K | keep deg C; subtract 273.15 if K |
+| Tmax | deg C | daily met file column 3 | CMFD/MSWX/NASA POWER (shared loader) or FLUXNET tower | deg C | none (the loader already gives deg C) |
+| Tmin | deg C | daily met file column 4 | CMFD/MSWX/NASA POWER (shared loader) or FLUXNET tower | deg C | none (the loader already gives deg C) |
 | Tday | deg C | daily met file column 5 | computed | deg C | `Tmin + 0.45*(Tmax-Tmin)` |
-| prcp | cm/day | daily met file column 6 | CMFD/MSWX/NASA POWER or VIC-derived forcing | mm/day | divide by 10 |
-| VPD | Pa | daily met file column 7 | computed from humidity or source VPD | kPa or Pa | multiply kPa by 1000 |
-| srad | W/m2 **daylight average** (`metv.swavgfd`) | daily met file column 8 | CMFD/MSWX/NASA POWER/FLUXNET or VIC-derived forcing | W/m2 **24-h mean** | multiply by 86400/daylen (energy-conserving; done by `convert_forcing_to_bgc.py`, dt_027) |
+| prcp | cm/day | daily met file column 6 | CMFD/MSWX/NASA POWER (shared loader) or FLUXNET tower | mm/day | divide by 10 |
+| VPD | Pa | daily met file column 7 | computed from the source's specific humidity and the source's own surface pressure (cmfd/mswx/nasa_power), or tower VPD (fluxnet, hPa) | kg/kg + Pa, or hPa | `es(Tday) - q*P/(0.622+0.378*q)`; tower hPa x 100 |
+| srad | W/m2 **daylight average** (`metv.swavgfd`) | daily met file column 8 | CMFD/MSWX/NASA POWER/FLUXNET | W/m2 **24-h mean** | multiply by 86400/daylen (energy-conserving; done by `convert_forcing_to_bgc.py`, dt_027) |
 | daylen | s | daily met file column 9 | computed from latitude and day-of-year | s | compute astronomically |
 | atmospheric CO2 | ppm | constant or annual file in CO2_CONTROL | user/scenario | ppm | none |
 | atmospheric N deposition | kgN/m2/yr | constant, ramped, or annual file | user/scenario | kgN/m2/yr | none |
@@ -194,7 +213,7 @@ Use the wrappers in `tools/` for generated inputs, spinup, normal execution, and
 | S5 | Spinup Execution | `run_bgc_spinup.py` | `docs/s5_spinup_strategy_skill.md` |
 | S6 | Normal Execution | `run_bgc.py` | -- |
 | S7 | Output Analysis | `parse_bgc_output.py` | -- |
-| S8 | VIC Coupling | (orchestrate per-cell) | -- |
+| S8 | Comparison with VIC results (optional) | (orchestrate per-cell; BIOME-BGC input is never made from VIC input files) | -- |
 
 ## 6. Output Description
 
@@ -226,7 +245,7 @@ Other dag outputs, in dag terms: `daily_npp`, `daily_nee`, `daily_nep`, `daily_h
 |------|------------|---------|
 | `generate_site_ini` | `tools/generate_site_ini.py` | Generate .ini file from structured inputs (keyword-section format) |
 | `select_ecophysiology` | `tools/select_ecophysiology.py` | Map AVHRR land cover to PFT and generate .epc file |
-| `convert_forcing_to_bgc` | `tools/convert_forcing_to_bgc.py` | Convert VIC forcing to BGC met format (mm->cm, compute VPD in Pa, compute daylen) |
+| `convert_forcing_to_bgc` | `tools/convert_forcing_to_bgc.py` | Build the BGC met file straight from the source: `--source cmfd\|mswx\|nasa_power` (shared loader, at `--lat/--lon`) or `--source fluxnet` (tower file); mm->cm, VPD in Pa from humidity + source pressure, daylen, daylight-average shortwave, 365-day years; refuses gaps/NaN |
 | `run_bgc_spinup` | `tools/run_bgc_spinup.py` | Execute spinup with -u flag, monitor convergence |
 | `run_bgc` | `tools/run_bgc.py` | Execute normal simulation with -m -a flags |
 | `parse_bgc_output` | `tools/parse_bgc_output.py` | Parse ASCII output, compute annual C budgets, physical checks |
@@ -308,7 +327,7 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging. These
 
 ### 1. Precipitation in cm, NOT mm (dt_007)
 
-BIOME-BGC expects precipitation in **cm/day**. CMFD/MSWX/VIC provide mm. Forgetting to divide by 10 gives 10x too much water. The model runs fine -- GPP/NPP will just be 10x too high. **This is the #1 silent error.**
+BIOME-BGC expects precipitation in **cm/day**. CMFD/MSWX/NASA POWER/FLUXNET provide mm. Forgetting to divide by 10 gives 10x too much water. The model runs fine -- GPP/NPP will just be 10x too high. **This is the #1 silent error.**
 
 ### 2. VPD in Pa, NOT kPa (dt_008)
 
@@ -320,7 +339,7 @@ Day length in seconds is NOT available from CMFD/MSWX. It must be computed from 
 
 ### 3b. Shortwave is the DAYLIGHT average, not the 24-h mean (dt_027)
 
-Met column 8 is `metv.swavgfd`, "daylight avg shortwave flux density" (`bgc_struct.h`, users guide met-file item 8; MTCLIM writes exactly that — the bundled Missoula file has ~470 W/m² in July). Every daily forcing product (CMFD/MSWX/NASA POWER/FLUXNET `SW_IN_F`, VIC 3-hourly averaged) is a 24-h mean. Feeding it unchanged delivers only daylen/86400 of the day's energy (≈0.65 in June, ≈0.3 in December at 55°N) and biases GPP/LAI/ET low by 30-60% with the seasonal timing intact. `convert_forcing_to_bgc.py` now scales by `86400/daylen`; pass `--srad_is_daylight_avg` only for MTCLIM-style input. (VPD column 7 is likewise the daylight average; FLUXNET `VPD_F` is a 24-h mean and is currently used as-is — smaller, opposite-sign effect.)
+Met column 8 is `metv.swavgfd`, "daylight avg shortwave flux density" (`bgc_struct.h`, users guide met-file item 8; MTCLIM writes exactly that — the bundled Missoula file has ~470 W/m² in July). Every daily forcing product (CMFD/MSWX/NASA POWER/FLUXNET `SW_IN_F`) is a 24-h mean. Feeding it unchanged delivers only daylen/86400 of the day's energy (≈0.65 in June, ≈0.3 in December at 55°N) and biases GPP/LAI/ET low by 30-60% with the seasonal timing intact. `convert_forcing_to_bgc.py` now scales by `86400/daylen`; pass `--srad_is_daylight_avg` only for MTCLIM-style input. (VPD column 7 is likewise the daylight average; FLUXNET `VPD_F` is a 24-h mean and is currently used as-is — smaller, opposite-sign effect.)
 
 ### 4. INI file is keyword-section based (dt_004)
 
@@ -359,11 +378,13 @@ TOOLS=KISSPATH_KI_ROOT/BIOME_BGC/knowledge_infrastructure/tools
 # 1. Select PFT and generate .epc
 python $TOOLS/select_ecophysiology.py --pft ENF --output epc/site.epc
 
-# 2. Convert VIC forcing to BGC met format
+# 2. Build the met file straight from the weather source (no default source;
+#    cmfd/mswx: add --forcing_dir <store>; flux tower: --source fluxnet --forcing_file <FULLSET_DD.csv>)
 python $TOOLS/convert_forcing_to_bgc.py \
-  --forcing_file <vic_forcing_file> \
-  --lat 46.8 --start_year 2000 --end_year 2010 \
+  --source nasa_power --lat 46.8 --lon -114.0 \
+  --start_year 2000 --end_year 2010 \
   --output metdata/site.mtc43
+cat metdata/site.mtc43.summary.json   # mean annual precipitation / temperature: must fit the site
 
 # 3. Generate spinup .ini
 python $TOOLS/generate_site_ini.py \
@@ -412,17 +433,18 @@ Expected results for Missoula ENF (44 years, 1950-1993):
 
 ## Error Handling
 
-See `diagnostics/triplets.yaml` for 25 diagnostic triplets covering:
+See `diagnostics/triplets.yaml` for 33 diagnostic triplets covering:
 - Unit conversion errors (dt_005-dt_010) -- **7 silent errors**, most dangerous
 - INI format errors (dt_002-dt_004, dt_011)
 - Spinup convergence issues (dt_012-dt_016)
 - Coupling pitfalls (dt_020-dt_025)
+- Weather-source route (dt_028-dt_033): no VIC forcing files, `--source` required, source pressure for VPD, gaps/NaN refused, MSWX read one file at a time
 - Parameter selection (dt_017-dt_019)
 
 ## 10. Coupling Interfaces
 
 ### Inbound (other models -> BIOME-BGC)
-- **VIC forcing** -> `convert_forcing_to_bgc.py` -> BGC met file
+- none for weather: the met file is built from the data source itself (CMFD / MSWX / NASA POWER through the shared loader, or a FLUXNET tower file) by `convert_forcing_to_bgc.py`, never from another model's input files
 - **HWSD soil** -> sand/silt/clay/depth in .ini SITE section
 - **AVHRR land cover** -> `select_ecophysiology.py` -> PFT + .epc
 
@@ -464,7 +486,7 @@ Other convention examples that have null bands in `docs/validation_convention.ya
 
 | Component | Source | Status | Notes |
 |-----------|--------|--------|-------|
-| Forcing | Pipeline | Available | Use `load_daily_forcing` or CMFD direct reader, then `tools/convert_forcing_to_bgc.py`. |
+| Forcing | CMFD / MSWX / NASA POWER / FLUXNET tower | Available | `tools/convert_forcing_to_bgc.py --source cmfd\|mswx\|nasa_power --lat --lon ...` (the tool calls the shared loader itself) or `--source fluxnet --forcing_file`. |
 | Soil | HWSD or supplied soil database | Available | Use `lookup_hwsd`; sand/silt/clay must sum to 100. |
 | Land cover | AVHRR or explicit PFT | Available | BIOME-BGC is for natural vegetation classes 1-10. |
 | Initial conditions | Spinup endpoint | Required | Multi-century spinup is mandatory for realistic NEE. |

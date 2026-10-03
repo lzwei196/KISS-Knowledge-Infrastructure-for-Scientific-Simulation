@@ -14,9 +14,9 @@
 
 | Knowledge Item | Type | Source |
 |---------------|------|--------|
-| VIC precip mm/timestep -> SUMMA kg/m2/s: divide by DATA_STEP | Procedural | Unit analysis |
-| VIC temp C -> SUMMA K: add 273.15 | Procedural | Unit analysis |
-| VIC pressure kPa -> SUMMA Pa: multiply by 1000 | Procedural | Unit analysis |
+| Precipitation mm in the step -> SUMMA kg/m2/s: divide by the step seconds | Procedural | Unit analysis |
+| Temperature C -> SUMMA K: add 273.15 | Procedural | Unit analysis |
+| Pressure must be Pa in SUMMA (kPa -> Pa: multiply by 1000) | Procedural | Unit analysis |
 | Forcing hruId must match attributes hruId exactly | Evaluative | SUMMA source |
 | Mean pptrate should be ~1e-5 kg/m2/s for temperate basins | Debugging | Empirical validation |
 | Pressure in wrong units causes NaN soil temperature | Debugging | Operational experience |

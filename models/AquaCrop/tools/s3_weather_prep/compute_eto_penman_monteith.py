@@ -6,7 +6,7 @@ Stage:        s3_weather_prep
 Description:  Computes FAO-56 Penman-Monteith reference evapotranspiration (ET0)
               from daily meteorological data. Required when source data does not
 from ki_tools_common.humidity import saturation_vapor_pressure
-              include ET0 (VIC, CMFD, MSWX, station data).
+              include ET0 (CMFD, MSWX, NASA POWER, station data).
 
 Reference:    Allen et al. (1998) FAO Irrigation and Drainage Paper 56
 

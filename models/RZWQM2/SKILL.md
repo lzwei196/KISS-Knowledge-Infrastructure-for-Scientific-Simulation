@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (38 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (36 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (10 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (29 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -58,8 +58,6 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s0_management_data/crop_name_harmonizer.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/crop_name_harmonizer.py --help` |
 | `tools/s0_management_data/fertilizer_rate_lookup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/fertilizer_rate_lookup.py --help` |
 | `tools/s0_management_data/irrigation_type_lookup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/irrigation_type_lookup.py --help` |
-| `tools/s0_vic_coupling/vic_forcing_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_vic_coupling/vic_forcing_converter.py --help` |
-| `tools/s0_vic_coupling/vic_soil_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_vic_coupling/vic_soil_converter.py --help` |
 | `tools/s10_calibration/modify_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/modify_soil_params.py --help` |
 | `tools/s10_calibration/parse_rzwqm2_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/parse_rzwqm2_output.py --help` |
 | `tools/s10_calibration/rzwqm2_calibrate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/rzwqm2_calibrate.py --help` |
@@ -84,7 +82,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s9_result_parsing/parse_ana_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_result_parsing/parse_ana_output.py --help` |
 | `tools/s9_result_parsing/parse_layer_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_result_parsing/parse_layer_output.py --help` |
 
-*36 public tools; `_`-prefixed helpers and packaging files excluded.*
+*34 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -149,14 +147,14 @@ The binary is also copied into each scenario directory by the template. Either p
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 RZWQM2 forcing tools in this KI:
 - `tools/s0_global_data/forcing_source_adapter.py` — Multi-source forcing adapter (CMFD/MSWX/NASA POWER)
-- `tools/s0_vic_coupling/vic_forcing_converter.py` — Converts VIC forcing to RZWQM2 met format
 - `tools/s2_met_prep/generate_met_file.py` — Generates RZWQM2 .MET meteorological input file
 - `tools/s2_met_prep/power_cache_to_rzwqm2.py` — Converts NASA POWER cache to RZWQM2 format
 - `tools/s2_met_prep/met_quality_check.py` — QC validation of met data
 
 ### Soil properties
 
-- `tools/s0_vic_coupling/vic_soil_converter.py` — Converts VIC soil parameters to RZWQM2 format
+- `tools/s0_global_data/hwsd_soil_adapter.py` — Soil profile straight from the HWSD raster + database (primary)
+- `tools/s0_global_data/soil_source_adapter.py` — Soil profile from SoilGrids or HWSD, with Brooks-Corey parameters
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 See `data_ki/HWSD/SKILL.md` for soil property documentation.
@@ -217,17 +215,11 @@ The pipeline definition and tool registry are in `knowledge_infrastructure.yaml`
 | Latitude / longitude in `rzwqm.dat` | degrees | radians | `rad = deg * pi / 180` |
 | Breakpoint rainfall `.brk` | `.met` precipitation in `mm` | inches | divide by `25.4` |
 | Tile drainage in `.ana` | `cm` | `mm` for post-processing | multiply by `10` |
-| VIC `ksat` columns 12-14 | `mm/day` | `cm/hr` | divide by `240` |
-| VIC `expt` columns 9-11 | dimensionless | pore-size distribution | `2 / expt` |
-| VIC `bulk_density` columns 33-35 | `kg/m3` | porosity `cm3/cm3` | `1 - bd/2650` |
-| VIC `Wcr_FRACT` columns 40-42 | fraction | `fc33` volumetric | `Wcr * ws` |
-| VIC `Wpwp_FRACT` columns 43-45 | fraction | `fc15` volumetric | `Wpwp * ws` |
-| VIC layer depth columns 22-24 | `m` | `cm` | multiply by `100` |
-| VIC forcing temperature | `K` | `C` | subtract `273.15` |
-| VIC forcing radiation | `W/m2` | `MJ/m2/day` | multiply by `0.0864` |
-| VIC forcing wind | `m/s` | `km/day` | multiply by `86.4` |
-| VIC forcing E-pan | estimated ET0 | E-pan estimate | `0.7 * Hargreaves ET0` |
-| VIC forcing PAR | shortwave radiation | PAR estimate | `0.48 * shortwave radiation` |
+| CMFD temperature (MSWX is already `C`) | `K` | `C` | subtract `273.15` |
+| Forcing radiation (CMFD/MSWX) | `W/m2` | `MJ/m2/day` | multiply by `0.0864` |
+| Forcing wind (CMFD/MSWX) | `m/s` | `km/day` | multiply by `86.4` |
+| E-pan (not in the forcing sources) | estimated ET0 | E-pan estimate | `0.7 * Hargreaves ET0` |
+| PAR (not in the forcing sources) | shortwave radiation | PAR estimate | `0.48 * shortwave radiation` |
 
 ## 11. Validated Results
 
@@ -264,7 +256,6 @@ Execute stages in order. Each stage has a skill document, validated tools, and m
 
 ```
 S0  Global Data Acquisition        (soil/forcing/crop from pluggable sources)
-S0  VIC-RZWQM2 Coupling           (optional: convert VIC params to RZWQM2)
 S1  Site/Grid Configuration        docs/s1_site_config_skill.md
 S2  Meteorological Data Prep       docs/s2_met_prep_skill.md
 S3  Breakpoint Rainfall            docs/s3_brk_generation_skill.md
@@ -315,12 +306,10 @@ S10 Mass Project Generation        (CSV of sites → N complete scenarios)
 | Stage | Tool | Script | Purpose |
 |-------|------|--------|---------|
 | S0 | site_csv_validator | `tools/s0_global_data/site_csv_validator.py` | Validate input CSV of sites for mass generation |
-| S0 | soil_source_adapter | `tools/s0_global_data/soil_source_adapter.py` | Retrieve soil from VIC/SoilGrids/gSSURGO/HWSD |
-| S0 | forcing_source_adapter | `tools/s0_global_data/forcing_source_adapter.py` | Retrieve forcing from CMFD/ERA5/VIC/CSV |
+| S0 | soil_source_adapter | `tools/s0_global_data/soil_source_adapter.py` | Retrieve soil from SoilGrids/HWSD (gSSURGO, Canada: not implemented) |
+| S0 | forcing_source_adapter | `tools/s0_global_data/forcing_source_adapter.py` | Retrieve forcing from CMFD/MSWX/CSV (ERA5: not implemented) |
 | S0 | crop_selector | `tools/s0_global_data/crop_selector.py` | Map crop names to DSSAT files (41 crops) |
 | S0 | elevation_source_adapter | `tools/s0_global_data/elevation_source_adapter.py` | Retrieve elevation from CMFD/SRTM/manual |
-| S0 | vic_soil_converter | `tools/s0_vic_coupling/vic_soil_converter.py` | Convert VIC soil params to RZWQM2 format |
-| S0 | vic_forcing_converter | `tools/s0_vic_coupling/vic_forcing_converter.py` | Convert VIC forcing to RZWQM2 met CSV |
 | S1 | write_site_properties | `tools/s1_site_config/write_site_properties.py` | Write lat/lon/elevation/slope to RZWQM.dat |
 | S2 | generate_met_file | `tools/s2_met_prep/generate_met_file.py` | Create .met file from CSV weather data |
 | S2 | met_quality_check | `tools/s2_met_prep/met_quality_check.py` | Validate/fix Tmin>Tmax and RH bounds |
@@ -379,7 +368,6 @@ The S0 stage provides pluggable data retrieval for any location worldwide. Each 
 
 | Source | Coverage | Data | How to use |
 |--------|----------|------|------------|
-| `vic_global` | Global 0.25° | VIC 53-col params (ksat, expt, bulk_density, Wcr, Wpwp) | Provide path to `global_soil_param_new.txt` |
 | `soilgrids` | Global 250m | Sand/silt/clay, bulk density, SOC at 6 depths | No local data — calls ISRIC REST API |
 | `gssurgo` | US (all states) | Full SSURGO soil profiles | Provide state code + geodatabase path |
 | `canada_shapefile` | Canada | Soil layers from provincial shapefiles | Provide .shp/.dbf paths |
@@ -389,47 +377,16 @@ The S0 stage provides pluggable data retrieval for any location worldwide. Each 
 
 | Source | Coverage | Resolution | How to use |
 |--------|----------|------------|------------|
-| `cmfd` | China | 0.25°, 3-hourly | Provide path to CMFD NetCDF directory |
+| `cmfd` | China | 0.1°, 3-hourly | Provide path to CMFD NetCDF directory |
+| `mswx` | Global | 0.1°, 3-hourly | Provide path to the MSWX store (`KISSPATH_FORCING`) |
 | `era5_api` | Global | 0.25°, hourly | Requires `cdsapi` package + CDS API key |
-| `vic_forcing` | Basin-specific | Grid-cell text files | Provide path to VIC forcing directory |
 | `csv` | User-provided | Daily | Provide CSV with date,tmin,tmax,wind,radiation,epan,rh,par,rain |
 
 ### Crop Selection
 
-The `crop_selector` maps common names to DSSAT file prefixes for 41 crops including maize, wheat, soybean, rice, barley, cotton, potato, alfalfa, and more. It can also map VIC AVHRR vegetation classes (1-15) to appropriate crop types.
+The `crop_selector` maps common names to DSSAT file prefixes for 41 crops including maize, wheat, soybean, rice, barley, cotton, potato, alfalfa, and more. It can also map AVHRR land-cover classes (1-15) to appropriate crop types.
 
 **crop_ref mapping**: In RZCropSel.rzq, maize=1, soybean=2, wheat=3. When calling write_management_events, set crop_ref to match the desired crop (default is 1=maize).
-
----
-
-## VIC-RZWQM2 Coupling (S0)
-
-When working with HydroCraft (VIC-routing), use the coupling tools to bridge VIC and RZWQM2 parameter spaces.
-
-### Soil Parameter Bridge
-
-The `vic_soil_converter` reads VIC's 53-column soil parameter file and converts to RZWQM2 format:
-
-| VIC Parameter | VIC Unit | RZWQM2 Parameter | RZWQM2 Unit | Conversion |
-|---------------|----------|-------------------|-------------|------------|
-| ksat (cols 12-14) | mm/day | ksat | cm/hr | divide by 240 |
-| expt (cols 9-11) | dimensionless | pore_size_dist | dimensionless | 2 / expt |
-| bulk_density (cols 33-35) | kg/m3 | ws (porosity) | cm3/cm3 | 1 - bd/2650 |
-| Wcr_FRACT (cols 40-42) | fraction | fc33 | volumetric | Wcr * ws |
-| Wpwp_FRACT (cols 43-45) | fraction | fc15 | volumetric | Wpwp * ws |
-| depth (cols 22-24) | m | depth | cm | multiply by 100 |
-
-Missing parameters (bubbling_pressure, wr, N2, C2) are derived via RZWQM2 pedotransfer functions.
-
-### Forcing Bridge
-
-The `vic_forcing_converter` converts VIC forcing files (text or CMFD NetCDF) to RZWQM2 daily format:
-- Temperature: K → C (subtract 273.15), split into Tmin/Tmax
-- Radiation: W/m2 → MJ/m2/day (multiply by 0.0864)
-- Wind: m/s → km/day (multiply by 86.4)
-- Humidity: specific humidity → RH% (via saturation vapor pressure)
-- E-pan: estimated as 0.7 * Hargreaves ET0
-- PAR: estimated as 0.48 * shortwave radiation
 
 ---
 
@@ -446,22 +403,18 @@ site_002,32.1,114.6,2015-01-01,2020-12-31,wheat
 site_003,50.7,-97.5,2011-01-01,2021-12-31,soybean
 ```
 
-Optional columns: `elevation, slope, soil_source, forcing_source, soil_source_path, forcing_source_path, state_code, vic_grid_id`
+Optional columns: `elevation, slope, soil_source, forcing_source, soil_source_path, forcing_source_path, state_code, warmup_years`
 
 ### Usage
 
 ```
 mass_project_generator.py <sites.csv> <project_path> <template_scenario> \
-    [soil_source] [forcing_source] [soil_path] [forcing_path] [dssat_path] [vic_mode]
+    [soil_source] [forcing_source] [forcing_path]
 ```
 
 The generator clones the template scenario for each site, then runs the full pipeline (S1-S7): site config, met file, breakpoint rainfall, soil properties, node discretization, initial conditions, and path updates.
 
-VIC coupling mode options:
-- `none` — use soil/forcing adapters directly
-- `soil_only` — soil from VIC params, forcing from adapter
-- `forcing_only` — soil from adapter, forcing from VIC
-- `full` — both soil and forcing from VIC
+Soil and weather always come straight from the data source through the two S0 adapters.
 
 ---
 

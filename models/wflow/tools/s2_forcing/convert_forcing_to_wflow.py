@@ -5,8 +5,9 @@ convert_forcing_to_wflow.py — Convert CMFD/MSWX forcing to wflow NetCDF format
 wflow requires a single NetCDF forcing file with dimensions (time, y, x) and
 variables: precip (mm/timestep), temp (degC), pet (mm/timestep).
 
-This tool reads HydroCraft's pre-processed VIC forcing files (ASCII per cell)
-or raw CMFD/MSWX NetCDF and converts them to wflow format.
+This tool reads the forcing straight from the data source (CMFD, MSWX, NASA
+POWER, GSWP3 through ki_tools_common.load_forcing) on the cells of the wflow
+grid and writes it in wflow format.
 
 CRITICAL UNIT CONVERSIONS:
   - Temperature: Kelvin -> Celsius (subtract 273.15)
@@ -17,14 +18,9 @@ CRITICAL UNIT CONVERSIONS:
 
 Usage:
     python convert_forcing_to_wflow.py \
-      --forcing_dir /path/to/vic/forcing/forcing_final \
-      --grid_nc /path/to/basin_grid.nc \
-      --start_year 2000 --end_year 2010 \
-      --output /path/to/wflow_project/forcing.nc
-
-    python convert_forcing_to_wflow.py \
-      --cmfd_dir /path/to/CMFD \
-      --grid_nc /path/to/basin_grid.nc \
+      --source cmfd \
+      --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+      --staticmaps_nc /path/to/wflow_project/staticmaps.nc \
       --start_year 2000 --end_year 2010 \
       --output /path/to/wflow_project/forcing.nc
 """
@@ -37,6 +33,12 @@ import sys
 import time
 from pathlib import Path
 
+# netCDF4 must be loaded BEFORE xarray. python_env holds two copies of the HDF5
+# library (one in the netCDF4 wheel, one in the h5py wheel) and only the copy
+# loaded first can open or write a file afterwards. xarray alone pulls in
+# h5py's copy, and then the default engine fails on staticmaps.nc and on
+# to_netcdf with "NetCDF: HDF error" (measured 2026-10-03).
+import netCDF4  # noqa: F401
 import numpy as np
 
 
@@ -241,9 +243,10 @@ def validate_inputs(args):
     """Validate forcing data sources."""
     errors = []
 
-    if not args.source and not args.forcing_dir and not args.cmfd_dir and not args.mswx_dir:
+    if not args.source and not args.forcing_dir:
         errors.append(
-            "Must provide --forcing_dir (VIC ASCII), --cmfd_dir, or --mswx_dir"
+            "Must provide --source (cmfd, mswx, nasa_power, gswp3); "
+            "--forcing_dir is then the dataset root"
         )
 
     if args.forcing_dir and not args.source and not os.path.isdir(args.forcing_dir):
@@ -269,168 +272,6 @@ def validate_inputs(args):
         sys.exit(1)
 
 
-def read_vic_forcing_files(forcing_dir, grid_nc, start_year, end_year):
-    """Read VIC-format ASCII forcing files and convert to wflow arrays.
-
-    VIC forcing files are per-cell ASCII files with columns:
-    PREC  TMAX  TMIN  WIND  SHORTWAVE  LONGWAVE  VP  PRESSURE
-    (or similar, depending on the HydroCraft forcing pipeline)
-    """
-    import xarray as xr
-    import pandas as pd
-
-    # Read grid to get cell coordinates
-    ds_grid = xr.open_dataset(grid_nc)
-    if "lat" in ds_grid and "lon" in ds_grid:
-        lats = ds_grid["lat"].values
-        lons = ds_grid["lon"].values
-    elif "y" in ds_grid.dims and "x" in ds_grid.dims:
-        lats = ds_grid["y"].values
-        lons = ds_grid["x"].values
-    else:
-        raise ValueError(f"Cannot determine grid coordinates from {grid_nc}")
-
-    # Determine grid dimensions
-    if lats.ndim == 1 and lons.ndim == 1:
-        ny, nx = len(lats), len(lons)
-    else:
-        ny, nx = lats.shape
-
-    # Generate time coordinate
-    start_date = pd.Timestamp(f"{start_year}-01-01")
-    end_date = pd.Timestamp(f"{end_year}-12-31")
-    times = pd.date_range(start_date, end_date, freq="D")
-    nt = len(times)
-
-    # Initialize arrays
-    precip = np.full((nt, ny, nx), np.nan, dtype=np.float32)
-    temp = np.full((nt, ny, nx), np.nan, dtype=np.float32)
-    pet = np.full((nt, ny, nx), np.nan, dtype=np.float32)
-
-    # Find forcing files - try multiple naming patterns
-    forcing_files = sorted(glob.glob(os.path.join(forcing_dir, "forcing_*")))
-    if not forcing_files:
-        # Try HydroCraft pattern: {basin}_{res}deg_{lat}_{lon}
-        forcing_files = sorted(glob.glob(os.path.join(forcing_dir, "*_*deg_*")))
-    if not forcing_files:
-        forcing_files = sorted(glob.glob(os.path.join(forcing_dir, "*_forcing_*")))
-    if not forcing_files:
-        forcing_files = sorted(glob.glob(os.path.join(forcing_dir, "*.txt")))
-
-    print(f"  Found {len(forcing_files)} forcing files", file=sys.stderr)
-
-    for fpath in forcing_files:
-        # Parse lat/lon from filename
-        fname = os.path.basename(fpath)
-        parts = fname.split("_")
-        flat = flon = None
-
-        # Try HydroCraft pattern: {basin}_{res}deg_{lat}_{lon}
-        # e.g., bengbu_0.25deg_31.1250_115.6250
-        if len(parts) >= 4 and "deg" in parts[1]:
-            try:
-                flat = float(parts[2])
-                flon = float(parts[3])
-            except (ValueError, IndexError):
-                pass
-
-        # Try standard patterns: forcing_{lat}_{lon}, data_{lat}_{lon}
-        if flat is None:
-            cleaned = fname.replace("forcing_", "").replace("data_", "")
-            cparts = cleaned.split("_")
-            try:
-                flat = float(cparts[-2]) if len(cparts) >= 2 else float(cparts[0])
-                flon = float(cparts[-1]) if len(cparts) >= 2 else float(cparts[1])
-            except (ValueError, IndexError):
-                pass
-
-        if flat is None or flon is None:
-            print(f"  WARNING: Cannot parse coordinates from {fname}", file=sys.stderr)
-            continue
-
-        # Find grid indices
-        if lats.ndim == 1:
-            j = np.argmin(np.abs(lats - flat))
-            i = np.argmin(np.abs(lons - flon))
-        else:
-            dists = (lats - flat) ** 2 + (lons - flon) ** 2
-            j, i = np.unravel_index(dists.argmin(), dists.shape)
-
-        # Read forcing data
-        try:
-            data = np.loadtxt(fpath)
-        except Exception as e:
-            print(f"  WARNING: Cannot read {fname}: {e}", file=sys.stderr)
-            continue
-
-        # Determine if data is sub-daily or daily
-        # VIC forcing columns: AIR_TEMP(0) PREC(1) PRESSURE(2) SWDOWN(3) LWDOWN(4) VP(5) WIND(6)
-        # HydroCraft 3-hourly: 8 timesteps/day
-        # Heuristic: if nrows > nt * 2, data is sub-daily
-        nrows_total = data.shape[0]
-        if nrows_total > nt * 1.5:
-            # Sub-daily data: aggregate to daily
-            steps_per_day = round(nrows_total / nt)
-            if steps_per_day < 1:
-                steps_per_day = 1
-            usable_days = min(nrows_total // steps_per_day, nt)
-            daily_data = data[:usable_days * steps_per_day].reshape(usable_days, steps_per_day, -1)
-
-            # Col 0: AIR_TEMP (degC) -> daily mean
-            temp[:usable_days, j, i] = daily_data[:, :, 0].mean(axis=1)
-
-            # Col 1: PREC (mm/timestep) -> daily sum
-            precip[:usable_days, j, i] = daily_data[:, :, 1].sum(axis=1)
-
-            # For PET: use daily Tmax/Tmin from sub-daily T
-            tmax = daily_data[:, :, 0].max(axis=1)
-            tmin = daily_data[:, :, 0].min(axis=1)
-        else:
-            # Daily data
-            nrows = min(nrows_total, nt)
-
-            if data.shape[1] >= 3:
-                precip[:nrows, j, i] = data[:nrows, 1]  # PREC
-                temp[:nrows, j, i] = data[:nrows, 0]    # AIR_TEMP
-                tmax = data[:nrows, 0]  # Only have mean T for daily
-                tmin = data[:nrows, 0]
-            usable_days = nrows
-
-        if data.shape[1] >= 3 and usable_days > 0:
-
-            # PET: Hargreaves estimate from Tmax, Tmin, and day of year
-            # PET = 0.0023 * Ra * (T + 17.78) * sqrt(Tmax - Tmin)
-            doy = np.array([t.timetuple().tm_yday for t in times[:usable_days]])
-            lat_rad = np.radians(flat)
-            # Extraterrestrial radiation (Ra) approximation (MJ/m2/day)
-            dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
-            delta = 0.4093 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
-            ws = np.arccos(-np.tan(lat_rad) * np.tan(delta))
-            ws = np.clip(ws, 0.0, np.pi)
-            ra = (
-                24.0
-                * 60.0
-                / np.pi
-                * 0.0820
-                * dr
-                * (
-                    ws * np.sin(lat_rad) * np.sin(delta)
-                    + np.cos(lat_rad) * np.cos(delta) * np.sin(ws)
-                )
-            )
-            ra = np.maximum(ra, 0.0)
-
-            t_range = np.maximum(tmax - tmin, 0.1)
-            t_mean = (tmax + tmin) / 2.0
-            # Hargreaves PET in mm/day
-            pet_val = 0.0023 * ra * (t_mean + 17.78) * np.sqrt(t_range) / 2.45
-            pet_val = np.maximum(pet_val, 0.0)
-            pet[:usable_days, j, i] = pet_val
-
-    return times, lats if lats.ndim == 1 else lats[:, 0], \
-           lons if lons.ndim == 1 else lons[0, :], precip, temp, pet
-
-
 def process(args):
     """Convert forcing data to wflow NetCDF format."""
     import xarray as xr
@@ -448,23 +289,21 @@ def process(args):
             forcing_dir=(args.forcing_dir or None)
         )
     elif args.forcing_dir:
-        # Try VIC ASCII first, then CMFD NetCDF from subdirectories
+        # No --source: only a CMFD store (Prec/, Temp/, SRad/ subdirectories) is
+        # read here. Any other folder needs --source.
         forcing_dir = Path(args.forcing_dir)
-        vic_files = list(forcing_dir.glob("*_*.*_*.*"))  # VIC naming pattern
         cmfd_subdirs = any((forcing_dir / d).exists() for d in ['Prec', 'Temp', 'SRad'])
-
-        if vic_files and not cmfd_subdirs:
-            times, lats, lons, precip, temp, pet = read_vic_forcing_files(
-                args.forcing_dir, grid_path, args.start_year, args.end_year
+        if not cmfd_subdirs:
+            raise ValueError(
+                f"{args.forcing_dir} is not a CMFD store (no Prec/, Temp/, SRad/). "
+                "Name the data source with --source (cmfd, mswx, nasa_power, gswp3)."
             )
-        else:
-            # Read CMFD NetCDF directly from Prec/, Temp/, SRad/ subdirectories
-            print("  Reading CMFD NetCDF from subdirectories...", file=sys.stderr)
-            times, lats, lons, precip, temp, pet = read_cmfd_forcing_direct(
-                args.forcing_dir, grid_path, args.start_year, args.end_year
-            )
+        print("  Reading CMFD NetCDF from subdirectories...", file=sys.stderr)
+        times, lats, lons, precip, temp, pet = read_cmfd_forcing_direct(
+            args.forcing_dir, grid_path, args.start_year, args.end_year
+        )
     else:
-        raise ValueError("--forcing_dir is required")
+        raise ValueError("--source is required")
 
     # Check for NaN coverage
     valid_cells = np.isfinite(precip[0]).sum()
@@ -546,20 +385,20 @@ def process(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert CMFD/MSWX/VIC forcing to wflow NetCDF format"
+        description="Convert CMFD/MSWX forcing to wflow NetCDF format"
     )
     parser.add_argument("--source", type=str, default="",
                         choices=["", "cmfd", "mswx", "nasa_power", "gswp3"],
                         help="Load via ki_tools_common.load_forcing (PREFERRED). "
                              "--forcing_dir then means the dataset ROOT.")
     parser.add_argument("--forcing_dir", type=str, default="",
-                        help="VIC ASCII forcing directory, or dataset root with --source")
+                        help="Dataset root of the source named with --source")
     parser.add_argument("--cmfd_dir", type=str, default="",
                         help="Raw CMFD NetCDF directory")
     parser.add_argument("--mswx_dir", type=str, default="",
                         help="Raw MSWX NetCDF directory")
     parser.add_argument("--grid_nc", type=str, default="",
-                        help="Basin grid NetCDF (from VIC pipeline)")
+                        help="Grid NetCDF with lat/lon (or y/x) axes; normally use --staticmaps_nc")
     parser.add_argument("--staticmaps_nc", type=str, default="",
                         help="wflow staticmaps.nc (alternative to grid_nc)")
     parser.add_argument("--start_year", type=int, required=True)

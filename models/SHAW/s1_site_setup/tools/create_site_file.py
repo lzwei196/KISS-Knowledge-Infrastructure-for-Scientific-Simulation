@@ -22,25 +22,43 @@ import os
 import math
 from pathlib import Path
 
-# HWSD soil adapter
-HWSD_RASTER = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/soil/HWSD_RASTER/hwsd.bil"))
-HWSD_MDB = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/forcing/huaihe_raw/soil/HWSD.mdb"))
+# Soil comes straight from the HWSD database through the shared lookup
+# (ki_tools_common.soil_utils.lookup_hwsd: hwsd.bil raster + HWSD_DATA.csv).
+KI_TOOLS_COMMON = os.path.join(
+    os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "models/ki_tools_common")
+
+
+class SoilLookupError(RuntimeError):
+    """HWSD gave no real soil for the point. Nothing is filled in."""
 
 
 def get_hwsd_soil(lat, lon):
     """
-    Query HWSD database for soil properties at a given lat/lon.
-    Returns dict with sand, silt, clay, bulk_density, organic_matter, gravel
-    for top and sub soil.
+    HWSD soil at (lat, lon) through the shared lookup.
+    Returns dict with t_sand, t_silt, t_clay, s_sand, s_silt, s_clay (percent),
+    t_bulk_density (kg/m3), t_oc (percent), t_gravel (percent; not given by
+    the shared lookup, written as 0) and the map-unit record.
+    Raises SoilLookupError when the point has no map unit or the map unit has
+    no texture: the shared lookup returns generic 40/40/20 values in that case
+    and this tool must not write them as if they were the site's soil.
     """
-    try:
-        sys.path.insert(0, str(Path("KISSPATH_ROOT/skills/vic-auto-run/s1_soil")))
-        from hwsd_soil_adapter import query_hwsd_point
-        props = query_hwsd_point(lat, lon, str(HWSD_RASTER), str(HWSD_MDB))
-        return props
-    except ImportError:
-        print("WARNING: hwsd_soil_adapter not found. Using default soil properties.")
-        return None
+    if KI_TOOLS_COMMON not in sys.path:
+        sys.path.insert(0, KI_TOOLS_COMMON)
+    from ki_tools_common.soil_utils import lookup_hwsd
+    h = lookup_hwsd(lat, lon)
+    comp = h.get("hwsd_component")
+    if not h.get("mu_id") or comp is None or comp.get("quality") == "no_texture_in_map_unit":
+        raise SoilLookupError(
+            f"HWSD has no usable soil at ({lat}, {lon}) (map unit {h.get('mu_id')}, "
+            f"component record: {comp}). Nothing written. Give another point, or run with "
+            f"--soil_source default to use the generic silt loam ON PURPOSE.")
+    return {
+        "t_sand": h["sand"], "t_silt": h["silt"], "t_clay": h["clay"],
+        "s_sand": h["sub_sand"], "s_silt": h["sub_silt"], "s_clay": h["sub_clay"],
+        "t_bulk_density": h["bulk_density"] * 1000.0,   # g/cm3 -> kg/m3
+        "t_oc": h["oc"], "t_gravel": 0.0,
+        "mu_id": h["mu_id"], "hwsd_component": comp,
+    }
 
 
 def pedotransfer_campbell(sand, clay, bulk_density):
@@ -113,12 +131,19 @@ def generate_soil_layers(ns, max_depth):
 def write_site_file(args):
     """Generate the SHAW .sit file."""
 
-    # Get soil properties from HWSD
-    hwsd = get_hwsd_soil(args.lat, args.lon)
+    # Soil properties: HWSD at the point, or the generic silt loam when asked for
+    if args.soil_source == "default":
+        hwsd = None
+        print("WARNING: --soil_source default: generic silt loam 30/50/20, NOT the site's soil.")
+    else:
+        hwsd = get_hwsd_soil(args.lat, args.lon)
+        c = hwsd["hwsd_component"]
+        print(f"  HWSD map unit {hwsd['mu_id']}: top sand/silt/clay "
+              f"{hwsd['t_sand']:.0f}/{hwsd['t_silt']:.0f}/{hwsd['t_clay']:.0f} %, "
+              f"component share {c.get('share_pct')} % ({c.get('quality')})")
 
-    # Default soil properties if HWSD fails
     if hwsd is None:
-        # Default: silt loam
+        # generic silt loam (only with --soil_source default)
         top_sand, top_silt, top_clay = 30.0, 50.0, 20.0
         sub_sand, sub_silt, sub_clay = 30.0, 50.0, 20.0
         bulk_density = 1400.0  # kg/m3
@@ -330,6 +355,9 @@ def main():
     parser.add_argument("--albdry", type=float, default=0.25, help="Dry soil albedo")
     parser.add_argument("--albexp", type=float, default=2.0, help="Albedo exponent")
     parser.add_argument("--hrnoon", type=float, default=12.0, help="Solar noon hour")
+    parser.add_argument("--soil_source", choices=["hwsd", "default"], default="hwsd",
+                        help="hwsd: soil at the point from the HWSD database (stops if the point "
+                             "has none). default: generic silt loam, only when you want it")
 
     args = parser.parse_args()
 
@@ -337,7 +365,11 @@ def main():
         print("ERROR: NS must be between 2 and 50")
         sys.exit(1)
 
-    write_site_file(args)
+    try:
+        write_site_file(args)
+    except SoilLookupError as e:
+        print(f"ERROR: {e}")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

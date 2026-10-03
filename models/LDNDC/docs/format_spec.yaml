@@ -512,28 +512,13 @@ known_issues:
     (from physiology), NH3 volatilization, NO emissions', 'Budget residual should be < 5
   severity: silent
 - id: dt_014
-  symptom: After VIC-to-LDNDC climate conversion, LDNDC simulates no precipitation events -- all days
-    are dry
-  diagnosis: 'VIC forcing stores precipitation as a rate (mm/timestep for 3-hourly data), but the conversion
-    to daily total did not aggregate all 8 timesteps. Result: daily precip = one 3-hour value instead
-    of the sum of eight.; VIC forcing files contain sub-daily values (typically 3-hourly, 8 values per
-    day). Wh'
-  remedy: Verify daily precipitation in converted climate.txt matches VIC daily totals. Sum all sub-daily
-    timesteps.; vic_to_ldndc_climate; ['Read a VIC forcing file for one day (8 lines for 3-hourly)', 'Sum
-    precipitation values across all 8 lines', 'Compare to the corresponding daily value in climate.txt',
-    '
-  severity: silent
-- id: dt_015
-  symptom: VIC and LDNDC simulate the same location but soil texture and depth differ significantly between
-    VIC soil params and LDNDC site.xml
-  diagnosis: VIC and LDNDC soil data were derived from different sources or at different resolutions.
-    VIC may use its own soil parameter file while LDNDC site.xml was generated independently from HWSD.;
-    In coupled VIC-LDNDC simulations, both models should use consistent soil properties. If VIC uses one
-    soil data
-  remedy: Use vic_soil_to_ldndc_site tool to derive LDNDC soil from VIC soil params, ensuring consistency;
-    vic_soil_to_ldndc_site; ['Compare VIC soil param texture (cols for sand, clay) with LDNDC site.xml
-    clay, sand', 'Compare VIC layer depths with LDNDC layer depths', 'If discrepancies > 10%, regenerate
-    LDN
+  symptom: After converting a sub-daily forcing series to LDNDC climate, LDNDC simulates almost no precipitation
+    events -- nearly all days are dry
+  diagnosis: 'A sub-daily forcing series (CMFD, MSWX: 3-hourly, 8 values per day) was turned into a daily
+    value without adding up all 8 timesteps. Result: daily precip = one 3-hour value instead of the sum
+    of eight.'
+  remedy: Build climate.txt with convert_forcing_to_ldndc_climate (daily totals from the shared loader);
+    check the annual precipitation in the header against the known value for the site.
   severity: silent
 - id: dt_v001
   symptom: 'LDNDC error: ''Couldn''t open file /home/user/.ldndc/udunits2/udunits2.xml'''
@@ -574,17 +559,6 @@ known_issues:
     species: grep -i species model/ldndc/ldndc-1.37.linux64/Lresources'']; run_ldndc_bengbu_ghg.py uses
     correct names'
   severity: fatal
-- id: dt_v005
-  symptom: Climate temperature values are 273+ degrees — absurdly high
-  diagnosis: 'VIC forcing temperature is already in Celsius, not Kelvin; Some tool stubs assumed VIC temperature
-    needs K→C conversion (subtract 273.15). HydroCraft VIC forcing stores temperature in °C directly.
-    Subtracting 273.15 produces extreme negative values; NOT subtracting when already Celsius is correct.
-
-    ;'
-  remedy: 'Do NOT apply K→C conversion to VIC forcing temperature; convert_forcing_to_ldndc_climate; [''Check
-    VIC forcing values: if tavg range is -10 to 40, it is already Celsius'', ''If tavg range is 260-310,
-    it is Kelvin — subtract 273.15'']; Validate temperature range after conversion: -40 < tavg < 50'
-  severity: silent
 - id: dt_v006
   symptom: Saturated hydraulic conductivity (sks) unrealistically high in site.xml
   diagnosis: 'LDNDC sks unit is cm/min, not mm/hr or m/day; HWSD and VIC report Ksat in mm/hr or m/day.

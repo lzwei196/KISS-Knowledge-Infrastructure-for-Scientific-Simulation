@@ -6,13 +6,13 @@
 
 ## Purpose
 
-Analyze WOFOST simulation results across multiple grid cells, create spatial yield maps, and optionally compare with DSSAT results for multi-model ensemble estimation. When integrated with HydroCraft, WOFOST runs on each VIC grid cell using cell-specific weather and soil data. This stage aggregates individual cell results into basin-level statistics and visualizations. The WOFOST-DSSAT ensemble provides uncertainty bounds on yield estimates.
+Analyze WOFOST simulation results across multiple grid cells, create spatial yield maps, and optionally compare with DSSAT results for multi-model ensemble estimation. When integrated with HydroCraft, WOFOST runs on each grid cell using cell-specific weather and soil data. This stage aggregates individual cell results into basin-level statistics and visualizations. The WOFOST-DSSAT ensemble provides uncertainty bounds on yield estimates.
 
 ## Prerequisites
 
 - [ ] WOFOST simulation completed for all grid cells (Stages 6-7)
 - [ ] Per-cell output CSVs available in output directory
-- [ ] Basin grid NetCDF available (for spatial coordinates)
+- [ ] Per-cell output files carry lat and lon in the file name (or as columns)
 - [ ] If ensemble: DSSAT gridded yield CSV also available
 
 ## Inputs
@@ -20,7 +20,7 @@ Analyze WOFOST simulation results across multiple grid cells, create spatial yie
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
 | cell_outputs_dir | directory | Stage 7 | Directory with per-cell WOFOST daily output CSVs |
-| grid_nc | file | VIC grid generation | Basin grid NetCDF with cell coordinates |
+| cell coordinates | text | file names | lat and lon are read from each per-cell file name (`..._<lat>_<lon>.csv`) or from `lat`/`lon` columns; no grid file is needed |
 | wofost_yield_csv | file | this stage | Aggregated WOFOST gridded yield (created in Step 1) |
 | dssat_yield_csv | file | DSSAT pipeline | DSSAT gridded yield CSV (for ensemble comparison) |
 | shp_path | file | basin delineation | Basin boundary shapefile (for map overlay) |
@@ -31,13 +31,7 @@ Analyze WOFOST simulation results across multiple grid cells, create spatial yie
 
 ```python
 import pandas as pd
-import xarray as xr
 import glob
-
-# Read grid coordinates
-grid = xr.open_dataset(grid_nc)
-lats = grid['lat'].values
-lons = grid['lon'].values
 
 # Collect per-cell yield
 results = []

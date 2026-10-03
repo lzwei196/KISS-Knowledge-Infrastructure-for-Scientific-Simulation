@@ -66,7 +66,6 @@
 
 | Knowledge Item | Type | Source |
 |---------------|------|--------|
-| VIC forcing to .obs conversion | Procedural | Tool (convert_vic_to_obs) |
 | Temporal resampling (sub-daily to daily) | Procedural | Code (pandas resample) |
 | Area-weighted HRU-to-grid aggregation | Procedural | Spatial math |
 | **Process ownership table definition** | **Evaluative (CRITICAL)** | Coupling design |

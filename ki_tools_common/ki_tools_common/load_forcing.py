@@ -151,6 +151,9 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
     except ImportError:
         raise ImportError("xarray required for sub-daily loading. pip install xarray")
 
+    if end_year < start_year:
+        raise ValueError("sub-daily %s: start_year %s is after end_year %s"
+                         % (source, start_year, end_year))
     fdir = forcing_dir or (CMFD_DIR if source == "cmfd" else MSWX_DIR)
     if not os.path.isdir(fdir):
         raise FileNotFoundError(f"{source.upper()} directory not found: {fdir}")
@@ -207,6 +210,14 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
                     time_vals = ds["time"].values
                 ds.close()
             n_steps = len(year_data["temp"])
+            # A part-filled year (2026 today) has a different number of steps
+            # per variable; padding the short ones with NaN hid that.
+            short = {k: len(v) for k, v in year_data.items() if len(v) != n_steps}
+            if short:
+                raise ValueError(
+                    "MSWX sub-daily %d: variables differ in length (temp %d steps; "
+                    "%s). The year is not complete for every variable."
+                    % (year, n_steps, ", ".join("%s %d" % kv for kv in sorted(short.items()))))
             for i in range(n_steps):
                 if time_vals is not None:
                     all_dates.append(_pd.Timestamp(time_vals[i]).to_pydatetime())
@@ -289,6 +300,72 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
     }
 
 
+# Divisor that turns one hourly PRECTOTCORR value into mm fallen in that hour,
+# keyed by the unit the response itself declares.
+#
+# The hourly API changed. Until at least 2026-06 each hourly value was a mm/day
+# RATE (a .obs built here on 2026-06-08 for 51.1722 N, -115.5718 E starts
+# 2005-01-01 with 0.045, 0.050, 0.033 mm = raw 1.08, 1.20, 0.79 divided by 24).
+# On 2026-10-02 (API v2.10.2) the same hours come back as 0.05, 0.05, 0.03, the
+# response labels them "mm/hour", and the January 2005 sum of the hourly values
+# (66.42) equals the daily product's sum (66.24). Dividing those by 24 gave a
+# precipitation total 24 times too small (41 mm in two years at 49.17 N,
+# 125.23 E) with no error anywhere.
+_NASA_POWER_HOURLY_PRECIP_DIVISOR = {
+    "mm/hour": 1.0, "mm/hr": 1.0, "mm/h": 1.0, "mm hour-1": 1.0,
+    "mm/day": 24.0, "mm day-1": 24.0,
+}
+
+
+def _nasa_power_hourly_precip_divisor(data, year):
+    """Divisor for hourly PRECTOTCORR, from the units the response declares.
+
+    Fails closed: a missing or unknown unit raises instead of guessing, because
+    a wrong guess is a silent factor of 24 in precipitation.
+    """
+    units = str((data.get("parameters") or {}).get("PRECTOTCORR", {}).get("units", ""))
+    key = " ".join(units.strip().lower().split())
+    if key not in _NASA_POWER_HOURLY_PRECIP_DIVISOR:
+        raise RuntimeError(
+            f"NASA POWER hourly {year}: PRECTOTCORR units are {units!r}; expected "
+            f"one of {sorted(_NASA_POWER_HOURLY_PRECIP_DIVISOR)}. Refusing to guess "
+            f"between mm/hour and a mm/day rate (a factor of 24).")
+    return _NASA_POWER_HOURLY_PRECIP_DIVISOR[key], units
+
+
+def _nasa_power_check_hourly_against_daily(session, lat, lon, year, hourly_sum_mm):
+    """Compare one year's hourly precipitation total with the daily product.
+
+    The unit label is trusted for the conversion; this is the check that the
+    label and the values still agree. It raises when the two totals differ by
+    more than a factor of 2 (a unit error is a factor of 24). If the daily
+    request itself fails the check is skipped with a warning.
+    """
+    try:
+        resp = session.get(NASA_POWER_DAILY_URL, params={
+            "start": f"{year}0101", "end": f"{year}1231",
+            "latitude": lat, "longitude": lon, "community": "RE",
+            "parameters": "PRECTOTCORR", "format": "JSON", "header": "false",
+        }, timeout=120)
+        resp.raise_for_status()
+        daily = resp.json()["properties"]["parameter"]["PRECTOTCORR"]
+        daily_sum = float(sum(v for v in daily.values() if v is not None and v > -900))
+    except Exception as exc:  # network / format trouble: do not block the load
+        warnings.warn(f"NASA POWER {year}: could not cross-check hourly precipitation "
+                      f"against the daily product ({exc}); units label trusted.")
+        return None
+    if daily_sum < 5.0 or not np.isfinite(hourly_sum_mm):
+        return None  # too dry to judge a ratio
+    ratio = hourly_sum_mm / daily_sum
+    if not (0.5 <= ratio <= 2.0):
+        raise RuntimeError(
+            f"NASA POWER {year} at ({lat}, {lon}): hourly precipitation sums to "
+            f"{hourly_sum_mm:.1f} mm but the daily product sums to {daily_sum:.1f} mm "
+            f"(ratio {ratio:.3f}). The hourly unit label and the values disagree; "
+            f"refusing to return precipitation that is off by this factor.")
+    return ratio
+
+
 def _load_nasa_power_hourly(lat, lon, start_year, end_year):
     """Load NASA POWER hourly data WITHOUT daily aggregation."""
     try:
@@ -319,6 +396,8 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
         pd = data["properties"]["parameter"]
         t2m = pd.get("T2M", {})
         prec = pd.get("PRECTOTCORR", {})
+        prec_div, prec_units = _nasa_power_hourly_precip_divisor(data, year)
+        _year_start = len(all_prec)
         swd = pd.get("ALLSKY_SFC_SW_DWN", {})
         lwd = pd.get("ALLSKY_SFC_LW_DWN", {})
         ws = pd.get("WS2M", {})
@@ -335,13 +414,22 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
                 return float(v) if v != _fill and v is not None else np.nan
 
             all_temp.append(_v(t2m, key))
-            # PRECTOTCORR is mm/day rate → mm per hour = rate / 24
-            all_prec.append(max(0, _v(prec, key) / 24.0))
+            # mm fallen in this hour; the divisor follows the declared unit
+            # (see _NASA_POWER_HOURLY_PRECIP_DIVISOR)
+            all_prec.append(max(0, _v(prec, key) / prec_div))
             all_srad.append(_v(swd, key))  # Already W/m²
             all_lrad.append(_v(lwd, key))
             all_wind.append(_v(ws, key))
             all_shum.append(_v(qv, key) / 1000.0)  # g/kg → kg/kg
             all_pres.append(_v(ps, key) * 1000.0)   # kPa → Pa
+
+        if year == start_year:
+            # one extra small request per load: do the label and the values agree?
+            _ratio = _nasa_power_check_hourly_against_daily(
+                session, lat, lon, year, float(np.nansum(all_prec[_year_start:])))
+            print(f"  NASA POWER hourly PRECTOTCORR units: {prec_units} (divisor "
+                  f"{prec_div:g}); hourly/daily total {year}: "
+                  f"{'not checked' if _ratio is None else f'{_ratio:.3f}'}", flush=True)
 
     return {
         "dates": np.array(all_dates, dtype="datetime64[s]"),

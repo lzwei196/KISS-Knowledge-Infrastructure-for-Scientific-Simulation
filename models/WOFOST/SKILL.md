@@ -12,7 +12,7 @@
 >
 > Before starting, run: `python3 preflight_check.py` (in this KI directory). **Use `python3` (3.12, pcse 6.0.12) for ALL tools -- the default `python` (3.11) cannot import pcse (numpy ABI mismatch) and preflight FAILS.**
 
-> **CMFD direct reader available:** Use `from ki_tools_common.netcdf_utils import load_cmfd_daily_all` to read CMFD 3-hourly data directly. Returns daily precip (mm), temp (°C with Tmin/Tmax), radiation (W/m²), wind, humidity. Handles subdirectory search (Prec/, Temp/, etc.) and unit conversions automatically.
+> **Weather from a data product (CMFD / MSWX / NASA POWER):** run `tools/s3_weather_prep/build_pcse_weather_from_source.py --source cmfd|mswx|nasa_power ...`. It reads the product through the shared loader `ki_tools_common.load_forcing.load_daily_forcing` and writes the PCSE CSV weather file. Do not read the product files yourself and do not build WOFOST weather from another model's input files.
 > to verify that the model binary/package and required data are available.
 >
 > **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
@@ -31,14 +31,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (34 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -54,7 +54,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s1_crop_params/validate_crop_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_crop_params/validate_crop_params.py --help` |
 | `tools/s2_soil_params/convert_hwsd_to_pcse_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_soil_params/convert_hwsd_to_pcse_soil.py --help` |
 | `tools/s2_soil_params/validate_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_soil_params/validate_soil_params.py --help` |
-| `tools/s3_weather_prep/convert_vic_to_pcse_weather.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/convert_vic_to_pcse_weather.py --help` |
+| `tools/s3_weather_prep/build_pcse_weather_from_source.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/build_pcse_weather_from_source.py --help` |
 | `tools/s3_weather_prep/create_csv_weather_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/create_csv_weather_file.py --help` |
 | `tools/s3_weather_prep/validate_weather_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/validate_weather_data.py --help` |
 | `tools/s4_agromanagement/generate_agromanagement_yaml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_agromanagement/generate_agromanagement_yaml.py --help` |
@@ -81,9 +81,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 WOFOST forcing tools in this KI:
-- `extract_cmfd_weather.py` — Extracts CMFD data for PCSE weather input
-- `convert_vic_to_pcse_weather.py` — Converts VIC forcing to PCSE weather format
-- `create_csv_weather_file.py` — Creates CSV weather files for PCSE
+- `build_pcse_weather_from_source.py` — one point, straight from the product: `--source cmfd|mswx|nasa_power --lat --lon --elev --start_year --end_year [--forcing_dir] --output`. Calls the shared loader, writes the PCSE CSV (IRRAD kJ/m2/day = W/m2 × 86.4, TMIN/TMAX °C, VAP kPa from specific humidity + the source's pressure, WIND m/s, RAIN mm/day, SNOWDEPTH NaN) and `<output>.summary.json`. Stops and writes nothing on a missing value, a gap or a period the source does not cover. Give each point its own file name (dt_022). `mswx`: one build at a time (exfat disk).
+- `create_csv_weather_file.py` — for weather you already hold as a daily table (station file): generic CSV → PCSE CSV. Same writer as the tool above.
 - `validate_weather_data.py` — Validates weather data ranges and completeness
 
 ### Soil properties
@@ -146,7 +145,7 @@ print(pcse.__version__)  # Should print 6.0.x
 |-------|-------|---------------|-----------|
 | 1 | Crop Parameter Configuration | [s1_crop_params_skill.md](docs/s1_crop_params_skill.md) | `load_crop_parameters`, `validate_crop_params` |
 | 2 | Soil Parameter Setup | [s2_soil_params_skill.md](docs/s2_soil_params_skill.md) | `convert_hwsd_to_pcse_soil`, `validate_soil_params` |
-| 3 | Weather Data Preparation | [s3_weather_prep_skill.md](docs/s3_weather_prep_skill.md) | `convert_vic_to_pcse_weather`, `create_csv_weather_file`, `validate_weather_data` |
+| 3 | Weather Data Preparation | [s3_weather_prep_skill.md](docs/s3_weather_prep_skill.md) | `build_pcse_weather_from_source`, `create_csv_weather_file`, `validate_weather_data` |
 | 4 | Agromanagement Definition | [s4_agromanagement_skill.md](docs/s4_agromanagement_skill.md) | `generate_agromanagement_yaml`, `validate_agromanagement` |
 | 5 | Engine Configuration | [s5_engine_config_skill.md](docs/s5_engine_config_skill.md) | `configure_pcse_engine`, `validate_engine_config` |
 | 6 | Simulation Execution | [s6_execution_skill.md](docs/s6_execution_skill.md) | `run_wofost_simulation`, `check_simulation_status` |
@@ -180,7 +179,7 @@ Other dag outputs currently exposed by this KI: `DVS`, `DOA`, `DOM`, `LAI`, `LAI
 | Variable | Source or context | Source unit | Model or output unit | Conversion / handling |
 |----------|-------------------|-------------|----------------------|-----------------------|
 | `TWSO` | dag output | model output | `kg ha-1` | No conversion stated here; use dag output unit. |
-| `IRRAD` | VIC shortwave radiation | `W/m2` | `J/m2/day` | `IRRAD = SW_W_m2 × 86400`. |
+| `IRRAD` | shared loader `srad_wm2` (24-h mean) | `W/m2` | CSV column `kJ/m2/day`; internal `J/m2/day` | CSV: `× 86.4` (done by `build_pcse_weather_from_source`); PCSE then `× 1000`. A hand-built WeatherDataContainer takes `J/m2/day` = `W/m2 × 86400`. |
 | `E0` / `ES0` / `ET0` | Hargreaves evapotranspiration output | `mm/day` | `cm/day` | Divide by 10. |
 | `RAIN` | `CSVWeatherDataProvider` CSV column | `mm/day` | internal model variable `cm/day` | PCSE divides the CSV value by 10 internally. |
 | `VAP` | weather input vapor pressure | `hPa` or `mbar` when supplied that way | `kPa` | `1 kPa = 10 hPa = 10 mbar`; convert to kPa before model use. |
@@ -199,8 +198,9 @@ import yaml, datetime
 
 # 1. Weather — automatic from NASA POWER
 # NOTE: NASAPowerWeatherDataProvider may fail behind a proxy. If so, use
-# ki_tools_common.load_forcing with source='nasa_power' and build a custom
-# WeatherDataProvider (see tools/extract_cmfd_weather.py for the pattern).
+# the shared loader (source='nasa_power', no proxy) and build a
+# CSV weather file with tools/s3_weather_prep/build_pcse_weather_from_source.py
+# (--source nasa_power), then load it with CSVWeatherDataProvider.
 weather = NASAPowerWeatherDataProvider(latitude=52.0, longitude=5.5)
 
 # 2. Crop parameters — built-in PCSE database
@@ -269,12 +269,12 @@ print(f"Final DVS: {df['DVS'].iloc[-1]:.2f}")
 
 ### 1. Unit Traps (SILENT ERRORS) — VERIFIED 2026-03-19
 
-- **⚠️ IRRAD is J/m2/day (JOULES), NOT kJ or MJ!** — The PCSE documentation says "kJ" but the internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m²/d = 15.7 MJ. **Convert from VIC: IRRAD = SW_W_m2 × 86400** (not × 86.4). If IRRAD < 100,000, it's 1000x too low and yield will be ZERO. This is the #1 cause of WOFOST zero-yield bugs. **(dt_v005)**
+- **⚠️ IRRAD is J/m2/day (JOULES), NOT kJ or MJ!** — The PCSE documentation says "kJ" but the internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m²/d = 15.7 MJ. **From a W/m2 daily mean: internal IRRAD = W/m2 × 86400** (the CSV column is kJ/m2/day = W/m2 × 86.4; the provider multiplies by 1000). If IRRAD < 100,000, it's 1000x too low and yield will be ZERO. This is the #1 cause of WOFOST zero-yield bugs. **(dt_v005)**
 - **E0/ES0/ET0 are cm/day, NOT mm/day** — Spain DB values: ET0=0.08-0.88 cm/d. If Hargreaves gives mm/day, **divide by 10**. Values >1.5 cm/d cause extreme water stress. **(dt_v006)**
 - **RAIN unit is context-dependent** -- In a **CSVWeatherDataProvider CSV the RAIN column is mm/day** (PCSE divides it by 10 -> cm internally); only the *internal model variable* / a hand-built WeatherDataContainer use cm/day. Writing the CSV in cm makes rainfall 10-100x too low -> drought-stressed crop, low yield. Ground truth: create_csv_weather_file.py docstring + dt_004.
 - **VAP is kPa, NOT hPa or mbar** — Vapor pressure must be in kPa. 1 kPa = 10 hPa = 10 mbar.
 
-### Validated Results — Bengbu (VIC forcing, DB crop params)
+### Validated Results — Bengbu (March 2026 run, DB crop params)
 | Crop | WOFOST | DSSAT | AquaCrop |
 |------|:---:|:---:|:---:|
 | Winter wheat | **3,543 kg/ha** | 3,217 | 6,307 |
@@ -354,6 +354,93 @@ PCSE has no dedicated spring wheat variety. Use `Winter_wheat_107` (VERNSAT=5 da
 - DVS = 2: maturity (harvest)
 - If DVS never reaches 2.0, the crop did not mature. Check TSUM1/TSUM2 (too high for the climate?) or vernalization (stuck?).
 
+### 7. `convert_hwsd_to_pcse_soil.py` produced soils that were far too dry (dt_v007) — FIXED 2026-09-12
+
+**Status: OPEN as of 2026-09-09. Every WOFOST site built with this tool has too little
+plant-available water.** Not a site-specific problem — the bias runs across the whole texture
+triangle. Water-limited (WLP) runs are affected; potential-production (PP) runs are not.
+
+`tools/s2_soil_params/convert_hwsd_to_pcse_soil.py` → `pedotransfer_wosten()` is documented as
+"Wosten et al. (1999)". It is not: Wösten's HYPRES functions are van Genuchten parameter
+regressions, while the code is three ad-hoc linear forms
+
+```python
+SMW   = 0.001 + 0.26*(clay/100) + 0.05*(om/100)
+SMFCF = 0.02  + 0.37*(clay/100) + 0.15*(om/100) + 0.10*(silt/100)
+```
+
+whose output is biased low everywhere. Corrected magnitudes (swept over the 12 USDA class
+centroids by two reviewers): **WP and FC are ~0.4-0.6x published values**; **PAW is 0.53-0.97x** —
+worst for sandy loam, nearly correct for clay and silty clay. Class centroids:
+
+| texture | this tool SMW | this tool SMFCF | PAW |
+|---|---|---|---|
+| sand | 0.009 | 0.038 | 0.028 |
+| loam | 0.054 | 0.136 | 0.082 |
+| silt loam | 0.054 | 0.156 | 0.102 |
+| clay | 0.158 | 0.264 | 0.106 |
+
+A loam at field capacity 0.136 and a sand at wilting point 0.009 are not physical. Measured
+against the canonical shared bridge at one Henan cell (HWSD MU 11509, sand 36 / clay 21):
+
+| source | WP | FC | PAW |
+|---|---|---|---|
+| `ki_tools_common.soil_utils.saxton_rawls` | 0.116 | 0.233 | **0.117** |
+| DSSAT KI `convert_hwsd_to_sol.py` | 0.134 | 0.287 | **0.153** |
+| **this tool** | 0.056 | 0.142 | **0.086** |
+
+**The bypass**: `get_texture_from_hwsd()` calls `ki_tools_common.soil_utils.lookup_hwsd`, and
+`lookup_hwsd` already returns `result['hydraulics'] = saxton_rawls(sand, clay, oc)`. The tool takes
+the raw texture out of that return value, discards those hydraulics, and recomputes them worse.
+
+**But do not simply switch to `ki_tools_common.soil_utils.saxton_rawls` — it has its own two
+defects** (found 2026-09-09 while chasing this one):
+
+- it is **not** Saxton-Rawls. Its own inline comment says it is a 12-entry Rawls, Brakensiek &
+  Saxton (1982) texture-class lookup — a step function. Clay 18/20/22/26% all return exactly
+  WP 0.116 / FC 0.233; 28% jumps to 0.188 / 0.312.
+- its `om` argument is a **silent no-op**: om = 0, 1.12, 5 and 20% return identical values.
+
+The genuine continuous Saxton & Rawls (2006), correctly cited and actually using organic matter,
+already exists in the library as a private fork:
+`DSSAT/knowledge_infrastructure/tools/s3_soil_setup/convert_hwsd_to_sol.py::saxton_rawls`.
+
+**Correct fix, in this order** (the ordering matters — an earlier version of this ticket had it
+backwards and held the large fix hostage to the small one):
+
+1. **Now: point this tool at `ki_tools_common.soil_utils.saxton_rawls` as it stands.** Map
+   `wilting_point`→`SMW`, `field_capacity`→`SMFCF`, `saturation`→`SM0`, and correct the
+   `pedotransfer_wosten` citation. Measured effect: re-running C01 rainfed through PCSE with each
+   soil moved yield by **+10.5% / +42.1% / 0%** across three seasons. That is the bulk of the error.
+2. **Separately, not blocking (1): upgrade the canonical function itself.** It is worth a further
+   3–5% at that cell — real, but do not delay (1) for it. The genuine continuous Saxton & Rawls
+   (2006) already exists in the library in at least six copies, e.g.
+   `DSSAT/.../convert_hwsd_to_sol.py::saxton_rawls` and
+   `SWAT_Plus/.../s4/hwsd_to_swatplus_soil.py::saxton_rawls_awc` (the same correct equations).
+   Promote one, **re-homed rather than copied** — explicit units, documented OC→OM, optional
+   measured bulk density, unrounded internals — and **ship a numeric accuracy test against the
+   paper's published class values**. No accuracy test exists anywhere in the library today; the only
+   one asserts ordering and a Ksat range, which is how a function named after a paper and never
+   checked against it survived this long.
+
+⚠️ **Do not "just fix the `om` no-op".** `soil_utils.py:269` passes `oc` into a parameter named and
+documented as `om` — a 1.724× unit error that is currently harmless *only because the argument is
+dead*. Making `om` live without fixing that line would silently split EPIC (which correctly passes
+OM) from `lookup_hwsd` (which passes OC). Fix both together or neither.
+
+⚠️ The canonical function has two further dead inputs: it **discards the measured bulk density** and
+back-derives it from the class saturation (which is why its SAT 0.463 is the outlier while WOFOST
+and DSSAT independently agree at ~0.475 from the measured BD 1.39), and it is a **step function** —
+clay 15–26% all return the same values, stepping at clay 27%.
+
+**Why the validator did not catch it**: `validate_soil_params.py` only checks ordering
+(`SMW < SMFCF < SM0`) and a porosity ceiling. All three hold at half-scale. Ordering checks cannot
+detect a uniform bias — a range check against texture class is needed.
+
+**Impact on the record**: this voided the C01 stage-1 WOFOST-vs-DSSAT comparison; see
+`KISSPATH_DATA/System1/offline/huai_scaleup/C01_STAGE1_FINDINGS.md`. Any past WLP result built with
+this tool should be treated as run on a too-dry soil until re-run.
+
 ---
 
 ## Error Handling
@@ -365,7 +452,6 @@ When errors occur during WOFOST/PCSE simulation, consult the diagnostic triplets
 ## Model Couplings
 
 See [`docs/model_couplings.yaml`](docs/model_couplings.yaml) for formal coupling definitions:
-- **VIC weather → PCSE weather provider**: VIC forcing output → unit conversion → PCSE CSV weather
 - **HWSD → PCSE soil**: HWSD raster/MDB → pedotransfer → WOFOST soil parameters
 - **WOFOST ↔ DSSAT ensemble**: Run both models per grid cell → average yields → uncertainty bounds
 - **WOFOST LAI → VIC feedback**: WOFOST daily LAI → VIC vegetation parameter update (experimental)
@@ -388,7 +474,7 @@ knowledge_infrastructure/
 │   │   ├── convert_hwsd_to_pcse_soil.py
 │   │   └── validate_soil_params.py
 │   ├── s3_weather_prep/
-│   │   ├── convert_vic_to_pcse_weather.py
+│   │   ├── build_pcse_weather_from_source.py
 │   │   ├── create_csv_weather_file.py
 │   │   └── validate_weather_data.py
 │   ├── s4_agromanagement/

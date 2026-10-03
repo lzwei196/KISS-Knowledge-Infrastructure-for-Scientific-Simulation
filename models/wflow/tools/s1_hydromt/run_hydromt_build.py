@@ -24,8 +24,7 @@ Usage:
 
     python run_hydromt_build.py \
       --config /path/to/wflow_config.yaml \
-      --shapefile /path/to/basin.shp \
-      --grid_nc /path/to/basin_grid.nc
+      --shapefile /path/to/basin.shp
 """
 
 import argparse
@@ -37,6 +36,11 @@ import sys
 import time
 from pathlib import Path
 
+# netCDF4 must be loaded BEFORE xarray: python_env holds two copies of the HDF5
+# library and only the one loaded first can open or write a file afterwards;
+# xarray alone loads h5py's copy and the default engine then fails with
+# "NetCDF: HDF error" (measured 2026-10-03).
+import netCDF4  # noqa: F401
 import yaml
 
 
@@ -67,7 +71,7 @@ def validate_inputs(args):
         if args.data_catalog and not os.path.exists(args.data_catalog):
             errors.append(f"Data catalog not found: {args.data_catalog}")
     else:
-        # Manual mode needs shapefile or grid_nc
+        # Manual mode needs the basin shapefile
         shp = args.shapefile or config.get("basin", {}).get("shapefile", "")
         if not shp or not os.path.exists(shp):
             errors.append(
@@ -1192,8 +1196,6 @@ def main():
                         help="HydroMT build config YAML")
     parser.add_argument("--shapefile", type=str, default="",
                         help="Basin shapefile (manual mode)")
-    parser.add_argument("--grid_nc", type=str, default="",
-                        help="Basin grid NetCDF from VIC pipeline (manual mode)")
     parser.add_argument("--expected_area_km2", type=float, default=0.0,
                         help="Published catchment area of the gauge. Used to pick "
                              "the outlet cell from the snap ladder; falls back to "

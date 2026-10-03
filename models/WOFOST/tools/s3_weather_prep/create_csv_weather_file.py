@@ -79,6 +79,41 @@ def validate_inputs():
         sys.exit(1)
 
 
+def write_pcse_csv(df, output_file, lat, lon, elev, source,
+                   col_date="date", col_irrad="IRRAD", col_tmin="TMIN",
+                   col_tmax="TMAX", col_vap="VAP", col_wind="WIND",
+                   col_rain="RAIN"):
+    """The ONE writer of the PCSE CSVWeatherDataProvider file in this KI.
+
+    df holds one row per day, already in the CSV units: IRRAD kJ/m2/day,
+    TMIN/TMAX deg C, VAP kPa, WIND m/s, RAIN mm/day. Used by process() here and
+    by build_pcse_weather_from_source.py.
+
+    The provider runs ast.literal_eval on every header value, so strings must
+    be quoted and the geo line must be a single ';'-separated statement list
+    with NO trailing comments. Dates are YYYYMMDD; missing SNOWDEPTH is NaN.
+    """
+    src = str(source).replace("'", "")
+    with open(output_file, 'w') as f:
+        f.write("## Site Characteristics\n")
+        f.write("Country = 'unknown'\n")
+        f.write("Station = 'custom'\n")
+        f.write("Description = 'Weather data converted for PCSE'\n")
+        f.write(f"Source = '{src}'\n")
+        f.write("Contact = 'HydroCraft'\n")
+        f.write(f"Longitude = {lon}; Latitude = {lat}; Elevation = {elev}; "
+                f"AngstromA = 0.18; AngstromB = 0.55; HasSunshine = False\n")
+        f.write("## Daily weather observations (missing values are NaN)\n")
+        f.write("DAY,IRRAD,TMIN,TMAX,VAP,WIND,RAIN,SNOWDEPTH\n")
+
+        for _, row in df.iterrows():
+            dv = row[col_date]
+            day = dv.strftime('%Y%m%d') if hasattr(dv, 'strftime') else str(dv).replace('-', '')
+            f.write(f"{day},{row[col_irrad]:.1f},{row[col_tmin]:.1f},{row[col_tmax]:.1f},"
+                    f"{row[col_vap]:.3f},{row[col_wind]:.1f},{row[col_rain]:.4f},NaN\n")
+    return output_file
+
+
 def process():
     import pandas as pd
 
@@ -118,29 +153,11 @@ def process():
     if max_rain > 500:
         logger.warning(f"RAIN max={max_rain:.1f} mm — suspiciously high, check units!")
 
-    # Write PCSE CSV in the exact format CSVWeatherDataProvider expects.
-    # The provider runs ast.literal_eval on every header value, so strings must
-    # be quoted and the geo line must be a single ';'-separated statement list
-    # with NO trailing comments. Dates are YYYYMMDD; missing SNOWDEPTH is NaN.
     os.makedirs(os.path.dirname(OUTPUT_FILE) or '.', exist_ok=True)
-    src = str(INPUT_CSV).replace("'", "")
-    with open(OUTPUT_FILE, 'w') as f:
-        f.write("## Site Characteristics\n")
-        f.write("Country = 'unknown'\n")
-        f.write("Station = 'custom'\n")
-        f.write("Description = 'Weather data converted for PCSE'\n")
-        f.write(f"Source = '{src}'\n")
-        f.write("Contact = 'HydroCraft'\n")
-        f.write(f"Longitude = {LON}; Latitude = {LAT}; Elevation = {ELEV}; "
-                f"AngstromA = 0.18; AngstromB = 0.55; HasSunshine = False\n")
-        f.write("## Daily weather observations (missing values are NaN)\n")
-        f.write("DAY,IRRAD,TMIN,TMAX,VAP,WIND,RAIN,SNOWDEPTH\n")
-
-        for _, row in df.iterrows():
-            dv = row[COL_DATE]
-            day = dv.strftime('%Y%m%d') if hasattr(dv, 'strftime') else str(dv).replace('-', '')
-            f.write(f"{day},{row[COL_IRRAD]:.1f},{row[COL_TMIN]:.1f},{row[COL_TMAX]:.1f},"
-                    f"{row[COL_VAP]:.3f},{row[COL_WIND]:.1f},{row[COL_RAIN]:.4f},NaN\n")
+    write_pcse_csv(df, OUTPUT_FILE, LAT, LON, ELEV, str(INPUT_CSV),
+                   col_date=COL_DATE, col_irrad=COL_IRRAD, col_tmin=COL_TMIN,
+                   col_tmax=COL_TMAX, col_vap=COL_VAP, col_wind=COL_WIND,
+                   col_rain=COL_RAIN)
 
     logger.info(f"Created: {OUTPUT_FILE} ({len(df)} days)")
     return OUTPUT_FILE

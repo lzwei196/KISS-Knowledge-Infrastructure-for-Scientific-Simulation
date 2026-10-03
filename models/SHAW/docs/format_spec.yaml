@@ -471,23 +471,12 @@ known_issues:
   severity: high
 - id: shaw_006
   symptom: Soil Ksat is always in cm/hr regardless of IFLAGSI
-  diagnosis: SHAW soil Ksat (SATCON) is in cm/hr, not affected by IFLAGSI flag. VIC Ksat is in mm/s. Using
-    VIC mm/s value directly gives 360x wrong Ksat
-  remedy: 'Convert VIC Ksat: SHAW_Ksat_cm_hr = VIC_Ksat_mm_s * 360.0. The vic_to_shaw_soil.py tool handles
-    this automatically.'
+  diagnosis: SHAW soil Ksat (SATCON) is in cm/hr, not affected by the IFLAGSI flag. A value taken from
+    a source in another unit (mm/s, mm/day, m/day) and written unconverted is wrong by a large factor
+  remedy: 'Build the site file with s1_site_setup/tools/create_site_file.py: it derives Ksat in cm/hr
+    from the HWSD texture of the point. Soil values are never taken from another model''s parameter files.
+    A measured Ksat must be converted to cm/hr first (1 mm/s = 360 cm/hr; 1 m/day = 4.17 cm/hr).'
   severity: critical
-- id: shaw_007
-  symptom: VIC exponent to Campbell b conversion
-  diagnosis: VIC 'expt' parameter = 2*b + 3 (where b is Campbell's pore size distribution). Using VIC
-    expt directly as SHAW 'b' gives wildly wrong water retention
-  remedy: 'SHAW_b = (VIC_expt - 3) / 2. Example: VIC expt=9 -> SHAW b=3.0'
-  severity: critical
-- id: shaw_008
-  symptom: VIC bubble pressure to SHAW air-entry potential
-  diagnosis: VIC 'bubble' is in cm (positive). SHAW 'psi_e' is in meters (negative). Using VIC bubble
-    directly gives wrong magnitude and sign
-  remedy: 'SHAW_psi_e_m = -VIC_bubble_cm / 100.0. Example: VIC bubble=30cm -> SHAW psi_e=-0.30m'
-  severity: high
 - id: shaw_009
   symptom: Too few soil nodes for freeze-thaw simulation
   diagnosis: Using NS=5 or fewer nodes with 4m soil depth gives coarse vertical resolution (80cm+ per
@@ -700,4 +689,50 @@ known_issues:
     rule cm_026 (copy-first for Fortran control files).
 
     '
+  severity: high
+- id: shaw_034
+  symptom: SHAW weather tool looked for VIC ASCII forcing first; a run with CMFD/MSWX/NASA POWER needed
+    VIC forcing made beforehand, or silently used an old VIC cell file found in --forcing_dir
+  diagnosis: Before 2026-10-02 convert_forcing_to_shaw.py with --forcing_dir called find_forcing_file()
+    FIRST (comment "try VIC ASCII first, then CMFD NetCDF") and only fell back to its own CMFD reader
+    when no VIC file matched. The header, the parser text and SKILL.md said "Convert VIC forcing to SHAW"
+    while als
+  remedy: 'Use the direct path: convert_forcing_to_shaw.py --source nasa_power|cmfd|mswx --lat --lon --start_year
+    --end_year --mode daily|hourly. The tool now calls load_daily_forcing / load_hourly_forcing and has
+    no default source. The VIC ASCII reader was removed on 2026-10-02 (weather always from the source)'
+  severity: high
+- id: shaw_035
+  symptom: Daily precipitation in the .wea is near zero (annual total about 0.1 mm) when the weather was
+    built from CMFD NetCDF by the old tool; soil dries out, no runoff, no error printed
+  diagnosis: The old tool had its own CMFD reader that added the eight 3-hour CMFD precipitation values
+    of a day (prec_mm = sum(prec[s:e])). CMFD prec is a RATE in kg m-2 s-1, so each value must be multiplied
+    by 10800 s first. Without it daily rain is 10800 times too small. Check 2026-10-02 at (32.43, 115.6),
+    ye
+  remedy: 'Do not read CMFD in SHAW code. Use convert_forcing_to_shaw.py --source cmfd --forcing_dir <CMFD
+    3-hour store> --lat --lon; the shared loader does the rate-to-mm step. The own CMFD reader was removed
+    from the tool. Always read the annual rain totals the tool prints: several hundred to about 1500 mm
+    i'
+  severity: critical
+- id: shaw_036
+  symptom: --mode hourly with gridded forcing crashed with KeyError 'hour', or wrote 3-hour records and
+    a 4-digit year into an hourly (MTSTEP=0) weather file
+  diagnosis: 'The old CMFD fallback built daily records with no hour key, so write_hourly_weather failed.
+    With VIC ASCII 3-hour input the hourly writer wrote 8 records per day (hours 0,3,..,21) although MTSTEP=0
+    expects 24, and wrote the year with 4 digits (shaw_032: SHAW then stops after one day). Source times
+    a'
+  remedy: 'Use convert_forcing_to_shaw.py --source nasa_power|cmfd|mswx --mode hourly. It calls load_hourly_forcing,
+    shifts UTC to local standard time (--utc_offset, default round(lon/15)), keeps whole local days, writes
+    24 records per day (3-hour sources: three hourly records per step, state held, rain split '
+  severity: high
+- id: shaw_037
+  symptom: 'copy_template prints "WARNING: .../outputs/shaw_quebec_compton/compton.sit not found, skipping"
+    for every file and the run later fails with FileNotFoundError on <case>.sit'
+  diagnosis: 'The template registry pointed at case folders under outputs/ (shaw_quebec_compton, shaw_jackpine).
+    Those folders were lost when outputs/ moved to another disk (found missing 2026-10-02). copy_template
+    only warned and returned an empty dict, so the real cause was hidden.
+
+    '
+  remedy: The compton template now lives inside the KI at tools/s1_site_setup/templates/compton/ (recovered
+    from the 2026-06-28 RISMA run copy; see its README.md) and copy_template looks there first. copy_template
+    raises FileNotFoundError when a template .sit/.inp is missing. The jackpine (hourly, canopy) tem
   severity: high

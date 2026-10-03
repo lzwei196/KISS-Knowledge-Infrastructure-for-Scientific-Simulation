@@ -834,28 +834,6 @@
   cross_references:
   - dt_w001
   - dt_w026
-- id: dt_w028
-  stage: s2_forcing
-  failure_domain: parameter_format
-  symptom:
-    description: 0 forcing files found or coordinates misparsed
-    error_pattern: Found 0 forcing files
-    detection_method: output_check
-  diagnosis:
-    root_cause: VIC forcing file naming pattern {basin}_{res}deg_{lat}_{lon} not recognized
-    explanation: 'HydroCraft VIC forcing uses bengbu_0.25deg_31.1250_115.6250 pattern. Fixed in v1.1.0
-      by adding *_*deg_* glob and parsing parts[2]/parts[3].
-
-      '
-    affected_components:
-    - convert_forcing_to_wflow.py
-  remedy:
-    action: Use updated convert_forcing_to_wflow.py
-    tool_to_run: convert_forcing_to_wflow.py
-    manual_steps: []
-    prevention: Updated tool handles all known HydroCraft naming patterns.
-  severity: fatal
-  cross_references: []
 - id: dt_w029
   stage: s1_hydromt
   failure_domain: silent_error

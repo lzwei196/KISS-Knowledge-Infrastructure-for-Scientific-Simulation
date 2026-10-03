@@ -29,14 +29,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (35 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (31 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -56,7 +56,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s2_drainage_network/define_cross_sections.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/define_cross_sections.py --help` |
 | `tools/s2_drainage_network/import_network_from_gis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/import_network_from_gis.py --help` |
 | `tools/s2_drainage_network/validate_network_connectivity.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/validate_network_connectivity.py --help` |
-| `tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py --help` |
+| `tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py --help` |
 | `tools/s3_rainfall_forcing/create_rain_timeseries.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/create_rain_timeseries.py --help` |
 | `tools/s3_rainfall_forcing/generate_design_storm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/generate_design_storm.py --help` |
 | `tools/s3_rainfall_forcing/scale_cmip6_rainfall_to_swmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/scale_cmip6_rainfall_to_swmm.py --help` |
@@ -84,8 +84,36 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-Then convert to SWMM rainfall format using this KI's tool: `tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py`
+**Rain from a gridded source (CMFD / MSWX / NASA POWER)**: one tool reads the source and writes the SWMM series:
+
+```bash
+KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py \
+  --source cmfd --points "32.05,118.80" \
+  --start_date 2020-07-01 --end_date 2020-07-31 \
+  --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+  --rain_format intensity --series_name CMFD_Rain --output rain/cmfd_rain.dat
+```
+
+- `--source` is required (`cmfd` China 3-hourly, `mswx` global 3-hourly, `nasa_power` global hourly, network). The tool calls `ki_tools_common.load_forcing.load_hourly_forcing` itself; do not call the loader by hand and do not use daily data (a day total hides the storm peak SWMM needs).
+- It prints the `[RAINGAGES]` `FORMAT` and `INTERVAL` that match the data (`3:00` for cmfd / mswx, `1:00` for nasa_power; `INTENSITY` = mm/hr, `VOLUME` = mm per step) and writes `<output stem>.summary.json` (source, points, step, total mm, daily totals). Use exactly that FORMAT and INTERVAL (dt_009, dt_024).
+- It stops and writes nothing when a value is missing, the time axis is uneven, or the period is not fully in the store.
+- Time stamps are UTC.
+- Rain is built from the data source by this KI's own tool. Do not make SWMM rain out of another model's input files (dt_023).
+
+**Rain from a gauge CSV**: `tools/s3_rainfall_forcing/create_rain_timeseries.py`. **Design storm**: `tools/s3_rainfall_forcing/generate_design_storm.py`.
+
+**Whole-city model with real rain**: `tools/run_city_swmm.py` builds a city model from a bbox (swmmanywhere) and by default runs the bundled one-day design storm. To run it on the rain series made above:
+
+```bash
+KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_city_swmm.py \
+  --city Nanjing --bbox 118.74,32.00,118.86,32.10 --workdir <dir> \
+  --rain_dat rain/cmfd_rain.dat --rain_interval 3:00 --rain_format intensity \
+  --wettest_days 5 --json_out city_result.json
+```
+
+`--rain_interval` and `--rain_format` are the values the rain tool printed. `--wettest_days N` simulates the N wettest days in a row; `--sim_start/--sim_end` pick the days by hand. The tool writes `<model>_extrain.inp` (never edit the .inp by hand for this), runs it, and reports `rain_applied_ok` (the rain depth in the SWMM report equals the depth in the .dat within 1 %) next to the runoff and flow-routing continuity errors. `--existing_inp` reuses a model built before.
+
+Run the rain tool and the city tool as two commands (two processes), as shown. Importing the forcing loader and `run_city_swmm` into one Python process ends in a segfault (exit -11, no message) when the city build starts.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -232,7 +260,7 @@ C2      CIRCULAR  0.8    0      0      0      1
 |-------|------|-----------|----------------|
 | S1 | Subcatchment Delineation | `delineate_subcatchments`, `classify_land_use`, `compute_subcatchment_params`, `validate_subcatchments` | `docs/s1_subcatchment_delineation_skill.md` |
 | S2 | Drainage Network | `create_drainage_network`, `import_network_from_gis`, `define_cross_sections`, `validate_network_connectivity` | `docs/s2_drainage_network_skill.md` |
-| S3 | Rainfall Forcing | `create_rain_timeseries`, `convert_vic_forcing_to_swmm`, `generate_design_storm`, `validate_rainfall_input` | `docs/s3_rainfall_forcing_skill.md` |
+| S3 | Rainfall Forcing | `build_rain_timeseries_from_source`, `create_rain_timeseries`, `generate_design_storm`, `validate_rainfall_input` | `docs/s3_rainfall_forcing_skill.md` |
 | S4 | LID Setup | `create_lid_control`, `assign_lid_to_subcatchment`, `validate_lid_params` | `docs/s4_lid_setup_skill.md` |
 | S5 | Model Assembly | `assemble_inp_file`, `configure_simulation_options`, `validate_inp_file` | `docs/s5_model_assembly_skill.md` |
 | S6 | Execution | `run_swmm`, `extract_results`, `check_continuity_errors` | `docs/s6_execution_skill.md` |
@@ -270,7 +298,7 @@ Exact input shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` an
 
 | Variable | Unit model expects | Source dataset | Source unit | Conversion |
 |----------|-------------------|----------------|------------|------------|
-| Precipitation / rainfall | `mm/hr` intensity or `mm/interval` volume for CMS; `in/hr` or `in` for CFS | CMFD / MSWX / NASA POWER or user gage data | Dataset-specific | Convert with `tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py`; the `[RAINGAGES]` `FORMAT` must match intensity vs volume. |
+| Precipitation / rainfall | `mm/hr` intensity or `mm/interval` volume for CMS; `in/hr` or `in` for CFS | CMFD / MSWX / NASA POWER or user gage data | Dataset-specific | Gridded source: `tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py` (loader `precip_mm` is mm in the step; intensity = `precip_mm / step hours`). Gauge CSV: `create_rain_timeseries.py`. The `[RAINGAGES]` `FORMAT` and `INTERVAL` must match the series. |
 | Air temperature | `deg C/F` | User series or forcing dataset | Dataset-specific | Required for snowmelt / Hargreaves workflows; see `docs/format_spec.yaml`. |
 | Evaporation | `mm/day` SI or `in/day` US | User series or Hargreaves-derived | Dataset-specific | SWMM expects actual evaporation. |
 | Wind speed | `km/hr` SI or `mph` US | User series or forcing dataset | Dataset-specific | Used for snowmelt refinement when configured. |
@@ -343,7 +371,7 @@ Headline output, the dag's `validation_rank: 1` variable:
 |-------|----------------|---------|
 | S1 | `tools/s1_subcatchment_delineation/` | Delineate and validate subcatchments and surface parameters. |
 | S2 | `tools/s2_drainage_network/` | Create or import drainage network geometry and cross sections. |
-| S3 | `tools/s3_rainfall_forcing/` | Build rainfall time series and convert forcing into SWMM format. |
+| S3 | `tools/s3_rainfall_forcing/` | Build rainfall time series from a forcing source (CMFD / MSWX / NASA POWER), a gauge CSV or a design storm. |
 | S4 | `tools/s4_lid_setup/` | Create and assign LID controls. |
 | S5 | `tools/s5_model_assembly/` | Assemble and validate SWMM INP files. |
 | S6 | `tools/s6_execution/` | Run SWMM, extract outputs, and check continuity errors. |
@@ -397,7 +425,6 @@ The full corpus stays in `diagnostics/triplets.yaml`; these are the first triple
 | Upstream model | Variable exchanged | Unit | Temporal resolution |
 |----------------|-------------------|------|---------------------|
 | VIC | Surface runoff / baseflow converted to SWMM inflow | `m3/s` for CMS after conversion from `mm/day` | Source/run dependent |
-| VIC | Meteorological forcing reused as SWMM rainfall | `mm/hr` intensity or `mm/interval` volume | Source/run dependent |
 | CaMa-Flood | River stage at SWMM outfalls | `m (CMS) or ft (US)` | Source/run dependent |
 
 | Downstream model | Variable exchanged | Unit | Temporal resolution |
@@ -579,26 +606,23 @@ Full diagnostic triplets: `diagnostics/triplets.yaml`
 
 ## HydroCraft Integration Points
 
-SWMM integrates with HydroCraft's VIC and CaMa-Flood models through four coupling pathways:
+SWMM integrates with HydroCraft's VIC and CaMa-Flood models through three coupling pathways (another model's RESULTS feed SWMM, or SWMM's feed it). Rainfall is not a coupling: it comes from the data source through `build_rain_timeseries_from_source` (see Data Preparation).
 
 ### 1. VIC Surface Runoff to SWMM Inflow (Rural-to-Urban)
 VIC grid cells surrounding the urban area produce surface runoff and baseflow. These are converted to external inflow time series at SWMM junction nodes representing the urban boundary. Use `convert_vic_runoff_to_swmm_inflow`.
 
-### 2. VIC Forcing to SWMM Rainfall (Shared Meteorology)
-Reuse VIC's meteorological forcing (CMFD, MSWX, or NASA POWER) as SWMM rainfall input for consistent precipitation across the rural-urban interface. Use `convert_vic_forcing_to_swmm`.
-
-### 3. CaMa-Flood Stage to SWMM Outfall BC (River Backwater)
+### 2. CaMa-Flood Stage to SWMM Outfall BC (River Backwater)
 CaMa-Flood's river water surface elevation is used as a time-varying boundary condition at SWMM outfalls. This captures backwater effects when the receiving river floods, preventing drainage discharge and causing urban flooding. Use `convert_cama_stage_to_outfall_bc`.
 
-### 4. SWMM Outflow to CaMa-Flood Lateral Inflow (Urban-to-River)
+### 3. SWMM Outflow to CaMa-Flood Lateral Inflow (Urban-to-River)
 SWMM outfall discharge is converted to CaMa-Flood lateral inflow, representing urban drainage contributions to the river system. Use `convert_swmm_outflow_to_cama_lateral`.
 
 ### Coupling Sequence
 
 For a fully coupled simulation:
-1. Run VIC (watershed hydrology) -- produces runoff + forcing
+1. Run VIC (watershed hydrology) -- produces runoff
 2. Run CaMa-Flood (river routing) -- produces river stage at urban outfalls
-3. Convert VIC runoff + forcing to SWMM inputs
+3. Convert VIC runoff to SWMM inflow; build the SWMM rainfall from the same data source VIC was driven with (`build_rain_timeseries_from_source`)
 4. Convert CaMa stage to SWMM outfall boundary conditions
 5. Run SWMM (urban drainage) -- produces outfall discharge
 6. (Optional) Feed SWMM outfall discharge back to CaMa-Flood as lateral inflow for a second iteration

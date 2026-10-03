@@ -433,74 +433,39 @@
   cross_references:
   - dt_012
 - id: dt_014
-  stage: s10_vic_coupling
+  stage: s4_climate_prep
   failure_domain: unit_conversion
   symptom:
-    description: After VIC-to-LDNDC climate conversion, LDNDC simulates no precipitation events -- all
-      days are dry
+    description: After converting a sub-daily forcing series to LDNDC climate, LDNDC simulates almost
+      no precipitation events -- nearly all days are dry
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: 'VIC forcing stores precipitation as a rate (mm/timestep for 3-hourly data), but the conversion
-      to daily total did not aggregate all 8 timesteps. Result: daily precip = one 3-hour value instead
+    root_cause: 'A sub-daily forcing series (CMFD, MSWX: 3-hourly, 8 values per day) was turned into a
+      daily value without adding up all 8 timesteps. Result: daily precip = one 3-hour value instead
       of the sum of eight.'
-    explanation: 'VIC forcing files contain sub-daily values (typically 3-hourly, 8 values per day). When
-      converting to LDNDC daily climate.txt, each day''s precipitation must be the SUM of all sub-daily
-      values. If only one value is taken (e.g., first timestep), daily precipitation is 1/8 of the true
-      value. For light rain days, this produces near-zero precipitation that LDNDC treats as dry. The
-      model runs without error but the water balance and all moisture-dependent biogeochemistry are wrong.
+    explanation: 'When converting to LDNDC daily climate.txt, each day''s precipitation must be the SUM
+      of all sub-daily values. If only one value is taken (e.g., first timestep), daily precipitation
+      is 1/8 of the true value. For light rain days, this produces near-zero precipitation that LDNDC
+      treats as dry. The model runs without error but the water balance and all moisture-dependent
+      biogeochemistry are wrong.
 
       '
     affected_components:
-    - VIC forcing conversion
     - climate.txt precipitation column
     - All water-dependent processes
   remedy:
-    action: Verify daily precipitation in converted climate.txt matches VIC daily totals. Sum all sub-daily
-      timesteps.
-    tool_to_run: vic_to_ldndc_climate
+    action: Build climate.txt with convert_forcing_to_ldndc_climate (it reads daily totals from the shared
+      loader). Check the annual precipitation in the %attributes block against what is known for the site.
+    tool_to_run: convert_forcing_to_ldndc_climate
     manual_steps:
-    - Read a VIC forcing file for one day (8 lines for 3-hourly)
-    - Sum precipitation values across all 8 lines
-    - Compare to the corresponding daily value in climate.txt
-    - If climate.txt value is ~1/8 of the VIC sum, aggregation is wrong
-    prevention: vic_to_ldndc_climate sums all sub-daily values when aggregating to daily
+    - Read the annual precipitation line in the climate.txt header
+    - Compare it with the known annual precipitation of the site
+    - If it is about 1/8 of the expected value, the daily aggregation is wrong
+    prevention: convert_forcing_to_ldndc_climate takes daily totals from ki_tools_common.load_forcing
   severity: silent
   cross_references:
   - dt_005
-- id: dt_015
-  stage: s10_vic_coupling
-  failure_domain: dependency_mismatch
-  symptom:
-    description: VIC and LDNDC simulate the same location but soil texture and depth differ significantly
-      between VIC soil params and LDNDC site.xml
-    error_pattern: ''
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: VIC and LDNDC soil data were derived from different sources or at different resolutions.
-      VIC may use its own soil parameter file while LDNDC site.xml was generated independently from HWSD.
-    explanation: 'In coupled VIC-LDNDC simulations, both models should use consistent soil properties.
-      If VIC uses one soil database (e.g., its internal soil parameter file) and LDNDC uses another (e.g.,
-      HWSD directly), the same grid cell may have different clay content, bulk density, and profile depth
-      in each model. This inconsistency means the hydrological response (VIC) and biogeochemical response
-      (LDNDC) are based on different soils, producing scientifically questionable results.
-
-      '
-    affected_components:
-    - VIC soil parameter file
-    - LDNDC site.xml
-    - Cross-model consistency
-  remedy:
-    action: Use vic_soil_to_ldndc_site tool to derive LDNDC soil from VIC soil params, ensuring consistency
-    tool_to_run: vic_soil_to_ldndc_site
-    manual_steps:
-    - Compare VIC soil param texture (cols for sand, clay) with LDNDC site.xml clay, sand
-    - Compare VIC layer depths with LDNDC layer depths
-    - If discrepancies > 10%, regenerate LDNDC site.xml from VIC soil params
-    prevention: In coupled runs, always derive LDNDC soil from VIC params via vic_soil_to_ldndc_site
-  severity: silent
-  cross_references:
-  - dt_003
 - id: dt_v001
   stage: s1_project_setup
   failure_domain: path_resolution
@@ -608,33 +573,6 @@
     prevention: run_ldndc_bengbu_ghg.py uses correct names
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
-- id: dt_v005
-  stage: s4_climate_prep
-  failure_domain: unit_conversion
-  symptom:
-    description: Climate temperature values are 273+ degrees — absurdly high
-    error_pattern: tavg > 100|temperature.*27[0-9]
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: VIC forcing temperature is already in Celsius, not Kelvin
-    explanation: 'Some tool stubs assumed VIC temperature needs K→C conversion (subtract 273.15). HydroCraft
-      VIC forcing stores temperature in °C directly. Subtracting 273.15 produces extreme negative values;
-      NOT subtracting when already Celsius is correct.
-
-      '
-    affected_components:
-    - s4_climate_prep
-  remedy:
-    action: Do NOT apply K→C conversion to VIC forcing temperature
-    tool_to_run: convert_forcing_to_ldndc_climate
-    manual_steps:
-    - 'Check VIC forcing values: if tavg range is -10 to 40, it is already Celsius'
-    - If tavg range is 260-310, it is Kelvin — subtract 273.15
-    prevention: 'Validate temperature range after conversion: -40 < tavg < 50'
-  severity: silent
-  cross_references:
-  - cfp_005
   verified: '2026-03-19'
 - id: dt_v006
   stage: s2_site_config

@@ -89,7 +89,7 @@ soil.add_layer_from_texture(thickness=0.3, Sand=55, Clay=15, OrgMat=2, penetrabi
 
 ### S3: Weather Data Preparation
 
-**Input**: Daily weather data source (file, VIC output, or raw arrays)
+**Input**: Daily weather straight from a forcing source (CMFD / MSWX / NASA POWER through the shared loader `ki_tools_common.load_forcing.load_daily_forcing`), or an AquaCrop-format weather file
 **Output**: pandas DataFrame with columns: `MinTemp`, `MaxTemp`, `Precipitation`, `ReferenceET`, `Date`
 **Tools**: `prepare_weather_df`, `compute_eto_penman_monteith`, `validate_weather_df`
 
@@ -97,28 +97,40 @@ soil.add_layer_from_texture(thickness=0.3, Sand=55, Clay=15, OrgMat=2, penetrabi
 from aquacrop.utils import prepare_weather
 # From AquaCrop-format text file (7 columns: Day Month Year MinTemp MaxTemp Precip ET0):
 weather_df = prepare_weather('path/to/weather.txt')
+```
 
-# From VIC/CMFD/MSWX forcing (requires ET0 computation):
+From a forcing source (ET0 must be computed; full recipe in SKILL.md "Forcing source for multi-decade windows"):
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from tools.s3_weather_prep.compute_eto_penman_monteith import compute_et0_fao56   # this KI's ET0 function
+import numpy as np
 import pandas as pd
+
+fc = load_daily_forcing('nasa_power', lat, lon, y0, y1)        # or 'cmfd' / 'mswx' with forcing_dir=<3-hourly store>
+fc = {k: (v if k == 'dates' else np.asarray(v, dtype=float)) for k, v in fc.items()}   # the loader returns lists
+dates = pd.to_datetime(fc['dates'])
+et0 = compute_et0_fao56(fc['temp_min_c'], fc['temp_max_c'], fc['srad_wm2'] * 0.0864,   # W/m2 -> MJ/m2/day
+                        fc['wind_ms'], lat, elevation, dates.dayofyear.values)
 weather_df = pd.DataFrame({
-    'MinTemp': tmin_array,     # deg C
-    'MaxTemp': tmax_array,     # deg C
-    'Precipitation': prcp_array, # mm/day
-    'ReferenceET': et0_array,  # mm/day, MUST compute from Penman-Monteith
-    'Date': pd.date_range(start='2000-01-01', periods=len(tmin_array), freq='D')
+    'MinTemp': fc['temp_min_c'],        # deg C
+    'MaxTemp': fc['temp_max_c'],        # deg C
+    'Precipitation': fc['precip_mm'],   # mm/day (the loader already returns daily totals)
+    'ReferenceET': et0,                 # mm/day
+    'Date': dates,
 })
 ```
 
 **CRITICAL**: `ReferenceET` is REQUIRED and must be > 0. AquaCrop clips it to minimum 0.1 mm/day internally. Unlike DSSAT which computes ET internally, AquaCrop expects pre-computed ET0 from the user.
 
-**Unit conversion table (VIC to AquaCrop)**:
+**Unit conversion table (shared loader, daily, to AquaCrop)**:
 
-| Variable | VIC unit | AquaCrop unit | Conversion |
-|----------|----------|---------------|-----------|
-| Temperature | deg C | deg C | none |
-| Precipitation | mm/timestep | mm/day | sum to daily |
-| SW radiation | W/m2 | MJ/m2/day | multiply by 0.0864 (for ET0 computation) |
-| Wind | m/s | m/s | none (used for ET0 computation) |
+| Variable | Loader key and unit | AquaCrop unit | Conversion |
+|----------|---------------------|---------------|-----------|
+| Temperature | `temp_min_c`, `temp_max_c`, deg C | deg C | none |
+| Precipitation | `precip_mm`, mm/day | mm/day | none (already a daily total) |
+| SW radiation | `srad_wm2`, W/m2 | MJ/m2/day | multiply by 0.0864 (for ET0 computation) |
+| Wind | `wind_ms`, m/s | m/s | none (used for ET0 computation) |
 
 **Milestone**: All 5 columns present, no gaps in daily dates, `ReferenceET.min() > 0`
 

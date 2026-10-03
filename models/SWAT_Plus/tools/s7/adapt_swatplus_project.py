@@ -14,7 +14,7 @@ model. The agent should never modify this script -- only call it.
 Inputs:
   --template_dir  : Path to a working SWAT+ TxtInOut directory (str)
   --output_dir    : Path for the adapted project output (str)
-  --weather_dir   : Path to new weather files produced by vic_forcing_to_swatplus (str)
+  --weather_dir   : Path to new weather files produced by s3/prepare_weather_files.py (str)
   --soil_file     : Path to new soils.sol from hwsd_to_swatplus_soil (str)
   --start_year    : Simulation start year (int)
   --end_year      : Simulation end year (int)

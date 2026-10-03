@@ -27,7 +27,7 @@ pipeline:
   - s8_execution_skill
   - s9_result_parsing_skill
 tools:
-  count: 36
+  count: 34
   files:
   - tools/s0_global_data/crop_selector.py
   - tools/s0_global_data/elevation_source_adapter.py
@@ -40,8 +40,6 @@ tools:
   - tools/s0_management_data/crop_name_harmonizer.py
   - tools/s0_management_data/fertilizer_rate_lookup.py
   - tools/s0_management_data/irrigation_type_lookup.py
-  - tools/s0_vic_coupling/vic_forcing_converter.py
-  - tools/s0_vic_coupling/vic_soil_converter.py
   - tools/s10_calibration/modify_soil_params.py
   - tools/s10_calibration/parse_rzwqm2_output.py
   - tools/s10_calibration/rzwqm2_calibrate.py

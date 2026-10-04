@@ -1,0 +1,20 @@
+!! info.txt — HYPE demo configuration (3 subbasins)
+!! Minimal setup for validation — water balance only
+!!
+bdate	2005-01-01
+cdate	2005-01-01
+edate	2005-12-31
+resultdir	./resultdir/
+modeldir	./modelfiles/
+forcingdir	./forcingdir/
+logdir	./logdir/
+!!
+!! Output configuration
+timeoutput variable cout	rout	snow	evap	cprc
+timeoutput meanperiod 1
+timeoutput decimals 3
+!!
+!! Model options
+modeloption petmodel 1
+modeloption snowfallmodel 0
+modeloption snowmeltmodel 2

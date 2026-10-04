@@ -1,0 +1,33 @@
+{
+  "description": "Expected results for the official SMHI HYPE demo basin (3 subbasins, 2005). inputs/ are the unmodified demo files. Recorded from a clean run of the installed hype 5.35.0 binary; deterministic.",
+  "engine_version": "5.35.0",
+  "stdout_contains": "halt: successfully",
+  "result_files": [
+    "timeEVAP.txt",
+    "timeSNOW.txt",
+    "timeCPRC.txt",
+    "timeCOUT.txt",
+    "timeROUT.txt"
+  ],
+  "numeric_checks": [
+    {
+      "name": "peak_evap_mm",
+      "file": "resultdir/timeEVAP.txt",
+      "reduce": "max_all_subbasins",
+      "expected": 2.94,
+      "tol": 0.1,
+      "why": "peak daily evaporation across subbasins"
+    },
+    {
+      "name": "n_days",
+      "file": "resultdir/timeEVAP.txt",
+      "reduce": "n_rows",
+      "expected": 365,
+      "tol": 0,
+      "why": "365 daily records in 2005"
+    }
+  ],
+  "recorded_on": "2026-10-04",
+  "recorded_with": "hype 5.35.0 from /mnt/disk1/Hydrocraft_server/model/hype/hype",
+  "stdout_note": "HYPE writes 'halt: successfully' to its log file, not captured stdout; pass is judged by result files + numeric anchors."
+}

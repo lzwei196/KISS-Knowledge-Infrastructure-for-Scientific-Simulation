@@ -1,0 +1,19 @@
+!! par.txt — HYPE parameters for demo basin
+!! Land use dependent parameters (3 landuses: forest, crop, water)
+ttmp	0.0	0.0	0.0
+cmlt	3.5	4.0	0.0
+srrcs	0.1	0.05	0.0
+cevp	0.15	0.20	0.0
+!! Soil type dependent parameters (3 soil types: till, clay, water)
+wcfc	0.15	0.25	0.05
+wcwp	0.05	0.10	0.01
+wcep	0.35	0.40	0.50
+rrcs1	0.1	0.05	0.0
+rrcs2	0.01	0.005	0.0
+!! General parameters
+rrcs3	0.001
+lp	0.8
+rivvel	1.0
+damp	0.5
+cevpam	0.3
+cevpph	30

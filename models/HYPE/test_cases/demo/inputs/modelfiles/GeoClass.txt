@@ -1,0 +1,5 @@
+!! GeoClass.txt — SLC definitions for demo
+!! Col: SLC_ID landuse soil crop crop2 rotation vegtype special tiledepth streamdepth numlayers soildepth1 [soildepth2] [soildepth3]
+1	1	1	0	0	0	1	0	0	0	3	0.3	0.6	1.5
+2	2	2	1	0	0	2	0	0.8	0	3	0.3	0.9	1.8
+3	3	3	0	0	0	0	2	0	0	1	5.0

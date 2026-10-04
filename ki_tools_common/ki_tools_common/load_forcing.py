@@ -51,7 +51,7 @@ NASA_POWER_DAILY_PARAMS = (
 
 
 def load_daily_forcing(source, lat, lon, start_year, end_year, forcing_dir=None,
-                       variables=None):
+                       variables=None, on_missing="raise", period=None):
     """Load daily forcing from CMFD, MSWX, or NASA POWER.
 
     Args:
@@ -66,27 +66,47 @@ def load_daily_forcing(source, lat, lon, start_year, end_year, forcing_dir=None,
             slab per timestep, so each variable skipped saves a whole-year
             decompression (~5 min). Ignored by the other sources.
 
+            For every source, variables= also tells the completeness check
+            what the caller needs: a variable not listed is not checked (and
+            may hold NaN); one listed (or every one, when variables is None)
+            must be complete.
+        on_missing: "raise" (default) stops with a message naming the variable
+            and the first missing dates when any requested day is absent, or
+            when a variable has a gap. "nan" returns the gaps as NaN for a
+            caller that checks them itself. Missing values are NEVER replaced
+            (no 0 mm rain, no mean for an extreme, no other wind height).
+        period: optional (start, end) dates, end included, inside the years:
+            only this stretch must be complete (for part-year runs).
+
     Returns:
         dict with keys: dates, precip_mm, temp_mean_c, temp_max_c,
                         temp_min_c, srad_wm2, wind_ms, shum_kgkg, pres_pa
-             (and lrad_wm2 when available)
+             (and lrad_wm2 when available). A variable the source does not
+             give, or that was not requested, is NaN for every day.
     """
+    _check_on_missing(on_missing)
+    skip = _not_requested(source, variables)      # validates the keys up front
     source = source.lower().strip()
     if source == "cmfd":
-        return _load_cmfd(lat, lon, start_year, end_year, forcing_dir)
+        out = _load_cmfd(lat, lon, start_year, end_year, forcing_dir)
     elif source == "mswx":
-        return _load_mswx(lat, lon, start_year, end_year, forcing_dir,
-                          variables=variables)
+        out = _load_mswx(lat, lon, start_year, end_year, forcing_dir,
+                         variables=variables)
     elif source == "nasa_power":
-        return _load_nasa_power(lat, lon, start_year, end_year)
+        out = _load_nasa_power(lat, lon, start_year, end_year)
     elif source == "gswp3":
-        return _load_gswp3(lat, lon, start_year, end_year, forcing_dir)
+        out = _load_gswp3(lat, lon, start_year, end_year, forcing_dir)
     else:
         raise ValueError(f"Unknown source '{source}'. Choose from: cmfd, mswx, nasa_power, gswp3")
+    if on_missing == "raise":
+        _require_complete_daily(out, source, start_year, end_year, f"({lat}, {lon})",
+                                skip, period)
+    return out
 
 
 def load_daily_forcing_points(source, latlons, start_year, end_year,
-                              forcing_dir=None, variables=None):
+                              forcing_dir=None, variables=None, on_missing="raise",
+                              period=None):
     """Load daily forcing at SEVERAL points, returning one dict per point.
 
     Equivalent to calling ``load_daily_forcing`` once per point, but for the
@@ -103,25 +123,205 @@ def load_daily_forcing_points(source, latlons, start_year, end_year,
         start_year, end_year: period (inclusive)
         forcing_dir: root directory for cmfd/mswx
 
+        on_missing, period: as in ``load_daily_forcing``; applied to every point.
+
     Returns:
         list of forcing dicts, in the same order as ``latlons``; each has the
         same keys as ``load_daily_forcing``.
     """
+    _check_on_missing(on_missing)
+    skip = _not_requested(source, variables)
     latlons = [(float(a), float(b)) for a, b in latlons]
     src = source.lower().strip()
     if src == "cmfd" and len(latlons) > 1:
-        return _load_cmfd_points(latlons, start_year, end_year, forcing_dir)
-    if src == "mswx":
+        res = _load_cmfd_points(latlons, start_year, end_year, forcing_dir)
+    elif src == "mswx":
         # MSWX annual files are gzip-chunked one GLOBAL slab per timestep, so a
         # per-point loop would decompress the whole file once per point.
-        return _load_mswx_points(latlons, start_year, end_year, forcing_dir,
-                                 variables=variables)
-    return [load_daily_forcing(source, la, lo, start_year, end_year, forcing_dir,
-                               variables=variables)
-            for la, lo in latlons]
+        res = _load_mswx_points(latlons, start_year, end_year, forcing_dir,
+                                variables=variables)
+    else:
+        return [load_daily_forcing(source, la, lo, start_year, end_year, forcing_dir,
+                                   variables=variables, on_missing=on_missing,
+                                   period=period)
+                for la, lo in latlons]
+    if on_missing == "raise":
+        for (la, lo), o in zip(latlons, res):
+            _require_complete_daily(o, src, start_year, end_year, f"({la}, {lo})",
+                                    skip, period)
+    return res
 
 
-def load_hourly_forcing(source, lat, lon, start_year, end_year, forcing_dir=None):
+_ON_MISSING = ("raise", "nan")
+# variables= keys (MSWX naming, used for every source) -> output names.
+_VARIABLE_KEYS = ("P", "Tair", "SWd", "LWd", "Wind", "spechum", "Pres")
+_DAILY_NAMES = {
+    "P": ("precip_mm",), "Tair": ("temp_mean_c", "temp_max_c", "temp_min_c"),
+    "SWd": ("srad_wm2",), "LWd": ("lrad_wm2",), "Wind": ("wind_ms", "wind2_ms"),
+    "spechum": ("shum_kgkg",), "Pres": ("pres_pa",),
+}
+_SUBDAILY_NAMES = {
+    "P": ("precip_mm", "prec_kgm2s"), "Tair": ("temp_c",),
+    "SWd": ("srad_wm2",), "LWd": ("lrad_wm2",), "Wind": ("wind_ms", "wind2_ms"),
+    "spechum": ("shum_kgkg",), "Pres": ("pres_pa",),
+}
+
+
+def _not_requested(source, variables, names=_DAILY_NAMES):
+    """Output names the caller said it does not need (variables=). These are
+    returned as read (NaN where missing, or throughout if not read) and are not
+    checked; every variable the caller needs must be complete."""
+    if variables is None:
+        return ()
+    want = set(variables)
+    unknown = want - set(_VARIABLE_KEYS)
+    if unknown:
+        # Callers written before this check pass their own names (SWAP:
+        # "tmin", "prcp", ...). Earlier loaders ignored them. We cannot tell
+        # what such a caller needs, so NOTHING is excluded: every variable is
+        # checked. Unknown names can only make the check stricter.
+        warnings.warn(f"variables: keys {sorted(unknown)} are not {_VARIABLE_KEYS}; "
+                      f"every variable is checked for completeness")
+        return ()
+    return tuple(n for k, ns in names.items() if k not in want for n in ns)
+
+
+def _period_bounds(period, start_year, end_year, as_steps=False):
+    """[first, stop) of the stretch that must be complete: the whole years by
+    default, or the explicit period=(start, end), end inclusive, which must lie
+    inside the years asked for."""
+    unit = "s" if as_steps else "D"
+    first = np.datetime64(f"{start_year}-01-01", unit)
+    stop = np.datetime64(f"{end_year + 1}-01-01", unit)
+    if period is None:
+        return first, stop
+    a = np.datetime64(str(period[0])[:10], "D").astype(f"datetime64[{unit}]")
+    b = (np.datetime64(str(period[1])[:10], "D") + np.timedelta64(1, "D")).astype(f"datetime64[{unit}]")
+    if not (first <= a < b <= stop):
+        raise ValueError(f"period {period} must lie inside {start_year}-{end_year}")
+    return a, b
+
+
+def _samples_per_day(times):
+    """Samples per day from the store's own time step (3-hourly -> 8,
+    daily -> 1), so a store that is short on EVERY day is still caught."""
+    t = np.asarray(times, dtype="datetime64[s]").astype("int64")
+    if t.size < 2:
+        return 1
+    d = np.diff(np.sort(t))
+    d = d[d > 0]
+    vals, cnt = np.unique(d, return_counts=True)
+    step = int(vals[np.argmax(cnt)])
+    if step <= 0 or 86400 % step:
+        raise ValueError(f"time step {step} s does not divide a day; cannot aggregate")
+    return 86400 // step
+_DAILY_CORE = ("precip_mm", "temp_mean_c", "temp_max_c", "temp_min_c")
+_DAILY_OTHER = ("srad_wm2", "lrad_wm2", "wind_ms", "wind2_ms", "shum_kgkg", "pres_pa")
+
+
+def _check_on_missing(on_missing):
+    if on_missing not in _ON_MISSING:
+        raise ValueError(f"on_missing must be one of {_ON_MISSING}, got {on_missing!r}")
+
+
+def _gap_message(name, dates, bad, where, source):
+    idx = np.flatnonzero(bad)
+    first = ", ".join(str(dates[i])[:10] for i in idx[:5])
+    return (f"{source} at {where}: {name} is missing on {idx.size} of {len(bad)} "
+            f"days (first: {first}). Missing values are not filled. Choose another "
+            f"source or period, or pass on_missing='nan' and handle the gaps yourself.")
+
+
+def _require_complete_daily(out, source, start_year, end_year, where, not_requested=(),
+                            period=None):
+    """Stop unless every day of the checked stretch (whole years, or period=)
+    is present once and no needed variable has a gap there. Variables the caller
+    said it does not need (``not_requested``) are not checked."""
+    dates = np.asarray([np.datetime64(str(d)[:10]) for d in out["dates"]])
+    if len(set(dates.tolist())) != dates.size:
+        raise ValueError(f"{source} at {where}: duplicate dates. Nothing is filled in.")
+    a0, a1 = _period_bounds(period, start_year, end_year)
+    want = np.arange(a0, a1, np.timedelta64(1, "D"))
+    have = set(dates.tolist())
+    lost = [str(d) for d in want if d.tolist() not in have]
+    if lost:
+        hint = "" if period is not None else (
+            " If you need only part of these years, pass period=(start, end).")
+        raise ValueError(
+            f"{source} at {where}: {len(lost)} of {want.size} days in {a0}..{a1 - 1} "
+            f"are absent from the source (first: {', '.join(lost[:5])}). "
+            f"Nothing is filled in.{hint}")
+    sel = (dates >= a0) & (dates < a1)
+    for name in _DAILY_CORE + _DAILY_OTHER:
+        if name not in out:
+            continue
+        if name in not_requested:
+            continue                     # the caller said it does not need it
+        a = np.asarray(out[name], dtype=float)[sel]
+        bad = ~np.isfinite(a)
+        if bad.any():
+            raise ValueError(_gap_message(name, dates[sel], bad, where, source))
+
+
+def _require_complete_hourly(out, source, where, start_year, end_year, not_requested=(),
+                             period=None):
+    """Sub-daily counterpart: every step of the checked stretch (whole years,
+    or period=) present, evenly spaced, and no gap in any variable there. Only
+    a variable the caller said it does not need may be NaN on every step."""
+    dates = np.asarray([np.datetime64(d, "s") for d in out["dates"]], dtype="datetime64[s]")
+    step = np.timedelta64(int(out["timestep_seconds"]), "s")
+    first, stop = _period_bounds(period, start_year, end_year, as_steps=True)
+    sel = (dates >= first) & (dates < stop)
+    d = dates[sel]
+    n_want = int((stop - first) // step)
+    if d.size != n_want or d[0] != first or d[-1] != stop - step \
+            or not np.all(np.diff(d) == step):
+        hint = "" if period is not None else (
+            " If you need only part of these years, pass period=(start, end).")
+        raise ValueError(
+            f"{source} at {where}: {d.size} steps from {d[0] if d.size else '-'} to "
+            f"{d[-1] if d.size else '-'}; {first}..{stop - step} needs {n_want} evenly "
+            f"spaced steps of {step}. Nothing is filled in.{hint}")
+    for name in ("precip_mm", "prec_kgm2s", "temp_c", "srad_wm2", "lrad_wm2", "wind_ms",
+                 "wind2_ms", "shum_kgkg", "pres_pa"):
+        if name not in out:
+            continue
+        if name in not_requested:
+            continue                     # the caller said it does not need it
+        a = np.asarray(out[name], dtype=float)[sel]
+        bad = ~np.isfinite(a)
+        if bad.any():
+            raise ValueError(_gap_message(name, d, bad, where, source))
+
+
+def _strict_daily(t, p, other, nsub, nsub_expected):
+    """Daily values from the sub-daily samples of ONE day. Any missing sample
+    (or a day short of samples) makes that day's value NaN; nothing is
+    averaged around a gap and missing rain never becomes 0."""
+    t = np.asarray(t, dtype=float)
+    p = np.asarray(p, dtype=float)
+    short = nsub != nsub_expected
+    def full(a):
+        return (not short) and a.size > 0 and bool(np.all(np.isfinite(a)))
+    if full(t):
+        tm, tx, tn = float(np.mean(t)), float(np.max(t)), float(np.min(t))
+    else:
+        tm = tx = tn = float("nan")
+    if full(p):
+        # CMFD prec is a rate (kg m-2 s-1); tiny negative values from the
+        # product's processing are clipped, a missing value is not.
+        pr = max(0.0, float(np.mean(p)) * 86400.0)
+    else:
+        pr = float("nan")
+    oth = {}
+    for k, a in other.items():
+        a = np.asarray(a, dtype=float)
+        oth[k] = float(np.mean(a)) if full(a) else float("nan")
+    return tm, tx, tn, pr, oth
+
+
+def load_hourly_forcing(source, lat, lon, start_year, end_year, forcing_dir=None,
+                        on_missing="raise", variables=None, period=None):
     """Load sub-daily forcing from CMFD, MSWX, or NASA POWER.
 
     For models that need sub-daily timesteps (SUMMA, SHAW, WRF-Hydro, VIC hourly).
@@ -140,14 +340,24 @@ def load_hourly_forcing(source, lat, lon, start_year, end_year, forcing_dir=None
         - NASA POWER: hourly (timestep_seconds=3600)
         - precip_mm is mm per timestep (NOT rate)
         - temp_c is instantaneous (no min/max aggregation)
+        on_missing: "raise" (default) stops on a missing or uneven step or a
+            gap in any variable; "nan" returns gaps as NaN. Never filled.
+        variables, period: as in ``load_daily_forcing`` (variables here only
+            tells the check what the caller needs; everything is still read).
     """
+    _check_on_missing(on_missing)
+    skip = _not_requested(source, variables, _SUBDAILY_NAMES)
     source = source.lower().strip()
     if source == "nasa_power":
-        return _load_nasa_power_hourly(lat, lon, start_year, end_year)
+        out = _load_nasa_power_hourly(lat, lon, start_year, end_year)
     elif source in ("cmfd", "mswx"):
-        return _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir)
+        out = _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir)
     else:
         raise ValueError(f"Unknown source '{source}'. Choose from: cmfd, mswx, nasa_power")
+    if on_missing == "raise":
+        _require_complete_hourly(out, source, f"({lat}, {lon})", start_year, end_year,
+                                 skip, period)
+    return out
 
 
 def _open_nc(path):
@@ -230,6 +440,7 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
                 fpath = os.path.join(fdir, subdir, f"{prefix}_{year}.nc")
                 if not os.path.isfile(fpath):
                     raise FileNotFoundError(f"MSWX file not found: {fpath}")
+                _mswx_check_time(fpath, year)      # every variable, not only the first
                 ds = _open_nc(fpath)
                 dvar = list(ds.data_vars)
                 lat_dim = "lat" if "lat" in ds.dims else "latitude"
@@ -300,7 +511,7 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
 
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
-            month_data = {}
+            month_data, month_times = {}, {}
             for var_key, (subdir, prefix) in var_map.items():
                 fpath = month_files[(year, month, var_key)]
                 ds = _open_nc(fpath)
@@ -310,19 +521,25 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
                 li = int(np.argmin(np.abs(lats - lat)))
                 lo = int(np.argmin(np.abs(lons - lon)))
                 month_data[var_key] = ds[dvar][:, li, lo].values
+                month_times[var_key] = (np.asarray(ds["time"].values)
+                                        if "time" in ds.variables else None)
                 ds.close()
 
-            n_steps = len(month_data["temp"])
-            for var_key, v in month_data.items():
-                if len(v) != n_steps:
-                    raise ValueError(
-                        "CMFD sub-daily %d-%02d: %s has %d steps, temp has %d (%s)"
-                        % (year, month, var_key, len(v), n_steps,
-                           month_files[(year, month, var_key)]))
-            for i in range(n_steps):
-                day = i // 8
-                hour = (i % 8) * 3
-                all_dates.append(datetime(year, month, 1) + timedelta(days=day, hours=hour))
+            # The file's own time coordinate must be every 3 h from the first of
+            # the month to its last step, for EVERY variable; dates are taken
+            # from it, never generated from the record position.
+            nd = (datetime(year + (month == 12), month % 12 + 1, 1) - datetime(year, month, 1)).days
+            want = (np.datetime64(f"{year}-{month:02d}-01T00:00:00")
+                    + np.arange(nd * 8) * np.timedelta64(ts_seconds, "s"))
+            for var_key in var_map:
+                _same_axis(want, month_times[var_key],
+                           "CMFD sub-daily %d-%02d %s (%s)" % (
+                               year, month, var_key, month_files[(year, month, var_key)]))
+                if len(month_data[var_key]) != want.size:
+                    raise ValueError("CMFD sub-daily %d-%02d: %s has %d values for %d times"
+                                     % (year, month, var_key, len(month_data[var_key]), want.size))
+            for i in range(want.size):
+                all_dates.append(want[i].astype("datetime64[s]").astype(datetime))
                 for var_key in var_map:
                     all_vars[var_key].append(float(month_data[var_key][i]))
 
@@ -423,7 +640,6 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
     all_dates, all_temp, all_prec, all_srad = [], [], [], []
     all_lrad, all_wind, all_shum, all_pres = [], [], [], []
     all_wind2 = []
-    used_ws2m = False
 
     for year in range(start_year, end_year + 1):
         params = {
@@ -466,19 +682,15 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
             all_temp.append(_v(t2m, key))
             # mm fallen in this hour; the divisor follows the declared unit
             # (see _NASA_POWER_HOURLY_PRECIP_DIVISOR)
-            all_prec.append(max(0, _v(prec, key) / prec_div))
+            _pv = _v(prec, key) / prec_div
+            all_prec.append(max(0.0, _pv) if np.isfinite(_pv) else np.nan)
             all_srad.append(_v(swd, key))  # Already W/m²
             all_lrad.append(_v(lwd, key))
-            # Prefer the 10 m anemometer wind, exactly as the daily loader does;
-            # fall back to WS2M only when 10 m is missing.
-            w2 = _v(ws, key)
-            w10 = _v(ws10, key)
-            all_wind2.append(w2)
-            if np.isnan(w10):
-                used_ws2m = True
-                all_wind.append(w2)
-            else:
-                all_wind.append(w10)
+            # wind_ms is the 10 m anemometer wind, exactly as the daily loader
+            # does. A missing 10 m value stays missing; the 2 m wind is a
+            # different quantity and is returned only as wind2_ms.
+            all_wind2.append(_v(ws, key))
+            all_wind.append(_v(ws10, key))
             all_shum.append(_v(qv, key) / 1000.0)  # g/kg → kg/kg
             all_pres.append(_v(ps, key) * 1000.0)   # kPa → Pa
 
@@ -492,7 +704,7 @@ def _load_nasa_power_hourly(lat, lon, start_year, end_year):
 
     # wind_height_m tells a caller which measurement height `wind_ms` is at, so
     # models that need it (FSM2 zU, SUMMA mHeight, ...) do not have to guess.
-    wind_height = 2.0 if used_ws2m else 10.0
+    wind_height = 10.0
 
     return {
         "dates": np.array(all_dates, dtype="datetime64[s]"),
@@ -548,18 +760,27 @@ def _load_cmfd(lat, lon, start_year, end_year, forcing_dir):
         raise ValueError(f"lat/lon length mismatch: {lat_arr.size} vs {lon_arr.size}")
     areal = lat_arr.size > 1
 
+    nodata_cells = set()
+
     def _areal_mean(da, lats, lons):
-        """cos(lat)-weighted mean over the requested cells, NaN-safe."""
+        """cos(lat)-weighted mean over the requested cells.
+
+        A cell with no value at ANY step of the file (outside the CMFD land
+        grid) is left out and counted in ``cmfd_cells_without_data``. A cell
+        missing at only SOME steps makes those steps NaN: the other cells are
+        not allowed to stand in for it."""
         lis = np.abs(lats[None, :] - lat_arr[:, None]).argmin(axis=1)
         los = np.abs(lons[None, :] - lon_arr[:, None]).argmin(axis=1)
         full = np.asarray(da.values)                       # (time, lat, lon)
         pts = full[:, lis, los].astype(float)              # (time, npoints)
         w = np.cos(np.radians(np.asarray(lats, dtype=float)[lis]))
-        valid = np.isfinite(pts)
-        wm = np.where(valid, w[None, :], 0.0)
-        num = np.nansum(np.where(valid, pts, 0.0) * wm, axis=1)
-        den = wm.sum(axis=1)
-        return np.where(den > 0, num / np.maximum(den, 1e-12), np.nan)
+        never = ~np.isfinite(pts).any(axis=0)
+        nodata_cells.update(int(i) for i in np.flatnonzero(never))
+        use = ~never
+        if not use.any():
+            return np.full(pts.shape[0], np.nan)
+        pu, wu = pts[:, use], w[use]
+        return (pu * wu[None, :]).sum(axis=1) / wu.sum()   # NaN if any used cell is NaN
 
     fdir = forcing_dir or CMFD_DIR
     if not os.path.isdir(fdir):
@@ -647,31 +868,38 @@ def _load_cmfd(lat, lon, start_year, end_year, forcing_dir):
             if not arrs:
                 continue
             year_series[key] = np.concatenate(arrs)
-            if year_times is None and tlist:
-                year_times = np.concatenate(tlist)
+            t_key = np.concatenate(tlist) if len(tlist) == len(arrs) else None
+            if t_key is None or len(t_key) != year_series[key].shape[0]:
+                raise ValueError(f"CMFD {key} {year}: time coordinate missing or not matching "
+                                 f"its data; the calendar cannot be verified")
+            if year_times is None:
+                year_times = t_key
+            else:
+                _same_axis(year_times, t_key, f"CMFD {key} {year}")
 
         if "temp" not in year_series or year_times is None:
             continue
+        _check_regular_year(year_times, year, f"CMFD {year}")
 
         times = np.asarray(year_times, dtype="datetime64[s]")
         days_np = times.astype("datetime64[D]")
-        for day in np.unique(days_np):
+        udays, counts = np.unique(days_np, return_counts=True)
+        nsub_expected = _samples_per_day(times)            # 8 for 3-hourly, 1 for daily
+        _other = (("srad", "srad_wm2"), ("lrad", "lrad_wm2"), ("wind", "wind_ms"),
+                  ("shum", "shum_kgkg"), ("pres", "pres_pa"))
+        for day, nsub in zip(udays, counts):
             sel = days_np == day
             t = year_series["temp"][sel] - 273.15
-            p = year_series["prec"][sel]
+            p = year_series["prec"][sel] if "prec" in year_series else np.array([])
+            oth = {ok: year_series[rk][sel] for rk, ok in _other if rk in year_series}
+            tm, tx, tn, pr, ov = _strict_daily(t, p, oth, int(nsub), nsub_expected)
             all_dates.append(day)
-            out["temp_mean_c"].append(float(np.nanmean(t)))
-            out["temp_max_c"].append(float(np.nanmax(t)))
-            out["temp_min_c"].append(float(np.nanmin(t)))
-            out["precip_mm"].append(max(0.0, float(np.nanmean(p)) * 86400.0))
-            for raw_key, out_key in (
-                ("srad", "srad_wm2"), ("lrad", "lrad_wm2"), ("wind", "wind_ms"),
-                ("shum", "shum_kgkg"), ("pres", "pres_pa"),
-            ):
-                if raw_key in year_series:
-                    out[out_key].append(float(np.nanmean(year_series[raw_key][sel])))
-                else:
-                    out[out_key].append(float("nan"))
+            out["temp_mean_c"].append(tm)
+            out["temp_max_c"].append(tx)
+            out["temp_min_c"].append(tn)
+            out["precip_mm"].append(pr)
+            for _rk, ok in _other:
+                out[ok].append(ov.get(ok, float("nan")))
 
     if not all_dates:
         raise FileNotFoundError(
@@ -696,7 +924,11 @@ def _load_cmfd(lat, lon, start_year, end_year, forcing_dir):
         dt.utcfromtimestamp(int(d.astype("datetime64[s]").astype("int64")))
         for d in all_dates
     ]
-    return {"dates": dates_py, **{k: list(v) for k, v in out.items()}}
+    res = {"dates": dates_py, **{k: list(v) for k, v in out.items()}}
+    if areal:
+        res["cmfd_cells_without_data"] = len(nodata_cells)
+        res["cmfd_cells_requested"] = int(lat_arr.size)
+    return res
 
 
 def _load_cmfd_points(latlons, start_year, end_year, forcing_dir):
@@ -780,30 +1012,41 @@ def _load_cmfd_points(latlons, start_year, end_year, forcing_dir):
             if not arrs:
                 continue
             year_series[key] = np.concatenate(arrs, axis=0)
-            if year_times is None and tlist:
-                year_times = np.concatenate(tlist)
+            t_key = np.concatenate(tlist) if len(tlist) == len(arrs) else None
+            if t_key is None or len(t_key) != year_series[key].shape[0]:
+                raise ValueError(f"CMFD {key} {year}: time coordinate missing or not matching "
+                                 f"its data; the calendar cannot be verified")
+            if year_times is None:
+                year_times = t_key
+            else:
+                _same_axis(year_times, t_key, f"CMFD {key} {year}")
 
         if "temp" not in year_series or year_times is None:
             continue
+        _check_regular_year(year_times, year, f"CMFD {year}")
 
         days_np = np.asarray(year_times, dtype="datetime64[s]").astype("datetime64[D]")
-        for day in np.unique(days_np):
+        udays, counts = np.unique(days_np, return_counts=True)
+        nsub_expected = _samples_per_day(year_times)
+        _other = (("srad", "srad_wm2"), ("lrad", "lrad_wm2"), ("wind", "wind_ms"),
+                  ("shum", "shum_kgkg"), ("pres", "pres_pa"))
+        for day, nsub in zip(udays, counts):
             sel = days_np == day
             all_dates.append(day)
             t = year_series["temp"][sel] - 273.15         # (nsub, npts)
-            p = year_series["prec"][sel]
+            p = year_series["prec"][sel] if "prec" in year_series else None
             for j in range(npts):
-                out[j]["temp_mean_c"].append(float(np.nanmean(t[:, j])))
-                out[j]["temp_max_c"].append(float(np.nanmax(t[:, j])))
-                out[j]["temp_min_c"].append(float(np.nanmin(t[:, j])))
-                out[j]["precip_mm"].append(max(0.0, float(np.nanmean(p[:, j])) * 86400.0))
-                for raw_key, out_key in (("srad", "srad_wm2"), ("lrad", "lrad_wm2"),
-                                         ("wind", "wind_ms"),
-                                         ("shum", "shum_kgkg"), ("pres", "pres_pa")):
-                    if raw_key in year_series:
-                        out[j][out_key].append(float(np.nanmean(year_series[raw_key][sel][:, j])))
-                    else:
-                        out[j][out_key].append(float("nan"))
+                oth = {ok: year_series[rk][sel][:, j] for rk, ok in _other
+                       if rk in year_series}
+                tm, tx, tn, pr, ov = _strict_daily(
+                    t[:, j], p[:, j] if p is not None else np.array([]), oth,
+                    int(nsub), nsub_expected)
+                out[j]["temp_mean_c"].append(tm)
+                out[j]["temp_max_c"].append(tx)
+                out[j]["temp_min_c"].append(tn)
+                out[j]["precip_mm"].append(pr)
+                for _rk, ok in _other:
+                    out[j][ok].append(ov.get(ok, float("nan")))
 
     if not all_dates:
         raise FileNotFoundError(
@@ -855,6 +1098,81 @@ def _mswx_read_box(task):
     return arr
 
 
+def _same_axis(ref, other, label):
+    """Every variable must carry the same time axis as the reference one; values
+    are lined up by position, so a repeated, missing or shifted step in any one
+    variable file would otherwise put its values on the wrong times."""
+    if other is None:
+        raise ValueError(f"{label}: no time coordinate; its calendar cannot be verified")
+    a = np.asarray(ref).astype("datetime64[s]")
+    b = np.asarray(other).astype("datetime64[s]")
+    if a.shape != b.shape or not np.array_equal(a, b):
+        n = min(a.size, b.size)
+        k = np.flatnonzero(a[:n] != b[:n])
+        where = f"first difference at {a[k[0]]} vs {b[k[0]]}" if k.size else \
+            f"{b.size} steps vs {a.size}"
+        raise ValueError(f"{label}: time axis differs from the reference variable "
+                         f"({where}). Values are not shifted or filled.")
+
+
+def _check_regular_year(times, year, label):
+    """The reference time axis of a CMFD year must start at {year}-01-01 00:00
+    and go up in exactly equal steps that divide a day. It may end early (a
+    store that stops part-way through the year; the calendar check decides if
+    that matters), but a repeated, missing or shifted step stops here: a day
+    with a repeated step can still hold the expected number of records."""
+    t = np.asarray(times).astype("datetime64[s]")
+    if t.size == 0 or t[0] != np.datetime64(f"{year}-01-01T00:00:00"):
+        raise ValueError(f"{label}: time axis starts at {t[0] if t.size else '-'}, "
+                         f"not {year}-01-01 00:00")
+    if t.size > 1:
+        d = np.diff(t).astype("int64")
+        step = int(d[0])
+        if step <= 0 or 86400 % step or not np.all(d == step):
+            k = int(np.flatnonzero(d != step)[0]) if np.any(d != step) else 0
+            raise ValueError(f"{label}: time steps are not equal after {t[k]} "
+                             f"(next {t[k + 1]}). Values are not shifted or filled.")
+        last = np.datetime64(f"{year + 1}-01-01T00:00:00") - np.timedelta64(step, "s")
+        if t[-1] > last:
+            raise ValueError(f"{label}: time axis runs past {year} ({t[-1]})")
+
+
+def _mswx_check_time(fpath, year):
+    """The file's own time axis must be every 3 hours from {year}-01-01 00:00
+    to the last step of the year, with no repeat and no gap. A step count alone
+    is not enough: MSWX 1979 has exactly 2920 steps but a repeated step and a
+    gap; 2011 has a repeated step. Nothing is cut or filled."""
+    import h5py
+    with h5py.File(fpath, "r") as f:
+        if "time" not in f:
+            raise ValueError(f"MSWX {fpath}: no time variable; the calendar cannot be verified")
+        v = np.asarray(f["time"][:], dtype=np.float64)
+        units = f["time"].attrs.get("units", b"")
+    units = units.decode() if isinstance(units, bytes) else str(units)
+    word, _, base = units.partition(" since ")
+    scale = {"days": 1.0, "hours": 1.0 / 24.0, "minutes": 1.0 / 1440.0,
+             "seconds": 1.0 / 86400.0}.get(word.strip().lower())
+    if scale is None or not base:
+        raise ValueError(f"MSWX {fpath}: time units {units!r} not understood")
+    b = base.strip().split()
+    ymd = [int(x) for x in b[0].split("-")]
+    hms = [float(x) for x in (b[1].split(":") if len(b) > 1 else ["0"])] + [0.0, 0.0]
+    t0 = datetime(ymd[0], ymd[1], ymd[2]) + timedelta(hours=hms[0], minutes=hms[1], seconds=hms[2])
+    days = v * scale
+    ndays = (datetime(year + 1, 1, 1) - datetime(year, 1, 1)).days
+    want = ((datetime(year, 1, 1) - t0).total_seconds() / 86400.0
+            + np.arange(ndays * 8) * 0.125)
+    if days.size != want.size or not np.allclose(days, want, rtol=0, atol=1e-6):
+        n = min(days.size, want.size)
+        bad = np.flatnonzero(~np.isclose(days[:n], want[:n], rtol=0, atol=1e-6))
+        first = (t0 + timedelta(days=float(days[bad[0]]))) if bad.size else None
+        raise ValueError(
+            f"MSWX {year} ({os.path.basename(fpath)}): time axis has {days.size} steps, "
+            f"expected {want.size} every 3 h from {year}-01-01 00:00"
+            + (f"; first wrong step {first:%Y-%m-%d %H:%M}" if first else "")
+            + ". A faulty year file is not cut or filled.")
+
+
 def _mswx_grid(fdir, year):
     """Return (lat, lon) coordinate vectors of the MSWX grid."""
     import h5py
@@ -900,6 +1218,7 @@ def load_mswx_year_box(forcing_dir, year, var_subdir, lats, lons):
     if not os.path.isfile(fpath):
         raise FileNotFoundError(f"MSWX source missing: {fpath}")
     vname = _mswx_varname(fpath)
+    _mswx_check_time(fpath, year)
     with h5py.File(fpath, "r") as f:
         units = f[vname].attrs.get("units", b"")
         units = units.decode() if isinstance(units, bytes) else str(units)
@@ -909,6 +1228,10 @@ def load_mswx_year_box(forcing_dir, year, var_subdir, lats, lons):
     r0, r1 = int(r_idx.min()), int(r_idx.max()) + 1
     c0, c1 = int(c_idx.min()), int(c_idx.max()) + 1
     box = _mswx_read_box((fpath, vname, r0, r1, c0, c1))
+    ndays = (datetime(year + 1, 1, 1) - datetime(year, 1, 1)).days
+    if box.shape[0] != ndays * 8:
+        raise ValueError(f"MSWX {var_subdir} {year}: {box.shape[0]} data steps, "
+                         f"expected {ndays * 8}; not cut or filled")
     ext = box[:, r_idx - r0, c_idx - c0].reshape((box.shape[0],) + lats.shape)
     if np.isnan(ext).any():
         raise ValueError(
@@ -1001,6 +1324,7 @@ def _load_mswx_points(latlons, start_year, end_year, forcing_dir=None,
                 fpath = os.path.join(fdir, subdir, f"{prefix}_{year}.nc")
                 if not os.path.isfile(fpath):
                     raise FileNotFoundError(f"MSWX file not found: {fpath}")
+                _mswx_check_time(fpath, year)
                 tasks.append((fpath, _mswx_varname(fpath), r0, r1, c0, c1))
                 tkeys.append((year, key))
 
@@ -1011,8 +1335,12 @@ def _load_mswx_points(latlons, start_year, end_year, forcing_dir=None,
             # (nsteps, nbox_lat, nbox_lon) -> (nsteps, npts)
             pts = {k: boxes.pop((year, k))[:, rr, cc] for k in keys}
 
-            nsteps = pts["P"].shape[0]
-            ndays = nsteps // 8                 # MSWX is 3-hourly: 8 steps/day
+            nsteps = next(iter(pts.values())).shape[0]
+            ndays = (datetime(year + 1, 1, 1) - datetime(year, 1, 1)).days
+            if nsteps != ndays * 8:          # MSWX is 3-hourly: 8 steps/day
+                raise ValueError(
+                    f"MSWX {year} has {nsteps} time steps, expected {ndays * 8} "
+                    f"(8 per day). A short or faulty year file is not cut or filled.")
             sl = slice(0, ndays * 8)
 
             def _daily(key, how, _pts=pts, _nd=ndays, _sl=sl):
@@ -1023,15 +1351,17 @@ def _load_mswx_points(latlons, start_year, end_year, forcing_dir=None,
                     warnings.simplefilter("ignore")
                     return how(a, axis=1)
 
-            p_d = _daily("P", np.nansum)         # MSWX P is mm/3hr -> sum
-            t_d = _daily("Tair", np.nanmean)
-            tmax = _daily("Tair", np.nanmax)
-            tmin = _daily("Tair", np.nanmin)
-            sw_d = _daily("SWd", np.nanmean)
-            lw_d = _daily("LWd", np.nanmean)
-            wd_d = _daily("Wind", np.nanmean)
-            sh_d = _daily("spechum", np.nanmean)
-            pr_d = _daily("Pres", np.nanmean)
+            # np.sum / np.mean / np.max / np.min keep NaN: one missing 3-hour
+            # step makes the day missing (never 0 mm, never a partial mean).
+            p_d = _daily("P", np.sum)            # MSWX P is mm/3hr -> sum
+            t_d = _daily("Tair", np.mean)
+            tmax = _daily("Tair", np.max)
+            tmin = _daily("Tair", np.min)
+            sw_d = _daily("SWd", np.mean)
+            lw_d = _daily("LWd", np.mean)
+            wd_d = _daily("Wind", np.mean)
+            sh_d = _daily("spechum", np.mean)
+            pr_d = _daily("Pres", np.mean)
             del pts
 
             for d in range(ndays):
@@ -1118,6 +1448,7 @@ def _load_nasa_power(lat, lon, start_year, end_year):
     all_srad = []
     all_lrad = []
     all_wind = []
+    all_wind2 = []
     all_shum = []
     all_pres = []
 
@@ -1177,19 +1508,20 @@ def _load_nasa_power(lat, lon, start_year, end_year):
             tmin = _val(tmin_d, day_key)
             tmax = _val(tmax_d, day_key)
             all_tmean.append(tmean)
-            all_tmin.append(tmin if not np.isnan(tmin) else tmean)
-            all_tmax.append(tmax if not np.isnan(tmax) else tmean)
+            all_tmin.append(tmin)            # missing stays missing (no Tmean stand-in)
+            all_tmax.append(tmax)
 
-            all_precip.append(max(0.0, _val(prec_d, day_key)))
+            _pv = _val(prec_d, day_key)
+            all_precip.append(max(0.0, _pv) if np.isfinite(_pv) else np.nan)
             # kW-hr/m^2/day -> W/m^2
             all_srad.append(_val(swd_d, day_key) * _KWHD_TO_WM2)
             all_lrad.append(_val(lwd_d, day_key) * _KWHD_TO_WM2)
             # GLM (and most surface models) expect wind at the 10 m anemometer
-            # height; prefer WS10M and fall back to WS2M only when 10 m is
-            # missing. WS2M can be anomalously low (near-zero) over some grid
-            # cells, which starves convective/evaporative cooling in lake models.
-            w10 = _val(ws10_d, day_key)
-            all_wind.append(w10 if not np.isnan(w10) else _val(ws_d, day_key))
+            # height, so wind_ms is WS10M (wind_height_m = 10). A missing 10 m
+            # value stays missing: the 2 m wind is a different quantity and is
+            # NOT mixed in day by day. WS2M is returned separately as wind2_ms.
+            all_wind.append(_val(ws10_d, day_key))
+            all_wind2.append(_val(ws_d, day_key))
             all_shum.append(_val(qv_d, day_key) / 1000.0)   # g/kg -> kg/kg
             all_pres.append(_val(ps_d, day_key) * 1000.0)   # kPa -> Pa
 
@@ -1214,6 +1546,8 @@ def _load_nasa_power(lat, lon, start_year, end_year):
         "srad_wm2": srad_arr,
         "lrad_wm2": np.array(all_lrad, dtype=np.float64),
         "wind_ms": np.array(all_wind, dtype=np.float64),
+        "wind2_ms": np.array(all_wind2, dtype=np.float64),
+        "wind_height_m": 10.0,
         "shum_kgkg": np.array(all_shum, dtype=np.float64),
         "pres_pa": np.array(all_pres, dtype=np.float64),
     }
@@ -1245,8 +1579,11 @@ def _load_gswp3(lat, lon, start_year, end_year, forcing_dir):
             sel_lon = (lon % 360) if (float(ds[lon_dim].min()) >= 0 and lon < 0) else lon
             da = ds[v].sel(**{lat_dim: lat, lon_dim: sel_lon}, method="nearest")
             per[v] = da.values
+            tv = da["time"].values if "time" in da.coords else None
             if v == "tasmax":
-                t = da["time"].values
+                t = tv
+            else:
+                _same_axis(t, tv, f"GSWP3 {v} {y0}-{y1}")
             ds.close()
         yrs = np.array([int(str(tt)[:4]) for tt in t])
         m = (yrs >= start_year) & (yrs <= end_year)
@@ -1269,7 +1606,8 @@ def _load_gswp3(lat, lon, start_year, end_year, forcing_dir):
     }
 
 
-def load_subdaily_forcing_points(source, latlons, start_year, end_year, forcing_dir=None):
+def load_subdaily_forcing_points(source, latlons, start_year, end_year, forcing_dir=None,
+                                 on_missing="raise", variables=None, period=None):
     """Multi-point loader returning NATIVE sub-daily samples (no daily collapse).
 
     _load_cmfd_points() reads each monthly CMFD file once, extracts every requested
@@ -1287,11 +1625,22 @@ def load_subdaily_forcing_points(source, latlons, start_year, end_year, forcing_
         wind_ms          m s-1
         shum_kgkg        kg/kg
         pres_pa          Pa
+
+    on_missing, variables, period: as in ``load_hourly_forcing``, applied to
+    every point. A variable file absent from the store, a missing month or a
+    missing value stops the loader by default; nothing is filled in.
     """
+    _check_on_missing(on_missing)
+    skip = _not_requested(source, variables, _SUBDAILY_NAMES)
     if str(source).lower() != "cmfd":
         raise NotImplementedError(
             "load_subdaily_forcing_points supports source='cmfd' only, got %r" % (source,))
-    return _load_cmfd_points_subdaily(latlons, start_year, end_year, forcing_dir)
+    res = _load_cmfd_points_subdaily(latlons, start_year, end_year, forcing_dir)
+    if on_missing == "raise":
+        for (la, lo), o in zip(latlons, res):
+            _require_complete_hourly(o, "cmfd", f"({float(la)}, {float(lo)})",
+                                     start_year, end_year, skip, period)
+    return res
 
 
 def _load_cmfd_points_subdaily(latlons, start_year, end_year, forcing_dir):
@@ -1371,11 +1720,18 @@ def _load_cmfd_points_subdaily(latlons, start_year, end_year, forcing_dir):
             if not arrs:
                 continue
             year_series[key] = np.concatenate(arrs, axis=0)
-            if year_times is None and tlist:
-                year_times = np.concatenate(tlist)
+            t_key = np.concatenate(tlist) if len(tlist) == len(arrs) else None
+            if t_key is None or len(t_key) != year_series[key].shape[0]:
+                raise ValueError(f"CMFD {key} {year}: time coordinate missing or not matching "
+                                 f"its data; the calendar cannot be verified")
+            if year_times is None:
+                year_times = t_key
+            else:
+                _same_axis(year_times, t_key, f"CMFD {key} {year}")
 
         if "temp" not in year_series or year_times is None:
             continue
+        _check_regular_year(year_times, year, f"CMFD {year}")
         nT = year_series["temp"].shape[0]
         for k, v in year_series.items():
             if v.shape[0] != nT:

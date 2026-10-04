@@ -1,0 +1,38 @@
+{
+  "description": "Expected results for the SHAW 3.0.3 official 'Trial' demo. Values were recorded from a clean-directory run of the shipped shaw303 binary on the authentic inputs in inputs/ (not hand-written). Checks use tolerances so a correct build on another machine still passes; output-file sha256 are informational only (floating-point output varies by platform).",
+  "simulation": {
+    "start_day_year": [338, 1986],
+    "end_day_year": [350, 1986],
+    "n_days": 13
+  },
+  "outputs_present": ["out.out", "temp.out", "moist.out", "energy.out", "water.out", "frost.out"],
+  "output_line_counts": {
+    "water.out": 20,
+    "frost.out": 54,
+    "out.out": 599,
+    "temp.out": 303,
+    "moist.out": 303,
+    "energy.out": 308
+  },
+  "numeric_checks": [
+    {"name": "final_cumulative_ET_mm", "file": "water.out", "day": 350, "column": "CUM. ET",
+     "expected": 4.0, "tol": 0.3,
+     "why": "cumulative evapotranspiration over the 13-day run, last water-balance row"},
+    {"name": "water_balance_error_mm", "file": "water.out", "day": 350, "column": "ERROR",
+     "expected": 0.0, "tol": 0.1,
+     "why": "mass-balance closure error must stay near zero"},
+    {"name": "final_snow_depth_cm", "file": "frost.out", "day": 350, "hour": 24, "column": "SNOW",
+     "expected": 4.5, "tol": 0.6,
+     "why": "simulated snow depth on the final day"},
+    {"name": "final_SWE_mm", "file": "frost.out", "day": 350, "hour": 24, "column": "SWE",
+     "expected": 9.2, "tol": 1.5,
+     "why": "snow water equivalent on the final day"}
+  ],
+  "informational_output_sha256_first16": {
+    "water.out": "7a89c7d02e4d525e",
+    "frost.out": "a6ee89f8aae1c01b",
+    "out.out": "4977b7d5c012b873"
+  },
+  "recorded_on": "2026-10-04",
+  "recorded_with": "shaw303 from /mnt/disk1/Hydrocraft_server/model/shaw (SHAW 3.0.3)"
+}

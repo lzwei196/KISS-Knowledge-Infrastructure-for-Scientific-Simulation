@@ -1,0 +1,22 @@
+{
+  "description": "Expected results for GLM's official Sparkling Lake example. inputs/ are the unmodified distribution files (glm3.nml + bcs/). Recorded from a clean run of the installed glm binary; deterministic (two runs produce an identical lake.csv).",
+  "engine_version": "3.3.3",
+  "stdout_contains": "Model Run Complete",
+  "output_file": "output/lake.csv",
+  "output_rows": 730,
+  "final_time": "1982-04-14 24:00:00",
+  "numeric_checks": [
+    {
+      "name": "final_lake_volume",
+      "csv": "output/lake.csv",
+      "row": "last",
+      "column": "Volume",
+      "expected": 5566184.75,
+      "tol": 200.0,
+      "why": "lake volume on the final day"
+    }
+  ],
+  "recorded_on": "2026-10-04",
+  "recorded_with": "glm 3.3.3 from /mnt/disk1/Hydrocraft_server/model/glm/bin/glm",
+  "note": "output_rows counts DATA rows (lake.csv has a header line on top)."
+}

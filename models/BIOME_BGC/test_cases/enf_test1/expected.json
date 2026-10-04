@@ -1,0 +1,18 @@
+{
+  "description": "Expected results for Biome-BGC's official enf_test1 example (evergreen needleleaf forest, Missoula miss5093 meteorology). Recorded from a clean run of the installed bgc binary; the annual binary output is deterministic (two runs byte-identical).",
+  "simulation": {"first_year": 1950, "n_years": 44, "final_year": 1993},
+  "stdout_contains": "Year:   1993",
+  "outputs_present": ["oth.annout", "oth.annavgout", "oth.monavgout", "oth.dayout"],
+  "output_sizes_bytes": {"oth.annout": 1056, "oth.annavgout": 4048, "oth.monavgout": 48576},
+  "annual_output": {
+    "file": "oth.annout", "dtype": "<f8", "n_values": 132, "vars_per_year": 3,
+    "sha256": "ef99fc60db1a6b586edbff06a47d31024592714ed05b120022f9fd7efbead7fc"
+  },
+  "numeric_checks": [
+    {"name": "last_year_annual_var0", "file": "oth.annout", "dtype": "<f8",
+     "index": -3, "expected": 0.0029, "tol": 0.001,
+     "why": "first of the 3 annual output variables, final simulation year"}
+  ],
+  "recorded_on": "2026-10-04",
+  "recorded_with": "bgc from /mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+}

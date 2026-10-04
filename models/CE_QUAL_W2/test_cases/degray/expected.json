@@ -1,0 +1,14 @@
+{
+  "description": "Expected results for the official CE-QUAL-W2 v5 DeGray Lake example. inputs/ are the unmodified distribution files (top-level + InputFiles/). run_reference.py flattens InputFiles and strips Windows path prefixes (as the distribution's Linux prep does), then runs w2_v5.",
+  "engine_version": "v5",
+  "stdout_contains": "Normal termination",
+  "final_jday_approx": 358,
+  "outputs_present": [
+    "cpl.opt",
+    "snp.opt",
+    "flx.opt"
+  ],
+  "recorded_on": "2026-10-04",
+  "recorded_with": "w2_v5 from /mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5",
+  "note": "Primary pass = 'Normal termination'. cpl/snp/flx .opt are always produced; other .opt (e.g. qwb.opt) are control-flag dependent."
+}

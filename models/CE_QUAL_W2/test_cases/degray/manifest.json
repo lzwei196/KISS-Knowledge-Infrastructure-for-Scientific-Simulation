@@ -1,0 +1,143 @@
+{
+  "test_case": "CE-QUAL-W2 DeGray Lake (official example)",
+  "engine": {
+    "name": "CE-QUAL-W2",
+    "version": "v5",
+    "binary": "w2_v5",
+    "source": "Portland State University CE-QUAL-W2 v5 distribution, DeGray Lake example",
+    "license": "CE-QUAL-W2 public release"
+  },
+  "ki": {
+    "model": "CE_QUAL_W2"
+  },
+  "simulation": {
+    "note": "DeGray reservoir water-quality run; normal termination near JDAY 358"
+  },
+  "files": {
+    "inputs/TDG_output.csv": {
+      "bytes": 31,
+      "sha256": "a12338f569ceaaad0fc72f08da64901fd17771d723eb5f71395362106d22deaf"
+    },
+    "inputs/W2_singlewetwellwd.csv": {
+      "bytes": 824,
+      "sha256": "38e4d013589db5462dbe5c4de99413a3c124010238dcf8f9331bda3741334554"
+    },
+    "inputs/atm_deposition_wb1.csv": {
+      "bytes": 198,
+      "sha256": "1229cb65429297db2e359b4eee71a7065a690ecbb3842d156fbc1b32c2c50bae"
+    },
+    "inputs/dynpump1.npt": {
+      "bytes": 281,
+      "sha256": "75177486064d4a1094fd03d6763dee4605c43c066e78484321f5642077b8ae0a"
+    },
+    "inputs/dynselective1.npt": {
+      "bytes": 196,
+      "sha256": "723ebecf1dcd51ff70d46c57bf950d576bdc7d3c2237f08cab7f7bd59c2cc18a"
+    },
+    "inputs/prf_dam.npt": {
+      "bytes": 119211,
+      "sha256": "6c637170683d49ff07c82fd509780dbbed76c9b73381e4148544eaa675f85491"
+    },
+    "inputs/str_br1.csv": {
+      "bytes": 108407,
+      "sha256": "5522b08fe671abb4526e11e35dc89d5dad412eb7ca98fff778b4f6e3bdec10bc"
+    },
+    "inputs/w2_AlgaeMigration.csv": {
+      "bytes": 6385,
+      "sha256": "2acbbaa602850ae7047bd7828a3b624ec0c89b4395323b541623a3ebcc7f0465"
+    },
+    "inputs/w2_Algae_Toxin.csv": {
+      "bytes": 382,
+      "sha256": "6a5dba55dfa81efddb10cdcf0be8c0c933085119c08397489fdeb2a091ac5d1a"
+    },
+    "inputs/w2_aerate.npt": {
+      "bytes": 351,
+      "sha256": "fadc12033d047bf29c86e15017d755c37ce5dab785a25c3f953086112e585a40"
+    },
+    "inputs/w2_con.csv": {
+      "bytes": 119444,
+      "sha256": "238b9ec316c2ad71793923796612107573b065b7b47407d7611ca8b74f1a5a2c"
+    },
+    "inputs/w2_diagenesis.npt": {
+      "bytes": 8843,
+      "sha256": "39a815900c8a5ee2058790a9689cfc1c6145d2d344e9d49c79b6871352dc1a6c"
+    },
+    "inputs/w2_envirprf.npt": {
+      "bytes": 2375,
+      "sha256": "d1df343c4051ef7fdc200aed321b1fb0f4ccdbee7e8441b650b240be323ce6f0"
+    },
+    "inputs/w2_habitat.npt": {
+      "bytes": 989,
+      "sha256": "78769d679667de09bd5c95da602299801b837fffcfb766ec21cb3dd94d1ad744"
+    },
+    "inputs/w2_lake_river_contour.csv": {
+      "bytes": 418,
+      "sha256": "0b243b542e8b48b0106496f5fefab12e7e4b17ccf5cf4de2656ff2899407b8bc"
+    },
+    "inputs/w2_multiple_WB.npt": {
+      "bytes": 446,
+      "sha256": "241d101cab30f7070c937cc973c8dd0439dada6576c5552e4e0008c176fa1c62"
+    },
+    "inputs/w2_selective.npt": {
+      "bytes": 1287,
+      "sha256": "15870a9580ee11fad06dd6985e0fe68aec016c8d4671e3eddb7e6fca3833a000"
+    },
+    "inputs/w2_tecplotbr.csv": {
+      "bytes": 213,
+      "sha256": "cc8c5a02762f0c85ddbbf34a22872a5700cb873f3902b67dbf4ce659bf4ffb9a"
+    },
+    "inputs/InputFiles/bth1.csv": {
+      "bytes": 14792,
+      "sha256": "0eb99112007ecb44014ff17da1738c9e50e5853e9b1a24f291f88673615d6a15"
+    },
+    "inputs/InputFiles/cin_br1.csv": {
+      "bytes": 3362,
+      "sha256": "f476d1f511275b04a85c08d9a4ce35a1a4d4d8dccd8fdd9fff3979e80bb95824"
+    },
+    "inputs/InputFiles/met.npt": {
+      "bytes": 146539,
+      "sha256": "fcf5c7284ccfdd6dbfedae1a91202cc2c7c283a6dcbf6a02abfb8c68019804de"
+    },
+    "inputs/InputFiles/qgt.npt": {
+      "bytes": 48,
+      "sha256": "027e078d2fa4889e5d7c5520645fc60eb095fcbf0fe4ad5bb4db1ea594ccb4df"
+    },
+    "inputs/InputFiles/qin_br1.npt": {
+      "bytes": 5831,
+      "sha256": "090bdef558df24475986f4131c0d8be18bb05921b08562025883400bc5102d04"
+    },
+    "inputs/InputFiles/qin_br1_equal.npt": {
+      "bytes": 143,
+      "sha256": "d9e81706c488fa822a1dbac245297fde5077607b566714ad8004f5585bab197f"
+    },
+    "inputs/InputFiles/qot_br1.npt": {
+      "bytes": 6677,
+      "sha256": "55606ec4d08d8fbbc4e13f8f44cda04b104badfb0db9dc95f5c1ecfdf40b3017"
+    },
+    "inputs/InputFiles/qot_br1_equal.npt": {
+      "bytes": 143,
+      "sha256": "b072b4aaef3872fa6e35e957a023840d11ec292c69a4f80ec0e7b0be54e2a521"
+    },
+    "inputs/InputFiles/shade.npt": {
+      "bytes": 934,
+      "sha256": "3305585f22362bd730c50b5077127b49cc31e16b983180f106c67ab29edfbdf7"
+    },
+    "inputs/InputFiles/tin_br1.npt": {
+      "bytes": 6677,
+      "sha256": "d0573c5afd828fdaee13acb57d07fe4475427a609a2533eb6c4881a09b613ccd"
+    },
+    "inputs/InputFiles/vpr.npt": {
+      "bytes": 1131,
+      "sha256": "965c6da6330301c50af339f461d2ebbb647de1332f7b46e7fd1fdff4244bcc20"
+    },
+    "inputs/InputFiles/wsc.npt": {
+      "bytes": 705,
+      "sha256": "b7fef70bbc9058aa93cd0f73df8bb833f77396a0dd3f6f702863b8d71a800dd3"
+    }
+  },
+  "run": {
+    "cwd": "clean dir with inputs flattened (InputFiles/* copied up) and Windows path prefixes stripped",
+    "command": "w2_v5 (reads w2_con.csv from cwd)",
+    "reference": "python run_reference.py"
+  }
+}

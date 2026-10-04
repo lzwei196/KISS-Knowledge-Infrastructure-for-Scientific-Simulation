@@ -1,0 +1,8 @@
+$atm_deposition_wb1.csv,,,,,,
+Atmospheric mass input, kg/km2/year,,,,,,
+JDAY,PO4,NH4,NO3,LPOMP,RPOMP,
+1,14,0.6,2,1,1,
+100,15,0.5,1,1,1,
+250,13,0.4,1,1,1,
+365,12,0.6,1,1,1,
+400,11,0.4,2,1,1,

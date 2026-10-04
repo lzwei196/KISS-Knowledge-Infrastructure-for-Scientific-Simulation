@@ -1,0 +1,4 @@
+# of branches to output to TECPLOT, This file allows the user to control which branches are output to Tecplot,
+1,,
+Put the branches you want to be output to TECPLOT on the next line seperated by a comma,,
+1,,

@@ -1,0 +1,26 @@
+{
+  "test_case": "DLBreach Teton Dam (official test case)",
+  "engine": {
+    "name": "DLBreach",
+    "binary": "DLBreach_Barrier.exe (via WINE)",
+    "source": "DLBreach (Wu 2016) distribution test cases; Teton Dam failure",
+    "license": "DLBreach distribution"
+  },
+  "ki": {
+    "model": "DLBreach"
+  },
+  "simulation": {
+    "note": "Teton Dam (1976) breach; prompts casename on stdin; ~27.8 h simulated"
+  },
+  "files": {
+    "inputs/Teton_cards.txt": {
+      "bytes": 2085,
+      "sha256": "84538364cbe59a8fe42ce7b2213802707dc04feebf5af8da8301b3b204e5faae"
+    }
+  },
+  "run": {
+    "cwd": "clean dir with Teton_cards.txt",
+    "command": "printf 'Teton_cards\\n' | wine DLBreach_Barrier.exe",
+    "reference": "python run_reference.py"
+  }
+}

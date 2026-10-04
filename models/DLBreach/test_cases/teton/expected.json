@@ -1,0 +1,13 @@
+{
+  "description": "Expected results for the official DLBreach Teton Dam test case. Input is the unmodified Teton_cards.txt; recorded from a clean WINE run of DLBreach_Barrier.exe (deterministic: two runs byte-identical).",
+  "output_file": "Teton_cards.out",
+  "columns": "Time(hr) Qbreach Qspill zs_upstr zs_downstr zb_breach B_bottom B_top Areabreach Brchsideslope Vol_watout USSedRate DSSedRate",
+  "numeric_checks": [
+    {"name": "peak_Qbreach_m3s", "column_index": 1, "reduce": "max",
+     "expected": 64272.8, "tol": 50.0, "why": "peak breach outflow (Teton Dam)"},
+    {"name": "final_time_hr", "column_index": 0, "reduce": "last",
+     "expected": 27.78, "tol": 0.2, "why": "end of simulation"}
+  ],
+  "recorded_on": "2026-10-04",
+  "recorded_with": "DLBreach_Barrier.exe via WINE, /mnt/disk1/Hydrocraft_server/model/dlbreach/bin"
+}

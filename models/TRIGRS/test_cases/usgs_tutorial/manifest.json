@@ -1,0 +1,107 @@
+{
+  "test_case": "TRIGRS usgs_tutorial (official USGS TRIGRS tutorial)",
+  "engine": {
+    "name": "TRIGRS",
+    "version": "2.1.00c (serial trg, 02 Feb 2022); TopoIndex 1.0.14",
+    "programs": [
+      "tpx",
+      "trg"
+    ],
+    "binary": "/mnt/disk1/Hydrocraft_server/models/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg (same file as models/TRIGRS/bin/trg); src/TopoIndex/tpx",
+    "source": "USGS landslides-trigrs git (https://code.usgs.gov/usgs/landslides-trigrs), commit 9bb5ec2a697e161d1b602eb68ffa7acc722d5ee6 (2022-02-03); files data/tutorial/*, tpx_in.txt, tr_in.txt",
+    "license": "Public domain (USGS); calerf.f and derfc.f from Netlib (see LICENSE.md in the repo)"
+  },
+  "ki": {
+    "model": "TRIGRS",
+    "run_tool": "tools/run_trigrs.py (--skip_compile --skip_topoindex)",
+    "parse_tool": "tools/parse_trigrs_output.py"
+  },
+  "simulation": {
+    "grid": "10 x 10 cells, 10 m",
+    "zones": 2,
+    "rain_periods": 2,
+    "rain_rates_m_per_s": [
+      3e-07,
+      9e-05
+    ],
+    "period_times_s": [
+      0,
+      172800,
+      216000
+    ],
+    "output_times_s": [
+      172800,
+      216000
+    ],
+    "infiltration_model": "saturated (TRIGRS switches both zones to it, tx=1)",
+    "runoff_routing": true,
+    "runtime": "under 1 second"
+  },
+  "temp_copy_path_edits": {
+    "tpx_in.txt": [
+      "data/dem.asc -> Data/tutorial/dem.asc",
+      "data/directions.asc -> Data/tutorial/directions.asc"
+    ],
+    "tr_in.txt": [
+      "Data/tutorial/TIdscelGrid_tutorial.asc -> Data/tutorial/TIdscelGrid_tutorial.txt"
+    ]
+  },
+  "files": {
+    "inputs/data/tutorial/dem.asc": {
+      "bytes": 432,
+      "sha256": "77d09790161e587be92d0c43dd45bd9e9ff1afd0c17e99b239c9c255a582ca97"
+    },
+    "inputs/data/tutorial/depthwt.asc": {
+      "bytes": 513,
+      "sha256": "11002e291466eb296c2d372e4a94a0de2a08c6bba42e24a05c729eda198aa3e3"
+    },
+    "inputs/data/tutorial/directions.asc": {
+      "bytes": 315,
+      "sha256": "e182b851132a3a0bbbcb92d4899a33ca44755c137385f1f929bd2dd0a5bf96d5"
+    },
+    "inputs/data/tutorial/master.asc": {
+      "bytes": 435,
+      "sha256": "61f8b3a5bf24cf380c285241fd11de56dace2159d2beb26dd7e320635afd580f"
+    },
+    "inputs/data/tutorial/ri1.asc": {
+      "bytes": 814,
+      "sha256": "59d8c3ba919220801be793f454d2db2ec1d59a7b33e935b15ab16b2a2f4b2e2f"
+    },
+    "inputs/data/tutorial/ri2.asc": {
+      "bytes": 814,
+      "sha256": "a14cde88e6c51e2d9d597205b00a194b33a147e036d3f797002ef6b9a8870da3"
+    },
+    "inputs/data/tutorial/rizero.asc": {
+      "bytes": 815,
+      "sha256": "b3f9019dc2186b08b423ad7172c7ef5a0886b51e4663164cc7e35f54fb94a010"
+    },
+    "inputs/data/tutorial/slope.asc": {
+      "bytes": 653,
+      "sha256": "1fda811d7a1264f65775adf5dbc252a9006ce3c020231fbf94ea74689a4e0996"
+    },
+    "inputs/data/tutorial/test1.asc": {
+      "bytes": 718,
+      "sha256": "ed808ecdbec3e9b6147f7c7f8769b9e2d4de6f6799d2ec34b1be316410e2341a"
+    },
+    "inputs/data/tutorial/test2.asc": {
+      "bytes": 322,
+      "sha256": "ed197a81554e2f4095b1d8aa2a673a4a026ae3f9a21c29fbf4d4362cb31a1571"
+    },
+    "inputs/data/tutorial/zmax.asc": {
+      "bytes": 520,
+      "sha256": "86890f37f896c754118adefba5bd2494910b957e9aa7661dfd732a2e0a35c995"
+    },
+    "inputs/data/tutorial/zones.asc": {
+      "bytes": 314,
+      "sha256": "f1f24b3a3f26612b22b24f9bf8bb1402ae63218de3fc9bbcb4ebb2f7df59e17c"
+    },
+    "inputs/tpx_in.txt": {
+      "bytes": 878,
+      "sha256": "ced9b3455c226937fb87e6be621593a8c1dff59b9529b3e5ca2b0d52546f8079"
+    },
+    "inputs/tr_in.txt": {
+      "bytes": 4002,
+      "sha256": "7f5e9e8fb6423c6b75ae2d4c19c1d49133736edb357362fa7b85cd11c69bb6c5"
+    }
+  }
+}

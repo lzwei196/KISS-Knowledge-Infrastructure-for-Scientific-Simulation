@@ -1,0 +1,25 @@
+TopoIndex 1.0.15; Name of project (up to 255 characters)
+Tutorial example data for TopoIndex analysis
+Flow-direction numbering scheme (ESRI=1, TopoIndex=2)
+2
+Exponent, Number of iterations
+-1,        10
+Name of elevation grid file  
+data/dem.asc
+Name of direction grid 
+data/directions.asc
+Save listing of D8 downslope neighbor cells?  Enter T (.true.) or F (.false.) 
+T
+Save grid of D8 downslope neighbor cells? Enter T (.true.) or F (.false.)
+T
+Save cell index number grid?  Enter T (.true.) or F (.false.)
+T
+Save list of cell number and corresponding index number? Enter T (.true.) or F (.false.) 
+T
+Save flow-direction grid remapped from ESRI to TopoIndex? Enter T (.true.) or F (.false.)
+T
+Save grid of points on ridge crests? Enter T (.true.) or F (.false.); Sparse (T) or dense (F)?
+F,T
+ID code for output files? (8 characters or less)
+tutorial
+

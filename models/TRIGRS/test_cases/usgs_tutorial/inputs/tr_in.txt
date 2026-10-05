@@ -1,0 +1,88 @@
+Name of project (up to 255 characters)
+TRIGRS, version 2.1.00a, Tutorial
+tx, nmax, mmax, zones 
+1,   30,   100,   2
+nzs,  zmin,  uww,    nper    t
+10,   0.001,  9.8e3,   2,  216000
+zmax,   depth,   rizero,  Min_Slope_Angle (degrees), Max_Slope_Angle (degrees)
+-3.001,  -2.4,  -1.0e-9,       0.,  90.0
+zone, 1
+cohesion,phi,  uws,   diffus,   K-sat, Theta-sat,Theta-res,Alpha
+3.5e+03, 35., 2.2e+04,  6.0e-06, 1.0e-07,   0.45,    0.05,    -0.5
+zone, 2
+cohesion,phi,  uws,   diffus,   K-sat, Theta-sat,Theta-res,Alpha
+8.0e+03, 31., 2.2e+04,  8.0e-4, 1.0e-04,   0.45,    0.06,   -8.
+cri(1), cri(2), ..., cri(nper)
+3.e-7,  9.e-5
+capt(1), capt(2), ..., capt(n), capt(n+1)
+0,       172800, 216000
+File name of slope angle grid (slofil)  
+Data/tutorial/slope.asc
+File name of digital elevation grid (elevfil)
+Data/tutorial/dem.asc
+File name of property zone grid (zonfil)
+Data/tutorial/zones.asc
+File name of depth grid (zfil) 
+Data/tutorial/zmax.asc
+File name of initial depth of water table grid   (depfil)
+Data/tutorial/depthwt.asc
+File name of initial infiltration rate grid   (rizerofil)
+Data/tutorial/rizero.asc
+List of file name(s) of rainfall intensity for each period, (rifil())  
+Data/tutorial/ri1.asc
+Data/tutorial/ri2.asc
+File name of grid of D8 runoff receptor cell numbers (nxtfil)
+Data/tutorial/TIdscelGrid_tutorial.asc
+File name of list of cells defining runoff computation order (ndxfil)
+Data/tutorial/TIcelindxList_tutorial.txt
+File name of list of all runoff receptor cells  (dscfil)
+Data/tutorial/TIdscelList_tutorial.txt
+File name of list of runoff weighting factors  (wffil)
+Data/tutorial/TIwfactorList_tutorial.txt
+Folder where output grid files will be stored  (folder)
+Data/tutorial/
+Identification code to be added to names of output files (suffix)
+tutorial
+Save grid files of runoff? Enter T (.true.) or F (.false.)
+T
+Save grid of minimum factor of safety? Enter T (.true.) or F (.false.)
+T
+Save grid of depth of minimum factor of safety? Enter T (.true.) or F (.false.)
+T
+Save grid of pressure head at depth of minimum factor of safety? Enter T (.true.) or F (.false.)
+T
+Save grid of computed water table depth or elevation? Enter T (.true.) or F (.false.) followed by 'depth,' or 'eleva' 
+T, depth
+Save grid files of actual infiltration rate? Enter T (.true.) or F (.false.)
+T
+Save grid files of unsaturated zone basal flux? Enter T (.true.) or F (.false.)
+F
+Save listing of pressure head and factor of safety ("flag")? (-9 sparse xmdv , -8 down-sampled xmdv, -7 full xmdv, -6 sparse ijz, -5 down-sampled ijz, -4 full ijz, -3 Z-P-Fs-saturation list -2 detailed Z-P-Fs, -1 Z-P-Fs list, 0 none). Enter flag value followed by down-sampling interval (integer).
+-2,1
+Number of times to save output grids and (or) ijz/xmdv files
+2
+Times of output grids and (or) ijz / xmdv files
+172800, 216000.
+Skip other timesteps? Enter T (.true.) or F (.false.)
+F
+Use analytic solution for fillable porosity?  Enter T (.true.) or F (.false.)
+T
+Estimate positive pressure head in rising water table zone (i.e. in lower part of unsat zone)?  Enter T (.true.) or F (.false.)
+T
+Use psi0=-1/alpha? Enter T (.true.) or F (.false.) (False selects the default value, psi0=0)
+F
+Log mass balance results?   Enter T (.true.) or F (.false.)
+T
+Flow direction (Enter "gener", "slope", or "hydro")
+gener
+Add steady background flux to transient infiltration rate to prevent drying beyond the initial conditions during periods of zero infiltration?
+T
+Specify file extension for output grids. Enter T (.true.) for ".asc" or F for ".txt"
+T
+Ignore negative pressure head in computing factor of safety (saturated infiltration only)?   Enter T (.true.) or F (.false.)
+T
+Ignore height of capillary fringe in computing pressure head for unsaturated infiltration option?   Enter T (.true.) or F (.false.)
+T
+Parameters for deep pressure-head estimate in SCOOPS ijz output: Depth below ground surface (positive, use negative value to cancel this option), pressure option (enter 'zero' , 'flow' , 'hydr' , or 'relh')
+-50.0,flow
+

@@ -1,0 +1,123 @@
+{
+  "description": "Expected results for the official USGS TRIGRS tutorial (landslides-trigrs, trigrs_full/data/tutorial with the shipped tpx_in.txt + tr_in.txt, commit 9bb5ec2a): TopoIndex then serial TRIGRS, 10 x 10 grid, 2 zones, 2 rain periods, outputs at 172800 s and 216000 s. The USGS repo ships no reference outputs for the tutorial, so values are recorded from real runs of the server's engines. Three clean runs (one by hand, two through run_reference.py) gave byte-identical output grids and list file, and TrigrsLog.txt identical except the date/time lines (deterministic). Grid values are written by TRIGRS with 4 significant digits, so tolerances are set at that level.",
+  "engine_version": "TRIGRS 2.1.00c (02 Feb 2022, serial trg) + TopoIndex 1.0.14 (11 May 2015); USGS git 9bb5ec2a697e161d1b602eb68ffa7acc722d5ee6",
+  "numeric_checks": [
+    {
+      "name": "topoindex_data_cells",
+      "expected": 100,
+      "tol": 0,
+      "why": "TopoIndex grid size file: 100 data cells (10 x 10 tutorial grid)"
+    },
+    {
+      "name": "topoindex_downslope_cells",
+      "expected": 154,
+      "tol": 0,
+      "why": "TopoIndex: number of downslope (runoff receptor) links with exponent -1 (TIgrid_size.txt nwf)"
+    },
+    {
+      "name": "n_cells_fs_grid",
+      "expected": 100,
+      "tol": 0,
+      "why": "factor-of-safety grid at t2 has a value for every one of the 100 cells"
+    },
+    {
+      "name": "fs_min_t1",
+      "expected": 1.113,
+      "tol": 0.0001,
+      "why": "lowest factor of safety at t = 172800 s (end of rain period 1); TRfs_min_tutorial_1.asc"
+    },
+    {
+      "name": "fs_mean_t1",
+      "expected": 2.67524,
+      "tol": 0.0001,
+      "why": "mean factor of safety at t = 172800 s"
+    },
+    {
+      "name": "n_cells_fs_lt1_t1",
+      "expected": 0,
+      "tol": 0,
+      "why": "no cell is unstable (FS < 1) after the light first period"
+    },
+    {
+      "name": "fs_min_t2",
+      "expected": 0.9817,
+      "tol": 0.0001,
+      "why": "lowest factor of safety at t = 216000 s (end of heavy rain period 2); TRfs_min_tutorial_2.asc"
+    },
+    {
+      "name": "fs_mean_t2",
+      "expected": 2.22815,
+      "tol": 0.0001,
+      "why": "mean factor of safety at t = 216000 s"
+    },
+    {
+      "name": "n_cells_fs_lt1_t2",
+      "expected": 16,
+      "tol": 0,
+      "why": "16 of 100 cells unstable (FS < 1) after the heavy second period: the main tutorial result"
+    },
+    {
+      "name": "water_depth_mean_t1",
+      "expected": 1.477,
+      "tol": 0.0001,
+      "why": "mean computed water-table depth (m) at t1; TRwater_depth_tutorial_1.asc"
+    },
+    {
+      "name": "water_depth_mean_t2",
+      "expected": 0.0,
+      "tol": 0.0001,
+      "why": "water table reaches the ground surface in every cell at t2"
+    },
+    {
+      "name": "p_at_fs_min_max_t2",
+      "expected": 2.0,
+      "tol": 0.0001,
+      "why": "largest pressure head (m) at the depth of minimum FS at t2; TRp_at_fs_min_tutorial_2.asc"
+    },
+    {
+      "name": "runoff_sum_per2",
+      "expected": 0.0124439,
+      "tol": 1e-07,
+      "why": "sum over cells of routed runoff (m/s) in period 2; TRrunoffPer2tutorial.asc (only made when routing runs)"
+    },
+    {
+      "name": "infil_mean_per2",
+      "expected": 7.91644e-05,
+      "tol": 1e-10,
+      "why": "mean actual infiltration rate (m/s) in period 2; TRinfilratPer2tutorial.asc"
+    },
+    {
+      "name": "n_profiles_list",
+      "expected": 200,
+      "tol": 0,
+      "why": "TRlist_z_p_fs_tutorial.txt holds a depth profile for 100 cells x 2 output times"
+    },
+    {
+      "name": "mb_infiltration_per2",
+      "expected": 0.0079164385615087,
+      "tol": 1e-12,
+      "why": "TrigrsLog.txt mass balance, period 2: total infiltration"
+    },
+    {
+      "name": "mb_runoff_per2",
+      "expected": 0.0010835814537131,
+      "tol": 1e-12,
+      "why": "TrigrsLog.txt mass balance, period 2: total runoff"
+    },
+    {
+      "name": "mb_rel_closure_per2",
+      "expected": 0.0,
+      "tol": 1e-06,
+      "why": "mass balance closes: |(precip+exfil) - (infil+runoff)| / (precip+exfil) in period 2 (run gives 1.35e-8)"
+    }
+  ],
+  "other_checks": [
+    "TopoIndex return code 0 and 'TopoIndex finished normally' in TopoIndexLog.txt",
+    "TRIGRS return code 0 and 'TRIGRS finished normally' in TrigrsLog.txt",
+    "'Runoff-routing computations' in TrigrsLog.txt (routing was not skipped)"
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg (sha256 73b41ac4..., same file as models/TRIGRS/bin/trg) and src/TopoIndex/tpx, Linux x86_64, gfortran build",
+  "reference": "no official reference outputs exist in the USGS repo for the tutorial (git ls-files shows inputs only); values are from own runs",
+  "notes": "Path settings changed only in the temp copies: tpx_in.txt dem/direction paths (data/... -> Data/tutorial/...) and tr_in.txt nxtfil Data/tutorial/TIdscelGrid_tutorial.asc -> .txt. The .asc name in the shipped tr_in.txt does not match the name TopoIndex writes (.txt); with it TRIGRS logs 'Skipped runoff-routing computations' and writes no runoff grids, and FS at t1 differs. With the .txt name, runoff routing runs as the tutorial intends. No physical setting was changed."
+}

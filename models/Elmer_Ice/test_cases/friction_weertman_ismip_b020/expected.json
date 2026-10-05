@@ -1,0 +1,100 @@
+{
+  "description": "Expected results for the official Elmer/Ice test elmerice/Tests/Friction_Weertman (ISMIP-HOM B020 set-up: 2D full-Stokes ice flow down a 0.5 degree slope over a sine bed, L = 20 km, Weertman sliding with beta = 0.02, n = 3). inputs/ are the unmodified files from the ElmerCSC/elmerfem git tree (commit 0a0fcfe). Steady run: ElmerGrid 1 2 rectangle.grd, then ElmerSolver ismip_weertman.sif. Units in the .sif are m, years and MPa.",
+  "engine_version": "Elmer 26.1-devel (Rev 0a0fcfe, compiled 2026-06-23), built with Elmer/Ice",
+  "numeric_checks": [
+    {
+      "name": "solver_returncode",
+      "expected": 0,
+      "tol": 0,
+      "why": "ElmerSolver exits cleanly (return code 0)"
+    },
+    {
+      "name": "all_done_line",
+      "expected": 1,
+      "tol": 0,
+      "why": "ElmerSolver prints its own success line '*** Elmer Solver: ALL DONE ***'"
+    },
+    {
+      "name": "reference_compare_passed",
+      "expected": 1,
+      "tol": 0,
+      "why": "OFFICIAL: ElmerSolver's own CompareToReferenceSolution prints 'PASSED all 1 tests' and writes TEST.PASSED = 1 (the official ctest pass rule)"
+    },
+    {
+      "name": "ns_final_norm",
+      "expected": 56.70374,
+      "tol": 0.0005670374,
+      "why": "OFFICIAL: 'Solver 3 :: Reference Norm = Real 56.70374' in ismip_weertman.sif; tol = Elmer's default Reference Norm Tolerance 1e-5 relative (ElmerSolver.F90)"
+    },
+    {
+      "name": "ns_nonlinear_iterations",
+      "expected": 32,
+      "tol": 0,
+      "why": "Stokes nonlinear iterations to reach 1e-5 (own run)"
+    },
+    {
+      "name": "n_nodes",
+      "expected": 451,
+      "tol": 0,
+      "why": "41 x 11 nodes from rectangle.grd (40 x 10 elements)"
+    },
+    {
+      "name": "n_cells",
+      "expected": 500,
+      "tol": 0,
+      "why": "400 quads + 100 boundary line elements in the VTU"
+    },
+    {
+      "name": "n_surface_nodes",
+      "expected": 41,
+      "tol": 0,
+      "why": "nodes on the mapped top surface z = -x tan(0.5 deg)"
+    },
+    {
+      "name": "n_bed_nodes",
+      "expected": 41,
+      "tol": 0,
+      "why": "nodes on the mapped sine bed"
+    },
+    {
+      "name": "max_speed",
+      "expected": 111.350138,
+      "tol": 0.000111,
+      "why": "largest ice speed in the domain, m/a (own run; tol = 1e-6 relative)"
+    },
+    {
+      "name": "mean_surface_vx",
+      "expected": 81.3500429,
+      "tol": 8.14e-05,
+      "why": "mean along-flow surface velocity, m/a (own run; tol = 1e-6 relative)"
+    },
+    {
+      "name": "max_surface_vx",
+      "expected": 108.052156,
+      "tol": 0.000108,
+      "why": "largest along-flow surface velocity, m/a (own run; tol = 1e-6 relative)"
+    },
+    {
+      "name": "mean_bed_speed",
+      "expected": 55.6966879,
+      "tol": 5.57e-05,
+      "why": "mean sliding speed on the bed (Weertman law), m/a (own run; tol = 1e-6 relative)"
+    },
+    {
+      "name": "max_pressure",
+      "expected": 13.2434772,
+      "tol": 1.32e-05,
+      "why": "largest pressure, MPa (about rho g H at the thickest ice) (own run; tol = 1e-6 relative)"
+    },
+    {
+      "name": "mean_pressure",
+      "expected": 4.41543564,
+      "tol": 4.42e-06,
+      "why": "mean pressure over all nodes, MPa (own run; tol = 1e-6 relative)"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver (+ ElmerGrid from the same dir), serial, OMP_NUM_THREADS=4, run through tools/run_elmerice.py",
+  "reference": "Official reference: the Reference Norm 56.70374 written in the official .sif by the test authors (L. Tavard, LGGE, 26.11.2015, rev 522ee2e). This run gave Norm = 56.7037392, relative error 1.38e-8.",
+  "notes": "The OFFICIAL checks are reference_compare_passed and ns_final_norm. The other numbers were recorded from our own run; two clean runs gave the same values to all printed digits (9 significant digits), so the run repeats. VTU fields are read straight from the file because tools/parse_vtu_output.py cannot read Elmer's default binary (appended raw) VTU."
+}

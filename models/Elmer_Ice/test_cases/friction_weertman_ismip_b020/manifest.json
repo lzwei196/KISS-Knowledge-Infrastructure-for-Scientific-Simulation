@@ -1,0 +1,47 @@
+{
+  "test_case": "Elmer/Ice Friction_Weertman (official test, ISMIP-HOM B020 set-up)",
+  "engine": {
+    "name": "Elmer/Ice (ElmerSolver + ElmerGrid)",
+    "version": "Elmer 26.1-devel (Rev 0a0fcfe, compiled 2026-06-23)",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver",
+    "programs": [
+      "ElmerGrid",
+      "ElmerSolver"
+    ],
+    "source": "ElmerCSC/elmerfem git (https://github.com/ElmerCSC/elmerfem), elmerice/Tests/Friction_Weertman, commit 0a0fcfe991e506e6a0c6c81b3e1c0f4759021306",
+    "license": "GPL-2.0 / LGPL-2.1 (Elmer; Elmer/Ice code is GPL)"
+  },
+  "ki": {
+    "model": "Elmer_Ice",
+    "run_tool": "tools/run_elmerice.py"
+  },
+  "simulation": {
+    "type": "steady",
+    "dimension": "2D (x-z flow line)",
+    "physics": "full Stokes, Glen flow law n=3, Weertman sliding (beta=0.02, m=1/3)",
+    "domain": "L = 20 km, surface slope 0.5 deg, sine bed (amplitude 500 m, mean thickness 1000 m)",
+    "mesh": "40 x 10 quads (ElmerGrid structured grid), periodic left/right",
+    "units": "m, year, MPa",
+    "solver": "Navier-Stokes (Stokes), direct UMFPACK, Newton after 5 iterations",
+    "mpi_ranks": 1,
+    "official_reference": "Solver 3 Reference Norm = 56.70374 (in the .sif)"
+  },
+  "files": {
+    "inputs/ELMERSOLVER_STARTINFO": {
+      "bytes": 19,
+      "sha256": "31893c73839f295f948bf9efd1506163bb28567684b4987601bea86424959ec5"
+    },
+    "inputs/README.txt": {
+      "bytes": 248,
+      "sha256": "484417efb621765974e3035c86fae61c548e431eec5de5bcf0d4daa5f0b43c9f"
+    },
+    "inputs/ismip_weertman.sif": {
+      "bytes": 3880,
+      "sha256": "ce31ec9f19179c7751df7a64dfb056446e5824d0b2bd32aabc5c0335113a86cd"
+    },
+    "inputs/rectangle.grd": {
+      "bytes": 643,
+      "sha256": "43ca4339a20f7f10c287ef261df2e635c782aa139cb2ad1aec49243adbd3f633"
+    }
+  }
+}

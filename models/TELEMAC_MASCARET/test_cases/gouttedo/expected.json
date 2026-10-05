@@ -1,0 +1,29 @@
+{
+  "description": "Expected results for the official TELEMAC-MASCARET example telemac2d/gouttedo (water drop in a square basin), main sequential run t2d_gouttedo.cas. The official check (vnv_gouttedo.py: check_epsilons('seq:T2DRES', 'f2d_gouttedo.slf', eps=[1e-7])) compares every variable of the last record against the official reference file f2d_gouttedo.slf with an absolute max-norm tolerance of 1e-7. The ref_* values below are read FROM that official reference file and use the same 1e-7 tolerance. The run_* mass-balance values come from our own run (no official value exists for them).",
+  "engine_version": "TELEMAC-MASCARET 9.1-dev (main branch, commit be14a12315ac9346ca0ce8da065aba5d0ec5766e, 2026-03-26), build main_gfortran_release, serial",
+  "numeric_checks": [
+    {"name": "finished_normally", "expected": 1, "tol": 0, "why": "KI run tool return code 0 with status success, and the TELEMAC listing contains 'CORRECT END OF RUN'"},
+    {"name": "linf_diff_last_record_VELOCITY_U", "expected": 0.0, "tol": 1e-07, "why": "official vnv check: max |run - f2d_gouttedo.slf| of U at the last record"},
+    {"name": "linf_diff_last_record_VELOCITY_V", "expected": 0.0, "tol": 1e-07, "why": "official vnv check: max |run - f2d_gouttedo.slf| of V at the last record"},
+    {"name": "linf_diff_last_record_WATER_DEPTH", "expected": 0.0, "tol": 1e-07, "why": "official vnv check: max |run - f2d_gouttedo.slf| of H at the last record"},
+    {"name": "linf_diff_all_records_all_vars", "expected": 0.0, "tol": 1e-07, "why": "extra, stricter than the official check: same 1e-7 limit over all 21 records, not only the last"},
+    {"name": "ref_n_records", "expected": 21, "tol": 0, "why": "100 steps of 0.04 s, printed every 5 steps, plus the initial state (from reference file)"},
+    {"name": "ref_t_end_s", "expected": 4.0, "tol": 1e-07, "why": "final time of the run (from reference file)"},
+    {"name": "ref_npoin", "expected": 4624, "tol": 0, "why": "mesh nodes (from reference file)"},
+    {"name": "ref_nelem", "expected": 8978, "tol": 0, "why": "mesh triangles (from reference file)"},
+    {"name": "ref_H_initial_max_m", "expected": 4.773152828216553, "tol": 1e-07, "why": "top of the initial water drop made by user_condin_h.f (from reference file)"},
+    {"name": "ref_H_record10_max_m", "expected": 3.004875898361206, "tol": 1e-07, "why": "max water depth at t = 2 s (from reference file)"},
+    {"name": "ref_H_final_max_m", "expected": 3.1280534267425537, "tol": 1e-07, "why": "max water depth at t = 4 s (from reference file)"},
+    {"name": "ref_H_final_min_m", "expected": 2.129861831665039, "tol": 1e-07, "why": "min water depth at t = 4 s (from reference file)"},
+    {"name": "ref_H_final_mean_m", "expected": 2.472256132888134, "tol": 1e-07, "why": "mean nodal water depth at t = 4 s (from reference file)"},
+    {"name": "ref_U_final_max_ms", "expected": 0.463295578956604, "tol": 1e-07, "why": "max x-velocity at t = 4 s (from reference file)"},
+    {"name": "ref_V_final_min_ms", "expected": -0.4632953405380249, "tol": 1e-07, "why": "min y-velocity at t = 4 s (from reference file)"},
+    {"name": "run_initial_volume_m3", "expected": 999.7839, "tol": 0.0001, "why": "INITIAL VOLUME from the TELEMAC listing (own run, repeated exactly)"},
+    {"name": "run_final_volume_m3", "expected": 999.7839, "tol": 0.0001, "why": "FINAL VOLUME from the TELEMAC listing; closed basin, so water is kept (own run)"},
+    {"name": "run_volume_rel_error_cumulated", "expected": 0.0, "tol": 1e-10, "why": "RELATIVE ERROR CUMULATED ON VOLUME from the listing; own run gave 1.933094e-15"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py through the KI tool tools/run_telemac.py (telemac2d.py, serial) with /mnt/disk1/Hydrocraft_server/python_env/bin/python; two runs gave bit-identical result files",
+  "reference": "examples/telemac2d/gouttedo/f2d_gouttedo.slf (Git LFS, sha256 051a9303afab21bf0d458a7282781f33e09984bc178d7bbed9d5d980b3a31521) and vnv_gouttedo.py, TELEMAC-MASCARET repo https://gitlab.pam-retd.fr/otm/telemac-mascaret commit be14a123",
+  "notes": "Observed on 2026-10-05: largest difference to the official reference over all records and variables was 5.7e-14 (last record: 0.0). Run-only tweak: run_reference.py makes an empty folder <workdir>/user_fortran/CMakeFiles/user_fortran.dir in the temp run dir before the run, because this build's user-Fortran link command writes a linker dependency file there. No input file or setting is changed; the result matches the official reference."
+}

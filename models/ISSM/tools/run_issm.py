@@ -41,6 +41,8 @@ Usage:
 import argparse
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -133,7 +135,10 @@ def generate_run_script(args, script_path):
     ISSM's Python path setup requires sourcing etc/environment.sh first.
     """
     if args.example:
-        example_dir = os.path.join(args.issm_dir, "examples", args.example)
+        # Run a COPY of the example in the output folder (never inside $ISSM_DIR/examples);
+        # ISSM's own generic_settings.py hook (private folder, first on sys.path) moves the
+        # cluster executionpath out of $ISSM_DIR/execution.
+        example_dir = args.example_run_dir
         script = f"""#!/usr/bin/env python3
 import sys
 import os
@@ -141,8 +146,11 @@ import json
 import time
 import numpy as np
 
+# ISSM generic_settings hook (executionpath) must be found before runme.py imports generic
+sys.path.insert(0, {args.settings_dir!r})
+
 # Add ISSM paths
-issm_dir = "{args.issm_dir}"
+issm_dir = {args.issm_dir!r}
 sys.path.insert(0, os.path.join(issm_dir, "src", "m", "classes"))
 sys.path.insert(0, os.path.join(issm_dir, "src", "m", "solve"))
 sys.path.insert(0, os.path.join(issm_dir, "src", "m", "mesh"))
@@ -150,18 +158,21 @@ sys.path.insert(0, os.path.join(issm_dir, "src", "m", "parameterization"))
 sys.path.insert(0, os.path.join(issm_dir, "src", "m", "io"))
 sys.path.insert(0, os.path.join(issm_dir, "src", "m", "boundaryconditions"))
 
-os.chdir("{example_dir}")
+os.chdir({example_dir!r})
 
 # Run the example
 start_time = time.time()
+rc = 0
 try:
     exec(open("runme.py").read())
     elapsed = time.time() - start_time
     result = {{
         "status": "success",
-        "example": "{args.example}",
+        "example": {args.example!r},
         "elapsed_s": round(elapsed, 2),
-        "output_dir": "{args.output_dir}"
+        "output_dir": {args.output_dir!r},
+        "example_run_dir": {example_dir!r},
+        "execution_dir": {args.execution_dir!r}
     }}
 except Exception as e:
     elapsed = time.time() - start_time
@@ -170,11 +181,13 @@ except Exception as e:
         "errors": [str(e)],
         "elapsed_s": round(elapsed, 2)
     }}
+    rc = 1
 
-with open(os.path.join("{args.output_dir}", "results.json"), "w") as f:
+with open(os.path.join({args.output_dir!r}, "results.json"), "w") as f:
     json.dump(result, f, indent=2)
 
 print(json.dumps(result, indent=2))
+sys.exit(rc)
 """
     else:
         script = f"""#!/usr/bin/env python3
@@ -185,7 +198,7 @@ import time
 import numpy as np
 
 # Add ISSM paths
-issm_dir = "{args.issm_dir}"
+issm_dir = {args.issm_dir!r}
 for subdir in ["classes", "solve", "mesh", "parameterization", "io",
                "boundaryconditions", "materials", "interp", "array",
                "geometry", "extrusion"]:
@@ -203,31 +216,42 @@ from socket import gethostname
 start_time = time.time()
 try:
     # Step 1: Create model and mesh
-    md = triangle(model(), '{args.domain}', {args.resolution})
+    md = triangle(model(), {args.domain!r}, {args.resolution})
     print(f"Mesh: {{md.mesh.numberofvertices}} vertices, {{md.mesh.numberofelements}} elements",
           file=sys.stderr)
 
     # Step 2: Set mask
-    md = setmask(md, '{args.ocean_mask}', '{args.grounded_mask}')
+    md = setmask(md, {args.ocean_mask!r}, {args.grounded_mask!r})
 
     # Step 3: Parameterize
-    md = parameterize(md, '{args.par_file}')
+    md = parameterize(md, {args.par_file!r})
 
     # Step 4: Set flow equation
-    md = setflowequation(md, '{args.flow_equation}', 'all')
+    md = setflowequation(md, {args.flow_equation!r}, 'all')
 
     # Step 5: Configure solver
-    md.cluster = generic('name', gethostname(), 'np', {args.nprocs})
+    # executionpath: keep ISSM's run files out of $ISSM_DIR/execution
+    md.cluster = generic('name', gethostname(), 'np', {args.nprocs},
+                         'executionpath', {args.execution_dir!r})
 
     # Step 6: Solve
-    md = solve(md, '{args.solution}')
+    md = solve(md, {args.solution!r})
 
     elapsed = time.time() - start_time
 
     # Extract results summary
-    sol_name = '{args.solution}Solution'
+    sol_name = {args.solution!r} + 'Solution'
     sol = getattr(md.results, sol_name, None)
-    result_summary = {{"status": "success", "elapsed_s": round(elapsed, 2)}}
+    if sol is None:
+        raise RuntimeError(f"ISSM finished but md.results has no {{sol_name}}")
+    # ISSM's own result file (kept in the execution folder; the copy in the cwd is deleted
+    # by loadresultsfromcluster) -> for tools/parse_issm_output.py --outbin
+    outbin = os.path.join(md.cluster.executionpath, md.private.runtimename,
+                          md.miscellaneous.name + '.outbin')
+    if not os.path.isfile(outbin) or os.path.getsize(outbin) == 0:
+        raise RuntimeError(f"ISSM result file missing or empty: {{outbin}}")
+    result_summary = {{"status": "success", "elapsed_s": round(elapsed, 2),
+                       "outbin": os.path.abspath(outbin), "yts": float(md.constants.yts)}}
 
     if sol is not None:
         if hasattr(sol, 'Vel'):
@@ -246,8 +270,8 @@ try:
             }}
 
     # Save results
-    os.makedirs("{args.output_dir}", exist_ok=True)
-    with open(os.path.join("{args.output_dir}", "results.json"), "w") as f:
+    os.makedirs({args.output_dir!r}, exist_ok=True)
+    with open(os.path.join({args.output_dir!r}, "results.json"), "w") as f:
         json.dump(result_summary, f, indent=2)
 
     print(json.dumps(result_summary, indent=2))
@@ -259,8 +283,8 @@ except Exception as e:
         "errors": [str(e)],
         "elapsed_s": round(elapsed, 2)
     }}
-    os.makedirs("{args.output_dir}", exist_ok=True)
-    with open(os.path.join("{args.output_dir}", "results.json"), "w") as f:
+    os.makedirs({args.output_dir!r}, exist_ok=True)
+    with open(os.path.join({args.output_dir!r}, "results.json"), "w") as f:
         json.dump(result, f, indent=2)
     print(json.dumps(result, indent=2))
     sys.exit(1)
@@ -272,9 +296,98 @@ except Exception as e:
     return script_path
 
 
+def fail(errors):
+    """Print a JSON error and exit 1."""
+    print(json.dumps({"status": "error", "errors": errors}, indent=2))
+    sys.exit(1)
+
+
+def normalize_paths(args):
+    """Make every path absolute (relative to the caller's cwd, as validate_inputs checks them).
+
+    The generated script runs with cwd=output_dir, so relative paths would otherwise resolve
+    against the output folder. Mask arguments stay as given when they are 'all' / '' (ISSM
+    keywords) or do not name an existing file.
+    """
+    args.issm_dir = os.path.abspath(args.issm_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
+    for name in ("domain", "par_file"):
+        val = getattr(args, name)
+        if val:
+            setattr(args, name, os.path.abspath(val))
+    for name in ("ocean_mask", "grounded_mask"):
+        val = getattr(args, name)
+        if val and val != "all" and os.path.isfile(val):
+            setattr(args, name, os.path.abspath(val))
+    args.execution_dir = os.path.abspath(args.execution_dir or
+                                         os.path.join(args.output_dir, "execution"))
+
+
+def select_mpiexec(args):
+    """MPI launcher for issm.exe: --mpiexec -> $ISSM_MPIEXEC -> $ISSM_DIR's PETSc MPICH.
+
+    issm.exe is linked with PETSc's MPICH; another mpiexec on PATH (e.g. OpenMPI) starts N
+    independent 1-rank copies instead of one N-rank run, so there is NO PATH fallback.
+    """
+    if args.mpiexec is not None:
+        cand, source = args.mpiexec, "--mpiexec"
+    elif os.environ.get("ISSM_MPIEXEC") is not None:
+        cand, source = os.environ["ISSM_MPIEXEC"], "$ISSM_MPIEXEC"
+    else:
+        cand = os.path.join(args.issm_dir, "externalpackages", "petsc", "install", "bin", "mpiexec")
+        source = "ISSM_DIR PETSc MPICH"
+        if not os.path.isfile(cand):
+            fail([f"No MPI launcher: {cand} not found. issm.exe must be started with the MPI it "
+                  f"was built with; give it with --mpiexec PATH or $ISSM_MPIEXEC."])
+    if not cand or not os.path.isfile(cand) or not os.access(cand, os.X_OK):
+        fail([f"MPI launcher from {source} is not an executable file: {cand!r}"])
+    return os.path.abspath(cand), source
+
+
+def stage_example(args):
+    """Copy $ISSM_DIR/examples/<name> into the output folder and write the settings hook."""
+    src = os.path.join(args.issm_dir, "examples", args.example)
+    args.example_run_dir = os.path.join(args.output_dir, f"example_{args.example}")
+    if os.path.exists(args.example_run_dir):
+        fail([f"Example copy already exists (not overwritten): {args.example_run_dir}"])
+    shutil.copytree(src, args.example_run_dir, symlinks=True)
+    # runme.py files use '../Data/...' (= $ISSM_DIR/examples/Data); give the copy the same view
+    data_src = os.path.join(args.issm_dir, "examples", "Data")
+    data_link = os.path.join(args.output_dir, "Data")
+    if os.path.isdir(data_src):
+        if os.path.islink(data_link) and os.path.realpath(data_link) == os.path.realpath(data_src):
+            pass
+        elif os.path.lexists(data_link):
+            print(f"WARNING: {data_link} exists and is not a link to {data_src}; "
+                  f"example paths '../Data/...' will read it", file=sys.stderr)
+        else:
+            os.symlink(data_src, data_link)
+    # ISSM's own user hook for the generic cluster class: only sets executionpath
+    args.settings_dir = os.path.join(args.output_dir, "_issm_settings")
+    os.makedirs(args.settings_dir, exist_ok=True)
+    with open(os.path.join(args.settings_dir, "generic_settings.py"), "w") as f:
+        f.write("def generic_settings(c):\n"
+                f"    c.executionpath = {args.execution_dir!r}\n"
+                "    return c\n")
+
+
 def run_issm(args):
     """Execute the ISSM simulation."""
     os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(args.execution_dir, exist_ok=True)
+    mpiexec, mpi_source = select_mpiexec(args)
+    print(f"ISSM MPI launcher: {mpiexec} (from {mpi_source}); run files in {args.execution_dir}",
+          file=sys.stderr)
+    # ISSM's generic cluster writes a literal `mpiexec -np N ...` into its .queue script:
+    # a private wrapper named mpiexec, first on PATH, runs exactly the selected launcher.
+    wrap_dir = os.path.join(args.output_dir, "_issm_mpi")
+    os.makedirs(wrap_dir, exist_ok=True)
+    wrapper = os.path.join(wrap_dir, "mpiexec")
+    with open(wrapper, "w") as f:
+        f.write("#!/bin/sh\nexec " + shlex.quote(mpiexec) + ' "$@"\n')
+    os.chmod(wrapper, 0o755)
+    if args.example:
+        stage_example(args)
 
     # Generate run script
     script_path = os.path.join(args.output_dir, "_run_issm.py")
@@ -282,7 +395,7 @@ def run_issm(args):
 
     # Build environment with ISSM paths
     env = os.environ.copy()
-    issm_dir = os.path.abspath(args.issm_dir)
+    issm_dir = args.issm_dir
     env["ISSM_DIR"] = issm_dir
 
     # Add ISSM Python paths
@@ -295,18 +408,27 @@ def run_issm(args):
         if os.path.isdir(path):
             python_paths.append(path)
 
+    # ISSM's built Python API (bin/*.py + lib/*_python.so), as preflight_check.py issm_env()
+    for sub in ("bin", "lib", "scripts"):
+        path = os.path.join(issm_dir, sub)
+        if os.path.isdir(path):
+            python_paths.append(path)
+
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = ":".join(python_paths) + (":" + existing_pythonpath if existing_pythonpath else "")
 
-    # Add ISSM bin to PATH
+    # PATH: MPI wrapper first, then ISSM bin
     bin_dir = os.path.join(issm_dir, "bin")
-    if os.path.isdir(bin_dir):
-        env["PATH"] = bin_dir + ":" + env.get("PATH", "")
+    path_parts = [wrap_dir] + ([bin_dir] if os.path.isdir(bin_dir) else [])
+    env["PATH"] = ":".join(path_parts) + ":" + env.get("PATH", "")
 
-    # Add lib paths
-    lib_dir = os.path.join(issm_dir, "lib")
-    if os.path.isdir(lib_dir):
-        env["LD_LIBRARY_PATH"] = lib_dir + ":" + env.get("LD_LIBRARY_PATH", "")
+    # Add lib paths (ISSM, PETSc, Triangle), as preflight_check.py issm_env()
+    lib_parts = [os.path.join(issm_dir, "lib"),
+                 os.path.join(issm_dir, "externalpackages", "petsc", "install", "lib"),
+                 os.path.join(issm_dir, "externalpackages", "triangle", "install", "lib")]
+    lib_parts = [d for d in lib_parts if os.path.isdir(d)]
+    if lib_parts:
+        env["LD_LIBRARY_PATH"] = ":".join(lib_parts) + ":" + env.get("LD_LIBRARY_PATH", "")
 
     # Execute
     print(f"Running ISSM simulation...", file=sys.stderr)
@@ -376,8 +498,15 @@ def main():
     parser.add_argument("--nprocs", type=int, default=2, help="Number of processors")
     parser.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds")
     parser.add_argument("--output_dir", required=True, help="Output directory")
+    parser.add_argument("--execution_dir", default=None,
+                        help="Folder for ISSM's run files (.bin/.queue/.outbin); "
+                             "default <output_dir>/execution (never $ISSM_DIR/execution)")
+    parser.add_argument("--mpiexec", default=None,
+                        help="MPI launcher issm.exe was built with; default $ISSM_MPIEXEC, "
+                             "else $ISSM_DIR/externalpackages/petsc/install/bin/mpiexec")
 
     args = parser.parse_args()
+    normalize_paths(args)
     validate_inputs(args)
     run_issm(args)
 

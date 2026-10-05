@@ -246,22 +246,38 @@ def check_binary_starts(checks, binary):
     )
 
 
-def check_path_resolution(checks, binary):
-    # tools/run_lisflood.py runs bare `lisflood` from PATH (fallback:
-    # `sys.executable -m lisflood.main`, which only works inside the lisflood env).
-    # So the caller's PATH must resolve `lisflood` to the binary checked above.
-    found = shutil.which("lisflood")
-    ok = bool(found) and os.path.realpath(found) == os.path.realpath(binary)
-    subject = f"PATH lookup of `lisflood` -> {found or 'not found'} (must be {binary})"
+def resolve_tool_engine():
+    """The engine tools/run_lisflood.py would run without --lisflood-bin, from the tool's own
+    resolve_lisflood_bin() ($LISFLOOD_BIN -> server default -> PATH only if the default is
+    absent). Returns (Path, source) or (None, error text)."""
+    import importlib.util
+    old = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True  # no __pycache__ in the live tools folder
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_ki_run_lisflood", KI_DIR / "tools" / "run_lisflood.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        path, source = module.resolve_lisflood_bin(None)
+        return Path(path), source
+    except Exception as exc:  # import or resolution failure
+        return None, f"{type(exc).__name__}: {exc}"
+    finally:
+        sys.dont_write_bytecode = old
+
+
+def check_tool_engine(checks, binary, source):
+    # The binary checked here IS the run tool's own choice (no PATH requirement any more).
     add_check(
         checks,
         "run",
-        subject,
+        f"tools/run_lisflood.py engine lookup -> {binary or 'none'} ({source})",
         True,
-        ok,
+        binary is not None,
         diagnostic_fix(
-            f"tools/run_lisflood.py calls bare `lisflood`; put {binary.parent} first on PATH "
-            f"(e.g. `PATH={binary.parent}:$PATH`) for this preflight and for the run tool"
+            f"tools/run_lisflood.py cannot select a LISFLOOD engine ({source}); give it with "
+            f"--lisflood-bin (run tool) or $LISFLOOD_BIN (run tool and this preflight), or restore "
+            f"the server default {DEFAULT_BINARY}"
         ),
     )
 
@@ -283,15 +299,25 @@ def check_official_case_env(checks):
 
 def main():
     checks = []
-    binary = manifest_binary_path()
+    manifest_binary = manifest_binary_path()
+    binary, engine_source = resolve_tool_engine()
 
     print(f"{' PREFLIGHT: LISFLOOD ':=^60}")
     print(f"KI directory: {KI_DIR}")
     print(f"Diagnostics: {DIAGNOSTICS}")
-    print(f"Executable from manifest: {binary}")
+    print(f"Executable from manifest: {manifest_binary}")
+    print(f"Engine used by tools/run_lisflood.py: {binary or 'NONE'} ({engine_source})")
 
     check_required_files(checks)
     check_tool_syntax(checks)
+    check_tool_engine(checks, binary, engine_source)
+    if binary is None:
+        # no fallback to another engine: the run tool would fail the same way
+        check_official_case_env(checks)
+        passed = sum(1 for c in checks if c["status"] == "pass")
+        print(f"Results: {passed} passed, {len(checks) - passed} failed")
+        emit_report(MODEL_ID, checks)
+        return
     _, binary_ok = check_binary(checks, binary)
 
     python_exe = run_env_python(binary) if binary_ok else None
@@ -309,7 +335,6 @@ def main():
 
     check_runtime_imports(checks, python_exe)
     check_binary_starts(checks, binary)
-    check_path_resolution(checks, binary)
     check_official_case_env(checks)
 
     passed = sum(1 for c in checks if c["status"] == "pass")

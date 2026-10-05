@@ -12,7 +12,7 @@ package:
   scientific_reference_version: Elmer/Ice 9.0 (Gagliardini et al. 2013 full-Stokes baseline; ReleaseNotes
     9.0); SSA marine-ice-sheet configuration
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Elmer_Ice/install/bin/ElmerSolver
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver
     type: work_dir
 pipeline:
   stages:

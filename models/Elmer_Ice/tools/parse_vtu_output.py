@@ -31,10 +31,12 @@ Usage:
 """
 
 import argparse
+import base64
 import glob
 import json
 import os
 import re
+import struct
 import sys
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
@@ -43,6 +45,105 @@ import numpy as np
 
 
 SEC_PER_YEAR = 31556926.0
+
+# VTK XML data types -> numpy
+VTK_TYPES = {"Float32": "f4", "Float64": "f8", "Int8": "i1", "UInt8": "u1",
+             "Int16": "i2", "UInt16": "u2", "Int32": "i4", "UInt32": "u4",
+             "Int64": "i8", "UInt64": "u8"}
+
+
+def _local(tag):
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _child(elem, name):
+    for c in elem:
+        if _local(c.tag) == name:
+            return c
+    return None
+
+
+def _load_vtu(filepath):
+    """Return (xml root, appended bytes or None, appended encoding or None).
+
+    Elmer's default VTU keeps the arrays in <AppendedData encoding="raw">, which
+    is binary and not valid XML; only the XML part before it is parsed.
+    """
+    with open(filepath, "rb") as f:
+        raw = f.read()
+    m = re.search(rb"<AppendedData\b[^>]*>", raw)
+    if m is None:
+        return ET.fromstring(raw), None, None
+    tag = m.group(0).decode("latin-1")
+    enc = re.search(r"""encoding\s*=\s*["']([^"']+)["']""", tag)
+    enc = enc.group(1) if enc else "raw"
+    us = raw.find(b"_", m.end())
+    if us < 0:
+        raise ValueError(f"{filepath}: AppendedData has no '_' marker")
+    end = raw.rfind(b"</AppendedData>")
+    if end < us:
+        raise ValueError(f"{filepath}: AppendedData is not closed (truncated file?)")
+    root = ET.fromstring(raw[:m.start()] + b"</VTKFile>")
+    # payload = bytes between '_' and the closing tag (binary bytes are not stripped)
+    return root, raw[us + 1:end], enc
+
+
+class _VtuDecoder:
+    def __init__(self, root, appended, encoding, filepath):
+        if root.get("compressor"):
+            raise ValueError(f"{filepath}: compressed VTU ({root.get('compressor')}) "
+                             "is not supported")
+        self.end = "<" if root.get("byte_order", "LittleEndian") == "LittleEndian" else ">"
+        htype = root.get("header_type", "UInt32")
+        if htype not in ("UInt32", "UInt64"):
+            raise ValueError(f"{filepath}: unsupported header_type {htype}")
+        self.hfmt = self.end + ("I" if htype == "UInt32" else "Q")
+        self.hsize = struct.calcsize(self.hfmt)
+        self.appended, self.encoding, self.path = appended, encoding, filepath
+
+    def values(self, da):
+        """DataArray -> 1-D float64 array (None if it holds no data)."""
+        fmt = da.get("format", "ascii")
+        vtype = da.get("type", "Float64")
+        if fmt == "ascii":
+            if not (da.text and da.text.strip()):
+                return None
+            return np.array([float(x) for x in da.text.strip().split()])
+        if vtype not in VTK_TYPES:
+            raise ValueError(f"{self.path}: unsupported DataArray type {vtype}")
+        dtype = np.dtype(self.end + VTK_TYPES[vtype])
+        if fmt == "binary":
+            text = "".join((da.text or "").split())
+            blob = base64.b64decode(text)
+            n = struct.unpack(self.hfmt, blob[:self.hsize])[0]
+            data = blob[self.hsize:self.hsize + n]
+            if len(data) != n:  # header and data base64-encoded separately
+                hlen = 4 * ((self.hsize + 2) // 3)
+                n = struct.unpack(self.hfmt, base64.b64decode(text[:hlen])[:self.hsize])[0]
+                data = base64.b64decode(text[hlen:])[:n]
+            if len(data) != n:
+                raise ValueError(f"{self.path}: truncated binary DataArray {da.get('Name')}")
+        elif fmt == "appended":
+            if self.appended is None:
+                raise ValueError(f"{self.path}: DataArray is 'appended' but no AppendedData")
+            if self.encoding != "raw":
+                raise ValueError(f"{self.path}: AppendedData encoding '{self.encoding}' "
+                                 "is not supported (only raw)")
+            off = int(da.get("offset", "0"))
+            if off < 0 or off + self.hsize > len(self.appended):
+                raise ValueError(f"{self.path}: offset {off} out of range")
+            n = struct.unpack(self.hfmt, self.appended[off:off + self.hsize])[0]
+            if off + self.hsize + n > len(self.appended):
+                raise ValueError(f"{self.path}: appended DataArray {da.get('Name')} runs past "
+                                 "the end of AppendedData (truncated or corrupt file)")
+            data = self.appended[off + self.hsize:off + self.hsize + n]
+            if len(data) != n:
+                raise ValueError(f"{self.path}: truncated appended DataArray {da.get('Name')}")
+        else:
+            raise ValueError(f"{self.path}: unsupported DataArray format {fmt}")
+        if n % dtype.itemsize:
+            raise ValueError(f"{self.path}: byte count {n} is not a multiple of {vtype}")
+        return np.frombuffer(data, dtype=dtype).astype(np.float64)
 
 
 def validate_inputs(args):
@@ -89,43 +190,44 @@ def parse_vtu_file(filepath):
       </UnstructuredGrid>
     </VTKFile>
     """
-    tree = ET.parse(filepath)
-    root = tree.getroot()
+    root, appended, encoding = _load_vtu(filepath)
+    dec = _VtuDecoder(root, appended, encoding, filepath)
 
     result = {"coordinates": None, "variables": OrderedDict()}
 
     # Find the Piece element
-    piece = root.find(".//{http://www.vtk.org/XMLFileFormat}Piece")
-    if piece is None:
-        # Try without namespace
-        piece = root.find(".//Piece")
+    piece = next((e for e in root.iter() if _local(e.tag) == "Piece"), None)
     if piece is None:
         raise ValueError(f"No Piece element found in {filepath}")
 
     n_points = int(piece.get("NumberOfPoints", 0))
 
     # Parse coordinates
-    points = piece.find("Points") or piece.find(
-        "{http://www.vtk.org/XMLFileFormat}Points")
+    points = _child(piece, "Points")
     if points is not None:
         for da in points.iter():
-            if da.tag.endswith("DataArray") or da.tag == "DataArray":
-                text = da.text.strip()
-                coords = np.array([float(x) for x in text.split()])
-                n_comp = int(da.get("NumberOfComponents", 3))
-                result["coordinates"] = coords.reshape(-1, n_comp)
+            if _local(da.tag) == "DataArray":
+                coords = dec.values(da)
+                if coords is not None:
+                    n_comp = int(da.get("NumberOfComponents", 3))
+                    if coords.size != n_points * n_comp:
+                        raise ValueError(f"{filepath}: Points has {coords.size} values, "
+                                         f"expected {n_points} x {n_comp}")
+                    result["coordinates"] = coords.reshape(-1, n_comp)
                 break
 
     # Parse point data
-    point_data = piece.find("PointData") or piece.find(
-        "{http://www.vtk.org/XMLFileFormat}PointData")
+    point_data = _child(piece, "PointData")
     if point_data is not None:
         for da in point_data:
-            if da.tag.endswith("DataArray") or da.tag == "DataArray":
+            if _local(da.tag) == "DataArray":
                 name = da.get("Name", "unknown")
                 n_comp = int(da.get("NumberOfComponents", 1))
-                if da.text and da.text.strip():
-                    values = np.array([float(x) for x in da.text.strip().split()])
+                values = dec.values(da)
+                if values is not None:
+                    if values.size != n_points * n_comp:
+                        raise ValueError(f"{filepath}: {name} has {values.size} values, "
+                                         f"expected {n_points} x {n_comp}")
                     if n_comp > 1:
                         values = values.reshape(-1, n_comp)
                     result["variables"][name] = {

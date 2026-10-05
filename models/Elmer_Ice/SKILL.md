@@ -145,7 +145,7 @@ export PATH=/opt/elmer/bin:$PATH
 ```bash
 cd elmerice/examples/Test_SSA
 ElmerGrid 1 2 rectangle
-ElmerSolver ismip_SSA_1D.sif
+KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/Elmer_Ice/knowledge_infrastructure/tools/run_elmerice.py --sif ismip_SSA_1D.sif --run_dir .
 # Output: test_SSA_1D.vtu (open in ParaView)
 ```
 
@@ -515,17 +515,17 @@ cd elmerice/examples/Test_SSA
 ElmerGrid 1 2 rectangle
 
 # Step 3: Run SSA 1D benchmark
-ElmerSolver ismip_SSA_1D.sif
+KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/Elmer_Ice/knowledge_infrastructure/tools/run_elmerice.py --sif ismip_SSA_1D.sif --run_dir .
 
 # Step 4: View results
 paraview test_SSA_1D.vtu
 
 # Step 5: Run 3D case (if 3D mesh is built)
-ElmerSolver ismip_SSA_3D.sif
+KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/Elmer_Ice/knowledge_infrastructure/tools/run_elmerice.py --sif ismip_SSA_3D.sif --run_dir .
 
 # Step 6: Run parallel (4 cores)
 ElmerGrid 1 2 rectangle -partdual -metis 4
-mpirun -np 4 ElmerSolver ismip_SSA_1D.sif
+KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/Elmer_Ice/knowledge_infrastructure/tools/run_elmerice.py --sif ismip_SSA_1D.sif --run_dir . --np 4
 ```
 
 ---

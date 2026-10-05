@@ -1,0 +1,33 @@
+{
+  "description": "Expected results for the official EPANET 2.2 tutorial network (User_Manual/docs/tutorial.inp of USEPA/EPANET2.2, the example input of the User Manual Appendix C): 5 junctions, 1 reservoir, 1 tank, 6 pipes, 1 pump, 24 h extended-period run with chlorine decay. inputs/ is the unmodified official file. Checks marked 'official' take their value from reference/tutorial.out, the official report excerpt that ships next to the input in the same repo (printed in the manual). Checks marked 'own run' (24 h values and period counts, which the excerpt does not cover) were recorded from a real run of the server engine; two clean runs gave identical reports (only date/path header lines differ), so the run is deterministic.",
+  "engine_version": "EPANET 2.2.0 (USEPA/EPANET2.2 git 598ee6c), runepanet + libepanet2.so built on this server",
+  "numeric_checks": [
+    {"name": "pump7_kwh_per_mgal", "key": "energy:7:kwh_per_mgal", "expected": 745.97, "tol": 0.01, "why": "official: pump energy use per million gallons (Energy Usage table)"},
+    {"name": "pump7_avg_kw", "key": "energy:7:avg_kw", "expected": 51.35, "tol": 0.01, "why": "official: average pump power"},
+    {"name": "pump7_peak_kw", "key": "energy:7:peak_kw", "expected": 51.59, "tol": 0.01, "why": "official: peak pump power"},
+    {"name": "node2_head_0h", "key": "node:0:00:00:2:head", "expected": 893.19, "tol": 0.01, "why": "official: head at pump outlet node at 0 h"},
+    {"name": "node3_pressure_0h", "key": "node:0:00:00:3:pressure", "expected": 73.52, "tol": 0.01, "why": "official: pressure at the first demand node at 0 h"},
+    {"name": "reservoir1_demand_0h", "key": "node:0:00:00:1:demand", "expected": -1049.81, "tol": 0.01, "why": "official: total inflow from the reservoir at 0 h (gpm)"},
+    {"name": "tank7_pressure_0h", "key": "node:0:00:00:7:pressure", "expected": 2.17, "tol": 0.01, "why": "official: tank pressure (initial level 5 ft) at 0 h"},
+    {"name": "link2_flow_0h", "key": "link:0:00:00:2:flow", "expected": 559.25, "tol": 0.01, "why": "official: pipe 2 flow at 0 h"},
+    {"name": "link5_flow_0h", "key": "link:0:00:00:5:flow", "expected": -9.44, "tol": 0.01, "why": "official: small reverse flow in pipe 5 at 0 h (sign matters)"},
+    {"name": "pump7_headloss_0h", "key": "link:0:00:00:7:headloss", "expected": -193.19, "tol": 0.01, "why": "official: head added by the pump at 0 h"},
+    {"name": "tank7_head_1h", "key": "node:1:00:00:7:head", "expected": 855.99, "tol": 0.01, "why": "official: tank fills during hour 1"},
+    {"name": "node3_chlorine_1h", "key": "node:1:00:00:3:quality", "expected": 0.99, "tol": 0.01, "why": "official: chlorine has reached node 3 at 1 h"},
+    {"name": "n_node_report_periods", "key": "n_node_report_periods", "expected": 25, "tol": 0, "why": "own run: hourly reports 0..24 h"},
+    {"name": "tank7_head_24h", "key": "node:24:00:00:7:head", "expected": 855.04, "tol": 0.01, "why": "own run: tank head at end of run"},
+    {"name": "node6_chlorine_24h", "key": "node:24:00:00:6:quality", "expected": 0.53, "tol": 0.01, "why": "own run: chlorine after decay (bulk k=-1/day) at node 6, 24 h"},
+    {"name": "tank7_chlorine_24h", "key": "node:24:00:00:7:quality", "expected": 0.14, "tol": 0.01, "why": "own run: chlorine in the tank at 24 h"}
+  ],
+  "official_excerpt_check": {
+    "file": "reference/tutorial.out",
+    "n_values": 83,
+    "tol": 0.01,
+    "why": "every number in the official excerpt (pump 7 energy row: 6; node results 0 h and 1 h: 2 x 28; link results 0 h: 21) must match the run within one unit of the last printed digit"
+  },
+  "finished_check": "tools/run_epanet.py exit 0 with '[SUCCESS] EPANET completed', and the engine wrote 'Analysis ended' with no 'Error' in the report (runepanet itself prints '... EPANET ran successfully.')",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/EPANET/source/repo/SRC_engines/build/src/run/runepanet (EPANET 2.2.0) through the KI tools/run_epanet.py; output read with the KI tools/parse_epanet_output.py --rpt",
+  "reference": "reference/tutorial.out = git show 598ee6c:User_Manual/docs/tutorial.out (USEPA/EPANET2.2), unmodified; it is the 'Excerpt from a EPANET report file' in User Manual Appendix C",
+  "note": "Our run matched all 83 official numbers exactly (diff 0.00), not just within tol."
+}

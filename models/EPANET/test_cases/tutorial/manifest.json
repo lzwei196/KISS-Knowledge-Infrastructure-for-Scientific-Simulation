@@ -1,0 +1,43 @@
+{
+  "test_case": "EPANET tutorial (official User Manual example network)",
+  "engine": {
+    "name": "EPANET",
+    "version": "2.2.0",
+    "binary": "runepanet (+ libepanet2.so)",
+    "default_binary": "/mnt/disk1/Hydrocraft_server/models/EPANET/source/repo/SRC_engines/build/src/run/runepanet",
+    "source": "USEPA/EPANET2.2 git 598ee6cd214de07a0d62e7dafc1bdbf09173645a, User_Manual/docs/tutorial.inp + tutorial.out",
+    "license": "MIT (EPANET, SRC_engines/LICENSE)"
+  },
+  "ki": {
+    "model": "EPANET",
+    "tools_used": [
+      "tools/run_epanet.py",
+      "tools/parse_epanet_output.py --rpt"
+    ]
+  },
+  "simulation": {
+    "network": "5 junctions, 1 reservoir, 1 tank, 6 pipes, 1 pump (single-point curve)",
+    "flow_units": "GPM",
+    "headloss": "Hazen-Williams",
+    "duration_h": 24,
+    "hydraulic_step_h": 1,
+    "quality": "chlorine, bulk decay -1/day, quality step 5 min",
+    "report_periods": 25,
+    "run_time_s": "~3"
+  },
+  "reference": {
+    "file": "reference/tutorial.out",
+    "kind": "official report excerpt shipped with the input (User Manual Appendix C)",
+    "values_compared": 83
+  },
+  "files": {
+    "inputs/tutorial.inp": {
+      "bytes": 1316,
+      "sha256": "cb9e95ac7e23047c692a3218f019ccc0f824260e74a9b6e3593c8761628c0798"
+    },
+    "reference/tutorial.out": {
+      "bytes": 4105,
+      "sha256": "f2e9e7a94d606ef2b52992b4abd5ebea25a8d4de6005b814de7584f61495b07a"
+    }
+  }
+}

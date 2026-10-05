@@ -1,0 +1,150 @@
+{
+  "description": "Expected results for the official pyGIMLi example '2D ERT modelling and inversion' (doc/examples/3_ert/plot_01_ert_2d_mod_inv.py, gimli-org/gimli git tag v1.5.5.post1, commit d0ed6ed4, the same release as the installed engine). The script builds a 2-layer + 2-anomaly resistivity model, simulates 171 dipole-dipole readings on 21 electrodes with fixed noise (1% + 1 uV, seed=1337), inverts them on an automatic unstructured mesh (lam=20) and on a custom regular grid (lam=20). inputs/ holds the unmodified official script. The first inversion is also re-run through the KI tool tools/run_pygimli.py on the script's own simple.dat and read with tools/parse_gimli_output.py.",
+  "engine_version": "pygimli 1.5.5.post1 + pgcore 1.5.5 (pip wheels in the dissection venv), Python 3.12",
+  "official_checks": [
+    {
+      "name": "ki_chi2",
+      "expected": 0.7,
+      "tol": 0.0999,
+      "why": "upstream assert in the script: np.testing.assert_approx_equal(mgr.inv.chi2(), 0.7, significant=1) for the first inversion (lam=20); significant=1 here means |chi2-0.7| < 0.1"
+    },
+    {
+      "name": "inv_grid_chi2",
+      "expected": 1.4,
+      "tol": 0.0999,
+      "why": "upstream assert in the script: assert_approx_equal(mgr.inv.chi2(), 1.4, significant=2) for the regular-grid inversion; means |chi2-1.4| < 0.1"
+    }
+  ],
+  "numeric_checks": [
+    {
+      "name": "n_data",
+      "expected": 171,
+      "tol": 0,
+      "why": "dipole-dipole readings on 21 electrodes left after removing rhoa<0"
+    },
+    {
+      "name": "n_electrodes",
+      "expected": 21,
+      "tol": 0,
+      "why": "electrodes from -15 to 15 m"
+    },
+    {
+      "name": "mesh_cells",
+      "expected": 3544,
+      "tol": 0,
+      "why": "forward-model mesh cell count (mesh quality 34)"
+    },
+    {
+      "name": "rhoa_min",
+      "expected": 42.792496044211,
+      "tol": 0.001,
+      "why": "smallest simulated apparent resistivity (Ohm m), noise seed 1337"
+    },
+    {
+      "name": "rhoa_max",
+      "expected": 104.19891011722967,
+      "tol": 0.001,
+      "why": "largest simulated apparent resistivity (Ohm m)"
+    },
+    {
+      "name": "inv_unstructured_ncells",
+      "expected": 287,
+      "tol": 0,
+      "why": "cells in the automatic inversion mesh (script, first inversion)"
+    },
+    {
+      "name": "inv_unstructured_min",
+      "expected": 22.960187160281997,
+      "tol": 0.05,
+      "why": "lowest inverted resistivity, first inversion (true low = 25 Ohm m). Tolerance wider: this in-script inversion is not bit-repeatable (seen 22.9602-22.9664 over 12 runs)"
+    },
+    {
+      "name": "inv_unstructured_max",
+      "expected": 146.74072560495787,
+      "tol": 0.1,
+      "why": "highest inverted resistivity, first inversion (true high = 150 Ohm m). Tolerance wider: not bit-repeatable (seen 146.710-146.741 over 12 runs)"
+    },
+    {
+      "name": "inv_grid_chi2",
+      "expected": 1.4162616026231722,
+      "tol": 0.001,
+      "why": "final chi^2 of the regular-grid inversion"
+    },
+    {
+      "name": "inv_grid_rrms",
+      "expected": 1.1962231024179237,
+      "tol": 0.001,
+      "why": "final relative RMS (%) of the regular-grid inversion"
+    },
+    {
+      "name": "inv_grid_ncells",
+      "expected": 160,
+      "tol": 0,
+      "why": "cells in the custom regular inversion grid"
+    },
+    {
+      "name": "inv_grid_min",
+      "expected": 18.901955304574166,
+      "tol": 0.01,
+      "why": "lowest inverted resistivity on the grid"
+    },
+    {
+      "name": "inv_grid_max",
+      "expected": 174.8005007498299,
+      "tol": 0.01,
+      "why": "highest inverted resistivity on the grid"
+    },
+    {
+      "name": "ki_status",
+      "expected": 1,
+      "tol": 0,
+      "why": "KI run_pygimli.py finished normally (status=success)"
+    },
+    {
+      "name": "ki_chi2",
+      "expected": 0.7037855504823118,
+      "tol": 0.001,
+      "why": "final chi^2 of the KI-tool inversion of simple.dat (same call as the script's first inversion)"
+    },
+    {
+      "name": "ki_iterations",
+      "expected": 3,
+      "tol": 0,
+      "why": "iterations until chi^2 <= 1 stop rule"
+    },
+    {
+      "name": "ki_ncells",
+      "expected": 287,
+      "tol": 0,
+      "why": "KI-tool inversion mesh cells (same as the script)"
+    },
+    {
+      "name": "ki_ndata",
+      "expected": 171,
+      "tol": 0,
+      "why": "readings read by the KI tool from simple.dat"
+    },
+    {
+      "name": "ki_model_min",
+      "expected": 22.96020034734459,
+      "tol": 0.01,
+      "why": "lowest resistivity from the KI tool (matches script within file rounding)"
+    },
+    {
+      "name": "ki_model_max",
+      "expected": 146.74071869282494,
+      "tol": 0.01,
+      "why": "highest resistivity from the KI tool"
+    },
+    {
+      "name": "ki_model_mean",
+      "expected": 80.45654016338945,
+      "tol": 0.01,
+      "why": "mean resistivity from KI parse_gimli_output.py"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python (pygimli 1.5.5.post1, pgcore 1.5.5), OMP_NUM_THREADS=4, MPLBACKEND=Agg",
+  "reference": "official_checks are the upstream values asserted inside the official script (with the upstream tolerance, |chi2-value| < 0.1). numeric_checks were recorded from our own real runs (12 clean runs of the script, 4 runs of the KI tool). Exactly repeatable every time: simulated data (simple.dat byte-identical), mesh, the regular-grid inversion, and the KI-tool inversion of simple.dat. NOT bit-repeatable: the script's own first inversion (automatic mesh) gave 3 slightly different results (chi2 0.70378/0.70379/0.70821, min 22.9602-22.9664, max 146.710-146.741), so those two checks have wider tolerances; all stay inside the upstream assert.",
+  "notes": "No change to the official script. Only the matplotlib backend is set to Agg (env var) so no windows open; this does not touch any numbers. The KI tool reads simple.dat as saved by the script; the file stores values with limited digits, so its model min/max differ from the script's own by about 1e-5 Ohm m."
+}

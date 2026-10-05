@@ -1,0 +1,42 @@
+{
+  "test_case": "pyGIMLi ert_2d_mod_inv (official example '2D ERT modelling and inversion')",
+  "engine": {
+    "name": "pyGIMLi",
+    "version": "pygimli 1.5.5.post1 + pgcore 1.5.5",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python",
+    "source": "https://github.com/gimli-org/gimli, doc/examples/3_ert/plot_01_ert_2d_mod_inv.py at tag v1.5.5.post1 (commit d0ed6ed4)",
+    "license": "Apache-2.0 (pyGIMLi)"
+  },
+  "ki": {
+    "model": "pyGIMLi",
+    "tools_used": [
+      "tools/run_pygimli.py",
+      "tools/parse_gimli_output.py"
+    ]
+  },
+  "simulation": {
+    "method": "ERT (electrical resistivity tomography), 2D",
+    "electrodes": 21,
+    "array": "dipole-dipole",
+    "n_data": 171,
+    "true_model_ohm_m": {
+      "layer_1": 100,
+      "layer_2": 75,
+      "layer_3": 50,
+      "ellipse_anomaly": 150,
+      "polygon_anomaly": 25
+    },
+    "noise": "1% + 1 uV, seed=1337",
+    "inversions": [
+      "automatic unstructured mesh, lam=20",
+      "custom regular grid, lam=20"
+    ],
+    "runtime_s": "about 4"
+  },
+  "files": {
+    "inputs/plot_01_ert_2d_mod_inv.py": {
+      "bytes": 7733,
+      "sha256": "e3df46daa3c313b7180c49d3ef2e66e9fcbeae757f03775c2d0f1cc9dadfadf6"
+    }
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "test_case": "pySTEPS mch_official_tests (pysteps official test suite on the official MeteoSwiss radar sample)",
+  "engine": {
+    "name": "pysteps",
+    "version": "1.20.0",
+    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (import pysteps; tests in pysteps.tests)",
+    "source": "pip wheel pysteps 1.20.0 (github.com/pySTEPS/pysteps); tests = pysteps/tests shipped in the package",
+    "license": "BSD-3-Clause (pysteps)"
+  },
+  "ki": {
+    "model": "pySTEPS"
+  },
+  "data": {
+    "source": "github.com/pySTEPS/pysteps-data, radar/mch/20150515 (commit e95a6efae3df33ae8cd1e54e6762ab5f83427a03)",
+    "provider": "MeteoSwiss AQC 5-min precipitation composite, 710x640 1-km grid",
+    "license": "pysteps-data has no licence file; it is the official example data of pysteps (README only states RMI terms, not used here)",
+    "verified": "all 40 files match the GitHub blob hashes at that commit"
+  },
+  "simulation": {
+    "what": "130 official pytest tests (STEPS, S-PROG, ANVIL, SSEPS, LINDA nowcasts; LK/VET/DARTS/proesmans motion; semi-Lagrangian extrapolation; noise; verification scores) + 8 official STEPS skill settings re-run for CRPS",
+    "reference_time": "2015-05-15 16:30 UTC",
+    "timestep_min": 5,
+    "n_frames": 40,
+    "seed": 42,
+    "pytest_modules": 14,
+    "deselected": [
+      "test_cascade::test_decompose_recompose (needs bom sample)"
+    ],
+    "runtime_s": 90,
+    "peak_rss_gb": 1.4
+  },
+  "files": {
+    "inputs/radar/mch/20150515/AQC151351545F_00005.801.gif": {
+      "bytes": 79335,
+      "sha256": "fd7a2232d7269c26820c06f9493e0dab394ce9c6d29000f46d603bba2d4937e2"
+    },
+    "inputs/radar/mch/20150515/AQC151351550F_00005.801.gif": {
+      "bytes": 75512,
+      "sha256": "b59e7b3397404b0e96e10d58b997e7b5be6ac0dfe4571e31584b565407381f7a"
+    },
+    "inputs/radar/mch/20150515/AQC151351555F_00005.801.gif": {
+      "bytes": 76109,
+      "sha256": "c74ee580a9cb11faded235b32082a5f24f66701472ed4824698b0fa52c0e5227"
+    },
+    "inputs/radar/mch/20150515/AQC151351600F_00005.801.gif": {
+      "bytes": 74311,
+      "sha256": "2c3245e9379b04668dd14112b6293a881fdf2cedb75c393cf51c3fe4c0c4fd91"
+    },
+    "inputs/radar/mch/20150515/AQC151351605F_00005.801.gif": {
+      "bytes": 73498,
+      "sha256": "15a2d54cd3350a90eb8590275400986c9eaaac6544bc2636185a0d28c5bd0a27"
+    },
+    "inputs/radar/mch/20150515/AQC151351610F_00005.801.gif": {
+      "bytes": 73175,
+      "sha256": "15433115eb25427e29eeb7d21b58284fadadf8bdf31fc72b2e94eec47b3ad995"
+    },
+    "inputs/radar/mch/20150515/AQC151351615F_00005.801.gif": {
+      "bytes": 71568,
+      "sha256": "b09e7fa65a566ae3430e35b5bff7297adf3659b9b1a56c89ea6186a0d60c8cfe"
+    },
+    "inputs/radar/mch/20150515/AQC151351620F_00005.801.gif": {
+      "bytes": 70951,
+      "sha256": "aa5bdc1a0229f12c3793364d350eb348451f2a6c1ad76cea57cc0165038a3fc4"
+    },
+    "inputs/radar/mch/20150515/AQC151351625F_00005.801.gif": {
+      "bytes": 70193,
+      "sha256": "1e221a9107a2cefd7598a56783301444d8d099706adf14a16ecfe7abba94bce3"
+    },
+    "inputs/radar/mch/20150515/AQC151351630F_00005.801.gif": {
+      "bytes": 69295,
+      "sha256": "03f31829aa45914ab9d75a82a59538453e689aedcec6c0e84b6e616cb74a4936"
+    },
+    "inputs/radar/mch/20150515/AQC151351635F_00005.801.gif": {
+      "bytes": 68562,
+      "sha256": "bbf8bbb99ec90dc2002fe585293e9c3a9dc17bb5190b44746c4b5fab98d8fbb5"
+    },
+    "inputs/radar/mch/20150515/AQC151351640F_00005.801.gif": {
+      "bytes": 67269,
+      "sha256": "8c7addcdb9ba4520839f0fd242a6ff7f0510b6aa730e058070f5a6df5f158b83"
+    },
+    "inputs/radar/mch/20150515/AQC151351645F_00005.801.gif": {
+      "bytes": 66158,
+      "sha256": "96e6ebbc9ebad2db979a1401040da11b5a58e714cecbb39a88754ea54e55e03a"
+    },
+    "inputs/radar/mch/20150515/AQC151351650F_00005.801.gif": {
+      "bytes": 63853,
+      "sha256": "b52b8a20a2bc7e8234d1bc2e7a39245a41fb4ae08413d519696a412cfaad189a"
+    },
+    "inputs/radar/mch/20150515/AQC151351655F_00005.801.gif": {
+      "bytes": 61867,
+      "sha256": "73ef7c83210a1454f59ba9e8ab9cde5a9c7146f6eddc131c3810ae21d475034c"
+    },
+    "inputs/radar/mch/20150515/AQC151351700F_00005.801.gif": {
+      "bytes": 60046,
+      "sha256": "18b3e0bef5fd57a578239b66dc29250111e5e8ff62fc5081be7dfd996c9cfd2d"
+    },
+    "inputs/radar/mch/20150515/AQC151351705F_00005.801.gif": {
+      "bytes": 57834,
+      "sha256": "5613ed34c4d288d5a8b7f934b6476a12f593cb4fbc89e87f55861e6b0471094d"
+    },
+    "inputs/radar/mch/20150515/AQC151351710F_00005.801.gif": {
+      "bytes": 55333,
+      "sha256": "027e72c018d5a1a8dbb483d4116c8fca6482977f16a0ac63f44feb2c84d15f68"
+    },
+    "inputs/radar/mch/20150515/AQC151351715F_00005.801.gif": {
+      "bytes": 52792,
+      "sha256": "c065f9fb8613684de6d8fd3f130b10fbe60b11b742d2d551e45b56065e183fee"
+    },
+    "inputs/radar/mch/20150515/AQC151351720F_00005.801.gif": {
+      "bytes": 52089,
+      "sha256": "4b51a0b0368255ab6ec581c3ffc2f1876da31ed2669631fb3d59e4a8b32c8f88"
+    },
+    "inputs/radar/mch/20150515/AQC151351725F_00005.801.gif": {
+      "bytes": 50810,
+      "sha256": "fda018cdee1242b3f76d3aaa1ce24c73011cbd3d0654b468495da334fe2fb3f2"
+    },
+    "inputs/radar/mch/20150515/AQC151351730F_00005.801.gif": {
+      "bytes": 49102,
+      "sha256": "197a47e28d3582dc96c710a7ac2a9acb7bbe6eb15ac2417fe6f1bc0de922b2cf"
+    },
+    "inputs/radar/mch/20150515/AQC151351735F_00005.801.gif": {
+      "bytes": 48346,
+      "sha256": "65885e24692c8542b9b1bb931947a2ad8b08f086d7f6cb2187fe1820d10456a8"
+    },
+    "inputs/radar/mch/20150515/AQC151351740F_00005.801.gif": {
+      "bytes": 47014,
+      "sha256": "565a8e0862b79e3e4f615b935e7c40cf4bc1ddee789df4c61cde983acc5d50e7"
+    },
+    "inputs/radar/mch/20150515/AQC151351745F_00005.801.gif": {
+      "bytes": 46531,
+      "sha256": "6cbf8cb1ee69e3bf881fe8a73ecd4e8b2b47cc535da3e8e2cfcbb34d2401160f"
+    },
+    "inputs/radar/mch/20150515/AQC151351750F_00005.801.gif": {
+      "bytes": 46378,
+      "sha256": "49c246392ec6a863fb17e09a95164dc88ccd935c53147ae0e4e6cc0297e396b3"
+    },
+    "inputs/radar/mch/20150515/AQC151351755F_00005.801.gif": {
+      "bytes": 45872,
+      "sha256": "f32e2ee130999455570776f41d0e069ee11adb90f43554feaae3eafc733ce103"
+    },
+    "inputs/radar/mch/20150515/AQC151351800F_00005.801.gif": {
+      "bytes": 46750,
+      "sha256": "f6ec7984614236198576ca174f545d5c4c4103657abb0d53bf3ab74fefadeb08"
+    },
+    "inputs/radar/mch/20150515/AQC151351805F_00005.801.gif": {
+      "bytes": 46672,
+      "sha256": "e8dce3aea01c2b26164ebc49f6875b050a48061d880e64338e8d70bcc989aeed"
+    },
+    "inputs/radar/mch/20150515/AQC151351810F_00005.801.gif": {
+      "bytes": 45913,
+      "sha256": "1f11d5be79d6da56b7659ee997e7ce56d94521a33dae96113f3ffe8c8807bdff"
+    },
+    "inputs/radar/mch/20150515/AQC151351815F_00005.801.gif": {
+      "bytes": 46775,
+      "sha256": "2f0c734f71dc3e19afb266cefa11f6806f6f773f3d211f31405f4fcd509ccdc9"
+    },
+    "inputs/radar/mch/20150515/AQC151351820F_00005.801.gif": {
+      "bytes": 47327,
+      "sha256": "c19ba75ade78141f8dac9910376a92e9de0a23455f6d02dc421f468bfd20a596"
+    },
+    "inputs/radar/mch/20150515/AQC151351825F_00005.801.gif": {
+      "bytes": 48024,
+      "sha256": "9c9ed0f4a2420ab4a8efa45f99ead03353bcedf689495e30df927dd21b06d379"
+    },
+    "inputs/radar/mch/20150515/AQC151351830F_00005.801.gif": {
+      "bytes": 48488,
+      "sha256": "a49b106172c5c8c3288d5df60371338bf6e6797246954cc2ef75a0d906d1d84e"
+    },
+    "inputs/radar/mch/20150515/AQC151351835F_00005.801.gif": {
+      "bytes": 48048,
+      "sha256": "8b4fe87752353f0ca01c16565e12e106bbda3c9a331df5cfe5ea15dae8c0c042"
+    },
+    "inputs/radar/mch/20150515/AQC151351840F_00005.801.gif": {
+      "bytes": 47991,
+      "sha256": "7dab1b183a2ec5d02345ea4e4bb654275637080c938209b7003fb33cfb4e7b4e"
+    },
+    "inputs/radar/mch/20150515/AQC151351845F_00005.801.gif": {
+      "bytes": 46935,
+      "sha256": "39b31f5e158e6abed62831ac32563eefbd7ab186129a266d5682d1bfa6491366"
+    },
+    "inputs/radar/mch/20150515/AQC151351850F_00005.801.gif": {
+      "bytes": 47276,
+      "sha256": "ae631b13b87b29fef21d8b9e6f147a41f8a5304279593e7c1f3fa3b07dd8b69c"
+    },
+    "inputs/radar/mch/20150515/AQC151351855F_00005.801.gif": {
+      "bytes": 46699,
+      "sha256": "7055e24437b9f13d7ee25f11f7c2a25aafd44a627860f92274c52bfd3160df83"
+    },
+    "inputs/radar/mch/20150515/AQC151351900F_00005.801.gif": {
+      "bytes": 45807,
+      "sha256": "43f870b111633b4fea5490c74138bd252dd1d4fd6ffdd713d1af94d37a74eb79"
+    }
+  }
+}

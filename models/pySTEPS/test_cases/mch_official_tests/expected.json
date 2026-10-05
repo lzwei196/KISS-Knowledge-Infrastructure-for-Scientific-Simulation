@@ -1,0 +1,121 @@
+{
+  "description": "Expected results for pysteps' own official tests run on the official MeteoSwiss (mch) radar sample of 2015-05-15 from pySTEPS/pysteps-data (commit e95a6ef). inputs/ are the 40 unmodified official GIF files. Pass rules: (a) the 130 official pytest tests pass with their own assert values; (b) the 8 official STEPS skill settings (seed 42) give CRPS below the official limits in test_nowcasts_steps.py and equal to the values recorded on this server. Two clean runs gave identical CRPS values (deterministic with seed 42).",
+  "engine_version": "pysteps 1.20.0 (pip wheel, python 3.12)",
+  "pytest_modules": [
+    "pysteps.tests.test_nowcasts_steps",
+    "pysteps.tests.test_nowcasts_sprog",
+    "pysteps.tests.test_nowcasts_anvil",
+    "pysteps.tests.test_nowcasts_sseps",
+    "pysteps.tests.test_nowcasts_linda",
+    "pysteps.tests.test_nowcasts_utils",
+    "pysteps.tests.test_motion",
+    "pysteps.tests.test_motion_lk",
+    "pysteps.tests.test_extrapolation_semilagrangian",
+    "pysteps.tests.test_cascade",
+    "pysteps.tests.test_noise_fftgenerators",
+    "pysteps.tests.test_verification_detcatscores",
+    "pysteps.tests.test_verification_detcontscores",
+    "pysteps.tests.test_verification_probscores"
+  ],
+  "pytest_deselect_names": [
+    "test_decompose_recompose"
+  ],
+  "numeric_checks": [
+    {
+      "name": "n_mch_files",
+      "expected": 40,
+      "tol": 0,
+      "why": "all 40 official mch frames 2015-05-15 15:45-19:00 UTC copied"
+    },
+    {
+      "name": "pytest_returncode",
+      "expected": 0,
+      "tol": 0,
+      "why": "official pytest run finished with no failure"
+    },
+    {
+      "name": "pytest_tests",
+      "expected": 130,
+      "tol": 0,
+      "why": "number of official tests run (14 modules, 1 bom-data test deselected)"
+    },
+    {
+      "name": "pytest_failures",
+      "expected": 0,
+      "tol": 0,
+      "why": "every official assert holds"
+    },
+    {
+      "name": "pytest_errors",
+      "expected": 0,
+      "tol": 0,
+      "why": "no test errors (data found, deps present)"
+    },
+    {
+      "name": "pytest_skipped",
+      "expected": 0,
+      "tol": 0,
+      "why": "no test silently skipped (cv2, PIL, data all present)"
+    },
+    {
+      "name": "steps_skill_0_crps",
+      "expected": 1.2565348,
+      "tol": 0.0001,
+      "official_max": 1.3,
+      "why": "official test_steps_skill case 0 (5 members, 6 levels, AR(2), no mask, no prob-matching, spatial, 3 steps), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_1_crps",
+      "expected": 1.25708872,
+      "tol": 0.0001,
+      "official_max": 1.3,
+      "why": "official test_steps_skill case 1 (same, timesteps given as list [3]), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_2_crps",
+      "expected": 7.31281065,
+      "tol": 0.0001,
+      "official_max": 7.32,
+      "why": "official test_steps_skill case 2 (mask_method incremental), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_3_crps",
+      "expected": 8.39315374,
+      "tol": 0.0001,
+      "official_max": 8.4,
+      "why": "official test_steps_skill case 3 (mask_method sprog), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_4_crps",
+      "expected": 8.36594098,
+      "tol": 0.0001,
+      "official_max": 8.37,
+      "why": "official test_steps_skill case 4 (mask_method obs), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_5_crps",
+      "expected": 0.57799364,
+      "tol": 0.0001,
+      "official_max": 0.6,
+      "why": "official test_steps_skill case 5 (probmatching cdf), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_6_crps",
+      "expected": 1.30601527,
+      "tol": 0.0001,
+      "official_max": 1.35,
+      "why": "official test_steps_skill case 6 (probmatching mean), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    },
+    {
+      "name": "steps_skill_7_crps",
+      "expected": 0.57591326,
+      "tol": 0.0001,
+      "official_max": 0.6,
+      "why": "official test_steps_skill case 7 (mask incremental + probmatching cdf, spectral domain), seed 42: CRPS of 5-member STEPS nowcast at +15 min vs mch obs; official limit from pysteps test file, value from our run"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (pysteps 1.20.0, opencv 4.11.0, Pillow 10.4.0), 4 threads",
+  "reference": "Official: assert values inside pysteps/tests/*.py of pysteps 1.20.0 (incl. max_crps limits in test_nowcasts_steps.steps_arg_values). Own run: exact CRPS numbers (two runs identical).",
+  "notes": "Only change made: a temp copy of the default pystepsrc with the mch root_path set to the temp data dir (shipped value is the relative './radar/mch'). This is a path only; it does not change any data or result. test_cascade::test_decompose_recompose is left out because it reads the bom (Australia) sample, which is not packaged."
+}

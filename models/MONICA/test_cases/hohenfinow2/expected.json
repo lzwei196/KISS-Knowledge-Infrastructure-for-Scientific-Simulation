@@ -1,0 +1,110 @@
+{
+  "description": "Expected results for the official MONICA Hohenfinow2 example (zalf-rpm/monica installer/Hohenfinow2, sim.json + crop.json + site.json + climate.csv, 1991-1997 crop rotation at Hohenfinow, Brandenburg, Germany). inputs/ are the unmodified files from the MONICA git tree. Values were recorded from real runs of the server's monica-run 3.6.53.0; three clean runs (two through the KI run tool, one direct) gave byte-identical output (sha256 33ed0613...829c), so the model is deterministic here. The tracked out.csv / min-out-monica.csv in the example folder are NOT used: their columns do not match any of the current sim*.json files, so they come from an older setup and cannot be compared.",
+  "engine_version": "monica-run 3.6.53.0 (zalf-rpm/monica git f821718), monica-parameters git fb0f478",
+  "daily_date_range": [
+    "1991-01-01",
+    "1997-12-31"
+  ],
+  "numeric_checks": [
+    {
+      "name": "n_daily_rows",
+      "expected": 2557,
+      "tol": 0,
+      "why": "one daily row per day 1991-01-01..1997-12-31 (start/end dates set in the official sim.json)"
+    },
+    {
+      "name": "n_monthly_rows",
+      "expected": 84,
+      "tol": 0,
+      "why": "7 years x 12 months in the monthly section"
+    },
+    {
+      "name": "n_yearly_rows",
+      "expected": 7,
+      "tol": 0,
+      "why": "one row per year 1991-1997 in the yearly section"
+    },
+    {
+      "name": "n_crops",
+      "expected": 7,
+      "tol": 0,
+      "why": "the 7 crops of the official rotation in crop.json (rye, silage maize, potato, winter wheat, winter barley, spring barley, winter rape)"
+    },
+    {
+      "name": "run_precip_sum_mm",
+      "expected": 3502.5,
+      "tol": 0.05,
+      "why": "whole-run rain total from the 'run' section; equals the climate.csv rain for the period"
+    },
+    {
+      "name": "daily_precip_sum_mm",
+      "expected": 3502.5,
+      "tol": 0.05,
+      "why": "sum of daily Precip must match the run total (inner consistency)"
+    },
+    {
+      "name": "yield_rye_1992",
+      "expected": 3356.9,
+      "tol": 0.5,
+      "why": "winter rye yield [kgDM/ha], harvest 1992-07-27"
+    },
+    {
+      "name": "yield_silage_maize_1993",
+      "expected": 1145.9,
+      "tol": 0.5,
+      "why": "silage maize yield [kgDM/ha], harvest 1993-09-23"
+    },
+    {
+      "name": "yield_potato_1994",
+      "expected": 9098.6,
+      "tol": 0.5,
+      "why": "potato yield [kgDM/ha], harvest 1994-09-06"
+    },
+    {
+      "name": "yield_winter_wheat_1995",
+      "expected": 8446.0,
+      "tol": 0.5,
+      "why": "winter wheat yield [kgDM/ha], harvest 1995-08-02"
+    },
+    {
+      "name": "yield_spring_barley_1996",
+      "expected": 6676.9,
+      "tol": 0.5,
+      "why": "spring barley yield [kgDM/ha], harvest 1996-09-10"
+    },
+    {
+      "name": "sum_crop_yields",
+      "expected": 28724.3,
+      "tol": 2.0,
+      "why": "sum of all 7 crop yields; winter barley (harvested 1996-04-13) and winter rape (sown 1997-04-04, harvested 1997-07-08) give 0 with the official dates"
+    },
+    {
+      "name": "max_daily_LAI",
+      "expected": 15.2314,
+      "tol": 0.001,
+      "why": "largest daily leaf area index over the run [m2/m2], as MONICA writes it"
+    },
+    {
+      "name": "max_daily_AbBiom",
+      "expected": 20595.8,
+      "tol": 1.0,
+      "why": "largest daily above-ground biomass [kgDM/ha]"
+    },
+    {
+      "name": "sum_yearly_NLeach",
+      "expected": 415.415,
+      "tol": 0.01,
+      "why": "nitrate leaching summed over the 7 yearly rows [kgN/ha]"
+    },
+    {
+      "name": "sum_yearly_Recharge",
+      "expected": 863.32,
+      "tol": 0.01,
+      "why": "groundwater recharge summed over the 7 yearly rows [mm]"
+    }
+  ],
+  "finished_normally": "run tool tools/run_monica.py returns rc 0 and status 'success', and sim-out.csv is written (monica-run prints no success line; it is silent on success)",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/MONICA/bin/monica-run with MONICA_PARAMETERS=/mnt/disk1/Hydrocraft_server/models/MONICA/source/monica-parameters, via tools/run_monica.py",
+  "reference": "own run (no matching official reference output ships with the example); output sha256 33ed06134972e98b27c60208aa0249d743ffcd7449728c355b84b5f946d2829c"
+}

@@ -1,0 +1,100 @@
+{
+  "description": "Expected results for the official PyAEZ Module I (Climate Regime) Laos example, as in tutorials/NB1_ClimateRegime.ipynb (monthly climate, lat 13.87-22.59, mask value 0, LGP Sa=100 D=1). inputs/ are the unmodified files from gicait/PyAEZ data_input/ (commit 792e1d4). Eight Module I rasters (thermal climate, thermal zone, LGPt0/5/10, Tsum0/5/10) match the official data_output/NB1 rasters exactly on every mask cell; those checks use the official files. LGP and LGP-equivalent use own-run values (see notes). Two clean runs gave identical results.",
+  "engine_version": "PyAEZ 2.2 (gicait/PyAEZ git 792e1d4, 2026-02-10); numpy/numba/GDAL from HydroCraft python_env",
+  "numeric_checks": [
+    {
+      "name": "mask_cells",
+      "expected": 9762,
+      "tol": 0,
+      "why": "cells inside the Laos admin mask that get a result (same count as the official LGP-Equivalent raster)"
+    },
+    {
+      "name": "thermal_climate_maxdiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "cell-by-cell match with LAO_ThermalClimate.tif, the official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1), over all 9762 mask cells"
+    },
+    {
+      "name": "thermal_zone_maxdiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "cell-by-cell match with LAO_ThermalZone.tif, the official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1), over all 9762 mask cells"
+    },
+    {
+      "name": "lgpt5_maxdiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "cell-by-cell match with LAO_LGPt5.tif, the official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1), over all 9762 mask cells"
+    },
+    {
+      "name": "lgpt10_maxdiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "cell-by-cell match with LAO_LGPt10.tif, the official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1), over all 9762 mask cells"
+    },
+    {
+      "name": "tsum0_maxdiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "cell-by-cell match with LAO_tsum0.tif, the official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1), over all 9762 mask cells"
+    },
+    {
+      "name": "tsum10_maxdiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "cell-by-cell match with LAO_tsum10.tif, the official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1), over all 9762 mask cells"
+    },
+    {
+      "name": "lgpt0_ndiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "no cell differs from LAO_LGPt0.tif (official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1))"
+    },
+    {
+      "name": "tsum5_ndiff_vs_official",
+      "expected": 0,
+      "tol": 0,
+      "why": "no cell differs from LAO_tsum5.tif (official PyAEZ NB1 output raster (reference/NB1/, git-tracked in gicait/PyAEZ data_output/NB1))"
+    },
+    {
+      "name": "tsum0_mean",
+      "expected": 8445.1187,
+      "tol": 0.001,
+      "why": "mean annual temperature sum >0 C (deg-days) over mask cells; value read from official LAO_tsum0.tif"
+    },
+    {
+      "name": "lgpt10_min",
+      "expected": 310,
+      "tol": 0,
+      "why": "shortest thermal growing period >10 C (days); value read from official LAO_LGPt10.tif"
+    },
+    {
+      "name": "thermal_climate_max",
+      "expected": 4,
+      "tol": 0,
+      "why": "highest thermal climate class in Laos; value read from official LAO_ThermalClimate.tif"
+    },
+    {
+      "name": "lgp_mean",
+      "expected": 259.83047,
+      "tol": 0.001,
+      "why": "mean length of growing period (days, Sa=100 mm, D=1). Own-run value: the official LAO_LGP.tif (mean 262.44) predates the 2024-01 LGP bug fixes, so it is not used"
+    },
+    {
+      "name": "lgp_min",
+      "expected": 209,
+      "tol": 0,
+      "why": "shortest LGP (days); own run, same as official"
+    },
+    {
+      "name": "lgp_equv_mean",
+      "expected": 293.30919,
+      "tol": 0.001,
+      "why": "mean LGP-equivalent (days). Own run; official LAO_LGPEquivalent.tif mean 293.3105, max cell diff 0.0124 day"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py -> KI tools/run_pyaez.py --modules 1, /mnt/disk1/Hydrocraft_server/python_env/bin/python_with_gdal, PYTHONPATH=/mnt/disk1/Hydrocraft_server/models/PyAEZ/source/repo",
+  "reference": "Official NB1 output rasters committed to gicait/PyAEZ in a3b1f5b (2023-07-03, 'Added data_output folders'), still tracked at 792e1d4; copied unchanged into reference/NB1/.",
+  "notes": "The official rasters store real numbers outside the admin mask (older saveRaster); our run writes -999 there, so all checks use the 9762 mask cells. Official LAO_LGP.tif differs on 2295 of 9762 cells (max 55 days, mean 262.44 vs 259.83) and LAO_LGPEquivalent.tif by at most 0.0124 day: these files were made in 2023-07, before upstream fixes to the LGP water balance (0a02583 'fix sb_old,wb_old initialization' in ClimateRegime.py and 4348400 'fix Sb365 bug in else section of EtaCalc' in LGPCalc.py, 2024-01). The climate inputs, admin mask and elevation are byte-identical between a3b1f5b and 792e1d4. So LGP checks are own-run values."
+}

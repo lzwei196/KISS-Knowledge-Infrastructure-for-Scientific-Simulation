@@ -1,0 +1,123 @@
+{
+  "test_case": "PyAEZ laos_climate_regime_nb1 (official Module I Climate Regime Laos example, tutorial NB1)",
+  "engine": {
+    "name": "PyAEZ",
+    "version": "2.2 (git 792e1d4)",
+    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python_with_gdal + PYTHONPATH=/mnt/disk1/Hydrocraft_server/models/PyAEZ/source/repo",
+    "source": "https://github.com/gicait/PyAEZ (commit 792e1d4231f6fa75beb98bbeed162a4fa9efbb56); inputs from data_input/, reference from data_output/NB1/",
+    "license": "MIT (Copyright 2023 GIC-AIT, FAO-UN)"
+  },
+  "ki": {
+    "model": "PyAEZ",
+    "run_tool": "tools/run_pyaez.py --modules 1"
+  },
+  "simulation": {
+    "module": "I - Climate Regime (ClimateRegime.ClimateRegime)",
+    "region": "Lao PDR",
+    "grid": "194 x 169 cells, 9762 inside admin mask",
+    "climate": "monthly (12 steps), 6 variables, daily=False",
+    "lat_min": 13.87,
+    "lat_max": 22.59,
+    "mask_value": 0,
+    "lgp_params": {
+      "Sa": 100,
+      "D": 1
+    },
+    "outputs": [
+      "thermal_climate",
+      "thermal_zone",
+      "lgpt0",
+      "lgpt5",
+      "lgpt10",
+      "tsum0",
+      "tsum5",
+      "tsum10",
+      "lgp",
+      "lgp_classified",
+      "lgp_equv"
+    ],
+    "runtime_s": "about 40-70"
+  },
+  "files": {
+    "inputs/LAO_Admin.tif": {
+      "bytes": 2405,
+      "sha256": "c2ad4e63da0591e95765eecc5d9ac0b4d34d4e9f2d35365403c5ddd72fce2883"
+    },
+    "inputs/LAO_Elevation.tif": {
+      "bytes": 54249,
+      "sha256": "6c4e54bfe2bb2d142a297ac40942487e8e31229b232d60f0f250e125db4d5792"
+    },
+    "inputs/climate/Metadata.txt": {
+      "bytes": 249,
+      "sha256": "6098adf88a437c1b98ad6eb03725fc599f8073775388d8e74cbeec38a014011a"
+    },
+    "inputs/climate/max_temp.npy": {
+      "bytes": 3147584,
+      "sha256": "b05e72983afd3b5753c7ed21d15a5f1261a6691e10114d728fd5895517c9f8fe"
+    },
+    "inputs/climate/min_temp.npy": {
+      "bytes": 3147584,
+      "sha256": "728000640bb4dffdbb6aae5a8baf610db7355a67d6ac065f2eef2c38728d66a6"
+    },
+    "inputs/climate/precipitation.npy": {
+      "bytes": 3147584,
+      "sha256": "39cbf6c181d11e49d908b8421f588a571197faf4799d6dcfc8ee14f6d996f7ce"
+    },
+    "inputs/climate/relative_humidity.npy": {
+      "bytes": 3147584,
+      "sha256": "6a9f344c433fa3d4ec0e160b1c36972a6e1c35ae6f70f7a7021217c79185f0a6"
+    },
+    "inputs/climate/short_rad.npy": {
+      "bytes": 3147584,
+      "sha256": "a6a70bca112f9ef5990448d759263e4ba846f3ce6474530dcdeff606d43c8c1c"
+    },
+    "inputs/climate/wind_speed.npy": {
+      "bytes": 3147584,
+      "sha256": "ed5f5bfefba03cb5fb2b0479d89063cbbf6fed8c2896e52f0b6a97e32f5f75bc"
+    },
+    "inputs/input_crop_TSUM_parameters_maiz_sugar.xlsx": {
+      "bytes": 16640,
+      "sha256": "83994a9ca86307ac89c46aaf8fcac22dc8d9d5bc5ab3e5c0c397a942b8edd17e"
+    },
+    "reference/NB1/LAO_LGP.tif": {
+      "bytes": 131629,
+      "sha256": "86b54c18b7c95726949d79a09862e2bc786dbd28f305f5178e79a07114929d90"
+    },
+    "reference/NB1/LAO_LGPEquivalent.tif": {
+      "bytes": 131629,
+      "sha256": "43958ae1fbfafe355b74575b0d98cfa6a6216da37eac9a47c854ad623f75a5e4"
+    },
+    "reference/NB1/LAO_LGPt0.tif": {
+      "bytes": 131629,
+      "sha256": "a3c7252660732f1059aad9a256aa2301484f0493cfe044ddb69aa91c1ae5bdcc"
+    },
+    "reference/NB1/LAO_LGPt10.tif": {
+      "bytes": 131629,
+      "sha256": "64a974a867551bf7468347facd8d526209f5619925e53bef442641e41a55c9e7"
+    },
+    "reference/NB1/LAO_LGPt5.tif": {
+      "bytes": 131629,
+      "sha256": "8d5dda03232772cc7096a792ea00fb87983c9a5c22d2b964ff12211a7efdf7ad"
+    },
+    "reference/NB1/LAO_ThermalClimate.tif": {
+      "bytes": 131629,
+      "sha256": "ec358ddd31e2f72465adadc4bad90935fe804fad5b9f4e66f827dcf04799347b"
+    },
+    "reference/NB1/LAO_ThermalZone.tif": {
+      "bytes": 131629,
+      "sha256": "f3a7d6d1db6e81fff002375991469966b55afeb1c4762c6f83e650d038b8e76e"
+    },
+    "reference/NB1/LAO_tsum0.tif": {
+      "bytes": 131629,
+      "sha256": "9e50c3989ec2ef08722d1093d74e96a3d38b95e2f28262685cd078d8ca11ba9d"
+    },
+    "reference/NB1/LAO_tsum10.tif": {
+      "bytes": 131629,
+      "sha256": "c0d6f601ae334ad491d3a036951a9b9f4c1cd83a6f68cb7f19dbd44f95fcb938"
+    },
+    "reference/NB1/LAO_tsum5.tif": {
+      "bytes": 131629,
+      "sha256": "9e50c3989ec2ef08722d1093d74e96a3d38b95e2f28262685cd078d8ca11ba9d"
+    }
+  }
+}

@@ -17,6 +17,7 @@ Usage:
 import argparse
 import csv
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -74,6 +75,65 @@ def validate_outputs(export_dir: str) -> list:
     return warnings
 
 
+# ── File discovery ──────────────────────────────────────────────────────────
+# C2F-W names per-simulation files with the simulation number zero-padded to
+# the width of str(nsims) (Cell2Fire.cpp widthSims): MessagesFile01.csv for
+# 20 sims, MessagesFile001.csv for 113 sims.  Grid folders are Grids<sim>
+# (no padding) holding ForestGrid<k>.csv snapshots / final grid.
+
+class Cell2FireParseError(ValueError):
+    """An output file exists but cannot be read."""
+
+
+def _numbered_files(folder: Path, stem: str, ext: str) -> dict:
+    """{number: path} for files named <stem><digits><ext> (any zero padding)."""
+    out = {}
+    if not folder.exists():
+        return out
+    pat = re.compile(rf"^{re.escape(stem)}(\d+){re.escape(ext)}$")
+    for f in folder.iterdir():
+        m = pat.match(f.name)
+        if m and f.is_file():
+            n = int(m.group(1))
+            if n in out:
+                raise Cell2FireParseError(f"two files for number {n}: {out[n].name}, {f.name}")
+            out[n] = f
+    return dict(sorted(out.items()))
+
+
+def _grid_files(output_folder: str) -> dict:
+    """{sim: [ForestGrid paths sorted by number]} from Grids/Grids<sim>/."""
+    grid_dir = Path(output_folder) / "Grids"
+    out = {}
+    if not grid_dir.exists():
+        return out
+    for d in grid_dir.iterdir():
+        m = re.match(r"^Grids(\d+)$", d.name)
+        if m and d.is_dir():
+            files = _numbered_files(d, "ForestGrid", ".csv")
+            if not files and (d / "FinalGrid.csv").exists():   # legacy name
+                files = {0: d / "FinalGrid.csv"}
+            sim = int(m.group(1))
+            if sim in out:
+                raise Cell2FireParseError(f"two grid folders for simulation {sim} in {grid_dir}")
+            out[sim] = list(files.values())
+    return dict(sorted(out.items()))
+
+
+def _read_asc(path: Path) -> np.ndarray:
+    """ESRI ASCII grid -> 2-D array; checks the data size against the header."""
+    hdr = _read_asc_header(str(path))
+    try:
+        data = np.loadtxt(str(path), skiprows=6, ndmin=2)
+    except Exception as e:
+        raise Cell2FireParseError(f"{path}: {e}")
+    nr, nc = hdr.get("nrows"), hdr.get("ncols")
+    if nr is None or nc is None or data.shape != (int(nr), int(nc)):
+        raise Cell2FireParseError(f"{path}: data shape {data.shape} does not match header "
+                                  f"nrows={nr} ncols={nc}")
+    return data
+
+
 # ── Parsers ─────────────────────────────────────────────────────────────────
 
 def parse_messages(output_folder: str, nsims: int) -> pd.DataFrame:
@@ -87,72 +147,132 @@ def parse_messages(output_folder: str, nsims: int) -> pd.DataFrame:
         return pd.DataFrame(columns=["sim", "sender", "receiver", "time_period"])
 
     all_rows = []
-    for sim_idx in range(1, nsims + 1):
-        msg_file = msg_dir / f"MessagesFile{sim_idx}.csv"
-        if not msg_file.exists():
-            # Try alternate naming: MessagesFile01.csv
-            msg_file = msg_dir / f"MessagesFile{sim_idx:02d}.csv"
-        if not msg_file.exists():
+    files = _numbered_files(msg_dir, "MessagesFile", ".csv")
+    for sim_idx, msg_file in files.items():
+        if not 1 <= sim_idx <= nsims:
             continue
 
         try:
             with open(msg_file, "r") as f:
                 reader = csv.reader(f)
                 for row in reader:
-                    if len(row) >= 3:
-                        try:
-                            sender = int(row[0])
-                            receiver = int(row[1])
-                            time_period = float(row[2])
-                            all_rows.append({
-                                "sim": sim_idx,
-                                "sender": sender,
-                                "receiver": receiver,
-                                "time_period": time_period,
-                            })
-                        except (ValueError, IndexError):
-                            continue  # Skip header or malformed rows
+                    if not any(c.strip() for c in row):
+                        continue  # blank line
+                    if len(row) < 3:
+                        raise ValueError(f"row with fewer than 3 fields: {row}")
+                    try:
+                        sender = int(row[0])
+                        receiver = int(row[1])
+                        time_period = float(row[2])
+                    except ValueError:
+                        # C2F-W message files have no header: a non-numeric
+                        # row is a damaged file, not something to skip.
+                        raise ValueError(f"non-numeric row: {row}")
+                    all_rows.append({
+                        "sim": sim_idx,
+                        "sender": sender,
+                        "receiver": receiver,
+                        "time_period": time_period,
+                    })
         except Exception as e:
-            print(f"WARNING: Error reading {msg_file}: {e}", file=sys.stderr)
+            raise Cell2FireParseError(f"Error reading {msg_file}: {e}")
 
-    return pd.DataFrame(all_rows)
+    return pd.DataFrame(all_rows, columns=["sim", "sender", "receiver", "time_period"])
+
+
+def grid_output_kind(output_folder: str, run_log: str = None) -> str:
+    """'final' if the engine's stdout log (run_log, default
+    <output_folder>/log.txt, e.g. written by run_cell2fire.py --log-file)
+    shows "FinalGrid: true": the engine then writes the final grid as the
+    LAST ForestGrid file of each Grids<sim>/.  'unverified' if grids exist
+    but there is no such proof (with --grids the files are timed snapshots,
+    and even a single file can be the ignition snapshot).  'none' if no grids."""
+    if not _grid_files(output_folder):
+        return "none"
+    log = Path(run_log) if run_log else Path(output_folder) / "log.txt"
+    try:
+        if log.is_file() and re.search(r"^FinalGrid:\s*true\b", log.read_text(errors="replace"), re.M):
+            return "final"
+    except OSError:
+        pass
+    return "unverified"
+
+
+def count_output_files(output_folder: str, nsims: int) -> int:
+    """Recognised per-simulation output files (message files, grid files)
+    for simulations 1..nsims.  An empty message file (no spread) counts."""
+    out = Path(output_folder)
+    n = sum(1 for k in _numbered_files(out / "Messages", "MessagesFile", ".csv") if 1 <= k <= nsims)
+    n += sum(len(v) for k, v in _grid_files(output_folder).items() if 1 <= k <= nsims)
+    return n
 
 
 def parse_final_grids(output_folder: str, nsims: int, nrows: int = None, ncols: int = None) -> np.ndarray:
     """
-    Parse final burned grids from all simulations.
+    Parse the LATEST written ForestGrid of each simulation (Grids/Grids<sim>/).
 
-    Returns 3D array: (nsims, nrows, ncols) with 0=unburned, 1=burned.
-    If nrows/ncols not provided, inferred from first grid file.
+    This is the final burned grid only for runs made with --final-grid (see
+    grid_output_kind()).  Without it the latest file is a timed snapshot that
+    can miss cells burnt later; use parse_scars_from_messages() then.
+
+    Returns 3D array: (n, nrows, ncols) with 0=unburned, 1=burned.
     """
-    grid_dir = Path(output_folder) / "Grids"
-    if not grid_dir.exists():
-        return np.array([])
-
     grids = []
-    for sim_idx in range(1, nsims + 1):
-        # Try different naming conventions
-        candidates = [
-            grid_dir / f"Grids{sim_idx}" / "FinalGrid.csv",
-            grid_dir / f"Grids{sim_idx:02d}" / "FinalGrid.csv",
-        ]
-
-        grid_data = None
-        for candidate in candidates:
-            if candidate.exists():
-                try:
-                    grid_data = np.loadtxt(str(candidate), delimiter=",")
-                    break
-                except Exception:
-                    continue
-
-        if grid_data is not None:
-            grids.append(grid_data)
+    for sim_idx, files in _grid_files(output_folder).items():
+        if not 1 <= sim_idx <= nsims or not files:
+            continue
+        try:
+            grids.append(np.loadtxt(str(files[-1]), delimiter=",", ndmin=2))
+        except Exception as e:
+            raise Cell2FireParseError(f"Error reading {files[-1]}: {e}")
 
     if not grids:
         return np.array([])
 
     return np.array(grids)
+
+
+def parse_scars_from_messages(output_folder: str, nsims: int, nrows: int, ncols: int) -> np.ndarray:
+    """
+    Final burned grid of each simulation rebuilt from the outputs:
+    ignition cell (ignition_and_weather_log.csv) + every cell that received a
+    spread message.  Needs --output-messages and --ignitionsLog.  Cell ids are
+    1-based, row-major (as in C2F-W).  Returns (n, nrows, ncols) or empty.
+    """
+    out = Path(output_folder)
+    ign_file = out / "ignition_and_weather_log.csv"
+    msg_files = _numbered_files(out / "Messages", "MessagesFile", ".csv")
+    if not ign_file.exists() or not msg_files:
+        return np.array([])
+    ign = {}
+    with open(ign_file) as f:
+        rows = list(csv.reader(f))
+    for i, row in enumerate(rows[1:], 1):
+        try:
+            ign[i] = int(row[1])
+        except (IndexError, ValueError):
+            raise Cell2FireParseError(f"{ign_file}: bad row {i}: {row}")
+    ncell = nrows * ncols
+    scars = []
+    for sim_idx, f in msg_files.items():
+        if not 1 <= sim_idx <= nsims:
+            continue
+        if sim_idx not in ign:
+            raise Cell2FireParseError(f"{ign_file}: no ignition row for simulation {sim_idx}")
+        cells = {ign[sim_idx]}
+        try:
+            m = np.loadtxt(str(f), delimiter=",", ndmin=2)
+        except Exception as e:
+            raise Cell2FireParseError(f"Error reading {f}: {e}")
+        if m.size:
+            cells |= {int(c) for c in m[:, 1]}
+        flat = np.zeros(ncell)
+        for c in cells:
+            if not 1 <= c <= ncell:
+                raise Cell2FireParseError(f"{f}: cell id {c} outside 1..{ncell}")
+            flat[c - 1] = 1
+        scars.append(flat.reshape(nrows, ncols))
+    return np.array(scars) if scars else np.array([])
 
 
 def compute_burn_probability(grids: np.ndarray) -> np.ndarray:
@@ -173,50 +293,31 @@ def compute_burn_probability(grids: np.ndarray) -> np.ndarray:
     return np.mean(grids > 0, axis=0)
 
 
-def parse_ros_files(output_folder: str, nsims: int) -> pd.DataFrame:
-    """Parse Rate of Spread files from all simulations."""
-    ros_dir = Path(output_folder) / "RateOfSpread"
-    if not ros_dir.exists():
-        return pd.DataFrame()
-
+def _parse_cell_rasters(folder: Path, stem: str, value_name: str, nsims: int) -> pd.DataFrame:
+    """Per-simulation ESRI ASCII rasters <stem><n>.asc -> long table with ALL
+    cells: cell (1-based, row-major as C2F-W), <value_name>, sim."""
     all_dfs = []
-    for sim_idx in range(1, nsims + 1):
-        ros_file = ros_dir / f"ROSFile{sim_idx}.csv"
-        if not ros_file.exists():
+    for sim_idx, f in _numbered_files(folder, stem, ".asc").items():
+        if not 1 <= sim_idx <= nsims:
             continue
-        try:
-            df = pd.read_csv(ros_file, header=None, names=["cell", "ros"])
-            df["sim"] = sim_idx
-            all_dfs.append(df)
-        except Exception:
-            continue
-
+        data = _read_asc(f)
+        all_dfs.append(pd.DataFrame({"cell": np.arange(1, data.size + 1),
+                                     value_name: data.ravel(), "sim": sim_idx}))
     if all_dfs:
         return pd.concat(all_dfs, ignore_index=True)
     return pd.DataFrame()
+
+
+def parse_ros_files(output_folder: str, nsims: int) -> pd.DataFrame:
+    """Parse Rate of Spread rasters (--out-ros: RateOfSpread/ROSFile<n>.asc)."""
+    return _parse_cell_rasters(Path(output_folder) / "RateOfSpread", "ROSFile", "ros", nsims)
 
 
 def parse_intensity_files(output_folder: str, nsims: int) -> pd.DataFrame:
-    """Parse fire intensity files from all simulations."""
-    int_dir = Path(output_folder) / "Intensity"
-    if not int_dir.exists():
-        return pd.DataFrame()
-
-    all_dfs = []
-    for sim_idx in range(1, nsims + 1):
-        int_file = int_dir / f"IntensityFile{sim_idx}.csv"
-        if not int_file.exists():
-            continue
-        try:
-            df = pd.read_csv(int_file, header=None, names=["cell", "intensity"])
-            df["sim"] = sim_idx
-            all_dfs.append(df)
-        except Exception:
-            continue
-
-    if all_dfs:
-        return pd.concat(all_dfs, ignore_index=True)
-    return pd.DataFrame()
+    """Parse surface Byram intensity rasters (--out-intensity:
+    SurfaceIntensity/SurfaceIntensity<n>.asc)."""
+    return _parse_cell_rasters(Path(output_folder) / "SurfaceIntensity", "SurfaceIntensity",
+                               "intensity", nsims)
 
 
 def parse_ignition_log(output_folder: str) -> pd.DataFrame:
@@ -310,7 +411,28 @@ def export_results(
         print(w, file=sys.stderr)
 
     messages = parse_messages(output_folder, nsims)
+    kind = grid_output_kind(output_folder)
     grids = parse_final_grids(output_folder, nsims)
+    grid_source = "final_grid" if kind == "final" else "none"
+    if kind != "final":
+        # No proof of final grids: rebuild final scars from messages +
+        # ignitions when possible (grid shape from a grid file or fuels.asc).
+        shape = grids.shape[1:] if grids.size else None
+        if shape is None and instance_folder:
+            h = _read_asc_header(str(Path(instance_folder) / "fuels.asc"))
+            if "nrows" in h and "ncols" in h:
+                shape = (int(h["nrows"]), int(h["ncols"]))
+        scars = (parse_scars_from_messages(output_folder, nsims, int(shape[0]), int(shape[1]))
+                 if shape else np.array([]))
+        if scars.size:
+            grids, grid_source = scars, "messages+ignitions"
+        elif grids.size:
+            grid_source = "latest_grid_unverified"
+            input_warnings.append(
+                "WARNING: burned grids are the LATEST ForestGrid file of each simulation; "
+                "there is no proof it is the final grid (no 'FinalGrid: true' in log.txt) "
+                "and no messages + ignition log to rebuild the scar")
+            print(input_warnings[-1], file=sys.stderr)
 
     # Get cell area from instance folder
     cell_area = None
@@ -324,6 +446,7 @@ def export_results(
 
     # Compute summary
     summary = compute_summary(messages, grids, nsims, cell_area)
+    summary["grid_source"] = grid_source
 
     # Export messages
     if not messages.empty:
@@ -387,16 +510,31 @@ def main():
 
     args = parser.parse_args()
 
-    result = export_results(
-        args.output_folder, args.export_dir, args.nsims, args.instance_folder
-    )
+    try:
+        if not Path(args.output_folder).is_dir():
+            raise Cell2FireParseError(f"output folder not found: {args.output_folder}")
+        if count_output_files(args.output_folder, args.nsims) == 0:
+            raise Cell2FireParseError(
+                f"no MessagesFile<n>.csv or Grids<n>/ForestGrid<k>.csv for simulations "
+                f"1..{args.nsims} in {args.output_folder}: nothing to parse")
+        result = export_results(
+            args.output_folder, args.export_dir, args.nsims, args.instance_folder
+        )
+    except (OSError, Cell2FireParseError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    def _fmt(key, spec):
+        v = result.get(key)
+        return format(v, spec) if isinstance(v, (int, float)) else "N/A"
 
     print(f"\n{'='*60}")
     print(f"Cell2Fire Output Summary")
     print(f"{'='*60}")
     print(f"Simulations:           {result.get('nsims', 'N/A')}")
-    print(f"Mean burned cells:     {result.get('mean_burned_cells', 'N/A'):.1f}")
-    print(f"Mean burn fraction:    {result.get('mean_burn_fraction', 'N/A'):.3f}")
+    print(f"Burned grids from:     {result.get('grid_source', 'N/A')}")
+    print(f"Mean burned cells:     {_fmt('mean_burned_cells', '.1f')}")
+    print(f"Mean burn fraction:    {_fmt('mean_burn_fraction', '.3f')}")
     if "mean_burned_area_ha" in result:
         print(f"Mean burned area (ha): {result['mean_burned_area_ha']:.1f}")
     if "mean_fire_duration_periods" in result:

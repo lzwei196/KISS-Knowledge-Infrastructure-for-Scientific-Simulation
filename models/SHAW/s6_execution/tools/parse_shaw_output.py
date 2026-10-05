@@ -20,194 +20,109 @@ Usage:
 """
 
 import argparse
+import calendar
 import csv
-import os
-import re
+import math
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
+
+
+def _date_fields(jday, hour, year):
+    """Preserve SHAW's date columns and add a normalized ISO timestamp.
+
+    Hour 24 is midnight at the start of the following day. Four-digit years
+    are already calendar years; only SHAW's legacy two-digit years expand.
+    """
+    if 0 <= year < 100:
+        year += 1900 if year > 50 else 2000
+    if not (1 <= year <= 9999 and 1 <= jday <= 365 + calendar.isleap(year) and 0 <= hour <= 24):
+        raise ValueError("invalid SHAW day/hour/year")
+    stamp = datetime(year, 1, 1) + timedelta(days=jday - 1, hours=hour)
+    return {"jday": jday, "hour": hour, "year": year, "datetime": stamp.isoformat()}
+
+
+def _numeric_rows(filepath, minimum):
+    """Read the standard SHAW 3.03 DAY HR YR columns, ignoring text headers.
+
+    Never silently turn a truncated or nonfinite scientific row into a shorter
+    apparently successful time series. Layouts are from the official Trial
+    reference outputs, not guessed from whichever column count happens to fit.
+    """
+    with open(filepath, encoding="utf-8") as source:
+        for number, line in enumerate(source, 1):
+            fields = line.split()
+            if not fields:
+                continue
+            try:
+                int(fields[0])
+            except ValueError:
+                continue
+            try:
+                if len(fields) < 3:
+                    raise ValueError("truncated numeric date row")
+                date = [int(value) for value in fields[:3]]
+                stamp = _date_fields(*date)
+                if len(fields) < minimum:
+                    raise ValueError(f"expected at least {minimum} columns, found {len(fields)}")
+                values = [float(value.replace("D", "E").replace("d", "e")) for value in fields[3:]]
+                if not all(math.isfinite(value) for value in values):
+                    raise ValueError("nonfinite scientific output")
+            except ValueError as error:
+                raise ValueError(f"{filepath}:{number}: {error}") from error
+            yield stamp, values
 
 
 def parse_frost_file(filepath):
-    """
-    Parse frost.out — frost depth, thaw depth, snow depth.
-
-    Typical format:
-    Header lines, then data rows with:
-    JDAY HOUR YEAR frost_depth(cm) thaw_depth(cm) snow_depth(cm) SWE(cm) ...
-    """
-    records = []
-    header_found = False
-
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Skip header/comment lines
-            if any(c.isalpha() for c in line[:10]):
-                header_found = True
-                continue
-
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-
-            try:
-                jday = int(parts[0])
-                # Try different column layouts
-                if len(parts) >= 7:
-                    # Full format: JDAY HOUR YEAR frost thaw snow_depth SWE
-                    hour = int(parts[1])
-                    year = int(parts[2])
-                    frost_depth = float(parts[3])
-                    thaw_depth = float(parts[4])
-                    snow_depth = float(parts[5])
-                    swe = float(parts[6]) if len(parts) > 6 else 0.0
-                elif len(parts) >= 4:
-                    hour = 12
-                    year = int(parts[1])
-                    frost_depth = float(parts[2])
-                    thaw_depth = float(parts[3])
-                    snow_depth = float(parts[4]) if len(parts) > 4 else 0.0
-                    swe = float(parts[5]) if len(parts) > 5 else 0.0
-                else:
-                    continue
-
-                records.append({
-                    'jday': jday,
-                    'hour': hour,
-                    'year': year + (1900 if year > 50 else 2000),
-                    'frost_depth_cm': frost_depth,
-                    'thaw_depth_cm': thaw_depth,
-                    'snow_depth_cm': snow_depth,
-                    'swe_cm': swe,
-                })
-            except (ValueError, IndexError):
-                continue
-
-    return records
+    """Read DAY HR YR THAW(cm) FROST(cm) SNOW(cm) SWE(mm), then node ice."""
+    return [{**stamp, "thaw_depth_cm": values[0], "frost_depth_cm": values[1],
+             "snow_depth_cm": values[2], "swe_mm": values[3], "swe_cm": values[3] / 10.0}
+            for stamp, values in _numeric_rows(filepath, 7)]
 
 
 def parse_water_file(filepath):
+    """Read the official SHAW 3.03 water-balance layout; keep native flux signs.
+
+    PRECIP is total precipitation and SNOWMELT is melt, not rainfall/snowfall.
+    Storage change is the sum of the canopy, snow, residue and soil columns.
     """
-    Parse water.out — water balance summary.
-
-    Typical columns: JDAY YEAR Rain Snow ET Runoff Drainage StorageChange ...
-    """
-    records = []
-
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-
-    for line in lines:
-        line = line.strip()
-        if not line or any(c.isalpha() for c in line[:10]):
-            continue
-
-        parts = line.split()
-        if len(parts) < 6:
-            continue
-
-        try:
-            jday = int(parts[0])
-            year = int(parts[1])
-            records.append({
-                'jday': jday,
-                'year': year + (1900 if year > 50 else 2000),
-                'rain_mm': float(parts[2]),
-                'snow_mm': float(parts[3]) if len(parts) > 3 else 0.0,
-                'et_mm': float(parts[4]) if len(parts) > 4 else 0.0,
-                'runoff_mm': float(parts[5]) if len(parts) > 5 else 0.0,
-                'drainage_mm': float(parts[6]) if len(parts) > 6 else 0.0,
-                'storage_change_mm': float(parts[7]) if len(parts) > 7 else 0.0,
-            })
-        except (ValueError, IndexError):
-            continue
-
-    return records
+    columns = ("precip_mm", "snowmelt_mm", "intercepted_precip_mm", "et_mm", "transpiration_mm",
+               "canopy_storage_change_mm", "snow_storage_change_mm", "residue_storage_change_mm",
+               "soil_storage_change_mm", "drainage_mm", "runoff_mm", "ponded_mm", "lateral_outflow_mm",
+               "sink_mm", "cumulative_et_mm", "balance_error_mm")
+    return [{**stamp, **dict(zip(columns, values)), "storage_change_mm": sum(values[5:9])}
+            for stamp, values in _numeric_rows(filepath, 19)]
 
 
 def parse_energy_file(filepath):
-    """
-    Parse energy.out — surface energy balance.
+    """Read the material-resolved radiation layout; Rn = net solar + net longwave."""
+    return [{**stamp, "rnet_wm2": values[6] + values[13], "sensible_wm2": values[14],
+             "latent_wm2": values[15], "ground_wm2": values[16],
+             "net_solar_wm2": values[6], "net_longwave_wm2": values[13]}
+            for stamp, values in _numeric_rows(filepath, 20)]
 
-    Typical columns: JDAY HOUR YEAR Rn H LE G ...
-    """
-    records = []
 
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-
-    for line in lines:
-        line = line.strip()
-        if not line or any(c.isalpha() for c in line[:10]):
-            continue
-
-        parts = line.split()
-        if len(parts) < 6:
-            continue
-
-        try:
-            jday = int(parts[0])
-            hour = int(parts[1]) if len(parts) > 7 else 12
-            year_idx = 2 if len(parts) > 7 else 1
-            year = int(parts[year_idx])
-
-            records.append({
-                'jday': jday,
-                'hour': hour,
-                'year': year + (1900 if year > 50 else 2000),
-                'rnet_wm2': float(parts[year_idx + 1]),
-                'sensible_wm2': float(parts[year_idx + 2]),
-                'latent_wm2': float(parts[year_idx + 3]),
-                'ground_wm2': float(parts[year_idx + 4]),
-            })
-        except (ValueError, IndexError):
-            continue
-
-    return records
+def read_profile_depths(filepath):
+    """Return the actual soil-node depths (metres) from a standard profile header."""
+    with open(filepath, encoding="utf-8") as source:
+        for line in source:
+            fields = line.split()
+            if len(fields) > 3 and fields[0].upper() in ("DY", "DAY") and fields[1:3] == ["HR", "YR"]:
+                depths = [float(value) for value in fields[3:]]
+                if not all(math.isfinite(value) for value in depths):
+                    raise ValueError(f"{filepath}: nonfinite profile depth")
+                return depths
+    return []
 
 
 def parse_profile_file(filepath, var_name="value"):
-    """
-    Parse temp.out or moist.out — depth profiles over time.
-
-    Format: JDAY HOUR YEAR value_node1 value_node2 ... value_nodeN
-    """
+    """Read DAY HR YR followed by a consistent, header-matching soil-node count."""
+    expected = len(read_profile_depths(filepath)) or None
     records = []
-
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-
-    for line in lines:
-        line = line.strip()
-        if not line or any(c.isalpha() for c in line[:10]):
-            continue
-
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-
-        try:
-            jday = int(parts[0])
-            hour = int(parts[1])
-            year = int(parts[2])
-
-            values = [float(v) for v in parts[3:]]
-
-            record = {
-                'jday': jday,
-                'hour': hour,
-                'year': year + (1900 if year > 50 else 2000),
-            }
-            for i, v in enumerate(values):
-                record[f'{var_name}_node{i+1}'] = v
-
-            records.append(record)
-        except (ValueError, IndexError):
-            continue
-
+    for stamp, values in _numeric_rows(filepath, 4):
+        expected = expected or len(values)
+        if len(values) != expected:
+            raise ValueError(f"{filepath}: profile has {len(values)} nodes; expected {expected}")
+        records.append({**stamp, **{f"{var_name}_node{i}": value for i, value in enumerate(values, 1)}})
     return records
 
 
@@ -221,7 +136,7 @@ def write_csv(records, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     keys = records[0].keys()
-    with open(output_path, 'w', newline='') as f:
+    with open(output_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(records)

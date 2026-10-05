@@ -1,0 +1,95 @@
+{
+  "test_case": "Delft3D f34_standard (official Delft3D-FLOW example 01_standard, F34)",
+  "engine": {
+    "name": "Delft3D-FLOW",
+    "version": "6.04.03 (flow2d3d)",
+    "binary": "d_hydro + libflow2d3d.so",
+    "source": "Deltares/Delft3D git, examples/delft3d4/01_standard (commit bb39f63b)",
+    "license": "Delft3D: GPL-3.0 / LGPL-2.1 / AGPL-3.0 per component (see Deltares LICENSE)"
+  },
+  "ki": {
+    "model": "Delft3D"
+  },
+  "simulation": {
+    "start": "1990-08-05 00:00",
+    "duration_min": 1500,
+    "dt_min": 5,
+    "stations": [
+      "W1",
+      "W2",
+      "W3",
+      "W4",
+      "W5"
+    ]
+  },
+  "files": {
+    "inputs/config_d_hydro.xml": {
+      "bytes": 1773,
+      "sha256": "d796513d98e7df021b9499f5d065f394a42b3c2eed465934d99d76254c550f16"
+    },
+    "inputs/f34.bca": {
+      "bytes": 3164,
+      "sha256": "0785f0d3c10c56aee65635c6fc85af5ff6c1c5fde4607de8b0d08cff9344d519"
+    },
+    "inputs/f34.bch": {
+      "bytes": 80,
+      "sha256": "ce7f23601091c31088e41dea105cb5db7a9de1d7f8163951634a1d4a36432011"
+    },
+    "inputs/f34.bnd": {
+      "bytes": 60,
+      "sha256": "87dc184e7dcc6cc5e9ba078d1b9851ab3b649def4ac90afd7bac61897554fc48"
+    },
+    "inputs/f34.crs": {
+      "bytes": 192,
+      "sha256": "197ca5c808702203b75b5cac723029c512f8f1b7c74f119c531708fa15684b4e"
+    },
+    "inputs/f34.dep": {
+      "bytes": 4004,
+      "sha256": "c5ac35cad8c16cb621cb162131be30d9d7eca7181e28f8aa34fcc7b47a5913e5"
+    },
+    "inputs/f34.dis": {
+      "bytes": 464,
+      "sha256": "979498dfe0325b26cf3456e0d7d521761f3107369fbf3671f15cc289fe822f84"
+    },
+    "inputs/f34.dry": {
+      "bytes": 28,
+      "sha256": "787d12d2441e06b0b4278e1757d878fe2c103932fb4ba16f617336a3efdb7be4"
+    },
+    "inputs/f34.enc": {
+      "bytes": 261,
+      "sha256": "46b57166398823240204fda17dc142e66323ac76bf980c4ad5d797f18ce491a9"
+    },
+    "inputs/f34.grd": {
+      "bytes": 16942,
+      "sha256": "e701dfdf2a9fe3a41e3ef92626a315393493de421f2301b2eed5a27b33640781"
+    },
+    "inputs/f34.ldb": {
+      "bytes": 1299,
+      "sha256": "aa20e78c173ef45ae20f4f125ea4aff4e0d8ececdf7578d0a9103f3d4adbf378"
+    },
+    "inputs/f34.mdf": {
+      "bytes": 3240,
+      "sha256": "4751040347562133ee72af11edba33ca95a66a89648861768e391150f385e416"
+    },
+    "inputs/f34.obs": {
+      "bytes": 175,
+      "sha256": "d897d816c819edc058681b601fea84623fe0aff83797e7fbdc90122086d79c28"
+    },
+    "inputs/f34.par": {
+      "bytes": 53,
+      "sha256": "e06f1d731e7a0a82387be975b0c7c37be2e7a0cb793e0138ff3699849d9592be"
+    },
+    "inputs/f34.src": {
+      "bytes": 49,
+      "sha256": "9c2e42b12ec63477cf42e2748687a45088d9076d0ede65c8aa8a48a4bd836aed"
+    },
+    "inputs/f34.thd": {
+      "bytes": 30,
+      "sha256": "7723f6ba20f2fbef602f90d9a289c34098ce3e76d5e9d1f342688cf1fc8964dc"
+    },
+    "inputs/f34.wnd": {
+      "bytes": 51,
+      "sha256": "a6602e64714c10ad4e19259e26a5fb240f509b06a732f947f13c7dd6004d637d"
+    }
+  }
+}

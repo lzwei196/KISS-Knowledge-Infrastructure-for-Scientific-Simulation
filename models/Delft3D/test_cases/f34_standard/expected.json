@@ -1,0 +1,118 @@
+{
+  "description": "Expected results for the official Delft3D-FLOW example examples/delft3d4/01_standard (F34 estuary, tidal boundary + wind, 25 h, dt 5 min). inputs/ are the unmodified files from the Deltares/Delft3D git tree (commit bb39f63b). Recorded from a clean run of the server's d_hydro (flow2d3d 6.04.03); repeat runs give the same values.",
+  "engine_version": "Delft3D-FLOW (flow2d3d) 6.04.03, d_hydro",
+  "diag_contains": "FINISHED    Delft3D-FLOW",
+  "numeric_checks": [
+    {
+      "name": "n_times",
+      "expected": 301,
+      "tol": 0,
+      "why": "301 history records (0..90000 s every 300 s)"
+    },
+    {
+      "name": "n_stations",
+      "expected": 5,
+      "tol": 0,
+      "why": "5 monitoring points W1..W5 in f34.obs"
+    },
+    {
+      "name": "t_end_s",
+      "expected": 90000.0,
+      "tol": 0,
+      "why": "Tstop 1500 min = 90000 s"
+    },
+    {
+      "name": "W1_max_wl",
+      "expected": 1.25918,
+      "tol": 0.001,
+      "why": "max water level (m) at W1"
+    },
+    {
+      "name": "W1_min_wl",
+      "expected": -1.09359,
+      "tol": 0.001,
+      "why": "min water level (m) at W1"
+    },
+    {
+      "name": "W1_last_wl",
+      "expected": 1.0823,
+      "tol": 0.001,
+      "why": "last water level (m) at W1"
+    },
+    {
+      "name": "W2_max_wl",
+      "expected": 1.10079,
+      "tol": 0.001,
+      "why": "max water level (m) at W2"
+    },
+    {
+      "name": "W2_min_wl",
+      "expected": -1.03251,
+      "tol": 0.001,
+      "why": "min water level (m) at W2"
+    },
+    {
+      "name": "W2_last_wl",
+      "expected": 1.03424,
+      "tol": 0.001,
+      "why": "last water level (m) at W2"
+    },
+    {
+      "name": "W3_max_wl",
+      "expected": 1.04902,
+      "tol": 0.001,
+      "why": "max water level (m) at W3"
+    },
+    {
+      "name": "W3_min_wl",
+      "expected": -1.02715,
+      "tol": 0.001,
+      "why": "min water level (m) at W3"
+    },
+    {
+      "name": "W3_last_wl",
+      "expected": 0.99775,
+      "tol": 0.001,
+      "why": "last water level (m) at W3"
+    },
+    {
+      "name": "W4_max_wl",
+      "expected": 0.97979,
+      "tol": 0.001,
+      "why": "max water level (m) at W4"
+    },
+    {
+      "name": "W4_min_wl",
+      "expected": -0.76332,
+      "tol": 0.001,
+      "why": "min water level (m) at W4"
+    },
+    {
+      "name": "W4_last_wl",
+      "expected": 0.90877,
+      "tol": 0.001,
+      "why": "last water level (m) at W4"
+    },
+    {
+      "name": "W5_max_wl",
+      "expected": 1.0432,
+      "tol": 0.001,
+      "why": "max water level (m) at W5"
+    },
+    {
+      "name": "W5_min_wl",
+      "expected": -0.70813,
+      "tol": 0.001,
+      "why": "min water level (m) at W5"
+    },
+    {
+      "name": "W5_last_wl",
+      "expected": 0.84926,
+      "tol": 0.001,
+      "why": "last water level (m) at W5"
+    }
+  ],
+  "run_note": "run_reference.py appends 'FlNcdf = #maphis#' to the run copy of f34.mdf so output is NetCDF; this only switches the output format (tri-diag compared with a NEFIS-only run: same).",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Delft3D/build_flow2d3d/d_hydro/d_hydro (KI preflight engine, 25/25 passed)"
+}

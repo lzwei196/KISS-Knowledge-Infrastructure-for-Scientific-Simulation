@@ -1,0 +1,95 @@
+{
+  "description": "Expected results for the official ELMFIRE Tutorial 01 (tutorials/01-constant-wind: flat ground, GR2 grass, constant 15 mph wind from the north, one point ignition at (0, 3000), 400x400 cells of 30 m, stop at 19800 s). inputs/ are the unmodified files from the ELMFIRE git tree. Run as the docs say (./01-run.sh). ELMFIRE ships no reference outputs for this tutorial (and the verification/ folder holds only scripts, no results), so values are recorded from real runs on this server. Three clean runs gave byte-identical output GeoTIFFs (deterministic).",
+  "engine_version": "ELMFIRE 2025.1002 (git 6500728e)",
+  "numeric_checks": [
+    {
+      "name": "output_time_s",
+      "expected": 19804,
+      "tol": 0,
+      "why": "outputs are written at the first step past SIMULATION_TSTOP=19800 s (file name suffix)"
+    },
+    {
+      "name": "stdout_fire_area_acres",
+      "expected": 3852.1,
+      "tol": 0.05,
+      "why": "fire area ELMFIRE prints itself at the end of the run"
+    },
+    {
+      "name": "burned_cells",
+      "expected": 17320,
+      "tol": 0,
+      "why": "30 m cells with a time of arrival (burned) in time_of_arrival tif"
+    },
+    {
+      "name": "burned_area_acres_from_toa",
+      "expected": 3851.8787,
+      "tol": 0.01,
+      "why": "burned cells x 900 m2, in acres; must match the printed fire area"
+    },
+    {
+      "name": "toa_max_s",
+      "expected": 19804.2051,
+      "tol": 0.01,
+      "why": "latest arrival time = end of run"
+    },
+    {
+      "name": "toa_mean_s",
+      "expected": 13193.8058,
+      "tol": 0.01,
+      "why": "mean arrival time over burned cells"
+    },
+    {
+      "name": "flin_max_kw_m",
+      "expected": 1218.3359,
+      "tol": 0.01,
+      "why": "peak fireline intensity (head fire, GR2 grass, 15 mph wind)"
+    },
+    {
+      "name": "flin_mean_kw_m",
+      "expected": 916.1409,
+      "tol": 0.01,
+      "why": "mean fireline intensity over burned cells"
+    },
+    {
+      "name": "vs_max_ft_min",
+      "expected": 81.1304,
+      "tol": 0.001,
+      "why": "peak spread rate (head fire)"
+    },
+    {
+      "name": "vs_mean_ft_min",
+      "expected": 61.0069,
+      "tol": 0.001,
+      "why": "mean spread rate over burned cells"
+    },
+    {
+      "name": "burned_north_edge_y_m",
+      "expected": 3135.0,
+      "tol": 0,
+      "why": "wind from north (0 deg): fire backs only a little north of the ignition at y=3000 m"
+    },
+    {
+      "name": "burned_south_edge_y_m",
+      "expected": -5235.0,
+      "tol": 0,
+      "why": "head fire runs south with the wind, about 8.2 km in 5.5 h"
+    },
+    {
+      "name": "hourly_isochrone_features",
+      "expected": 9,
+      "tol": 0,
+      "why": "lines in hourly_isochrones.shp made by gdal_contour -i 3600"
+    }
+  ],
+  "finished_normally_check": "01-run.sh return code 0 AND the engine line 'End of simulation reached successfully' in the log (01-run.sh itself always ends with exit 0, so the line is the real test)",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "elmfire_2025.1002 at /home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin, GDAL 3.12.4 command line tools, single process; run by run_reference.py",
+  "run_tweak": "Temp copy only: PATH_TO_GDAL in elmfire.data.in is changed from '/usr/bin' (official) to the folder holding gdal_translate on PATH (/home/server/.local/bin here), because the server has no GDAL in /usr/bin and ELMFIRE stops with 'gdal_translate: not found'. It only tells ELMFIRE where gdal_translate is (used to turn input .tif into .bsq); no model setting changes. A leftover local run in the tutorial folder from April 2026 (not official) also printed 3852.1 acres.",
+  "reference": "none official; own runs (repeat exact)",
+  "sha256_informational": {
+    "time_of_arrival_0000001_0019804.tif": "873b164bb20358062c55f59062f3caa2701e94aa9171a73a59850f6b9136afa9",
+    "flin_0000001_0019804.tif": "e17917be0d03b073173bfe777511467b9a4544dc85a0b46bba68695389a87e13",
+    "vs_0000001_0019804.tif": "16b86855bd1e0cd6da2b17157bc5a4c9f5e0684f305c549630a0eb8be6172212"
+  },
+  "note": "Tutorial doc text says SIMULATION_TSTOP=22200 s, but the tracked 01-run.sh sets 19800 s (5.5 h); the script is what runs."
+}

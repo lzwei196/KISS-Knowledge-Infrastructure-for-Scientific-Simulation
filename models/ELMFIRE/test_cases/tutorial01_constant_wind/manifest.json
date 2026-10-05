@@ -1,0 +1,37 @@
+{
+  "test_case": "ELMFIRE tutorial01_constant_wind (official Tutorial 01: fire spread in flat terrain under constant wind)",
+  "engine": {
+    "name": "ELMFIRE",
+    "version": "2025.1002",
+    "binary": "elmfire_2025.1002",
+    "source": "https://github.com/lautenberger/elmfire, tutorials/01-constant-wind + tutorials/functions (commit 6500728e96ee3e8d95cee38d962452fa39bf6803, 2026-03-15)",
+    "license": "Eclipse Public License 2.0 (ELMFIRE)"
+  },
+  "ki": {
+    "model": "ELMFIRE"
+  },
+  "simulation": {
+    "grid": "400 x 400 cells, 30 m, domain 12 km x 12 km centred on (0,0), EPSG:32610",
+    "fuel": "FBFM40 102 (GR2), flat (slope 0), no canopy",
+    "weather": "constant wind 15 mph from 0 deg; dead moisture 3/4/5 %; live herb 30 %, live woody 60 %",
+    "ignition": "one point at (0, 3000) m, t=0",
+    "tstop_s": 19800,
+    "dt_s": 30,
+    "launcher": "official 01-run.sh (GDAL builds constant input rasters, runs ELMFIRE, converts outputs to GeoTIFF, gdal_contour isochrones)",
+    "runtime": "about 7 s wall, about 105 MB RAM, single process"
+  },
+  "files": {
+    "inputs/functions/functions.sh": {
+      "bytes": 1180,
+      "sha256": "d44688989284116ec4337f67c90f8cd319b8174670d2c575bcb9d4da19631c40"
+    },
+    "inputs/01-constant-wind/01-run.sh": {
+      "bytes": 3625,
+      "sha256": "cdd88455675aa2bb3c9035e8ade410f092c1738c15231a2f7dc54f4fdf79f9a8"
+    },
+    "inputs/01-constant-wind/elmfire.data.in": {
+      "bytes": 1492,
+      "sha256": "d7a5487be75290beacba0dba1d9e12acac77df1cbc56add5b44e97b32d055756"
+    }
+  }
+}

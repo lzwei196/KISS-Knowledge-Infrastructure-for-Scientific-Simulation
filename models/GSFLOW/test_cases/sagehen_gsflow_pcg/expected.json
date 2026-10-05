@@ -1,0 +1,116 @@
+{
+  "description": "Expected results for the official USGS GSFLOW Sagehen Creek sample problem, condition 1 (GSFLOW mode, PCG solver, windows/gsflow.control), gsflow_v2 repo commit cec18ae. Every expected value is computed from the OFFICIAL reference output shipped with the example (GSFLOW/data/sagehen/output-test/1_GSFLOW_mode.PCG: gsflow.csv, gsflow.out, modflow/sagehen.mf.list, modflow/sagehen_sfrseg17.out), made by USGS with GSFLOW 2.4.0. Tolerance: 1 % relative, the threshold used by the official GSFLOW autotest (autotest/t002_test.py validate()); counts are exact; the 2-decimal percent discrepancy uses 0.05 absolute.",
+  "engine_version": "GSFLOW 2.4.0 02/01/2025 (MODFLOW-NWT 1.3.0, PRMS 6.0.0), server build autotest/gsflow from gsflow_v2 commit cec18ae",
+  "finished_normally": "return code 0 and 'Normal termination of simulation' in the screen output",
+  "numeric_checks": [
+    {
+      "name": "csv_n_days",
+      "expected": 5844,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "daily rows in gsflow.csv: 1980-10-01 to 1996-09-30 = 5844 days"
+    },
+    {
+      "name": "csv_streamout_mean",
+      "expected": 31770.378009753593,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean daily basin outflow StreamOut_Q (m3/d), gsflow.csv"
+    },
+    {
+      "name": "csv_streamout_max",
+      "expected": 1469218.0,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "peak daily basin outflow StreamOut_Q (m3/d), gsflow.csv"
+    },
+    {
+      "name": "csv_precip_sum",
+      "expected": 466366077.223,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "total precipitation Precip_Q over 16 years (m3), gsflow.csv"
+    },
+    {
+      "name": "csv_recharge_mean",
+      "expected": 18784.414309206022,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean daily recharge to the water table RechargeUnsat2Sat_Q (m3/d), gsflow.csv"
+    },
+    {
+      "name": "csv_sat_storage_final",
+      "expected": 151323500.0,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "saturated-zone storage Sat_S on the last day (m3), gsflow.csv"
+    },
+    {
+      "name": "csv_infil_mean",
+      "expected": 70821.3615643384,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean daily infiltration to soil Infil2Soil_Q (m3/d), gsflow.csv"
+    },
+    {
+      "name": "gsflow_out_time_steps",
+      "expected": 5844,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "time steps reported at the end of gsflow.out"
+    },
+    {
+      "name": "gsflow_out_nonconvergence",
+      "expected": 0,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "non-converged time steps reported at the end of gsflow.out"
+    },
+    {
+      "name": "gsflow_out_cum_percent_discrepancy",
+      "expected": -0.02,
+      "tol": 0.05,
+      "tol_type": "abs",
+      "why": "whole-run GSFLOW water-budget error in percent (last cumulative PERCENT DISCREPANCY in gsflow.out); printed with 2 decimals so an absolute tolerance is used"
+    },
+    {
+      "name": "mf_cum_uzf_recharge_in",
+      "expected": 109799440.0,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "cumulative UZF recharge into MODFLOW (m3), last budget in sagehen.mf.list"
+    },
+    {
+      "name": "mf_cum_stream_leakage_out",
+      "expected": 75046520.0,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "cumulative groundwater flow out to streams (m3), last budget in sagehen.mf.list"
+    },
+    {
+      "name": "mf_cum_surface_leakage_out",
+      "expected": 83188440.0,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "cumulative groundwater discharge to land surface (m3), last budget in sagehen.mf.list"
+    },
+    {
+      "name": "gage4_seg15_flow_mean",
+      "expected": 31766.047233960646,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean flow at SFR gage 4 (segment 15 reach 4, the outlet), sagehen_sfrseg17.out"
+    },
+    {
+      "name": "gage4_seg15_flow_final",
+      "expected": 6134.1226,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "flow at SFR gage 4 on the last step, sagehen_sfrseg17.out"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py --summarise-dir <repo>/GSFLOW/data/sagehen/output-test/1_GSFLOW_mode.PCG",
+  "reference": "https://github.com/rniswon/gsflow_v2 GSFLOW/data/sagehen/output-test/1_GSFLOW_mode.PCG (commit cec18ae99e4093b5cdf10714ace0f5d1d9fe632d)",
+  "notes": "Run-time path tweak (temp copy only): '\\\\' -> '/' in windows/gsflow.control and input/modflow/sagehen.nam so Linux can open the files; this is the same fix the official autotest/t001_test.py applies on non-Windows. No values are changed."
+}

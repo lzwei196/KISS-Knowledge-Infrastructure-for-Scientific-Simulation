@@ -1,0 +1,14 @@
+#Sagehen Simulation -- Example problem for GSFLOW
+#  (File modified for version 1.1.00 release)
+#Budget output is written to the List file (sagehen.mf.list) at
+#  the end of the steady-state simulation and
+#  September 30 of 1981, 1985, 1990, 1995, and 1996
+#Calculated heads are written to the List file (sagehen.mf.list)
+#  and to the head output file (unit 58) at
+#  the end of the steady-state simulation and
+#  September 30, 1996
+HEAD PRINT FORMAT   4
+DRAWDOWN PRINT FORMAT   0
+HEAD SAVE UNIT 58
+PERIOD   1 STEP   1   
+    SAVE BUDGET

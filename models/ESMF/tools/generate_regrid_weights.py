@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -315,8 +316,10 @@ def run_regridweightgen(source: str, destination: str, weight_file: str,
     TRAP: --ignore_unmapped is almost always needed. Without it,
     any destination cell without a source cell causes a fatal error.
 
-    TRAP: --src_missingvalue excludes masked source cells.
-    Without it, fill values (e.g., -9999) are interpolated as real data.
+    TRAP: --src_missingvalue <var> excludes masked source cells, but ESMF accepts it only
+    for UGRID/GRIDSPEC source files and only with a variable name, so it is NOT added
+    automatically (it made every SCRIP conservative run fail). Pass it when needed:
+    --extra-args "--src_missingvalue <var>".
     """
     tool, tool_source = resolve_regridweightgen(regridweightgen)
     if not tool:
@@ -334,11 +337,10 @@ def run_regridweightgen(source: str, destination: str, weight_file: str,
         "--ignore_unmapped",
     ]
 
-    if REGRID_METHODS[method]["conservative"]:
-        cmd.append("--src_missingvalue")
-
     if extra_args:
-        cmd.extend(extra_args)
+        # each value may hold several ESMF tokens ("--src_missingvalue var"): split like a shell
+        for arg in extra_args:
+            cmd.extend(shlex.split(arg))
 
     logger.info("Running: %s", " ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -385,8 +387,12 @@ def _run_esmpy_regrid(source: str, destination: str, weight_file: str,
     logger.info("Using ESMPy for weight generation...")
 
     try:
-        srcgrid = esmpy.Grid(filename=source, filetype=esmpy.FileFormat.SCRIP)
-        dstgrid = esmpy.Grid(filename=destination, filetype=esmpy.FileFormat.SCRIP)
+        # conservative methods need the cell corners (ESMPy default: no corner stagger)
+        corners = REGRID_METHODS[method]["requires_corners"]
+        srcgrid = esmpy.Grid(filename=source, filetype=esmpy.FileFormat.SCRIP,
+                             add_corner_stagger=corners)
+        dstgrid = esmpy.Grid(filename=destination, filetype=esmpy.FileFormat.SCRIP,
+                             add_corner_stagger=corners)
 
         srcfield = esmpy.Field(srcgrid, name="src")
         dstfield = esmpy.Field(dstgrid, name="dst")
@@ -474,7 +480,9 @@ def main():
     parser.add_argument("--use-esmpy", action="store_true",
                         help="Use ESMPy instead of ESMF_RegridWeightGen")
     parser.add_argument("--extra-args", nargs="*", default=[],
-                        help="Extra arguments for ESMF_RegridWeightGen")
+                        help="Extra arguments for ESMF_RegridWeightGen; give options as one quoted "
+                             "value, e.g. --extra-args \"--src_missingvalue var\" (split like a "
+                             "shell), or --extra-args=--netcdf4")
     parser.add_argument("--regridweightgen", default=None,
                         help="ESMF_RegridWeightGen to use (default: $ESMF_REGRIDWEIGHTGEN, else "
                              f"the server default {REGRIDWEIGHTGEN_DEFAULT}, else the first on "

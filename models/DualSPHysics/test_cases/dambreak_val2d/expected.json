@@ -1,0 +1,110 @@
+{
+  "description": "Expected results for the official DualSPHysics 2D dam-break validation case CaseDambreakVal2D (examples/main/01_DamBreak, DualSPHysics v5.4 git ef3721a): water column 1 m wide x 2 m high collapses in a 4 m tank, dp=0.01 m, 21,001 particles, TimeMax 2.0 s, CPU, 8 OpenMP threads. inputs/ are the unmodified files from the official git; nothing in the case was changed. Values recorded from real runs on this server. Runs are deterministic: run1 (8 threads), the run_reference.py runs (8 threads) and an older local run of the same binary with 64 threads gave byte-identical gauge CSVs and final particle file.",
+  "engine_version": "DualSPHysics5 v5.4.355 (08-04-2025) CPU, GenCase v5.4.354.01, MeasureTool v5.4.266.01",
+  "numeric_checks": [
+    {
+      "name": "finished_code0",
+      "expected": 1,
+      "tol": 0,
+      "why": "Run.out ends with the solver's own success line 'Finished execution (code=0).'"
+    },
+    {
+      "name": "total_particles",
+      "expected": 21001,
+      "tol": 0,
+      "why": "GenCase particle count (bound 1001 + fluid 20000)"
+    },
+    {
+      "name": "fluid_particles",
+      "expected": 20000,
+      "tol": 0,
+      "why": "1 m x 2 m column at dp=0.01 m"
+    },
+    {
+      "name": "n_part_files",
+      "expected": 201,
+      "tol": 0,
+      "why": "TimeMax 2.0 s / TimeOut 0.01 s + initial part"
+    },
+    {
+      "name": "final_time_s",
+      "expected": 2.000016,
+      "tol": 0.0001,
+      "why": "simulation reached TimeMax"
+    },
+    {
+      "name": "total_steps",
+      "expected": 69913,
+      "tol": 700,
+      "why": "Verlet steps to 2 s (exact on this server; 1% allowed for other CPUs)"
+    },
+    {
+      "name": "particles_out_total",
+      "expected": 559,
+      "tol": 60,
+      "why": "fluid particles thrown out of the domain by splashing (exact on this server)"
+    },
+    {
+      "name": "front_x_t0",
+      "expected": 1.00689,
+      "tol": 0.002,
+      "why": "gauge Swl_z003 front position at t=0 (column edge at x=1 m)"
+    },
+    {
+      "name": "front_max_x",
+      "expected": 3.99147,
+      "tol": 0.005,
+      "why": "front reaches the end wall (x=4 m)"
+    },
+    {
+      "name": "front_time_reach_3p9m",
+      "expected": 0.655013,
+      "tol": 0.011,
+      "why": "time the front passes x=3.9 m"
+    },
+    {
+      "name": "front_rmse_vs_experiment",
+      "expected": 0.272466,
+      "tol": 0.02,
+      "why": "RMSE of simulated front vs the official experiment file (Koshizuka & Oka 1996), 13 points with x<3.9 m; value from our run, no official tolerance ships"
+    },
+    {
+      "name": "front_maxabs_vs_experiment",
+      "expected": 0.334698,
+      "tol": 0.03,
+      "why": "largest front error vs the official experiment points"
+    },
+    {
+      "name": "swl_x02_at_t1",
+      "expected": 0.556408,
+      "tol": 0.02,
+      "why": "water level at x=0.2 m at t=1 s (gauge Swl_x02)"
+    },
+    {
+      "name": "elev_x02_t0",
+      "expected": 2.00973,
+      "tol": 0.005,
+      "why": "MeasureTool elevation at x=0.2 m at t=0 (official post-processing step)"
+    },
+    {
+      "name": "elev_x02_final",
+      "expected": 0.211107,
+      "tol": 0.01,
+      "why": "MeasureTool elevation at x=0.2 m at t=2 s"
+    },
+    {
+      "name": "n_elev_rows",
+      "expected": 201,
+      "tol": 0,
+      "why": "MeasureTool read every saved part"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "GenCase_linux64 + DualSPHysics5.4CPU_linux64 (-cpu -ompthreads:8) via KI tools/run_dualsphysics.py, then MeasureTool_linux64, binaries in /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux",
+  "reference": "Official experimental reference shipped with the case: 'EXP_X-DamTipPosition_Koshizula&Oka1996.txt' (front position vs time; Koshizuka & Oka 1996, Nucl. Sci. Eng. 123:421-434). The simulated front runs ahead of the experiment by about 0.26 m on average (bias), as is common for SPH dam-break fronts vs this experiment. The last 2 experiment points (x>=3.9 m, one beyond the 4 m tank) are left out of the error checks because the simulated front stops at the wall.",
+  "sha256_informational": {
+    "GaugesSWL_Swl_z003.csv": "f8e3b0f6d63c2899d47ce8f166185818684134e1d3fc0ccdd038d806871b40f0",
+    "data/Part_0200.bi4": "eaa5b52381178e6b1d89204090b56259c4f356a06548cfa991a1db6d877cb747",
+    "note": "byte-identical between runs on this server (8 and 64 threads)"
+  }
+}

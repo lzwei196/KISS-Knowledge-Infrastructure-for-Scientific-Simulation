@@ -1,0 +1,44 @@
+{
+  "test_case": "DualSPHysics dambreak_val2d (official CaseDambreakVal2D, examples/main/01_DamBreak)",
+  "engine": {
+    "name": "DualSPHysics",
+    "version": "DualSPHysics5 v5.4.355 (08-04-2025), GenCase v5.4.354.01, MeasureTool v5.4.266.01",
+    "binary": [
+      "GenCase_linux64",
+      "DualSPHysics5.4CPU_linux64",
+      "MeasureTool_linux64"
+    ],
+    "source": "https://github.com/DualSPHysics/DualSPHysics, examples/main/01_DamBreak (commit ef3721a861fda961f0e2f9ec4cd317b19de99086, 2025-04-16)",
+    "license": "LGPL-2.1-or-later (DualSPHysics)"
+  },
+  "ki": {
+    "model": "DualSPHysics",
+    "run_tool": "tools/run_dualsphysics.py"
+  },
+  "simulation": {
+    "dimension": "2D",
+    "dp_m": 0.01,
+    "particles": 21001,
+    "fluid_particles": 20000,
+    "time_max_s": 2.0,
+    "time_out_s": 0.01,
+    "scheme": "Verlet, Wendland kernel, artificial viscosity 0.02, DDT Fourtakas 0.1",
+    "threads": 8,
+    "runtime_min": 3,
+    "reference_data": "inputs/EXP_X-DamTipPosition_Koshizula&Oka1996.txt (official, Koshizuka & Oka 1996 dam-front position)"
+  },
+  "files": {
+    "inputs/CaseDambreakVal2D_Def.xml": {
+      "bytes": 7925,
+      "sha256": "47c1b6f7a00dce67d405d47902e82c3e18abaa6da54632ec6c4f3c8857c48f2f"
+    },
+    "inputs/EXP_X-DamTipPosition_Koshizula&Oka1996.txt": {
+      "bytes": 450,
+      "sha256": "9d0fc12e5813dc5fadc679b3dfeff8b60b1d87e03fcbc404a2905350a3f3185f"
+    },
+    "inputs/xCaseDambreakVal2D_linux64_CPU.sh": {
+      "bytes": 3979,
+      "sha256": "e6660b8a060a482fa77d39128b5d3124d54586cb1c37d8e78786c25c50fba47b"
+    }
+  }
+}

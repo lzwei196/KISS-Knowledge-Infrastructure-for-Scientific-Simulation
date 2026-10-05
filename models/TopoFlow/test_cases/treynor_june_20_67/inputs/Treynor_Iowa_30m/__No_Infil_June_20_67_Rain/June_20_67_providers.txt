@@ -1,0 +1,30 @@
+#
+# Available provider components by comp_type:
+#
+#     meteorology:   tf_meteorology
+#     channnels:     tf_channels_kin_wave, tf_channels_diff_wave, tf_channels_dynam_wave
+#     snow:          tf_snow_degree_day, tf_snow_energy_balance
+#     evap:          tf_evap_priestley_taylor, tf_evap_energy_balance, tf_evap_read_file
+#     infil:         tf_infil_green_ampt, tf_infil_smith_parlange, tf_infil_richards_1d, tf_infil_beven
+#     satzone:       tf_satzone_darcy_layers
+#     diversions:    tf_diversions_fraction_method
+#     ice:           tf_ice_gc2d
+#     hydro_model:   topoflow_driver
+#     data:          tf_data_his
+#     LEM:           erode_d8_global, erode_d8_local, dem_smoother
+#     D8:            d8_global, d8_local
+
+#----------------------------
+# comp_type     component
+#----------------------------
+meteorology     tf_meteorology
+diversions      tf_diversions_fraction_method
+channels        tf_channels_kin_wave
+snow            tf_snow_degree_day
+satzone         tf_satzone_darcy_layers
+evap            tf_evap_priestley_taylor
+infil           tf_infil_green_ampt
+ice             tf_ice_gc2d
+hydro_model     topoflow_driver
+  
+

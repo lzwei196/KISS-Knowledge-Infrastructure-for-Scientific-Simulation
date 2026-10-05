@@ -1,0 +1,138 @@
+{
+  "test_case": "TopoFlow treynor_june_20_67 (official example Treynor_Iowa_30m/__No_Infil_June_20_67_Rain)",
+  "engine": {
+    "name": "TopoFlow",
+    "version": "3.71 (2023-09-25), topoflow36 git a1c07d0a72185cbd0baeff1ef77feadad09c3f88",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python (python package topoflow, EMELI framework)",
+    "source": "https://github.com/peckhams/topoflow36 topoflow/examples/Treynor_Iowa_30m (commit a1c07d0, 2025-10-09)",
+    "license": "MIT (Copyright (c) 2019 Scott D. Peckham)"
+  },
+  "ki": {
+    "model": "TopoFlow",
+    "run_tool": "tools/run_topoflow.py"
+  },
+  "simulation": {
+    "site": "Treynor watershed, Iowa (0.396 km2, 30 m grid, 44 rows x 29 cols)",
+    "event": "rain storm of 1967-06-20 20:57",
+    "components": "meteorology (rain only, time series) + kinematic-wave channels + topoflow_driver; diversions, snow, satzone, evap, infil, ice disabled",
+    "dt_s": 6,
+    "stop_rule": "Q_peak_fraction 0.05",
+    "outputs": [
+      "June_20_67_0D-Q.txt",
+      "June_20_67_0D-Q.nc",
+      "June_20_67_2D-Q.nc",
+      "June_20_67_2D-d.nc"
+    ],
+    "run_setup_changes_in_temp_copy": [
+      "out_directory -> temp dir",
+      "copy of rain_rates.txt in in_directory '..'",
+      "ice provider line commented out (component is Disabled)"
+    ]
+  },
+  "files": {
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_channels_kinematic_wave.cfg": {
+      "bytes": 5214,
+      "sha256": "5216f9a4e0a1ec238946163c5c2e9d2a8dc92ad68b5e48e143af16e099603217"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_d8_global.cfg": {
+      "bytes": 2794,
+      "sha256": "cafe3313c0fc6e884166cd509fb1a6117dab9273e5fbc904f46c2226cc6fa288"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_diversions_fraction_method.cfg": {
+      "bytes": 892,
+      "sha256": "0023bb769c174090a2b6791babe2de9abf3fba3cb6e264210a2896d54c71a803"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_evap_priestley_taylor.cfg": {
+      "bytes": 2128,
+      "sha256": "6d9745f382c0d757dd48612a4a7dd7aa639ce52c5cbfa390e8e0227334e8afc0"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_ice_valley_glacier.cfg": {
+      "bytes": 5344,
+      "sha256": "bcd9a877ece679485b3a0212def03e7ce48297b0e76873288c8fea46d2cdf518"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_infil_green_ampt.cfg": {
+      "bytes": 3380,
+      "sha256": "56ef842d33326d898bd4fb467a553d2f9ec58a4ba7f98889caf62c52e12dc15b"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_meteorology.cfg": {
+      "bytes": 7471,
+      "sha256": "bc45ae572edc1f04142fcad8365502d38d6df76ac911210b63df68d41857f56f"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_outlets.txt": {
+      "bytes": 546,
+      "sha256": "a382b66ea1ad7f824dd3620e2b7febf7566b6bcb2149157ee464f32de930fb9b"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_path_info.cfg": {
+      "bytes": 513,
+      "sha256": "3efac06bab40d621a5730c3a15b573154ce9341f4da08a2bb117b6d580cc4df8"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_providers.txt": {
+      "bytes": 1156,
+      "sha256": "b6183085dc86a78eafb4348dc379c713d2ca84fbe25fbf354557db372eee671e"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_rain_rates.txt": {
+      "bytes": 4396,
+      "sha256": "99e8d3b161477e9ada79a1a2aa67927393deafa7f4b9036442f1ea38cc90ce15"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_satzone_darcy_layers.cfg": {
+      "bytes": 6946,
+      "sha256": "5f7e101f7792b7070fa3b2d28de46f48b6c95add319538678cf4f690943cdca0"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_snow_degree_day.cfg": {
+      "bytes": 3751,
+      "sha256": "f189b19f263d17e5b8033255007689683716cad94c9236b6390209dd4ab73f23"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_time_info.cfg": {
+      "bytes": 926,
+      "sha256": "3dfbba025a078f4e044f25dd8e2cee3ff8004b4b1970169bd28461caf98c8a61"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/June_20_67_topoflow.cfg": {
+      "bytes": 1060,
+      "sha256": "40c98b241804880a6e554100f5fbdf3e00cafc6f25f800e1887dd0a6cde3f07e"
+    },
+    "inputs/Treynor_Iowa_30m/__No_Infil_June_20_67_Rain/__README.txt": {
+      "bytes": 620,
+      "sha256": "15982890c6b3a5163827b36c68b2686f0c7db9ba30e7c77537b66a4c57ffe01c"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor.rti": {
+      "bytes": 2299,
+      "sha256": "05904f2f6f0e9acc68ec31d29261dfdaeb765c61c33ec441e0787cef8ff49c2b"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_DEM.rtg": {
+      "bytes": 5104,
+      "sha256": "3ac3d51d91e98393dbd5fbacd451e0d78136306b1efa4076071e49109c10ca17"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_aspect.bin": {
+      "bytes": 5104,
+      "sha256": "29a7a087c9bf2ca02f40f4dcf0559067544440d8aa09865319bb1fa9ef2a9930"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_chan-a.rtg": {
+      "bytes": 5104,
+      "sha256": "74ba6b27cb652ed3b91e5ce86695c57378cb6a632644a41892a5501ff4508206"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_chan-n.rtg": {
+      "bytes": 5104,
+      "sha256": "62186b8116b84040461147e5af01ed352a6056f7421bcc18b04d4bbe10987254"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_chan-w.rtg": {
+      "bytes": 5104,
+      "sha256": "a9eefc05e0875d65311aff05db6dfccaa49176be9a2acb1627f67c14efa6f5cb"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_d-bank.rtg": {
+      "bytes": 5104,
+      "sha256": "5a47f357b6018b1e0be838f6da0d299f205ac1e9186627de2a44952b22934ba3"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_slope.bin": {
+      "bytes": 5104,
+      "sha256": "69fd37b28a81bb95a9dd7e0ec5eef80cb57dc3dfe8092253313e5b97a83a0166"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/Treynor_slope.rtg": {
+      "bytes": 5104,
+      "sha256": "69fd37b28a81bb95a9dd7e0ec5eef80cb57dc3dfe8092253313e5b97a83a0166"
+    },
+    "inputs/Treynor_Iowa_30m/__topo/__NOTES.txt": {
+      "bytes": 716,
+      "sha256": "4f919256ad7f04072c4f5efc11de6234fe701de5cf11c64898ac0eb4156867e0"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "description": "TopoFlow official example Treynor_Iowa_30m / __No_Infil_June_20_67_Rain (kinematic-wave channels, rain only, no infiltration; storm of 20 June 1967 on the 0.396 km2 Treynor watershed, Iowa, 30 m grid). Run stops by the official rule: outlet Q falls to 5% of its peak.",
+  "engine_version": "TopoFlow 3.71 (2023-09-25) as printed by the model; source peckhams/topoflow36 commit a1c07d0a72185cbd0baeff1ef77feadad09c3f88 (installed copy has local patches, see README)",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py through KI tool tools/run_topoflow.py, engine python /home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python (Python 3.12.3, numpy/scipy/netCDF4 1.7.4)",
+  "reference": "Upstream ships no model reference output for this case (only observed discharge in __observations/, not used as a check). Values below come from our own real run, run twice: every value matched exactly, and the 0D-Q.txt and raw .rts grid files were byte-identical between the two runs.",
+  "run_setup_changes_in_temp_copy": [
+    "June_20_67_path_info.cfg: out_directory ~/TF_Output/Treynor -> temp dir (path setting only)",
+    "June_20_67_rain_rates.txt: byte-identical copy also placed in Treynor_Iowa_30m/ (the in_directory '..'), because the meteorology component reads it there (file layout only)",
+    "June_20_67_providers.txt: line 'ice tf_ice_gc2d' commented out. The ice component is 'Disabled' in its own cfg; a disabled ice component sets no h_ice and the framework crashes while linking components (also with unmodified upstream HEAD code). Disabled ice gives zero melt; the report shows vol_IM = 0."
+  ],
+  "numeric_checks": [
+    {"name": "n_timesteps_driver", "expected": 1592, "tol": 0, "why": "number of 6 s driver steps until the Q_peak_fraction stop rule fired"},
+    {"name": "simulated_time_min", "expected": 159.2, "tol": 0.05, "why": "model time at stop"},
+    {"name": "Q_peak_m3s", "expected": 12.4438734, "tol": 1e-4, "why": "peak outlet discharge (6 s resolution) from the model report"},
+    {"name": "Q_peak_time_min", "expected": 41.8, "tol": 0.05, "why": "time of peak outlet discharge"},
+    {"name": "Q_outlet_final_m3s", "expected": 0.6131273, "tol": 1e-4, "why": "outlet discharge at stop"},
+    {"name": "vol_P_m3", "expected": 123547.89325488031, "tol": 0.1, "why": "total rain volume over the DEM"},
+    {"name": "vol_edge_m3", "expected": 122404.56417541427, "tol": 0.1, "why": "water that left the DEM boundary"},
+    {"name": "vol_Q_outlet_m3", "expected": 42127.2042944739, "tol": 0.1, "why": "volume through the main outlet"},
+    {"name": "vol_chan_final_m3", "expected": 1102.1305753437978, "tol": 0.01, "why": "water left in channels at stop"},
+    {"name": "mass_balance_rel_error", "expected": 0.0003334618101277683, "tol": 1e-8, "why": "model's own mass balance check (vol_error / vol_in)"},
+    {"name": "hydrograph_0D_rows", "expected": 160, "tol": 0, "why": "rows in June_20_67_0D-Q.txt (every 60 s)"},
+    {"name": "hydrograph_0D_Q_max_m3s", "expected": 12.436923, "tol": 1e-4, "why": "max of main outlet column Q_34_16 in 0D-Q.txt"},
+    {"name": "hydrograph_0D_Q_sum_x60s_m3", "expected": 42139.961537999996, "tol": 0.1, "why": "sum of outlet Q x 60 s (should be close to vol_Q)"},
+    {"name": "grid_2D_Q_frames", "expected": 160, "tol": 0, "why": "time frames in June_20_67_2D-Q.nc"},
+    {"name": "grid_2D_Q_max_m3s", "expected": 15.35547924041748, "tol": 1e-4, "why": "max Q over all cells and frames in 2D-Q.nc"},
+    {"name": "grid_2D_Q_last_frame_max_m3s", "expected": 0.9182412624359131, "tol": 1e-4, "why": "max Q in the last saved grid frame"}
+  ],
+  "notes": "Finished-normally checks (not numeric): return code 0, KI tool JSON status 'success', model lines 'Simulation complete.', 'Finished. (June_20_67)' and 'Stopping: Reached Q_peak fraction = 0.05.'. For context only: the official observed discharge file (__observations/June_20_1967_Observed_Discharge.txt, not packaged) has a peak of about 12.4 m3/s."
+}

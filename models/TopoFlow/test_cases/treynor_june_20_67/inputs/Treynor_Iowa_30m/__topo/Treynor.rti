@@ -1,0 +1,71 @@
+RiverTools Info File
+ 
+;--------------------
+;Description of Grid
+;--------------------
+DEM filename:  nish_one.bil
+DEM source:    Unknown
+ 
+;----------------------
+;Grid dimensions, etc.
+;----------------------
+Number of columns:  29
+Number of rows:     44
+Data type:          FLOAT
+Byte order:         MSB
+ 
+;--------------------
+;Pixel geometry info
+;--------------------
+Pixel geometry code:  1
+Pixel x-resolution:   30.000000
+Pixel y-resolution:   30.000000
+Pixel z-resolution:   1.0000000
+Z-resolution units:   METERS
+ 
+;--------------------------------------------------
+;Bounding box coordinates (degrees lat/lon or UTM)
+;--------------------------------------------------
+South edge y-coordinate:  4560090.419999999925
+North edge y-coordinate:  4561410.419999999925
+East  edge x-coordinate:  278720.358000000007
+West  edge x-coordinate:  277850.358000000007
+Measurement units:        METERS
+ 
+;----------------------
+;Min and max elevation
+;----------------------
+Minimum elevation:  335.051
+Maximum elevation:  380.181
+ 
+;---------
+;UTM zone
+;---------
+UTM zone: 15
+ 
+ 
+;----------------------------------
+;Notes About RiverTools Info Files
+;----------------------------------
+;(1)  RiverTools grid info filenames end with '.rti'.
+;(2)  The first line should be:  RiverTools Info File
+;(3)  Lines starting with a semi-colon are ignored.
+;(4)  Colons are used to delimit labels from values.
+;(5)  The order of the numbers above is important.
+;(6)  Number of rows and columns are required.
+;(7)  Pixel geometry codes are: 0=Fixed-Angle, 1=Fixed-Length.
+;(8)  Pixel x-resolution and y-resolution are required.
+;(9)  Measurement units must be METERS or DEGREES.
+;(10) Elevation data type is required.
+;     Allowed types are BYTE, INTEGER, LONG, FLOAT, DOUBLE.
+;(11) Byte order is required; either LSB or MSB.
+;     (LSB = Least Significant Byte = little-endian)
+;     (MSB = Most Significant Byte  = big-endian)
+;(12) For 'fixed-angle' pixels, bounding lats and lons
+;     are required to compute lengths and areas correctly.
+;(13) Latitudes south of equator are negative and
+;     longitudes west of prime meridian are negative.
+;(14) This file is best modified with the View DEM Info
+;     dialog in the File menu.
+ 
+ 

@@ -1,0 +1,8 @@
+
+S.D. Peckham
+May 13, 2020
+
+Note: TopoFlow 3.6 now supports storing files that are derived from or related to the topography in a separate folder called "__topo", within the CFG directory.  The presence or absence of this separate folder will be automatically detected by TopoFlow. Similarly, soil data files can be put in a separate folder called "__soil", and meteorology-related files can be put in a separate folder called "__met".  No changes to CFG files (including [case_prefix]_path_info.cfg) are necessary to use this new feature.
+
+Note: The binary grids in this folder with extension RTG and BIN have the MSB byte order.  This is noted in the RTI files, and TopoFlow performs byte-swapping automatically.
+

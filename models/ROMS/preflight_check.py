@@ -24,8 +24,8 @@ MPI_BUILDS = [ROMS_REPO / "build_mpi" / "romsM"]
 APP_NOTE = (
     "A ROMS binary runs only the application compiled into it; this check proves startup, "
     "not case compatibility. Pass the build whose app matches the case to tools/run_roms.py "
-    "--binary (the tool does not read ROMS_BIN; ROMS_BIN only picks the binary for this "
-    "preflight and the reference test cases), or build one with cmake -DROMS_APP=<APP>."
+    "with --binary, or set ROMS_BIN (the tool uses it when --binary is not given; ROMS_BIN "
+    "also pins the binary this preflight checks), or build one with cmake -DROMS_APP=<APP>."
 )
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 RECOVERY = f"Check {TRIPLETS} for recovery steps."

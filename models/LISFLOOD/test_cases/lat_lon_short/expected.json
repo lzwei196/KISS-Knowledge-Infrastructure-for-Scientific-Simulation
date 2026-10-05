@@ -1,0 +1,118 @@
+{
+  "description": "Expected results for LISFLOOD's official lat/lon use case 'short' test (tests/test_latlon.py::TestLatLonShort, ec-jrc/lisflood-code commit fe94c33, v4.3.1). All expected numbers are taken from the official reference files that ship with the test (reference/dis_short.tss and reference/chanqWin_short.tss), with the official TSSComparator tolerance (atol=1e-4, rtol=1e-3). The run also checks every one of the 32 daily values against those files with the same tolerance.",
+  "engine_version": "LISFLOOD (lisflood-model) 4.3.1, official conda env (python 3.7, numpy 1.21.6, xarray 0.20.2, dask 2022.2.0, pcraster 4.3.3, lisflood-utilities 0.12.19)",
+  "numeric_checks": [
+    {
+      "name": "finished_normally",
+      "expected": true,
+      "tol": 0,
+      "why": "run_model returned success (return code 0) and LISFLOOD printed its last step line '10988 - 01/02/2016 00:00'"
+    },
+    {
+      "name": "official_tsscomparator",
+      "expected": true,
+      "tol": 0,
+      "why": "lisfloodutilities TSSComparator (atol=1e-4, rtol=1e-3) passes for dis_run.tss vs reference/dis_short.tss and chanqWin.tss vs reference/chanqWin_short.tss, as in tests/test_latlon.py"
+    },
+    {
+      "name": "dis_n_steps",
+      "expected": 32,
+      "tol": 0,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: 32 daily steps, 01/01/2016 to 01/02/2016; value from the official reference/dis_short.tss"
+    },
+    {
+      "name": "dis_first_step",
+      "expected": 10957,
+      "tol": 0,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: step number of 01/01/2016 (days since CalendarDayStart 02/01/1986, counted from 1); value from the official reference/dis_short.tss"
+    },
+    {
+      "name": "dis_last_step",
+      "expected": 10988,
+      "tol": 0,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: step number of 01/02/2016; value from the official reference/dis_short.tss"
+    },
+    {
+      "name": "dis_first",
+      "expected": 277.818,
+      "tol": 0.2779,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: value on the first day (m3/s); value from the official reference/dis_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "dis_last",
+      "expected": 521.923,
+      "tol": 0.522,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: value on the last day (m3/s); value from the official reference/dis_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "dis_max",
+      "expected": 527.439,
+      "tol": 0.5275,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: largest value over the 32 days (m3/s); value from the official reference/dis_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "dis_min",
+      "expected": 277.818,
+      "tol": 0.2779,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: smallest value over the 32 days (m3/s); value from the official reference/dis_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "dis_mean",
+      "expected": 483.4689375,
+      "tol": 0.4836,
+      "why": "discharge at the gauge (-122.55, 52.95), dis_run.tss: mean over the 32 days (m3/s); value from the official reference/dis_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "chanqWin_n_steps",
+      "expected": 32,
+      "tol": 0,
+      "why": "channel inflow at the gauge, chanqWin.tss: 32 daily steps, 01/01/2016 to 01/02/2016; value from the official reference/chanqWin_short.tss"
+    },
+    {
+      "name": "chanqWin_first_step",
+      "expected": 10957,
+      "tol": 0,
+      "why": "channel inflow at the gauge, chanqWin.tss: step number of 01/01/2016 (days since CalendarDayStart 02/01/1986, counted from 1); value from the official reference/chanqWin_short.tss"
+    },
+    {
+      "name": "chanqWin_last_step",
+      "expected": 10988,
+      "tol": 0,
+      "why": "channel inflow at the gauge, chanqWin.tss: step number of 01/02/2016; value from the official reference/chanqWin_short.tss"
+    },
+    {
+      "name": "chanqWin_first",
+      "expected": 280.699,
+      "tol": 0.2808,
+      "why": "channel inflow at the gauge, chanqWin.tss: value on the first day (m3/s); value from the official reference/chanqWin_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "chanqWin_last",
+      "expected": 535.156,
+      "tol": 0.5353,
+      "why": "channel inflow at the gauge, chanqWin.tss: value on the last day (m3/s); value from the official reference/chanqWin_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "chanqWin_max",
+      "expected": 535.156,
+      "tol": 0.5353,
+      "why": "channel inflow at the gauge, chanqWin.tss: largest value over the 32 days (m3/s); value from the official reference/chanqWin_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "chanqWin_min",
+      "expected": 280.699,
+      "tol": 0.2808,
+      "why": "channel inflow at the gauge, chanqWin.tss: smallest value over the 32 days (m3/s); value from the official reference/chanqWin_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    },
+    {
+      "name": "chanqWin_mean",
+      "expected": 486.9009375,
+      "tol": 0.487,
+      "why": "channel inflow at the gauge, chanqWin.tss: mean over the 32 days (m3/s); value from the official reference/chanqWin_short.tss; tol = official atol 1e-4 + rtol 1e-3 x value"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/miniconda3/envs/lisflood_official/bin/lisflood, started through the KI tool tools/run_lisflood.py (run_model)",
+  "reference": "inputs/reference/dis_short.tss and inputs/reference/chanqWin_short.tss (official, written by the LISFLOOD team on 2022-07-28 with run_lat_lon_createreference.xml)",
+  "notes": "Settings changes are made only in the temp copy: StepStart, StepEnd, PathOut (same as the upstream test) and PathRoot set to the full temp path instead of $(SettingsPath) (same folder; needed because the KI run tool does not expand $(SettingsPath)). On 2026-10-05 our run gave dis_run.tss and chanqWin.tss with every value byte-identical to the official reference files (only the header line with file path and date differs). Two runs repeated exactly."
+}

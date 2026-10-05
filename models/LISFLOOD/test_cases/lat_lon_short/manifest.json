@@ -1,0 +1,425 @@
+{
+  "test_case": "LISFLOOD lat_lon_short (official LF_lat_lon_UseCase, tests/test_latlon.py short run)",
+  "engine": {
+    "name": "LISFLOOD",
+    "version": "4.3.1 (lisflood-model)",
+    "binary": "lisflood (official conda env, default /home/server/miniconda3/envs/lisflood_official/bin/lisflood)",
+    "environment": "LISFLOOD's own environment.yml at fe94c33: python 3.7, numpy 1.21.6, xarray 0.20.2, dask 2022.2.0, pandas 1.3.5, netCDF4 1.5.8, pcraster 4.3.3, gdal 3.5.0, lisflood-utilities 0.12.19",
+    "source": "https://github.com/ec-jrc/lisflood-code, tests/data/LF_lat_lon_UseCase + tests/test_latlon.py (commit fe94c33b6bd9fe09fa7be43a6dd4fdc8a11f744c, VERSION 4.3.1)",
+    "license": "EUPL-1.2 (LISFLOOD)"
+  },
+  "ki": {
+    "model": "LISFLOOD",
+    "run_tool": "tools/run_lisflood.py (run_model)"
+  },
+  "simulation": {
+    "settings": "inputs/run_lat_lon.xml",
+    "period": "01/01/2016 00:00 to 01/02/2016 00:00",
+    "steps": 32,
+    "dt_sec": 86400,
+    "grid": "lat/lon (EPSG:4326) small catchment",
+    "gauge": "-122.55 52.95",
+    "outputs_checked": [
+      "dis_run.tss",
+      "chanqWin.tss"
+    ],
+    "reference": [
+      "inputs/reference/dis_short.tss",
+      "inputs/reference/chanqWin_short.tss"
+    ],
+    "tolerance": "TSSComparator atol=1e-4, rtol=1e-3",
+    "settings_changes_in_temp_copy": {
+      "PathRoot": "<full temp path> (was $(SettingsPath))",
+      "StepStart": "01/01/2016 00:00",
+      "StepEnd": "01/02/2016 00:00",
+      "PathOut": "$(PathRoot)/short"
+    },
+    "runtime_s": "about 2-10"
+  },
+  "files": {
+    "inputs/inflow/inflow.tss": {
+      "bytes": 433421,
+      "sha256": "fad935b0d34b8ba19d99537201ad6874957a5dc0460ff250182ecc8faf493d4b"
+    },
+    "inputs/inflow/inflow_new3.map": {
+      "bytes": 1992,
+      "sha256": "6bdcfcfe66edc0371083a3cd32d58cbce2f774c4a53c22dff7db2a0278c0131b"
+    },
+    "inputs/lai/laif.nc": {
+      "bytes": 77208,
+      "sha256": "e1090c29ec02597b82bdda8009087084b6391aaaf14aa5de7eb616d67c4a0161"
+    },
+    "inputs/lai/laii.nc": {
+      "bytes": 75028,
+      "sha256": "cff2e325df8dfc57a17101208ee6b38eddc552027011906d593a4e9d646e3fa3"
+    },
+    "inputs/lai/laio.nc": {
+      "bytes": 75028,
+      "sha256": "cff2e325df8dfc57a17101208ee6b38eddc552027011906d593a4e9d646e3fa3"
+    },
+    "inputs/landuse/fracforest.nc": {
+      "bytes": 13622,
+      "sha256": "2a91966a897bfb15c4a6ac9ae43aaf1dbbf0fa048e599ebc2fbebed180b36f4a"
+    },
+    "inputs/landuse/fracgwused.nc": {
+      "bytes": 13622,
+      "sha256": "2799c16cc1068b40e5cb7809d12ffebc0f5c1b16b845340c69cf2faadce8db19"
+    },
+    "inputs/landuse/fracirrigated.nc": {
+      "bytes": 13622,
+      "sha256": "983f35b4203699ba08da8a375a2936630051ac46a7bb3ca7d6ad5f52dbcba776"
+    },
+    "inputs/landuse/fracncused.nc": {
+      "bytes": 13622,
+      "sha256": "a8ef78a9d0e16fcb3e7b216f85480e62f52d9538b3e40dbffb4a5d58c1b4e006"
+    },
+    "inputs/landuse/fracother.nc": {
+      "bytes": 13622,
+      "sha256": "660d77d0b212967b2144103bb82364563bc085f5697fd9645c4f38ce8ed79a59"
+    },
+    "inputs/landuse/fracrice.nc": {
+      "bytes": 13622,
+      "sha256": "5936a28597dcb9c9b4c0d22b5355faf48c6ddffba229b1b5b0f4edca9a29e54c"
+    },
+    "inputs/landuse/fracsealed.nc": {
+      "bytes": 13622,
+      "sha256": "7c9186dad424af11b711fcfa8159d72993318c581c827906739334e01c9eeefb"
+    },
+    "inputs/landuse/fracwater.nc": {
+      "bytes": 13622,
+      "sha256": "d7bf1100c645da97df7fbafe60b8bdd21e9c96dee8e00d5004bfe3c5ca898fc9"
+    },
+    "inputs/maps/chan.nc": {
+      "bytes": 11886,
+      "sha256": "b3ed139e16c3fa75b4c6bf18fe64750a9a1d1176ac6540852951319f330447b4"
+    },
+    "inputs/maps/chanbnkf.nc": {
+      "bytes": 13622,
+      "sha256": "039ac69bb85fd76d54f04535a0f8dad579e735927f601ef23a2e0ec4a828d264"
+    },
+    "inputs/maps/chanbw.nc": {
+      "bytes": 13622,
+      "sha256": "266a4c789f6e82d84d353e30fd25e0ed55673346ba58359341b14ce1a0947921"
+    },
+    "inputs/maps/changrad.nc": {
+      "bytes": 13622,
+      "sha256": "f3025768edbc32b97b770c1d188c4983acb33e66ecac4efd3993a330d0f6b260"
+    },
+    "inputs/maps/chanleng.nc": {
+      "bytes": 13622,
+      "sha256": "a4ccd0fc6d2aaca15fa4e3c7adfb7154dd1dfab55f266cf5be6eeda4403d4f63"
+    },
+    "inputs/maps/chanman.nc": {
+      "bytes": 13622,
+      "sha256": "ddf3abd05b62bf08d59aaa16f511cd3bae7e72aeada448f5396139b4743b7187"
+    },
+    "inputs/maps/chans.nc": {
+      "bytes": 13622,
+      "sha256": "1efd340f2677d9d7b1883727028046ed94742da9b4b40b817dc74963944bf5db"
+    },
+    "inputs/maps/cropcoef_f.nc": {
+      "bytes": 13622,
+      "sha256": "729bb0d14592e293115f1c1b73e5fb29da1748218a80a6392600fe218a7e1f6f"
+    },
+    "inputs/maps/cropcoef_i.nc": {
+      "bytes": 13622,
+      "sha256": "31b2e730f11c72e29211cc2e335a1d73856a98afd38e4a5bbb26cd0228be62db"
+    },
+    "inputs/maps/cropcoef_o.nc": {
+      "bytes": 13622,
+      "sha256": "a4856c755808ac0c41179221ffe3714a2523e53237d811d4b1222fc0400894bf"
+    },
+    "inputs/maps/cropgrpn_f.nc": {
+      "bytes": 13622,
+      "sha256": "0a3f7d1e71bbe3cb6156e1587d0d450376782d30bc964aa50d413e66f74ca15e"
+    },
+    "inputs/maps/cropgrpn_i.nc": {
+      "bytes": 13622,
+      "sha256": "ddb97a179b41ba2a5a9316108860f8ce19225fc91ae6f4dd5314f3689e669c4e"
+    },
+    "inputs/maps/cropgrpn_o.nc": {
+      "bytes": 13622,
+      "sha256": "f53017f123c66c38afc576ec158bf40edfbed29e58503214ac539c1dd3623521"
+    },
+    "inputs/maps/elvstd.nc": {
+      "bytes": 13622,
+      "sha256": "f097b4dbfbaf2ac28b175927e6a1f9adff8b4cf281ac6936d344822d6d3cabe0"
+    },
+    "inputs/maps/energyconsumptiveuse.nc": {
+      "bytes": 13622,
+      "sha256": "3add212fb6570cc8c2d8fe24269191772b5e132574fe4cd649a37325b05b01a5"
+    },
+    "inputs/maps/genua1_f.nc": {
+      "bytes": 13622,
+      "sha256": "1d983f04dba79258c2e67600ea2164e16489a266ed5ddad0df4576e3e9431fca"
+    },
+    "inputs/maps/genua1_o.nc": {
+      "bytes": 13622,
+      "sha256": "0ae62da96e010cfed975a53fbb74ae140dd02f6da2a47f6464fbd633d819cd40"
+    },
+    "inputs/maps/genua2_f.nc": {
+      "bytes": 13622,
+      "sha256": "53152d26551c12b003f1585614782fd974be294f43d067c9ba1fb9441b2066a2"
+    },
+    "inputs/maps/genua2_o.nc": {
+      "bytes": 13622,
+      "sha256": "2ceeb7c0bb802982f60b4d7bfe60128e2f461e1788b9249f8b4119aad2cf428c"
+    },
+    "inputs/maps/genua3.nc": {
+      "bytes": 13622,
+      "sha256": "ad3396d2b355e48a1c53101c1f5e3aa08c3838895fc70117171ff5a526b9916e"
+    },
+    "inputs/maps/gradient.nc": {
+      "bytes": 13622,
+      "sha256": "b93f7367fe660a6ed359fbcbed8cf1d2a6144a346d17975477e52ac8a1937f9c"
+    },
+    "inputs/maps/gwbodies.nc": {
+      "bytes": 13622,
+      "sha256": "f8aba40d04fcdbb0523714f3597340bab6400360001c4570c406b442473e4374"
+    },
+    "inputs/maps/ksat1_f.nc": {
+      "bytes": 13622,
+      "sha256": "8303904fbbf653ad801ccfc58c9c9fedee02d61bfb8b2daadc0dcfcb0c384496"
+    },
+    "inputs/maps/ksat1_o.nc": {
+      "bytes": 13622,
+      "sha256": "4e635fcff047137ccafe7e8a34f68a17a0de2210dabc0f7abbde60bacd4aeddd"
+    },
+    "inputs/maps/ksat2_f.nc": {
+      "bytes": 13622,
+      "sha256": "dc08851a76ab9f9f68dfc9ede94c3b65c712db9f1139ae91a366361c912dba7e"
+    },
+    "inputs/maps/ksat2_o.nc": {
+      "bytes": 13622,
+      "sha256": "bbef546596e77f63ea3d8ab45b03aa516993b2de1d5b2c8c5d71ec33d613aa60"
+    },
+    "inputs/maps/ksat3.nc": {
+      "bytes": 13622,
+      "sha256": "7b21aa45633dfac3cdfa13742c06848470a7ac38f825be8b513bf18d5ea79c25"
+    },
+    "inputs/maps/lakemask.nc": {
+      "bytes": 13622,
+      "sha256": "6a997cad59cf677a481747f366bb7c674b92229c718719c089c4d780626da20f"
+    },
+    "inputs/maps/lakes_463.nc": {
+      "bytes": 11886,
+      "sha256": "371f81bc5ec1b066a2facce1ab8801300fd134dbb81754be9dad07d369c0cb9c"
+    },
+    "inputs/maps/lambda1_f.nc": {
+      "bytes": 13622,
+      "sha256": "836bdfd5e84192cd3a98961eaae5631d8014d18464c6440fff0e2091878b18a2"
+    },
+    "inputs/maps/lambda1_o.nc": {
+      "bytes": 13622,
+      "sha256": "201a203511d8a01fee80ebdf7f29114e5cd3e32ffb8abf4d09e9bdc465c38e2f"
+    },
+    "inputs/maps/lambda2_f.nc": {
+      "bytes": 13622,
+      "sha256": "6d673032fbf5f5176d01ac7e3447003a7695e55111df4a67c653fa4f1d080155"
+    },
+    "inputs/maps/lambda2_o.nc": {
+      "bytes": 13622,
+      "sha256": "70177189fc032d9e30e8b4b09f3bef5af390e1498e47d3290000d5ce379ed932"
+    },
+    "inputs/maps/lambda3.nc": {
+      "bytes": 13622,
+      "sha256": "83a4d682d5902b3d81813d2dccf9839e505b8aa55f67ee74301c2cf00e97f7e6"
+    },
+    "inputs/maps/ldd.nc": {
+      "bytes": 11886,
+      "sha256": "c13df8eafae2ace5644114632fd445c0aa0eddbee28a6797a18bf5cd370a0228"
+    },
+    "inputs/maps/lzthreshold.nc": {
+      "bytes": 13622,
+      "sha256": "f68855af8b76259f9b3f51a30e5744e2b0b9a0e88deda0d548a2e909e5447aa1"
+    },
+    "inputs/maps/mannings_f.nc": {
+      "bytes": 13622,
+      "sha256": "14ccc5788a55454f2968e801a6dd6ecfbeea3a2d13fc3d92f86e24f27bfeebea"
+    },
+    "inputs/maps/mannings_o.nc": {
+      "bytes": 13622,
+      "sha256": "6b402f2aef61631fb68106148a4624983ee635050d76cc0ec3f60800205f3573"
+    },
+    "inputs/maps/masksmall.map": {
+      "bytes": 690,
+      "sha256": "b69f73ac784bafa5009d30071d3d46296712e5359904e78e7c41c1cede1167e4"
+    },
+    "inputs/maps/pixarea.nc": {
+      "bytes": 13622,
+      "sha256": "23acac31c981591bd886b689197494da9c92de160cbb5244f372748e93a7f8e2"
+    },
+    "inputs/maps/pixleng.nc": {
+      "bytes": 13622,
+      "sha256": "dc69515daf1e03f8aeee621e173b5daccdbe291b812d932e5672966dcbbebb5b"
+    },
+    "inputs/maps/res_687.nc": {
+      "bytes": 11886,
+      "sha256": "1409e2ade1512eb282ae4a828c133081908dc25d2a38421dd5cb6d480c99104c"
+    },
+    "inputs/maps/thetar1.nc": {
+      "bytes": 13622,
+      "sha256": "a2ea17814e904c385c11e1f9972f6f9257513fca10bc3b69a20b546e668f56f7"
+    },
+    "inputs/maps/thetar2.nc": {
+      "bytes": 13622,
+      "sha256": "072f5ff7935ebc5c2d7009b68bbddc6c0846813757220ec539e83d0d58838bbe"
+    },
+    "inputs/maps/thetar3.nc": {
+      "bytes": 13622,
+      "sha256": "0a7b29b8237b8dafce7f9e1c7d07a3e4c5b436c1bf3df64135183f86bf920235"
+    },
+    "inputs/maps/thetas1_f.nc": {
+      "bytes": 13622,
+      "sha256": "d2bcf0eda76681e6b88d7c45e849f86eb5889852b8e2be7e3e36710e1644fb0a"
+    },
+    "inputs/maps/thetas1_o.nc": {
+      "bytes": 13622,
+      "sha256": "9cbe84ca8547d9b29ecfc00ac1994650a79fda1381c2c10163d13caef7c82272"
+    },
+    "inputs/maps/thetas2_f.nc": {
+      "bytes": 13622,
+      "sha256": "f46737f13d47927af57f0d762f96f3805ef18ae110fd402574ffc89a3add0a09"
+    },
+    "inputs/maps/thetas2_o.nc": {
+      "bytes": 13622,
+      "sha256": "06d235ad529366eca2eea8dd1dfebcc67594929e23022f26d1c5452ea4cb203f"
+    },
+    "inputs/maps/thetas3.nc": {
+      "bytes": 13622,
+      "sha256": "d935250d4ed1b893ff1b9a9a204c8dad1b0f97d099925d67d78d150db63586ad"
+    },
+    "inputs/maps/wregion.nc": {
+      "bytes": 13622,
+      "sha256": "e5fbeb84c600589eaa9e270e83fa077ee5abb4597df19b556c68cab8314e9852"
+    },
+    "inputs/mapstables/riceharvestday1.nc": {
+      "bytes": 13622,
+      "sha256": "c3e20a017ff6d4398a9fbd9b07658890da1fc84a173171e4c99980a338541f63"
+    },
+    "inputs/mapstables/riceharvestday2.nc": {
+      "bytes": 13622,
+      "sha256": "b8063d0d4069406819809f71e47d4240a6b57638f78dbbb7a3af4a33d99124f5"
+    },
+    "inputs/mapstables/riceplantingday1.nc": {
+      "bytes": 13622,
+      "sha256": "93dd375ad7ea584b0b1ec9fec4632db27d082fa8a141282835ef26aa46b6e165"
+    },
+    "inputs/mapstables/riceplantingday2.nc": {
+      "bytes": 13622,
+      "sha256": "b96720520a8ef75ba1b75625bc06efcee40f612b6e5b6dd25f16a6cb54d6e953"
+    },
+    "inputs/meteo/e0.nc": {
+      "bytes": 6075691,
+      "sha256": "7f9d6f1964b8880546bbbe2c1d1b03ebea840c1639e10461600357e86ddc2902"
+    },
+    "inputs/meteo/ta.nc": {
+      "bytes": 10461324,
+      "sha256": "f23dac1d79ab9b832314ed711fdd8157fce92b468172b840722fa2baa1f7d0ba"
+    },
+    "inputs/meteo/tp.nc": {
+      "bytes": 1866993,
+      "sha256": "1b58ca07a47a82e10f4a8b2ac990e7f4e6a8c86f30d19e9e4fc87707ba75c5c2"
+    },
+    "inputs/reference/avgdis.map": {
+      "bytes": 1992,
+      "sha256": "934846f03507b6957e353b2e18923e2bb3378d90319fea5e69b3687ec3870183"
+    },
+    "inputs/reference/chanqWin_short.tss": {
+      "bytes": 992,
+      "sha256": "5ecbd7f718ecd57ec8fb17a32d12124050d9c75eb9db10f5aa2ac76e897e6684"
+    },
+    "inputs/reference/dis_short.tss": {
+      "bytes": 992,
+      "sha256": "2bd0dea9f7cfd2b286411fefc8a7b9db742f4cd952ed1c77a67c229f81e015a3"
+    },
+    "inputs/reference/lzavin.map": {
+      "bytes": 1992,
+      "sha256": "c9f7bc9c9fd073cd71d505d252a04030a83d15a925d22a6bb0cad81fc2a92b2a"
+    },
+    "inputs/run_lat_lon.xml": {
+      "bytes": 200076,
+      "sha256": "d137dbb701c6b8d267e8ea28fe7b36e546bdf99a8cf5312cb0bd2e1390d1a6cd"
+    },
+    "inputs/soilhyd/soildepth1_f.nc": {
+      "bytes": 13622,
+      "sha256": "e5130fce7b294264853ad634c64260d2b38888d3496d0f6294a582d816365702"
+    },
+    "inputs/soilhyd/soildepth1_o.nc": {
+      "bytes": 13622,
+      "sha256": "be23afed7e70fa3792605d834cae4413f62a3583d8902347a27f406213d3ef33"
+    },
+    "inputs/soilhyd/soildepth2_f.nc": {
+      "bytes": 13622,
+      "sha256": "0a973cc4eedcacf40ec69eabc595a35eb085a195a50891b7014a5d7f8d0a9cbe"
+    },
+    "inputs/soilhyd/soildepth2_o.nc": {
+      "bytes": 13622,
+      "sha256": "0f197a80ec471f45fe57fee1bb149ee481f1b853ac40cceaeb528331b6ea0d5f"
+    },
+    "inputs/soilhyd/soildepth3_f.nc": {
+      "bytes": 13622,
+      "sha256": "acd187888f25b43a6fa07757835b69dd844d12605f2ca171c2fe5da066706c69"
+    },
+    "inputs/soilhyd/soildepth3_o.nc": {
+      "bytes": 13622,
+      "sha256": "8ceed009e8a2b1ca5808143d3092224eee77fe8744aeee1b81ea136e050244e2"
+    },
+    "inputs/tables/lakea_463_RW_F.txt": {
+      "bytes": 7918,
+      "sha256": "e70e267351853f8ee096f712eecd383720dc6acad208a194dd5b2d2a16346b02"
+    },
+    "inputs/tables/lakearea_463.txt": {
+      "bytes": 6915,
+      "sha256": "5278a2710b55cc871ad00a42fcf6c18b085bec85439b2bb792c0c76511f02a99"
+    },
+    "inputs/tables/lakeavinflow_463.txt": {
+      "bytes": 20448,
+      "sha256": "89e10a92e3c3da67797dd64e568f4a92494d0eee5589472267fc8295b42ec38c"
+    },
+    "inputs/tables/rclim_687.txt": {
+      "bytes": 7449,
+      "sha256": "5919a43aa47c799aa8dd783b72abbcd2c8ba2bab16fa0a518e1b6a3b3eb1f1d0"
+    },
+    "inputs/tables/rflim_687_97th.txt": {
+      "bytes": 6762,
+      "sha256": "7dbfd3d26a9f995e0ce99852266172175297b3eebeeff0be360328b9c8aa87c5"
+    },
+    "inputs/tables/rminq_687_5th.txt": {
+      "bytes": 7377,
+      "sha256": "e4d34839659a640f07ae91c13927ceb9fb2fb8a6139161b6406b8f5bd0d03a11"
+    },
+    "inputs/tables/rndq_687_97th.txt": {
+      "bytes": 7464,
+      "sha256": "d7e9906423d56d829b9c774f0686fd19a961794c25d2a91160de624891c49521"
+    },
+    "inputs/tables/rnlim_687_67th.txt": {
+      "bytes": 6762,
+      "sha256": "5e9f2113442259bbb3e5d7080d76aa9ce0cd646fa981f6272af54d9a5ec974e1"
+    },
+    "inputs/tables/rnormq_687_50th.txt": {
+      "bytes": 6935,
+      "sha256": "3ce4c0c066354396b6f46ca6f6628090819daace9e10d869b86552a85118f273"
+    },
+    "inputs/tables/rstor_687.txt": {
+      "bytes": 10816,
+      "sha256": "782e4075398f59e6db8f8c0b494fe61818bb9b0a19036b0f168c1a1e2c142bb1"
+    },
+    "inputs/wateruse/dom.nc": {
+      "bytes": 528808,
+      "sha256": "786407acbd56b30188fb21cd07f2031297489dc54c6bd6d85def72e212fb0828"
+    },
+    "inputs/wateruse/ene.nc": {
+      "bytes": 160319,
+      "sha256": "a2e65fc7c51c8e44072ff7663342946b06b31af7ed0d9a0b495cb9f6cf644983"
+    },
+    "inputs/wateruse/ind.nc": {
+      "bytes": 229857,
+      "sha256": "441b29e6f541fa99b851167500686d2f5188c5b6be9ff2b5babe8ed1d136562d"
+    },
+    "inputs/wateruse/liv.nc": {
+      "bytes": 277581,
+      "sha256": "afd0788e19802f07f766aeed11524835ce47b4942b40cf345ce86237b1c076b1"
+    }
+  }
+}

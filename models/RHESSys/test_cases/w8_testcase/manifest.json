@@ -1,0 +1,97 @@
+{
+  "test_case": "RHESSys w8_testcase (official W8 test case, Testing/ folder of RHESSys git)",
+  "engine": {
+    "name": "RHESSys",
+    "version": "rhessys7.4 (makefile VERSION 7.4; -version prints 5.14.3)",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4",
+    "source": "https://github.com/RHESSys/RHESSys, commit f9d1bbf8d161aa55b6a51061dc320188ead44962 (2024-03-05, shallow clone); Testing/ and rhessys/test/rhessystest.py",
+    "license": "no licence file in the RHESSys repository (public GitHub, academic model from UCSB/Tague lab)"
+  },
+  "ki": {
+    "model": "RHESSys",
+    "run_tool": "tools/run_rhessys.py"
+  },
+  "simulation": {
+    "site": "Watershed 8 (W8), HJ Andrews Experimental Forest, Oregon, USA",
+    "start": "1988 10 1 1",
+    "end": "2000 10 1 1",
+    "printed_days": "1989-10-01..2000-09-30 (4018)",
+    "output": "legacy basin daily (-b) + growth basin daily (-g)",
+    "command": "rhessys7.4 -t tecfiles/tec.test -w worldfiles/w8TC.world -whdr worldfiles/w8TC.hdr -r flowtables/w8TC.flow -pre out/test -s 0.355794 651.390265 -sv 0.355794 651.390265 -svalt 1.083102 1.193924 -gw 0.116316 0.916922 -st 1988 10 1 1 -ed 2000 10 1 1 -b -g",
+    "runtime_s": 10
+  },
+  "files": {
+    "inputs/clim/w8_base": {
+      "bytes": 399,
+      "sha256": "46b227c9ba5afb7fbe20729b760d87640d8a68a06da03a9202910ba7f3260a4f"
+    },
+    "inputs/clim/w8_daily.rain": {
+      "bytes": 136438,
+      "sha256": "deec4f027e97fbd32162d910c2b44f8971af576af442ef6942fce84db91a38ff"
+    },
+    "inputs/clim/w8_daily.tmax": {
+      "bytes": 138477,
+      "sha256": "a24731ff0748d1ffc79e5cff63b3686846d10529f9ae028b41bf4014ec94f70d"
+    },
+    "inputs/clim/w8_daily.tmin": {
+      "bytes": 135810,
+      "sha256": "674c2095dd7c9148bc48a76d9ce0539a4df957cf06a7d427b8162c48331ed7ec"
+    },
+    "inputs/defs/basin.def": {
+      "bytes": 29,
+      "sha256": "351977b79069488346974f9beb97aff6234e7e048ea76e59d4a108e99c515d3d"
+    },
+    "inputs/defs/hill.def": {
+      "bytes": 55,
+      "sha256": "9a9b4d1532ce44f464bb15c7a59cbc74fcb927d9f450a95e0635513a77c98872"
+    },
+    "inputs/defs/lu_undev.def": {
+      "bytes": 199,
+      "sha256": "4ddf784e531edd34a8ef0f7c4d731baa14f115c036cf05f6f2afc14677b65172"
+    },
+    "inputs/defs/soil_sandyloam.def": {
+      "bytes": 636,
+      "sha256": "30eb5a3b41917d8d7b57d882d62cbdb2ca03d644df8319600ef28abe49462b4c"
+    },
+    "inputs/defs/veg_douglasfir.def": {
+      "bytes": 3715,
+      "sha256": "6ad0a525f684f6ae320e987b5cacb2d5ca8fa0ed384266ff4e83c8dde0af6c5f"
+    },
+    "inputs/defs/zone.def": {
+      "bytes": 386,
+      "sha256": "151498ca04b33bfa1cb21a78e95f7272daa0350cfa88191caf6e3048422c2a3d"
+    },
+    "inputs/flowtables/w8TC.flow": {
+      "bytes": 45803,
+      "sha256": "c498e066d07ca7c7a29fe3cde5fd3985c13170f0f2f0b22938ca0fc297f1c804"
+    },
+    "inputs/tecfiles/tec.test": {
+      "bytes": 61,
+      "sha256": "2ae07fbbd6a0567ae71bd79a57d7999396d3aa3e445a10c9f2ed0310eef5aa25"
+    },
+    "inputs/worldfiles/w8TC.hdr": {
+      "bytes": 192,
+      "sha256": "0ac8758566cc860923f30f890cd45eeb16d47c182971ee9b0e4cb5f104f8d3be"
+    },
+    "inputs/worldfiles/w8TC.world": {
+      "bytes": 1487530,
+      "sha256": "a87700f233bab458d56a7da30b0255eaf2eb56fa5a55967de314beeb5c011238"
+    },
+    "reference/TestCase.Rmd": {
+      "bytes": 7651,
+      "sha256": "b7876a9402bc99202bdaa9b9afbe07cde18522d126723006e5392e20a82c72da"
+    },
+    "reference/base_basin_daily.csv": {
+      "bytes": 1482652,
+      "sha256": "2dfb8ccbd500e7b6b70ec46423875aeaf39d7087028c26ccd3aaa81c3bd8bd21"
+    },
+    "reference/rhessystest.py": {
+      "bytes": 2865,
+      "sha256": "db49fea25a7f48f8445561979c34eb04c2e04d5d2deeebe6942f76598cdd709e"
+    },
+    "reference/testing_filter.yml": {
+      "bytes": 1060,
+      "sha256": "68e4872e94df782d912d628eb5b635c92e13957077f48485d8f6abcc086949a8"
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "description": "Expected results for the official RHESSys W8 test case (RHESSys git, Testing/ folder, TestCase.Rmd): W8 catchment of the HJ Andrews forest (Oregon), 1988-10-01..2000-10-01, legacy basin daily output (-b) with growth mode (-g), the exact command line and parameters of TestCase.Rmd. inputs/ are the unmodified files from git HEAD f9d1bbf. Values recorded from our own clean runs through the KI tool run_rhessys.py: two runs gave byte-identical output, and the KI-tool run gave byte-identical output to running the official Rmd command directly. Tolerances are 1e-5 relative (outputs are printed with 6 decimals).",
+  "engine_version": "rhessys7.4 (makefile VERSION 7.4; the binary's -version prints 'RHESSys Version: 5.14.3'); built from RHESSys git f9d1bbf WITH one uncommitted local edit in rhessys/cycle/canopy_stratum_daily_F.c (see README)",
+  "numeric_checks": [
+    {
+      "name": "n_days_basin",
+      "expected": 4018,
+      "tol": 0,
+      "why": "daily basin output 1989-10-01..2000-09-30 (tec print_daily_on 1989-10-01; first year is spin-up)"
+    },
+    {
+      "name": "n_days_grow",
+      "expected": 4018,
+      "tol": 0,
+      "why": "daily growth (carbon/nitrogen) basin output, same days"
+    },
+    {
+      "name": "first_date",
+      "expected": 19891001,
+      "tol": 0,
+      "why": "first printed day (yyyymmdd)"
+    },
+    {
+      "name": "last_date",
+      "expected": 20000930,
+      "tol": 0,
+      "why": "last printed day (yyyymmdd); run ends 2000-10-01 hour 1"
+    },
+    {
+      "name": "precip_sum_mm",
+      "expected": 13165.753257,
+      "tol": 0.13,
+      "why": "total precipitation over printed days (input climate passes through correctly)"
+    },
+    {
+      "name": "streamflow_sum_mm",
+      "expected": 6604.366734,
+      "tol": 0.066,
+      "why": "total basin streamflow (main hydrology output)"
+    },
+    {
+      "name": "streamflow_max_mm",
+      "expected": 86.573992,
+      "tol": 0.00087,
+      "why": "largest daily streamflow (peak flow)"
+    },
+    {
+      "name": "et_sum_mm",
+      "expected": 6588.349023,
+      "tol": 0.066,
+      "why": "total evaporation + transpiration"
+    },
+    {
+      "name": "sat_def_mean_mm",
+      "expected": 1348.8559288685913,
+      "tol": 0.013,
+      "why": "mean saturation deficit (soil water storage state)"
+    },
+    {
+      "name": "snowpack_max_mm",
+      "expected": 219.090322,
+      "tol": 0.0022,
+      "why": "largest snowpack water equivalent"
+    },
+    {
+      "name": "lai_mean",
+      "expected": 9.672618409905423,
+      "tol": 9.7e-05,
+      "why": "mean leaf area index (vegetation growth, -g mode)"
+    },
+    {
+      "name": "plantc_final",
+      "expected": 70.581598,
+      "tol": 0.00071,
+      "why": "plant carbon on last day (kgC/m2)"
+    },
+    {
+      "name": "soilc_final",
+      "expected": 36.244167,
+      "tol": 0.00036,
+      "why": "soil carbon on last day (kgC/m2)"
+    },
+    {
+      "name": "litrc_final",
+      "expected": 1.09372877,
+      "tol": 1.1e-05,
+      "why": "litter carbon on last day (kgC/m2)"
+    },
+    {
+      "name": "water_balance_max3day_abs_mm",
+      "expected": 2.3333e-06,
+      "tol": 2e-06,
+      "why": "RHESSys's own WaterBalanceTest (rhessys/test/rhessystest.py): max 3-day mean |daily water balance error|; official pass limit is < 1e-5"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4 via models/RHESSys/tools/run_rhessys.py, python_env",
+  "reference": "Official base output reference/base_basin_daily.csv (and Testing/W8TestCase.RData, same content) was made with the output filter reference/testing_filter.yml. It is NOT used as the pass gate: (1) this engine segfaults when given that filter (-of), so the same file cannot be made; (2) comparing our legacy output with it in the same units, means differ: streamflow +0.40%, sat_deficit -0.82%, rz_storage -5.87%, LAI -4.32%, snowpack +0.20% (litter C about -22%). TestCase.Rmd gives no pass limit for these, only says differences above +-4e-6 per day should be understood. Likely cause: the base was made with another code version and/or this engine has a local edit; not checked further (no engine rebuild allowed).",
+  "notes": "The official water balance test from rhessys/test/rhessystest.py (ZERO = 1e-5 on the max 3-day moving mean of |error|) is applied to this run and passes (2.33e-6)."
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Expected results for the official CSDMS HydroTrend default example (repo data/input/HYDRO.IN + HYDRO0.HYPS, 'Greenland Fjord(Mar 2008), 1000 year simulation', start 1908, 1000 years, monthly averaging 'M', 4 grain sizes). inputs/ are the unmodified files from git HEAD of csdms-contrib/hydrotrend (v3.1.4, commit 813a9f1). The Q checks come FROM THE OFFICIAL REFERENCE FILE reference/HYDROASCII.Q (repo data/output/HYDROASCII.Q); the repo's own test is an exact `diff` of this file, so the official tolerance is zero (byte-identical). The QS/QB/LOG checks have no official reference and were recorded from our own runs; two clean runs gave byte-identical output dirs (fixed random seeds, deterministic).",
+  "engine_version": "HydroTrend 3.0.5 (binary --version) built from csdms-contrib/hydrotrend v3.1.4, commit 813a9f1",
+  "numeric_checks": [
+    {"name": "Q_sha256_matches_official", "expected": 1, "tol": 0, "why": "official test: run output HYDROASCII.Q must be byte-identical to repo data/output/HYDROASCII.Q (sha256 ebbe5774...)"},
+    {"name": "Q_n_records", "expected": 12000, "tol": 0, "why": "official file: 1000 years x 12 monthly averages (HYDRO.IN line 5 averaging = M)"},
+    {"name": "Q_mean_m3s", "expected": 210.27930375, "tol": 1e-6, "why": "official file: mean of the monthly river-mouth discharge"},
+    {"name": "Q_max_m3s", "expected": 765.486, "tol": 1e-9, "why": "official file: largest monthly discharge"},
+    {"name": "Q_min_m3s", "expected": 16.926, "tol": 1e-9, "why": "official file: smallest monthly discharge"},
+    {"name": "Q_first_m3s", "expected": 21.975, "tol": 1e-9, "why": "official file: first record (Jan 1908)"},
+    {"name": "Q_last_m3s", "expected": 60.864, "tol": 1e-9, "why": "official file: last record (Dec 2907)"},
+    {"name": "Qs_mean_kgs", "expected": 23.447469083333335, "tol": 1e-6, "why": "own run (repeated exactly): mean monthly suspended sediment load, HYDROASCII.QS"},
+    {"name": "Qs_max_kgs", "expected": 439.447, "tol": 1e-9, "why": "own run (repeated exactly): largest monthly suspended sediment load"},
+    {"name": "Qb_mean_kgs", "expected": 53.36620491666667, "tol": 1e-6, "why": "own run (repeated exactly): mean monthly bedload, HYDROASCII.QB"},
+    {"name": "log_Qbar_m3s", "expected": 218.20, "tol": 1e-9, "why": "own run: long-term mean daily discharge Qbar printed in HYDRO.LOG"},
+    {"name": "log_Qsbar_kgs", "expected": 24.33, "tol": 1e-9, "why": "own run: BQART long-term suspended load Qsbar printed in HYDRO.LOG"},
+    {"name": "log_Qpeak_m3s", "expected": 6590.8, "tol": 1e-9, "why": "own run: peak daily discharge Qpeak printed in HYDRO.LOG"},
+    {"name": "log_basin_area_km2", "expected": 9440.46, "tol": 1e-9, "why": "own run: basin area from HYDRO0.HYPS printed in HYDRO.LOG"}
+  ],
+  "finished_check": "KI tool rc 0, model rc 0, and stdout contains 'HydroTrend 3.0 finished.'",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/HydroTrend/bin/hydrotrend (preflight-resolved engine) run through KI tools/run_hydrotrend.py",
+  "reference": "csdms-contrib/hydrotrend data/output/HYDROASCII.Q at commit 813a9f1 (copied unmodified to reference/HYDROASCII.Q); repo test data/hydrotrend_test_with_args.sh.in diffs it exactly",
+  "notes": "No input tweak. The run is done from inside the temp dir with relative paths 'input' and 'output' because HydroTrend crashes on long absolute output paths (fixed 98/80-char C buffers); this does not change results (output is byte-identical to the official file)."
+}

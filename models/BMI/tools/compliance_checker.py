@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """BMI Compliance Checker.
 
-Validates that a Python class correctly implements all 31 BMI functions
-required by the BMI v2.0 specification.
+Validates that a Python class implements the BMI functions listed in
+BMI_FUNCTIONS. The BMI version checked is inferred from the class:
+get_bmi_version exists only since BMI 2.1, so a class without it is checked
+against BMI 2.0 (get_bmi_version not required); a class that has it is
+checked against BMI 2.1 (all functions required). This is an inferred
+checking target, not a version the model declared.
 
 Pipeline stage: S2 — Compliance Check
 Pattern: validate_inputs → check_compliance → validate_outputs (report)
 """
 
 import importlib
+import importlib.util
 import inspect
 import logging
 import json
@@ -315,11 +320,26 @@ def check_compliance(bmi_class: type) -> dict:
     dict
         Compliance report with per-function results.
     """
+    # Inferred BMI version to check against (see module docstring). A present
+    # but non-callable get_bmi_version still means "2.1" and then fails below.
+    bmi_version = "2.1" if hasattr(bmi_class, "get_bmi_version") else "2.0"
+
+    def _required(spec):
+        since = spec.get("required_since")
+        return since is None or float(since) <= float(bmi_version)
+
     report = {
         "class_name": bmi_class.__name__,
+        "bmi_version_checked": bmi_version,
+        "bmi_version_basis": (
+            "inferred: class has get_bmi_version (BMI 2.1+)" if bmi_version == "2.1"
+            else "inferred: class has no get_bmi_version (added in BMI 2.1), checked as BMI 2.0"
+        ),
         "total_functions": len(BMI_FUNCTIONS),
+        "required_functions": sum(1 for sp in BMI_FUNCTIONS.values() if _required(sp)),
         "implemented": 0,
         "missing": 0,
+        "not_required": [],
         "warnings": [],
         "errors": [],
         "by_category": {},
@@ -333,6 +353,15 @@ def check_compliance(bmi_class: type) -> dict:
 
         has_method = hasattr(bmi_class, func_name)
         is_callable = callable(getattr(bmi_class, func_name, None))
+
+        if not _required(spec) and not has_method:
+            report["not_required"].append(func_name)
+            report["details"][func_name] = {
+                "status": "not_required",
+                "category": category,
+                "reason": f"BMI {spec['required_since']}+ only; checked as BMI {bmi_version}",
+            }
+            continue
 
         if has_method and is_callable:
             report["implemented"] += 1
@@ -371,9 +400,10 @@ def check_compliance(bmi_class: type) -> dict:
                 "reason": "not implemented",
             }
 
-    # Summary
+    # Summary (percentage of the functions required for the checked version)
+    required_implemented = report["required_functions"] - report["missing"]
     report["compliance_pct"] = round(
-        100 * report["implemented"] / report["total_functions"], 1
+        100 * required_implemented / report["required_functions"], 1
     )
     report["status"] = "PASS" if report["missing"] == 0 else "FAIL"
 
@@ -398,14 +428,23 @@ def validate_outputs(report: dict) -> bool:
     print(f"{'='*60}")
     print(f"Status: {report['status']}")
     print(
-        f"Functions: {report['implemented']}/{report['total_functions']} "
-        f"({report['compliance_pct']}%)"
+        f"BMI {report['bmi_version_checked']}: "
+        f"{report['required_functions'] - report['missing']}/{report['required_functions']} "
+        f"required ({report['compliance_pct']}%); {report['implemented']} of "
+        f"{report['total_functions']} listed functions implemented"
     )
+    print(f"Version: {report['bmi_version_basis']}")
+    if report["not_required"]:
+        print(f"Not required for BMI {report['bmi_version_checked']}: "
+              f"{', '.join(report['not_required'])}")
     print()
 
     print("By category:")
     for cat, counts in report["by_category"].items():
         total = counts["pass"] + counts["fail"]
+        if total == 0:
+            print(f"  {cat:20s} not required for BMI {report['bmi_version_checked']}")
+            continue
         marker = "PASS" if counts["fail"] == 0 else "FAIL"
         print(f"  {cat:20s} {counts['pass']}/{total:2d} [{marker}]")
 
@@ -449,7 +488,13 @@ def main():
     args = parser.parse_args()
 
     # validate → process → validate
-    bmi_class = validate_inputs(args.module, args.class_name)
+    try:
+        bmi_class = validate_inputs(args.module, args.class_name)
+    except Exception as e:
+        logger.error(
+            f"{e} (run this tool with the Python where the model package is "
+            f"installed: {sys.executable} was used)")
+        sys.exit(1)
     report = check_compliance(bmi_class)
     is_compliant = validate_outputs(report)
 

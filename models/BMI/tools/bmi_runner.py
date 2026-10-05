@@ -9,7 +9,10 @@ Pattern: validate_inputs → run_model → validate_outputs
 """
 
 import csv
+import importlib
+import json
 import logging
+import math
 import os
 import sys
 import time
@@ -295,11 +298,15 @@ def validate_outputs(results: dict) -> bool:
                 f"{times[i - 1]} -> {times[i]}"
             )
 
-    # Check for all-null variables
+    # Check for all-null variables (a requested variable that could never be read)
+    all_null = []
     for var_name, values in results["variables"].items():
         non_null = [v for v in values if v is not None]
         if not non_null:
-            logger.warning(f"Variable '{var_name}' has no valid values")
+            logger.error(f"Variable '{var_name}' has no valid values")
+            all_null.append(var_name)
+    if all_null:
+        return False
 
     logger.info(
         f"Validation passed: {results['n_steps']} steps, "
@@ -342,26 +349,75 @@ def main():
         default=None,
         help="Output variable names to track",
     )
+    parser.add_argument(
+        "--inject-json",
+        default=None,
+        help="JSON file {time: {var_name: [values...]}}: set_value injections "
+             "(the run_model inject_schedule), e.g. an initial field at time 0",
+    )
 
     args = parser.parse_args()
 
-    # Import model class
+    # Injection schedule (checked before the model is loaded or initialized)
+    inject_schedule = None
+    if args.inject_json:
+        try:
+            inject_schedule = _load_inject_json(args.inject_json)
+        except Exception as e:
+            logger.error(f"Bad --inject-json {args.inject_json}: {e}")
+            sys.exit(1)
+
+    # Import model class (run this tool with the Python that has the model installed)
     try:
         mod = importlib.import_module(args.module)
         bmi_class = getattr(mod, args.class_name)
         bmi_instance = bmi_class()
     except Exception as e:
-        logger.error(f"Cannot load BMI class: {e}")
+        logger.error(
+            f"Cannot load BMI class {args.module}.{args.class_name} with "
+            f"{sys.executable}: {e}. Run bmi_runner.py with the Python where the "
+            f"model package is installed (heat example: $BMI_HEAT_PYTHON or "
+            f"KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python)."
+        )
         sys.exit(1)
 
-    import importlib
-
     # validate → process → validate
-    params = validate_inputs(
-        bmi_instance, args.config_file, args.vars, args.end_time
-    )
+    try:
+        params = validate_inputs(
+            bmi_instance, args.config_file, args.vars, args.end_time,
+            inject_schedule,
+        )
+    except Exception as e:
+        logger.error(f"Invalid input: {e}")
+        sys.exit(1)
     results = run_model(params, args.output_csv)
-    validate_outputs(results)
+    if not validate_outputs(results):
+        logger.error("BMI run FAILED output validation")
+        sys.exit(1)
+
+
+def _load_inject_json(path: str) -> dict:
+    """Read and check {time: {var_name: [numbers]}}; times and values finite."""
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not data:
+        raise ValueError("top level must be a non-empty object {time: {var: values}}")
+    schedule = {}
+    for t, injections in data.items():
+        try:
+            t_val = float(t)
+        except (TypeError, ValueError):
+            raise ValueError(f"time key {t!r} is not a number")
+        if not math.isfinite(t_val):
+            raise ValueError(f"time key {t!r} is not finite")
+        if not isinstance(injections, dict) or not injections:
+            raise ValueError(f"time {t}: value must be a non-empty object {{var: values}}")
+        for var, values in injections.items():
+            arr = np.asarray(values, dtype=float)
+            if arr.size == 0 or not np.all(np.isfinite(arr)):
+                raise ValueError(f"time {t}, {var}: values must be non-empty finite numbers")
+        schedule[t] = injections
+    return schedule
 
 
 if __name__ == "__main__":

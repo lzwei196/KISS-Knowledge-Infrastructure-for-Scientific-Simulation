@@ -1,0 +1,44 @@
+{
+  "test_case": "Daisy tutorial_andeby (official tutorial setup sample/test.dai)",
+  "engine": {
+    "name": "Daisy",
+    "version": "7.1.4",
+    "binary": "daisy (server: /mnt/disk1/Hydrocraft_server/models/Daisy/bin/daisy)",
+    "library": "DAISYHOME lib/ (tillage.dai, crop.dai, log.dai and the files they load) from the same git commit",
+    "source": "github.com/daisy-model/daisy, sample/test.dai + sample/dk-taastrup.dwf (commit a621e3b519e85117b1a35df5f8ad428408f8cb88)",
+    "license": "GNU GPL v2 (repo COPYING.txt); repo also ships COPYING.LIB (GNU LGPL v2.1)"
+  },
+  "ki": {
+    "model": "Daisy",
+    "run_tool": "tools/run_daisy.py",
+    "parse_tool": "tools/parse_daisy_output.py"
+  },
+  "simulation": {
+    "site": "Andeby (fictional sandy Danish farm), Taastrup weather (daily)",
+    "start": "1986-12-01T01",
+    "stop": "1988-04-01T01",
+    "soil": "FAO3 sandy Ap (0-20 cm) over C horizon to 2.5 m, deep groundwater (free drainage)",
+    "management": "plow 1987-03-20; 100 kg mineral N 04-04; sow grass + spring barley 04-05; barley harvest at DS 2.0 (1987-08-26); 80 kg N 09-08; grass cut 10-10",
+    "outputs": [
+      "harvest.dlf",
+      "sbarley.dlf",
+      "field_water.dlf",
+      "field_nitrogen.dlf",
+      "soil_water.dlf",
+      "soil_nitrogen.dlf",
+      "checkpoint-1987-8-7+6.dai",
+      "daisy.log"
+    ],
+    "runtime_seconds": 1.2
+  },
+  "files": {
+    "inputs/dk-taastrup.dwf": {
+      "bytes": 657471,
+      "sha256": "990bde17793719885973edd01c14979de9469e302c5bd1a0015eab5b0aa10604"
+    },
+    "inputs/test.dai": {
+      "bytes": 2164,
+      "sha256": "d44071c7333d654150e5bb90de8d7f337d9a90a46ceb72823b0388182b6f7639"
+    }
+  }
+}

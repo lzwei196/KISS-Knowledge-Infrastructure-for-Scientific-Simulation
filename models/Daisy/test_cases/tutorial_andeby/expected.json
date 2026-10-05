@@ -1,0 +1,112 @@
+{
+  "description": "Expected results for the official Daisy tutorial setup sample/test.dai ('Simulation for use in tutorial.', Andeby farm: sandy soil column, Taastrup weather, 1986-12-01 to 1988-04-01, plowing + mineral N, spring barley with under-sown grass, barley harvest, autumn N, grass cut). inputs/ are the unmodified files from git HEAD of github.com/daisy-model/daisy (commit a621e3b). The repo ships NO reference output for this setup, so the values were recorded from a clean run of the server binary through the KI's tools/run_daisy.py; two clean runs gave identical .dlf and checkpoint files (apart from the RUN: time stamp line), so the run is deterministic. Also checked: run exit code 0 and the 'Program finished' line in daisy.log.",
+  "engine_version": "Daisy 7.1.4 (binary built Mar 25 2026 from github.com/daisy-model/daisy commit a621e3b)",
+  "numeric_checks": [
+    {
+      "name": "n_dlf_files",
+      "expected": 6,
+      "tol": 0,
+      "why": "the setup asks for 6 .dlf logs (harvest, sbarley, field/soil water, field/soil nitrogen)"
+    },
+    {
+      "name": "n_harvest_rows",
+      "expected": 2,
+      "tol": 0,
+      "why": "two harvest events: spring barley harvest and the grass cut"
+    },
+    {
+      "name": "barley_harvest_doy",
+      "expected": 238,
+      "tol": 0,
+      "why": "barley harvested 1987-08-26 (day 238), when DS reached 2.0 before the 9-5 fallback date"
+    },
+    {
+      "name": "barley_grain_DM",
+      "expected": 2.70161,
+      "tol": 0.001,
+      "why": "spring barley grain (storage organ) dry matter at harvest, Mg DM/ha"
+    },
+    {
+      "name": "barley_stem_DM",
+      "expected": 5.51912,
+      "tol": 0.001,
+      "why": "spring barley stem dry matter removed at harvest, Mg DM/ha"
+    },
+    {
+      "name": "barley_grain_N",
+      "expected": 48.7602,
+      "tol": 0.01,
+      "why": "N in harvested barley grain, kg N/ha"
+    },
+    {
+      "name": "grass_cut_leaf_DM",
+      "expected": 1.43068,
+      "tol": 0.001,
+      "why": "grass leaf dry matter taken at the 1987-10-10 cut, Mg DM/ha"
+    },
+    {
+      "name": "n_sbarley_daily_rows",
+      "expected": 488,
+      "tol": 0,
+      "why": "daily crop log rows 1986-12-01 to 1988-04-01"
+    },
+    {
+      "name": "barley_max_LAI",
+      "expected": 5.28476,
+      "tol": 0.001,
+      "why": "peak spring barley leaf area index, m2/m2"
+    },
+    {
+      "name": "precip_total_mm",
+      "expected": 899.9,
+      "tol": 0.05,
+      "why": "sum of monthly precipitation read from dk-taastrup.dwf (input passes through)"
+    },
+    {
+      "name": "actual_ET_total_mm",
+      "expected": 538.13588,
+      "tol": 0.01,
+      "why": "sum of monthly actual evapotranspiration, mm"
+    },
+    {
+      "name": "matrix_percolation_total_mm",
+      "expected": 126.997445,
+      "tol": 0.01,
+      "why": "sum of monthly matrix percolation out of the logged zone, mm"
+    },
+    {
+      "name": "final_soil_matrix_water_mm",
+      "expected": 675.301,
+      "tol": 0.01,
+      "why": "soil matrix water at the last monthly row (1988-04-01), mm"
+    },
+    {
+      "name": "matrix_N_leaching_total",
+      "expected": 6.3172042,
+      "tol": 0.001,
+      "why": "sum of monthly matrix N leaching, kg N/ha"
+    },
+    {
+      "name": "crop_N_uptake_total",
+      "expected": 232.72426,
+      "tol": 0.01,
+      "why": "sum of monthly crop N uptake (barley + grass), kg N/ha"
+    },
+    {
+      "name": "n_balance_lines",
+      "expected": 13,
+      "tol": 0,
+      "why": "Daisy's own end-of-run balance summaries written to daisy.log (N and water)"
+    },
+    {
+      "name": "max_abs_balance_error",
+      "expected": 0.0,
+      "tol": 0.05,
+      "why": "largest |In - Out - Increase| in those summaries; Daisy prints 0.0 / 0.000, i.e. water and N balances close"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/Daisy/bin/daisy (7.1.4) with DAISYHOME=/mnt/disk1/Hydrocraft_server/models/Daisy/source/repo, run via KI tools/run_daisy.py, read via KI tools/parse_daisy_output.py",
+  "reference": "own run (no official reference output ships with sample/test.dai); run twice, identical results",
+  "notes": "Tolerances are small and only allow for print rounding on other builds; this build repeats exactly. Sums are over the monthly rows of field_water.dlf / field_nitrogen.dlf (first row is the 1986-12-01 initial state, all zeros)."
+}

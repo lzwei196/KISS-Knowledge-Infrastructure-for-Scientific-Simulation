@@ -1,0 +1,86 @@
+;;; test.dai -- Sample file using the Daisy libraries.
+
+(description "Simulation for use in tutorial.")
+
+;; Use standard parameterizations.
+(input file "tillage.dai")
+(input file "crop.dai")
+(input file "log.dai")
+
+;; We have some very sandy soil.
+(defhorizon Ap FAO3
+  "Andeby top soil."
+  (clay 8.0 [%])
+  (silt 10.5 [%])
+  (sand 81.5 [%])
+  (humus 1.12 [%])
+  (C_per_N 11.0 [g C/g N])
+  (dry_bulk_density 1.5 [g/cm^3]))
+
+(defhorizon C Ap
+  "Andeby C horizon."
+  (humus 0.12 [%]))
+
+;; We build the column from the horizons.
+(defcolumn Andeby default
+  "Data collected by F.Guf at the B.And farm, Andeby, 2002."
+  (Soil (horizons (-20 [cm] Ap) (-2.5 [m] C))
+        (border -1 [m])
+        (MaxRootingDepth 60.0 [cm]))
+  (OrganicMatter original
+                 (init (input 1400 [kg C/ha/y])
+                       (root 480 [kg C/ha/y])
+                       (end -20 [cm])))
+  (Groundwater deep))
+
+;; Combine it.
+(defprogram AndebyFarm Daisy
+
+  ;; Field to use.
+  (column Andeby)
+
+  ;; Weather data.
+  (weather default "dk-taastrup.dwf")
+
+
+  ;; Simulation start and stop dates.
+  (time 1986 12 1 1)
+  (stop 1988 4 1 1)
+
+  ;; Management activities.
+  (manager activity
+    (wait (at 1987 3 20 1))
+    (plowing)
+    (wait (at 1987 4 4 1))
+    (fertilize (mineral (weight 100.0 [kg N/ha])
+			(NH4_fraction 0.5 [])))
+    (wait (at 1987 4 5 1))
+    (progn
+      (sow "Grass")
+      (sow "Spring Barley"))
+    (wait (or (crop_ds_after "Spring Barley" 2.0)
+	      (at 1987 9 5 1)))
+    (harvest "Spring Barley")
+    (wait (at 1987 9 8 1))
+    (fertilize (mineral (weight 80.0 [kg N/ha])
+			(NH4_fraction 0.5 [])))
+    (wait (at 1987 10 10 1))
+    (cut "Grass"
+	 (stub 8.0 [cm])              ;Leave 8 cm stub.
+	 (stem 1.00 [])))             ;Harvest everything above stub.
+
+  ;; Create these log files.
+  (output harvest
+	  ("Field nitrogen" (when monthly))
+	  ("Soil nitrogen" (when daily) (from 0 [m]) (to -1 [m]))
+	  ("Field water" (when monthly))
+	  ("Soil water" (when daily) (from 0 [m]) (to -1 [m]))
+	  ("Crop"
+	   (crop "Spring Barley")
+	   (where "sbarley.dlf"))
+	  (checkpoint (when (at 1987 8 7 6)))))
+
+;; Use it.
+(run AndebyFarm)
+
+;;; test.dai ends here.

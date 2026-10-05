@@ -1,0 +1,37 @@
+{
+  "test_case": "PorePy mandel_biot (official Mandel problem example + functional test)",
+  "engine": {
+    "name": "PorePy",
+    "version": "1.12.0",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PorePy/venv/bin/python",
+    "source": "github.com/pmgbergen/porepy, commit e4a9a212f3d231aee37c7bc469b78e418f87015f: src/porepy/examples/mandel_biot.py, tests/functional/test_mandel.py",
+    "license": "GPL-3.0 (PorePy)"
+  },
+  "ki": {
+    "model": "PorePy",
+    "run_tool_used": false,
+    "run_tool_gap": "tools/run_porepy.py --example mandel_biot imports MandelSetup, which does not exist in porepy 1.12.0 (class is MandelModel)"
+  },
+  "simulation": {
+    "model": "MandelModel (Biot poromechanics, 2D Cartesian grid)",
+    "n_cells": 612,
+    "time_schedule_s": [
+      0,
+      25,
+      50
+    ],
+    "dt_s": 25,
+    "extra_run": "scaled vs unscaled, one 10 s step",
+    "reference": "exact analytical Mandel solution; desired errors from the official test"
+  },
+  "files": {
+    "inputs/mandel_biot.py": {
+      "bytes": 50386,
+      "sha256": "30c82cffc30fd2470e8fd36050453c4b2118937e15e236a1d7ee603769d8bd74"
+    },
+    "inputs/test_mandel.py": {
+      "bytes": 6454,
+      "sha256": "bc87914b8554f9ec890463840ff5943011d0d6d1b458a0c81972d0e2d368ca81"
+    }
+  }
+}

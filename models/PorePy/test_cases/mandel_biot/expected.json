@@ -1,0 +1,119 @@
+{
+  "description": "Expected results for PorePy's official Mandel problem (src/porepy/examples/mandel_biot.py, Biot poromechanics on a 2D Cartesian grid) as run by PorePy's own functional test tests/functional/test_mandel.py. Values are the relative/absolute errors against the exact analytical Mandel solution.",
+  "engine_version": "porepy 1.12.0 (git e4a9a212f3d231aee37c7bc469b78e418f87015f)",
+  "numeric_checks": [
+    {
+      "name": "n_results",
+      "expected": 2,
+      "atol": 0,
+      "why": "errors saved at both requested times (25 s and 50 s)"
+    },
+    {
+      "name": "final_time",
+      "expected": 50.0,
+      "atol": 0,
+      "why": "simulation reached the end time 50 s"
+    },
+    {
+      "name": "error_pressure_t25",
+      "expected": 0.024921804453552153,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of pressure vs the exact Mandel solution at t=25 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_flux_t25",
+      "expected": 0.3589228363108329,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of Darcy flux vs exact solution at t=25 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_displacement_t25",
+      "expected": 0.0007428565885956782,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of displacement vs exact solution at t=25 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_force_t25",
+      "expected": 0.0077403423843181735,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of poroelastic force vs exact solution at t=25 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_consolidation_degree_x_t25",
+      "expected": 0.005949597128370475,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "absolute error of horizontal degree of consolidation at t=25 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_consolidation_degree_y_t25",
+      "expected": 2.983724378680108e-16,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "absolute error of vertical degree of consolidation (round-off level) at t=25 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_pressure_t50",
+      "expected": 0.016162549749926567,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of pressure vs the exact Mandel solution at t=50 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_flux_t50",
+      "expected": 0.16633135580309805,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of Darcy flux vs exact solution at t=50 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_displacement_t50",
+      "expected": 0.0007082894988831649,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of displacement vs exact solution at t=50 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_force_t50",
+      "expected": 0.004907534757124174,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "relative L2 error of poroelastic force vs exact solution at t=50 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_consolidation_degree_x_t50",
+      "expected": 0.0043008910464760325,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "absolute error of horizontal degree of consolidation at t=50 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "error_consolidation_degree_y_t50",
+      "expected": 2.983724378680108e-16,
+      "atol": 1e-05,
+      "rtol": 0.001,
+      "why": "absolute error of vertical degree of consolidation (round-off level) at t=50 s; official desired value and tolerance from tests/functional/test_mandel.py"
+    },
+    {
+      "name": "scaled_minus_unscaled_error_pressure",
+      "expected": 0.0,
+      "atol": 0.00015,
+      "why": "pressure error must be the same for scaled (mm, g) and unscaled runs; official check assert_almost_equal(decimal=4) in test_scaled_vs_unscaled_systems"
+    },
+    {
+      "name": "scaled_minus_unscaled_error_displacement",
+      "expected": 0.0,
+      "atol": 0.00015,
+      "why": "displacement error must be the same for scaled (mm, g) and unscaled runs; official check assert_almost_equal(decimal=4) in test_scaled_vs_unscaled_systems"
+    }
+  ],
+  "tolerance_rule": "pass if |got - expected| <= atol + rtol*|expected| (same as numpy.testing.assert_allclose used by the official test)",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PorePy/venv/bin/python (porepy 1.12.0 editable install of the repo), OMP_NUM_THREADS=4",
+  "reference": "OFFICIAL: the expected error values and tolerances (atol 1e-5, rtol 1e-3; decimal=4 for scaled vs unscaled) are copied from tests/functional/test_mandel.py of pmgbergen/porepy at the commit above. run_reference.py also re-reads them from inputs/test_mandel.py and fails if they differ.",
+  "notes": "pytest is not installed in the engine venv, so run_reference.py drives the same model setup as the test fixture with a small script. No input file is changed."
+}

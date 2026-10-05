@@ -1,0 +1,70 @@
+{
+  "test_case": "ISSM NightlyRun test101 (SquareShelfConstrainedStressSSA2d, official)",
+  "engine": {
+    "name": "ISSM",
+    "version": "2026.1 (git ab809d35b83c5c34f2d80a959324b9ee1a0853f3)",
+    "binary": "bin/issm.exe (PETSc 3.23, MPICH 4.3.0) + Python API",
+    "source": "https://github.com/ISSMteam/ISSM test/NightlyRun/test101.py (+ test/Exp, test/Par, test/Data, test/Archives)",
+    "license": "BSD-3-Clause (California Institute of Technology)"
+  },
+  "ki": {
+    "model": "ISSM",
+    "tool": "tools/run_issm.py (custom mode)"
+  },
+  "simulation": {
+    "solution": "StressbalanceSolution",
+    "flow_equation": "SSA (2D)",
+    "domain": "square ice shelf, fully floating (Exp/Square.exp)",
+    "mesh": "triangle, 50 km, 340 vertices, 614 elements",
+    "mpi_ranks": 2,
+    "omp_threads": 4,
+    "runtime_s": "about 2",
+    "reference": "Archives/Archive101.arch (official), 13 fields with official tolerances"
+  },
+  "files": {
+    "inputs/Archives/Archive101.arch": {
+      "bytes": 19629,
+      "sha256": "8dde6dd609fb9588e04972f11773f6672cd26af3b0b5d53a67a8679afdb50131"
+    },
+    "inputs/Data/SquareShelfConstrained.arch": {
+      "bytes": 25767,
+      "sha256": "64d22320b74c1d45b1c62e6b9511955bfa21ff4bc11efdcd0b0d1956f5f1ff2c"
+    },
+    "inputs/Exp/MassFlux1.exp": {
+      "bytes": 102,
+      "sha256": "bc17e7f50940f209f575a91357280813ebf044d45b1d1378db3ab43c2701923f"
+    },
+    "inputs/Exp/MassFlux2.exp": {
+      "bytes": 102,
+      "sha256": "e5b9126b9097a41226a672cb96c4bb54502af6f5381cc765c5839b0e174a7dcd"
+    },
+    "inputs/Exp/MassFlux3.exp": {
+      "bytes": 102,
+      "sha256": "4d2a9727020e0198ddc33dd6c24a1366803bce376a7f052e0c7b96706d97ed5e"
+    },
+    "inputs/Exp/MassFlux4.exp": {
+      "bytes": 469,
+      "sha256": "d06370628899f923d720b7199f404fc7f489fdab1a528f9be30f903d83a0b91e"
+    },
+    "inputs/Exp/MassFlux5.exp": {
+      "bytes": 3710,
+      "sha256": "2f0d8e99380777f7eebf5b7287b4797ffd6cbb5275f7a83876733dfe00c3bcb3"
+    },
+    "inputs/Exp/MassFlux6.exp": {
+      "bytes": 18110,
+      "sha256": "3910e27f527393a1534a1b875bf1196be95d591ba6c0dacc4a8418798f54fe4a"
+    },
+    "inputs/Exp/Square.exp": {
+      "bytes": 117,
+      "sha256": "50ba4896f232591ae504d9354dd0e873797c8ed9d3854ef8c2c2430ced8daab2"
+    },
+    "inputs/NightlyRun/test101.py": {
+      "bytes": 2926,
+      "sha256": "ceb4a23a1106fa0642ef6604e55a800acd1dc620ff529405e99b9f2471eddc57"
+    },
+    "inputs/Par/SquareShelfConstrained.py": {
+      "bytes": 2716,
+      "sha256": "f909dd259292dc085f17558606caaf8c31855236c89c78d2be4f6760697a3722"
+    }
+  }
+}

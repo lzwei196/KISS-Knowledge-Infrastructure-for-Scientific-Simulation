@@ -29,54 +29,13 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+from parse_shaw_output import parse_frost_file
+
 
 def parse_frost_output(filepath):
-    """Parse SHAW frost.out file."""
-    records = []
-
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or any(c.isalpha() for c in line[:10]):
-                continue
-
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-
-            try:
-                jday = int(parts[0])
-                if len(parts) >= 7:
-                    hour = int(parts[1])
-                    year = int(parts[2])
-                    frost_depth = float(parts[3])
-                    thaw_depth = float(parts[4])
-                    snow_depth = float(parts[5])
-                    swe = float(parts[6]) if len(parts) > 6 else 0.0
-                else:
-                    hour = 12
-                    year = int(parts[1])
-                    frost_depth = float(parts[2])
-                    thaw_depth = float(parts[3])
-                    snow_depth = float(parts[4]) if len(parts) > 4 else 0.0
-                    swe = float(parts[5]) if len(parts) > 5 else 0.0
-
-                year = year + (1900 if year > 50 else 2000)
-                dt = datetime(year, 1, 1) + timedelta(days=jday - 1, hours=hour)
-
-                records.append({
-                    'datetime': dt,
-                    'jday': jday,
-                    'year': year,
-                    'frost_depth_cm': frost_depth,
-                    'thaw_depth_cm': thaw_depth,
-                    'snow_depth_cm': snow_depth,
-                    'swe_cm': swe,
-                })
-            except (ValueError, IndexError):
-                continue
-
-    return records
+    """Use the standard SHAW column and SWE-unit interpretation shared with CSV export."""
+    return [{**row, "datetime": datetime.fromisoformat(row["datetime"])}
+            for row in parse_frost_file(filepath)]
 
 
 def compute_frost_metrics(records):
@@ -106,10 +65,10 @@ def compute_frost_metrics(records):
         max_snow_day = recs[snow_depths.index(max_snow)]['jday'] if max_snow > 0 else 0
 
         # Frozen days: frost_depth > 0
-        frozen_days = sum(1 for f in frost_depths if f > 0)
+        frozen_days = len({r["jday"] for r in recs if r["frost_depth_cm"] > 0})
 
         # Snow-covered days
-        snow_days = sum(1 for s in snow_depths if s > 0.1)
+        snow_days = len({r["jday"] for r in recs if r["snow_depth_cm"] > 0.1})
 
         # Freeze-thaw cycles: transitions from frozen to unfrozen
         cycles = 0

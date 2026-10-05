@@ -1,0 +1,26 @@
+{
+  "test_case": "OpenGeoSys LiquidFlow GravityDriven (official OGS benchmark, ctest LiquidFlow_GravityDriven)",
+  "engine": {
+    "name": "OpenGeoSys",
+    "version": "6.5.7",
+    "binary": "ogs (serial, pip wheel build); vtkdiff for the official check",
+    "source": "github.com/ufz/ogs Tests/Data/Parabolic/LiquidFlow/GravityDriven (master commit a5c00a5059a8704fafb64cdf1756494ace6b727f, 2026-03-24)",
+    "license": "BSD-3-Clause style (OpenGeoSys LICENSE.txt, Copyright (c) 2012-2026 OpenGeoSys Community)"
+  },
+  "ki": {
+    "model": "OpenGeoSys"
+  },
+  "simulation": {
+    "process": "LIQUID_FLOW (steady, storage = 0)",
+    "domain": "2D box 1 m x 1 m, 409 nodes, 736 triangles",
+    "gravity": "0 -9.81 m/s2",
+    "boundary": "Dirichlet p = 0 at top corners (0,1) and (1,1)",
+    "time": "t 0 -> 1 s, one Backward Euler step",
+    "reference": "analytic hydrostatic pressure and zero Darcy velocity, stored in mesh2D.vtu (AnalyticPressure, v_ref)"
+  },
+  "files": {
+    "inputs/gravity_driven.prj": {"bytes": 6219, "sha256": "e318703b36291caf661153ce74bcc261cc8c6fe7f18d876b64b69be18c80ba34"},
+    "inputs/gravity_driven.gml": {"bytes": 393, "sha256": "08da542e228bdd460c060a38fe12203a552bc66a7f3fa1f07d459e98e34b35a8"},
+    "inputs/mesh2D.vtu": {"bytes": 59821, "sha256": "c1c303271ce9f0b2b836602dba9580f6ce854e0c223eac10457b2d40cb46cf78"}
+  }
+}

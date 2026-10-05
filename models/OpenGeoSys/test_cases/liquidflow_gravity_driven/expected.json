@@ -1,0 +1,21 @@
+{
+  "description": "Expected results for the official OpenGeoSys benchmark Tests/Data/Parabolic/LiquidFlow/GravityDriven (ctest LiquidFlow_GravityDriven, ufz/ogs master commit a5c00a5): steady water pressure in a 1 m x 1 m 2D box under gravity, top held at p = 0. The OFFICIAL reference is the analytic solution stored in the input mesh mesh2D.vtu (point fields AnalyticPressure and v_ref). The official test compares the output fields pressure and v to them with vtkdiff, abs and rel tolerance 1e-8 (ProcessLib/LiquidFlow/Tests.cmake). The expected values for the pressure checks below are read from that official AnalyticPressure field; the tolerance is the official 1e-8.",
+  "engine_version": "OpenGeoSys 6.5.7 (pip wheel build, ogs --version)",
+  "numeric_checks": [
+    {"name": "ogs_return_code", "expected": 0, "tol": 0, "why": "ogs finished normally (KI run_ogs.py status success)"},
+    {"name": "vtkdiff_pressure_vs_AnalyticPressure_rc", "expected": 0, "tol": 0, "why": "official ctest check 1: vtkdiff mesh2D.vtu AnalyticPressure vs output pressure, --abs 1e-8 --rel 1e-8"},
+    {"name": "vtkdiff_v_vs_v_ref_rc", "expected": 0, "tol": 0, "why": "official ctest check 2: vtkdiff mesh2D.vtu v_ref vs output v (Darcy velocity), --abs 1e-8 --rel 1e-8"},
+    {"name": "pressure_max_abs_error_vs_analytic", "expected": 0.0, "tol": 1e-08, "why": "largest point error of pressure against the official analytic field, official tolerance"},
+    {"name": "v_max_abs_error_vs_v_ref", "expected": 0.0, "tol": 1e-08, "why": "largest point error of Darcy velocity against the official v_ref (= 0, no flow at hydrostatic state)"},
+    {"name": "pressure_max", "expected": 9810.0, "tol": 1e-08, "why": "bottom pressure rho*g*H = 1000*9.81*1; official AnalyticPressure max"},
+    {"name": "pressure_min", "expected": 0.0, "tol": 1e-08, "why": "top boundary p = 0; official AnalyticPressure min"},
+    {"name": "pressure_mean", "expected": 4898.944397332519, "tol": 1e-08, "why": "mean over the 409 nodes of official AnalyticPressure"},
+    {"name": "n_points", "expected": 409, "tol": 0, "why": "official mesh2D.vtu node count"},
+    {"name": "n_output_vtu", "expected": 2, "tol": 0, "why": "prj writes the initial state (ts 0) and the final step (ts 1)"},
+    {"name": "final_time_s", "expected": 1.0, "tol": 0, "why": "prj t_end = 1 s, one time step"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "ogs 6.5.7 at /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/venv/bin/ogs, vtkdiff from the same venv, run through KI tools/run_ogs.py with OMP_NUM_THREADS=1",
+  "reference": "https://github.com/ufz/ogs  Tests/Data/Parabolic/LiquidFlow/GravityDriven (commit a5c00a5059a8704fafb64cdf1756494ace6b727f) and ProcessLib/LiquidFlow/Tests.cmake",
+  "notes": "Inputs are byte-for-byte the git HEAD files; nothing is changed. OMP_NUM_THREADS=1 is set only in the run environment (default would use all cores); a run with the default 192 threads also passes. Seen in our runs: pressure max abs error 6.9e-11 Pa, velocity max abs error 2.9e-19 m/s."
+}

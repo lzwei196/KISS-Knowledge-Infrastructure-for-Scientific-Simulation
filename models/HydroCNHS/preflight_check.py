@@ -15,7 +15,11 @@ MODEL_ID = "HydroCNHS"
 EXPECTED_VERSION = "1.2.1"
 KI_DIR = Path(__file__).resolve().parent
 MODEL_DIR = KI_DIR.parent
-MODEL_VENV_PYTHON = MODEL_DIR / "venv" / "bin" / "python"
+# Model venv (hydrocnhs from source/repo/src). Override with HYDROCNHS_PYTHON.
+# An override set to "" is invalid (it fails below); it does not fall back to the default.
+MODEL_VENV_PYTHON = Path(os.environ.get("HYDROCNHS_PYTHON", str(MODEL_DIR / "venv" / "bin" / "python")))
+# A cold first import of hydrocnhs took ~2 min on the loaded server (2026-10-05); allow 180 s.
+IMPORT_TIMEOUT_S = 180
 MODEL_SOURCE_DIR = MODEL_DIR / "source" / "repo" / "src" / "hydrocnhs"
 PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
@@ -140,7 +144,7 @@ def check_python_runtime() -> None:
             str(MODEL_VENV_PYTHON),
             True,
             "fail",
-            f"Restore the HydroCNHS model venv at {MODEL_DIR / 'venv'} or install hydrocnhs in KISSPATH_PYTHON_ENV; see {TRIPLETS}.",
+            f"HydroCNHS python not found at {MODEL_VENV_PYTHON}. Restore the HydroCNHS model venv at {MODEL_DIR / 'venv'} or set HYDROCNHS_PYTHON to a python that has hydrocnhs; see {TRIPLETS}.",
         )
         return
     if not os.access(MODEL_VENV_PYTHON, os.X_OK):
@@ -160,14 +164,15 @@ def check_python_runtime() -> None:
         subject=real_python,
         kind="binary",
         critical=True,
-        timeout_s=10,
+        timeout_s=30,
     )
 
 
 def check_hydrocnhs_import() -> None:
     code = (
-        "import hydrocnhs, hydrocnhs.calibration; "
-        "version = getattr(hydrocnhs, '__version__', 'NO_VERSION'); "
+        "import hydrocnhs, hydrocnhs.calibration, importlib.metadata as md; "
+        # hydrocnhs 1.2.1 has no __version__ attribute; its installed metadata has the version.
+        "version = getattr(hydrocnhs, '__version__', None) or md.version('hydrocnhs'); "
         f"raise SystemExit(0 if version == '{EXPECTED_VERSION}' else "
         "f'unexpected hydrocnhs version {version}')"
     )
@@ -177,7 +182,7 @@ def check_hydrocnhs_import() -> None:
         subject="hydrocnhs",
         kind="import",
         critical=True,
-        timeout_s=30,
+        timeout_s=IMPORT_TIMEOUT_S,
     )
 
 

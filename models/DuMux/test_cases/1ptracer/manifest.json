@@ -1,0 +1,76 @@
+{
+  "test_case": "DuMux examples/1ptracer (official DuMux example, ctest example_1ptracer)",
+  "engine": {
+    "name": "DuMux",
+    "version": "3.10 (releases/3.10, commit 3e151aebf005bf500c0d0e05563c0e8c41583eef, git describe 3.10.0-11-g3e151aebf); DUNE 2.10",
+    "binary": "example_1ptracer (compiled example program; server build at /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer)",
+    "source": "https://git.iws.uni-stuttgart.de/dumux-repositories/dumux.git examples/1ptracer, test/references/test_1ptracer_*-reference.vtu, bin/testing/dumux_fuzzycompare_legacy.py (all taken with git show HEAD, unmodified)",
+    "license": "GPL-3.0-or-later (DuMux, see LICENSE.md upstream)"
+  },
+  "ki": {
+    "model": "DuMux",
+    "run_tool": "tools/run_dumux.py (run_simulation)"
+  },
+  "simulation": {
+    "grid": "2D unit square, 50 x 50 cells (2500 cells, 2601 points), cell-centred TPFA",
+    "stages": "1) steady single-phase flow (pressure, seeded random permeability with a lower-permeability lens); 2) tracer transport with the flow velocity",
+    "time": "dt 10 s, TEnd 5000 s, 500 steps, output every 500 s (11 tracer files)",
+    "command": "example_1ptracer params.input -Problem.Name example_1ptracer -Problem.FlowDirection 1",
+    "threads": "DUMUX_NUM_THREADS=4 / OMP_NUM_THREADS=4 (results do not depend on it)",
+    "runtime": "under 1 s with 4 threads"
+  },
+  "files": {
+    "compare/__pycache__/dumux_fuzzycompare_legacy.cpython-312.pyc": {
+      "bytes": 27213,
+      "sha256": "47151839b20e3130e731e97cba39add129156e511c1033bc261144e593bd6c12"
+    },
+    "compare/dumux_fuzzycompare_legacy.py": {
+      "bytes": 28784,
+      "sha256": "415a768eb1a7b2701e0e21501b2f0bad9aebe03e6e467ba2e0410d34fb44f7f9"
+    },
+    "inputs/params.input": {
+      "bytes": 327,
+      "sha256": "2c89cd2ce42df913bbc46164dea41e88e62618e5be3d14f478edc8f189dcc355"
+    },
+    "inputs/source/CMakeLists.txt": {
+      "bytes": 886,
+      "sha256": "537b3054b058f840a43eb0eae7118ac41c39abfae345febe569942f8446969c7"
+    },
+    "inputs/source/main.cc": {
+      "bytes": 17443,
+      "sha256": "f62eafd9d15afa26f1d74c711de78087ab352892f10732638b86220065f501ae"
+    },
+    "inputs/source/problem_1p.hh": {
+      "bytes": 4303,
+      "sha256": "1d20b651b5b5882b17bc09b75389629896e4ded88cebf196e29e5f6afb64195a"
+    },
+    "inputs/source/problem_tracer.hh": {
+      "bytes": 6886,
+      "sha256": "6437b4784e97c2dce0ed0ca8b34e909e7651fad4041d7f0471e3c4e75d7602af"
+    },
+    "inputs/source/properties_1p.hh": {
+      "bytes": 6372,
+      "sha256": "6c1a255a7605cb7c3dcaf2d52f8d049341898f7ab6a3f24c93d0568cad0aa001"
+    },
+    "inputs/source/properties_tracer.hh": {
+      "bytes": 8243,
+      "sha256": "bae258ba360c8bb1e2627d76f29e79b4b94e18e10856d8372bad562745b66414"
+    },
+    "inputs/source/spatialparams_1p.hh": {
+      "bytes": 8311,
+      "sha256": "02ed75434c619eb25b4ea3c98dc84e9ddfa65daa1c0ebbf29eb784b34114c210"
+    },
+    "inputs/source/spatialparams_tracer.hh": {
+      "bytes": 5267,
+      "sha256": "48280de186145f469048c112fef1685693878bae5c3976600a0246cd5adc8b2f"
+    },
+    "reference/test_1ptracer_pressure-reference.vtu": {
+      "bytes": 164175,
+      "sha256": "0af37dcbaad456fe1c2a2de51b59a01d28a0ecfd99e042617c1c3a3cbd235a40"
+    },
+    "reference/test_1ptracer_transport-reference.vtu": {
+      "bytes": 270456,
+      "sha256": "64b2e11a61dfe1c4eb0bb5858f30ce1f611477f1a1c00547494cbed9561bd935"
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "description": "Expected results for the official DuMux example examples/1ptracer (DuMux releases/3.10, commit 3e151aeb, 3.10.0-11): steady single-phase flow on a 50x50 unit square with a seeded random permeability field, then 500 steps of tracer transport to t=5000 s. Field values come from the OFFICIAL DuMux test-suite reference files test/references/test_1ptracer_pressure-reference.vtu and test_1ptracer_transport-reference.vtu, which the DuMux ctest 'example_1ptracer' compares against with the official fuzzy-compare script (relative 1e-2, absolute 1.5e-7*max).",
+  "engine_version": "DuMux 3.10 (releases/3.10 commit 3e151aebf005bf500c0d0e05563c0e8c41583eef) with DUNE 2.10; server build of example_1ptracer",
+  "numeric_checks": [
+    {
+      "name": "p_min",
+      "expected": 100098.0,
+      "tol": 1000.98,
+      "why": "min pressure [Pa] of the 1p stage (official reference test_1ptracer_pressure-reference.vtu); tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "p_max",
+      "expected": 109902.0,
+      "tol": 1099.02,
+      "why": "max pressure [Pa] of the 1p stage (official reference); tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "p_mean",
+      "expected": 105004.3556,
+      "tol": 1050.043556,
+      "why": "mean cell pressure [Pa] of the 1p stage (official reference); tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "permeability_mean",
+      "expected": 9.6472207189558e-10,
+      "tol": 9.6472207189558e-12,
+      "why": "mean of the seeded random permeability field [m^2] (official reference); shows the grid and random field are the same; tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "tracer_x_max_end",
+      "expected": 9.97466e-10,
+      "tol": 9.97466e-12,
+      "why": "max tracer mole fraction at t=5000 s (official reference test_1ptracer_transport-reference.vtu); tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "tracer_x_mean_end",
+      "expected": 9.999753316053405e-11,
+      "tol": 9.999753316053406e-13,
+      "why": "mean tracer mole fraction at t=5000 s (official reference); falls slightly below the start value as tracer leaves at the outflow side; tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "velocity_max",
+      "expected": 7.137088209756806e-05,
+      "tol": 7.137088209756806e-07,
+      "why": "max cell velocity magnitude [m/s] at t=5000 s (official reference); tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "velocity_mean_y",
+      "expected": 6.996248577016e-06,
+      "tol": 6.996248577016e-08,
+      "why": "mean vertical velocity [m/s] (official reference); main flow is bottom to top; tol = official DuMux fuzzy-compare relative tolerance 1e-2"
+    },
+    {
+      "name": "fuzzy_fail_pressure",
+      "expected": 0,
+      "tol": 0,
+      "why": "official DuMux fuzzycompare (legacy backend, rel 1e-2, abs 1.5e-7*max) of 1p.vtu vs test_1ptracer_pressure-reference.vtu, every field and cell; 0 = equal"
+    },
+    {
+      "name": "fuzzy_fail_transport",
+      "expected": 0,
+      "tol": 0,
+      "why": "official DuMux fuzzycompare of example_1ptracer-00010.vtu vs test_1ptracer_transport-reference.vtu (the files the DuMux ctest compares); 0 = equal"
+    },
+    {
+      "name": "n_time_steps",
+      "expected": 500,
+      "tol": 0,
+      "why": "TEnd 5000 s / dt 10 s (params.input); last 'Time step N done' line"
+    },
+    {
+      "name": "final_time_s",
+      "expected": 5000,
+      "tol": 0,
+      "why": "TimeLoop.TEnd in params.input; time on last step line"
+    },
+    {
+      "name": "n_tracer_vtu",
+      "expected": 11,
+      "tol": 0,
+      "why": "output every 500 s check point, t=0..5000 (own run; the ctest compares file -00010)"
+    },
+    {
+      "name": "pvd_last_time_s",
+      "expected": 5000,
+      "tol": 0,
+      "why": "last time in example_1ptracer.pvd"
+    },
+    {
+      "name": "tracer_x_mean_start",
+      "expected": 1e-10,
+      "tol": 1e-12,
+      "why": "initial tracer mole fraction mean at t=0 (own run): 1e-9 in the bottom 10% of cells = 1e-10 domain mean"
+    }
+  ],
+  "finished_check": "return code 0 and the model's own line 'Simulation took ... seconds' at the end of stdout",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py through KI tools/run_dumux.py run_simulation; engine /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer; DUMUX_NUM_THREADS=4",
+  "reference": "https://git.iws.uni-stuttgart.de/dumux-repositories/dumux (examples/1ptracer, test/references, bin/testing/dumux_fuzzycompare_legacy.py)",
+  "notes": [
+    "Run command = official ctest command plus -Problem.FlowDirection 1. The server binary was built from a KI-edited problem_1p.hh whose default (FlowDirection 0) is left-right flow; with the default it crashes at step 136 (BiCGSTAB defect=inf). FlowDirection 1 selects the unedited official bottom-top code path; the full-field fuzzy compare against the official references proves the results are the official ones. An unedited build ignores the key.",
+    "Our run vs official references: pressure, permeability, max tracer and max velocity identical to all printed digits; tracer mean differs by 1.5e-8 relative, mean vertical velocity by 1.7e-9 relative.",
+    "Two runs (default 192 OpenMP threads and 4 threads) gave byte-identical output files."
+  ]
+}

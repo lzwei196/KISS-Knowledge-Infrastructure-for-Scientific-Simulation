@@ -14,7 +14,24 @@ from typing import Any
 MODEL_ID = "PorePy"
 KI_DIR = Path(__file__).resolve().parent
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
-HYDROCRAFT_PYTHON = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PorePy/venv/bin/python")
+# The PorePy engine venv. $POREPY_PYTHON (same name as the official test cases)
+# overrides it; an explicit value is used as-is, with no fallback.
+DEFAULT_POREPY_PYTHON = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PorePy/venv/bin/python"
+_POREPY_PYTHON_ENV = os.environ.get("POREPY_PYTHON")
+if _POREPY_PYTHON_ENV is None:
+    HYDROCRAFT_PYTHON = Path(DEFAULT_POREPY_PYTHON)
+elif _POREPY_PYTHON_ENV:
+    HYDROCRAFT_PYTHON = Path(os.path.abspath(_POREPY_PYTHON_ENV))
+else:
+    # Set but empty: an explicit, invalid choice; it must fail, not fall back.
+    HYDROCRAFT_PYTHON = Path("<POREPY_PYTHON is set but empty>")
+IMPORT_TIMEOUT = 180
+OPTIONAL_IMPORT_NOTES = {
+    "pypardiso": (
+        "optional; PorePy falls back to the SciPy sparse direct solver on ImportError; "
+        "install pypardiso into {env} only to enable PyPardiso acceleration"
+    ),
+}
 
 
 def emit_report(model_id: str, checks: list[dict[str, Any]]) -> None:
@@ -127,6 +144,8 @@ def check_python_executable(checks: list[dict[str, Any]]) -> bool:
 def check_import(
     checks: list[dict[str, Any]], module: str, *, critical: bool = True
 ) -> None:
+    label = "FAIL" if critical else "WARN"
+    optional = "" if critical else "optional "
     try:
         result = subprocess.run(
             [
@@ -140,10 +159,10 @@ def check_import(
             ],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=IMPORT_TIMEOUT,
         )
     except Exception as exc:
-        print(f"FAIL import {module}: import check crashed: {exc}")
+        print(f"{label} {optional}import {module}: import check crashed: {exc}")
         add_check(
             checks,
             kind="import",
@@ -169,16 +188,27 @@ def check_import(
         return
 
     error = (result.stderr or result.stdout).strip()
-    print(f"FAIL import {module}: {error}")
+    if critical:
+        print(f"FAIL import {module}: {error}")
+        fix = fix_text(
+            f"install {module.split('.')[0]} into {HYDROCRAFT_PYTHON.parent.parent}"
+        )
+    else:
+        lines = [line for line in error.splitlines() if line.strip()]
+        last = lines[-1] if lines else f"exit code {result.returncode}"
+        missing = f"No module named '{module.split('.')[0]}'" in last
+        print(f"WARN optional import {module}: {'not installed' if missing else last}")
+        note = OPTIONAL_IMPORT_NOTES.get(
+            module, "optional; install {pkg} into {env} if needed"
+        ).format(pkg=module.split(".")[0], env=HYDROCRAFT_PYTHON.parent.parent)
+        fix = note if missing else f"{note}. Import failed: {last}"
     add_check(
         checks,
         kind="import",
         subject=module,
         critical=critical,
         status="fail",
-        fix=fix_text(
-            f"install {module.split('.')[0]} into {HYDROCRAFT_PYTHON.parent.parent}"
-        ),
+        fix=fix,
     )
 
 
@@ -272,7 +302,10 @@ def main() -> None:
         "tools/parse_porepy_output.py",
         "tools/run_porepy.py",
     ):
-        check_tool_syntax(checks, tool)
+        if python_ready:
+            check_tool_syntax(checks, tool)
+    if not python_ready:
+        print("Skipping tool syntax checks because the configured Python executable is unavailable.")
 
     if python_ready:
         for module in (

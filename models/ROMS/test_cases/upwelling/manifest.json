@@ -1,0 +1,39 @@
+{
+  "test_case": "ROMS upwelling (official ROMS UPWELLING test case)",
+  "engine": {
+    "name": "ROMS",
+    "version": "4.3 (git bf66be420a4df245b93aa4f64086a5c89ac71e1f, 2026-03-12)",
+    "binary": "romsS (serial), built with ROMS_APP=UPWELLING: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS",
+    "source": "github.com/myroms/roms, ROMS/External/roms_upwelling.in + ROMS/Include/upwelling.h (commit bf66be4)",
+    "license": "MIT (License_ROMS.md, Copyright (c) 2002-2026 ROMS)"
+  },
+  "ki": {
+    "model": "ROMS",
+    "run_tool": "tools/run_roms.py (run_roms() function)"
+  },
+  "simulation": {
+    "grid": "41x80x16 periodic channel (analytic grid, ANA_GRID)",
+    "dt_s": 300,
+    "ntimes": 1440,
+    "days": 5,
+    "forcing": "analytic wind stress and fluxes (ANA_SMFLUX, ANA_STFLUX, ANA_SSFLUX, ANA_BTFLUX, ANA_BSFLUX)",
+    "initial": "analytic (ANA_INITIAL)",
+    "mpi_ranks": 1,
+    "wall_time_s": 36,
+    "peak_rss_mb": 140
+  },
+  "files": {
+    "inputs/ROMS/External/varinfo.yaml": {
+      "bytes": 395345,
+      "sha256": "0c2b102648c927c0bda983bc622edfd14320fc1933c00051f8895d74ca3fdaa8"
+    },
+    "inputs/roms_upwelling.in": {
+      "bytes": 174348,
+      "sha256": "22ea9c1f8d3d81ea1a7e72d32826acb88ecbd74af1790143d3071c2b4e69e98f"
+    },
+    "inputs/upwelling.h": {
+      "bytes": 1816,
+      "sha256": "72e5630393c5619ca0a299ff8d1174148d7f88eaf50625d152feb5fa1fecc20f"
+    }
+  }
+}

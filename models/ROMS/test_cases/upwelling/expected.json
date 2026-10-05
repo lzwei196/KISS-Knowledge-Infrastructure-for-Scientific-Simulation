@@ -1,0 +1,101 @@
+{
+  "description": "Expected results for the official ROMS UPWELLING test case (myroms/roms commit bf66be4, ROMS 4.3): wind-driven upwelling/downwelling in a periodic channel, 41x80x16 grid, analytic grid/initial/forcing, 1440 steps of 300 s = 5 days. No official reference output for this case is on the server (the myroms roms_test repo is not here, and the ROMS source tree ships none), so the values were recorded from real runs of the server UPWELLING binary. Repeat runs give bit-identical NetCDF output and identical stdout energy tables.",
+  "engine_version": "ROMS 4.3, git bf66be420a4df245b93aa4f64086a5c89ac71e1f, serial romsS built with ROMS_APP=UPWELLING (gfortran -O3 -ffast-math)",
+  "finished_normally_check": "return code 0, 'ROMS: DONE' in the log, log 'Header file' = upwelling.h, KI tool log scan finds no errors, roms_his.nc created",
+  "numeric_checks": [
+    {
+      "name": "n_diag_rows",
+      "expected": 1441,
+      "tol": 0,
+      "why": "one energy/volume row per step, steps 0..1440 (NTIMES=1440, NINFO=1)"
+    },
+    {
+      "name": "his_records",
+      "expected": 21,
+      "tol": 0,
+      "why": "ROMS's own count of history records (NHIS=72 -> every 6 h for 5 days, plus t=0)"
+    },
+    {
+      "name": "his_ocean_time_end_s",
+      "expected": 432000.0,
+      "tol": 0,
+      "why": "last history time = 1440 steps x 300 s = 5 days"
+    },
+    {
+      "name": "final_kinetic_energy",
+      "expected": 0.02448788,
+      "tol": 1e-06,
+      "why": "domain kinetic energy at step 1440 from ROMS stdout table"
+    },
+    {
+      "name": "final_potential_energy",
+      "expected": 658.5713,
+      "tol": 0.001,
+      "why": "domain potential energy at step 1440 from ROMS stdout table"
+    },
+    {
+      "name": "final_total_energy",
+      "expected": 658.5958,
+      "tol": 0.001,
+      "why": "domain total energy at step 1440 from ROMS stdout table"
+    },
+    {
+      "name": "initial_total_energy",
+      "expected": 658.5677,
+      "tol": 0.001,
+      "why": "total energy at step 0 (analytic initial state)"
+    },
+    {
+      "name": "final_net_volume",
+      "expected": 388437600000.0,
+      "tol": 100000.0,
+      "why": "domain water volume (m3) at step 1440; tol = print precision"
+    },
+    {
+      "name": "net_volume_rel_change",
+      "expected": 0.0,
+      "tol": 1e-09,
+      "why": "volume conservation: relative change step 0 -> 1440 in the closed periodic channel"
+    },
+    {
+      "name": "final_max_speed",
+      "expected": 0.6425841,
+      "tol": 1e-05,
+      "why": "max current speed (m/s) at step 1440 from ROMS stdout table"
+    },
+    {
+      "name": "his_final_temp_min",
+      "expected": 14.511805534362793,
+      "tol": 0.0001,
+      "why": "min temperature (C) in the last history record"
+    },
+    {
+      "name": "his_final_temp_max",
+      "expected": 22.07265853881836,
+      "tol": 0.0001,
+      "why": "max temperature (C) in the last history record"
+    },
+    {
+      "name": "his_final_temp_mean",
+      "expected": 18.552051544189453,
+      "tol": 0.0001,
+      "why": "mean temperature (C, plain grid-point mean) in the last history record"
+    },
+    {
+      "name": "his_final_zeta_max",
+      "expected": 0.0964001715183258,
+      "tol": 1e-05,
+      "why": "max sea-surface height (m) in the last history record (wind set-up)"
+    },
+    {
+      "name": "his_final_u_min",
+      "expected": -0.6424028277397156,
+      "tol": 1e-05,
+      "why": "strongest along-channel current u (m/s) in the last history record"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS, run in a fresh temp dir with the unmodified official roms_upwelling.in and varinfo.yaml",
+  "reference": "own runs (no official reference output available on the server)",
+  "notes": "Tolerances are set near the print precision of the stdout table and well above float32 rounding of the history file, so a rebuild with another compiler should still pass; they are not official ROMS tolerances. The ROMS source checkout has 3 local edits (link flags, a LEKIMA-only block in ana_vmix.h, a guard in inp_par.F); none is active in the UPWELLING path."
+}

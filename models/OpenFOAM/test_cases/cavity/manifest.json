@@ -1,0 +1,92 @@
+{
+  "test_case": "OpenFOAM cavity (official tutorial tutorials/incompressibleFluid/cavity)",
+  "engine": {
+    "name": "OpenFOAM (Foundation)",
+    "version": "OpenFOAM-dev, build dev-d41922f7f4a1 (git d41922f7, 2026-03-24)",
+    "binary": [
+      "blockMesh",
+      "foamRun"
+    ],
+    "binary_default": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun",
+    "environment": "source <OpenFOAM>/etc/bashrc",
+    "source": "https://github.com/OpenFOAM/OpenFOAM-dev, tutorials/incompressibleFluid/cavity (commit d41922f7f4a1c4f1a1b6832bf7f94f2000c2df41)",
+    "license": "GPL-3.0-or-later (OpenFOAM Foundation)"
+  },
+  "ki": {
+    "model": "OpenFOAM",
+    "tools_used": [
+      "tools/run_openfoam.py",
+      "tools/parse_openfoam_output.py"
+    ]
+  },
+  "simulation": {
+    "problem": "2D lid-driven square cavity, 0.1 m x 0.1 m, lid 1 m/s",
+    "mesh": "blockMesh 20x20x1 = 400 cells",
+    "solver": "foamRun -solver incompressibleFluid (PISO/PIMPLE)",
+    "turbulence": "RAS kEpsilon",
+    "nu_m2_s": 1e-05,
+    "time": {
+      "start": 0,
+      "end": 10,
+      "deltaT": 0.005,
+      "steps": 2000,
+      "write_every_s": 0.5
+    },
+    "processes": 1,
+    "runtime_s": "about 2"
+  },
+  "files": {
+    "inputs/0/U": {
+      "bytes": 975,
+      "sha256": "26f78f4651be43397178aa33c838b257f86684c07a507d7b7ed2f8e95c4057ec"
+    },
+    "inputs/0/epsilon": {
+      "bytes": 1043,
+      "sha256": "ef24f1b9b9cd25dfc389f2241c495b38f781619dc52400e5bacfbc673cc752db"
+    },
+    "inputs/0/k": {
+      "bytes": 1029,
+      "sha256": "7b39e6a7578b836fffbf0062142e8991c35a15b7e6fdf8b1951abd767b55ef09"
+    },
+    "inputs/0/nuTilda": {
+      "bytes": 942,
+      "sha256": "9bf5ed0b81251c7a904c3ed7cfd20a352ab4dc390221b12b995edb423014bf0e"
+    },
+    "inputs/0/nut": {
+      "bytes": 1015,
+      "sha256": "43621cd90b25301dd379d4bc162c6ee92fbf2d578d65d546cd2f900de05a5e90"
+    },
+    "inputs/0/omega": {
+      "bytes": 1028,
+      "sha256": "d140410a55f94a7d13aad6daa9cc5b87073d838f44061705a4105e71b9f5d755"
+    },
+    "inputs/0/p": {
+      "bytes": 936,
+      "sha256": "dfd108494001df166f6f9a0522cda2763dd492369f25fe74f2023a2587b3e6a2"
+    },
+    "inputs/constant/momentumTransport": {
+      "bytes": 768,
+      "sha256": "b0c2da0b1fbe4530bd02dae0ffbca90885a3b9137c6a07dd61fb0001244c11c4"
+    },
+    "inputs/constant/physicalProperties": {
+      "bytes": 741,
+      "sha256": "48f9010ad8834aaafe1fc1f1fa9902f85757aca29bbc684fd66df3375bca09d2"
+    },
+    "inputs/system/blockMeshDict": {
+      "bytes": 1281,
+      "sha256": "9d8f984ef85ac97402ff975c966c84ef794fa633c72629bdf33e8c1a506982ad"
+    },
+    "inputs/system/controlDict": {
+      "bytes": 1037,
+      "sha256": "c73804ed62943478b85ab210d142650b36aee0703da405917747c4f01d0c3ab2"
+    },
+    "inputs/system/fvSchemes": {
+      "bytes": 1321,
+      "sha256": "b595b44faacc73a659c8e607295aa19756cbcaa24a63b887611b6a5dc215a481"
+    },
+    "inputs/system/fvSolution": {
+      "bytes": 1222,
+      "sha256": "44abcb9b73f983b9efa7d53fbb35af3e16c7aacfac7dbf635255716663f2c67d"
+    }
+  }
+}

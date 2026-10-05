@@ -1,0 +1,27 @@
+{
+  "description": "Expected results for the official OpenFOAM tutorial tutorials/incompressibleFluid/cavity (OpenFOAM Foundation, OpenFOAM-dev git d41922f7): lid-driven square cavity, 20x20x1 cells, lid speed 1 m/s, nu 1e-5 m2/s, k-epsilon RAS, foamRun (incompressibleFluid) from t=0 to t=10 s with dt=0.005 s, writing every 0.5 s. inputs/ are the unmodified files from the OpenFOAM git tree (git show HEAD). Values are the fields at t=10 s. No reference output ships with this tutorial, so values were recorded from real runs of the server's build; two clean runs gave byte-identical output in every time folder (deterministic).",
+  "engine_version": "OpenFOAM-dev (Foundation), build dev-d41922f7f4a1, linux64GccDPInt32Opt",
+  "numeric_checks": [
+    {"name": "n_output_times", "expected": 21, "tol": 0, "why": "time folders 0, 0.5, ..., 10 (the run reached endTime 10)"},
+    {"name": "n_cells", "expected": 400, "tol": 0, "why": "blockMesh made the 20x20x1 mesh"},
+    {"name": "U_mag_mean", "expected": 0.10514, "tol": 0.0001, "why": "mean cell speed at t=10 s (m/s)"},
+    {"name": "U_mag_max", "expected": 0.251305, "tol": 0.0001, "why": "max cell speed at t=10 s (m/s), below the lid speed 1"},
+    {"name": "p_mean", "expected": -0.00877671, "tol": 1e-05, "why": "mean kinematic pressure at t=10 s (m2/s2)"},
+    {"name": "p_min", "expected": -0.0168597, "tol": 1e-05, "why": "min kinematic pressure (vortex core / low corner)"},
+    {"name": "p_max", "expected": 0.0356238, "tol": 1e-05, "why": "max kinematic pressure (lid corner where the flow hits the wall)"},
+    {"name": "k_mean", "expected": 0.000673011, "tol": 1e-06, "why": "mean turbulent kinetic energy at t=10 s (m2/s2)"},
+    {"name": "k_max", "expected": 0.00195927, "tol": 3e-06, "why": "max turbulent kinetic energy at t=10 s"},
+    {"name": "epsilon_mean", "expected": 0.00111277, "tol": 2e-06, "why": "mean dissipation rate at t=10 s (m2/s3)"},
+    {"name": "nut_mean", "expected": 4.89863e-05, "tol": 1e-07, "why": "mean turbulent viscosity at t=10 s (m2/s)"},
+    {"name": "courant_max", "expected": 0.251756, "tol": 0.0001, "why": "max Courant number of the last time step"}
+  ],
+  "extra_checks": [
+    "blockMesh log ends with 'End'",
+    "foamRun return code 0 and its log ends with 'End' (OpenFOAM's normal finish line)",
+    "every final residual of the last step < 1e-3 (KI run tool threshold)"
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "blockMesh + foamRun from /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin (env from its etc/bashrc); foamRun run through the KI tools/run_openfoam.py, fields read through the KI tools/parse_openfoam_output.py",
+  "reference": "None ships with the tutorial. The well-known Ghia et al. (1982) centreline data is for laminar Re=100 on fine grids and is not part of OpenFOAM, so it is not used.",
+  "notes": "Tolerances are loose against the exact repeat (identical bytes) so that a rebuild with another compiler still passes; a change in the physics would move these numbers by far more."
+}

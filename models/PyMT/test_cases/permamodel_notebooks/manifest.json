@@ -1,0 +1,123 @@
+{
+  "test_case": "PyMT permamodel_notebooks (official frost_number.ipynb + ku.ipynb, offline cells)",
+  "engine": {
+    "name": "PyMT",
+    "version": "pymt 1.3.3.dev0 (git c0544b6, v1.3.2-3); plugin pymt_permamodel 0.2.3; permamodel 0.2.3",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python",
+    "source": "csdms/pymt git, notebooks/frost_number.ipynb + notebooks/ku.ipynb (last changed in 4129aff, read from HEAD c0544b6); default model config from the pymt_permamodel 0.2.3 release (pip wheel, files match its RECORD hashes)",
+    "license": "MIT (pymt, CSDMS); MIT (pymt_permamodel, CSDMS); MIT (permamodel)"
+  },
+  "ki": {
+    "model": "PyMT",
+    "run_tool": "tools/run_model.py"
+  },
+  "simulation": {
+    "components": [
+      "FrostNumber",
+      "Ku"
+    ],
+    "runs": 7,
+    "time_steps_per_run": 1,
+    "time_step": "1 year",
+    "outputs_checked": [
+      "frostnumber__air",
+      "soil__active_layer_thickness",
+      "soil__temperature"
+    ],
+    "network": "none"
+  },
+  "files": {
+    "inputs/frost_number.ipynb": {
+      "bytes": 33537,
+      "sha256": "1636b19cdd7b502409d0415b711bf3ac7f27b4f99f35588d4fa46c769bfe6ea4"
+    },
+    "inputs/ku.ipynb": {
+      "bytes": 60069,
+      "sha256": "e29257701ad5bd3a5524c5b980dee044006d58e03ac9a0cc259a02a18b222e74"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/api.yaml": {
+      "bytes": 82,
+      "sha256": "b378d5ddf29ff32b63ebcbf8f768a34a349498b3f00d549f208189411e2c7715"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/fn_t_air_max.dat": {
+      "bytes": 30,
+      "sha256": "8299568810abe71777fb4173dfc4ddf38ea68cd3bb9a2e6e0f9d7ee73939326d"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/fn_t_air_min.dat": {
+      "bytes": 34,
+      "sha256": "9580270c68c08ffed0e2513ba7d58714f480f7b61cf7bedd5202979176cfb88a"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/frostnumber_model.cfg": {
+      "bytes": 2321,
+      "sha256": "f8a315d3b374f354c427d023a9c7756f701a4154f21cfbcae62618dac2196b34"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/info.yaml": {
+      "bytes": 1109,
+      "sha256": "44cdf740fb74eaeaf99dcde64df5559859de2c5faeae9f772f32e23692cbd0e4"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/parameters.yaml": {
+      "bytes": 2580,
+      "sha256": "0b648dd2493c8372d744e8ca784c3d62f06f82f845b16840ce199c8bae379490"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/FrostNumber/run.yaml": {
+      "bytes": 35,
+      "sha256": "b6cdb3763e1148d3898f81c81b4413c81e19f43ff59d3215d2635a8911d6f6df"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/A_air.txt": {
+      "bytes": 50,
+      "sha256": "afdbf75348d97ecead4efe44df2b33e9ab8b3b3d90d816d24d846b5d5f94a91a"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/T_air.txt": {
+      "bytes": 55,
+      "sha256": "5ea9d12758e3a39dd2616a23397102271665332956d4f05b118bff76420571d6"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/api.yaml": {
+      "bytes": 73,
+      "sha256": "63f0f24a829809cfb8c05262d8490455a062b5072f704fc6a4b23dca7d71c0c5"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/dvf.txt": {
+      "bytes": 71,
+      "sha256": "4a8193650245bd9b27a5081b6aef6d07117021dd3a1de5ab00815af5fdc83620"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/dvt.txt": {
+      "bytes": 71,
+      "sha256": "4a8193650245bd9b27a5081b6aef6d07117021dd3a1de5ab00815af5fdc83620"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/h_snow.txt": {
+      "bytes": 40,
+      "sha256": "f3ff23be01f367e51e80ae1ce0d5166ee6ba4f5a99db7397a9d744880a766c58"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/hvgf.txt": {
+      "bytes": 17,
+      "sha256": "1cf0711c7a67d8caee12c098b46a8420a368e31c38a7f8e5acd863038ed03869"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/hvgt.txt": {
+      "bytes": 17,
+      "sha256": "1cf0711c7a67d8caee12c098b46a8420a368e31c38a7f8e5acd863038ed03869"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/info.yaml": {
+      "bytes": 822,
+      "sha256": "ea2691b71dcee2a5424c02e8bee6177b194a7cce916c01ab206d756033b9c19e"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/ku_model.cfg": {
+      "bytes": 7448,
+      "sha256": "d2c1d004bf461fd41614dd07042f0383dd9dd536dcea0f72eda815b7c647df3c"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/parameters.yaml": {
+      "bytes": 3570,
+      "sha256": "4b980d8607e7251dce39365620582d1fbec6a7e4498f867745b6d4ef46f3bf8e"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/rho_snow.txt": {
+      "bytes": 35,
+      "sha256": "236e756ac71607b89df8c2277204874b06221e3ca35b84709867c8d99dbae8ab"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/run.yaml": {
+      "bytes": 26,
+      "sha256": "1721f648704a1a73877d6547844009a39f1214b2b67ac615e397393bd76c99b5"
+    },
+    "inputs/pymt_permamodel_0.2.3_data/Ku/vwc.txt": {
+      "bytes": 38,
+      "sha256": "342479f1f213ed2219f780de2957c9b237b23561734971d4714a45216eb9709f"
+    }
+  }
+}

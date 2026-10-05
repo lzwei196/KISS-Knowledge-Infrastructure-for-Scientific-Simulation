@@ -1,0 +1,22 @@
+author: J. Scott Stewart
+doi:
+email: james.stewart@colorado.edu
+license: MIT
+url: http://csdms.colorado.edu/wiki/Model:Frost_Model
+version: 0.1
+summary: "From Nelson and Outcalt (1987), the 'frost number', a
+  dimensionless ratio defined by manipulation of either freezing and
+  thawing degree-day sums or frost and thaw penetration depths, can be
+  used to define an unambiguous latitudinal zonation of permafrost
+  continuity. The index is computed using several variables
+  influencing the depth of frost and thaw penetration, and can be
+  related mathematically to the existence and continuity of
+  permafrost. Although the frost number is a useful device for
+  portraying the distribution of contemporary permafrost at
+  continental scales, it is not capable of detecting relict permafrost
+  and should not be mapped over small areas unless numerous climate
+  stations are located in the region of interest."
+cite_as:
+  Nelson, Frederick E., Outcalt, Samuel I., 1987. A Computational Method
+  for Prediction and Regionalization of Permafrost. Arctic and Alpine
+  Research, 19, 279–288. 10.2307/1551363

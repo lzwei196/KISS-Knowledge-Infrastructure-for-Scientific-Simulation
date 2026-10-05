@@ -1,0 +1,16 @@
+author: Kang Wang and Elchin Jafarov
+doi:
+email: wangkang1984@gmail.com
+license: MIT
+url: http://csdms.colorado.edu/wiki/Model:Kudryavtsev_Model
+version: 0.1
+summary: "The Kudryavtsev et al. (1974), or Ku model, presents an
+  approximate solution of the Stefan problem. The model provides a
+  steady-state solution under the assumption of sinusoidal air
+  temperature forcing. It considers snow, vegetation, and soil layers
+  as thermal damping to variation of air temperature. The layer of
+  soil is considered to be a homogeneous column with different thermal
+  properties in the frozen and thawed states. The main outputs are
+  annual maximum frozen/thaw depth and mean annual temperature at the
+  top of permafrost (or at the base of the active layer). It can be
+  applied over a wide variety of climatic conditions."

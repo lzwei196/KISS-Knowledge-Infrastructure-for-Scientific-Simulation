@@ -8,6 +8,14 @@ and diagnostic output.
 Usage:
     python3 run_phreeqc.py --binary ./phreeqc --input model.pqi \
         --output model.pqo --database phreeqc.dat
+
+Binary lookup: --binary, else $PHREEQC_BIN, else the server default (the same
+binary preflight_check.py checks). An explicit value that is not an executable
+file is an error (no fallback).
+File paths (--input/--output/--database/--screen-log/--json-output) are taken
+relative to the directory the tool is started from.
+Exit code: 0 only when PHREEQC finished without error and wrote a non-empty
+output; 1 otherwise (the JSON result is still written first).
 """
 import argparse
 import json
@@ -17,6 +25,24 @@ import sys
 import time
 import re
 
+DEFAULT_BINARY = (
+    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+    "PHREEQC/source/repo/build/phreeqc"
+)
+# Text reads: PHREEQC databases (phreeqc.dat, pitzer.dat, Amm.dat, ...) contain
+# Latin-1 bytes (e.g. 0xb0 degree sign); latin-1 never fails and keeps ASCII keywords.
+TEXT_ENCODING = "latin-1"
+
+
+def resolve_binary(arg_binary):
+    """--binary, else $PHREEQC_BIN, else the server default. Returns (path, source)."""
+    if arg_binary is not None:
+        return arg_binary, "--binary"
+    env_bin = os.environ.get("PHREEQC_BIN")
+    if env_bin is not None:
+        return env_bin, "PHREEQC_BIN"
+    return DEFAULT_BINARY, "server default"
+
 
 def validate_inputs(args):
     """Preflight checks before execution."""
@@ -24,17 +50,17 @@ def validate_inputs(args):
     warnings = []
 
     # Check binary exists and is executable
-    if not os.path.isfile(args.binary):
-        errors.append(f"PHREEQC binary not found: {args.binary}")
+    if not args.binary or not os.path.isfile(args.binary):
+        errors.append(f"PHREEQC binary not found: {args.binary!r} (from {args.binary_source})")
     elif not os.access(args.binary, os.X_OK):
-        errors.append(f"PHREEQC binary not executable: {args.binary}")
+        errors.append(f"PHREEQC binary not executable: {args.binary} (from {args.binary_source})")
 
     # Check input file
     if not os.path.isfile(args.input):
         errors.append(f"Input file not found: {args.input}")
     else:
         # Quick validation of input file
-        with open(args.input, "r") as f:
+        with open(args.input, "r", encoding=TEXT_ENCODING) as f:
             content = f.read()
 
         # Check for at least one keyword block
@@ -72,13 +98,10 @@ def validate_inputs(args):
     return warnings
 
 
-def check_element_coverage(input_file, database_file):
-    """Check if all elements in SOLUTION blocks exist in the database."""
-    warnings = []
-
-    # Read database master species
-    db_elements = set()
-    with open(database_file, "r") as f:
+def _master_species(path):
+    """Element names from SOLUTION_MASTER_SPECIES blocks of a database or input file."""
+    elements = set()
+    with open(path, "r", encoding=TEXT_ENCODING) as f:
         in_master = False
         for line in f:
             stripped = line.strip()
@@ -95,15 +118,28 @@ def check_element_coverage(input_file, database_file):
                     if parts:
                         elem = parts[0]
                         if not elem.startswith("#"):
-                            db_elements.add(elem.split("(")[0])  # Strip redox state
+                            elements.add(elem.split("(")[0])  # Strip redox state
+    return elements
+
+
+def check_element_coverage(input_file, database_file):
+    """Check if all elements in SOLUTION blocks exist in the database."""
+    warnings = []
+
+    # Read master species of the database and of the input file itself
+    # (an input may define new elements in its own SOLUTION_MASTER_SPECIES block)
+    db_elements = set()
+    for species_file in (database_file, input_file):
+        db_elements |= _master_species(species_file)
 
     # Read input elements from SOLUTION blocks
     input_elements = set()
-    with open(input_file, "r") as f:
+    with open(input_file, "r", encoding=TEXT_ENCODING) as f:
         in_solution = False
         for line in f:
             stripped = line.strip()
-            if stripped.upper().startswith("SOLUTION"):
+            # "SOLUTION n ..." only, not SOLUTION_MASTER_SPECIES / SOLUTION_SPECIES / ...
+            if re.match(r"SOLUTION(\s|$)", stripped.upper()):
                 in_solution = True
                 continue
             if in_solution:
@@ -165,6 +201,7 @@ def process(args, preflight_warnings):
             cmd,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=args.timeout,
             cwd=args.workdir or os.path.dirname(args.input) or ".",
         )
@@ -204,23 +241,32 @@ def validate_outputs(results, args):
 
     # Check output file was created
     if not os.path.isfile(args.output):
-        results["warnings"].append("Output file was not created despite exit code 0")
+        results["status"] = "error"
+        results.setdefault("errors", []).append(
+            f"Output file was not created despite exit code 0: {args.output}")
         return results
 
     output_size = os.path.getsize(args.output)
     results["output_size_bytes"] = output_size
 
     if output_size == 0:
-        results["warnings"].append("Output file is empty")
+        results["status"] = "error"
+        results.setdefault("errors", []).append(f"Output file is empty: {args.output}")
         return results
 
-    # Quick scan for errors in output
-    with open(args.output, "r") as f:
-        head = f.read(5000)
-
-    if "ERROR" in head.upper():
-        error_lines = [l.strip() for l in head.splitlines() if "error" in l.lower()]
-        results["warnings"].append(f"Output contains error messages: {error_lines[:5]}")
+    # Scan the whole output for PHREEQC's own error marker ("ERROR: ...").
+    # (A plain "error" substring also matches normal lines such as
+    # "Percent error, 100*(Cat-|An|)/(Cat+|An|)".)
+    error_lines = []
+    with open(args.output, "r", encoding=TEXT_ENCODING) as f:
+        for line in f:
+            if line.lstrip().startswith("ERROR:"):
+                error_lines.append(line.strip())
+    if error_lines:
+        results["status"] = "error"
+        results.setdefault("errors", []).append(
+            f"PHREEQC output contains {len(error_lines)} ERROR line(s)")
+        results["error_details"] = error_lines[:10]
 
     # Check for selected output files
     sel_files = []
@@ -236,7 +282,9 @@ def validate_outputs(results, args):
 
 def main():
     parser = argparse.ArgumentParser(description="PHREEQC execution wrapper")
-    parser.add_argument("--binary", required=True, help="Path to phreeqc binary")
+    parser.add_argument("--binary", default=None,
+                        help="Path to phreeqc binary (default: $PHREEQC_BIN, else the server build "
+                             + DEFAULT_BINARY + ")")
     parser.add_argument("--input", required=True, help="Input file (.pqi)")
     parser.add_argument("--output", required=True, help="Output file (.pqo)")
     parser.add_argument("--database", required=True, help="Thermodynamic database (.dat)")
@@ -246,6 +294,13 @@ def main():
     parser.add_argument("--json-output", default=None, help="Path for JSON result summary")
 
     args = parser.parse_args()
+    args.binary, args.binary_source = resolve_binary(args.binary)
+    # One meaning for relative paths: the directory the tool is started from
+    # (validation and PHREEQC, which runs in --workdir, then see the same files).
+    for name in ("binary", "input", "output", "database", "screen_log", "json_output"):
+        value = getattr(args, name)
+        if value:
+            setattr(args, name, os.path.abspath(value))
     warnings = validate_inputs(args)
     results = process(args, warnings)
     results = validate_outputs(results, args)
@@ -256,6 +311,10 @@ def main():
             json.dump(results, f, indent=2)
     else:
         print(json.dumps(results, indent=2))
+
+    if results.get("status") != "success":
+        print(f"PHREEQC run FAILED: {results.get('errors')}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

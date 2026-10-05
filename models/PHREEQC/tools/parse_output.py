@@ -52,7 +52,7 @@ def parse_selected_output(filepath):
     rows = []
     headers = None
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         for line_num, line in enumerate(f):
             # Skip empty lines
             if not line.strip():
@@ -88,7 +88,7 @@ def parse_full_output_speciation(filepath):
     current_solution = None
     section = None
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             stripped = line.strip()
 
@@ -148,16 +148,26 @@ def parse_full_output_si(filepath):
     current_si = None
     section = None
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             stripped = line.strip()
 
-            if "-----Saturation indices-----" in line or \
-               "Phase" in stripped and "SI" in stripped and "log IAP" in stripped:
+            # SI column header; the Phase assemblage table has a similar header
+            # ("... Initial  Final  Delta"), which is not a saturation-index table
+            is_col_header = ("Phase" in stripped and "SI" in stripped
+                             and "log IAP" in stripped and "Initial" not in stripped)
+            if "-----Saturation indices-----" in line:
                 if current_si:
                     solutions.append(current_si)
                 current_si = {"phases": []}
                 section = "header"
+                continue
+            if is_col_header and section != "header":
+                # Column header without the dashed title: start a block, rows follow
+                if current_si:
+                    solutions.append(current_si)
+                current_si = {"phases": []}
+                section = "data"
                 continue
 
             if current_si is None:
@@ -169,10 +179,15 @@ def parse_full_output_si(filepath):
                     continue
 
             if section == "data":
-                if not stripped or stripped.startswith("---"):
-                    if not stripped:
+                if stripped.startswith("---"):
+                    # next section title: the table ends (even if it had no rows)
+                    section = None
+                    continue
+                if not stripped:
+                    # blank line(s) between the column header and the first row are
+                    # skipped; a blank line after rows ends the table
+                    if current_si["phases"]:
                         section = None
-                        continue
                     continue
 
                 parts = stripped.split()
@@ -202,7 +217,7 @@ def parse_full_output_totals(filepath):
     current_totals = None
     section = None
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             stripped = line.strip()
 
@@ -222,8 +237,15 @@ def parse_full_output_totals(filepath):
                     continue
 
             if section == "data":
-                if not stripped:
+                if stripped.startswith("---"):
+                    # next section title: the table ends (even if empty, e.g. "Pure water")
                     section = None
+                    continue
+                if not stripped:
+                    # skip the blank line after "Elements Molality Moles";
+                    # a blank line after rows ends the table
+                    if current_totals["elements"]:
+                        section = None
                     continue
 
                 parts = stripped.split()
@@ -254,7 +276,7 @@ def parse_full_output_phases(filepath):
     current = None
     section = None
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             stripped = line.strip()
 

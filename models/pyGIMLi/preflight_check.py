@@ -243,8 +243,10 @@ def main():
         critical=False,
         python=HYDROCRAFT_PYTHON,
         fix=(
-            f"HydroCraft python_env has no pygimli; run the KI tools with {PYTHON} "
-            "instead (the SKILL.md tool index still names python_env)."
+            "HydroCraft python_env has no pygimli. This is expected: run_pygimli.py and "
+            "parse_gimli_output.py find the pyGIMLi python themselves (--pygimli-python, "
+            f"else $PYGIMLI_PYTHON, else {PYTHON}) and re-launch with it, so the SKILL.md "
+            "python_env call lines work as written; the converters need only python_env."
             if engine_ok else
             "HydroCraft python_env has no pygimli, and the selected interpreter "
             f"{PYTHON} failed the critical checks above; repair it or set PYGIMLI_PYTHON "
@@ -256,7 +258,8 @@ def main():
     print()
     print(f"  Results: {len(checks) - len(failed)} passed, {len(failed)} failed")
     if engine_ok:
-        print(f"  Checked engine: {PYTHON}; run the KI tools with this interpreter.")
+        print(f"  Checked engine: {PYTHON}; the KI tools find and use it themselves "
+              "(start them with python_env as SKILL.md says).")
     else:
         print(
             f"  Checked engine: {PYTHON} FAILED; repair it or set PYGIMLI_PYTHON to a "

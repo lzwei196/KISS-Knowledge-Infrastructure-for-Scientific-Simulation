@@ -311,6 +311,35 @@ def validate_outputs(result):
     return result
 
 
+def nonfinite_errors(result):
+    """A model/response/chi2 with NaN or Inf means the run FAILED (diverged), not a warning."""
+    errors = []
+    for key in ("model", "response"):
+        arr = result.get(key)
+        if arr is None:
+            continue
+        arr = np.asarray(arr, dtype=float)
+        n_nan, n_inf = int(np.isnan(arr).sum()), int(np.isinf(arr).sum())
+        if n_nan or n_inf:
+            errors.append(f"{key} has {n_nan} NaN and {n_inf} Inf of {arr.size} values "
+                          f"(inversion diverged or bad data/transform)")
+    chi2 = result.get("chi2")
+    if chi2 is not None and not np.isfinite(chi2):
+        errors.append(f"chi2 is not finite ({chi2})")
+    return errors
+
+
+def _json_safe(obj):
+    """Non-finite floats -> None so the JSON stays strict."""
+    if isinstance(obj, (float, np.floating)):
+        return float(obj) if np.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def save_results(result, output_dir):
     """Save all results to output directory."""
     import pygimli as pg
@@ -335,9 +364,11 @@ def save_results(result, output_dir):
         except Exception:
             pass
 
-    # Save summary
+    # Save summary (a non-finite model/response/chi2 makes the run an error; the
+    # arrays and mesh above are still written for diagnosis)
+    errors = nonfinite_errors(result)
     summary = {
-        "status": "success",
+        "status": "error" if errors else "success",
         "chi2": result["chi2"],
         "n_iterations": result["n_iterations"],
         "elapsed_s": result["elapsed_s"],
@@ -346,8 +377,11 @@ def save_results(result, output_dir):
         "model_range": result["model_range"],
         "warnings": result.get("warnings", []),
     }
+    if errors:
+        summary["errors"] = errors
+        summary = _json_safe(summary)
     with open(os.path.join(output_dir, "result.json"), "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(summary, f, indent=2, allow_nan=False)
 
     return summary
 
@@ -395,7 +429,10 @@ def main():
     result = validate_outputs(result)
     summary = save_results(result, args.output)
 
-    print(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2, allow_nan=False))
+    if summary["status"] != "success":
+        print("pyGIMLi run FAILED: " + "; ".join(summary.get("errors", [])), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

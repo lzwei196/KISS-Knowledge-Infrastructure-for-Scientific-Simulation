@@ -1,0 +1,66 @@
+{
+  "test_case": "SWAP hupselbrook (official test case tests/cases/1.hupselbrook)",
+  "engine": {
+    "name": "SWAP",
+    "version": "4.2.0",
+    "binary": "swap (server: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SWAP/source/repo/builddir/swap, sha256 a696efc5344daa53b3ddeebd3664656d0822959a5b2f4f863efc710469f1cf97)",
+    "source": "https://github.com/SWAP-model/swap, tests/cases/1.hupselbrook (commit 7587ca3a5f037a7276f1c86059632f921f710775, 2026-01-08)",
+    "license": "LGPL-2.1 (SWAP, Wageningen Environmental Research)"
+  },
+  "ki": {
+    "model": "SWAP",
+    "run_tool": "tools/run_swap.py",
+    "parse_tool": "tools/parse_swap_output.py"
+  },
+  "simulation": {
+    "site": "Hupselse Beek catchment, the Netherlands (project 'hupsel')",
+    "period": "2002-01-01 to 2004-12-31",
+    "crops": [
+      "maizes 2002",
+      "potatod 2003",
+      "grassd 2004"
+    ],
+    "soil_profile_depth_cm": 200,
+    "processes": [
+      "Richards soil water flow",
+      "crop growth + root water uptake",
+      "drainage (swap.dra, system 1)",
+      "heat transport",
+      "solute transport"
+    ],
+    "main_file": "swap.swp (copied from swap_linux.swp.template, as SWAP's own test does)",
+    "outputs_checked": [
+      "result.blc",
+      "result.inc",
+      "result.vap",
+      "swap.ok"
+    ],
+    "runtime_seconds": 0.5
+  },
+  "files": {
+    "inputs/283.met": {
+      "bytes": 69250,
+      "sha256": "ec92d20437787134a0bd91e7fb0c5553c4ed57f592dc3f7c28e156c0c425a6d8"
+    },
+    "inputs/grassd.crp": {
+      "bytes": 21706,
+      "sha256": "338abcf9779bc24931f0767979ba49cdc8a6041df39be01b965bf58c4377feb4"
+    },
+    "inputs/maizes.crp": {
+      "bytes": 20512,
+      "sha256": "8f7b14a3cfc02a9315b76288b828625ce685de1ec292076b60dd3c29a911263d"
+    },
+    "inputs/potatod.crp": {
+      "bytes": 30258,
+      "sha256": "8c0c212eab2cf9f3befe6ce78c1c53c757f6d156d5192062896815a44f8fa322"
+    },
+    "inputs/swap.dra": {
+      "bytes": 17882,
+      "sha256": "fc0b5327073a1c1dfa2f20a2731bd299e2c2e3d4a839e5e1e9a5a832049096b3"
+    },
+    "inputs/swap_linux.swp.template": {
+      "bytes": 36625,
+      "sha256": "e8b0b75af82e73e5afaf6c8ed5216ba30323ad36bd4d749b99af72a7a26cdbd8"
+    }
+  }
+}

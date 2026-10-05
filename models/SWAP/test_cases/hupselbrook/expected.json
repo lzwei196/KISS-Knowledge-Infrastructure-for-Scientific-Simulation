@@ -1,0 +1,25 @@
+{
+  "description": "Expected results for SWAP's official test case tests/cases/1.hupselbrook (SWAP 4.2.0, github.com/SWAP-model/swap). 3 years (2002-2004), Hupselse Beek site (NL), grass/maize/potato crop files, drainage system, heat and solute transport on. inputs/ are the unmodified files from the SWAP git tree (git show HEAD). The case ships NO reference output in git (its CI test only checks that swap runs to the end), so values were recorded from real runs of the server's built SWAP. Two clean runs gave byte-identical result.blc, result.inc, result.vap and result.sba (deterministic); tolerances only allow for the 2-decimal print of .blc and 0.1 cm print of groundwater level.",
+  "engine_version": "SWAP 4.2.0 (git 7587ca3a5f03, binary sha256 a696efc5344daa53b3ddeebd3664656d0822959a5b2f4f863efc710469f1cf97)",
+  "numeric_checks": [
+    {"name": "n_balance_years", "expected": 3, "tol": 0, "why": "result.blc has one yearly balance block per year 2002-2004"},
+    {"name": "n_monthly_increments", "expected": 36, "tol": 0, "why": "result.inc has one row per month, 36 months"},
+    {"name": "n_profile_snapshots", "expected": 37, "tol": 0, "why": "result.vap holds the initial profile plus 36 monthly profiles"},
+    {"name": "initial_storage_cm", "expected": 71.6, "tol": 0.01, "why": "soil water in the 200 cm profile at start (from initial groundwater level)"},
+    {"name": "final_storage_cm", "expected": 73.05, "tol": 0.01, "why": "soil water at end of 2004"},
+    {"name": "total_rain_cm", "expected": 236.71, "tol": 0.02, "why": "gross rainfall read from 283.met over 3 years (input passes through)"},
+    {"name": "total_irrigation_cm", "expected": 0.5, "tol": 0.01, "why": "the one fixed irrigation given in swap.swp"},
+    {"name": "total_interception_cm", "expected": 10.65, "tol": 0.02, "why": "rain caught by the crop canopy"},
+    {"name": "total_transpiration_cm", "expected": 99.67, "tol": 0.02, "why": "actual crop water use, main output of the crop/root water uptake part"},
+    {"name": "total_soil_evaporation_cm", "expected": 51.92, "tol": 0.02, "why": "actual soil evaporation"},
+    {"name": "total_drainage_cm", "expected": 73.51, "tol": 0.02, "why": "outflow to drainage system 1 (swap.dra)"},
+    {"name": "max_abs_balance_deviation_cm", "expected": 0.0, "tol": 0.01, "why": "water balance closes every year (SWAP's own Balance Deviation line)"},
+    {"name": "min_groundwater_level_cm", "expected": -146.0, "tol": 0.1, "why": "deepest month-end groundwater level"},
+    {"name": "max_groundwater_level_cm", "expected": -42.2, "tol": 0.1, "why": "shallowest month-end groundwater level"},
+    {"name": "mean_groundwater_level_cm", "expected": -91.5389, "tol": 0.01, "why": "mean month-end groundwater level over 36 months"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py --print-values: KI tools/run_swap.py (with --binary <SWAP 4.2.0 build> --allow-unpinned-binary) then tools/parse_swap_output.py, python_env Python",
+  "reference": "No official reference output exists for this case: result.* files in the server's copy of the folder are untracked leftovers of an earlier local run (they match this run byte for byte except the 'Generated at' time line). Official check in SWAP's CI (pixi.toml test-linux) = swap runs to normal completion; our 'finished normally' check covers that.",
+  "notes": "Only step besides copying: swap_linux.swp.template is copied to swap.swp, exactly as SWAP's own test task does. No input file is changed."
+}

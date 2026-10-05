@@ -1,0 +1,25 @@
+{
+  "description": "Expected results for Ribasim's official test model 'basic' (python/ribasim_testmodels basic_model(), written by utils/generate-testmodels.py; Deltares/Ribasim commit fcfb329a, version 2026.1.0-rc2). 4 basins, 17 nodes, 17 links, 2020-01-01 to 2021-01-01, daily output, concentration tracking on. The four end_storage checks use the values and tolerance (atol = 1.5 m3) asserted in Ribasim's own Julia test core/test/run_models_test.jl, testitem 'basic model' (current_storage at end of run). The concentration checks follow the same test's asserts (Continuity == 1, sum of source fractions == 1, ResidenceTime > 0; Julia isapprox default rtol ~1.5e-8). The water-balance checks use Ribasim's own default solver limits (water_balance_abstol 1e-3, water_balance_reltol 1e-2). The rest are counts and totals recorded from our own run; two runs gave the same numbers.",
+  "engine_version": "Ribasim 2026.1.0-rc2 (Julia core from github.com/Deltares/Ribasim commit fcfb329a, Julia 1.12.5)",
+  "numeric_checks": [
+    {"name": "basin_n_times", "expected": 366, "tol": 0, "why": "one saved state per day of 2020 (leap year)"},
+    {"name": "basin_n_nodes", "expected": 4, "tol": 0, "why": "basins 1, 3, 6, 9"},
+    {"name": "flow_n_links", "expected": 17, "tol": 0, "why": "all 17 links in the model get a flow"},
+    {"name": "end_storage_basin_1", "expected": 775.23576, "tol": 1.5, "why": "OFFICIAL: run_models_test.jl 'basic model' current_storage[1], atol 1.5"},
+    {"name": "end_storage_basin_3", "expected": 775.23365, "tol": 1.5, "why": "OFFICIAL: run_models_test.jl 'basic model' current_storage[2], atol 1.5"},
+    {"name": "end_storage_basin_6", "expected": 572.60102, "tol": 1.5, "why": "OFFICIAL: run_models_test.jl 'basic model' current_storage[3], atol 1.5"},
+    {"name": "end_storage_basin_9", "expected": 1130.005, "tol": 1.5, "why": "OFFICIAL: run_models_test.jl 'basic model' current_storage[4], atol 1.5"},
+    {"name": "max_abs_balance_error", "expected": 0.0, "tol": 0.001, "why": "Ribasim water balance closes within its own default water_balance_abstol (1e-3); our run gives ~1e-17"},
+    {"name": "max_abs_relative_error", "expected": 0.0, "tol": 0.01, "why": "Ribasim water balance closes within its own default water_balance_reltol (1e-2); our run gives ~6e-14"},
+    {"name": "continuity_max_dev", "expected": 0.0, "tol": 1e-08, "why": "OFFICIAL assert: Continuity tracer stays 1.0 everywhere"},
+    {"name": "source_sum_max_dev", "expected": 0.0, "tol": 1e-08, "why": "OFFICIAL assert: source fractions (Initial, LevelBoundary, FlowBoundary, UserDemand, Drainage, Precipitation, SurfaceRunoff) sum to 1"},
+    {"name": "residence_time_min_positive", "expected": 1.0, "tol": 0, "why": "OFFICIAL assert: all ResidenceTime values > 0 (1 = true)"},
+    {"name": "total_precipitation_m3", "expected": 1464.0, "tol": 1e-06, "why": "own run: 4 basins x 366 days x 1 m3/day of precipitation"},
+    {"name": "total_evaporation_m3", "expected": 1285.6281614361621, "tol": 0.01, "why": "own run (repeated exactly in a second run); small tol for solver noise"},
+    {"name": "max_level_m", "expected": 1.63, "tol": 1e-06, "why": "own run: basin 9 level reaches the downstream level of 1.63 m"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/Ribasim/bin/ribasim via the KI tool tools/run_ribasim.py",
+  "reference": "github.com/Deltares/Ribasim @ fcfb329a: python/ribasim_testmodels/ribasim_testmodels/basic.py (basic_model), utils/generate-testmodels.py, core/test/run_models_test.jl (testitem 'basic model')",
+  "notes": "basin.nc keeps storage at the start of each day, so end-of-run storage is computed as last storage + last storage_rate x 86400 s. Cross-check: this equals the storage from the final levels in basin_state.nc through the basin profile (e.g. basin 1: level 1.27523033 m -> 775.2353 m3). No input was changed for the run."
+}

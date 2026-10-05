@@ -1,0 +1,24 @@
+{
+  "description": "Expected results for the official WSIMOD quickstart demo (docs/demo/examples/quickstart_demo.yaml with docs/demo/data/processed/timeseries_data.csv, ImperialCollegeLondon/wsi git 2f55314). One Land node (10 urban + 100 rural area units, Oxford land forcing 2009-03-03..2013-02-25, 1456 daily steps), sewer, groundwater, river node and outlet. inputs/ are the unmodified files from the wsi git tree. The upstream test (tests/test_example_files.py) only checks that flows/tanks/surfaces.csv are written, so there are no official reference numbers; the values below were recorded from real runs on this server. Two clean runs through the KI run tool and one run through the official `python -m wsimod` CLI gave byte-identical flows.csv, tanks.csv and surfaces.csv (deterministic).",
+  "engine_version": "wsimod 0.1.dev1+g2f55314d0 (wsi git 2f55314d054dd7b29253da1b9c3514f496d4648f), Python 3.12.3, pandas 3.0.0, numpy 2.4.4",
+  "numeric_checks": [
+    {"name": "n_timesteps", "expected": 1456, "tol": 0, "why": "one step per unique date in timeseries_data.csv (2009-03-03..2013-02-25)"},
+    {"name": "n_flow_records", "expected": 8736, "tol": 0, "why": "6 arcs x 1456 steps"},
+    {"name": "n_tank_records", "expected": 7280, "tol": 0, "why": "5 tanks (sewer, 3 land tanks, groundwater) x 1456 steps"},
+    {"name": "n_surface_records", "expected": 2912, "tol": 0, "why": "2 surfaces (urban, rural) x 1456 steps"},
+    {"name": "outlet_flow_sum", "expected": 121.5681367161217, "tol": 1e-06, "why": "total flow on catchment_outflow arc to the outlet (main model output)"},
+    {"name": "outlet_flow_max", "expected": 0.5102884152215214, "tol": 1e-08, "why": "peak daily outlet flow"},
+    {"name": "outlet_flow_mean", "expected": 0.08349459939294072, "tol": 1e-09, "why": "mean daily outlet flow"},
+    {"name": "baseflow_sum", "expected": 65.4115196070878, "tol": 1e-06, "why": "total groundwater baseflow to river"},
+    {"name": "storm_outflow_sum", "expected": 16.17199999999999, "tol": 1e-06, "why": "total sewer storm outflow (sewer capacity 0.04 limits it)"},
+    {"name": "precipitation_total", "expected": 325.149, "tol": 1e-06, "why": "rain on both surfaces (forcing mm->m times area); checks forcing was read and scaled"},
+    {"name": "evaporation_total", "expected": 155.75329462114715, "tol": 1e-06, "why": "total evaporation from both surfaces"},
+    {"name": "final_groundwater_storage", "expected": 26.34338046199157, "tol": 1e-06, "why": "groundwater storage on the last day"},
+    {"name": "final_rural_surface_storage", "expected": 14.676065221283489, "tol": 1e-06, "why": "rural soil storage on the last day"},
+    {"name": "water_balance_residual", "expected": 0.0, "tol": 1e-08, "why": "rain - evaporation - outlet flow - end storage (all tanks + surfaces, start storage 0) must close"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "KI tools/run_wsimod.py --mode api with PYTHONPATH=<wsi repo source>, /mnt/disk1/Hydrocraft_server/python_env/bin/python",
+  "reference": "No official reference outputs ship with this demo. Upstream tests/test_model.py::TestModel::test_run builds the same network for one day with hand-set inputs and asserts outlet flow 0.05 and urban storage 0.03; that test was also run on this server and passed (not part of this package).",
+  "notes": "Run finishes in about 1 s. No changes were made to the inputs; the output folder from the yaml (results/quickstart_results) is replaced by the --outputs argument, which is the official CLI option for this."
+}

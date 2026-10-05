@@ -1,0 +1,38 @@
+{
+  "test_case": "WSIMOD quickstart_demo (official quickstart example)",
+  "engine": {
+    "name": "WSIMOD (python package wsimod)",
+    "version": "0.1.dev1+g2f55314d0",
+    "binary": "python -m wsimod / wsimod.orchestration.model.Model, run from repo source via PYTHONPATH",
+    "source": "ImperialCollegeLondon/wsi git, commit 2f55314d054dd7b29253da1b9c3514f496d4648f; files docs/demo/examples/quickstart_demo.yaml and docs/demo/data/processed/timeseries_data.csv",
+    "license": "BSD-3-Clause (WSIMOD)"
+  },
+  "ki": {
+    "model": "WSIMOD",
+    "run_tool": "tools/run_wsimod.py --mode api",
+    "parse_tool": "tools/parse_wsimod_output.py"
+  },
+  "simulation": {
+    "network": "Land (urban 10 + rural 100) -> Sewer / Groundwater / river Node -> Waste outlet, 5 nodes 6 arcs",
+    "forcing": "site oxford_land: precipitation (mm, scaled to m), temperature, et0",
+    "time_step": "daily",
+    "start": "2009-03-03",
+    "end": "2013-02-25",
+    "n_timesteps": 1456,
+    "outputs": [
+      "flows.csv",
+      "tanks.csv",
+      "surfaces.csv"
+    ]
+  },
+  "files": {
+    "inputs/quickstart_demo.yaml": {
+      "bytes": 1493,
+      "sha256": "3a535e6a2becb4490f5963d9bde8b52bdfeccc2b65021fda6607e9c4307f5be4"
+    },
+    "inputs/timeseries_data.csv": {
+      "bytes": 3443552,
+      "sha256": "85af63a828e09e890ce7796790b1172888a219b72429efceaada59c249bb0e3a"
+    }
+  }
+}

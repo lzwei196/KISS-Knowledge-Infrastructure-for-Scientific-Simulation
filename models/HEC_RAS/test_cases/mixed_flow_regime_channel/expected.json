@@ -1,0 +1,26 @@
+{
+  "description": "Expected results for HEC's official 'Mixed Flow Regime Channel' steady example (HEC-RAS Example_Projects 6.6, folder '1D Steady Flow Hydraulics/Mixed Flow Regime Channel'), run with RasSteady.exe from HEC-RAS 6.7 Beta 5 under WINE 9.0 through the KI tools/run_hecras.py. inputs/ are the unmodified files from the official zip (sha256 in manifest.json). The official example ships no computed results (.O01 / .p01.hdf), so the solver values were recorded from our own run; two clean runs gave identical MIXED.O01 bytes and identical values in all 71 numeric HDF datasets (deterministic). The three 'vs_observed_ws' checks compare the computed PF 1 water surface with the 19 'Observed WS' values that HEC ships inside the official MIXED.f01 (an official reference).",
+  "engine_version": "HEC-RAS 6.7 Beta 5, RasSteady.exe (x64) under WINE 9.0",
+  "numeric_checks": [
+    {"name": "n_profiles", "expected": 2, "tol": 0, "why": "flow file has two steady profiles, PF 1 and PF 2"},
+    {"name": "n_cross_sections", "expected": 19, "tol": 0, "why": "one reach with 19 cross sections"},
+    {"name": "pf1_flow_all_xs", "expected": 500.0, "tol": 0, "why": "PF 1 discharge 500 cfs carried at every cross section"},
+    {"name": "pf2_flow_all_xs", "expected": 1000.0, "tol": 0, "why": "PF 2 discharge 1000 cfs carried at every cross section"},
+    {"name": "pf1_ws_upstream_ft", "expected": 71.8657, "tol": 0.005, "why": "PF 1 water surface at the top cross section (RS 0.5682)"},
+    {"name": "pf1_ws_downstream_ft", "expected": 66.00045, "tol": 0.005, "why": "PF 1 water surface at the bottom cross section (RS 0.0)"},
+    {"name": "pf1_ws_first_subcritical_xs_ft", "expected": 69.51859, "tol": 0.005, "why": "PF 1 water surface just below the hydraulic jump"},
+    {"name": "pf2_ws_upstream_ft", "expected": 72.92663, "tol": 0.005, "why": "PF 2 water surface at the top cross section"},
+    {"name": "pf2_ws_downstream_ft", "expected": 69.01941, "tol": 0.005, "why": "PF 2 water surface at the bottom cross section"},
+    {"name": "pf1_n_supercritical_xs", "expected": 6, "tol": 0, "why": "PF 1 cross sections with Froude > 1 (mixed-flow regime)"},
+    {"name": "pf2_n_supercritical_xs", "expected": 5, "tol": 0, "why": "PF 2 cross sections with Froude > 1"},
+    {"name": "pf1_first_subcritical_xs_index", "expected": 5, "tol": 0, "why": "hydraulic jump sits between XS 4 and XS 5 (RS 0.4925 -> 0.4735), the same place as the jump in the official observed WS"},
+    {"name": "pf1_rmse_vs_observed_ws_ft", "expected": 0.09625, "tol": 0.002, "why": "RMSE of PF 1 computed WS vs the 19 official Observed WS values in MIXED.f01"},
+    {"name": "pf1_nse_vs_observed_ws", "expected": 0.99653, "tol": 0.001, "why": "NSE of PF 1 computed WS vs official Observed WS"},
+    {"name": "pf1_max_abs_err_vs_observed_ws_ft", "expected": 0.277, "tol": 0.005, "why": "largest PF 1 gap to official Observed WS (at the jump)"}
+  ],
+  "finished_normally": "run_hecras.py exit 0 with ok=true; RasSteady.exe return code 0 and its line 'Finished Steady Flow Simulation'",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "wine '/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe' MIXED.r01 (sha256 deaef5889cba19343ec3a116db10d4859fc6f06c3432b4041595390be09226f0), driven by the KI tools/run_hecras.py; output read with tools/parse_output_hecras.py and tools/validate_hecras.py",
+  "reference": "Official reference = 'Observed WS' lines in the official MIXED.f01 (19 values, PF 1). Solver values = own run, repeated twice with identical output.",
+  "notes": "No input change. run_hecras.py itself seeds MIXED.p01.tmp.hdf from MIXED.g01.hdf in its temp workspace (its normal step, which the HEC-RAS GUI would do). After 'Finished Steady Flow Simulation' RasSteady.exe prints an HDF5-DIAG 'H5Gopen2: not a location' message; return code is 0 and all results are written, so it is noise, not a failure. Tolerances (0.005 ft on WS) leave room for float differences on another WINE/CPU; on this server the run repeats exactly."
+}

@@ -1,0 +1,63 @@
+{
+  "test_case": "HEC-RAS mixed_flow_regime_channel (official HEC example 'Mixed Flow Regime Channel', steady)",
+  "engine": {
+    "name": "HEC-RAS",
+    "version": "6.7 Beta 5 (RasSteady.exe x64, under WINE 9.0)",
+    "binary": "/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe",
+    "binary_sha256": "deaef5889cba19343ec3a116db10d4859fc6f06c3432b4041595390be09226f0",
+    "source": "US Army Corps of Engineers, Hydrologic Engineering Center (HEC). Inputs from Example_Projects_6_6.zip (https://github.com/HydrologicEngineeringCenter/hec-downloads/releases/download/1.0.33/Example_Projects_6_6.zip, zip sha256 ea239b506155a2dfeda2af80b3c2af948eef42c40218bcd65de472cfed386887), folder '1D Steady Flow Hydraulics/Mixed Flow Regime Channel'",
+    "license": "HEC-RAS is US Government (USACE) software, free to use, closed source; HEC example projects are distributed freely by HEC"
+  },
+  "ki": {
+    "model": "HEC_RAS",
+    "run_tool": "tools/run_hecras.py",
+    "parse_tools": [
+      "tools/parse_output_hecras.py",
+      "tools/validate_hecras.py"
+    ]
+  },
+  "simulation": {
+    "type": "1D steady flow, mixed flow regime (subcritical + supercritical, hydraulic jump)",
+    "units": "English (ft, cfs)",
+    "river": "Mixed Reach / Mixed Reach",
+    "cross_sections": 19,
+    "profiles": {
+      "PF 1": "500 cfs",
+      "PF 2": "1000 cfs"
+    },
+    "boundaries": "normal depth both ends (up slope 0.01, down slope 0.000586)",
+    "plan": "MIXED.P01 'Mixed Flow Plan'",
+    "run_file": "MIXED.r01",
+    "runtime_s": "about 3"
+  },
+  "files": {
+    "inputs/MIXED.P01": {
+      "bytes": 425,
+      "sha256": "d9d7603042601db759779902b688dfb86581508cd5b58ac28770d176a3b07f0c"
+    },
+    "inputs/MIXED.PRJ": {
+      "bytes": 560,
+      "sha256": "b0a6d0cad552cc02d9910e147f9704bf58546ba88f6897b7ea6bb7fcc893fb61"
+    },
+    "inputs/MIXED.f01": {
+      "bytes": 1834,
+      "sha256": "a0c50328fdf645d93b0d7bc1be7ac926fa1252505f7dce531ad37b925ad62e32"
+    },
+    "inputs/MIXED.g01": {
+      "bytes": 8499,
+      "sha256": "28d264546fabfae32590f369e8d2a7e90099af26fc9678512b4b599f843b5529"
+    },
+    "inputs/MIXED.g01.hdf": {
+      "bytes": 47712,
+      "sha256": "c06a778f007039ff79031ed4a81d931ee02485666ad5ff1f60234f5af0851dc5"
+    },
+    "inputs/MIXED.r01": {
+      "bytes": 10415,
+      "sha256": "3b089dfea779d3578fe6cc16225433ce37cb90f994b9d546076c54c20387c71e"
+    },
+    "inputs/MIXED.rasmap": {
+      "bytes": 4866,
+      "sha256": "80cda4646775c84ee08f3709596d2014df02507000ab752ad0741ca9c102c216"
+    }
+  }
+}

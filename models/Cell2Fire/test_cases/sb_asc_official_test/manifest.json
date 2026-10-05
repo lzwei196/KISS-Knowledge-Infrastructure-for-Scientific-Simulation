@@ -1,0 +1,44 @@
+{
+  "test_case": "Cell2Fire sb-asc (official C2F-W test-suite case, Scott & Burgan)",
+  "engine": {
+    "name": "Cell2Fire W (C2F-W)",
+    "version": "git 38ff0a0 (2026-03-02), local build, prints v0.0.0",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire",
+    "source": "https://github.com/fire2a/C2F-W test/model/sb-asc + test/target_results.zip (commit 38ff0a0cee074e322d330524c1fa3ae7dce28289)",
+    "license": "GPL-3.0 (C2F-W)"
+  },
+  "ki": {
+    "model": "Cell2Fire",
+    "run_tool_used": false,
+    "parse_tool_used": false
+  },
+  "simulation": {
+    "fire_model": "S (Scott & Burgan 40 fuel models)",
+    "grid": "7 x 7 cells, 100 m, ASCII grid",
+    "n_fires": 113,
+    "seed": 123,
+    "scenario": 1,
+    "weather": "Weather.csv, 5 hourly rows, WS 10, WD 180.0 on every row",
+    "ignitions": "random cell per fire from seed 123",
+    "command": "Cell2Fire --input-instance-folder model/sb-asc --output-folder test_results/sb-asc --nsims 113 --output-messages --grids --out-intensity --sim S --seed 123 --ignitionsLog --scenario 1",
+    "runtime_s": "about 0.5"
+  },
+  "files": {
+    "inputs/Weather.csv": {
+      "bytes": 207,
+      "sha256": "62b466ee26d0ba5a6d6610629e523ce5b73383e032e12425ba2dbf73fd70f958"
+    },
+    "inputs/fuels.asc": {
+      "bytes": 271,
+      "sha256": "ac7cbd2fa722f7e3aea710b9e0f5721104ab59f1f94343b5f87480320d0481e1"
+    },
+    "inputs/spain_lookup_table.csv": {
+      "bytes": 4105,
+      "sha256": "3824d90a21d6869dea4cfe9d173fe82be04bf64cf41c7ef51dcd6e3a110892f9"
+    },
+    "reference/target_results.zip": {
+      "bytes": 2427596,
+      "sha256": "0361457b10af0b2cbd10484e4937491df4d9d9eabe952952388fc79cb4a7b6cf"
+    }
+  }
+}

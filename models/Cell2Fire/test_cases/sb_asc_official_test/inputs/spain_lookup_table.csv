@@ -1,0 +1,39 @@
+grid_value,export_value,descriptive_name,fuel_type, r, g, b, h, s, l
+101,101,The primary carrier of fire in GR1 is sparse grass though small amounts of fine dead fuel may be present,GR1,209,255,115,57,255,185
+102,102,The primary carrier of fire in GR2 is grass though small amounts of fine dead fuel may be present,GR2,209,255,115,57,255,185
+103,103,The primary carrier of fire in GR3 is continuous coarse humid-climate grass. Grass and herb fuel load is relatively light,GR3,34,102,51,95,128,68
+104,104,The primary carrier of fire in GR4 is continuous dry climate grass,GR4,131,199,149,96,96,165
+105,105,The primary carrier of fire in GR5 is humid climate grass,GR5,112,168,0,57,255,84
+106,106,The primary carrier of fire in GR6 is continuous humid-climate grass,GR6,223,184,230,206,122,207
+107,107,The primary carrier of fire in GR7 is continuous dry-climate grass,GR7,172,102,237,192,201,170
+108,108,The primary carrier of fire in GR8 is continuous very coarse humid climate grass,GR8,112,12,242,188,231,127
+121,121,The primary carrier of fire in GS1 is grass and shrubs combined,GS1,196,189,151,35,70,174
+122,122,The primary carrier of fire in GS2 is grass and shrubs combined,GS2,137,112,68,27,86,103
+123,123,The primary carrier of fire in GS3 is grass and shrubs combined,GS3,196,189,151,35,70,174
+124,124,The primary carrier of fire in GS4 is grass and shrubs combined,GS4,251,190,185,3,227,218
+142,142,The primary carrier of fire in SH2 is woody shrubs and shrub litter,SH2,247,104,161,-272,229,176
+143,143,The primary carrier of fire in SH3 is woody shrubs and shrub litter,SH3,174,1,126,-285,252,88
+144,144,The primary carrier of fire in SH4 is woody shrubs and shrub litter,SH4,255,255,190,42,255,223
+145,145,The primary carrier of fire in SH5 is woody shrubs and shrub litter,SH5,230,230,0,42,255,115
+146,146,The primary carrier of fire in SH6 is woody shrubs and shrub litter,SH6,255,211,127,28,255,191
+147,147,The primary carrier of fire in SH7 is woody shrubs and shrub litter,SH7,255,170,0,28,255,128
+148,148,The primary carrier of fire in SH8 is woody shrubs and shrub litter,SH8,255,211,127,28,255,191
+149,149,The primary carrier of fire in SH9 is woody shrubs and shrub litter,SH9,99,0,0,0,255,50
+161,161,The primary carrier of fire in TU1 is low load of grass and or shrub with litter,TU1,99,0,0,0,255,50
+162,162,The primary carrier of fire in TU2 is moderate litter load with shrub component,TU2,99,0,0,0,255,50
+163,163,The primary carrier of fire in TU3 is moderate forest litter with grass and shrub components,TU3,99,0,0,0,255,50
+164,164,The primary carrier of fire in TU4 is short conifer trees with grass or moss understory,TU4,99,0,0,0,255,50
+165,165,The primary carrier of fire in TU5 is heavy forest litter,TU5,99,0,0,0,255,50
+181,181,The primary carrier of fire in TL1 is compact forest litter,TL1,99,0,0,0,255,50
+182,182,The primary carrier of fire in TL2 is broadleaf (hardwood) litter,TL2,99,0,0,0,255,50
+183,183,The primary carrier of fire in TL3 is moderate load conifer litter light load of coarse fuels,TL3,99,0,0,0,255,50
+185,185,The primary carrier of fire in TL5 is high load conifer litter light slash or mortality fuel,TL5,99,0,0,0,255,50
+186,186,The primary carrier of fire in TL6 is moderate load broadleaf litter,TL6,99,0,0,0,255,50
+188,188,The primary carrier of fire in TL8 is moderate load long-needle pine litter,TL8,255,211,127,28,255,191
+189,189,The primary carrier of fire in TL9 is very high load fluffy broadleaf litter,TL9,255,211,127,28,255,191
+0,0,Not Available,Non-fuel,255,255,255,170,0,255
+91,91,Fuel model NB1 consists of land covered by urban and suburban development,Non-fuel,130,130,130,170,0,130
+92,92,Land covered by permanent snow or ice is included in NB2,Non-fuel,115,223,255,138,255,185
+93,93,Fuel model NB3 is agricultural land maintained in a nonburnable condition,Non-fuel,0,0,0,170,0,0
+98,98,Land covered by open bodies of water such as lakes rivers and oceans comprises NB8,Non-fuel,166,166,166,170,0,166
+99,99,Land devoid of enough fuel to support wildland fire spread is covered by fuel model NB9,Non-fuel,204,204,204,170,0,204

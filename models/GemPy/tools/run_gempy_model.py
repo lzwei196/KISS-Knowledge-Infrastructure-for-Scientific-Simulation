@@ -70,27 +70,20 @@ def run_example_model(example_name, output_dir):
     t0 = time.time()
 
     try:
-        model = gp.create_geomodel(
-            project_name=example_name,
-            extent=[0, 1000, 0, 1000, 0, 1000],
-            resolution=[20, 20, 20],
-            refinement=4
-        )
-
-        # Add simple horizontal stratigraphy
+        # Add simple horizontal stratigraphy. The structural frame must exist before
+        # create_geomodel (GemPy 3 needs structural_frame or importer_helper). Surface ids
+        # are left to GemPy (hand-set ids break gp.save_model's serialization check).
         element1 = gp.data.StructuralElement(
             name="Layer1",
             color="#015482",
             surface_points=gp.data.SurfacePointsTable.from_arrays(
                 x=[500], y=[500], z=[700],
-                names=["Layer1"],
-                name_id_map={"Layer1": 1}
+                names=["Layer1"]
             ),
             orientations=gp.data.OrientationsTable.from_arrays(
                 x=[500], y=[500], z=[700],
                 G_x=[0], G_y=[0], G_z=[1],
-                names=["Layer1"],
-                name_id_map={"Layer1": 1}
+                names=["Layer1"]
             )
         )
         element2 = gp.data.StructuralElement(
@@ -98,8 +91,7 @@ def run_example_model(example_name, output_dir):
             color="#9f0052",
             surface_points=gp.data.SurfacePointsTable.from_arrays(
                 x=[500], y=[500], z=[400],
-                names=["Layer2"],
-                name_id_map={"Layer2": 2}
+                names=["Layer2"]
             ),
             orientations=gp.data.OrientationsTable.initialize_empty()
         )
@@ -109,7 +101,17 @@ def run_example_model(example_name, output_dir):
             elements=[element1, element2],
             structural_relation=gp.data.StackRelationType.ERODE
         )
-        model.structural_frame.structural_groups = [group]
+
+        model = gp.create_geomodel(
+            project_name=example_name,
+            extent=[0, 1000, 0, 1000, 0, 1000],
+            resolution=[20, 20, 20],
+            refinement=4,
+            structural_frame=gp.data.StructuralFrame(
+                structural_groups=[group],
+                color_gen=gp.data.ColorsGenerator()
+            )
+        )
 
         solutions = gp.compute_model(model)
         elapsed = time.time() - t0

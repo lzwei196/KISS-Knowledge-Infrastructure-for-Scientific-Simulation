@@ -1,0 +1,37 @@
+{
+  "test_case": "GEOPHIRES example1 (official GEOPHIRES-X example: EGS electricity, multiple parallel fractures)",
+  "engine": {
+    "name": "GEOPHIRES-X",
+    "version": "3.11.25",
+    "binary": "<python with geophires_x> -m geophires_x (server: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv/bin/python)",
+    "source": "NREL/GEOPHIRES-X git, tests/examples/example1.txt + example1.out (commit 870971c89451aa98128a151dce9d54585c1df2fa)",
+    "license": "MIT (GEOPHIRES-X, NREL)"
+  },
+  "ki": {
+    "model": "GEOPHIRES",
+    "run_tool": "tools/run_geophires.py",
+    "parse_tool": "tools/parse_geophires_output.py"
+  },
+  "simulation": {
+    "reservoir_model": "Multiple Parallel Fractures (Reservoir Model 1), 20 fractures, 1e9 m3",
+    "depth_km": 3,
+    "gradient_degC_per_km": 50,
+    "wells": "2 production + 2 injection, 55 kg/s each",
+    "wellbore_model": "Ramey",
+    "end_use": "Electricity, supercritical ORC",
+    "plant_lifetime_yr": 30,
+    "time_steps_per_year": 6,
+    "economic_model": "Fixed Charge Rate (0.05)",
+    "run_time_s": "about 2-3"
+  },
+  "files": {
+    "inputs/example1.txt": {
+      "bytes": 3380,
+      "sha256": "17c32a9a2b87ec2b7ae8428a17da12d4c57d84f411ea1ec6f09382eb85f7cedf"
+    },
+    "reference/example1.out": {
+      "bytes": 20464,
+      "sha256": "f7cd2ca722ee9448192501ae8b99ae9f8d6b9d9f4b2d54b6daee3a8d4c36e55d"
+    }
+  }
+}

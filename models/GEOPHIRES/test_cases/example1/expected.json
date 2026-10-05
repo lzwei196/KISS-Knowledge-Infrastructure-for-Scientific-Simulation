@@ -1,0 +1,29 @@
+{
+  "description": "Expected results for the official GEOPHIRES-X example1 (EGS, multiple parallel fractures reservoir at 3 km, Ramey wellbore model, supercritical ORC electricity, 30-year life, fixed charge rate economics). inputs/example1.txt and reference/example1.out are the unmodified files from the GEOPHIRES-X git tree (tests/examples/). All expected values are read FROM THE OFFICIAL reference/example1.out, not from our run.",
+  "engine_version": "GEOPHIRES-X 3.11.25 (git 870971c8)",
+  "official_comparison": {
+    "what": "Same check as the GEOPHIRES-X test suite (tests/test_geophires_x.py::test_geophires_examples): parse both the new .out and the official example1.out with geophires_x_client.GeophiresXResult, drop 'metadata' and 'Simulation Metadata' (version, date, run time), and require the two result dicts to be exactly equal.",
+    "tolerance": "exact (example1 is not in the suite's almost-equal fallback list)"
+  },
+  "numeric_checks": [
+    {"name": "average_net_electricity_MW", "path": ["SUMMARY OF RESULTS", "Average Net Electricity Production"], "expected": 5.39, "tol": 0, "why": "main output: average net power"},
+    {"name": "electricity_breakeven_price_cents_per_kWh", "path": ["SUMMARY OF RESULTS", "Electricity breakeven price"], "expected": 8.82, "tol": 0, "why": "LCOE, the headline economic result"},
+    {"name": "project_npv_MUSD", "path": ["ECONOMIC PARAMETERS", "Project NPV"], "expected": -35.81, "tol": 0, "why": "project net present value"},
+    {"name": "project_irr_pct", "path": ["ECONOMIC PARAMETERS", "Project IRR"], "expected": -2.85, "tol": 0, "why": "project internal rate of return"},
+    {"name": "max_production_temperature_degC", "path": ["RESERVOIR SIMULATION RESULTS", "Maximum Production Temperature"], "expected": 167.3, "tol": 0, "why": "reservoir/wellbore thermal result (max)"},
+    {"name": "min_production_temperature_degC", "path": ["RESERVOIR SIMULATION RESULTS", "Minimum Production Temperature"], "expected": 165.3, "tol": 0, "why": "reservoir/wellbore thermal result (min)"},
+    {"name": "average_reservoir_heat_extraction_MW", "path": ["RESERVOIR SIMULATION RESULTS", "Average Reservoir Heat Extraction"], "expected": 53.52, "tol": 0, "why": "average heat taken from the reservoir"},
+    {"name": "total_capital_costs_MUSD", "path": ["CAPITAL COSTS (M$)", "Total capital costs"], "expected": 47.99, "tol": 0, "why": "total CAPEX"},
+    {"name": "total_om_costs_MUSD_per_yr", "path": ["OPERATING AND MAINTENANCE COSTS (M$/yr)", "Total operating and maintenance costs"], "expected": 1.35, "tol": 0, "why": "total yearly O&M"},
+    {"name": "average_annual_net_electricity_GWh", "path": ["SURFACE EQUIPMENT SIMULATION RESULTS", "Average Annual Net Electricity Generation"], "expected": 42.51, "tol": 0, "why": "yearly energy delivered"},
+    {"name": "power_profile_years", "profile": "POWER GENERATION PROFILE", "stat": "n_years", "expected": 30, "tol": 0, "why": "one row per year of the 30-year plant life"},
+    {"name": "final_year_net_power_MW", "profile": "POWER GENERATION PROFILE", "stat": "last", "column": "NET POWER (MW)", "expected": 5.4179, "tol": 0, "why": "net power in year 30"},
+    {"name": "final_year_pct_total_heat_mined", "profile": "HEAT AND/OR ELECTRICITY EXTRACTION AND GENERATION PROFILE", "stat": "last", "column": "PERCENTAGE OF TOTAL HEAT MINED (%)", "expected": 14.07, "tol": 0, "why": "share of reservoir heat used after 30 years"},
+    {"name": "final_net_cashflow_MUSD", "profile": "REVENUE & CASHFLOW PROFILE", "stat": "last", "column": "Project Net Cashflow (MUSD)", "expected": -18.35, "tol": 0, "why": "cumulative cash position at end of life"}
+  ],
+  "finished_normally": "run_geophires.py exits 0 with status 'success', and the .out starts with the '***CASE REPORT***' banner",
+  "ki_parser_cross_check": "the KI tools/parse_geophires_output.py must give the same Average Net Electricity Production, Electricity breakeven price, Project NPV and Project IRR as the official parser",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "values read from the official GEOPHIRES-X tests/examples/example1.out (git 870971c8); confirmed by real runs of GEOPHIRES-X 3.11.25 (venv /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv) through the KI tools/run_geophires.py. Two clean runs gave result dicts exactly equal to the official file (only version/date/run time lines differ).",
+  "reference": "reference/example1.out (official GEOPHIRES-X expected output, written by GEOPHIRES 3.9.28; the suite still uses it unchanged as the expected result for 3.11.25)"
+}

@@ -41,6 +41,65 @@ import sys
 import time
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Engine python: pyGIMLi lives in its own venv (pygimli + pgcore pip wheels), not in the HydroCraft python_env that
+# SKILL.md uses to start the KI tools. Lookup (same as preflight_check.py): --pygimli-python ->
+# $PYGIMLI_PYTHON (empty = unset) -> server default -> this python (only if it imports pygimli). An explicit value is
+# used as given (no fallback). If the chosen python is not the one running this tool, the tool
+# re-launches itself with it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+ENGINE_PYTHON_ENV = "PYGIMLI_PYTHON"
+ENGINE_PYTHON_DEFAULT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python"
+_REEXEC_GUARD = "KI_PYGIMLI_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the pyGIMLi interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--pygimli-python"
+    env_value = os.environ.get(ENGINE_PYTHON_ENV, "").strip() or None  # as preflight_check.py
+    if env_value is not None:
+        return env_value, "$" + ENGINE_PYTHON_ENV
+    if os.path.isfile(ENGINE_PYTHON_DEFAULT):
+        return ENGINE_PYTHON_DEFAULT, "server default"
+    try:
+        import pygimli  # noqa: F401
+        return sys.executable, "running python (imports pygimli)"
+    except ImportError:
+        return None, (f"no python with pygimli: --pygimli-python and ${ENGINE_PYTHON_ENV} not set, "
+                      f"server default {ENGINE_PYTHON_DEFAULT} not found, and {sys.executable} "
+                      "cannot import pygimli")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the pyGIMLi python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        print(json.dumps({"status": "error", "errors": [source]}), file=sys.stderr)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        print(json.dumps({"status": "error", "errors": [
+            f"re-launch loop: running {sys.executable}, expected {python} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    if not (os.path.isfile(python) and os.access(python, os.X_OK)):
+        print(json.dumps({"status": "error", "errors": [
+            f"pyGIMLi python not found or not executable: {python!r} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: a venv python must keep its own path
+    print(f"[{os.path.basename(__file__)}] re-launching with {python} ({source})",
+          file=sys.stderr, flush=True)
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        print(json.dumps({"status": "error", "errors": [
+            f"could not start pyGIMLi python {python!r} ({source}): {e}"]}), file=sys.stderr)
+        sys.exit(1)
+
 
 def validate_inputs(args):
     """Validate arguments and check pyGIMLi availability."""
@@ -323,8 +382,13 @@ def main():
                         help="Homogeneous resistivity for forward mode (Ohm·m)")
     parser.add_argument("--robust", action="store_true",
                         help="Use robust (L1) data weighting")
+    parser.add_argument("--pygimli-python", default=None,
+                        help="Python of the pyGIMLi venv (default: $PYGIMLI_PYTHON, else the "
+                             "server venv, else this python if it imports pygimli). "
+                             "The tool re-launches itself with it.")
 
     args = parser.parse_args()
+    ensure_engine_python(args.pygimli_python)
 
     validate_inputs(args)
     result = process(args)

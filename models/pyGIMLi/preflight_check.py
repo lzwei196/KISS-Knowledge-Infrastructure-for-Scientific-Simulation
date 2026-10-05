@@ -9,8 +9,13 @@ import sys
 
 MODEL_ID = "pyGIMLi"
 KI_DIR = os.path.dirname(os.path.abspath(__file__))
-PYTHON = "KISSPATH_PYTHON_ENV/bin/python"
-SITE_PACKAGES = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
+# pyGIMLi is not in HydroCraft python_env; it lives in its own venv. Lookup, same as
+# the official test cases: $PYGIMLI_PYTHON -> the server venv. An explicit value is
+# used as-is (no silent fallback). The venv path is executed as given (not its
+# realpath), so the venv's site-packages are used.
+DEFAULT_PYTHON = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python"
+PYTHON = os.environ.get("PYGIMLI_PYTHON", "").strip() or DEFAULT_PYTHON
+HYDROCRAFT_PYTHON = "KISSPATH_PYTHON_ENV/bin/python"
 BINARY = os.path.join(KI_DIR, "tools", "run_pygimli.py")
 TRIPLETS = os.path.join(KI_DIR, "diagnostics", "triplets.yaml")
 
@@ -43,14 +48,14 @@ def run_command(argv, timeout=20, env=None):
             stderr=subprocess.PIPE,
             timeout=timeout,
         )
-    except FileNotFoundError as exc:
+    except OSError as exc:
         return exc
     except subprocess.TimeoutExpired as exc:
         return exc
 
 
 def command_detail(result):
-    if isinstance(result, FileNotFoundError):
+    if isinstance(result, OSError):
         return str(result)
     if isinstance(result, subprocess.TimeoutExpired):
         return f"timed out after {result.timeout}s"
@@ -58,8 +63,8 @@ def command_detail(result):
     return output.splitlines()[-1] if output else f"exit code {result.returncode}"
 
 
-def check_file(checks, path, label, critical=True, executable=False):
-    subject = os.path.realpath(path) if os.path.exists(path) else path
+def check_file(checks, path, label, critical=True, executable=False, keep_path=False):
+    subject = os.path.realpath(path) if os.path.exists(path) and not keep_path else path
     if not os.path.isfile(path):
         checks.append(
             check(
@@ -104,30 +109,66 @@ def check_dir(checks, path, label, critical=True):
     return True
 
 
-def check_python_import(checks, module, label, critical=True):
+def check_site_packages(checks):
+    """Ask the selected interpreter for its own site-packages (purelib)."""
+    result = run_command(
+        [PYTHON, "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+    )
+    ok = not isinstance(result, Exception) and result.returncode == 0
+    path = result.stdout.strip() if ok else ""
+    if ok and os.path.isdir(path):
+        check_dir(checks, path, "pyGIMLi Python site-packages", critical=True)
+        return True
+    checks.append(
+        check(
+            "data",
+            f"site-packages of {PYTHON}",
+            True,
+            False,
+            (
+                f"Could not find site-packages of {PYTHON} (set PYGIMLI_PYTHON to a Python "
+                f"with pygimli, default {DEFAULT_PYTHON}); check {TRIPLETS}."
+            ),
+            command_detail(result) if not ok else f"not a directory: {path}",
+        )
+    )
+    return False
+
+
+def check_python_import(checks, module, label, critical=True, python=None, fix=None):
+    python = python or PYTHON
     result = run_command(
         [
-            PYTHON,
+            python,
             "-c",
             (
                 "import importlib; "
                 f"m = importlib.import_module({module!r}); "
-                "print(getattr(m, '__version__', 'import-ok'))"
+                "v = getattr(m, '__version__', 'import-ok')\n"
+                "try:\n"
+                "    from importlib.metadata import version\n"
+                f"    v = version({module.split('.')[0]!r})\n"
+                "except Exception:\n"
+                "    pass\n"
+                "print(v)"
             ),
         ],
+        timeout=180,
     )
     passed = not isinstance(result, Exception) and result.returncode == 0
     checks.append(
         check(
             "import",
-            f"{module} via {PYTHON} (realpath {os.path.realpath(PYTHON)})",
+            f"{module} via {python} (realpath {os.path.realpath(python)})",
             critical,
             passed,
-            (
-                f"Install/repair {label} in {PYTHON}; start with diagnostics in "
+            fix or (
+                f"Install/repair {label} in {python} (or set PYGIMLI_PYTHON to a Python "
+                f"with pygimli, default {DEFAULT_PYTHON}); start with diagnostics in "
                 f"{TRIPLETS}."
             ),
-            "" if passed else command_detail(result),
+            result.stdout.strip().splitlines()[-1] if passed and result.stdout.strip()
+            else ("" if passed else command_detail(result)),
         )
     )
     return passed
@@ -160,8 +201,15 @@ def main():
     print(f"  PREFLIGHT CHECK: {MODEL_ID}")
     print("=" * 60)
 
-    check_file(checks, PYTHON, "HydroCraft Python interpreter", critical=True, executable=True)
-    check_dir(checks, SITE_PACKAGES, "HydroCraft Python site-packages", critical=True)
+    check_file(
+        checks,
+        PYTHON,
+        "pyGIMLi Python interpreter (PYGIMLI_PYTHON or venv)",
+        critical=True,
+        executable=True,
+        keep_path=True,
+    )
+    check_site_packages(checks)
     check_file(checks, BINARY, "pyGIMLi runner", critical=True, executable=True)
 
     for relative in (
@@ -186,10 +234,34 @@ def main():
         critical=True,
     )
     check_binary_starts(checks)
+    engine_ok = all(c["status"] == "pass" for c in checks if c.get("critical"))
+    # Info only: SKILL.md's tool index names HydroCraft python_env, which has no pygimli.
+    check_python_import(
+        checks,
+        "pygimli",
+        "pyGIMLi",
+        critical=False,
+        python=HYDROCRAFT_PYTHON,
+        fix=(
+            f"HydroCraft python_env has no pygimli; run the KI tools with {PYTHON} "
+            "instead (the SKILL.md tool index still names python_env)."
+            if engine_ok else
+            "HydroCraft python_env has no pygimli, and the selected interpreter "
+            f"{PYTHON} failed the critical checks above; repair it or set PYGIMLI_PYTHON "
+            "to a working pyGIMLi Python, then rerun this preflight."
+        ),
+    )
 
     failed = [c for c in checks if c["status"] == "fail"]
     print()
     print(f"  Results: {len(checks) - len(failed)} passed, {len(failed)} failed")
+    if engine_ok:
+        print(f"  Checked engine: {PYTHON}; run the KI tools with this interpreter.")
+    else:
+        print(
+            f"  Checked engine: {PYTHON} FAILED; repair it or set PYGIMLI_PYTHON to a "
+            "working pyGIMLi Python, then rerun this preflight."
+        )
     if failed:
         print(f"  Recovery: inspect {TRIPLETS} first for known failure patterns.")
 

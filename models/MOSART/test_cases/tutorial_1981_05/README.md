@@ -74,3 +74,11 @@ and restart files (one thread).
   This is why the case uses one thread.
 - The preflight `import mosartwmpy` check can pass 45 s on a cold disk cache (it took 17 s
   warm). The import works.
+
+## Update 2026-10-05: server venv fixed
+The server's MOSART venv (`/mnt/disk1/Hydrocraft_server/models/MOSART/venv`) was moved from
+pandas 3.0.3 to pandas 2.3.3 (owner-approved). With it, this official tutorial runs with
+reservoirs (ISTARF) on and **without** the pandas setting, and gives the same expected values.
+The launcher still sets `future.infer_string=False` only when it finds pandas 3 or newer, so the
+case also runs on hosts that have pandas 3. Package list before the change:
+`/home/server/mosart_venv_backup_20261005/pip_freeze_before.txt`.

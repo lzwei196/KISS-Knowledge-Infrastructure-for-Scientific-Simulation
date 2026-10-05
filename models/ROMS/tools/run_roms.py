@@ -30,6 +30,12 @@ Usage:
 
   # Build only
   python run_roms.py --source-dir /path/to/roms --app UPWELLING --build-only
+
+Binary: --binary -> $ROMS_BIN. There is no default: a ROMS binary runs only the
+application compiled into it (e.g. build_upwelling/romsS = UPWELLING).
+The full model log is written to --log_file (default <workdir>/roms_run.log).
+Success = return code 0 AND "ROMS: DONE" in the log AND no error pattern; the
+CLI exits 1 otherwise (after printing the JSON report).
 """
 
 import argparse
@@ -45,9 +51,21 @@ def validate_inputs(args):
     """Validate inputs before execution."""
     errors = []
 
+    if not args.binary and os.environ.get("ROMS_BIN", "").strip():
+        args.binary = os.environ["ROMS_BIN"].strip()
+        print(f"Using ROMS binary from $ROMS_BIN: {args.binary}")
+    if args.binary:
+        args.binary = os.path.abspath(args.binary)
+
+    if args.build_only and not (args.source_dir and args.app):
+        errors.append("--build-only needs --source-dir and --app")
+    if args.source_dir and not args.app and not args.binary and not args.build_only:
+        errors.append("--source-dir needs --app to build (or give --binary / ROMS_BIN)")
+
     if not args.build_only and not args.source_dir:
         if not args.binary:
-            errors.append("Must specify --binary or --source-dir")
+            errors.append("Must specify --binary (or set ROMS_BIN) or --source-dir; "
+                          "a ROMS binary runs only the application compiled into it")
         elif not os.path.isfile(args.binary):
             errors.append(f"Binary not found: {args.binary}")
 
@@ -84,9 +102,16 @@ def parse_roms_in(config_path):
     return params
 
 
-def check_input_files(config_path):
-    """Check that all referenced input files exist."""
+def check_input_files(config_path, workdir=None):
+    """List input files named in roms.in that do not exist.
+
+    Relative names are checked against workdir (ROMS's run directory; default:
+    the folder of config_path). ROMS reads only the files its CPP options need
+    (ANA_* options replace them), so a name in this list is not an error by itself.
+    """
     params = parse_roms_in(config_path)
+    if workdir is None:
+        workdir = os.path.dirname(os.path.abspath(config_path))
     missing = []
     file_keys = ['GRDNAME', 'ININAME', 'FRCNAME', 'BRYNAME', 'CLMNAME',
                  'TIDENAME', 'VARNAME', 'SPOSNAM', 'FPOSNAM']
@@ -97,7 +122,8 @@ def check_input_files(config_path):
             paths = params[key].replace('|', '\n').split('\n')
             for p in paths:
                 p = p.strip()
-                if p and not os.path.isfile(p):
+                full = p if os.path.isabs(p) else os.path.join(workdir, p)
+                if p and not os.path.isfile(full):
                     missing.append(f"{key}: {p}")
 
     return params, missing
@@ -150,7 +176,7 @@ def build_roms(source_dir, app_name, build_dir=None, compiler='gfortran', nprocs
         print(f"Building ROMS with CMake (app={app_name})...")
         cmake_cmd = [
             'cmake', source_dir,
-            f'-DAPP={app_name}',
+            f'-DROMS_APP={app_name}',
             f'-DCMAKE_Fortran_COMPILER={compiler}',
         ]
         result = subprocess.run(cmake_cmd, cwd=build_dir,
@@ -242,6 +268,8 @@ def scan_log_for_errors(stdout, stderr):
         (r'SIGFPE', 'Floating point exception'),
         (r'NaN', 'NaN values detected'),
         (r'out of memory', 'Memory allocation failure'),
+        (r'Found Error', 'ROMS reported an error (Found Error)'),
+        (r'ABNORMAL', 'Abnormal termination'),
     ]
 
     warning_patterns = [
@@ -259,6 +287,49 @@ def scan_log_for_errors(stdout, stderr):
             warnings.append(msg)
 
     return errors, warnings
+
+
+def roms_listed_input_files(log, workdir):
+    """Input files ROMS itself listed under "Output/Input Files:" that do not exist.
+
+    Narrow coverage: ROMS checks a needed file before it prints this list, so a
+    missing needed file usually stops ROMS earlier (with an error in the log).
+    Returns (listed, missing).
+    """
+    listed, missing = [], []
+    lines = log.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if "Output/Input Files:" in l)
+    except StopIteration:
+        return listed, missing
+    seen_entry = False
+    for line in lines[start + 1:]:
+        if not line.strip():
+            if seen_entry:
+                break
+            continue
+        m = re.match(r"^\s*(.+?):\s+(\S+)\s*$", line)
+        if not m:
+            continue
+        seen_entry = True
+        label, fname = m.group(1).strip(), m.group(2)
+        if label.startswith("Output"):
+            continue
+        listed.append(f"{label}: {fname}")
+        full = fname if os.path.isabs(fname) else os.path.join(workdir, fname)
+        if not os.path.exists(full):
+            missing.append(f"{label}: {fname}")
+    return listed, missing
+
+
+ENERGY_ROW = re.compile(r"^\s*(\d+\s+)?\d+\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d\d(\s+\S+){4}\s*$")
+
+
+def energy_table_tail(log, n=10):
+    """Header + last n rows of the TIME-STEP / KINETIC_ENRG / ... table (raw text)."""
+    header = next((l for l in log.splitlines() if "KINETIC_ENRG" in l), None)
+    rows = [l for l in log.splitlines() if ENERGY_ROW.match(l)]
+    return ([header] if header else []) + rows[-n:]
 
 
 def validate_output_files(params, workdir='.'):
@@ -301,6 +372,9 @@ def main():
                         help='Fortran compiler for building')
     parser.add_argument('--workdir', type=str, default=None,
                         help='Working directory for execution')
+    parser.add_argument('--log_file', type=str, default=None,
+                        help='Full model log (stdout, then stderr); relative paths are '
+                             'in the workdir; default <workdir>/roms_run.log')
 
     args = parser.parse_args()
     validate_inputs(args)
@@ -330,10 +404,16 @@ def main():
         print(json.dumps(result, indent=2))
         return
 
+    workdir = os.path.abspath(args.workdir or os.path.dirname(os.path.abspath(args.config)))
+    log_file = args.log_file or "roms_run.log"
+    if not os.path.isabs(log_file):
+        log_file = os.path.join(workdir, log_file)
+
     # Pre-flight checks
-    params, missing_files = check_input_files(args.config)
+    params, missing_files = check_input_files(args.config, workdir)
     if missing_files:
-        print(f"WARNING: Missing input files: {missing_files}")
+        print(f"INFO: roms.in names files that do not exist (normal when ANA_* options "
+              f"replace them; ROMS stops with an error if it needs one): {missing_files}")
 
     cfl_warnings = estimate_cfl(params)
     if cfl_warnings:
@@ -348,18 +428,51 @@ def main():
             sys.exit(1)
 
     # Run
-    run_result = run_roms(binary_path, args.config, nprocs=args.np,
-                          timeout=args.timeout, workdir=args.workdir)
+    timed_out = False
+    try:
+        run_result = run_roms(binary_path, os.path.abspath(args.config), nprocs=args.np,
+                              timeout=args.timeout, workdir=workdir)
+    except subprocess.TimeoutExpired as e:
+        timed_out = True
+        dec = lambda x: x.decode(errors="replace") if isinstance(x, bytes) else (x or "")
+        run_result = {"returncode": None, "stdout": dec(e.stdout),
+                      "stderr": dec(e.stderr) + f"\nTimed out after {args.timeout} s",
+                      "elapsed_seconds": float(args.timeout)}
+    except OSError as e:
+        run_result = {"returncode": None, "stdout": "",
+                      "stderr": f"Could not start {binary_path}: {e}", "elapsed_seconds": 0.0}
+
+    log = run_result['stdout'] + run_result['stderr']
+    try:
+        with open(log_file, "w") as lf:  # replaced on every run
+            lf.write(run_result['stdout'])
+            if run_result['stderr']:
+                lf.write("\n--- stderr ---\n" + run_result['stderr'])
+        log_error = None
+    except OSError as e:
+        log_error = f"could not write log file {log_file}: {e}"
 
     # Post-run analysis
     log_errors, log_warnings = scan_log_for_errors(
         run_result['stdout'], run_result['stderr']
     )
-
-    workdir = args.workdir or os.path.dirname(os.path.abspath(args.config))
     created, missing_out = validate_output_files(params, workdir)
+    listed_inputs, missing_inputs = roms_listed_input_files(log, workdir)
+    done = "ROMS: DONE" in log
 
-    if run_result['returncode'] == 0 and not log_errors:
+    reasons = []
+    if timed_out:
+        reasons.append(f"timed out after {args.timeout} s")
+    if run_result['returncode'] != 0:
+        reasons.append(f"return code {run_result['returncode']}")
+    if not done:
+        reasons.append("completion line 'ROMS: DONE' not found in the log")
+    if log_errors:
+        reasons.append(f"log errors: {log_errors}")
+    if log_error:
+        reasons.append(log_error)
+
+    if not reasons:
         status = "success"
     elif log_errors:
         status = "runtime_error"
@@ -368,19 +481,28 @@ def main():
 
     result = {
         "status": status,
+        "failure_reasons": reasons,
         "binary": binary_path,
         "config": args.config,
         "returncode": run_result['returncode'],
         "elapsed_seconds": run_result['elapsed_seconds'],
+        "roms_done": done,
+        "log_file": log_file,
         "log_errors": log_errors,
         "log_warnings": log_warnings,
         "output_files_created": created,
         "output_files_missing": missing_out,
-        "stdout_tail": run_result['stdout'][-500:] if run_result['stdout'] else "",
-        "stderr_tail": run_result['stderr'][-500:] if run_result['stderr'] else "",
+        "input_files_listed_by_roms": listed_inputs,
+        "input_files_missing": missing_inputs,
+        "config_files_not_found": missing_files,
+        "energy_table_tail": energy_table_tail(log),
+        "stdout_tail": run_result['stdout'][-5000:] if run_result['stdout'] else "",
+        "stderr_tail": run_result['stderr'][-5000:] if run_result['stderr'] else "",
     }
 
     print(json.dumps(result, indent=2))
+    if status != "success":
+        sys.exit(1)
 
 
 if __name__ == '__main__':

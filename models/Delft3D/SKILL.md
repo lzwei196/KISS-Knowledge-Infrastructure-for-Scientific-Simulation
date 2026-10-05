@@ -534,11 +534,10 @@ python ki/tools/convert_boundary_conditions.py \
   --start_date 2020-01-01 --end_date 2020-02-01 \
   --output_bc boundaries.bc
 
-# 4. Run the model via DIMR
-python ki/tools/run_delft3d.py \
-  --dimr_config dimr_config.xml \
-  --binary_dir /path/to/install_all/lnx64/bin \
-  --nproc 4
+# 4. Run the model. This server has only Delft3D-FLOW 4 (d_hydro + libflow2d3d.so, no dimr):
+KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/Delft3D/knowledge_infrastructure/tools/run_delft3d.py \
+  --mode d_hydro --config config_d_hydro.xml --work_dir <case_dir> --nproc 1
+#    (with a DIMR build: --dimr_config dimr_config.xml --binary_dir /path/to/install_all/lnx64/bin)
 
 # 5. Parse and analyze output
 python ki/tools/parse_delft3d_output.py \

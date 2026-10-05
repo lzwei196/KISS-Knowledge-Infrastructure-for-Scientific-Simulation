@@ -122,13 +122,27 @@ def run(args):
 
         seed = args.seed if args.seed is not None else None
 
+        # STEPS needs the grid spacing in km (velocity perturbations, mask).
+        # pysteps importers give xpixelsize in metadata['cartesian_unit'].
+        xpix = meta.get('xpixelsize', 1.0)
+        cunit = meta.get('cartesian_unit')
+        if cunit == 'm':
+            kmperpixel = xpix / 1000.0
+        elif cunit == 'km':
+            kmperpixel = xpix
+        else:
+            kmperpixel = xpix
+            logger.warning(f"metadata has no cartesian_unit (m/km); using "
+                           f"kmperpixel=xpixelsize={xpix} as given")
+        logger.info(f"STEPS kmperpixel={kmperpixel}")
+
         forecast_dbr = steps_nowcast(
             R_dbr, V, args.n_leadtimes,
             n_ens_members=args.n_ens_members,
             n_cascade_levels=args.n_cascade_levels,
             noise_method=args.noise_method if args.noise_method != 'None' else None,
-            R_thr=-10.0,
-            kmperpixel=meta.get('xpixelsize', 1.0),
+            precip_thr=-10.0,
+            kmperpixel=kmperpixel,
             timestep=meta.get('accutime', 5),
             seed=seed,
         )

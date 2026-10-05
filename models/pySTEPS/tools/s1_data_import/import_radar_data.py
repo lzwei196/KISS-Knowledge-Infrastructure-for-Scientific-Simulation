@@ -56,6 +56,12 @@ IMPORTERS = {
     'bom_rf3':    'pysteps.io.importers.import_bom_rf3',
 }
 
+# MeteoSwiss GIF products and the physical unit of their decoded values
+# (pysteps 1.20 import_mch_gif lookup tables: AQC/CPC and AZC give mm per
+# accumulation period, RZC gives mm/h).  pysteps' own pystepsrc "mch" source
+# uses product AQC, unit mm, accutime 5.
+MCH_PRODUCT_UNITS = {'AQC': 'mm', 'CPC': 'mm', 'AZC': 'mm', 'RZC': 'mm/h'}
+
 
 def validate_inputs(args):
     errors = []
@@ -67,6 +73,12 @@ def validate_inputs(args):
                       f"Supported: {list(IMPORTERS.keys()) + ['geotiff', 'netcdf']}")
     if args.n_frames < 2:
         errors.append("Need at least 2 frames for motion estimation")
+    if args.format == 'mch_gif':
+        if args.mch_product.upper() not in MCH_PRODUCT_UNITS:
+            errors.append(f"Unknown MeteoSwiss product: {args.mch_product}. "
+                          f"Supported: {sorted(MCH_PRODUCT_UNITS)}")
+        if args.timestep <= 0:
+            errors.append("--timestep (the accumulation time of the mch_gif files) must be > 0")
     if args.timestep not in [5, 10, 15, 30, 60]:
         logger.warning(f"Non-standard timestep: {args.timestep} min. Typical: 5, 10, 15.")
     return errors
@@ -79,7 +91,7 @@ def dbz_to_mmh(data):
     return R
 
 
-def import_with_pysteps(data_dir, fmt, n_frames, timestep):
+def import_with_pysteps(data_dir, fmt, n_frames, timestep, mch_product='AQC'):
     """Import using pysteps native importers."""
     import pysteps
     from pysteps.io import archive
@@ -101,19 +113,37 @@ def import_with_pysteps(data_dir, fmt, n_frames, timestep):
     else:
         raise ValueError(f"No pysteps importer for format: {fmt}")
 
+    # Per-format importer arguments.  import_mch_gif (pysteps >= 1.4) requires
+    # product, unit and accutime; the other importers take the filename only.
+    importer_kwargs = {}
+    if fmt == 'mch_gif':
+        product = mch_product.upper()
+        importer_kwargs = {'product': product, 'unit': MCH_PRODUCT_UNITS[product],
+                           'accutime': timestep}
+        logger.info(f"mch_gif importer arguments: {importer_kwargs}")
+
     # Read frames
     frames = []
     metadata = None
     selected_files = files[-n_frames:]  # Take last n_frames
+    failed = []
 
     for f in selected_files:
         try:
-            data, quality, meta = importer(str(f))
+            data, quality, meta = importer(str(f), **importer_kwargs)
             if data is not None:
                 frames.append(data)
                 metadata = meta
+            else:
+                failed.append(f.name)
         except Exception as e:
             logger.warning(f"Failed to read {f.name}: {e}")
+            failed.append(f.name)
+
+    if fmt == 'mch_gif' and failed:
+        # A missing frame breaks the assumed fixed cadence of the sequence.
+        raise ValueError(f"{len(failed)} of {len(selected_files)} selected mch_gif "
+                         f"frames could not be imported: {failed[:5]}")
 
     if not frames:
         raise ValueError("No frames successfully imported")
@@ -216,7 +246,7 @@ def run(args):
         data, metadata = import_netcdf(args.data_dir, args.n_frames)
     else:
         data, metadata = import_with_pysteps(args.data_dir, args.format, args.n_frames,
-                                              args.timestep)
+                                              args.timestep, args.mch_product)
 
     # Handle NaN
     nan_frac = np.isnan(data).mean()
@@ -236,6 +266,18 @@ def run(args):
     elif unit == 'dBZ':
         logger.warning("Data is in dBZ but --no-convert_to_mmh specified. "
                         "Ensure you apply dB_transform before nowcasting.")
+    elif unit == 'mm' and args.format == 'mch_gif':
+        # MeteoSwiss AQC/CPC/AZC give mm per accumulation period; the nowcast
+        # (s3) expects mm/h.  Convert with pysteps' own to_rainrate (uses
+        # metadata['accutime']; 5-min AQC -> x12).
+        if args.convert_to_mmh:
+            from pysteps.utils.conversion import to_rainrate
+            logger.info(f"Converting mm per {metadata['accutime']} min -> mm/h "
+                        "(pysteps.utils.conversion.to_rainrate)")
+            data, metadata = to_rainrate(data, metadata)
+        else:
+            logger.warning("Data is in mm per accumulation period but conversion is off; "
+                           "s3 expects mm/h.")
 
     # Validate value range
     valid_data = data[data > 0]
@@ -298,6 +340,12 @@ def main():
     parser.add_argument('--output_dir', required=True, help="Output directory")
     parser.add_argument('--convert_to_mmh', type=bool, default=True,
                         help="Convert dBZ to mm/h (default: true)")
+    parser.add_argument('--no_convert_to_mmh', dest='convert_to_mmh', action='store_false',
+                        help="Do not convert to mm/h (dBZ, or mch_gif mm accumulations)")
+    parser.add_argument('--mch_product', default='AQC',
+                        help="MeteoSwiss product for --format mch_gif: AQC (default, as in "
+                             "pysteps' pystepsrc), CPC, RZC, AZC. --timestep must be the "
+                             "files' accumulation time in minutes.")
     args = parser.parse_args()
 
     errors = validate_inputs(args)

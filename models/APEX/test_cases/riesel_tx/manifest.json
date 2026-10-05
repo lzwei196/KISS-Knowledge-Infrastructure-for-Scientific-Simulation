@@ -1,0 +1,217 @@
+{
+  "test_case": "APEX riesel_tx (official APEX0806 Riesel, Texas example ex1_RiselTX)",
+  "engine": {
+    "name": "APEX",
+    "version": "APEX0806",
+    "binary": "APEX0806.exe (Windows PE32, 2,242,560 bytes, sha256 eb387764a78bf250dbf59fd2ce80c6603aa714b780c6ae65465598607d603573), run with wine",
+    "source": "Texas A&M AgriLife / Blackland Research and Extension Center, 'APEX v.0806 Editor' download https://epicapex.tamu.edu/media/1xid5waj/apex-0806-editor-09232015.zip (listed on https://epicapex.tamu.edu/software/archive/), folder ApexEditor(09232015)/ex1_RiselTX; zip sha256 4295d621e84692bccd8b52cd43111b37420d9c3f4c93f221cb42d3653eabcbde",
+    "license": "Free public download from Texas A&M AgriLife (epicapex.tamu.edu); the zip carries no licence file"
+  },
+  "ki": {
+    "model": "APEX",
+    "run_tool": "tools/s6_run_apex.py",
+    "parse_tool": "tools/s7_parse_output.py"
+  },
+  "simulation": {
+    "site": "Riesel, Texas (USDA-ARS Blackland watershed), SIT0002.SIT",
+    "period": "1998-01-01 to 2007-12-31 (NBYR=10, IYR=1998)",
+    "subareas": 4,
+    "crops": [
+      "CORN",
+      "WWHT",
+      "OATS",
+      "SGHY",
+      "FALW",
+      "RNGE"
+    ],
+    "weather": "daily A48309.dly",
+    "run_time_seconds": 3
+  },
+  "files": {
+    "inputs/109.WP1": {
+      "bytes": 1011,
+      "sha256": "14250ed431f0639419cc417d7350582aeecf13e57d485aec674f3cbb1719dad2"
+    },
+    "inputs/25.WND": {
+      "bytes": 1301,
+      "sha256": "12755a1f94b2064207312268152afb4a76725f5e7be92528f88545d89ad86989"
+    },
+    "inputs/A48309.dly": {
+      "bytes": 978880,
+      "sha256": "b8ef526cebbdbfa68a328dd1fa2278f0ed6060c0e8a9783cd0b0bf9b9e3f7bcc"
+    },
+    "inputs/AGRR.OPC": {
+      "bytes": 851,
+      "sha256": "31384eac39ad35dcd4392a6b8005905404e71f99ef8be37857dfbe8a1836acfa"
+    },
+    "inputs/APEXCONT.DAT": {
+      "bytes": 432,
+      "sha256": "12f0408a188aec358c732125326c3bfea9ec923105427f1f7f4286c88ebb66fe"
+    },
+    "inputs/APEXDIM.DAT": {
+      "bytes": 86,
+      "sha256": "7b42c4bc3f256439bb2ab45f86cb4571dc1b2ae3e9709044589662779187caf3"
+    },
+    "inputs/APEXFILE.DAT": {
+      "bytes": 409,
+      "sha256": "6b74938044e22dcbba15d4e1fb787b0ad4023ba86fa8c2c395afd75ea21faa72"
+    },
+    "inputs/APEXRUN.DAT": {
+      "bytes": 108,
+      "sha256": "984f422090c510ec1b4bda4d70bf7c827c1b9e755414bafdddb2901938c3fc8c"
+    },
+    "inputs/CROPCOM.DAT": {
+      "bytes": 84957,
+      "sha256": "067fa43d1202989c82f6ecc9073309079ddccb680629e8b8a37dbab686124b67"
+    },
+    "inputs/FERTCOM.DAT": {
+      "bytes": 6336,
+      "sha256": "1d4265a16d2f61e965d4b083d3eaa27aae4e264257c18f3f1bfd086efb66ec84"
+    },
+    "inputs/Heiden.SOL": {
+      "bytes": 1270,
+      "sha256": "185cb6dc728e882df9de533564d8fc06e712a75fa259d90447485f72bcff87e2"
+    },
+    "inputs/HERD0604.DAT": {
+      "bytes": 92,
+      "sha256": "8561166368d0375df67e765a80e04f9d49c05bb8dab567eee533d9fe5b8f6408"
+    },
+    "inputs/HOUSTON.SOL": {
+      "bytes": 1548,
+      "sha256": "94cd37b57bbbba532eabf02890c51eee71afb16fa2793afb63ad644006acb1e8"
+    },
+    "inputs/HoustonB.SOL": {
+      "bytes": 1270,
+      "sha256": "185cb6dc728e882df9de533564d8fc06e712a75fa259d90447485f72bcff87e2"
+    },
+    "inputs/MLRN0806.DAT": {
+      "bytes": 51,
+      "sha256": "088fad0019b75c43d634c9dcabae1d2e795eab235eb8c495fc757ff15c9f7330"
+    },
+    "inputs/OPSCCOM.DAT": {
+      "bytes": 84,
+      "sha256": "bfbac260c2e9b30d708b90d5adaffde4a9f664e514d43993ba01a1ced08d93a7"
+    },
+    "inputs/PARM0806.DAT": {
+      "bytes": 1449,
+      "sha256": "2f317adf925e52810703409a0afb8603634f097a00109a651e08409a799c4c97"
+    },
+    "inputs/pest.dat": {
+      "bytes": 38640,
+      "sha256": "339f64e28ed55e6fb0444e348060c06bab4dfa1476bd6a7a15ce6703d7c2471a"
+    },
+    "inputs/PESTCOM.DAT": {
+      "bytes": 21684,
+      "sha256": "213f430c7fa404986871bdb21329ba1c9510c9d33aeb7e265bf7e6bbb7b81779"
+    },
+    "inputs/PRNT0806.DAT": {
+      "bytes": 1168,
+      "sha256": "a52b28f593b5faf0867646572b64ae305f4f450358aa4979a259dcb016cb4a57"
+    },
+    "inputs/PSOCOM.DAT": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "inputs/RFDTLST.DAT": {
+      "bytes": 39,
+      "sha256": "e24da3db1f96080d506a3a3977840e946365014a6a16f14336631c4f90b081f7"
+    },
+    "inputs/RNGE.OPC": {
+      "bytes": 242,
+      "sha256": "91457391d9ce7f4771cadcb7e2244417e0f6f0c6342a235be161dc37fde20257"
+    },
+    "inputs/SIT0002.SIT": {
+      "bytes": 732,
+      "sha256": "d896cb2f4782bd8b8814de4cd12a5c638457186e8f2c720d87f65a539295dcc3"
+    },
+    "inputs/SITECOM.DAT": {
+      "bytes": 19,
+      "sha256": "02f552cfd1cec3efbe31aabd10eb073d16b1be9a31018b3ff0dedfb5cfc7659c"
+    },
+    "inputs/SOILCOM.DAT": {
+      "bytes": 57,
+      "sha256": "e3e2142bd94b0ca61f72a016b5c6b12a3d947eb01aaafa5e4c3717b2651b1df0"
+    },
+    "inputs/SUB0002.SUB": {
+      "bytes": 4336,
+      "sha256": "be076d90ac0d6f9d0b7f19bf85853f81d2901dd31f500def5212e23d6e0878d3"
+    },
+    "inputs/SUB00y6.SUB": {
+      "bytes": 1096,
+      "sha256": "0ec21aa3e950d6298304962c98bd70a1d5e44fdf271104ecea75aa4f442cf749"
+    },
+    "inputs/SUB00y8.SUB": {
+      "bytes": 1075,
+      "sha256": "27f4554c09f5108b72935bf37f5f0f48a6f522aaf767bedc644ecdbae2661c53"
+    },
+    "inputs/SUB0y10.SUB": {
+      "bytes": 1098,
+      "sha256": "aecc89b186618055bbc7a9446c6ab7d342a2104eb2359dae4804de4884d7cdf4"
+    },
+    "inputs/SUBACOM.DAT": {
+      "bytes": 74,
+      "sha256": "210a99d8264aa9b61c0d06c5f10d46d4dbccb808fa8fba679a5c42932abc89ce"
+    },
+    "inputs/TILLCOM.DAT": {
+      "bytes": 62162,
+      "sha256": "3f3d3e0f351b5c4402d0c8ca2396e14a69e008f5b81e2c4c8fdc98d57b6fb469"
+    },
+    "inputs/TR55COM.DAT": {
+      "bytes": 5610,
+      "sha256": "340fcc97009218bd3925827b6f8ab37de701e61128f90e2c3b9472353730a4e8"
+    },
+    "inputs/TXMEXIA.WND": {
+      "bytes": 1337,
+      "sha256": "576ea40cef6536f12236d629a5e3cfeb1b7d8d62c0813a78bb6985e2ecbec306"
+    },
+    "inputs/TXMEXIA.WP1": {
+      "bytes": 1115,
+      "sha256": "b9f5509b405e1fd5000c2eb1de77c98e2e98a057e375e665b5cbec03679fd99a"
+    },
+    "inputs/WDLSTCOM.DAT": {
+      "bytes": 6689,
+      "sha256": "d293b7384c5649c3c59fd6efbe3342fcaece11362c77a36b3f9a935da1cf3dc7"
+    },
+    "inputs/WIND.DAT": {
+      "bytes": 1494,
+      "sha256": "a2cf03576b0356950837ca37e0a81c4089495cbac997bc9bc962eb8a954d4a8d"
+    },
+    "inputs/WPM1.DAT": {
+      "bytes": 7020,
+      "sha256": "3c89ce939246e646a1f65c24b0842da4d76c2b064647075b3ffd7771737c6a9c"
+    },
+    "inputs/Y10.OPC": {
+      "bytes": 10969,
+      "sha256": "bae08cdb1aa71d2ada5afbe1a426dab85ce2453ba3afa998d9e601ae20153850"
+    },
+    "inputs/Y6.OPC": {
+      "bytes": 10440,
+      "sha256": "09b1a956914accbe1fb8cf5b28c3a155742c6c782f0a5743c8a3a416bc0ce4e2"
+    },
+    "inputs/Y8.OPC": {
+      "bytes": 11133,
+      "sha256": "15ea9892ad30d3874c6e8967592121feef7109ffd73cf71f9eaf43ea40720c20"
+    },
+    "reference/fort.102": {
+      "bytes": 841,
+      "sha256": "25cf2597ae53cbf38d8799c6ed575ea0ef0a7d38031711b50043f994dd96709a"
+    },
+    "reference/fort.108": {
+      "bytes": 5510,
+      "sha256": "18c5d11da681f1c33469856f49376e910d05626eb5008af7662974941965c984"
+    },
+    "reference/fort.112": {
+      "bytes": 50,
+      "sha256": "dde84dfc6220b1d533b67d9148ea4e0be8bc2f621f921ee30cf18c56c224be2a"
+    },
+    "reference/fort.128": {
+      "bytes": 80,
+      "sha256": "ae45134188ad62e4eca1c853c6a906a1cb002b27fc0eed0a031857536ede8308"
+    }
+  },
+  "not_copied": {
+    "APEX0806.exe": "the engine; found at run time (--apex-bin / $APEX_BIN / PATH / server default)",
+    "test.txt": "empty 0-byte file in the official folder, not read by APEX",
+    "fort.102/108/112/128": "official run outputs; kept in reference/, not inputs/"
+  }
+}

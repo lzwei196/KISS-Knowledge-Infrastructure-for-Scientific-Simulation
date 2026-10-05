@@ -1,0 +1,26 @@
+{
+  "description": "Expected results for the official APEX0806 Riesel TX example (ex1_RiselTX from the 'APEX v.0806 Editor' download, Texas A&M AgriLife, 2015-09-23): one 10-year run (1998-2007), 4 subareas (3 crop fields + rangeland), daily weather from A48309.dly. inputs/ are the unmodified official files. The fort.* checks compare against the official side outputs the APEX team's own run wrote (shipped in the same download, kept in reference/). The other checks were recorded from our run; two clean runs gave identical outputs apart from the date/time stamp lines.",
+  "engine_version": "APEX0806 (APEX0806.exe, PE32 build of 2015-05-01, sha256 eb387764a78bf250dbf59fd2ce80c6603aa714b780c6ae65465598607d603573) under wine-9.0",
+  "numeric_checks": [
+    {"name": "fort102_maxdiff_vs_official", "expected": 0, "tol": 0.0, "why": "end-of-run totals and manure/fertilizer balance (fort.102) equal the official file, every printed number"},
+    {"name": "fort108_maxdiff_vs_official", "expected": 0, "tol": 0.0, "why": "yearly watershed water/nutrient balance table (fort.108, 10 years x 56 columns) equals the official file"},
+    {"name": "fort112_maxdiff_vs_official", "expected": 0, "tol": 0.0, "why": "fort.112 equals the official file"},
+    {"name": "fort128_maxdiff_vs_official", "expected": 0, "tol": 0.0, "why": "fort.128 equals the official file"},
+    {"name": "fort108_years", "expected": 10, "tol": 0, "why": "one row per simulated year 1998-2007 (official fort.108 has 10)"},
+    {"name": "fort112_outflow_mm", "expected": 0.0, "tol": 0.0, "why": "official fort.112: OUTFLOW = 0.00 mm"},
+    {"name": "water_balance_error_pct", "expected": -0.000295194, "tol": 1e-6, "why": "APEX TOTAL WATER BALANCE PER in OUTPUT.OUT; closes to about 3e-4 %"},
+    {"name": "acy_rows", "expected": 51, "tol": 0, "why": "crop-year rows in OUTPUT.ACY (4 subareas, 10 years, rotations)"},
+    {"name": "acy_first_year", "expected": 1998, "tol": 0, "why": "IYR=1998 in APEXCONT.DAT"},
+    {"name": "acy_last_year", "expected": 2007, "tol": 0, "why": "NBYR=10 -> last year 2007"},
+    {"name": "corn_harvests", "expected": 14, "tol": 0, "why": "CORN rows in OUTPUT.ACY"},
+    {"name": "corn_mean_yield_t_ha", "expected": 6.26, "tol": 0.005, "why": "mean CORN grain yield YLDG (t/ha) over the 14 harvests"},
+    {"name": "corn_max_yield_t_ha", "expected": 9.68, "tol": 0.005, "why": "largest CORN yield (subarea 3, 2002)"},
+    {"name": "corn_mean_biomass_t_ha", "expected": 18.498571, "tol": 0.005, "why": "mean CORN biomass BIOM (t/ha)"},
+    {"name": "aws_runoff_qts_sum_mm", "expected": 2482.91, "tol": 0.05, "why": "sum of yearly outlet flow QTS (mm) in OUTPUT.AWS, 1998-2007"}
+  ],
+  "finished_check": "s6_run_apex returns rc=0 with no accepted terminal fault, EPICERR.DAT has no ERROR, and OUTPUT.OUT holds TOTAL WATER BALANCE, TOTAL SEDIMENT BALANCE and TOTAL RUN TIME",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/APEX/knowledge_infrastructure/reference/APEX0806.exe (same bytes as the exe in the official download) run through the KI tools/s6_run_apex.py; crop table read with tools/s7_parse_output.py",
+  "reference": "reference/fort.102, fort.108, fort.112, fort.128 = official side outputs from the APEX v.0806 Editor download (ApexEditor(09232015)/ex1_RiselTX, dated 2015-09-04). The download ships no OUTPUT.* files, so the crop/AWS/water-balance values come from our own run.",
+  "notes": "Our run reproduces all four official fort.* files byte for byte. The tolerance on fort.* is 0 on the printed numbers."
+}

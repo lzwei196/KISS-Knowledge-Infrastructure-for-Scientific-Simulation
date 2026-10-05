@@ -1,0 +1,41 @@
+{
+  "test_case": "SimPEG gravity_prism_analytic (official test tests/pf/test_forward_Grav_Linear.py)",
+  "engine": {
+    "name": "SimPEG",
+    "version": "0.25.2",
+    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (import simpeg from python_env site-packages)",
+    "source": "https://github.com/simpeg/simpeg, tests/pf/test_forward_Grav_Linear.py + tests/conftest.py (commit ba60041a81907bb7b50f5e59c6be21441959ed8f, v0.25.2)",
+    "license": "MIT (SimPEG)"
+  },
+  "ki": {
+    "model": "SimPEG"
+  },
+  "simulation": {
+    "method": "gravity",
+    "mode": "forward",
+    "simulation": "potential_fields.gravity.Simulation3DIntegral (geoana engine)",
+    "mesh": "TensorMesh 42x42x42, 0.2 m cells, centred",
+    "model": "two nested prisms, density 1 and 2 g/cc",
+    "receivers": "5 x 5 grid, -20..20 m, z = 3 m",
+    "reference": "analytic prism field (geoana.gravity.Prism)",
+    "pytest_selection": "-k 'analytic and geoana'"
+  },
+  "files": {
+    "inputs/tests/__init__.py": {
+      "bytes": 366,
+      "sha256": "501355265f9fb282e7b285d30b924f603b358feafda0fecc308f4c36e9c809de"
+    },
+    "inputs/tests/conftest.py": {
+      "bytes": 680,
+      "sha256": "030efce2a89772fe4417e4c974b48f6f990e664e0242059677b0f2c5b0473e02"
+    },
+    "inputs/tests/pf/__init__.py": {
+      "bytes": 366,
+      "sha256": "501355265f9fb282e7b285d30b924f603b358feafda0fecc308f4c36e9c809de"
+    },
+    "inputs/tests/pf/test_forward_Grav_Linear.py": {
+      "bytes": 33115,
+      "sha256": "8f54f0ffb475918c81269d2f53a6cd5ba049e5bde5d3795f6d8a63f4598b33d3"
+    }
+  }
+}

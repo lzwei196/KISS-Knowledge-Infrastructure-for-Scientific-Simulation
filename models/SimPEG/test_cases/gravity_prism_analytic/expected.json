@@ -1,0 +1,23 @@
+{
+  "description": "Expected results for SimPEG's official gravity forward test tests/pf/test_forward_Grav_Linear.py (SimPEG v0.25.2, git ba60041). Part A runs the official pytest tests that compare the integral gravity simulation with the exact (analytic) field of two nested dense prisms (geoana engine; 36 tests). Part B builds the same tensor-mesh model from the official test's own fixtures and runs gz forward the way the KI tool run_simpeg.py sets it up (all cells active, zero density outside the blocks), then compares with the official analytic gz. The gz expected values are the official analytic answer (geoana Prism, computed by the test's own get_analytic_solution) and the tolerance is the official one of test_accelerations_vs_analytic (atol 1e-6 mGal; rtol 1e-9 is far smaller here). Two clean runs gave identical numbers.",
+  "engine_version": "SimPEG 0.25.2 (python_env site-packages; matches git ba60041 'Cherry-pick changelog for v0.25.2'), discretize 0.12.0, geoana 0.8.1, numpy 2.4.4, pytest 9.0.3",
+  "numeric_checks": [
+    {"name": "pytest_returncode", "expected": 0, "tol": 0, "why": "official pytest run finished normally (all selected tests passed)"},
+    {"name": "pytest_passed", "expected": 36, "tol": 0, "why": "3 analytic tests x 2 meshes (tensor, tree) x 2 geoana modes x 3 sensitivity stores; choclo variants are left out (choclo not installed)"},
+    {"name": "pytest_failed", "expected": 0, "tol": 0, "why": "no official analytic check failed"},
+    {"name": "n_cells", "expected": 74088, "tol": 0, "why": "official tensor mesh: 42 x 42 x 42 cells of 0.2 m"},
+    {"name": "n_dense_cells", "expected": 4096, "tol": 0, "why": "cells inside the outer 3.2 m prism (16^3)"},
+    {"name": "n_data", "expected": 25, "tol": 0, "why": "official 5 x 5 receiver grid at z = 3 m"},
+    {"name": "n_finite", "expected": 25, "tol": 0, "why": "no NaN/Inf in predicted gz"},
+    {"name": "n_within_official_tol", "expected": 25, "tol": 0, "why": "every gz value matches the analytic answer within rtol 1e-9 + atol 1e-6 mGal (official)"},
+    {"name": "gz_max", "expected": -3.2077721e-05, "tol": 1e-06, "why": "official analytic gz, weakest point (grid corner), mGal"},
+    {"name": "gz_min", "expected": -0.0256046422, "tol": 1e-06, "why": "official analytic gz, strongest point (above the prisms), mGal"},
+    {"name": "gz_mean", "expected": -0.00120689804, "tol": 1e-06, "why": "official analytic gz, mean over 25 receivers, mGal"},
+    {"name": "gz_center", "expected": -0.0256046422, "tol": 1e-06, "why": "official analytic gz at the centre receiver (0, 0, 3), mGal"},
+    {"name": "max_abs_diff_vs_analytic", "expected": 0.0, "tol": 1e-06, "why": "largest |simulated - analytic| gz must be under the official atol (seen: 1.2e-15 mGal)"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (Python 3.12), OMP_NUM_THREADS=4, MPLBACKEND=Agg",
+  "reference": "Official analytic reference inside the test file (geoana.gravity.Prism, TestsGravitySimulation.get_analytic_solution) with the official tolerances in the test file.",
+  "notes": "Inputs are unmodified (git show HEAD:tests/...). No tweak to inputs. The KI tool run_simpeg.py is tried but fails on SimPEG 0.25 (see README), so Part B calls the engine directly; its set-up mirrors the KI tool."
+}

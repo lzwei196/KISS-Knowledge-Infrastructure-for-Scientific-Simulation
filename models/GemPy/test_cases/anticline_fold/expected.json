@@ -1,0 +1,31 @@
+{
+  "description": "Expected results for GemPy's official anticline (fold) example model: gempy/API/examples_generator.py::_generate_anticline_model with gempy_data jan_models/model2 CSVs (extent 0-1000 m, octree refinement 5, one series Strat_Series = rock2, rock1). inputs/ are the unmodified CSVs from cgre-aachen/gempy_data commit cf00bc9.",
+  "engine_version": "gempy 2026.0.1a2.dev0+ge46fee77b (git e46fee7, tag v2026.0.1a1 line), gempy_engine 2026.0.1a0, numpy backend",
+  "official_reference_check": {
+    "file": "reference/anticline_scalar_field.approved.txt",
+    "what": "51 scalar-field values sampled every int(n/50)-th point of the finest octree level centers (octrees_output[-1].outputs_centers[0].exported_fields.scalar_field), exactly as test/test_model_types/test_example_models_I.py::test_generate_fold_model does",
+    "source": "cgre-aachen/gempy git e46fee7: test/test_model_types/test_example_models_I.test_generate_fold_model.Anticline Scalar Field.approved.txt (unmodified copy)",
+    "rtol": 1e-05,
+    "atol": 1e-05,
+    "tolerance_source": "GemPy's own test/verify_helper.py ArrayComparator (np.allclose rtol=1e-5, atol=1e-5)"
+  },
+  "numeric_checks": [
+    {"name": "n_octree_levels", "expected": 5, "tol": 0, "why": "refinement=5 gives 5 octree levels"},
+    {"name": "n_finest_level_points", "expected": 7808, "tol": 0, "why": "number of finest-level octree centers the official test samples from"},
+    {"name": "lith_block_size", "expected": 32768, "tol": 0, "why": "32^3 cells of the refinement-5 regular block"},
+    {"name": "lith_count_id1", "expected": 11628, "tol": 0, "why": "cells of unit id 1 (rock2) in the lithology block"},
+    {"name": "lith_count_id2", "expected": 6500, "tol": 0, "why": "cells of unit id 2 (rock1, the folded layer)"},
+    {"name": "lith_count_id3", "expected": 14640, "tol": 0, "why": "cells of unit id 3 (basement)"},
+    {"name": "sf_finest_min", "expected": -0.5692817958406894, "tol": 1e-05, "why": "min scalar field on finest octree level"},
+    {"name": "sf_finest_max", "expected": -0.30350294360119195, "tol": 1e-05, "why": "max scalar field on finest octree level"},
+    {"name": "sf_finest_mean", "expected": -0.4344608265183337, "tol": 1e-05, "why": "mean scalar field on finest octree level"},
+    {"name": "parse_n_groups", "expected": 1, "tol": 0, "why": "KI parse tool reads one structural group from the saved model"},
+    {"name": "parse_n_elements", "expected": 2, "tol": 0, "why": "KI parse tool reads two surfaces (rock2, rock1)"},
+    {"name": "parse_grid_n_points", "expected": 32768, "tol": 0, "why": "KI parse tool reads the 32768-point grid"}
+  ],
+  "finished_check": "driver exits 0 and prints DRIVER_OK after gp.compute_model and gp.save_model",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python (Python 3.12, numpy 2.4.3), OMP_NUM_THREADS=4",
+  "reference": "Main check = GemPy's own approved array (official). numeric_checks = values from our own run; two clean runs gave byte-identical results (deterministic).",
+  "notes": "Only change from the official generator: the CSV paths point to local copies in inputs/ instead of https://raw.githubusercontent.com/cgre-aachen/gempy_data/master/... (same bytes, checked by sha256 against commit cf00bc9). The run matches the official approved values to about 5e-9 (the approved file is printed with 8 decimals). Lithology ids 1,2,3 follow the stack order rock2, rock1, basement."
+}

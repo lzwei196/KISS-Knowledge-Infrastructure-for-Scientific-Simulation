@@ -1,0 +1,49 @@
+{
+  "test_case": "GemPy anticline_fold (official anticline example model, ExampleModel.ANTICLINE)",
+  "engine": {
+    "name": "GemPy",
+    "version": "2026.0.1a2.dev0+ge46fee77b (gempy_engine 2026.0.1a0)",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python (python with gempy installed)",
+    "source": "https://github.com/cgre-aachen/gempy git e46fee7 (gempy/API/examples_generator.py::_generate_anticline_model; test/test_model_types/test_example_models_I.py::test_generate_fold_model); data from https://github.com/cgre-aachen/gempy_data commit cf00bc907d3e6962967da38ae2ad19d770df956e data/input_data/jan_models/",
+    "license": "GemPy: EUPL-1.2; gempy_data: LGPL-3.0"
+  },
+  "ki": {
+    "model": "GemPy"
+  },
+  "simulation": {
+    "type": "implicit 3D structural geological model (universal co-kriging)",
+    "extent_m": [
+      0,
+      1000,
+      0,
+      1000,
+      0,
+      1000
+    ],
+    "refinement": 5,
+    "grid": "octree, 32x32x32 regular block at finest level",
+    "series": {
+      "Strat_Series": [
+        "rock2",
+        "rock1"
+      ]
+    },
+    "n_surface_points": 36,
+    "n_orientations": 2,
+    "backend": "numpy"
+  },
+  "files": {
+    "inputs/model2_orientations.csv": {
+      "bytes": 87,
+      "sha256": "26fda5d7c0a74291d5fa18f880aeb84c106af0b771f95af103a025e4e80c4669"
+    },
+    "inputs/model2_surface_points.csv": {
+      "bytes": 659,
+      "sha256": "2790bb25dce52b1a99e4a95e3e9dc276a842dbcc863051d0a4cf4169a8de9a6e"
+    },
+    "reference/anticline_scalar_field.approved.txt": {
+      "bytes": 620,
+      "sha256": "b6a6aefba462379894cc22766038e3296689ffc5c6070da8eb37dedcfb5c792e"
+    }
+  }
+}

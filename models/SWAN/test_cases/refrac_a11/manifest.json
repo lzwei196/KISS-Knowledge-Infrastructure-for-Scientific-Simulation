@@ -1,0 +1,68 @@
+{
+  "test_case": "SWAN refrac_a11 (official SWAN test case 'refrac', a11refr)",
+  "engine": {
+    "name": "SWAN",
+    "version": "41.45",
+    "binary": "swan.exe (serial)",
+    "source": "SWAN source bundled in ADCIRC git (github.com/adcirc/adcirc, thirdparty/swan, commit c622c78), built on the server; test case from https://swanmodel.sourceforge.io/download/zip/refrac.tar.gz (Delft University of Technology)",
+    "license": "GPL-3.0-or-later (SWAN, Delft University of Technology)"
+  },
+  "ki": {
+    "model": "SWAN",
+    "run_tool": "tools/run_swan.py binary",
+    "parse_tool": "tools/parse_swan_output.py (parse_table)"
+  },
+  "simulation": {
+    "type": "stationary, 2D",
+    "grid": "regular 20000 x 4000 m, 25 x 100 cells",
+    "directions": "sector 80-130 deg, 100 bins",
+    "frequencies": "0.05-0.25 Hz, 41 bins",
+    "boundary": "south side, Hs 1 m, Tp 10 s, dir 120 deg, Gaussian",
+    "physics": "refraction and shoaling only (OFF QUAD, BREA, WCAP; no wind)",
+    "outputs": [
+      "a11ref01.tab (curve, 101 points)",
+      "a11ref01.tbl (13 locations)",
+      "a11ref01.spc (1D spectra)"
+    ],
+    "runtime_s": "about 1.5"
+  },
+  "reference_files": "reference/ holds the official output and analytical solution shipped with refrac.tar.gz (not inputs)",
+  "files": {
+    "inputs/a11refr.bot": {
+      "bytes": 17,
+      "sha256": "54172bb455fd409b8c5f30c6528ec64bac0f1c55608e7f9ba5ab47fbc9847d4b"
+    },
+    "inputs/a11refr.loc": {
+      "bytes": 166,
+      "sha256": "568ad7f6ea148471ab65b7bc6bd2e9f31738d22c5831be6ee2fd80c27d21b59c"
+    },
+    "inputs/a11refr.swn": {
+      "bytes": 1118,
+      "sha256": "b6dfb95305edc47f2cc73ab0d3c0e8228e524920f19d4aa4a3907cfd1c73f8ef"
+    },
+    "reference/a11ref01.spc": {
+      "bytes": 16451,
+      "sha256": "bcdc87652dc5394d27bb0bc8c4ce8f46df099f33b9722fa4ff538ca41d79f6dc"
+    },
+    "reference/a11ref01.tab": {
+      "bytes": 7979,
+      "sha256": "04e4a94acbeb80e48aaafc3cc78985244f0382583c7c54d383dfd48cbcdc6ad4"
+    },
+    "reference/a11ref01.tbl": {
+      "bytes": 1134,
+      "sha256": "8eb3e7889e1093e5504fac4409a8a0a9a5d9c27722b6f388b08e07b10799058f"
+    },
+    "reference/a11refr.ana": {
+      "bytes": 85143,
+      "sha256": "3673419abaa495da55b0cc6d3fe8ff50e0e39050fb0dcf4edd4bc1c89a7c94de"
+    },
+    "reference/a11refr.prt": {
+      "bytes": 15474,
+      "sha256": "7095f8a04a06024f96bd358343c535091c9805632583f8ecf589f03b9abe44fa"
+    },
+    "reference/refrac.txt": {
+      "bytes": 258,
+      "sha256": "dd4e3888d52112f4b3b29623799199fcd64e97610914a721d54801d7326e670d"
+    }
+  }
+}

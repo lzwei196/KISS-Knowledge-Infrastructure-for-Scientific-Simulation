@@ -1,0 +1,24 @@
+{
+  "description": "Expected results for the official SWAN test case 'refrac' (a11refr: refraction of a 1 m, 10 s wave train over a sloping beach, no wind, no quadruplets, breaking or whitecapping). inputs/ are the unmodified files of refrac.tar.gz from the SWAN website. All expected values are read FROM THE OFFICIAL FILES in reference/ (a11ref01.tab, a11ref01.tbl written by SWAN 41.10 at TU Delft, and the analytical solution a11refr.ana, Ris 1997). The official case gives no tolerance; tolerances here are set to the printed precision of the official files (tab: 4 significant digits, tbl: 6).",
+  "engine_version": "SWAN 41.45 (serial swan.exe from ADCIRC thirdparty/swan, ADCIRC git c622c78)",
+  "numeric_checks": [
+    {"name": "tab_rows", "expected": 101, "tol": 0, "why": "CURVE 'CTA11' has 100 segments = 101 output points (official a11ref01.tab)"},
+    {"name": "tab_wet_rows", "expected": 100, "tol": 0, "why": "last point (y=4000 m) is dry and gets SWAN's exception value in the official table"},
+    {"name": "tab_hs_max", "expected": 2.402, "tol": 0.001, "why": "largest Hs along the curve, near the shore at y=3960 m (official a11ref01.tab)"},
+    {"name": "tab_hs_min_wet", "expected": 0.9997, "tol": 0.0002, "why": "smallest Hs in deep water, just under the 1 m boundary wave (official a11ref01.tab)"},
+    {"name": "tab_dir_min_wet", "expected": 94.68, "tol": 0.02, "why": "wave direction turns from 120 deg toward shore-normal by refraction (official a11ref01.tab)"},
+    {"name": "tab_tm01_mean_wet", "expected": 10.038, "tol": 0.001, "why": "mean period along the curve stays ~10 s (no source terms) (official a11ref01.tab)"},
+    {"name": "tab_max_absdiff_vs_official", "expected": 0.0, "tol": 0.0005, "why": "every value of a11ref01.tab (101 x 6) must match the official file to its printed precision"},
+    {"name": "tbl_rows", "expected": 13, "tol": 0, "why": "13 output locations in a11refr.loc (official a11ref01.tbl)"},
+    {"name": "tbl_hs_first", "expected": 1.00012, "tol": 2e-05, "why": "Hs at the deep-water location (10000,0) (official a11ref01.tbl)"},
+    {"name": "tbl_hs_last", "expected": 2.31343, "tol": 2e-05, "why": "Hs at the shallowest location (10000,3950) (official a11ref01.tbl)"},
+    {"name": "tbl_tm01_last", "expected": 10.0806, "tol": 0.0002, "why": "Tm01 at (10000,3950) (official a11ref01.tbl)"},
+    {"name": "tbl_max_absdiff_vs_official", "expected": 0.0, "tol": 1e-05, "why": "every value of a11ref01.tbl (13 x 5) must match the official file to its printed precision"},
+    {"name": "hs_max_abs_error_vs_analytical", "expected": 0.0025, "tol": 0.001, "why": "official SWAN result differs from the analytical refraction solution (a11refr.ana) by at most 0.0025 m along the curve"}
+  ],
+  "finished_check": "run_swan.py prints 'Status: OK' (return code 0, outputs present, no ERROR in PRINT) and SWAN writes 'Normal end of run A11' to norm_end",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "Values taken from the official reference files; then checked by running the server's swan.exe (SWAN 41.45) through models/SWAN/tools/run_swan.py. Two clean runs gave byte-identical a11ref01.tab, a11ref01.tbl and a11ref01.spc. a11ref01.tab was byte-identical to the official file; a11ref01.tbl differs only in the version header and by 1e-6 in a few FSpr values; a11ref01.spc differs in one value in the 4th digit.",
+  "reference": "SWAN test cases, https://swanmodel.sourceforge.io/download/zip/refrac.tar.gz (sha256 440994427d45a41aa06c9db2089469d8b728f50955ec069282007f1b8b69a7d8), Delft University of Technology. Analytical solution: Ris (1997).",
+  "notes": "The run copies a11refr.swn to INPUT in the temp dir, exactly as the official swanrun script does, because swan.exe always reads INPUT. No input file is changed."
+}

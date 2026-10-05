@@ -1,0 +1,123 @@
+{
+  "description": "Expected results for official USGS PHREEQC example 1 (examples/ex1, 'Add uranium and speciate seawater'), run with the database the example uses (database/phreeqc.dat). Every expected value is copied from the official USGS output examples/ex1.out that ships in the phreeqc3 git tree (commit 311a485); tolerance = one unit in the last digit printed there. In addition run_reference.py compares the whole output to reference/ex1.out line by line (same last-digit rule), skipping only the 3 file-path header lines and the trailing run-time line.",
+  "engine_version": "PHREEQC 3.8.9 (October 13, 2025 banner), built from usgs-coupled/phreeqc3 git 311a485",
+  "numeric_checks": [
+    {
+      "name": "pH",
+      "expected": 8.22,
+      "tol": 0.001,
+      "why": "input pH kept (charge balance not on pH)"
+    },
+    {
+      "name": "pe",
+      "expected": 8.451,
+      "tol": 0.001,
+      "why": "input pe kept"
+    },
+    {
+      "name": "specific_conductance",
+      "expected": 52918,
+      "tol": 1,
+      "why": "computed specific conductance, uS/cm at 25 C"
+    },
+    {
+      "name": "density",
+      "expected": 1.02326,
+      "tol": 1e-05,
+      "why": "computed solution density, g/cm3"
+    },
+    {
+      "name": "ionic_strength",
+      "expected": 0.6737,
+      "tol": 0.0001,
+      "why": "ionic strength, mol/kgw"
+    },
+    {
+      "name": "total_carbon",
+      "expected": 0.002232,
+      "tol": 1e-06,
+      "why": "total C from alkalinity 141.682 as HCO3"
+    },
+    {
+      "name": "electrical_balance",
+      "expected": 0.0007936,
+      "tol": 1e-07,
+      "why": "charge balance of the seawater analysis, eq"
+    },
+    {
+      "name": "percent_error",
+      "expected": 0.07,
+      "tol": 0.01,
+      "why": "percent charge-balance error"
+    },
+    {
+      "name": "iterations",
+      "expected": 7,
+      "tol": 0,
+      "why": "solver iterations to converge"
+    },
+    {
+      "name": "total_H",
+      "expected": 111.0148,
+      "tol": 0.0001,
+      "why": "mass balance: total H, mol"
+    },
+    {
+      "name": "total_O",
+      "expected": 55.63069,
+      "tol": 1e-05,
+      "why": "mass balance: total O, mol"
+    },
+    {
+      "name": "U_total_molality",
+      "expected": 1.437e-08,
+      "tol": 1e-11,
+      "why": "3.3 ppb U converted to molality"
+    },
+    {
+      "name": "molality_UO2(CO3)3-4",
+      "expected": 1.267e-08,
+      "tol": 1e-11,
+      "why": "main U species (uranyl tricarbonate), read with KI parse tool"
+    },
+    {
+      "name": "molality_HCO3-",
+      "expected": 0.001613,
+      "tol": 1e-06,
+      "why": "main carbon species, read with KI parse tool"
+    },
+    {
+      "name": "n_si_phases",
+      "expected": 37,
+      "tol": 0,
+      "why": "number of phases in the saturation index table"
+    },
+    {
+      "name": "SI_Calcite",
+      "expected": 0.78,
+      "tol": 0.01,
+      "why": "seawater is supersaturated with calcite"
+    },
+    {
+      "name": "SI_Dolomite",
+      "expected": 2.49,
+      "tol": 0.01,
+      "why": "saturation index of dolomite"
+    },
+    {
+      "name": "SI_Uraninite",
+      "expected": -12.77,
+      "tol": 0.01,
+      "why": "uraninite (the phase added in the input) far undersaturated"
+    }
+  ],
+  "extra_checks": [
+    "return code 0 and 'End of Run after ... Seconds.' line present",
+    "no ERROR in output",
+    "whole output equals official reference/ex1.out (except 3 path header lines + run-time line), numbers within 1 unit of last printed digit"
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc, run directly (KI tools/run_phreeqc.py crashes on phreeqc.dat, see README)",
+  "reference": "reference/ex1.out = git show 311a485:examples/ex1.out (official USGS expected output)",
+  "notes": "Two clean runs on 2026-10-05 gave outputs that differ only in the run-time line; apart from the file-path header lines and the run-time line, the run is identical byte for byte to the official ex1.out. Inputs are not changed in any way."
+}

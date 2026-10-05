@@ -1,0 +1,44 @@
+{
+  "test_case": "PHREEQC ex1_seawater (official USGS example 1: add uranium and speciate seawater)",
+  "engine": {
+    "name": "PHREEQC",
+    "version": "3.8.9",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc",
+    "source": "https://github.com/usgs-coupled/phreeqc3 (commit 311a485, 2026-03-03): examples/ex1, examples/ex1.out, database/phreeqc.dat, doc/NOTICE.TXT",
+    "license": "USGS public-domain software, User Rights Notice (NOTICE.TXT included)"
+  },
+  "ki": {
+    "model": "PHREEQC"
+  },
+  "simulation": {
+    "type": "initial solution speciation (one SOLUTION, no reactions)",
+    "solution": "seawater, Nordstrom and others (1979), plus 3.3 ppb U",
+    "temperature_C": 25.0,
+    "database": "phreeqc.dat",
+    "extra_definitions": "U master species, 11 U species and Uraninite phase defined in the input file",
+    "command": "phreeqc ex1 ex1.out phreeqc.dat",
+    "runtime_seconds": "<0.1"
+  },
+  "reference": {
+    "file": "reference/ex1.out",
+    "what": "official USGS expected output for ex1, tracked in phreeqc3 git"
+  },
+  "files": {
+    "inputs/ex1": {
+      "bytes": 2498,
+      "sha256": "3906a796f6ae0d096743ba90f6ba67786194d9605bc2ad808b267ee723abec6e"
+    },
+    "inputs/phreeqc.dat": {
+      "bytes": 54151,
+      "sha256": "5b80d45c989cd1db7aab485e198321ba550d5902be8097c8be26d85ba03da278"
+    },
+    "reference/ex1.out": {
+      "bytes": 17678,
+      "sha256": "a73ad131d9d5b9008d50343d02ba96de4f42d88c62d86145e2c8e642c6c798a2"
+    },
+    "NOTICE.TXT": {
+      "bytes": 2706,
+      "sha256": "f5c97c1c0fea8c27096d3e7b298a627264a71683dc2debb374d07baaea168b34"
+    }
+  }
+}

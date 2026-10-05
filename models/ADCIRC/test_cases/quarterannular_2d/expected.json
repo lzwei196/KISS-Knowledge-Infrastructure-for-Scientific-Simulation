@@ -1,0 +1,71 @@
+{
+  "description": "Expected results for the official ADCIRC test-suite case adcirc/adcirc_quarterannular-2d (adcirc-testsuite commit 72bb573): quarter-annulus grid (63 nodes, 96 elements), 5-day tidal run. The expected values are computed from the OFFICIAL control/ solution files of the ADCIRC test suite (Git LFS objects), and the tolerance is the suite's own (1e-5, RunSingleTest.sh err=0.00001).",
+  "engine_version": "ADCIRC (server build, adcirc -v = c622c78)",
+  "numeric_checks": [
+    {
+      "name": "fort63_n_snap",
+      "expected": 824,
+      "tol": 0
+    },
+    {
+      "name": "fort63_t_end_s",
+      "expected": 431749.632,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort63_max_elev",
+      "expected": 0.65462010875,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort63_min_elev",
+      "expected": -0.63453388969,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort63_last_mean_abs_elev",
+      "expected": 0.34283838695968255,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort64_max_speed",
+      "expected": 0.29691682865449837,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort64_last_mean_speed",
+      "expected": 0.13824927760182845,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort61_n_snap",
+      "expected": 824,
+      "tol": 0
+    },
+    {
+      "name": "fort61_max_elev",
+      "expected": 0.57726615857,
+      "tol": 1e-05
+    },
+    {
+      "name": "fort61_min_elev",
+      "expected": -0.55049737433,
+      "tol": 1e-05
+    },
+    {
+      "name": "maxele_max",
+      "expected": 0.65490447982,
+      "tol": 1e-05,
+      "why": "peak water level over the run, max over nodes (maxele.63 record 1)"
+    },
+    {
+      "name": "maxele_mean",
+      "expected": 0.47089428707761904,
+      "tol": 1e-05,
+      "why": "peak water level over the run, mean over nodes"
+    }
+  ],
+  "reference": "official control/ files; a clean run of the server binary matched them: max |diff| fort.61 1.3e-8, fort.62 7.6e-9, fort.63 1e-14, fort.64 1e-12, maxele.63 0 (byte-identical). fort.54 and maxvel.63 differ only in the phase / time-of-max of near-zero (1e-16..1e-17) values, which carry no meaning.",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/ADCIRC/bin/adcirc via the KI tools/run_adcirc.py (serial)"
+}

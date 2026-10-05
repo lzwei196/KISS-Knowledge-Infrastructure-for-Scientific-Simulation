@@ -16,6 +16,10 @@ KI_DIR = Path(__file__).resolve().parent
 HYDRO_PYTHON = ROOT / "python_env" / "bin" / "python3"
 RUNNER = ROOT / "models" / "WSIMOD" / "run_and_score.py"
 KI_TOOLS_COMMON = ROOT / "models" / "ki_tools_common"
+# WSIMOD is not pip-installed: GeoForge's run_and_score.py puts this source repo on
+# PYTHONPATH (its WSI_REPO constant). Keep the two paths the same.
+WSIMOD_REPO = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/WSIMOD/source/repo")
+IMPORT_TIMEOUT = 180
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 
 
@@ -84,15 +88,26 @@ def run_python_check(code: str, subject: str, critical: bool, fix: str) -> dict:
             f"Restore the HydroCraft Python environment at {HYDRO_PYTHON}.",
         )
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(KI_TOOLS_COMMON) + os.pathsep + env.get("PYTHONPATH", "")
-    proc = subprocess.run(
-        [str(HYDRO_PYTHON), "-c", code],
-        cwd=str(KI_DIR),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=15,
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(KI_TOOLS_COMMON), str(WSIMOD_REPO), env.get("PYTHONPATH", "")]
     )
+    try:
+        proc = subprocess.run(
+            [str(HYDRO_PYTHON), "-c", code],
+            cwd=str(KI_DIR),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=IMPORT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        result = check("import", subject, critical, False, fix)
+        print(f"        Detail: import did not finish within {IMPORT_TIMEOUT}s")
+        return result
+    except OSError as exc:
+        result = check("import", subject, critical, False, fix)
+        print(f"        Detail: {exc}")
+        return result
     passed = proc.returncode == 0
     if not passed:
         detail = (proc.stderr or proc.stdout).strip().splitlines()
@@ -170,12 +185,19 @@ def main() -> None:
             f"Restore or install ki_tools_common at {KI_TOOLS_COMMON}; check {TRIPLETS}.",
         )
     )
+    checks.append(check_dir(WSIMOD_REPO, "WSIMOD source repo (WSI_REPO in run_and_score.py)", True))
+    checks.append(check_file(WSIMOD_REPO / "wsimod" / "__init__.py", "WSIMOD source package wsimod/__init__.py", True))
+    expected_init = WSIMOD_REPO / "wsimod" / "__init__.py"
     checks.append(
         run_python_check(
-            "import wsimod; from wsimod.orchestration.model import Model; import wsimod.validation",
-            "HydroCraft Python import: wsimod",
+            "import wsimod, pathlib; "
+            "from wsimod.orchestration.model import Model; "
+            "from wsimod.validation import evaluate_input_file, validate_io_args, load_data_files, assign_data_to_settings; "
+            f"got = pathlib.Path(wsimod.__file__).resolve(); want = pathlib.Path({str(expected_init)!r}).resolve(); "
+            "assert got == want, f'wsimod loaded from {got}, expected {want}'",
+            f"HydroCraft Python import: wsimod from {WSIMOD_REPO}",
             True,
-            f"Install WSIMOD in {ROOT / 'python_env'} with `{HYDRO_PYTHON} -m pip install wsimod`; then rerun preflight. See {TRIPLETS} dt_016.",
+            f"Restore the WSIMOD source repo at {WSIMOD_REPO} (the path run_and_score.py puts on PYTHONPATH; WSIMOD is not pip-installed in {ROOT / 'python_env'}); then rerun preflight. See {TRIPLETS} dt_016.",
         )
     )
 

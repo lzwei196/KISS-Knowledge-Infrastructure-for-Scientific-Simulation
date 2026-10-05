@@ -1,0 +1,28 @@
+{
+  "description": "Expected results for the official OpenHydroQual validation case 'first order decay in a batch reactor' (repo folder validation/first order decay in a batch reactor/, git 58933b3). One 1 m^3 reactor, constituent A starts at 2 g/m^3 and decays with k = 0.7 1/day for 5 days. inputs/ are the unmodified files from the upstream git tree. Run through the KI tools/run_ohq.py --fix-paths (rewrites only the three template-file paths, in a temp copy). Two clean runs gave byte-identical output.txt (deterministic).",
+  "engine_version": "OpenHydroQual OHQLibTest + libOHQLib.so.2 built from ArashMassoudieh/OpenHydroQual git 58933b3 (2026-03-19), Qt 6.9",
+  "numeric_checks": [
+    {"name": "max_rel_err_vs_exact", "expected": 0.0, "tol": 0.05, "why": "OFFICIAL reference: model A concentration (linear interpolation of output) vs the official exact_solution.csv (C = 2 exp(-0.7 t), 51 points, t = 0..5) must stay within 5 % at every point. Upstream gives no number tolerance, only the plot OHQ_vs_Exact_Batch_first_order.pdf; 5 % is our bound. This run: 2.81 %."},
+    {"name": "max_abs_err_vs_exact", "expected": 0.02426005, "tol": 1e-05, "why": "largest gap to the official exact solution (g/m^3), recorded from our run; the first-order implicit scheme (c_n_weight = 1) lags a little near t = 1, as the upstream plot also shows"},
+    {"name": "n_exact_points", "expected": 51, "tol": 0, "why": "official exact_solution.csv has 51 points (t = 0, 0.1, ..., 5)"},
+    {"name": "n_rows", "expected": 5050, "tol": 0, "why": "number of output time records (KI parse_output.py n_rows)"},
+    {"name": "t_final", "expected": 5.049, "tol": 1e-06, "why": "last output time (days); the solver steps a little past simulation_end_time = 5"},
+    {"name": "conc_first", "expected": 1.99928, "tol": 1e-06, "why": "first written A concentration (start value is 2 g/m^3)"},
+    {"name": "conc_t1", "expected": 0.985071, "tol": 1e-06, "why": "A concentration at t = 1 day (exact 0.99317)"},
+    {"name": "conc_t2", "expected": 0.484151, "tol": 1e-06, "why": "A concentration at t = 2 days (exact 0.49319)"},
+    {"name": "conc_t5", "expected": 0.0615008, "tol": 1e-07, "why": "A concentration at t = 5 days (exact 0.060395)"},
+    {"name": "conc_min", "expected": 0.0594625, "tol": 1e-07, "why": "lowest A concentration = final value (KI parse_output.py stats)"},
+    {"name": "conc_mean", "expected": 0.54325891, "tol": 1e-06, "why": "mean of A concentration over all records (KI parse_output.py stats)"},
+    {"name": "storage_min", "expected": 1.0, "tol": 0, "why": "batch reactor: water volume stays 1 m^3 (no inflow, no outflow)"},
+    {"name": "storage_max", "expected": 1.0, "tol": 0, "why": "batch reactor: water volume stays 1 m^3"},
+    {"name": "mass_minus_conc_x_storage_max", "expected": 0.0, "tol": 5e-05, "why": "mass check: A mass = concentration x volume at every record (gap only from 6-digit printing; this run 2e-05)"}
+  ],
+  "finished_check": "return code 0 and the engine line 'Simulation finished!'",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest via the KI tools/run_ohq.py (--fix-paths, --resources <repo>/resources); output read with KI tools/parse_output.py and directly (interleaved t,value columns)",
+  "reference": "inputs/exact_solution.csv (official, upstream git) and reference/OHQ_vs_Exact_Batch_first_order.pdf (official comparison plot)",
+  "notes": [
+    "The .ohq file names its templates with the developer's Windows paths (C:/Program Files (x86)/..., E:/Projects/...). run_ohq.py --fix-paths writes first_order_decay_fixed.ohq in the temp dir with only those 3 lines changed to the local resources/ dir; nothing else in the file changes. The engine would also fall back to its default template dir by file name, so the result does not depend on this change.",
+    "The engine prints 'Failed to parse configuration ... Line 1, Column 1' and three 'has no property called inflow_concentration / A:inflow_concentration / inflow_timeseries' lines. They come from empty fields the old .ohq sets that the current templates renamed; this batch case has no inflow, so they do not change the result (checked against the exact solution)."
+  ]
+}

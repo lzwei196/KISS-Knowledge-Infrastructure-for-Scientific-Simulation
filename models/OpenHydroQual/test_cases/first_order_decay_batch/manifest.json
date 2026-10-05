@@ -1,0 +1,39 @@
+{
+  "test_case": "OpenHydroQual first_order_decay_batch (official validation case 'first order decay in a batch reactor')",
+  "engine": {
+    "name": "OpenHydroQual (OHQLibTest command-line runner + libOHQLib)",
+    "version": "git 58933b3 (2026-03-19), Qt 6.9",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest",
+    "source": "https://github.com/ArashMassoudieh/OpenHydroQual, folder 'validation/first order decay in a batch reactor/' (commit 58933b3aa54e8f613c08a0c894e29197873cec48)",
+    "license": "AGPL-3.0 (OpenHydroQual)"
+  },
+  "ki": {
+    "model": "OpenHydroQual",
+    "run_tool": "tools/run_ohq.py --fix-paths",
+    "parse_tool": "tools/parse_output.py"
+  },
+  "simulation": {
+    "system": "one batch Reactor, volume 1 m^3, no inflow",
+    "constituent": "A, start 2 g/m^3",
+    "reaction": "first-order decay, rate = 0.7 * A (1/day)",
+    "start_time_day": 0,
+    "end_time_day": 5,
+    "initial_time_step_day": 0.001,
+    "reference": "exact solution C = 2 exp(-0.7 t), inputs/exact_solution.csv",
+    "run_time_s": 0.12
+  },
+  "files": {
+    "inputs/exact_solution.csv": {
+      "bytes": 1080,
+      "sha256": "24c203a49dcde457dfa45fc7bde3b13c270426db0e83a0fb44b55a65c994d9f0"
+    },
+    "inputs/first_order_decay.ohq": {
+      "bytes": 3673,
+      "sha256": "55ef6f97f30ad22c77c3ed0ada6f8ed9394deea1383fb459f9cdfb211c673c4d"
+    },
+    "reference/OHQ_vs_Exact_Batch_first_order.pdf": {
+      "bytes": 435212,
+      "sha256": "115834ed56ef81ee468a4a7ec50f6f646016e28f28f5f5ea286db7efa3468c3a"
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "description": "Expected results for the official dfnWorks example examples/graph_transport (lanl/dfnWorks git 821d476, pydfnworks 2.10.0, DFNGen 2.3): 3 elliptical TPL fracture families in a 400x50x50 m domain, graph-based flow left->right (2 MPa -> 1 MPa) and graph particle tracking of 10,000 particles. inputs/driver.py is the unmodified official file. The repo ships no reference outputs for this example, so values were recorded from real runs on this server: three clean runs gave identical values (network seed = pydfnworks default 1; each particle is seeded by its own number).",
+  "engine_version": "dfnWorks git 821d476 (pydfnworks 2.10.0, DFNGen 2.3)",
+  "finished_normally": {
+    "return_code": 0,
+    "model_lines": [
+      "Graph Particle Tracking Completed Successfully.",
+      "All particles exited the network"
+    ]
+  },
+  "numeric_checks": [
+    {
+      "name": "fractures_accepted",
+      "expected": 942,
+      "tol": 0,
+      "why": "DFNGen accepted fractures before isolated ones are removed (311+315+316)"
+    },
+    {
+      "name": "fractures_final",
+      "expected": 935,
+      "tol": 0,
+      "why": "fractures kept in the final network"
+    },
+    {
+      "name": "isolated_removed",
+      "expected": 7,
+      "tol": 0,
+      "why": "isolated fractures removed by DFNGen"
+    },
+    {
+      "name": "intersections",
+      "expected": 4385,
+      "tol": 0,
+      "why": "fracture intersections found by DFNGen"
+    },
+    {
+      "name": "final_p32",
+      "expected": 0.750279,
+      "tol": 1e-06,
+      "why": "total fracture intensity P32 (m2/m3) after removal; three families aim at 0.25 each"
+    },
+    {
+      "name": "graph_edges",
+      "expected": 50192,
+      "tol": 0,
+      "why": "edges in the intersection graph written to graph_flow.hdf5 (read with KI parse tool)"
+    },
+    {
+      "name": "edge_flow_rate_mean_m3s",
+      "expected": 1.0559508083907836e-10,
+      "tol": 1e-06,
+      "why": "mean edge volume flow rate from the graph pressure solve (KI parse tool)",
+      "tol_type": "relative"
+    },
+    {
+      "name": "edge_velocity_max_ms",
+      "expected": 7.211729511006888e-05,
+      "tol": 1e-06,
+      "why": "largest edge velocity from the graph flow solve (KI parse tool)",
+      "tol_type": "relative"
+    },
+    {
+      "name": "n_particles",
+      "expected": 10000,
+      "tol": 0,
+      "why": "all 10,000 particles written to graph_partime.hdf5"
+    },
+    {
+      "name": "travel_time_min_s",
+      "expected": 169164545.42731574,
+      "tol": 1e-06,
+      "why": "first arrival: smallest particle travel time",
+      "tol_type": "relative"
+    },
+    {
+      "name": "travel_time_median_s",
+      "expected": 344072754.7875095,
+      "tol": 1e-06,
+      "why": "median particle travel time",
+      "tol_type": "relative"
+    },
+    {
+      "name": "travel_time_mean_s",
+      "expected": 366977017.95650995,
+      "tol": 1e-06,
+      "why": "mean particle travel time",
+      "tol_type": "relative"
+    },
+    {
+      "name": "travel_time_max_s",
+      "expected": 2642709392.1506667,
+      "tol": 1e-06,
+      "why": "last arrival: largest particle travel time",
+      "tol_type": "relative"
+    },
+    {
+      "name": "pathline_length_mean_m",
+      "expected": 658.3084004411769,
+      "tol": 1e-06,
+      "why": "mean particle path length (domain is 400 m long in x)",
+      "tol_type": "relative"
+    },
+    {
+      "name": "beta_mean_s_per_m",
+      "expected": 138242662450766.95,
+      "tol": 1e-06,
+      "why": "mean Beta (s/m), the transport resistance used for matrix diffusion",
+      "tol_type": "relative"
+    }
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (Python 3.12, numpy 2.4.4, scipy 1.18.1, networkx 3.6.1) + /home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen",
+  "reference": "own runs (no official reference outputs ship with this example)",
+  "notes": "Counts must match exactly. Float tolerance is relative 1e-6 (runs repeat exactly; the small slack only allows for other numpy/scipy builds). Matrix diffusion is off in this example, so advective time equals total travel time."
+}

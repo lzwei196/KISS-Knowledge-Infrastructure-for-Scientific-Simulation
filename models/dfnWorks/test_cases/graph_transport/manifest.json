@@ -1,0 +1,36 @@
+{
+  "test_case": "dfnWorks graph_transport (official examples/graph_transport)",
+  "engine": {
+    "name": "dfnWorks",
+    "version": "git 821d476 (pydfnworks 2.10.0, DFNGen 2.3)",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen",
+    "python": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (imports pydfnworks from the same repo)",
+    "source": "https://github.com/lanl/dfnWorks, examples/graph_transport/driver.py (commit 821d4761e6f468c62429256c3f8b7c82a4f06e49)",
+    "license": "LANL LA-CC-17-027; GNU LGPL v3 or later (see LICENSE.md in the dfnWorks repo)"
+  },
+  "ki": {
+    "model": "dfnWorks"
+  },
+  "simulation": {
+    "domain_m": [
+      400,
+      50,
+      50
+    ],
+    "h_m": 1,
+    "fracture_families": 3,
+    "family_shape": "ellipse, truncated power law radii 10-20 m, alpha 1.8",
+    "target_p32_per_family": 0.25,
+    "seed": 1,
+    "flow": "graph flow left -> right, 2e6 Pa -> 1e6 Pa",
+    "transport": "graph particle tracking, 10000 particles",
+    "needs": "DFNGen + pydfnworks only (no LaGriT, PFLOTRAN, FEHM)",
+    "run_time_s": "about 5"
+  },
+  "files": {
+    "inputs/driver.py": {
+      "bytes": 2509,
+      "sha256": "e86667fe3fafe33e17b6a90f8dacbe7a0faaf6296085eea48e59ec2f2a8528e6"
+    }
+  }
+}

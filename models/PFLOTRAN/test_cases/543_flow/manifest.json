@@ -1,0 +1,57 @@
+{
+  "test_case": "PFLOTRAN 543_flow (official regression test regression_tests/default/543/543_flow)",
+  "engine": {
+    "name": "PFLOTRAN",
+    "version": "v6.0 (git fab315dc6559306f2f93b27571bf5add812dd820)",
+    "binary": "/mnt/disk1/Hydrocraft_server/models/PFLOTRAN/source/repo/src/pflotran/pflotran",
+    "build": "PETSc 3.21, HDF5 1.14 (miniconda3 libs), OpenMPI",
+    "source": "https://bitbucket.org/pflotran/pflotran, tag v6.0, files from regression_tests/default/543/ and regression_tests/regression_tests.py",
+    "license": "LGPL (PFLOTRAN, see LICENSE in the PFLOTRAN repo)"
+  },
+  "ki": {
+    "model": "PFLOTRAN",
+    "run_tool": "tools/run_pflotran.py"
+  },
+  "simulation": {
+    "mode": "RICHARDS (variably saturated flow)",
+    "grid": "structured 5 x 4 x 3 = 60 cells",
+    "materials": "4 soils (IDs 1-4) from 543.h5",
+    "initial_condition": "pressure read from 543_initial_pressure.h5 (INITIALIZE_FLOW_FROM_FILE)",
+    "boundaries": "west hydrostatic, east time-varying datum, top recharge 0.5 dm/yr, injection well 1000 dm3/h",
+    "final_time_days": 10,
+    "time_steps": 100,
+    "mpi_ranks": 1,
+    "runtime_seconds": "about 1-2"
+  },
+  "reference": {
+    "gold_file": "inputs/543_flow.regression.gold",
+    "tolerances": "inputs/543.cfg [default-test-criteria]",
+    "checker": "inputs/regression_tests.py --check-only"
+  },
+  "files": {
+    "inputs/543.cfg": {
+      "bytes": 2459,
+      "sha256": "22a9185aab879928666ef81c7f6b6cac5e1e06ada95c1e9d1e3cd084b9da8188"
+    },
+    "inputs/543.h5": {
+      "bytes": 18040,
+      "sha256": "1a715170d76a43b150ac0b7bd35a080f14829c49b28eec6b4e09bfd005479dbf"
+    },
+    "inputs/543_flow.in": {
+      "bytes": 6063,
+      "sha256": "8272663649401959ad0c06b7fecf3381307991e496354f39ab0668c6364c1672"
+    },
+    "inputs/543_flow.regression.gold": {
+      "bytes": 1134,
+      "sha256": "12b71d250cc39a6a9f9ee93bcb0a24115ac14aa494862e1f7ddd76f587e6aad7"
+    },
+    "inputs/543_initial_pressure.h5": {
+      "bytes": 7912,
+      "sha256": "a35fe9ea15837ea18fa865b7ae376314c4c64fbfc7fa64a9477c5cfe309dd6e8"
+    },
+    "inputs/regression_tests.py": {
+      "bytes": 124239,
+      "sha256": "ed1eff2c8f69838822888ca59d998995c6b162e083c7a1b5bfe257519e6ff247"
+    }
+  }
+}

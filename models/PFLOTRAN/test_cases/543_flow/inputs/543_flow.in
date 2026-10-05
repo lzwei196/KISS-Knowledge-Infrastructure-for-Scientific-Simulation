@@ -1,0 +1,348 @@
+#Description: 3D test problem for testing chemical reactions
+#             based on chemistry from Hammond and Lichtner, WRR, 2010
+
+SIMULATION
+  SIMULATION_TYPE SUBSURFACE
+  PROCESS_MODELS
+    SUBSURFACE_FLOW flow
+      MODE RICHARDS
+    /
+  /
+END
+
+SUBSURFACE
+
+#=========================== numerical methods ================================
+NUMERICAL_METHODS FLOW
+
+  TIMESTEPPER
+    TS_ACCELERATION 0
+  /
+
+  LINEAR_SOLVER
+    KSP_TYPE PREONLY
+    PC_TYPE LU
+  /
+
+END
+
+#=========================== regression =======================================
+REGRESSION
+  CELLS_PER_PROCESS 2
+  CELL_IDS
+    29
+  /
+END
+
+#=========================== flow mode ========================================
+
+#=========================== solver options ===================================
+
+
+
+#=========================== discretization ===================================
+GRID
+  TYPE STRUCTURED
+  ORIGIN 0.d0 0.d0 0.d0
+  NXYZ 5 4 3
+  DXYZ
+    10. 11. 12. 13. 14.
+    13. 12. 11. 10.
+    15. 20. 25.
+  /
+END
+
+#=========================== fluid properties =================================
+FLUID_PROPERTY
+  DIFFUSION_COEFFICIENT 1.d-9
+END
+
+#=========================== datasets =========================================
+skip
+DATASET U
+  HDF5_DATASET_NAME U
+  FILENAME datasets.h5
+END
+
+DATASET Calcite
+  HDF5_DATASET_NAME Calcite
+  FILENAME datasets.h5
+END
+noskip
+
+#=========================== material properties ==============================
+MATERIAL_PROPERTY soil1
+  ID 1
+  POROSITY 0.25d0
+  TORTUOSITY 1.d0
+  CHARACTERISTIC_CURVES sf1
+  PERMEABILITY
+    PERM_HORIZONTAL 1.d-12
+    VERTICAL_ANISOTROPY_RATIO 0.1d0
+  /
+END
+
+MATERIAL_PROPERTY soil2
+  ID 2
+  POROSITY 0.25d0
+  TORTUOSITY 1.d0
+  CHARACTERISTIC_CURVES sf2
+  PERMEABILITY
+    PERM_X 1.d-11
+    PERM_Y 1.d-11
+    PERM_Z 1.d-12
+  /
+END
+
+MATERIAL_PROPERTY soil3
+  ID 3
+  POROSITY 0.2d0
+  TORTUOSITY 1.d0
+  CHARACTERISTIC_CURVES sf3
+  PERMEABILITY
+    PERM_X 1.d-10
+    PERM_Y 1.d-10
+    PERM_Z 1.d-11
+  /
+END
+
+MATERIAL_PROPERTY soil4
+  ID 4
+  POROSITY 0.25d0
+  TORTUOSITY 1.d0
+  CHARACTERISTIC_CURVES sf4
+  PERMEABILITY
+    PERM_X 1.d-9
+    PERM_Y 1.d-9
+    PERM_Z 1.d-10
+  /
+END
+
+! this material property is never used, but introduces a gap in material
+! ids (notice no material id of 5 in file) for testing purposes.
+MATERIAL_PROPERTY soil6
+  ID 6
+  POROSITY 0.25d0
+  TORTUOSITY 1.d0
+  CHARACTERISTIC_CURVES sf4
+  PERMEABILITY
+    PERM_X 1.d-9
+    PERM_Y 1.d-9
+    PERM_Z 1.d-10
+  /
+END
+
+#=========================== characteristic curves ============================
+CHARACTERISTIC_CURVES sf1
+  SATURATION_FUNCTION VAN_GENUCHTEN
+    M 0.286
+    ALPHA  1.9401d-4
+    LIQUID_RESIDUAL_SATURATION 0.115
+  /
+  PERMEABILITY_FUNCTION MUALEM_VG_LIQ
+    M 0.286
+    LIQUID_RESIDUAL_SATURATION 0.115
+  /
+END
+
+CHARACTERISTIC_CURVES sf2
+  SATURATION_FUNCTION VAN_GENUCHTEN
+    M 0.486
+    ALPHA  3.8801d-4
+    LIQUID_RESIDUAL_SATURATION 0.110
+  /
+  PERMEABILITY_FUNCTION MUALEM_VG_LIQ
+    M 0.486
+    LIQUID_RESIDUAL_SATURATION 0.110
+  /
+END
+
+CHARACTERISTIC_CURVES sf3
+  SATURATION_FUNCTION VAN_GENUCHTEN
+    M 0.541
+    ALPHA 1.0211d-4
+    LIQUID_RESIDUAL_SATURATION 0.118
+  /
+  PERMEABILITY_FUNCTION MUALEM_VG_LIQ
+    M 0.541
+    LIQUID_RESIDUAL_SATURATION 0.118
+  /
+END
+
+CHARACTERISTIC_CURVES sf4
+  SATURATION_FUNCTION VAN_GENUCHTEN
+    M 0.527
+    ALPHA 5.1054d-5
+    LIQUID_RESIDUAL_SATURATION 0.143
+  /
+  PERMEABILITY_FUNCTION MUALEM_VG_LIQ
+    M 0.527
+    LIQUID_RESIDUAL_SATURATION 0.143
+  /
+END
+
+#=========================== output options ===================================
+OUTPUT
+#  TIMES d 0.001 0.01 0.1 1. 10.
+#  PERIODIC TIME 1 d
+  TIME_UNITS y
+  FORMAT TECPLOT BLOCK
+  VELOCITY_AT_CENTER
+END
+
+#=========================== times ============================================
+TIME
+  FINAL_TIME 10.d0 d
+  INITIAL_TIMESTEP_SIZE 1.d-1 d
+  MAXIMUM_TIMESTEP_SIZE 1.d-1 d
+END
+
+#=========================== regions ==========================================
+REGION all
+  COORDINATES
+    0.d0 0.d0 0.d0
+    60.d0 46.d0 60.d0
+  /
+END
+
+REGION top
+  FACE TOP
+  COORDINATES
+    0.d0 0.d0 60.d0
+    60.d0 46.d0 60.d0
+  /
+END
+
+REGION bottom
+  FACE BOTTOM
+  COORDINATES
+    0.d0 0.d0 0.d0
+    60.d0 46.d0 0.d0
+  /
+END
+
+REGION west
+  FACE WEST
+  COORDINATES
+    0.d0 0.d0 0.d0
+    0.d0 46.d0 60.d0
+  /
+END
+
+REGION east
+  FACE EAST
+  COORDINATES
+    60.d0 0.d0 0.d0
+    60.d0 46.d0 60.d0
+  /
+END
+
+REGION north
+  FACE NORTH
+  COORDINATES
+    0.d0 46.d0 0.d0
+    60.d0 46.d0 60.d0
+  /
+END
+
+REGION south
+  FACE SOUTH
+  COORDINATES
+    0.d0 0.d0 0.d0
+    60.d0 0.d0 60.d0
+  /
+END
+
+REGION plume
+  BLOCK 2 3 2 3 2 3
+END
+
+REGION well
+  BLOCK 4 4 2 3 3 3
+END
+
+#=========================== flow conditions ==================================
+FLOW_CONDITION initial
+  TYPE
+    LIQUID_PRESSURE HYDROSTATIC
+  /
+  DATUM 0.d0 0.d0 35.d0
+  GRADIENT
+    LIQUID_PRESSURE -1.6666667d-2 0.d0 0.d0
+  /
+  LIQUID_PRESSURE 1 atm 
+END
+
+FLOW_CONDITION east
+  TYPE
+    LIQUID_PRESSURE HYDROSTATIC
+  /
+  INTERPOLATION LINEAR
+  DATUM LIST
+    TIME_UNITS d
+    0.d0 0.d0 0.d0 34.d0
+    10.d0 0.d0 0.d0 39.d0
+    50.d0 0.d0 0.d0 33.d0
+    100.d0 0.d0 0.d0 34.d0
+  /
+  LIQUID_PRESSURE 1.01325 Bar
+END
+
+FLOW_CONDITION recharge
+  TYPE
+    LIQUID_FLUX neumann
+  /
+  LIQUID_FLUX 0.5d0 dm/yr
+END
+
+FLOW_CONDITION injection_well
+  TYPE
+    RATE scaled_volumetric_rate neighbor_perm
+  /
+  RATE 1.d3 dm^3/hour
+END
+
+INITIALIZE_FLOW_FROM_FILE 543_initial_pressure.h5
+
+#=========================== condition couplers ===============================
+# initial condition
+INITIAL_CONDITION
+  FLOW_CONDITION initial
+  REGION all
+END
+
+INITIAL_CONDITION
+  FLOW_CONDITION initial
+  REGION plume
+END
+
+# west boundary condition
+BOUNDARY_CONDITION west
+  FLOW_CONDITION initial
+  REGION west
+END
+
+# east boundary condition
+BOUNDARY_CONDITION east
+  FLOW_CONDITION east
+  REGION east
+END
+
+# top boundary condition
+BOUNDARY_CONDITION top
+  FLOW_CONDITION recharge
+  REGION top
+END
+
+# well source/sink
+SOURCE_SINK well
+  FLOW_CONDITION injection_well
+  REGION well
+END
+
+#=========================== stratigraphy couplers ============================
+STRATA
+  FILE ./543.h5
+END
+
+END_SUBSURFACE

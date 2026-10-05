@@ -1,0 +1,25 @@
+{
+  "description": "Expected results for the official PFLOTRAN regression test default/543/543_flow (3D Richards flow on a 5x4x3 structured grid with 4 soil materials, recharge on top, a changing east head and an injection well; 10 days in 100 steps of 0.1 d). Every expected value below is copied from the OFFICIAL gold file inputs/543_flow.regression.gold, and every tolerance is the OFFICIAL tolerance from inputs/543.cfg [default-test-criteria] (pressure 1e-12 relative, saturation 1e-12 absolute, discrete 0 absolute, generic 1e-12 absolute) or the regression_tests.py built-in default (residual 1e-12 absolute; mean of a discrete variable uses the generic tolerance). The whole gold file is also checked by PFLOTRAN's own regression_tests.py --check-only.",
+  "engine_version": "PFLOTRAN v6.0 (git fab315dc6559306f2f93b27571bf5add812dd820, tag v6.0), PETSc 3.21",
+  "source_file": "inputs/543_flow.regression.gold",
+  "numeric_checks": [
+    {"section": "PRESSURE", "key": "Max", "name": "pressure_max_Pa", "expected": 4.0763719684121E+05, "tol": 1e-12, "tol_type": "relative", "why": "largest liquid pressure at 10 d"},
+    {"section": "PRESSURE", "key": "Min", "name": "pressure_min_Pa", "expected": -2.0158416259121E+04, "tol": 1e-12, "tol_type": "relative", "why": "smallest liquid pressure (unsaturated top cells)"},
+    {"section": "PRESSURE", "key": "Mean", "name": "pressure_mean_Pa", "expected": 2.0416276766874E+05, "tol": 1e-12, "tol_type": "relative", "why": "mean liquid pressure over all 60 cells"},
+    {"section": "PRESSURE", "key": "29", "name": "pressure_cell29_Pa", "expected": 2.3584750178849E+05, "tol": 1e-12, "tol_type": "relative", "why": "pressure at the official check cell 29"},
+    {"section": "SATURATION", "key": "Min", "name": "saturation_min", "expected": 1.3332489875118E-01, "tol": 1e-12, "tol_type": "absolute", "why": "driest cell liquid saturation"},
+    {"section": "SATURATION", "key": "Mean", "name": "saturation_mean", "expected": 7.3390829333077E-01, "tol": 1e-12, "tol_type": "absolute", "why": "mean liquid saturation"},
+    {"section": "DISCRETE", "key": "Mean", "name": "material_id_mean", "expected": 2.3333333333333E+00, "tol": 1e-12, "tol_type": "absolute", "why": "materials read from 543.h5 are placed right"},
+    {"section": "GENERIC", "key": "29", "index": 0, "name": "velocity_x_cell29_m_per_y", "expected": -2.2482369131225E+02, "tol": 1e-12, "tol_type": "absolute", "why": "x liquid velocity at cell 29"},
+    {"section": "SOLUTION", "key": "Time Steps", "name": "time_steps", "expected": 100, "tol": 0, "tol_type": "absolute", "why": "10 d / 0.1 d max step"},
+    {"section": "SOLUTION", "key": "Newton Iterations", "name": "newton_iterations", "expected": 234, "tol": 0, "tol_type": "absolute", "why": "solver work count"},
+    {"section": "SOLUTION", "key": "Linear Solver Iterations", "name": "linear_iterations", "expected": 234, "tol": 0, "tol_type": "absolute", "why": "direct LU: one linear solve per Newton step"},
+    {"section": "SOLUTION", "key": "Time Step Cuts", "name": "time_step_cuts", "expected": 0, "tol": 0, "tol_type": "absolute", "why": "no convergence trouble"},
+    {"section": "SOLUTION", "key": "Solution 2-Norm", "name": "solution_2norm", "expected": 2.0084450136586E+06, "tol": 1e-12, "tol_type": "absolute", "why": "norm of the final pressure field"},
+    {"section": "SOLUTION", "key": "Residual 2-Norm", "name": "residual_2norm", "expected": 7.8869263700965E-10, "tol": 1e-12, "tol_type": "absolute", "why": "final residual is near zero (converged)"}
+  ],
+  "finished_check": "return code 0 from the KI run tool, and the screen output has '--> write regression output file: <path>/543_flow.regression' and 'Wall Clock Time:'; plus PFLOTRAN's own regression_tests.py --check-only prints 'All tests passed.' with exit 0",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/PFLOTRAN/source/repo/src/pflotran/pflotran (serial, 1 rank) run through the KI tools/run_pflotran.py; output compared by inputs/regression_tests.py",
+  "reference": "Official gold file regression_tests/default/543/543_flow.regression.gold from https://bitbucket.org/pflotran/pflotran at tag v6.0 (last changed in commit cfa897925e615ff6c60efbb8bc07a8d6a8313f71). Our runs match it exactly (every value in the file is the same digit for digit; the only extra line is the run time 'Time (seconds)', which the gold file does not hold)."
+}

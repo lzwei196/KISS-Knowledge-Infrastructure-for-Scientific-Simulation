@@ -20,6 +20,7 @@ Pattern: validate → process → validate
 import argparse
 import csv
 import os
+import re
 import struct
 import sys
 from pathlib import Path
@@ -55,7 +56,41 @@ def validate_binary_file(filepath):
     return errors
 
 
-def read_prolog(f):
+# EPANET 2.2 writes IDs and chemical name/units as MAXID+1 = 32 bytes; EPANET 2.0
+# wrote 16 bytes. The width is found from the file size (see detect_id_len).
+ID_LEN_CANDIDATES = (32, 16)
+
+
+def prolog_size_bytes(n_nodes, n_links, n_tanks, id_len):
+    """Size of the prolog for a given ID width (EPANET output.c savenetdata)."""
+    return (15 * 4 + 3 * 80 + 2 * 260 + 2 * id_len
+            + id_len * (n_nodes + n_links)
+            + 3 * 4 * n_links + 2 * 4 * n_tanks
+            + 4 * n_nodes + 2 * 4 * n_links)
+
+
+def detect_id_len(filepath):
+    """Return (id_len, n_periods) whose layout matches the file size exactly, else (None, info)."""
+    file_size = os.path.getsize(filepath)
+    with open(filepath, "rb") as f:
+        ints = struct.unpack('15i', f.read(60))
+        f.seek(-12, 2)
+        n_periods = struct.unpack('i', f.read(4))[0]
+    n_nodes, n_tanks, n_links, n_pumps = ints[2], ints[3], ints[4], ints[5]
+    energy = 28 * n_pumps + 4
+    period = 16 * n_nodes + 32 * n_links
+    tried = []
+    for id_len in ID_LEN_CANDIDATES:
+        pro = prolog_size_bytes(n_nodes, n_links, n_tanks, id_len)
+        expect = pro + energy + n_periods * period + 28
+        tried.append(f"id_len={id_len}: expected {expect} bytes")
+        if n_periods >= 0 and expect == file_size:
+            return id_len, n_periods
+    return None, (f"file is {file_size} bytes, epilog says {n_periods} periods; "
+                  + "; ".join(tried))
+
+
+def read_prolog(f, id_len=32):
     """Read the prolog section of the binary output file."""
     f.seek(0)
     prolog = {}
@@ -85,25 +120,25 @@ def read_prolog(f):
     prolog['input_file'] = f.read(260).decode('ascii', errors='replace').strip('\x00').strip()
     prolog['report_file'] = f.read(260).decode('ascii', errors='replace').strip('\x00').strip()
 
-    # Chemical name and units (16 chars each)
-    prolog['chem_name'] = f.read(16).decode('ascii', errors='replace').strip('\x00').strip()
-    prolog['chem_units'] = f.read(16).decode('ascii', errors='replace').strip('\x00').strip()
+    # Chemical name and units (id_len chars each)
+    prolog['chem_name'] = f.read(id_len).decode('ascii', errors='replace').split('\x00')[0].strip()
+    prolog['chem_units'] = f.read(id_len).decode('ascii', errors='replace').split('\x00')[0].strip()
 
     n_nodes = prolog['n_nodes']
     n_links = prolog['n_links']
     n_tanks = prolog['n_tanks_reservoirs']
 
-    # Node IDs (16 chars each)
+    # Node IDs (id_len chars each)
     node_ids = []
     for _ in range(n_nodes):
-        nid = f.read(16).decode('ascii', errors='replace').strip('\x00').strip()
+        nid = f.read(id_len).decode('ascii', errors='replace').split('\x00')[0].strip()
         node_ids.append(nid)
     prolog['node_ids'] = node_ids
 
-    # Link IDs (16 chars each)
+    # Link IDs (id_len chars each)
     link_ids = []
     for _ in range(n_links):
-        lid = f.read(16).decode('ascii', errors='replace').strip('\x00').strip()
+        lid = f.read(id_len).decode('ascii', errors='replace').split('\x00')[0].strip()
         link_ids.append(lid)
     prolog['link_ids'] = link_ids
 
@@ -139,7 +174,7 @@ def read_energy(f, n_pumps):
     energy = []
     for _ in range(n_pumps):
         pump_data = {
-            'pump_index': struct.unpack('f', f.read(4))[0],
+            'pump_index': struct.unpack('i', f.read(4))[0],  # INT4 link index
             'utilization': struct.unpack('f', f.read(4))[0],
             'avg_efficiency': struct.unpack('f', f.read(4))[0],
             'avg_kwh_per_unit': struct.unpack('f', f.read(4))[0],
@@ -190,38 +225,27 @@ def read_epilog(f):
 
 
 def parse_binary(filepath):
-    """Parse complete EPANET binary output file."""
+    """Parse complete EPANET binary output file.
+
+    Raises ValueError when the file layout does not match EPANET 2.0/2.2.
+    """
+    id_len, n_periods = detect_id_len(filepath)
+    if id_len is None:
+        raise ValueError("binary layout not recognised (" + n_periods + ")")
     with open(filepath, "rb") as f:
-        prolog = read_prolog(f)
+        prolog = read_prolog(f, id_len)
+        prolog['id_len'] = id_len
         energy, peak_energy = read_energy(f, prolog['n_pumps'])
 
-        # Read all periods
         periods = []
-        # Determine n_periods from epilog
-        # First read forward through periods until we hit epilog
-        n_nodes = prolog['n_nodes']
-        n_links = prolog['n_links']
-        period_size = (16 * n_nodes + 32 * n_links)
-
-        # Calculate expected position of epilog
-        file_size = os.path.getsize(filepath)
-        epilog_size = 28
-        energy_size = 28 * prolog['n_pumps'] + 4
-        prolog_size = 852 + 20 * n_nodes + 36 * n_links + 8 * prolog['n_tanks_reservoirs']
-
-        expected_periods = 0
-        if period_size > 0:
-            expected_periods = (file_size - prolog_size - energy_size - epilog_size) // period_size
-
-        for _ in range(expected_periods):
-            try:
-                period = read_period(f, n_nodes, n_links)
-                periods.append(period)
-            except struct.error:
-                break
+        for _ in range(n_periods):
+            periods.append(read_period(f, prolog['n_nodes'], prolog['n_links']))
 
         epilog = read_epilog(f)
 
+    if epilog['magic'] != MAGIC_NUMBER or epilog['n_periods'] != n_periods:
+        raise ValueError(f"epilog check failed (magic {epilog['magic']}, "
+                         f"periods {epilog['n_periods']} vs {n_periods})")
     return prolog, energy, peak_energy, periods, epilog
 
 
@@ -269,7 +293,7 @@ def print_summary(prolog, energy, peak_energy, periods, epilog):
     if periods:
         # Print first period summary
         p = periods[0]
-        print(f"\n  First Period Node Results (t=0):")
+        print(f"\n  First Period Node Results (t={prolog['report_start']}s):")
         for i, nid in enumerate(prolog['node_ids'][:5]):
             print(f"    {nid}: demand={p['demand'][i]:.2f}, "
                   f"head={p['head'][i]:.2f}, pressure={p['pressure'][i]:.2f}")
@@ -278,6 +302,7 @@ def print_summary(prolog, energy, peak_energy, periods, epilog):
 
 
 def export_node_csv(csv_path, prolog, periods, report_step):
+    # time_s counts from the report start time (prolog report_start).
     """Export node results to CSV."""
     os.makedirs(os.path.dirname(os.path.abspath(csv_path)), exist_ok=True)
 
@@ -287,7 +312,7 @@ def export_node_csv(csv_path, prolog, periods, report_step):
             'time_s', 'time_h', 'node_id', 'demand', 'head', 'pressure', 'quality'
         ])
         for t, period in enumerate(periods):
-            time_s = t * report_step
+            time_s = prolog['report_start'] + t * report_step
             time_h = time_s / 3600.0
             for i, nid in enumerate(prolog['node_ids']):
                 writer.writerow([
@@ -312,7 +337,7 @@ def export_link_csv(csv_path, prolog, periods, report_step):
             'quality', 'status', 'setting', 'reaction_rate', 'friction_factor'
         ])
         for t, period in enumerate(periods):
-            time_s = t * report_step
+            time_s = prolog['report_start'] + t * report_step
             time_h = time_s / 3600.0
             for i, lid in enumerate(prolog['link_ids']):
                 writer.writerow([
@@ -330,6 +355,19 @@ def export_link_csv(csv_path, prolog, periods, report_step):
     print(f"  [OK] Link CSV: {csv_path} ({len(periods)} periods x {prolog['n_links']} links)")
 
 
+# Section titles of the EPANET text report (text.h FMT40/49/71/76/77/79/80, "Analysis begun/ended")
+REPORT_SECTION_END = re.compile(
+    r'(Reporting Criteria:|Hydraulic Status:|Energy Usage:|(\S+\s+)?(Node|Link) Results:|Analysis (begun|ended))')
+
+
+def _is_number(text):
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
 def parse_report_file(rpt_path, csv_dir):
     """Fallback: parse text report file to CSV."""
     if not os.path.isfile(rpt_path):
@@ -342,13 +380,13 @@ def parse_report_file(rpt_path, csv_dir):
     links = []
     current_section = None
     current_time = None
+    after_page_break = False
 
     with open(rpt_path, "r") as f:
         for line in f:
             stripped = line.strip()
 
             # Detect time header
-            import re
             time_match = re.match(r'Node Results at (.+):', stripped)
             if time_match:
                 current_section = "nodes"
@@ -361,14 +399,28 @@ def parse_report_file(rpt_path, csv_dir):
                 current_time = time_match.group(1)
                 continue
 
-            # Skip headers and separators
-            if stripped.startswith('-') or stripped.startswith('Node') or \
-               stripped.startswith('Link') or not stripped:
+            # Page break: EPANET writes "\f" then "  Page <n>    <title>" (FMT82)
+            if '\f' in line:
+                after_page_break = True
+                continue
+            if after_page_break and stripped:
+                after_page_break = False
+                if re.match(r'Page\s+\d+(\s|$)', stripped):
+                    continue
+
+            # Other report section titles (report.c / text.h) end a results table
+            if REPORT_SECTION_END.match(stripped):
+                current_section = None
                 continue
 
-            # Parse data lines
+            # Skip separators and blank lines
+            if stripped.startswith('-') or not stripped:
+                continue
+
+            # Parse data lines; column-header and page-header lines are not data:
+            # a data row has numbers in the value columns.
             parts = stripped.split()
-            if len(parts) >= 4 and current_time:
+            if len(parts) >= 4 and current_time and all(_is_number(x) for x in parts[1:4]):
                 if current_section == "nodes":
                     nodes.append({
                         'time': current_time,
@@ -376,7 +428,7 @@ def parse_report_file(rpt_path, csv_dir):
                         'demand': parts[1],
                         'head': parts[2],
                         'pressure': parts[3],
-                        'quality': parts[4] if len(parts) > 4 else '0',
+                        'quality': parts[4] if len(parts) > 4 and _is_number(parts[4]) else '0',
                     })
                 elif current_section == "links":
                     links.append({
@@ -449,7 +501,11 @@ def main():
             sys.exit(1)
 
         # Step 2: Parse
-        prolog, energy, peak_energy, periods, epilog = parse_binary(args.binary_file)
+        try:
+            prolog, energy, peak_energy, periods, epilog = parse_binary(args.binary_file)
+        except (ValueError, struct.error) as exc:
+            print(f"  [ERR] Could not read {args.binary_file}: {exc}")
+            sys.exit(1)
 
         # Step 3: Output
         if args.summary or not args.csv:

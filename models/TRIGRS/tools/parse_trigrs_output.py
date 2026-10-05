@@ -35,6 +35,12 @@ from pathlib import Path
 
 import numpy as np
 
+# Log lines that contain "error" but are information only
+INFO_LOG_LINES = (
+    "early-time errors in unsaturated infiltration model",
+    "if errors occur in runoff routing",
+)
+
 
 def validate_inputs(output_dir: str, suffix: str) -> dict:
     """Validate that TRIGRS output files exist."""
@@ -95,24 +101,26 @@ def find_output_files(output_dir: str, suffix: str) -> dict:
         dict mapping file type to list of (timestep, filepath) tuples
     """
     files = {}
+    sfx = re.escape(suffix)
+    ext = r"\.(?:asc|txt)$"  # TRIGRS writes ASCII grids as .asc or .txt
+    # Whole file names as written by TRIGRS (trigrs.f90). Runoff and infiltration
+    # grids are per rain PERIOD: TRrunoffPer<N><suffix>, TRinfilratPer<N><suffix>.
     patterns = {
-        "fs_min": re.compile(r"TRfs_min_" + re.escape(suffix) + r"_(\d+)"),
-        "z_at_fs": re.compile(r"TRz_at_fs_min_" + re.escape(suffix) +
-                              r"_(\d+)"),
-        "p_at_fs": re.compile(r"TRp_at_fs_min_" + re.escape(suffix) +
-                              r"_(\d+)"),
-        "water_depth": re.compile(r"TRwater_depth_" + re.escape(suffix) +
-                                  r"_(\d+)"),
-        "water_eleva": re.compile(r"TRwater_eleva_" + re.escape(suffix) +
-                                  r"_(\d+)"),
-        "infiltration": re.compile(r"TRinfiltration_" + re.escape(suffix) +
-                                   r"_(\d+)"),
-        "runoff": re.compile(r"TRrunoff_" + re.escape(suffix) + r"_(\d+)"),
+        "fs_min": [r"^TRfs_min_" + sfx + r"_(\d+)" + ext],
+        "z_at_fs": [r"^TRz_at_fs_min_" + sfx + r"_(\d+)" + ext],
+        "p_at_fs": [r"^TRp_at_fs_min_" + sfx + r"_(\d+)" + ext],
+        "water_depth": [r"^TRwater_depth_" + sfx + r"_(\d+)" + ext],
+        "water_eleva": [r"^TRwater_eleva_" + sfx + r"_(\d+)" + ext],
+        "infiltration": [r"^TRinfilratPer(\d+)" + sfx + ext,
+                         r"^TRinfiltration_" + sfx + r"_(\d+)" + ext],
+        "runoff": [r"^TRrunoffPer(\d+)" + sfx + ext,
+                   r"^TRrunoff_" + sfx + r"_(\d+)" + ext],
     }
+    patterns = {k: [re.compile(x) for x in v] for k, v in patterns.items()}
 
     for filename in sorted(os.listdir(output_dir)):
-        for ftype, pattern in patterns.items():
-            match = pattern.search(filename)
+        for ftype, plist in patterns.items():
+            match = next((m for m in (pt.match(filename) for pt in plist) if m), None)
             if match:
                 step = int(match.group(1))
                 filepath = os.path.join(output_dir, filename)
@@ -167,11 +175,20 @@ def parse_list_file(filepath: str) -> list:
     profiles = []
     current_cell = None
     current_data = []
+    # Column positions; TRIGRS writes a header line, e.g. "Z P FS" or
+    # "Z P Pzero Ptran Pbeta FS" (prpijz.f90). Default = simple Z P FS layout.
+    i_z, i_p, i_fs = 0, 1, 2
 
     with open(filepath, "r") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
+                continue
+
+            # Column header line
+            cols = line.split()
+            if cols and cols[0] == "Z" and "FS" in cols and "P" in cols:
+                i_z, i_p, i_fs = 0, cols.index("P"), cols.index("FS")
                 continue
 
             # Check for cell header
@@ -185,11 +202,11 @@ def parse_list_file(filepath: str) -> list:
 
             # Parse data lines (depth, pressure_head, factor_of_safety)
             parts = line.split()
-            if len(parts) >= 3:
+            if len(parts) > max(i_z, i_p, i_fs):
                 try:
-                    depth = float(parts[0])
-                    phead = float(parts[1])
-                    fs = float(parts[2])
+                    depth = float(parts[i_z])
+                    phead = float(parts[i_p])
+                    fs = float(parts[i_fs])
                     current_data.append({
                         "depth_m": depth,
                         "pressure_head_m": phead,
@@ -219,7 +236,9 @@ def parse_log_file(work_dir: str) -> dict:
     with open(log_path, "r") as f:
         for line in f:
             line_lower = line.lower().strip()
-            if "error" in line_lower:
+            # "...to avoid early-time errors..." and "If errors occur in runoff
+            # routing..." are information lines written by every TRIGRS run.
+            if "error" in line_lower and not any(s in line_lower for s in INFO_LOG_LINES):
                 info["errors"].append(line.strip())
             if "warn" in line_lower:
                 info["warnings"].append(line.strip())
@@ -314,6 +333,10 @@ def main():
     files = find_output_files(args.output_dir, args.suffix)
     for ftype, flist in files.items():
         print(f"  {ftype}: {len(flist)} timestep(s)")
+    if not files:
+        print(f"ERROR: no TRIGRS output grids with suffix '{args.suffix}' in "
+              f"{args.output_dir}", file=sys.stderr)
+        return 1
 
     # Step 3: Parse grids
     print("[3/4] Parsing output grids...")

@@ -1,0 +1,191 @@
+=======================================================================================
+=   Horizon.out Depths(cm)                                                            =
+=======================================================================================
+15 30 60 90 120 150 178 
+===============================================================================================
+= C:\RZWQM2\data\Corn-Akron\Irr-1-85DS =
+= DO NOT EDIT OR ADD COMMENTS. IT MAY PREVENT THE FILE FROM FUNCTIONING.                      =
+=   DATA INPUT TO CREATE COMP2EXP.OUT FILE FOR MODEL COMPARISON                               =
+= MEASURED SOIL PROPERTIES BY SOIL LAYER (LIMIT TO 1200 DATA POINTS PER VARIABLE)             =
+= DAY                                                                                         =
+= DEPTH (cm)                                                                                  =
+= SWC, SOIL WATER CONTENT (cm3/cm3 or g/g)                                                    =
+= SRP, SLOW RESIDUE POOL (ug C/g soil)                                                        =
+= FRP, FAST RESIDUE POOL (ug C/g soil)                                                        =
+= FHP, FAST HUMUS POOL (ug C/g soil)                                                          =
+= IHP, INTERMEDIATE HUMUS POOL(ug C/g soil)                                                   =
+= SHP, SLOW HUMUS POOL (ug C/g soil)                                                          =
+= NO3, NO3-N CONC. (ug/g soil)                                                                =
+= NH4, NH4-N CONC. (ug/g soil)                                                                =
+= P1S, PEST#1 CONC. ABSORB. (ug/g soil)                                                       =
+= P1W, PEST#1 CONC. IN SOL. (mg/ml water)                                                     =
+= P1T, PEST#1 TOTAL MASS (ug/g soil)                                                          =
+= P2S, PEST#2 CONC. ABSORB. (ug/g soil)                                                       =
+= P2W, PEST#2 CONC. IN SOL. (ug/ml water)                                                     =
+= P2T, PEST#2 TOTAL MASS (ug/g soil)                                                          =
+= P3S, PEST#3 CONC. ABSORB (ug/g soil)                                                        =
+= P3W, PEST#3 CONC. IN SOL. (mg/ml water)                                                     =
+= P3T, PEST#3 TOTAL MASS (ug/g soil)                                                          =
+= SOILT, SOIL TEMPERATURE (oC)                                                                =
+= SOC, TOTAL SOIL ORGANIC CARBON PER LAYER [Expressed as a fraction] (g-C/g soil)             =
+= SP,  SOIL PRESSURE HEAD (cm)                                                                =
+= N2O, N2O PRODUCTION (kg N/ha)                                                               =
+= NxO, NxO PRODUCTION (kg N/ha)                                                               =
+= CH4, CH4 PRODUCTION (kg N/ha)                                                               =
+= The following flags apply to the above variables. A vertical section like SWC below         =
+=(record 1=data point count and record 2..n detail) is for each flag=1,                       =
+=then Measured daily values for yield... follow                                               =
+=SWC SRP FRP FHP IHP SHP NO3 NH4 P1S P1W P1T P2S P2W P2T P3S P3W P3T SoilT SOC SP N2O NxO CH4 =
+===============================================================================================
+  1   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0 
+=======================================================================================
+=   MOISTURE CONTENT                                                                  =
+=   line 1 no. of DATA POINTS (1 DATA POINT = 1 Date of Data),                        =
+=   AND SWC input type (0=volumetric and 1= gravimetric) AND RESETWC (Yes=1/NO=0)     =
+=   line 2...n HORIZON LAYER DATA                                                     =
+=                                                                                     =
+= DD  MM   YYYY  DEPTH(cm)  SWC (cm/cm or g/g)  RESETSWC (0 or 1)                     =
+=======================================================================================
+11     0     0
+ 13   6   1985   30.0        0.19      0 
+ 13   6   1985   60.0        0.22      0 
+ 13   6   1985   90.0        0.20      0 
+ 13   6   1985  120.0        0.19      0 
+ 13   6   1985  150.0        0.19      0 
+ 13   6   1985  180.0        0.18      0 
+ 19   6   1985   30.0        0.17      0 
+ 19   6   1985   60.0        0.20      0 
+ 19   6   1985   90.0        0.20      0 
+ 19   6   1985  120.0        0.19      0 
+ 19   6   1985  150.0        0.18      0 
+ 19   6   1985  180.0        0.18      0 
+  3   7   1985   30.0        0.17      0 
+  3   7   1985   60.0        0.16      0 
+  3   7   1985   90.0        0.18      0 
+  3   7   1985  120.0        0.17      0 
+  3   7   1985  150.0        0.17      0 
+  3   7   1985  180.0        0.17      0 
+ 10   7   1985   30.0        0.14      0 
+ 10   7   1985   60.0        0.12      0 
+ 10   7   1985   90.0        0.14      0 
+ 10   7   1985  120.0        0.17      0 
+ 10   7   1985  150.0        0.17      0 
+ 10   7   1985  180.0        0.17      0 
+ 17   7   1985   30.0        0.18      0 
+ 17   7   1985   60.0        0.11      0 
+ 17   7   1985   90.0        0.11      0 
+ 17   7   1985  120.0        0.15      0 
+ 17   7   1985  150.0        0.16      0 
+ 17   7   1985  180.0        0.17      0 
+  6   8   1985   30.0        0.17      0 
+  6   8   1985   60.0        0.18      0 
+  6   8   1985   90.0        0.13      0 
+  6   8   1985  120.0        0.14      0 
+  6   8   1985  150.0        0.16      0 
+  6   8   1985  180.0        0.16      0 
+ 27   8   1985   30.0        0.15      0 
+ 27   8   1985   60.0        0.12      0 
+ 27   8   1985   90.0        0.11      0 
+ 27   8   1985  120.0        0.12      0 
+ 27   8   1985  150.0        0.14      0 
+ 27   8   1985  180.0        0.16      0 
+  4   9   1985   30.0        0.19      0 
+  4   9   1985   60.0        0.12      0 
+  4   9   1985   90.0        0.10      0 
+  4   9   1985  120.0        0.10      0 
+  4   9   1985  150.0        0.13      0 
+  4   9   1985  180.0        0.15      0 
+ 10   9   1985   30.0        0.16      0 
+ 10   9   1985   60.0        0.12      0 
+ 10   9   1985   90.0        0.10      0 
+ 10   9   1985  120.0        0.10      0 
+ 10   9   1985  150.0        0.13      0 
+ 10   9   1985  180.0        0.15      0 
+ 17   9   1985   30.0        0.15      0 
+ 17   9   1985   60.0        0.12      0 
+ 17   9   1985   90.0        0.10      0 
+ 17   9   1985  120.0        0.10      0 
+ 17   9   1985  150.0        0.14      0 
+ 17   9   1985  180.0        0.15      0 
+ 25   9   1985   30.0        0.16      0 
+ 25   9   1985   60.0        0.12      0 
+ 25   9   1985   90.0        0.10      0 
+ 25   9   1985  120.0        0.10      0 
+ 25   9   1985  150.0        0.13      0 
+ 25   9   1985  180.0        0.15      0 
+======================================================================================
+= MEASURED DAILY RESULTS                                                             =
+= No. of data points                                                                 =
+= DAY  (dd mm yyyy)                                                                  =
+= CROP YIELD (kg/ha)                                                                 =
+= CROP BIOMASS (kg/ha)                                                               =
+= CROP N UPTAKE (kg/ha)                                                              =
+= GRAIN N UPTAKE (kg/ha)                                                             =
+= TILE FLOW SECTION                                                                  =
+=    ACCUMULATED TILE FLOW (cm)                                                      =
+=    NITRATE-N IN TILE (mg/L)                                                        =
+=    PEST#1 CONC. IN TILE (mg/L)                                                     =
+=    PEST#2 CONC. IN TILE (mg/L)                                                     =
+=    PEST#3 CONC. IN TILE (mg/L)                                                     =
+= WATER TABLE (cm)                                                                   =
+= SURFACE RUNOFF SECTION                                                             =
+=    DAILY RUNOFF  (cm)                                                              =
+=    NITRATE-N IN RUNOFF  (mg/L)                                                     =
+=    PEST#1 CONC. IN RUNOFF (mg/L)                                                   =
+=    PEST#2 CONC. IN RUNOFF (mg/L)                                                   =
+=    PEST#3 CONC. IN RUNOFF (mg/L)                                                   =
+= PLANT HEIGHT (cm)                                                                  =
+= ET, from day1 to day2                                                              =
+= LAI                                                                                =
+= PLANT PHENOLOGY                                                                    =
+=YIELD,BIOMASS,PLANT N-UP,GRAIN-N-UP,TILE-FLOW,WATER TABLE,RUNOFF,HEIGHT,ET,LAI,PHENO, BGBIOMASS =
+======================================================================================
+   1   1   0   0   0   0   0   1   1   1   0   0   
+======================================================================================
+=   CROP YIELD     (LIMIT 100 data points)                                           =
+=   HARVEST DATE (DD-MM-YYYY), YIELD, HARVEST EFFICIENCY, CROP#                      =
+======================================================================================
+1
+ 17     9   1985       6854.00   0.97     1   
+======================================================================================
+=   CROP BIOMASS   (LIMIT 100 DATA POINTS)                                           =
+=   DATE (DD-MM-YYYY), BIOMASS CROP#                                                 =
+======================================================================================
+5
+ 17     6     1985        505.00     1   
+  2     7     1985       2960.00     1   
+ 15     7     1985       3835.00     1   
+ 23     7     1985       7575.00     1   
+ 21     8     1985      11770.00     1   
+======================================================================================
+=   PLANT HEIGHT    (LIMIT 500 DATA POINTS)                                          =
+=   number of data points                                                            =
+=   Sampling DATE (DD-MM-YYYY), Height                                               =
+======================================================================================
+8    0
+ 17     6     1985         37.00     0   
+ 26     6     1985         56.00     0   
+  2     7     1985         72.00     0   
+  8     7     1985         94.00     0   
+ 15     7     1985        107.00     0   
+ 26     7     1985        175.00     0   
+  2     8     1985        182.00     0   
+  9     8     1985        181.00     0   
+======================================================================================
+=   ET ESTIMATION   (LIMIT 200 DATA POINTS)                                          =
+=   number of data points                                                            =
+=   Start DATE (DD-MM-YYYY), End Date, ET (cm)                                       =
+======================================================================================
+1
+ 13     6     1985    25     9     1985         43.28   
+======================================================================================
+= LAI             (LIMIT 500 DATA POINTS)                                            =
+=   number of data points                                                            =
+= Sampling DATE (DD-MM-YYYY), LAI                                                    =
+======================================================================================
+5    0
+ 17     6     1985          0.53     0   
+  2     7     1985          2.03     0   
+ 15     7     1985          2.63     0   
+  2     8     1985          2.92     0   
+ 21     8     1985          3.06     0   

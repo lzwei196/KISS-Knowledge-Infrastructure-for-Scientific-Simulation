@@ -1,0 +1,25 @@
+{
+  "description": "Expected results for the official RZWQM2 example scenario Corn-Akron / Irr-1-85DS (1985 irrigated corn, USDA-ARS Central Great Plains Research Station, Akron, Colorado), taken from the DATA example library of the RZWQM2 Windows install (input headers RZWQM2 V4.20). One year, 1 Jan - 31 Dec 1985, CERES-Maize (DSSAT 4.0 inside RZWQM2). The release ships no model output for this scenario (its Analysis folder is empty), so the values below were recorded from real runs of the server's Linux engine. Two clean runs gave a byte-identical .ana file (deterministic). Only change, in the temp run copy only: C:\\RZWQM2\\... paths in ipnames.dat / mzdssat.rzx made relative, and upper-case file name copies for the case-sensitive Linux engine - the same path step the RZWQM2 interface itself does on RUN; no numbers are changed.",
+  "engine_version": "RZWQM2 Version 4.6 Intel Fortran (September 2, 2025), Linux build main_ryzen_patched",
+  "numeric_checks": [
+    {"name": "n_daily_records", "expected": 366, "tol": 0, "why": "day 0 (31 Dec 1984 start state) + 365 days of 1985 in the .ana file"},
+    {"name": "last_doy_1985", "expected": 365, "tol": 0, "why": "run reaches the scenario end date 31 Dec 1985 (finished normally)"},
+    {"name": "sum_precipitation_cm", "expected": 45.3111, "tol": 0.001, "why": "1985 rain read from the official akron.brk breakpoint file"},
+    {"name": "sum_irrigation_cm", "expected": 7.0, "tol": 0.0001, "why": "irrigation events from the scenario management in rzwqm.dat"},
+    {"name": "sum_actual_evaporation_cm", "expected": 23.7689, "tol": 0.001, "why": "soil evaporation over the year (water cycle)"},
+    {"name": "sum_actual_transpiration_cm", "expected": 27.3949, "tol": 0.001, "why": "crop transpiration over the year (water cycle + crop)"},
+    {"name": "sum_runoff_cm", "expected": 0.784879, "tol": 0.0001, "why": "surface runoff over the year"},
+    {"name": "final_stored_soil_water_cm", "expected": 24.019, "tol": 0.001, "why": "soil water store on 31 Dec 1985"},
+    {"name": "max_biomass_above_kgha", "expected": 14159.4, "tol": 1.0, "why": "peak above-ground corn biomass"},
+    {"name": "max_grain_yield_kgha", "expected": 6329.46, "tol": 0.5, "why": "peak grain biomass (simulated yield)"},
+    {"name": "max_lai", "expected": 2.21547, "tol": 0.0005, "why": "peak leaf area index"},
+    {"name": "max_grain_n_kgha", "expected": 112.105, "tol": 0.01, "why": "peak N in grain"},
+    {"name": "sum_mineralization_kgha", "expected": 66.4748, "tol": 0.01, "why": "soil N mineralization over the year (N cycle)"},
+    {"name": "water_balance_end_cm", "expected": 0.0, "tol": 0.001, "why": "model's own MASSBAL.OUT water balance error at end (run gave 3.5e-6 cm)"},
+    {"name": "nitrogen_balance_end_kgha", "expected": 0.0, "tol": 0.01, "why": "model's own MASSBAL.OUT N balance error at end (run gave 7.1e-4 kg N/ha)"}
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched (sha256 fcb5c9491da1c7ab0732a491b890b0194ca968546487424a0f560095e3f82851) via KI tools/s8_execution/run_rzwqm2.py; values read with KI tools/s9_result_parsing/parse_ana_output.py",
+  "reference": "No official reference output ships with this scenario. expdata.dat holds the measured field data (observations), not model output, so it is not used as expected values.",
+  "notes": "During the run the engine prints 'sh: copy: not found' twice (a Windows 'copy' shell call; harmless on Linux) and 'check your expdata.dat file (daily data)' (a note about the observation file used for the model-vs-measured tables). Neither affects the results checked here."
+}

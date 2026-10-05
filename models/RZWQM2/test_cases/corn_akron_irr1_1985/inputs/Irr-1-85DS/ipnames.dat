@@ -1,0 +1,36 @@
+C:\RZWQM2\data\Corn-Akron\Irr-1-85DS\cntrl.dat
+C:\RZWQM2\data\Corn-Akron\Irr-1-85DS\rzwqm.dat
+C:\RZWQM2\data\Corn-Akron\Meteorology\akron.met
+C:\RZWQM2\data\Corn-Akron\Meteorology\akron.brk
+C:\RZWQM2\data\Corn-Akron\Irr-1-85DS\rzinit.dat
+C:\RZWQM2\data\Corn-Akron\Irr-1-85DS\plgen.dat
+C:\RZWQM2\data\Corn-Akron\Meteorology\akron.sno
+C:\RZWQM2\data\Corn-Akron\Analysis\Irr-1-85DS.ana
+1  1  1985  31  12  1985
+0  0  0  0  0  0  0  0  0  0  0  0  
+0  0  0  0  0  0  0  0  0  0  0  0  
+100  100  100  100  100  100  100  100  100  100  100  100  
+100  100  100  100  100  100  100  100  100  100  100  100  
+100  100  100  100  100  100  100  100  100  100  100  100  
+100  100  100  100  100  100  100  100  100  100  100  100  
+100  100  100  100  100  100  100  100  100  100  100  100  
+100  100  100  100  100  100  100  100  100  100  100  100  
+=================================================================
+= file location for simulation controls used in RZWQM2
+= file location for main parameters for RZWQM2
+= file location for Weather data excluding rainfall
+= file location for rainfall data
+= file location for initial soil status
+= file locaiton for parameters used in the generic plant growth module
+= file location for the snow parameters
+= file location for the *.ana file storing daily outputs
+= begining simulation (DD MM YYYY) and end simulation date (DD MM YYYY)
+= increase in Tmin in oC
+= increase in Tmax in oC
+= % used to modify windrun
+= % used to modify solar radiation
+= % used to modify Pan Evaporation
+= % used to modify relative humdity
+= % used to modify rainfall amount
+= % used to modify Co2
+=================================================================

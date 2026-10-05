@@ -1,0 +1,97 @@
+====================================================
+==  
+==  RZWQM-DSSAT CONTROL FILE
+==
+====================================================
+=
+=   FACTORS AND EFFICIENCIES
+=
+= SLNF - SOIL N FACTOR [0..1]
+= SLPF - SOIL P FACTOR [0..1]
+= EFINOC - INOCULATION EFFICIENCY [0..1]
+= EFNFIX - N FIXATION EFFICIENCY [0..1]
+=
+====================================================
+1  1  1  1
+====================================================
+=
+=   SIMULATION CONTROL
+= 
+= ISWWAT - WATER ROUTINES [Y/N]
+= ISWNIT - NITROGEN ROUTINES [Y/N]
+= ISWSYM - SYMBIOSIS ROUTINES [Y/N]
+= ISWPHO - PHOSPHOROUS ROUTINES [Y/N]
+= ISWPOT - POTASSIUM ROUTINES [Y/N]
+= ISWDIS - DISEASE AND PEST ROUTINES [Y/N]
+= ISWPAR - USER ENTERED PAR VALUES [Y/N]
+= ISWPSN - PHOTSYNTHESIS OPTION DAILY(C) HOURLY(L) [C/L]
+====================================================
+Y  Y  Y  N  N  N  N  C
+====================================================
+=
+=   OUTPUT CONTROL
+=
+= IOX   - FILES NAMED WITH EXPERIMENT CODE [Y/N]
+= IDETO - CREATE OVERVIEW FILE [Y/N]
+= IDETS - CREATE SUMMARY FILE [Y/N]
+= FROP  - DETAILED OUTPUT FREQUENCY [DAYS]
+= IDETG - CREATE GROWTH FILE [Y/N]
+= IDETC - CREATE CARBON FILE [Y/N]
+= IDETW - CREATE WATER FILE [Y/N]
+= IDETN - CREATE NITROGEN FILE [Y/N]
+= IDETP - CREATE PHOSPHOROUS FILE [Y/N]
+= IDETD - CREATE DISEASES AND PEST FILE [Y/N]
+= IDETL - CREATE LONG FORMAT OUTPUT FILE [Y/N]
+= TRMTNO - TREATMENT NUMBER (default = 1)
+====================================================
+N  Y  N  10  Y  Y  Y  Y  N  N  N  1
+====================================================
+= ROOT DISTRIBUTION FUNCTIONAL LAYOUT
+= 
+= 1) NUMBER OF ROOT LAYERS, MAX ROOT DEPTH, GEOTROPISM EXPONENT
+= 2...) SOIL ROOT GROWTH FACTORS
+====================================================
+9  200  3  
+1
+1
+0.96
+0.84
+0.84
+0.71
+0.22
+0.12
+0.07
+====================================================
+= DATABASE FILE LOCATIONS
+====================================================
+C:\RZWQM2\DATABASES\DSSAT\
+C:\RZWQM2\DATA\CORN-AKRON\IRR-1-85DS\
+28
+MZCER040
+SBGRO040
+WHCER040
+SGCER040
+PTSUB040
+MLCER040
+BACER040
+BNGRO040
+FBGRO040
+VBGRO040
+BRGRO040
+CBGRO040
+CHGRO040
+CPGRO040
+PNGRO040
+PRGRO040
+TMGRO040
+COGRO040
+G0GRO040
+MXCER040
+MOCER040
+TRCER040
+CAGRO040
+BSCER040
+SUGRO040
+ALFRM040
+BMFRM040
+SFCER040

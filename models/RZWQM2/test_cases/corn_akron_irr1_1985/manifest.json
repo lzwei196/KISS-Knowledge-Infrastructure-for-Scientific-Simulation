@@ -1,0 +1,102 @@
+{
+  "test_case": "RZWQM2 Corn-Akron Irr-1-85DS (official example scenario from the RZWQM2 install DATA library)",
+  "engine": {
+    "name": "RZWQM2",
+    "version": "4.6 Intel Fortran (September 2, 2025), Linux build",
+    "binary": "main_ryzen_patched (server default /mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched, sha256 fcb5c9491da1c7ab0732a491b890b0194ca968546487424a0f560095e3f82851)",
+    "source": "USDA-ARS RZWQM2 Windows release (https://www.ars.usda.gov/research/software/download/?softwareid=412); scenario C:\\RZWQM2\\data\\Corn-Akron\\Irr-1-85DS, DSSAT files from C:\\RZWQM2\\DATABASES\\DSSAT; input headers V4.20; server copy /home/server/RZWQM2/RZWQM2/data/{data/Corn-Akron,databases/DSSAT}",
+    "license": "USDA-ARS public software (US Government work), distributed free by USDA-ARS after registration"
+  },
+  "ki": {
+    "model": "RZWQM2",
+    "run_tool": "tools/s8_execution/run_rzwqm2.py",
+    "parse_tool": "tools/s9_result_parsing/parse_ana_output.py"
+  },
+  "simulation": {
+    "site": "Central Great Plains Research Station, Akron, Colorado, USA",
+    "crop": "maize (CERES-Maize, cultivar IB0033 PIO 3780)",
+    "treatment": "Irr-1-85DS, irrigated",
+    "start": "1985-01-01",
+    "end": "1985-12-31",
+    "time_step": "daily output (.ana), hourly/breakpoint rain",
+    "runtime_s": "about 1-2"
+  },
+  "files": {
+    "inputs/DSSAT/DATA.CDE": {
+      "bytes": 73788,
+      "sha256": "bfb356b933f606bbfb6f93982b48b73545a0758bcf30f6127db351b7c0010cca"
+    },
+    "inputs/DSSAT/DETAIL.CDE": {
+      "bytes": 34227,
+      "sha256": "a79f6f0d150e447f459fa715876f70b179c674bda34e8f0b8d2e4a8481be16eb"
+    },
+    "inputs/DSSAT/MZCER040.ECO": {
+      "bytes": 1228,
+      "sha256": "8a7d5419004b8acb9d94c041edc57587f32221d8cd74eaf48fd781815f9ef445"
+    },
+    "inputs/DSSAT/MZCER040.SPE": {
+      "bytes": 2416,
+      "sha256": "f717ca9a63ab738d52c4eff307eeb4acdd92c38e71c588e7d99457dc069ec746"
+    },
+    "inputs/Irr-1-85DS/RZCropSel.rzq": {
+      "bytes": 32,
+      "sha256": "4eaabf77ba52d24a944831748daca542fbb2c2c14b60c7c0dfc71c81b1b159fb"
+    },
+    "inputs/Irr-1-85DS/Scenario.rzp": {
+      "bytes": 65,
+      "sha256": "299726f104cc0e97cf1c87f829d40d129d93fbaa67b064f4ec98400ab98f8f48"
+    },
+    "inputs/Irr-1-85DS/cntrl.dat": {
+      "bytes": 7940,
+      "sha256": "b14444903a192339b5f93515c1b872dbed59bba1c1c87820d7d84881d1b22e6a"
+    },
+    "inputs/Irr-1-85DS/expdata.dat": {
+      "bytes": 12663,
+      "sha256": "c8c6f13c7f47e6a0e08ff8a20f4e8b541f8959f28c433efb72445a32e10cc9a9"
+    },
+    "inputs/Irr-1-85DS/expdssat.MZA": {
+      "bytes": 1256,
+      "sha256": "99400b06e73d7b129ee2e4b0b0a6cbddb0b555ae5ef9711f5e8efb2298d3ab26"
+    },
+    "inputs/Irr-1-85DS/ipnames.dat": {
+      "bytes": 1725,
+      "sha256": "c1b26bfdc9106f1eebc87b1e31ad928fbd74104cc4d23718e86e09b7c1760ad9"
+    },
+    "inputs/Irr-1-85DS/mzcer040.cul": {
+      "bytes": 822,
+      "sha256": "fbbdeab9e10a052520a3c65f7f47f4ccf05ac3dccb0c119427cf80ab16008fcf"
+    },
+    "inputs/Irr-1-85DS/mzdssat.rzx": {
+      "bytes": 2348,
+      "sha256": "349bd702e947f7c3fdea1f9e851d9a7847e4afce15eb7b56d6da62379f46fb1e"
+    },
+    "inputs/Irr-1-85DS/plgen.dat": {
+      "bytes": 1287,
+      "sha256": "30d1f4ab89d098ff62f682a3a03673efc161c86f350247ae710e92e8e98fdfea"
+    },
+    "inputs/Irr-1-85DS/rzinit.dat": {
+      "bytes": 7918,
+      "sha256": "ddf1504afcb009c41e2a479597604ea151adea2d5e189235860b97649fd15051"
+    },
+    "inputs/Irr-1-85DS/rzwqm.dat": {
+      "bytes": 53209,
+      "sha256": "6f290d8ec0f54c20f3bba1808aa029bd4674b79936c51da8b6db9e2b0b03c9f5"
+    },
+    "inputs/Meteorology/akron.brk": {
+      "bytes": 21657,
+      "sha256": "7f86303a3f6c424164e9a9b2f954b4db2a8eb73e4b06780919516ddb15668ea0"
+    },
+    "inputs/Meteorology/akron.met": {
+      "bytes": 64813,
+      "sha256": "eefd44bf507198368c38a7cbc54237c9801fb3e4ae895b42adef836405aec3a1"
+    },
+    "inputs/Meteorology/akron.sno": {
+      "bytes": 3486,
+      "sha256": "505b5b6f56fbb68a20cd3ddd2fdcf86d1f756eeabe7bb0f132abfae223b2927e"
+    },
+    "inputs/Project.rzp": {
+      "bytes": 523,
+      "sha256": "9c8654817f8996e82ddcaa18d7701603c2dfcb366db875bda13d925c42ed1aba"
+    }
+  }
+}

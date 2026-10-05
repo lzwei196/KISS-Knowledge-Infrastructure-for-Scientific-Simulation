@@ -30,12 +30,136 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# ESMF engine lookup. The engine is NOT in the HydroCraft python_env that SKILL.md uses to
+# start this tool; on this server it is the conda env obs4mips (same defaults and env vars as
+# preflight_check.py). An explicit value (CLI option or env var) is used as given: if it does
+# not work, the run fails; it never falls back to another engine.
+#   ESMF_RegridWeightGen: --regridweightgen -> $ESMF_REGRIDWEIGHTGEN -> server default
+#                         -> first one on PATH -> none at all: ESMPy route (as before)
+#   ESMPy python:         --esmf-python -> $ESMF_PYTHON -> server default
+#                         -> this python (only if it imports esmpy / ESMF)
+# The ESMPy route re-launches this tool with the ESMPy python when another python runs it.
+# ---------------------------------------------------------------------------
+ESMF_ENV_DEFAULT = "KISSPATH_HOME/miniconda3/envs/obs4mips"
+REGRIDWEIGHTGEN_DEFAULT = os.path.join(ESMF_ENV_DEFAULT, "bin", "ESMF_RegridWeightGen")
+ESMF_PYTHON_DEFAULT = os.path.join(ESMF_ENV_DEFAULT, "bin", "python")
+_REEXEC_GUARD = "KI_ESMF_REEXEC"
+
+
+class EngineError(RuntimeError):
+    """The selected ESMF engine is missing or unusable."""
+
+
+def _import_esmpy():
+    """Import ESMPy under its current name, else the legacy name ESMF."""
+    try:
+        import esmpy
+    except ImportError:
+        import ESMF as esmpy
+    return esmpy
+
+
+def _is_executable(path):
+    return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
+
+
+def resolve_regridweightgen(cli_value=None):
+    """Return (path, source) of ESMF_RegridWeightGen, or (None, reason) if there is none."""
+    if cli_value is not None:
+        path, source = cli_value, "--regridweightgen"
+    elif os.environ.get("ESMF_REGRIDWEIGHTGEN") is not None:
+        path, source = os.environ["ESMF_REGRIDWEIGHTGEN"], "$ESMF_REGRIDWEIGHTGEN"
+    elif os.path.isfile(REGRIDWEIGHTGEN_DEFAULT):
+        path, source = REGRIDWEIGHTGEN_DEFAULT, "server default"
+    else:
+        path = shutil.which("ESMF_RegridWeightGen")
+        if not path:
+            return None, ("no --regridweightgen / $ESMF_REGRIDWEIGHTGEN, no server default "
+                          f"{REGRIDWEIGHTGEN_DEFAULT}, none on PATH")
+        source = "PATH"
+    if not _is_executable(path):
+        raise EngineError(f"ESMF_RegridWeightGen not found or not executable: {path!r} ({source})")
+    # run exactly the file that was checked (a bare name would otherwise be searched on PATH)
+    return os.path.abspath(path), source
+
+
+def resolve_esmf_python(cli_value=None):
+    """Return (python, source) of the interpreter that has ESMPy."""
+    if cli_value is not None:
+        return cli_value, "--esmf-python"
+    if os.environ.get("ESMF_PYTHON") is not None:
+        return os.environ["ESMF_PYTHON"], "$ESMF_PYTHON"
+    if os.path.isfile(ESMF_PYTHON_DEFAULT):
+        return ESMF_PYTHON_DEFAULT, "server default"
+    try:
+        _import_esmpy()
+    except ImportError:
+        raise EngineError(
+            f"no python with ESMPy: --esmf-python and $ESMF_PYTHON not set, server default "
+            f"{ESMF_PYTHON_DEFAULT} not found, and {sys.executable} cannot import esmpy/ESMF")
+    return sys.executable, "running python (imports esmpy)"
+
+
+def ensure_esmf_python(cli_value=None):
+    """Make sure the ESMPy python runs this tool; re-launch with it (same arguments) if not."""
+    python, source = resolve_esmf_python(cli_value)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        try:
+            _import_esmpy()
+        except ImportError as e:
+            raise EngineError(f"{python} ({source}) cannot import esmpy/ESMF: {e}")
+        return os.path.abspath(python), source
+    if os.environ.get(_REEXEC_GUARD):
+        raise EngineError(f"re-launch loop: running {sys.executable}, expected {python} ({source})")
+    if not _is_executable(python):
+        raise EngineError(f"ESMPy python not found or not executable: {python!r} ({source})")
+    python = os.path.abspath(python)  # not realpath: a venv python must keep its own path
+    logger.info("re-launching with ESMPy python %s (%s)", python, source)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        raise EngineError(f"could not start ESMPy python {python} ({source}): {e}")
+
+
+def check_engine(use_esmpy, regridweightgen=None, esmf_python=None):
+    """--check-engine: resolve and probe the engine exactly as a real run would."""
+    if not use_esmpy:
+        tool, source = resolve_regridweightgen(regridweightgen)
+        if tool:
+            try:
+                with tempfile.TemporaryDirectory() as tmp:  # --version writes PET*.Log to cwd
+                    proc = subprocess.run([tool, "--version"], capture_output=True, text=True,
+                                          timeout=180, cwd=tmp)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                raise EngineError(f"{tool} --version did not run ({source}): {e}")
+            out = proc.stdout + proc.stderr
+            version = next((l.split(":", 1)[1].strip() for l in out.splitlines()
+                            if l.strip().startswith("ESMF_VERSION_STRING:")), "")
+            if proc.returncode != 0 or not version:
+                raise EngineError(f"{tool} --version failed (rc={proc.returncode}, {source}): "
+                                  f"{out.strip()[-300:]}")
+            return {"ok": True, "route": "ESMF_RegridWeightGen", "path": tool,
+                    "source": source, "version": version}
+        logger.warning("ESMF_RegridWeightGen: %s; checking the ESMPy route", source)
+    python, source = ensure_esmf_python(esmf_python)
+    try:
+        esmpy = _import_esmpy()
+    except ImportError as e:
+        raise EngineError(f"{python} ({source}) cannot import esmpy/ESMF: {e}")
+    return {"ok": True, "route": "esmpy", "python": python, "source": source,
+            "version": getattr(esmpy, "__version__", "?")}
 
 # ---------------------------------------------------------------------------
 # Regridding method specifications
@@ -184,7 +308,8 @@ def validate_input(source: str, destination: str, method: str) -> dict:
 
 
 def run_regridweightgen(source: str, destination: str, weight_file: str,
-                        method: str, extra_args: list = None) -> dict:
+                        method: str, extra_args: list = None,
+                        regridweightgen: str = None, esmf_python: str = None) -> dict:
     """Run ESMF_RegridWeightGen command-line tool.
 
     TRAP: --ignore_unmapped is almost always needed. Without it,
@@ -193,10 +318,12 @@ def run_regridweightgen(source: str, destination: str, weight_file: str,
     TRAP: --src_missingvalue excludes masked source cells.
     Without it, fill values (e.g., -9999) are interpolated as real data.
     """
-    tool = shutil.which("ESMF_RegridWeightGen")
+    tool, tool_source = resolve_regridweightgen(regridweightgen)
     if not tool:
-        logger.warning("ESMF_RegridWeightGen not in PATH. Trying ESMPy fallback.")
+        logger.warning("ESMF_RegridWeightGen: %s. Trying ESMPy fallback.", tool_source)
+        ensure_esmf_python(esmf_python)
         return _run_esmpy_regrid(source, destination, weight_file, method)
+    logger.info("ESMF_RegridWeightGen: %s (%s)", tool, tool_source)
 
     cmd = [
         tool,
@@ -236,14 +363,11 @@ def _run_esmpy_regrid(source: str, destination: str, weight_file: str,
                       method: str) -> dict:
     """Fallback: generate weights using ESMPy Python interface."""
     try:
-        import esmpy
+        esmpy = _import_esmpy()
     except ImportError:
-        try:
-            import ESMF as esmpy
-        except ImportError:
-            logger.error("Neither ESMF_RegridWeightGen nor ESMPy available")
-            return {"tool": "none", "returncode": -1,
-                    "error": "No regridding tool available"}
+        logger.error("Neither ESMF_RegridWeightGen nor ESMPy available")
+        return {"tool": "none", "returncode": -1,
+                "error": "No regridding tool available"}
 
     method_map = {
         "bilinear": esmpy.RegridMethod.BILINEAR,
@@ -341,9 +465,9 @@ def validate_output(weight_file: str, method: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Generate ESMF regrid weights")
-    parser.add_argument("--source", "-s", required=True, help="Source grid file")
-    parser.add_argument("--destination", "-d", required=True, help="Destination grid file")
-    parser.add_argument("--weight", "-w", required=True, help="Output weight file")
+    parser.add_argument("--source", "-s", help="Source grid file (required)")
+    parser.add_argument("--destination", "-d", help="Destination grid file (required)")
+    parser.add_argument("--weight", "-w", help="Output weight file (required)")
     parser.add_argument("--method", "-m", default="bilinear",
                         choices=list(REGRID_METHODS.keys()),
                         help="Regridding method")
@@ -351,19 +475,52 @@ def main():
                         help="Use ESMPy instead of ESMF_RegridWeightGen")
     parser.add_argument("--extra-args", nargs="*", default=[],
                         help="Extra arguments for ESMF_RegridWeightGen")
+    parser.add_argument("--regridweightgen", default=None,
+                        help="ESMF_RegridWeightGen to use (default: $ESMF_REGRIDWEIGHTGEN, else "
+                             f"the server default {REGRIDWEIGHTGEN_DEFAULT}, else the first on "
+                             "PATH, else the ESMPy route)")
+    parser.add_argument("--esmf-python", default=None,
+                        help="Python with ESMPy for the ESMPy route (default: $ESMF_PYTHON, else "
+                             f"the server default {ESMF_PYTHON_DEFAULT}, else this python if it "
+                             "imports esmpy); the tool re-launches itself with it")
+    parser.add_argument("--check-engine", action="store_true",
+                        help="Only resolve and test the engine this run would use "
+                             "(with --use-esmpy: the ESMPy route); print one JSON line")
     args = parser.parse_args()
+
+    if args.check_engine:
+        try:
+            info = check_engine(args.use_esmpy, args.regridweightgen, args.esmf_python)
+        except EngineError as e:
+            print(json.dumps({"ok": False, "error": str(e)}))
+            sys.exit(1)
+        print(json.dumps(info))
+        return
+
+    missing = [f"--{n}" for n in ("source", "destination", "weight") if not getattr(args, n)]
+    if missing:
+        parser.error("the following arguments are required: " + ", ".join(missing))
 
     os.makedirs(os.path.dirname(args.weight) or ".", exist_ok=True)
 
-    # Validate
-    validate_input(args.source, args.destination, args.method)
+    try:
+        if args.use_esmpy:
+            ensure_esmf_python(args.esmf_python)
 
-    # Process
-    if args.use_esmpy:
-        result = _run_esmpy_regrid(args.source, args.destination, args.weight, args.method)
-    else:
-        result = run_regridweightgen(args.source, args.destination, args.weight,
-                                      args.method, args.extra_args)
+        # Validate
+        validate_input(args.source, args.destination, args.method)
+
+        # Process
+        if args.use_esmpy:
+            result = _run_esmpy_regrid(args.source, args.destination, args.weight, args.method)
+        else:
+            result = run_regridweightgen(args.source, args.destination, args.weight,
+                                          args.method, args.extra_args,
+                                          args.regridweightgen, args.esmf_python)
+    except EngineError as e:
+        logger.error("%s", e)
+        print(json.dumps({"tool": "none", "returncode": -1, "error": str(e)}, indent=2))
+        sys.exit(1)
 
     # Validate output
     if result.get("returncode") == 0:

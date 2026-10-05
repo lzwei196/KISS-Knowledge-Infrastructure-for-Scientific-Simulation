@@ -3,8 +3,8 @@
 
 The ESMF engine on this server is the conda env obs4mips (esmpy + ESMF_RegridWeightGen 8.9.1).
 Override with ESMF_PYTHON (interpreter that has esmpy) and ESMF_REGRIDWEIGHTGEN (CLI path).
-KI tools (tools/generate_regrid_weights.py) must be run with that interpreter, or with its
-bin/ folder on PATH, so they find esmpy / ESMF_RegridWeightGen.
+tools/generate_regrid_weights.py finds them itself (same env vars and defaults), so SKILL.md's
+python_env call works; the launch-route check below asks the tool which engine it would use.
 """
 import os, sys, shutil, subprocess
 
@@ -100,48 +100,37 @@ def check_regridweightgen(path=ESMF_REGRIDWEIGHTGEN, timeout=180):
         FAIL += 1
 
 def check_tool_launch_route():
-    """FAIL when the KI tools, started the way SKILL.md documents (HydroCraft
-    python_env, this process's PATH), would not reach a working ESMF.
-    generate_regrid_weights.py uses the first ESMF_RegridWeightGen on PATH and falls
-    back to `import esmpy` ONLY when no binary is on PATH (a broken one is not skipped)."""
+    """FAIL when the KI tool, started the way SKILL.md documents (HydroCraft python_env,
+    this process's environment), would not reach a working ESMF. The tool resolves the
+    engine itself (tools/generate_regrid_weights.py: binary --regridweightgen ->
+    $ESMF_REGRIDWEIGHTGEN -> server default -> PATH; ESMPy --esmf-python -> $ESMF_PYTHON ->
+    server default -> its own python), so ask it: `--check-engine` runs the same lookup and
+    re-launch as a real run and probes the engine. Both routes are checked."""
     global PASS, FAIL
     penv = "KISSPATH_PYTHON_ENV/bin/python"
-    fix = (f"run tools/generate_regrid_weights.py with {ESMF_PYTHON} and put "
-           f"{os.path.dirname(ESMF_REGRIDWEIGHTGEN)} first on PATH (or fix the KI launcher/SKILL.md to do so)")
-    on_path = shutil.which("ESMF_RegridWeightGen")
-    if on_path:
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools",
+                        "generate_regrid_weights.py")
+    fix = ("set ESMF_REGRIDWEIGHTGEN / ESMF_PYTHON to a working ESMF (server default: "
+           f"{ESMF_ENV}), or pass --regridweightgen / --esmf-python to the tool")
+    for label, extra in (("ESMF_RegridWeightGen route", []), ("ESMPy route", ["--use-esmpy"])):
+        cmd = [penv, tool, "--check-engine"] + extra
         try:
-            probe = subprocess.run([on_path, "--version"], capture_output=True, text=True,
-                                   timeout=180)
-            ok = probe.returncode == 0 and "ESMF_VERSION_STRING:" in probe.stdout + probe.stderr
-        except (OSError, subprocess.TimeoutExpired):
-            ok = False
-        if ok:
-            print(f"  OK    tool launch route: ESMF_RegridWeightGen on PATH works: {on_path}")
-            PASS += 1
-        else:
-            print(f"  FAIL  tool launch route: the ESMF_RegridWeightGen first on PATH ({on_path}) "
-                  "does not start with --version; KI tools would use it and not fall back to esmpy")
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"  FAIL  tool launch route ({label}): {' '.join(cmd)} did not finish: {exc}")
             print(f"         Fix: {fix}")
             FAIL += 1
-        return
-    esmpy_in_penv = False
-    if os.path.isfile(penv):
-        try:
-            esmpy_in_penv = subprocess.run(
-                [penv, "-c",  # same fallback as the tool: import esmpy, else import ESMF
-                 "try:\n    import esmpy\nexcept ImportError:\n    import ESMF as esmpy"],
-                capture_output=True, timeout=180).returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
-            esmpy_in_penv = False
-    if esmpy_in_penv:
-        print(f"  OK    tool launch route: no ESMF_RegridWeightGen on PATH; esmpy (or legacy ESMF) imports in {penv}")
-        PASS += 1
-    else:
-        print(f"  FAIL  tool launch route: KI tools started with {penv} (as SKILL.md lists) find "
-              "no ESMF_RegridWeightGen on PATH and cannot import esmpy (or legacy ESMF), so they cannot reach the ESMF checked above")
-        print(f"         Fix: {fix}")
-        FAIL += 1
+            continue
+        lines = proc.stdout.strip().splitlines()
+        detail = lines[-1] if lines else (proc.stderr.strip().splitlines() or ["no output"])[-1]
+        if proc.returncode == 0:
+            print(f"  OK    tool launch route ({label}): python_env tools/generate_regrid_weights.py -> {detail}")
+            PASS += 1
+        else:
+            print(f"  FAIL  tool launch route ({label}): python_env tools/generate_regrid_weights.py "
+                  f"--check-engine rc={proc.returncode}: {detail}")
+            print(f"         Fix: {fix}")
+            FAIL += 1
 
 def main():
     global PASS, FAIL

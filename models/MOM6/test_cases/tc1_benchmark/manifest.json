@@ -1,0 +1,50 @@
+{
+  "test_case": "MOM6 tc1 (official .testing/tc1, low-resolution benchmark)",
+  "engine": {
+    "name": "MOM6",
+    "version": "git f52a2b3 (NOAA-GFDL/MOM6 dev/gfdl, 2026-03-24); FMS 2025.02.01",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6",
+    "build": "MOM6 .testing symmetric build (gfortran 13.3, Open MPI 4.1.6)",
+    "source": "https://github.com/NOAA-GFDL/MOM6 , .testing/tc1 (git-tracked), commit f52a2b361de7c577a6ded6229de37633ec753ab8",
+    "license": "Apache-2.0 (MOM6 LICENSE)"
+  },
+  "ki": {
+    "model": "MOM6",
+    "run_tool": "tools/run_mom6.py",
+    "parse_tool": "tools/output_parser.py (parse_ocean_stats)"
+  },
+  "simulation": {
+    "config": "benchmark (TOPO/THICKNESS/TS_CONFIG = benchmark)",
+    "grid": "mercator 10 x 8, 90 deg lon x 41 deg lat (41S-0)",
+    "layers": 8,
+    "dt_s": 900,
+    "dt_therm_s": 3600,
+    "run_length_days": 0.25,
+    "steps": 24,
+    "forcing": "analytic: WIND_CONFIG gyres, BUOY_CONFIG linear (restoring)",
+    "input_data_files": "none (fully analytic)",
+    "runs": [
+      "1 MPI rank, layout 1,1",
+      "2 MPI ranks, LAYOUT=2,1 (MOM6 layout test)"
+    ],
+    "wall_time_s": "about 2 per run"
+  },
+  "files": {
+    "inputs/MOM_input": {
+      "bytes": 40736,
+      "sha256": "4dfba77d330f86ea86c232bdfbeccb33c74cc6122bc0179db032d024adc87b71"
+    },
+    "inputs/MOM_override": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "inputs/diag_table": {
+      "bytes": 372,
+      "sha256": "4f6c8f51f9073602b7cb67937747be43759b8cf005037e498061032e02d40651"
+    },
+    "inputs/input.nml": {
+      "bytes": 346,
+      "sha256": "c0406c5a39f7b6ce8db811088d251830fecba52490f3fa6615237be122c8a33a"
+    }
+  }
+}

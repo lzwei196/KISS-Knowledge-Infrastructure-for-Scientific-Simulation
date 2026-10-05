@@ -1,0 +1,25 @@
+{
+  "description": "Expected results for MOM6's official test case tc1 (.testing/tc1: low-resolution 'benchmark' configuration, 10x8 grid, 8 layers, analytic grid/topography/initial state/forcing, DAYMAX = 0.25 day = 24 steps of 900 s). inputs/ are the unmodified files from MOM6 git (NOAA-GFDL/MOM6 dev/gfdl, commit f52a2b3). MOM6 ships no stored reference ocean.stats: its own test suite compares ocean.stats between builds and layouts and needs them to be byte-identical. So the values below were recorded from real runs on this server; three runs (two 1-rank, one 2-rank LAYOUT=2,1) gave byte-identical ocean.stats and chksum_diag. The two 'layout' checks reproduce MOM6's own layout test.",
+  "engine_version": "MOM6 git f52a2b3 (dev/gfdl, 2026-03-24), FMS 2025.02.01, symmetric memory build, gfortran 13.3, Open MPI 4.1.6",
+  "numeric_checks": [
+    {"name": "n_stats_records", "expected": 3, "tol": 0, "why": "ocean.stats rows at day 0, 0.125, 0.25 (ENERGYSAVEDAYS = 0.125)"},
+    {"name": "final_step", "expected": 24, "tol": 0, "why": "0.25 day / 900 s = 24 steps; run reached DAYMAX"},
+    {"name": "final_day", "expected": 0.25, "tol": 1e-9, "why": "DAYMAX = 0.25"},
+    {"name": "initial_energy_per_mass", "expected": 0.44260260910129862, "tol": 1e-12, "why": "energy of the analytic benchmark initial state [m2 s-2]"},
+    {"name": "final_energy_per_mass", "expected": 0.46271773941971323, "tol": 1e-12, "why": "main summary of the dynamics after 24 steps [m2 s-2]; bit-identical in repeat runs"},
+    {"name": "final_max_cfl", "expected": 0.00012, "tol": 1e-6, "why": "maximum CFL at day 0.25 (as printed, 5 decimals)"},
+    {"name": "final_mean_sea_level", "expected": -4.8829e-09, "tol": 1e-13, "why": "mean sea level [m] at day 0.25 (as printed)"},
+    {"name": "final_total_mass", "expected": 7.8794e+19, "tol": 1e14, "why": "total ocean mass [kg]; unchanged from day 0 (mass conserved)"},
+    {"name": "final_mean_salinity", "expected": 35.0, "tol": 1e-4, "why": "mean salinity [PSU]; benchmark has uniform S = 35, must not drift"},
+    {"name": "final_mean_temp", "expected": 4.5248, "tol": 1e-4, "why": "mean temperature [degC] at day 0.25 (as printed)"},
+    {"name": "final_frac_mass_err", "expected": 5.57e-17, "tol": 1e-15, "why": "fractional mass error column 'Me': must stay at round-off level (mass closure)"},
+    {"name": "final_truncations", "expected": 0, "tol": 0, "why": "no velocity truncations (model stable)"},
+    {"name": "layout_2x1_ocean_stats_lines_differing", "expected": 0, "tol": 0, "why": "MOM6's own layout test: 2-rank LAYOUT=2,1 run gives the same ocean.stats as the 1-rank run"},
+    {"name": "layout_2x1_chksum_diag_lines_differing", "expected": 0, "tol": 0, "why": "MOM6's own layout test also compares the diagnostic checksums (DIAG_AS_CHKSUM = True)"}
+  ],
+  "finished_normally": "KI tool run_mom6.py exits 0, MOM6 writes exitcode = 0, and the FMS clock table in the log lists 'Total runtime' and 'Termination'",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py via KI tools/run_mom6.py (1 rank and 2 ranks) on /home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6",
+  "reference": "No official reference ocean.stats ships with MOM6 (.testing compares builds/layouts against each other). Values are from own real runs, repeated: byte-identical ocean.stats and chksum_diag across 2 x 1-rank runs and the 2-rank LAYOUT=2,1 run.",
+  "notes": "The only change to inputs is made in the temp copy of the 2-rank run: MOM_override gets the line 'LAYOUT=2,1', exactly as MOM6's .testing/Makefile does for its layout test. It does not change results (that is what the identical-output checks prove). Empty INPUT/ and RESTART/ dirs are made in the temp dir (tc1 reads no files)."
+}

@@ -264,8 +264,9 @@ def main():
         "pyflowline",
         critical=False,
         fix=(
-            "Install pyflowline in KISSPATH_PYTHON_ENV when "
-            "generating production meshes; see diagnostics/triplets.yaml."
+            "Optional: install pyflowline in KISSPATH_PYTHON_ENV "
+            "to use the documented mesh-generation and flowline-preparation workflows. "
+            "KI tools and the HexWatershed binary do not require it; see diagnostics/triplets.yaml."
         ),
     )
 
@@ -281,7 +282,15 @@ def main():
 
     passed = sum(1 for check in checks if check["status"] == "pass")
     failed = len(checks) - passed
-    print(f"\n  Results: {passed} passed, {failed} failed")
+    critical_failed = sum(
+        1 for check in checks if check["status"] != "pass" and check["critical"]
+    )
+    warnings = failed - critical_failed
+    print(
+        f"\n  Results: {passed} passed, {critical_failed} critical failure"
+        f"{'' if critical_failed == 1 else 's'}, {warnings} non-critical warning"
+        f"{'' if warnings == 1 else 's'}"
+    )
     if failed:
         print(f"  Recovery: inspect {DIAGNOSTICS} for matching diagnostics.")
 

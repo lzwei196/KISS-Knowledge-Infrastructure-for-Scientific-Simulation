@@ -1,0 +1,29 @@
+{
+  "test_case": "PySWMM storage_pump_outfall (official pyswmm test model model_storage_pump.inp)",
+  "engine": {
+    "name": "pyswmm + swmm-toolkit (EPA SWMM)",
+    "version": "pyswmm 2.1.0, swmm-toolkit 0.17.0, SWMM 5.2.4",
+    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (import pyswmm)",
+    "source": "https://github.com/pyswmm/pyswmm pyswmm/tests/data/model_storage_pump.inp, tag v2.1.0 (commit 80b9d558f3f235cc347ac8eb9f03d01fe9c55463)",
+    "license": "BSD-2-Clause (pyswmm)"
+  },
+  "ki": {
+    "model": "PySWMM",
+    "run_tool": "tools/run_pyswmm.py"
+  },
+  "simulation": {
+    "start": "2015-11-01 14:00",
+    "end": "2015-11-04 00:00",
+    "flow_units": "CFS",
+    "routing": "DYNWAVE, 1 s step",
+    "elements": "1 subcatchment, junctions J1 J2, storage SU1, outfall J3, conduits C1:C2 C2, pump P1",
+    "pollutant": "test",
+    "runtime_seconds": "about 2"
+  },
+  "files": {
+    "inputs/model_storage_pump.inp": {
+      "bytes": 12675,
+      "sha256": "934de182569ab3ebbb012d5c60861590790b7b9ed573a327dfb52b9569788223"
+    }
+  }
+}

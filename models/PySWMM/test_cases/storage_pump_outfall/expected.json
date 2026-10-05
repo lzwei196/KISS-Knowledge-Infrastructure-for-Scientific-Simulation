@@ -1,0 +1,137 @@
+{
+  "description": "Expected results for the official pyswmm test model pyswmm/tests/data/model_storage_pump.inp (pyswmm v2.1.0, git 80b9d55). One subcatchment, junctions J1/J2, pump P1 into storage unit SU1, outfall J3, constant 20 cfs inflow with pollutant 'test', DYNWAVE routing 1 s, 2015-11-01 14:00 to 2015-11-04 00:00. inputs/ is the unmodified file from the pyswmm git tree (git show HEAD:...).",
+  "engine_version": "pyswmm 2.1.0 + swmm-toolkit 0.17.0 (EPA SWMM 5.2.4)",
+  "numeric_checks": [
+    {
+      "name": "SU1_storage_max_volume",
+      "expected": 5000.0,
+      "tol": 5.0,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [5000.0]",
+      "why": "largest volume held in storage unit SU1 (ft3)"
+    },
+    {
+      "name": "SU1_storage_average_volume",
+      "expected": 4979.5,
+      "tol": 5.4795,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [4979.0, 4980.0]",
+      "why": "mean volume in SU1 (ft3)"
+    },
+    {
+      "name": "SU1_storage_max_vol_date",
+      "expected": 42309.5,
+      "tol": 0.5,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [42309.0, 42310.0]",
+      "why": "date of max SU1 volume (days since 1899-12-30); tol = half the official gap only (a % band makes no sense for a date)"
+    },
+    {
+      "name": "SU1_peak_total_inflow",
+      "expected": 3.0,
+      "tol": 0.103,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [2.9, 3.1]",
+      "why": "peak inflow into SU1 = pump P1 rate (cfs)"
+    },
+    {
+      "name": "SU1_average_depth",
+      "expected": 4.95,
+      "tol": 0.05495,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [4.9, 5.0]",
+      "why": "mean water depth in SU1 (ft)"
+    },
+    {
+      "name": "SU1_flooding_duration",
+      "expected": 57.5,
+      "tol": 0.5575,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [57.0, 58.0]",
+      "why": "hours SU1 overflows"
+    },
+    {
+      "name": "SU1_peak_flooding_rate",
+      "expected": 3.0,
+      "tol": 0.103,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [2.9, 3.1]",
+      "why": "peak overflow rate at SU1 (cfs)"
+    },
+    {
+      "name": "SU1_max_depth",
+      "expected": 5.0,
+      "tol": 0.015,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [4.99, 5.01]",
+      "why": "max depth in SU1 = full depth 5 ft"
+    },
+    {
+      "name": "SU1_flooding_volume",
+      "expected": 621391.5,
+      "tol": 622.8915,
+      "source": "official: pyswmm tests/test_nodes.py::test_storage_7 asserts [621390.0, 621393.0]",
+      "why": "total overflow volume at SU1 (ft3)"
+    },
+    {
+      "name": "J3_total_periods",
+      "expected": 208796.0,
+      "tol": 208.796,
+      "source": "official: pyswmm tests/test_nodes.py::test_outfalls_8 asserts [208796.0]",
+      "why": "routing steps counted at outfall J3"
+    },
+    {
+      "name": "J3_pollutant_loading_test",
+      "expected": 1756.1,
+      "tol": 1.8561,
+      "source": "official: pyswmm tests/test_nodes.py::test_outfalls_8 asserts [1756.0, 1756.2]",
+      "why": "pollutant 'test' load leaving J3 (lbs)"
+    },
+    {
+      "name": "J3_average_flowrate",
+      "expected": 8.95,
+      "tol": 0.05895,
+      "source": "official: pyswmm tests/test_nodes.py::test_outfalls_8 asserts [8.9, 9.0]",
+      "why": "mean outfall flow (cfs)"
+    },
+    {
+      "name": "J3_peak_flowrate",
+      "expected": 9.05,
+      "tol": 0.05905,
+      "source": "official: pyswmm tests/test_nodes.py::test_outfalls_8 asserts [9.0, 9.1]",
+      "why": "peak outfall flow (cfs)"
+    },
+    {
+      "name": "J3_cumulative_inflow",
+      "expected": 1876850.0,
+      "tol": 1926.85,
+      "source": "official: pyswmm tests/test_nodes.py::test_outfalls_8 asserts [1876800.0, 1876900.0]",
+      "why": "total volume reaching outfall J3 (ft3)"
+    },
+    {
+      "name": "ki_total_steps",
+      "expected": 208800,
+      "tol": 0,
+      "source": "own run (two clean runs gave identical values)",
+      "why": "routing steps the KI run tool stepped through (1 s steps, 11/01 14:00 to 11/04 00:00)"
+    },
+    {
+      "name": "rpt_runoff_continuity_error_pct",
+      "expected": 0.0,
+      "tol": 0.001,
+      "source": "own run (two clean runs gave identical values)",
+      "why": "runoff water balance error in report (%)"
+    },
+    {
+      "name": "rpt_flow_routing_continuity_error_pct",
+      "expected": -0.002,
+      "tol": 0.001,
+      "source": "own run (two clean runs gave identical values)",
+      "why": "flow routing water balance error in report (%)"
+    },
+    {
+      "name": "rpt_outfall_J3_total_test_lbs",
+      "expected": 1756.208,
+      "tol": 0.01,
+      "source": "own run (two clean runs gave identical values)",
+      "why": "Outfall Loading Summary total 'test' load at J3 (lbs); agrees with official 1756-1756.2"
+    }
+  ],
+  "finished_normally": "KI tool exit code 0 and JSON status 'completed'; report has 'Analysis begun on' and 'Analysis ended on' and no ERROR; statistics run exit code 0",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (pyswmm 2.1.0, swmm-toolkit 0.17.0), KI tools/run_pyswmm.py + a statistics pass that copies pyswmm's own test procedure",
+  "reference": "Official values come from pyswmm/tests/test_nodes.py (test_storage_7, test_outfalls_8). Where the official test asserts two values (e.g. 4979 and 4980), expected = their middle and tol = half their gap + 0.1%. The official test uses pytest.approx(rel=UT_PRECISION) with UT_PRECISION=1 (meant as 1%, but pytest reads it as 100%), so it is very loose; the tolerance here is much tighter. Own-run values for this run (2026-10-05): SU1 flooding_volume 621394.5, J3 total_periods 208797, J3 pollutant 1756.2078, J3 cumulative_inflow 1876901.2 - each within 0.001% of the nearest official value.",
+  "notes": "Two clean runs gave identical numbers. The pyswmm getters sim.runoff_error/flow_routing_error read inside the run return 0.0, while the report says -0.002% routing error; the report value is used here."
+}

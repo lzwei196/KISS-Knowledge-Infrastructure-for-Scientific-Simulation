@@ -19,9 +19,16 @@ Usage:
         --mode cold \
         --timeout 3600 \
         --check_only
+
+Engine: --lisflood-bin -> $LISFLOOD_BIN -> server default
+KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood (same as preflight_check.py);
+only if that default does not exist, `lisflood` on PATH (announced). An explicit
+engine that is not an executable file is an error; no other engine is tried.
 """
 
 import argparse
+import re
+import shutil
 import subprocess
 import sys
 import os
@@ -35,20 +42,69 @@ try:
 except ImportError:
     np = None
 
+# Server default engine (same as preflight_check.py DEFAULT_BINARY / manifest binary.path)
+SERVER_LISFLOOD = "KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood"
+TAIL_CHARS = 3000
+
+_VAR = re.compile(r"\$\(([^)]+)\)")
+
+
+def expand_vars(value, user, max_passes=50):
+    """Expand $(name) with LISFLOOD's rule: names come from the user (lfuser +
+    built-in) variables only, repeated until nothing is left (nested values).
+    Unknown names are left as they are."""
+    for _ in range(max_passes):
+        new = _VAR.sub(lambda m: user.get(m.group(1), m.group(0)), value)
+        if new == value:
+            break
+        value = new
+    return value
+
+
+def unresolved(value):
+    return _VAR.findall(value or "")
+
+
+def resolve_lisflood_bin(cli_value=None):
+    """Return (absolute path, source) of the LISFLOOD engine, or raise RuntimeError."""
+    for label, cand in (("--lisflood-bin", cli_value),
+                        ("$LISFLOOD_BIN", os.environ.get("LISFLOOD_BIN"))):
+        if cand:
+            path = shutil.which(cand) if os.sep not in cand else cand
+            if path and os.path.isfile(path) and os.access(path, os.X_OK):
+                return os.path.abspath(path), label
+            raise RuntimeError(f"LISFLOOD engine from {label} is not an executable file: {cand}")
+    if os.path.exists(SERVER_LISFLOOD):
+        if os.path.isfile(SERVER_LISFLOOD) and os.access(SERVER_LISFLOOD, os.X_OK):
+            return SERVER_LISFLOOD, "server default"
+        raise RuntimeError(f"server default LISFLOOD engine is not executable: {SERVER_LISFLOOD}")
+    on_path = shutil.which("lisflood")
+    if on_path:
+        return os.path.abspath(on_path), "PATH (server default not present)"
+    raise RuntimeError(f"LISFLOOD engine not found (server default {SERVER_LISFLOOD}); "
+                       "use --lisflood-bin or set LISFLOOD_BIN")
+
 
 def parse_settings_xml(settings_path):
     """Parse LISFLOOD settings XML and extract key configuration.
 
     Returns dict with paths, options, time settings, and parameters.
+    Variables follow LISFLOOD's own rule (global_modules/settings.py _bindings):
+    user = built-ins (SettingsDir/SettingsPath) + <lfuser> textvars; <lfbinding>
+    values are expanded with the user variables only. "user" keeps the expanded
+    user values (PathOut etc.), "bindings" the expanded model bindings, and
+    "textvars" the merged view (bindings override) used by the checks.
     """
     tree = ET.parse(settings_path)
     root = tree.getroot()
+    settings_dir = os.path.normpath(os.path.dirname(os.path.abspath(settings_path)))
 
     config = {
         "options": {},
         "textvars": {},
         "bindings": {},
-        "settings_dir": os.path.dirname(os.path.abspath(settings_path)),
+        "user": {},
+        "settings_dir": settings_dir,
     }
 
     # Parse lfoptions
@@ -57,18 +113,21 @@ def parse_settings_xml(settings_path):
         choice = option.get("choice", "0")
         config["options"][name] = choice
 
-    # Parse lfuser text variables
-    for textvar in root.iter("textvar"):
-        name = textvar.get("name", "")
-        value = textvar.get("value", "")
-        config["textvars"][name] = value
+    # lfuser (+ LISFLOOD's built-in user variables)
+    user = {"SettingsDir": settings_dir, "SettingsPath": settings_dir}
+    for section in root.iter("lfuser"):
+        for textvar in section.iter("textvar"):
+            user[textvar.get("name", "")] = textvar.get("value", "")
+    # lfbinding
+    bindings = {}
+    for section in root.iter("lfbinding"):
+        for textvar in section.iter("textvar"):
+            bindings[textvar.get("name", "")] = textvar.get("value", "")
 
-    # Parse lfbinding
-    for binding in root.iter("textvar"):
-        name = binding.get("name", "")
-        value = binding.get("value", "")
-        config["bindings"][name] = value
-
+    config["user"] = {k: expand_vars(v, user) for k, v in user.items()}
+    config["bindings"] = {k: expand_vars(v, user) for k, v in bindings.items()}
+    config["textvars"] = dict(config["user"])
+    config["textvars"].update(config["bindings"])
     return config
 
 
@@ -106,11 +165,15 @@ def preflight_check(settings_path):
     print(f"[OK] Settings parsed: {len(config['options'])} options, "
           f"{len(config['textvars'])} variables")
 
-    # Check 3: Key paths exist
+    # Check 3: Key paths exist (user variables; PathOut as LISFLOOD's _out_dir uses it)
     path_vars = ["PathRoot", "PathOut", "PathMeteo", "PathMaps"]
     for pv in path_vars:
-        if pv in config["textvars"]:
-            resolved = resolve_path(config["textvars"][pv], config)
+        if pv in config["user"]:
+            if unresolved(config["user"][pv]):
+                issues.append(f"{pv} has undefined variable(s) "
+                              f"{unresolved(config['user'][pv])}: {config['user'][pv]}")
+                continue
+            resolved = resolve_path(config["user"][pv], config)
             if not os.path.exists(resolved):
                 if pv == "PathOut":
                     warnings.append(f"Output dir does not exist (will create): {resolved}")
@@ -121,7 +184,9 @@ def preflight_check(settings_path):
                 print(f"[OK] {pv}: {resolved}")
 
     # Check 4: MaskMap exists
-    if "MaskMap" in config["textvars"]:
+    if "MaskMap" in config["textvars"] and unresolved(config["textvars"]["MaskMap"]):
+        issues.append(f"MaskMap has undefined variable(s): {config['textvars']['MaskMap']}")
+    elif "MaskMap" in config["textvars"]:
         mask_path = resolve_path(config["textvars"]["MaskMap"], config)
         # Try with common extensions
         found = False
@@ -195,73 +260,70 @@ def preflight_check(settings_path):
     return len(issues) == 0, issues, warnings
 
 
-def run_model(settings_path, timeout=3600, capture_output=True):
+def run_model(settings_path, timeout=3600, capture_output=True, lisflood_bin=None):
     """Execute LISFLOOD model.
 
-    LISFLOOD can be invoked either:
-      1. `lisflood settings.xml` (if installed via pip)
-      2. `python src/lisf1.py settings.xml` (from source)
+    The engine is the LISFLOOD console script of a conda env with LISFLOOD
+    installed: --lisflood-bin / lisflood_bin -> $LISFLOOD_BIN -> server default
+    (see resolve_lisflood_bin). No other interpreter or engine is tried.
 
     Returns (success: bool, stdout: str, stderr: str, runtime_s: float)
     """
-    # Try 'lisflood' command first, fall back to python src/lisf1.py
-    commands_to_try = [
-        ["lisflood", settings_path],
-        [sys.executable, "-m", "lisflood.main", settings_path],
-    ]
+    settings_path = os.path.abspath(settings_path)
+    try:
+        binary, source = resolve_lisflood_bin(lisflood_bin)
+    except RuntimeError as e:
+        print(f"[FAIL] {e}")
+        return False, "", str(e), 0
 
-    # Check if source code is available
-    src_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "source", "repo", "src"
-    )
-    lisf1_path = os.path.join(src_dir, "lisf1.py")
-    if os.path.exists(lisf1_path):
-        commands_to_try.append([sys.executable, lisf1_path, settings_path])
+    env = os.environ.copy()
+    env["PATH"] = os.path.dirname(binary) + os.pathsep + env.get("PATH", "")
+    cmd = [binary, settings_path]
+    print(f"\n[RUN] {' '.join(cmd)}   (engine from {source})")
+    t0 = time.time()
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=capture_output,
+            text=True,
+            timeout=timeout,
+            cwd=os.path.dirname(settings_path),
+            env=env,
+        )
+    except subprocess.TimeoutExpired as e:
+        print(f"[FAIL] Timeout after {timeout}s")
+        out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        return False, out, err + f"\nTimeout after {timeout}s", timeout
+    except OSError as e:
+        print(f"[FAIL] Could not start {binary}: {e}")
+        return False, "", f"Could not start {binary}: {e}", 0
+    runtime = time.time() - t0
 
-    for cmd in commands_to_try:
-        print(f"\n[RUN] {' '.join(cmd)}")
-        t0 = time.time()
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=capture_output,
-                text=True,
-                timeout=timeout,
-                cwd=os.path.dirname(os.path.abspath(settings_path)),
-            )
-            runtime = time.time() - t0
+    stdout = result.stdout or ""
+    stderr = result.stderr or ""
 
-            stdout = result.stdout or ""
-            stderr = result.stderr or ""
-
-            if result.returncode == 0:
-                print(f"[OK] LISFLOOD completed in {runtime:.1f}s")
-                return True, stdout, stderr, runtime
-            else:
-                print(f"[FAIL] Exit code: {result.returncode}")
-                if stderr:
-                    # Show last 20 lines of stderr
-                    last_lines = stderr.strip().split("\n")[-20:]
-                    print("Last error lines:")
-                    for line in last_lines:
-                        print(f"  {line}")
-                return False, stdout, stderr, runtime
-
-        except FileNotFoundError:
-            continue
-        except subprocess.TimeoutExpired:
-            print(f"[FAIL] Timeout after {timeout}s")
-            return False, "", f"Timeout after {timeout}s", timeout
-
-    print("[FAIL] Could not find LISFLOOD executable")
-    return False, "", "LISFLOOD not found (tried: lisflood, python -m lisflood.main, lisf1.py)", 0
+    if result.returncode == 0:
+        print(f"[OK] LISFLOOD completed in {runtime:.1f}s")
+        return True, stdout, stderr, runtime
+    print(f"[FAIL] Exit code: {result.returncode}")
+    if stderr:
+        # Show last 20 lines of stderr
+        last_lines = stderr.strip().split("\n")[-20:]
+        print("Last error lines:")
+        for line in last_lines:
+            print(f"  {line}")
+    return False, stdout, stderr, runtime
 
 
-def validate_output(settings_path):
-    """Validate LISFLOOD output after a run."""
+def validate_output(settings_path, since=None):
+    """Validate LISFLOOD output after a run.
+
+    since: run start time (epoch s); when given, at least one file in the output
+    folder must have been written by this run.
+    """
     config = parse_settings_xml(settings_path)
-    out_dir = resolve_path(config["textvars"].get("PathOut", "out"), config)
+    out_dir = resolve_path(config["user"].get("PathOut", "out"), config)
 
     errors = []
     warnings = []
@@ -293,8 +355,6 @@ def validate_output(settings_path):
             ds.close()
         except Exception as e:
             warnings.append(f"Could not read dis.nc: {e}")
-    else:
-        warnings.append("dis.nc not found in output directory")
 
     # Check for TSS files (time series)
     tss_files = list(Path(out_dir).glob("*.tss"))
@@ -306,6 +366,19 @@ def validate_output(settings_path):
     nc_files = list(Path(out_dir).glob("*.nc"))
     results["nc_files"] = [str(f.name) for f in nc_files]
     print(f"[OK] Found {len(nc_files)} NetCDF output files")
+
+    # Any output (NetCDF, TSS, PCRaster maps, ...) written by this run
+    all_files = [f for f in Path(out_dir).iterdir() if f.is_file()]
+    results["n_output_files"] = len(all_files)
+    if since is not None:
+        new_files = [f for f in all_files if f.stat().st_mtime >= since]
+        results["n_new_output_files"] = len(new_files)
+        if not new_files:
+            errors.append(f"No output file written by this run in {out_dir}")
+    elif not all_files:
+        errors.append(f"No output files in {out_dir}")
+    if not os.path.exists(dis_path) and not tss_files and not nc_files and all_files:
+        warnings.append("No dis.nc, .tss or .nc output (other output formats only)")
 
     for e in errors:
         print(f"[ERROR] {e}")
@@ -326,6 +399,9 @@ def main():
                         help="Only run preflight checks, don't execute")
     parser.add_argument("--output_json", default=None,
                         help="Write run results to JSON file")
+    parser.add_argument("--lisflood-bin", "--lisflood_bin", dest="lisflood_bin", default=None,
+                        help="LISFLOOD engine (default: $LISFLOOD_BIN, then "
+                             f"{SERVER_LISFLOOD})")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -354,8 +430,9 @@ def main():
 
     # Step 2: Execute
     print("\n--- Executing LISFLOOD ---")
+    run_start = time.time()
     success, stdout, stderr, runtime = run_model(
-        args.settings, timeout=args.timeout
+        args.settings, timeout=args.timeout, lisflood_bin=args.lisflood_bin
     )
 
     # Step 3: Validate output
@@ -368,9 +445,12 @@ def main():
 
     if success:
         print("\n--- Output validation ---")
-        out_ok, out_results = validate_output(args.settings)
+        out_ok, out_results = validate_output(args.settings, since=run_start)
         results["output"] = out_results
         results["output_valid"] = out_ok
+        if not out_ok:
+            success = False
+            results["success"] = False
 
     # Save results
     if args.output_json:
@@ -382,8 +462,12 @@ def main():
         print(f"\n[DONE] LISFLOOD completed in {runtime:.1f}s")
     else:
         print(f"\n[FAIL] LISFLOOD failed")
+        if results.get("output_valid") is False:
+            print(f"Output check failed: {results.get('output')}")
+        if stdout:
+            print(f"Standard output (last {TAIL_CHARS} chars):\n{stdout[-TAIL_CHARS:]}")
         if stderr:
-            print(f"Error output (last 500 chars):\n{stderr[-500:]}")
+            print(f"Error output (last {TAIL_CHARS} chars):\n{stderr[-TAIL_CHARS:]}")
         sys.exit(1)
 
 

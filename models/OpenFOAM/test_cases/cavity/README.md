@@ -40,11 +40,14 @@ of OpenFOAM, so it is not used.)
 Tolerances in `expected.json` are wider than the exact repeat so that another build of
 OpenFOAM still passes, but much smaller than any real change in the flow.
 
-## Known KI gaps
-- No KI tool runs `blockMesh` on the case's own `blockMeshDict`. `tools/generate_mesh.py`
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for OpenFOAM has landed in this checkout since the case was made (last OpenFOAM commit `50ac142`), so every item below is still open.
+
+- **Still open:** No KI tool runs `blockMesh` on the case's own `blockMeshDict`. `tools/generate_mesh.py`
   always writes a new `blockMeshDict` from its own arguments, which would replace the
   official one. So `run_reference.py` runs `blockMesh` directly (with the same bashrc).
-- `tools/run_openfoam.py` keeps only the last 2000 characters of the solver output and
+- **Still open:** `tools/run_openfoam.py` keeps only the last 2000 characters of the solver output and
   writes no `log.foamRun`, so the full residual history cannot be read afterwards with
   `tools/parse_openfoam_output.py --extract-residuals`.
-- `tools/run_openfoam.py` lists output time folders in text order ("10" before "2").
+- **Still open:** `tools/run_openfoam.py` lists output time folders in text order ("10" before "2").

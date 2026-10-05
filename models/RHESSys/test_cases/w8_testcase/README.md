@@ -67,14 +67,17 @@ about -22%. `TestCase.Rmd` gives no pass limit for these. The likely cause is th
 with a different code version and/or the local edit above; this was not checked further (no engine
 rebuild). `run_reference.py` prints these differences on every run, for information.
 
-## Known KI gaps
-- `tools/run_rhessys.py` puts `-of <filter>` right after `-r <flowtable>`. RHESSys reads the next
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for RHESSys has landed in this checkout since the case was made (last RHESSys commit `ed82315`), so every item below is still open.
+
+- **Still open:** `tools/run_rhessys.py` puts `-of <filter>` right after `-r <flowtable>`. RHESSys reads the next
   word after the flow table as an optional surface flow table unless it is a known option, and
   `-of` is not in RHESSys's known-option list, so the engine stops with
   `option #22 is invalid`. Also `-of` cannot be used together with `-b` (RHESSys: "Both legacy
   and output filter output were specified"). So the KI tool cannot run filter output with a flow
   table. This case uses legacy output, which the tool runs fine.
-- `tools/parse_output.py` legacy mode uses a fixed column list that does not match the header of
+- **Still open:** `tools/parse_output.py` legacy mode uses a fixed column list that does not match the header of
   this engine's `basin.daily` (the file has its own header row). It was not used; output is read
   directly by header names.
-- The engine's output filter crashes on the official `testing_filter.yml` (see above).
+- **Still open:** The engine's output filter crashes on the official `testing_filter.yml` (see above).

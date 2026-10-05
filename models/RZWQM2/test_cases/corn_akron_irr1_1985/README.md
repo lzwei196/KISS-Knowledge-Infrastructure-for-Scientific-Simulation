@@ -66,12 +66,15 @@ model output, so it is not used as the reference.
   of the release DATA library. The Bengbu wheat template the KI SKILL.md points to is a
   local project setup and is not used either.
 
-## Known KI gaps
-- `run_rzwqm2.py` reads `ipnames.dat` before `IPNAMES.DAT` and checks the paths in it, but the
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for RZWQM2 has landed in this checkout since the case was made (last RZWQM2 commit `7e25baa`), so every item below is still open.
+
+- **Still open:** `run_rzwqm2.py` reads `ipnames.dat` before `IPNAMES.DAT` and checks the paths in it, but the
   Linux engine itself opens only `IPNAMES.DAT` (and other files by upper-case name). A release
   scenario folder with Windows paths and lower-case names therefore does not run as-is; the
   tool does not do the path / upper-case step that the RZWQM2 interface does. This case does
   that step itself in the temp copy.
-- `run_rzwqm2.py` default `BINARY_PATH` points to `/home/server/RZWQM2/RZWQM2/linux/main_ryzen_patched`,
+- **Still open:** `run_rzwqm2.py` default `BINARY_PATH` points to `/home/server/RZWQM2/RZWQM2/linux/main_ryzen_patched`,
   not the preflight engine `/mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched`;
   this case always passes the binary path explicitly.

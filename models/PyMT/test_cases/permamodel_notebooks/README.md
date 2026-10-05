@@ -60,16 +60,19 @@ the saved print, inside tol. Also checked: soil temperature of the first Ku run
 exactly, 7 steps done, installed plugin defaults are the official files, and every run
 finished normally. Two clean runs gave identical numbers.
 
-## Known KI gaps
-- `pymt` keeps `setup()` settings on the model object, so in the notebook each new
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for PyMT has landed in this checkout since the case was made (last PyMT commit `51c4b87`), so every item below is still open.
+
+- **Still open:** `pymt` keeps `setup()` settings on the model object, so in the notebook each new
   `setup(...)` adds to the earlier settings (e.g. `vwc_H2O=0.6` is run with the earlier
   T_air, A_air and h_snow=0.4 still set). `run_model.py` makes a new model object each
   time, so to repeat a notebook step you must pass the full set of settings. Passing only
   `{"vwc_H2O": 0.6}` gives 0.3519 m, not the notebook's 0.2033 m. The KI docs do not say this.
-- `run_model.py --run-dir` does not work: the tool passes it as `setup(path=...)`, but pymt
+- **Still open:** `run_model.py --run-dir` does not work: the tool passes it as `setup(path=...)`, but pymt
   takes the folder as the first plain argument, so `path` becomes a template setting and the
   model still sets up in a new `/tmp/tmpXXXX` folder (left behind). This case does not use
   `--run-dir`; it sets TMPDIR instead.
-- With no `--duration`, `run_model.py` runs FrostNumber for 0 steps, because the plugin's
+- **Still open:** With no `--duration`, `run_model.py` runs FrostNumber for 0 steps, because the plugin's
   default end time equals its start time (0 years). Use `--duration 1` (done here).
-- Ku's `finalize()` writes `off.nc` into the current folder, so run it in a scratch folder.
+- **Still open:** Ku's `finalize()` writes `off.nc` into the current folder, so run it in a scratch folder.

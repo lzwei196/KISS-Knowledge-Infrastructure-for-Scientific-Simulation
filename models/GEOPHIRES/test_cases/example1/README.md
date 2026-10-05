@@ -51,12 +51,15 @@ Recorded 2026-10-05. Two clean runs both matched the official file exactly; only
 version/date/run-time lines differ (the official file was written by GEOPHIRES 3.9.28 and
 the suite still uses it unchanged for 3.11.25), plus whitespace that the official parser ignores.
 
-## Known KI gaps (not fixed here)
-- `tools/parse_geophires_output.py` does not find the year-by-year production profile in a
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for GEOPHIRES has landed in this checkout since the case was made (last GEOPHIRES commit `617e8bf`), so every item below is still open.
+
+- **Still open:** `tools/parse_geophires_output.py` does not find the year-by-year production profile in a
   GEOPHIRES-X 3.11 `.out` ("Production profile section not found"), so `--csv` writes nothing.
   It still exits 0. The case therefore uses the official `GeophiresXResult` parser for the
   checks and uses the KI parser only for the four headline numbers it reads correctly.
-- The same parser splits the text value "End-Use Option: Electricity" into value `E` and
+- **Still open:** The same parser splits the text value "End-Use Option: Electricity" into value `E` and
   unit `lectricity`.
-- `tools/run_geophires.py` has no engine lookup of its own: it uses `--venv <dir>` or the
+- **Still open:** `tools/run_geophires.py` has no engine lookup of its own: it uses `--venv <dir>` or the
   Python that starts it. `run_reference.py` starts it with the engine Python.

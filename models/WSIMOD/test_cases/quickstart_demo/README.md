@@ -59,13 +59,11 @@ Extra check (not in this package): the upstream unit test
 `tests/test_model.py::TestModel::test_run` (same network, one day, hand-set inputs, asserts
 outlet flow 0.05 and urban storage 0.03) was run on this server and passed.
 
-## Known KI gaps
-- The KI preflight (`preflight_check.py`) fails on `import wsimod` because the package is not
-  installed in python_env; its fix text says to pip install. The model works when the repo
-  source is put on `PYTHONPATH`, as this case does.
-- `tools/run_wsimod.py` only works when the caller sets `PYTHONPATH` to the wsimod source;
+## KI gaps (status 2026-10-06)
+- **Fixed in `b8854c6`:** the preflight now imports `wsimod` from the repo source on `PYTHONPATH`, as the KI tools do, and no longer says to pip install. Before: it failed on `import wsimod` in python_env and said to pip install.
+- **Still open:** `tools/run_wsimod.py` only works when the caller sets `PYTHONPATH` to the wsimod source;
   its own error message also says to pip install.
-- `tools/run_wsimod.py --mode cli` calls `python` from PATH, not the current interpreter
+- **Still open:** `tools/run_wsimod.py --mode cli` calls `python` from PATH, not the current interpreter
   (not used here; this case uses `--mode api`).
-- No KI tool builds the settings yaml (nodes/arcs graph): the forcing tool takes a user CSV and
+- **Still open:** No KI tool builds the settings yaml (nodes/arcs graph): the forcing tool takes a user CSV and
   the parameter tool takes typed-in numbers. This case uses the official yaml as-is.

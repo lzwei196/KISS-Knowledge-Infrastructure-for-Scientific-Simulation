@@ -56,16 +56,19 @@ Between two runs the `0D-Q.txt` and raw `.rts` grid files were byte-identical.
 For context only (not a check): the official observed discharge
 (`__observations/June_20_1967_Observed_Discharge.txt`, not packaged) peaks at 12.415 m3/s.
 
-## Known KI gaps
-- `tools/run_topoflow.py` looks for output files only in the cfg folder (and its parent), not in
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for TopoFlow has landed in this checkout since the case was made (last TopoFlow commit `ce2832d`), so every item below is still open.
+
+- **Still open:** `tools/run_topoflow.py` looks for output files only in the cfg folder (and its parent), not in
   the `out_directory` from `path_info.cfg`. So its JSON says "No output files found" and gives no
   peak flow, even though the run wrote all outputs. `run_reference.py` reads them directly.
-- `tools/run_topoflow.py` checks DEM and `.rti` files only in the cfg folder, so it warns
+- **Still open:** `tools/run_topoflow.py` checks DEM and `.rti` files only in the cfg folder, so it warns
   "No DEM file found" for the official layout (grids sit in `../__topo/`). Only a warning.
-- `tools/parse_output.py` cannot read the official `*_0D-Q.txt` (it fails on the header line
+- **Still open:** `tools/parse_output.py` cannot read the official `*_0D-Q.txt` (it fails on the header line
   `Time [min] ...`) and reports "No discharge data available". `run_reference.py` reads the file
   itself.
-- The installed engine is the upstream source tree with local edits (not upstream as is):
+- **Still open:** The installed engine is the upstream source tree with local edits (not upstream as is):
   `framework/emeli.py` (goes on when a provider is missing), `components/channels_base.py` and
   `topoflow_driver.py` (use 0 when icemelt is missing), `components/met_base.py` (default lat/lon
   changed from Denver to Nuxia, Tibet; sets `h_snow`/`h_ice` to 0), `utils/regrid.py` (GDAL import

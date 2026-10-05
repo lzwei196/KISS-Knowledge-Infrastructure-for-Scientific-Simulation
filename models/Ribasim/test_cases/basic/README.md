@@ -54,17 +54,20 @@ Python needs numpy, xarray and netCDF4 (all in python_env).
   precipitation 1464 m3, total evaporation 1285.628 m3, highest level 1.63 m.
   Two runs gave exactly the same output.
 
-## Known KI gaps
-- The KI's own model builder (`tools/build_network.py`) only turns hand-written CSV tables
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for Ribasim has landed in this checkout since the case was made (last Ribasim commit `06c8a26`), so every item below is still open.
+
+- **Still open:** The KI's own model builder (`tools/build_network.py`) only turns hand-written CSV tables
   into a model; it cannot build this official test model. The inputs come from Ribasim's
   own generator instead.
-- `/mnt/disk1/Hydrocraft_server/python_env` has no `ribasim` Python package (and no
+- **Still open:** `/mnt/disk1/Hydrocraft_server/python_env` has no `ribasim` Python package (and no
   `pandera`/`datacompy`, and its pandas 3 is newer than ribasim allows), so the generator
   was run with the dissection venv
   `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Ribasim/venv`. Running the
   test case itself does not need the `ribasim` package.
-- The copy of `tools/run_ribasim.py` in this KISS checkout is older than the live KI copy
+- **Still open:** The copy of `tools/run_ribasim.py` in this KISS checkout is older than the live KI copy
   on disk1 (the live one adds output-freshness checks and stricter binary checks). Both
   ran this case fine.
-- The KI parse tool `tools/parse_ribasim_output.py` was not used; results are read
+- **Still open:** The KI parse tool `tools/parse_ribasim_output.py` was not used; results are read
   directly with xarray in `run_reference.py`.

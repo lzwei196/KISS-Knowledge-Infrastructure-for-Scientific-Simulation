@@ -39,7 +39,7 @@ Exit 0 = PASS, 2 = checks failed, 3 = no python that can import mosartwmpy (NOT 
 
 Two run settings are made only inside `run_reference.py` (inputs and model code untouched):
 1. When pandas is 3 or newer, a small launcher sets the pandas option
-   `future.infer_string = False` before the KI tool starts. See "Known KI gaps".
+   `future.infer_string = False` before the KI tool starts. See "KI gaps".
 2. `NUMBA_NUM_THREADS=1`, so the run repeats exactly (see below).
 
 ## Expected results
@@ -57,23 +57,23 @@ Proof the pandas setting does not change numbers: with ISTARF turned off (the on
 run works without the setting), runs with and without the setting gave bit-identical output
 and restart files (one thread).
 
-## Known KI gaps (plain words, not fixed here)
-- The MOSART venv has pandas 3.0.3. With it, mosartwmpy 0.6.2 stops in the first time step
-  of this official tutorial: `ValueError: operands could not be broadcast together with
-  shapes (103936,) (80053,) (80053,)` in `reservoirs/istarf.py`. Cause: pandas 3 keeps text
-  columns (the reservoir `fit` column) as Arrow string arrays, not numpy arrays, so the
-  model's mask step skips them. ISTARF is on by default, so the KI run tool fails on the
-  tutorial as it is. The pandas option above works around it; a lasting fix is pandas < 3 in
-  the venv or a note/workaround in the KI.
-- `h5py` is not installed in the MOSART venv. mosartwmpy's own unit test
+## KI gaps (status 2026-10-06)
+- **Partly fixed (server venv, noted in `add2193`):** the server MOSART venv now has pandas
+  2.3.3, so the tutorial runs with reservoirs on and no pandas setting (see the update below).
+  Still open: the KI run tool itself was not changed, so a venv with pandas 3 still fails.
+  Before: with pandas 3.0.3, mosartwmpy 0.6.2 stopped in the first time step
+  (`ValueError: operands could not be broadcast together ...` in `reservoirs/istarf.py`)
+  because pandas 3 keeps the reservoir `fit` column as Arrow strings.
+- **Still open:** `h5py` is not installed in the MOSART venv (checked 2026-10-06). mosartwmpy's own unit test
   (`mosartwmpy/tests/test_model.py`, grid in `tests/grid.zip`) needs it
   (`Grid.from_files` opens NetCDF with engine h5netcdf), so that test cannot run here. That
   test also has no stored reference output, which is why the tutorial was chosen.
-- With many numba threads, mosartwmpy results change a little from run to run (domain
+- **Still open:** With many numba threads, mosartwmpy results change a little from run to run (domain
   totals moved by about 1e-4 for routing and 1e-3 for water management between two runs).
   This is why the case uses one thread.
-- The preflight `import mosartwmpy` check can pass 45 s on a cold disk cache (it took 17 s
-  warm). The import works.
+- **Fixed in `dad4953`:** the preflight import check now waits up to 180 s and also tries
+  `from mosartwmpy import Model`. Before: the `import mosartwmpy` check could pass its 45 s
+  limit on a cold disk cache (17 s warm), though the import works.
 
 ## Update 2026-10-05: server venv fixed
 The server's MOSART venv (`/mnt/disk1/Hydrocraft_server/models/MOSART/venv`) was moved from

@@ -66,18 +66,9 @@ than 1 % in a few small soil/unsaturated-zone flow columns (`SoilDrainage2Unsat_
 `Stream2Unsat_Q`, `Grav_S`) and in the iteration count `KKITER`. These are not used as
 checks; the case checks whole-run summary values instead.
 
-## Known KI gaps
-- `tools/run_gsflow.py` cannot drive this official case. Its pre-run check treats every
-  file named in the control file as a required input, except names containing "output".
-  So it stops on `stat_var_file`, `var_init_file` and `var_save_file`, even though this
-  control file switches them off (`statsON_OFF 0`, `init_vars_from_file 0`,
-  `save_vars_to_file 0`) and the files are not meant to exist. It also does not handle the
-  Windows `..\` paths of official GSFLOW examples. So `run_reference.py` runs the gsflow
-  binary directly.
-- `tools/parse_gsflow_output.py --csv-file gsflow.csv` writes its CSV but then crashes in
-  its own output check: it expects dates as `YYYY-MM-DD`, but GSFLOW 2.4.0 writes
-  `MM/DD/YYYY`. So `run_reference.py` reads `gsflow.csv`, `gsflow.out`, the MODFLOW list file
-  and the gage file directly.
-- The KI build tools (control file, PRMS day files, soil parameters) do not make HRU,
-  MODFLOW or SFR files, so the KI cannot build this case from raw data; the case uses the
-  official files as they are.
+## KI gaps (status 2026-10-06)
+- **Fixed in `6254e68`:** `run_gsflow.py` now reads the control file the way GSFLOW does (switched-off files such as `stat_var_file`, `var_init_file`, `var_save_file` are no longer required) and has an opt-in `--convert-windows-paths` for `..\` paths. Before: its pre-run check stopped on those switched-off files and did not handle Windows paths, so `run_reference.py` runs the gsflow binary directly.
+- **Fixed in `6254e68`:** `parse_gsflow_output.py` now accepts the GSFLOW 2.4 `MM/DD/YYYY` dates. Before: it crashed in its own output check because it expected `YYYY-MM-DD`, so `run_reference.py` reads `gsflow.csv`, `gsflow.out`, the MODFLOW list file and the gage file directly.
+
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open:** The KI build tools (control file, PRMS day files, soil parameters) do not make HRU, MODFLOW or SFR files, so the KI cannot build this case from raw data; the case uses the official files as they are.

@@ -58,13 +58,16 @@ Module I maps still match exactly.
 Note: the official rasters keep real numbers outside the mask (older save code), while
 today's run writes -999 there, so all checks use the 9762 mask cells only.
 
-## Known KI gaps
-- `tools/run_pyaez.py` does not set `PYTHONPATH` to the PyAEZ source; `pyaez` is not
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for PyAEZ has landed in this checkout since the case was made (last PyAEZ commit `f6dbf64`), so every item below is still open.
+
+- **Still open:** `tools/run_pyaez.py` does not set `PYTHONPATH` to the PyAEZ source; `pyaez` is not
   installed in python_env, so the tool fails with "No module named 'pyaez'" unless the
   caller sets `PYTHONPATH` (the preflight sets it itself). `run_reference.py` sets it.
-- `tools/run_pyaez.py` Module I writes only 2-D maps; it skips the temperature profile
+- **Still open:** `tools/run_pyaez.py` Module I writes only 2-D maps; it skips the temperature profile
   (3-D), multi-cropping zones, frost index / permafrost, fallow and AEZ classification
   that the NB1 notebook also makes. It also needs `--crop-name` / `--crop-params` even when
   only Module I is run.
-- `tools/parse_output.py` requires output folders NB1 to NB6 and cannot read a Module I
+- **Still open:** `tools/parse_output.py` requires output folders NB1 to NB6 and cannot read a Module I
   only run, so the rasters are read directly with GDAL.

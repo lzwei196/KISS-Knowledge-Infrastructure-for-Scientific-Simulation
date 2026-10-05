@@ -59,14 +59,15 @@ and `regression_tests.py --check-only` says "All tests passed.".
 We also checked the official checker really catches errors: a changed gold value
 (pressure max off by 0.1 Pa, 2.5e-7 relative) made it fail.
 
-## Known KI gaps
-- `tools/run_pflotran.py` writes its own log to `<prefix>.out`, which is the same name
-  PFLOTRAN uses for its own output file, so PFLOTRAN's `.out` file is replaced by the
-  tool's log (the log does hold the full screen output, so nothing is lost here).
-- `tools/run_pflotran.py` looks for the text "Simulation Complete", which PFLOTRAN v6.0
-  does not print, and expects `<prefix>.h5` and `<prefix>-mas.dat`; this case writes
-  Tecplot output and no mass balance file. So the tool prints three warnings even
-  though the run is fine. The return code is still 0.
-- The KI has no tool to read PFLOTRAN `.regression` files; `parse_pflotran_output.py`
-  reads HDF5 and Tecplot observation files only. The `.regression` file is read by
-  `run_reference.py` itself and by PFLOTRAN's own `regression_tests.py`.
+## KI gaps (status 2026-10-06)
+- **Fixed in `1777b45`:** `run_pflotran.py` writes its own log to `<prefix>_run_log.txt`
+  and keeps PFLOTRAN's own `.out` file. Before: the tool log was written to `<prefix>.out`
+  and replaced PFLOTRAN's file.
+- **Fixed in `1777b45`:** `run_pflotran.py` checks PFLOTRAN v6's end line
+  `Wall Clock Time:` and looks for the output files the deck really asks for, so no false
+  warnings. Before: it looked for "Simulation Complete", `<prefix>.h5` and
+  `<prefix>-mas.dat` and printed three warnings on a good run.
+- **Fixed in `1777b45`:** `parse_pflotran_output.py` now reads `.regression` files
+  (`--regression-file`, writes `regression.csv`), plus v6 observation files and HDF5 cell
+  data. Before: there was no KI tool for `.regression` files; `run_reference.py` reads it
+  itself. The workaround in `run_reference.py` is kept so the case also runs with older tool versions.

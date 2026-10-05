@@ -42,11 +42,11 @@ printed there.
 - Uranium: total 1.437e-08 mol/kg; main species UO2(CO3)3-4 at 1.267e-08; HCO3- 1.613e-03.
 - Saturation indices: 37 phases; calcite 0.78, dolomite 2.49, uraninite -12.77.
 
-## Known KI gaps (not fixed here)
-- `tools/run_phreeqc.py` crashes on the official `phreeqc.dat`: its element check opens the
-  database as UTF-8, but the file has a Latin-1 degree sign (byte 0xb0), so Python stops
-  with `UnicodeDecodeError` before PHREEQC is started. So the case runs the engine directly.
-- `tools/parse_output.py` reads the species table correctly (used here for the
-  UO2(CO3)3-4 and HCO3- values), but returns empty lists for the saturation index table and
-  the solution composition table of this output (it loses its place at the blank line /
-  column-header line). Those values are read straight from the output text here.
+## KI gaps (status 2026-10-06)
+- **Fixed in `440739f`:** `run_phreeqc.py` reads databases as Latin-1, so the official
+  `phreeqc.dat` works; it also finds the engine via `PHREEQC_BIN` and exits 1 on errors.
+  Before: it opened `phreeqc.dat` as UTF-8 and stopped with `UnicodeDecodeError` on the
+  degree sign (byte 0xb0), so the case runs the engine directly. The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `440739f`:** `parse_output.py` now reads the saturation-index table and the
+  solution composition (totals) table. Before: it returned empty lists for both, so those
+  values are read straight from the output text here. The workaround in `run_reference.py` is kept so the case also runs with older tool versions.

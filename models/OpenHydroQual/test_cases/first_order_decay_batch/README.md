@@ -70,8 +70,11 @@ The validation cases ship an exact solution, which is the best reference. Of the
   about 0.29 g/m^3. This is a stale upstream file, not a KI fault; it is not packaged.
 (Water_Network also ran through `run_ohq.py` in 0.5 s, but it has no reference output.)
 
-## Known KI gaps
-- `tools/run_ohq.py` exits 0 even when the model fails; the failure only shows as
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for OpenHydroQual has landed in this checkout since the case was made (last OpenHydroQual commit `920a698`), so every item below is still open.
+
+- **Still open:** `tools/run_ohq.py` exits 0 even when the model fails; the failure only shows as
   `"status": "error"` in its JSON. `run_reference.py` reads that status.
-- `run_ohq.py --fix-paths` changes only the `loadtemplate`/`addtemplate` lines. It cannot
+- **Still open:** `run_ohq.py --fix-paths` changes only the `loadtemplate`/`addtemplate` lines. It cannot
   update old property names in older .ohq files (the CSTR case above).

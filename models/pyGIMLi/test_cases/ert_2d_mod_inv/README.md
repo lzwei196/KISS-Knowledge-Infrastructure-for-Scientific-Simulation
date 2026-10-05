@@ -60,16 +60,18 @@ What `run_reference.py` does, in a fresh temp dir that is deleted at the end:
   0.7038-0.7082, min 22.960-22.966, max 146.710-146.741 Ohm m). Those two checks have
   wider tolerances (0.05 and 0.1 Ohm m); all stay well inside the upstream assert.
 
-## Known KI gaps
-- The KI preflight checks `pygimli` in the server `python_env`, where it is not
-  installed, so 3 import checks fail there. pyGIMLi only runs from the dissection venv
-  above, and `preflight_check.py` has no setting to point at another Python.
-- `tools/run_pygimli.py` cannot build a custom geometry or simulate data on a
+## KI gaps (status 2026-10-06)
+- **Fixed in `585e484`:** the preflight checks `pygimli` in the pyGIMLi venv
+  (`PYGIMLI_PYTHON` can point at another Python); `python_env` without pygimli is only a
+  warning. `e368063` and `001e33a` make the run and parse tools re-launch with that venv.
+  Before: the preflight checked only `python_env`, so 3 import checks failed, with no way to
+  point at another Python.
+- **Still open:** `tools/run_pygimli.py` cannot build a custom geometry or simulate data on a
   layered/anomaly model (its forward mode only does a uniform half-space). So the
   modelling half of the official example runs through the official script, and the KI
   tool is used for the inversion of the script's data file.
-- `tools/run_pygimli.py` sets `--max-iter` default 10, while pyGIMLi's own default is 20;
+- **Still open:** `tools/run_pygimli.py` sets `--max-iter` default 10, while pyGIMLi's own default is 20;
   this case passes `--max-iter 20` to match the official call (it stops after 3 anyway).
-- `pygimli.__version__` in this venv depends on the current folder (it asks git in the
+- **Still open:** `pygimli.__version__` in this venv depends on the current folder (it asks git in the
   cwd), so it can print a wrong version; `run_reference.py` reads the package metadata
   instead.

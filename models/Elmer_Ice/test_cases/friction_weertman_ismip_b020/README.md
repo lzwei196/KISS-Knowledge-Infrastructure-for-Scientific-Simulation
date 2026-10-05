@@ -47,17 +47,21 @@ Exit 0 = PASS, 2 = checks failed, 3 = engine or Elmer/Ice libraries missing (not
   108.05 m/a, mean bed sliding speed 55.70 m/a, max pressure 13.24 MPa, mean pressure 4.42 MPa.
 - Plus: return code 0 and ElmerSolver's own line `*** Elmer Solver: ALL DONE ***`.
 
-## Known KI gaps
-1. The engine named by the KI preflight (`/mnt/disk1/Hydrocraft_server/models/Elmer_Ice/bin/bin/ElmerSolver`,
-   and the copy in `.../_work/Elmer_Ice/install/bin/`) is plain Elmer without the Elmer/Ice
-   libraries. It cannot load `ElmerIceUSF` / `ElmerIceSolvers`, so this case (and any case
-   using Elmer/Ice solvers or user functions) does not run with it. The Elmer/Ice build is in
-   `.../_work/Elmer_Ice/install_ice/`; this case uses that. The preflight still says PASSED
-   because it only checks that ElmerSolver starts.
-2. `tools/run_elmerice.py` reports `"status": "success"` with return code 0 even when
-   ElmerSolver stops early because a library is missing (ElmerSolver itself returns 0).
-   It also looks for `.vtu` only in the run folder, but Elmer writes it in the mesh folder,
-   so it wrongly warns "No VTU files produced". It keeps only the last 20 stdout lines.
-3. `tools/parse_vtu_output.py` cannot read Elmer's default VTU (binary "appended raw" data);
-   it fails with an XML parse error. `run_reference.py` reads the VTU itself.
-4. No KI tool builds the mesh; `ElmerGrid` is run directly.
+## KI gaps (status 2026-10-06)
+1. **Fixed in `d12e117` and `bb300dc`:** the preflight now checks the Elmer/Ice build
+   (`install_ice`; `ELMERSOLVER_BIN` / `ELMERGRID_BIN` overrides) and that the ElmerIceSolvers /
+   USF / Utils libraries load, so the plain Elmer build no longer passes; the run tool, the KI
+   yaml and `SKILL.md` now point at `install_ice`. Before: the preflight named the plain Elmer
+   build (`.../models/Elmer_Ice/bin/bin/ElmerSolver`, and `.../_work/Elmer_Ice/install/bin/`),
+   which cannot load `ElmerIceUSF` / `ElmerIceSolvers`, and still said PASSED because it only
+   checked that ElmerSolver starts.
+2. **Fixed in `bb300dc`:** `tools/run_elmerice.py` needs return code 0 AND
+   `*** Elmer Solver: ALL DONE ***` for success, also looks for `.vtu` in the mesh folder, and
+   keeps the last 200 stdout lines. Before: it reported `"status": "success"` even when
+   ElmerSolver stopped early on a missing library, wrongly warned "No VTU files produced", and
+   kept only the last 20 stdout lines.
+3. **Fixed in `bb300dc`:** `tools/parse_vtu_output.py` now reads Elmer's binary VTU. Before: it
+   failed with an XML parse error on Elmer's default VTU ("appended raw" data), so
+   `run_reference.py` reads the VTU itself. The workaround in `run_reference.py` is kept so the
+   case also runs with older tool versions.
+4. **Still open:** No KI tool builds the mesh; `ElmerGrid` is run directly.

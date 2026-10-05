@@ -57,16 +57,9 @@ The ROMS source checkout on the server has 3 local edits not in git: NetCDF link
 safety check in `inp_par.F` that only stops the run if an array was never set up. None of
 these touches the UPWELLING path, so the binary runs the official case as published.
 
-## Known KI gaps
-- The KI preflight checks `.../repo/build/romsS`, which is a **CALCURRENT** build, not
-  UPWELLING. A ROMS binary is tied to one case (the header is compiled in). Fed this
-  case's `roms_upwelling.in`, that binary stops with `Found Error: 5` in `read_phypar.F`.
-  This case uses the separate UPWELLING build in `build_upwelling/`.
-- `tools/run_roms.py` on the command line prints only the last 500 characters of the ROMS
-  log, so the energy / volume table (the usual ROMS health check) is lost. That is why
-  this script imports the tool and calls `run_roms()` directly, which returns the full log.
-- `tools/run_roms.py` warns about "missing input files" (grid, initial, forcing, boundary,
-  climate, tide, stations, floats) even though this analytic case reads none of them;
-  the tool does not look at the CPP options to know which files are used.
-- The tool's build path passes `-DAPP=...` to CMake, but ROMS's CMake reads `ROMS_APP`.
-  Not used here (no build is done), noted only.
+## KI gaps (status 2026-10-06)
+- **Fixed in `f43dcaa`:** the preflight now lists every ROMS build with the application it was built for, and says a build only runs its own application (`ROMS_BIN` picks one). Before: it checked only `.../repo/build/romsS`, a CALCURRENT build that stops on this case with `Found Error: 5`. This case still uses the separate UPWELLING build in `build_upwelling/`.
+- **Fixed in `33b8846`:** `tools/run_roms.py` writes the full ROMS log to a file (`roms_run.log`), returns the end of the energy table, and needs `ROMS: DONE` for success. Before: the command line printed only the last 500 characters of the log, so the energy / volume table was lost, and this case called `run_roms()` directly.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `33b8846`:** files named in `roms.in` that do not exist are now an INFO line, not a warning (normal when ANA_* options replace them). Before: it warned about "missing input files" this analytic case never reads.
+- **Fixed in `33b8846`:** the build path now passes `-DROMS_APP=...` to CMake. Before: it passed `-DAPP=...`, which ROMS's CMake does not read.

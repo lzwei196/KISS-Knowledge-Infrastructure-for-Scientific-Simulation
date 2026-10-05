@@ -52,11 +52,13 @@ Side note (not part of this case): the repo's own test suite
 check of the binary, `crop-simple` reproduced its baseline byte-for-byte and
 `groundwater-deep` matched to about 6 significant figures (baseline made with 7.0.13).
 
-## Known KI gaps
-- `tools/run_daisy.py` runs `daisy <file>.dai` with no library path and does not set
-  `DAISYHOME`. Without `DAISYHOME` in the environment, Daisy cannot open `tillage.dai`,
-  `crop.dai`, `log.dai` and stops with "Unknown 'action' model 'plowing'". This case
-  works around it by setting `DAISYHOME` in the environment it passes to the tool.
-- The KI has converters only for weather (`convert_weather_to_dwf.py`) and soil
+## KI gaps (status 2026-10-06)
+- **Fixed in `13717b9`:** `tools/run_daisy.py` now sets `DAISYHOME` to the Daisy library when the
+  caller set none (also `--daisy-home` and `DAISY_BIN`), and exits 1 when the engine fails.
+  Before: with no `DAISYHOME`, Daisy could not open `tillage.dai`, `crop.dai`, `log.dai` and
+  stopped with "Unknown 'action' model 'plowing'"; this case works around it by setting
+  `DAISYHOME` in the environment it passes to the tool. The workaround in `run_reference.py` is
+  kept so the case also runs with older tool versions.
+- **Still open:** The KI has converters only for weather (`convert_weather_to_dwf.py`) and soil
   (`convert_soil_to_dai.py`); the main `.dai` (crop and management) has no builder tool,
   so this case uses the official `.dai` as is.

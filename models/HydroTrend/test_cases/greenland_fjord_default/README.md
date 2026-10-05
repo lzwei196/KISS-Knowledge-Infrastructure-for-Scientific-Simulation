@@ -42,18 +42,9 @@ then checks `expected.json` and deletes the temp dir.
 Both server engines pass: `/mnt/disk1/Hydrocraft_server/models/HydroTrend/bin/hydrotrend`
 (the preflight one, used to record) and the dissection-toolkit build `_build/hydrotrend`.
 
-## Known KI gaps (noted, not fixed)
-1. **Long paths crash the model.** HydroTrend keeps the output path in fixed C buffers
-   (98 chars for the out dir, 80 for the file name start). `run_hydrotrend.py` passes the
-   paths as given and does not set the working dir, so a normal absolute temp path
-   (about 90 chars) makes the model print "output directory is too long", misread
-   HYDRO.IN and die with a crash (rc -11). This case works around it by calling the tool
-   from inside the temp dir with short relative paths. Results are not changed by this
-   (output matches the official file byte for byte).
-2. **No tool writes HYDRO.IN.** SKILL.md lists `generate_hydro_in.py` for "Parameter
-   Assembly", but it is not in `tools/`. That is why this case uses the shipped example.
-3. **`parse_hydrotrend_output.py` assumes daily rows.** On this case (monthly averaging)
-   it reports `n_days 12000, n_years 33` instead of 12000 months / 1000 years, gives
-   wrong dates, and leaves the `Cs` column empty (HYDROASCII.CS has one column per grain
-   size). SKILL.md also calls the ASCII outputs "Daily". So `run_reference.py` reads the
-   output files directly instead of using the parse tool.
+## KI gaps (status 2026-10-06)
+1. **Fixed in `40f7fb5`:** `run_hydrotrend.py` now runs the engine from the output dir with short relative paths. Before: long absolute paths overflowed the engine's fixed path buffers and crashed it (rc -11); this case calls the tool from inside the temp dir with short relative paths.
+   The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+2. **Still open:** **No tool writes HYDRO.IN.** SKILL.md lists `generate_hydro_in.py` for "Parameter Assembly", but it is not in `tools/`. That is why this case uses the shipped example.
+3. **Partly fixed in `40f7fb5`:** `parse_hydrotrend_output.py` now reads the output interval from HYDRO.IN (monthly is no longer read as daily) and sums `Cs` over grain sizes; still open: SKILL.md still calls the ASCII outputs "Daily". Before: on this monthly case it reported 12000 days / 33 years, wrong dates and an empty `Cs` column, so `run_reference.py` reads the output files directly.
+   The workaround in `run_reference.py` is kept so the case also runs with older tool versions.

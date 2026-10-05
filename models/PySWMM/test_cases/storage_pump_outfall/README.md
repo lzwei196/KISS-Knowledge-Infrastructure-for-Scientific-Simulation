@@ -45,13 +45,10 @@ and reports status `completed`; report runoff continuity error 0.000%, flow rout
 continuity error -0.002%, J3 total "test" load 1756.208 lbs. The report must contain
 "Analysis begun on" and "Analysis ended on" and no ERROR.
 
-## Known KI gaps (not fixed here)
-- `tools/parse_swmm_output.py` cannot read this `.out`: with `--nodes` or `--system` it stops
-  with "Invalid Property: outflow", with `--links C2,P1` it stops with "Invalid Property: setting"
-  (it asks the pyswmm Output API for properties that do not exist). So output is read from the
-  `.rpt` and from pyswmm statistics directly.
-- `tools/run_pyswmm.py` reports `runoff_error` and `routing_error` as 0.0 because it reads them
-  inside the run, before SWMM works them out; the report says -0.002% routing error.
-- SKILL.md names `build_inp.py` and `convert_domain_to_inp.py`, but these tools are not in
+## KI gaps (status 2026-10-06)
+- **Fixed in `5bec039`:** `tools/parse_swmm_output.py` now asks for real swmm.toolkit output names and checks the `.out` file first. Before: with `--nodes`/`--system` it stopped with "Invalid Property: outflow", with `--links C2,P1` with "Invalid Property: setting", so output was read from the `.rpt` and from pyswmm statistics directly.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `5bec039`:** `tools/run_pyswmm.py` now reads the continuity errors after SWMM ends the run. Before: it reported `runoff_error` and `routing_error` as 0.0 (read too early), while the report says -0.002% routing error.
+- **Still open:** SKILL.md names `build_inp.py` and `convert_domain_to_inp.py`, but these tools are not in
   `tools/` (only forcing and soil converters, the run tool and the parse tool exist).
   This case uses the official `.inp` as is, so it does not need them.

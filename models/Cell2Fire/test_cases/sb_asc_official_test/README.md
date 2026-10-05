@@ -51,17 +51,17 @@ two runs on this server both matched all 753 official target files byte for byte
 Note: the `Grids/GridsN/ForestGridNNN.csv` files from `--grids` are snapshots at set
 times, not the final burn scar, so burnt cells are counted from the spread messages.
 
-## Known KI gaps
-- `tools/run_cell2fire.py` cannot run this case. It stops with "No elevation.asc or
-  elevation.tif found", but the engine does not need elevation (it fills it with NaN, as
-  the official log shows). It also always adds `--fmc`, `--weather rows`, `--final-grid`,
-  `--Fire-Period-Length`, `--Weather-Period-Length`, `--ROS-CV` and `--nthreads`, with no
-  way to leave them out, so it cannot give the exact official command. The engine is run
-  directly here.
-- `tools/parse_cell2fire_output.py` does not read this output: it looks for
-  `MessagesFile{n}.csv` / `{n:02d}` (the engine writes 3-digit names such as
-  `MessagesFile001.csv` when there are 100+ fires, so it found only fires 100-113),
-  `Grids/GridsN/FinalGrid.csv` (the engine writes `ForestGridNNN.csv`) and
-  `Intensity/IntensityFile{n}.csv` (the engine writes `SurfaceIntensity/SurfaceIntensityNNN.asc`),
-  then it crashes when printing the summary (`Unknown format code 'f'`). The output is
-  read directly here.
+## KI gaps (status 2026-10-06)
+- **Fixed in `b270fb9`:** `tools/run_cell2fire.py` no longer needs elevation (it warns and the
+  engine fills NaN), and `--engine-defaults` leaves out the extra flags so the exact official
+  command can be given. Before: it stopped with "No elevation.asc or elevation.tif found" and
+  always added `--fmc`, `--weather rows`, `--final-grid`, `--Fire-Period-Length`,
+  `--Weather-Period-Length`, `--ROS-CV` and `--nthreads`. The engine is run directly here; the
+  workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `b270fb9`:** `tools/parse_cell2fire_output.py` finds files with any zero padding
+  (`MessagesFile001.csv`), reads `Grids/GridsN/ForestGridNNN.csv` and
+  `SurfaceIntensity/SurfaceIntensityNNN.asc`, and the summary print no longer crashes. Before: it
+  looked for `MessagesFile{n}.csv` / `{n:02d}` (found only fires 100-113), `FinalGrid.csv` and
+  `Intensity/IntensityFile{n}.csv`, then crashed with `Unknown format code 'f'`. The output is
+  read directly here; the workaround in `run_reference.py` is kept so the case also runs with
+  older tool versions.

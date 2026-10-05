@@ -64,13 +64,13 @@ What the script does:
 The test counts and the CRPS limits are official. The exact CRPS values were recorded from
 our own run on 2026-10-05; two clean runs gave identical values (tolerance 1e-4).
 
-## Known KI gaps
-The KI tools could not drive this case, so pysteps was run directly:
-- The KI tools do not run the pysteps test suite (pytest); there is no tool for it.
-- `tools/s1_data_import/import_radar_data.py --format mch_gif` fails on these official files:
-  it calls `import_mch_gif(file)` without the required `product`, `unit`, `accutime`
-  arguments, so every frame is skipped ("No frames successfully imported").
-- `tools/s3_nowcast/run_nowcast.py --method steps` passes `R_thr=` to
-  `pysteps.nowcasts.steps.forecast`; pysteps 1.20.0 has no such argument (it is now
-  `precip_thr`) and takes no extra keyword arguments, so the STEPS call would raise a TypeError.
-  (Checked from the function signature; not run end to end because s1 already fails.)
+## KI gaps (status 2026-10-06)
+When this case was made the KI tools could not drive it, so pysteps was run directly.
+The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open:** The KI tools do not run the pysteps test suite (pytest); there is no tool for it.
+- **Fixed in `5d7e259`:** `import_radar_data.py --format mch_gif` now passes `product`,
+  `unit` and `accutime` and converts to mm/h. Before: it called `import_mch_gif(file)`
+  without them, so every frame was skipped ("No frames successfully imported").
+- **Fixed in `5d7e259`:** `run_nowcast.py --method steps` now uses `precip_thr` (pysteps
+  1.20) and converts `kmperpixel` from metres. Before: it passed `R_thr=`, which pysteps
+  1.20.0 does not accept, so the STEPS call would raise a TypeError.

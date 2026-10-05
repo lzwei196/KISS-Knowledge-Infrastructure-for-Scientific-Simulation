@@ -64,14 +64,17 @@ one 2-rank run gave byte-identical `ocean.stats` and `chksum_diag`.
 | velocity truncations | 0 |
 | 1-rank vs 2-rank (LAYOUT=2,1): differing lines in ocean.stats / chksum_diag | 0 / 0 |
 
-## Known KI gaps
-- `tools/run_mom6.py` requires an `INPUT/` folder even when the case reads no files; the
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for MOM6 has landed in this checkout since the case was made (last MOM6 commit `7e85a2c`), so every item below is still open.
+
+- **Still open:** `tools/run_mom6.py` requires an `INPUT/` folder even when the case reads no files; the
   script makes an empty one (the tool then warns "INPUT is empty").
-- `tools/run_mom6.py` reports `n_timesteps` as 4 for this case: it counts the units header
+- **Still open:** `tools/run_mom6.py` reports `n_timesteps` as 4 for this case: it counts the units header
   line of `ocean.stats` as a step. The real number of records is 3 (`output_parser.py`
   counts them right).
-- Neither tool reads the `Truncs` column: they look for the word `Truncs` in each data row,
+- **Still open:** Neither tool reads the `Truncs` column: they look for the word `Truncs` in each data row,
   but MOM6 only writes that word in the header. The script reads the column itself, and also
   reads the mass / salinity / temperature / error columns itself.
-- The KI has no tool to build a grid, initial state, `MOM_input` or `diag_table`; it only has
+- **Still open:** The KI has no tool to build a grid, initial state, `MOM_input` or `diag_table`; it only has
   forcing and topography converters. That is fine here because tc1 is fully analytic.

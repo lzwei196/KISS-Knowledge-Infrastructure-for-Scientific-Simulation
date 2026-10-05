@@ -40,7 +40,7 @@ Then it checks `expected.json` and deletes the temp dir.
 - centre after 1 step 50.0; centre / max after 10 steps 6.084105186164379; min 0.0
 - final plate sum 65.01314109191298 (the notebook's last printed number; heat leaves at the edges)
 - KI runner: 10 steps, 10 CSV rows, final sum equal to the notebook's to 1e-9
-- KI compliance checker: 41 of 42 functions (see gaps below)
+- KI compliance checker: 41 functions implemented; BmiHeat follows BMI 2.0, so the checker (fixed in bac69b4) reports 41/41 required — get_bmi_version is BMI 2.1 only
 - upstream unit tests: 28 passed, 0 failed
 
 The notebook is saved without outputs and the repo has no reference output files, so the
@@ -54,16 +54,16 @@ so it was removed after install). So `from heat import BmiHeat` fails there, whi
 memory before the notebook and tests run. This only gives back the name that `__init__.py`
 would export; the model code is the same file-for-file as upstream commit 0701609.
 
-## Known KI gaps (not fixed here)
-- `preflight_check.py` checks for modules `bmi` and `BmiHeat`, which do not exist; the real
-  module is `heat` (class `heat.BmiHeat`). So preflight shows 2 FAIL even when the example
-  works. It also checks only `python_env`, where `heat` is not installed; the only install
-  is the dissection venv above (with the missing `__init__.py`).
-- `tools/bmi_runner.py` command line is broken: `main()` uses `importlib` before its local
-  `import importlib`, so the CLI always fails with "Cannot load BMI class". This case uses
-  the tool's Python functions instead.
-- `tools/compliance_checker.py` lists 42 functions including `get_bmi_version` (BMI 2.1).
-  BmiHeat at this commit follows BMI 2.0 (bmipy 2.0.1), so the checker reports FAIL 41/42.
-  The checker does not account for the BMI version.
-- `SKILL.md` quick start says grid shape `[10, 20]`; that is the default with no config.
+## KI gaps (status 2026-10-06)
+- **Fixed in `077b3ba`:** `preflight_check.py` now checks `heat.bmi_heat.BmiHeat` in the BMI venv
+  (override with `BMI_HEAT_PYTHON`). Before: it checked for modules `bmi` and `BmiHeat`, which do
+  not exist, and only in `python_env`, so it showed 2 FAIL even when the example worked.
+- **Fixed in `bac69b4`:** the `tools/bmi_runner.py` command line now imports `importlib` before use.
+  Before: the CLI always failed with "Cannot load BMI class", so this case uses the tool's Python
+  functions instead. The workaround in `run_reference.py` is kept so the case also runs with older
+  tool versions.
+- **Fixed in `bac69b4`:** `tools/compliance_checker.py` checks a class without `get_bmi_version` as
+  BMI 2.0, so BmiHeat now gives 41/41. Before: it always checked 42 functions (BMI 2.1) and
+  reported FAIL 41/42.
+- **Still open:** `SKILL.md` quick start says grid shape `[10, 20]`; that is the default with no config.
   With the official `heat.yaml` the shape is `[6, 8]`.

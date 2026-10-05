@@ -59,15 +59,16 @@ what the official example produces and is recorded as is.
 "Finished normally" = run tool return code 0 with status "success" and the output file
 written (`monica-run` prints no success line; it is silent when it works).
 
-## Known KI gaps
-- `tools/run_monica.py` passes `--output` to `monica-run -o`. With a bare file name
-  (its default `out.csv`) `monica-run` prints `Error failed to create path: ''.` on
-  stderr, yet still writes the file and exits 0; the run tool then lists this as a
-  warning. With a full path the message is gone. `run_reference.py` passes a full path;
-  the output is byte-identical either way.
-- `tools/parse_monica_output.py` stacks all six output sections into one table, so its
-  summary adds things up across sections (for this case it reports rain 10507.5 mm
-  instead of 3502.5 and 443 "harvests" instead of 7). `run_reference.py` therefore reads
-  `sim-out.csv` directly, section by section.
-- The KI tools only make `climate.csv` and site soil; crop rotation, management and
+## KI gaps (status 2026-10-06)
+- **Fixed in `d69c1d3`:** `run_monica.py` now gives `monica-run` a full output path (a bare
+  name is put next to `sim.json`), so the "failed to create path" message is gone; it also
+  needs real output from this run for success. Before: a bare `--output` name made
+  `monica-run` print `Error failed to create path: ''` and the tool listed a warning.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `d69c1d3`:** `parse_monica_output.py` keeps the output sections apart; summary
+  values come from one section only (fluxes and states from `daily`, yield from `crop`).
+  Before: it stacked all six sections, so the summary gave rain 10507.5 mm instead of 3502.5
+  and 443 "harvests" instead of 7; `run_reference.py` reads `sim-out.csv` section by section.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open:** The KI tools only make `climate.csv` and site soil; crop rotation, management and
   `sim.json` come from a template, so this case uses the official files as they are.

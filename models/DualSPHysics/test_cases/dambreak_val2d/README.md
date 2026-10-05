@@ -45,12 +45,15 @@ pictures. They make only visual files, and `TracerParts_linux64` is not in the s
 so they are not part of this test. The 3D case `CaseDambreak` in the same folder is not used
 (no experiment data for it; much larger).
 
-## Known KI gaps
-- `tools/run_dualsphysics.py` reads particle counts with a regex that stops at the comma
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for DualSPHysics has landed in this checkout since the case was made (last DualSPHysics commit `14b4087`), so every item below is still open.
+
+- **Still open:** `tools/run_dualsphysics.py` reads particle counts with a regex that stops at the comma
   ("21,001" -> 21), so its `total_particles` field is wrong; it also looks for `RUN.out`
   but the solver writes `Run.out` (the tool then only warns). The run itself works.
-- `tools/parse_dsph_output.py --mode summary` fails on this real `Run.out`
+- **Still open:** `tools/parse_dsph_output.py --mode summary` fails on this real `Run.out`
   ("No PART data found in RUN.out"), so `run_reference.py` reads `Run.out` and the gauge CSVs directly.
-- The solver binary `DualSPHysics5.4CPU_linux64` is not tracked in git (git-ignored build output);
+- **Still open:** The solver binary `DualSPHysics5.4CPU_linux64` is not tracked in git (git-ignored build output);
   it was built on the server from the official source at commit ef3721a, with one compile-only
   local fix (`#include <cstdint>` in `src/source/JBinaryData.h`).

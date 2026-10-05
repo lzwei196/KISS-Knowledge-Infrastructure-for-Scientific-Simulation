@@ -64,13 +64,8 @@ From the official analytic reference (not from our own run), official tolerance:
 
 Two clean runs gave the same numbers.
 
-## Known KI gaps
-- `tools/run_simpeg.py` cannot run this case (or any gravity / magnetics forward) with the
-  installed SimPEG 0.25.2. In `build_simulation()` it calls
-  `gravity.survey.Survey(source_list=[source])` (and the same for magnetics), but SimPEG
-  0.25 wants `Survey(source_field)`. It stops with
-  `TypeError: Survey.__init__() missing 1 required positional argument: 'source_field'`.
-  So Part B calls the engine directly with the same set-up as the KI tool. The script still
-  tries the KI tool once and prints whether it works, but the checks do not depend on it.
-- The KI tool only supports tensor meshes with all cells active and the `gz` component, so
+## KI gaps (status 2026-10-06)
+- **Fixed in `7d3ecff`:** `tools/run_simpeg.py` now builds the gravity / magnetics survey as `Survey(source)`, the way SimPEG 0.25 wants; missing or NaN results now give exit code 1. Before: it called `Survey(source_list=[source])` and stopped with `TypeError: ... missing 1 required positional argument: 'source_field'`, so Part B calls the engine directly with the same set-up as the KI tool.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open:** The KI tool only supports tensor meshes with all cells active and the `gz` component, so
   the tree-mesh and gradient parts of the official test are covered only by Part A.

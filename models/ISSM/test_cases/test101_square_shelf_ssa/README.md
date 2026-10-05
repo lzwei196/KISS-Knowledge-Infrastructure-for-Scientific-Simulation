@@ -50,21 +50,11 @@ It does not change the model, so the results do not change (they match the offic
 
 A missing `issm.exe`, Python API or `mpiexec` is reported (exit 3), never faked.
 
-## Known KI gaps (not fixed here)
-- `run_issm.py --example <name>` does `os.chdir` into `$ISSM_DIR/examples/<name>` and runs
-  `runme.py` there, so it writes run files into the model source tree. It also does not use
-  the official NightlyRun tests or their archives. That is why this case uses the tool's
-  custom mode instead.
-- `run_issm.py` sets `md.cluster = generic(...)` without an `executionpath`, so by default
-  `issm.exe` writes to `$ISSM_DIR/execution` (source tree). This case points it to the temp
-  dir with ISSM's `generic_settings.py` hook.
-- `run_issm.py` only adds some `src/m/*` folders to the path (not `src/m/miscellaneous`,
-  `src/m/classes/clusters`, ...). With no extra `PYTHONPATH` it fails with
-  `No module named 'MatlabFuncs'`. It works when `$ISSM_DIR/bin` and `$ISSM_DIR/lib` are on
-  `PYTHONPATH` (as the KI preflight does).
-- `run_issm.py` puts `$ISSM_DIR/bin` first on `PATH`, but `mpiexec` is not there; whatever
-  `mpiexec` is on the user's `PATH` is used (on this server `~/.local/bin/mpiexec` is OpenMPI,
-  while `issm.exe` is built with PETSc's MPICH). This case puts PETSc's MPICH `mpiexec` first.
-- `run_issm.py` only saves velocity max/mean (and thickness if present) to `results.json`;
-  full fields stay in memory. `parse_issm_output.py` reads `.npy` / NetCDF files, not ISSM's
-  `.outbin`, so it is not used here; fields are read from `md.results` directly.
+## KI gaps (status 2026-10-06)
+- **Partly fixed in `68fa97c`:** `run_issm.py --example <name>` now runs a copy of the example in the output folder, not inside `$ISSM_DIR/examples`; still open: it does not use the official NightlyRun tests or their archives, so this case still uses the tool's custom mode.
+- **Fixed in `68fa97c`:** `run_issm.py` now sets the cluster `executionpath` so run files stay out of `$ISSM_DIR/execution`. Before: `issm.exe` wrote into the source tree; this case points it to the temp dir with ISSM's `generic_settings.py` hook.
+- **Fixed in `68fa97c`:** `run_issm.py` now sets its own `PYTHONPATH` and `LD_LIBRARY_PATH`. Before: it added only some `src/m/*` folders and failed with `No module named 'MatlabFuncs'` unless `$ISSM_DIR/bin` and `$ISSM_DIR/lib` were on `PYTHONPATH`.
+- **Fixed in `68fa97c`:** `run_issm.py` now uses PETSc's MPICH `mpiexec`. Before: it used whatever `mpiexec` was on `PATH` (OpenMPI on this server, while `issm.exe` is built with MPICH); this case puts PETSc's MPICH `mpiexec` first.
+
+  The workarounds in `run_reference.py` (`generic_settings.py` hook, MPICH `mpiexec` first) are kept so the case also runs with older tool versions.
+- **Partly fixed in `68fa97c`:** `parse_issm_output.py` now reads ISSM's `.outbin` (with `--outbin`); still open: `run_issm.py` still saves only velocity and thickness max/mean to `results.json`. This case reads fields from `md.results` directly.

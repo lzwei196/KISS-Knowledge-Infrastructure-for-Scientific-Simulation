@@ -38,15 +38,10 @@ checks `expected.json`, then deletes the temp dir. It takes a few seconds.
   24 h 855.04 ft, chlorine at 24 h 0.53 mg/L (node 6) and 0.14 mg/L (tank 7). Two clean
   runs gave the same report (only date and path header lines differ).
 
-## Known KI gaps (not fixed here)
-- `tools/parse_epanet_output.py` cannot read the EPANET 2.2 binary `.out` file: it reads
-  16-character IDs and a wrong prolog size, so `--summary` prints garbage (node ID "mg/L",
-  pump 0, all zeros, "Reporting Periods 1057639384") but still exits 0. This case reads the
-  text report with its `--rpt` mode instead, which works.
-- The `--rpt` mode also writes the column-header row ("Demand, Head, ...") and page-header
-  lines as data rows; `run_reference.py` drops rows that are not all numbers.
-- The KI's own `find_binary()` only looks in paths relative to the live KI tree, so from
-  this repo the binary is passed with `--binary`.
-- The server `runepanet` has its RUNPATH set to the dissection-toolkit copy of
-  `libepanet2.so`; `run_epanet.py` puts the disk1 solver dir first in `LD_LIBRARY_PATH`
-  (both libraries are byte-identical).
+## KI gaps (status 2026-10-06)
+- **Fixed in `4c999e8`:** `parse_epanet_output.py` now finds the ID width from the file size and reads the EPANET 2.2 binary `.out` correctly. Before: it read 16-character IDs and a wrong prolog size, so `--summary` printed garbage but still exited 0; this case reads the text report with `--rpt` instead.
+- **Fixed in `4c999e8`:** the `--rpt` mode now drops the column-header and page-header rows. Before: they were written as data rows, and `run_reference.py` drops rows that are not all numbers.
+- **Fixed in `4c999e8`:** `run_epanet.py` now finds the binary from `--binary`, then `EPANET_BIN`, then the server build (absolute paths, as in the preflight). Before: `find_binary()` only looked in paths relative to the live KI tree, so from this repo the binary is passed with `--binary`.
+
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open:** The server `runepanet` has its RUNPATH set to the dissection-toolkit copy of `libepanet2.so`; `run_epanet.py` puts the disk1 solver dir first in `LD_LIBRARY_PATH` (both libraries are byte-identical).

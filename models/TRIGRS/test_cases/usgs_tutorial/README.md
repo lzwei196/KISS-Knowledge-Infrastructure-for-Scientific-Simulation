@@ -89,19 +89,10 @@ Note: the mass balance in the log shows rain rates of 3e-7 and 9e-5 m/s (the `cr
 in `tr_in.txt`), not the 5e-5 / 7e-5 m/s values in `ri1.asc` / `ri2.asc`. This is how the
 shipped tutorial runs; we record it and change nothing.
 
-## Known KI gaps
-- `tools/run_trigrs.py` cannot run TopoIndex from the built tree: it looks for a
-  `src/TopoIndex/Makefile` (there is none), then falls back to `make tpx` inside the model
-  source tree `src/TRIGRS/`. To avoid building inside the source tree, the case runs `tpx`
-  directly and calls the tool with `--skip_topoindex`.
-- `tools/run_trigrs.py` needs the `trg` binary inside a `src/TRIGRS/` folder that has a
-  Makefile and Fortran files, and needs `gfortran` on PATH, even with `--skip_compile`. It cannot
-  take a path to a stand-alone binary such as `models/TRIGRS/bin/trg`. If the binary found is
-  not in such a folder, `run_reference.py` runs `trg` directly (that path also PASSES).
-- `tools/parse_trigrs_output.py` reads the FS and water-table grids fine, but its file-name
-  patterns for runoff and infiltration (`TRrunoff_<suffix>_N`, `TRinfiltration_<suffix>_N`) do
-  not match what TRIGRS writes (`TRrunoffPerNsuffix.asc`, `TRinfilratPerNsuffix.asc`), so those
-  grids, the pressure-head grid, the list file and the mass balance numbers are read directly.
-  It also counts the log line "...to avoid early-time errors..." as an error.
-- The KI has no tool that can make the tutorial's DEM, slope, depth or water-table grids, so
+## KI gaps (status 2026-10-06)
+- **Fixed in `dc43a8c`:** `tools/run_trigrs.py` can use a built `tpx` (`--tpx_binary`, `$TOPOINDEX_BIN`, or the server default) and stops if TopoIndex fails. Before: it looked for a `src/TopoIndex/Makefile` (there is none), then ran `make tpx` inside the source tree, so this case runs `tpx` directly and calls the tool with `--skip_topoindex`.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `dc43a8c`:** `tools/run_trigrs.py` can take a stand-alone `trg` (`--trg_binary`, `$TRIGRS_BIN`, or the server default `bin/trg`) and only needs a source tree and `gfortran` when it must compile. Before: it needed `trg` inside a `src/TRIGRS/` folder with a Makefile and Fortran files, and `gfortran` on PATH even with `--skip_compile`; `run_reference.py` runs `trg` directly if the binary is not in such a folder.
+- **Partly fixed in `dc43a8c`:** `tools/parse_trigrs_output.py` now matches the real runoff and infiltration file names (`TRrunoffPer<N><suffix>`, `TRinfilratPer<N><suffix>`), reads the list-file column header, and no longer counts the "...to avoid early-time errors..." line as an error; not re-checked: whether the pressure-head grid, list file and mass balance numbers now come out right through the tool (this case still reads them directly). Before: its runoff/infiltration name patterns did not match what TRIGRS writes, so those grids, the pressure-head grid, the list file and the mass balance numbers were read directly.
+- **Still open:** The KI has no tool that can make the tutorial's DEM, slope, depth or water-table grids, so
   the official grids are used as shipped.

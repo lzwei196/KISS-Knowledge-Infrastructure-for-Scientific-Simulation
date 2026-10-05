@@ -55,16 +55,8 @@ Exit 0 = PASS, 2 = checks failed, 3 = engine or compiler missing (nothing run).
 Result on 2026-10-05: last record matches the official reference exactly (difference 0);
 largest difference over all records is 5.7e-14. Two runs gave bit-identical files.
 
-## Known KI gaps
-- With this server build, `tools/run_telemac.py` alone fails on this case at the link of
-  the user Fortran: the link line in `builds/main_gfortran_release/build_commands.json`
-  has `-Wl,--dependency-file=CMakeFiles/user_fortran.dir/link.d` (left over from CMake),
-  and that folder does not exist in TELEMAC's temp work folder, so `ld` stops.
-  `run_reference.py` gets round it only in the temp run dir: it makes the empty folder
-  `wd/user_fortran/CMakeFiles/user_fortran.dir` and passes `-w wd` to telemac2d.py through
-  the tool's `--options`. No input or setting is changed, and the result matches the
-  official reference. Any case with a `FORTRAN FILE` hits this.
-- `tools/run_telemac.py` does not set SYSTELCFG, BUILD_DIR, PYTHONPATH or LD_LIBRARY_PATH
-  itself; the caller must set them (run_reference.py does).
-- On failure the tool returns only the last 500 characters of stderr, which hides the real
-  error; use `--options "-s"` to keep the TELEMAC listing (`*.sortie`) next to the .cas.
+## KI gaps (status 2026-10-06)
+- **Fixed in `c54e9f0`:** `tools/run_telemac.py` now makes the `-Wl,--dependency-file` folders (from `build_commands.json`) in TELEMAC's work folder, so cases with a `FORTRAN FILE` link. Before: the user Fortran link stopped in `ld` because `CMakeFiles/user_fortran.dir` did not exist; `run_reference.py` makes that empty folder in its temp run dir and passes `-w wd` through `--options`.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Partly fixed in `c54e9f0`:** the tool now sets HOMETEL, BUILD_DIR and LD_LIBRARY_PATH itself (server defaults if not given); still open: it does not set SYSTELCFG or PYTHONPATH. Before: it set none of SYSTELCFG, BUILD_DIR, PYTHONPATH or LD_LIBRARY_PATH; the caller had to (run_reference.py does).
+- **Partly fixed in `c54e9f0`:** on failure the tool now returns the last 4000 characters (was 500) and adds hints for known errors; still open: to keep the full TELEMAC listing (`*.sortie`) you still need `--options "-s"`. Before: only the last 500 characters of stderr, which hid the real error.

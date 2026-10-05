@@ -41,18 +41,21 @@ stamp lines.
 
 A missing engine, wine or pandas is reported (exit 3), never faked.
 
-## Known KI gaps (not fixed here)
-- The KISS copy of the KI has no `examples/ex1_RiselTX/` and no `reference/APEX0806.exe`
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for APEX has landed in this checkout since the case was made (last APEX commit `8856df7`), so every item below is still open.
+
+- **Still open:** The KISS copy of the KI has no `examples/ex1_RiselTX/` and no `reference/APEX0806.exe`
   (`models/APEX/examples/` holds a different, older pasture file set). So
   `tools/s1_setup_workspace.py` cannot run from the KISS checkout; this case copies its
   own `inputs/` instead and calls `s6` directly.
-- `SKILL.md` says the example data come from pyAPEXSCU (Marena, Oklahoma grazing study).
+- **Still open:** `SKILL.md` says the example data come from pyAPEXSCU (Marena, Oklahoma grazing study).
   The live template is in fact this Texas A&M Riesel TX example.
-- `s6_run_apex.py` and `s7_parse_output.py` texts and error messages still say "apex1501",
+- **Still open:** `s6_run_apex.py` and `s7_parse_output.py` texts and error messages still say "apex1501",
   but they run and read APEX0806.
-- `s7_parse_output.parse()` puts tables from `OUTPUT.OUT` and `OUTPUT.ACY` in one frame
+- **Still open:** `s7_parse_output.parse()` puts tables from `OUTPUT.OUT` and `OUTPUT.ACY` in one frame
   (here 931 + 51 rows, with mixed columns). This case keeps only rows where
   `__source__ == "OUTPUT.ACY"`.
-- The disk1 KI folder `examples/ex1_RiselTX/` also holds leftover `OUTPUT.*` and `fort.*`
+- **Still open:** The disk1 KI folder `examples/ex1_RiselTX/` also holds leftover `OUTPUT.*` and `fort.*`
   from local runs; `s1` deletes them after copying. Its input files are identical to
   the official download.

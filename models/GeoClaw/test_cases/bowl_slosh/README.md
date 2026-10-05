@@ -52,18 +52,10 @@ a normal finish (all steps rc 0 and the line "end of AMRCLAW integration" in `fo
 On 2026-10-05 three clean runs matched the official data exactly (gauge h, hu, hv, eta
 max difference 0 over all 55 records; fgmax sums equal). Runs repeat exactly.
 
-## Known KI gaps
-- `tools/run_geoclaw.py` runs `xgeoclaw` in the run folder, so all output (fort.q*, fort.t*,
-  gauge00001.txt, fgmax0001.txt) lands in the run folder, not in `_output/`. The tool then
-  looks in `_output/` and wrongly warns "CRITICAL: No fort.q files produced", although the run
-  finished fine. `run_reference.py` reads the output from the run folder.
-- `tools/parse_geoclaw_output.py` reads frame times correctly but finds 0 grids in the
-  Clawpack 5.x `fort.q` files (h_max and speed_max come out 0), and it looks for an old
-  `fort.gauge` file, while Clawpack 5.x writes `gaugeNNNNN.txt`. So only frame count and
-  frame time are taken from it; gauge and fgmax values are read with Clawpack's own readers.
-- The KI preflight checks `import clawpack` with `/usr/bin/python3.12`, where clawpack is not
-  installed, so it fails 3 import checks. Clawpack 5.14.0 is installed in
-  `_work/GeoClaw/venv`, which this case uses. The prebuilt binary the KI points to
-  (`examples/tsunami/chile2010/xgeoclaw`) is only for chile2010 and is not used here.
-- `setrun.py` still sets `deep_depth` and `max_level_deep`; Clawpack prints a warning that
-  these are ignored since v5.8.0. This is in the official file and does not change results.
+## KI gaps (status 2026-10-06)
+- **Fixed in `d78c500`:** `run_geoclaw.py` now writes output to `_output/` like Clawpack's `runclaw` and exits non-zero only on a real failure; the same commit changed `run_reference.py` to read `_output/`. Before: all output landed in the run folder and the tool wrongly warned "CRITICAL: No fort.q files produced".
+- **Fixed in `d78c500`:** `parse_geoclaw_output.py` now reads Clawpack 5.x `fort.q` grids and `gaugeNNNNN.txt` files. Before: it found 0 grids (h_max and speed_max were 0) and looked for an old `fort.gauge` file, so only frame count and frame time were taken from it.
+
+  The workaround in `run_reference.py` (gauge and fgmax values read with Clawpack's own readers) is kept so the case also runs with older tool versions.
+- **Fixed in `891d03f`:** the preflight now checks clawpack in the GeoClaw venv (`CLAW_PYTHON` / `CLAW`), proves the per-example build works with a tiny case in a temp dir, and shows the chile2010-only `xgeoclaw` as info. Before: it checked `import clawpack` with `/usr/bin/python3.12` (3 import FAILs) and pointed at the chile2010-only binary.
+- **Still open (upstream, not a KI issue):** `setrun.py` still sets `deep_depth` and `max_level_deep`; Clawpack prints a warning that these are ignored since v5.8.0. This is in the official file and does not change results.

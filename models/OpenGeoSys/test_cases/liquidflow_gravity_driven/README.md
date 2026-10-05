@@ -43,16 +43,19 @@ min 0 and mean 4898.944397332519 (all read from the official analytic field), no
 Seen on 2026-10-05 (two runs, same numbers each time): pressure max error 6.9e-11 Pa,
 velocity max error 2.9e-19 m/s. PASS.
 
-## Known KI gaps (not fixed here)
-- `run_ogs.py` keeps only the first 500 characters of the ogs log, so the ogs end line
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for OpenGeoSys has landed in this checkout since the case was made (last OpenGeoSys commit `f66e883`), so every item below is still open.
+
+- **Still open:** `run_ogs.py` keeps only the first 500 characters of the ogs log, so the ogs end line
   ("OGS terminated with exit code 0") cannot be checked through the tool; the case uses the
   return code and the tool's `status: success` instead.
-- `run_ogs.py` warns "t_end very short, did you forget days->seconds" and "storage = 0, no
+- **Still open:** `run_ogs.py` warns "t_end very short, did you forget days->seconds" and "storage = 0, no
   time change" for this case. Both are false alarms here: the benchmark is a steady case
   on purpose.
-- `run_ogs.py` has no way to compare output to a reference (no vtkdiff step); the case
+- **Still open:** `run_ogs.py` has no way to compare output to a reference (no vtkdiff step); the case
   calls vtkdiff itself.
-- `parse_ogs_output.py --stats`: the JSON summary `pressure_summary` gives min/max/mean of the
+- **Still open:** `parse_ogs_output.py --stats`: the JSON summary `pressure_summary` gives min/max/mean of the
   per-step means (e.g. "max" 4898.9), not of the field; the per-step CSV rows are right and
   are what this case uses. The ogs .pvd lists the last step twice, so the tool reports 3
   steps for 2 output files.

@@ -66,16 +66,19 @@ Checks:
 Note: the tutorial doc text says the stop time is 22200 s, but the tracked `01-run.sh` sets
 19800 s. The script is what runs.
 
-## Known KI gaps
-- `tools/run_elmfire.py` cannot drive this official case. It runs the engine with the
-  working folder set to the folder of the namelist (`inputs/`) and looks for the input
-  folders relative to that folder. ELMFIRE's own layout puts `elmfire.data` in `inputs/`
-  with paths like `./inputs` that are relative to the case folder, so the tool stops with
-  `Fuels/topo directory not found: .../inputs/./inputs`. The case is therefore run with the
-  official `01-run.sh` and the engine directly.
-- `tools/parse_elmfire_output.py` does not give useful numbers here: it needs
-  `fire_size_stats.csv` (which the official script deletes at the end) for area, so it
-  reports 0 acres; and it looks for `spread_rate*` files, but ELMFIRE names the spread rate
-  output `vs_*`, so it reports 0 spread rate. `run_reference.py` reads the GeoTIFFs directly.
-- The official namelist hard-codes `PATH_TO_GDAL = '/usr/bin'`; on hosts where GDAL is
-  elsewhere the KI should set it (see the change above).
+## KI gaps (status 2026-10-06)
+- **Fixed in `7cba7ea`:** `tools/run_elmfire.py` takes `--case-dir` so input folders resolve the
+  way ELMFIRE's own layout expects, and it checks ELMFIRE's success line. Before: it looked for
+  input folders relative to `inputs/` and stopped with
+  `Fuels/topo directory not found: .../inputs/./inputs`, so the case is run with the official
+  `01-run.sh` and the engine directly. The workaround in `run_reference.py` is kept so the case
+  also runs with older tool versions.
+- **Fixed in `7cba7ea`:** `tools/parse_elmfire_output.py` reads the `vs_*` spread-rate files and,
+  when `fire_size_stats.csv` is gone, counts the area from the time-of-arrival raster. Before: it
+  reported 0 acres (it needed `fire_size_stats.csv`, which the official script deletes) and 0
+  spread rate (it looked for `spread_rate*`). `run_reference.py` reads the GeoTIFFs directly;
+  the workaround is kept so the case also runs with older tool versions.
+- **Partly fixed in `7cba7ea`:** `tools/run_elmfire.py` now checks that `PATH_TO_GDAL` holds
+  `gdal_translate` and, if not, names the folder on PATH to use; still open: the KI does not set
+  it by itself. Before: the official namelist hard-codes `PATH_TO_GDAL = '/usr/bin'`; on hosts
+  where GDAL is elsewhere the KI should set it (see the change above).

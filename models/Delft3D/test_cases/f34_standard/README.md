@@ -28,8 +28,14 @@ NEFIS-only run: same run). The history file is read with the KI's own
 - water level (m) max / min / last: W1 1.2592 / −1.0936 / 1.0823, W5 1.0432 / −0.7081 / 0.8493
   (all 5 stations in `expected.json`, tolerance 0.001 m)
 
-## Known KI gaps found while making this case
-- `tools/run_delft3d.py` only starts runs through DIMR (`dimr` / `run_dimr.sh`), but the
-  server build has only `d_hydro` + `libflow2d3d.so`, so it cannot drive this engine.
-- `tools/parse_delft3d_output.py` reads the Delft3D-FLOW `trih-*.nc` file but does not pick up
-  its water-level variable `ZWL` (the CSV has only the time column).
+## KI gaps (status 2026-10-06)
+- **Fixed in `d591049`:** `tools/run_delft3d.py` has a `--mode d_hydro` for Delft3D-FLOW 4 (the
+  server build) and counts a run as good only when this run's `FINISHED` line is there. Before:
+  it only started runs through DIMR (`dimr` / `run_dimr.sh`), but the server build has only
+  `d_hydro` + `libflow2d3d.so`, so it could not drive this engine. This case runs `d_hydro`
+  itself; the workaround in `run_reference.py` is kept so the case also runs with older tool
+  versions.
+- **Fixed in `d591049`:** `tools/parse_delft3d_output.py` now reads the Delft3D-FLOW variables
+  `ZWL`, `ZCURU`, `ZCURV` and `ZTAU*`. Before: it did not pick up the water level `ZWL` from
+  `trih-*.nc` (the CSV had only the time column), so `ZWL` is checked directly here; the
+  workaround in `run_reference.py` is kept so the case also runs with older tool versions.

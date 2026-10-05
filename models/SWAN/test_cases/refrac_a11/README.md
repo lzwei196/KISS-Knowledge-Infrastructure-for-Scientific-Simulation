@@ -47,12 +47,8 @@ to the official file; `a11ref01.tbl` differed only in the version header and by 
 few FSpr values; `a11ref01.spc` differed in one value in the 4th digit. Two clean runs
 gave byte-identical outputs.
 
-## Known KI gaps
-- `tools/run_swan.py binary` calls `swan.exe <name>`, but `swan.exe` ignores that argument
-  and always reads a file called `INPUT`. Without `INPUT` in the run dir the run stops at
-  once. The tool does not make `INPUT` itself (the official `swanrun` script does), so this
-  case makes it before calling the tool.
-- `tools/run_swan.py` returns exit code 0 even when its status is FAIL; this case checks the
-  printed `Status: OK` line instead.
-- `tools/run_swan.py` imports `pyswan` at start, even for binary mode, so it needs a python
-  with `pyswan` installed.
+## KI gaps (status 2026-10-06)
+- **Fixed in `dd78254`:** `tools/run_swan.py binary` now copies the case file to the command file `swan.exe` reads (`INPUT`, or the name in `swaninit`), as `swanrun` does. Before: it called `swan.exe <name>`, which ignores the name, so the run stopped at once; this case makes `INPUT` before calling the tool.
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Fixed in `dd78254`:** `tools/run_swan.py` now exits with code 1 on any status other than OK. Before: it returned 0 even on FAIL, so this case checks the printed `Status: OK` line.
+- **Fixed in `dd78254`:** `pyswan` is now imported only in pyswan mode. Before: it was imported at start, even for binary mode.

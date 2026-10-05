@@ -47,14 +47,9 @@ the local copies in `inputs/` instead of the GitHub URL (same bytes, sha256 in m
   1 group, 2 surfaces and 32768 grid points from the saved model.
 - Finished check: the engine script exits 0 and prints `DRIVER_OK` after compute and save.
 
-## Known KI gaps
-- `tools/run_gempy_model.py` (params + CSV mode) builds and **computes** this model fine, but then
-  calls `gp.save_model(model, path=..., name=...)`. This GemPy version's `save_model` has no
-  `name` argument, so the tool stops with "save_model() got an unexpected keyword argument
-  'name'" and reports `status: error` with no model file. Because of this, `run_reference.py`
-  runs the engine directly (official generator code) and only calls the KI run tool for
-  information (its message is printed as `[info]`).
-- `tools/run_gempy_model.py --example horizontal_strat` is not GemPy's official horizontal
-  example: it builds a hand-made model with one point per layer on a 20 x 20 x 20 grid. It is not used here.
-- `tools/parse_gempy_output.py --extract summary` works on the saved model and is used for
-  three checks. Its summary shows `project_name: "unknown"` (the name is not read back).
+## KI gaps (status 2026-10-06)
+- **Fixed in `369c617`:** `run_gempy_model.py` now calls `gp.save_model(model, path=...)` the way this GemPy expects and exits 1 on error. Before: it passed `name=...`, which this GemPy rejects, so the tool stopped with `status: error` and no model file; `run_reference.py` therefore runs the engine directly and calls the KI run tool only for information.
+
+  The workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open:** `tools/run_gempy_model.py --example horizontal_strat` is not GemPy's official horizontal example: it builds a hand-made model with one point per layer on a 20 x 20 x 20 grid. It is not used here. (`e91b4a6` made this example run, but it is still the hand-made model.)
+- **Fixed in `e91b4a6`:** `parse_gempy_output.py` now reads the real project name back. Before: its summary showed `project_name: "unknown"`. (The summary was already used for three checks.)

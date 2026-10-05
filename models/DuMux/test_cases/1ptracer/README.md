@@ -92,20 +92,25 @@ bottom-to-top code. The input files are not changed; only this command-line key 
 and the full-field compare against the official references proves the result is the
 official one. A clean, unedited DuMux build does not use this key; DuMux only lists unused keys at the end of a run and goes on (not tried here, as no clean build exists on the server).
 
-## Known KI gaps
-- The server binary was built from a KI-edited `problem_1p.hh` whose default flow
+## KI gaps (status 2026-10-06)
+- **Still open:** The server binary was built from a KI-edited `problem_1p.hh` whose default flow
   direction differs from the official example (see above). The official example only
   reproduces with `-Problem.FlowDirection 1`.
-- `tools/run_dumux.py` as a whole (`process()` / command line) always runs the program in
-  the binary's own folder, so all output is written into the build tree, and it searches the
-  whole source tree for a missing params file. This case therefore calls only its
-  `run_simulation` function, with a temp working dir.
-- `tools/run_dumux.py` does not limit OpenMP threads, so on this 192-core server each run
-  spins all cores (about 30 s and ~90 CPU-minutes instead of under 1 s).
-- `tools/parse_dumux_output.py` defaults to the variable `pressure`, which this example does
-  not write (fields are `p` and `x^tracer_0`), so with defaults it returns NaN columns. With
-  `--variables 'x^tracer_0'` it works. This case reads the .vtu files directly.
-- The official command-line wrapper `bin/testing/fuzzycomparevtu.py` passes its arguments to
-  `compareVTK` in the wrong order and crashes (`'bool' object is not iterable`); this case
-  calls `compareVTK` the way the official `dumux_runtest.py` does. This is an upstream
-  script issue, not a KI one.
+- **Fixed in `ae00b7c`:** `tools/run_dumux.py` now runs the program in a work dir (default: the
+  current directory), never in the build tree, and no longer searches the source tree for a
+  missing params file (it fails with `params_not_found`). Before: it always ran in the
+  binary's own folder and searched the whole source tree, so this case calls only its
+  `run_simulation` function, with a temp working dir. The workaround in `run_reference.py` is
+  kept so the case also runs with older tool versions.
+- **Fixed in `ae00b7c`:** `tools/run_dumux.py` sets a thread limit (`--threads`,
+  `DUMUX_NUM_THREADS` or `OMP_NUM_THREADS`, else a small default). Before: it did not limit
+  OpenMP threads, so each run spun all 192 cores (about 30 s and ~90 CPU-minutes instead of
+  under 1 s).
+- **Fixed in `ae00b7c`:** `tools/parse_dumux_output.py` maps `pressure` to DuMux's `p` and takes
+  times from the `.pvd`. Before: it defaulted to `pressure`, which this example does not write,
+  so with defaults it returned NaN columns. This case reads the .vtu files directly; the
+  workaround in `run_reference.py` is kept so the case also runs with older tool versions.
+- **Still open (upstream, not a KI issue):** The official command-line wrapper
+  `bin/testing/fuzzycomparevtu.py` passes its arguments to `compareVTK` in the wrong order and
+  crashes (`'bool' object is not iterable`); this case calls `compareVTK` the way the official
+  `dumux_runtest.py` does.

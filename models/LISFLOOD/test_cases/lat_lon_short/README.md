@@ -63,7 +63,7 @@ Settings changes (temp copy only, all path or date values):
 | StepStart | 02/01/1986 00:00 | 01/01/2016 00:00 | same as the upstream test |
 | StepEnd | 01/01/2018 00:00 | 01/02/2016 00:00 | same as the upstream test |
 | PathOut | $(PathRoot)/reference | $(PathRoot)/short | same as the upstream test |
-| PathRoot | $(SettingsPath) | full temp path | same folder; the KI tool cannot read `$(SettingsPath)` |
+| PathRoot | $(SettingsPath) | full temp path | same folder; needed by the KI tool before 11f9c59 (which now expands `$(SettingsPath)`); kept so the case runs with older tool versions |
 
 The PathRoot change points to the same folder, so it does not change results: the output
 values are byte-identical to the official reference files.
@@ -89,20 +89,14 @@ The script checks:
 On 2026-10-05 the run matched the official reference files exactly (every value the same;
 only the header line with the settings path and date differs). Two runs gave the same values.
 
-## Known KI gaps
+## KI gaps (status 2026-10-06)
 
-These are gaps in the KI run tool `tools/run_lisflood.py`; they were not fixed here.
+These were gaps in the KI run tool `tools/run_lisflood.py` and its preflight when this case was made.
 
-1. The tool's command-line preflight rejects this official settings file. It does not
-   expand nested `$(...)` values, and later `<lfbinding>` entries (like
-   `MaskMap = $(MaskMap)`, `DtSec = $(DtSec)`) overwrite the real `<lfuser>` values, so it
-   reports "MaskMap not found: .../$(MaskMap)" and "Invalid DtSec: $(DtSec)" and exits 1.
-   So the script calls the tool's `run_model()` function directly instead of its CLI.
-2. The tool does not expand `$(SettingsPath)`, so PathRoot is written as a full path in the
-   temp copy.
-3. The tool calls bare `lisflood` from PATH (then `python -m lisflood.main`); it has no way to
-   choose the engine env. The script puts the official env's `bin/` first on PATH.
-4. The tool's `validate_output` looks for `dis.nc`; this case writes only `.tss` files, so the
-   script reads the `.tss` files itself (and with the official `TSSComparator`).
-5. The KI's preflight (`preflight_check.py`) points at the older env
-   `/home/server/miniconda3/envs/lisflood`, which fails on these official files (see above).
+1. **Fixed in `11f9c59`:** the run tool now expands `$(...)` settings the way LISFLOOD does (including nested values). Before: its command-line preflight rejected this official settings file ("MaskMap not found: .../$(MaskMap)", "Invalid DtSec: $(DtSec)"), so the script calls the tool's `run_model()` function directly instead of its CLI.
+2. **Fixed in `11f9c59`:** the run tool now expands `$(SettingsPath)`. Before: it did not, so PathRoot is written as a full path in the temp copy.
+3. **Fixed in `11f9c59`:** the run tool now finds the engine via `--lisflood-bin` / `LISFLOOD_BIN` / `envs/lisflood`. Before: it called bare `lisflood` from PATH, so the script puts the official env's `bin/` first on PATH.
+4. **Fixed in `11f9c59`:** `validate_output` now accepts `.tss` (and other) output written by this run. Before: it looked only for `dis.nc`. The script still reads the `.tss` files itself to compare them with the official `TSSComparator`.
+5. **Partly fixed in `fa72538`, `709cd3a`:** the preflight now does a real start probe, uses the run tool's own engine lookup, and shows an info line for the `lisflood_official` env; still open: its default engine is still the older env `/home/server/miniconda3/envs/lisflood`, which fails on these official files (see above).
+
+The workaround in `run_reference.py` is kept so the case also runs with older tool versions.

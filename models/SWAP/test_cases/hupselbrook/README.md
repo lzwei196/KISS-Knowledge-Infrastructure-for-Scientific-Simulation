@@ -84,15 +84,17 @@ Checks (3 years total unless said):
 Tolerances only cover print rounding (0.01-0.02 cm for `.blc` values, 0.1 cm
 for groundwater level).
 
-## Known KI gaps
+## KI gaps (status 2026-10-06)
 
-- The KISS copy of `tools/run_swap.py` has a placeholder pinned binary path
+No KI tool fix for SWAP has landed in this checkout since the case was made (last SWAP commit `f54c86b`), so every item below is still open.
+
+- **Still open:** The KISS copy of `tools/run_swap.py` has a placeholder pinned binary path
   (`KISSPATH_INTERNAL_NOT_SHIPPED/...`), so it cannot run without `--binary`.
   This script always passes `--binary <found swap> --allow-unpinned-binary`.
-- The KISS copy of `tools/run_swap.py` is older than the live server copy: it
+- **Still open:** The KISS copy of `tools/run_swap.py` is older than the live server copy: it
   calls `swap` with no file argument (fine here, SWAP then reads `swap.swp`),
   and it counts exit code 0 or any `*.ok` file as success, while the live copy
   needs SWAP's own `Swap normal completion` line. To be safe this script also
   checks that the fresh `swap.ok` holds SWAP's success line.
-- The KI's `assemble_swap_config.py` builds a new `.swp` from a base template;
+- **Still open:** The KI's `assemble_swap_config.py` builds a new `.swp` from a base template;
   it is not used here because the official case already has its own `.swp`.

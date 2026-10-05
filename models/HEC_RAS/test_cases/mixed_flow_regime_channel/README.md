@@ -45,12 +45,15 @@ Water-surface tolerance is 0.005 ft to allow for small float differences on anot
 After `Finished Steady Flow Simulation`, RasSteady.exe prints an `HDF5-DIAG ... H5Gopen2(): not a
 location` message. The return code is 0 and all results are written, so this is noise.
 
-## Known KI gaps
-- In this repo, `tools/_hecras_env.py` holds an install-time placeholder (`KISSPATH_HOME`)
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for HEC_RAS has landed in this checkout since the case was made (last HEC_RAS commit `189d37e`), so every item below is still open.
+
+- **Still open:** In this repo, `tools/_hecras_env.py` holds an install-time placeholder (`KISSPATH_HOME`)
   in the HEC-RAS install path, and neither it nor `run_hecras.py` takes the binary path as a
   flag or env var. So `run_reference.py` sets `_hecras_env.BINARIES["steady"]` and
   `WINEPREFIX` to the binary it found, then calls `run_hecras.main()` unchanged.
-- The repo copy of the KI has no `examples/` folder, so `run_hecras.py` with no
+- **Still open:** The repo copy of the KI has no `examples/` folder, so `run_hecras.py` with no
   `--project` (and `prepare_steady_run.py`, which copy the bundled template) cannot work from
   the repo alone; this case passes `--project` with its own copy of the official files.
-- A missing engine or `wine` is reported (exit 3), never faked.
+- **Note (not a gap):** A missing engine or `wine` is reported (exit 3), never faked.

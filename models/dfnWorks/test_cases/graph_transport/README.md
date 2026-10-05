@@ -69,8 +69,11 @@ are seeded by its own particle number.
 
 Counts must match exactly; floats use relative tolerance 1e-6.
 
-## Known KI gaps
-- The KI run tool `tools/run_dfnworks.py --mode graph` cannot drive this official case, so the
+## KI gaps (status 2026-10-06)
+
+No KI tool fix for dfnWorks has landed in this checkout since the case was made (last dfnWorks commit `41e10d1`), so every item below is still open.
+
+- **Still open:** The KI run tool `tools/run_dfnworks.py --mode graph` cannot drive this official case, so the
   official driver is run directly:
   - it has no way to set `domainSizeIncrease` ([5,5,5] here) or `disableFram` (True here), so
     it would build a different network;
@@ -80,6 +83,6 @@ Counts must match exactly; floats use relative tolerance 1e-6.
     default seed 1 is used;
   - it does not set empty `LAGRIT_EXE` etc., so with the server's `.dfnworksrc` (empty LaGriT
     path) pydfnworks stops with `KeyError: 'LAGRIT_EXE'`.
-- The KI parse tool `tools/parse_dfnworks_output.py --job_dir` reads `graph_flow.hdf5` well
+- **Still open:** The KI parse tool `tools/parse_dfnworks_output.py --job_dir` reads `graph_flow.hdf5` well
   (used here), but it does not read `graph_partime.hdf5` ("No particle travel times found") and
   returns empty `params`. Particle times and network counts are read directly instead.

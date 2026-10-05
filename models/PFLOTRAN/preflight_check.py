@@ -3,10 +3,15 @@
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import io
 import json
 import os
-import shutil
+import re
+import signal
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -14,9 +19,15 @@ from pathlib import Path
 MODEL_ID = "PFLOTRAN"
 KI_DIR = Path(__file__).resolve().parent
 HYDROCRAFT_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
-PFLOTRAN_BIN = Path(
+SERVER_DEFAULT_PFLOTRAN_BIN = (
     "KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran"
 )
+# Same choice as tools/run_pflotran.py: $PFLOTRAN_BIN if set (non-empty), else the server build.
+PFLOTRAN_BIN = Path(os.path.abspath(os.environ.get("PFLOTRAN_BIN") or SERVER_DEFAULT_PFLOTRAN_BIN))
+RUN_TOOL = KI_DIR / "tools" / "run_pflotran.py"
+# Name of an input deck that never exists: the startup probes stop at "file not found"
+# (PFLOTRAN exit 87 = EXIT_USER_ERROR) after PETSc/MPI start-up, so no simulation runs.
+PROBE_INPUT = "preflight_probe_missing_input.in"
 AUTO_DISSECT_DIR = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 
@@ -171,6 +182,70 @@ def check_imports() -> None:
         run_python_probe(rel_path, code)
 
 
+def run_startup_probe(cmd: list[str], timeout: int) -> tuple[int | None, str]:
+    """Run a PFLOTRAN start-up probe in an empty temp dir; kill its process group on timeout.
+
+    The probe asks for a missing input deck plus PETSc -log_view: PETSc and MPI start,
+    PFLOTRAN stops with 'File ... not found' (exit 87), and PETSc's summary says how
+    many processes formed the communicator. Returns (exit code or None on timeout, output);
+    exit code -1 if the program could not be started (OSError).
+    """
+    with tempfile.TemporaryDirectory(prefix="pflotran_preflight_") as tmp:
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=tmp,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            return -1, f"could not start {cmd[0]}: {exc}"
+        try:
+            out, _ = proc.communicate(timeout=timeout)
+            return proc.returncode, out or ""
+        except subprocess.TimeoutExpired:
+            if proc.pid > 1:
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+            out, _ = proc.communicate()
+            return None, out or ""
+
+
+LOAD_ERROR_MARKERS = (
+    "symbol lookup error",
+    "undefined symbol",
+    "error while loading shared libraries",
+)
+
+
+def judge_startup_probe(rc: int | None, output: str, nproc: int) -> str:
+    """Return '' if the probe shows a clean start with one nproc-process communicator, else why not."""
+    if rc is None:
+        return "probe timed out"
+    for marker in LOAD_ERROR_MARKERS:
+        if marker in output:
+            line = next(l for l in output.splitlines() if marker in l)
+            return f"library error: {line.strip()}"
+    if rc != 87:
+        return f"exit code {rc}, expected 87 (PFLOTRAN EXIT_USER_ERROR for the missing probe input)"
+    if f'File: "{PROBE_INPUT}" not found' not in output:
+        return "PFLOTRAN did not reach its input-file check (no 'not found' message for the probe input)"
+    sizes = re.findall(r" with (\d+) process(?:es)?, by ", output)
+    if sizes != [str(nproc)]:
+        return (
+            f"PETSc -log_view did not report exactly one {nproc}-process communicator "
+            f"(reported sizes: {sizes or 'none'})"
+        )
+    return ""
+
+
+def last_lines(output: str, n: int = 3) -> str:
+    lines = [l.strip() for l in output.strip().splitlines() if l.strip()]
+    return " | ".join(lines[-n:]) if lines else "no output"
+
+
 def check_pflotran_starts() -> None:
     subject = str(PFLOTRAN_BIN.resolve(strict=False))
     if not (PFLOTRAN_BIN.is_file() and os.access(PFLOTRAN_BIN, os.X_OK)):
@@ -179,30 +254,15 @@ def check_pflotran_starts() -> None:
             subject,
             True,
             "fail",
-            f"Fix the PFLOTRAN executable at {PFLOTRAN_BIN}; consult {TRIPLETS}.",
+            f"Fix the PFLOTRAN executable at {PFLOTRAN_BIN} (or point $PFLOTRAN_BIN at a working build); consult {TRIPLETS}.",
         )
         return
 
-    try:
-        result = subprocess.run(
-            [str(PFLOTRAN_BIN), "-help"],
-            cwd=str(KI_DIR),
-            text=True,
-            capture_output=True,
-            timeout=15,
-        )
-    except subprocess.TimeoutExpired:
-        add_check(
-            "run",
-            subject,
-            True,
-            "fail",
-            f"PFLOTRAN did not return from a cheap -help startup probe; consult {TRIPLETS}.",
-        )
-        return
-
-    output = f"{result.stdout}\n{result.stderr}"
-    if output.strip() and ("PETSc" in output or "PFLOTRAN" in output or "Options" in output):
+    rc, output = run_startup_probe(
+        [str(PFLOTRAN_BIN), "-pflotranin", PROBE_INPUT, "-log_view"], timeout=60
+    )
+    problem = judge_startup_probe(rc, output, 1)
+    if not problem:
         add_check("run", subject, True, "pass")
     else:
         add_check(
@@ -210,21 +270,119 @@ def check_pflotran_starts() -> None:
             subject,
             True,
             "fail",
-            f"PFLOTRAN started with exit code {result.returncode} but did not print recognizable help output; consult {TRIPLETS}.",
+            f"PFLOTRAN 1-rank start-up probe failed: {problem}; last output: {last_lines(output)}. "
+            f"Check the PETSc/MPI libraries the binary links (ldd {PFLOTRAN_BIN}); consult {TRIPLETS}.",
         )
 
 
-def check_mpi_available() -> None:
-    mpi = shutil.which("mpirun") or shutil.which("mpiexec")
-    if mpi:
-        add_check("binary", str(Path(mpi).resolve(strict=False)), False, "pass")
-    else:
+def load_run_tool_mpirun():
+    """Load the run tool's own launcher lookup so the preflight checks what the tool will use.
+
+    Returns (launcher or None, server default, messages printed by the lookup, load error or '').
+    """
+    try:
+        spec = importlib.util.spec_from_file_location("pflotran_run_tool_for_preflight", RUN_TOOL)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            launcher = mod.find_mpirun(None)
+        return launcher, str(mod.SERVER_DEFAULT_MPIRUN), buf.getvalue().strip(), ""
+    except Exception as exc:  # noqa: BLE001 - any load problem becomes a critical check
+        return None, "", "", f"{type(exc).__name__}: {exc}"
+
+
+def libmpi_of_binary() -> str:
+    """Path of libmpi.so.* that ldd resolves for the PFLOTRAN binary (diagnostic only)."""
+    try:
+        result = subprocess.run(
+            ["ldd", str(PFLOTRAN_BIN)], text=True, capture_output=True, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown (ldd failed)"
+    for line in result.stdout.splitlines():
+        m = re.match(r"\s*libmpi\.so\S*\s+=>\s+(\S+)", line)
+        if m:
+            return os.path.realpath(m.group(1))
+    return "unknown (no libmpi in ldd output)"
+
+
+def check_mpi_launcher() -> None:
+    """Check the MPI launcher tools/run_pflotran.py uses for --nproc > 1.
+
+    Same lookup as the tool ($PFLOTRAN_MPIRUN, else the server default; no PATH search),
+    then a 2-rank start-up probe that must report ONE 2-process communicator.
+    """
+    launcher, default, lookup_msg, load_error = load_run_tool_mpirun()
+    if load_error:
         add_check(
             "binary",
-            "mpirun/mpiexec",
-            False,
+            f"MPI launcher lookup in {RUN_TOOL}",
+            True,
             "fail",
-            f"Install OpenMPI or run PFLOTRAN with nproc=1; consult {TRIPLETS} for recovery.",
+            f"Could not load find_mpirun() from {RUN_TOOL}: {load_error}; consult {TRIPLETS}.",
+        )
+        return
+
+    env_choice = os.environ.get("PFLOTRAN_MPIRUN")
+    if launcher is None:
+        if env_choice:
+            add_check(
+                "binary",
+                f"$PFLOTRAN_MPIRUN={env_choice}",
+                True,
+                "fail",
+                f"{lookup_msg or 'not an executable file'}. Unset $PFLOTRAN_MPIRUN to use the server default "
+                f"{default}, or point it at the mpirun of the MPI PFLOTRAN links; consult {TRIPLETS}.",
+            )
+        elif os.path.exists(default):
+            add_check(
+                "binary",
+                default,
+                True,
+                "fail",
+                f"Server default MPI launcher {default} exists but is not an executable file; "
+                f"fix its permissions or set $PFLOTRAN_MPIRUN; consult {TRIPLETS}.",
+            )
+        else:
+            add_check(
+                "binary",
+                default,
+                False,
+                "fail",
+                f"No MPI launcher: serial runs only (nproc=1); MPI runs (nproc>1) unavailable. Restore the "
+                f"miniconda OpenMPI at {default} or set $PFLOTRAN_MPIRUN to the mpirun of the MPI PFLOTRAN "
+                f"links; consult {TRIPLETS}.",
+            )
+        return
+
+    subject = f"{launcher} (MPI launcher of tools/run_pflotran.py)"
+    if not (PFLOTRAN_BIN.is_file() and os.access(PFLOTRAN_BIN, os.X_OK)):
+        add_check(
+            "run",
+            subject,
+            True,
+            "fail",
+            f"Cannot test the launcher without a working PFLOTRAN binary at {PFLOTRAN_BIN}; consult {TRIPLETS}.",
+        )
+        return
+
+    rc, output = run_startup_probe(
+        [launcher, "-n", "2", str(PFLOTRAN_BIN), "-pflotranin", PROBE_INPUT, "-log_view"],
+        timeout=60,
+    )
+    problem = judge_startup_probe(rc, output, 2)
+    if not problem:
+        add_check("run", subject, True, "pass")
+    else:
+        add_check(
+            "run",
+            subject,
+            True,
+            "fail",
+            f"2-rank start-up probe with {launcher} failed: {problem}; last output: {last_lines(output)}. "
+            f"PFLOTRAN links {libmpi_of_binary()}; the launcher must come from that same MPI "
+            f"(server default {default}). Unset or fix $PFLOTRAN_MPIRUN; consult {TRIPLETS}.",
         )
 
 
@@ -249,7 +407,7 @@ def main() -> None:
     check_pflotran_starts()
     check_python_interpreter()
     check_imports()
-    check_mpi_available()
+    check_mpi_launcher()
 
     print()
     passed = sum(1 for c in checks if c["status"] == "pass")
@@ -260,6 +418,8 @@ def main() -> None:
         print(f"  STATUS: PREFLIGHT FAILED - consult {TRIPLETS} for recovery.")
     else:
         print("  STATUS: PREFLIGHT PASSED - safe to proceed with model execution.")
+        if any(c["status"] != "pass" and "No MPI launcher" in str(c.get("fix")) for c in checks):
+            print("  NOTE: MPI unavailable - serial runs (nproc=1) only.")
 
     emit_report(MODEL_ID, checks)
 

@@ -1,0 +1,62 @@
+{
+  "description": "Expected results for the official DART Lorenz-63 example (models/lorenz_63/work, DART v11.21.2): perfect_model_obs then filter, 20-member EAKF, 600 obs. inputs/ are the unmodified files from the DART git tree. Recorded from a clean run of the server's built programs; two clean runs gave byte-identical obs_seq.out and obs_seq.final (deterministic).",
+  "engine_version": "DART v11.21.2 (git 56fee97)",
+  "numeric_checks": [
+    {
+      "name": "n_obs_out",
+      "expected": 600,
+      "tol": 0,
+      "why": "perfect_model_obs writes all 600 obs of obs_seq.in"
+    },
+    {
+      "name": "n_obs_final",
+      "expected": 600,
+      "tol": 0,
+      "why": "filter processes all 600 obs"
+    },
+    {
+      "name": "num_copies_final",
+      "expected": 46,
+      "tol": 0,
+      "why": "obs, truth, prior/posterior mean+spread, 20 prior + 20 posterior members = 46"
+    },
+    {
+      "name": "rmse_obs",
+      "expected": 2.903495,
+      "tol": 0.001,
+      "why": "synthetic obs error vs truth"
+    },
+    {
+      "name": "rmse_prior_mean",
+      "expected": 1.10849,
+      "tol": 0.001,
+      "why": "forecast (prior) ensemble-mean error vs truth"
+    },
+    {
+      "name": "rmse_posterior_mean",
+      "expected": 0.81027,
+      "tol": 0.001,
+      "why": "analysis (posterior) ensemble-mean error vs truth"
+    },
+    {
+      "name": "mean_prior_spread",
+      "expected": 0.784699,
+      "tol": 0.001,
+      "why": "mean prior ensemble spread"
+    },
+    {
+      "name": "mean_posterior_spread",
+      "expected": 0.63243,
+      "tol": 0.001,
+      "why": "mean posterior ensemble spread"
+    }
+  ],
+  "extra_check": "posterior RMSE < prior RMSE < obs RMSE (the filter must reduce error)",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "perfect_model_obs + filter from /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work, run through the KI tools/run_dart.py",
+  "sha256_informational": {
+    "obs_seq.out": "f2ba08181f09a3045806b79f19ba93c7724cb0ff4340dd6e699e5c9245852cb4",
+    "obs_seq.final": "0a0fde193a3ef2696f5c70f4e727d7ce9e0cacb1e6fc781b4d011f3c11c46b1b"
+  },
+  "note": "The obs_seq.out/obs_seq.final that DART ships in git were written by an older DART (old header format, other noise draws); they are NOT used as the reference."
+}

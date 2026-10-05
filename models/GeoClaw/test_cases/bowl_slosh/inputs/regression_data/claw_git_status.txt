@@ -1,0 +1,113 @@
+Clawpack Git Status 
+Diffs can be found in /Users/rjl/clawpack_src/clawpack_master/geoclaw/tests/bowl_slosh/regression_data/claw_git_diffs.txt
+
+Fri, 23 Oct 2020 16:12:16 PDT
+$CLAW = /Users/rjl/clawpack_src/clawpack_master
+$FC = gfortran
+
+
+===========
+clawpack
+===========
+/Users/rjl/clawpack_src/clawpack_master/
+
+--- last commit ---
+be2b38d (HEAD -> master, origin/master, origin/HEAD) Merge pull request #189 from clawpack/no_version_repetition
+
+--- branch and status ---
+## master...origin/master
+ M amrclaw
+ M classic
+ M geoclaw
+ M pyclaw
+ M riemann
+ M visclaw
+
+
+===========
+classic
+===========
+/Users/rjl/clawpack_src/clawpack_master/classic
+
+--- last commit ---
+13f06a2 (HEAD -> master, origin/master, origin/HEAD) Merge pull request #88 from rjleveque/travis_noPy2
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+amrclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/amrclaw
+
+--- last commit ---
+6da6e17 (HEAD -> master, origin/master, origin/HEAD) Merge pull request #266 from rjleveque/region_tools_ixy
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+clawutil
+===========
+/Users/rjl/clawpack_src/clawpack_master/clawutil
+
+--- last commit ---
+116ffb7 (HEAD -> master, tag: v5.7.1, origin/master, origin/HEAD) Merge pull request #151 from rjleveque/b4run
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+pyclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/pyclaw
+
+--- last commit ---
+41e15d8 (HEAD -> master, origin/master, origin/HEAD) Merge pull request #650 from kbarnhart/barnhark/fix_vtk_docstring_formatting
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+visclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/visclaw
+
+--- last commit ---
+b03b0d4 (HEAD -> master, origin/master, origin/HEAD) Merge pull request #280 from rjleveque/mapc2p_exists
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+riemann
+===========
+/Users/rjl/clawpack_src/clawpack_master/riemann
+
+--- last commit ---
+e326696 (HEAD -> rpt2_geoclaw) refactor rpt2_geoclaw.f, cleaned up and modified behavior
+
+--- branch and status ---
+## rpt2_geoclaw
+
+
+===========
+geoclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/geoclaw
+
+--- last commit ---
+13ff68f (HEAD -> rpt2_regression_data) Merge branch 'master' into rpt2_regression_data
+
+--- branch and status ---
+## rpt2_regression_data
+ M tests/bowl_slosh/regression_data/claw_git_status.txt
+ M tests/chile2010_adjoint/regression_data/claw_git_status.txt
+ M tests/chile2010_adjoint/regression_data/gauge00001.txt
+ M tests/storm_surge/regression_data/claw_git_status.txt
+ M tests/storm_surge/regression_data/gauge00001.txt

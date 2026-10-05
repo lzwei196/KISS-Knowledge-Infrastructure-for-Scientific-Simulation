@@ -4,15 +4,20 @@ parse_elmfire_output.py — Parse ELMFIRE outputs to CSV and compute fire behavi
 
 Reads:
   - time_of_arrival GeoTIFFs → fire perimeter progression
-  - spread_rate GeoTIFFs → rate of spread statistics
+  - vs_* (ELMFIRE's spread-rate output; older name spread_rate*) → rate of spread statistics
   - flin GeoTIFFs → fireline intensity statistics
   - flame_length GeoTIFFs → flame length statistics
-  - fire_size_stats CSV → cumulative burned area
+  - fire_size_stats CSV → cumulative burned area (if missing - ELMFIRE's own scripts
+    delete it - the area is counted from the time_of_arrival raster: cells with a
+    time of arrival >= 0 times the cell area)
 
 Outputs:
   - summary.csv: time series of fire area, max ROS, max FLIN, max FL
   - metrics.json: aggregate fire behavior metrics
   - Optionally: comparison with observed fire perimeters
+
+Metrics with no valid source are null in the metrics JSON (before this fix they were
+reported as 0, which reads as a real value).
 
 Unit notes (ELMFIRE native output units):
   - Rate of spread: ft/min (×0.00508 for m/s, ×0.01829 for km/hr)
@@ -77,10 +82,9 @@ def validate_inputs(args):
 
 def parse_fire_size_stats(outputs_dir):
     """Parse fire_size_stats CSV files."""
+    # Only ELMFIRE's own fire_size_stats file (another CSV in the folder, e.g. this
+    # tool's results.csv, is not fire statistics)
     csv_files = sorted(glob.glob(os.path.join(outputs_dir, "fire_size_stats*.csv")))
-    if not csv_files:
-        # Also check for any CSV
-        csv_files = sorted(glob.glob(os.path.join(outputs_dir, "*.csv")))
 
     if not csv_files:
         return None
@@ -150,7 +154,7 @@ def collect_output_rasters(outputs_dir):
 
     for pattern_name, file_patterns in [
         ("time_of_arrival", ["time_of_arrival*.tif", "time_of_arrival*.bil"]),
-        ("spread_rate", ["spread_rate*.tif", "spread_rate*.bil"]),
+        ("spread_rate", ["vs_*.tif", "vs_*.bil", "spread_rate*.tif", "spread_rate*.bil"]),
         ("flin", ["flin*.tif", "flin*.bil"]),
         ("flame_length", ["flame_length*.tif", "flame_length*.bil"]),
         ("crown_fire", ["crown_fire*.tif", "crown_fire*.bil"]),
@@ -163,64 +167,148 @@ def collect_output_rasters(outputs_dir):
     return categories
 
 
-def compute_fire_metrics(fire_stats, raster_categories):
-    """Compute aggregate fire behavior metrics."""
+def burned_area_from_toa(toa_files, notes, read_errors=None):
+    """Burned area (acres) counted from the time_of_arrival raster: cells with a time
+    of arrival >= 0 times the cell area. Used only when fire_size_stats gives no area
+    (ELMFIRE's own scripts delete that CSV). Only one fire case and a north-up grid in
+    metres are supported; otherwise None with a note. This is a raster cell count,
+    close to but not the same number as ELMFIRE's own fire area statistic."""
+    if read_errors is None:
+        read_errors = []
+    if not HAS_GDAL or not toa_files:
+        notes.append("no time_of_arrival raster to count burned cells from")
+        return None
+    # ELMFIRE names it time_of_arrival_<case>_<time>.(bil|tif)
+    parsed = []
+    for f in toa_files:
+        m = re.match(r"time_of_arrival_(\d+)_(\d+)\.", os.path.basename(f))
+        if m:
+            parsed.append((int(m.group(1)), int(m.group(2)), f))
+    cases = {c for c, _, _ in parsed}
+    if len(cases) != 1:
+        notes.append(f"time_of_arrival rasters for {len(cases)} fire cases; burned area from the "
+                     "raster is only done for one case")
+        return None
+    last_time = max(t for _, t, _ in parsed)
+    cands = sorted(f for _, t, f in parsed if t == last_time)
+    path = next((f for f in cands if f.endswith(".tif")), cands[0])
+    try:
+        ds = gdal.Open(path)
+        band = ds.GetRasterBand(1)
+        data = band.ReadAsArray().astype(float)
+        nodata = band.GetNoDataValue()
+        gt = ds.GetGeoTransform()
+        srs = ds.GetSpatialRef()
+        ds = None
+    except Exception as exc:  # GDAL raises RuntimeError on unreadable files
+        notes.append(f"cannot read {path}: {exc}")
+        read_errors.append(path)
+        return None
+    if gt[2] != 0 or gt[4] != 0:
+        notes.append(f"{path}: rotated grid, burned area not counted")
+        return None
+    # acreage needs a grid in metres: a projected/local CRS whose linear unit is 1 m
+    if srs is None or srs.IsGeographic() or abs(srs.GetLinearUnits() - 1.0) > 1e-9:
+        notes.append(f"{path}: grid units not known to be metres, burned area not counted")
+        return None
+    valid = np.isfinite(data)
+    if nodata is not None:
+        valid &= data != nodata
+    burned = valid & (data >= 0)
+    acres = float(burned.sum() * abs(gt[1] * gt[5]) / 4046.8564224)
+    notes.append(f"total_area_acres counted from {os.path.basename(path)} "
+                 f"({int(burned.sum())} burned cells; no usable fire_size_stats area)")
+    return acres
+
+
+def compute_fire_metrics(fire_stats, raster_categories, notes=None, read_errors=None):
+    """Compute aggregate fire behavior metrics.
+
+    A metric with no valid source stays None (not 0) and a note says why.
+    """
+    if notes is None:
+        notes = []
+    if read_errors is None:
+        read_errors = []
     metrics = {
-        "total_area_acres": 0,
-        "total_area_ha": 0,
-        "max_spread_rate_ft_min": 0,
-        "max_spread_rate_m_s": 0,
-        "max_fireline_intensity_kw_m": 0,
-        "max_flame_length_ft": 0,
-        "max_flame_length_m": 0,
-        "simulation_duration_hr": 0,
+        "total_area_acres": None,
+        "total_area_ha": None,
+        "max_spread_rate_ft_min": None,
+        "max_spread_rate_m_s": None,
+        "max_fireline_intensity_kw_m": None,
+        "max_flame_length_ft": None,
+        "max_flame_length_m": None,
+        "simulation_duration_hr": None,
         "output_file_count": 0,
     }
 
-    # From fire size stats CSV
+    def finite(v):
+        return isinstance(v, float) and np.isfinite(v)
+
+    # From fire size stats CSV: total area column ("Total fire area (ac)" in ELMFIRE
+    # 2025, older "Area(acres)"), duration "tstop (h)" (older "Time ... sec")
     if fire_stats:
-        areas = []
+        areas, times = [], []
         for row in fire_stats:
-            for key in row:
-                if "Area(acres)" in key or "area" in key.lower():
-                    areas.append(row[key])
-                    break
+            for key, val in row.items():
+                k = key.strip().lower()
+                if k in ("total fire area (ac)", "area(acres)") and finite(val):
+                    areas.append(val)
+                elif k == "tstop (h)" and finite(val):
+                    times.append(val)
+                elif "time" in k and "sec" in k and "wall" not in k and finite(val):
+                    times.append(val / 3600.0)
         if areas:
             metrics["total_area_acres"] = max(areas)
             metrics["total_area_ha"] = max(areas) * ACRES_TO_HA
-
-        times = []
-        for row in fire_stats:
-            for key in row:
-                if "Time" in key and "sec" in key:
-                    times.append(row[key])
-                    break
+            notes.append("total_area_acres from fire_size_stats (ELMFIRE's fire area)")
+        else:
+            notes.append("fire_size_stats has no total fire area column/value")
         if times:
-            metrics["simulation_duration_hr"] = max(times) / 3600.0
+            metrics["simulation_duration_hr"] = max(times)
+        else:
+            notes.append("simulation_duration_hr: no tstop column in fire_size_stats")
+    else:
+        notes.append("simulation_duration_hr: no fire_size_stats CSV (not taken from the "
+                     "time of arrival, which ends when the fire stops)")
+
+    if metrics["total_area_acres"] is None:
+        acres = burned_area_from_toa(raster_categories.get("time_of_arrival", []), notes, read_errors)
+        if acres is not None:
+            metrics["total_area_acres"] = acres
+            metrics["total_area_ha"] = acres * ACRES_TO_HA
 
     # From raster statistics
     for category, files in raster_categories.items():
         metrics["output_file_count"] += len(files)
         for f in files:
-            stats = parse_raster_stats(f)
+            try:
+                stats = parse_raster_stats(f)
+            except Exception as exc:
+                notes.append(f"cannot read {f}: {exc}")
+                read_errors.append(f)
+                continue
             if stats is None:
+                # discovered but not read: GDAL missing or gdal.Open returned None
+                notes.append(f"cannot read {f}" + ("" if HAS_GDAL else " (GDAL/osgeo not available)"))
+                read_errors.append(f)
+                continue
+            if stats["count"] == 0 or not np.isfinite(stats["max"]):
                 continue
 
             if category == "spread_rate":
-                metrics["max_spread_rate_ft_min"] = max(
-                    metrics["max_spread_rate_ft_min"], stats["max"])
-                metrics["max_spread_rate_m_s"] = (
-                    metrics["max_spread_rate_ft_min"] * FT_MIN_TO_M_S)
+                cur = metrics["max_spread_rate_ft_min"]
+                metrics["max_spread_rate_ft_min"] = stats["max"] if cur is None else max(cur, stats["max"])
+                metrics["max_spread_rate_m_s"] = metrics["max_spread_rate_ft_min"] * FT_MIN_TO_M_S
 
             elif category == "flin":
-                metrics["max_fireline_intensity_kw_m"] = max(
-                    metrics["max_fireline_intensity_kw_m"], stats["max"])
+                cur = metrics["max_fireline_intensity_kw_m"]
+                metrics["max_fireline_intensity_kw_m"] = stats["max"] if cur is None else max(cur, stats["max"])
 
             elif category == "flame_length":
-                metrics["max_flame_length_ft"] = max(
-                    metrics["max_flame_length_ft"], stats["max"])
-                metrics["max_flame_length_m"] = (
-                    metrics["max_flame_length_ft"] * FT_TO_M)
+                cur = metrics["max_flame_length_ft"]
+                metrics["max_flame_length_ft"] = stats["max"] if cur is None else max(cur, stats["max"])
+                metrics["max_flame_length_m"] = metrics["max_flame_length_ft"] * FT_TO_M
 
     return metrics
 
@@ -240,26 +328,41 @@ def write_summary_csv(fire_stats, output_path):
     print(f"  Summary CSV written to: {output_path}")
 
 
-def validate_outputs(metrics, output_path):
-    """Validate parsed outputs are sensible."""
-    results = {"status": "ok", "warnings": []}
+def validate_outputs(metrics, output_path, expect_csv=True, notes=None, read_errors=None):
+    """Validate parsed outputs are sensible. notes: where each value came from / why
+    it is missing (from compute_fire_metrics)."""
+    results = {"status": "ok", "warnings": list(notes or [])}
 
-    if metrics["total_area_acres"] == 0:
+    if read_errors:
+        results["status"] = "error"
+        results["warnings"].append(f"Output rasters found but not readable: {read_errors}")
+    if metrics["total_area_acres"] is None:
+        results["status"] = "error"
+        results["warnings"].append("Burned area not available (see the notes above)")
+    elif metrics["total_area_acres"] == 0:
         results["warnings"].append("Total burned area is 0 — fire may not have spread")
+    for k in ("max_spread_rate_ft_min", "max_fireline_intensity_kw_m", "max_flame_length_ft"):
+        if metrics.get(k) is None:
+            results["warnings"].append(f"{k}: no valid output raster for it (null in the metrics)")
 
-    if metrics["max_spread_rate_ft_min"] > 1000:
+    if (metrics["max_spread_rate_ft_min"] or 0) > 1000:
         results["warnings"].append(
             f"Max spread rate {metrics['max_spread_rate_ft_min']:.0f} ft/min "
             f"is very high — verify inputs")
 
-    if metrics["max_flame_length_ft"] > 200:
+    if (metrics["max_flame_length_ft"] or 0) > 200:
         results["warnings"].append(
             f"Max flame length {metrics['max_flame_length_ft']:.0f} ft "
             f"is extremely high — verify fuel moisture")
 
-    if not os.path.isfile(output_path):
+    if expect_csv and not os.path.isfile(output_path):
         results["status"] = "error"
         results["warnings"].append(f"Output file not created: {output_path}")
+    elif not expect_csv:
+        old = (f" (the existing {output_path} is NOT from this parse and was left unchanged)"
+               if os.path.isfile(output_path) else "")
+        results["warnings"].append(f"No fire_size_stats CSV, so no time series written to "
+                                   f"{output_path}; metrics JSON only{old}")
 
     print(json.dumps(results, indent=2))
     return results
@@ -285,16 +388,21 @@ def process(args):
             print(f"  {cat}: {len(files)} files")
 
     # Compute metrics
-    metrics = compute_fire_metrics(fire_stats, raster_categories)
+    notes, read_errors = [], []
+    metrics = compute_fire_metrics(fire_stats, raster_categories, notes, read_errors)
+    def _f(v, fmt):
+        return "n/a" if v is None else format(v, fmt)
     print(f"\nFire behavior metrics:")
-    print(f"  Total area: {metrics['total_area_acres']:.1f} acres "
-          f"({metrics['total_area_ha']:.1f} ha)")
-    print(f"  Max spread rate: {metrics['max_spread_rate_ft_min']:.1f} ft/min "
-          f"({metrics['max_spread_rate_m_s']:.3f} m/s)")
-    print(f"  Max fireline intensity: {metrics['max_fireline_intensity_kw_m']:.0f} kW/m")
-    print(f"  Max flame length: {metrics['max_flame_length_ft']:.1f} ft "
-          f"({metrics['max_flame_length_m']:.1f} m)")
-    print(f"  Duration: {metrics['simulation_duration_hr']:.1f} hr")
+    print(f"  Total area: {_f(metrics['total_area_acres'], '.1f')} acres "
+          f"({_f(metrics['total_area_ha'], '.1f')} ha)")
+    for n in notes:
+        print(f"  note: {n}")
+    print(f"  Max spread rate: {_f(metrics['max_spread_rate_ft_min'], '.1f')} ft/min "
+          f"({_f(metrics['max_spread_rate_m_s'], '.3f')} m/s)")
+    print(f"  Max fireline intensity: {_f(metrics['max_fireline_intensity_kw_m'], '.0f')} kW/m")
+    print(f"  Max flame length: {_f(metrics['max_flame_length_ft'], '.1f')} ft "
+          f"({_f(metrics['max_flame_length_m'], '.1f')} m)")
+    print(f"  Duration: {_f(metrics['simulation_duration_hr'], '.1f')} hr")
 
     # Write outputs
     write_summary_csv(fire_stats, args.out)
@@ -307,7 +415,10 @@ def process(args):
 
     # Validate
     print("\nValidating parsed outputs...")
-    validate_outputs(metrics, args.out)
+    v = validate_outputs(metrics, args.out, expect_csv=bool(fire_stats), notes=notes,
+                         read_errors=read_errors)
+    if v["status"] != "ok":
+        sys.exit(1)
 
     return metrics
 

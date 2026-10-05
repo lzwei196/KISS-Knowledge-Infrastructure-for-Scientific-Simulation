@@ -1,0 +1,57 @@
+{
+  "test_case": "BMI heat_example (official CSDMS BmiHeat example: examples/heat.yaml + run-model-from-bmi.ipynb + upstream tests)",
+  "engine": {
+    "name": "bmi-heat (CSDMS BmiHeat reference BMI model, Python package 'heat')",
+    "version": "2.1.3.dev0 (git 07016091d721410894ef8b16127fbe2ed063f0dd, 2024-10-21)",
+    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python (imports heat.bmi_heat; bmipy 2.0.1)",
+    "source": "https://github.com/csdms/bmi-example-python (examples/ and tests/ at commit 0701609)",
+    "license": "MIT (CSDMS, see inputs/LICENSE)"
+  },
+  "ki": {
+    "model": "BMI",
+    "tools_used": [
+      "tools/bmi_runner.py (validate_inputs, run_model, validate_outputs)",
+      "tools/compliance_checker.py (check_compliance)"
+    ]
+  },
+  "simulation": {
+    "model": "2D heat equation on a plate (BmiHeat)",
+    "grid": "uniform_rectilinear 6 x 8, spacing 1.0, origin 0.0",
+    "alpha": 1.0,
+    "time_step_s": 0.25,
+    "n_steps": 10,
+    "end_time_s": 2.5,
+    "start_field": "zeros with 100 K at the centre cell (3,4), set via set_value as in the notebook",
+    "variable": "plate_surface__temperature (K)"
+  },
+  "files": {
+    "inputs/LICENSE": {
+      "bytes": 1109,
+      "sha256": "f1fdd29df2618241263737bd80e2e3fb3733b2dac281a7154a27e543f65ae123"
+    },
+    "inputs/heat.yaml": {
+      "bytes": 106,
+      "sha256": "c3d86f7597b341189c477e1ea98c45c8176ca7166275586e8dd41949f0b24158"
+    },
+    "inputs/run-model-from-bmi.ipynb": {
+      "bytes": 7490,
+      "sha256": "649248920d6468b8634a9e244949c2dca6032fe734a495d3fa1f58704f38346e"
+    },
+    "inputs/tests/get_value_test.py": {
+      "bytes": 1881,
+      "sha256": "7eda36455cefbbfbaf4da9d42d2313cfaffeff667b99264c8e0afa7fa464f84f"
+    },
+    "inputs/tests/grid_info_test.py": {
+      "bytes": 2098,
+      "sha256": "9acc9df99693a6883b4a64b6fb988a5a736096e62339d4573f441185cf8a0195"
+    },
+    "inputs/tests/irf_test.py": {
+      "bytes": 2120,
+      "sha256": "e0d84d3c3957ddc37aede52a4b6525086e0d8c882ac2e4211fea064329a005a4"
+    },
+    "inputs/tests/set_value_test.py": {
+      "bytes": 778,
+      "sha256": "7f49a82e162c45df23f99e3e354c358f64f5bd944e20536d387f46b0a0b39cba"
+    }
+  }
+}

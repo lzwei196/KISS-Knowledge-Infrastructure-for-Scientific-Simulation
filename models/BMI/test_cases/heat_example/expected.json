@@ -1,0 +1,26 @@
+{
+  "description": "Expected results for the official CSDMS BMI heat example (csdms/bmi-example-python, commit 0701609, bmi-heat 2.1.3.dev0): examples/heat.yaml (6x8 plate, spacing 1, alpha 1) driven by the official notebook examples/run-model-from-bmi.ipynb -- set a 100 K spike in the plate centre, run 10 steps of dt=0.25 s. The same case is also run through the KI tools/bmi_runner.py, the KI tools/compliance_checker.py is run on BmiHeat, and the 28 upstream unit tests (tests/*.py) are called. inputs/ are the unmodified upstream files. The notebook ships with no stored outputs and the repo has no reference output files, so values were recorded from our own run; two clean runs gave identical numbers and a byte-identical KI runner CSV (the case is deterministic: the spike set_value overwrites the random start field).",
+  "engine_version": "bmi-heat 2.1.3.dev0 (csdms/bmi-example-python git 07016091d721410894ef8b16127fbe2ed063f0dd), bmipy 2.0.1, numpy 2.4.3, scipy 1.17.1",
+  "numeric_checks": [
+    {"name": "nb_time_step", "expected": 0.25, "tol": 0, "why": "dt = min(spacing)^2 / (4 alpha) = 1/4"},
+    {"name": "nb_grid_size", "expected": 48, "tol": 0, "why": "heat.yaml shape 6 x 8"},
+    {"name": "nb_n_steps", "expected": 10, "tol": 0, "why": "notebook runs one update, then updates until t = 10 dt"},
+    {"name": "nb_final_time", "expected": 2.5, "tol": 0, "why": "10 steps x 0.25 s"},
+    {"name": "nb_center_after_1_step", "expected": 50.0, "tol": 1e-9, "why": "centre value after the first step (100 K spike spreads)"},
+    {"name": "nb_center_final", "expected": 6.084105186164379, "tol": 1e-9, "why": "centre value after 10 steps"},
+    {"name": "nb_final_max", "expected": 6.084105186164379, "tol": 1e-9, "why": "plate maximum after 10 steps (still at the centre)"},
+    {"name": "nb_final_min", "expected": 0.0, "tol": 1e-9, "why": "plate minimum after 10 steps"},
+    {"name": "nb_final_sum", "expected": 65.01314109191298, "tol": 1e-9, "why": "the notebook's last printed number: temperature_flat.sum() (heat lost at the edges, so < 100)"},
+    {"name": "ki_runner_n_steps", "expected": 10, "tol": 0, "why": "KI bmi_runner.run_model with end_time 2.5 and spike injected at t=0"},
+    {"name": "ki_runner_final_sum", "expected": 65.01314109191298, "tol": 1e-9, "why": "KI runner final mean x 48 must equal the notebook sum"},
+    {"name": "ki_runner_csv_rows", "expected": 10, "tol": 0, "why": "one CSV row per step"},
+    {"name": "ki_compliance_implemented", "expected": 41, "tol": 0, "why": "KI compliance_checker: BmiHeat has 41 of the 42 functions it lists; the one missing is get_bmi_version, which is BMI 2.1 and not part of BMI 2.0 that this heat version and bmipy 2.0.1 follow"},
+    {"name": "upstream_tests_passed", "expected": 28, "tol": 0, "why": "all 28 upstream unit tests (get_value 6, grid_info 11, irf 9, set_value 2) pass"},
+    {"name": "upstream_tests_failed", "expected": 0, "tol": 0, "why": "no upstream unit test fails"}
+  ],
+  "extra_check": "KI runner final sum must match the notebook final sum to 1e-9; engine worker must exit 0",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python (bmi-heat installed from git), notebook cells run as-is (the one '!cat heat.yaml' shell line skipped), KI tools from models/BMI/tools",
+  "reference": "Own run, repeated twice with identical results. No official reference outputs exist (notebook saved without outputs; repo has no reference files).",
+  "notes": "Run-time only tweak (no file changed): the server venv's heat package lost heat/__init__.py, so run_reference sets heat.BmiHeat = heat.bmi_heat.BmiHeat before the notebook and tests run. This only restores the name the package's own __init__.py would export; the model code is the same."
+}

@@ -75,6 +75,62 @@ except ImportError:  # pragma: no cover
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Engine python: PCRaster + PCR-GLOBWB live in the conda env pcrglobwb_python3, not in the
+# HydroCraft python_env that SKILL.md uses to start the KI tools. Lookup (same as
+# preflight_check.py): --pcrglobwb-python -> $PCRGLOBWB_PYTHON -> server default -> this
+# python (only if it imports pcraster). An explicit value is used as given (no fallback).
+# If the chosen python is not the one running this tool, the tool re-launches itself with
+# it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+PCRGLOBWB_PYTHON_DEFAULT = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+                            "PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin/python")
+_REEXEC_GUARD = "KI_PCRGLOBWB_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the PCR-GLOBWB interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--pcrglobwb-python"
+    env_value = os.environ.get("PCRGLOBWB_PYTHON")
+    if env_value is not None:
+        return env_value, "$PCRGLOBWB_PYTHON"
+    if os.path.isfile(PCRGLOBWB_PYTHON_DEFAULT):
+        return PCRGLOBWB_PYTHON_DEFAULT, "server default"
+    try:
+        import pcraster  # noqa: F401
+        return sys.executable, "running python (imports pcraster)"
+    except ImportError:
+        return None, ("no python with pcraster: --pcrglobwb-python and $PCRGLOBWB_PYTHON not "
+                      f"set, server default {PCRGLOBWB_PYTHON_DEFAULT} not found, and "
+                      f"{sys.executable} cannot import pcraster")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the PCR-GLOBWB python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        logger.error(source)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        logger.error(f"re-launch loop: running {sys.executable}, expected {python} ({source})")
+        sys.exit(1)
+    if not (python and os.path.isfile(python) and os.access(python, os.X_OK)):
+        logger.error(f"PCR-GLOBWB python not found or not executable: {python!r} ({source})")
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: keep the env's own path
+    logger.info(f"re-launching with {python} ({source})")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        logger.error(f"could not start {python} ({source}): {e}")
+        sys.exit(1)
+
 
 DEFAULT_LDD_NC = (
     "https://opendap.4tu.nl/thredds/dodsC/data2/pcrglobwb/version_2019_11_beta/"
@@ -457,8 +513,13 @@ def main():
                         help="Fail if |traced - reported| area exceeds this")
     parser.add_argument("--ldd-nc", default=DEFAULT_LDD_NC)
     parser.add_argument("--cellarea-nc", default=DEFAULT_CELLAREA_NC)
+    parser.add_argument("--pcrglobwb-python", default=None,
+                        help="Python with pcraster (default: $PCRGLOBWB_PYTHON, else the server "
+                             "env pcrglobwb_python3, else this python if it imports pcraster). "
+                             "The tool re-launches itself with it.")
 
     args = parser.parse_args()
+    ensure_engine_python(args.pcrglobwb_python)
 
     validate_inputs(args.gauge_lat, args.gauge_lon, args.target_area_km2,
                     args.cellsize, args.buffer_cells, args.snap_search)

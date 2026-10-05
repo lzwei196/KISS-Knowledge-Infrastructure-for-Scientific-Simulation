@@ -29,6 +29,8 @@ PARSE_TOOL = TOOLS / "parse_geoclaw_output.py"
 _WORK = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw"
 _DEF_CLAW = _WORK + "/clawpack"
 _DEF_PY = _WORK + "/venv/bin/python"
+# python that starts the KI tools (env KI_TOOL_PY, default: the Clawpack python)
+TOOL_PY = os.environ.get("KI_TOOL_PY")
 NEEDED_SRC = ["clawutil/src/Makefile.common", "geoclaw/src/2d/shallow/Makefile.geoclaw",
               "amrclaw/src/2d", "riemann/src/rpn2_geoclaw.f"]
 
@@ -95,6 +97,7 @@ def main():
         print("MISSING DEPENDENCY: " + "; ".join(miss) + ". NOT run.", file=sys.stderr)
         return 3
 
+    TOOL_PY_ = TOOL_PY or py
     tmp = Path(tempfile.mkdtemp(prefix="geoclaw_bowl_slosh_"))
     fails, got = [], {}
     try:
@@ -105,7 +108,7 @@ def main():
         # 2. unmodified official files
         run = tmp / "run"
         shutil.copytree(HERE / "inputs", run)
-        env = dict(os.environ, CLAW=str(tmp / "claw"), FC=fc_path, OMP_NUM_THREADS="4",
+        env = dict(os.environ, CLAW=str(tmp / "claw"), FC=fc_path, OMP_NUM_THREADS="4", CLAW_PYTHON=py,
                    PATH=str(Path(py).parent) + os.pathsep + os.environ.get("PATH", ""))
         env.pop("FFLAGS", None)
         cp = subprocess.run([py, "maketopo.py"], cwd=run, env=env, capture_output=True,
@@ -114,11 +117,12 @@ def main():
             raise RuntimeError(f"maketopo.py failed: {cp.stderr[-400:]}")
         # 3. KI run tool
         tool_json = tmp / "run_tool.json"
-        cp = subprocess.run([py, str(RUN_TOOL), "--run-dir", str(run), "--use-makefile",
+        cp = subprocess.run([TOOL_PY_, str(RUN_TOOL), "--run-dir", str(run), "--use-makefile",
                              "--timeout", "900", "--json-output", str(tool_json)],
                             cwd=tmp, env=env, capture_output=True, text=True, timeout=1200)
         res = json.loads(tool_json.read_text()) if tool_json.is_file() else {}
-        amr = (run / "fort.amr").read_text() if (run / "fort.amr").is_file() else ""
+        out = run / "_output"  # the run tool writes output to <run>/_output, as Clawpack runclaw does
+        amr = (out / "fort.amr").read_text() if (out / "fort.amr").is_file() else ""
         ok = (cp.returncode == 0 and res.get("status") == "success"
               and all(s.get("returncode") == 0 for s in res.get("steps", []))
               and "end of AMRCLAW integration" in amr)
@@ -130,7 +134,7 @@ def main():
             print("  ran GeoClaw through KI tools/run_geoclaw.py (setrun -> make .exe -> xgeoclaw)")
             # 4a. KI parse tool: frames (xgeoclaw writes into the run dir, see README)
             pj = tmp / "parse.json"
-            subprocess.run([py, str(PARSE_TOOL), "--output-dir", str(run), "--json-output", str(pj)],
+            subprocess.run([TOOL_PY_, str(PARSE_TOOL), "--output-dir", str(out), "--json-output", str(pj)],
                            cwd=tmp, env=env, capture_output=True, text=True, timeout=300)
             if pj.is_file():
                 p = json.loads(pj.read_text())
@@ -138,7 +142,7 @@ def main():
                     got["n_frames"] = float(p["n_frames"])
                     got["final_frame_time"] = float(p["time_range"][1])
             # 4b. official readers, official reference data
-            cp = subprocess.run([py, "-c", READER, str(run), str(run / "regression_data")],
+            cp = subprocess.run([py, "-c", READER, str(out), str(run / "regression_data")],
                                 cwd=tmp, env=env, capture_output=True, text=True, timeout=300)
             line = [l for l in cp.stdout.splitlines() if l.startswith("JSON=")]
             if line:

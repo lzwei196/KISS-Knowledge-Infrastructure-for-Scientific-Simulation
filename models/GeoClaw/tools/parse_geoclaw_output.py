@@ -47,10 +47,12 @@ def validate_inputs(args):
     if not t_files:
         warnings.append(f"No fort.t files found — timing info unavailable")
 
-    # Check gauge file
+    # Check gauge files (Clawpack 5.x: gaugeNNNNN.txt; older: fort.gauge)
     gauge_file = os.path.join(args.output_dir, "fort.gauge")
-    if not os.path.isfile(gauge_file):
-        warnings.append("No fort.gauge file — no gauge data available")
+    if not os.path.isfile(gauge_file) and not _gauge_txt_files(args.output_dir):
+        warnings.append("No gaugeNNNNN.txt or fort.gauge file — no gauge data available")
+    if _gauge_bin_files(args.output_dir):
+        warnings.append("Binary gauge files (gauge*.bin) are not parsed by this tool")
 
     # Check requested format
     if args.format not in ["csv", "json", "numpy"]:
@@ -76,84 +78,139 @@ def _parse_fort_t(filepath):
         meta["naux"] = int(lines[3].split()[0])
         meta["ndim"] = int(lines[4].split()[0])
         meta["nghost"] = int(lines[5].split()[0])
+    if len(lines) >= 7 and lines[6].split():  # Clawpack 5.x: "ascii   format" / "binary..."
+        meta["format"] = lines[6].split()[0]
     return meta
 
 
-def _parse_fort_q(filepath, meqn=3, ndim=2):
-    """Parse a fort.qNNNN file to extract solution data for all AMR grids."""
-    grids = []
+_GRID_HEADER_NAMES = {"grid_number", "AMR_level", "mx", "my", "mz",
+                      "xlow", "ylow", "zlow", "dx", "dy", "dz"}
 
+
+def _parse_fort_q(filepath, meqn=None, ndim=2):
+    """Parse a fort.qNNNN file (ASCII) and return the solution for all AMR grids.
+
+    Each grid is a header of "value name" lines (grid_number, AMR_level, mx, my, xlow,
+    ylow, dx, dy) followed by mx*my cell records, one cell per line; Clawpack 5.x puts a
+    blank line after every row of cells. Every record has the same number of columns
+    (GeoClaw 5.x: h, hu, hv, eta), which must equal meqn from fort.t when it is given.
+    Raises ValueError on a truncated or malformed grid.
+    """
     with open(filepath, "r") as f:
-        content = f.read()
+        lines = [l.split() for l in f]
 
-    # Split by grid headers
-    # Each grid starts with a header block containing grid_number, AMR_level, mx, my, etc.
-    blocks = content.strip().split("\n\n")
-
-    i = 0
-    while i < len(blocks):
-        block = blocks[i].strip()
-        if not block:
+    grids = []
+    i, n = 0, len(lines)
+    while i < n:
+        if not lines[i]:
             i += 1
             continue
+        header = {}
+        while i < n and len(lines[i]) == 2 and lines[i][1] in _GRID_HEADER_NAMES:
+            value, name = lines[i]
+            header[name] = int(value) if name in ("grid_number", "AMR_level", "mx", "my", "mz") \
+                else float(value)
+            i += 1
+        missing = [k for k in ("grid_number", "AMR_level", "mx", "my", "xlow", "ylow", "dx")
+                   if k not in header]
+        if missing:
+            raise ValueError(f"{filepath}: line {i + 1}: expected a grid header, missing {missing}")
+        header.setdefault("dy", header["dx"])
+        mx, my = header["mx"], header["my"]
+        ncell = mx * my * header.get("mz", 1)
 
-        lines = block.split("\n")
+        values = []
+        ncol = None
+        while len(values) < ncell and i < n:
+            if lines[i]:
+                if ncol is None:
+                    ncol = len(lines[i])
+                    if meqn is not None and ncol != meqn:
+                        raise ValueError(f"{filepath}: line {i + 1}: {ncol} values per cell, "
+                                         f"fort.t declares meqn = {meqn}")
+                elif len(lines[i]) != ncol:
+                    raise ValueError(f"{filepath}: line {i + 1}: {len(lines[i])} values, "
+                                     f"expected {ncol} (grid {header['grid_number']})")
+                values.append([float(v) for v in lines[i]])
+            i += 1
+        if len(values) < ncell:
+            raise ValueError(f"{filepath}: grid {header['grid_number']} is truncated: "
+                             f"{len(values)} of {ncell} cells")
 
-        # Try to parse as header
-        try:
-            header = {}
-            if len(lines) >= 7:
-                header["grid_number"] = int(lines[0].split()[0])
-                header["AMR_level"] = int(lines[1].split()[0])
-                header["mx"] = int(lines[2].split()[0])
-                header["my"] = int(lines[3].split()[0])
-                header["xlow"] = float(lines[4].split()[0])
-                header["ylow"] = float(lines[5].split()[0])
-                header["dx"] = float(lines[6].split()[0])
-                header["dy"] = float(lines[7].split()[0]) if len(lines) > 7 else header["dx"]
+        q = np.array(values).reshape(my, mx, ncol) if "mz" not in header else np.array(values)
+        header["ncol"] = ncol
+        header["q"] = q
 
-                # Data follows in next block or remaining lines
-                data_lines = lines[8:] if len(lines) > 8 else []
-                if not data_lines and i + 1 < len(blocks):
-                    i += 1
-                    data_lines = blocks[i].strip().split("\n")
+        # Compute derived quantities
+        h = q[..., 0]
+        hu = q[..., 1]
+        hv = q[..., 2] if ncol > 2 else np.zeros_like(h)
 
-                mx = header["mx"]
-                my = header["my"]
+        # Compute velocity (avoid division by zero in dry cells)
+        dry = h < 1e-6
+        with np.errstate(divide="ignore", invalid="ignore"):
+            u = np.where(dry, 0.0, hu / h)
+            v = np.where(dry, 0.0, hv / h)
+        speed = np.sqrt(u**2 + v**2)
 
-                # Parse data values
-                values = []
-                for dl in data_lines:
-                    vals = dl.split()
-                    values.extend([float(v) for v in vals])
+        header["h_max"] = float(np.max(h))
+        header["h_mean"] = float(np.mean(h[~dry])) if np.any(~dry) else 0.0
+        header["speed_max"] = float(np.max(speed))
 
-                expected = mx * my * meqn
-                if len(values) >= expected:
-                    q = np.array(values[:expected]).reshape(my, mx, meqn)
-                    header["q"] = q
-
-                    # Compute derived quantities
-                    h = q[:, :, 0]
-                    hu = q[:, :, 1]
-                    hv = q[:, :, 2] if meqn > 2 else np.zeros_like(h)
-
-                    # Compute velocity (avoid division by zero in dry cells)
-                    dry = h < 1e-6
-                    u = np.where(dry, 0.0, hu / h)
-                    v = np.where(dry, 0.0, hv / h)
-                    speed = np.sqrt(u**2 + v**2)
-
-                    header["h_max"] = float(np.max(h))
-                    header["h_mean"] = float(np.mean(h[~dry])) if np.any(~dry) else 0.0
-                    header["speed_max"] = float(np.max(speed))
-
-                grids.append(header)
-        except (ValueError, IndexError):
-            pass
-
-        i += 1
+        grids.append(header)
 
     return grids
+
+
+def _gauge_txt_files(outdir):
+    """Clawpack 5.x ASCII gauge files gaugeNNNNN.txt (not gauges.data)."""
+    return sorted(f for f in glob.glob(os.path.join(outdir, "gauge*.txt"))
+                  if re.fullmatch(r"gauge\d+\.txt", os.path.basename(f)))
+
+
+def _gauge_bin_files(outdir):
+    return sorted(f for f in glob.glob(os.path.join(outdir, "gauge*.bin*"))
+                  if re.fullmatch(r"gauge\d+\.bin\w*", os.path.basename(f)))
+
+
+def _parse_gauge_txt(filepath):
+    """Parse one Clawpack 5.x gaugeNNNNN.txt file.
+
+    Header lines start with '#': '# gauge_id= 1 location=( x y ) num_var= 4'.
+    Data columns: level, time, then num_var values (GeoClaw: h, hu, hv, eta), then aux.
+    Returns (gauge_id, {"time", "level", "q"}), or (gauge_id, None) for the header of a
+    binary gauge ('# file format binary..., time series in .bin file').
+    """
+    gauge_id, num_var, binary = None, None, False
+    times, levels, qs = [], [], []
+    with open(filepath, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                if re.search(r"file format\s+binary", line):
+                    binary = True
+                m = re.search(r"gauge_id=\s*(\d+)", line)
+                if m:
+                    gauge_id = int(m.group(1))
+                m = re.search(r"num_var=\s*(\d+)", line)
+                if m:
+                    num_var = int(m.group(1))
+                continue
+            parts = line.split()
+            nq = num_var if num_var is not None else len(parts) - 2
+            if len(parts) < 2 + nq:
+                raise ValueError(f"{filepath}: short gauge record: {line[:80]}")
+            levels.append(int(float(parts[0])))
+            times.append(float(parts[1]))
+            qs.append([float(v) for v in parts[2:2 + nq]])
+    if gauge_id is None:
+        m = re.search(r"gauge(\d+)\.txt$", os.path.basename(filepath))
+        gauge_id = int(m.group(1))
+    if binary:
+        return gauge_id, None
+    return gauge_id, {"time": np.array(times), "level": levels, "q": np.array(qs)}
 
 
 def _parse_gauge_file(filepath):
@@ -201,17 +258,32 @@ def process(args, input_warnings):
         "warnings": warnings,
     }
 
-    # Parse all frames
-    t_files = sorted(glob.glob(os.path.join(outdir, "fort.t*")))
-    q_files = sorted(glob.glob(os.path.join(outdir, "fort.q*")))
+    # Parse all frames (fort.tNNNN paired with fort.qNNNN by frame number)
+    def _frame_numbers(prefix):
+        return {os.path.basename(f)[len(prefix):]
+                for f in glob.glob(os.path.join(outdir, prefix + "*"))
+                if re.fullmatch(re.escape(prefix) + r"\d+", os.path.basename(f))}
+    t_nums, q_nums = _frame_numbers("fort.t"), _frame_numbers("fort.q")
+    if t_nums != q_nums:
+        raise ValueError("fort.t / fort.q frames do not pair up: only fort.t for "
+                         f"{sorted(t_nums - q_nums)}, only fort.q for {sorted(q_nums - t_nums)}")
 
     frames = []
-    for tf, qf in zip(t_files, q_files):
+    for num in sorted(t_nums, key=int):
+        tf = os.path.join(outdir, "fort.t" + num)
+        qf = os.path.join(outdir, "fort.q" + num)
         meta = _parse_fort_t(tf)
-        grids = _parse_fort_q(qf, meqn=meta.get("meqn", 3))
+        if not all(k in meta for k in ("time", "meqn", "ngrids")):
+            raise ValueError(f"{tf}: incomplete frame header (time/meqn/ngrids missing)")
+        if meta.get("format", "ascii") != "ascii":
+            raise ValueError(f"{tf}: output format '{meta['format']}' is not supported "
+                             "(only ASCII fort.q is read)")
+        grids = _parse_fort_q(qf, meqn=meta["meqn"])
+        if "ngrids" in meta and len(grids) != meta["ngrids"]:
+            raise ValueError(f"{qf}: {len(grids)} grids read, {tf} declares {meta['ngrids']}")
 
         frame = {
-            "frame": int(re.search(r"\d+", os.path.basename(tf)).group()),
+            "frame": int(num),
             "time": meta.get("time", 0.0),
             "n_grids": len(grids),
             "h_max": max((g.get("h_max", 0) for g in grids), default=0),
@@ -224,11 +296,23 @@ def process(args, input_warnings):
     if frames:
         result["time_range"] = [frames[0]["time"], frames[-1]["time"]]
 
-    # Parse gauges
-    gauge_file = os.path.join(outdir, "fort.gauge")
+    # Parse gauges: Clawpack 5.x gaugeNNNNN.txt, else the old fort.gauge
     gauge_data = {}
-    if os.path.isfile(gauge_file):
+    gauge_txt = _gauge_txt_files(outdir)
+    gauge_file = os.path.join(outdir, "fort.gauge")
+    if gauge_txt:
+        for gf in gauge_txt:
+            gid, gdata = _parse_gauge_txt(gf)
+            if gdata is None:  # header of a binary gauge: data are in the .bin file
+                result["warnings"].append(f"gauge {gid}: binary time series ({gf} is only the "
+                                          "header), not parsed")
+                continue
+            if gid in gauge_data:
+                raise ValueError(f"gauge id {gid} appears in more than one file ({gf})")
+            gauge_data[gid] = gdata
+    elif os.path.isfile(gauge_file):
         gauge_data = _parse_gauge_file(gauge_file)
+    if gauge_data:
         result["n_gauges"] = len(gauge_data)
         result["gauge_ids"] = list(gauge_data.keys())
 
@@ -372,7 +456,17 @@ def main():
     input_warnings = validate_inputs(args)
 
     # Phase 2: Process
-    result, gauge_data = process(args, input_warnings)
+    try:
+        result, gauge_data = process(args, input_warnings)
+    except (ValueError, OSError, IndexError) as e:
+        result = {"status": "error", "output_dir": args.output_dir,
+                  "errors": [f"{type(e).__name__}: {e}"], "warnings": input_warnings}
+        text = json.dumps(result, indent=2, default=str)
+        if args.json_output:
+            with open(args.json_output, "w") as f:
+                f.write(text)
+        print(text)
+        sys.exit(1)
 
     # Phase 3: Validate outputs
     result = validate_outputs(result, gauge_data)

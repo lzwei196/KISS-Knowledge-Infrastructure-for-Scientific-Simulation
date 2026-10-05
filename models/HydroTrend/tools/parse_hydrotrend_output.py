@@ -4,12 +4,15 @@ parse_hydrotrend_output.py
 
 Parses HydroTrend ASCII output files into structured CSV and JSON summaries.
 
-Input files parsed:
-  - {PREFIX}ASCII.Q   — daily water discharge (m³/s)
-  - {PREFIX}ASCII.QS  — daily suspended sediment (kg/s)
-  - {PREFIX}ASCII.QB  — daily bedload (kg/s)
-  - {PREFIX}ASCII.CS  — daily sediment concentration (kg/m³)
-  - {PREFIX}ASCII.VWD — daily velocity(m/s), width(m), depth(m)
+Input files parsed (one row per averaging record: HYDRO.IN line 5 interval
+D=daily, M=monthly, S=seasonal, Y=yearly; HydroTrend uses a FIXED 365-day
+model year, no Feb 29):
+  - {PREFIX}ASCII.Q   — water discharge (m³/s)
+  - {PREFIX}ASCII.QS  — suspended sediment (kg/s)
+  - {PREFIX}ASCII.QB  — bedload (kg/s)
+  - {PREFIX}ASCII.CS  — sediment concentration, one column per grain size (kg/m³);
+                        Cs_kgm3 = sum over grain sizes, Cs_g1..Cs_gN per grain size
+  - {PREFIX}ASCII.VWD — velocity(m/s), width(m), depth(m)
 
 Output:
   - Combined CSV with date, Q, Qs, Qb, Cs, velocity, width, depth
@@ -43,6 +46,12 @@ import os
 import sys
 from datetime import datetime, timedelta
 from collections import defaultdict
+
+# HydroTrend's fixed 365-day model year (hydrooutput.c: daysiy, recperyear).
+_MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+_SEASON_START_DOY = [1, 91, 182, 274]          # season ends: day 90, 181, 273, 365
+_SEASON_DAYS = [90, 91, 92, 92]
+RECORDS_PER_YEAR = {"D": 365, "M": 12, "S": 4, "Y": 1}
 
 
 # --------------------------------------------------------------------------- #
@@ -107,6 +116,96 @@ def validate_parsed_data(data):
 # --------------------------------------------------------------------------- #
 #  Parsing
 # --------------------------------------------------------------------------- #
+def read_hydro_in(in_file):
+    """Return (start_year, n_years, interval, n_epochs) from a HYDRO.IN file
+    (line 4: number of epochs; line 5: "<start year> <no. of years> <D/M/S/Y>").
+    Returns None if the file is missing; raises HydroParseError if malformed."""
+    if not os.path.isfile(in_file):
+        return None
+    try:
+        with open(in_file, "r", errors="replace") as f:
+            lines = f.readlines()
+        n_epochs = int(lines[3].split()[0])
+        parts = lines[4].split()
+        interval = parts[2][0].upper()
+        start, nyears = int(parts[0]), int(parts[1])
+    except (IndexError, ValueError) as e:
+        raise HydroParseError(f"{in_file}: cannot read lines 4-5 ({e})")
+    if interval not in RECORDS_PER_YEAR:
+        raise HydroParseError(f"{in_file}: unknown averaging interval {parts[2]!r} (line 5)")
+    return start, nyears, interval, n_epochs
+
+
+def noleap_date(year, doy):
+    """(month, day) of day-of-year `doy` (1..365) on the 365-day model calendar."""
+    m = 0
+    while doy > _MONTH_DAYS[m]:
+        doy -= _MONTH_DAYS[m]
+        m += 1
+    return m + 1, doy
+
+
+def record_calendar(i, start_year, interval):
+    """Model-calendar info for record i: (year, month, day, day_of_year, n_days)."""
+    rpy = RECORDS_PER_YEAR[interval]
+    year = start_year + i // rpy
+    k = i % rpy
+    if interval == "D":
+        doy, ndays = k + 1, 1
+    elif interval == "M":
+        doy, ndays = sum(_MONTH_DAYS[:k]) + 1, _MONTH_DAYS[k]
+    elif interval == "S":
+        doy, ndays = _SEASON_START_DOY[k], _SEASON_DAYS[k]
+    else:
+        doy, ndays = 1, 365
+    month, day = noleap_date(year, doy)
+    return year, month, day, doy, ndays
+
+
+class HydroParseError(ValueError):
+    """Output file that this parser cannot read safely."""
+
+
+def read_multi_column(filepath, n_header=2):
+    """Read a HydroTrend ASCII output file -> list of float lists.
+
+    Exactly `n_header` header lines are skipped (HydroTrend writes a name line
+    and a dashes line); any other non-numeric line is an error, so a bad row
+    can never silently shift the record dates.  Returns None if missing.
+    """
+    if not os.path.isfile(filepath):
+        return None
+    rows = []
+    with open(filepath, "r") as f:
+        for ln, line in enumerate(f, 1):
+            if ln <= n_header:
+                continue
+            parts = line.split()
+            if not parts:
+                continue
+            try:
+                rows.append([float(x) for x in parts])
+            except ValueError:
+                raise HydroParseError(f"{filepath}: line {ln} is not numeric: {line.strip()[:80]!r}")
+    return rows
+
+
+def read_river_column(filepath, name):
+    """Single-value-per-record file (Q, QS, QB) -> list of floats.
+
+    More than one column means the run used the multi-outlet option
+    (one extra column per outlet), which this parser does not support.
+    """
+    rows = read_multi_column(filepath)
+    if rows is None:
+        return None
+    if any(len(r) != 1 for r in rows):
+        raise HydroParseError(
+            f"{filepath}: rows with more than one column (multi-outlet run?); "
+            f"{name} parsing supports single-outlet output only")
+    return [r[0] for r in rows]
+
+
 def read_single_column(filepath):
     """Read a single-column ASCII file, returning list of floats."""
     values = []
@@ -144,61 +243,86 @@ def read_vwd_file(filepath):
     return velocities, widths, depths
 
 
-def parse_all_outputs(out_dir, prefix, start_year):
-    """Parse all HydroTrend ASCII output files into a combined dataset."""
-    q_vals = read_single_column(
-        os.path.join(out_dir, f"{prefix}ASCII.Q")
-    )
-    qs_vals = read_single_column(
-        os.path.join(out_dir, f"{prefix}ASCII.QS")
-    )
-    qb_vals = read_single_column(
-        os.path.join(out_dir, f"{prefix}ASCII.QB")
-    )
-    cs_vals = read_single_column(
+def parse_all_outputs(out_dir, prefix, start_year, interval="D", cs_grain_columns=False):
+    """Parse all HydroTrend ASCII output files into a combined dataset.
+
+    interval: averaging interval of the run (HYDRO.IN line 5): D, M, S or Y.
+    Dates follow HydroTrend's 365-day model year (no Feb 29); for M/S/Y the
+    date is the first day of the record.  Cs_kgm3 is the sum of the per-grain
+    concentrations; cs_grain_columns=True also adds Cs_g1..Cs_gN.
+    Raises HydroParseError for malformed or multi-outlet output, or files
+    whose record counts disagree.
+    """
+    interval = (interval or "D").upper()[0]
+    q_vals = read_river_column(os.path.join(out_dir, f"{prefix}ASCII.Q"), "Q")
+    qs_vals = read_river_column(os.path.join(out_dir, f"{prefix}ASCII.QS"), "Qs")
+    qb_vals = read_river_column(os.path.join(out_dir, f"{prefix}ASCII.QB"), "Qb")
+    # One column per grain size: Cs_kgm3 = total (sum), Cs_g<k> per size.
+    cs_rows = read_multi_column(
         os.path.join(out_dir, f"{prefix}ASCII.CS")
     )
-    vel, wid, dep = read_vwd_file(
-        os.path.join(out_dir, f"{prefix}ASCII.VWD")
-    )
+    vwd_rows = read_multi_column(os.path.join(out_dir, f"{prefix}ASCII.VWD"))
+    if vwd_rows is not None and any(len(r) != 3 for r in vwd_rows):
+        raise HydroParseError(f"{prefix}ASCII.VWD: rows without exactly 3 columns "
+                              "(multi-outlet run?)")
+    vel = [r[0] for r in vwd_rows] if vwd_rows is not None else None
+    wid = [r[1] for r in vwd_rows] if vwd_rows is not None else None
+    dep = [r[2] for r in vwd_rows] if vwd_rows is not None else None
 
     if q_vals is None:
         return []
+    for name, vals in (("QS", qs_vals), ("QB", qb_vals), ("CS", cs_rows), ("VWD", vwd_rows)):
+        if vals is not None and len(vals) != len(q_vals):
+            raise HydroParseError(f"{prefix}ASCII.{name} has {len(vals)} records, "
+                                  f"{prefix}ASCII.Q has {len(q_vals)}")
+    if cs_rows and len({len(r) for r in cs_rows}) != 1:
+        raise HydroParseError(f"{prefix}ASCII.CS: rows with different numbers of columns")
 
-    n_days = len(q_vals)
-    start_date = datetime(start_year, 1, 1)
+    n_records = len(q_vals)
+    n_grain = len(cs_rows[0]) if (cs_rows and cs_grain_columns) else 0
 
     data = []
-    for i in range(n_days):
-        date = start_date + timedelta(days=i)
+    for i in range(n_records):
+        year, month, day, doy, ndays = record_calendar(i, start_year, interval)
+        cs = cs_rows[i] if cs_rows and i < len(cs_rows) else None
         record = {
-            "date": date.strftime("%Y-%m-%d"),
-            "year": date.year,
-            "month": date.month,
-            "day_of_year": date.timetuple().tm_yday,
+            "date": f"{year:04d}-{month:02d}-{day:02d}",
+            "year": year,
+            "month": month,
+            "day_of_year": doy,
             "Q_m3s": q_vals[i] if i < len(q_vals) else None,
             "Qs_kgs": qs_vals[i] if qs_vals and i < len(qs_vals) else None,
             "Qb_kgs": qb_vals[i] if qb_vals and i < len(qb_vals) else None,
-            "Cs_kgm3": cs_vals[i] if cs_vals and i < len(cs_vals) else None,
+            "Cs_kgm3": sum(cs) if cs else None,
             "velocity_ms": vel[i] if vel and i < len(vel) else None,
             "width_m": wid[i] if wid and i < len(wid) else None,
             "depth_m": dep[i] if dep and i < len(dep) else None,
         }
+        for g in range(n_grain):
+            record[f"Cs_g{g + 1}"] = cs[g] if cs and g < len(cs) else None
+        record["_n_days"] = ndays
         data.append(record)
 
     return data
 
 
 def compute_annual_stats(data):
-    """Compute annual statistics from daily data."""
-    yearly = defaultdict(lambda: {"Q": [], "Qs": [], "Qb": [], "Cs": []})
+    """Compute annual statistics (records of any averaging interval).
+
+    Means are unweighted means of the records; annual volume/mass weight each
+    record by the number of model days it covers."""
+    yearly = defaultdict(lambda: {"Q": [], "Qs": [], "Qb": [], "Cs": [],
+                                  "Qvol": 0.0, "Qsmass": 0.0})
 
     for d in data:
         yr = d["year"]
+        nd = d.get("_n_days", 1)   # days represented by this record
         if d["Q_m3s"] is not None:
             yearly[yr]["Q"].append(d["Q_m3s"])
+            yearly[yr]["Qvol"] += d["Q_m3s"] * nd * 86400
         if d["Qs_kgs"] is not None:
             yearly[yr]["Qs"].append(d["Qs_kgs"])
+            yearly[yr]["Qsmass"] += d["Qs_kgs"] * nd * 86400
         if d["Qb_kgs"] is not None:
             yearly[yr]["Qb"].append(d["Qb_kgs"])
         if d["Cs_kgm3"] is not None:
@@ -213,15 +337,11 @@ def compute_annual_stats(data):
             stats["Q_max_m3s"] = round(max(y["Q"]), 3)
             stats["Q_min_m3s"] = round(min(y["Q"]), 3)
             # Annual volume in km³
-            stats["Q_annual_km3"] = round(
-                sum(y["Q"]) * 86400 / 1e9, 4
-            )
+            stats["Q_annual_km3"] = round(y["Qvol"] / 1e9, 4)
         if y["Qs"]:
             stats["Qs_mean_kgs"] = round(sum(y["Qs"]) / len(y["Qs"]), 3)
             # Annual sediment in Mt
-            stats["Qs_annual_Mt"] = round(
-                sum(y["Qs"]) * 86400 / 1e9, 6
-            )
+            stats["Qs_annual_Mt"] = round(y["Qsmass"] / 1e9, 6)
         if y["Qb"]:
             stats["Qb_mean_kgs"] = round(sum(y["Qb"]) / len(y["Qb"]), 3)
         if y["Cs"]:
@@ -295,12 +415,25 @@ def main():
                         help="File prefix")
     parser.add_argument("--start-year", type=int, required=True,
                         help="Simulation start year")
+    parser.add_argument("--interval", default="auto",
+                        choices=["auto", "D", "M", "S", "Y", "d", "m", "s", "y"],
+                        help="Averaging interval of the run (HYDRO.IN line 5). auto: read "
+                             "it from --in-file, else <out-dir>/<prefix>.IN; if not found, "
+                             "assume D (daily) with a warning")
+    parser.add_argument("--in-file", default=None,
+                        help="Path to the run's <prefix>.IN (for --interval auto); must exist "
+                             "if given")
+    parser.add_argument("--cs-grain-columns", action="store_true",
+                        help="Also write one Cs_g<k> column per grain size to the CSV "
+                             "(Cs_kgm3 is always the sum over grain sizes)")
     parser.add_argument("--output-csv", default=None,
                         help="Output CSV file path")
     parser.add_argument("--output-json", default=None,
                         help="Output JSON summary path")
     parser.add_argument("--observed", default=None,
-                        help="Observed data CSV for validation")
+                        help="Observed data CSV for validation (matched on the date "
+                             "column; for M/S/Y runs the record date is the first day "
+                             "of the month/season/year)")
     parser.add_argument("--obs-date-col", default="date",
                         help="Date column in observed CSV")
     parser.add_argument("--obs-value-col", default="discharge_m3s",
@@ -313,8 +446,38 @@ def main():
         print(json.dumps(check, indent=2))
         sys.exit(1)
 
-    # Step 2: Parse
-    data = parse_all_outputs(args.out_dir, args.prefix, args.start_year)
+    # Step 2: Parse (averaging interval from HYDRO.IN line 5)
+    interval = args.interval.upper()
+    info = None
+    try:
+        in_file = args.in_file or os.path.join(args.out_dir, f"{args.prefix}.IN")
+        if args.in_file and not os.path.isfile(args.in_file):
+            raise HydroParseError(f"--in-file not found: {args.in_file}")
+        if interval == "AUTO" or args.in_file:
+            info = read_hydro_in(in_file)
+        if interval == "AUTO":
+            if info is None:
+                interval = "D"
+                print(f"WARNING: {in_file} not found; cannot read the averaging interval; "
+                      "assuming daily (D). Pass --interval or --in-file.", file=sys.stderr)
+            else:
+                interval = info[2]
+        if info is not None and info[0] != args.start_year:
+            print(f"WARNING: --start-year {args.start_year} differs from "
+                  f"{in_file} start year {info[0]}; using --start-year.", file=sys.stderr)
+        data = parse_all_outputs(args.out_dir, args.prefix, args.start_year, interval,
+                                 cs_grain_columns=args.cs_grain_columns)
+        if not data:
+            raise HydroParseError(f"{args.prefix}ASCII.Q in {args.out_dir} has no data records")
+        if info is not None and info[3] == 1:
+            expect = info[1] * RECORDS_PER_YEAR[interval]
+            if len(data) != expect:
+                raise HydroParseError(
+                    f"{len(data)} records but {in_file} line 5 gives {info[1]} years x "
+                    f"{RECORDS_PER_YEAR[interval]} records/year = {expect}")
+    except HydroParseError as e:
+        print(json.dumps({"status": "error", "errors": [str(e)]}, indent=2))
+        sys.exit(1)
 
     # Step 3: Validate parsed data
     warnings = validate_parsed_data(data)
@@ -324,9 +487,9 @@ def main():
 
     # Step 4: Write CSV
     if args.output_csv and data:
-        fieldnames = list(data[0].keys())
+        fieldnames = [k for k in data[0].keys() if not k.startswith("_")]
         with open(args.output_csv, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(data)
 
@@ -360,7 +523,9 @@ def main():
     q_vals = [d["Q_m3s"] for d in data if d["Q_m3s"] is not None]
     summary = {
         "status": "success",
-        "n_days": len(data),
+        "n_days": sum(d.get("_n_days", 1) for d in data),
+        "n_records": len(data),
+        "interval": interval,
         "n_years": len(annual),
         "discharge_stats": {
             "mean_m3s": round(sum(q_vals) / len(q_vals), 3) if q_vals else 0,

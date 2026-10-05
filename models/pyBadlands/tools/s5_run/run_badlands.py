@@ -26,6 +26,65 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+# ---------------------------------------------------------------------------
+# Engine python: pyBadlands lives in its own venv (numpy<2, badlands from source), not in the HydroCraft python_env that
+# SKILL.md uses to start the KI tools. Lookup (same as preflight_check.py): --pybadlands-python ->
+# $PYBADLANDS_PYTHON -> server default -> this python (only if it imports badlands). An explicit value is
+# used as given (no fallback). If the chosen python is not the one running this tool, the tool
+# re-launches itself with it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+ENGINE_PYTHON_ENV = "PYBADLANDS_PYTHON"
+ENGINE_PYTHON_DEFAULT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python"
+_REEXEC_GUARD = "KI_PYBADLANDS_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the pyBadlands interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--pybadlands-python"
+    env_value = os.environ.get(ENGINE_PYTHON_ENV)
+    if env_value is not None:
+        return env_value, "$" + ENGINE_PYTHON_ENV
+    if os.path.isfile(ENGINE_PYTHON_DEFAULT):
+        return ENGINE_PYTHON_DEFAULT, "server default"
+    try:
+        from badlands.model import Model  # noqa: F401
+        return sys.executable, "running python (imports badlands)"
+    except ImportError:
+        return None, (f"no python with badlands: --pybadlands-python and ${ENGINE_PYTHON_ENV} not set, "
+                      f"server default {ENGINE_PYTHON_DEFAULT} not found, and {sys.executable} "
+                      "cannot import badlands")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the pyBadlands python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        print(json.dumps({"status": "error", "errors": [source]}), file=sys.stderr)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        print(json.dumps({"status": "error", "errors": [
+            f"re-launch loop: running {sys.executable}, expected {python} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    if not (os.path.isfile(python) and os.access(python, os.X_OK)):
+        print(json.dumps({"status": "error", "errors": [
+            f"pyBadlands python not found or not executable: {python!r} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: a venv python must keep its own path
+    print(f"[{os.path.basename(__file__)}] re-launching with {python} ({source})",
+          file=sys.stderr, flush=True)
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        print(json.dumps({"status": "error", "errors": [
+            f"could not start pyBadlands python {python!r} ({source}): {e}"]}), file=sys.stderr)
+        sys.exit(1)
+
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -49,9 +108,11 @@ def validate_inputs(args):
         xml_dir = os.path.dirname(os.path.abspath(args.xml))
 
         # Check DEM file
+        # Badlands opens the files named in the XML relative to the CURRENT folder
+        # (forcing/xmlParser.py), not the XML's folder; check them the same way.
         dem_elem = root.find(".//demfile")
         if dem_elem is not None and dem_elem.text:
-            dem_path = os.path.join(xml_dir, dem_elem.text.strip())
+            dem_path = os.path.abspath(dem_elem.text.strip())
             if not os.path.isfile(dem_path):
                 errors.append(f"DEM file not found: {dem_path}")
 
@@ -65,14 +126,14 @@ def validate_inputs(args):
         # Check rainfall maps
         for rain_map in root.findall(".//rain/map"):
             if rain_map.text:
-                map_path = os.path.join(xml_dir, rain_map.text.strip())
+                map_path = os.path.abspath(rain_map.text.strip())
                 if not os.path.isfile(map_path):
                     warnings.append(f"Rainfall map not found: {map_path}")
 
-        # Check displacement files
-        for ufile in root.findall(".//disp/ufile"):
+        # Check displacement files (<dfile>: vertical, <ufile>: 3D)
+        for ufile in root.findall(".//disp/dfile") + root.findall(".//disp/ufile"):
             if ufile.text:
-                u_path = os.path.join(xml_dir, ufile.text.strip())
+                u_path = os.path.abspath(ufile.text.strip())
                 if not os.path.isfile(u_path):
                     warnings.append(f"Displacement file not found: {u_path}")
 
@@ -140,6 +201,9 @@ def run_model(args, out_path):
     try:
         model = Model()
         model.load_xml(args.xml, verbose=args.verbose)
+        # Badlands picks its own output folder (relative to the current folder, with
+        # "_N" added when the folder already exists); report the folder it really uses.
+        result["output_dir"] = os.path.abspath(model.input.outDir)
         result["load_time_s"] = round(time.time() - t0, 2)
         result["start_time"] = model.tNow
     except Exception as e:
@@ -196,8 +260,13 @@ def main():
                         help="Enable verbose output during simulation")
     parser.add_argument("--output-json", dest="output_json", default=None,
                         help="Write result to JSON file")
+    parser.add_argument("--pybadlands-python", dest="pybadlands_python", default=None,
+                        help="Python of the pyBadlands venv (default: $PYBADLANDS_PYTHON, "
+                             "else the server venv, else this python if it imports badlands). "
+                             "The tool re-launches itself with it.")
 
     args = parser.parse_args()
+    ensure_engine_python(args.pybadlands_python)
     out_path, warnings = validate_inputs(args)
 
     result = run_model(args, out_path)

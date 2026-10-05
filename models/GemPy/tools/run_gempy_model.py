@@ -116,13 +116,15 @@ def run_example_model(example_name, output_dir):
 
         # Save model
         os.makedirs(output_dir, exist_ok=True)
-        gp.save_model(model, path=output_dir, name=example_name)
+        # GemPy 3 API: save_model(model, path) with the full .gempy file path
+        model_file = gp.save_model(
+            model, path=os.path.join(output_dir, f"{example_name}.gempy"))
 
         return {
             "status": "success",
             "project_name": example_name,
             "computation_time_s": round(elapsed, 2),
-            "model_file": os.path.join(output_dir, f"{example_name}.gempy"),
+            "model_file": model_file,
             "n_grid_points": int(model.grid.values.shape[0]) if model.grid.values is not None else 0,
             "has_solutions": solutions is not None,
         }
@@ -218,7 +220,8 @@ def run_from_params(args):
         # Save outputs
         os.makedirs(args.output_dir, exist_ok=True)
         model_path = os.path.join(args.output_dir, f"{project_name}.gempy")
-        gp.save_model(model, path=args.output_dir, name=project_name)
+        # GemPy 3 API: save_model(model, path) with the full .gempy file path
+        model_path = gp.save_model(model, path=model_path)
 
         # Collect result metadata
         result = {
@@ -237,11 +240,16 @@ def run_from_params(args):
         # Extract block model stats
         if solutions is not None:
             raw = model.solutions.raw_arrays
-            if hasattr(raw, 'block') and raw.block is not None:
+            # GemPy 3 names the lithology block `lith_block` (older: `block`)
+            block = getattr(raw, 'block', None)
+            if block is None:
+                block = getattr(raw, 'lith_block', None)
+            if block is not None:
                 import numpy as np
-                unique_ids = np.unique(raw.block)
+                block = np.asarray(block)
+                unique_ids = np.unique(block)
                 result["n_unique_formations"] = int(len(unique_ids))
-                result["block_shape"] = list(raw.block.shape)
+                result["block_shape"] = list(block.shape)
 
         return result
 
@@ -278,7 +286,7 @@ def validate_outputs(result):
             f"Computation took {ct:.0f}s. Consider using OCTREE or lower resolution."
         )
 
-    if result.get("n_unique_formations", 0) <= 1:
+    if "n_unique_formations" in result and result["n_unique_formations"] <= 1:
         warnings.append(
             "Only 1 formation in block model — "
             "check structural mapping and input data."
@@ -340,6 +348,11 @@ def main():
         print(f"Result written to {args.output}", file=sys.stderr)
     else:
         print(output_json)
+
+    if result.get("status") != "success":
+        print("GemPy run FAILED: " + "; ".join(result.get("errors", ["see JSON result"])),
+              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

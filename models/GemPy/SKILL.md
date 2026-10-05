@@ -49,8 +49,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 |---|---|
 | `tools/build_structural_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_structural_params.py --help` |
 | `tools/convert_geological_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_geological_data.py --help` |
-| `tools/parse_gempy_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gempy_output.py --help` |
-| `tools/run_gempy_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gempy_model.py --help` |
+| `tools/parse_gempy_output.py` | `"${GEMPY_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python}" {KI}/tools/parse_gempy_output.py --help` (needs gempy: python_env has none; GemPy venv, or $GEMPY_PYTHON) |
+| `tools/run_gempy_model.py` | `"${GEMPY_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python}" {KI}/tools/run_gempy_model.py --help` (needs gempy: python_env has none; GemPy venv, or $GEMPY_PYTHON) |
 
 *4 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->

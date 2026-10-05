@@ -1,0 +1,64 @@
+{
+  "test_case": "MOSART tutorial_1981_05 (official mosartwmpy tutorial, CONUS May 1981)",
+  "engine": {
+    "name": "mosartwmpy",
+    "version": "0.6.2",
+    "binary": "/mnt/disk1/Hydrocraft_server/models/MOSART/venv/bin/python (import mosartwmpy)",
+    "source": "https://github.com/IMMM-SFA/mosartwmpy (engine: PyPI mosartwmpy 0.6.2; config notebooks/config.yaml from git commit 54d715e, version 0.7.0, file unchanged); data: Zenodo record 6959736 mosartwmpy_tutorial_1981_05.zip (md5 4a1cdd8329a2e2f82fa0653f2acc19ab), listed in mosartwmpy/data_manifest.yaml as 'tutorial'",
+    "license": "mosartwmpy code: BSD 2-Clause (Copyright 2021 Battelle Memorial Institute); tutorial data: Zenodo licence 'other-open'"
+  },
+  "ki": {
+    "model": "MOSART",
+    "run_tool": "tools/run_mosartwmpy.py",
+    "parse_tool": "tools/parse_mosart_output.py"
+  },
+  "simulation": {
+    "grid": "CONUS NLDAS 1/8 degree, 224 x 464 = 103936 cells (80053 active)",
+    "start": "1981-05-01",
+    "end": "1981-05-30",
+    "timestep_s": 10800,
+    "output": "daily means, 30 records",
+    "water_management": true,
+    "istarf": true,
+    "run_settings": {
+      "pandas_future_infer_string": false,
+      "NUMBA_NUM_THREADS": 1
+    },
+    "runtime_min": "about 6 (one thread)",
+    "peak_ram_gb": "about 2.5"
+  },
+  "files": {
+    "inputs/config.yaml": {
+      "bytes": 946,
+      "sha256": "e36dcdcde94da0137b1e3f6f12f4547b208aeb182b256c708ce1263adcc7854b"
+    },
+    "inputs/input/runoff/runoff_1981_05.nc": {
+      "bytes": 10154656,
+      "sha256": "c9660de8627dbd35e2e0e19f176739163d8ae7a71724a519e296c1c3b26adc6c"
+    },
+    "inputs/input/domains/mosart_conus_nldas_grid.nc": {
+      "bytes": 7189277,
+      "sha256": "5ae4b6b410669fd8864c29bfaf65c785d5a7d5eb01eac80ac1c0a59dc3803880"
+    },
+    "inputs/input/reservoirs/dependency_database.parquet": {
+      "bytes": 5305353,
+      "sha256": "fdde131aedf232a7a41ea3060543d5c550bf241c716c54640d15a11c5f4b9351"
+    },
+    "inputs/input/reservoirs/mean_monthly_reservoir_demand.parquet": {
+      "bytes": 366565,
+      "sha256": "361b785b299414473a3c7da16a2cfdc3e072921768697f142b46a6bbd8a9c619"
+    },
+    "inputs/input/reservoirs/mean_monthly_reservoir_flow.parquet": {
+      "bytes": 258164,
+      "sha256": "05cf5fd3e76eccdda282e5e1bd1aade36c0faf791bca71c7ef844452a5a3e409"
+    },
+    "inputs/input/reservoirs/reservoirs.nc": {
+      "bytes": 1155953,
+      "sha256": "5f58bbc56074a4d8a037c63993fe841e009df67caafa62d211d993d746033df4"
+    },
+    "inputs/input/demand/demand_1981_05.nc": {
+      "bytes": 850484,
+      "sha256": "f3accf8285d2ce0e309b0d48c3122e7f260f728bb4f7538bb58fbf77ab16bba7"
+    }
+  }
+}

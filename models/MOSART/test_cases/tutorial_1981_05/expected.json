@@ -1,0 +1,113 @@
+{
+  "description": "Expected results for the official mosartwmpy tutorial case: CONUS 1/8-degree NLDAS grid (224 x 464 cells), 1981-05-01 to 1981-05-30, 3-hour step, water management with ISTARF reservoir release. Inputs are the unmodified official tutorial data (Zenodo 10.5281/zenodo.6959736) and the official notebooks/config.yaml. The case ships no official reference output, so the expected values were recorded from real runs on this server. Two full runs gave exactly the same values for every check.",
+  "engine_version": "mosartwmpy 0.6.2 (PyPI wheel) in /mnt/disk1/Hydrocraft_server/models/MOSART/venv (Python 3.12, pandas 3.0.3, numpy 2.4.6, numba)",
+  "numeric_checks": [
+    {
+      "name": "n_days",
+      "expected": 30,
+      "tol": 0,
+      "why": "daily output records written (30 days, 1981-05-01..05-30)"
+    },
+    {
+      "name": "parse_rows_WRM_STORAGE",
+      "expected": 30,
+      "tol": 0,
+      "why": "rows returned by the KI parse tool (one per day)"
+    },
+    {
+      "name": "parse_rows_STORAGE_LIQ",
+      "expected": 30,
+      "tol": 0,
+      "why": "rows returned by the KI parse tool (one per day)"
+    },
+    {
+      "name": "qsur_mean_all",
+      "expected": 0.3002655234384916,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "mean surface runoff QSUR_LIQ (m3/s per cell), all days and cells; shows runoff forcing was read"
+    },
+    {
+      "name": "qsub_mean_all",
+      "expected": 0.4205885981641224,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "mean subsurface runoff QSUB_LIQ (m3/s per cell), all days and cells"
+    },
+    {
+      "name": "discharge_max_all",
+      "expected": 21695.62890625,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "largest daily mean river discharge in any cell (m3/s); main routing output"
+    },
+    {
+      "name": "discharge_sum_last_day",
+      "expected": 5198980.990206178,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "river discharge summed over all cells on 1981-05-30 (m3/s)"
+    },
+    {
+      "name": "storage_liq_sum_last_day",
+      "expected": 122143900000.0,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "total routing water storage STORAGE_LIQ on 1981-05-30 (m3), from KI parse_mosart_output.py basin-sum"
+    },
+    {
+      "name": "wrm_storage_sum_last_day",
+      "expected": 660718160000.0,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "total reservoir storage WRM_STORAGE on 1981-05-30 (m3), from KI parse_mosart_output.py basin-sum"
+    },
+    {
+      "name": "wrm_supply_sum_all",
+      "expected": 71861.63146152464,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "reservoir supply WRM_SUPPLY summed over all days and cells (m3/s); water management active"
+    },
+    {
+      "name": "wrm_demand_sum_all",
+      "expected": 88126.80377100594,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "water demand WRM_DEMAND summed over all days and cells (m3/s); demand file read"
+    },
+    {
+      "name": "wrm_deficit_sum_all",
+      "expected": 175663861.88994753,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "unmet demand WRM_DEFICIT summed over all days and cells (m3)"
+    },
+    {
+      "name": "final_discharge_max",
+      "expected": 21989.737632838383,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "max discharge in the final model state, reported by KI run_mosartwmpy.py summary (m3/s)"
+    },
+    {
+      "name": "final_storage_max",
+      "expected": 569475141.5552751,
+      "tol": 1e-06,
+      "tol_type": "relative",
+      "why": "max surface water storage in the final model state, reported by KI run_mosartwmpy.py summary (m3)"
+    }
+  ],
+  "other_checks": [
+    "finished normally: KI tool return code 0, '[run_mosartwmpy] SUCCESS' line, and model log line 'Simulation completed'",
+    "first output day 1981-05-01, last output day 1981-05-30"
+  ],
+  "recorded_on": "2026-10-05",
+  "recorded_with": "run_reference.py --print-values, run twice: identical values (bit for bit) in both runs",
+  "reference": "own run (no official reference output exists for the tutorial)",
+  "notes": [
+    "Run settings made only inside run_reference.py: (1) pandas option future.infer_string=False when pandas >= 3, needed or mosartwmpy 0.6.2 stops in the first step (ISTARF, 'operands could not be broadcast together with shapes (103936,) (80053,)'); (2) NUMBA_NUM_THREADS=1 so the run repeats exactly.",
+    "Proof the pandas setting does not change numbers: with ISTARF turned off (the only setting where the run works without the pandas setting), runs with and without it gave bit-identical output and restart files (one thread).",
+    "With many numba threads the model is not bit-repeatable: domain totals moved by about 1e-4 (routing) to 1e-3 (water management) between two runs. The tolerance 1e-6 relative is meant for the one-thread run."
+  ]
+}

@@ -1,0 +1,412 @@
+{
+  "test_case": "LPJmL testcase_2cell (official 2-cell test case run by upstream `make test`)",
+  "engine": {
+    "name": "LPJmL",
+    "version": "6.1.9",
+    "binary": "/home/server/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml",
+    "build": "clean clone of tag v6.1.9, ./configure.sh -nompi -noerror, gcc 13.3 -O2, official LPJFLAGS; json-c 0.16 + netcdf 4.8.1 (miniconda3/envs/lisflood_official), udunits2 (miniconda3); notes: /home/server/engine_builds_20261006/lpjml_v6.1.9/BUILD_NOTES.txt",
+    "source": "https://github.com/PIK-LPJmL/LPJmL tag v6.1.9, commit 4595764150e981da2dd5672621544c41e77b1c6a (2026-09-01)",
+    "license": "AGPL-3.0-or-later (LPJmL); input data licences are in each .clm.json metafile"
+  },
+  "ki": {
+    "model": "LPJmL",
+    "run_tool": "tools/run_lpjml.py",
+    "ki_engine_note": "the KI's preflight engine is LPJmL v6.0.0 (cdfae44); this case needs v6.1.9"
+  },
+  "simulation": {
+    "cells": 2,
+    "resolution_deg": 0.5,
+    "runs": [
+      "lpjml -DTESTCASE_2CELL lpjml_config.cjson (spinup 3800 years, writes restart/restart_1700_nv.lpj)",
+      "lpjml -DTESTCASE_2CELL -DFROM_RESTART lpjml_config.cjson (transient, globalflux output 1481-2019)"
+    ],
+    "main_outputs": [
+      "output/globalflux_spinup.csv",
+      "output/globalflux.csv"
+    ],
+    "reference_outputs": [
+      "inputs/testcase_2cell/globalflux_spinup.csv",
+      "inputs/testcase_2cell/globalflux.csv"
+    ],
+    "runtime_s_on_this_server": "spinup ~115, transient ~340",
+    "peak_rss_mb": 34
+  },
+  "files": {
+    "inputs/include/conf.h": {
+      "bytes": 12178,
+      "sha256": "604119585795419089b51d34c0719880c624e1e4a6442a025eb15952e2bf690a"
+    },
+    "inputs/include/managepar.h": {
+      "bytes": 6809,
+      "sha256": "30e0580d15812980c70832284782055338571beb4abdafabcae7cb29ebbdb1c4"
+    },
+    "inputs/include/soilpar.h": {
+      "bytes": 1638,
+      "sha256": "7413c7db73f16c6f96a26ea354dd7f2d4ed90d8708637a5013f8896e5a34555d"
+    },
+    "inputs/lpjml_config.cjson": {
+      "bytes": 34281,
+      "sha256": "e54f293d7a3150275d52d4a9df98418eded7b1a57259677fc0d67f82ee70d890"
+    },
+    "inputs/par/hydro.cjson": {
+      "bytes": 1361,
+      "sha256": "e7bb52752354457d552603e65cd1c9ea05fc04c8d1bfcd15ad58a9a9daabd8fb"
+    },
+    "inputs/par/lpjparam.cjson": {
+      "bytes": 11674,
+      "sha256": "1917d93555c80aee0d7edcde3f6c80636c82cfb04b6a76d2a270caf210198437"
+    },
+    "inputs/par/manage_irrig_systems_with_dummy_laimax_data.cjson": {
+      "bytes": 38258,
+      "sha256": "ef4b1d75da9b6ddc339707f64eb3e139ecb98acfe556d6cc457c387e3d67abc5"
+    },
+    "inputs/par/netcdf.cjson": {
+      "bytes": 4074,
+      "sha256": "823c891e347a97722f51a6387ce84512712d5df50a2c55011a915e2317fe12ef"
+    },
+    "inputs/par/netcdf.json": {
+      "bytes": 2764,
+      "sha256": "8891eb3282026110e9969238e85d6999cfc28c1812c156e5a19e849a15c0a7ba"
+    },
+    "inputs/par/outputvars.cjson": {
+      "bytes": 74903,
+      "sha256": "6856e122218e59e243405a4b6603dd025f5f9b991f9580477b85399a6afe5d90"
+    },
+    "inputs/par/pft.cjson": {
+      "bytes": 296728,
+      "sha256": "4a14e136a6ff5bebfc84e36dda567e08b6ce5e901ba43ad6f278f3ab5c43b221"
+    },
+    "inputs/par/soil.cjson": {
+      "bytes": 11234,
+      "sha256": "a2e464ccdf892233bf495b32ab5752d0ff64336c6ab4fabdad87b3052df758dc"
+    },
+    "inputs/par/soil_rock_ice.cjson": {
+      "bytes": 11821,
+      "sha256": "f60a5ecc459959e1031b3e0c4a4d45c41ebd9d2dffd2df2bfb60f24dcc5f298d"
+    },
+    "inputs/testcase_2cell/CH4_concentration_1700-2022.dat": {
+      "bytes": 4357,
+      "sha256": "b1e7efec1c1ebd1cd2e5150ade32a8c47d8a24c80a66dbb7840cfd5c7b6ce3fe"
+    },
+    "inputs/testcase_2cell/country_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "3eb50cc5533db4e718fc3de899fc053c0a2cd19790c3550fae74449f56bd7458"
+    },
+    "inputs/testcase_2cell/country_testcase_2cell.clm.json": {
+      "bytes": 12435,
+      "sha256": "4619fea612e1b785c0e2c52227cdc6e41af69768bd0898ebac16649ba0bc8f7b"
+    },
+    "inputs/testcase_2cell/crop_phu_testcase_2cell.clm": {
+      "bytes": 11483,
+      "sha256": "81b5be0b28387f1f92e5520564c5e1e4c273e1c20e67973e6805e4b60a5764b9"
+    },
+    "inputs/testcase_2cell/crop_phu_testcase_2cell.clm.json": {
+      "bytes": 2235,
+      "sha256": "7436788f947830acc031b706a9995b99848954c761519b2731fdfe43fafbfcb9"
+    },
+    "inputs/testcase_2cell/drainage_testcase_2cell.clm": {
+      "bytes": 75,
+      "sha256": "b8a7bc4367dfeaf0534baae38a14295e3137cbbeffb8583d37dc9ca36ecbd566"
+    },
+    "inputs/testcase_2cell/drainage_testcase_2cell.clm.json": {
+      "bytes": 1240,
+      "sha256": "b6530bd16913331ba6a4f5dc99f0e78a60c7f42edd0c52098b75ef51157d439c"
+    },
+    "inputs/testcase_2cell/elevation_testcase_2cell.clm": {
+      "bytes": 63,
+      "sha256": "c6ab2db72a4a093e3e1fcd0b0ccd3dd91beabf98ffaa2c14ddee32a84cb8dee2"
+    },
+    "inputs/testcase_2cell/elevation_testcase_2cell.clm.json": {
+      "bytes": 1172,
+      "sha256": "7ef9d89ea58f7e1502fb3cde0c9f76f3088f829a04f5aa952dec783c42ba9ece"
+    },
+    "inputs/testcase_2cell/fertilizer_testcase_2cell.clm": {
+      "bytes": 40507,
+      "sha256": "052dc24e651313b92e79ee42bc546dfd703c04faaedbf7da4873ebf0fa8ba607"
+    },
+    "inputs/testcase_2cell/fertilizer_testcase_2cell.clm.json": {
+      "bytes": 1844,
+      "sha256": "7b72b02a89a0c40ae408407e949214b6224b75edd2ebf4e965379788fc124c32"
+    },
+    "inputs/testcase_2cell/global_co2_ann_1700_2022.txt": {
+      "bytes": 4199,
+      "sha256": "884a05b9748548aa26d8038359a1e5fc66835e3981775185f61a646da39e4cbc"
+    },
+    "inputs/testcase_2cell/globalflux.csv": {
+      "bytes": 289415,
+      "sha256": "c464d8cc1e9a6cd208ca5e338f317f9aca8c56b6830751207c0b9d5583210ed7"
+    },
+    "inputs/testcase_2cell/globalflux.csv.json": {
+      "bytes": 1063,
+      "sha256": "046ec7112b929a81ec56a2a387aaa3d936400bb8ba6f67a9c17030b9977211ac"
+    },
+    "inputs/testcase_2cell/globalflux_spinup.csv": {
+      "bytes": 1480588,
+      "sha256": "19c3f4df677231bb56237c1c09ef8a02bf5aaed4c514d43873e492472e4651e0"
+    },
+    "inputs/testcase_2cell/globalflux_spinup.csv.json": {
+      "bytes": 924,
+      "sha256": "aed285cb758d00dd37c9adfbff6bba64a8004c6968a10e0ca6fd727a8de9f646"
+    },
+    "inputs/testcase_2cell/grassland_lsuha_testcase_2cell.clm": {
+      "bytes": 63,
+      "sha256": "ced3fcfc3379ebea8b53f3f6849df7d0f92e2525d997f7605589b50340e860be"
+    },
+    "inputs/testcase_2cell/grassland_lsuha_testcase_2cell.clm.json": {
+      "bytes": 1550,
+      "sha256": "2bffc4e7b17e4c716ee7d2234b19d2958b61af74b35ae080ad3060d9c635d2d1"
+    },
+    "inputs/testcase_2cell/grid_testcase_2cell.clm": {
+      "bytes": 59,
+      "sha256": "8d36eba858d80373cf7af0101d3f4de1ede4a5262022d0152882f69d65d9603c"
+    },
+    "inputs/testcase_2cell/grid_testcase_2cell.clm.json": {
+      "bytes": 942,
+      "sha256": "df22fe658e90132c22331b076dcce017cc1c4bb41b758fdd20940564dd2e355a"
+    },
+    "inputs/testcase_2cell/human_ignition_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "01de9767257cb454963957837a9270a413cebc273cd6b47d95ae61bbc8a77714"
+    },
+    "inputs/testcase_2cell/human_ignition_testcase_2cell.clm.json": {
+      "bytes": 1293,
+      "sha256": "dbdb7b486ced3299492addb5835c3724d53719ffafad54d2662f95cdcb7cc733"
+    },
+    "inputs/testcase_2cell/humid_testcase_2cell.clm": {
+      "bytes": 347539,
+      "sha256": "1d24c540239c123adb8ed8a2db567958be6e4d85ab65c59c40e95cc653abb1f3"
+    },
+    "inputs/testcase_2cell/humid_testcase_2cell.clm.json": {
+      "bytes": 1558,
+      "sha256": "5738d2ee96ab423bc864862a10298ee8e4f04c3af9f6cfc99ddcc6b935f6afbf"
+    },
+    "inputs/testcase_2cell/hydro_testcase_2cell.clm": {
+      "bytes": 71,
+      "sha256": "81cca1b0e786189da30103648a45024e3f1d693876b8aa1d34c6b12f2f884410"
+    },
+    "inputs/testcase_2cell/hydro_testcase_2cell.clm.json": {
+      "bytes": 1253,
+      "sha256": "e15dfbc321d06591e8558a62a63b949ad017a1f817b6cd77b454d2105d3671f3"
+    },
+    "inputs/testcase_2cell/input_testcase_2cell.cjson": {
+      "bytes": 4780,
+      "sha256": "a90710ed282242b32e0d9d4fa7221c268750377432059ecdb5376212994906b7"
+    },
+    "inputs/testcase_2cell/irrig_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "130f2a28ef5b1071e42417f76e6aa6fc2984754cec61538d528c41e31e207cf6"
+    },
+    "inputs/testcase_2cell/irrig_testcase_2cell.clm.json": {
+      "bytes": 1231,
+      "sha256": "445cddb8f5b78734f4dff69d301d2e163f86243f678f833fcebd49afe43aa12d"
+    },
+    "inputs/testcase_2cell/kbf_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "395b258f4a2ae486315f4e7270c0a6d9f44de1841f0d88c3879dcd65e56b6e60"
+    },
+    "inputs/testcase_2cell/kbf_testcase_2cell.clm.json": {
+      "bytes": 1721,
+      "sha256": "763135163fcda002b15ba84fa23e9faaf9f78f2f872ea04e1014b5f2ba935fbb"
+    },
+    "inputs/testcase_2cell/lakes_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "d0fa044e494b3699e6d17035c4411f375d6ff1cc225f78f5b1ed2b8ea54b1001"
+    },
+    "inputs/testcase_2cell/lakes_testcase_2cell.clm.json": {
+      "bytes": 1242,
+      "sha256": "b94eecd2036e157d4c79450e1d08d052a3915be877fa3813b0a1a0e4640fa184"
+    },
+    "inputs/testcase_2cell/landfrac_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "3c951ed1104a9efd2ae6eda0d70bf9c59f64cbce33e004eeb3cadbb788797442"
+    },
+    "inputs/testcase_2cell/landfrac_testcase_2cell.clm.json": {
+      "bytes": 1344,
+      "sha256": "11330c59c8052687936981cf3a881d69a7644c8b5cea3269e1c9a51615c9b4a2"
+    },
+    "inputs/testcase_2cell/landuse_testcase_2cell.clm": {
+      "bytes": 265275,
+      "sha256": "bea93d817c102af80b75d6660ca06a1ad959ef43acc0328b071f5fc2e40c13c0"
+    },
+    "inputs/testcase_2cell/landuse_testcase_2cell.clm.json": {
+      "bytes": 1711,
+      "sha256": "c104d9471ced5ebe0df95e6c4aa54c3a4f44452b237f6d08b07e91211238264e"
+    },
+    "inputs/testcase_2cell/lightning_testcase_2cell.clm": {
+      "bytes": 155,
+      "sha256": "bfb4e90155fb5e2cb2d4e3a1a2b5efab8fec91681a8d03f3b72cb1a17d55803d"
+    },
+    "inputs/testcase_2cell/lightning_testcase_2cell.clm.json": {
+      "bytes": 1720,
+      "sha256": "2cb229c495ce73c53821a69231ec928077d76b2634621ec9f990c551bfdf71d5"
+    },
+    "inputs/testcase_2cell/lwnet_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "9c66064bf48bb40353c4719e1e2de2ffe0b080fe72a8bddee5f92e201fdbcacd"
+    },
+    "inputs/testcase_2cell/lwnet_testcase_2cell.clm.json": {
+      "bytes": 1529,
+      "sha256": "f679204e03fbfcb788581117a6373d965973ace4fdf7968c3d2dee35503e5931"
+    },
+    "inputs/testcase_2cell/manure_testcase_2cell.clm": {
+      "bytes": 40507,
+      "sha256": "8b22a50048e9222190c11f78e22543daca19276f9ad8e2667d57bea6445d7ff7"
+    },
+    "inputs/testcase_2cell/manure_testcase_2cell.clm.json": {
+      "bytes": 1653,
+      "sha256": "66fa07e0e28bd2008c081161f8140dc997f227a57497aad02b0d6f51d02dca4a"
+    },
+    "inputs/testcase_2cell/nh4_deposition_testcase_2cell.clm": {
+      "bytes": 16571,
+      "sha256": "8e8ebdb1574e0f36449cee7093bf3a939d60eafd9df50421405156a5e45081c4"
+    },
+    "inputs/testcase_2cell/nh4_deposition_testcase_2cell.clm.json": {
+      "bytes": 1342,
+      "sha256": "b4c93a883d93b8c35661a4ad7ba8de368779d77684d18cb04aea07813c28c2a6"
+    },
+    "inputs/testcase_2cell/no3_deposition_testcase_2cell.clm": {
+      "bytes": 16571,
+      "sha256": "bf70d35e324040f66ed882bdc740c90f7583cad77752a1b36bd652f2d2170777"
+    },
+    "inputs/testcase_2cell/no3_deposition_testcase_2cell.clm.json": {
+      "bytes": 1342,
+      "sha256": "7962b93bbfb18ba55d9fc9978b651cde5b5d42b2e8b16c0f5edbb9e3049fde13"
+    },
+    "inputs/testcase_2cell/popnum_testcase_2cell.clm": {
+      "bytes": 1219,
+      "sha256": "8782834fd79996432f4ef05123e7530163b86a5176837df1f2515799f5a3346f"
+    },
+    "inputs/testcase_2cell/popnum_testcase_2cell.clm.json": {
+      "bytes": 1195,
+      "sha256": "6eba31abf18bdff57e888439e2caa34f03aac1ca754831b2cb87b3b02a2d4d2c"
+    },
+    "inputs/testcase_2cell/prec_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "4a500fb09454f626e36b17b1ef1ca7316053f675d4174cd9c488fcd15d240030"
+    },
+    "inputs/testcase_2cell/prec_testcase_2cell.clm.json": {
+      "bytes": 1524,
+      "sha256": "e9730208f75b08df12c8c0e909e359a255977995ebdbfa74a24dedca5ce4b719"
+    },
+    "inputs/testcase_2cell/reservoir_testcase_2cell.clm": {
+      "bytes": 139,
+      "sha256": "0f12fa64b098c3997c5dd395e1888e0bbe551743c44e731119634248cb151b33"
+    },
+    "inputs/testcase_2cell/reservoir_testcase_2cell.clm.json": {
+      "bytes": 1239,
+      "sha256": "4ce921a083ff22065d41bca437b13f45dfd18e684bfe7c22529aa2e7c5d1fcf9"
+    },
+    "inputs/testcase_2cell/residue_testcase_2cell.clm": {
+      "bytes": 10683,
+      "sha256": "8f56285b48ad87edc3c94fe3444431d42342553b08de87cefc8a70fd96b20801"
+    },
+    "inputs/testcase_2cell/residue_testcase_2cell.clm.json": {
+      "bytes": 1500,
+      "sha256": "8866f637a8a797d3aa74af2558bae7d394439bd0d70e1d65b5977c479a4bee13"
+    },
+    "inputs/testcase_2cell/sdate_testcase_2cell.clm": {
+      "bytes": 155,
+      "sha256": "ad865659d064a4981c27214053c19ccf43476a1a696c745fba9f66a3aa7185b3"
+    },
+    "inputs/testcase_2cell/sdate_testcase_2cell.clm.json": {
+      "bytes": 1560,
+      "sha256": "98675e23572b9af4efc0ae27debaeaaf68765f9856a7c6d30d548854c0201621"
+    },
+    "inputs/testcase_2cell/slope_max_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "c096eb055a29fa5835e2326db339645b53e1414e7280f08d574dcaa9113aeb68"
+    },
+    "inputs/testcase_2cell/slope_max_testcase_2cell.clm.json": {
+      "bytes": 1325,
+      "sha256": "b305f10ce9c4125e41d55e75fcc3a2bae16d14a5c070003081750c83a40cabf9"
+    },
+    "inputs/testcase_2cell/slope_mean_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "428619bab2d78a08a52629afed304de67468fb0a86f1795a1ce3db1f59100263"
+    },
+    "inputs/testcase_2cell/slope_mean_testcase_2cell.clm.json": {
+      "bytes": 1313,
+      "sha256": "85a70b19411020b9ce110d13e2ed9594549a35decb4393716e9b9afc2c18998a"
+    },
+    "inputs/testcase_2cell/slope_min_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "0f42588f3e04e5445af165732e31123c246fd9dcf21a5de153edc546b113b5be"
+    },
+    "inputs/testcase_2cell/slope_min_testcase_2cell.clm.json": {
+      "bytes": 1325,
+      "sha256": "f92612b5a7546af714bca637ef3970006b8ca8a3c4e02b117b9b430d0a7aad92"
+    },
+    "inputs/testcase_2cell/soil_ph_testcase_2cell.clm": {
+      "bytes": 67,
+      "sha256": "1949bd6db51508415a841fbe4058b36a88eb8e1a5146e7cc13189c8848dbf48c"
+    },
+    "inputs/testcase_2cell/soil_ph_testcase_2cell.clm.json": {
+      "bytes": 1315,
+      "sha256": "56d611853459c1d4dc5a7fbe4c95e4672625cfcc791995b2a707f2340c850eb2"
+    },
+    "inputs/testcase_2cell/soil_testcase_2cell.clm": {
+      "bytes": 61,
+      "sha256": "cfc46e9a6925292f4632df24862384fc11891457d74c15714e17ea17e6527bd6"
+    },
+    "inputs/testcase_2cell/soil_testcase_2cell.clm.json": {
+      "bytes": 1506,
+      "sha256": "4db64408807092960c94549e5fa3d54d23cf7f273a84f66e4e8013d2779f47d0"
+    },
+    "inputs/testcase_2cell/swdown_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "d6ed676b8416f5b9807efaeba77a304c5c8046018635912436d8ddde368ca8db"
+    },
+    "inputs/testcase_2cell/swdown_testcase_2cell.clm.json": {
+      "bytes": 1538,
+      "sha256": "8338fc12231ff4883f3cd9d8ce3c3cdd30164a548a196e5bd4e7642a1bcd1ea1"
+    },
+    "inputs/testcase_2cell/tillage_testcase_2cell.clm": {
+      "bytes": 211,
+      "sha256": "e4dac4cf6484257c962b7ae8e4f46c9711090297a471f5be7e2985da05c2a53b"
+    },
+    "inputs/testcase_2cell/tillage_testcase_2cell.clm.json": {
+      "bytes": 1586,
+      "sha256": "3a8546ee1cdb8800b9fbfc016721bd597900e95fcadeab0b9b4954d83d47e80a"
+    },
+    "inputs/testcase_2cell/tmax_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "bf6ad099bfb4860ef3b754f5aefe42d8cc23045c8722de7902aec5ed68b461e4"
+    },
+    "inputs/testcase_2cell/tmax_testcase_2cell.clm.json": {
+      "bytes": 1553,
+      "sha256": "1de81d9120a728003fedd78ffc5e33fbd5299fbdf3d893c134680a9f896b4e60"
+    },
+    "inputs/testcase_2cell/tmin_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "87f6e1e83192a4d13f1e30b710ffb876963a4d2b25c5dc805225006e3e26a10b"
+    },
+    "inputs/testcase_2cell/tmin_testcase_2cell.clm.json": {
+      "bytes": 1553,
+      "sha256": "8324a4b257b639defca57b286eabbdebed40fe5f0307ca6e49771031d64a515a"
+    },
+    "inputs/testcase_2cell/tmp_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "ec1f47178ac5da69e1165c2da3041c110e1304c0ca25de22b9bcc22111709a68"
+    },
+    "inputs/testcase_2cell/tmp_testcase_2cell.clm.json": {
+      "bytes": 1536,
+      "sha256": "5148bc81ff2cc40f0b3b54cda06daa077f4347cddb2aa8096001cd72ab63d87d"
+    },
+    "inputs/testcase_2cell/wateruse_testcase_2cell.clm": {
+      "bytes": 1435,
+      "sha256": "6e0a0b5ba3a9a3048403a55b80fa006f79c7f2c995361073c5667689763300e4"
+    },
+    "inputs/testcase_2cell/wateruse_testcase_2cell.clm.json": {
+      "bytes": 1345,
+      "sha256": "d127afdf32ce6891b423cd4f300e02c92f446a4aed8847f6ad9ce00cb487f680"
+    },
+    "inputs/testcase_2cell/windspeed_testcase_2cell.clm": {
+      "bytes": 173799,
+      "sha256": "bdce4f6ff93eebe8d0e00de40bd2c5a20ae1bb9b879d5c21b62d9bc603f712f9"
+    },
+    "inputs/testcase_2cell/windspeed_testcase_2cell.clm.json": {
+      "bytes": 1534,
+      "sha256": "7312e6eacb33b0e00e95e23c71a3ec67d1bac88398ca6b47862f9716e2709a5c"
+    }
+  }
+}

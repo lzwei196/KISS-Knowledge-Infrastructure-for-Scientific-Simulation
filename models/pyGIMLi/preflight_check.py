@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 
 MODEL_ID = "pyGIMLi"
@@ -37,11 +38,11 @@ def check(kind, subject, critical, passed, fix="", detail=""):
     }
 
 
-def run_command(argv, timeout=20, env=None):
+def run_command(argv, timeout=20, env=None, cwd=None):
     try:
         return subprocess.run(
             argv,
-            cwd=KI_DIR,
+            cwd=cwd or KI_DIR,
             env=env,
             text=True,
             stdout=subprocess.PIPE,
@@ -190,6 +191,74 @@ def check_binary_starts(checks):
     return passed
 
 
+def check_launch_route(checks):
+    """Check the launch route SKILL.md and GeoForge use: python_env starts run_pygimli.py,
+    which re-launches itself with the pyGIMLi python and imports pygimli there.
+
+    `--help` cannot test this (argparse exits before the engine is chosen), so the tool is
+    started with a data file that does not exist: the re-launched python runs
+    validate_inputs(), which imports pygimli and then stops with exactly one error,
+    "Data file not found". No model is run and nothing is written. The environment is
+    passed through unchanged, so $PYGIMLI_PYTHON is honoured as the tool would honour it.
+    """
+    selected = os.path.abspath(PYTHON)
+    subject = (f"launch route: {HYDROCRAFT_PYTHON} tools/run_pygimli.py -> re-launch with "
+               f"{selected} -> import pygimli")
+    missing = ""
+    try:
+        with tempfile.TemporaryDirectory(prefix="pygimli_preflight_") as tmp:
+            missing = os.path.join(tmp, "__preflight_missing__.ohm")
+            result = run_command(
+                [HYDROCRAFT_PYTHON, BINARY, "--data", missing, "--method", "ert",
+                 "--mode", "forward", "--output", os.path.join(tmp, "out")],
+                timeout=180,
+                cwd=tmp,
+            )
+    except OSError as exc:  # temp dir could not be made/removed (disk full, no inodes)
+        result = exc
+    problem = ""
+    if isinstance(result, Exception):
+        problem = command_detail(result)
+    else:
+        lines = [ln.strip() for ln in result.stderr.splitlines() if ln.strip()]
+        relaunch = f"[run_pygimli.py] re-launching with {selected} ("
+        needs_relaunch = selected != os.path.abspath(HYDROCRAFT_PYTHON)
+        last_json = None
+        for line in reversed(lines):
+            if line.startswith("{"):
+                try:
+                    last_json = json.loads(line)
+                except ValueError:
+                    last_json = None
+                break
+        expected = {"status": "error", "errors": [f"Data file not found: {missing}"]}
+        if result.returncode != 1:
+            problem = f"exit code {result.returncode}, expected 1"
+        elif needs_relaunch and not any(ln.startswith(relaunch) for ln in lines):
+            problem = f"no re-launch with {selected}"
+        elif last_json != expected:
+            problem = "tool did not stop with only the expected 'Data file not found' error"
+        if problem:
+            tail = " | ".join(lines[-3:]) if lines else command_detail(result)
+            problem = f"{problem}; stderr: {tail}"
+    passed = not problem
+    checks.append(
+        check(
+            "run",
+            subject,
+            True,
+            passed,
+            (
+                f"The SKILL.md launch line (python_env + tools/run_pygimli.py) does not reach "
+                f"pygimli. Make PYGIMLI_PYTHON point to a working pyGIMLi Python (default "
+                f"{DEFAULT_PYTHON}) or unset it, then check {TRIPLETS}."
+            ),
+            "" if passed else problem,
+        )
+    )
+    return passed
+
+
 def emit_report(model_id, checks):
     print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}))
     sys.exit(0 if all(c["status"] == "pass" or not c.get("critical") for c in checks) else 1)
@@ -235,36 +304,27 @@ def main():
     )
     check_binary_starts(checks)
     engine_ok = all(c["status"] == "pass" for c in checks if c.get("critical"))
-    # Info only: SKILL.md's tool index names HydroCraft python_env, which has no pygimli.
-    check_python_import(
-        checks,
-        "pygimli",
-        "pyGIMLi",
-        critical=False,
-        python=HYDROCRAFT_PYTHON,
-        fix=(
-            "HydroCraft python_env has no pygimli. This is expected: run_pygimli.py and "
-            "parse_gimli_output.py find the pyGIMLi python themselves (--pygimli-python, "
-            f"else $PYGIMLI_PYTHON, else {PYTHON}) and re-launch with it, so the SKILL.md "
-            "python_env call lines work as written; the converters need only python_env."
-            if engine_ok else
-            "HydroCraft python_env has no pygimli, and the selected interpreter "
-            f"{PYTHON} failed the critical checks above; repair it or set PYGIMLI_PYTHON "
-            "to a working pyGIMLi Python, then rerun this preflight."
-        ),
-    )
+    # The real launch route: SKILL.md starts the tools with HydroCraft python_env (no
+    # pygimli); run_pygimli.py re-launches itself with the pyGIMLi python.
+    route_ok = check_launch_route(checks)
 
     failed = [c for c in checks if c["status"] == "fail"]
     print()
     print(f"  Results: {len(checks) - len(failed)} passed, {len(failed)} failed")
     if engine_ok:
-        print(f"  Checked engine: {PYTHON}; the KI tools find and use it themselves "
-              "(start them with python_env as SKILL.md says).")
+        print(f"  Checked engine: {PYTHON} OK.")
     else:
         print(
             f"  Checked engine: {PYTHON} FAILED; repair it or set PYGIMLI_PYTHON to a "
             "working pyGIMLi Python, then rerun this preflight."
         )
+    if route_ok:
+        print("  Launch route OK: python_env tools/run_pygimli.py re-launches with "
+              f"{os.path.abspath(PYTHON)} and imports pygimli (start the tools with "
+              "python_env as SKILL.md says).")
+    else:
+        print("  Launch route FAILED: python_env tools/run_pygimli.py does not reach "
+              "pygimli; see the check above.")
     if failed:
         print(f"  Recovery: inspect {TRIPLETS} first for known failure patterns.")
 

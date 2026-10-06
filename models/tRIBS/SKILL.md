@@ -207,6 +207,7 @@ S4 (rain) ──┘
 > mesh-tool gaps. The shipped Zenodo benchmarks (happy_jack point/SWE,
 > big_spring distributed) under `testing/black_box/benchmarks/` remain the
 > bit-identical regression path (mesh `.nodes` byte-match, full 143183-hr run in ~43 s).
+> **Foundation test case** (KISS `test_cases/happy_jack/`): official Zenodo 10909507 Happy Jack benchmark, checked with the repo's 9 black-box tests; its data is the Netdisk pack `/KISS_test_case_packs/tRIBS/happy_jack_v1` — share https://pan.baidu.com/s/1-7fewTfk2tuJxLJfKzR3wA code `8ncs` (server copy `KISSPATH_HOME/ki_test_case_packs/tRIBS/happy_jack_v1`); `run_reference.py` downloads it if missing and checks every file (bytes + sha256) before running.
 > **DOMAIN VALIDITY — basin-suitability gate (READ before choosing a verifier gauge):**
 > tRIBS is a *continuous, fully-distributed* model whose runoff is generated and
 > routed over a **D8 contributing drainage network**. It is INVALID — discharge

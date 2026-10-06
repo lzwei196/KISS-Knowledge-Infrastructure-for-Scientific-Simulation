@@ -1,0 +1,94 @@
+{
+  "description": "Expected results for the official tRIBS Happy Jack benchmark (Zenodo 10909507, SNOTEL point-scale run at Happy Jack, AZ; start 06/01/2002, RUNTIME 143183 h ~ 16.3 years, hourly forcing). Pass needs BOTH (a) all 9 official black-box tests of the tRIBS repo (testing/black_box/happy_jack_pytest/test_happy_jack.py) to pass with their own thresholds (forcing in = forcing recorded; water balance |P - losses - dS| < 10 mm/yr; KGE of daily SWE vs SNOTEL > 1 - sqrt(2)), and (b) the numbers below.",
+  "engine_version": "tRIBS Version 5.3.0, Summer 2025 (git 813aad5560a72c7529f8b6a5035a67c20f6a6fa0, serial build)",
+  "numeric_checks": [
+    {
+      "name": "returncode",
+      "expected": 0,
+      "tol": 0,
+      "why": "tRIBS exits normally"
+    },
+    {
+      "name": "part9_reached",
+      "expected": 1,
+      "tol": 0,
+      "why": "model's own end line 'Part 9: Deleting Objects and Exiting Program' (KI tool finding)"
+    },
+    {
+      "name": "official_tests_passed",
+      "expected": 9,
+      "tol": 0,
+      "why": "all 9 official black-box tests pass (official method and thresholds)"
+    },
+    {
+      "name": "official_water_balance_metric_mm_per_yr",
+      "expected": 7.249470192657242,
+      "tol": 0.01,
+      "why": "value printed by the official water-balance test; the official limit is |x| < 10 mm/yr"
+    },
+    {
+      "name": "official_kge_swe_vs_snotel",
+      "expected": -0.08471965217209387,
+      "tol": 0.0001,
+      "why": "value printed by the official KGE test (daily SWE vs SNOTEL); the official limit is > -0.4142"
+    },
+    {
+      "name": "precip_total_minus_official_reference_mm",
+      "expected": 0.0,
+      "tol": 0.01,
+      "why": "total rain in the run equals the total in the official reference output (results/reference.zip, hj_ref0.pixel): same forcing goes in"
+    },
+    {
+      "name": "n_pixel_records",
+      "expected": 143183,
+      "tol": 0,
+      "why": "one hourly pixel record per hour of RUNTIME"
+    },
+    {
+      "name": "precip_total_mm",
+      "expected": 11603.01,
+      "tol": 0.01,
+      "why": "sum of Rain_mm_h over the run"
+    },
+    {
+      "name": "et_total_mm",
+      "expected": 3359.2019434,
+      "tol": 0.001,
+      "why": "sum of EvpTtrs_mm_h (own run; repeat run bit-identical)"
+    },
+    {
+      "name": "surface_runoff_total_mm",
+      "expected": 7951.010565,
+      "tol": 0.001,
+      "why": "sum of Srf_Hour_mm (surface runoff per output hour; the column the official water-balance test sums) (own run; repeat bit-identical)"
+    },
+    {
+      "name": "swe_max_cm",
+      "expected": 61.7523441,
+      "tol": 0.0001,
+      "why": "peak snow water equivalent SnWE_cm (own run)"
+    },
+    {
+      "name": "swe_mean_cm",
+      "expected": 5.66282831264396,
+      "tol": 0.0001,
+      "why": "mean SnWE_cm (own run)"
+    },
+    {
+      "name": "nwt_end_mm",
+      "expected": 10665.1016306,
+      "tol": 0.001,
+      "why": "final water table depth Nwt_mm (own run)"
+    },
+    {
+      "name": "mu_end_mm",
+      "expected": 1472.2190279,
+      "tol": 0.001,
+      "why": "final unsaturated zone moisture Mu_mm (own run)"
+    }
+  ],
+  "recorded_on": "2026-10-06",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/tRIBS/source/repo/build/tRIBS run through the KI tool tools/run_tribs.py on the unchanged official inputs (pack tRIBS/happy_jack_v1); python_env pytRIBS for the official tests",
+  "reference": "Official parts: the 9 pass/fail tests and their thresholds come from the tRIBS repo black-box suite (copied unchanged into inputs/happy_jack_pytest/). The official results/reference.zip is used for the precip-total check. The other numbers are from our own runs: two clean runs gave bit-identical output files.",
+  "notes": "The official reference.zip was made in March 2024 with an older tRIBS. The current tRIBS 5.3.0 adds an output column (ShortRadInSlope_W_m2) and gives somewhat different states (e.g. peak SWE 61.75 cm vs 54.92 cm in the reference; SWE correlation run vs reference ~0.96; ET 3359 vs 3406 mm). So the reference outputs are NOT a bit-for-bit target, and the official black-box tests do not use them either. run_reference.py prints this comparison as information only."
+}

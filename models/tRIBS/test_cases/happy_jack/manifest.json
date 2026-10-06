@@ -1,0 +1,475 @@
+{
+  "test_case": "tRIBS happy_jack (official Happy Jack SNOTEL point-scale benchmark, Zenodo 10909507)",
+  "engine": {
+    "name": "tRIBS",
+    "version": "5.3.0 (Summer 2025), git 813aad5560a72c7529f8b6a5035a67c20f6a6fa0",
+    "binary": "tRIBS (serial build; server default /mnt/disk1/Hydrocraft_server/models/tRIBS/source/repo/build/tRIBS)",
+    "source": "https://github.com/tribshms/tRIBS",
+    "license": "MIT (tRIBS code); CC-BY-4.0 (benchmark data, Zenodo 10909507)"
+  },
+  "ki": {
+    "model": "tRIBS",
+    "run_tool": "tools/run_tribs.py"
+  },
+  "simulation": {
+    "site": "Happy Jack SNOTEL, Arizona, USA (single element, OPTMESHINPUT 8 point file)",
+    "start": "06/01/2002 00:00",
+    "runtime_hours": 143183,
+    "met_step_minutes": 60,
+    "config": "src/in_files/happy_jack.in (unchanged)",
+    "official_checks": "testing/black_box/happy_jack_pytest/test_happy_jack.py (9 tests)",
+    "typical_run_seconds": 15
+  },
+  "pack": {
+    "name": "happy_jack_v1",
+    "version": "v1",
+    "remote_path": "/KISS_test_case_packs/tRIBS/happy_jack_v1",
+    "share_url": "https://pan.baidu.com/s/1-7fewTfk2tuJxLJfKzR3wA",
+    "share_pwd": "8ncs",
+    "share_valid": "permanent (no expiry)",
+    "server_default": "/home/server/ki_test_case_packs/tRIBS/happy_jack_v1",
+    "file_count": 102,
+    "total_bytes": 236838317,
+    "source": {
+      "title": "tRIBS benchmark: SNOTEL point-scale simulation, Happy Jack, AZ, USA",
+      "zenodo_record": "https://zenodo.org/records/10909507",
+      "doi": "10.5281/zenodo.10909507",
+      "publication_date": "2024-04-02",
+      "archive": "happy_jack.gz",
+      "archive_bytes": 52672057,
+      "archive_md5": "346b1826fe2311a30b3630162b028b8b",
+      "archive_md5_matches_zenodo": true,
+      "fetched_by": "tRIBS repo testing/black_box/setup_black_box.sh (https://github.com/tribshms/tRIBS, commit 813aad5560a72c7529f8b6a5035a67c20f6a6fa0)",
+      "how_extracted": "tar -xzf happy_jack.gz --strip-components=1 (every file as shipped, incl. macOS ._ metadata files; nothing added or changed)"
+    },
+    "license": "CC-BY-4.0 (Zenodo record 10909507)",
+    "files": {
+      "._README.html": {
+        "bytes": 234,
+        "sha256": "436cd700a87093d6800490218200793425a71d39babb2d575a78b804d13752ee"
+      },
+      "._bin": {
+        "bytes": 178,
+        "sha256": "8d01b94f6e1372eacb3b1a0e7885ad62898ed8ff520bc03cf6e301964598618f"
+      },
+      "._data": {
+        "bytes": 178,
+        "sha256": "a186bf5b1159b79f285b75519453994f019c15a30ec794dfa6c2e3053e939efd"
+      },
+      "._doc": {
+        "bytes": 178,
+        "sha256": "ed7da4bfa6e813cb5a653502a9e77b7f57172c79b50730ea3ce95d8aebe05e83"
+      },
+      "._results": {
+        "bytes": 178,
+        "sha256": "1c21f9b5b284687932dfa28ac50970891e49a3ca2a7d361358f4d5d5aa68fde8"
+      },
+      "._src": {
+        "bytes": 178,
+        "sha256": "2f082bffb7c7299bcc29196c6541363a9954a7a8405286a8d4f52778393852f0"
+      },
+      "PACK_MANIFEST.json": {
+        "bytes": 15488,
+        "sha256": "5072d5b9ea805a2112d27568f4ae900bc4d64e30e621fb64712963e124535e71"
+      },
+      "README.html": {
+        "bytes": 4999,
+        "sha256": "ad1db96a49b2d3a8a730adc3358b2f053fd2aa7942787a4aed6ca5c05bf6aa1c"
+      },
+      "bin/._README.txt": {
+        "bytes": 700,
+        "sha256": "3f682f21433ee0d75f5081de2154a1ff2431f643397d91019ad7c98f24db106f"
+      },
+      "bin/README.txt": {
+        "bytes": 66,
+        "sha256": "86e57eeea47eac337072210af4d4d3595e373e74bba79709a3e61da52ddbcf06"
+      },
+      "data/._.ipynb_checkpoints": {
+        "bytes": 177,
+        "sha256": "37edea02f54d9d06620597a4bd19722f823b59e0285e5dd881b364192b7e125b"
+      },
+      "data/._Dynamic_Veg_Grid_Data.gdf": {
+        "bytes": 178,
+        "sha256": "6947b7553020072c9b1154e117f30f966208fa1d97660075e347dc58f953a27b"
+      },
+      "data/._Dynamic_Veg_Maps": {
+        "bytes": 178,
+        "sha256": "e8375ac63eca802ca00d744551be80f20cf36e874a856bfb58025b0a0e07d390"
+      },
+      "data/._HJ_PRECIP_2002-2018.mdf": {
+        "bytes": 178,
+        "sha256": "196de2c523fdabe8288df0cafb9d923fdbb2a88795d051a00a946c3b0191bff1"
+      },
+      "data/._HJ_PRECIP_2002-2018.sdf": {
+        "bytes": 178,
+        "sha256": "55f5c17481e1d30c421008d4260482a95730365e39cac299ffebcb59f35f9449"
+      },
+      "data/._HJ_Soil_Map.soi": {
+        "bytes": 178,
+        "sha256": "b4bcba8962d6b7f5a0eb64448321650bdc741e01ecc237dd58322d95b1de09ea"
+      },
+      "data/._HJ_Soil_Table.sdt": {
+        "bytes": 178,
+        "sha256": "c367f2b69c15a7f7277c8b8c670947a968a1e62b90b73bd5aa3c5e3e83151aff"
+      },
+      "data/._HJ_Veg_Map.lan": {
+        "bytes": 178,
+        "sha256": "6e69265f4b2cdedd402a21354d5da63686fac3d52e3e51b5632aac294e150a4b"
+      },
+      "data/._HJ_Veg_Table.ldt": {
+        "bytes": 177,
+        "sha256": "a3291964ef6a847b0f14dac97ec8bf9825167ca3c06460e201588bc427c314f3"
+      },
+      "data/._HJ_WEATHER_2002-2018.mdf": {
+        "bytes": 178,
+        "sha256": "3819c0d308208a8c2f4243e0274d8a4f4edde4d6ab00a252646b6d0ddc5d0de0"
+      },
+      "data/._HJ_WEATHER_2002-2018.sdf": {
+        "bytes": 178,
+        "sha256": "ac7e0d59d4ee37fdc7eca78d1bebbbeb27c0df55024718d91101de642bb38370"
+      },
+      "data/._HJ_WEATHER_2002-2018_XC_mod.mdf": {
+        "bytes": 178,
+        "sha256": "df8dfe6bdcadc591481fb3aa7dd9eaac8f6bd34cf352152b486f6752e31712a1"
+      },
+      "data/._HJ_Water_Table_Map.iwt": {
+        "bytes": 178,
+        "sha256": "7da86dbd9ad5ed5833473cadc5fe5cf45def8ac37ea6b8efc185934957a50973"
+      },
+      "data/._HappyJack.points": {
+        "bytes": 177,
+        "sha256": "07cc12314c13ceeeeb8dcfb7980e01accc624ebfb8ae7ad2da75896ccda8a5ad"
+      },
+      "data/._Nodes": {
+        "bytes": 178,
+        "sha256": "57688f17bba112d6c22f91fc32165fc79aaea4a778bdaf10b794859b82255d6b"
+      },
+      "data/._README.txt": {
+        "bytes": 338,
+        "sha256": "4bf909f742c9c1a4f8005a5071f0c0553749ef26fc988b62265b02aa5e3f20c0"
+      },
+      "data/._Sheltering_DEM.dem": {
+        "bytes": 178,
+        "sha256": "f1357b845ce03c28fbcf6465d1a91df57a03f81099c81956c354fb985bdb033d"
+      },
+      "data/._Snotel": {
+        "bytes": 178,
+        "sha256": "7f091a3aebd17e8ba38c8c16e0be39a827da0eed35eb3c9e24a1bee22e8276a6"
+      },
+      "data/.ipynb_checkpoints/._HJ_WEATHER_2002-2018-checkpoint.sdf": {
+        "bytes": 178,
+        "sha256": "a1ad7221135949c918a4dfc441406744fd145065fae1b5d2eb63208476c58c9d"
+      },
+      "data/.ipynb_checkpoints/HJ_WEATHER_2002-2018-checkpoint.sdf": {
+        "bytes": 90,
+        "sha256": "e9fe73966e86fbafab0f07f4d857042ee5e6ad354b873ebc2dc66ddc1282adf8"
+      },
+      "data/Dynamic_Veg_Grid_Data.gdf": {
+        "bytes": 88,
+        "sha256": "76ea4172c8784b8a43d6390f81d93e7d418f15b8087671e6ae3e53887e6f2827"
+      },
+      "data/Dynamic_Veg_Maps/._VF_0201200800.asc": {
+        "bytes": 178,
+        "sha256": "34bb08b46df1c2d8121dd5e1832516acddae4c5deda86d1d849e6c35535bb4fd"
+      },
+      "data/Dynamic_Veg_Maps/._VF_0601200200.asc": {
+        "bytes": 178,
+        "sha256": "9c6dafc894da93f7440c2ae3ef2a715d90e4a93338ecb4cad70ece0ae01c4e7d"
+      },
+      "data/Dynamic_Veg_Maps/._VF_0601200800.asc": {
+        "bytes": 178,
+        "sha256": "86a84edb0b9654d5ca21eca4d0e913ab0ee17b215ea04820fbec33c22ba487a2"
+      },
+      "data/Dynamic_Veg_Maps/._VF_0801200800.asc": {
+        "bytes": 178,
+        "sha256": "1f39321a1105551baf5c7a2313baf904f7c82cafefed0b7fa6442196718a3c02"
+      },
+      "data/Dynamic_Veg_Maps/._VF_1001201800.asc": {
+        "bytes": 178,
+        "sha256": "107b22cc189f11f48d49f9090fbfb424335f8e377e31b6aeb9172ea8fae9c84f"
+      },
+      "data/Dynamic_Veg_Maps/._VF_1201200700.asc": {
+        "bytes": 178,
+        "sha256": "f6ff8ac82621639a02a59eab4ba5b8f528e502ea182e76d66605ccccb02e1a0f"
+      },
+      "data/Dynamic_Veg_Maps/._VH_0201200800.asc": {
+        "bytes": 178,
+        "sha256": "79c9c424805daa168b36c03a9627dee439ef7310af752b549d5c1521f5e2329d"
+      },
+      "data/Dynamic_Veg_Maps/._VH_0601200200.asc": {
+        "bytes": 178,
+        "sha256": "19e6435c5ebc2f045beff810b1e9cec428bfe618c1f3b6358ba68565b618c588"
+      },
+      "data/Dynamic_Veg_Maps/._VH_0601200800 .asc": {
+        "bytes": 178,
+        "sha256": "1258419f61749122cacdc3b94b5b4218bc25e35861dcbb2b4a4715136b0f8d43"
+      },
+      "data/Dynamic_Veg_Maps/._VH_0801200800.asc": {
+        "bytes": 178,
+        "sha256": "e3df39086a481760c99d8d100c8e64b198d69254ccf599241f851a24fb120fea"
+      },
+      "data/Dynamic_Veg_Maps/._VH_1001201800.asc": {
+        "bytes": 178,
+        "sha256": "65a15575ea66e278cd8bdd34edf8947eee93a17ae96a421983999b8b4ce4c21c"
+      },
+      "data/Dynamic_Veg_Maps/._VH_1201200700.asc": {
+        "bytes": 178,
+        "sha256": "2c697c15a744532e6b8c562687b6bf67e081466c493d21e24ebe1066b7818ed2"
+      },
+      "data/Dynamic_Veg_Maps/VF_0201200800.asc": {
+        "bytes": 12634943,
+        "sha256": "10ddecf687e77bf6059afe025ff4e2e3dbebb40da724c640a72054abf5e79809"
+      },
+      "data/Dynamic_Veg_Maps/VF_0601200200.asc": {
+        "bytes": 12634943,
+        "sha256": "10ddecf687e77bf6059afe025ff4e2e3dbebb40da724c640a72054abf5e79809"
+      },
+      "data/Dynamic_Veg_Maps/VF_0601200800.asc": {
+        "bytes": 12634943,
+        "sha256": "10ddecf687e77bf6059afe025ff4e2e3dbebb40da724c640a72054abf5e79809"
+      },
+      "data/Dynamic_Veg_Maps/VF_0801200800.asc": {
+        "bytes": 12634943,
+        "sha256": "10ddecf687e77bf6059afe025ff4e2e3dbebb40da724c640a72054abf5e79809"
+      },
+      "data/Dynamic_Veg_Maps/VF_1001201800.asc": {
+        "bytes": 12634943,
+        "sha256": "10ddecf687e77bf6059afe025ff4e2e3dbebb40da724c640a72054abf5e79809"
+      },
+      "data/Dynamic_Veg_Maps/VF_1201200700.asc": {
+        "bytes": 12634943,
+        "sha256": "10ddecf687e77bf6059afe025ff4e2e3dbebb40da724c640a72054abf5e79809"
+      },
+      "data/Dynamic_Veg_Maps/VH_0201200800.asc": {
+        "bytes": 13043572,
+        "sha256": "5847f71a598c4ef391a65a2becc4130c8c65cfcdcb0d4a26d6d2a944432ad795"
+      },
+      "data/Dynamic_Veg_Maps/VH_0601200200.asc": {
+        "bytes": 13043572,
+        "sha256": "5847f71a598c4ef391a65a2becc4130c8c65cfcdcb0d4a26d6d2a944432ad795"
+      },
+      "data/Dynamic_Veg_Maps/VH_0601200800 .asc": {
+        "bytes": 13043572,
+        "sha256": "5847f71a598c4ef391a65a2becc4130c8c65cfcdcb0d4a26d6d2a944432ad795"
+      },
+      "data/Dynamic_Veg_Maps/VH_0801200800.asc": {
+        "bytes": 13043572,
+        "sha256": "5847f71a598c4ef391a65a2becc4130c8c65cfcdcb0d4a26d6d2a944432ad795"
+      },
+      "data/Dynamic_Veg_Maps/VH_1001201800.asc": {
+        "bytes": 13043572,
+        "sha256": "5847f71a598c4ef391a65a2becc4130c8c65cfcdcb0d4a26d6d2a944432ad795"
+      },
+      "data/Dynamic_Veg_Maps/VH_1201200700.asc": {
+        "bytes": 13043572,
+        "sha256": "5847f71a598c4ef391a65a2becc4130c8c65cfcdcb0d4a26d6d2a944432ad795"
+      },
+      "data/HJ_PRECIP_2002-2018.mdf": {
+        "bytes": 2720616,
+        "sha256": "01b60bf41fc20095a637ec9eb6c75c2dc8efb9a7499c21617c35fc4b09dc8650"
+      },
+      "data/HJ_PRECIP_2002-2018.sdf": {
+        "bytes": 72,
+        "sha256": "dd94f1da85dcf73bc2110eb7e12dc1261f4b3768556693ec5faae9dfe37cf1fa"
+      },
+      "data/HJ_Soil_Map.soi": {
+        "bytes": 162,
+        "sha256": "c48d2209cfb6e1bec9306767e6c10a058dd5f61b167bc002695b01e71c86903e"
+      },
+      "data/HJ_Soil_Table.sdt": {
+        "bytes": 65,
+        "sha256": "480429df099e733673112019f237e792cce56f877e67c48e67d49bb6b719ab31"
+      },
+      "data/HJ_Veg_Map.lan": {
+        "bytes": 160,
+        "sha256": "8632e5281f6f6747d31296f7f6a9f4722e77086dadeb4547996f9fc0294c5aec"
+      },
+      "data/HJ_Veg_Table.ldt": {
+        "bytes": 95,
+        "sha256": "d1835ba980b5ee7e402126976690e1eadc4bbc84e293199e77dcd18140db5c8d"
+      },
+      "data/HJ_WEATHER_2002-2018.mdf": {
+        "bytes": 9020624,
+        "sha256": "5d7975eded72ff5d17d9d7e5e2843d1944eecf146c7efcd12d2636ff9ea66f3b"
+      },
+      "data/HJ_WEATHER_2002-2018.sdf": {
+        "bytes": 90,
+        "sha256": "e9fe73966e86fbafab0f07f4d857042ee5e6ad354b873ebc2dc66ddc1282adf8"
+      },
+      "data/HJ_WEATHER_2002-2018_XC_mod.mdf": {
+        "bytes": 9343383,
+        "sha256": "0ed6aab055f783fa3893daa3924682b7bdaca45e5efdd7f2283c42f6442fc613"
+      },
+      "data/HJ_Water_Table_Map.iwt": {
+        "bytes": 215,
+        "sha256": "798f8c76c4dc53a5d68a45f11631c5c026ca142aafc578298009bf6dd7ebb91f"
+      },
+      "data/HappyJack.points": {
+        "bytes": 282,
+        "sha256": "9310a70ac09956c6592fe1157d3eb5ca4ae68636dab8a18912f6c75d878ea441"
+      },
+      "data/Nodes/._hNodes.dat": {
+        "bytes": 178,
+        "sha256": "478f34ce6b69486e34e14475e3b389fdc8beafafb94c978e7343c6bc04a6aa60"
+      },
+      "data/Nodes/._oNodes.dat": {
+        "bytes": 234,
+        "sha256": "647a576838917378b45502b562e72515689502a8f3a642b31fb70707ffb9ce64"
+      },
+      "data/Nodes/._pNodes.dat": {
+        "bytes": 234,
+        "sha256": "98d07a0cc184a971f8e9209f48f0d8d4fa67d5063642593f642495acd49c5b64"
+      },
+      "data/Nodes/hNodes.dat": {
+        "bytes": 6,
+        "sha256": "8516632d770e25405fd0efa2c5504c30d462fe85ee635f83173f7983394d28a8"
+      },
+      "data/Nodes/oNodes.dat": {
+        "bytes": 6,
+        "sha256": "8516632d770e25405fd0efa2c5504c30d462fe85ee635f83173f7983394d28a8"
+      },
+      "data/Nodes/pNodes.dat": {
+        "bytes": 6,
+        "sha256": "8516632d770e25405fd0efa2c5504c30d462fe85ee635f83173f7983394d28a8"
+      },
+      "data/README.txt": {
+        "bytes": 36,
+        "sha256": "7b1f5222ff28a0197486cb14b668096cb74e4f49ab183221233baecb8ff8419a"
+      },
+      "data/Sheltering_DEM.dem": {
+        "bytes": 6477756,
+        "sha256": "3cdbe006469187561444c62483b4167ec85729c1bc21b3c8f0c2fe1b7febd0bb"
+      },
+      "data/Snotel/._bcqc_34.75000_-111.41000.txt": {
+        "bytes": 282,
+        "sha256": "dbac7dc3c52305d333a0d8a7b27b63d6a3f2b77aadee7489a113bba23b31dac8"
+      },
+      "data/Snotel/bcqc_34.75000_-111.41000.txt": {
+        "bytes": 304965,
+        "sha256": "dad8dc88e3bea2d5a501dc2f803134a66ead7b7de384d4b9628938130012fba2"
+      },
+      "doc/._documentation": {
+        "bytes": 178,
+        "sha256": "33c702754a04d44a9eda293bd1fa9d01475c6716d1fd9410b8cd43803a57c9aa"
+      },
+      "doc/._tRIBS_snotel_comparison.ipynb": {
+        "bytes": 234,
+        "sha256": "a3a140d224b5c55903a6a2b91860a5ae5f31ba5d7775cc049f320e1c5b3f3c1f"
+      },
+      "doc/documentation/._README.md": {
+        "bytes": 234,
+        "sha256": "83eec17378c95eb400094fcfebb14130a9e417300f5d14a9d48b82727af54c8c"
+      },
+      "doc/documentation/._build_docs.sh": {
+        "bytes": 234,
+        "sha256": "7022ac8812d53e6126476b9d48d5d6b62ce1d21f473ab573187c40e966b08fa8"
+      },
+      "doc/documentation/._github.css": {
+        "bytes": 178,
+        "sha256": "5b706aa4369a69c1cf5764330beb9a64bd1dfd2cca56c8c7f7ac763d7881ac72"
+      },
+      "doc/documentation/README.md": {
+        "bytes": 2972,
+        "sha256": "a4dfe9436bb464f5ae5870f4763bcc5e13d9cb4dd4d70bb0aac6bcfe5152cd0c"
+      },
+      "doc/documentation/build_docs.sh": {
+        "bytes": 160,
+        "sha256": "ed214162fee654f6e6e3f8639eb72d6f68e35adae4174d6edce5b2e9da4f49a4"
+      },
+      "doc/documentation/github.css": {
+        "bytes": 6503,
+        "sha256": "9265642c75cd310d6630c0892795ddd5a88047f07c9a2df056acec0a3a427643"
+      },
+      "doc/tRIBS_snotel_comparison.ipynb": {
+        "bytes": 6788,
+        "sha256": "e82802fe2befbd0d89712f052df2b72ab3d3822a4678389c7ad7cc235e6faa7f"
+      },
+      "results/._reference.zip": {
+        "bytes": 178,
+        "sha256": "7d44a851ed05ec1c5771d92a64c31f8ba531829e57f481ed5740f8f35659987d"
+      },
+      "results/._test": {
+        "bytes": 178,
+        "sha256": "d3a64d55e73db3a452ddb838e9e43e8fe171f92b9eb943266d4f104e6044e689"
+      },
+      "results/reference.zip": {
+        "bytes": 54566016,
+        "sha256": "fb7c01adcb7b47dc6c37f7bfc3db28520918502320bdd4283beac0fc7f64ace8"
+      },
+      "src/._.ipynb_checkpoints": {
+        "bytes": 178,
+        "sha256": "833c516a3df8962521c2a9bc758e3aa69b17e014ca94deea2352414717b92fd4"
+      },
+      "src/._README.txt": {
+        "bytes": 700,
+        "sha256": "55660f1f35d3705d34c423c717217a41bc6f84078dd6a99acc093a9589143d86"
+      },
+      "src/._in_files": {
+        "bytes": 178,
+        "sha256": "bd4093cd94ae73dbe378daaf90cd5f754e74c9631581d3cdef57f06a43e33f73"
+      },
+      "src/.ipynb_checkpoints/._Check_MU-checkpoint.ipynb": {
+        "bytes": 177,
+        "sha256": "2211cfc788c3da659a876a2a107dd7031b78e5983761cfea6f147c874e11b7c7"
+      },
+      "src/.ipynb_checkpoints/._post_process_development-checkpoint.ipynb": {
+        "bytes": 178,
+        "sha256": "c2e8e2c7a19c62e9ff60aaab305b588d7803702ff20d73d950017088406e6822"
+      },
+      "src/.ipynb_checkpoints/._tP4_example-checkpoint.ipynb": {
+        "bytes": 178,
+        "sha256": "22624adcf54ffff30016db4b87f8badc3fbff6e1744e1f201f86eb272a8311ec"
+      },
+      "src/.ipynb_checkpoints/._tRIBS_snotel_comparison-checkpoint.ipynb": {
+        "bytes": 178,
+        "sha256": "e0dd5c08a65585147787aacb71863f8433a7dc7655c3400761e679d91c5e50c9"
+      },
+      "src/.ipynb_checkpoints/Check_MU-checkpoint.ipynb": {
+        "bytes": 8180,
+        "sha256": "dc2f02b2d638e4ae4843b3b4dd78d3f6b297f824b1fed375c83f9d6811499eb2"
+      },
+      "src/.ipynb_checkpoints/post_process_development-checkpoint.ipynb": {
+        "bytes": 136534,
+        "sha256": "2344410549a501f22e386d45663bfb1c986fe53c697e8b0d71fcc3f5ef5ab5df"
+      },
+      "src/.ipynb_checkpoints/tP4_example-checkpoint.ipynb": {
+        "bytes": 72,
+        "sha256": "4a62b68a633d79c53a6fd8893e8ea42dcf2b9a8a3e907b1b9861661f04f21517"
+      },
+      "src/.ipynb_checkpoints/tRIBS_snotel_comparison-checkpoint.ipynb": {
+        "bytes": 136489,
+        "sha256": "240fe89d0d8e9fbe4a53e11311c1d33e17e3c9a7380aea6aa84c855b24c75263"
+      },
+      "src/README.txt": {
+        "bytes": 66,
+        "sha256": "86e57eeea47eac337072210af4d4d3595e373e74bba79709a3e61da52ddbcf06"
+      },
+      "src/in_files/._happy_jack.in": {
+        "bytes": 234,
+        "sha256": "33da5776c47925344259f4d0d875b901457d277c80973b8266fece04aff1b3a1"
+      },
+      "src/in_files/happy_jack.in": {
+        "bytes": 2335,
+        "sha256": "68074178ba7c55e040a71e3c132e22f530469e7b886253b9500a585b6f8a16cf"
+      }
+    }
+  },
+  "files": {
+    "inputs/happy_jack_pytest/setup_black_box.sh": {
+      "bytes": 677,
+      "sha256": "b7ade685376c61b38ef044f67ed28cf7c91c60e36963c825892dc0fd8c16ba1b"
+    },
+    "inputs/happy_jack_pytest/test_happy_jack.py": {
+      "bytes": 7663,
+      "sha256": "93bb4ffee159327e9086092078d9dfb92dbd91a50377e5c7a3c35bf6d39d9dfd"
+    },
+    "inputs/happy_jack_pytest/conftest.py": {
+      "bytes": 1480,
+      "sha256": "8898653dd145f989d991836cae042fbdbe4ab5e097b85dfa17967e73f0ec46e9"
+    },
+    "inputs/happy_jack_pytest/BLACK_BOX_README.md": {
+      "bytes": 1768,
+      "sha256": "126b598b5dd152f7f52aaa494dee52040ffdef53944458419f00e830bfa99163"
+    }
+  }
+}

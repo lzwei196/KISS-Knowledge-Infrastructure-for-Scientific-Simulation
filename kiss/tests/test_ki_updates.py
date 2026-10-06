@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from kiss_cli import catalog, ki_updates, settings
+from .test_ki_verification_boundaries import isolated_engine
 
 
 class KiUpdateTests(unittest.TestCase):
@@ -24,8 +25,13 @@ class KiUpdateTests(unittest.TestCase):
             ki_updates.os.environ,
             {"GEOFORGE_KI_UPDATE_HOME": str(self.home)}, clear=False)
         self.env.start()
+        # These tests isolate updater transport/platform behavior. The actual
+        # KDT boundary, signatures and rejection paths have dedicated coverage.
+        self.gate_fixture = isolated_engine(self.root)
+        self.gate_fixture.__enter__()
 
     def tearDown(self):
+        self.gate_fixture.__exit__(None, None, None)
         self.env.stop()
         self.temp.cleanup()
 

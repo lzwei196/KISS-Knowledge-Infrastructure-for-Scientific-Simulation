@@ -67,11 +67,14 @@ def test_api_stop_ends_already_running_preflight(stopped_chat, tmp_path):
     project, sid, _ = stopped_chat
     ki_root = tmp_path / "ki"
     ki_root.mkdir()
+    (ki_root / "SKILL.md").write_text("# Local setup fixture\n")
+    from kiss_cli import ki_guard
     started = tmp_path / "preflight-started"
     late = tmp_path / "preflight-completed"
     (ki_root / "preflight_check.py").write_text(
         f"import pathlib,time\npathlib.Path({str(started)!r}).touch()\n"
         f"time.sleep(3)\npathlib.Path({str(late)!r}).touch()\n")
+    ki_guard.enroll(ki_root)
     cfg = paths.KissConfig.default(tmp_path / "setup")
     cfg.python = sys.executable
     result = _stoppable_call(lambda: api.execute_tool(
@@ -118,10 +121,11 @@ def test_builtin_setup_stops_before_later_steps(stopped_chat, tmp_path, monkeypa
     project, sid, _ = stopped_chat
     ki_root = tmp_path / "ki"
     ki_root.mkdir()
+    (ki_root / "SKILL.md").write_text("# Local setup fixture\n")
+    from kiss_cli import ki_guard
+    ki_guard.enroll(ki_root)
     started, late = tmp_path / "installer-started", tmp_path / "installer-late"
     script = f"import pathlib,time;pathlib.Path({str(started)!r}).touch();time.sleep(3)"
-    monkeypatch.setattr(gui.port, "materialise", lambda *a: SimpleNamespace(
-        unresolved=[], corrupted=[], tokens_replaced=0, undeliverable_files=0))
     def python_env(cfg):
         rc, out = install._run([sys.executable, "-c", script])
         return install.Step("python-env", rc == 0, out)
@@ -335,10 +339,12 @@ def test_installer_stop_from_emit_does_not_start_next_phase(tmp_path, monkeypatc
     (project / "status.json").write_text('{"ok":true,"verified_at":123,"installation_ready":true}')
     ki_root = tmp_path / "ki"
     ki_root.mkdir()
+    (ki_root / "SKILL.md").write_text("# Local setup fixture\n")
     invoked = []
+    real_materialise = gui.port.materialise
     def materialise(*args):
         invoked.append("materialise")
-        return SimpleNamespace(unresolved=[], corrupted=[], tokens_replaced=0, undeliverable_files=0)
+        return real_materialise(*args)
     monkeypatch.setattr(gui.port, "materialise", materialise)
     def phase(name):
         def run(*args, **kwargs):

@@ -14,6 +14,7 @@
 <header class="topbar"><a href="/library" title="Back to KI Library" style="text-decoration:none;color:var(--fg2);font-size:20px">←</a><img src="/logo.svg" alt="GeoForge"><b>KI Studio</b><span class="pill">KDT-single</span><span class="spacer"></span><button data-language-toggle>简体中文</button><button id="theme" title="Toggle theme">◐</button></header>
 <div class="wrap">
   <section class="hero"><div><h1>KDT Workbench</h1><p>Import source, documentation, papers and examples; dissect the KI, inspect its live structure and visualization contract, then decide whether a separately verified snapshot belongs in your KI Library.</p></div><span class="pill" id="enginepill"><span class="dot warn"></span><span>Checking KDT…</span></span></section>
+  <p class="hint" id="kigatehint">Draft → Verified → Active. Every edit requires a new KDT check. These rules apply to all CLI and API agents. Package checks do not replace software or reference-case tests.</p>
   <div class="grid">
     <main>
       <section class="card" id="createcard"><div class="cardhead"><h2>New KI workspace</h2></div><div class="body">
@@ -72,7 +73,13 @@ function fillProviderSelect(id,preferred=""){const s=$(id);s.innerHTML=PROV.map(
 function drawProviderModels(providerId,modelId,preferred=""){const p=PROV.find(x=>x.name===$(providerId).value),m=$(modelId);m.innerHTML="";for(const name of p?.models||[]){const o=document.createElement("option");o.value=name;o.textContent=name;if(name===(preferred||p.default_model))o.selected=true;m.appendChild(o)}if(!m.options.length)m.innerHTML=`<option value="">${T("Agent default","Agent 默认设置")}</option>`;if(preferred&&[...m.options].some(o=>o.value===preferred))m.value=preferred}
 function syncRunBinding(){if(!CURRENT)return;fillProviderSelect("#runprovider",CURRENT.provider||$("#provider").value);drawProviderModels("#runprovider","#runllm",CURRENT.llm_model||"")}
 async function loadBase(){const [e,p,j]=await Promise.all([json("/api/kdt/status"),json("/api/providers"),json("/api/kdt/jobs")]);ENGINE=e;PROV=p.providers||[];$("#parent").value=e.default_parent;$("#domain").innerHTML=(e.domains||[]).map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join("")+`<option value="__custom__">${T("Other — enter your own","其他 — 自行输入")}</option>`;fillProviderSelect("#provider",p.default);drawProviderModels("#provider","#llm");domainMode();drawEngine();drawJobs(j.jobs||[])}
-function drawEngine(){const ok=ENGINE?.installed;$("#enginepill").innerHTML=`<span class="dot ${ok?"ok":"warn"}"></span><span>${ok?T("KDT ready","KDT 已就绪"):T("KDT setup needed","需要安装 KDT")}</span>`;$("#enginedetail").textContent=ok?`${T("Pinned commit","固定提交")} ${ENGINE.reviewed_commit.slice(0,12)} · ${ENGINE.path}`:T("Install the reviewed engine once to begin.","首次使用前安装经过审计的引擎。");$("#install").textContent=ok?T("KDT installed","KDT 已安装"):T("Install KDT engine","安装 KDT 引擎");$("#install").disabled=ok||BUSY}
+function drawEngine(){
+  const ok=ENGINE?.installed,changed=ENGINE?.dirty&&!ok;
+  $("#enginepill").innerHTML=`<span class="dot ${ok?"ok":"warn"}"></span><span>${ok?T("KDT ready","KDT 已就绪"):changed?T("KDT repair needed","KDT 需要修复"):T("KDT setup needed","需要安装 KDT")}</span>`;
+  $("#enginedetail").textContent=ok?`${T("Pinned commit","固定提交")} ${ENGINE.reviewed_commit.slice(0,12)} · ${ENGINE.path}`:changed?T("The installed verifier was modified. Repair restores the reviewed version and preserves the previous folder.","已安装的验证器被修改。修复会恢复经过审计的版本，并保留原文件夹。"):T("Install the reviewed engine once to begin.","首次使用前安装经过审计的引擎。");
+  $("#install").textContent=ok?T("KDT installed","KDT 已安装"):changed?T("Repair KDT engine","修复 KDT 引擎"):T("Install KDT engine","安装 KDT 引擎");
+  $("#install").disabled=ok||BUSY;
+}
 const kindLabel=k=>k==="task_workflow"?T("task workflow","任务工作流"):T("process model","过程模型");
 const domainLabel=j=>j.domain_guided===false?`${j.domain} · ${T("no KDT prior","无 KDT 先验")}`:j.domain;
 const statusLabel=s=>({created:T("created","已创建"),probing:T("probing","正在探测"),probed:T("source mapped","源码已分析"),probe_failed:T("probe failed","探测失败"),building:T("agent building","Agent 正在构建"),built:T("draft ready","草稿已就绪"),build_failed:T("build failed","构建失败"),accepted:T("legacy KDT gate passed","旧版 KDT 门禁通过"),kdt_passed:T("KDT gate passed","KDT 门禁通过"),verified:T("KI_verify passed","KI_verify 已通过"),verify_failed:T("returned for revision","已返回修改"),editing:T("editing","正在修改"),needs_revision:T("needs revision","需要修改")}[s]||s);

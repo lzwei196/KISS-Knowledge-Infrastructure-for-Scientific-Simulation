@@ -94,9 +94,11 @@ def test_gui_planning_gets_source_mapping_and_each_materialised_case(tmp_path, m
     models = []
     configs = {}
     for name in names:
-        source = _ki(tmp_path, name)
+        source = _ki(tmp_path, name, enroll=False)
         model = KI(name, source.root)
         _case(model.root, f"{name.lower()}-replay")
+        from kiss_cli import ki_guard
+        ki_guard.enroll(model.root)
         models.append(model)
         cfg = paths.KissConfig.default(tmp_path / "installed" / name)
         cfg.python = sys.executable

@@ -59,12 +59,14 @@ def test_second_approved_phase_finishes_while_retaining_exact_prior_results(tmp_
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
     monkeypatch.setenv("GEOFORGE_FLOW_REGISTRY", str(tmp_path / "registry"))
     project = _project(tmp_path)
-    ki = _ki(tmp_path, "M")
+    ki = _ki(tmp_path, "M", enroll=False)
     tool = ki.root / "tools/run.py"
     next_tool = ki.root / "tools/next.py"
     next_tool.write_bytes(tool.read_bytes())
     if first_failed:
         tool.write_text(tool.read_text() + "\nraise SystemExit(1)\n")
+    from kiss_cli import ki_guard
+    ki_guard.enroll(ki.root)
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     planning = _drive_planning(tmp_path, ki, project)
     if not first_failed:

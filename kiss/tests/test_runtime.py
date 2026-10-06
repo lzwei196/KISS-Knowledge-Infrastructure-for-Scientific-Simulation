@@ -2174,13 +2174,15 @@ class SessionProjectTests(unittest.TestCase):
             self.assertIn((shared.roles["home"] / "Demo" / "bin" / "model").as_posix(),
                           materialised)
 
-            # A validated legacy deck may need to keep inputs and generated
-            # outputs together. A project-local binding survives refresh, but
-            # it cannot override shared executable/runtime locations.
+            # A project-local deck can be resolved for review, but changing
+            # active bindings requires explicit adoption and cannot silently
+            # rewrite the already enrolled KI.
             deck = project / "outputs" / "Demo" / "case-one"
             deck.mkdir(parents=True)
             (deck / "INPUT.DAT").write_text("ready")
             model_home = project / "models" / ki.name
+            original_config = (model_home / paths.CONFIG_NAME).read_bytes()
+            original_ki = (run_ki.root / "SKILL.md").read_bytes()
             saved = paths.KissConfig.load(model_home)
             saved.roles["static"] = deck
             saved.roles["binaries"] = project / "untrusted-binaries"
@@ -2189,11 +2191,20 @@ class SessionProjectTests(unittest.TestCase):
             self.assertEqual(rebound.roles["static"], deck)
             self.assertEqual(rebound.roles["binaries"], shared.roles["binaries"])
 
-            # Reusing the chat refreshes its generated KI copy, so corrected
-            # shared paths and newly shipped tools reach existing projects.
-            (run_ki.root / "SKILL.md").write_text("stale generated copy\n")
-            refreshed, _ = gui.Handler._session_workspace(fake_handler, project, ki)
-            self.assertNotIn("stale", (refreshed.root / "SKILL.md").read_text(encoding="utf-8"))
+            changed_config = (model_home / paths.CONFIG_NAME).read_bytes()
+            with self.assertRaisesRegex(ValueError, "path bindings changed"):
+                gui.Handler._session_workspace(fake_handler, project, ki)
+            self.assertEqual((run_ki.root / "SKILL.md").read_bytes(), original_ki)
+            self.assertEqual((model_home / paths.CONFIG_NAME).read_bytes(), changed_config)
+
+            # Direct edits are retained as evidence and refused, rather than
+            # overwritten by a fresh copy or accepted as a new baseline.
+            (model_home / paths.CONFIG_NAME).write_bytes(original_config)
+            edited = b"unverified local edit\n"
+            (run_ki.root / "SKILL.md").write_bytes(edited)
+            with self.assertRaisesRegex(ValueError, "Active KI changed"):
+                gui.Handler._session_workspace(fake_handler, project, ki)
+            self.assertEqual((run_ki.root / "SKILL.md").read_bytes(), edited)
 
     def test_session_overlay_reuses_missing_local_assets_without_replacing_code(self):
         with tempfile.TemporaryDirectory() as td:
@@ -3014,13 +3025,16 @@ class InstallLocationTests(unittest.TestCase):
             self.assertTrue(info["custom"])
             self.assertEqual(info["path"], str(target.resolve()))
 
-    def test_install_path_is_recorded_beside_and_inside_local_ki(self):
+    def test_install_path_is_recorded_beside_ki_without_mutating_its_source(self):
         with tempfile.TemporaryDirectory() as td:
             workroot = Path(td) / "geoforge"
             workspace = Path(td) / "chosen" / "VIC"
             install_locations.select(workroot, "VIC", workspace)
             live = workspace / "ki"
             live.mkdir(parents=True)
+            (live / "SKILL.md").write_text("# VIC fixture\n")
+            from kiss_cli import ki_guard
+            ki_guard.enroll(live)
             cfg = paths.KissConfig.default(workspace)
             (workspace / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
 
@@ -3029,13 +3043,13 @@ class InstallLocationTests(unittest.TestCase):
 
             outer = json.loads(
                 (workspace / install_locations.RECORD_FILE).read_text(encoding="utf-8"))
-            inner = json.loads(
-                (live / install_locations.RECORD_FILE).read_text(encoding="utf-8"))
-            self.assertEqual(outer, inner)
+            self.assertFalse((live / install_locations.RECORD_FILE).exists())
+            self.assertEqual(outer["ki_root"], str(live.resolve()))
             self.assertEqual(outer["workspace"], str(workspace.resolve()))
             self.assertEqual(outer["binaries"], str(cfg.roles["binaries"]))
             self.assertTrue(value["verified"])
             self.assertTrue(install_locations.info(workroot, "VIC")["recorded"])
+            ki_guard.require_intact(live)
 
     def test_existing_install_is_separate_from_the_writable_workspace(self):
         with tempfile.TemporaryDirectory() as td:
@@ -3182,19 +3196,17 @@ class InstallStatusTests(unittest.TestCase):
             root = Path(td)
             package = root / "models" / "Demo"
             package.mkdir(parents=True)
+            (package / "SKILL.md").write_text("# Demo installation fixture\n")
+            (package / "preflight_check.py").write_text("print('PREFLIGHT_REPORT={}')\n")
             ki = KI("Demo", package)
             man = Manifest(
                 model="Demo", acquire=Acquire(strategy="build", repo="https://invalid"),
-            )
-            materialised = SimpleNamespace(
-                unresolved=set(), corrupted=[], tokens_replaced=0, undeliverable_files=0,
             )
             emitted = []
             good = lambda name: install.Step(name, True, "ok")
             failed = install.Step("acquire[build]", False, "clone failed: no such tag")
 
-            with mock.patch.object(gui.port, "materialise", return_value=materialised), \
-                 mock.patch.object(gui.install, "ensure_python_env", return_value=good("python-env")), \
+            with mock.patch.object(gui.install, "ensure_python_env", return_value=good("python-env")), \
                  mock.patch.object(gui.install, "install_ki_tools_common", return_value=good("ki-tools-common")), \
                  mock.patch.object(gui.install, "check_system_deps", return_value=good("system-deps")), \
                  mock.patch.object(gui.install, "install_python_deps", return_value=good("python-deps")), \
@@ -3816,13 +3828,20 @@ class AgentSetupTests(unittest.TestCase):
     def test_agent_final_preflight_becomes_the_saved_verification_state(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            ki = SimpleNamespace(name="Demo", meta={"version": "1.0"})
+            live = root / "ki"
+            live.mkdir()
+            (live / "SKILL.md").write_text("# Demo setup fixture\n")
+            ki = KI("Demo", live)
+            from kiss_cli import ki_guard, ki_verification
+            ki_guard.enroll(live)
+            cfg = paths.KissConfig.default(root)
+            cfg.python = sys.executable
             check = SimpleNamespace(
                 ok=True, detail="1 passed, 0 failed", commands=["check Demo"])
             with mock.patch.object(install, "run_preflight", return_value=check), \
                  mock.patch.object(setup, "clear_request"):
                 ok = gui.Handler._record_agent_preflight(
-                    None, ki, ki, SimpleNamespace(python=sys.executable),
+                    None, ki, ki, cfg,
                     root, lambda _piece: True,
                 )
             status = json.loads((root / "status.json").read_text(encoding="utf-8"))
@@ -3831,6 +3850,8 @@ class AgentSetupTests(unittest.TestCase):
             self.assertTrue(status["agent_setup"])
             self.assertIsNotNone(status["verified_at"])
             self.assertEqual(status["steps"][-1]["name"], "preflight")
+            self.assertEqual(status["ki_content_digest"], ki_verification.content_digest(live))
+            ki_guard.require_intact(live)
 
     def test_wrf_hydro_manifest_uses_real_release_and_separates_project_data(self):
         manifest = Manifest.load(
@@ -5294,13 +5315,21 @@ class AgentSetupTests(unittest.TestCase):
 
 
 class ImportValidationTests(unittest.TestCase):
+    def setUp(self):
+        from .test_ki_verification_boundaries import isolated_engine
+        self.gate_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.gate_temp.cleanup)
+        self.gate_fixture = isolated_engine(Path(self.gate_temp.name))
+        self.gate_fixture.__enter__()
+        self.addCleanup(self.gate_fixture.__exit__, None, None, None)
+
     @staticmethod
     def _package(*, valid: bool = True) -> bytes:
         doc = io.BytesIO()
         with zipfile.ZipFile(doc, "w") as z:
             z.writestr("Demo/SKILL.md", "# Demo KI\n")
             if valid:
-                z.writestr("Demo/preflight_check.py", "print('ok')\n")
+                z.writestr("Demo/preflight_check.py", "print('PREFLIGHT_REPORT={}')\n")
             z.writestr("Demo/docs/format_spec.yaml", "format: demo\n")
             z.writestr("Demo/dag.yaml", """
 template_version: '3.5'

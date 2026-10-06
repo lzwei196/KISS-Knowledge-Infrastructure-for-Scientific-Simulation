@@ -474,6 +474,22 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
                     timeout: float | None = None, provider_id: str = "",
                     stop=None, turn_id: str | None = None,
                     project_data_tool: bool = False) -> ExecutionResult:
+    from . import ki_guard
+    # Keep adoption/recovery out of the entire checks -> execution -> receipt
+    # boundary, including standalone CLI dispatch without a provider wrapper.
+    with ki_guard.worker(ki_root):
+        return _execute_ki_tool(flow=flow, cfg=cfg, project=project, ki=ki, ki_root=ki_root,
+            tool=tool, arguments=arguments, cwd=cwd, plan_step_id=plan_step_id,
+            python_tool=python_tool, timeout=timeout, provider_id=provider_id,
+            stop=stop, turn_id=turn_id, project_data_tool=project_data_tool)
+
+
+def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
+                    tool: Path, arguments: list[str], cwd: Path,
+                    plan_step_id: str | None, python_tool: bool,
+                    timeout: float | None = None, provider_id: str = "",
+                    stop=None, turn_id: str | None = None,
+                    project_data_tool: bool = False) -> ExecutionResult:
     """Attempt a KI tool once, then return outcome and receipt diagnostics.
 
     Permission failures raise FlowDenied before launch. After launch is attempted,
@@ -483,6 +499,11 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     untracked direct route, which cannot obtain an approved execution receipt.
     """
     requested_root = Path(ki_root)
+    from . import ki_guard
+    try:
+        ki_guard.require_intact(requested_root, required=(requested_root / "SKILL.md").is_file())
+    except ki_guard.KIIntegrityError as exc:
+        raise flowgate.FlowDenied(str(exc)) from None
     project, ki_root, tool, cwd = map(lambda p: Path(p).resolve(), (project, ki_root, tool, cwd))
     if (stop is not None and stop()) or stop_requested(project) or stop_requested(project, turn_id=turn_id):
         raise flowgate.FlowDenied("stopped by the user; no process was launched")
@@ -542,6 +563,7 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         from .settings import with_provider_proxy
         child_env = with_provider_proxy(provider_id, child_env)
     child_env.update(approved_env)
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
     command = ([str(cfg.python), str(tool)] if python_tool else [str(tool)]) + list(arguments)
     if project_data_tool:
         try:
@@ -570,6 +592,12 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         # Not an attempt: no receipt, so a step that already passed is not demoted.
         raise flowgate.FlowDenied("stopped by the user; no process was launched")
     exit_code, status, detail = run.returncode, run.status, run.detail
+    try:
+        ki_guard.require_intact(requested_root, required=(requested_root / "SKILL.md").is_file())
+    except ki_guard.KIIntegrityError as exc:
+        # Retain the failed attempt and outputs; a KI-changing tool cannot
+        # obtain a successful execution receipt. Provider exit owns recovery.
+        exit_code, status, detail = 1, "failed", str(exc)
     output = (run.stdout + run.stderr)[-80000 if exit_code is not None else -12000:]
     finished = time.time()
     receipt, receipt_error = None, None

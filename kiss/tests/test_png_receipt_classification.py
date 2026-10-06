@@ -22,11 +22,9 @@ def test_png_only_run_kinds_cannot_complete_but_plot_process_can(tmp_path, monke
     picture = io.BytesIO()
     Image.new("RGB", (2, 3), (10, 30, 20)).save(picture, format="PNG")
     encoded = base64.b64encode(picture.getvalue()).decode("ascii")
-    ki = _ki(tmp_path)
-    tool = ki.root / "tools/run.py"
-    tool.write_text("import base64,pathlib,sys\n"
+    ki = _ki(tmp_path, extra_files={"tools/run.py": "import base64,pathlib,sys\n"
                     "out=pathlib.Path(sys.argv[1]);out.parent.mkdir(parents=True,exist_ok=True)\n"
-                    f"out.write_bytes(base64.b64decode({encoded!r}))\n", encoding="utf-8")
+                    f"out.write_bytes(base64.b64decode({encoded!r}))\n"})
     project, flow = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     plan, inventory = _plan(ki)

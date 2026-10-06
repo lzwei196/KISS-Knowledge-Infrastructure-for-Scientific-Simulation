@@ -26,6 +26,7 @@
     "Observe KIs": "观察 KI",
     "Explore the 14-domain KI atlas and live projects.": "探索 14 个领域的 KI 星图与实时项目。",
     "KDT Workbench": "KDT 工作台",
+    "Draft → Verified → Active. Every edit requires a new KDT check. These rules apply to all CLI and API agents. Package checks do not replace software or reference-case tests.": "草稿 → 已验证 → 已启用。每次修改后都必须重新通过 KDT 检查，所有 CLI 与 API Agent 遵守相同规则。软件包检查不能替代软件运行或参考算例测试。",
     "Import source, documentation, papers and examples; dissect the KI, inspect its live structure and visualization contract, then decide whether a separately verified snapshot belongs in your KI Library.": "导入源码、文档、论文和样例；拆解 KI，实时检查其结构与可视化合同，再决定是否把经过独立验证的快照加入你的 KI 库。",
     "Create a KI for your own model": "为你自己的模型或工作流创建 KI",
     "New KI workspace": "新建 KI 工作区",

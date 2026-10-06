@@ -19,7 +19,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import api, flowgate, flowrun, plan_review, gui, obs_access, projectrun, sessions, setup as setup_flow  # noqa: E402
+from kiss_cli import api, flowgate, flowrun, plan_review, gui, ki_guard, obs_access, projectrun, sessions, setup as setup_flow  # noqa: E402
 from ._acquisition_fixtures import approved_result as _acq_result
 
 
@@ -28,7 +28,7 @@ def _keys(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path_factory.mktemp("keys")))
 
 
-def _ki(tmp_path, name):
+def _ki(tmp_path, name, *, extra_files=None, enroll=True):
     root = tmp_path / "kis" / name
     (root / "tools").mkdir(parents=True)
     (root / "SKILL.md").write_text(f"# {name}\n> **MANDATORY EXECUTION POLICY**\n> run the real model\n\n")
@@ -37,6 +37,12 @@ def _ki(tmp_path, name):
     (root / "tools" / "run.py").write_text(
         "import sys, pathlib\nout = pathlib.Path(sys.argv[1]); out.parent.mkdir(parents=True, exist_ok=True)\n"
         "out.write_text('t,q\\n1,0.5\\n2,1.2\\n3,0.8\\n')\n")
+    for relative, source in (extra_files or {}).items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source, encoding="utf-8")
+    if enroll:
+        ki_guard.enroll(root)
     return SimpleNamespace(name=name, root=root)
 
 
@@ -624,8 +630,8 @@ def test_auto_choice_is_promoted_into_the_flow(tmp_path):
 
 
 def test_run_ki_tool_checks_step_ki_and_tool_before_running(tmp_path):
-    project = _project(tmp_path); a, b = _ki(tmp_path, "A"), _ki(tmp_path, "B")
-    (a.root / "tools" / "other.py").write_text("print('x')")
+    project = _project(tmp_path)
+    a, b = _ki(tmp_path, "A", extra_files={"tools/other.py": "print('x')"}), _ki(tmp_path, "B")
     flowrun.pre(project, "run A and B for 2003", ["A", "B"], [a, b], None, None)
     t = flowrun.turn(project, [a, b], _cfg(project), "api", "deepseek", None, "run A and B")
     pj, inv = t.session.flow.plan.read_artifacts(project)
@@ -1996,9 +2002,9 @@ def test_incomplete_turn_names_stale_steps_and_unvouched_files(tmp_path, monkeyp
 
 def test_a_stopped_run_is_resumable_not_a_failed_validation(tmp_path):
     from kiss_cli import execution, project_status
-    project = _project(tmp_path); ki = _ki(tmp_path, "M")
-    (ki.root / "tools" / "run.py").write_text(
-        "import sys, time, pathlib\ntime.sleep(20)\npathlib.Path(sys.argv[1]).write_text('t,q\\n1,0.5\\n')\n")
+    project = _project(tmp_path)
+    ki = _ki(tmp_path, "M", extra_files={"tools/run.py":
+        "import sys, time, pathlib\ntime.sleep(20)\npathlib.Path(sys.argv[1]).write_text('t,q\\n1,0.5\\n')\n"})
     flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
     _approve(project, ki, flowrun.after(project, _drive_planning(tmp_path, ki, project), "planned", setup_ok=True))
     t = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")

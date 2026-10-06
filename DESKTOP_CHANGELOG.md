@@ -8,6 +8,15 @@ Desktop update agents should read the JSON manifest first and use this file to e
 
 ## Windows development source — 2026-10-06 (not a new installer release)
 
+- KI draft enforcement is shared across CLI and API providers. KDT and Desktop
+  package acceptance is signed by the host and bound to exact candidate and
+  verifier bytes. Edits invalidate acceptance; imports and changed library KIs
+  cannot activate on an agent-written success report. Current KI integrity is
+  checked at tool dispatch and software verification. Existing catalogue entries
+  receive a recorded legacy baseline, which does not claim a new KDT or native pass.
+- KI 编辑使用统一门禁，覆盖全部 CLI 和 API 提供方：草稿必须经过 KDT 与桌面包检查，
+  宿主签名绑定实际文件和验证器版本；修改后旧验证失效。结构验证与软件、科学算例
+  验证分别记录。安装记录保存在 KI 目录之外，避免状态更新时间被误判为源码修改。
 - KI updates keep models, installation manifests and shared helpers on one revision,
   preserve Windows guidance with recorded provenance, and retain rejected candidates
   with file-level diagnostics. Existing projects keep their KI/helper pair; fresh

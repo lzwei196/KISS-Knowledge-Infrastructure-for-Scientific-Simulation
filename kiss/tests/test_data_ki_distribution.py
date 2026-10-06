@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from kiss_cli import api, catalog, sessions
+from kiss_cli import api, catalog, ki_guard, sessions
 from .test_flowgate import _session, _plan, _cfg
 from .test_project_status_data_scope import progress
 
@@ -69,6 +69,7 @@ def test_shipped_reader_runs_through_approved_tool_proxy_without_model_claim(tmp
     root = tmp_path / "ki"
     shutil.copytree(SOURCE / "data_kis/Agrometeo_Quebec_Observations", root)
     ki = catalog.KI("Agrometeo_Quebec_Observations", root)
+    ki_guard.enroll(root)
     project, fs = _session(tmp_path, ki, [("task_received", None),
                          ("kis_resolved", {"selected_kis": [ki.name]})])
     raw = project / "inputs/soilTemp10cm_2022.csv"

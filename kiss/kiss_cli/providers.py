@@ -818,6 +818,70 @@ def run(provider: Provider, prompt: str, cwd: Path,
         *, extra_dirs: list[str] | None = None,
         extra_env: dict[str, str] | None = None,
         cfg=None, ki_root: Path | None = None, pol=None,
+        model: str | None = None, timeout: int | None = None,
+        resume: str | None = None, session_out: dict | None = None,
+        runtime_events: dict | None = None, flow_policy=None,
+        managed_roots: list[Path] | None = None) -> Iterator[str]:
+    from . import ki_guard
+    from contextlib import ExitStack
+    roots = list(dict.fromkeys(Path(p).absolute() for p in
+                              ([ki_root] if ki_root is not None else []) + list(managed_roots or [])))
+    with ExitStack() as workers:
+        for root in roots:
+            workers.enter_context(ki_guard.worker(root))
+        yield from _guarded_run(provider, prompt, cwd, extra_dirs=extra_dirs,
+                               extra_env=extra_env, cfg=cfg, ki_root=ki_root, pol=pol,
+                               model=model, timeout=timeout, resume=resume,
+                               session_out=session_out, runtime_events=runtime_events,
+                               flow_policy=flow_policy, managed_roots=roots)
+
+
+def _guarded_run(provider: Provider, prompt: str, cwd: Path,
+        *, extra_dirs: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
+        cfg=None, ki_root: Path | None = None, pol=None,
+        model: str | None = None, timeout: int | None = None,
+        resume: str | None = None, session_out: dict | None = None,
+        runtime_events: dict | None = None, flow_policy=None,
+        managed_roots: list[Path] | None = None) -> Iterator[str]:
+    """All CLI providers share the same active-KI integrity lifecycle."""
+    from . import ki_guard
+    roots = list(managed_roots or [])
+    for root in roots:
+        try:
+            ki_guard.require_intact(root, required=(root / "SKILL.md").is_file())
+        except ki_guard.KIIntegrityError as exc:
+            if session_out is not None:
+                session_out["returncode"] = 1
+            yield f"[KI integrity check failed: {exc}]"
+            return
+    state = session_out if session_out is not None else {}
+    try:
+        yield from _run(provider, prompt, cwd, extra_dirs=extra_dirs,
+                        extra_env={**(extra_env or {}), "PYTHONDONTWRITEBYTECODE": "1"},
+                        cfg=cfg, ki_root=ki_root, pol=pol, model=model, timeout=timeout,
+                        resume=resume, session_out=state, runtime_events=runtime_events,
+                        flow_policy=flow_policy)
+    finally:
+        failures = []
+        for root in roots:
+            try:
+                draft = ki_guard.preserve_drift(root)
+                if draft is not None:
+                    failures.append(f"Active KI blocked; changed bytes retained at {draft}. "
+                                    "Original baseline preserved; stop workers before explicit recovery.")
+            except ki_guard.KIIntegrityError as exc:
+                failures.append(str(exc))
+        if failures:
+            state["returncode"] = 1
+            state["ki_integrity_error"] = "\n".join(failures)
+            raise ki_guard.KIIntegrityError(state["ki_integrity_error"])
+
+
+def _run(provider: Provider, prompt: str, cwd: Path,
+        *, extra_dirs: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
+        cfg=None, ki_root: Path | None = None, pol=None,
         model: str | None = None,
         timeout: int | None = None,
         resume: str | None = None,

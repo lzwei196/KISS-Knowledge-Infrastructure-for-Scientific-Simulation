@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import execution, flowgate, paths
+from kiss_cli import execution, flowgate, ki_guard, paths
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +26,7 @@ def _isolated_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
 
 
-def _project(tmp_path, *, python_tool=True, source=None):
+def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None):
     project = (tmp_path / "project").resolve()
     root = project / "models" / "M" / "ki"
     (root / "tools").mkdir(parents=True)
@@ -38,6 +38,11 @@ def _project(tmp_path, *, python_tool=True, source=None):
     tool = root / "tools" / ("run.py" if python_tool else "run.sh")
     tool.write_text(source or "print('local execution fixture')\n" if python_tool
                     else "#!/bin/sh\nprintf 'local execution fixture'\n")
+    for name, text in (extra_tools or {}).items():
+        (root / "tools" / name).write_text(text)
+    # Synthetic package construction is the trusted host boundary. Later
+    # mutations under test must not refresh this baseline.
+    ki_guard.enroll(root)
     cfg = paths.KissConfig.default(project)
     cfg.python = Path(sys.executable)
     (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
@@ -288,9 +293,8 @@ def test_valid_reapproval_during_attempt_cannot_rebind_its_receipt(tmp_path, mon
 
 
 def test_fresh_plan_rejects_old_tool_even_when_supplied_session_is_stale(tmp_path, monkeypatch):
-    ctx = _project(tmp_path)
+    ctx = _project(tmp_path, extra_tools={"replacement.py": "print('replacement fixture')\n"})
     replacement = ctx.root / "tools" / "replacement.py"
-    replacement.write_text("print('replacement fixture')\n")
     new_plan = copy.deepcopy(ctx.plan)
     new_plan["steps"][0]["tool"] = str(replacement)
     ctx.flow.flow.plan.write_artifacts(ctx.project, new_plan, ctx.inventory)

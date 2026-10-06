@@ -713,6 +713,11 @@ def place_agent_install(man: Manifest, binary: Path | None,
 
 def run_preflight(ki, python: str, cfg=None, *, project=None, stop=None, turn_id=None) -> Step:
     """Run the KI's own preflight_check.py, inside the sandbox when configured."""
+    from . import ki_guard
+    try:
+        ki_guard.require_intact(ki.root, required=(Path(ki.root) / "SKILL.md").is_file())
+    except ki_guard.KIIntegrityError as exc:
+        return Step("preflight", False, str(exc))
     if not ki.preflight:
         return Step("preflight", False, "this KI ships no preflight_check.py")
     argv = [python, str(ki.preflight)]
@@ -720,18 +725,22 @@ def run_preflight(ki, python: str, cfg=None, *, project=None, stop=None, turn_id
         from .paths import have_sandbox, sandbox_command
         if have_sandbox():
             argv = sandbox_command(cfg, argv, cwd=ki.root)
-    env = None
+    env = {"PYTHONDONTWRITEBYTECODE": "1"}
     if cfg is not None:
         from .paths import with_ki_tools_common, with_python_runtime
-        env = with_python_runtime(python, with_ki_tools_common(cfg, {}))
+        env = with_python_runtime(python, with_ki_tools_common(cfg, env))
     try:
         context = (contextlib.nullcontext() if _CANCELLATION.get() is not None else
                    cancellation_context(project or getattr(cfg, "root", None), stop=stop, turn_id=turn_id))
-        with context:
+        with context, ki_guard.worker(ki.root):
             rc, out = _run(argv, cwd=ki.root, timeout=600, env=env)
     except InstallStopped as exc:
         return Step("preflight", False, str(exc), commands=[" ".join(argv)])
     tail = "\n".join(out.strip().splitlines()[-25:])
+    try:
+        ki_guard.require_intact(ki.root, required=(Path(ki.root) / "SKILL.md").is_file())
+    except ki_guard.KIIntegrityError as exc:
+        return Step("preflight", False, f"{exc}\n{tail}", commands=[" ".join(argv)])
     return Step("preflight", rc == 0, tail, commands=[" ".join(argv)])
 
 

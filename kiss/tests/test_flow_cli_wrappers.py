@@ -13,7 +13,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import cli, flowrun, paths, project_paths  # noqa: E402
+from kiss_cli import cli, flowrun, ki_guard, paths, project_paths  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +40,7 @@ def _project_with_ki(tmp_path):
 
 
 def _approve(project, ki):
+    ki_guard.enroll(ki.root)
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     t = flowrun.turn(project, [ki], SimpleNamespace(root=project, python=sys.executable, roles={}),
                      "cli", "claude", None, "run M for 2003")
@@ -90,6 +91,7 @@ def test_run_tool_uses_only_environment_from_the_approved_step(
         "out.parent.mkdir(parents=True, exist_ok=True)\n"
         "out.write_text(json.dumps({'ki': os.environ['VIC_KI_ROOT'], "
         "'secret': 'TEST_API_KEY' in os.environ}))\n")
+    ki_guard.enroll(ki.root)
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     turn = flowrun.turn(
         project, [ki], SimpleNamespace(root=project, python=sys.executable, roles={}),

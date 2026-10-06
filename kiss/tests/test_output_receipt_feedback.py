@@ -15,18 +15,14 @@ from .test_flowgate import _cfg, _ki, _plan, _session
 def _approved_run(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
     monkeypatch.setenv("GEOFORGE_FLOW_REGISTRY", str(tmp_path / "registry.json"))
-    ki = _ki(tmp_path)
-    (ki.root / "tools" / "run.py").write_text(
-        "import argparse, pathlib\n"
+    ki = _ki(tmp_path, extra_files={"tools/run.py": "import argparse, pathlib\n"
         "parser = argparse.ArgumentParser()\n"
         "parser.add_argument('--output-dir', required=True)\n"
         "args = parser.parse_args()\n"
         "out = pathlib.Path(args.output_dir)\n"
         "out.mkdir(parents=True, exist_ok=False)\n"
         "(out / 'q.csv').write_text('t,q\\n1,0.5\\n2,1.2\\n3,0.8\\n')\n"
-        "print('fixture process completed')\n",
-        encoding="utf-8",
-    )
+        "print('fixture process completed')\n"})
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     plan, inventory = _plan(ki)

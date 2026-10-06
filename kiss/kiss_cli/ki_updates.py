@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 from urllib.parse import quote, urlsplit
 
-from . import doctor, firstrun, ki_platform_overlay, paths, reference_portability, settings, tls
+from . import doctor, firstrun, ki_platform_overlay, ki_verification, paths, reference_portability, settings, tls
 from .catalog import KI, Catalog, installation_platform
 
 
@@ -49,7 +49,8 @@ SNAPSHOT_MANIFEST = ".geoforge-library.json"
 
 
 def _validation_policy() -> str:
-    return getattr(doctor, "VALIDATION_POLICY_VERSION", "ki-doctor-v1")
+    return (getattr(doctor, "VALIDATION_POLICY_VERSION", "ki-doctor-v1")
+            + ":" + ki_verification.GATE_POLICY)
 
 
 class SnapshotValidationError(RuntimeError):
@@ -642,6 +643,8 @@ class UpdateManager:
 
     def _validate(self, root: Path) -> tuple[int, int, list[dict]]:
         self._reference_case_summary = None
+        self._ki_verification = []
+        before = _snapshot_content_hash(root)
         common = root / "ki_tools_common"
         if not (common / "ki_tools_common/__init__.py").is_file() or not (common / "pyproject.toml").is_file():
             raise RuntimeError("downloaded KI snapshot is missing the required ki_tools_common package")
@@ -664,6 +667,37 @@ class UpdateManager:
             raise SnapshotValidationError(
                 f"downloaded KI snapshot failed {len(blocked)} blocking checks: {preview}",
                 [vars(finding).copy() for finding in findings], _portability_files(catalog, root))
+        # Existing shipped packages retain their previous status. Every new or
+        # edited KI must pass the same host KDT gate as Studio and ZIP imports.
+        # An unchanged package is not relabelled as KDT/native-test verified.
+        current = Catalog(self.current_library_root / "models",
+                          data_dir=data_ki_root(self.current_library_root))
+        for ki in catalog:
+            previous = current.packages.get(ki.name)
+            if previous and _file_digests(previous.root) == _file_digests(ki.root):
+                self._ki_verification.append({"name": ki.name, "state": "unchanged_existing"})
+                continue
+            try:
+                report = ki_verification.verify_candidate(
+                    ki.root, name=ki.name, kind=ki_verification.detect_kind(ki.root))
+                if not report.get("ok"):
+                    details = report.get("failures") or [
+                        f["detail"] for f in (report.get("desktop") or {}).get("findings", [])
+                        if f.get("severity") == doctor.BLOCK]
+                    raise ValueError("; ".join(details[:5]) or "KI package validation failed")
+                ki_verification.require_current(ki.root, report)
+            except (ValueError, RuntimeError, OSError) as error:
+                raise SnapshotValidationError(
+                    f"{ki.name}: KDT verification required before activation: {error}",
+                    [{"ki": ki.name, "severity": doctor.BLOCK,
+                      "check": "kdt-verification", "detail": str(error), "count": 1}],
+                    _portability_files(catalog, root)) from error
+            self._ki_verification.append({"name": ki.name, "state": "Verified",
+                "candidate_digest": report["candidate_digest"],
+                "software_execution": report.get("software_execution")})
+        if before != _snapshot_content_hash(root):
+            raise RuntimeError("KI snapshot changed during verification; activation refused")
+        self._validated_content_hash = before
         warnings = [finding for finding in findings if finding.severity == doctor.WARN]
         # Binding caveats must not disappear behind unrelated package warnings.
         ordered = sorted(warnings, key=lambda finding: finding.check != "reference-case-binding")
@@ -785,18 +819,23 @@ class UpdateManager:
                 diff = _library_diff(self.current_library_root, incoming)
                 helper_changed = (_file_digests(self.current_library_root / "ki_tools_common") !=
                                   _file_digests(incoming / "ki_tools_common"))
+                if _snapshot_content_hash(incoming) != self._validated_content_hash:
+                    raise RuntimeError("KI snapshot changed after verification; activation refused")
                 _atomic_json(incoming / SNAPSHOT_MANIFEST, {
                     "schema_version": 1, "revision": revision,
                     "source_commit": self._source_commit, "trees": self._component_trees,
                     "upstream_revision": upstream_revision,
                     "validation_policy": _validation_policy(),
                     "reference_cases": getattr(self, "_reference_case_summary", None),
+                    "ki_verification": self._ki_verification,
                     "warning_count": warning_count, "warnings": warnings,
                     "windows_overlay": overlay if overlay.get("files") else None,
                     "content_sha256": _snapshot_content_hash(incoming)})
                 snapshot = home / "snapshots" / revision
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 stage = "snapshot_activation"
+                if _snapshot_content_hash(incoming) != self._validated_content_hash:
+                    raise RuntimeError("KI snapshot changed before activation; activation refused")
                 if snapshot.exists():
                     cached = _read_json(snapshot / SNAPSHOT_MANIFEST)
                     if (not _snapshot_valid(snapshot) or cached.get("revision") != revision
@@ -840,6 +879,7 @@ class UpdateManager:
                     archive_cache_reused=archive_meta.get("cache_reused", False),
                     components=component_sources(snapshot),
                     reference_cases=getattr(self, "_reference_case_summary", None),
+                    ki_verification=self._ki_verification,
                     windows_overlay=overlay if overlay.get("files") else None, **diff)
             except Exception as error:
                 if incoming.exists():

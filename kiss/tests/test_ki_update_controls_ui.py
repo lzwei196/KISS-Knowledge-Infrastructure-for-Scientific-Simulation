@@ -216,7 +216,9 @@ def test_component_sources_distinguish_fallback_and_escape_recorded_values(zh):
     assert "aaaaaaaaaaaa" in html and "aaaaaaaaaaaaa" not in html
     assert "bbbbbbbbbbbb" in html
     assert "&lt;script&gt;bad" in html and "<script>" not in html
-    assert ("共享工具" if zh else "shared tools") in node(f, "#updatescope")["text"]
+    scope = node(f, "#updatescope")["text"]
+    assert "KDT" in scope and "CLI" in scope and "API" in scope
+    assert ("另行验证" if zh else "separate checks") in scope
 
 
 def test_server_error_is_escaped_and_unsafe_source_link_is_rejected():

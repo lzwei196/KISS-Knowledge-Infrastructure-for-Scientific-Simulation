@@ -38,7 +38,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
+from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_guard, ki_updates, ki_verification, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI, bundled_data_dir
 from .manifest import Manifest
 from . import software_verification
@@ -1203,7 +1203,12 @@ class Handler(BaseHTTPRequestHandler):
         return "guided"
 
     def _ki(self, name: str):
-        return self.catalog.get(unquote(name))
+        ki = self.catalog.get(unquote(name))
+        try:
+            ki_guard.require_intact(ki.root)
+        except (ValueError, RuntimeError, OSError) as error:
+            raise KeyError(f"{ki.name}: KI draft requires verification: {error}") from error
+        return ki
 
     def _workdir(self, ki) -> Path:
         index = getattr(self, "_install_location_index", None)
@@ -1242,10 +1247,47 @@ class Handler(BaseHTTPRequestHandler):
         sj = ((wd / "status.json") if configured else
               status_files.get(ki.name.casefold()))
         setup_kind = self._manifest_setup_kind(ki)
+        source_error = getattr(self, "catalogue_integrity_errors", {}).get(ki.name)
+        if not source_error:
+            try:
+                # Catalogue enrollment happens at startup/import, never in a
+                # status read. Recheck here because source bytes can drift
+                # after startup while an older software report remains green.
+                ki_guard.require_intact(ki.root)
+            except (ValueError, RuntimeError, OSError) as error:
+                source_error = str(error)
+        if source_error:
+            return {"state": "setup", "label": "KI draft requires verification",
+                    "can_run": False, "setup_kind": setup_kind,
+                    "requires_reverification": True,
+                    "primary_error": {"name": "ki-source", "detail": source_error}}
+        live = wd / "ki"
+        if ki_guard.is_managed(live):
+            try:
+                ki_guard.require_intact(live)
+            except (ValueError, RuntimeError, OSError) as error:
+                return {"state": "setup", "label": "KI edit needs verification",
+                        "can_run": False, "setup_kind": setup_kind,
+                        "requires_reverification": True,
+                        "primary_error": {"name": "ki-edit", "detail": str(error)}}
         if sj is not None and sj.exists():
             try:
                 st = json.loads(sj.read_text(encoding="utf-8"))
                 ok = bool(st.get("ok"))
+                if ok and (not ki_guard.is_managed(live) or
+                           not st.get("ki_content_digest") or
+                           st["ki_content_digest"] != ki_verification.content_digest(live)):
+                    return {"state": "setup", "label": "Recheck KI revision",
+                            "can_run": False, "setup_kind": setup_kind,
+                            "requires_reverification": True,
+                            "checked_at": st.get("checked_at"), "verified_at": None,
+                            "previous_verification_passed": True,
+                            "software_version": st.get("software_version"),
+                            "steps": st.get("steps", []),
+                            "primary_error": {"name": "ki-revision", "detail":
+                                "The previous software check passed, but this installed KI "
+                                "has no current exact-revision verification. Run software "
+                                "verification again; the previous report remains in history."}}
                 library = getattr(self, "library_root", None)
                 if ok and library is not None and (Path(library) / ki_updates.SNAPSHOT_MANIFEST).is_file():
                     try:
@@ -2081,7 +2123,11 @@ class Handler(BaseHTTPRequestHandler):
             for ki in self.catalog:
                 shipped = self._shipped_manifest(ki.name).exists()
                 imported = bool(self.catalog.user_dir and ki.root.parent == self.catalog.user_dir)
-                checked_import = (ki.root / ".geoforge-import.json").is_file()
+                try:
+                    checked_import = bool(imported and ki_verification.current_report(
+                        ki.root, kind=ki_verification.detect_kind(ki.root)))
+                except (ValueError, RuntimeError, OSError):
+                    checked_import = False
                 out.append({
                     "name": ki.name, **ki.meta,
                     "package_origin": "imported" if imported else "bundled",
@@ -2663,6 +2709,7 @@ class Handler(BaseHTTPRequestHandler):
         every session.
         """
         project = Path(project).resolve()
+        ki_guard.require_intact(ki.root, required=False)
         cfg = cfg if cfg is not None else self._session_config(project, ki)
 
         model_home = project / "models" / ki.name
@@ -2670,7 +2717,11 @@ class Handler(BaseHTTPRequestHandler):
         saved_path = model_home / paths.CONFIG_NAME
         library = getattr(self, "library_root", None)
         snapshot_library = bool(library and (Path(library) / ki_updates.SNAPSHOT_MANIFEST).is_file())
-        retain_pair = snapshot_library and saved_path.is_file()
+        if ki_guard.is_managed(live):
+            ki_guard.require_intact(live)
+            if not saved_path.is_file():
+                raise ValueError(f"Recorded KI path bindings are missing; active files were preserved: {saved_path}")
+        retain_pair = saved_path.is_file() and (snapshot_library or ki_guard.is_managed(live))
         if retain_pair:
             # A library update does not migrate an existing scientific project.
             # Its materialised code, local fixes and shared helpers form one pair.
@@ -2691,6 +2742,9 @@ class Handler(BaseHTTPRequestHandler):
             # add removed code or cases back. Runtime binaries remain accessible
             # through cfg's shared installation paths, outside the project KI.
             saved_path.write_text(cfg.dumps(), encoding="utf-8")
+        # Enrollment records a retained baseline; it does not invent a KDT or
+        # scientific pass. Repeated enrollment refuses changed active bytes.
+        ki_guard.enroll(live)
         # Root discovery must not select whichever KI happened to be prepared
         # last. Model tools explicitly use their own config at dispatch.
         if write_project_config and project_paths.can_write_project_config(project, [ki.name]):
@@ -2782,6 +2836,11 @@ class Handler(BaseHTTPRequestHandler):
 
         check = check or install.run_preflight(live_ki, cfg.python, cfg,
                                                project=project, stop=stop, turn_id=turn_id)
+        if ki_guard.is_managed(live_ki.root):
+            try:
+                ki_guard.require_intact(live_ki.root)
+            except (ValueError, RuntimeError, OSError) as error:
+                check = install.Step("preflight", False, str(error))
         verification_identity = None
         requirements = None
         if self is not None and getattr(self, "library_root", None) is not None:
@@ -2809,6 +2868,8 @@ class Handler(BaseHTTPRequestHandler):
             status = json.loads(status_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             status = {}
+        status["ki_content_digest"] = (ki_verification.content_digest(live_ki.root)
+                                       if check.ok else None)
         steps = [s for s in status.get("steps", [])
                  if isinstance(s, dict) and s.get("name") not in {"preflight", "manifest-requirements"}]
         if check.ok:
@@ -3411,13 +3472,18 @@ verification are different states; never claim this test verified the KI."""
 
         def run_agent(prompt_text: str) -> str:
             buf: list[str] = []
+            protected_roots = [ki.root]
+            live = wd / "ki"
+            if live.exists() or ki_guard.is_managed(live):
+                protected_roots.append(live)
             if kind == "api":
                 prov = api.PROVIDERS.get(pname)
                 if prov is None or not prov.available():
                     emit("      no usable API provider for the proposal step\n")
                     return ""
                 for piece in api.run(prov, ki, cfg, "You write build manifests.",
-                                     prompt_text, model=llm):
+                                     prompt_text, model=llm,
+                                     setup_context={"managed_ki_roots": protected_roots}):
                     buf.append(piece)
                     emit(piece if piece.startswith("`>") else "")
                 return "".join(buf)
@@ -3429,7 +3495,8 @@ verification are different states; never claim this test verified the KI."""
                 prov = providers.get(pname) if pname else avail[0]
             except KeyError:
                 prov = avail[0]
-            for piece in providers.run(prov, prompt_text, wd, cfg=None, model=llm):
+            for piece in providers.run(prov, prompt_text, wd, cfg=None, model=llm,
+                                       managed_roots=protected_roots):
                 buf.append(piece)
             return "".join(buf)
 
@@ -3534,23 +3601,52 @@ verification are different states; never claim this test verified the KI."""
             if blockers:
                 report["error"] = "KI package did not pass validation"
                 return self._json(report, 422)
+            # This marker describes origin, never authority. Acceptance lives
+            # in the host store and covers these final bytes, including it.
+            (root / ".geoforge-import.json").write_text(json.dumps({
+                "schema_version": 2, "package_origin": "imported",
+            }, indent=2), encoding="utf-8")
+            try:
+                acceptance = ki_verification.verify_candidate(
+                    root, name=name, kind=ki_verification.detect_kind(root))
+                report["verification"] = acceptance
+                report["findings"].extend({"severity": doctor.BLOCK, "check": "KDT",
+                                            "detail": detail}
+                                           for detail in acceptance.get("failures", []))
+                report["blocking"] = sum(f["severity"] == doctor.BLOCK
+                                         for f in report["findings"])
+                ki_verification.require_current(root, acceptance)
+            except (ValueError, RuntimeError, OSError) as error:
+                report.update(ok=False, valid=False, ready_to_import=False,
+                              state="Draft", error=str(error))
+                return self._json(report, 422)
             if validate_only:
                 report["ready_to_import"] = True
+                report["state"] = "Verified"
                 return self._json(report)
 
             dest = self.catalog.user_dir / name
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(root, dest)
-            (dest / ".geoforge-import.json").write_text(json.dumps({
-                "package_valid": True,
-                "checked_at": time.time(),
-                "findings": findings,
-            }, indent=2), encoding="utf-8")
+            # Copy into an undiscoverable staging directory and verify the
+            # destination bytes before publishing the catalogue entry.
+            with tempfile.TemporaryDirectory(prefix=".ki-import-", dir=dest.parent) as staging:
+                candidate = Path(staging) / "candidate"
+                shutil.copytree(root, candidate)
+                try:
+                    ki_verification.require_current(candidate, acceptance)
+                    if dest.exists():
+                        return self._json({"error": "KI destination already exists"}, 409)
+                    candidate.rename(dest)
+                    ki_guard.enroll(dest)
+                except (ValueError, RuntimeError, OSError) as error:
+                    return self._json({"ok": False, "valid": False,
+                                       "state": "Draft", "error": str(error)}, 422)
 
         self.catalog.refresh()
         return self._json({"ok": True, "name": name,
                            "path": str(self.catalog.user_dir / name),
-                           "package_status": "valid", "findings": findings})
+                           "package_status": "valid", "state": "Active",
+                           "verification": acceptance, "findings": findings})
 
     # --- session chat ------------------------------------------------------
     def _stream_session_chat(self, sid: str, req) -> None:
@@ -4239,6 +4335,7 @@ verification are different states; never claim this test verified the KI."""
                                    *flowrun.wrapper_access_roots(
                                        auto_turn.wrappers if auto_turn is not None else {})],
                        cfg=cfg, pol=pol, model=llm,
+                       managed_roots=[item.root for item in active_kis],
                        runtime_events=runtime_events,
                        extra_env=self._agent_runtime_env(project),
                        flow_policy=(auto_turn.policy if auto_turn is not None else None))
@@ -4551,6 +4648,7 @@ verification are different states; never claim this test verified the KI."""
                        bare_prompt=bare_task, wd=wd, out=out,
                        session=session, cli_state=cli_state,
                        extra_dirs=grants, cfg=cfg, ki_root=resolved[0].root,
+                       managed_roots=[item.root for item in resolved],
                        pol=pol, model=llm, runtime_events=runtime_events,
                        extra_env=self._agent_runtime_env(project),
                        flow_policy=flow_policy)
@@ -4742,7 +4840,7 @@ def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         setup_flow.prepare_common(cfg, repo_root)
     live = root / "ki"
     install.check_cancelled()
-    mrep = port.materialise(ki.root, live, cfg)
+    mrep = setup_flow.materialise_active(ki.root, live, cfg)
     ok = not mrep.unresolved and not mrep.corrupted
     result.add(install.Step(
         "materialise", ok,
@@ -4824,6 +4922,8 @@ def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         "model": ki.name, "ok": result.ok, "checked_at": checked_at, "interrupted": False,
         "verified_at": checked_at if result.ok and not installation_only else None,
         "verification_identity": verification_identity if result.ok and not installation_only else None,
+        "ki_content_digest": (ki_verification.content_digest(ki.root)
+                              if result.ok and not installation_only else None),
         "installation_only": installation_only,
         "installation_ready": result.ok if installation_only else None,
         "software_version": (ki.meta or {}).get("version"),
@@ -4883,6 +4983,8 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
         cat = base
         library_root = base_repo_root
     Handler.catalog = cat
+    catalogue_baselines = ki_guard.enroll_catalogue(cat)
+    Handler.catalogue_integrity_errors = catalogue_baselines["errors"]
     # The executable's own root continues to provide the reviewed harness and
     # host-side ki_tools_common. Model subprocesses receive a separate, pinned
     # helper copy from the active KI library; app/harness source stays fixed.
@@ -4896,8 +4998,11 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
 
     if auto_update:
         def activate(snapshot: Path) -> None:
-            Handler.catalog = Catalog(snapshot / "models", user_dir=user_models,
-                                      data_dir=ki_updates.data_ki_root(snapshot, bundled_data_dir()))
+            candidate = Catalog(snapshot / "models", user_dir=user_models,
+                                data_dir=ki_updates.data_ki_root(snapshot, bundled_data_dir()))
+            baselines = ki_guard.enroll_catalogue(candidate)
+            Handler.catalog = candidate
+            Handler.catalogue_integrity_errors = baselines["errors"]
             Handler.library_root = snapshot
 
         manager = ki_updates.UpdateManager(library_root, activate)

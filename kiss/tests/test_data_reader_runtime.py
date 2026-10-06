@@ -7,7 +7,7 @@ import venv
 
 import pytest
 
-from kiss_cli import cli, install, paths, port, python_script, runnable
+from kiss_cli import cli, install, ki_guard, paths, port, python_script, runnable
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Manifest
 
@@ -101,6 +101,7 @@ def test_materialised_reader_retains_exact_source_and_can_complete_setup(tmp_pat
     assert not report.unresolved and not report.corrupted and report.tokens_replaced == 0
     assert (source/"tools/read_observations.py").read_bytes() == (live/"tools/read_observations.py").read_bytes()
     ki = KI(name, live)
+    ki_guard.enroll(live)
     assert install.needs_shared_tools(ki, manifest) is False
     step, runner = install.acquire(manifest, root/"unused-prefix", cfg.python, ki=ki)
     assert step.ok and runner == live/"tools/read_observations.py"
@@ -143,4 +144,6 @@ def test_cli_verify_checks_installed_copy_and_rejects_installed_source_drift(tmp
     runner.write_bytes(runner.read_bytes()+b"\n# installed source drift\n")
     assert cli.cmd_verify(args) == 1
     failed = json.loads(capsys.readouterr().out)[0]
-    assert "SHA256 mismatch" in failed["detail"]
+    assert "KI integrity gate" in failed["detail"] and "Active KI changed" in failed["detail"]
+    assert failed["state"] == "blocked"
+    assert failed["responds"] is False

@@ -458,7 +458,7 @@ function drawKiUpdate(){
     updateValidationFailure(u.validation_failure)+
     updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+
     (u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:""));
-  $("#updatescope").textContent=updateText("GeoForge updates model and data KIs, shared tools, and installation manifests from the official repository. It does not change chat projects, input data, installed model binaries, verification history, or KIs you imported yourself. A downloaded snapshot becomes active only after deterministic package checks pass.","GeoForge 从官方仓库更新模型 KI、数据 KI、共享工具和安装清单。更新不会更改聊天项目、输入数据、已安装的模型程序、验证历史或自行导入的 KI。下载的快照通过确定性软件包检查后才会启用。");
+  $("#updatescope").textContent=updateText("New or edited KIs must pass KDT and Desktop package checks before activation. GeoForge checks the exact files again before applying them. Existing projects keep their KI revision; software and reference-case results require separate checks. These rules apply to every CLI and API provider.","新增或修改的 KI 必须通过 KDT 和桌面软件包检查才能启用；应用前再次核对文件内容。现有项目保留原 KI 版本，软件运行和参考算例结果需另行验证。所有 CLI 与 API 提供方遵守相同规则。");
   $("#updateretry").disabled=checking||disabled||KIUPDATE_STARTING;
   $("#updateretry").textContent=disabled?updateText("Unavailable","不可用"):KIUPDATE_STARTING?updateText("Starting…","正在启动……"):checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");
   $("#updateretry").title=disabled?disabledReason:"";
@@ -686,7 +686,7 @@ let PENDING_IMPORT=null;
 function showImportReport(d){
   const valid=!!d.valid;
   $("#importsummary").innerHTML=valid
-    ? `<b>${esc(d.name)}</b> is a valid KI package and can be imported. This checks its structure; software verification happens after setup.`
+    ? `<b>${esc(d.name)}</b> ${updateText("passed KDT and Desktop package checks. Import rechecks the exact files. Software verification happens after setup.","已通过 KDT 和桌面软件包检查。导入时会再次核对文件内容，软件运行验证在安装后进行。")}`
     : `<b>${esc(d.name||"This package")}</b> cannot be imported yet. Fix the blocking findings and try again.`;
   const findings=d.findings||[];
   $("#importfindings").innerHTML=findings.map(f=>

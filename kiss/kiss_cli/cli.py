@@ -132,6 +132,10 @@ def cmd_doctor(args) -> int:
 def cmd_init(args) -> int:
     cat = _catalog(args)
     ki = cat.get(args.model)
+    from . import ki_guard
+    baseline = ki_guard.enroll_catalogue(cat)
+    if ki.name in baseline["errors"]:
+        raise ki_guard.KIIntegrityError(baseline["errors"][ki.name])
     repo_root = ki.root.parent.parent
 
     # Default to ~/kiss/<model>, the same layout the app and `kiss verify` use.
@@ -169,7 +173,7 @@ def cmd_init(args) -> int:
         setup.prepare_common(cfg, repo_root)
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     live = root / "ki"
-    mrep = port.materialise(ki.root, live, cfg)
+    mrep = setup.materialise_active(ki.root, live, cfg)
     # A file that stopped parsing once the real path was written in is a failure,
     # not a footnote — writing broken JSON/YAML silently is the whole class of
     # bug this installer exists to avoid.
@@ -301,6 +305,9 @@ def cmd_run(args) -> int:
     cat = _catalog(args)
     ki = cat.get(args.model)
     cfg = paths.KissConfig.load(Path(args.workdir) if args.workdir else None)
+    from . import ki_guard
+    active = cfg.root / "ki"
+    ki_guard.require_intact(active if (active / "SKILL.md").is_file() else ki.root)
     if not args.argv:
         print("nothing to run — pass a command after --", file=sys.stderr)
         return 2
@@ -311,6 +318,7 @@ def cmd_run(args) -> int:
                   "Install it, or set relocation = \"symlink\" in kiss.toml.", file=sys.stderr)
             return 3
         argv = paths.sandbox_command(cfg, argv, cwd=ki.root)
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     os.execvp(argv[0], argv)
 
 
@@ -769,6 +777,8 @@ def cmd_verify(args) -> int:
     from . import runnable
 
     cat = _catalog(args)
+    from . import ki_guard, setup
+    baseline = ki_guard.enroll_catalogue(cat)
     kis = [cat.get(args.model)] if args.model else list(cat)
     repo_root = kis[0].root.parent.parent
     harvested = {}
@@ -790,15 +800,24 @@ def cmd_verify(args) -> int:
             except Exception:
                 cfg = None
         py = args.python or (cfg.python if cfg else None)
-        man = _manifest_for(ki, repo_root)
-        # Verify the installed, materialised copy just as GUI setup does.
-        # The catalogue package may be outside this workspace and still carry
-        # placeholders; source-bound Python admission must not bypass that gate.
-        live = root / "ki"
-        if cfg is not None and live.is_dir():
-            ki = type(ki)(name=ki.name, root=live)
-        v = runnable.check(ki, man, cfg, harvested,
-                           timeout=args.timeout, python=py)
+        try:
+            if ki.name in baseline["errors"]:
+                raise ki_guard.KIIntegrityError(baseline["errors"][ki.name])
+            man = _manifest_for(ki, repo_root)
+            # Verify the installed, materialised copy just as GUI setup does.
+            # A source or materialization change remains blocked, but is a
+            # structured per-model result rather than aborting --json output.
+            live = root / "ki"
+            if cfg is not None and live.is_dir():
+                setup.materialise_active(ki.root, live, cfg)
+                ki = type(ki)(name=ki.name, root=live)
+            ki_guard.require_intact(ki.root)
+            v = runnable.check(ki, man, cfg, harvested,
+                               timeout=args.timeout, python=py)
+            ki_guard.require_intact(ki.root)
+        except ki_guard.KIIntegrityError as exc:
+            v = runnable.Verdict(ki.name, kind="unknown", python=str(py or ""),
+                                 detail=f"KI integrity gate: {exc}")
         runnable.save(workroot, v)
         results.append(v)
         if not args.json:

@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from kiss_cli import doctor, kdtstudio
+from kiss_cli import doctor, kdtstudio, ki_verification
 from kiss_cli.catalog import KI
 
 
@@ -30,6 +30,8 @@ class KdtStudioTests(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {
             "GEOFORGE_KDT_HOME": str(self.data),
             "GEOFORGE_KDT_ENGINE": str(self.engine),
+            "GEOFORGE_KI_VERIFICATION_HOME": str(self.base / "host-verification"),
+            "GEOFORGE_FLOW_KEYS": str(self.base / "host-keys"),
         })
         self.env.start()
 
@@ -311,14 +313,11 @@ class KdtStudioTests(unittest.TestCase):
             "influence: {}\nsafety: {}\n"
         )
         (candidate / "dag.yaml").write_text(bare_dag, encoding="utf-8")
-        acceptance = {
-            "ok": True,
-            "engine_commit": kdtstudio.REVIEWED_COMMIT,
-            "digest": kdtstudio.tree_digest(candidate),
-            "signature": kdtstudio.tree_signature(candidate),
-        }
-        (root / "runs" / "ki-acceptance.json").write_text(
-            json.dumps(acceptance), encoding="utf-8")
+        (self.engine / "verify_ki_structure.py").write_text(
+            "def verify(root, kind=None):\n"
+            " return {'ok': True, 'failures': [], 'warnings': [], 'info': {}}\n",
+            encoding="utf-8")
+        acceptance = kdtstudio.verify(created["id"])
 
         adaptation = kdtstudio.adapt_for_desktop(created["id"])
         desktop = Path(adaptation["path"])
@@ -338,11 +337,7 @@ class KdtStudioTests(unittest.TestCase):
         ]
         self.assertEqual(blockers, [])
 
-        (root / "runs" / "geoforge-ki-verify.json").write_text(json.dumps({
-            "ok": True,
-            "candidate_signature": kdtstudio.tree_signature(candidate),
-            "authoring_revision": 0,
-        }), encoding="utf-8")
+        kdtstudio.geoforge_verify(created["id"])
 
         archive, blob, exported = kdtstudio.export_desktop_zip(created["id"])
         self.assertEqual(exported["source_digest"], acceptance["digest"])

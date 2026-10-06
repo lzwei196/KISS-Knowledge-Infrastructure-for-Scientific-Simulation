@@ -14,7 +14,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import api, flowgate, obs_access, paths, project_paths, projectrun  # noqa: E402
+from kiss_cli import api, flowgate, ki_guard, obs_access, paths, project_paths, projectrun  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +22,7 @@ def _keys(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path_factory.mktemp("keys")))
 
 
-def _ki(tmp_path, name="M"):
+def _ki(tmp_path, name="M", *, extra_files=None):
     root = tmp_path / "kis" / name
     (root / "tools").mkdir(parents=True)
     (root / "SKILL.md").write_text("# M\n> **MANDATORY EXECUTION POLICY**\n> run the real model\n\n")
@@ -31,6 +31,11 @@ def _ki(tmp_path, name="M"):
         "import sys, pathlib\n"
         "out = pathlib.Path(sys.argv[1]); out.parent.mkdir(parents=True, exist_ok=True)\n"
         "out.write_text('t,q\\n1,0.5\\n2,1.2\\n3,0.8\\n')\nprint('ran')\n")
+    for relative, content in (extra_files or {}).items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    ki_guard.enroll(root)
     return SimpleNamespace(name=name, root=root)
 
 
@@ -244,14 +249,13 @@ def test_run_ki_tool_in_executing_writes_a_receipt_and_validates(tmp_path):
 
 
 def test_direct_api_tool_gets_approved_step_environment_only(tmp_path, monkeypatch):
-    ki = _ki(tmp_path)
-    tool = ki.root / "tools" / "env.py"
-    tool.write_text(
+    ki = _ki(tmp_path, extra_files={"tools/env.py":
         "import json, os, pathlib\n"
         "p = pathlib.Path(os.environ['MODEL_OUTPUT'])\n"
         "p.parent.mkdir(parents=True, exist_ok=True)\n"
         "p.write_text(json.dumps({'root': os.environ['MODEL_KI_ROOT'], "
-        "'secret': 'PRIVATE_API_KEY' in os.environ}))\n")
+        "'secret': 'PRIVATE_API_KEY' in os.environ}))\n"})
+    tool = ki.root / "tools" / "env.py"
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     pj, inv = _plan(ki)
@@ -338,7 +342,7 @@ def test_run_ki_tool_refused_when_approved_tool_bytes_drift(tmp_path):
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
     (ki.root / "tools" / "run.py").write_text("print('changed after approval')\n")
-    with pytest.raises(api.ToolError, match="no valid approval"):
+    with pytest.raises(api.ToolError, match="Active KI changed"):
         api.execute_tool(
             "run_ki_tool", {"tool_path": "tools/run.py", "arguments": ["outputs/q.csv"],
                             "plan_step_id": "M:run"},
@@ -430,8 +434,9 @@ def test_write_plan_accepts_two_calls_and_json_strings(tmp_path, monkeypatch):
 
 
 def test_api_runs_the_declared_model_binary_with_a_receipt(tmp_path, monkeypatch):
-    ki = _ki(tmp_path)
     exe = tmp_path / "binaries" / "vic_classic.exe"
+    ki = _ki(tmp_path, extra_files={"knowledge_infrastructure.yaml":
+             f"model:\n  binary:\n    path: {exe}\n"})
     exe.parent.mkdir()
     if os.name == "nt":
         import shutil
@@ -439,8 +444,6 @@ def test_api_runs_the_declared_model_binary_with_a_receipt(tmp_path, monkeypatch
     else:
         exe.write_text("#!/bin/sh\necho ran \"$@\"\n")
     exe.chmod(0o755)
-    (ki.root / "knowledge_infrastructure.yaml").write_text(
-        f"model:\n  binary:\n    path: {exe}\n")
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     pj, inv = _plan(ki)

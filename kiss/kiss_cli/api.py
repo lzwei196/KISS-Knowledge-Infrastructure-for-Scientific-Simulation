@@ -1387,7 +1387,77 @@ def _user_only_file(path: Path, project_root: Path) -> bool:
             (path.name == "manual-download-details.json" and path.parent.name == ".geoforge"))
 
 
+_KI_INSPECTION_TOOLS = frozenset({
+    "read_ki_file", "list_ki_files", "search_diagnostics", "list_skills", "read_skill",
+    "list_project_files", "read_project_file", "list_work_files", "read_work_file",
+})
+
+
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
+                 setup_context: dict | None = None,
+                 project_mode: bool = False, flow=None) -> str:
+    from . import ki_guard
+    from contextlib import ExitStack
+    roots = [Path(ki.root).absolute()]
+    for value in (setup_context or {}).get("managed_ki_roots", []):
+        roots.append(Path(value).absolute())
+    for selected in getattr(getattr(flow, "ctx", None), "selected_kis", []) or []:
+        _, selected_root = flow.ki_root_for(selected, Path(ki.root))
+        roots.append(Path(selected_root).absolute())
+    roots = list(dict.fromkeys(roots))
+    with ExitStack() as workers:
+        for root in roots:
+            workers.enter_context(ki_guard.worker(root))
+        if name in {"write_work_file", "replace_work_text", "write_project_file"}:
+            base = Path((setup_context or {}).get("project_root") or cfg.root) if name == "write_project_file" else Path(cfg.root)
+            for root in roots:
+                try:
+                    ki_guard.reject_write(root, base / str(args.get("path") or ""))
+                except ki_guard.KIIntegrityError as exc:
+                    raise ToolError(str(exc)) from None
+        return _guarded_execute_tool(name, args, ki, cfg, setup_mode=setup_mode,
+                                     setup_context=setup_context, project_mode=project_mode,
+                                     flow=flow, managed_roots=roots)
+
+
+def _guarded_execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
+                         setup_context: dict | None = None,
+                         project_mode: bool = False, flow=None, managed_roots=None) -> str:
+    """One host integrity boundary, shared by every API provider."""
+    from . import ki_guard
+    if name in _KI_INSPECTION_TOOLS:
+        # Draft/blocked KIs must remain inspectable for repair. The underlying
+        # tool still enforces flow state, path containment and private files.
+        return _execute_tool(name, args, ki, cfg, setup_mode=setup_mode,
+                             setup_context=setup_context, project_mode=project_mode, flow=flow)
+    roots = managed_roots or [Path(ki.root).absolute()]
+    try:
+        for root in roots:
+            ki_guard.require_intact(root, required=(root / "SKILL.md").is_file())
+    except ki_guard.KIIntegrityError as exc:
+        raise ToolError(str(exc)) from None
+    try:
+        return _execute_tool(name, args, ki, cfg, setup_mode=setup_mode,
+                             setup_context=setup_context, project_mode=project_mode, flow=flow)
+    except ki_guard.KIIntegrityError as exc:
+        raise ToolError(str(exc)) from None
+    finally:
+        failures = []
+        for root in roots:
+            try:
+                # A tool may have spawned untracked children: copy only.
+                draft = ki_guard.preserve_drift(root)
+                if draft is not None:
+                    failures.append(f"KI edit was not accepted. Active KI is blocked; changed bytes retained at {draft}. "
+                                    "Original baseline preserved; stop workers before recovery and verify "
+                                    "the candidate through KDT before explicit adoption.")
+            except ki_guard.KIIntegrityError as exc:
+                failures.append(str(exc))
+        if failures:
+            raise ToolError("\n".join(failures))
+
+
+def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                  setup_context: dict | None = None,
                  project_mode: bool = False, flow=None) -> str:
     """Run one tool. Every path argument is confined to the KI package.
@@ -1519,6 +1589,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         for f in root.rglob("*"):
             if not f.is_file() or "diagnostic" not in str(f.relative_to(root)):
                 continue
+            if root not in f.resolve().parents:
+                continue
             for i, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
                 if kw in line.lower():
                     hits.append(
@@ -1578,6 +1650,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if project_mode and name == "write_project_file":
         p = _inside_project(args.get("path") or "")
+        from . import ki_guard
+        ki_guard.reject_write(root, p)
         content = args.get("content")
         if not isinstance(content, str):
             raise ToolError("content must be text")
@@ -2075,6 +2149,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if setup_mode and name == "write_work_file":
         p = _inside_work(args.get("path") or "")
+        from . import ki_guard
+        ki_guard.reject_write(root, p)
         relative_parts = {part.lower() for part in p.relative_to(workroot).parts}
         if (bool((setup_context or {}).get("installation_only")) and
                 p.parent == workroot and p.name in {
@@ -2107,6 +2183,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if setup_mode and name == "replace_work_text":
         p = _inside_work(args.get("path") or "")
+        from . import ki_guard
+        ki_guard.reject_write(root, p)
         if not p.is_file():
             raise ToolError(f"no such workspace file: {args.get('path')}")
         relative_parts = {part.lower() for part in p.relative_to(workroot).parts}
@@ -2399,7 +2477,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 # Its own session, tree-killed on timeout, ended by the chat's Stop.
                 # (On Windows, run_process also closes stdin for every launch.)
                 proc = execution.run_process(
-                    argv, cwd=execution_cwd, env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard},
+                    argv, cwd=execution_cwd, env={**child_env, **safe_env, "PIP_REQUIRE_VIRTUALENV": pip_guard,
+                                                "PYTHONDONTWRITEBYTECODE": "1"},
                     timeout=timeout, project=project_root,
                     stop=stop, turn_id=turn_id,
                     stdin=subprocess.DEVNULL if isolate_probe else None,

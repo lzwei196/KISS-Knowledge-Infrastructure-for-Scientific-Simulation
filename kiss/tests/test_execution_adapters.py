@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import api, cli, flowgate, paths, project_paths
+from kiss_cli import api, cli, flowgate, ki_guard, paths, project_paths
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +21,7 @@ def _isolated_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
 
 
-def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=None):
+def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=None, extra_tools=None):
     project = (tmp_path / "project").resolve()
     root = project / "models" / "M" / "ki"
     (root / "tools").mkdir(parents=True)
@@ -34,6 +34,9 @@ def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=No
     tool.write_text(source)
     if tool.suffix != ".py":
         tool.chmod(0o700)
+    for name, text in (extra_tools or {}).items():
+        (root / "tools" / name).write_text(text)
+    ki_guard.enroll(root)
     ki = SimpleNamespace(name="M", root=root)
     shared = paths.KissConfig.default(project)
     shared.python = Path(sys.executable)
@@ -91,14 +94,15 @@ def _receipts(ctx):
 
 @pytest.mark.parametrize("location", ["shipped", "external", "preflight"])
 def test_absolute_python_tool_is_rejected_with_only_a_contained_shipped_tool_hint(tmp_path, location):
-    ctx = _project(tmp_path, "from pathlib import Path\nPath('launched').write_text('bad')\n")
+    source = "from pathlib import Path\nPath('launched').write_text('bad')\n"
+    ctx = _project(tmp_path, source,
+        extra_tools={"preflight_check.py": source} if location == "preflight" else None)
     candidate = ctx.tool
     if location == "external":
         candidate = tmp_path / "outside.py"
         candidate.write_text(ctx.tool.read_text())
     elif location == "preflight":
         candidate = ctx.ki.root / "tools" / "preflight_check.py"
-        candidate.write_text(ctx.tool.read_text())
     approval = ctx.flow.approval_id
     with pytest.raises(api.ToolError, match="absolute paths are not accepted") as error:
         api.execute_tool("run_ki_tool", {"tool_path": str(candidate), "plan_step_id": "M:run"},

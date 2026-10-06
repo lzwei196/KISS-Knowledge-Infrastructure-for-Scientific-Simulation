@@ -178,7 +178,7 @@ def select_mode(workroot: Path, model: str, mode: str,
 def record(model: str, workspace: Path, cfg, *, ki_root: Path | None = None,
            verified: bool | None = None, installation_mode: str | None = None,
            existing_path: str | Path | None = None) -> dict:
-    """Write the local path contract beside and inside the materialised KI."""
+    """Write machine state beside the KI without changing accepted KI bytes."""
     workspace = Path(workspace).expanduser().resolve()
     path = workspace / RECORD_FILE
     try:
@@ -217,10 +217,9 @@ def record(model: str, workspace: Path, cfg, *, ki_root: Path | None = None,
     workspace.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
-    if live.is_dir():
-        (live / RECORD_FILE).write_text(
-            json.dumps(value, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8")
+    # Old releases also wrote a copy inside live/. Leave any legacy copy as
+    # history; all current readers use the workspace record above. Updating
+    # verification timestamps must not look like a KI source edit.
     return value
 
 

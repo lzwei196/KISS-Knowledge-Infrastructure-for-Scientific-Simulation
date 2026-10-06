@@ -2,12 +2,13 @@
 import copy
 import hashlib
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
 import pytest
 
-from kiss_cli import api, flowgate, project_data_tools
+from kiss_cli import api, flowgate, ki_guard, project_data_tools
 from .test_flowgate import _ki, _cfg, _session, _plan
 
 
@@ -27,6 +28,9 @@ out.write_text(json.dumps({'rows': rows, 'count': len(rows)}), encoding='utf-8')
 
 def case(tmp_path, source=CSV_READER, arguments=None):
     ki = _ki(tmp_path)
+    # Host preparation fixes the selected KI baseline before authoring or any
+    # tested mutation. Project readers remain separately reviewed draft tools.
+    ki_guard.enroll(ki.root)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     raw = project / "inputs" / "raw.csv"
     raw.parent.mkdir(); raw.write_text("date,value,flag\n2020-02-28,1,B\n2020-02-29,,E\n", encoding="utf-8")
@@ -72,6 +76,30 @@ def test_author_is_planning_only_no_execution_and_source_not_a_ki_tool(tmp_path)
     with pytest.raises(api.ToolError, match="not allowed"):
         api.execute_tool("write_project_data_tool", {"ki":"M", "name":"second", "source":"pass", "purpose":"reader"},
                          ki, _cfg(project), project_mode=True, flow=fs)
+
+
+def test_project_reader_authoring_cannot_enroll_an_unknown_ki_implicitly(tmp_path):
+    ki, project, fs, _plan_doc, _inventory, _authored = case(tmp_path)
+    unregistered = tmp_path / "unregistered-ki"
+    shutil.copytree(ki.root, unregistered)
+    unknown = type(ki)(name=ki.name, root=unregistered)
+    assert not ki_guard.is_managed(unregistered)
+    with pytest.raises(api.ToolError, match="no host baseline"):
+        api.execute_tool("write_project_data_tool", {
+            "ki": "M", "name": "unknown", "source": "pass", "purpose": "reader"},
+            unknown, _cfg(project), project_mode=True, flow=fs)
+    assert not ki_guard.is_managed(unregistered)
+    assert not any(path.name == "unknown.py" for path in project.rglob("*.py"))
+
+
+def test_project_reader_execution_refuses_changed_selected_ki_after_approval(tmp_path):
+    c = case(tmp_path)
+    approve(c)
+    protocol = c[0].root / "SKILL.md"
+    protocol.write_text(protocol.read_text(encoding="utf-8") + "\nChanged protocol\n", encoding="utf-8")
+    with pytest.raises(api.ToolError, match="Active KI changed"):
+        run(c)
+    assert not (c[1] / "outputs").exists()
 
 
 def test_csv_reader_preserves_values_flags_and_missingness_with_signed_receipt(tmp_path):

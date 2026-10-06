@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 from urllib.parse import urlparse
 
-from . import doctor, firstrun
+from . import doctor, firstrun, ki_verification
 from .catalog import KI
 
 try:
@@ -148,17 +148,61 @@ def _git_head(root: Path) -> str | None:
     return result.stdout.strip() or None
 
 
+def engine_source_digest(root: Path | None = None) -> str | None:
+    """Bind the actual verifier source, including explicitly configured engines."""
+    root = Path(root or engine_root()).resolve()
+    try:
+        files = {root / relative for relative in REQUIRED_ENGINE_FILES}
+        files.update(path for path in root.rglob("*.py")
+                     if not {".git", "__pycache__"}.intersection(path.relative_to(root).parts))
+        digest = hashlib.sha256()
+        for path in sorted(files, key=lambda item: item.relative_to(root).as_posix()):
+            if not path.is_file() or path.is_symlink():
+                return None
+            relative = path.relative_to(root).as_posix()
+            digest.update(relative.encode("utf-8") + b"\0")
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+        return digest.hexdigest()
+    except (OSError, ValueError, RuntimeError):
+        return None
+
+
+def _engine_changes(root: Path) -> list[str] | None:
+    if not (root / ".git").exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"],
+            capture_output=True, text=True, errors="replace", timeout=15, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    changed = []
+    for line in result.stdout.splitlines():
+        relative = line[3:].strip('"').replace("\\", "/")
+        if "__pycache__" in relative.split("/") or relative.endswith((".pyc", ".pyo")):
+            continue
+        changed.append(relative)
+    return changed
+
+
 def engine_status() -> dict:
     root = engine_root()
     valid = _engine_valid(root)
     head = _git_head(root) if valid else None
     # A test or manually supplied engine may intentionally have no .git dir;
     # the reviewed application install always does and is pinned exactly.
-    pinned = valid and (head == REVIEWED_COMMIT or bool(os.environ.get("GEOFORGE_KDT_ENGINE")))
+    custom = bool(os.environ.get("GEOFORGE_KDT_ENGINE"))
+    changes = _engine_changes(root) if valid else None
+    source_digest = engine_source_digest(root) if valid else None
+    pinned = valid and bool(source_digest) and (custom or (head == REVIEWED_COMMIT and changes == []))
     return {
         "installed": bool(valid and pinned),
         "valid": valid,
         "commit": head,
+        "custom": custom,
+        "dirty": bool(changes) if changes is not None else None,
+        "modified_files": changes or [],
+        "source_digest": source_digest,
         "reviewed_commit": REVIEWED_COMMIT,
         "path": str(root),
         "repository": REPOSITORY.removesuffix(".git"),
@@ -874,14 +918,25 @@ def job(job_id: str) -> dict:
     out = dict(doc)
     out.setdefault("ki_kind", "process_model")
     out.setdefault("authoring_revision", 0)
-    signature = tree_signature(root / "candidate")
-    bare_current = bool(acceptance and acceptance.get("ok") and
-                        acceptance.get("signature") == signature)
+    def current(report, *, desktop):
+        try:
+            ki_verification.require_current(
+                root / "candidate", report, kind=out["ki_kind"], desktop=desktop)
+            return True
+        except (ValueError, RuntimeError, OSError):
+            return False
+
+    bare_current = bool(
+        current(acceptance, desktop=False) and
+        acceptance.get("studio_attempt") == out.get("verification_attempt") and
+        int(acceptance.get("authoring_revision", -1)) == int(out["authoring_revision"])
+    )
     verification_current = bool(
-        verification and verification.get("ok") and
-        verification.get("candidate_signature") == signature and
+        bare_current and current(verification, desktop=True) and
+        verification.get("studio_attempt") == out.get("verification_attempt") and
         int(verification.get("authoring_revision", -1)) ==
-        int(out["authoring_revision"])
+        int(out["authoring_revision"]) and
+        tree_digest(root / "desktop-candidate") == (verification.get("desktop") or {}).get("digest")
     )
     out.update({
         "root": str(root),
@@ -890,10 +945,8 @@ def job(job_id: str) -> dict:
         "acceptance": acceptance,
         "verification": verification,
         "verification_current": verification_current,
-        # Listing and opening Studio jobs must stay instant even if a user
-        # accidentally placed a large binary in candidate/. A cheap metadata
-        # signature controls the button; export/import still recomputes the
-        # full cryptographic digest before trusting the package.
+        # Content hashes and host signatures, not editable JSON or mtimes,
+        # decide whether this exact authoring revision can be adopted.
         "can_export_bare": bare_current,
         "can_import": verification_current,
         "evidence": evidence_inventory(job_id),
@@ -1343,69 +1396,31 @@ def tree_signature(root: Path) -> list[list[object]] | None:
 
 
 def verify(job_id: str) -> dict:
-    """Run KDT's gate without executing untrusted candidate Python.
-
-    KDT's current gate executes preflight_check.py.  A newly generated script
-    has not earned that authority yet, so the gate sees an isolated copy whose
-    preflight is replaced with a deterministic "deferred to GeoForge setup"
-    report. The original file is still statically checked for its report
-    contract. Real software execution happens later through the normal Setup
-    Agent policy and verifier.
-    """
+    """Run the shared host KDT gate; native software verification is separate."""
     root, doc = _meta(job_id)
-    candidate = root / "candidate"
-    if not candidate.is_dir() or not any(candidate.iterdir()):
-        raise ValueError("the candidate KI is empty")
-    _reject_symlinks(candidate)
-    with tempfile.TemporaryDirectory(prefix="geoforge-kdt-gate-") as td:
-        safe = Path(td) / "candidate"
-        shutil.copytree(candidate, safe)
-        preflight = safe / "preflight_check.py"
-        original_has_contract = False
-        if preflight.is_file():
-            original_has_contract = "PREFLIGHT_REPORT=" in preflight.read_text(
-                encoding="utf-8", errors="replace")
-            if os.name == "nt" and getattr(sys, "frozen", False):
-                # In a one-file Windows build sys.executable is GeoForge.exe,
-                # not Python. KDT would otherwise launch
-                # ``GeoForge.exe preflight_check.py`` and misreport a valid KI
-                # as broken. The untrusted preflight is deliberately deferred
-                # here, so omit it from the isolated structural-gate copy.
-                preflight.unlink()
-            else:
-                preflight.write_text(
-                    "import json\n"
-                    "report={'checks':[{'kind':'run','subject':'deferred',"
-                    "'critical':True,'status':'fail','fix':'Run GeoForge software setup and verification'}]}\n"
-                    "print('PREFLIGHT_REPORT='+json.dumps(report))\n"
-                    "raise SystemExit(1)\n",
-                    encoding="utf-8",
-                )
-        with _engine_imports():
-            gate = _load_engine_module("verify_ki_structure.py", "gate")
-            result = gate.verify(safe, kind=str(doc.get("ki_kind") or "process_model"))
-        result["failures"] = [_desktopize_gate_text(item)
-                              for item in result.get("failures") or []]
-        result["warnings"] = [_desktopize_gate_text(item)
-                              for item in result.get("warnings") or []]
-        if preflight.is_file() and not original_has_contract:
-            result.setdefault("failures", []).append(
-                "preflight_check.py does not contain the PREFLIGHT_REPORT= contract"
-            )
-            result["ok"] = False
-    digest = tree_digest(candidate)
-    acceptance = {
-        "ok": bool(result.get("ok")),
-        "checked_at": time.time(),
-        "engine_commit": REVIEWED_COMMIT,
-        "ki_kind": str(doc.get("ki_kind") or "process_model"),
-        "digest": digest,
-        "signature": tree_signature(candidate),
-        "failures": list(result.get("failures") or []),
-        "warnings": list(result.get("warnings") or []),
-        "info": result.get("info") or {},
-        "software_execution": "deferred_to_geoforge_setup",
-    }
+    attempt = uuid.uuid4().hex
+    doc["verification_attempt"] = attempt
+    doc["status"] = "verifying"
+    _write_meta(root, doc)
+    try:
+        acceptance = ki_verification.verify_candidate(
+            root / "candidate", kind=str(doc.get("ki_kind") or "process_model"),
+            desktop=False, name=doc["model_name"])
+    except Exception as error:
+        _root, latest = _meta(job_id)
+        if latest.get("verification_attempt") == attempt:
+            latest["status"] = "verify_failed"
+            latest["last_error"] = str(error)[:1000]
+            _write_meta(root, latest)
+        raise
+    _root, latest = _meta(job_id)
+    if (latest.get("verification_attempt") != attempt or
+            latest.get("authoring_revision", 0) != doc.get("authoring_revision", 0)):
+        raise ki_verification.VerificationError("Another Studio revision or verification started; verify the current draft")
+    acceptance = ki_verification._seal(root / "candidate", {
+        **acceptance, "studio_attempt": attempt,
+        "authoring_revision": int(doc.get("authoring_revision") or 0),
+    })
     (root / "runs" / "ki-acceptance.json").write_text(
         json.dumps(acceptance, indent=2, ensure_ascii=False), encoding="utf-8")
     doc["status"] = "kdt_passed" if acceptance["ok"] else "needs_revision"
@@ -1422,16 +1437,23 @@ def geoforge_verify(job_id: str) -> dict:
     """
     root, doc = _meta(job_id)
     kdt_result = verify(job_id)
-    signature = tree_signature(root / "candidate")
     report: dict = {
         "report_version": 1,
+        "gate_policy": ki_verification.GATE_POLICY,
+        "engine_policy": REVIEWED_COMMIT,
+        "engine_source_digest": kdt_result["engine_source_digest"],
+        "engine_override": kdt_result["engine_override"],
+        "doctor_policy": doctor.VALIDATION_POLICY_VERSION,
+        "kind": str(doc.get("ki_kind") or "process_model"),
+        "desktop_requested": True,
         "report_id": uuid.uuid4().hex[:16],
         "checked_at": time.time(),
         "read_only": True,
         "model_name": doc["model_name"],
         "authoring_revision": int(doc.get("authoring_revision") or 0),
-        "candidate_digest": tree_digest(root / "candidate"),
-        "candidate_signature": signature,
+        "studio_attempt": kdt_result["studio_attempt"],
+        "candidate_digest": kdt_result["candidate_digest"],
+        "digest": kdt_result["candidate_digest"],
         "kdt": {
             "ok": bool(kdt_result.get("ok")),
             "engine_commit": kdt_result.get("engine_commit"),
@@ -1440,6 +1462,8 @@ def geoforge_verify(job_id: str) -> dict:
         },
         "desktop": {"ok": False, "findings": [], "blocking": 0},
         "software_execution": "not_run_during_authoring_verification",
+        "native_regression": {"status": "not_run", "verified": False},
+        "assurance": "host_attestation_not_os_sandbox",
     }
     if kdt_result.get("ok"):
         adaptation = adapt_for_desktop(job_id)
@@ -1461,6 +1485,10 @@ def geoforge_verify(job_id: str) -> dict:
     report["decision"] = "awaiting_user" if report["ok"] else "return_to_workbench"
     report_path = root / "runs" / "geoforge-ki-verify.json"
     report["report_path"] = str(report_path)
+    if tree_digest(root / "candidate") != report["candidate_digest"]:
+        raise ki_verification.VerificationError("KI changed during Desktop verification; verify the draft again")
+    report["state"] = "Verified" if report["ok"] else "Draft"
+    report = ki_verification._seal(root / "candidate", report)
     _write_readonly_json(report_path, report)
     # verify() refreshed metadata, so reopen before writing the final phase.
     root, latest = _meta(job_id)
@@ -1484,15 +1512,34 @@ def export_zip(job_id: str) -> tuple[Path, bytes]:
     root, doc = _meta(job_id)
     state = job(job_id)
     acceptance = state.get("acceptance") or {}
-    if (not state["can_export_bare"] or
-            acceptance.get("digest") != tree_digest(root / "candidate")):
+    if not state["can_export_bare"]:
         raise ValueError("verify the unchanged candidate before exporting it")
+    ki_verification.require_current(root / "candidate", acceptance, desktop=False)
     name = _slug(doc["model_name"])
     path = root / "exports" / f"{name}-KI.zip"
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for file in sorted(p for p in (root / "candidate").rglob("*") if p.is_file()):
-            archive.write(file, file.relative_to(root / "candidate").as_posix())
+    _export_verified_tree(root / "candidate", path, acceptance["candidate_digest"])
     return path, path.read_bytes()
+
+
+def _export_verified_tree(source: Path, path: Path, expected_digest: str) -> None:
+    """Export a stable copy; a concurrent edit never becomes accepted bytes."""
+    temporary = path.with_name(path.name + f".{uuid.uuid4().hex}.tmp")
+    try:
+        with tempfile.TemporaryDirectory(prefix="geoforge-ki-export-") as td:
+            snapshot = Path(td) / "candidate"
+            shutil.copytree(source, snapshot)
+            if (tree_digest(source) != expected_digest or
+                    tree_digest(snapshot) != expected_digest):
+                raise ValueError("KI changed before export; verify the unchanged draft again")
+            with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for file in sorted(p for p in snapshot.rglob("*") if p.is_file()):
+                    archive.write(file, file.relative_to(snapshot).as_posix())
+            if (tree_digest(source) != expected_digest or
+                    tree_digest(snapshot) != expected_digest):
+                raise ValueError("KI changed during export; verify the unchanged draft again")
+            os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def adapt_for_desktop(job_id: str) -> dict:
@@ -1508,9 +1555,9 @@ def adapt_for_desktop(job_id: str) -> dict:
     state = job(job_id)
     acceptance = state.get("acceptance") or {}
     candidate = root / "candidate"
-    if (not state["can_export_bare"] or
-            acceptance.get("digest") != tree_digest(candidate)):
+    if not state["can_export_bare"]:
         raise ValueError("verify the unchanged bare KI before Desktop adaptation")
+    ki_verification.require_current(candidate, acceptance, desktop=False)
     _reject_symlinks(candidate)
 
     desktop = root / "desktop-candidate"
@@ -1518,6 +1565,8 @@ def adapt_for_desktop(job_id: str) -> dict:
     if staging.exists():
         shutil.rmtree(staging)
     shutil.copytree(candidate, staging)
+    ki_verification.require_current(staging, acceptance, desktop=False)
+    ki_verification.require_current(candidate, acceptance, desktop=False)
     changes: list[dict[str, str]] = []
     dag = staging / "dag.yaml"
     if dag.is_file():
@@ -1578,15 +1627,18 @@ def adapt_for_desktop(job_id: str) -> dict:
 def export_desktop_zip(job_id: str) -> tuple[Path, bytes, dict]:
     """Create and export GeoForge's projection without altering the bare KI."""
     root, doc = _meta(job_id)
-    if not job(job_id).get("can_import"):
+    state = job(job_id)
+    if not state.get("can_import"):
         raise ValueError("finish KI_verify on the unchanged candidate before importing it")
-    adaptation = adapt_for_desktop(job_id)
-    desktop = Path(adaptation["path"])
+    # Export the exact projection that passed doctor, not a newly generated
+    # projection with a different timestamp or unreviewed intervening edits.
+    desktop_report = state["verification"]["desktop"]
+    adaptation = desktop_report["adaptation"]
+    desktop = root / "desktop-candidate"
     name = _slug(doc["model_name"])
     path = root / "exports" / f"{name}-GeoForge-Desktop-KI.zip"
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for file in sorted(p for p in desktop.rglob("*") if p.is_file()):
-            archive.write(file, file.relative_to(desktop).as_posix())
+    _export_verified_tree(desktop, path, desktop_report["digest"])
+    ki_verification.require_current(root / "candidate", state["verification"])
     return path, path.read_bytes(), adaptation
 
 

@@ -552,6 +552,50 @@ def prepare_common(cfg, repo_root: Path) -> Path:
     return target
 
 
+def materialise_active(ki_root: Path, live: Path, cfg):
+    """Trusted host bootstrap; an enrolled active copy is never refreshed here."""
+    from . import ki_guard
+    def source_digest(tree):
+        # Existing bytecode is retained by the active baseline but is not a
+        # portable source/config change when comparing a fresh projection.
+        import hashlib
+        value = hashlib.sha256()
+        for path in sorted(Path(tree).rglob("*")):
+            if (not path.is_file() or "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}
+                    or path == Path(tree) / ".geoforge-install.json"):
+                continue
+            value.update(path.relative_to(tree).as_posix().encode())
+            value.update(b"\0")
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b""):
+                    value.update(chunk)
+        return value.hexdigest()
+    ki_guard.require_intact(ki_root, required=False)
+    if (live / "SKILL.md").is_file() or ki_guard.is_managed(live):
+        # One-time migration records the current legacy baseline, not KDT
+        # verification. Once recorded, drift can never re-enroll itself.
+        ki_guard.enroll(live)
+        if Path(ki_root).resolve() != live.resolve():
+            candidate = live.parent / f"ki-draft-{uuid.uuid4().hex[:12]}"
+            report = port.materialise(ki_root, candidate, cfg)
+            if (report.unresolved or report.corrupted or
+                    source_digest(candidate) != source_digest(live)):
+                raise ki_guard.KIIntegrityError(
+                    f"Active KI was preserved. Updated source/settings produce a different working copy at {candidate}. "
+                    "Verify the portable source through KDT, then explicitly adopt its host-materialized revision; "
+                    "setup cannot silently refresh the active KI.")
+            # This tree was just created by this function under the known
+            # workspace parent, never supplied by a provider.
+            if candidate.resolve().parent != live.parent.resolve() or candidate.is_symlink():
+                raise ki_guard.KIIntegrityError("Candidate cleanup path changed")
+            shutil.rmtree(candidate)
+        return port.MaterialiseReport(dest=live)
+    report = port.materialise(ki_root, live, cfg)
+    if not report.unresolved and not report.corrupted:
+        ki_guard.enroll(live)
+    return report
+
+
 def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     """Create the writable workspace and provider instruction files.
 
@@ -570,7 +614,7 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     prepare_common(cfg, repo_root)
     cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     live = root / "ki"
-    report = port.materialise(ki.root, live, cfg)
+    report = materialise_active(ki.root, live, cfg)
     if report.unresolved or report.corrupted:
         detail = "; ".join(filter(None, [
             f"unresolved placeholders: {', '.join(sorted(report.unresolved))}"

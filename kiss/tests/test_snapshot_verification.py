@@ -1,12 +1,14 @@
 """Updated KIs cannot inherit an unrelated machine verification result."""
 import json
 from pathlib import Path
+import shutil
 import sys
 
 import pytest
 import yaml
 
-from kiss_cli import catalog, gui, install, ki_updates, paths, software_verification
+from kiss_cli import (catalog, gui, install, ki_guard, ki_updates, ki_verification,
+                      paths, setup, software_verification)
 from kiss_cli.manifest import Manifest
 
 
@@ -32,6 +34,8 @@ def example(tmp_path):
     ki = catalog.KI("Demo", source)
     cfg = paths.KissConfig.default(workspace)
     cfg.python = sys.executable
+    ki_guard.enroll(source)
+    setup.materialise_active(source, workspace / "ki", cfg)
     return handler, ki, cfg, binary
 
 
@@ -46,6 +50,15 @@ def expected(handler, ki):
     return software_verification.identity(ki, handler._manifest(ki), handler.library_root)
 
 
+def current_status(handler, ki, cfg):
+    return write_status(cfg, verification_identity=expected(handler, ki),
+                        ki_content_digest=ki_verification.content_digest(cfg.root / "ki"))
+
+
+def working_ki(ki, cfg):
+    return catalog.KI(ki.name, cfg.root / "ki")
+
+
 def test_legacy_snapshot_report_requires_recheck_without_mutation(example):
     handler, ki, cfg, binary = example
     path = write_status(cfg)
@@ -58,14 +71,14 @@ def test_legacy_snapshot_report_requires_recheck_without_mutation(example):
 
 def test_matching_snapshot_identity_is_verified(example):
     handler, ki, cfg, _ = example
-    write_status(cfg, verification_identity=expected(handler, ki))
+    current_status(handler, ki, cfg)
     assert handler._status_for(ki)["can_run"]
 
 
 @pytest.mark.parametrize("change", ["ki", "helpers", "recipe"])
 def test_each_effective_component_invalidates_saved_verification(example, change):
     handler, ki, cfg, _ = example
-    write_status(cfg, verification_identity=expected(handler, ki))
+    current_status(handler, ki, cfg)
     if change == "recipe":
         doc = yaml.safe_load(ki.manifest.read_text())
         doc["python_deps"] = ["new-scientific-package>=2"]
@@ -79,18 +92,22 @@ def test_each_effective_component_invalidates_saved_verification(example, change
     assert not handler._status_for(ki)["can_run"]
 
 
-def test_bundled_legacy_status_retains_existing_behavior(example):
+def test_bundled_legacy_status_requires_current_revision_without_erasing_history(example):
     handler, ki, cfg, _ = example
     (handler.library_root / ki_updates.SNAPSHOT_MANIFEST).unlink()
-    write_status(cfg)
-    assert handler._status_for(ki)["can_run"]
+    path = write_status(cfg)
+    before = path.read_bytes()
+    status = handler._status_for(ki)
+    assert not status["can_run"] and status["requires_reverification"]
+    assert status["previous_verification_passed"] and status["checked_at"] == 12
+    assert status["verified_at"] is None and path.read_bytes() == before
 
 
 def test_successful_agent_preflight_records_identity_and_requirements(example, monkeypatch):
     handler, ki, cfg, binary = example
     monkeypatch.setattr(software_verification, "requirements",
         lambda *a, **kw: install.Step("manifest-requirements", True, "fresh requirements checked"))
-    assert handler._record_agent_preflight(ki, ki, cfg, cfg.root, lambda _: None,
+    assert handler._record_agent_preflight(ki, working_ki(ki, cfg), cfg, cfg.root, lambda _: None,
         check=install.Step("preflight", True, "fresh model check"))
     saved = json.loads((cfg.root / "status.json").read_text())
     assert saved["verification_identity"] == expected(handler, ki)
@@ -104,7 +121,7 @@ def test_new_dependency_failure_cannot_retain_a_successful_report(example, monke
     write_status(cfg, verification_identity=expected(handler, ki))
     monkeypatch.setattr(software_verification, "requirements",
         lambda *a, **kw: install.Step("manifest-requirements", False, "missing scipy>=99"))
-    assert not handler._record_agent_preflight(ki, ki, cfg, cfg.root, lambda _: None,
+    assert not handler._record_agent_preflight(ki, working_ki(ki, cfg), cfg, cfg.root, lambda _: None,
         check=install.Step("preflight", True, "old script passed"))
     saved = json.loads((cfg.root / "status.json").read_text())
     assert not saved["ok"] and saved["verification_identity"] is None
@@ -115,7 +132,7 @@ def test_new_dependency_failure_cannot_retain_a_successful_report(example, monke
 def test_failed_native_preflight_clears_identity(example):
     handler, ki, cfg, _ = example
     write_status(cfg, verification_identity=expected(handler, ki))
-    assert not handler._record_agent_preflight(ki, ki, cfg, cfg.root, lambda _: None,
+    assert not handler._record_agent_preflight(ki, working_ki(ki, cfg), cfg, cfg.root, lambda _: None,
         check=install.Step("preflight", False, "real preflight failed"))
     assert json.loads((cfg.root / "status.json").read_text())["verification_identity"] is None
 
@@ -159,3 +176,37 @@ def test_coupled_requirements_fail_closed_until_current_verification(example):
     assert not software_verification.requirements(man, cfg).ok
     assert not software_verification.requirements(man, cfg, dependency_check=lambda _: False).ok
     assert software_verification.requirements(man, cfg, dependency_check=lambda n: n == "Routing").ok
+
+
+@pytest.mark.parametrize("installed_copy", [True, False])
+def test_old_unregistered_installation_cannot_inherit_ready_status(example, installed_copy):
+    handler, ki, cfg, _ = example
+    legacy = cfg.root.parent / "legacy"
+    legacy.mkdir()
+    if installed_copy:
+        shutil.copytree(cfg.root / "ki", legacy / "ki")
+    old_cfg = paths.KissConfig.default(legacy)
+    status_path = write_status(old_cfg, verification_identity=expected(handler, ki),
+        ki_content_digest=ki_verification.content_digest(legacy / "ki"))
+    before = status_path.read_bytes()
+    handler._workdir = lambda _ki: legacy
+    handler._default_status_files = {ki.name.casefold(): status_path}
+    status = handler._status_for(ki)
+    assert not status["can_run"] and status["requires_reverification"]
+    assert status["previous_verification_passed"]
+    assert not ki_guard.is_managed(legacy / "ki")
+    assert status_path.read_bytes() == before
+
+
+def test_post_startup_source_drift_invalidates_ready_badge(example):
+    handler, ki, cfg, _ = example
+    status_path = current_status(handler, ki, cfg)
+    handler.catalogue_integrity_errors = {}
+    assert handler._status_for(ki)["can_run"]
+    (ki.root / "SKILL.md").write_text("changed after startup")
+    saved = status_path.read_bytes()
+    state = handler._status_for(ki)
+    assert not state["can_run"] and state["requires_reverification"]
+    assert state["primary_error"]["name"] == "ki-source"
+    assert "changed" in state["primary_error"]["detail"].lower()
+    assert status_path.read_bytes() == saved

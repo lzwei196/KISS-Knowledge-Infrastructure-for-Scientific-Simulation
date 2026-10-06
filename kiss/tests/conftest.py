@@ -25,6 +25,11 @@ def _isolated_catalogue_store(tmp_path, monkeypatch):
         monkeypatch.setenv(key, str(home))
     monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
     monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+    # Integrity records are host state, not part of scientific fixture trees.
+    # Keep their backups/acceptances local even when a test replaces app paths.
+    # Dedicated gate fixtures may override these locations explicitly.
+    monkeypatch.setenv("GEOFORGE_KI_GUARD_HOME", str(tmp_path / "ki-guard"))
+    monkeypatch.setenv("GEOFORGE_KI_VERIFICATION_HOME", str(tmp_path / "ki-verification"))
     monkeypatch.setattr(obs_access, "catalogue_store_path",
                         lambda: tmp_path / ".geoforge-test-store" / "catalogue.json")
     monkeypatch.setattr(obs_access.secret_store, "get_secret", lambda *_a, **_k: None)

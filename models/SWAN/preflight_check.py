@@ -3,7 +3,6 @@
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -128,36 +127,80 @@ def check_tool_import(tool_path):
     return ok
 
 
+def resolve_swan_via_tool():
+    """Ask tools/run_swan.py's own resolver (resolve_swan_binary) for the SWAN executable.
+
+    Runs with HYDRO_PYTHON (the interpreter the KI tools run with), inherits the
+    environment ($SWAN_BIN) and the caller's working directory (relative $SWAN_BIN).
+    Preflight has no --swan-exe, so this tests $SWAN_BIN -> server default only.
+    Returns (path or None, message).
+    """
+    code = (
+        "import json, sys; "
+        f"sys.path.insert(0, {str(KI_DIR / 'tools')!r}); "
+        "import run_swan; "
+        "p, m = run_swan.resolve_swan_binary(); "
+        "print('SWAN_RESOLVE=' + json.dumps([p, m]))"
+    )
+    proc = run_cmd([HYDRO_PYTHON, "-c", code], timeout=60, cwd=Path.cwd())
+    if proc.returncode != 0:
+        tail = ((proc.stderr or proc.stdout or "").strip().splitlines() or ["no output"])[-1]
+        return None, f"resolver in tools/run_swan.py failed (rc {proc.returncode}): {tail}"
+    for line in reversed((proc.stdout or "").splitlines()):
+        if line.startswith("SWAN_RESOLVE="):
+            try:
+                path, msg = json.loads(line[len("SWAN_RESOLVE="):])
+                return (path or None), str(msg)
+            except (ValueError, TypeError):
+                break
+    return None, "resolver in tools/run_swan.py gave no readable answer"
+
+
 def check_optional_swan_binary():
-    found = shutil.which("swan.exe") or shutil.which("swanrun") or shutil.which("swan")
+    # Same lookup as tools/run_swan.py binary mode: $SWAN_BIN -> server default
+    # (DEFAULT_SWAN_EXE). A set but bad $SWAN_BIN fails; there is no fall-through.
+    found, how = resolve_swan_via_tool()
     if not found:
         add_check(
             "binary",
-            "SWAN executable in PATH",
+            "SWAN executable ($SWAN_BIN -> server default, via tools/run_swan.py resolve_swan_binary)",
             False,
             False,
-            f"install SWAN binary or pass --swan-exe to tools/run_swan.py; see {TRIPLETS}",
+            f"{how}; set $SWAN_BIN to a working swan.exe (or pass --swan-exe to "
+            f"tools/run_swan.py); see {TRIPLETS}",
         )
         return None
 
-    real = Path(os.path.realpath(found))
-    ok = os.access(real, os.X_OK)
+    real = Path(found)
+    ok = real.is_file() and os.access(real, os.X_OK)
     add_check(
         "binary",
-        real,
+        f"{real} ({how})",
         False,
         ok,
-        f"chmod +x {real} or install a working SWAN executable; see {TRIPLETS}",
+        f"chmod +x {real} or set $SWAN_BIN to a working SWAN executable; see {TRIPLETS}",
     )
     if ok:
-        proc = run_cmd([real], timeout=5)
-        starts = proc.returncode in (0, 1, 2) or bool((proc.stdout or proc.stderr).strip())
+        # Startup probe only (not a model run): in an empty temp dir swan.exe writes
+        # swaninit and a PRINT file, then stops with "Input file missing".
+        with tempfile.TemporaryDirectory(prefix="swan_preflight_bin_") as tmp:
+            proc = run_cmd([real], timeout=10, cwd=tmp)
+            bad = getattr(proc, "timed_out", False) or getattr(proc, "os_error", False) \
+                or proc.returncode not in (0, 1, 2)
+            print_file = Path(tmp) / "PRINT"
+            print_text = print_file.read_text(errors="replace") if print_file.is_file() else ""
+            starts = (
+                not bad
+                and (Path(tmp) / "swaninit").is_file()
+                and "Execution started" in print_text
+            )
         add_check(
             "run",
-            real,
+            f"{real} startup (empty dir: swaninit + PRINT 'Execution started')",
             False,
             starts,
-            f"{real} did not start cheaply; verify the SWAN installation; see {TRIPLETS}",
+            f"{real} did not start as SWAN (rc {proc.returncode}); verify the SWAN "
+            f"installation or set $SWAN_BIN; see {TRIPLETS}",
         )
     return real
 

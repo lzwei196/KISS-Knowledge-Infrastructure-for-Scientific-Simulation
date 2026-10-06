@@ -205,6 +205,8 @@ def stamp_item(project, item):
     Writes only stable facts on the item (request hash, size, versions), never the
     whole estimate, so a benign re-estimate does not change the approval hash.
     """
+    if obs.delivery_preference(item) == 'manual':
+        raise ValueError("manual delivery preference conflicts with a server clip selection")
     state = match_item(project, item)
     request = request_body(state['request'])
     req = _item_requirements(item)
@@ -235,6 +237,10 @@ def prefer_clip(project, item, record, *, client=None) -> bool:
     Runs at plan submission for items that carry a study bbox. One read-only
     estimate; on 'subsettable' with an eligible or inspection-only offer the item
     becomes a subset acquisition. Any failure leaves the pin as it was."""
+    if obs.delivery_preference(item) == 'manual':
+        if item.get('acquisition_id') or item.get('delivery') == 'subset':
+            raise ValueError("manual delivery preference conflicts with acquisition_id or delivery 'subset'")
+        return False
     req = item.get('requirements') or {}
     if not isinstance(req, dict) or not req.get('bbox'):
         return False
@@ -309,6 +315,8 @@ def changed_since_review(summary, state):
 
 def refresh_inventory(project, inventory, *, client=None):
     """Fresh estimates for every clip item; returns {item_id: [reasons]} for changed ones."""
+    if errors := obs.delivery_preference_errors(inventory):
+        return {'inventory': errors}
     changed = {}
     for item in (inventory or {}).get('items') or []:
         if not isinstance(item, dict) or not item.get('acquisition_id'):
@@ -330,6 +338,8 @@ def approve_inventory(project, inventory, *, client=None):
     The plan approval is the user's consent; this is its consequence. A failed
     job creation is reported per item and never blocks the others.
     """
+    if errors := obs.delivery_preference_errors(inventory):
+        return [{'item': None, 'ok': False, 'error': '; '.join(errors)}]
     results = []
     for item in (inventory or {}).get('items') or []:
         if not isinstance(item, dict) or not item.get('acquisition_id'):

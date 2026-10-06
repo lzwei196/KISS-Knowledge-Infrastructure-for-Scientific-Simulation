@@ -119,6 +119,32 @@ def _rel(p: Path | None, root: Path) -> str:
         return str(p)
 
 
+def _reference_case_guidance(root: Path) -> str:
+    """Point to shipped cases without choosing one or granting execution."""
+    root = Path(root).resolve()
+    case_root = root / "test_cases"
+    if not case_root.is_dir() or not case_root.resolve().is_relative_to(root):
+        return ""
+    cases = []
+    for case in sorted(case_root.iterdir()):
+        if not case.is_dir() or not case.resolve().is_relative_to(root):
+            continue
+        docs = [case / name for name in ("README.md", "manifest.json", "expected.json")]
+        docs = [path for path in docs if path.is_file() and path.resolve().is_relative_to(root)]
+        if docs:
+            cases.append("  " + ", ".join(path.relative_to(root).as_posix() for path in docs))
+    if not cases:
+        return ""
+    return (
+        "[SHIPPED REFERENCE CASES]\n" + "\n".join(cases) + "\n"
+        "If the user requests a shipped case replay, read these files and the linked runner. "
+        "The case supplies its own run settings and inputs; inspect them before asking for "
+        "new study choices or data. Retain the input bytes and expected checks. Plan the replay "
+        "through the normal approval/tool interface; this list grants no execution permission. "
+        "Do not substitute an example for a requested new-site study.\n"
+    )
+
+
 def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
             execute: bool = True, strict: bool = False) -> str:
     """Build the opening prompt for an agent about to operate ``ki``.
@@ -153,6 +179,9 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
         f"  formats      {_rel(ki.format_spec, root)}",
     ]
     parts.append("[KNOWLEDGE INFRASTRUCTURE]\n" + "\n".join(kifiles) + "\n")
+    reference_cases = _reference_case_guidance(root)
+    if reference_cases:
+        parts.append(reference_cases)
 
     # --- the shared KI-usage contract (not ours; see module docstring) -----
     harness_text, why = _harness_contract(
@@ -221,13 +250,15 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
 
 def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True,
                   execute: bool = True, strict: bool = False) -> str:
-    """One task, several models: each toggled KI contributes its own contract.
+    """One task, several KIs: each selected package contributes its own contract.
 
     The single-model prompt stays the default; this exists for the compare/
     ensemble workflow, where the agent must treat every selected model as a
     first-class participant rather than picking a favourite and narrating the
     rest. Contracts are the same per-KI harness text as the single case, so a
     model behaves identically whether toggled alone or with others.
+    Explicit data-reader workflows contribute preparation roles, not additional
+    model runs or model-comparison obligations.
 
     ``execute`` selects the contract wording (plan v3 B2): False = the planning
     turn's inspect contract (read, plan, never run); True = the run contract.
@@ -250,6 +281,27 @@ def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True,
          "do not present planned outputs as simulation results."),
         "",
     ]
+    readers = [ki for ki in kis if (getattr(ki, "meta", {}) or {}).get("package_kind") == "task_workflow"
+               and (getattr(ki, "meta", {}) or {}).get("package_role") == "data_reader"]
+    if readers:
+        reader_names = {ki.name for ki in readers}
+        models = [ki.name for ki in kis if ki.name not in reader_names]
+        parts = [
+            f"You are GeoForge, using {len(kis)} Knowledge Infrastructure packages: {names}.",
+            "", "[MODEL AND DATA-READER ROLES]",
+            f"- Scientific models: {', '.join(models) or 'none'}. Data readers: {', '.join(ki.name for ki in readers)}.",
+            ("- Execute each KI's role in the approved current phase; do not silently drop a selected role."
+             if execute else "- Plan each selected KI's role; no reader or model execution in this planning turn."),
+            "- Data readers extract and check acquired observations in check/prepare steps. Their completion "
+            "is data preparation, not model execution or scientific validation.",
+            "- Keep each tool attributed to its own KI. Selecting a reader with a model does not create "
+            "a model-coupling requirement or a model-versus-reader comparison.",
+            "- Use only acquired data and explicit project bindings; resolve missing source, station, period "
+            "and output paths before executing a reader. Never invent missing weather or site inputs.",
+            ("- Report reader preparation and model outcomes separately, including any remaining work."
+             if execute else "- Explain planned model and reader inputs, roles and missing requirements; "
+             "planned outputs are not results."), "",
+        ]
     for ki in kis:
         parts.append(f"===== {ki.name} " + "=" * max(4, 60 - len(ki.name)))
         contract, why = _harness_contract(
@@ -259,6 +311,9 @@ def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True,
             raise KiContractUnavailable(f"{ki.name}: {why}")
         parts.append(contract if contract else
                      f"[contract unavailable: {why}] Read {ki.root}/SKILL.md first.")
+        reference_cases = _reference_case_guidance(ki.root)
+        if reference_cases:
+            parts.append(reference_cases)
         parts.append("")
     if headless and execute:
         parts.append(HEADLESS_LONG_JOB_RULE)

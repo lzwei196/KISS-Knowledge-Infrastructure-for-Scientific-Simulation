@@ -1,0 +1,11 @@
+{
+  "fixture_kind": "SYNTHETIC format regression; not real observations",
+  "station": {"STATION_NUMBER": "TEST001", "STATION_NAME": "Synthetic test station", "LATITUDE": 50.0, "LONGITUDE": -110.0},
+  "quality_symbols": [{"SYMBOL_ID": "B", "SYMBOL_EN": "Ice Conditions", "SYMBOL_FR": "Conditions de glace"}],
+  "daily_values": [
+    {"date": "2020-02-28", "flow": 1.25, "symbol": "B"},
+    {"date": "2020-02-29", "flow": null, "symbol": null},
+    {"date": "2020-03-01", "flow": 2.5, "symbol": ""},
+    {"date": "2020-03-02", "flow": 3.75, "symbol": ""}
+  ]
+}

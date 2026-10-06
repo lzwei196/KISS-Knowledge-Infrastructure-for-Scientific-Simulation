@@ -19,10 +19,14 @@ the receipts that make a run real. Plan v3 file map: PART B (B4/B5), design
 from __future__ import annotations
 
 import importlib
+import hashlib
 import json
 import os
+import re
 import secrets
+import stat
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -34,6 +38,102 @@ from . import harness_runtime
 
 class FlowUnavailable(RuntimeError):
     """The bundled flow package cannot be loaded. Fail the turn, never weaken."""
+
+
+PLAN_VALIDATION_LOG = Path(".geoforge/plan-validation.jsonl")
+_PLAN_LOG_BYTES = 128 * 1024
+_PLAN_RECORD_BYTES = 32 * 1024
+_PLAN_LOG_LOCK = threading.Lock()
+
+
+def _plan_proposal_summary(plan, inventory):
+    """Keep identities and counts only; never persist the submitted documents."""
+    result = {}
+    for name, value, collection in (("plan", plan, "steps"), ("inventory", inventory, "items")):
+        try:
+            encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                 ensure_ascii=False, allow_nan=False).encode("utf-8")
+            result[name + "_sha256"] = hashlib.sha256(encoded).hexdigest()
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            result[name + "_sha256"] = None
+        entries = value.get(collection) if isinstance(value, dict) else None
+        result[collection + "_count"] = len(entries) if isinstance(entries, list) else None
+    return result
+
+
+def _redact_plan_error(value):
+    """Redact recognizable credentials without consulting any credential store."""
+    text = str(value)
+    text = re.sub(r"-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|$)",
+                  "[redacted private key]", text, flags=re.S)
+    # Entire URLs are diagnostic context, not essential validation facts. This
+    # also removes userinfo, encoded query credentials and signed fragments.
+    text = re.sub(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>\"']+", "[redacted URL]", text)
+    text = re.sub(r"(?i)\bbearer\s+[^\s,;\"']+", "Bearer [redacted]", text)
+    sensitive = r"(?:[\w-]*(?:token|password|passwd|secret|credential)|api[_-]?key|authorization)"
+    text = re.sub(r"(?i)(\b" + sensitive + r"[\"']?\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;}]+)",
+                  r"\1[redacted]", text)
+    text = re.sub(r"(?i)(--?" + sensitive + r"\s+)(\"[^\"]*\"|'[^']*'|[^\s,;}]+)",
+                  r"\1[redacted]", text)
+    text = re.sub(r"\b(?:gfd_[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,})\b",
+                  "[redacted credential]", text)
+    text = re.sub(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+                  "[redacted credential]", text)
+    return text[:2000] + (" [truncated]" if len(text) > 2000 else "")
+
+
+def _record_plan_validation(project, proposal, *, result, stage, errors=()):
+    """Best-effort host diagnostics, never approval or scientific evidence.
+
+    .geoforge is already protected by every provider's normal write policy.
+    One rotated predecessor bounds disk use and preserves rejection history
+    when a later proposal succeeds. Links/reparse points are never followed.
+    """
+    try:
+        messages = [_redact_plan_error(error) for error in list(errors)[:30]]
+        row = {"schema_version": "geoforge.plan-validation.v1", "at_epoch": time.time(),
+               "result": result, "stage": stage, **proposal,
+               "error_count": len(errors), "errors": messages,
+               "errors_truncated": len(errors) > len(messages) or any(
+                   message.endswith(" [truncated]") for message in messages)}
+        def encode():
+            return (json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+        payload = encode()
+        while len(payload) > _PLAN_RECORD_BYTES and row["errors"]:
+            row["errors"].pop()
+            row["errors_truncated"] = True
+            payload = encode()
+        if len(payload) > _PLAN_RECORD_BYTES:
+            return
+        with _PLAN_LOG_LOCK:
+            root = Path(project).resolve()
+            directory = root / PLAN_VALIDATION_LOG.parent
+            path = root / PLAN_VALIDATION_LOG
+            backup = path.with_suffix(".previous.jsonl")
+            for candidate in (directory, path, backup):
+                try:
+                    info = candidate.lstat()
+                except FileNotFoundError:
+                    continue
+                if (stat.S_ISLNK(info.st_mode) or
+                        getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 1024)):
+                    return
+                if candidate != directory and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1):
+                    return
+            if directory.resolve() != directory or not directory.resolve().is_relative_to(root):
+                return
+            directory.mkdir(parents=True, exist_ok=True)
+            if path.exists() and path.stat().st_size + len(payload) > _PLAN_LOG_BYTES:
+                # Do not preserve an externally enlarged log as an unbounded backup.
+                if path.stat().st_size <= _PLAN_LOG_BYTES:
+                    os.replace(path, backup)
+                else:
+                    path.unlink()
+            with path.open("ab") as stream:
+                stream.write(payload)
+    except Exception:
+        # Logging must neither approve a bad proposal nor reject a valid one.
+        return
 
 
 def load():
@@ -53,7 +153,7 @@ def load():
         # discovering the incomplete bundle halfway through a project.
         for sub in (
                 "states", "resolve", "plan", "approval", "contracts",
-                "receipts", "policy", "tools", "build_data", "declared", "decisions", "ki_inputs"):
+                "receipts", "policy", "tools", "project_tools", "build_data", "declared", "decisions", "ki_inputs"):
             importlib.import_module(f"ki_tools_common.flow.{sub}")
     except Exception as error:
         raise FlowUnavailable(
@@ -209,14 +309,14 @@ class FlowSession:
         return step
 
     def request_replan(self, reason: str) -> str:
-        """EXECUTING -> REPLAN_REQUIRED in the middle of a turn.
+        """Continue an executing or completed phase through a revised plan.
 
         The approval is revoked and ``write_plan`` becomes available at once, so
         the agent that discovered the problem can write the corrected plan in
         the same turn instead of stopping to ask for a state change."""
         S = self.flow.states.State
-        if self.state is not S.EXECUTING:
-            raise FlowDenied(f"request_replan is only meaningful while EXECUTING, not in {self.state.value}")
+        if self.state not in (S.EXECUTING, S.COMPLETED):
+            raise FlowDenied(f"request_replan requires EXECUTING or COMPLETED, not {self.state.value}")
         self.move("replan")
         self.flow.approval.revoke(self.project, reason or "agent requested a plan change")
         self.reload_artifacts()
@@ -248,6 +348,7 @@ class FlowSession:
                         execution_status: str | None = None,
                         process_started: bool | None = None,
                         input_arguments: list[str] | None = None,
+                        data_input_files: list[str] | None = None,
                         calibration_result: dict | None = None) -> dict:
         """Write the signed run receipt + validation for one tool/model run and return a
         small summary for the agent. Receipts are bound to the current approval; an
@@ -306,7 +407,18 @@ class FlowSession:
         log = logs_dir / f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}_{secrets.token_hex(6)}.log"
         log.write_text(stdout_tail, encoding="utf-8", errors="replace")
         physical = kind in ("run", "route", "calibrate")
-        if typed_calibration:
+        from .catalog import KI
+        package_meta = KI(ki, Path(ki_root)).meta
+        data_ki = ({"name": ki, "version": package_meta.get("version"),
+                    "implementation": package_meta.get("impl_id")}
+                   if package_meta.get("package_kind") == "task_workflow"
+                   and package_meta.get("package_role") == "data_reader" else None)
+        if "project_data_tool" in step or data_ki is not None:
+            from . import project_data_tools
+            validation = project_data_tools.validate_outputs(
+                self.project, outputs, exit_code,
+                input_files=data_input_files if "project_data_tool" in step else None)
+        elif typed_calibration:
             validation = calibration.validate_receipt_result(calibration_result, step["calibration"])
             report_path = self.project / str(calibration_result.get("report_path") or "")
             fresh_report = (report_path.resolve().is_relative_to(self.project.resolve() / "calibration" / "runs")
@@ -344,13 +456,43 @@ class FlowSession:
                             approval_sha256=expected_approval_sha256 or self.approval_id,
                             forcing_source=forcing_source,
                             validation=validation, execution_status=execution_status,
-                            process_started=process_started)
-        return {"receipt": str(path), "run_id": json.loads(path.read_text(encoding="utf-8"))["run_id"],
-                "outputs": [p.relative_to(self.project).as_posix()
-                            if _under(p, self.project) else str(p)
-                            for p in outputs][:50],
-                "validation": validation["status"], "execution_status": execution_status,
-                "failed_checks": [c["check"] for c in validation["checks"] if not c["ok"]][:12]}
+                            process_started=process_started,
+                            **({"project_data_tool": step["project_data_tool"]}
+                               if "project_data_tool" in step else
+                               {"data_ki": data_ki} if data_ki is not None else {}))
+        summary = {"receipt": str(path), "run_id": json.loads(path.read_text(encoding="utf-8"))["run_id"],
+                   "outputs": [p.relative_to(self.project).as_posix()
+                               if _under(p, self.project) else str(p)
+                               for p in outputs][:50],
+                   "validation": validation["status"], "execution_status": execution_status,
+                   "failed_checks": [c["check"] for c in validation["checks"] if not c["ok"]][:12]}
+        if "project_data_tool" in step:
+            summary.update(execution_scope="project_data_tool", model_executed=False, step_kind=kind)
+        elif data_ki is not None:
+            summary.update(execution_scope="data_ki", model_executed=False, step_kind=kind)
+        if not outputs:
+            # Explain the existing collection boundary in the returned feedback;
+            # do not alter the signed receipt or collect bookkeeping as science.
+            if typed_calibration:
+                destination_hint = (
+                    "Inspect the native calibration failure and retain the host-owned calibration/runs/ "
+                    "destination. Use run_calibration with the approved binding; do not redirect "
+                    "the engine's files into ordinary outputs/ or artifacts/. "
+                )
+            else:
+                destination_hint = (
+                    "Read the shipped tool or wrapper's documented flags; do not guess argument names. "
+                    "Use a fresh outputs/<run>/ or artifacts/ destination consistent with the approved plan. "
+                )
+            summary["output_hint"] = (
+                "No new or changed output files were captured. Tracked project roots: "
+                + ", ".join(sub + "/" for sub in subs) + ". "
+                "An arbitrary runs/<name> directory is bookkeeping and is not captured. "
+                "Process success alone is insufficient to validate a scientific run. "
+                + destination_hint +
+                "If recovery changes the approved plan, use request_replan before rerunning."
+            )
+        return summary
 
     # ---------------------------------------------------------------- plan files (api.py write_plan)
     def prepare_calibration_steps(self, plan: dict) -> list[str]:
@@ -378,24 +520,38 @@ class FlowSession:
 
     def write_plan(self, plan: dict, inventory: dict) -> list[str]:
         """Validate and write the two plan files. Returns validation errors (empty = written)."""
-        if isinstance(plan, dict) and (errors := self.prepare_calibration_steps(plan)):
-            return errors
-        errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots,
-                                      for_review=True, project=self.project)
-        if errs:
-            return errs
-        from . import obs_subset
-        for item in inventory.get('items') or []:
-            if item.get('acquisition_id'):
-                try:
-                    obs_subset.stamp_item(self.project, item)
-                except (OSError, ValueError, KeyError, TypeError) as error:
-                    errs.append(f"item {item.get('id')!r}: {error}")
-        if errs:
-            return errs
-        self.flow.plan.write_artifacts(self.project, plan, inventory)
-        self.reload_artifacts()
-        self.plan_submission = (self.flow.plan.sha256(plan), self.flow.plan.sha256(inventory))
+        proposal = _plan_proposal_summary(plan, inventory)
+        stage = "calibration_binding"
+        try:
+            if isinstance(plan, dict) and (errors := self.prepare_calibration_steps(plan)):
+                _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errors)
+                return errors
+            stage = "schema_validation"
+            errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots,
+                                          for_review=True, project=self.project)
+            if errs:
+                _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errs)
+                return errs
+            stage = "acquisition_binding"
+            from . import obs_subset
+            for item in inventory.get('items') or []:
+                if item.get('acquisition_id'):
+                    try:
+                        obs_subset.stamp_item(self.project, item)
+                    except (OSError, ValueError, KeyError, TypeError) as error:
+                        errs.append(f"item {item.get('id')!r}: {error}")
+            if errs:
+                _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errs)
+                return errs
+            stage = "write_artifacts"
+            self.flow.plan.write_artifacts(self.project, plan, inventory)
+            self.reload_artifacts()
+            self.plan_submission = (self.flow.plan.sha256(plan), self.flow.plan.sha256(inventory))
+        except Exception as error:
+            _record_plan_validation(self.project, proposal, result="error", stage=stage,
+                                    errors=[f"{type(error).__name__}: {error}"])
+            raise
+        _record_plan_validation(self.project, proposal, result="written", stage="complete")
         return []
 
     # ---------------------------------------------------------------- downloads (api.py fetch_data)
@@ -485,6 +641,10 @@ def _hint(state) -> str:
         return "The plan is waiting for the user's approval; nothing runs before that."
     if v in ("SETUP_REQUIRED", "SETUP_RUNNING"):
         return "The KI software is not verified yet; finish setup first."
-    if v in ("COMPLETED", "VERIFYING", "FAILED_VALIDATION", "FAILED"):
+    if v == "COMPLETED":
+        return ("The approved phase is complete. If the user requests additional work, call "
+                "request_replan and submit the next phase for review; retain the existing inputs "
+                "and results. A status question alone needs no new plan.")
+    if v in ("VERIFYING", "FAILED_VALIDATION", "FAILED"):
         return "This run is closed; a rerun needs a fresh approval."
     return ""

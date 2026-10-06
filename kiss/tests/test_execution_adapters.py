@@ -89,6 +89,28 @@ def _receipts(ctx):
     return docs
 
 
+@pytest.mark.parametrize("location", ["shipped", "external", "preflight"])
+def test_absolute_python_tool_is_rejected_with_only_a_contained_shipped_tool_hint(tmp_path, location):
+    ctx = _project(tmp_path, "from pathlib import Path\nPath('launched').write_text('bad')\n")
+    candidate = ctx.tool
+    if location == "external":
+        candidate = tmp_path / "outside.py"
+        candidate.write_text(ctx.tool.read_text())
+    elif location == "preflight":
+        candidate = ctx.ki.root / "tools" / "preflight_check.py"
+        candidate.write_text(ctx.tool.read_text())
+    approval = ctx.flow.approval_id
+    with pytest.raises(api.ToolError, match="absolute paths are not accepted") as error:
+        api.execute_tool("run_ki_tool", {"tool_path": str(candidate), "plan_step_id": "M:run"},
+                         ctx.ki, ctx.cfg, project_mode=True, flow=ctx.flow)
+    message = str(error.value)
+    assert ("tool_path='tools/run.py'" in message) is (location == "shipped")
+    assert ("relative to the KI root" in message) is (location == "shipped")
+    assert ctx.flow.approval_id == approval
+    assert not (ctx.project / "launched").exists()
+    assert _receipts(ctx) == []
+
+
 @pytest.mark.parametrize("adapter", ["direct", "cli"])
 @pytest.mark.parametrize("refusal", ["planning", "unapproved_step", "changed_plan"])
 def test_refusal_never_launches_or_issues_execution_receipt(

@@ -919,6 +919,21 @@ def _card(flow, fs, plan: dict, inv: dict, provider_note: str) -> dict:
                       "tool": Path(tool).name if tool else None,
                       "env": sorted((st.get("env") or {}).keys()),
                       "inputs": list(st.get("inputs") or []), "outputs": list(st.get("outputs") or [])})
+        if isinstance(st.get("project_data_tool"), dict):
+            from ki_tools_common.flow import project_tools
+            binding = st["project_data_tool"]
+            details = {key: binding.get(key) for key in project_tools.FIELDS}
+            errors = project_tools.step_errors(st, fs.project)
+            details["errors"] = errors
+            if not errors:
+                source = project_tools.source_path(fs.project, str(st.get("ki") or ""), tool)
+                details["source_path"] = source.relative_to(fs.project.resolve()).as_posix()
+                # Display only validated local source, never an arbitrary plan path.
+                with source.open(encoding="utf-8") as stream:
+                    preview = stream.read(24001)
+                details["source_preview"] = preview[:24000]
+                details["source_truncated"] = len(preview) > 24000
+            steps[-1]["project_data_tool"] = details
         if isinstance(st.get("calibration"), dict):
             steps[-1]["calibration"] = dict(st["calibration"])
             if not flow.plan.calibration_step_errors(st, fs.project):

@@ -268,6 +268,16 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
     active = activity.get("state") == "running" and activity.get("process_alive") is True
     complete = (state == "COMPLETED" and approval == "OK"
                 and proof.get("receipts_verified") is True and proof.get("validation") == "passed")
+    runs = proof.get("runs") or []
+    step_kinds = {str(step.get("id")): step.get("kind") for step in plan.get("steps") or []
+                  if isinstance(step, dict)}
+    data_only = bool(runs) and all(
+        isinstance(run, dict) and (
+            (run.get("execution_scope") in {"project_data_tool", "data_ki"}
+             and run.get("model_executed") is False)
+            or step_kinds.get(str(run.get("plan_step_id"))) in {"prepare", "check"})
+        for run in runs)
+    data_complete = complete and data_only
     needs_approval = state in {"APPROVED", "ACQUIRING", "EXECUTING", "VERIFYING", "COMPLETED",
                                "SETUP_REQUIRED", "SETUP_RUNNING", "SETUP_VERIFIED"}
     ready = False
@@ -289,7 +299,10 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
     elif state == "BLOCKED" or acquisition.get("status") == "failed":
         status, summary, actor = "failed", "Project work is blocked; inspect the acquisition or planning details.", "user"
     elif complete:
-        status, summary, actor = "complete", "Flow completed with current approved execution evidence.", "none"
+        summary = ("This phase completed data preparation with current approved evidence. "
+                   "This alone does not establish completion of the full scientific workflow."
+                   if data_complete else "Flow completed with current approved execution evidence.")
+        status, actor = "complete", "none"
     elif state == "COMPLETED":
         status, summary, actor = "failed", "Flow recorded completion, but current evidence does not establish it.", "agent"
     elif state in {"WAITING_FOR_USER", "PLAN_REVIEW"}:
@@ -316,7 +329,10 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
     result = {**report, "status": status, "stage": stage or "understanding", "summary": summary,
               "goal": plan.get("goal") or report.get("goal") or "",
               "selected_kis": selected or report.get("selected_kis") or [],
-              "flow_state": state or None, "science_complete": complete,
+              "flow_state": state or None, "science_complete": complete and not data_only,
+              "data_preparation_complete": data_complete,
+              "completion_scope": ("data_preparation" if data_complete else
+                                   "scientific_workflow" if complete else None),
               "next_actor": actor, "source": "Flow and signed evidence" if state else "Unverified project report",
               "observed_at": observed_at, "age_seconds": _age(observed_at, now),
               "acquisition": acquisition_progress, "ready_to_start": ready,

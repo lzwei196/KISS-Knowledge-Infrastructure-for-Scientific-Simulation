@@ -16,14 +16,17 @@ an in-place rewrite.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import tempfile
 import threading
 import time
+import tomllib
 import urllib.request
 import uuid
 import zipfile
@@ -31,7 +34,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 from urllib.parse import quote, urlsplit
 
-from . import doctor, firstrun, settings, tls
+from . import doctor, firstrun, ki_platform_overlay, paths, reference_portability, settings, tls
 from .catalog import KI, Catalog, installation_platform
 
 
@@ -42,6 +45,150 @@ ARCHIVE_ROOT = f"https://codeload.github.com/{REPOSITORY}/zip"
 MAX_ARCHIVE_BYTES = 900 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ARCHIVE_FILES = 50_000
+SNAPSHOT_MANIFEST = ".geoforge-library.json"
+
+
+def _validation_policy() -> str:
+    return getattr(doctor, "VALIDATION_POLICY_VERSION", "ki-doctor-v1")
+
+
+class SnapshotValidationError(RuntimeError):
+    """Full static findings accompany the short user-facing error preview."""
+
+    def __init__(self, message: str, findings: list[dict], portability_files: list[dict]):
+        super().__init__(message)
+        self.findings = findings
+        self.portability_files = portability_files
+
+
+def _portability_files(catalog: Catalog, root: Path) -> list[dict]:
+    rows = []
+    for ki in catalog:
+        classified = reference_portability.classify_reference_paths(ki)
+        for relative in sorted(ki.portability.files):
+            source = ki.root / relative
+            classifications = {(item["line"], item["path"], item["role"]): item
+                               for item in classified.get(Path(relative).as_posix(), [])}
+            matches = [
+                {"line": number, "path": matched, "role": role,
+                 "classification": classifications.get((number, matched, role), {}).get("classification", "blocked"),
+                 "reason": classifications.get((number, matched, role), {}).get("reason", "Outside recognized reference-case metadata or configurable runner defaults")}
+                for number, line in enumerate(source.read_text(encoding="utf-8", errors="replace").splitlines(), 1)
+                for matched, role in paths.scan_text(line)
+            ]
+            rows.append({"ki": ki.name, "path": source.relative_to(root).as_posix(),
+                         "sha256": _file_digest(source), "matches": matches})
+    return rows
+
+
+def _reference_case_summary(catalog: Catalog, findings: list) -> dict:
+    counts = {"provenance": 0, "runtime_binding_metadata": 0, "configurable_default": 0}
+    affected = set()
+    for ki in catalog:
+        for records in reference_portability.classify_reference_paths(ki).values():
+            for record in records:
+                category = record["classification"]
+                if category in counts:
+                    counts[category] += 1
+                    affected.add(ki.name)
+    return {"validation_policy": _validation_policy(), "native_verification": "not_performed",
+            "configurable_path_count": counts["configurable_default"],
+            "historical_path_count": counts["provenance"],
+            "runtime_binding_metadata_count": counts["runtime_binding_metadata"],
+            "affected_kis": sorted(affected),
+            "warnings": [vars(item).copy() for item in findings
+                         if item.check in {"reference-case-provenance", "reference-case-binding"}]}
+
+
+def _revision_identity(trees: dict, overlay_id: str | None = None) -> str:
+    # Keep the on-disk path no longer than the legacy two-tree identity. Full
+    # component identities and overlay provenance remain in the manifest.
+    value = {"trees": trees, "overlay_id": overlay_id,
+             "policy": ki_platform_overlay.POLICY_VERSION,
+             "validation_policy": _validation_policy()}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
+
+
+def data_ki_root(library_root: Path, fallback: Path | None = None) -> Path | None:
+    root = Path(library_root) / "kiss" / "data_kis"
+    return root if root.is_dir() else fallback
+
+
+def shared_tools_root(library_root: Path, bundled_root: Path) -> Path:
+    """Select runtime helpers without changing the app/harness source root."""
+    library_root = Path(library_root)
+    marker = library_root / SNAPSHOT_MANIFEST
+    expects_marker = (bool(re.fullmatch(r"[0-9a-f]{16}(?:-[0-9a-f]{16}){3,}", library_root.name))
+                      or (library_root.parent.name == "snapshots" and
+                          bool(re.fullmatch(r"[0-9a-f]{32}", library_root.name))))
+    if expects_marker and not marker.is_file():
+        raise ValueError("The active KI snapshot's component manifest is missing")
+    if marker.is_file() and not (_read_json(marker).get("trees") or {}).get("shared_tools"):
+        raise ValueError("The active KI snapshot's shared helper identity is missing")
+    candidate = library_root / "ki_tools_common"
+    if (candidate / "ki_tools_common" / "__init__.py").is_file():
+        return library_root
+    if ((library_root / SNAPSHOT_MANIFEST).is_file()
+            or re.fullmatch(r"[0-9a-f]{16}(?:-[0-9a-f]{16}){3,}", library_root.name)):
+        raise ValueError("The active KI snapshot's pinned shared helper package is missing")
+    # Older snapshots contained only models and manifests. Keep them usable,
+    # with this fallback exposed explicitly in the component report.
+    return Path(bundled_root)
+
+
+def component_sources(library_root: Path, bundled_root: Path | None = None) -> dict:
+    root = Path(library_root)
+    meta = _read_json(root / SNAPSHOT_MANIFEST)
+    if not meta:
+        state = _read_json(update_root() / "state.json")
+        if state.get("active_snapshot") == root.name:
+            meta = {"source_commit": state.get("source_commit"), "trees": {
+                "models": state.get("models_tree"), "manifests": state.get("manifests_tree")}}
+    trees = meta.get("trees") or {}
+    commit = meta.get("source_commit")
+    out = {}
+    for name, present in (
+            ("models", True), ("manifests", True),
+            ("shared_tools", (root / "ki_tools_common/ki_tools_common/__init__.py").is_file()),
+            ("data_kis", (root / "kiss/data_kis").is_dir())):
+        pinned = bool(meta and present)
+        out[name] = {"state": "snapshot" if pinned else "bundled_fallback",
+                     "tree_sha": trees.get(name) if pinned else None,
+                     "source_commit": commit if pinned else None}
+    return out
+
+
+def _snapshot_content_hash(root: Path) -> str:
+    files = _file_digests(root)
+    files.pop(SNAPSHOT_MANIFEST, None)
+    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+
+
+def _snapshot_valid(root: Path) -> bool:
+    marker = root / SNAPSHOT_MANIFEST
+    if not marker.exists():
+        state = _read_json(update_root() / "state.json")
+        recorded_new = (state.get("active_snapshot") == root.name
+                        and bool((state.get("component_trees") or {}).get("shared_tools")))
+        return bool(re.fullmatch(r"[0-9a-f]{16}-[0-9a-f]{16}", root.name)) and not recorded_new
+    meta = _read_json(marker)
+    trees = meta.get("trees")
+    if meta.get("schema_version") != 1 or not isinstance(trees, dict):
+        return False
+    if not all(isinstance(trees.get(key), str) and len(trees[key]) == 40
+               and all(c in "0123456789abcdef" for c in trees[key].lower())
+               for key in ("models", "manifests", "shared_tools")):
+        return False
+    if not (root / "ki_tools_common/ki_tools_common/__init__.py").is_file() or not (root / "ki_tools_common/pyproject.toml").is_file():
+        return False
+    if trees.get("data_kis") and not (root / "kiss/data_kis").is_dir():
+        return False
+    if trees.get("data_kis") is not None and not re.fullmatch(r"[0-9a-f]{40}", str(trees["data_kis"])):
+        return False
+    try:
+        return bool(meta.get("content_sha256")) and meta["content_sha256"] == _snapshot_content_hash(root)
+    except OSError:
+        return False
 
 
 def branch_for_platform() -> str:
@@ -95,6 +242,8 @@ def active_library_root(reference: Path | None = None) -> Path | None:
         return None
     if ((candidate / "models").is_dir() and
             any((candidate / "models").glob("*/SKILL.md"))):
+        if not _snapshot_valid(candidate):
+            return None
         if (reference is not None and _guards_guidance() and
                 _lost_guidance(Path(reference), candidate)):
             return None
@@ -185,7 +334,10 @@ def _file_digests(path: Path) -> dict[str, str]:
 
 
 def _package_files(library_root: Path, name: str) -> dict[str, str]:
-    files = _file_digests(library_root / "models" / name)
+    package = library_root / "models" / name
+    if not package.is_dir():
+        package = library_root / "kiss" / "data_kis" / name
+    files = _file_digests(package)
     manifest = library_root / "kiss" / "manifests" / f"{name}.yaml"
     if manifest.is_file():
         files["@shared-manifest"] = hashlib.sha256(manifest.read_bytes()).hexdigest()
@@ -193,12 +345,11 @@ def _package_files(library_root: Path, name: str) -> dict[str, str]:
 
 
 def _library_diff(before: Path, after: Path) -> dict:
-    old_names = ({p.name for p in (before / "models").iterdir()
-                  if p.is_dir() and (p / "SKILL.md").is_file()}
-                 if (before / "models").is_dir() else set())
-    new_names = ({p.name for p in (after / "models").iterdir()
-                  if p.is_dir() and (p / "SKILL.md").is_file()}
-                 if (after / "models").is_dir() else set())
+    def names(root):
+        return {p.name for rel in ("models", "kiss/data_kis")
+                if (root / rel).is_dir() for p in (root / rel).iterdir()
+                if p.is_dir() and (p / "SKILL.md").is_file()}
+    old_names, new_names = names(before), names(after)
     added = sorted(new_names - old_names)
     removed = sorted(old_names - new_names)
     changed: list[dict] = []
@@ -238,6 +389,7 @@ class UpdateManager:
         # archive is downloaded, avoiding mutable-branch CDN cache mismatches.
         self._archive_ref = f"refs/heads/{self.branch}"
         self._source_commit = ""
+        self._component_trees: dict[str, str | None] = {}
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         previous = _read_json(update_root() / "last-report.json")
@@ -254,6 +406,9 @@ class UpdateManager:
             }),
             "source_url": REPOSITORY_URL,
             "branch": self.branch,
+            "components": component_sources(self.current_library_root),
+            "windows_overlay": _read_json(self.current_library_root / SNAPSHOT_MANIFEST).get("windows_overlay"),
+            "reference_cases": _read_json(self.current_library_root / SNAPSHOT_MANIFEST).get("reference_cases"),
         }
 
     def status(self) -> dict:
@@ -335,16 +490,22 @@ class UpdateManager:
                    if isinstance(row, dict)}
         models_sha = str((entries.get("models") or {}).get("sha") or "")
         kiss_sha = str((entries.get("kiss") or {}).get("sha") or "")
+        common_sha = str((entries.get("ki_tools_common") or {}).get("sha") or "")
         if not models_sha or not kiss_sha:
             raise RuntimeError(
                 f"the {self.branch} branch does not contain models/ and kiss/")
+        if not common_sha:
+            raise RuntimeError(f"the {self.branch} branch has no required ki_tools_common/ package")
         kiss = self._request_json(f"{API_ROOT}/git/trees/{kiss_sha}")
         kiss_entries = {row.get("path"): row for row in kiss.get("tree") or []
                         if isinstance(row, dict)}
         manifests_sha = str((kiss_entries.get("manifests") or {}).get("sha") or "")
         if not manifests_sha:
             raise RuntimeError(f"the {self.branch} branch has no kiss/manifests/")
-        revision = f"{models_sha[:16]}-{manifests_sha[:16]}".lower()
+        data_sha = str((kiss_entries.get("data_kis") or {}).get("sha") or "")
+        self._component_trees = {"models": models_sha, "manifests": manifests_sha,
+                                 "shared_tools": common_sha, "data_kis": data_sha or None}
+        revision = _revision_identity(self._component_trees)
         return revision, models_sha, manifests_sha
 
     def _download(self, destination: Path) -> None:
@@ -367,6 +528,65 @@ class UpdateManager:
                         raise RuntimeError("the KI update archive exceeded the safe size limit")
                     handle.write(block)
 
+    def _obtain_archive(self, destination: Path) -> dict:
+        """Reuse exact downloaded bytes, never a cached validation verdict."""
+        commit = self._source_commit
+        cache = update_root() / "archives" / f"{commit}.zip"
+        meta_path = cache.with_suffix(".json")
+        pinned = bool(re.fullmatch(r"[0-9a-f]{40}", commit))
+        meta = _read_json(meta_path) if pinned else {}
+        if (meta.get("source_commit") == commit and cache.is_file()
+                and 0 < cache.stat().st_size <= MAX_ARCHIVE_BYTES
+                and meta.get("size_bytes") == cache.stat().st_size
+                and meta.get("sha256") == _file_digest(cache)):
+            shutil.copyfile(cache, destination)
+            return {**meta, "cache_reused": True}
+        self._download(destination)
+        size = destination.stat().st_size
+        if not 0 < size <= MAX_ARCHIVE_BYTES:
+            raise RuntimeError("the KI update archive has an invalid size")
+        return {"source_commit": commit, "sha256": _file_digest(destination),
+                "size_bytes": size, "cache_reused": False}
+
+    def _cache_archive(self, archive: Path, meta: dict) -> None:
+        # Called only after safe extraction succeeds. This remains unvalidated
+        # source material; every retry repeats extraction, overlay and doctor.
+        if not re.fullmatch(r"[0-9a-f]{40}", self._source_commit) or meta.get("cache_reused"):
+            return
+        cache = update_root() / "archives" / f"{self._source_commit}.zip"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache.with_name(f".{uuid.uuid4().hex}.zip")
+        try:
+            shutil.copyfile(archive, temporary)
+            temporary.replace(cache)
+            _atomic_json(cache.with_suffix(".json"), {**meta, "validation": "not_reusable"})
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _quarantine(self, incoming: Path, error: Exception, *, stage: str,
+                    archive_meta: dict, source_hash: str | None, overlay: dict | None) -> dict:
+        """Preserve rejected bytes separately from every activatable snapshot."""
+        target = update_root() / "quarantine" / uuid.uuid4().hex[:12]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        incoming.replace(target)
+        report = {
+            "schema_version": 1, "activated": False, "stage": stage,
+            "validation_policy": _validation_policy(),
+            "source_commit": self._source_commit, "component_trees": self._component_trees,
+            "archive_sha256": archive_meta.get("sha256"),
+            "archive_cache_reused": archive_meta.get("cache_reused", False),
+            "source_content_sha256": source_hash,
+            "candidate_content_sha256": _snapshot_content_hash(target),
+            "quarantine_path": str(target), "report_path": str(target / "validation-report.json"),
+            "windows_overlay": overlay, "error": str(error),
+            "reference_cases": getattr(self, "_reference_case_summary", None),
+            "findings": getattr(error, "findings", []),
+            "portability_scanner": "catalog.Portability.scan / paths.scan_text",
+            "portability_files": getattr(error, "portability_files", []),
+        }
+        _atomic_json(target / "validation-report.json", report)
+        return report
+
     def _extract(self, archive: Path, destination: Path) -> None:
         destination.mkdir(parents=True, exist_ok=True)
         files = 0
@@ -378,9 +598,9 @@ class UpdateManager:
                 if len(parts) < 3:
                     continue
                 rel: PurePosixPath | None = None
-                if parts[1] == "models":
+                if parts[1] in {"models", "ki_tools_common"}:
                     rel = PurePosixPath(*parts[1:])
-                elif len(parts) >= 4 and parts[1:3] == ("kiss", "manifests"):
+                elif len(parts) >= 4 and parts[1] == "kiss" and parts[2] in {"manifests", "data_kis"}:
                     rel = PurePosixPath(*parts[1:])
                 if rel is None or info.is_dir():
                     continue
@@ -421,22 +641,34 @@ class UpdateManager:
             target.symlink_to(link)
 
     def _validate(self, root: Path) -> tuple[int, int, list[dict]]:
-        catalog = Catalog(root / "models")
+        self._reference_case_summary = None
+        common = root / "ki_tools_common"
+        if not (common / "ki_tools_common/__init__.py").is_file() or not (common / "pyproject.toml").is_file():
+            raise RuntimeError("downloaded KI snapshot is missing the required ki_tools_common package")
+        with (common / "pyproject.toml").open("rb") as handle:
+            tomllib.load(handle)
+        for source in common.rglob("*.py"):
+            ast.parse(source.read_text(encoding="utf-8-sig"), filename=str(source))
+        catalog = Catalog(root / "models", data_dir=data_ki_root(root))
         if not len(catalog):
             raise RuntimeError("the downloaded snapshot contains no KIs")
         findings = []
         for ki in catalog:
             findings.extend(doctor.check_ki(ki))
         findings.extend(doctor.check_cross_model(catalog))
+        self._reference_case_summary = _reference_case_summary(catalog, findings)
         blocked = [finding for finding in findings if finding.severity == doctor.BLOCK]
         if blocked:
             preview = "; ".join(
                 f"{finding.ki}: {finding.detail}" for finding in blocked[:5])
-            raise RuntimeError(
-                f"downloaded KI snapshot failed {len(blocked)} blocking checks: {preview}")
+            raise SnapshotValidationError(
+                f"downloaded KI snapshot failed {len(blocked)} blocking checks: {preview}",
+                [vars(finding).copy() for finding in findings], _portability_files(catalog, root))
         warnings = [finding for finding in findings if finding.severity == doctor.WARN]
+        # Binding caveats must not disappear behind unrelated package warnings.
+        ordered = sorted(warnings, key=lambda finding: finding.check != "reference-case-binding")
         preview = [{"ki": finding.ki, "check": finding.check,
-                    "detail": finding.detail} for finding in warnings[:20]]
+                    "detail": finding.detail} for finding in ordered[:20]]
         return len(catalog), len(warnings), preview
 
     def _refusal(self, revision: str, reference: str, lost: list[str]) -> dict:
@@ -454,7 +686,8 @@ class UpdateManager:
                       "installation notes or recipes that the current library "
                       f"ships ({examples}), so it was not activated. Updates "
                       "resume once the repository carries them."),
-            "refused": {"revision": revision, "reference": reference, "lost": lost},
+            "refused": {"revision": revision, "reference": reference, "lost": lost,
+                        "policy": ki_platform_overlay.POLICY_VERSION},
             # Nothing changed; do not show an earlier update's lists under it.
             "added": [], "updated": [], "removed": [], "changes": [],
             "warning_count": 0,
@@ -462,21 +695,37 @@ class UpdateManager:
 
     def _run(self) -> None:
         checked_at = time.time()
+        validation_failure = None
+        self._reference_case_summary = None
         try:
             revision, models_sha, manifests_sha = self._remote_revision()
+            upstream_revision = revision
             route = self._proxy_url() or "direct"
             state_path = update_root() / "state.json"
             state = _read_json(state_path)
-            if (state.get("revision") == revision and
-                    active_library_root(self.current_library_root) is not None):
+            active = active_library_root(self.current_library_root)
+            if (state.get("validation_policy") == _validation_policy() and
+                    (state.get("revision") == revision or
+                 (state.get("upstream_revision") == revision and
+                  state.get("overlay_policy") == ki_platform_overlay.POLICY_VERSION)) and
+                    active is not None):
+                if active != self.current_library_root:
+                    self.activate(active)
+                    self.current_library_root = active
+                active_meta = _read_json(active / SNAPSHOT_MANIFEST)
                 self._set(
                     state="up_to_date", checked_at=checked_at,
-                    active_revision=revision,
+                    active_revision=state.get("revision") or revision,
                     summary="The KI library is already up to date.",
                     network_route=route, source_commit=self._source_commit,
                     added=[], updated=[], removed=[], changes=[],
                     unchanged_count=int(state.get("package_count") or 0),
-                    error=None, refused=None,
+                    warning_count=active_meta.get("warning_count", 0),
+                    warnings=active_meta.get("warnings", []),
+                    error=None, refused=None, validation_failure=None,
+                    components=component_sources(self.current_library_root),
+                    windows_overlay=active_meta.get("windows_overlay"),
+                    reference_cases=active_meta.get("reference_cases"),
                 )
                 return
             guard = _guards_guidance()
@@ -487,7 +736,8 @@ class UpdateManager:
                 reference = _guidance_fingerprint(self.current_library_root)
                 refused = self.status().get("refused") or {}
                 if (refused.get("revision") == revision and
-                        refused.get("reference") == reference):
+                        refused.get("reference") == reference and
+                        refused.get("policy") == ki_platform_overlay.POLICY_VERSION):
                     self._set(checked_at=checked_at, network_route=route,
                               source_commit=self._source_commit,
                               **self._refusal(revision, reference,
@@ -500,44 +750,84 @@ class UpdateManager:
             with tempfile.NamedTemporaryFile(
                     prefix="geoforge-ki-", suffix=".zip", delete=False) as temporary:
                 archive = Path(temporary.name)
+            stage, archive_meta, source_hash, overlay = "download", {}, None, None
             try:
-                self._download(archive)
+                archive_meta = self._obtain_archive(archive)
+                stage = "extraction"
                 self._extract(archive, incoming)
+                self._cache_archive(archive, archive_meta)
+                source_hash = _snapshot_content_hash(incoming)
+                stage = "windows_overlay"
+                overlay = ki_platform_overlay.apply_windows_overlay(
+                    self.current_library_root, incoming,
+                    platform=installation_platform(), upstream_commit=self._source_commit,
+                    source_identity=self.current_library_root.name)
+                if overlay.get("files"):
+                    revision = _revision_identity(self._component_trees, overlay["overlay_id"])
                 # Windows install notes and recipes live only on the Windows
                 # branch; a main snapshot without them would silently take
                 # this machine's installation guidance away.
                 lost = (_lost_guidance(self.current_library_root, incoming)
                         if guard else [])
                 if lost:
+                    failure = SnapshotValidationError("Required platform installation guidance is missing",
+                        [{"ki": row.split(":", 1)[0], "severity": doctor.BLOCK,
+                          "check": "installation-guidance", "detail": row, "count": 1} for row in lost], [])
+                    validation_failure = self._quarantine(incoming, failure, stage="platform_guard",
+                        archive_meta=archive_meta, source_hash=source_hash, overlay=overlay)
                     self._set(checked_at=checked_at, network_route=route,
                               source_commit=self._source_commit,
+                              validation_failure=validation_failure,
                               **self._refusal(revision, reference, lost))
                     return
+                stage = "package_validation"
                 package_count, warning_count, warnings = self._validate(incoming)
                 diff = _library_diff(self.current_library_root, incoming)
+                helper_changed = (_file_digests(self.current_library_root / "ki_tools_common") !=
+                                  _file_digests(incoming / "ki_tools_common"))
+                _atomic_json(incoming / SNAPSHOT_MANIFEST, {
+                    "schema_version": 1, "revision": revision,
+                    "source_commit": self._source_commit, "trees": self._component_trees,
+                    "upstream_revision": upstream_revision,
+                    "validation_policy": _validation_policy(),
+                    "reference_cases": getattr(self, "_reference_case_summary", None),
+                    "warning_count": warning_count, "warnings": warnings,
+                    "windows_overlay": overlay if overlay.get("files") else None,
+                    "content_sha256": _snapshot_content_hash(incoming)})
                 snapshot = home / "snapshots" / revision
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
+                stage = "snapshot_activation"
                 if snapshot.exists():
+                    cached = _read_json(snapshot / SNAPSHOT_MANIFEST)
+                    if (not _snapshot_valid(snapshot) or cached.get("revision") != revision
+                            or cached.get("validation_policy") != _validation_policy()
+                            or cached.get("trees") != self._component_trees):
+                        raise RuntimeError("The cached KI snapshot was changed or is incomplete; preserved without activation")
                     shutil.rmtree(incoming)
                 else:
                     incoming.replace(snapshot)
                 new_state = {
                     "active_snapshot": revision,
                     "revision": revision,
+                    "upstream_revision": upstream_revision,
+                    "overlay_policy": ki_platform_overlay.POLICY_VERSION,
                     "models_tree": models_sha,
                     "manifests_tree": manifests_sha,
                     "package_count": package_count,
                     "activated_at": time.time(),
                     "branch": self.branch,
                     "source_commit": self._source_commit,
+                    "component_trees": self._component_trees,
+                    "validation_policy": _validation_policy(),
                 }
                 _atomic_json(state_path, new_state)
                 self.activate(snapshot)
                 self.current_library_root = snapshot
-                changed_count = len(diff["added"]) + len(diff["updated"]) + len(diff["removed"])
+                changed_count = len(diff["added"]) + len(diff["updated"]) + len(diff["removed"]) + int(helper_changed)
                 summary = (
                     f"KI library updated: {len(diff['added'])} added, "
                     f"{len(diff['updated'])} changed, {len(diff['removed'])} removed."
+                    + (" Shared helpers updated." if helper_changed else "")
                     if changed_count else "The repository was checked; KI contents are unchanged.")
                 self._set(
                     state="updated" if changed_count else "up_to_date",
@@ -545,10 +835,26 @@ class UpdateManager:
                     network_route=route, source_commit=self._source_commit,
                     summary=summary, package_count=package_count,
                     warning_count=warning_count, warnings=warnings,
-                    error=None, refused=None, **diff)
+                    error=None, refused=None, validation_failure=None,
+                    archive_sha256=archive_meta.get("sha256"),
+                    archive_cache_reused=archive_meta.get("cache_reused", False),
+                    components=component_sources(snapshot),
+                    reference_cases=getattr(self, "_reference_case_summary", None),
+                    windows_overlay=overlay if overlay.get("files") else None, **diff)
+            except Exception as error:
+                if incoming.exists():
+                    try:
+                        validation_failure = self._quarantine(incoming, error, stage=stage,
+                            archive_meta=archive_meta, source_hash=source_hash, overlay=overlay)
+                    except Exception as evidence_error:
+                        # Never discard a candidate when retaining evidence failed.
+                        validation_failure = {"activated": False, "stage": stage,
+                            "source_commit": self._source_commit, "quarantine_path": str(incoming),
+                            "error": str(error), "evidence_error": str(evidence_error)}
+                raise
             finally:
                 archive.unlink(missing_ok=True)
-                if incoming.exists():
+                if incoming.exists() and validation_failure is None:
                     shutil.rmtree(incoming, ignore_errors=True)
         # This worker must always terminate in a report the window can show.
         # A malformed remote archive should never leave the UI saying
@@ -561,4 +867,7 @@ class UpdateManager:
                 network_route=(settings.proxy_url_for(
                     settings.GITHUB_PROXY_TARGET) or "direct"),
                 error=str(error)[:2000],
+                source_commit=self._source_commit,
+                validation_failure=validation_failure,
+                added=[], updated=[], removed=[], changes=[], warning_count=0,
             )

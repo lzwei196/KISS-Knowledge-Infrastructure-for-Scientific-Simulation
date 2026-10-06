@@ -1,0 +1,44 @@
+package:
+  name: HYDAT_Observations
+  version: "1.0.0"
+  kind: task_workflow
+  role: data_reader
+  domain: observed hydrology
+  implementation: geoforge-hydat-daily-reader
+  language: Python
+  license: MIT
+  repo_url: https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation
+  description: Read acquired HYDAT daily discharge with native quality symbols and full provenance; no model execution.
+data:
+  dataset_ids: [hydat_sqlite]
+  format: SQLite
+  quantity: daily mean discharge
+  units: m3/s
+  units_authority: ECCC documentation, not an embedded DLY_FLOWS units column
+runtime:
+  language: Python
+  minimum_version: "3.11"
+  import_modules: [argparse, calendar, csv, datetime, hashlib, json, math, pathlib, sqlite3]
+  external_packages: []
+  install: Use the configured Python; all reader dependencies are standard library.
+workflow:
+  stages:
+    - id: inspect_and_extract
+      tool: tools/read_observations.py
+      permitted_step_kinds: [check, prepare]
+      execution_scope: data_preparation
+      inputs: [acquired_hydat_sqlite, station_number, start_date, end_date]
+      outputs: [observations.csv, audit.json]
+      model_executed: false
+attribution:
+  data_ki: HYDAT_Observations
+  scientific_model: null
+  downstream_models: unrestricted; configure and validate their inputs separately
+validation:
+  preflight: preflight_check.py
+  tests: tests/test_hydat_reader.py
+  fixture: fixtures/synthetic_hydat.json
+  fixture_kind: synthetic format regression, not observations or a model benchmark
+distribution:
+  shipped_by: GeoForge Desktop data-KI library
+  companion_server_delivery: not implemented or claimed by this package

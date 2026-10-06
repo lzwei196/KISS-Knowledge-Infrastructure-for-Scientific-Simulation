@@ -493,11 +493,52 @@ def runtime_command(models_dir: Path, model: str, root: Path) -> str:
 
 
 def prepare_common(cfg, repo_root: Path) -> Path:
-    """Materialise the bundled shared tool library into this setup workspace."""
+    """Materialise helpers; versioned snapshots never overwrite an older copy."""
     source = Path(repo_root) / "ki_tools_common"
     if not source.is_dir():
         raise ValueError(
             f"GeoForge's bundled ki_tools_common is missing (expected {source})")
+    from . import ki_updates
+    snapshot = ki_updates._read_json(Path(repo_root) / ki_updates.SNAPSHOT_MANIFEST)
+    if snapshot:
+        import hashlib
+        import tempfile
+        binding = {
+            "source_commit": snapshot.get("source_commit"),
+            "source_tree": (snapshot.get("trees") or {}).get("shared_tools"),
+            "roles": {key: str(value) for key, value in sorted(cfg.roles.items())
+                      if key != "ki_tools_common"},
+        }
+        identity = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
+        target = Path(cfg.root) / "ktc" / identity[:12]
+        cfg.roles["ki_tools_common"] = target
+        marker = ".geoforge-common.json"
+        def source_files(root):
+            return {name: digest for name, digest in ki_updates._file_digests(root).items()
+                    if name != marker and not any(part == "__pycache__" or part.endswith(".egg-info")
+                                                for part in Path(name).parts)
+                    and not name.endswith((".pyc", ".pyo"))}
+        if target.exists():
+            saved = ki_updates._read_json(target / marker)
+            actual = source_files(target)
+            if saved.get("binding_sha256") != identity or saved.get("files") != actual:
+                raise ValueError(f"Pinned shared helpers changed locally; preserved without overwriting: {target}")
+            return target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".incoming-", dir=target.parent) as temporary:
+            staged = Path(temporary) / "package"
+            report = port.materialise(source, staged, cfg)
+            if report.unresolved or report.corrupted:
+                raise ValueError("cannot prepare snapshot ki_tools_common: unresolved or corrupted paths")
+            ki_updates._atomic_json(staged / marker, {
+                **binding, "binding_sha256": identity,
+                "files": source_files(staged)})
+            # Only a new directory is installed. Existing revisions and local
+            # edits remain intact, including copies used by running projects.
+            if target.exists():
+                raise ValueError(f"Shared helper destination appeared during preparation: {target}")
+            staged.rename(target)
+        return target
     target = Path(cfg.roles.get("ki_tools_common") or (cfg.root / "ki_tools_common"))
     report = port.materialise(source, target, cfg)
     if report.unresolved or report.corrupted:
@@ -526,6 +567,8 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     cfg.python = install.runtime_python(cfg.python)
     cfg_file.write_text(cfg.dumps(), encoding="utf-8")
 
+    prepare_common(cfg, repo_root)
+    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     live = root / "ki"
     report = port.materialise(ki.root, live, cfg)
     if report.unresolved or report.corrupted:
@@ -540,7 +583,7 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     # This is application infrastructure, not a model-specific dependency the
     # agent or user should have to locate. Keep an offline, materialised copy
     # beside every shared model workspace before any preflight or chat starts.
-    prepare_common(cfg, repo_root)
+    # Helpers were bound before KI paths were materialised above.
 
     live_ki = type(ki)(name=ki.name, root=live)
     # A small number of older KDT KIs declare their tools below the original

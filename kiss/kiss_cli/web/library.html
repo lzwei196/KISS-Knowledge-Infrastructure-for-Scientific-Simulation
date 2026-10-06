@@ -300,7 +300,7 @@ select option:disabled{color:var(--fg-3)}
     <div style="display:flex;align-items:center;gap:10px"><span class="mark verify">↻</span><h2 style="margin:0">KI library updates</h2><span class="spacer"></span><button id="updateclose">Close</button></div>
     <div class="update-summary" id="updatesummary">Checking update status…</div>
     <div id="updatedetails"></div>
-    <p class="update-note">GeoForge updates only KI definitions and their install manifests from the official repository. It does not change chat projects, input data, installed model binaries, verification history, or KIs you imported yourself. A downloaded snapshot becomes active only after deterministic package checks pass.</p>
+    <p class="update-note" id="updatescope">GeoForge updates model and data KIs, shared tools, and installation manifests from the official repository. It does not change chat projects, input data, installed model binaries, verification history, or KIs you imported yourself. A downloaded snapshot becomes active only after deterministic package checks pass.</p>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" id="updateretry">Check again</button><button id="updatenetwork">Network settings</button><a id="updatesource" target="_blank" rel="noreferrer"><button>Open source repository</button></a></div>
   </div></div>
 </main>
@@ -366,22 +366,166 @@ function safeUrl(s){try{const u=new URL(s);return /^https?:$/.test(u.protocol)?u
 function when(ts){return ts?new Date(ts*1000).toLocaleString():"Not yet";}
 function updateZh(){return window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN"}function updateText(en,zh){return updateZh()?zh:en}
 function updateNames(title,items){return (items||[]).length?`<b>${esc(title)}</b><div class="update-list">${items.map(x=>`<span class="update-name">${esc(x)}</span>`).join("")}</div>`:""}
-function updateSummary(u){if(!updateZh())return u.summary||"KI update status is not available.";if(u.state==="checking")return "正在从 GeoForge 仓库检查 KI 更新……";if(u.state==="updated")return `KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`;if(u.state==="up_to_date")return "KI 库已经是最新版本。";if(u.state==="error")return "KI 更新未完成；GeoForge 已继续使用上一次验证通过的版本。";if(u.state==="kept")return "GeoForge 保留了当前 KI 库，因为仓库中的版本会移除本机平台的安装说明或安装配方。";return "尚未检查 KI 更新。"}
-function drawKiUpdate(){const u=KIUPDATE||{},checking=u.state==="checking",route=u.network_route?` · ${updateText("route","线路")}: ${u.network_route==="direct"?updateText("direct","直连"):u.network_route}`:"";$("#kiupdatelabel").textContent=checking?updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):u.state==="error"?updateText("Update issue","更新问题"):u.state==="kept"?updateText("Library kept","已保留当前库"):updateText("KI updates","KI 更新");$("#updatesummary").innerHTML=`<b>${esc(updateSummary(u))}</b><br><small>${esc(u.branch||"")}${u.checked_at?` · ${esc(when(u.checked_at))}`:""}${u.source_commit?` · ${esc(String(u.source_commit).slice(0,12))}`:""}${esc(route)}</small>`;const changes=(u.changes||[]).map(row=>`<div class="update-detail"><b>${esc(row.name)}</b>${updateNames(updateText("Added files","新增文件"),row.added_files)}${updateNames(updateText("Changed files","更新文件"),row.updated_files)}${updateNames(updateText("Removed files","移除文件"),row.removed_files)}</div>`).join("");$("#updatedetails").innerHTML=(u.error?`<div class="finding WARN"><b>${updateText("Current library kept safely","已安全保留当前 KI 库")}</b> · ${esc(u.error)}</div>`:"")+updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+(u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:"");$("#updateretry").disabled=checking;$("#updateretry").textContent=checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");$("#updatesource").href=safeUrl(u.source_url)||"#"}
-async function loadKiUpdate(open=false){try{KIUPDATE=await (await fetch("/api/ki-updates")).json();drawKiUpdate();const revision=KIUPDATE.active_revision||"";if(revision&&revision!==KIUPDATE_REVISION){KIUPDATE_REVISION=revision;MODELS=await (await fetch("/api/models")).json();STATUS=await (await fetch("/api/status")).json();drawList();drawDetails([...SEL][0]);drawSetup()}if(KIUPDATE.state==="checking"){clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=setTimeout(()=>loadKiUpdate(false),1000)}if(open)$("#updatemodal").classList.add("open")}catch(e){KIUPDATE={state:"error",summary:"Could not read KI update status.",error:e.message};drawKiUpdate();if(open)$("#updatemodal").classList.add("open")}}
+let KIUPDATE_STARTING=false, KIUPDATE_SEQUENCE=0;
+let KIUPDATE_STATUS_ERROR="", KIUPDATE_ACTION_ERROR="", KIUPDATE_VIEW_ERROR="";
+function updateSummary(u){
+  if(u.state==="disabled")return updateText("KI updates are unavailable in this server session.","当前服务未启用 KI 更新。");
+  if(!updateZh())return u.summary||"KI update status is not available.";
+  if(u.state==="checking")return "正在从 GeoForge 仓库检查 KI 更新……";
+  if(u.state==="updated")return `KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`;
+  if(u.state==="up_to_date")return "KI 库已经是最新版本。";
+  if(u.state==="error")return "KI 更新未完成；GeoForge 已继续使用上一次验证通过的版本。";
+  if(u.state==="kept")return "GeoForge 保留了当前 KI 库，因为仓库中的版本会移除本机平台的安装说明或安装配方。";
+  return "尚未检查 KI 更新。";
+}
+function updateComponents(components){
+  if(!components||typeof components!=="object")return "";
+  const labels={models:["Model KIs","模型 KI"],manifests:["Installation manifests","安装清单"],shared_tools:["Shared tools","共享工具"],data_kis:["Data KIs","数据 KI"]};
+  const rows=Object.entries(labels).flatMap(([key,label])=>{
+    const c=components[key];if(!c||typeof c!=="object")return [];
+    const source=c.state==="snapshot"?updateText("Repository snapshot","仓库快照"):
+      c.state==="bundled_fallback"?updateText("Bundled fallback (not updated)","应用内置回退（未更新）"):updateText("Source not recorded","来源未记录");
+    const pins=[c.source_commit?`${updateText("commit","提交")} ${String(c.source_commit).slice(0,12)}`:"",c.tree_sha?`${updateText("tree","目录树")} ${String(c.tree_sha).slice(0,12)}`:""].filter(Boolean).join(" · ");
+    return [`<div class="update-detail"><b>${updateText(...label)}</b> · ${esc(source)}${pins?`<br><small>${esc(pins)}</small>`:""}</div>`];
+  });
+  return rows.length?`<b>${updateText("Active component sources","当前组件来源")}</b>${rows.join("")}`:"";
+}
+function updateWindowsOverlay(overlay){
+  if(!overlay||!Array.isArray(overlay.files)||!overlay.files.length)return "";
+  const count=mode=>overlay.files.filter(row=>row?.mode===mode).length;
+  const notes=count("retained_windows_notes"),retained=count("retained_windows_recipe"),composed=count("three_way_rebase")+count("platform_contract_overlay");
+  const pins=[overlay.upstream_commit?`${updateText("upstream commit","上游提交")} ${String(overlay.upstream_commit).slice(0,12)}`:"",overlay.overlay_id?`${updateText("overlay digest","补充层摘要")} ${String(overlay.overlay_id).slice(0,12)}`:""].filter(Boolean).join(" · ");
+  return `<div class="update-detail"><b>${updateText("Active Windows support","当前 Windows 支持")}</b><br>${updateText("Repository KIs with retained or composed Windows installation support.","仓库 KI 加上保留或组合生成的 Windows 安装支持。")}`+
+    `<br>${notes} ${updateText("retained documents","份保留的说明")} · ${retained} ${updateText("retained recipes","份保留的安装配方")} · ${composed} ${updateText("composed recipes","份组合生成的安装配方")}`+
+    (overlay.source_identity?`<br><small style="overflow-wrap:anywhere">${updateText("Platform support source","平台支持来源")}: ${esc(overlay.source_identity)}</small>`:"")+
+    (pins?`<br><small>${esc(pins)}</small>`:"")+
+    (overlay.setup_reverification_required?`<div class="finding WARN">${updateText("Setup must be verified again for the combined KI and Windows recipe. This library update does not verify model installation or scientific results.","组合后的 KI 与 Windows 安装配方需要重新验证安装。本次库更新不代表模型安装或科学结果已通过验证。")}</div>`:"")+"</div>";
+}
+function updateValidationFailure(failure){
+  if(!failure||typeof failure!=="object")return "";
+  const findings=Array.isArray(failure.findings)?failure.findings.filter(row=>row&&typeof row==="object"):[];
+  const files=Array.isArray(failure.portability_files)?failure.portability_files.filter(row=>row&&typeof row==="object"):[];
+  const blockers=findings.filter(row=>row.severity==="BLOCK").length;
+  const value=(en,zh,text)=>text===undefined||text===null||text===""?"":`<div><b>${updateText(en,zh)}:</b> <code>${esc(text)}</code></div>`;
+  const identity=value("Candidate commit","候选提交",failure.source_commit)+value("Check stage","检查阶段",failure.stage)+
+    value("Quarantined candidate","隔离的候选文件",failure.quarantine_path)+value("Full report file","完整报告文件",failure.report_path)+
+    value("Evidence retention issue","诊断证据保留问题",failure.evidence_error)+
+    value("Archive SHA-256","归档 SHA-256",failure.archive_sha256)+value("Source content SHA-256","源内容 SHA-256",failure.source_content_sha256)+
+    value("Candidate content SHA-256","候选内容 SHA-256",failure.candidate_content_sha256)+
+    value("Candidate overlay digest","候选补充层摘要",failure.windows_overlay?.overlay_id)+
+    value("Candidate platform support source","候选平台支持来源",failure.windows_overlay?.source_identity);
+  const rows=findings.map(row=>`<div class="update-detail"><b>${esc(row.severity)} · ${esc(row.ki)} · ${esc(row.check)}</b><div style="white-space:pre-wrap">${esc(row.detail)}</div>`+
+    (row.count>1?`<small>${updateText("Reported occurrences","报告中的出现次数")}: ${esc(row.count)}</small>`:"")+"</div>").join("");
+  const paths=files.map(row=>`<details class="update-detail"><summary>${esc(row.ki)} · <code>${esc(row.path)}</code></summary>`+
+    value("File SHA-256","文件 SHA-256",row.sha256)+(Array.isArray(row.matches)?row.matches:[]).filter(match=>match&&typeof match==="object").map(match=>
+      `<div>${updateText("Line","行")} ${esc(match.line)} · ${updateText("role","角色")} <code>${esc(match.role)}</code> · <code>${esc(match.path)}</code></div>`).join("")+"</details>").join("");
+  return `<details class="update-detail" style="overflow-wrap:anywhere"><summary><b>${failure.activated===false?updateText("Inactive candidate diagnostics","未启用候选版本的诊断"):updateText("Candidate diagnostics","候选版本诊断")}</b> · ${blockers} ${updateText("blocking package findings","项阻塞性软件包检查结果")}</summary>`+
+    (failure.activated===false?`<p>${updateText("This candidate was not activated; the active component sources above are unchanged. These static package findings do not establish that model execution failed.","此候选版本未启用；上方当前组件来源保持不变。这些静态软件包检查结果不代表模型运行失败。")}</p>`:"")+
+    (failure.error?`<div style="white-space:pre-wrap">${esc(failure.error)}</div>`:"")+identity+
+    `<details class="update-detail"><summary>${updateText("All package findings","全部软件包检查结果")} (${findings.length})</summary>${rows||updateText("No structured findings were recorded for this failure.","本次失败未记录结构化检查结果。")}</details>`+
+    `<details class="update-detail"><summary>${updateText("Files and path roles","文件与路径角色")} (${files.length})</summary>${paths||updateText("No portability file matches were recorded.","未记录可移植性文件匹配结果。")}</details></details>`;
+}
+function updateReferenceCases(cases){
+  if(!cases||typeof cases!=="object")return "";
+  const count=key=>Number.isInteger(cases[key])&&cases[key]>=0?cases[key]:0;
+  const configurable=count("configurable_path_count"),historical=count("historical_path_count"),bindings=count("runtime_binding_metadata_count");
+  if(!configurable&&!historical&&!bindings)return "";
+  const warnings=Array.isArray(cases.warnings)?cases.warnings.filter(row=>row&&typeof row==="object"):[];
+  return `<div class="update-detail"><b>${updateText("Active reference-case portability","当前参考案例的可移植性")}</b><br>`+
+    `${configurable} ${updateText("configurable paths","项可配置路径")} · ${historical} ${updateText("historical paths","项历史记录路径")} · ${bindings} ${updateText("runtime-binding metadata entries","项运行绑定元数据")}`+
+    `<p>${updateText("Static classification only. Native executables still need explicit bindings and the reference cases must be run before claiming native verification.","这里只完成静态分类。仍需明确绑定本机模型程序，并实际运行参考案例后，才能确认本机验证通过。")}</p>`+
+    (cases.native_verification==="not_performed"?`<b>${updateText("Native reference runs: not performed by this update.","本次更新尚未执行本机参考案例。")}</b>`:"")+
+    updateNames(updateText("Affected KIs","涉及的 KI"),Array.isArray(cases.affected_kis)?cases.affected_kis:[])+
+    (warnings.length?`<details><summary>${updateText("Reference-case findings","参考案例检查结果")} (${warnings.length})</summary>${warnings.map(row=>`<div class="update-detail"><b>${esc(row.ki)} · ${esc(row.check)}</b><div style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.detail)}</div></div>`).join("")}</details>`:"")+"</div>";
+}
+function drawKiUpdate(){
+  const u=KIUPDATE||{},checking=u.state==="checking",disabled=u.state==="disabled",inProgress=checking||KIUPDATE_STARTING;
+  const issue=KIUPDATE_STATUS_ERROR||KIUPDATE_ACTION_ERROR||KIUPDATE_VIEW_ERROR;
+  const route=u.network_route?` · ${updateText("route","线路")}: ${u.network_route==="direct"?updateText("direct","直连"):u.network_route}`:"";
+  $("#kiupdatelabel").textContent=disabled?updateText("Updates unavailable","更新不可用"):issue?updateText("Update issue","更新问题"):
+    checking||KIUPDATE_STARTING?updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):
+    u.state==="error"?updateText("Update issue","更新问题"):u.state==="kept"?updateText("Library kept","已保留当前库"):updateText("KI updates","KI 更新");
+  const notice=(title,detail)=>detail?`<div class="finding WARN"><b>${esc(title)}</b> · ${esc(detail)}</div>`:"";
+  $("#updatesummary").innerHTML=notice(updateText("Could not read current status; the last recorded status is shown.","无法读取当前状态；下方显示上次记录。"),KIUPDATE_STATUS_ERROR)+
+    notice(updateText("Could not start the update check","无法启动更新检查"),KIUPDATE_ACTION_ERROR)+
+    notice(updateText("Could not refresh the library view","无法刷新 KI 库视图"),KIUPDATE_VIEW_ERROR)+
+    `<b>${esc(KIUPDATE_STARTING?updateText("Starting the update check…","正在启动更新检查……"):updateSummary(u))}</b><br><small>${esc(u.branch||"")}${u.checked_at?` · ${inProgress?updateText("Previous check: ","上次检查："):""}${esc(when(u.checked_at))}`:""}${u.source_commit?` · ${inProgress?updateText("Previous checked commit: ","上次检查的提交："):updateText("Checked commit: ","已检查的提交：")}${esc(String(u.source_commit).slice(0,12))}`:""}${esc(route)}</small>`;
+  const changes=(u.changes||[]).map(row=>`<div class="update-detail"><b>${esc(row.name)}</b>${updateNames(updateText("Added files","新增文件"),row.added_files)}${updateNames(updateText("Changed files","更新文件"),row.updated_files)}${updateNames(updateText("Removed files","移除文件"),row.removed_files)}</div>`).join("");
+  const disabledReason=u.reason||u.summary||updateText("Open GeoForge Desktop with its KI updater enabled.","请使用启用了 KI 更新功能的 GeoForge Desktop。");
+  $("#updatedetails").innerHTML=(disabled?`<div class="finding WARN"><b>${updateText("Updater disabled","更新功能未启用")}</b> · ${esc(disabledReason)}<br>${updateText("This session cannot start an update check.","本次服务无法启动更新检查。")}</div>`:"")+
+    updateWindowsOverlay(u.windows_overlay)+updateComponents(u.components)+updateReferenceCases(u.reference_cases)+(inProgress?"":
+    notice(updateText("Current library kept safely","已安全保留当前 KI 库"),u.error)+
+    updateValidationFailure(u.validation_failure)+
+    updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+
+    (u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:""));
+  $("#updatescope").textContent=updateText("GeoForge updates model and data KIs, shared tools, and installation manifests from the official repository. It does not change chat projects, input data, installed model binaries, verification history, or KIs you imported yourself. A downloaded snapshot becomes active only after deterministic package checks pass.","GeoForge 从官方仓库更新模型 KI、数据 KI、共享工具和安装清单。更新不会更改聊天项目、输入数据、已安装的模型程序、验证历史或自行导入的 KI。下载的快照通过确定性软件包检查后才会启用。");
+  $("#updateretry").disabled=checking||disabled||KIUPDATE_STARTING;
+  $("#updateretry").textContent=disabled?updateText("Unavailable","不可用"):KIUPDATE_STARTING?updateText("Starting…","正在启动……"):checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");
+  $("#updateretry").title=disabled?disabledReason:"";
+  $("#updatesource").href=safeUrl(u.source_url)||"#";
+}
+async function kiUpdateJSON(url,options){
+  const response=await fetch(url,options),data=await response.json().catch(()=>null);
+  if(!response.ok)throw new Error(data?.error||`${updateText("Request failed","请求失败")} (${response.status})`);
+  if(!data||typeof data!=="object")throw new Error(updateText("Invalid update response","更新响应格式无效"));
+  return data;
+}
+function scheduleKiUpdatePoll(){
+  clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=null;
+  if(!KIUPDATE_STARTING&&KIUPDATE?.state!=="disabled"&&
+      (KIUPDATE?.state==="checking"||KIUPDATE_STATUS_ERROR||KIUPDATE_VIEW_ERROR))
+    KIUPDATE_TIMER=setTimeout(()=>loadKiUpdate(false),KIUPDATE_STATUS_ERROR||KIUPDATE_VIEW_ERROR?3000:1000);
+}
+async function loadKiUpdate(open=false){
+  if(open)$("#updatemodal").classList.add("open");
+  if(KIUPDATE_STARTING)return;
+  const sequence=++KIUPDATE_SEQUENCE;clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=null;
+  try{
+    const status=await kiUpdateJSON("/api/ki-updates",{cache:"no-store"});
+    if(sequence!==KIUPDATE_SEQUENCE)return;
+    if(typeof status.state!=="string")throw new Error(updateText("Missing KI update state","缺少 KI 更新状态"));
+    KIUPDATE=status;KIUPDATE_STATUS_ERROR="";drawKiUpdate();
+    const revision=status.active_revision||"";
+    if(revision&&revision!==KIUPDATE_REVISION){
+      try{
+        const [models,verification]=await Promise.all([kiUpdateJSON("/api/models"),kiUpdateJSON("/api/status")]);
+        if(sequence!==KIUPDATE_SEQUENCE)return;
+        if(!Array.isArray(models)||Array.isArray(verification))throw new Error(updateText("Invalid library response","KI 库响应格式无效"));
+        MODELS=models;STATUS=verification;drawList();drawDetails([...SEL][0]);drawSetup();
+        KIUPDATE_REVISION=revision;KIUPDATE_VIEW_ERROR="";
+      }catch(error){if(sequence!==KIUPDATE_SEQUENCE)return;KIUPDATE_VIEW_ERROR=error.message||String(error);}
+    }else KIUPDATE_VIEW_ERROR="";
+  }catch(error){if(sequence!==KIUPDATE_SEQUENCE)return;KIUPDATE_STATUS_ERROR=error.message||String(error);}
+  if(sequence===KIUPDATE_SEQUENCE){drawKiUpdate();scheduleKiUpdatePoll();}
+}
+async function checkKiUpdate(){
+  if(KIUPDATE_STARTING||KIUPDATE?.state==="checking"||KIUPDATE?.state==="disabled")return;
+  KIUPDATE_STARTING=true;KIUPDATE_SEQUENCE++;clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=null;
+  KIUPDATE_ACTION_ERROR="";drawKiUpdate();
+  try{
+    const result=await kiUpdateJSON("/api/ki-updates/check",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    if(typeof result.state!=="string")throw new Error(updateText("Missing KI update state","缺少 KI 更新状态"));
+    KIUPDATE=result;KIUPDATE_STATUS_ERROR="";
+  }catch(error){KIUPDATE_ACTION_ERROR=error.message||String(error);}
+  finally{KIUPDATE_STARTING=false;drawKiUpdate();}
+  // Refresh even after a rejected request: the updater may have become unavailable.
+  // Keep the POST error visible instead of silently replacing it with an idle report.
+  await loadKiUpdate(false);
+}
 
 function drawList(){
   const q=$("#q").value.toLowerCase();
   const rows=MODELS.filter(m=>!q||(m.name+" "+(m.reference||"")+" "+(m.language||"")).toLowerCase().includes(q));
   const verified=MODELS.filter(m=>(STATUS[m.name]||{}).state==="verified").length;
-  $("#count").textContent=`${rows.length} of ${MODELS.length} KIs · ${verified} verified here`;
+  const dataKis=MODELS.filter(m=>m.package_role==="data_reader").length;
+  $("#count").textContent=`${rows.length} of ${MODELS.length} KIs${dataKis?` · ${dataKis} ${updateText("data KIs","数据 KI")}`:""} · ${verified} verified here`;
   $("#nprov").textContent=`${verified} verified`;
   $("#list").innerHTML=rows.map(m=>`
     <div class="item ${SEL.has(m.name)?'on':''}" data-n="${esc(m.name)}">
       <span class="tick"></span>
       <div class="tx">
         <div class="nm"><span class="dot ${stateClass(m.name)}" title="${esc(stateTitle(m.name))}"></span>${esc(m.name)}</div>
-        <div class="sub">${esc(m.reference||m.language||"Knowledge Infrastructure")}</div>
+        <div class="sub">${m.package_role==="data_reader"?esc(updateText("Data KI","数据 KI"))+" · ":""}${esc(m.reference||m.language||"Knowledge Infrastructure")}</div>
       </div>
     </div>`).join("");
   document.querySelectorAll(".item").forEach(e=>e.onclick=()=>selectKI(e.dataset.n));
@@ -574,7 +718,7 @@ $("#importconfirm").onclick=async()=>{
 $("#importcancel").onclick=()=>{$("#importmodal").classList.remove("open");PENDING_IMPORT=null;$("#importfile").value="";};
 $("#kiupdates").onclick=()=>loadKiUpdate(true);
 $("#updateclose").onclick=()=>$("#updatemodal").classList.remove("open");
-$("#updateretry").onclick=async()=>{await fetch("/api/ki-updates/check",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await loadKiUpdate(false)};
+$("#updateretry").onclick=checkKiUpdate;
 $("#updatenetwork").onclick=async()=>{$("#updatemodal").classList.remove("open");await openSettings()};
 $("#envcheck").onclick=async()=>{
   const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";

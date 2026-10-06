@@ -54,6 +54,7 @@ class Capability(str, Enum):
     READ_PROJECT = "read_project"
     WRITE_PLAN_FILES = "write_plan_files"     # runs/plan.json + runs/data-inventory.json only
     WRITE_CALIBRATION_ADAPTER = "write_calibration_adapter"  # two selected-KI adapter files, never execution
+    WRITE_PROJECT_DATA_TOOL = "write_project_data_tool"  # reviewable local source, no execution
     WRITE_PROJECT = "write_project"           # inputs/, runs/ (except protected), outputs/, artifacts/
     DOWNLOAD = "download"
     COMPILE = "compile"
@@ -75,7 +76,7 @@ _R = {Capability.READ_KI, Capability.READ_PROJECT}
 ALLOWED: dict[State, frozenset[Capability]] = {
     State.NEW: frozenset(_R),
     State.RESOLVING_KIS: frozenset(_R),
-    State.PLANNING: frozenset(_R | {Capability.WRITE_PLAN_FILES, Capability.WRITE_CALIBRATION_ADAPTER}),
+    State.PLANNING: frozenset(_R | {Capability.WRITE_PLAN_FILES, Capability.WRITE_CALIBRATION_ADAPTER, Capability.WRITE_PROJECT_DATA_TOOL}),
     State.PLAN_REVIEW: frozenset(_R),
     State.WAITING_FOR_USER: frozenset(_R),
     State.APPROVED: frozenset(_R),
@@ -87,7 +88,7 @@ ALLOWED: dict[State, frozenset[Capability]] = {
     State.BLOCKED: frozenset(_R),
     State.FAILED: frozenset(_R),
     State.FAILED_VALIDATION: frozenset(_R | {Capability.PLOT}),
-    State.REPLAN_REQUIRED: frozenset(_R | {Capability.WRITE_PLAN_FILES, Capability.WRITE_CALIBRATION_ADAPTER}),
+    State.REPLAN_REQUIRED: frozenset(_R | {Capability.WRITE_PLAN_FILES, Capability.WRITE_CALIBRATION_ADAPTER, Capability.WRITE_PROJECT_DATA_TOOL}),
     State.SETUP_REQUIRED: frozenset(_R),
     State.SETUP_RUNNING: frozenset(_R | {Capability.RUN_SETUP, Capability.COMPILE}),
     State.SETUP_VERIFIED: frozenset(_R),
@@ -137,6 +138,7 @@ _MOVES: dict[tuple[State, str], tuple[State, str | None]] = {
     (State.EXECUTING, "replan"): (State.REPLAN_REQUIRED, None),
     (State.EXECUTING, "error"): (State.FAILED, None),
     (State.VERIFYING, "validated"): (State.COMPLETED, "evidence"),
+    (State.COMPLETED, "replan"): (State.REPLAN_REQUIRED, None),
     (State.VERIFYING, "validation_failed"): (State.FAILED_VALIDATION, None),
     # a rerun goes back through APPROVED so the setup gate and the current-approval check
     # apply again (codex review #7): FAILED* -> APPROVED (approval OK) -> EXECUTING (setup)

@@ -1,0 +1,10 @@
+{
+  "fixture_kind": "SYNTHETIC format regression; not real observations",
+  "header": ["Station", "date", "latitude", "longitude", "soil temp(°C)"],
+  "station": "Synthetic station",
+  "start_date": "2020-02-29",
+  "hour_count": 24,
+  "latitude_raw": "45.250000",
+  "longitude_raw": "-71.800000",
+  "temperature_C_raw": "1.2500"
+}

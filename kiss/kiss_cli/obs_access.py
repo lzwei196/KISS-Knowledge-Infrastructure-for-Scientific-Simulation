@@ -88,6 +88,10 @@ ERROR_MESSAGES = {
     "unsafe_archive": "The downloaded archive contains an unsafe path.",
     "secret_store_unavailable": "The system password store is unavailable on this machine.",
     "server_unavailable": "GeoForge Database server or gateway is unavailable.",
+    "manual_delivery_unavailable": (
+        "The server did not offer the selected manual delivery. No file was downloaded; "
+        "keep the Baidu preference and review the available delivery options."
+    ),
     "unknown_variable": (
         "The server rejected an unknown source variable. Read the dataset schema with "
         "describe_dataset_id (CLI: --describe DATASET_ID), then submit a revised estimate "
@@ -101,6 +105,17 @@ ERROR_MESSAGES = {
 }
 
 DATA_DISCOVERY_RULES = (
+    "Honor an explicit Baidu Pan/manual delivery preference by setting "
+    "delivery_preference:'manual' on runs/data-inventory.json, or on an individual "
+    "item to override the inventory preference. The default is 'auto'. Manual means "
+    "use a real catalogue/resolver record whose delivery is manual; it does not "
+    "invent a Baidu share or change the chosen source, native cadence or scientific "
+    "requirements. Resolve exact delivery IDs, list all required variable/year files, "
+    "their total size and actual extent, and plan the KI's local preparation. Manual "
+    "delivery needs no clip estimate and must not be converted automatically into a "
+    "server clip. Never pin a whole-product parent or combine manual preference with "
+    "an acquisition_id or delivery:'subset'. If manual delivery is unavailable, report "
+    "that limitation instead of switching delivery.\n"
     "After catalogue discovery, inspect each candidate's live source schema using "
     "describe_dataset (API) or the provided Desktop database "
     "command with --describe DATASET_ID. Catalogue variable labels can differ from "
@@ -112,8 +127,8 @@ DATA_DISCOVERY_RULES = (
     "raster bands may be informational rather than selectable. Do not invent a "
     "member/band selector. An empty variables list explicitly requests all fields; "
     "never use it to bypass an unknown-variable error.\n"
-    "Catalogue discovery is not live delivery verification (API: search_catalogue, then "
-    "describe_dataset, then estimate_clip). A matching record (even "
+    "Catalogue discovery is not live delivery verification. For server clips, use "
+    "search_catalogue, then describe_dataset, then estimate_clip. A matching record (even "
     "from a fresh catalogue) does not prove that server clipping works now. Before "
     "offering a server-subset download for approval, obtain a read-only subset estimate "
     "for the exact dataset, bbox, dates and native variables. Quote output bytes, part "
@@ -130,6 +145,14 @@ DATA_DISCOVERY_RULES = (
     "estimate, re-estimates it before the card, and starts the server job when the user approves "
     "the plan. There is no separate data approval. State inspection-only or all-member scope in "
     "the item's notes.\n"
+    "For SHAW, CRHM or VIC server input preparation, inspect a separate read-only KI plan "
+    "with estimate_preparation (CLI helper: --prepare-request REQUEST.json). State the "
+    "consuming model/KI step, source, output mode, dates and site/grid explicitly. Review "
+    "source cadence, planned transformations, outputs and every blocker. A preparation "
+    "estimate creates no job/download and proves no input readiness. Its preparation_id "
+    "is not an acquisition_id and must not be inserted as one in the raw data inventory. "
+    "Prepared job acquisition is not enabled in this client yet; never substitute raw data "
+    "or run a converter twice to bypass an unsupported preparation response.\n"
     "Search each required data category separately. This is lexical catalogue search, "
     "not semantic question answering: all query words must match. Use bbox for location "
     "and separate date/variable filters; national/global products need not name the town. "
@@ -418,7 +441,7 @@ class Client:
         return self._json("/resolve?" + urllib.parse.urlencode({k: v for k, v in params.items() if v}))
 
     def download(self, dataset_id: str, project: Path, *,
-                 destination: str | None = None) -> dict:
+                 destination: str | None = None, manual_only: bool = False) -> dict:
         dataset_id = str(dataset_id).strip()
         if not dataset_id:
             raise ObsAccessError("invalid_dataset", "A dataset id is required.")
@@ -444,12 +467,20 @@ class Client:
                     content_type = (response.headers.get("Content-Type") or "").lower()
                     if "json" in content_type:
                         payload = json.loads(response.read().decode("utf-8"))
+                        if not isinstance(payload, dict):
+                            raise ObsAccessError("manual_delivery_unavailable" if manual_only else "invalid_response")
                         if payload.get("served") is False:
                             return {**payload, "ok": True, "served": False,
                                     "dataset_id": dataset_id,
                                     "destination": str(target)}
+                        if manual_only:
+                            raise ObsAccessError("manual_delivery_unavailable")
                         raise ObsAccessError("invalid_response")
 
+                    if manual_only:
+                        # A preference is not permission for a different transport.
+                        # Check headers before reading any binary payload or writing it.
+                        raise ObsAccessError("manual_delivery_unavailable")
                     content_length = response.headers.get("Content-Length")
                     if content_length and int(content_length) > MAX_SERVED_BYTES:
                         raise ObsAccessError(
@@ -940,7 +971,7 @@ def local_search(records: list[dict], *, q: str = "", bbox=None, start=None, end
         "acquisition_evidence": {
             "catalogue_only": True, "live_delivery": "not_checked",
             "subset_estimate": "not_checked", "model_ready": False,
-            "next_action": "request_exact_subset_estimate_before_acquisition_approval",
+            "next_action": "inspect_native_schema_and_select_delivery_route",
         },
         "total": len(scored),
         "offset": offset,
@@ -1206,6 +1237,11 @@ def _fuzzy_id(text: str, by_id: dict) -> str | None:
 
 
 def _pinned_id(item: dict, by_id: dict) -> str | None:
+    # A replan may reuse an already acquired local file under a dataset-like
+    # inventory name. Its name must not silently request another acquisition.
+    # An explicit dataset_id still takes precedence and is validated normally.
+    if not item.get("dataset_id") and item.get("chosen_source") == "existing_local":
+        return None
     # The item id itself is often the catalogue id (agents name items after datasets).
     candidates = [item.get("dataset_id"), item.get("chosen_source"), item.get("id")]
     for raw in candidates:
@@ -1224,6 +1260,34 @@ def _pinned_id(item: dict, by_id: dict) -> str | None:
     return None
 
 
+def delivery_preference(value: dict, *, default: str = "auto") -> str:
+    """Resolve an explicit item override without materializing an inherited default."""
+    preference = value.get("delivery_preference", default)
+    if not isinstance(preference, str) or preference not in ("auto", "manual"):
+        raise ValueError("delivery_preference must be 'auto' or 'manual'")
+    return preference
+
+
+def delivery_preference_errors(inventory: dict) -> list[str]:
+    """Check every preference/clip conflict before any discovery or remote estimate."""
+    try:
+        default = delivery_preference(inventory or {})
+    except ValueError as error:
+        return [f"inventory: {error}"]
+    errors = []
+    for item in (inventory or {}).get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            preference = delivery_preference(item, default=default)
+            if preference == "manual" and (item.get("acquisition_id") or item.get("delivery") == "subset"):
+                raise ValueError("manual delivery preference conflicts with acquisition_id or delivery 'subset'; "
+                                 "select an actual manual delivery record and remove the clip selection")
+        except ValueError as error:
+            errors.append(f"item {item.get('id')!r}: {error}")
+    return errors
+
+
 def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: Path | None = None) -> list[str]:
     """Attach catalogue facts to every inventory item pinned to a dataset id.
 
@@ -1233,7 +1297,10 @@ def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: 
     not contain is an error returned to the agent; nothing is invented.
     Without a catalogue copy the inventory is left untouched.
     """
-    errors = []
+    errors = delivery_preference_errors(inventory)
+    if errors:
+        return errors
+    default_preference = delivery_preference(inventory or {})
     regular_items = []
     for item in (inventory or {}).get('items') or []:
         if not isinstance(item, dict):
@@ -1275,6 +1342,15 @@ def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: 
         pinned = _pinned_id(item, by_id)
         if not pinned:
             continue
+        preference = delivery_preference(item, default=default_preference)
+        if pinned in subsets and preference == "manual":
+            errors.append(
+                f"item {item.get('id')!r}: {pinned} is a whole-product parent and cannot be "
+                "selected for manual delivery. Use search_catalogue with parent_id to resolve "
+                "exact delivery child IDs, or select a real pre-cut regional record that covers "
+                "the study. List every required file, total download size, actual extent and "
+                "local preparation before approval; never construct child IDs.")
+            continue
         if pinned in subsets and project is not None:
             # A whole product is only usable as a server clip. The host joins the
             # item to the agent's estimate for this study area; the agent need
@@ -1299,6 +1375,13 @@ def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: 
             continue
         child = CHILD_ID.match(pinned)
         record = by_id[pinned]
+        if preference == "manual" and record.get("delivery") != "manual":
+            errors.append(
+                f"item {item.get('id')!r}: manual delivery is unavailable or unconfirmed for "
+                f"{pinned}; the selected catalogue/resolver record does not declare delivery 'manual'. "
+                "Keep the user's preference and select a real manual record or revise the choice; "
+                "no Baidu availability or replacement delivery is inferred.")
+            continue
         resolution = record.get("resolution") or {}
         if resolution.get("coverage_complete") is False or resolution.get("covers_requested_bbox") is False:
             errors.append(f"item {item.get('id')!r}: resolver reports missing variables/years or spatial coverage; revise the request before approval")
@@ -1307,7 +1390,7 @@ def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: 
         item["delivery"] = "manual" if child else record.get("delivery")
         item["catalogue"] = {k: record.get(k) for k in STAMP_FIELDS
                              if record.get(k) not in (None, "", [])}
-        if project is not None and not child:
+        if project is not None and not child and preference != "manual":
             # A study bbox on the item and a dataset that is manual or too big to
             # serve: try the server clip ourselves (read-only estimate). The agent
             # should not have to remember; the host decides from the facts.
@@ -1409,8 +1492,12 @@ def study_hint_block(records: list[dict], *texts: str, limit: int = 12) -> str:
              "A basin-name match is not a grid-specific download. Before choosing forcing data, "
              "determine the model grid cells or extent and query their bbox, required variables "
              "and period. Check actual spatial coverage and delivery granularity; bbox filtering "
-             "does not clip a file. Prefer matching grid/tile records or a verified clipping service "
-             "when available. If only basin-wide or national files exist, disclose their extent, "
+             "does not clip a file. Honor the user's delivery preference: persist "
+             "delivery_preference:'manual' in the inventory (or an overriding item) for Baidu Pan. "
+             "Use exact real manual delivery IDs and local KI preparation; no clip estimate is "
+             "required for manual delivery. With the default 'auto', prefer matching grid/tile "
+             "records or a verified clipping service when available. Do not change source or "
+             "native cadence to satisfy delivery preference. If only basin-wide or national files exist, disclose their extent, "
              "download size and required local extraction, and ask the user to choose before "
              "pinning that fallback. Never silently substitute a Huai basin package for grid data. "
              "'served' downloads automatically after approval; "

@@ -69,8 +69,11 @@ a = Analysis(
     binaries=[*trust_binaries, *netcdf_binaries, *calibration_binaries],
     datas=[
         (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
+        # Launched by the configured Python beside execution.__file__, outside PYZ.
+        (str(SOURCE / "kiss_cli" / "_project_data_worker.py"), "kiss_cli"),
         (str(REPO / "models"), "models"),
         (str(SOURCE / "system_kis"), "system_kis"),
+        (str(SOURCE / "data_kis"), "data_kis"),
         (str(REPO / "ki_tools_common"), "ki_tools_common"),
         (str(SOURCE / "vendor" / "agent-calibration-framework"),
          "agent-calibration-framework"),

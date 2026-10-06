@@ -312,6 +312,14 @@ def test_planning_block_uses_inspect_and_execution_block_uses_execute(tmp_path):
     eb = contracts.execution_block({"M": ki}, pj, a, tmp_path, "claude", {"run_tool": "kiss run-tool", "fetch": "kiss fetch"})
     assert "[STAGE GROUNDING — execute the carried plan; do not re-derive]" in eb
     assert "TOOLS (validated)" in eb and "NOT YOUR OWN JUDGE" in eb and "REPLAN_REQUIRED" in eb
+    api_eb = contracts.execution_block({"M": ki}, pj, a, tmp_path, "api")
+    for text in (pb, eb, api_eb):
+        assert "[RESULT LOCATIONS]" in text
+        assert "inputs/, outputs/, artifacts/ and runs/logs/" in text
+        assert "not collected as result evidence" in text
+        assert "Preserve earlier run evidence" in text
+        assert "calibration/runs/; preserve that destination" in text
+    assert "informational cross-platform hash" in pb
     short = contracts.execution_block({"M": ki}, pj, a, tmp_path, short=True)
     assert "STAGE GROUNDING" in short and "TOOLS (validated)" not in short
     ctx = FlowContext(project=tmp_path, state=State.EXECUTING)

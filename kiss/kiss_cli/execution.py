@@ -8,6 +8,7 @@ Local fixture processes can exercise the same interface without a provider.
 from __future__ import annotations
 
 import os
+import json
 import signal
 import subprocess
 import threading
@@ -471,7 +472,8 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
                     tool: Path, arguments: list[str], cwd: Path,
                     plan_step_id: str | None, python_tool: bool,
                     timeout: float | None = None, provider_id: str = "",
-                    stop=None, turn_id: str | None = None) -> ExecutionResult:
+                    stop=None, turn_id: str | None = None,
+                    project_data_tool: bool = False) -> ExecutionResult:
     """Attempt a KI tool once, then return outcome and receipt diagnostics.
 
     Permission failures raise FlowDenied before launch. After launch is attempted,
@@ -487,14 +489,23 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     if turn_id is None:
         turn_id = os.environ.get(TURN_ID_ENV) or current_turn_id(project) or None
     from ki_tools_common.flow.tools import is_ki_tool
-    if not is_ki_tool(ki_root, tool):
+    if not project_data_tool and not is_ki_tool(ki_root, tool):
         raise flowgate.FlowDenied("execution requires a shipped KI tool or declared model binary")
+    if project_data_tool and flow is None:
+        raise flowgate.FlowDenied("project data execution requires an approved Flow plan")
     if (cwd != project and project not in cwd.parents) or not cwd.is_dir():
         raise flowgate.FlowDenied("execution directory must exist inside the project")
     approved_env, approval_id = {}, None
     if flow is not None:
         approval_id = _fresh_approval(flow, project)
         step = flow.check_step_tool(plan_step_id, ki, tool)
+        if project_data_tool:
+            from . import project_data_tools
+            _, reviewed_args, reviewed_cwd, reviewed_timeout = project_data_tools.invocation(
+                flow, ki, tool, plan_step_id,
+                {"arguments": arguments, "cwd": cwd.relative_to(project).as_posix(), "timeout_seconds": timeout})
+            if not python_tool:
+                raise flowgate.FlowDenied("project data tools must be Python source, not native programs")
         # Help/version-only calls do not execute the approved scientific step.
         # Refuse them before launch instead of recording a failed attempt with
         # no outputs, which would supersede that step's successful execution.
@@ -527,11 +538,27 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     child_env = paths.with_python_runtime(cfg.python, child_env)
     from .calibration import with_framework_env
     child_env = with_framework_env(child_env)
-    if provider_id:
+    if provider_id and not project_data_tool:
         from .settings import with_provider_proxy
         child_env = with_provider_proxy(provider_id, child_env)
     child_env.update(approved_env)
     command = ([str(cfg.python), str(tool)] if python_tool else [str(tool)]) + list(arguments)
+    if project_data_tool:
+        try:
+            request = project_data_tools.worker_request(project, tool, step, flow.inventory or {}, arguments)
+        except (OSError, TypeError, ValueError) as exc:
+            raise flowgate.FlowDenied(str(exc)) from exc
+        # No provider proxy, model environment, credential variables or Desktop
+        # module path reaches the isolated-stdlib data worker. These guards are
+        # accident prevention around trusted reviewed source, not an OS sandbox.
+        keep = {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP", "LANG", "LC_ALL"}
+        child_env = {key: value for key, value in os.environ.items() if key.upper() in keep}
+        child_env = turn_environment(project, turn_id=turn_id, env=child_env)
+        worker = Path(__file__).with_name("_project_data_worker.py")
+        encoded_request = json.dumps(request, ensure_ascii=False)
+        if len(encoded_request) > 20000:
+            raise flowgate.FlowDenied("project data invocation is too large; select fewer precise input files")
+        command = [str(cfg.python), "-I", "-S", str(worker), str(tool), encoded_request]
     before = flowgate._snapshot(project) if flow is not None else None
     if flow is not None and (flow.approval_status() != "OK" or approval_id !=
                             flow.flow.approval.approval_id(flow.flow.approval.read(project))):
@@ -555,7 +582,8 @@ def execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
                 stdout_tail=(output + ("\n" + detail if detail else ""))[-20000:],
                 expected_approval_sha256=approval_id,
                 execution_status=status, process_started=run.process_started,
-                input_arguments=list(arguments))
+                data_input_files=request["input_files"] if project_data_tool else None,
+                input_arguments=list(arguments) + (request["input_files"] if project_data_tool else []))
         except Exception as exc:
             receipt_error = str(exc) or type(exc).__name__
     return ExecutionResult(status, exit_code, output, receipt, receipt_error, detail, timeout)

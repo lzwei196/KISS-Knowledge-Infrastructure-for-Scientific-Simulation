@@ -1,0 +1,35 @@
+schema_version: "1.0"
+kind: data_reader_contract
+input:
+  format: five-column yearly CSV
+  columns: [Station, date, latitude, longitude, soil temperature]
+  accepted_temperature_headers: ["soil temp (°C)", "soil temp(°C)"]
+  encoding: strict UTF-8-sig when header decodes; otherwise strict CP1252
+  schema_checks: exact header and every row width, including other stations
+  station_match: exact native text
+  date_format: "%Y-%m-%d %H:%M:%S"
+  selection: inclusive native calendar dates; all supplied files scanned to EOF
+  units: degC from explicit CSV header; no conversion
+  timezone: unknown; naive timestamps retained
+  nominal_depth: 0.1 m only if all filenames start soilTemp10cm_; no sensor-depth field
+  qc_fields: absent; finite values do not assert field QC
+output:
+  observations.csv:
+    fields: [station, timestamp_native, latitude_raw, longitude_raw, soil_temperature_C_raw, source_file, source_csv_record, value_status]
+    policy: native field texts retained, including missing/nonfinite/non-numeric values; no interpolation or resampling
+  excluded_selected_records.csv:
+    optional: true
+    reasons: [outside_requested_period, unparseable_native_timestamp]
+    policy: preserve all target-station excluded rows and their original fields
+  audit.json:
+    content: reader/source/output hashes and bytes, per-file headers and encodings, complete hourly gap ranges, duplicate and off-hour records, coordinate counts, invalid values, excluded counts, units/time/depth limitations
+    expected_grid: hourly native wall-clock labels; not a UTC or DST assertion
+    suspected_sentinels: flagged but not replaced; no source sentinel definition is supplied
+    status: extracted or review_required; neither asserts scientific QC
+    model_executed: false
+errors:
+  exit_2: invalid arguments, unsupported header/units, malformed row, undecodable source, no selected records, changed input, existing output directory or I/O failure
+integrity:
+  raw_files: unchanged; SHA256 checked before and after extraction
+  output_directory: new and outside directory sources
+  missing_fields: do not invent weather, moisture, snow, quality flags, timezone or site properties

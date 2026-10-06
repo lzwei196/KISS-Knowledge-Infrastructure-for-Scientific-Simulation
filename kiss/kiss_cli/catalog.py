@@ -28,6 +28,13 @@ def installation_platform() -> str:
         sys.platform, "linux" if sys.platform.startswith("linux") else "")
 
 
+def bundled_data_dir() -> Path | None:
+    """Data KIs travel with Desktop independently of the 127 model packages."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    root = base / "data_kis"
+    return root if root.is_dir() else None
+
+
 @dataclass
 class KI:
     """One knowledge-infrastructure package on disk."""
@@ -111,15 +118,27 @@ class KI:
         doc = self.dag_doc
         ident = doc.get("identity") or {}
         impl = ident.get("implementation") or {}
+        package = {}
+        if not doc and yaml is not None:
+            protocol = self.root / "knowledge_infrastructure.yaml"
+            if protocol.is_file():
+                try:
+                    declared = yaml.safe_load(protocol.read_text(encoding="utf-8")) or {}
+                    candidate = declared.get("package") if isinstance(declared, dict) else None
+                    package = candidate if isinstance(candidate, dict) else {}
+                except (OSError, ValueError, yaml.YAMLError):
+                    pass
         return {
             "model_id": ident.get("model_id") or self.name,
-            "language": ident.get("language"),
-            "license": ident.get("license"),
-            "repo_url": ident.get("repo_url"),
-            "version": impl.get("version"),
-            "impl_id": impl.get("id"),
-            "ki_class": ident.get("ki_class"),
-            "reference": ident.get("scientific_reference_version"),
+            "language": ident.get("language") or package.get("language"),
+            "license": ident.get("license") or package.get("license"),
+            "repo_url": ident.get("repo_url") or package.get("repo_url"),
+            "version": impl.get("version") or package.get("version"),
+            "impl_id": impl.get("id") or package.get("implementation"),
+            "ki_class": ident.get("ki_class") or package.get("role"),
+            "reference": ident.get("scientific_reference_version") or package.get("description"),
+            "package_kind": package.get("kind") or "process_model",
+            "package_role": package.get("role"),
             "spatial": (doc.get("boundary") or {}).get("spatial"),
             "temporal": (doc.get("boundary") or {}).get("temporal"),
         }
@@ -199,9 +218,11 @@ class Catalog:
     substitution the user never sees.
     """
 
-    def __init__(self, models_dir: Path, user_dir: Path | None = None):
+    def __init__(self, models_dir: Path, user_dir: Path | None = None,
+                 data_dir: Path | None = None):
         self.models_dir = Path(models_dir).resolve()
         self.user_dir = Path(user_dir).resolve() if user_dir else None
+        self.data_dir = Path(data_dir).resolve() if data_dir else None
         if not self.models_dir.is_dir():
             raise NotADirectoryError(f"no models directory at {self.models_dir}")
 
@@ -243,7 +264,7 @@ class Catalog:
             seen.add(cand)
             m = cand / "models"
             if m.is_dir() and any(m.glob("*/SKILL.md")):
-                return cls(m)
+                return cls(m, data_dir=bundled_data_dir())
         raise FileNotFoundError(
             "could not find the KI packages (a models/ directory with SKILL.md "
             "files). Download kiss-ki-packages.tar.gz from the release, extract "
@@ -254,7 +275,9 @@ class Catalog:
     @cached_property
     def packages(self) -> dict[str, KI]:
         out: dict[str, KI] = {}
-        roots = [self.models_dir] + ([self.user_dir] if self.user_dir and self.user_dir.is_dir() else [])
+        roots = ([self.models_dir]
+                 + ([self.data_dir] if self.data_dir and self.data_dir.is_dir() else [])
+                 + ([self.user_dir] if self.user_dir and self.user_dir.is_dir() else []))
         for root in roots:
             for d in sorted(root.iterdir()):
                 if d.is_dir() and (d / "SKILL.md").exists() and d.name not in out:

@@ -1,0 +1,22 @@
+kiss_manifest_version: 1
+model: Agrometeo_Quebec_Observations
+binary_type: Python
+verified: unverified
+acquire:
+  strategy: bundled
+  produces: tools/read_observations.py
+python_script:
+  implementation_id: geoforge-agrometeo-soil-temperature-reader
+  path: tools/read_observations.py
+  sha256: b7b21a335b9e16d4a4b06d849610be05c839e38c914fc044b07018d1ad530d84
+python_deps: []
+notes: >-
+  First-party data reader, not a scientific model or upstream executable.
+  Uses the configured workspace Python 3.11+ venv and standard library only.
+  Source hash, runtime imports and --help must pass before tool admission.
+  Observations are acquired separately; no raw archive is bundled.
+agent_hint: >-
+  Use the bundled tools/read_observations.py without replacing it.
+  Configure a workspace Python 3.11+ venv; no pip package or native-model download
+  is needed. Run preflight_check.py for actual standard-library imports and help.
+  Reading data requires a separate approved check or prepare step and fresh output directory.

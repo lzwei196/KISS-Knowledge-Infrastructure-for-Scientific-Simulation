@@ -347,6 +347,37 @@ def _case_files(project: Path, limit: int = 200) -> list[dict]:
     return files
 
 
+def _recorded_count(value) -> int | None:
+    """A missing execution count is unknown, not zero or an optimizer estimate."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _objective_checks(holdout: dict | None) -> list[dict]:
+    """Expose saved gate evidence without reconstructing criteria from today's engine.
+
+    Older reports only record the generic magnitude backstop when it fails.
+    Absence of a threshold therefore means unrecorded, not that no absolute
+    criterion was applied. Preserve each original comparison alongside this
+    explicit availability marker.
+    """
+    checks = holdout.get("per_objective") if isinstance(holdout, dict) else None
+    if not isinstance(checks, list):
+        return []
+    out = []
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        criterion = {"available": None, "source": None, "max_loss": None}
+        for key in ("band_ceiling", "mag_backstop"):
+            value = item.get(key)
+            if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value) and value >= 0):
+                criterion = {"available": True, "source": key, "max_loss": value}
+                break
+        out.append({**item, "absolute_criterion": criterion})
+    return out
+
+
 def _run_summaries(project: Path, limit: int = 20) -> list[dict]:
     root = Path(project).resolve() / "calibration" / "runs"
     found: list[tuple[float, dict]] = []
@@ -361,11 +392,17 @@ def _run_summaries(project: Path, limit: int = 20) -> list[dict]:
             report = report if isinstance(report, dict) else {}
             stat = report_path.stat()
             holdout = report.get("holdout")
+            train_metrics = report.get("train_metrics")
             found.append((stat.st_mtime, {
                 "run_id": str(payload.get("run_id") or report_path.parent.name),
                 "ki": payload.get("ki"),
                 "algorithm": report.get("algorithm") or payload.get("algorithm"),
                 "budget": payload.get("budget"),
+                "requested_optimizer_budget": _recorded_count(payload.get("budget")),
+                "optimizer_evaluations": _recorded_count(report.get("n_evaluations")),
+                # Never derive native launches from evaluations: probes, cache
+                # hits and holdout checks make these different quantities.
+                "native_launch_count": _recorded_count(report.get("native_launch_count")),
                 "seed": payload.get("seed"),
                 "status": report.get("status") or "unknown",
                 "promotable": report.get("promotable") is True,
@@ -373,7 +410,9 @@ def _run_summaries(project: Path, limit: int = 20) -> list[dict]:
                 "best_loss": report.get("best_loss"),
                 "best_params": report.get("best_params"),
                 "reason": report.get("reason"),
+                "train_metrics": train_metrics if isinstance(train_metrics, dict) else None,
                 "holdout": holdout if isinstance(holdout, dict) else None,
+                "objective_checks": _objective_checks(holdout),
                 "report_path": report_path.relative_to(project).as_posix(),
                 "log_path": (report_path.parent / "engine.log").relative_to(
                     project).as_posix(),

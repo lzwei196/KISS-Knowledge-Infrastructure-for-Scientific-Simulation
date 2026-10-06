@@ -6,6 +6,29 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## Windows development source — 2026-10-06 (not a new installer release)
+
+- KI updates keep models, installation manifests and shared helpers on one revision,
+  preserve Windows guidance with recorded provenance, and retain rejected candidates
+  with file-level diagnostics. Existing projects keep their KI/helper pair; fresh
+  snapshot projects no longer resurrect removed tools from an older installation.
+- Changed KI/recipe identities require software rechecks. Open chat pickers refresh
+  verification status, and setup distinguishes historical reports from current checks.
+- Project data readers and converters use reviewed source hashes, bounded local input
+  grants and signed run records. Two separate observation data KIs cover HYDAT and
+  Agrométéo Québec. Database preparation estimates and Netdisk delivery preferences
+  remain distinct from actual download or model success.
+- Custom executable checks require real tool bindings and passing run evidence.
+  DS planning diagnostics, continued-project evidence, calibration result displays,
+  browser reconnect behavior and prepared-data status handling are improved.
+- The [October 6 test report](docs/issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md)
+  distinguishes application tests, installation checks and native reference results.
+  SHAW's strict Trial test still has an output line-count mismatch. Downloaded KI
+  revision `8352acb8` is separate from this repository's bundled model tree.
+- Windows 开发源码：修复 KI 与共享工具更新一致性、旧文件混入新项目、验证状态刷新及
+  不可执行计划；增加观测数据 KI 和受审阅的本地读取流程。安装检查与科学结果分别记录，
+  不将 SHAW 算例的行数不符标记为通过。本条不是新安装包发布声明。
+
 ## v0.6.56 — Windows illustrated quickstarts and desktop introduction
 
 - The installer and portable app now include the illustrated English and Chinese quickstarts in the offline Guide menu. Each is three pages: connect DeepSeek, install and verify SHAW, then approve and inspect the official Trial run.

@@ -1,5 +1,37 @@
 # GeoForge Desktop user manual
 
+## Development: updating the KI library / 开发中：更新 KI 库
+
+Open **KI Library**, check for updates, and read the report's active revision and
+component sources. A data KI marked as bundled fallback was not updated from
+upstream. After activation, create a new project to test the new KI; existing
+projects retain their working copies. Use **Recheck updated KI** for installed
+software before running it. A setup pass confirms installation checks, not the
+scientific result. See the [October 6 GUI test report](../issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md)
+for tested fixes and remaining reference-case differences.
+
+打开 **KI 库**，检查更新，并查看报告中的已启用版本和各组件来源。“内置回退”表示该数据 KI
+本次未从服务器更新。更新后新建项目测试新 KI；旧项目保留原来的工作副本。运行前对已有软件
+执行“重新检查更新后的 KI”。安装检查通过不等于科学结果通过。具体修复和剩余算例差异见
+[10 月 6 日 GUI 测试记录](../issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md)。
+
+## Development: complete example inputs / 开发中：完整示例数据
+
+The [127-KI input and test checklist](../KI-TEST-INPUTS.md) describes the new
+Netdisk delivery preference and the requirement for a complete reproducible
+input pack per KI. This is an unreleased development addendum; the published
+guides below describe their own released versions.
+
+[127 个 KI 的输入与测试清单](../KI-TEST-INPUTS.md)说明网盘交付选择及每个 KI
+配套完整示例数据包的要求。这是尚未发布的开发补充说明，以下手册仍对应各自的发布版本。
+
+See [Data readers and local fallback / 数据读取工具与本地补充方案](../DATA-READER-FALLBACK.md)
+for the developing project-reader workflow, HYDAT/Québec examples, and the separate
+proposal to deliver a companion data KI with a dataset.
+
+[数据读取工具与本地补充方案](../DATA-READER-FALLBACK.md)介绍正在开发的项目读取器流程、
+HYDAT／魁北克实例，以及下载时提供配套数据 KI 的独立建议。
+
 ## 0.6.55 guide edition, bundled with Windows 0.6.56 / Windows 0.6.56 内置手册
 
 Windows [0.6.56](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56) includes the October 2 illustrated quickstarts in both the installer and portable app. The guide edition remains 0.6.55 because the documented application workflow is unchanged.

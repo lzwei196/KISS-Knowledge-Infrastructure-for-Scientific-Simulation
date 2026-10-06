@@ -100,12 +100,32 @@ PROV.providers=[{name:'api:deepseek',label:'DeepSeek'},{name:'cli:codex',label:'
 assert.match(settingsProviderOptions('api:deepseek'), /value="api:deepseek" selected>DeepSeek/);
 assert.equal((settingsProviderOptions('api:deepseek').match(/value="api:deepseek"/g)||[]).length,1);
 """
+    # Execute the shipped deferred startup callback: guarded status refresh must
+    # still populate provider settings after both async reads finish.
+    start = page.index("setTimeout(async()=>{", page.index("async function loadAll("))
+    end = page.index("},750);", start) + len("},750);")
+    startup = page[start:end]
+    script += """
+(async()=>{
+  let PROV={providers:[]},callback;
+  const CUR={id:'existing-chat'},calls=[];
+  const fresh={providers:[{name:'api:deepseek',usable:true}]};
+  function setTimeout(fn,delay){assert.equal(delay,750);callback=fn;}
+  async function refreshMachineStatus(redraw,force){assert.equal(redraw,true);assert.equal(force,true);calls.push('status');return {};}
+  async function fetch(url){assert.equal(url,'/api/providers');return {json:async()=>fresh};}
+  function drawProviders(){calls.push('providers');}
+  function drawLocalSettings(){calls.push('local');}
+  function drawProxyProviderSettings(){calls.push('proxy');}
+  function drawModelLabel(){calls.push('model');}
+""" + startup + """
+  await callback();
+  assert.equal(PROV,fresh);
+  assert.deepEqual(calls,['status','providers','local','proxy','model']);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
     result = subprocess.run([shutil.which("node"), "-e", script], capture_output=True, text=True,
                             encoding="utf-8")
     assert result.returncode == 0, result.stderr
-    startup = page[page.index("[STATUS,PROV]=await Promise.all"):page.index("},750);")]
-    assert "drawLocalSettings()" in startup
-    assert "drawProxyProviderSettings()" in startup
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows sharing violations")

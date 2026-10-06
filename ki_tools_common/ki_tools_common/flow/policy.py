@@ -44,20 +44,22 @@ EXEC_WRITABLE = ("inputs", "outputs", "artifacts", "references", "calibration/ca
 # desktop API-provider tool names (kiss_cli/api.py tool_schemas L115-489) allowed per state
 # GeoForge Database tools: one job each (FLOW-TARGET-2026-09-17 step 1). The old
 # multi-mode search_observation_data stays until the data proposal folds into the plan.
-DATABASE_API_TOOLS = frozenset({"search_catalogue", "describe_dataset", "estimate_clip"})
+DATABASE_API_TOOLS = frozenset({"search_catalogue", "describe_dataset", "estimate_clip",
+                                "estimate_preparation"})
 _BASE_API = frozenset({"read_ki_file", "list_ki_files", "list_skills", "read_skill",
                        "search_diagnostics", "list_project_files", "read_project_file",
                        "report_project_progress", "request_user_action"}) | DATABASE_API_TOOLS
 API_TOOLS_BY_STATE: dict[State, frozenset[str]] = {s: _BASE_API for s in State}
-API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan", "write_calibration_adapter"}
-API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan", "write_calibration_adapter"}
+API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan", "write_calibration_adapter", "write_project_data_tool"}
+API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan", "write_calibration_adapter", "write_project_data_tool"}
 # Data comes in during ACQUIRING (host-driven); EXECUTING keeps fetch_data for public URLs.
 API_TOOLS_BY_STATE[State.EXECUTING] = _BASE_API | {"run_preflight", "write_project_file", "run_ki_tool", "run_calibration",
                                                    "fetch_data",
                                                    "create_project_plot", "publish_project_view",
-                                                   "request_replan"}
+                                                   "request_replan", "run_project_data_tool"}
 for _s in (State.VERIFYING, State.COMPLETED, State.FAILED_VALIDATION):
     API_TOOLS_BY_STATE[_s] = _BASE_API | {"create_project_plot", "publish_project_view"}
+API_TOOLS_BY_STATE[State.COMPLETED] |= {"request_replan"}
 API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_builtin_setup", "list_work_files",
                                                        "read_work_file", "write_work_file",
                                                        "run_setup_command", "publish_setup_output"}
@@ -66,6 +68,8 @@ API_TOOLS_BY_STATE[State.SETUP_RUNNING] = _BASE_API | {"run_builtin_setup", "lis
 API_TOOL_CAPABILITY: dict[str, Capability] = {
     "write_plan": Capability.WRITE_PLAN_FILES,
     "write_calibration_adapter": Capability.WRITE_CALIBRATION_ADAPTER,
+    "write_project_data_tool": Capability.WRITE_PROJECT_DATA_TOOL,
+    "run_project_data_tool": Capability.RUN_MODEL,
     "write_project_file": Capability.WRITE_PROJECT,
     "run_ki_tool": Capability.RUN_MODEL,
     "run_calibration": Capability.RUN_MODEL,

@@ -22,6 +22,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--describe", dest="describe_dataset_id", default="", help="Read the actual source schema before selecting subset variables")
     result.add_argument("--resolve", dest="resolve_dataset_id", default="")
     result.add_argument("--subset", default="", help="Estimate a server-side subset; approval is required in Project status")
+    result.add_argument("--prepare-request", default="", help="JSON request file for a read-only KI preparation estimate")
     result.add_argument("--time-step", default="", choices=["", "daily", "3hr"])
     result.add_argument("--category", default="")
     result.add_argument("--delivery", default="", choices=["", "served", "manual"])
@@ -32,6 +33,20 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    preparation = ""
+    if args.prepare_request:
+        if args.describe_dataset_id or args.resolve_dataset_id or args.subset:
+            print("Choose preparation or describe/resolve/subset, not both", file=sys.stderr)
+            return 2
+        try:
+            with open(args.prepare_request, "rb") as request_file:
+                raw = request_file.read(60 * 1024 + 1)
+            if len(raw) > 60 * 1024:
+                raise ValueError("preparation request is too large")
+            preparation = json.dumps(json.loads(raw.decode("utf-8-sig")), allow_nan=False)
+        except (OSError, UnicodeError, ValueError) as error:
+            print(f"Preparation request refused: {error}", file=sys.stderr)
+            return 2
     endpoint = os.environ.get("GEOFORGE_AGENT_DATABASE_URL", "").strip()
     capability = os.environ.get("GEOFORGE_AGENT_DATABASE_TOKEN", "").strip()
     if not endpoint or not capability:
@@ -47,7 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         "variable": args.variable, "category": args.category, "delivery": args.delivery,
         "describe_dataset_id": args.describe_dataset_id,
         "resolve_dataset_id": args.resolve_dataset_id, "time_step": args.time_step,
-        "subset_dataset_id": args.subset, "cwd": os.getcwd() if args.subset else "",
+        "subset_dataset_id": args.subset, "prepare_request": preparation,
+        "cwd": os.getcwd() if args.subset or preparation else "",
         "offset": max(0, args.offset),
         "limit": max(1, min(args.limit, 100)),
     })

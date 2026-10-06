@@ -110,6 +110,7 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
             <span class="activity-time" id="activitytime">00:00</span></div>
           <div class="phasebar"><span class="phase" data-phase="0">1 · Read KI</span><span class="phase" data-phase="1">2 · Install &amp; repair</span><span class="phase" data-phase="2">3 · Verify</span></div>
         </div>
+        <div class="agent-note" id="logcontext"></div>
         <pre class="log"><span class="emptylog">The agent's work will appear here. It may build software for several minutes.</span></pre>
       </div>
     </section>
@@ -245,12 +246,38 @@ async function saveInstallLocation(allowEmptyExisting=false){
   const d=await r.json().catch(()=>({}));if(!r.ok){alert(d.error||"Could not save installation folder");return false}
   installPathDirty=false;existingPathDirty=false;await loadState();return true;
 }
-function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,failed=sw.state==="failed";
+function setupRecheckRequired(sw){return !!sw.requires_reverification||sw.primary_error?.name==="snapshot-changed";}
+function setupRecheckReason(){
+  return isZh()?"KI、安装配方或共享工具已更新。需要使用当前 KI 重新检查已有软件；以前的报告和软件仍然保留。":
+    "The KI, installation recipe, or shared tools changed. Recheck the existing software against the current KI; previous reports and software are retained.";
+}
+function drawVerification(sw){
+  const zh=isZh(),recheck=setupRecheckRequired(sw),steps=sw.steps||[],history=busy||recheck;
+  const recorded=zh?"已记录：":"Recorded: ";
+  const stepRows=steps.map(s=>{
+    const outcome=s.ok?(zh?"通过":"passed"):s.recovered?(zh?"已修复":"repaired"):s.deferred?(zh?"在各项目中处理":"handled in each project"):s.skipped?(zh?"已跳过":"skipped"):(zh?"失败":"failed");
+    const style=history?'skip':s.ok||s.recovered?'good':s.skipped?'skip':'bad';
+    const icon=history?'·':s.ok?'✓':s.recovered?'↺':s.deferred?'◇':s.skipped?'–':'✕';
+    return `<div class="step ${style}"><span class="icon">${icon}</span><div><b>${esc(s.name)}${history?' · '+recorded+outcome:s.recovered?' · '+outcome:s.deferred?' · '+outcome:''}</b>${s.detail?`<details><summary>${zh?'详情':'details'}</summary>${esc(s.detail)}</details>`:""}</div></div>`;
+  }).join("");
+  const when=sw.checked_at?`<div class="explain">${zh?'记录时间：':'Recorded check: '}${esc(sw.checked_at)}</div>`:"";
+  let message=busy?(zh?"验证正在进行。本次尝试的最终结果尚未确认。":"Verification is in progress. The final result of this attempt is not yet confirmed."):
+    recheck?setupRecheckReason():"";
+  if(busy&&recheck)message+=' '+setupRecheckReason();
+  $("#verification").innerHTML=(message?`<div class="explain">${esc(message)}</div>`:"")+
+    (steps.length?(history?`<details class="request-details"><summary>${zh?'以前记录的检查结果 · 不代表当前验证通过':'Previously recorded checks · not a current verification pass'}</summary>${when}<div class="steps">${stepRows}</div></details>`:
+      `${when}<div class="steps">${stepRows}</div>`):
+      (message?"":`<div class="explain">${zh?'尚未检查。Agent 将运行 KI 预检。':'Not checked yet. The agent will run the KI preflight.'}</div>`));
+}
+function draw(){if(!STATE)return;const sw=STATE.software||{},recheck=setupRecheckRequired(sw),ok=!!sw.can_run&&!recheck,failed=sw.state==="failed";
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
-  $("#statusbadge").className=`badge ${ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=sw.label||"Setup needed";
+  $("#statusbadge").className=`badge ${busy?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=busy?(isZh()?"正在验证":"Verification in progress"):sw.label||"Setup needed";
   const installMode=selectedInstallMode||(STATE.install_location||{}).installation_mode||"new";
-  $("#chat").style.display=ok?"":"none";$("#start").textContent=ok?"Re-check with agent":installMode==="existing"?(isZh()?"验证已有软件":"Verify existing software"):STATE.agent_ready?"Continue agent":"Start agent setup";
+  $("#chat").style.display=ok&&!busy?"":"none";$("#start").textContent=ok?"Re-check with agent":installMode==="existing"?(isZh()?"验证已有软件":"Verify existing software"):STATE.agent_ready?"Continue agent":"Start agent setup";
   const log=$(".log");if(!busy&&STATE.log_tail){rawLog=STATE.log_tail;log.textContent=presentSetupLog(rawLog);log.scrollTop=log.scrollHeight;}
+  $("#logcontext").textContent=busy?(isZh()?"当前尝试的实时日志":"Live log for the current attempt"):STATE.log_tail?
+    recheck?(isZh()?"已保存的设置日志 · 不代表更新后的 KI 已验证":"Saved setup log · does not establish verification for the updated KI"):
+      (isZh()?"已保存的设置日志 · 可能包含以前的尝试":"Saved setup log · may include earlier attempts"):"";
   const req=STATE.request,att=STATE.attention;
   if(req&&req.status==="waiting"){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Needs you now";
@@ -266,6 +293,15 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
       ${command}${upload}
       ${report}<input id="note" type="text" placeholder="Optional note for the agent"><div class="controls"><button class="primary" id="resume">${esc(resumeLabel)}</button><button id="askhelp">I can't do this — help me</button></div></div>`;
     $("#resume").onclick=resumeAgent;$("#askhelp").onclick=chatForHelp;if($("#upload"))$("#upload").onclick=uploadFile;if($("#copycommand"))$("#copycommand").onclick=async()=>{await GeoForgeClipboard.write(req.command);$("#copycommand").textContent="Copied"};$("#start").disabled=true;
+  }else if(busy){
+    $("#needbadge").className="badge";$("#needbadge").textContent=isZh()?"正在处理":"Working";
+    $("#need").innerHTML=`<div class="explain">${isZh()?"Agent 正在检查软件。目前没有需要你处理的请求；如需协助，将在这里显示。":"The agent is checking the software. No action is currently requested from you; a specific request will appear here if needed."}</div>`;
+    $("#start").disabled=true;
+  }else if(recheck){
+    $("#needbadge").className="badge warn";$("#needbadge").textContent=isZh()?"需要重新检查":"Recheck required";
+    $("#need").innerHTML=`<div class="request"><h4>${isZh()?"验证更新后的 KI":"Verify the updated KI"}</h4><p>${esc(setupRecheckReason())}</p><div class="controls"><button class="primary" id="retry">${isZh()?"让 Agent 重新检查":"Recheck with agent"}</button></div></div>`;
+    $("#retry").disabled=!$("#provider").value;$("#retry").onclick=()=>startAgent(false);
+    $("#start").disabled=!$("#provider").value;
   }else if(att){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Action needed";
     $("#need").innerHTML=`<div class="request"><div class="label">${esc((att.kind||'RETRY').toUpperCase())}</div><h4>${esc(att.title)}</h4><p>${esc(att.message)}</p><div class="controls"><button class="primary" id="retry">${esc(att.action_label||'Continue repair')}</button><button id="askhelp">Ask what went wrong</button></div></div>`;
@@ -278,8 +314,7 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
     $("#start").disabled=busy||!$("#provider").value;
   }
   drawInstallLocation();drawRunState();
-  const steps=sw.steps||[];$("#verification").innerHTML=steps.length?`<div class="steps">${steps.map(s=>`<div class="step ${s.ok||s.recovered?'good':s.skipped?'skip':'bad'}"><span class="icon">${s.ok?'✓':s.recovered?'↺':s.deferred?'◇':s.skipped?'–':'✕'}</span><div><b>${esc(s.name)}${s.recovered?' · repaired':s.deferred?' · handled in each project':''}</b>${s.detail?`<details><summary>details</summary>${esc(s.detail)}</details>`:""}</div></div>`).join("")}</div>`:
-    '<div class="explain">Not checked yet. The agent will run the KI preflight.</div>';
+  drawVerification(sw);
 }
 async function loadState(){if(!MODEL){$("#title").textContent="No KI selected";return;}const r=await fetch("/api/setup/"+encodeURIComponent(MODEL));STATE=await r.json();draw();}
 async function startAgent(discoverExisting=false){if(busy)return;if(!await saveInstallLocation(discoverExisting))return;busy=true;rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;draw();const log=$(".log");log.textContent="";drawRunState();

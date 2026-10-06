@@ -584,11 +584,60 @@ function artifactImage(alt,raw,sid){
   const caption=alt||parts[parts.length-1];
   return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
 }
-const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command",search_observation_data:"Searched GeoForge Database",search_catalogue:"Searched GeoForge Database",describe_dataset:"Read dataset schema",estimate_clip:"Estimated a server clip",download_observation_data:"Downloaded from GeoForge Database",fetch_data:"Downloaded a data file",write_plan:"Wrote the plan",run_calibration:"Ran a calibration",search_diagnostics:"Searched KDT diagnostics",responding:"Generating a response"};
+const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_data_tool:"Prepared a project data tool",run_project_data_tool:"Ran a project data tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command",search_observation_data:"Searched GeoForge Database",search_catalogue:"Searched GeoForge Database",describe_dataset:"Read dataset schema",estimate_clip:"Estimated a server clip",download_observation_data:"Downloaded from GeoForge Database",fetch_data:"Downloaded a data file",write_plan:"Wrote the plan",run_calibration:"Ran a calibration",search_diagnostics:"Searched KDT diagnostics",responding:"Generating a response"};
 const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令",search_observation_data:"已检索 GeoForge 数据库",search_catalogue:"已检索 GeoForge 数据库",describe_dataset:"已读取数据集字段",estimate_clip:"已估算服务器裁剪",download_observation_data:"已从 GeoForge 数据库下载",fetch_data:"已下载数据文件",write_plan:"已写入计划",run_calibration:"已运行校准",search_diagnostics:"已检索 KDT 诊断",responding:"正在生成回复"};
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
-let KI_UPDATE_REVISION="",KI_UPDATE_POLL=null;
-async function watchKiUpdates(){try{const r=await fetch("/api/ki-updates",{cache:"no-store"}),u=await r.json();if(u.state==="checking"){clearTimeout(KI_UPDATE_POLL);KI_UPDATE_POLL=setTimeout(watchKiUpdates,1000);return}if(["updated","up_to_date","error","kept"].includes(u.state)){const revision=u.active_revision||"";if(revision&&revision!==KI_UPDATE_REVISION){KI_UPDATE_REVISION=revision;MODELS=await (await fetch("/api/models",{cache:"no-store"})).json();STATUS=await (await fetch("/api/status",{cache:"no-store"})).json();if(CUR)drawModelLabel()}const zh=chineseUI();$("#ki-update-title").textContent=u.state==="error"?(zh?"KI 更新未完成":"KI update not completed"):u.state==="kept"?(zh?"已保留当前 KI 库":"Current KI library kept"):(zh?"KI 库检查完成":"KI library checked");$("#ki-update-message").textContent=u.state==="error"?(zh?"网络或验证出现问题，GeoForge 已继续使用上一次验证通过的 KI 库。":"A network or validation issue occurred. GeoForge kept the last validated KI library."):u.state==="kept"?(zh?"GeoForge 保留了当前 KI 库，因为仓库中的版本会移除本机平台的安装说明或安装配方；仓库补齐后会恢复更新。":(u.summary||"GeoForge kept the current KI library.")):zh?(u.state==="updated"?`KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`:"KI 库已经是最新版本。"):(u.summary||"");$("#ki-update-view").textContent=zh?"查看报告":"View report";$("#ki-update-dismiss").textContent=zh?"关闭":"Dismiss";$("#ki-update-toast").classList.add("open")}}catch(_error){}}
+let KI_UPDATE_REVISION="",KI_UPDATE_POLL=null,KI_UPDATE_REFRESHING=null,KI_UPDATE_NOTICE="";
+function drawCatalogStatus(){
+  if(CUR)drawModelLabel();
+  // Redraw the current selection, including unapplied choices and search text.
+  if($("#mpick").classList.contains("open"))drawPick();
+}
+async function kiUpdateReadJSON(url){
+  const response=await fetch(url,{cache:"no-store"});
+  if(!response.ok)throw new Error(`${url}: ${response.status}`);
+  return response.json();
+}
+async function watchKiUpdates(){
+  if(KI_UPDATE_REFRESHING)return KI_UPDATE_REFRESHING;
+  clearTimeout(KI_UPDATE_POLL);KI_UPDATE_POLL=null;
+  let delay=5000;
+  KI_UPDATE_REFRESHING=(async()=>{
+    try{
+      const u=await kiUpdateReadJSON("/api/ki-updates");
+      if(!u||typeof u!=="object"||Array.isArray(u))throw new Error("Invalid KI update report");
+      if(u.state==="checking"){
+        delay=1000;$("#ki-update-toast").classList.remove("open");
+      }
+      const revision=u.active_revision||"";
+      if(revision&&revision!==KI_UPDATE_REVISION){
+        $("#ki-update-toast").classList.remove("open");
+        const [models,status]=await Promise.all([
+          kiUpdateReadJSON("/api/models"),kiUpdateReadJSON("/api/status")]);
+        if(!Array.isArray(models)||!status||typeof status!=="object"||Array.isArray(status))
+          throw new Error("Invalid KI catalogue or verification status");
+        // Publish the pair only after both succeed; a failed refresh retries.
+        MODELS=models;STATUS=status;KI_UPDATE_REVISION=revision;
+        LAST_STATUS_CHECK=Date.now();drawCatalogStatus();
+      }
+      if(!["updated","up_to_date","error","kept"].includes(u.state))return;
+      const notice=JSON.stringify([u.state,revision,u.checked_at,u.source_commit,u.error,u.summary]);
+      if(notice===KI_UPDATE_NOTICE)return;
+      KI_UPDATE_NOTICE=notice;
+      const zh=chineseUI();
+      $("#ki-update-title").textContent=u.state==="error"?(zh?"KI 更新未完成":"KI update not completed"):u.state==="kept"?(zh?"已保留当前 KI 库":"Current KI library kept"):(zh?"KI 库检查完成":"KI library checked");
+      $("#ki-update-message").textContent=u.state==="error"?(zh?"网络或验证出现问题，GeoForge 已继续使用上一次验证通过的 KI 库。":"A network or validation issue occurred. GeoForge kept the last validated KI library."):u.state==="kept"?(zh?"GeoForge 保留了当前 KI 库，因为仓库中的版本会移除本机平台的安装说明或安装配方；仓库补齐后会恢复更新。":(u.summary||"GeoForge kept the current KI library.")):zh?(u.state==="updated"?`KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`:"KI 库已经是最新版本。"):(u.summary||"");
+      $("#ki-update-view").textContent=zh?"查看报告":"View report";
+      $("#ki-update-dismiss").textContent=zh?"关闭":"Dismiss";
+      $("#ki-update-toast").classList.add("open");
+    }catch(_error){
+      // A transient local read failure must not commit the revision or stop polling.
+    }finally{
+      KI_UPDATE_REFRESHING=null;KI_UPDATE_POLL=setTimeout(watchKiUpdates,delay);
+    }
+  })();
+  return KI_UPDATE_REFRESHING;
+}
 function workLabel(name){if(chineseUI()&&TOOL_LABELS_ZH[name])return TOOL_LABELS_ZH[name];if(TOOL_LABELS[name])return TOOL_LABELS[name];const words=String(name).replace(/([a-z])([A-Z])/g,"$1 $2").replace(/[_.-]+/g," ");return chineseUI()?"已使用 "+words:"Used "+words.toLowerCase();}
 function extractWork(t,streaming){const tools=[];let body=String(t??"");
   // GEOFORGE_INTAKE is an internal Agent-to-host handoff, not chat content.
@@ -673,14 +722,16 @@ async function refreshMachineStatus(redraw=true,force=false){
   // can incorrectly keep showing "Setup needed" after preflight has passed.
   if(!force&&Date.now()-LAST_STATUS_CHECK<1500)return STATUS;
   if(STATUS_REFRESHING)return STATUS_REFRESHING;
+  const revision=KI_UPDATE_REVISION;
   STATUS_REFRESHING=(async()=>{
     try{
       const r=await fetch("/api/status",{cache:"no-store"});
       if(!r.ok)throw new Error(`status ${r.status}`);
       const fresh=await r.json();
+      if(revision!==KI_UPDATE_REVISION)return STATUS;
       if(fresh&&typeof fresh==="object"&&!Array.isArray(fresh))STATUS=fresh;
       LAST_STATUS_CHECK=Date.now();
-      if(redraw&&CUR)drawModelLabel();
+      if(redraw)drawCatalogStatus();
       return STATUS;
     }catch(_error){return STATUS;}
     finally{STATUS_REFRESHING=null;}
@@ -730,10 +781,9 @@ async function loadAll(){
     // visible so a slow Windows disk or CLI cannot look like an app freeze.
     setTimeout(async()=>{
       try{
-        [STATUS,PROV]=await Promise.all([
-          fetch("/api/status").then(r=>r.json()),
+        [,PROV]=await Promise.all([
+          refreshMachineStatus(true,true),
           fetch("/api/providers").then(r=>r.json())]);
-        LAST_STATUS_CHECK=Date.now();
         drawProviders();drawLocalSettings();drawProxyProviderSettings();if(CUR)drawModelLabel();
       }catch(_error){}
     },750);
@@ -1230,7 +1280,8 @@ function renderPlanReview(r,rawMessage){
   const NEEDS_TOOL=new Set(["process","run","model_run","calibrate","route","couple","prepare","download"]);
   const toolText=s=>{if(s.tool)return ` · <code>${esc(s.tool)}</code>`;if(s.kind==="check")return ` · <span style="color:var(--fg-3)">${zh?"由 GeoForge 执行（预检）":"run by GeoForge (preflight)"}</span>`;if(!NEEDS_TOOL.has(String(s.kind||"process")))return ` · <span style="color:var(--fg-3)">${zh?"由 Agent 直接产出":"written by the agent"}</span>`;return ` · <span style="color:var(--block)">${zh?"缺少工具，无法执行":"no tool — cannot execute"}</span>`;};
   const calibrationText=s=>{const c=s.calibration;if(!c)return "";return `<div class="prgroup"><b>${zh?"校准设置":"Calibration settings"}</b><div>${zh?"算法":"Algorithm"}: ${esc(c.algorithm)} · ${zh?"请求的优化预算":"Requested optimizer budget"}: ${esc(c.budget)} · ${zh?"随机种子":"Seed"}: ${esc(c.seed)}</div><small>${zh?"采样器的初始化或批处理可能增加实际评估次数。":"Sampler initialization or batches may require additional evaluations."}</small><div>${zh?"决定性指标":"Determining metric"}: ${esc(c.determining_metric||(zh?"由合同中的目标确定":"from contract objectives"))}</div><div>${zh?"参数范围与默认值":"Parameter bounds and defaults"}: <code>${esc(JSON.stringify(s.calibration_parameters||[]))}</code></div><div>${zh?"观测类型":"Observation shapes"}: <code>${esc(JSON.stringify(c.obs_shape_by_var))}</code></div><div>${zh?"案例":"Case"}: ${esc(c.expected_case_id||(zh?"未指定":"not specified"))}</div><details><summary>${zh?"已绑定的校准合同与适配器":"Bound calibration contract and adapter"}</summary><code>${esc(c.contract_path)}</code><small style="display:block">${zh?"合同 SHA-256":"Contract SHA-256"}: ${esc(c.contract_sha256)}</small><small style="display:block">${zh?"适配器 SHA-256":"Adapter SHA-256"}: ${esc(c.runner_sha256)}</small></details></div>`;};
-  const steps=(r.steps||[]).map(s=>`<li><b>${esc(s.id||"")}</b><span class="prkind">${esc(s.kind||"")}</span>${toolText(s)}${s.env&&s.env.length?` <span class="prtag">env ${s.env.length}</span>`:""}${calibrationText(s)}</li>`).join("");
+  const projectDataText=s=>{const t=s.project_data_tool;if(!t)return "";return `<div class="prgroup"><b>${zh?"项目专用数据工具":"Project data tool"}</b> · ${esc(t.purpose||"")}<details><summary>${zh?"查看代码与运行设置":"Review code and run settings"}</summary><div><code>${esc(t.source_path||s.tool||"")}</code></div><div>SHA-256: <code>${esc(t.source_sha256||"")}</code></div><div>${zh?"参数":"Arguments"}: <code>${esc(JSON.stringify(t.arguments||[]))}</code></div><div>${zh?"工作目录":"Working directory"}: <code>${esc(t.cwd||".")}</code> · ${zh?"超时（秒）":"Timeout (seconds)"}: ${esc(t.timeout_seconds)}</div>${(t.errors||[]).length?`<div>${esc(t.errors.join("; "))}</div>`:`<pre>${esc(t.source_preview||"")}</pre>${t.source_truncated?`<small>${zh?"代码预览已截断；完整代码保存在上面的项目路径。":"Code preview is truncated; the complete source is at the project path above."}</small>`:""}`}</details></div>`;};
+  const steps=(r.steps||[]).map(s=>`<li><b>${esc(s.id||"")}</b><span class="prkind">${esc(s.kind||"")}</span>${toolText(s)}${s.env&&s.env.length?` <span class="prtag">env ${s.env.length}</span>`:""}${calibrationText(s)}${projectDataText(s)}</li>`).join("");
   const delivLabel={served:zh?"直接下载":"direct download",manual:zh?"网盘手动下载":"Baidu manual download",subset:zh?"服务器裁剪":"server clip",external:zh?"外部数据源":"external source"};
   const dataChoices=(r.data_choices||[]).length?`<div class="prsec" id="pr-data-choices"><h4>${zh?"数据来源，你来选":"Data sources, your pick"} · ${r.data_choices.length}</h4><div class="hint" style="margin:0 0 6px">${zh?"每项输入的候选数据源，推荐项已选中。改选外部数据源后，需要更新方案并重新审核。":"Candidate sources for each input; the recommendation is preselected. Switching to an external source requires an updated plan and a new review."}</div>${r.data_choices.map(c=>`<div class="prgroup"><b><code>${esc(c.item)}</code></b>${c.rationale?`<small style="display:block;color:var(--muted)">${esc(c.rationale)}</small>`:""}<div style="display:grid;gap:4px;margin-top:4px">${c.options.map(o=>`<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="radio" name="dc-${esc(c.id)}" data-choice="${esc(c.id)}" value="${esc(o.dataset_id)}" ${o.dataset_id===c.picked?"checked":""} style="width:auto;margin-top:4px"><span><code>${esc(o.dataset_id)}</code>${o.name?` · ${esc(o.name)}`:""}<small style="display:block">${esc(delivLabel[o.delivery]||o.delivery||"")}${o.size_label?` · ${esc(o.size_label)}`:""}${o.period?` · ${esc((o.period[0]||"")+"–"+(o.period[1]||""))}`:""}${o.dataset_id===c.picked?` · ${zh?"推荐":"recommended"}`:""}</small></span></label>`).join("")}</div></div>`).join("")}</div>`:"";
   const decisions=(r.decisions||[]).filter(c=>c.high_impact).map(c=>`<li>${esc(c.kind||c.id||"")}: ${esc((c.options||[]).join(" / "))}${c.picked?` → <b>${esc(String(c.picked))}</b>`:""} ${c.decided?`<span class="prtag">${zh?"已决定":"decided"}</span>`:`<span class="prtag" style="color:var(--warn)">${zh?"待你决定":"needs you"}</span>`}${c.answered?`<small style="display:block;color:var(--muted)">${zh?"来自你的回答：":"From your answer: "}${esc(c.answered)}</small>`:""}</li>`).join("");
@@ -1394,10 +1445,22 @@ async function addChatFiles(fileList){
     if(CUR&&CUR.id===target)setControls(true);
   }
 }
+function chatBindingUpdate(session,provider,llm){
+  if(!session.binding_locked&&!(session.messages||[]).length)return {provider,llm_model:llm};
+  const info=PROV.providers.find(p=>p.name===session.provider)||{};
+  const displayedModel=session.llm_model||(info.kind==="api"?info.default_model:"")||"";
+  if(provider!==session.provider||llm!==displayedModel)
+    throw new Error(chineseUI()?"本对话的 Agent 和模型已固定；请新建对话以更换。":"The agent and model are fixed for this chat; start a new chat to change them.");
+  // Legacy API chats may have no llm_model: their displayed default is not a
+  // requested binding change. Send with the persisted binding, including null.
+  return null;
+}
 async function send(){
-  let text=$("#msg").value.trim();
-  if(!await ensureSession())return;
-  const target=CUR.id, attachments=[...pendingFor(target)];
+  const draft=$("#msg").value;
+  let text=draft.trim();
+  if(!currentProviderReady()){$("#hint").textContent=chineseUI()?"请先连接本对话的 AI；草稿已保留。":"Connect this chat's AI before sending; your draft is kept.";return;}
+  const session=await ensureSession();if(!session)return;
+  const target=session.id, attachments=[...pendingFor(target)];
   const action=PENDING_ACTIONS.get(target)||null;
   if(sessionBusy(target)||sessionUploading(target)||(!text&&!attachments.length))return;
   CHAT_FOLLOW=true;                      // the reader's own message always brings the view down
@@ -1419,23 +1482,27 @@ async function send(){
     GeoForgeI18n.setLanguage("zh-CN");
   const provider=$("#prov").value,llm=$("#llm").value;
   const flight={raw:"",started:Date.now(),lastHeartbeat:Date.now(),lastOutput:null,provider,agentStatus:null};INFLIGHT.set(target,flight);drawSessions();setControls(true);
-  $("#msg").value="";DRAFTS.delete(target);
-  drawSlash();
+  DRAFTS.set(target,draft);$("#hint").textContent="";
+  let accepted=false;
   let runPoll=setInterval(()=>{refreshRun(target).catch(()=>{});refreshAgentStatus(target).catch(()=>{});},1500);
   try{
-    const up=await fetch(`/api/session/${target}/update`,{method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({provider,llm_model:llm})});
-    if(!up.ok){const d=await up.json().catch(()=>({}));
-      $("#hint").textContent=d.error||("update failed "+up.status);
-      throw new Error(d.error||`update failed ${up.status}`);}
-    if(CUR&&CUR.id===target){
-      addTurn("You","user").innerHTML=messageHtml({text,attachments:attachments.map(file=>file.path)},target);
-      renderLiveTurn(target);
+    const binding=chatBindingUpdate(session,provider,llm);
+    if(binding){
+      const up=await fetch(`/api/session/${target}/update`,{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(binding)});
+      if(!up.ok){const d=await up.json().catch(()=>({}));throw new Error(d.error||`update failed ${up.status}`);}
     }
     const r=await fetch(`/api/session/${target}/chat`,{method:"POST",
       headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,attachments:attachments.map(file=>file.path),action})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`request failed ${r.status}`);}
+    accepted=true;
+    if(DRAFTS.get(target)===draft)DRAFTS.delete(target);
+    if(CUR&&CUR.id===target){
+      // Do not erase a new draft typed while the request was being accepted.
+      if($("#msg").value===draft){$("#msg").value="";drawSlash();}
+      addTurn("You","user").innerHTML=messageHtml({text,attachments:attachments.map(file=>file.path)},target);
+      renderLiveTurn(target);
+    }
     PENDING_ACTIONS.delete(target);
     PENDING_ATTACHMENTS.delete(target);if(CUR&&CUR.id===target)renderAttachments();
     const rd=r.body.getReader(), dec=new TextDecoder();
@@ -1450,32 +1517,38 @@ async function send(){
     flight.raw=flight.raw.replaceAll("\u200b","");
     const detail=String(e&&e.message||e||"");
     const disconnected=/Load failed|Failed to fetch|network connection was lost/i.test(detail);
-    if(!flight.raw)flight.raw=disconnected
+    if(!flight.raw)flight.raw=accepted&&disconnected
       ?(chineseUI()?"与 GeoForge 的响应连接中断了。后台任务可能仍在结束并保存状态；你可以切换到其他对话，稍后回来查看。若再次发生，请检查 AI 设置和所选服务商的网络连接。":"The live response connection was interrupted. The background task may still be finishing and saving its state; you can use another chat and return shortly. If it happens again, check AI Settings and the selected provider's network connection.")
       :`${chineseUI()?"请求未完成":"The request did not finish"}: ${detail}`;
-    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=md(flight.raw,target,false);$("#hint").textContent=chineseUI()?"本对话的实时连接已停止；可稍后返回查看后台保存的结果。":"This chat's live connection stopped; return shortly to check the saved result.";}
+    if(CUR&&CUR.id===target){
+      const out=liveBubble(target);if(out)out.innerHTML=md(flight.raw,target,false);
+      $("#hint").textContent=accepted
+        ?(chineseUI()?"响应连接已停止；请查看后台保存的结果。":"The response connection stopped; check the saved result.")
+        :(chineseUI()?`请求未完成：${detail}。草稿已保留；重试前请先检查对话是否已收到消息。`:`The request did not finish: ${detail}. Your draft is kept; check whether the message arrived before retrying.`);
+    }
   }
   clearInterval(runPoll);
   INFLIGHT.delete(target);
   updateLiveActivity(target);
   if(CUR&&CUR.id===target)setControls(true);
   drawSessions();
-  const s=await (await fetch("/api/session/"+target)).json();
+  try{
+  const response=await fetch("/api/session/"+target);if(!response.ok)throw new Error("Could not refresh chat");
+  const s=await response.json();
   const i=SESSIONS.findIndex(x=>x.id===target);
   if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.message_count??s.messages.length;
            SESSIONS[i].models=s.models;SESSIONS[i].skills=s.skills||[];
            SESSIONS[i].mcps=s.mcps||[];
            SESSIONS[i].project_path=s.project_path;}
   if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;const turn=document.querySelector(`.turn[data-flight="${target}"]`);if(turn)delete turn.dataset.flight;setControls(true);}
+  }catch(_error){} // Preserve the send error and draft if the server is still unavailable.
   // A chat agent can finish or repair shared scientific software (API agents
   // do this through GeoForge's setup tools). Refresh the machine-level badge
   // as soon as that turn ends; otherwise the reply can truthfully say
   // "preflight passed" while the header keeps showing its stale failure.
-  await refreshMachineStatus(true,true);
-  await refreshRun(target);
-  await refreshViewStatus(target);
+  await Promise.allSettled([refreshMachineStatus(true,true),refreshRun(target),refreshViewStatus(target)]);
   drawSessions();
-  if(CUR&&CUR.id===target)await maybeShowAction(target);
+  if(CUR&&CUR.id===target)await maybeShowAction(target).catch(()=>{});
 }
 function setControls(on){
   const active=sessionBusy(),uploading=sessionUploading(),available=on!==false;
@@ -1501,7 +1574,7 @@ function setControls(on){
   updateActivityUI();
 }
 $("#send").onclick=send;
-$("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
+$("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();send();}});
 $("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";if(CUR)DRAFTS.set(CUR.id,e.target.value);drawSlash();});
 $("#attach").onclick=()=>$("#chatfiles").click();
 $("#chatfiles").onchange=async e=>{await addChatFiles(e.target.files);e.target.value="";};
@@ -1665,6 +1738,39 @@ function statusEvidenceText(observation){
   const time=typeof age==="number"&&Number.isFinite(age)?(chineseUI()?`${durationLabel(age)} 前的记录`:`observed ${durationLabel(age)} ago`):(chineseUI()?"记录时间未知":"observation time unknown");
   return [source,time,observation.summary].filter(Boolean).join(" · ");
 }
+function calibrationResultCard(latest,zh){
+  if(!latest)return "";
+  const finite=value=>typeof value==="number"&&Number.isFinite(value);
+  const number=value=>finite(value)?String(Number(value.toPrecision(5))):(zh?"未记录":"not recorded");
+  const count=value=>Number.isInteger(value)&&value>=0?String(value):(zh?"未记录":"not recorded");
+  const metrics=latest.train_metrics||{},meta=metrics.__kdt__||{};
+  const keys=[["nse","NSE"],["kge","KGE"],["r","r"],["pbias","PBIAS (%)"],["rmse","RMSE"]];
+  const groups=keys.some(([key])=>finite(metrics[key]))?[["",metrics]]:
+    Object.entries(metrics).filter(([key,value])=>!key.startsWith("__")&&value&&typeof value==="object").slice(0,4);
+  const training=groups.map(([variable,values])=>{
+    const fields=keys.filter(([key])=>finite(values[key])).map(([key,label])=>`${label} ${number(values[key])}`);
+    return fields.length?`<small>${esc(variable?variable+" · ":"")}${esc(fields.join(" · "))}</small>`:"";
+  }).join("");
+  const checks=Array.isArray(latest.objective_checks)?latest.objective_checks:(latest.holdout?.per_objective||[]);
+  const families=zh?{magnitude_accuracy:"量值",temporal_pattern_match:"时间变化",timing_accuracy:"时间偏差"}:
+    {magnitude_accuracy:"Magnitude",temporal_pattern_match:"Temporal fit",timing_accuracy:"Timing"};
+  const rows=checks.map(check=>{
+    const parts=String(check.objective||"").split(":"),family=parts.pop(),label=[...parts,families[family]||family].join(" · ");
+    const criterion=check.absolute_criterion||{};
+    const ceiling=finite(criterion.max_loss)?criterion.max_loss:finite(check.band_ceiling)?check.band_ceiling:check.mag_backstop;
+    let rule=finite(ceiling)?`${zh?"损失":"Loss"} ≤ ${number(ceiling)}`:(zh?"绝对损失阈值未记录":"Absolute loss threshold not recorded");
+    if(finite(check.corr_floor))rule+=` · r ≥ ${number(check.corr_floor)}`;
+    const state=check.ok===true?(zh?"通过":"Pass"):check.ok===false?(zh?"未通过":"Fail"):(zh?"未确认":"Unconfirmed");
+    const baseline=check.beats_baseline===false?`<small>${zh?"基线比较未通过":"Baseline comparison failed"}</small>`:"";
+    return `<tr><td>${esc(label)}<br><span class="actiontag ${check.ok===true?'ok':'warn'}">${state}</span>${baseline}</td><td>${number(check.calibration_loss)}</td><td>${number(check.holdout_loss)}</td><td>${number(check.baseline_holdout_loss)}</td><td>${esc(rule)}</td></tr>`;
+  }).join("");
+  const checkTable=rows?`<div style="overflow-x:auto"><table><thead><tr><th>${zh?"配置检查":"Configured check"}</th><th>${zh?"拟合损失":"Fit loss"}</th><th>${zh?"检查期损失":"Check loss"}</th><th>${zh?"基线检查期损失":"Baseline check loss"}</th><th>${zh?"记录的标准":"Recorded criterion"}</th></tr></thead><tbody>${rows}</tbody></table></div><small>${zh?"损失越低越好；各项检查使用各自的指标。":"Lower loss is better; each check uses its own metric."}</small>`:
+    `<small>${zh?"逐项检查结果未记录。":"Individual check results not recorded."}</small>`;
+  const losses=(Array.isArray(latest.best_loss)?latest.best_loss:[latest.best_loss]).filter(finite).map(number).join(", ");
+  const caveat=meta.temporal_check_previously_inspected?(zh?"检查期数据此前已查看，不是独立验证。":"The check period was previously inspected; it is not independent validation."):
+    (zh?"配置检查通过并不自动证明模型通过了独立的科学验证。":"Passing configured checks does not establish independent scientific validation.");
+  return `<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">${zh?"最近一次校准":"Latest calibration"} · ${esc(latest.ki||'KI')}</b><span class="actiontag ${latest.promotable===true?'ok':'warn'}">${latest.promotable===true?(zh?'配置检查已通过':'Configured checks passed'):(zh?'未提升为正式配置':'Not promoted')}</span></div><small>${esc(latest.algorithm||'optimizer')} · ${esc(latest.status||'unknown status')}${losses?` · ${zh?'最佳损失':'best loss'} ${losses}`:''}</small><small>${zh?"请求的优化预算":"Requested optimizer budget"}: ${count(latest.requested_optimizer_budget??latest.budget)} · ${zh?"优化评估":"Optimizer evaluations"}: ${count(latest.optimizer_evaluations??latest.n_evaluations)} · ${zh?"模型启动次数":"Native model launches"}: ${count(latest.native_launch_count)}</small><b>${zh?"拟合期指标":"Training metrics"}</b>${training||`<small>${zh?'未记录':'not recorded'}</small>`}${checkTable}${meta.activation_only?`<small>${zh?'这是功能启用测试，不代表流域已校准。':'Activation test; this does not mean the basin is calibrated.'}</small>`:''}<small>${caveat}</small>${latest.reason?`<small>${esc(latest.reason)}</small>`:''}<small>${zh?'报告':'Report'}: <code>${esc(latest.report_path||'')}</code></small></div>`;
+}
 function renderData(data){
   const files=data.files||[];
   const referenceFiles=data.reference_files||[];
@@ -1756,15 +1862,14 @@ function renderData(data){
   if(!calibration.ready){calibrationLabel="Engine unavailable";calibrationClass="block";calibrationHint="This build cannot load the shared calibration engine. The agent can inspect the problem, but must not claim that optimization ran.";}
   else if(calibrationAdapters.length){
     if(!readyCalibration.length){calibrationLabel="Adapter needed";calibrationClass="warn";calibrationHint="The model is selected, but its project calibration adapter still needs to be prepared.";}
-    else if(latestCalibration&&latestCalibration.promotable){calibrationLabel="Holdout passed";calibrationClass="ok";calibrationHint="The latest real-model calibration passed its held-out validation gate.";}
+    else if(latestCalibration&&latestCalibration.promotable){calibrationLabel=chineseUI()?"配置检查已通过":"Configured checks passed";calibrationClass="ok";calibrationHint=chineseUI()?"配置检查已通过；这并不代表独立的科学验证已通过。":"The configured checks passed; this does not establish independent scientific validation.";}
     else if(latestCalibration){calibrationLabel=latestCalibration.status==="completed"?"Holdout not passed":"Run needs review";calibrationClass="warn";calibrationHint="The latest attempt is saved, but GeoForge does not treat it as a validated calibration.";}
     else if(Number(calibration.case_count||0)>0){calibrationLabel="Workflow prepared";calibrationClass="ok";calibrationHint="A project case is saved. The agent must still verify that its observations, target, and holdout match this run before starting the optimizer.";}
     else{calibrationLabel="Project case needed";calibrationClass="warn";calibrationHint="A reusable model adapter exists, but it may describe a different site or target. Create a project case with observations and a holdout before running calibration.";}
   }
-  const calibrationLoss=latestCalibration&&latestCalibration.best_loss!=null?(Array.isArray(latestCalibration.best_loss)?latestCalibration.best_loss.join(", "):String(latestCalibration.best_loss)):"";
-  const calibrationLatest=latestCalibration?`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">Latest calibration · ${esc(latestCalibration.ki||'KI')}</b><span class="actiontag ${latestCalibration.promotable?'ok':'warn'}">${latestCalibration.promotable?'Validated':'Not promoted'}</span></div><small>${esc(latestCalibration.algorithm||'optimizer')} · ${esc(latestCalibration.status||'unknown status')}${calibrationLoss?` · best loss ${esc(calibrationLoss)}`:''}</small>${latestCalibration.reason?`<small>${esc(latestCalibration.reason)}</small>`:''}<small>Report: <code>${esc(latestCalibration.report_path||'')}</code></small></div>`:"";
+  const calibrationLatest=calibrationResultCard(latestCalibration,chineseUI());
   const calibrationModels=calibrationAdapters.length?calibrationAdapters.map(item=>`${esc(item.ki)} · ${item.status==='ready'?'adapter ready':'adapter needed'}`).join('<br>'):(runModels.length?runModels.map(esc).join(', '):'No KI selected yet');
-  const calibrationCard=`<div class="datacard"><div class="data-overview-head"><div><h3>Calibration</h3><div class="hint" style="margin:1px 0 0">GeoForge uses the real KI model, keeps observations and runs in this project, and accepts a result only after held-out validation.</div></div><span class="statuspill ${calibrationClass}">${esc(calibrationLabel)}</span></div><div class="dataitem"><b>${esc(calibration.ready_adapter_count||0)} ready adapter${Number(calibration.ready_adapter_count||0)===1?'':'s'} · ${esc(calibration.case_count||0)} case file${Number(calibration.case_count||0)===1?'':'s'} · ${esc(calibration.run_count||0)} run${Number(calibration.run_count||0)===1?'':'s'}</b><small>${calibrationModels}</small><small>${esc(calibrationHint)}</small></div>${calibrationLatest}<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><button id="calibration-agent" class="primary">${latestCalibration?'Continue calibration':'Calibrate with agent'}</button><button id="calibration-files">Add observations</button></div></div>`;
+  const calibrationCard=`<div class="datacard"><div class="data-overview-head"><div><h3>Calibration</h3><div class="hint" style="margin:1px 0 0">${chineseUI()?"使用真实 KI 模型和项目观测；拟合效果、配置检查与独立验证需要分别评估。":"Uses the real KI model and project observations. Assess fit, configured checks and independent validation separately."}</div></div><span class="statuspill ${calibrationClass}">${esc(calibrationLabel)}</span></div><div class="dataitem"><b>${esc(calibration.ready_adapter_count||0)} ready adapter${Number(calibration.ready_adapter_count||0)===1?'':'s'} · ${esc(calibration.case_count||0)} case file${Number(calibration.case_count||0)===1?'':'s'} · ${esc(calibration.run_count||0)} run${Number(calibration.run_count||0)===1?'':'s'}</b><small>${calibrationModels}</small><small>${esc(calibrationHint)}</small></div>${calibrationLatest}<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><button id="calibration-agent" class="primary">${latestCalibration?'Continue calibration':'Calibrate with agent'}</button><button id="calibration-files">Add observations</button></div></div>`;
   const zhUI=chineseUI();
   const requestRows=(request.rows||[]).length?`<div style="display:grid;gap:8px;margin-top:8px">${request.rows.map((r,i)=>`<div class="dataitem" style="padding:7px 0"><b>${esc(r.name||r.dataset_id||"")}</b>${r.size?` <small>${esc(sizeLabel(r.size))}</small>`:""}${r.code?`<small style="display:block">${zhUI?"提取码":"Extraction code"}: <code>${esc(r.code)}</code></small>`:""}${r.path_in_share?`<small style="display:block">${zhUI?"分享内只需下载":"Inside the share, download only"}: <code>${esc(r.path_in_share)}</code></small>`:""}<small style="display:block">${zhUI?"放置到":"Place at"}: <code>${esc(r.expected_path||"")}</code> <button class="tiny" data-copy-path="${esc(r.expected_path||"")}" style="margin-left:6px">${zhUI?"复制路径":"Copy path"}</button></small>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noreferrer"><button class="tiny" style="margin-top:4px">${zhUI?"打开下载链接":"Open download link"}</button></a>`:""}</div>`).join("")}</div>`:"";
   const requestActions=waiting?(request.kind==="download"&&(request.rows||[]).length
@@ -1800,12 +1905,37 @@ function renderData(data){
   const knownSizes=uniqueUnits.every(i=>typeof i.size==="number"&&i.size>=0);
   const resolutionCard=uniqueUnits.length?`<section class="datacard" id="resolved-data-units"><h3>${zhUI?"实际下载文件":"Actual delivery files"} · ${uniqueUnits.length}</h3><p>${knownSizes?`${(uniqueUnits.reduce((n,i)=>n+i.size,0)/1e9).toFixed(2)} GB`:zhUI?"总大小未知":"Total size unknown"} · ${zhUI?"不等于本地裁剪后的大小":"Not the locally clipped size"}</p>${uniqueUnits.map(i=>{const r=i.resolution;return `<div class="dataitem"><b>${esc(i.dataset_id||i.id)}</b><small>${zhUI?"研究范围":"Study bbox"}: ${esc(JSON.stringify(r.requested_bbox??null))}</small><small>${zhUI?"下载范围":"Delivery extent"}: ${esc(JSON.stringify(r.delivery_extent??null))}</small><small>${r.spatial_filter_applied===false?(zhUI?"未裁剪文件：下载后需由 Agent 在本地提取、重采样及检查单位。":"Uncut file: agent must extract locally, regrid and check units after download."):(zhUI?"需核对实际交付方式，不自动假定已裁剪。":"Verify actual delivery; do not assume clipping.")}</small><small>${zhUI?"解析请求的变量/年份完整性":"Resolver variable/year completeness"}: ${r.coverage_complete===true?(zhUI?"完整（仍须检查计划是否包含所有文件）":"Complete (check the plan includes every file)"):r.coverage_complete===false?(zhUI?"有缺口":"Gaps reported"):(zhUI?"未确认":"Unconfirmed")}</small></div>`;}).join("")}</section>`:"";
   const subsets=`<section class="datacard" id="project-data-review"><div id="subset-jobs"><div id="subset-note" class="subset-feedback" role="status" aria-live="polite"></div></div><details style="margin-top:12px"><summary>${zhUI?"高级：手动估算（不会弹出批准）":"Advanced: manual estimate (no approval popup)"}</summary><input id="subset-dataset" placeholder="dataset_id"><input id="subset-bbox" placeholder="west,south,east,north"><input id="subset-variables" placeholder="prec,temp (raster: leave empty)"><input id="subset-start" type="date" aria-label="Subset start"><input id="subset-end" type="date" aria-label="Subset end"><button id="subset-estimate">${zhUI?"估算裁剪（不下载）":"Estimate subset (no download)"}</button></details></section>`;
+  const preparations=`<section class="datacard" id="ki-preparation-plans"><h3>${zhUI?"KI 输入准备方案":"KI input preparation plans"}</h3><p class="hint">${zhUI?"先检查服务器能否按本项目 KI 准备输入。方案记录不代表文件已生成或模型已运行。":"Check whether the server can prepare inputs for this project's KI. A plan does not mean files were generated or the model ran."}</p><div id="preparation-estimates" aria-live="polite"></div><button id="prepare-check-agent">${zhUI?"让 Agent 检查准备方案":"Check preparation with agent"}</button></section>`;
   const observations=Array.isArray(projection.observations)?projection.observations:[];
   const evidenceDetails=observations.length?`<section class="datacard" id="status-evidence"><h3>${zhUI?"状态依据":"Status evidence"}</h3>${observations.map(observation=>`<div class="dataitem"><small>${esc(statusEvidenceText(observation))}</small></div>`).join("")}</section>`:"";
-  const details=`<details class="datacard" id="status-details"><summary style="cursor:pointer"><b>${zhP?"更多细节":"Details"}</b> <small class="hint">${zhP?"下载任务记录、项目文件夹、目录搜索、数据来源、校准":"acquisition log, folders, catalogue search, data sources, calibration"}</small></summary>${evidenceDetails}${subsets}${bindingNote}${resolutionCard}${dataActions}${dataOverview}${obsCatalogue}${dataSources}${calibrationCard}${advanced}</details>`;
+  const details=`<details class="datacard" id="status-details"><summary style="cursor:pointer"><b>${zhP?"更多细节":"Details"}</b> <small class="hint">${zhP?"下载任务记录、项目文件夹、目录搜索、数据来源、校准":"acquisition log, folders, catalogue search, data sources, calibration"}</small></summary>${evidenceDetails}${preparations}${subsets}${bindingNote}${resolutionCard}${dataActions}${dataOverview}${obsCatalogue}${dataSources}${calibrationCard}${advanced}</details>`;
   return `${waiting?human:""}${progress}${planData||""}${details}`;
 }
 let SUBSET_TIMER=null;
+
+function preparationEstimateCards(items,zh){
+  if(!Array.isArray(items)||!items.length)return `<p class="hint">${zh?"尚未检查本项目的服务器准备方案。":"No server preparation plans checked for this project yet."}</p>`;
+  const labels={estimate_available:zh?"方案已返回 · 尚未准备":"Plan returned · preparation not run",blocked:zh?"缺少前提条件":"Prerequisites missing",unsupported_contract:zh?"服务器方案格式需要核对":"Server plan format needs review",estimate_failed:zh?"未能取得方案":"Could not obtain plan"};
+  const describe=value=>typeof value==="string"?value:(value&&typeof value==="object"?[value.role,value.name,value.description||value.operation||value.method,value.cadence].filter(v=>typeof v==="string").join(" · "):"");
+  return items.map(item=>{
+    const request=item.request||{},plan=item.server_estimate||{};
+    const blockers=Array.isArray(item.blockers)?item.blockers:[];
+    const transforms=Array.isArray(plan.transforms)?plan.transforms:[];
+    const outputs=Array.isArray(plan.outputs)?plan.outputs:[];
+    const location=Array.isArray(request.bbox)?request.bbox.join(", "):[request.lat,request.lon].filter(v=>v!=null).join(", ");
+    return `<div class="dataitem"><b>${esc(request.model||"KI")}${request.ki_step?` · ${esc(request.ki_step)}`:""}</b><small>${esc(labels[item.status]||(zh?"待核对":"Needs review"))}</small><small>${esc(request.source||"")} · ${esc(request.mode||"")} · ${esc(location)}</small><small>${esc(request.start||"")} — ${esc(request.end||"")}</small>${plan.source_cadence?`<small>${zh?"源数据间隔":"Source cadence"}: ${esc(describe(plan.source_cadence))}</small>`:""}${transforms.length?`<small>${zh?"计划处理":"Planned processing"}: ${esc(transforms.map(describe).filter(Boolean).join("; "))}</small>`:""}${outputs.length?`<small>${zh?"计划输出":"Planned outputs"}: ${esc(outputs.map(describe).filter(Boolean).join("; "))}</small>`:""}${blockers.length?`<small style="color:var(--warn)">${zh?"需要解决":"Needs attention"}: ${esc(blockers.join("; "))}</small>`:""}${item.message?`<small>${esc(item.message)}</small>`:""}<small>${zh?"仅方案记录；未生成或下载输入，尚未运行模型。":"Plan record only; no inputs generated or downloaded, no model run."}</small></div>`;
+  }).join("");
+}
+async function refreshPreparationEstimates(sid){
+  const response=await fetch(`/api/session/${sid}/preparations`,{cache:"no-store"});
+  const payload=await response.json();
+  if(!response.ok)throw new Error(payload.error||"Could not load preparation plans");
+  if(CUR?.id!==sid||!$("#preparation-estimates"))return;
+  $("#preparation-estimates").innerHTML=preparationEstimateCards(payload.items,chineseUI());
+}
+function preparationAgentPrompt(zh){
+  return zh?"请检查本项目的 KI 输入准备方案。先读取所选 KI 和项目已经确定的模型版本、输入步骤、地点或网格、日期、数据源及日/小时模式。使用 estimate_preparation 工具，或 GeoForge Database 助手的 --prepare-request 参数，提交明确的请求；只估算，不创建任务或下载。报告真实源数据间隔、计划转换、输出及缺少的前提条件，不猜测未知配置或静默替换数据源。VIC 有阻碍时必须先解决网格和土壤文件。准备方案不代表输入已经验证，也不能把 preparation_id 当作 acquisition_id。":"Check a KI input preparation plan for this project. Read the selected KI and established model version, input step, site/grid, dates, source and daily/hourly mode. Use estimate_preparation, or the GeoForge Database helper's --prepare-request option, with explicit settings; estimate only, without creating a job or downloading. Report actual source cadence, planned transformations, outputs and prerequisites. Do not guess unknown settings or silently substitute a source. Resolve VIC grid/soil prerequisites when blocked. A plan does not establish validated inputs, and preparation_id is not an acquisition_id.";
+}
 
 const DATA_ACTIONS=new Set(), DATA_FEEDBACK=new Map(), SUBSET_READS=new Map();
 
@@ -2014,6 +2144,13 @@ async function refreshData(){
   if(!CUR||CUR.id!==requestedSession||DATA_ACTIONS.has(requestedSession))return;
   LAST_PREP=r.ok?data:null;
   $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
+  if(r.ok){
+    refreshPreparationEstimates(requestedSession).catch(error=>{
+      if(CUR?.id===requestedSession&&$("#preparation-estimates"))$("#preparation-estimates").textContent=error.message;
+    });
+    const prepareButton=$("#prepare-check-agent");
+    if(prepareButton)prepareButton.onclick=()=>sendDataPanelPrompt(preparationAgentPrompt(chineseUI()),"data");
+  }
   if(r.ok){const sid=CUR.id;refreshSubsets(sid).catch(e=>{$("#subset-note").textContent=e.message;});$("#subset-estimate").onclick=async()=>{const button=$("#subset-estimate");button.disabled=true;$("#subset-note").textContent=chineseUI()?"正在估算…":"Estimating…";try{await subsetAction(sid,"estimate",{request:{dataset_id:$("#subset-dataset").value.trim(),bbox:$("#subset-bbox").value.split(",").map(Number),variables:$("#subset-variables").value.split(",").map(s=>s.trim()).filter(Boolean),start:$("#subset-start").value,end:$("#subset-end").value}});await refreshSubsets(sid);$("#subset-note").textContent="";}catch(e){$("#subset-note").textContent=e.message;}finally{button.disabled=false;}};}
   const obsSearch=$("#obs-search"),obsQuery=$("#obs-query");
   drawDatabaseStatus("#obs-status").then(()=>{const pill=$("#obs-pill");if(!pill)return;fetch("/api/obs/status",{cache:"no-store"}).then(r=>r.json()).then(st=>{pill.textContent=!st.configured?(chineseUI()?"未配置":"Not set up"):st.mode==="off"?(chineseUI()?"已关闭":"Off"):st.effective_mode==="off"?(chineseUI()?"不可用":"Unavailable"):st.stale?(chineseUI()?"过期":"Stale"):(chineseUI()?"本地目录":"Local copy");pill.className="statuspill "+(st.configured&&st.mode!=="off"&&st.effective_mode!=="off"&&!st.stale?"ok":"warn");}).catch(()=>{});});
@@ -2137,7 +2274,7 @@ function drawPick(){
     .map(m=>`<div class="pickrow ${PICK.has(m.name)?'on':''}" data-n="${esc(m.name)}">
       <span class="tick"></span><span class="dot ${stateClass(m.name)}"></span>
       <span style="flex:1;min-width:0"><b>${esc(m.name)}</b>
-      <span style="color:var(--fg-3);font-size:12px"> ${esc((m.reference||"").slice(0,48))}</span></span>
+      <span style="color:var(--fg-3);font-size:12px"> ${m.package_role==="data_reader"?(chineseUI()?"数据 KI · ":"Data KI · "):""}${esc((m.reference||"").slice(0,48))}</span></span>
       <span style="color:var(--fg-3);font-size:11px">${esc(stateLabel(m.name))}</span></div>`).join("");
   document.querySelectorAll(".pickrow").forEach(e=>e.onclick=()=>{
     const n=e.dataset.n; PICK.has(n)?PICK.delete(n):PICK.add(n); drawPick();});
@@ -2517,6 +2654,7 @@ $("#s-test").onclick=async()=>{
 };
 window.addEventListener("focus",()=>{
   refreshSessionList();
+  watchKiUpdates();
   refreshMachineStatus(true,true);
   const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
   if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
@@ -2524,6 +2662,7 @@ window.addEventListener("focus",()=>{
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)pauseProjectMedia();
   else{
+    watchKiUpdates();
     refreshMachineStatus(true,true);
     if($("#viewpanel").classList.contains("open"))resumeProjectMedia();
   }
@@ -2542,6 +2681,5 @@ setInterval(()=>refreshAcquisitionProgress().catch(()=>{}),5000);
 setInterval(()=>{if(!CUR)return;if($("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});else refreshViewStatus().catch(()=>{});},5000);
 $("#ki-update-view").onclick=()=>location.href="/library?updates=1";
 $("#ki-update-dismiss").onclick=()=>$("#ki-update-toast").classList.remove("open");
-loadAll();
-watchKiUpdates();
+loadAll().finally(watchKiUpdates);
 </script></body></html>

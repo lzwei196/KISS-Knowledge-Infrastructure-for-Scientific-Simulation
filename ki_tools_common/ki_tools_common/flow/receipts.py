@@ -400,7 +400,8 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
                stdout_log: str | None = None, stderr_log: str | None = None,
                forcing_source: str | None = None, validation: dict | None = None,
                run_id: str | None = None, execution_status: str | None = None,
-               process_started: bool | None = None) -> Path:
+               process_started: bool | None = None, project_data_tool: dict | None = None,
+               data_ki: dict | None = None) -> Path:
     if not approval_sha256 or not plan_step_id:
         raise ReceiptError("a run receipt must name the approval it runs under and the plan step "
                            "it executes (codex review #2)")
@@ -430,6 +431,11 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
     if execution_status is not None:
         doc.update(execution_status=execution_status, process_started=process_started,
                    binary_actually_ran=process_started is True)
+    if project_data_tool is not None:
+        doc.update(execution_scope="project_data_tool", model_executed=False,
+                   project_data_tool=project_data_tool)
+    elif data_ki is not None:
+        doc.update(execution_scope="data_ki", model_executed=False, data_ki=data_ki)
     return _write(project, RUNS_SUB, rid, doc)
 
 
@@ -950,6 +956,58 @@ def _finished_at(run: dict) -> float:
         return float("-inf")
 
 
+def _historical_outputs(project: Path, runs: list[tuple[Path, dict, bool]],
+                        current_approval: str, current_outputs: set[str]) -> list[dict]:
+    """Classify intact prior output bytes as history, never current-step evidence.
+
+    A failed attempt can leave useful diagnostics. Its signed, unchanged files
+    retain their failed status here; they neither pass a step nor validate data.
+    The latest signed writer wins, and current-approval outputs are handled only
+    by the current-attempt rules in evidence(). No receipt is changed or rebound.
+    """
+    latest: dict[str, tuple[Path, dict, dict]] = {}
+    rank = {"passed": 0, "failed": 2}
+    valid_runs = [(path, doc) for path, doc, ok in runs if ok and doc.get("kind") == "run"
+                  and isinstance(doc.get("validation"), dict)]
+    for receipt_path, doc in sorted(valid_runs, key=lambda row: (
+            _finished_at(row[1]), rank.get(row[1]["validation"].get("status"), 1))):
+        for entry in doc.get("outputs") or []:
+            if isinstance(entry, dict) and isinstance(entry.get("path"), str):
+                latest[entry["path"]] = (receipt_path, doc, entry)
+    retained = []
+    root = project.resolve()
+    for relative, (receipt_path, doc, entry) in sorted(latest.items()):
+        validation = (doc.get("validation") or {}).get("status")
+        if (relative in current_outputs or not doc.get("approval_sha256")
+                or doc.get("approval_sha256") == current_approval
+                or validation not in {"passed", "warning", "failed"}
+                or doc.get("binary_actually_ran") is not True
+                or entry.get("missing") or type(entry.get("bytes")) is not int):
+            continue
+        # A 'passed' label cannot override contradictory signed process facts.
+        if validation in {"passed", "warning"} and (doc.get("exit_code") != 0 or
+                doc.get("execution_status") not in (None, "succeeded")):
+            continue
+        path = root / relative
+        try:
+            if _entry_status(root, entry) != "intact" or path.stat().st_size != entry["bytes"]:
+                continue
+            resolved_relative = path.resolve().relative_to(root).as_posix()
+            if resolved_relative in current_outputs:
+                continue
+        except (OSError, ValueError, RuntimeError):
+            continue
+        retained.append({"path": resolved_relative, "sha256": entry["sha256"], "bytes": entry["bytes"],
+                         "receipt_path": receipt_path.relative_to(project).as_posix(),
+                         "run_id": doc.get("run_id"), "ki": doc.get("ki"),
+                         "approval_sha256": doc["approval_sha256"], "plan_step_id": doc.get("plan_step_id"),
+                         "validation": validation, "exit_code": doc.get("exit_code"),
+                         "classification": {"failed": "failed_attempt", "warning": "validation_warning",
+                                            "passed": "passed_run"}[validation],
+                         "satisfies_current_step": False})
+    return retained
+
+
 #: Files the host itself writes (not agent or model results): the calibration manifest every
 #: desktop project gets at creation, and the Project View manifest the host validates and
 #: renders when the agent publishes it through its own tool (presentation, not data).
@@ -966,6 +1024,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     that verify AND are bound to the current approval (`approval_sha256 == the signed
     approval issuance's unique signature`), name a selected KI and a planned step. COMPLETED needs every
     executable planned step's latest bound attempt to have passed, and no unreceipted artifacts.
+    Intact signed outputs from older approvals are separately retained as history;
+    their pass/fail status never satisfies or validates a current planned step.
 
     `enforcement` = how the EXECUTING provider was contained (flow.policy Enforcement value).
     kimi #2: the HMAC key lives in the user's config dir; a provider whose agent runs as the
@@ -981,7 +1041,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     selected = set(plan.get("selected_kis") or approval.get("selected_kis") or [])
     steps = {str(s.get("id")): s for s in (plan.get("steps") or []) if isinstance(s, dict)}
     exec_steps = {sid for sid, s in steps.items()
-                  if (s.get("kind") or "process") in EXECUTABLE_STEP_KINDS}
+                  if ((s.get("kind") or "process") in EXECUTABLE_STEP_KINDS
+                      or (s.get("kind") == "check" and s.get("tool")))}
 
     runs = _read_all(project, RUNS_SUB)
     # An in-process status query can share its already computed inspection with
@@ -1056,11 +1117,14 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     for d in bound_dl:
         for o in (d.get("raw_files") or []) + (d.get("processed_files") or []):
             receipted_outputs.add(o.get("path"))
+    historical_outputs = _historical_outputs(project, runs, cur, set(writer))
+    historical_paths = {entry["path"] for entry in historical_outputs}
     # Inputs the approved inventory names under inputs/ are the plan's data, not results, and
     # the host's own calibration manifest is written at project creation: neither is an
     # unvouched output. Only inputs/ paths count, so a result cannot be declared into this set.
     root = project.resolve()
     declared_inputs = set(HOST_BOOKKEEPING)
+    declared_input_dirs: set[Path] = set()
     # Calibration cases are prepared inputs in their own project namespace.
     # Only inputs consumed by a typed calibration step qualify, never a plan's
     # produced items or arbitrary files somewhere under calibration/.
@@ -1074,10 +1138,13 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                 path = Path(str(raw))
                 rel = (path.resolve() if path.is_absolute() else (root / path).resolve()) \
                     .relative_to(root).as_posix()
-            except (OSError, ValueError):
+            except (OSError, ValueError, RuntimeError):
                 continue
             if rel.startswith("inputs/"):
                 declared_inputs.add(rel)
+                resolved = root / rel
+                if resolved.is_dir():
+                    declared_input_dirs.add(resolved)
             elif item.get("id") in calibration_inputs and rel.startswith("calibration/cases/"):
                 declared_inputs.add(rel)
                 resolved = root / rel
@@ -1087,13 +1154,27 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                             declared_inputs.add(child.resolve().relative_to(root).as_posix())
     unreceipted: list[str] = []
     for sub in output_dirs:
-        base = project / sub
+        base = root / sub
         if not base.is_dir():
             continue
         for p in base.rglob("*"):
             if p.is_file() and p.suffix.lower() in artifact_suffixes:
-                rel = p.resolve().relative_to(root).as_posix()
-                if rel not in receipted_outputs and rel not in declared_inputs:
+                try:
+                    resolved = p.resolve()
+                    rel = resolved.relative_to(root).as_posix()
+                except (OSError, ValueError, RuntimeError):
+                    # A linked input that escapes the project cannot become a
+                    # declared child, or abort evidence for every other file.
+                    unreceipted.append(p.absolute().relative_to(root).as_posix())
+                    continue
+                # Use the existing artifact scan rather than walking every
+                # declared directory again. Both lexical and resolved paths
+                # must remain inputs; output aliases gain no directory exemption.
+                declared_child = ((root / "inputs") in p.absolute().parents and
+                                  any(resolved.is_relative_to(directory)
+                                      for directory in declared_input_dirs))
+                if (rel not in receipted_outputs and rel not in declared_inputs
+                        and rel not in historical_paths and not declared_child):
                     unreceipted.append(rel)
 
     passed_steps = {sid for sid, d in latest.items() if status(d) == "passed" and sid not in stale_steps}
@@ -1107,12 +1188,19 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     failed_any = any(status(d) == "failed" for d in latest.values())
     missing_steps = sorted(exec_steps - passed_steps)
     complete = bool(bound_runs) and not missing_steps and not unreceipted and not failed_any
+    # A direct API wall does not turn reviewed, agent-authored Python into an
+    # OS sandbox. Keep signature verification, but describe that execution's
+    # assurance honestly, including a retained historical data-tool receipt.
+    project_data_involved = any(isinstance(s.get("project_data_tool"), dict) for s in steps.values()) or any(
+        ok and (d.get("execution_scope") == "project_data_tool" or isinstance(d.get("project_data_tool"), dict))
+        for _, d, ok in runs)
     return {
         "approval_sha256": cur or None,
-        "assurance": "cryptographic" if str(enforcement).lower() == "exact" else "containment",
+        "assurance": "cryptographic" if str(enforcement).lower() == "exact" and not project_data_involved else "containment",
         "runs_total": len(runs), "runs_bound": len(bound_runs),
         "downloads_total": len(dl), "downloads_bound": len(bound_dl),
         "rejected_receipts": rejected,
+        "historical_outputs": historical_outputs,
         "unreceipted_artifacts": unreceipted[:200],
         "executable_steps": sorted(exec_steps), "steps_passed": sorted(passed_steps),
         "steps_missing": missing_steps, "stale_steps": stale_steps,
@@ -1122,5 +1210,11 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         "runs": [{"run_id": d.get("run_id"), "ki": d.get("ki"), "exit_code": d.get("exit_code"),
                   "outputs": d.get("output_files_count"),
                   "validation": (d.get("validation") or {}).get("status"),
-                  "plan_step_id": d.get("plan_step_id")} for d in bound_runs],
+                  "plan_step_id": d.get("plan_step_id"),
+                  **({"execution_scope": ("data_ki" if d.get("execution_scope") == "data_ki"
+                                          else "project_data_tool"), "model_executed": False,
+                      "step_kind": (steps.get(str(d.get("plan_step_id"))) or {}).get("kind")}
+                     if d.get("execution_scope") in {"project_data_tool", "data_ki"} or
+                     isinstance((steps.get(str(d.get("plan_step_id"))) or {}).get("project_data_tool"), dict)
+                     else {})} for d in bound_runs],
     }

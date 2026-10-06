@@ -18,7 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import doctor, gui, handoff, install, install_locations, paths, port, recipe
-from .catalog import Catalog
+from .catalog import Catalog, bundled_data_dir
 from .manifest import Manifest
 
 C = {
@@ -34,7 +34,7 @@ def _c(key: str, s: str) -> str:
 
 
 def _catalog(args) -> Catalog:
-    return Catalog(args.models) if args.models else Catalog.discover()
+    return Catalog(args.models, data_dir=bundled_data_dir()) if args.models else Catalog.discover()
 
 
 def _manifest_for(ki, repo_root: Path) -> Manifest:
@@ -164,6 +164,10 @@ def cmd_init(args) -> int:
     # Materialise the KI: a working copy with this machine's real paths written
     # in place of the KISSPATH_* placeholders. Everything downstream — preflight,
     # the model's own tools, its config files — then sees true paths.
+    from . import ki_updates, setup
+    if (repo_root / ki_updates.SNAPSHOT_MANIFEST).is_file() and install.needs_shared_tools(ki, man):
+        setup.prepare_common(cfg, repo_root)
+        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     live = root / "ki"
     mrep = port.materialise(ki.root, live, cfg)
     # A file that stopped parsing once the real path was written in is a failure,
@@ -192,7 +196,9 @@ def cmd_init(args) -> int:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     print(f"  [2/8] python env ...... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
-    s = result.add(install.install_ki_tools_common(cfg, repo_root))
+    s = result.add(install.install_ki_tools_common(cfg, repo_root)
+                   if install.needs_shared_tools(ki, man) else
+                   install.Step("ki_tools_common", True, "Not required: source-bound stdlib data reader", skipped=True))
     print(f"  [3/8] ki_tools_common . {_c('ok' if s.ok else 'BLOCK', s.mark)}")
     if not s.ok:
         print(_c("dim", "        " + s.detail.strip().splitlines()[0][:100]))
@@ -478,6 +484,28 @@ def cmd_obs_search(args) -> int:
     return 0
 
 
+def cmd_obs_prepare_estimate(args) -> int:
+    """Inspect a KI preparation plan; never create a server job or acquire files."""
+    from . import obs_access, obs_prepare
+    try:
+        path = Path(args.request)
+        if path.stat().st_size > 60 * 1024:
+            raise ValueError("preparation request JSON is too large")
+        body = json.loads(path.read_text(encoding="utf-8-sig"))
+        result = (obs_prepare.record_estimate(Path(args.project), body) if args.project
+                  else obs_prepare.estimate(body))
+    except obs_access.ObsAccessError as error:
+        print(f"GeoForge preparation estimate failed: {error}", file=sys.stderr)
+        return 3 if error.code in obs_access.AUTH_ERRORS else 1
+    except (OSError, TypeError, ValueError) as error:
+        print(f"Preparation request refused: {error}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if (result.get("failure") or {}).get("code") in obs_access.AUTH_ERRORS:
+        return 3
+    return 0 if result.get("plan_available") is True else 2
+
+
 def cmd_calibration_status(args) -> int:
     """Prove that the fixed engine and required optimizers are in this runtime."""
     from . import calibration
@@ -683,6 +711,11 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--limit", type=int, default=25)
     q.set_defaults(fn=cmd_obs_search)
 
+    q = sub.add_parser("obs-prepare-estimate", help="inspect a KI preparation plan; no job or download")
+    q.add_argument("--request", required=True, help="UTF-8 JSON file with explicit KI, source, mode, dates and site/grid")
+    q.add_argument("--project", help="optionally save the estimate in this project")
+    q.set_defaults(fn=cmd_obs_prepare_estimate)
+
     q = sub.add_parser(
         "calibration-status",
         help="check the bundled calibration framework and optimizer dependencies")
@@ -757,7 +790,14 @@ def cmd_verify(args) -> int:
             except Exception:
                 cfg = None
         py = args.python or (cfg.python if cfg else None)
-        v = runnable.check(ki, _manifest_for(ki, repo_root), cfg, harvested,
+        man = _manifest_for(ki, repo_root)
+        # Verify the installed, materialised copy just as GUI setup does.
+        # The catalogue package may be outside this workspace and still carry
+        # placeholders; source-bound Python admission must not bypass that gate.
+        live = root / "ki"
+        if cfg is not None and live.is_dir():
+            ki = type(ki)(name=ki.name, root=live)
+        v = runnable.check(ki, man, cfg, harvested,
                            timeout=args.timeout, python=py)
         runnable.save(workroot, v)
         results.append(v)

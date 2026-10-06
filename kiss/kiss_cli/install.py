@@ -157,6 +157,24 @@ def check_system_deps(deps: list[str]) -> Step:
     return Step("system-deps", True, f"{len(deps)} present" if deps else "none required")
 
 
+def needs_shared_tools(ki, man: Manifest) -> bool:
+    """Only admitted first-party stdlib readers can skip scientific shared tools.
+
+    Invalid, changed and unknown declarations keep the established install path;
+    normal acquisition and runnable checks still reject invalid source contracts.
+    """
+    from . import python_script
+    if (getattr(ki, "name", "") not in python_script.DATA_READERS or
+            man.model != ki.name or man.acquire is None or
+            man.acquire.strategy != "bundled" or man.python_deps):
+        return True
+    try:
+        python_script.resolve(ki, man.python_script)
+    except (ValueError, TypeError, OSError):
+        return True
+    return False
+
+
 def install_python_deps(deps: list[str], python: str,
                         env: dict | None = None) -> Step:
     if not deps:
@@ -857,14 +875,11 @@ def install_ki_tools_common(cfg, repo_root: Path) -> Step:
         return Step("ki-tools-common", False,
                     f"not shipped in this checkout (expected {src})")
 
-    from . import port as _port
-
-    live = Path(cfg.roles.get("ki_tools_common") or (cfg.root / "ki_tools_common"))
-    mrep = _port.materialise(src, live, cfg)
-    if mrep.unresolved:
-        return Step("ki-tools-common", False,
-                    f"unresolved roles in ki_tools_common: "
-                    f"{', '.join(sorted(mrep.unresolved))}")
+    from .setup import prepare_common
+    try:
+        live = prepare_common(cfg, repo_root)
+    except (ValueError, OSError) as error:
+        return Step("ki-tools-common", False, str(error))
     src = live
 
     cmds: list[str] = []

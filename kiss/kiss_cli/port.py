@@ -432,7 +432,10 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
             continue
         out.parent.mkdir(parents=True, exist_ok=True)
 
-        if src.suffix.lower() not in TEXT_SUFFIXES:
+        # Reference cases carry hashes of portable, relative-path inputs. Their
+        # bytes (including newlines and literal tokens) are part of the test
+        # contract, so materialisation must not rewrite any case file.
+        if rel.parts[0] == "test_cases" or src.suffix.lower() not in TEXT_SUFFIXES:
             shutil.copy2(src, out)          # binaries, PDFs, netCDF — verbatim
             rep.skipped += 1
             continue
@@ -458,7 +461,13 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
         if not ok and _still_valid(src, text)[0]:
             rep.corrupted.append(f"{rel}: {why}")
 
-        out.write_text(new_text, encoding="utf-8")
+        # Unchanged text may carry a source-hash contract. Rewriting it with
+        # platform newline translation would invalidate that contract even
+        # when no paths were materialised (LF becomes CRLF on Windows).
+        if new_text == text:
+            shutil.copy2(src, out)
+        else:
+            out.write_text(new_text, encoding="utf-8")
         shutil.copystat(src, out)
         rep.files_written += 1
         rep.tokens_replaced += n

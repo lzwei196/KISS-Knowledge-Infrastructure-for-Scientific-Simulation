@@ -279,16 +279,38 @@ def test_approval_without_verified_software_goes_to_setup(tmp_path):
     assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "EXECUTING"
 
 
-def test_executing_turn_detects_drift_and_replan_marker(tmp_path):
+def test_cli_executing_turn_retains_legacy_replan_marker(tmp_path):
     project = _project(tmp_path); ki = _ki(tmp_path, "M")
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     t = _drive_planning(tmp_path, ki, project)
     _approve(project, ki, flowrun.after(project, t, "plan written", setup_ok=True))
     # the agent says it needs another model → re-plan
-    t2 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
+    t2 = flowrun.turn(project, [ki], _cfg(project), "cli", "claude", None, "go")
     flowrun.after(project, t2, "I cannot do this: REPLAN_REQUIRED: routing needs CaMa_Flood", setup_ok=True)
     assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "REPLAN_REQUIRED"
     assert not (project / "runs" / "approval.json").exists()
+
+
+@pytest.mark.parametrize("reply", [
+    "Status: REPLAN_REQUIRED. Tools were unavailable.",
+    "Previously the state was REPLAN_REQUIRED; the current plan is approved.",
+    "I cannot do this: REPLAN_REQUIRED: routing needs CaMa_Flood",
+])
+def test_api_prose_cannot_revoke_approval_or_claim_completion(tmp_path, reply):
+    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+    flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
+    t = _drive_planning(tmp_path, ki, project)
+    _approve(project, ki, flowrun.after(project, t, "plan written", setup_ok=True))
+    approval_before = (project / "runs/approval.json").read_bytes()
+    t2 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
+    assert t2.policy.provider == "api"
+    result = flowrun.after(project, t2, reply, setup_ok=True)
+    assert flowrun.current_state(project) == "EXECUTING"
+    assert (project / "runs/approval.json").read_bytes() == approval_before
+    assert not list((project / "runs").glob("approval.revoked.*"))
+    evidence = json.loads((project / "runs/evidence.json").read_text(encoding="utf-8"))
+    assert evidence["validation"] != "passed"
+    assert not evidence["runs"]
 
 
 def test_cli_policy_and_worktree_for_codex(tmp_path):

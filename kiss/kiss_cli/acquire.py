@@ -175,7 +175,7 @@ def _manual_row(project: Path, item: dict, info: dict) -> dict:
             "name": info.get("name") or item.get("dataset_id"),
             "size": info.get("size") or (item.get("catalogue") or {}).get("size"),
             "url": url, "code": info.get("baidu_pwd"),
-            "path_in_share": info.get("path_in_share"),
+            "path_in_share": info.get("path_in_share") or info.get("baidu_remote_path"),
             "expected_path": str(info.get("destination") or _manual_destination(project, item))}
 
 
@@ -284,9 +284,16 @@ def run(project: Path, *, client=None, automatic_only: bool = False) -> dict:
     if flow.approval.check(project) != "OK":
         raise ValueError("acquisition needs an approved plan")
     plan, inventory = flow.plan.read_artifacts(project)
+    if errors := obs_access.delivery_preference_errors(inventory):
+        raise ValueError("; ".join(errors))
+    default_preference = obs_access.delivery_preference(inventory)
     approval = flow.approval.approval_id(flow.approval.read(project))
     doc = status(project)
     wanted = needed(plan, inventory, project)
+    for item in wanted:
+        if (obs_access.delivery_preference(item, default=default_preference) == "manual"
+                and item.get("delivery") != "manual"):
+            raise ValueError(f"item {item.get('id')!r}: manual delivery is unavailable for the selected delivery")
     keep = {str(i["id"]) for i in wanted}
     # A new approval or a replan that dropped/renamed an item must not inherit its old verdict.
     old_items = doc.get("items") or {} if doc.get("approval_sha256") == approval else {}
@@ -355,7 +362,11 @@ def run(project: Path, *, client=None, automatic_only: bool = False) -> dict:
                     entry.update(status="done", receipt=placed["receipt"], path=placed["path"], error=None)
                 else:
                     _admit_request(project, approval)
-                    info = (client or obs_access.Client()).download(str(item.get("dataset_id") or ""), project)
+                    options = ({"manual_only": True}
+                               if obs_access.delivery_preference(item, default=default_preference) == "manual"
+                               else {})
+                    info = (client or obs_access.Client()).download(str(item.get("dataset_id") or ""), project,
+                                                                  **options)
                     row = _manual_row(project, item, info)
                     _save_manual_details(project, approval, details, item, row)
                     manual_rows.append((item, row))

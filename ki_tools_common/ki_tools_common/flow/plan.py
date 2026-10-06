@@ -517,6 +517,45 @@ def _strategy_for_unnamed(local_name: str, input_category: str, intent: dict) ->
 # Plan derivation — derive_plan.py L382-565
 # ---------------------------------------------------------------------------
 
+def _data_reader_workflow(ki_root: Path | None) -> dict | None:
+    """A declared data reader is a task workflow, not a missing model DAG."""
+    if ki_root is None:
+        return None
+    path = Path(ki_root) / "knowledge_infrastructure.yaml"
+    try:
+        doc = _yaml().safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, _yaml().YAMLError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    package = doc.get("package")
+    if (not isinstance(package, dict) or package.get("kind") != "task_workflow"
+            or package.get("role") != "data_reader"):
+        return None
+    workflow = doc.get("workflow")
+    return workflow if isinstance(workflow, dict) else {}
+
+
+def _reader_stages(ki_root: Path, workflow: dict) -> list[dict]:
+    """Expose declared tools and bindings for planning; never invent arguments."""
+    stages = []
+    declared = workflow.get("stages")
+    for index, stage in enumerate(declared if isinstance(declared, list) else []):
+        if not isinstance(stage, dict):
+            continue
+        tool = stage.get("tool")
+        candidate = Path(ki_root) / tool if isinstance(tool, str) and tool else None
+        tools = ([str(candidate.resolve())] if candidate is not None
+                 and candidate.resolve().is_relative_to(Path(ki_root).resolve()) else [])
+        stages.append({"code": str(stage.get("id") or f"read_{index+1}"),
+                       "name": str(stage.get("name") or stage.get("id") or "Read observations"),
+                       "tools": tools,
+                       "required_bindings": [value for value in stage.get("inputs", [])
+                                             if isinstance(value, str)]
+                       if isinstance(stage.get("inputs"), list) else []})
+    return stages
+
+
 def derive_plan_for_model(model_id: str, intent: dict, indexes: dict, roots: DataRoots,
                           ki_root: Path | None = None) -> dict:
     """Owner (2026-09-16): the planner reads the model's OWN KI — dag.yaml (what the model needs:
@@ -535,6 +574,14 @@ def derive_plan_for_model(model_id: str, intent: dict, indexes: dict, roots: Dat
     # The driver knows where the KI lives (web: <root>/models/<M>/knowledge_infrastructure;
     # desktop: the bundled models/<M>/). Only fall back to the server layout when it does not.
     ki_root = Path(ki_root) if ki_root else model_ki_root(roots.root, model_id)   # S0 round 2: DB ids (HEC-RAS) → HEC_RAS
+    workflow = _data_reader_workflow(ki_root)
+    if workflow is not None:
+        return {"model": model_id, "ki_root": _rel(ki_root, roots.root),
+                "package_kind": "task_workflow", "package_role": "data_reader",
+                "inputs": [], "ki_internal": [], "ki_stages": _reader_stages(ki_root, workflow),
+                "ask_user": [], "input_count": 0, "auto_resolved": 0,
+                "planning_note": "Bind acquired raw source, exact station, dates and fresh output paths "
+                                 "from the project before assigning the reader tool. No model execution."}
     ki_inputs, note = model_inputs(roots.root, model_id, ki_root=ki_root)
     if not ki_inputs:
         return {"model": model_id, "error": f"KI unreadable for {model_id}: {note}",
@@ -644,9 +691,11 @@ def derive_full_plan(models: list[str], intent: dict, roots: DataRoots,
             combined.append(q)
     total_inputs = sum(p.get("input_count", 0) for p in plans)
     total_resolved = sum(p.get("auto_resolved", 0) for p in plans)
+    reader_count = sum(p.get("package_role") == "data_reader" for p in plans)
     return {
         "models": models, "intent": intent, "plans": plans, "ask_user_combined": combined,
-        "summary": {"models": len(models), "total_inputs": total_inputs,
+        "summary": {"models": len(models) - reader_count,
+                    **({"data_readers": reader_count} if reader_count else {}), "total_inputs": total_inputs,
                     "auto_resolved": total_resolved, "asked_of_user": len(combined),
                     "auto_resolution_rate": round(total_resolved / total_inputs, 3) if total_inputs else 0.0},
     }
@@ -664,6 +713,17 @@ def _dag_steps(model_id: str, ki_root: Path | None) -> list[dict]:
     """Ordered steps from the KI's dag.yaml `processes` (tool left null for the agent to
     fill from the KI's tools/; validate() checks it). Falls back to one 'run' step."""
     steps: list[dict] = []
+    workflow = _data_reader_workflow(ki_root)
+    if workflow is not None:
+        stages = _reader_stages(Path(ki_root), workflow) or [{"code": "read", "tools": [], "required_bindings": []}]
+        return [{"id": f"{model_id}:{stage['code']}", "ki": model_id, "tool": None,
+                 "kind": "prepare", "inputs": [], "outputs": [], "status": "planned",
+                 "notes": ("Data reader; bind source/station/dates, invocation arguments and fresh output paths "
+                           "before assigning a tool and declaring actual inventory inputs/outputs. "
+                           f"Declared tool: {', '.join(stage['tools']) or 'read the workflow/SKILL.md'}. "
+                           f"Required bindings: {', '.join(stage['required_bindings']) or 'inspect the reader contract'}. "
+                           "This draft does not execute a model.")}
+                for stage in stages]
     dag = None
     if ki_root:
         p = Path(ki_root) / "dag.yaml"
@@ -993,9 +1053,22 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         if (for_review or for_execution) and not tool and (st.get("kind") or "process") in (
                 "process", "run", "model_run", "calibrate", "route", "couple", "prepare"):
             errs.append(f"step {st.get('id')!r} has no tool — not ready to execute")
+        if for_review and not tool and st.get("kind") == "check":
+            host_preflight = (step_id in {"preflight", f"{ki}:preflight"}
+                              and not st.get("inputs") and not st.get("outputs")
+                              and "project_data_tool" not in st and "calibration" not in st)
+            if not host_preflight:
+                errs.append(
+                    f"step {step_id!r} has no tool: GeoForge does not execute custom checks, "
+                    "staging or result promotion from prose. Bind a KI tool, or use the absolute "
+                    "tool and hash-bound project_data_tool returned by write_project_data_tool "
+                    "with reviewed arguments/cwd/timeout and declared outputs. Project data "
+                    "adapters may prepare or inspect data, never run the scientific model. "
+                    "Only the host preflight check may omit its tool; move narrative-only notes "
+                    "outside executable steps.")
         if (for_review or for_execution) and not tool and st.get("outputs") and st.get("kind") != "download":
             errs.append(f"step {st.get('id')!r} declares outputs but has no tool to record them; "
-                        "assign a KI tool, or remove the outputs if this is an informational step")
+                        "assign a KI tool or typed project_data_tool; move narrative-only notes outside executable steps")
         if for_execution:
             by_id = {str(it.get("id")): it for it in items if isinstance(it, dict)}
             # An input produced by an earlier step of this plan is not a gap:
@@ -1010,7 +1083,10 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
                         and not (it.get("dataset_id") or it.get("chosen_source") or it.get("local_paths"))
                         and str(inp) not in produced_earlier):
                     errs.append(f"step {st.get('id')!r} input {inp!r} is still missing")
-        if "calibration" in st:
+        if "project_data_tool" in st:
+            from .project_tools import step_errors
+            errs.extend(f"step {st.get('id')!r}: {problem}" for problem in step_errors(st, project))
+        elif "calibration" in st:
             errs.extend(f"step {st.get('id')!r}: {problem}"
                         for problem in calibration_step_errors(st, project))
         elif tool:

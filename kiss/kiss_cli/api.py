@@ -264,7 +264,12 @@ def tool_schemas(ki, *, setup_mode: bool = False,
             },
             {
                 "name": "read_project_file",
-                "description": "Read a text file from this chat's local project.",
+                "description": (
+                    "Preview up to 120000 characters from a text file in this chat's local "
+                    "project, including large CSV files. A truncated preview does not establish "
+                    "full-file coverage or record counts. Use a format-aware KI reader for "
+                    "binary files or complete dataset analysis."
+                ),
                 "input_schema": {"type": "object", "properties": {
                     "path": {"type": "string"},
                 }, "required": ["path"]},
@@ -290,13 +295,21 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "configuration generation, validation, and model harness steps. "
                     "Arguments may reference this chat project, this KI package, or "
                     "the current KI's GeoForge-managed shared binaries directory. "
+                    "Read the shipped tool or wrapper's documented flags; do not guess argument names. "
+                    "Write generated scientific results to a fresh outputs/<run>/ or artifacts/ "
+                    "directory consistent with the approved plan. An arbitrary runs/<name> "
+                    "directory is bookkeeping and is not captured as scientific output; "
+                    "runs/logs/ is the tracked log exception. Process success alone is insufficient. "
                     "Do not replace a KI tool with improvised calculations. Required "
                     "environment values are taken automatically from this approved plan step; "
                     "do not try to install startup hooks or mutate the system environment."
                 ),
                 "input_schema": {"type": "object", "properties": {
-                    "tool_path": {"type": "string", "description": "path below tools/ of the KI, "
-                                  "or the absolute path of the model binary the KI declares"},
+                    "tool_path": {"type": "string", "description": "Python tool path relative to the KI root, "
+                                  "including tools/, for example tools/s5_execution/run_crhm.py. "
+                                  "An absolute Python path stored in an approved plan is not the API "
+                                  "tool address; use its KI-root-relative path here. Only a model "
+                                  "binary declared by the KI may use an absolute path."},
                     "arguments": {"type": "array", "items": {"type": "string"}},
                     "cwd": {"type": "string",
                             "description": "relative project working directory; defaults to project root"},
@@ -309,6 +322,39 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                                                     "(runs/plan.json steps[].id); required once a "
                                                     "plan is approved — the receipt is bound to it"},
                 }, "required": ["tool_path"]},
+            },
+            {
+                "name": "write_project_data_tool",
+                "description": (
+                    "Planning/replan only: write a small project-local Python reader, converter or data check "
+                    "when no suitable shipped data tool exists. Executes nothing. Use acquired project inputs or "
+                    "explicit inventory files from this selected KI's project-local test_cases (data/metadata only); "
+                    "directory traversal requires a declared case inputs/ directory. Never read or execute KI code. "
+                    "preserve raw values/flags/units and missingness; never invent model output or replace model science. "
+                    "Return includes the exact tool path and project_data_tool binding: fill its arguments, cwd "
+                    "and timeout_seconds, then include it in a kind=check or prepare plan step for normal review. "
+                    "This is trusted reviewed source, not an OS sandbox. Data outputs must be fresh outputs/ or "
+                    "artifacts/ files, including staging. Unsupported formats pass structure checks only as exact "
+                    "byte/hash copies of granted inputs; this is not scientific validation. No network, native "
+                    "process, credential access or input modification."),
+                "input_schema": {"type": "object", "additionalProperties": False, "properties": {
+                    "ki": {"type": "string"}, "name": {"type": "string", "description": "short Python identifier, without .py"},
+                    "source": {"type": "string"}, "purpose": {"type": "string", "enum": ["reader", "converter", "check"]},
+                }, "required": ["ki", "name", "source", "purpose"]},
+            },
+            {
+                "name": "run_project_data_tool",
+                "description": (
+                    "Run the exact approved project-local data reader/converter/check with a signed receipt. "
+                    "Use the existing plan's project_data_tool invocation; omit arguments/cwd/timeout to use "
+                    "its reviewed values. Different source or invocation requires request_replan and review. "
+                    "Inputs are read-only; write fresh outputs/ or artifacts/ files. SQLite uses a file URI "
+                    "with mode=ro, uri=True and PRAGMA query_only=ON. No model/native execution or network."),
+                "input_schema": {"type": "object", "additionalProperties": False, "properties": {
+                    "ki": {"type": "string"}, "tool_path": {"type": "string"}, "plan_step_id": {"type": "string"},
+                    "arguments": {"type": "array", "items": {"type": "string"}}, "cwd": {"type": "string"},
+                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
+                }, "required": ["ki", "tool_path", "plan_step_id"]},
             },
             {
                 "name": "write_calibration_adapter",
@@ -665,9 +711,32 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 }, "required": ["dataset_id", "bbox"], "additionalProperties": False},
             },
             {
+                "name": "estimate_preparation",
+                "description": (
+                    "Inspect a read-only server plan to prepare inputs for a specific model KI step. "
+                    "State the source, output mode, site/grid and exact dates explicitly. Review native "
+                    "cadence, transforms, outputs and blockers. This creates no job or download and "
+                    "does not establish input readiness. Its preparation_id is an estimate reference, "
+                    "not an acquisition_id for write_plan. Never silently fall back to raw data."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "model": {"type": "string", "enum": ["shaw", "crhm", "vic"]},
+                    "ki_step": {"type": "string"}, "ki_version": {"type": "string"},
+                    "source": {"type": "string", "enum": ["cmfd", "nasa_power", "mswx"]},
+                    "mode": {"type": "string", "enum": ["daily", "hourly", "3-hourly"]},
+                    "lat": {"type": "number"}, "lon": {"type": "number"},
+                    "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+                    "grid_res": {"type": "number"},
+                    "start": {"type": "string", "description": "YYYY-MM-DD, inclusive"},
+                    "end": {"type": "string", "description": "YYYY-MM-DD, inclusive"},
+                    "utc_offset": {"type": "integer"},
+                }, "required": ["model", "source", "mode", "start", "end"], "additionalProperties": False},
+            },
+            {
                 "name": "request_replan",
                 "description": (
-                    "EXECUTING only. Use when the approved plan cannot be carried out as written "
+                    "EXECUTING or COMPLETED. Use when the user requests work beyond a completed "
+                    "phase, or when the approved plan cannot be carried out as written "
                     "(a tool needs a different input, a data source is unusable, a step or "
                     "scientific choice must change). GeoForge moves the project to REPLAN_REQUIRED, "
                     "revokes the approval, and makes write_plan available immediately, so you "
@@ -680,12 +749,14 @@ def tool_schemas(ki, *, setup_mode: bool = False,
             {
                 "name": "write_plan",
                 "description": (
-                    "PLANNING only. Write runs/plan.json and runs/data-inventory.json (the "
+                    "PLANNING or REPLAN_REQUIRED. Write runs/plan.json and runs/data-inventory.json (the "
                     "schemas are in your instructions). GeoForge validates them; errors come "
                     "back and nothing is written until they pass. No downloads, no inputs, no "
                     "model runs happen in planning — the user approves the plan first. If the "
                     "two documents together are large, send them in two calls: first only "
-                    "plan, then only data_inventory; GeoForge merges them."
+                    "plan, then only data_inventory; GeoForge combines these two complete documents. "
+                    "Each supplied document replaces its previous version. An inventory must include "
+                    "its entire items array: splitting items across calls does NOT append or merge them."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "plan": {"type": "object"},
@@ -715,6 +786,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
     if installation_only:
         forbidden = {
             "run_preflight", "run_ki_tool", "run_calibration", "write_calibration_adapter",
+            "write_project_data_tool", "run_project_data_tool",
             "create_project_plot", "publish_project_view", "fetch_data",
             "publish_setup_output",
         }
@@ -1354,6 +1426,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     progress_root = project_root
     if (bool((setup_context or {}).get("installation_only")) and name in {
             "run_preflight", "run_ki_tool", "run_calibration", "write_calibration_adapter",
+            "write_project_data_tool", "run_project_data_tool",
             "create_project_plot", "publish_project_view", "fetch_data",
             "publish_setup_output"}):
         raise ToolError(
@@ -1488,9 +1561,20 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if _user_only_file(p, project_root):
             raise ToolError("that file is a request card for the user (it may hold a private download "
                             "link or code); its answer reaches you through the conversation")
-        if p.stat().st_size > 5_000_000:
-            raise ToolError("project file is too large for the text reader; use a KI tool")
-        return p.read_text(encoding="utf-8", errors="replace")[:120000]
+        preview_limit = 120000
+        with p.open("r", encoding="utf-8", errors="replace") as stream:
+            preview = stream.read(preview_limit + 1)
+        if "\x00" in preview or preview.startswith("SQLite format 3"):
+            raise ToolError("this is a binary project file, not a text preview; "
+                            "use a format-aware KI reader, or author a reviewed project-local reader with "
+                            "write_project_data_tool during planning/replan if no suitable reader exists")
+        if len(preview) > preview_limit:
+            return preview[:preview_limit] + (
+                "\n\n[TRUNCATED PREVIEW: first 120000 characters only. This does not "
+                "establish full-file coverage or record counts; use a format-aware KI "
+                "reader for complete dataset analysis.]"
+            )
+        return preview
 
     if project_mode and name == "write_project_file":
         p = _inside_project(args.get("path") or "")
@@ -1519,7 +1603,30 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         # separators that are frequently copied into later JSON/tool calls.
         return f"wrote {rel.as_posix()} ({len(content.encode('utf-8'))} bytes)"
 
-    if project_mode and name == "run_ki_tool":
+    if project_mode and name == "write_project_data_tool":
+        from . import project_data_tools
+        from .flowgate import FlowDenied
+        if flow is None or flow.state.value not in {"PLANNING", "REPLAN_REQUIRED"}:
+            raise ToolError("Project data source authoring is available only during planning or replan")
+        if set(args) != {"ki", "name", "source", "purpose"}:
+            raise ToolError("Provide only ki, name, source and purpose")
+        if not isinstance(args["ki"], str) or not args["ki"]:
+            raise ToolError("ki must explicitly name a selected model")
+        try:
+            selected_name, _ = flow.ki_root_for(args["ki"], root)
+            return json.dumps(project_data_tools.write(project_root, selected_name, args["name"],
+                                                       args["source"], args["purpose"]), ensure_ascii=False)
+        except (FlowDenied, OSError, ValueError, TypeError, SyntaxError) as exc:
+            raise ToolError(str(exc)) from None
+
+    if project_mode and name in {"run_ki_tool", "run_project_data_tool"}:
+        project_data = name == "run_project_data_tool"
+        if project_data and flow is None:
+            raise ToolError("Project data tools require a current approved Flow plan")
+        if project_data and (set(args) - {"ki", "tool_path", "plan_step_id", "arguments", "cwd", "timeout_seconds"}
+                             or any(not isinstance(args.get(k), str) or not args[k]
+                                    for k in ("ki", "tool_path", "plan_step_id"))):
+            raise ToolError("Provide selected ki, tool_path, plan_step_id and only the reviewed invocation fields")
         tool_ki_name, tool_root = getattr(ki, "name", root.name), root
         requested_tool_root = Path(ki.root)
         if flow is not None:
@@ -1535,15 +1642,36 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         def _inside_tool_ki(rel: str, _root=tool_root) -> Path:
             # same containment rule as _inside, against the KI this call names (multi-KI runs)
             if Path(rel).is_absolute():
-                raise ToolError(f"absolute paths are not accepted: {rel}")
+                hint = ""
+                try:
+                    candidate = Path(rel).resolve()
+                    relative = candidate.relative_to(_root)
+                    if candidate.suffix.casefold() == ".py" and is_ki_tool(_root, candidate):
+                        hint = (f". For this shipped Python tool use tool_path={relative.as_posix()!r} "
+                                "relative to the KI root (including tools/ when present). "
+                                "Keep the approved plan and arguments unchanged.")
+                except (OSError, ValueError, RuntimeError):
+                    pass
+                raise ToolError(f"absolute paths are not accepted: {rel}{hint}")
             p = (_root / rel).resolve()
             if p != _root and _root not in p.parents:
                 raise ToolError(f"path escapes the KI package: {rel}")
             return p
         from ki_tools_common.flow.tools import is_declared_binary, is_ki_tool
         requested = str(args.get("tool_path") or "")
-        binary = is_declared_binary(tool_root, requested)
-        if binary:
+        binary = not project_data and is_declared_binary(tool_root, requested)
+        if project_data:
+            from . import project_data_tools
+            from ki_tools_common.flow import project_tools
+            try:
+                script = project_tools.source_path(project_root, tool_ki_name, requested)
+                _, approved_args, approved_cwd, approved_timeout = project_data_tools.invocation(
+                    flow, tool_ki_name, script, args.get("plan_step_id"), args)
+                args = {**args, "arguments": approved_args,
+                        "cwd": approved_cwd.relative_to(project_root).as_posix(), "timeout_seconds": approved_timeout}
+            except (FlowDenied, OSError, ValueError, TypeError) as exc:
+                raise ToolError(str(exc)) from None
+        elif binary:
             script = Path(requested).resolve()
             rel_script = script.name
         else:
@@ -1600,7 +1728,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 flow=flow, cfg=tool_cfg, project=project_root, ki=tool_ki_name, ki_root=requested_tool_root,
                 tool=script, arguments=arguments, cwd=cwd, plan_step_id=args.get("plan_step_id"),
                 python_tool=not binary, timeout=timeout, provider_id=provider_id,
-                stop=stop, turn_id=turn_id)
+                stop=stop, turn_id=turn_id, project_data_tool=project_data)
         except FlowDenied as e:
             raise ToolError(str(e)) from None
         headline = (f"exit_code={result.exit_code}" if result.exit_code is not None
@@ -1751,6 +1879,21 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             return "PLAN NOT WRITTEN — fix these and call write_plan again:\n- " + "\n- ".join(errs[:30])
         return ("Plan files written: runs/plan.json, runs/data-inventory.json. Stop here: GeoForge "
                 "shows the plan to the user; execution starts in a separate session after approval.")
+
+    if project_mode and name == "estimate_preparation":
+        from . import obs_access, obs_prepare
+        if flow is None:
+            raise ToolError("Preparation estimates require a project session")
+        if getattr(flow, "state", None) is not None and flow.state.value == "RESOLVING_KIS":
+            used = getattr(flow, "intake_estimates", 0)
+            if used >= INTAKE_ESTIMATE_CAP:
+                raise ToolError(f"at most {INTAKE_ESTIMATE_CAP} data estimates during task "
+                                "understanding; finish the intake before estimating more")
+            flow.intake_estimates = used + 1
+        try:
+            return json.dumps(obs_prepare.record_estimate(flow.project, args), ensure_ascii=False)
+        except (obs_access.ObsAccessError, TypeError, ValueError, OSError) as error:
+            raise ToolError(str(error)) from None
 
     if project_mode and name in ("search_catalogue", "describe_dataset", "estimate_clip"):
         # Thin adapters over the legacy multi-mode handler (removed in step 2).
@@ -2418,6 +2561,13 @@ def _post(url: str, headers: dict, payload: dict, *, provider: str,
         events = _sse_events(response, handle)
         return (_assemble_anthropic(events) if wire == "anthropic"
                 else _assemble_openai(events))
+    except AttributeError:
+        # Stop closes HTTPResponse from another thread. urllib/http.client can
+        # then dereference its cleared stream (for example None.peek) while
+        # iterating. Only normalize this when Stop was actually requested.
+        if handle is not None and handle.stopped.is_set():
+            raise ToolError("stopped by the user") from None
+        raise
     except (TimeoutError, http.client.IncompleteRead, ConnectionError,
             ValueError, OSError) as e:
         if handle is not None and handle.stopped.is_set():

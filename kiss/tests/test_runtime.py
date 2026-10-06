@@ -4072,7 +4072,9 @@ class AgentSetupTests(unittest.TestCase):
         self.assertIn("options", choice_tool["input_schema"]["properties"])
         run_tool = next(tool for tool in combined_tools if tool["name"] == "run_ki_tool")
         description = run_tool["input_schema"]["properties"]["tool_path"]["description"]
-        self.assertIn("absolute path of the model binary", description)
+        self.assertIn("Python tool path relative to the KI root", description)
+        self.assertIn("An absolute Python path stored in an approved plan is not the API", description)
+        self.assertIn("Only a model binary declared by the KI may use an absolute path", description)
         self.assertIn("tools/", description)
 
     def test_api_install_turn_keeps_setup_and_project_roots_separate(self):

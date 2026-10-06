@@ -1,0 +1,36 @@
+schema_version: "1.0"
+kind: data_reader_contract
+input:
+  format: SQLite with rowid-backed DLY_FLOWS
+  required_tables:
+    STATIONS: [STATION_NUMBER, STATION_NAME, LATITUDE, LONGITUDE]
+    DLY_FLOWS: [STATION_NUMBER, YEAR, MONTH, FLOW1..FLOW31, FLOW_SYMBOL1..FLOW_SYMBOL31]
+    DATA_SYMBOLS: [SYMBOL_ID, SYMBOL_EN, SYMBOL_FR]
+  optional_tables: [VERSION]
+  connection: file URI mode=ro with query_only=ON
+  query: parameterized exact station and year range, then inclusive calendar-date filter
+  units:
+    quantity: daily mean discharge
+    unit: m3/s
+    authority: https://www.canada.ca/en/environment-climate-change/services/environmental-indicators/water-quantity-canadian-rivers.html
+    embedded_units_column: false
+  date: native YEAR/MONTH plus valid calendar day; leap years honored
+  timezone: unknown; no UTC conversion or assumed offset
+  quality: retain FLOW_SYMBOL per day and read native DATA_SYMBOLS definitions
+output:
+  observations.csv:
+    fields: [station_number, date, discharge_native, value_status, quality_symbol_raw, quality_symbol_is_null, source_file, source_rowid, source_day_column]
+    null_flow: empty discharge_native with value_status=missing
+    numeric_values: preserve SQLite native numeric value; no unit conversion
+    absent_month: no invented rows; absent dates counted and compressed into audit ranges
+    duplicate_month: preserve repeated daily rows and report duplicated dates
+  audit.json:
+    content: reader version/hash, actual source and output hashes/bytes, schema, station metadata, version, requested dates, full gap ranges, invalid/null/negative counts, duplicate dates, native quality symbols and definitions
+    status: extracted or review_required; neither asserts scientific QC
+    model_executed: false
+errors:
+  exit_2: invalid arguments, missing schema/station, no selected records, changed input, existing output directory or I/O failure
+integrity:
+  raw_files: unchanged; SHA256 checked before and after extraction
+  output_directory: new only
+  transformations: none besides reshaping monthly columns into existing calendar-day records

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths as kpaths
+from . import reference_portability
 
 try:
     import yaml
@@ -25,6 +26,7 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 BLOCK, WARN, INFO = "BLOCK", "WARN", "INFO"
+VALIDATION_POLICY_VERSION = "ki-doctor-reference-cases-v1"
 
 #: Artefacts every KI is expected to ship, and whether absence is fatal.
 EXPECTED = [
@@ -98,6 +100,8 @@ def check_ki(ki) -> list[Finding]:
         if not (ki.root / rel).exists():
             if rel == "dag.yaml" and ki.name in DAG_EXEMPT:
                 add(INFO, "artefact-exempt", f"no dag.yaml — {ki.name} is a framework, not a model")
+            elif rel == "dag.yaml" and (getattr(ki, "meta", {}) or {}).get("package_kind") == "task_workflow":
+                add(INFO, "artefact-exempt", "task workflow declared in knowledge_infrastructure.yaml")
             else:
                 add(sev, "artefact-missing", f"{rel} absent ({why})")
 
@@ -127,10 +131,31 @@ def check_ki(ki) -> list[Finding]:
 
     # 3. Portability --------------------------------------------------------
     port = ki.portability
-    if port.total:
-        roles = ", ".join(f"{r}×{port.by_role[r]}" for r in sorted(port.by_role))
-        add(BLOCK, "hardcoded-paths", f"{port.total} authoring-machine paths in "
-            f"{len(port.files)} files [{roles}]", port.total)
+    classifications = reference_portability.classify_reference_paths(ki)
+    remaining = dict(port.by_role)
+    provenance = bindings = 0
+    for rows in classifications.values():
+        for row in rows:
+            category, role = row["classification"], row["role"]
+            if category == "blocked":
+                continue
+            if role not in kpaths.LEAK_ROLES:
+                remaining[role] = max(0, remaining.get(role, 0) - 1)
+            if category == "provenance":
+                provenance += 1
+            else:
+                bindings += 1
+    hardcoded = sum(remaining.values())
+    if hardcoded:
+        roles = ", ".join(f"{r}×{remaining[r]}" for r in sorted(remaining) if remaining[r])
+        add(BLOCK, "hardcoded-paths", f"{hardcoded} mandatory or unclassified authoring-machine paths "
+            f"[{roles}]", hardcoded)
+    if provenance:
+        add(WARN, "reference-case-provenance", f"{provenance} server-path references in reference-case "
+            "provenance/documentation are retained unchanged; this is not local test evidence", provenance)
+    if bindings:
+        add(WARN, "reference-case-binding", f"{bindings} reference-case engine metadata or proven "
+            "overridable defaults require local runtime bindings; native verification was not performed", bindings)
     for role, n in port.leaks.items():
         add(WARN, "internal-leak", f"{n} refs to private tooling ({role}) leaked into a public package", n)
 

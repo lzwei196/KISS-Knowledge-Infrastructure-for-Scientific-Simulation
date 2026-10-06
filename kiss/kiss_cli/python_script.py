@@ -1,4 +1,4 @@
-"""Explicit, source-bound bundled Python variants; never official upstream proof."""
+"""Explicit, source-bound Python variants and first-party observation readers."""
 from pathlib import Path
 import hashlib
 import json
@@ -14,12 +14,17 @@ VARIANTS = {
     'WASP': ('hydrocraft-wasp', 'tools/run_wasp.py'),
     'VELMA': ('velma-python-4layer', 'tools/run_velma.py'),
 }
+DATA_READERS = {
+    'HYDAT_Observations': ('geoforge-hydat-daily-reader', 'tools/read_observations.py'),
+    'Agrometeo_Quebec_Observations': ('geoforge-agrometeo-soil-temperature-reader', 'tools/read_observations.py'),
+}
 
 def resolve(ki, contract):
     """Validate the declared identity and exact materialized source before execution."""
     if not isinstance(contract, dict) or set(contract) != {'implementation_id', 'path', 'sha256'}:
         raise ValueError('python_script requires exactly implementation_id, path, sha256')
-    expected = VARIANTS.get(getattr(ki, 'name', ''))
+    name = getattr(ki, 'name', '')
+    expected = VARIANTS.get(name) or DATA_READERS.get(name)
     if not expected or (contract['implementation_id'], contract['path']) != expected:
         raise ValueError('Unrecognized declared Python implementation or runner path')
     if (getattr(ki, 'meta', {}) or {}).get('impl_id') != expected[0]:
@@ -38,10 +43,12 @@ def resolve(ki, contract):
     return path
 
 def check(v, ki, contract, cfg, python, env=None, timeout=25):
-    v.kind = 'declared python script'
+    data_reader = getattr(ki, 'name', '') in DATA_READERS
+    v.kind = 'data reader (Python)' if data_reader else 'declared python script'
+    # This flag retains the source-entrypoint gate; no native binary is invented.
     v.needs_binary = True
-    v.installation_scope = 'declared-python-variant'
-    v.official_upstream_verified = False
+    v.installation_scope = 'data-reader' if data_reader else 'declared-python-variant'
+    v.official_upstream_verified = None if data_reader else False
     v.implementation_id = contract.get('implementation_id', '') if isinstance(contract, dict) else ''
     try:
         path = resolve(ki, contract)
@@ -79,7 +86,8 @@ def check(v, ki, contract, cfg, python, env=None, timeout=25):
                       not v.probe_created_paths and 'usage:' in v.probe_output.lower() and
                       path.name in v.probe_output)
         if not v.detail:
-            v.detail = ('Declared implementation help passed; official upstream unverified' if v.responds
+            v.detail = (('Data reader help and imports passed; no model was executed' if data_reader
+                         else 'Declared implementation help passed; official upstream unverified') if v.responds
                         else 'Declared Python help must return 0, identify its runner, and create no files')
     except (ValueError, TypeError, OSError, subprocess.SubprocessError) as exc:
         v.responds = False

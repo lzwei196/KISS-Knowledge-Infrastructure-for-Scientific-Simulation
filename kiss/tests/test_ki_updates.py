@@ -59,6 +59,9 @@ class KiUpdateTests(unittest.TestCase):
                  extra: dict[str, str] | None = None) -> Path:
         path = self.root / "update.zip"
         with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("repo-mac-version/ki_tools_common/pyproject.toml",
+                             '[project]\nname = "ki_tools_common"\nversion = "0.1.0"\n')
+            archive.writestr("repo-mac-version/ki_tools_common/ki_tools_common/__init__.py", "")
             for rel, text in (extra or {}).items():
                 archive.writestr(f"repo-mac-version/{rel}", text)
             for name, skill in packages.items():
@@ -85,6 +88,8 @@ class KiUpdateTests(unittest.TestCase):
         activated: list[Path] = []
         manager = ki_updates.UpdateManager(
             self.base, activated.append, branch="mac-version")
+        manager._component_trees = {"models": "a" * 40, "manifests": "b" * 40,
+                                    "shared_tools": "c" * 40, "data_kis": None}
 
         def download(destination: Path) -> None:
             shutil.copyfile(archive, destination)
@@ -160,6 +165,8 @@ class KiUpdateTests(unittest.TestCase):
     def _run_update(self, archive: Path, activated: list[Path], revision: str):
         manager = ki_updates.UpdateManager(
             self.base, activated.append, branch="main")
+        manager._component_trees = {"models": "a" * 40, "manifests": "b" * 40,
+                                    "shared_tools": "c" * 40, "data_kis": None}
         with mock.patch.object(
                 manager, "_remote_revision",
                 return_value=(revision, "a" * 40, "b" * 40)), \
@@ -181,7 +188,11 @@ class KiUpdateTests(unittest.TestCase):
         activated: list[Path] = []
         revision = "7" * 16 + "-" + "8" * 16
 
-        report, _download = self._run_update(archive, activated, revision)
+        # Even if a supplement cannot restore these files, the original guard
+        # must still refuse activation. Composition itself has separate tests.
+        with mock.patch.object(ki_updates.ki_platform_overlay, "apply_windows_overlay",
+                               return_value={"files": []}):
+            report, _download = self._run_update(archive, activated, revision)
 
         # A deliberate refusal, not a failure: the window must not report it
         # as a network or validation error.
@@ -293,6 +304,7 @@ class KiUpdateTests(unittest.TestCase):
             "active_snapshot": revision,
             "revision": revision,
             "package_count": 1,
+            "validation_policy": ki_updates._validation_policy(),
         }), encoding="utf-8")
         manager = ki_updates.UpdateManager(
             snapshot, lambda _path: None, branch="mac-version")
@@ -316,12 +328,16 @@ class KiUpdateTests(unittest.TestCase):
         replies = [
             {"sha": commit_sha, "commit": {"tree": {"sha": tree_sha}}},
             {"tree": [{"path": "models", "sha": models_sha},
-                      {"path": "kiss", "sha": kiss_sha}]},
+                      {"path": "kiss", "sha": kiss_sha},
+                      {"path": "ki_tools_common", "sha": "6" * 40}]},
             {"tree": [{"path": "manifests", "sha": manifests_sha}]},
         ]
         with mock.patch.object(manager, "_request_json", side_effect=replies) as request:
             revision, got_models, got_manifests = manager._remote_revision()
-        self.assertEqual(revision, f"{'3' * 16}-{'5' * 16}")
+        self.assertEqual(revision, ki_updates._revision_identity({
+            "models": models_sha, "manifests": manifests_sha,
+            "shared_tools": "6" * 40, "data_kis": None}))
+        self.assertEqual(len(revision), 32)
         self.assertEqual((got_models, got_manifests), (models_sha, manifests_sha))
         self.assertEqual(manager._archive_ref, commit_sha)
         self.assertEqual(manager._source_commit, commit_sha)
@@ -393,15 +409,15 @@ const elements=new Map(),language=input.zh?'zh-CN':'en';
 function element(selector){
   if(!elements.has(selector)){
     const node={textContent:'',innerHTML:'',href:'',disabled:false,open:false};
-    node.classList={add(name){if(name==='open')node.open=true;},remove(name){if(name==='open')node.open=false;}};
+    node.classList={add(name){if(name==='open')node.open=true;},remove(name){if(name==='open')node.open=false;},contains(name){return name==='open'&&node.open;}};
     elements.set(selector,node);
   }
   return elements.get(selector);
 }
-const context={console,$:element,CUR:null,MODELS:null,STATUS:null,KIUPDATE:input.report,
+const context={console,$:element,CUR:null,MODELS:null,STATUS:null,LAST_STATUS_CHECK:0,KIUPDATE:input.report,
   drawModelLabel(){},setTimeout(){return 1;},clearTimeout(){},
   window:{GeoForgeI18n:{language}},GeoForgeI18n:{language},
-  fetch:async url=>({json:async()=>url==='/api/ki-updates'?input.report:{}})};
+  fetch:async url=>({ok:true,json:async()=>url==='/api/ki-updates'?input.report:url==='/api/models'?[]:{}})};
 vm.createContext(context);
 function shipped(start,end){
   const a=page.indexOf(start),b=page.indexOf(end,a);
@@ -411,8 +427,7 @@ function shipped(start,end){
 (async()=>{
   if(kind==='app'){
     shipped('const chineseUI=','\n');
-    shipped('let KI_UPDATE_REVISION=','\n');
-    shipped('async function watchKiUpdates(){','\n');
+    shipped('let KI_UPDATE_REVISION=','function workLabel(');
     await context.watchKiUpdates();
   }else{
     shipped('function esc(s){','\n');

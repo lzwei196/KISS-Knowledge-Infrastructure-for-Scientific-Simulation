@@ -82,6 +82,16 @@ def test_inventory_review_includes_noncanonical_files_and_five_links(planning_ca
     assert "decides on the card whether" not in text
 
 
+def test_custom_checks_require_execution_binding_and_only_host_preflight_may_omit_tool(planning_case):
+    text = contracts.planning_block(*planning_case)
+    assert "For read-only inspection use kind:'check', tool:null" not in text
+    assert "For executable inspection use kind:'check' with a real KI tool" in text
+    assert "hash-bound project_data_tool returned by write_project_data_tool" in text
+    assert "Custom checks, staging and result promotion cannot execute from prose" in text
+    assert "only id:'preflight' or '<KI>:preflight' may use" in text
+    assert "inputs:[], outputs:[], with no project_data_tool or calibration binding" in text
+
+
 def test_defaults_and_presence_are_not_claimed_as_scientific_readiness(planning_case):
     text = contracts.planning_block(*planning_case)
     assert "cite the KI file/section declaring the value, method" in text

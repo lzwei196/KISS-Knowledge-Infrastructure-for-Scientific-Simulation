@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,12 +29,13 @@ def isolated_host(tmp_path, monkeypatch):
 
 def _handler(monkeypatch, project, *, sid=SID, headers=None):
     handler = object.__new__(gui.Handler)
+    handler.server = SimpleNamespace(server_port=8877)
     handler.workroot = project.parent / "app"
     handler.path = f"/api/session/{sid}/acquire"
     handler.headers = {
         "Content-Length": "2", "Content-Type": "application/json",
         "Host": "127.0.0.1:8877", "Origin": "http://127.0.0.1:8877",
-        "Sec-Fetch-Site": "same-origin", "Cookie": f"geoforge_csrf={COOKIE}",
+        "Sec-Fetch-Site": "same-origin", "Cookie": f"geoforge_csrf_8877={COOKIE}",
     }
     if headers:
         handler.headers.update(headers)
@@ -134,7 +136,7 @@ def test_background_request_completes_subset_but_never_receipts_an_unfinished_ma
 
 
 @pytest.mark.parametrize("headers", [
-    {"Cookie": ""}, {"Cookie": "geoforge_csrf=wrong"},
+    {"Cookie": ""}, {"Cookie": "geoforge_csrf_8877=wrong"},
     {"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"},
 ])
 def test_acquire_rejects_unsafe_browser_requests_before_any_flow_or_transport(

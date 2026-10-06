@@ -6,6 +6,7 @@ import os
 import stat
 import threading
 from email.message import Message
+from types import SimpleNamespace
 
 from kiss_cli import gui, settings
 
@@ -19,13 +20,14 @@ def _request_headers(**values):
 
 def _handler(headers):
     handler = object.__new__(gui.Handler)
+    handler.server = SimpleNamespace(server_port=8765)
     handler.csrf_token = "test-request-token"
     handler.headers = headers
     return handler
 
 
 def test_local_post_requires_process_cookie_and_same_origin():
-    cookie = "geoforge_csrf=test-request-token"
+    cookie = "geoforge_csrf_8765=test-request-token"
     ok, _ = _handler(_request_headers(
         Host="127.0.0.1:8765", Origin="http://127.0.0.1:8765",
         Sec_Fetch_Site="same-origin", Cookie=cookie,

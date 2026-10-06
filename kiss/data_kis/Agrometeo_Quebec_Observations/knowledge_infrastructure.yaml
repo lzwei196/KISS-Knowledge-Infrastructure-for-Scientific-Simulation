@@ -1,0 +1,44 @@
+package:
+  name: Agrometeo_Quebec_Observations
+  version: "1.0.0"
+  kind: task_workflow
+  role: data_reader
+  domain: observed soil temperature
+  implementation: geoforge-agrometeo-soil-temperature-reader
+  language: Python
+  license: MIT
+  repo_url: https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation
+  description: Read acquired Quebec station soil temperature, preserving native field text, timing gaps and provenance; no model execution.
+data:
+  dataset_ids: [agrometeo_quebec]
+  format: CSV
+  quantity: soil temperature
+  units: degC
+  units_authority: explicit native CSV column header
+runtime:
+  language: Python
+  minimum_version: "3.11"
+  import_modules: [argparse, csv, datetime, hashlib, json, math, pathlib]
+  external_packages: []
+  install: Use the configured Python; all reader dependencies are standard library.
+workflow:
+  stages:
+    - id: inspect_and_extract
+      tool: tools/read_observations.py
+      permitted_step_kinds: [check, prepare]
+      execution_scope: data_preparation
+      inputs: [acquired_yearly_csv_files, exact_station_name, start_date, end_date]
+      outputs: [observations.csv, audit.json, optional excluded_selected_records.csv]
+      model_executed: false
+attribution:
+  data_ki: Agrometeo_Quebec_Observations
+  scientific_model: null
+  downstream_models: unrestricted; configure and validate their inputs separately
+validation:
+  preflight: preflight_check.py
+  tests: tests/test_agrometeo_reader.py
+  fixture: fixtures/synthetic_agrometeo.json
+  fixture_kind: synthetic format regression, not observations or a model benchmark
+distribution:
+  shipped_by: GeoForge Desktop data-KI library
+  companion_server_delivery: not implemented or claimed by this package

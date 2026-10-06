@@ -61,6 +61,7 @@ def test_project_setup_recipe_precedes_host_preflight_and_only_verified_handoff(
         _ki=lambda _name: ki, _workdir=lambda _ki: setup_wd,
         _status_for=lambda _ki: {"can_run": False}, _manifest=lambda _ki: {},
         repo_root=tmp_path, catalog=SimpleNamespace(models_dir=tmp_path),
+        _helper_repo_root=lambda: tmp_path,
         _software_status_prompt=lambda *_args: "", _record_agent_preflight=preflight,
     )
     monkeypatch.setattr(gui.setup_flow, "prepare", prepare)

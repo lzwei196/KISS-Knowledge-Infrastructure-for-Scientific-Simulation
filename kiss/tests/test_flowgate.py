@@ -290,8 +290,11 @@ def test_run_ki_tool_refuses_a_step_with_no_approved_tool(tmp_path):
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     pj, inv = _plan(ki); pj["steps"][0]["tool"] = None; pj["steps"][0]["kind"] = "check"
-    pj["steps"][0]["outputs"] = []  # an informational check is valid, but cannot run an unapproved tool
-    fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
+    pj["steps"][0]["outputs"] = []
+    # Simulate a historical plan accepted before review rejected unbound checks.
+    # It must still be unable to execute an unapproved tool.
+    fs.flow.plan.write_artifacts(project, pj, inv)
+    fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
     with pytest.raises(api.ToolError, match="has no approved tool"):
@@ -455,7 +458,8 @@ def test_api_runs_the_declared_model_binary_with_a_receipt(tmp_path, monkeypatch
         assert "ran -g runs/global.txt" in out
 
 
-def test_request_replan_unlocks_write_plan_in_the_same_turn(tmp_path):
+@pytest.mark.parametrize("completed", [False, True])
+def test_request_replan_unlocks_write_plan_in_the_same_turn(tmp_path, completed):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
@@ -464,8 +468,17 @@ def test_request_replan_unlocks_write_plan_in_the_same_turn(tmp_path):
     fs.flow.approval.approve(project, by="user"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
+    if completed:
+        api.execute_tool("run_ki_tool", {"tool_path": "tools/run.py", "arguments": ["outputs/q.csv"],
+                         "plan_step_id": "M:run"}, ki, _cfg(project), project_mode=True, flow=fs)
+        evidence = fs.evidence()
+        assert evidence["receipts_verified"] and evidence["validation"] == "passed"
+        fs.move("run_finished")
+        fs.move("validated", evidence)
+    preserved = {str(p): p.read_bytes() for folder in ("outputs", ".geoforge/receipts")
+                 for p in (project / folder).rglob("*") if p.is_file()}
     assert "request_replan" in fs.api_tools() and "write_plan" not in fs.api_tools()
-    with pytest.raises(api.ToolError, match="not allowed while the project is in EXECUTING"):
+    with pytest.raises(api.ToolError, match="not allowed while the project is in"):
         api.execute_tool("write_plan", {"plan": pj, "data_inventory": inv}, ki, _cfg(project),
                          project_mode=True, flow=fs)
     out = api.execute_tool("request_replan", {"reason": "S1 needs a site polygon"}, ki, _cfg(project),
@@ -473,6 +486,8 @@ def test_request_replan_unlocks_write_plan_in_the_same_turn(tmp_path):
     assert "REPLAN_REQUIRED" in out and fs.state.value == "REPLAN_REQUIRED"
     assert not (project / "runs" / "approval.json").exists()
     assert "write_plan" in fs.api_tools()
+    assert "run_ki_tool" not in fs.api_tools() and "fetch_data" not in fs.api_tools()
+    assert all(Path(p).read_bytes() == value for p, value in preserved.items())
     pj["steps"][0]["id"] = "M:run2"
     written = api.execute_tool("write_plan", {"plan": pj, "data_inventory": inv}, ki, _cfg(project),
                                project_mode=True, flow=fs)

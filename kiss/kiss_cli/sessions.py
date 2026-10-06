@@ -954,13 +954,16 @@ def catalogue_block(catalog, statuses: dict | None = None) -> str:
         state = (statuses or {}).get(ki.name) or {}
         label = state.get("label") or "Software status unknown"
         lines.append(f"  {ki.name} — {str(ref)[:95]} — {label}")
+        if (ki.meta or {}).get("package_role") == "data_reader":
+            lines.append(f"    Data KI: reads observations; does not simulate a model. SKILL: {ki.root / 'SKILL.md'}")
     return "\n".join(lines)
 
 
 AUTO_RULES = """[KI CHOICE IS YOURS]
 No KI was pre-selected for this session. From the catalogue above:
-1. CHOOSE the most suitable KI(s) for the task — prefer one unless the task
-   genuinely needs a comparison.
+1. CHOOSE the most suitable KI(s) for the task. A model KI may be combined with
+   a compatible data KI for observation reading or preparation. Data KIs do not
+   count as another simulation model or prove that a model has run.
 2. ANNOUNCE the choice, why, and its local software status in one sentence.
 3. THEN read the chosen KI's SKILL.md and follow it. Do not improvise a
    pipeline the KI already defines; do not substitute simplified formulas for

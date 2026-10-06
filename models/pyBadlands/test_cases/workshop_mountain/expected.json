@@ -1,0 +1,100 @@
+{
+  "description": "Official Badlands workshop example 'mountain' (badlands-workshop examples/mountain, commit 1bfad47): 50 Myr of uplift from data/uplift.csv on a flat 10 m surface, uniform 1 m/a rain to 15 Myr then orographic rain (wind 2 m/s from south), erosion-only stream power law plus linear hillslope creep. Run through KI tools s5_run/run_badlands.py and s6_output/parse_badlands_output.py; values are from the final tin output (tin.time200.hdf5) unless named initial.",
+  "engine_version": "badlands 2.3.1 (github.com/badlands-model/badlands, local source commit a6d7b3a), python 3.12.3, numpy 1.26.4, scipy 1.17.1",
+  "numeric_checks": [
+    {
+      "name": "run_status_completed",
+      "expected": 1.0,
+      "tol": 0,
+      "why": "KI run tool reports status completed (model finished normally)"
+    },
+    {
+      "name": "model_tnow_line_yr",
+      "expected": 50000000.0,
+      "tol": 0,
+      "why": "Badlands' own end-of-run line 'tNow = 50000000 (... seconds)' (model finished normally)"
+    },
+    {
+      "name": "final_time_yr",
+      "expected": 50000000.0,
+      "tol": 0,
+      "why": "model reached the XML end time 50 Myr"
+    },
+    {
+      "name": "n_tin_steps",
+      "expected": 201.0,
+      "tol": 0,
+      "why": "one tin output per 250 kyr display step, 0..50 Myr = 201 files"
+    },
+    {
+      "name": "last_step_number",
+      "expected": 200.0,
+      "tol": 0,
+      "why": "last output file is tin.time200 (parser orders by number, not name)"
+    },
+    {
+      "name": "n_nodes",
+      "expected": 16480.0,
+      "tol": 0,
+      "why": "TIN node count built from data/nodes.csv at resfactor 1"
+    },
+    {
+      "name": "initial_elev_max_m",
+      "expected": 10.000000000000004,
+      "tol": 1.0000000000000003e-05,
+      "why": "starting surface is flat at 10 m"
+    },
+    {
+      "name": "final_elev_min_m",
+      "expected": 10.0,
+      "tol": 9.999999999999999e-06,
+      "why": "fixed boundary nodes stay at 10 m"
+    },
+    {
+      "name": "final_elev_max_m",
+      "expected": 2494.345466371433,
+      "tol": 0.0024943454663714326,
+      "why": "highest peak after 50 Myr of uplift + erosion"
+    },
+    {
+      "name": "final_elev_mean_m",
+      "expected": 890.9893249696698,
+      "tol": 0.0008909893249696698,
+      "why": "mean final surface height"
+    },
+    {
+      "name": "final_cumdiff_min_m",
+      "expected": -49880.770400283305,
+      "tol": 0.049880770400283304,
+      "why": "largest cumulative erosion at one node"
+    },
+    {
+      "name": "final_cumdiff_max_m",
+      "expected": 0.0,
+      "tol": 1e-06,
+      "why": "no deposition: XML sets sp_law dep=0 (erosion only)"
+    },
+    {
+      "name": "final_cumdiff_mean_m",
+      "expected": -45337.53685017002,
+      "tol": 0.04533753685017002,
+      "why": "mean cumulative erosion/deposition"
+    },
+    {
+      "name": "final_total_erosion_m",
+      "expected": -747162607.290802,
+      "tol": 747.1626072908019,
+      "why": "sum of negative cumdiff over all nodes"
+    },
+    {
+      "name": "final_discharge_max",
+      "expected": 233544110.16717976,
+      "tol": 233.54411016717975,
+      "why": "largest flow discharge at the final step (orographic rain phase)"
+    }
+  ],
+  "recorded_on": "2026-10-06",
+  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv/bin/python via run_reference.py --print; tool launcher /mnt/disk1/Hydrocraft_server/python_env/bin/python",
+  "reference": "The workshop ships no reference output files, so the expected values are from our own runs. Three full runs in fresh temp dirs gave bit-identical values. Tolerance: exact (0) for counts and times; for real numbers max(1e-6 * |expected|, 1e-6), i.e. relative 1e-6, with an absolute floor 1e-6 that matters only for final_cumdiff_max_m (expected 0). Non-finite values fail.",
+  "notes": "Inputs are unmodified official files. No tweak to the XML."
+}

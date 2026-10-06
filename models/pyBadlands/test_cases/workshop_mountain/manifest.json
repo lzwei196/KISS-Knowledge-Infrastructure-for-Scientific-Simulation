@@ -1,0 +1,40 @@
+{
+  "test_case": "pyBadlands workshop_mountain (official badlands-workshop example 'mountain')",
+  "engine": {
+    "name": "Badlands (pyBadlands)",
+    "version": "2.3.1",
+    "binary": "python package badlands in the pyBadlands venv (python 3.12, numpy<2)",
+    "source": "inputs: github.com/badlands-model/badlands-workshop examples/mountain (commit 1bfad47aba2554945c5b6b645b10056df91d3bbf, 2023-08-07); engine: github.com/badlands-model/badlands (local source commit a6d7b3aa965cc0047af124310070a57d634b59d9)",
+    "license": "GPL-3.0 (badlands-workshop LICENSE and badlands LICENSE)"
+  },
+  "ki": {
+    "model": "pyBadlands"
+  },
+  "simulation": {
+    "grid": "TIN from data/nodes.csv, 16480 nodes, resfactor 1, fixed boundary",
+    "start_yr": 0,
+    "end_yr": 50000000,
+    "display_yr": 250000,
+    "outputs": 201,
+    "processes": "uplift (data/uplift.csv), uniform rain 1 m/a to 15 Myr then orographic rain, erosion-only stream power (m=0.5,n=1,K=5e-6), linear creep 0.8 m2/a",
+    "runtime_s": "about 100 on this server, ~165 MB RAM"
+  },
+  "files": {
+    "inputs/mountain.xml": {
+      "bytes": 6877,
+      "sha256": "d2461399e488c97252e6e986b5a4908830b13e3e3386feea6da515c3058b5236"
+    },
+    "inputs/data/nodes.csv": {
+      "bytes": 994749,
+      "sha256": "d9fb2cfc12614fc0d3b98e3166ca738c0e8344bfc94493e1c51839da677253da"
+    },
+    "inputs/data/rain_gradient.csv": {
+      "bytes": 242607,
+      "sha256": "221d8d9fcfabb45cecdb09d9481a6bde130e5bc982938da94bdb81740b176169"
+    },
+    "inputs/data/uplift.csv": {
+      "bytes": 144507,
+      "sha256": "5bd5635f613735c58b966d60b195faa9b157bed720b8319415171ab7739b9bdc"
+    }
+  }
+}

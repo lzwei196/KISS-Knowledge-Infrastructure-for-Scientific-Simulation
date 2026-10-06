@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT THE KINEROS2 MODEL.  This file belongs to the Python stand-in (a lumped, daily,
+Green-Ampt + two-reservoir re-implementation written before the real engine was installed).  Its
+output must never be reported as KINEROS2 results.  The real USDA-ARS engine is driven by
+tools/run_kineros2_engine.py.  Kept only for history and for comparison with old runs.
+
 run_kineros2.py -- Execute KINEROS2 analytic lumped model.
 
 Runs the KINEROS2-inspired lumped daily model with Green-Ampt infiltration
@@ -652,8 +657,12 @@ def run_calibration(args):
 
 
 def main():
+    print("WARNING: tools/run_kineros2.py is a Python SURROGATE (lumped daily stand-in), NOT the KINEROS2 "
+          "model; its output is not a KINEROS2 result. Run the real engine with tools/run_kineros2_engine.py.",
+          file=sys.stderr)
     parser = argparse.ArgumentParser(
-        description="Run KINEROS2 analytic lumped model")
+        description="SURROGATE (not KINEROS2): Python lumped daily stand-in. "
+                    "The real KINEROS2 engine is run by tools/run_kineros2_engine.py.")
     parser.add_argument("--mode", required=True,
                         choices=["simulate", "calibrate"],
                         help="Run mode: simulate or calibrate")
@@ -701,6 +710,8 @@ def main():
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
+    result["model_identity"] = ("PYTHON SURROGATE (lumped daily stand-in) -- not the USDA-ARS KINEROS2 engine; "
+                                "see tools/run_kineros2_engine.py")
     with open(args.output, "w") as f:
         json.dump(result, f, indent=2)
 

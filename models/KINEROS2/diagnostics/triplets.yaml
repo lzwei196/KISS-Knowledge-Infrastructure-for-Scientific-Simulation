@@ -1,366 +1,740 @@
-# ========================================================================
-# KINEROS2 Diagnostic Triplets
-# ========================================================================
-# 26 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
-# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
-# container only. The two-shape ambiguity is what let the self-improve overlay read
-# a corpus as empty and overwrite it.
-# ========================================================================
-
-# Comments preserved from the previous file:
-# KINEROS2 Diagnostic Triplets
-# Model: KINEROS2 (KINematic EROsion Simulation, version 2)
-# Domain: Event-based watershed rainfall-runoff and erosion using kinematic wave equations
-# Language: Fortran (with Python analytic reimplementation)
-# Each entry: symptom -> diagnosis -> remedy
-#
-# Failure domains covered:
-#   UNIT            - Unit mismatches (rainfall, conductivity, slope, area)
-#   IO_FORMAT       - Input file format errors (parameter files, rainfall, geometry)
-#   CONFIGURATION   - Model setup errors (channel connectivity, element ordering)
-#   PARAMETER       - Hydraulic/erosion parameters out of physical range
-#   NUMERICAL       - CFL violation, timestep, kinematic wave instability
-#   BUILD_RUNTIME   - Fortran binary execution and compilation issues
-#   SPATIAL         - DEM and channel network problems
-#   INITIALIZATION  - Soil moisture and antecedent condition errors
-  # ============================================================
-  # UNIT: Unit mismatch failures
-  # ============================================================
-  # ============================================================
-  # IO_FORMAT: Input file format errors
-  # ============================================================
-  # ============================================================
-  # CONFIGURATION: Model setup errors
-  # ============================================================
-  # ============================================================
-  # PARAMETER: Parameters out of physical range
-  # ============================================================
-  # ============================================================
-  # NUMERICAL: CFL, timestep, and kinematic wave instability
-  # ============================================================
-  # ============================================================
-  # BUILD_RUNTIME: Fortran compilation and execution issues
-  # ============================================================
-  # ============================================================
-  # SPATIAL: DEM and channel network problems
-  # ============================================================
-  # ============================================================
-  # INITIALIZATION: Soil moisture initial conditions
-  # ============================================================
-
+# KINEROS2 diagnostic triplets -- TOP-LEVEL LIST (one entry per symptom -> diagnosis -> remedy).
+# applies_to says which code an entry is about:
+#   real_engine       = the USDA-ARS KINEROS2 program (tools/run_kineros2_engine.py)
+#   python_surrogate  = the old lumped daily stand-in (tools/run_kineros2.py) -- NOT KINEROS2
+# dt_kineros2_001..026 are the original corpus (ids kept); 013/018/020/021/024/026 were corrected
+# on 2026-10-06 against the real source and test runs (see correction_note). 027..053 were added
+# on 2026-10-06 from the source code and verified runs of the real engine.
 - id: dt_kineros2_001
   symptom:
-    description: Simulated discharge is 86400x too low; hydrograph is nearly flat with negligible runoff
-      despite significant observed storm events
+    description: Simulated discharge is 86400x too low; hydrograph is nearly flat with negligible runoff despite
+      significant observed storm events
   diagnosis:
-    root_cause: Precipitation is supplied in kg/m2/s (CMFD raw units) but KINEROS2 expects mm/d. Since
-      1 kg/m2/s equals 86400 mm/d, feeding raw CMFD values makes a 2.7 mm/d rainfall appear as 0.000031
-      mm/d, producing essentially zero infiltration excess.
+    root_cause: Precipitation is supplied in kg/m2/s (CMFD raw units) but KINEROS2 expects mm/d. Since 1 kg/m2/s
+      equals 86400 mm/d, feeding raw CMFD values makes a 2.7 mm/d rainfall appear as 0.000031 mm/d, producing essentially
+      zero infiltration excess.
   remedy:
     action: Multiply CMFD precipitation by 86400 to convert from kg/m2/s to mm/d. Verify that daily precipitation
       values are in the range 0-150 mm/d for typical basins.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_002
   symptom:
-    description: Simulated discharge is about 8x too high; basin floods unrealistically even during moderate
-      rainfall events
+    description: Simulated discharge is about 8x too high; basin floods unrealistically even during moderate rainfall
+      events
   diagnosis:
-    root_cause: Precipitation is supplied as mm/3h sub-daily totals summed incorrectly or used directly
-      as mm/d. CMFD provides 3-hourly accumulations; directly treating each 3-hour value as a daily total
-      effectively multiplies precipitation by 8.
+    root_cause: Precipitation is supplied as mm/3h sub-daily totals summed incorrectly or used directly as mm/d.
+      CMFD provides 3-hourly accumulations; directly treating each 3-hour value as a daily total effectively multiplies
+      precipitation by 8.
   remedy:
-    action: Sum all eight 3-hourly CMFD values within each day to compute the correct daily total in mm/d,
-      rather than using individual 3-hour values as daily inputs.
+    action: Sum all eight 3-hourly CMFD values within each day to compute the correct daily total in mm/d, rather
+      than using individual 3-hour values as daily inputs.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_003
   symptom:
-    description: PET is absurdly high (hundreds of mm/d); soil dries out instantly and there is no runoff
-      because the Hamon method computes extreme evapotranspiration
+    description: PET is absurdly high (hundreds of mm/d); soil dries out instantly and there is no runoff because
+      the Hamon method computes extreme evapotranspiration
   diagnosis:
-    root_cause: Temperature is supplied in Kelvin (CMFD/ERA5 raw units) instead of degrees Celsius. The
-      Hamon PET method receives approximately 280 as input temperature, which produces physically impossible
-      evapotranspiration rates.
+    root_cause: Temperature is supplied in Kelvin (CMFD/ERA5 raw units) instead of degrees Celsius. The Hamon PET
+      method receives approximately 280 as input temperature, which produces physically impossible evapotranspiration
+      rates.
   remedy:
-    action: Subtract 273.15 from CMFD/ERA5 temperature values before passing to KINEROS2. Verify that
-      temperature time series ranges between approximately -30 and +45 degrees Celsius.
+    action: Subtract 273.15 from CMFD/ERA5 temperature values before passing to KINEROS2. Verify that temperature
+      time series ranges between approximately -30 and +45 degrees Celsius.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_004
   symptom:
-    description: Infiltration capacity is approximately 24x too low; nearly all rainfall becomes surface
-      runoff even on sandy soils that should absorb most precipitation
+    description: Infiltration capacity is approximately 24x too low; nearly all rainfall becomes surface runoff
+      even on sandy soils that should absorb most precipitation
   diagnosis:
-    root_cause: Saturated hydraulic conductivity (Ks) is supplied in mm/h (the unit used in HWSD and many
-      soil databases) but the daily KINEROS2 model expects mm/d. A Ks of 10 mm/h should be 240 mm/d; using
-      10 mm/d makes the Green-Ampt infiltration capacity far too small.
+    root_cause: Saturated hydraulic conductivity (Ks) is supplied in mm/h (the unit used in HWSD and many soil databases)
+      but the daily KINEROS2 model expects mm/d. A Ks of 10 mm/h should be 240 mm/d; using 10 mm/d makes the Green-Ampt
+      infiltration capacity far too small.
   remedy:
-    action: Multiply Ks by 24 when converting from mm/h to mm/d. For cm/h sources, multiply by 240. Verify
-      Ks falls within [1, 80] mm/d for the lumped daily model parameter range, or within physically realistic
-      bounds for the soil texture class (e.g., sandy loam approximately 262 mm/d, clay approximately 7.2
-      mm/d).
+    action: Multiply Ks by 24 when converting from mm/h to mm/d. For cm/h sources, multiply by 240. Verify Ks falls
+      within [1, 80] mm/d for the lumped daily model parameter range, or within physically realistic bounds for
+      the soil texture class (e.g., sandy loam approximately 262 mm/d, clay approximately 7.2 mm/d).
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_005
   symptom:
-    description: Wetting front suction appears 10x too low; Green-Ampt infiltration is insensitive to
-      soil moisture deficit and behaves as though the soil has minimal capillary pull
+    description: Wetting front suction appears 10x too low; Green-Ampt infiltration is insensitive to soil moisture
+      deficit and behaves as though the soil has minimal capillary pull
   diagnosis:
-    root_cause: Wetting front suction head (psi_f) is supplied in cm (as given in Rawls et al. 1983 tables)
-      but KINEROS2 expects mm. A silt loam with psi_f of 16.68 cm should be 166.8 mm; using 16.68 mm severely
-      underestimates capillary suction.
+    root_cause: Wetting front suction head (psi_f) is supplied in cm (as given in Rawls et al. 1983 tables) but
+      KINEROS2 expects mm. A silt loam with psi_f of 16.68 cm should be 166.8 mm; using 16.68 mm severely underestimates
+      capillary suction.
   remedy:
-    action: Multiply psi_f by 10 when converting from cm to mm. Verify the value falls within the expected
-      range [10, 500] mm and is consistent with the USDA soil texture class.
+    action: Multiply psi_f by 10 when converting from cm to mm. Verify the value falls within the expected range
+      [10, 500] mm and is consistent with the USDA soil texture class.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_006
   symptom:
-    description: Discharge magnitude is wrong by a factor of 100; unit hydrograph conversion produces
-      nonsensical flow values at the basin outlet
+    description: Discharge magnitude is wrong by a factor of 100; unit hydrograph conversion produces nonsensical
+      flow values at the basin outlet
   diagnosis:
-    root_cause: Basin area is specified in hectares instead of km2. Since 1 km2 = 100 ha, an area of 12133000
-      ha entered as 12133000 km2 (or 121330 ha entered as 121330 km2) makes the mm/d-to-m3/s conversion
-      factor off by a factor of 100.
+    root_cause: Basin area is specified in hectares instead of km2. Since 1 km2 = 100 ha, an area of 12133000 ha
+      entered as 12133000 km2 (or 121330 ha entered as 121330 km2) makes the mm/d-to-m3/s conversion factor off
+      by a factor of 100.
   remedy:
-    action: 'Divide the area by 100 if the source data is in hectares. The mm/d to m3/s conversion is:
-      Q_m3s = Q_mmd * area_km2 * 1e6 / 86400 / 1000. Verify the basin area against a known reference.'
+    action: 'Divide the area by 100 if the source data is in hectares. The mm/d to m3/s conversion is: Q_m3s = Q_mmd
+      * area_km2 * 1e6 / 86400 / 1000. Verify the basin area against a known reference.'
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_007
   symptom:
-    description: Soil storage capacity is 1000x too large; soil never saturates and all rainfall is absorbed
-      indefinitely with zero surface runoff
+    description: Soil storage capacity is 1000x too large; soil never saturates and all rainfall is absorbed indefinitely
+      with zero surface runoff
   diagnosis:
-    root_cause: Maximum soil storage (Smax) is specified in meters instead of mm. An Smax of 0.5 m should
-      be entered as 500 mm; entering 0.5 makes storage negligibly small, while entering the raw meter
-      value (e.g., 500) from a source that already reports mm is correct.
+    root_cause: Maximum soil storage (Smax) is specified in meters instead of mm. An Smax of 0.5 m should be entered
+      as 500 mm; entering 0.5 makes storage negligibly small, while entering the raw meter value (e.g., 500) from
+      a source that already reports mm is correct.
   remedy:
-    action: Ensure Smax is in mm. If the source provides meters, multiply by 1000. Verify Smax falls within
-      the physical range [100, 800] mm.
+    action: Ensure Smax is in mm. If the source provides meters, multiply by 1000. Verify Smax falls within the
+      physical range [100, 800] mm.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_008
   symptom:
-    description: Model tool exits with 'KeyError' or 'missing column' when reading the forcing JSON file;
-      run_kineros2.py cannot find expected precipitation or temperature arrays
+    description: Model tool exits with 'KeyError' or 'missing column' when reading the forcing JSON file; run_kineros2.py
+      cannot find expected precipitation or temperature arrays
   diagnosis:
-    root_cause: The forcing JSON file produced by convert_forcing_to_kineros2.py uses different key names
-      than what run_kineros2.py expects. Common mismatches include 'precip' vs 'precipitation', 'temp'
-      vs 'temperature', or the date field is formatted differently than expected.
+    root_cause: The forcing JSON file produced by convert_forcing_to_kineros2.py uses different key names than what
+      run_kineros2.py expects. Common mismatches include 'precip' vs 'precipitation', 'temp' vs 'temperature', or
+      the date field is formatted differently than expected.
   remedy:
-    action: Verify the forcing JSON contains the exact keys expected by run_kineros2.py (check the tool's
-      argument parser and input validation). Regenerate the forcing file using the convert_forcing_to_kineros2.py
-      tool with correct --output format rather than manually editing JSON.
+    action: Verify the forcing JSON contains the exact keys expected by run_kineros2.py (check the tool's argument
+      parser and input validation). Regenerate the forcing file using the convert_forcing_to_kineros2.py tool with
+      correct --output format rather than manually editing JSON.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_009
   symptom:
-    description: Observed discharge file cannot be parsed; calibration fails at startup with a date parsing
-      or CSV reading error
+    description: Observed discharge file cannot be parsed; calibration fails at startup with a date parsing or CSV
+      reading error
   diagnosis:
-    root_cause: The observed discharge CSV file uses an unexpected date format (e.g., DD/MM/YYYY instead
-      of YYYY-MM-DD), has a different delimiter (semicolons or tabs instead of commas), or contains header
-      lines that pandas cannot auto-detect.
+    root_cause: The observed discharge CSV file uses an unexpected date format (e.g., DD/MM/YYYY instead of YYYY-MM-DD),
+      has a different delimiter (semicolons or tabs instead of commas), or contains header lines that pandas cannot
+      auto-detect.
   remedy:
-    action: 'Ensure the observed discharge CSV has columns ''date'' (YYYY-MM-DD format) and ''discharge_m3s''
-      (numeric, in m3/s). Remove any metadata header lines. Use commas as delimiters. Verify with: head
-      -5 observed_Q.csv.'
+    action: 'Ensure the observed discharge CSV has columns ''date'' (YYYY-MM-DD format) and ''discharge_m3s'' (numeric,
+      in m3/s). Remove any metadata header lines. Use commas as delimiters. Verify with: head -5 observed_Q.csv.'
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_010
   symptom:
-    description: Soil parameter JSON is rejected; convert_soil_to_kineros2.py produces an error about
-      unrecognized soil texture class
+    description: Soil parameter JSON is rejected; convert_soil_to_kineros2.py produces an error about unrecognized
+      soil texture class
   diagnosis:
-    root_cause: The soil texture string does not match one of the recognized USDA texture classes. Common
-      issues include capitalization ('Sandy Loam' vs 'sandy loam'), extra whitespace, or using FAO texture
-      names instead of USDA classes.
+    root_cause: The soil texture string does not match one of the recognized USDA texture classes. Common issues
+      include capitalization ('Sandy Loam' vs 'sandy loam'), extra whitespace, or using FAO texture names instead
+      of USDA classes.
   remedy:
-    action: 'Use one of the exact USDA texture class names in lowercase: sand, loamy sand, sandy loam,
-      loam, silt loam, clay loam, clay. Pass via --texture argument exactly as listed. Check HWSD source
-      data for the correct USDA mapping.'
+    action: 'Use one of the exact USDA texture class names in lowercase: sand, loamy sand, sandy loam, loam, silt
+      loam, clay loam, clay. Pass via --texture argument exactly as listed. Check HWSD source data for the correct
+      USDA mapping.'
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_011
   symptom:
-    description: Calibration converges to physically unrealistic parameter values (e.g., Ks near zero,
-      alpha at upper bound) with poor objective function values; NSE remains below 0
+    description: Calibration converges to physically unrealistic parameter values (e.g., Ks near zero, alpha at
+      upper bound) with poor objective function values; NSE remains below 0
   diagnosis:
-    root_cause: The calibration period is too short, includes the spinup year, or the observed discharge
-      data does not overlap correctly with the forcing period. Using 1980 (the spinup year) in the calibration
-      window contaminates the objective function with the initial condition transient.
+    root_cause: The calibration period is too short, includes the spinup year, or the observed discharge data does
+      not overlap correctly with the forcing period. Using 1980 (the spinup year) in the calibration window contaminates
+      the objective function with the initial condition transient.
   remedy:
-    action: Ensure the calibration period starts after the spinup year (e.g., 1981-01-01 if spinup is
-      1980). Verify that forcing data, observed discharge, and the specified calibration window all overlap.
-      Use at least 3-5 years of data for calibration.
+    action: Ensure the calibration period starts after the spinup year (e.g., 1981-01-01 if spinup is 1980). Verify
+      that forcing data, observed discharge, and the specified calibration window all overlap. Use at least 3-5
+      years of data for calibration.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_012
   symptom:
-    description: Model produces constant baseflow with no response to rainfall events; the hydrograph
-      is a flat line regardless of precipitation variability
+    description: Model produces constant baseflow with no response to rainfall events; the hydrograph is a flat
+      line regardless of precipitation variability
   diagnosis:
-    root_cause: The slow reservoir fraction (f_slow) is set too close to 1.0, routing nearly all runoff
-      through the slow baseflow reservoir. Combined with a very small k_slow recession rate, this damps
-      out all event-scale response.
+    root_cause: The slow reservoir fraction (f_slow) is set too close to 1.0, routing nearly all runoff through
+      the slow baseflow reservoir. Combined with a very small k_slow recession rate, this damps out all event-scale
+      response.
   remedy:
-    action: Verify f_slow is within [0.1, 0.7] and k_slow is within [0.001, 0.05] 1/d. For event-responsive
-      basins, f_slow should be below 0.5. If calibrating, ensure the parameter bounds in the differential
-      evolution setup are correctly specified.
+    action: Verify f_slow is within [0.1, 0.7] and k_slow is within [0.001, 0.05] 1/d. For event-responsive basins,
+      f_slow should be below 0.5. If calibrating, ensure the parameter bounds in the differential evolution setup
+      are correctly specified.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_013
   symptom:
-    description: Applying KINEROS2 to a large basin (>1000 km2) produces unrealistic timing of peaks;
-      peak flows arrive too early or too late compared to observations
+    description: Applying KINEROS2 to a large basin (>1000 km2) produces unrealistic timing of peaks; peak flows
+      arrive too early or too late compared to observations
   diagnosis:
-    root_cause: KINEROS2 is designed for small watersheds (<100 km2) where the lumped kinematic wave approximation
-      is reasonable. For large basins (e.g., the Huai River at 121330 km2), the lumped dual-reservoir
-      routing cannot capture the travel time distribution across the basin, leading to incorrect peak
-      timing.
+    root_cause: The real KINEROS2 is an EVENT model for small watersheds (hectares to a few km2; WG11 = 6.3 km2
+      contributing) solved on a cascade of planes and channels at minute steps. Daily runs on large basins (e.g.
+      the Huai River at Bengbu, 121330 km2) were made only with the Python SURROGATE; they are not a valid KINEROS2
+      use and their peak timing errors say nothing about KINEROS2.
   remedy:
-    action: Accept that peak timing errors are an inherent limitation when applying KINEROS2 to large
-      basins in lumped mode. Consider adjusting k_fast and alpha to partially compensate for the missing
-      spatial routing. For accurate peak timing on large basins, use a distributed model instead.
+    action: Do not apply KINEROS2 to large basins or daily forcing. For a small watershed build an element cascade
+      (AGWA or by hand) and run single storms with tools/run_kineros2_engine.py. Never cite surrogate Bengbu metrics
+      as KINEROS2 skill.
+  applies_to: both
 - id: dt_kineros2_014
   symptom:
-    description: Green-Ampt infiltration produces abrupt, unrealistic transitions between full absorption
-      and full runoff; no gradual wetting-up behavior
+    description: Green-Ampt infiltration produces abrupt, unrealistic transitions between full absorption and full
+      runoff; no gradual wetting-up behavior
   diagnosis:
-    root_cause: The saturated hydraulic conductivity (Ks) is very small while the wetting front suction
-      (psi_f) is very large. When soil moisture deficit (theta_def) drops below 0.01, infiltration capacity
-      collapses abruptly from a high suction-driven rate to just Ks. This threshold behavior is physically
-      correct but numerically sensitive in the daily model.
+    root_cause: The saturated hydraulic conductivity (Ks) is very small while the wetting front suction (psi_f)
+      is very large. When soil moisture deficit (theta_def) drops below 0.01, infiltration capacity collapses abruptly
+      from a high suction-driven rate to just Ks. This threshold behavior is physically correct but numerically
+      sensitive in the daily model.
   remedy:
-    action: Verify that the Ks and psi_f combination is physically consistent for the soil texture class
-      (e.g., clay has low Ks around 7.2 mm/d and high psi_f around 316 mm, but these should not be mixed
-      with values from a different texture). Check the soil texture lookup table in Section 8 of SKILL.md
-      for consistent parameter pairs.
+    action: Verify that the Ks and psi_f combination is physically consistent for the soil texture class (e.g.,
+      clay has low Ks around 7.2 mm/d and high psi_f around 316 mm, but these should not be mixed with values from
+      a different texture). Check the soil texture lookup table in Section 8 of SKILL.md for consistent parameter
+      pairs.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_015
   symptom:
-    description: Routing exponent (alpha) calibrates to values outside [1.0, 2.0]; hydrograph shape is
-      either too peaked or too diffuse compared to observations
+    description: Routing exponent (alpha) calibrates to values outside [1.0, 2.0]; hydrograph shape is either too
+      peaked or too diffuse compared to observations
   diagnosis:
-    root_cause: The kinematic wave exponent alpha should theoretically be 5/3 (1.667) for Manning's equation.
-      Values outside the [1.0, 2.0] range in calibration indicate overfitting, compensating for structural
-      model errors (such as the lumped approximation on a large basin), or that other parameters (Ks,
-      Smax) are poorly constrained.
+    root_cause: The kinematic wave exponent alpha should theoretically be 5/3 (1.667) for Manning's equation. Values
+      outside the [1.0, 2.0] range in calibration indicate overfitting, compensating for structural model errors
+      (such as the lumped approximation on a large basin), or that other parameters (Ks, Smax) are poorly constrained.
   remedy:
-    action: Constrain alpha to [1.0, 2.0] in the calibration bounds. If alpha consistently hits a bound,
-      investigate whether the runoff generation parameters (Ks, psi_f, Smax) are physically reasonable
-      first. Fix unit errors in those parameters before recalibrating.
+    action: Constrain alpha to [1.0, 2.0] in the calibration bounds. If alpha consistently hits a bound, investigate
+      whether the runoff generation parameters (Ks, psi_f, Smax) are physically reasonable first. Fix unit errors
+      in those parameters before recalibrating.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_016
   symptom:
-    description: Field capacity fraction (fc) calibrates to values near 0.0 or 1.0; soil moisture dynamics
-      are unrealistic with either no retention or permanent saturation
+    description: Field capacity fraction (fc) calibrates to values near 0.0 or 1.0; soil moisture dynamics are unrealistic
+      with either no retention or permanent saturation
   diagnosis:
-    root_cause: Field capacity as a fraction of Smax should be between 0.2 and 0.8. Values near 0 mean
-      the soil retains almost no water after drainage (all water drains to reservoirs), while values near
-      1 mean the soil is always near capacity and rarely generates gravity drainage.
+    root_cause: Field capacity as a fraction of Smax should be between 0.2 and 0.8. Values near 0 mean the soil
+      retains almost no water after drainage (all water drains to reservoirs), while values near 1 mean the soil
+      is always near capacity and rarely generates gravity drainage.
   remedy:
-    action: Constrain fc to [0.2, 0.8] in calibration. If fc hits a bound, check that Smax is physically
-      reasonable (100-800 mm). An Smax that is too large or too small forces fc to compensate, pushing
-      it to extreme values.
+    action: Constrain fc to [0.2, 0.8] in calibration. If fc hits a bound, check that Smax is physically reasonable
+      (100-800 mm). An Smax that is too large or too small forces fc to compensate, pushing it to extreme values.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_017
   symptom:
-    description: Simulated discharge exhibits high-frequency oscillations or ringing on the rising limb
-      of the hydrograph; daily values alternate between high and low
+    description: Simulated discharge exhibits high-frequency oscillations or ringing on the rising limb of the hydrograph;
+      daily values alternate between high and low
   diagnosis:
-    root_cause: The daily timestep is too coarse relative to the kinematic wave celerity for the watershed
-      size. The lumped dual-reservoir model with a nonlinear exponent (alpha > 1) can produce oscillatory
-      behavior when the fast reservoir storage changes rapidly between timesteps.
+    root_cause: The daily timestep is too coarse relative to the kinematic wave celerity for the watershed size.
+      The lumped dual-reservoir model with a nonlinear exponent (alpha > 1) can produce oscillatory behavior when
+      the fast reservoir storage changes rapidly between timesteps.
   remedy:
-    action: Reduce k_fast to smooth the fast reservoir response (try values in the lower half of the [0.01,
-      0.5] range). If oscillation persists, check that alpha is not too large (keep below 1.8). For the
-      Fortran event-based model, reduce the computational timestep to satisfy the Courant condition.
+    action: Reduce k_fast to smooth the fast reservoir response (try values in the lower half of the [0.01, 0.5]
+      range). If oscillation persists, check that alpha is not too large (keep below 1.8). For the Fortran event-based
+      model, reduce the computational timestep to satisfy the Courant condition.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_018
   symptom:
-    description: In the original Fortran KINEROS2, the model crashes or produces NaN values during intense
-      rainfall events with steep overland flow planes
+    description: Real-engine run gives a ragged or clearly wrong hydrograph on steep/short elements, or the output
+      'Time step distribution (100,75,50%)' line shows steps far smaller than the dt you asked for
   diagnosis:
-    root_cause: The computational timestep violates the Courant-Friedrichs-Lewy (CFL) condition for the
-      kinematic wave finite difference scheme. The CFL number must satisfy c * dt / dx <= 1, where c is
-      the kinematic wave celerity. Steep slopes with high Manning's alpha and intense rainfall produce
-      very fast wave speeds.
+    root_cause: The kinematic-wave finite-difference solution needs a step that satisfies the Courant condition.
+      With the Courant flag N the engine keeps the user step and only REPORTS which step would have been accurate
+      (100/75/50 % levels); it does not shorten it. There is no DTEFAC parameter in K2shell.
   remedy:
-    action: Reduce the computational timestep (DTEFAC or DT parameter) until the CFL condition is satisfied.
-      For steep planes (slope > 0.1), start with dt = 10 seconds. Check the KINEROS2 Fortran log for Courant
-      number warnings. Alternatively, increase the spatial discretization (longer plane elements).
+    action: 'Run with the Courant flag Y (run_kineros2_engine.py --courant): the engine then shortens the compute
+      step itself and still reports at dt. Otherwise choose dt <= the 100% level printed in the event summary. Check
+      the element CLEN warnings too (dt_kineros2_037).'
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
+    text described tags/files that do not exist
 - id: dt_kineros2_019
   symptom:
-    description: Negative discharge values appear in the output time series, which is physically impossible
-      for a rainfall-runoff model
+    description: Negative discharge values appear in the output time series, which is physically impossible for
+      a rainfall-runoff model
   diagnosis:
-    root_cause: Numerical instability in the nonlinear reservoir routing when storage approaches zero.
-      The fast reservoir equation Q = k_fast * S^alpha can produce floating-point artifacts when S is
-      very small and alpha is non-integer, especially if S becomes slightly negative due to numerical
-      precision.
+    root_cause: Numerical instability in the nonlinear reservoir routing when storage approaches zero. The fast
+      reservoir equation Q = k_fast * S^alpha can produce floating-point artifacts when S is very small and alpha
+      is non-integer, especially if S becomes slightly negative due to numerical precision.
   remedy:
-    action: 'Add a floor of zero to both reservoir storage and discharge computations: S = max(S, 0) and
-      Q = max(Q, 0). In the Python reimplementation, verify that run_kineros2.py enforces non-negativity
-      at each timestep. In the Fortran code, check the routing subroutine for missing non-negativity guards.'
+    action: 'Add a floor of zero to both reservoir storage and discharge computations: S = max(S, 0) and Q = max(Q,
+      0). In the Python reimplementation, verify that run_kineros2.py enforces non-negativity at each timestep.
+      In the Fortran code, check the routing subroutine for missing non-negativity guards.'
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_020
   symptom:
-    description: Fortran compilation fails with 'undefined reference to main' or linker errors when building
-      the KINEROS2 source from the USDA-ARS repository
+    description: Building KINEROS2 from source fails (missing modules, rank mismatch in kinsed_wepp.for, duplicate
+      symbols) or no k2 binary exists
   diagnosis:
-    root_cause: The KINEROS2 Fortran source uses a specific Makefile that expects gfortran with particular
-      flags. Missing or incompatible Fortran compiler, wrong Makefile target, or missing source files
-      from an incomplete git clone cause linker failures.
+    root_cause: The ARS-SWRC/KINEROS2 GitHub repo has no makefile. Modules k2mods.for and kinsed.f90 must compile
+      first; fmt10_new.for, pond_dcg.for, sedbf.for and inject.for.bak are duplicates/fragments and must be left
+      out; gfortran rejects a rank mismatch at kinsed_wepp.for:155 that Intel Fortran accepts. Sources are CRLF.
   remedy:
-    action: Install gfortran (apt install gfortran on Ubuntu). Ensure all source files are present in
-      the src/ directory. Run 'make clean && make' from the src/ directory. If the GitHub repository returns
-      404, use the Python analytic reimplementation instead.
+    action: Use KISSPATH_HOME/engine_builds_20261006/KINEROS2/build.sh <srcdir> <outdir> on the patched copy src_patched/
+      (CRLF stripped, reshape (/5,1/)->(/5/)); flags -O2 -fno-automatic -ffixed-line-length-none -ffree-line-length-none
+      -std=legacy -fallow-argument-mismatch. Then python3 preflight_check.py. Never fall back to the Python surrogate
+      as if it were the model.
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
+    text described tags/files that do not exist
 - id: dt_kineros2_021
   symptom:
-    description: KINEROS2 Fortran binary exits immediately with 'cannot open input file' or a Fortran
-      runtime I/O error (unit number not connected)
+    description: Output (or stdout) ends with 'error - K2shell' / "Can't open <file>" and the run has no event summary,
+      while the exit status is 0
   diagnosis:
-    root_cause: The original Fortran KINEROS2 reads a parameter file and rainfall file from specific unit
-      numbers. If the file paths are incorrect, the files do not exist at the expected location, or the
-      file permissions prevent reading, Fortran I/O will fail with a unit error.
+    root_cause: A file named in kin.fil (parameter, rainfall, multiplier) does not exist relative to the run folder,
+      or the name carries a leading space (a space after a comma in kin.fil), or a FILE= name was upper-cased by
+      the reader. K2shell reads three files only (parameter, rainfall, multiplier) -- there is no control or geometry
+      file.
   remedy:
-    action: Verify that all input files (parameter file, precipitation file, geometry file) exist at the
-      paths specified in the control file. Check file permissions with ls -la. For the Python reimplementation,
-      verify --forcing and --params JSON paths are correct and the files are valid JSON.
+    action: 'Use tools/run_kineros2_engine.py: it copies inputs under short names into the workspace and writes
+      kin.fil without spaces. For PRINT=3/INJECT files make the on-disk name upper case. Check status in run_result.json,
+      never the exit code (dt_kineros2_027).'
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
+    text described tags/files that do not exist
 - id: dt_kineros2_022
   symptom:
-    description: 'Python reimplementation crashes with ''ModuleNotFoundError: No module named scipy''
-      or similar import error during calibration'
+    description: 'Python reimplementation crashes with ''ModuleNotFoundError: No module named scipy'' or similar
+      import error during calibration'
   diagnosis:
-    root_cause: The KINEROS2 Python analytic reimplementation requires numpy, pandas, xarray, geopandas,
-      scipy, and shapely. The calibration mode specifically requires scipy.optimize.differential_evolution,
-      which is not available if scipy is not installed.
+    root_cause: The KINEROS2 Python analytic reimplementation requires numpy, pandas, xarray, geopandas, scipy,
+      and shapely. The calibration mode specifically requires scipy.optimize.differential_evolution, which is not
+      available if scipy is not installed.
   remedy:
-    action: 'Install all required dependencies: pip install numpy pandas xarray geopandas scipy matplotlib
-      shapely. Verify installation with: python -c ''from scipy.optimize import differential_evolution;
-      print("OK")''.'
+    action: 'Install all required dependencies: pip install numpy pandas xarray geopandas scipy matplotlib shapely.
+      Verify installation with: python -c ''from scipy.optimize import differential_evolution; print("OK")''.'
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_023
   symptom:
-    description: Basin-average precipitation is zero or NaN despite valid CMFD data existing for the region;
-      forcing conversion produces an empty time series
+    description: Basin-average precipitation is zero or NaN despite valid CMFD data existing for the region; forcing
+      conversion produces an empty time series
   diagnosis:
-    root_cause: The basin shapefile does not overlap with the CMFD grid, or the shapefile CRS does not
-      match the CMFD coordinate system (EPSG:4326). A CRS mismatch shifts the basin mask to a wrong location,
-      causing the spatial average to fall outside the data domain.
+    root_cause: The basin shapefile does not overlap with the CMFD grid, or the shapefile CRS does not match the
+      CMFD coordinate system (EPSG:4326). A CRS mismatch shifts the basin mask to a wrong location, causing the
+      spatial average to fall outside the data domain.
   remedy:
-    action: 'Verify the basin shapefile CRS is EPSG:4326 (WGS84 geographic). Reproject if necessary using
-      geopandas: gdf = gdf.to_crs(''EPSG:4326''). Visually confirm overlap by plotting the shapefile extent
-      against the CMFD grid coordinates.'
+    action: 'Verify the basin shapefile CRS is EPSG:4326 (WGS84 geographic). Reproject if necessary using geopandas:
+      gdf = gdf.to_crs(''EPSG:4326''). Visually confirm overlap by plotting the shapefile extent against the CMFD
+      grid coordinates.'
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_024
   symptom:
-    description: In the distributed Fortran KINEROS2, overland flow elements produce zero outflow despite
-      rainfall; water enters planes but never reaches channels
+    description: Real-engine outlet outflow is far below rainfall minus infiltration, or some planes' runoff never
+      shows up at the outlet
   diagnosis:
-    root_cause: The element connectivity in the parameter file is incorrect. Each overland flow plane
-      must specify a downstream receiving element (channel or another plane). If the receiving element
-      ID is wrong or missing, runoff has no outlet path and accumulates without contributing to watershed
-      discharge.
+    root_cause: 'KINEROS2 has no RECEIVER tag. Topology is declared by the RECEIVING element: a CHANNEL lists UPSTREAM
+      (<=10) and LATERAL (<=2 planes) ids, a PLANE may list one UPSTREAM plane. An element no later block references
+      is computed but its water never reaches the outlet; the event summary Outflow is the LAST element only.'
   remedy:
-    action: 'Verify the element cascade topology in the KINEROS2 parameter file: each PLANE element must
-      have a valid RECEIVER that points to a CHANNEL or downstream PLANE element ID. Trace the network
-      from headwater planes to the outlet channel to confirm complete connectivity.'
+    action: 'Run tools/edit_kineros2_par.py validate case.par: it lists every element not referenced downstream
+      and every reference to an undefined or later element. Add the missing id to the receiving element''s UPSTREAM/LATERAL
+      list.'
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
+    text described tags/files that do not exist
 - id: dt_kineros2_025
   symptom:
-    description: First year of simulation produces wildly inaccurate discharge regardless of parameter
-      values; subsequent years match observations much better
+    description: First year of simulation produces wildly inaccurate discharge regardless of parameter values; subsequent
+      years match observations much better
   diagnosis:
-    root_cause: The initial soil moisture is set to zero (dry) or to Smax (saturated), creating an unrealistic
-      starting condition. The model requires a spinup period (at least one year) for soil moisture to
-      equilibrate from the arbitrary initial state.
+    root_cause: The initial soil moisture is set to zero (dry) or to Smax (saturated), creating an unrealistic starting
+      condition. The model requires a spinup period (at least one year) for soil moisture to equilibrate from the
+      arbitrary initial state.
   remedy:
-    action: Always include a spinup year before the analysis period. For example, use 1980 as spinup when
-      calibrating on 1981-1985. Exclude the spinup year from objective function calculations. The initial
-      soil moisture fraction can be set to 0.5 * Smax as a reasonable warm start.
+    action: Always include a spinup year before the analysis period. For example, use 1980 as spinup when calibrating
+      on 1981-1985. Exclude the spinup year from objective function calculations. The initial soil moisture fraction
+      can be set to 0.5 * Smax as a reasonable warm start.
+  applies_to: python_surrogate (tools/run_kineros2.py and its convert_* / parse_output_kineros2.py helpers)
 - id: dt_kineros2_026
   symptom:
-    description: For the event-based Fortran KINEROS2, antecedent soil moisture is ignored and every storm
-      simulation starts bone-dry, producing much less runoff than observed
+    description: Engine stops with 'error - element <id> / initial soil saturation (SA) not specified' (exit status
+      0), or simulated runoff ignores the SA values you set
   diagnosis:
-    root_cause: KINEROS2 in event mode does not carry soil moisture between simulations. The initial moisture
-      deficit (SAT parameter for each element) defaults to the full porosity if not explicitly set, meaning
-      the soil starts completely dry for every event. This is appropriate only for very dry antecedent
-      conditions.
+    root_cause: 'KINEROS2 never defaults SA: a pervious element with G > 0 and no saturation stops the run. The
+      value comes, in order of precedence, from the GLOBAL SAT (all elements), from the rain gages'' SAT (interpolated
+      to the element; then the element''s own SA is IGNORED), or from the element''s SA. Event mode carries no moisture
+      between runs.'
   remedy:
-    action: 'Set the SAT (saturation) parameter for each element in the KINEROS2 parameter file to reflect
-      actual antecedent conditions. Use API (Antecedent Precipitation Index) or a continuous soil moisture
-      model to estimate pre-event saturation. Typical values: 0.3-0.5 for moderate conditions, 0.7-0.9
-      for wet antecedent conditions. For the Python continuous model, ensure spinup is sufficient.'
+    action: 'Give every pervious element an initial relative saturation, from antecedent rain or soil moisture data
+      (WG11 4 Aug 1980 gages: 0.09-0.13). Decide where it lives: gage SAT for gage-driven antecedent patterns, element
+      SA otherwise -- not both (dt_kineros2_030).'
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
+    text described tags/files that do not exist
+- id: dt_kineros2_027
+  name: engine exits 0 on every error
+  severity: silent
+  stage: s6_execution
+  failure_domain: runtime
+  symptom: A KINEROS2 run 'succeeds' (exit status 0) but there is no event summary, or downstream tools read an
+    old/empty output
+  diagnosis: 'errxit() in K2shell.f90 writes '' error - <id>'' and ''<message>'' then executes stop '' ''; other
+    aborts are stop '' error - ...'' (sed00, rain.for, infilt). gfortran returns status 0 for all of them. Verified:
+    missing SA, missing file, space in kin.fil, missing particle density, decreasing rain depth -> all exit 0.'
+  remedy: 'Judge success from the output text: ''Event Volume Summary'' present and no ''error -'', ''STOP error'',
+    ''zero multiplier'', ''neg stor values'' or Fortran runtime message (tools/_k2lib.engine_failures). Use tools/run_kineros2_engine.py,
+    which returns 3 on such failures.'
+  detection: grep -c 'Event Volume Summary' run.out  (0 = failed run);  grep -n '^ *error -' run.out engine_stdout.txt
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_021
+  - dt_kineros2_028
+- id: dt_kineros2_028
+  name: space after a comma in kin.fil
+  severity: fatal
+  stage: s6_execution
+  failure_domain: configuration
+  symptom: Output says "error - K2shell / Can't open  EX1.PRE" (note two spaces) although the file exists
+  diagnosis: 'K2shell splits each kin.fil line on commas without trimming, so '' EX1.PRE'' (leading blank) is the
+    file name. Fields are character(len=150): longer paths are cut.'
+  remedy: Write kin.fil as par,pre,out,"title",tfin,dt,Y|N,Y|N,mult|N,Y with no blanks; copy inputs to short names
+    in the run folder (run_kineros2_engine.py does both).
+  detection: cat -A kin.fil | grep ', '
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_050
+- id: dt_kineros2_029
+  name: PR = 2 / Plot = H is not a print flag
+  severity: silent
+  stage: s3_parameter_file
+  failure_domain: configuration
+  symptom: No hydrograph table for an element whose block says 'PR = 2' or 'Plot = H' (official EX1.PAR has both);
+    only event totals are printed
+  diagnosis: K2shell asks for the print level with geti4('PRI', ...). A token must START with the requested letters,
+    so 'PR' does not match 'PRI'; 'Plot' is not read at all. The manual's shortest abbreviation tables are not what
+    the code does.
+  remedy: 'Write PRINT = 2 (or 3 with FILE=) on the outlet: tools/edit_kineros2_par.py set case.par --out new.par
+    --set <outlet_id>:PRINT=2. Check with edit_kineros2_par.py list (column PRI).'
+  detection: python3 tools/edit_kineros2_par.py get case.par --tag PRI
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_035
+- id: dt_kineros2_030
+  name: rain-gage SAT overrides element SA
+  severity: silent
+  stage: s1_rainfall
+  failure_domain: initial_conditions
+  symptom: Changing an element's SA (or applying the init_sat multiplier logic you expect) has no effect on runoff
+  diagnosis: rain.for interp() sets sat from the gages for every PLANE/CHANNEL/URBAN element whenever the gages
+    carry SAT (any tag starting with S in the gage block); the element's SA is read only when the gages have none.
+    A GLOBAL SAT overrides both.
+  remedy: Keep antecedent saturation in ONE place. To use element SA, drop SAT from the gage blocks (build_kineros2_rainfall.py
+    without --sat/--template SAT); to vary by gage, edit the gage SAT.
+  detection: grep -n 'SAT' storm.pre; python3 tools/edit_kineros2_par.py get case.par --tag SA
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_026
+- id: dt_kineros2_031
+  name: '''+'' splits numbers (1.6e+06)'
+  severity: fatal
+  stage: s3_parameter_file
+  failure_domain: configuration
+  symptom: Engine stops with 'volume entry (V) missing or invalid', 'depth/intensity value missing or invalid' or
+    another 'missing or invalid' message for a value that is plainly there
+  diagnosis: 'reader.for treats only 0-9 A-Z . - / : \ _ as token characters. ''+'' is a separator, so 1.6e+06 becomes
+    the tokens ''1.6E'' and ''06''; the first does not parse and every later column shifts.'
+  remedy: Write plain decimals (1600000) or an exponent without '+' (1.6E6). The KI tools write numbers with _k2lib.fmt_num
+    and edit_kineros2_par.py refuses values containing '+'. validate flags split exponents.
+  detection: python3 tools/edit_kineros2_par.py validate case.par  (reports "'1.6E+06' -- the reader splits exponents")
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_032
+  name: rain depth in the wrong unit system
+  severity: silent
+  stage: s1_rainfall
+  failure_domain: unit_conversion
+  symptom: Runoff is near zero (or absurdly large) although the storm was large (or small); infiltration takes almost
+    all rain
+  diagnosis: 'The rainfall file has no unit tag: depths are read in the PARAMETER file''s UNITS (mm for METRIC,
+    inches for ENGLISH) and divided by conv (1000 or 12). An inch file under METRIC is 25.4x too little rain; mm
+    under ENGLISH is 25.4x too much.'
+  remedy: Build the .pre with build_kineros2_rainfall.py --units equal to the parameter file's UNITS (it refuses
+    a DAP export in the other unit) and check event_summary.rainfall against the gage totals.
+  detection: python3 tools/edit_kineros2_par.py validate case.par --rain storm.pre  (warns when storm totals look
+    like the other unit)
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_033
+  name: flume nominal area differs from model area
+  severity: silent
+  stage: s9_validation
+  failure_domain: validation
+  symptom: Event volume or depth error against a WGEW flume is large and opposite to the peak error; mm/hr peaks
+    look inconsistent with cfs peaks
+  diagnosis: 'WGEW DAP mm and inches are per the flume''s NOMINAL drainage area (flume 11: 2035 ac). The ARS WG11
+    model covers 1551 ac because the eastern part sits behind two stock ponds and seldom contributes (ARS KINEROS2
+    home page). The engine''s depths are over its own area.'
+  remedy: 'Compare in absolute units: fetch runoff with --units cf and score m3/s and m3 (score_kineros2_event.py
+    refuses a non-cfs DAP export). State both areas in any report.'
+  detection: head -9 obs.txt | grep 'Flume areas';  grep 'Total watershed area' run.out
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_034
+  name: FILE= names are upper-cased
+  severity: fatal
+  stage: s5_elements
+  failure_domain: configuration
+  symptom: PRINT=3 writes CHAN2.CSV instead of chan2.csv; an INJECT element stops with 'input file not found' although
+    inflow.dat exists
+  diagnosis: reader.for upper-cases every line before parsing, including FILE= values; Linux file names are case-sensitive.
+  remedy: Name injection files in upper case (add_kineros2_element.py does) and look for upper-case PRINT=3 outputs
+    (run_kineros2_engine.py copies every *.CSV it finds).
+  detection: ls *.CSV; grep -n 'FILE' case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_035
+  name: list values do not continue on the next line
+  severity: silent
+  stage: s3_parameter_file
+  failure_domain: configuration
+  symptom: A channel ignores some UPSTREAM/LATERAL ids or a 2nd FRACT value; elements disappear from the topology
+    without an error
+  diagnosis: The manual says list values may continue over lines, but reader.for stops a list at the end of its
+    line (the line marker ends the value search).
+  remedy: Keep every list on one line (<= 200 columns, dt_kineros2_045). edit_kineros2_par.py list / get show exactly
+    what the engine reads.
+  detection: python3 tools/edit_kineros2_par.py get case.par --tag UP --index 3
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_036
+  name: gridded hourly rain smears convective storms
+  severity: degraded
+  stage: s1_rainfall
+  failure_domain: validation
+  symptom: With rain from NASA POWER / CMFD / MSWX the model gives little or no runoff for storms that produced
+    floods
+  diagnosis: 'KINEROS2 runoff is infiltration-excess: it depends on minute-scale intensity exceeding infiltration
+    capacity. A 0.1-0.5 degree hourly or 3-hourly product averages a convective cell over a large cell and many
+    minutes (NASA POWER at Walnut Gulch, 2006: wettest hour 1.87 mm, while WGEW gages record tens of mm/h; a 12-h
+    EX1 test with it gave 0 runoff).'
+  remedy: Use recording-gage breakpoints whenever they exist (fetch_wgew_dap.py precip). Gridded rain (build_kineros2_rainfall.py
+    --from-gridded) is a last resort and its runs must be labelled as such.
+  detection: max step in the .pre header written by build_kineros2_rainfall.py
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_037
+  name: CLEN numerical increment warning
+  severity: warning
+  stage: s6_execution
+  failure_domain: runtime
+  symptom: Output warns 'based on length and parameter CLEN, the numerical increment of N m is too large for realistic
+    numerical solution'
+  diagnosis: The engine sets the number of spatial nodes from CLEN; long elements relative to CLEN get coarse spatial
+    steps. Both official ARS samples print this warning (EX1 channel 34 m; WG11 planes 169-309 ft, channels 469-504
+    ft) and the official Windows exe prints the same.
+  remedy: Not a failure. If accuracy matters, raise CLEN-related resolution by splitting long elements or setting
+    CLEN to the longest single element as the manual defines; compare peaks before/after.
+  detection: grep -c 'numerical increment' run.out; run_result.json engine_warnings
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_038
+  name: '''rating exceeded'' on every flowing channel'
+  severity: warning
+  stage: s7_output_parsing
+  failure_domain: runtime
+  symptom: Output says 'Channel Elem. N rating exceeded at time T' for channels that clearly did not overtop
+  diagnosis: channel_tab.for reads the bank DEPTH only when rain on channels (global CHR = Y) is on; otherwise depth
+    stays 0 (default) and any flow sets iexceed. Both official samples print it.
+  remedy: Ignore unless CHR = Y with a real DEPTH, or a rating table (tabdat) is used -- then it means flow above
+    the table/bank depth and the geometry should be extended.
+  detection: grep -n 'rating exceeded' run.out; grep -n 'CHR' case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_039
+  name: rain file time/depth order errors
+  severity: fatal
+  stage: s1_rainfall
+  failure_domain: configuration
+  symptom: Engine stops with 'rain gage <id> decreasing depth value' or 'time not increasing' (exit 0)
+  diagnosis: rain.for requires strictly increasing TIME and non-decreasing cumulative DEPTH per gage. Hand edits,
+    merged events or intensity values typed under a DEPTH header trigger it.
+  remedy: Rebuild with build_kineros2_rainfall.py (it re-reads and checks the file) and one storm per file; use
+    an INTENSITY column if you have rates.
+  detection: python3 tools/build_kineros2_rainfall.py ... (exit 2 on these errors)
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_040
+  name: pervious element without saturation source
+  severity: fatal
+  stage: s2_infiltration
+  failure_domain: initial_conditions
+  symptom: '''error - element <id> initial soil saturation (SA) not specified'''
+  diagnosis: infilt_test.for requires SA for every element with KS > 0 and G > 0 unless the gages or the GLOBAL
+    block give SAT.
+  remedy: Add SA to the element (edit_kineros2_par.py set --set PLANE:SAT=0.2) or SAT to the gages / GLOBAL block.
+  detection: python3 tools/edit_kineros2_par.py validate case.par --rain storm.pre
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_026
+- id: dt_kineros2_041
+  name: sediment classes and units
+  severity: fatal
+  stage: s4_sediment
+  failure_domain: unit_conversion
+  symptom: 'With sediment on: ''missing particle density'', ''particle classes not defined'', ''particle size fractions
+    do not add to 1'', or absurd sediment yields under ENGLISH units'
+  diagnosis: sed00 reads up to 5 DIAMS with one DENSITY each; FRACT per element must sum to 1 +/- 0.05 in DIAMS
+    order. DIAMS are inches and TEMP deg F when UNITS = ENGLISH (conv = 12), so mm values under ENGLISH are 25.4x
+    too coarse.
+  remedy: configure_kineros2_sediment.py --check case.par before every sediment run; set classes in the parameter
+    file's unit system.
+  detection: python3 tools/configure_kineros2_sediment.py --check case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_042
+  name: unreferenced element loses its water
+  severity: silent
+  stage: s3_parameter_file
+  failure_domain: configuration
+  symptom: Outlet volume is smaller than the sum of element outflows; the volume balance error is fine
+  diagnosis: Each element's outflow is stored under its id and read only by elements that name it. The event Outflow
+    is the last element's outflow.
+  remedy: validate lists elements that no later element references; wire them into a channel's UPSTREAM/LATERAL.
+  detection: python3 tools/edit_kineros2_par.py validate case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_024
+- id: dt_kineros2_043
+  name: KE / KR tags switch the sediment method
+  severity: silent
+  stage: s4_sediment
+  failure_domain: configuration
+  symptom: Sediment results change drastically after adding a 'KE' (effective Ks) or 'KR' tag; RHEM/DWEPP parameter
+    errors appear
+  diagnosis: kinsed.f90 sed0 picks RHEM if the element has a tag starting with KE, DWEPP if it has KR, else Smith.
+    infilt also reads KE before KS as the conductivity.
+  remedy: Use KS for conductivity in Smith runs; add KE/KR only when you mean RHEM/DWEPP and supply their tags.
+    configure_kineros2_sediment.py --check prints the method per element.
+  detection: python3 tools/configure_kineros2_sediment.py --check case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_044
+  name: element referenced before it is defined
+  severity: fatal
+  stage: s3_parameter_file
+  failure_domain: configuration
+  symptom: '''error - Channel Elem. / lateral inflow not found'' (or upstream inflow not found), exit 0'
+  diagnosis: Blocks are processed top to bottom; an UPSTREAM/LATERAL id must belong to a block ABOVE (verified by
+    changing EX1's LAT = 1 to LAT = 7).
+  remedy: Reorder blocks so every element comes after the elements it receives; validate reports the offending reference.
+  detection: python3 tools/edit_kineros2_par.py validate case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_045
+  name: columns beyond 200 are ignored
+  severity: silent
+  stage: s3_parameter_file
+  failure_domain: configuration
+  symptom: Tags or values at the end of a long line are not read (missing tag errors or wrong defaults)
+  diagnosis: reader.for reads each line into a 210-character buffer and scans columns 1-200 only.
+  remedy: Keep lines short; split lists across tags rather than lines (lists cannot continue, dt_kineros2_035).
+    validate warns on long lines.
+  detection: awk 'length > 200' case.par
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_046
+  name: surrogate output reported as KINEROS2
+  severity: silent
+  stage: s6_execution
+  failure_domain: validation
+  symptom: KINEROS2 'results' are daily discharge series for a large basin, or quote NSE 0.851 / KGE 0.882 (Huaihe,
+    Bengbu)
+  diagnosis: tools/run_kineros2.py is a Python lumped daily stand-in (Green-Ampt + two reservoirs, Hamon PET) written
+    before the real engine existed on this server. The models DB still carries its metrics.
+  remedy: Use tools/run_kineros2_engine.py for every KINEROS2 result; check run_result.json 'engine' and 'binary.sha256'
+    (d3efaef0...). Surrogate JSON carries model_identity = PYTHON SURROGATE.
+  detection: grep -l 'model_identity' *.json; jq .engine run_result.json
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_013
+- id: dt_kineros2_047
+  name: water-balance helper flags a single storm
+  severity: warning
+  stage: s6_execution
+  failure_domain: validation
+  symptom: 'validate_water_balance prints ''UNIT ERROR: Annual P = 28105 mm/yr exceeds physical maximum'' for a
+    correct event'
+  diagnosis: ki_tools_common.validation.validate_water_balance scales the inputs to a year using period_days; a
+    77 mm storm with period_days=1 becomes 28105 mm/yr.
+  remedy: For events use only residual_pct (run_kineros2_engine.py records it with a note) and the engine's own
+    '< 1 percent' line.
+  detection: run_result.json event_water_balance
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_048
+  name: peak from the table vs the engine's peak line
+  severity: warning
+  stage: s7_output_parsing
+  failure_domain: validation
+  symptom: 'Peak discharge differs slightly between the hydrograph CSV and the ''Peak flow ='' line (WG11: 665.28
+    vs 668.40 cfs; 66.0 vs 64.7 min)'
+  diagnosis: The 'Peak flow' line is tracked on the compute steps (Courant-shortened); the table is sampled at the
+    user dt.
+  remedy: Report peaks from the 'Peak flow' line (run_result.json outlet.peak_discharge); compute NSE/volume from
+    the table at dt.
+  detection: jq .outlet run_result.json
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_049
+  name: observed and simulated clocks misaligned
+  severity: silent
+  stage: s9_validation
+  failure_domain: validation
+  symptom: Simulated rise is consistently early or late by a fixed number of minutes; NSE poor while peak and volume
+    are fine
+  diagnosis: 'The .pre clock origin is arbitrary (4Aug80.pre: 12:35); WGEW flume times are local clock (13:27).
+    Forgetting the 52-min offset shifts the whole curve.'
+  remedy: Pass --obs-offset-min = (flume start - rain clock origin) to score_kineros2_event.py; check that the rising
+    limbs start together.
+  detection: head -3 storm.pre (clock origin comment) and the Start_Time column of the DAP export
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_050
+  name: long paths in kin.fil
+  severity: fatal
+  stage: s6_execution
+  failure_domain: configuration
+  symptom: '"Can''t open" with a truncated path'
+  diagnosis: kin.fil fields are character(len=150) and the line buffer is 1000 characters.
+  remedy: Run in a workspace with inputs copied under short names (run_kineros2_engine.py).
+  detection: awk -F, '{for(i=1;i<=NF;i++) if(length($i)>150) print i}' kin.fil
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_028
+- id: dt_kineros2_051
+  name: user step too large without Courant
+  severity: degraded
+  stage: s6_execution
+  failure_domain: runtime
+  symptom: Peaks are damped and element hydrographs look stepped; the summary line 'Time step distribution (100,75,50%)'
+    shows values much smaller than dt
+  diagnosis: With Courant N the engine computes at the user dt and only reports the step that would satisfy the
+    criterion; with Y it adapts and warns if element volumes differ > 1% from the dt-sampled ones.
+  remedy: Use --courant, or dt <= the 100% level. Keep dt 1-3 min for small catchments.
+  detection: grep 'Time step distribution' run.out
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+  cross_references:
+  - dt_kineros2_018
+- id: dt_kineros2_052
+  name: zero multiplier
+  severity: fatal
+  stage: s8_calibration
+  failure_domain: configuration
+  symptom: Run stops with 'zero multiplier'
+  diagnosis: infilt reads the G multiplier and stops if it is <= 0.
+  remedy: Keep every multiplier > 0; the tools reject 0 for G before running.
+  detection: cat mult file line 4
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'
+- id: dt_kineros2_053
+  name: texture-class Ks far from field values
+  severity: degraded
+  stage: s2_infiltration
+  failure_domain: validation
+  symptom: Runoff from a run parameterised from HWSD/Table 1 is much larger than observed at Walnut Gulch
+  diagnosis: Rawls (1982) class Ks for HWSD's sandy clay loam at 31.72N 110.06W is 0.43 cm/hr -> 0.135 in/hr after
+    the 20 % gravel factor; the ARS WG11 file uses 0.40-0.52 in/hr (and then a 0.5 multiplier) -- the class value
+    is a starting point, not a site value.
+  remedy: Calibrate the Ks multiplier on an observed event (calibrate_kineros2_multipliers.py) or use field-derived
+    values; report which.
+  detection: python3 tools/kineros2_soil_params.py --hwsd --lat ... --lon ... --units english
+  applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
+  verified: '2026-10-06'

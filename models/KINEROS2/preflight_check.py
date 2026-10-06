@@ -1,255 +1,133 @@
 #!/usr/bin/env python3
-"""Preflight check for the KINEROS2 Knowledge Infrastructure."""
+"""Preflight check for the KINEROS2 Knowledge Infrastructure (REAL engine).
 
+Checks, before any model run:
+  1. the real KINEROS2 executable (USDA-ARS K2shell, Fortran) -- found via $KINEROS2_BIN, the models
+     DB binary_path, or the builder default; exists, is executable, is an ELF binary;
+  2. it actually RUNS: the official ARS sample EX1 (one plane + channel, with sediment) is run in a
+     temporary folder through tools/run_kineros2_engine.py and its event totals must match the build
+     log values (examples/ars_samples/expected_results.json) -- the engine exits 0 even on errors,
+     so only the output text proves a run;
+  3. python modules the tools need, the shipped sample inputs, and the diagnostics corpus.
+
+The Python SURROGATE (tools/run_kineros2.py) is NOT checked here: it is not the model.
+
+Exit 0 = model ready; 1 = blockers (each failed check prints a fix and points to
+diagnostics/triplets.yaml).  Last line: PREFLIGHT_REPORT=<json>.
+"""
+import importlib
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-
 MODEL_ID = "KINEROS2"
 KI_DIR = Path(__file__).resolve().parent
-HYDROCRAFT_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
-RUNNER = KI_DIR / "tools" / "run_kineros2.py"
-DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
-
+TOOLS = KI_DIR / "tools"
+EXAMPLES = KI_DIR / "examples" / "ars_samples"
+TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 CHECKS = []
 
 
-def add_check(kind, subject, critical, passed, fix):
-    status = "pass" if passed else "fail"
-    CHECKS.append({
-        "kind": kind,
-        "subject": str(subject),
-        "critical": bool(critical),
-        "status": status,
-        "fix": "" if passed else fix,
-    })
-    print(f"  {'OK' if passed else 'FAIL':5s} {kind}: {subject}")
-    if not passed:
-        print(f"        Fix: {fix}")
-
-
-def run_command(args, timeout=20):
-    return subprocess.run(
-        [str(a) for a in args],
-        cwd=str(KI_DIR),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-    )
-
-
-def check_file(path, label, critical=True, executable=False, kind="data"):
-    path = Path(path)
-    realpath = os.path.realpath(path)
-    if not path.is_file():
-        add_check(
-            kind,
-            realpath,
-            critical,
-            False,
-            f"Restore {label}; consult {DIAGNOSTICS} for recovery.",
-        )
-        return False
-    if executable and not os.access(path, os.X_OK):
-        add_check(
-            kind,
-            realpath,
-            critical,
-            False,
-            f"Run: chmod +x {path}. If execution still fails, check {DIAGNOSTICS}.",
-        )
-        return False
-    add_check(kind, realpath, critical, True, "")
-    return True
-
-
-def check_dir(path, label, critical=True):
-    path = Path(path)
-    if path.is_dir() and any(path.iterdir()):
-        add_check("data", os.path.realpath(path), critical, True, "")
-        return True
-    add_check(
-        "data",
-        os.path.realpath(path),
-        critical,
-        False,
-        f"Restore non-empty {label}; consult {DIAGNOSTICS} for recovery.",
-    )
-    return False
-
-
-def check_import(module, critical=True):
-    if not HYDROCRAFT_PYTHON.is_file():
-        add_check(
-            "import",
-            f"{module} via {HYDROCRAFT_PYTHON}",
-            critical,
-            False,
-            f"Restore HydroCraft Python at {HYDROCRAFT_PYTHON}; consult {DIAGNOSTICS}.",
-        )
-        return False
-    proc = run_command(
-        [
-            HYDROCRAFT_PYTHON,
-            "-c",
-            (
-                "import importlib, json; "
-                f"m=importlib.import_module({module!r}); "
-                "print(json.dumps({'module': m.__name__, "
-                "'version': getattr(m, '__version__', '')}))"
-            ),
-        ],
-        timeout=15,
-    )
-    passed = proc.returncode == 0
-    fix = (
-        f"Install {module.split('.')[0]} into {HYDROCRAFT_PYTHON}'s environment, "
-        f"then rerun preflight. Check {DIAGNOSTICS} if import errors persist. "
-        f"stderr: {proc.stderr.strip()[:300]}"
-    )
-    add_check("import", f"{module} via {HYDROCRAFT_PYTHON}", critical, passed, fix)
-    return passed
-
-
-def check_runner_starts():
-    if not RUNNER.is_file() or not os.access(RUNNER, os.X_OK) or not HYDROCRAFT_PYTHON.is_file():
-        return False
-    proc = run_command([HYDROCRAFT_PYTHON, RUNNER, "--help"], timeout=15)
-    passed = proc.returncode == 0 and "Run KINEROS2 analytic lumped model" in proc.stdout
-    add_check(
-        "run",
-        f"{os.path.realpath(RUNNER)} --help via {HYDROCRAFT_PYTHON}",
-        True,
-        passed,
-        f"Make the KINEROS2 runner start under {HYDROCRAFT_PYTHON}; check {DIAGNOSTICS}. stderr: {proc.stderr.strip()[:300]}",
-    )
-    return passed
-
-
-def check_smoke_simulation():
-    if not RUNNER.is_file() or not HYDROCRAFT_PYTHON.is_file():
-        return False
-
-    with tempfile.TemporaryDirectory(prefix="kineros2_preflight_") as tmp:
-        tmpdir = Path(tmp)
-        forcing = tmpdir / "forcing.json"
-        params = tmpdir / "params.json"
-        output = tmpdir / "simulation.json"
-
-        forcing.write_text(json.dumps({
-            "status": "success",
-            "output": {
-                "dates": ["2000-01-01", "2000-01-02", "2000-01-03"],
-                "prec_mm_d": [2.0, 0.5, 8.0],
-                "temp_deg_c": [18.0, 19.0, 20.0],
-            },
-        }))
-        params.write_text(json.dumps({
-            "parameters": {
-                "Ks": 25.0,
-                "psi_f": 170.0,
-                "Smax": 250.0,
-                "fc": 0.55,
-                "k_fast": 0.12,
-                "k_slow": 0.01,
-                "f_slow": 0.35,
-                "alpha": 1.5,
-            },
-        }))
-
-        proc = run_command(
-            [
-                HYDROCRAFT_PYTHON,
-                RUNNER,
-                "--mode",
-                "simulate",
-                "--forcing",
-                forcing,
-                "--params",
-                params,
-                "--basin-area-km2",
-                "10",
-                "--latitude",
-                "33",
-                "--output",
-                output,
-            ],
-            timeout=30,
-        )
-
-        passed = False
-        if proc.returncode == 0 and output.is_file():
-            try:
-                data = json.loads(output.read_text())
-                q = data.get("output", {}).get("Q_sim_m3s", [])
-                passed = data.get("status") == "success" and len(q) == 3
-            except json.JSONDecodeError:
-                passed = False
-
-        add_check(
-            "run",
-            f"{os.path.realpath(RUNNER)} smoke simulation via {HYDROCRAFT_PYTHON}",
-            True,
-            passed,
-            f"Fix KINEROS2 simulate mode and input contract; check {DIAGNOSTICS}. stderr: {proc.stderr.strip()[:300]} stdout: {proc.stdout.strip()[:300]}",
-        )
-        return passed
+def record(kind, subject, critical, ok, fix=""):
+    CHECKS.append({"kind": kind, "subject": str(subject), "critical": bool(critical),
+                   "status": "pass" if ok else "fail", "fix": "" if ok else fix})
+    print(f"  {'OK  ' if ok else 'FAIL'} [{'critical' if critical else 'optional'}] {kind}: {subject}")
+    if not ok:
+        print(f"        fix: {fix}")
+    return ok
 
 
 def emit_report():
-    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": MODEL_ID, "checks": CHECKS}, sort_keys=True))
-    critical_failed = any(c["critical"] and c["status"] != "pass" for c in CHECKS)
-    sys.exit(1 if critical_failed else 0)
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": MODEL_ID, "checks": CHECKS}, ensure_ascii=False))
+    critical = [c for c in CHECKS if c["critical"]]
+    ready = bool(critical) and all(c["status"] == "pass" for c in critical)
+    raise SystemExit(0 if ready else 1)
 
 
 def main():
-    print(f"{' PREFLIGHT: KINEROS2 ':=^60}")
-    print(f"KI directory: {KI_DIR}")
-    print(f"Diagnostics: {DIAGNOSTICS}")
-    print()
+    print("KINEROS2 preflight (real engine)")
+    sys.path.insert(0, str(TOOLS))
 
-    check_file(HYDROCRAFT_PYTHON, "HydroCraft Python interpreter", critical=True, executable=True, kind="binary")
-    check_file(RUNNER, "KINEROS2 runner declared in knowledge_infrastructure.yaml", critical=True, executable=True, kind="binary")
+    # 1. binary
+    binary = None
+    try:
+        import _k2lib as k2
+        binary = k2.resolve_binary()
+        with open(binary, "rb") as fh:
+            is_elf = fh.read(4) == b"\x7fELF"
+        if not record("binary", os.path.realpath(binary), True, is_elf,
+                      "the file is not a Linux ELF executable; rebuild with "
+                      "KISSPATH_HOME/engine_builds_20261006/KINEROS2/build.sh (see triplet dt_kineros2_020)"):
+            binary = None
+    except Exception as e:  # resolve_binary raises with the reason
+        record("binary", os.environ.get("KINEROS2_BIN") or "k2 (KINEROS2_BIN / models DB / default)", True, False,
+               f"{e}; set KINEROS2_BIN=/path/to/k2 or rebuild (triplets dt_kineros2_020, dt_kineros2_021)")
 
-    for relpath in [
-        "SKILL.md",
-        "knowledge_infrastructure.yaml",
-        "dag.yaml",
-        "docs/format_spec.yaml",
-        "diagnostics/triplets.yaml",
-    ]:
-        check_file(KI_DIR / relpath, relpath, critical=True, kind="data")
+    # 2. the engine runs the official example and reproduces it
+    if binary is not None:
+        try:
+            from run_kineros2_engine import run_case
+            spec = json.loads((EXAMPLES / "expected_results.json").read_text())
+            ex, tol = spec["examples"]["ex1"], spec["tolerance"]["rel"]
+            with tempfile.TemporaryDirectory(prefix="k2_preflight_") as td:
+                res = run_case(str(EXAMPLES / ex["parfile"]), str(EXAMPLES / ex["rainfile"]), Path(td),
+                               ex["tfin_min"], ex["dt_min"], courant=ex["courant"], sediment=ex["sediment"],
+                               title=ex["title"], binary=str(binary))
+            es = res.get("event_summary") or {}
+            got = {"outflow_volume": (es.get("outflow") or {}).get("volume"),
+                   "sediment_yield_t_per_ha": es.get("sediment_yield")}
+            ok = res["status"] == "success" and all(
+                got[k] is not None and abs(got[k] - ex["expected"][k]) <= tol * abs(ex["expected"][k]) for k in got)
+            record("run", os.path.realpath(binary), True, ok,
+                   f"EX1 smoke run gave status={res['status']} {got} vs expected "
+                   f"{ {k: ex['expected'][k] for k in got} }; failures={res.get('failures')}; "
+                   f"see triplets dt_kineros2_027/dt_kineros2_028")
+        except Exception as e:
+            record("run", os.path.realpath(binary), True, False,
+                   f"could not run the EX1 smoke test ({type(e).__name__}: {e}); see dt_kineros2_027")
 
-    check_dir(KI_DIR / "tools", "KI tools directory", critical=True)
-    for relpath in [
-        "tools/convert_forcing_to_kineros2.py",
-        "tools/convert_soil_to_kineros2.py",
-        "tools/run_kineros2.py",
-        "tools/parse_output_kineros2.py",
-    ]:
-        check_file(KI_DIR / relpath, relpath, critical=True, kind="data")
+    # 3. python modules
+    for mod, crit, why in (("numpy", True, "all engine tools"),
+                           ("matplotlib", False, "figures in score_kineros2_event.py"),
+                           ("scipy", False, "calibrate_kineros2_multipliers.py --method nelder-mead"),
+                           ("yaml", False, "reading diagnostics/triplets.yaml")):
+        try:
+            importlib.import_module(mod)
+            record("import", mod, crit, True)
+        except ImportError:
+            record("import", mod, crit, False, f"pip install {mod}  (needed for {why})")
+    try:
+        try:
+            importlib.import_module("ki_tools_common.metrics")
+        except ImportError:
+            sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+            importlib.import_module("ki_tools_common.metrics")
+        record("import", "ki_tools_common", False, True)
+    except ImportError:
+        record("import", "ki_tools_common", False, False,
+               "add KISSPATH_KI_TOOLS_COMMON to PYTHONPATH (scoring metrics, "
+               "HWSD soil lookup, gridded rain need it)")
 
-    for module in ["numpy", "pandas", "scipy", "xarray", "geopandas", "shapely"]:
-        check_import(module, critical=True)
-    check_import("matplotlib", critical=False)
+    # 4. data shipped with the KI
+    for name in ("EX1.PAR", "EX1.PRE", "wg11.par", "4Aug80.pre", "wg11_mult.txt", "expected_results.json"):
+        p = EXAMPLES / name
+        record("data", p, True, p.is_file(),
+               f"restore {name} from the ARS Samples.zip (https://www.tucson.ars.ag.gov/kineros/Download/Samples.zip)")
+    obs = KI_DIR / "examples" / "wg11_observed" / "flume11_19800804_breakpoint_cfs.txt"
+    record("data", obs, False, obs.is_file(),
+           "re-fetch: tools/fetch_wgew_dap.py runoff --flumes 11 --start 1980-08-04 --end 1980-08-04 --units cf")
+    try:
+        import yaml
+        entries = yaml.safe_load(TRIPLETS.read_text())
+        record("data", TRIPLETS, False, isinstance(entries, list) and len(entries) >= 15,
+               "diagnostics/triplets.yaml must be a top-level YAML list with >= 15 entries")
+    except Exception as e:
+        record("data", TRIPLETS, False, False, f"triplets.yaml unreadable: {e}")
 
-    check_runner_starts()
-    check_smoke_simulation()
-
-    print()
-    passed = sum(1 for c in CHECKS if c["status"] == "pass")
-    failed = len(CHECKS) - passed
-    print(f"Results: {passed} passed, {failed} failed")
-    if failed:
-        print(f"Blockers found. Start recovery with {DIAGNOSTICS}.")
-    else:
-        print("Preflight passed. KINEROS2 is ready for model execution.")
-
+    crit_fail = [c for c in CHECKS if c["critical"] and c["status"] == "fail"]
+    print("  STATUS:", "MODEL READY" if not crit_fail else f"{len(crit_fail)} critical blocker(s) -- see fixes above")
     emit_report()
 
 

@@ -230,6 +230,25 @@ def compute_accuracy_metrics(simulated, observed):
     commission = fp / (tp + fp) if (tp + fp) > 0 else 0.0
     omission = fn / (tp + fn) if (tp + fn) > 0 else 0.0
 
+    # Critical Success Index (a.k.a. threat score / Jaccard / IoU). This is the
+    # `determining_metric` the dag declares for BOTH comparable obs_shapes of
+    # `fire_map` (spatial_snapshot and categorical_event), yet the tool used to
+    # omit it entirely -- so no run could ever satisfy the dag contract without
+    # hand-rolling it. Dice/Sorensen = 2*CSI/(1+CSI).
+    csi = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
+
+    # Hit/miss diagnostics (Gale & Cary 2025 definitions).
+    pod = tp / (tp + fn) if (tp + fn) > 0 else 0.0        # probability of detection
+    far = fp / (tp + fp) if (tp + fp) > 0 else 0.0        # false alarm ratio
+
+    # Overestimation Index (Giannaros et al. 2020): positive = the model burned
+    # more than observed, negative = less. Bounded [-1, +1].
+    sim_n, obs_n = tp + fp, tp + fn
+    oi = (sim_n - obs_n) / (sim_n + obs_n) if (sim_n + obs_n) > 0 else 0.0
+
+    # Burned-area percent bias, the dag's determining_metric for `burned_area`.
+    area_pbias = 100.0 * (sim_n - obs_n) / obs_n if obs_n > 0 else float("nan")
+
     return {
         "true_positive": tp,
         "false_positive": fp,
@@ -237,9 +256,74 @@ def compute_accuracy_metrics(simulated, observed):
         "true_negative": tn,
         "sorensen_coefficient": round(sorensen, 4),
         "cohens_kappa": round(kappa, 4),
+        "csi": round(csi, 4),
+        "pod": round(pod, 4),
+        "far": round(far, 4),
+        "overestimation_index": round(oi, 4),
+        "burned_area_pbias_pct": round(area_pbias, 3),
+        "sim_burned_pixels": sim_n,
+        "obs_burned_pixels": obs_n,
         "commission_error": round(commission, 4),
         "omission_error": round(omission, 4),
         "overall_accuracy": round(p_o, 4),
+    }
+
+
+def write_paired_pixels(simulated, observed, output_path, event_id=None,
+                        max_rows=None):
+    """Write the per-pixel obs/sim pairs that a spatial metric is derived from.
+
+    The orchestrator re-derives every reported metric from the scored series, so
+    a spatial-overlap verdict has to ship the paired arrays it came from, not
+    just the summary numbers.  Columns: ``row,col,obs,sim`` (plus ``event_id``
+    when given), one row per grid cell, 1 = burned.
+
+    Args:
+        simulated: 2D BurnStatus array.
+        observed: 2D array, >0 = burned.
+        output_path: destination CSV.
+        event_id: optional fire identifier written into every row.
+        max_rows: optional cap (writes a deterministic stride-sampled subset;
+            the cap is recorded in the return value, never applied silently).
+
+    Returns:
+        dict describing what was written.
+    """
+    if np.shape(simulated) != np.shape(observed) or np.ndim(simulated) != 2:
+        raise ValueError(
+            f"write_paired_pixels: simulated {np.shape(simulated)} and observed "
+            f"{np.shape(observed)} must be 2D arrays on the SAME grid"
+        )
+    sim_b = ((simulated == BURNING) | (simulated == BURNED)).astype(np.uint8)
+    obs_b = (observed > 0).astype(np.uint8)
+    rows, cols = sim_b.shape
+    rr, cc = np.meshgrid(np.arange(rows), np.arange(cols), indexing="ij")
+
+    flat = np.column_stack(
+        [rr.ravel(), cc.ravel(), obs_b.ravel(), sim_b.ravel()]
+    )
+    sampled = False
+    if max_rows and flat.shape[0] > max_rows:
+        stride = int(np.ceil(flat.shape[0] / float(max_rows)))
+        flat = flat[::stride]
+        sampled = True
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(str(output_path), "w") as fh:
+        if event_id:
+            fh.write("event_id,row,col,obs,sim\n")
+            for r, c, o, s in flat:
+                fh.write(f"{event_id},{r},{c},{o},{s}\n")
+        else:
+            fh.write("row,col,obs,sim\n")
+            for r, c, o, s in flat:
+                fh.write(f"{r},{c},{o},{s}\n")
+
+    return {
+        "path": str(output_path),
+        "n_rows": int(flat.shape[0]),
+        "grid_shape": [int(rows), int(cols)],
+        "stride_sampled": sampled,
     }
 
 
@@ -385,10 +469,16 @@ def process(args):
 
     # Step 3: Accuracy metrics (if observed data provided)
     accuracy = None
+    paired = None
     if args.observed_perimeter:
         observed = np.load(args.observed_perimeter)
         _, final_map = maps[-1]
         accuracy = compute_accuracy_metrics(final_map, observed)
+        paired = write_paired_pixels(
+            final_map, observed,
+            output_dir / "paired_pixels.csv",
+            event_id=args.event_id,
+        )
 
     # Step 4: Write CSV
     csv_path = output_dir / "burn_statistics.csv"
@@ -408,6 +498,7 @@ def process(args):
         "n_snapshots": len(maps),
         "final_statistics": stats_list[-1],
         "accuracy_metrics": accuracy,
+        "paired_pixels": paired,
         "output_files": {
             "csv": str(csv_path),
             "plot": str(plot_path),
@@ -436,7 +527,11 @@ def main():
     parser.add_argument("--pixel-scale", type=float, required=True,
                         help="Feet per pixel (from SimFire config)")
     parser.add_argument("--observed-perimeter", type=str, default=None,
-                        help="Path to observed burn perimeter (NPY, 1=burned)")
+                        help="Path to observed burn perimeter (NPY, 1=burned). "
+                             "Build it with tools/mtbs_perimeter_to_grid.py "
+                             "rasterize so it shares the simulated grid.")
+    parser.add_argument("--event-id", type=str, default=None,
+                        help="Fire identifier stamped into paired_pixels.csv")
     parser.add_argument("--output-dir", type=str, required=True,
                         help="Output directory for analysis results")
 

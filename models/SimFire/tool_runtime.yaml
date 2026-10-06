@@ -1,0 +1,10 @@
+# Hand-written; read by ki_tools_common/generate_skill_map.py (2026-10-06).
+# simfire, pygame, landfire and geotiff live only in the SimFire venv (python_env has none of
+# them), and the six tools were verified together there on 2026-10-06, so the KI-TOOL-INDEX in
+# SKILL.md names the SimFire venv (or $SIMFIRE_PYTHON) for all of them. run_simfire.py sets
+# SDL_VIDEODRIVER=dummy itself before importing simfire. Not projected: edit by hand.
+python:
+  env_var: SIMFIRE_PYTHON
+  default: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python
+  note: "shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON"
+  tools: [tools/convert_landfire_to_simfire.py, tools/convert_wind_to_simfire.py, tools/derive_fire_environment.py, tools/mtbs_perimeter_to_grid.py, tools/parse_simfire_output.py, tools/run_simfire.py]

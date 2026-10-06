@@ -64,12 +64,242 @@ SPEED_CONVERSIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# NASA POWER -> SimFire `wind.simple` (S3, scalar mph + "TO" degrees)
+#
+# THE MISSING LINK (added 2026-08-09).  SKILL.md documented the UNITS of
+# `wind.simple.speed` exhaustively but never said WHICH WIND it is.  Rothermel
+# (RMRS-GTR-371 / INT-115) takes the **midflame** wind -- the wind at roughly
+# flame height inside/above the surface fuel bed -- not the 10 m or 2 m
+# meteorological wind that every reanalysis and every weather API reports.
+# Feeding a 10 m open wind straight into `wind.simple.speed` overstates the
+# wind coefficient phi_w by a factor of ~2-3, i.e. it is a SILENT bias of the
+# same family as the mph/ft-min traps already in triplets.yaml (dt_021).
+#
+# The conversion is a two-step standard:
+#   1. reference height -> 20 ft (6.1 m) open wind, via the log profile
+#        U_20ft = U_z * ln(6.1/z0) / ln(z/z0),      z0 = 0.03 m open rangeland
+#   2. 20 ft open wind -> midflame, via the Albini & Baughman (1979)
+#      unsheltered wind adjustment factor used by BEHAVE/FARSITE/FlamMap
+#        WAF = 1.83 / ln((20 + 0.36 H) / (0.13 H)),   H = fuel bed depth (ft)
+#      (Andrews 2012, RMRS-GTR-266, eq. for unsheltered fuels.)
+#   For H = 1 ft (FBFM 1/2/10/11 grass & short shrub) WAF ~= 0.36;
+#   for H = 6 ft (FBFM 4 chaparral) WAF ~= 0.55.
+#
+# Wind SPEED comes from ki_tools_common.load_forcing (the platform's canonical
+# loader).  Wind DIRECTION does NOT: `load_forcing` returns scalar `wind_ms`
+# only -- there is no direction field anywhere in ki_tools_common, which is a
+# genuine gap for any directional model (fire, dune, drift-snow, plume).  Until
+# that is fixed upstream, the direction is pulled here from the same NASA POWER
+# endpoint constant that load_forcing itself uses, so both halves of the wind
+# vector come from one product and one time standard.
+# ---------------------------------------------------------------------------
+
+KI_TOOLS_COMMON_SRC = "KISSPATH_KI_TOOLS_COMMON"
+
+# Reference heights (m)
+NASA_POWER_WIND_HEIGHT_M = 2.0   # load_forcing requests WS2M
+MIDFLAME_REF_HEIGHT_M = 6.096    # 20 ft, the fire-weather standard
+OPEN_RANGELAND_Z0_M = 0.03       # roughness length, open grass/shrub
+
+# Fuel-bed depth (ft) per FBFM-13 model, for the WAF. Matches SKILL.md's table.
+FBFM13_DEPTH_FT = {
+    1: 1.0, 2: 1.0, 3: 2.5, 4: 6.0, 5: 2.0, 6: 2.5, 7: 2.5,
+    8: 0.2, 9: 0.2, 10: 1.0, 11: 1.0, 12: 2.3, 13: 3.0,
+}
+
+
+def _ensure_ki_tools_common():
+    """Make ki_tools_common importable from a bare model venv."""
+    if KI_TOOLS_COMMON_SRC not in sys.path:
+        sys.path.insert(0, KI_TOOLS_COMMON_SRC)
+
+
+def wind_adjustment_factor(fuel_bed_depth_ft):
+    """Albini & Baughman (1979) unsheltered WAF: 20 ft open wind -> midflame.
+
+    Args:
+        fuel_bed_depth_ft: fuel bed depth H in feet (FBFM13_DEPTH_FT).
+
+    Returns:
+        float WAF in (0, 1].
+    """
+    h = max(0.1, float(fuel_bed_depth_ft))
+    import math
+
+    return 1.83 / math.log((20.0 + 0.36 * h) / (0.13 * h))
+
+
+def log_profile_scale(z_from_m, z_to_m, z0_m=OPEN_RANGELAND_Z0_M):
+    """Neutral log-law ratio U(z_to)/U(z_from) over roughness z0."""
+    import math
+
+    return math.log(z_to_m / z0_m) / math.log(z_from_m / z0_m)
+
+
+def _nasa_power_hourly_direction(lat, lon, year):
+    """Hourly 10 m wind direction (deg FROM north) from NASA POWER.
+
+    Uses ``load_forcing.NASA_POWER_URL`` so this stays pinned to whatever
+    endpoint the platform loader uses, and ``trust_env=False`` because the
+    sandbox proxy stalls power.larc.nasa.gov.
+
+    Returns:
+        (dates ndarray[datetime64[s]], direction ndarray[float] deg-from-N)
+    """
+    import datetime as _dt
+
+    import requests
+
+    _ensure_ki_tools_common()
+    from ki_tools_common.load_forcing import NASA_POWER_URL
+
+    params = {
+        "start": f"{year}0101", "end": f"{year}1231",
+        "latitude": lat, "longitude": lon,
+        "community": "RE", "parameters": "WD10M,WS10M",
+        "format": "JSON", "header": "false", "time-standard": "UTC",
+    }
+    sess = requests.Session()
+    sess.trust_env = False
+    resp = sess.get(NASA_POWER_URL, params=params, timeout=180)
+    resp.raise_for_status()
+    pdata = resp.json()["properties"]["parameter"]
+    wd, ws = pdata.get("WD10M", {}), pdata.get("WS10M", {})
+
+    dates, dirs, spds = [], [], []
+    for key in sorted(wd.keys()):
+        dates.append(_dt.datetime.strptime(key, "%Y%m%d%H"))
+        v = wd.get(key, -999.0)
+        s = ws.get(key, -999.0)
+        dirs.append(np.nan if v in (-999.0, None) else float(v))
+        spds.append(np.nan if s in (-999.0, None) else float(s))
+    return (
+        np.array(dates, dtype="datetime64[s]"),
+        np.array(dirs, dtype=float),
+        np.array(spds, dtype=float),
+    )
+
+
+def nasa_power_simple_wind(lat, lon, date, fuel_bed_depth_ft=1.0,
+                           hours=24, waf_override=None,
+                           start_offset_hours=0.0):
+    """Build a SimFire ``wind.simple`` block for one fire-day at one point.
+
+    Args:
+        lat, lon: fire location (degrees).
+        date: "YYYY-MM-DD" ignition date.
+        fuel_bed_depth_ft: representative fuel bed depth for the WAF.
+        hours: length of the burn window in hours.
+        waf_override: bypass the Albini-Baughman WAF with this value.
+        start_offset_hours: hours after 00 UTC of `date` at which the burn
+            window opens. NASA POWER is UTC; a burning period defined in LOCAL
+            solar time must be shifted by ``local_hour - lon/15``, otherwise a
+            western-US afternoon window silently samples the PREVIOUS night.
+
+    Returns:
+        dict with `speed` (mph, MIDFLAME -- write straight into
+        wind.simple.speed) and `direction` (deg, SimFire "TO" convention),
+        plus every intermediate so the conversion is auditable.
+    """
+    import datetime as _dt
+
+    _ensure_ki_tools_common()
+    from ki_tools_common.load_forcing import load_hourly_forcing
+
+    day = _dt.datetime.strptime(date, "%Y-%m-%d")
+    year = day.year
+
+    # Speed: the platform's canonical loader (NASA POWER hourly, WS2M).
+    # TRAP (found 2026-10-06): newer ki_tools_common.load_forcing returns
+    # `wind_ms` = WS10M (10 m, `wind_height_m` = 10) and the 2 m wind as
+    # `wind2_ms`; on 2026-08-08 `wind_ms` was WS2M. Treating a 10 m wind as 2 m
+    # inflates the midflame wind ~1.4x. Use the 2 m series when present, else
+    # the height the loader reports -- never assume.
+    fx = load_hourly_forcing("nasa_power", lat, lon, year, year)
+    fdates = fx["dates"].astype("datetime64[s]").astype(object)
+    if "wind2_ms" in fx:
+        fspd2m = np.asarray(fx["wind2_ms"], dtype=float)
+        wind_ref_height_m = NASA_POWER_WIND_HEIGHT_M
+    else:
+        fspd2m = np.asarray(fx["wind_ms"], dtype=float)
+        wind_ref_height_m = float(fx.get("wind_height_m", NASA_POWER_WIND_HEIGHT_M))
+
+    # Direction: same product, fetched here (load_forcing carries no direction).
+    ddates, ddirs, dspd10m = _nasa_power_hourly_direction(lat, lon, year)
+    ddates_obj = ddates.astype(object)
+
+    t0 = day + _dt.timedelta(hours=float(start_offset_hours))
+    t1 = t0 + _dt.timedelta(hours=hours)
+
+    m_spd = np.array([t0 <= d < t1 for d in fdates])
+    m_dir = np.array([t0 <= d < t1 for d in ddates_obj])
+    if not m_spd.any() or not m_dir.any():
+        raise RuntimeError(f"NASA POWER returned no hours in {t0}..{t1}")
+
+    spd2m = fspd2m[m_spd]
+    dirs = ddirs[m_dir]
+    spd10 = dspd10m[m_dir]
+    good = np.isfinite(dirs) & np.isfinite(spd10)
+    if not good.any():
+        raise RuntimeError("NASA POWER wind direction all-missing for this window")
+
+    # VECTOR mean direction, speed-weighted: a scalar mean of compass bearings
+    # is wrong across the 0/360 wrap and would point the head fire anywhere.
+    theta = np.radians(dirs[good])
+    u = -np.nanmean(spd10[good] * np.sin(theta))   # eastward component
+    v = -np.nanmean(spd10[good] * np.cos(theta))   # northward component
+    dir_to_deg = float((np.degrees(np.arctan2(u, v))) % 360.0)
+
+    mean_spd_2m_ms = float(np.nanmean(spd2m))
+    mean_spd_20ft_ms = mean_spd_2m_ms * log_profile_scale(
+        wind_ref_height_m, MIDFLAME_REF_HEIGHT_M
+    )
+    waf = (
+        float(waf_override)
+        if waf_override is not None
+        else wind_adjustment_factor(fuel_bed_depth_ft)
+    )
+    midflame_ms = mean_spd_20ft_ms * waf
+    midflame_mph = midflame_ms * 2.236936
+
+    return {
+        "speed": round(midflame_mph, 3),          # -> wind.simple.speed (mph)
+        "direction": round(dir_to_deg, 2),        # -> wind.simple.direction ("TO")
+        "provenance": {
+            "source": "NASA POWER hourly (via ki_tools_common.load_forcing "
+                      "for speed; WD10M/WS10M for direction)",
+            "lat": lat, "lon": lon, "date": date, "window_hours": hours,
+            "n_hours_speed": int(m_spd.sum()), "n_hours_dir": int(good.sum()),
+            "mean_wind_2m_ms": round(mean_spd_2m_ms, 3),
+            "wind_ref_height_m": wind_ref_height_m,
+            "mean_wind_20ft_ms": round(mean_spd_20ft_ms, 3),
+            "log_profile_z0_m": OPEN_RANGELAND_Z0_M,
+            "fuel_bed_depth_ft": fuel_bed_depth_ft,
+            "wind_adjustment_factor": round(waf, 4),
+            "midflame_wind_ms": round(midflame_ms, 3),
+            "direction_convention": "degrees CW from N, SimFire 'TO' direction",
+            "vector_mean": True,
+        },
+    }
+
+
 def validate_inputs(args):
     """Validate command-line arguments.
 
     Checks unit names, file existence, grid dimensions.
     """
     errors = []
+
+    if getattr(args, "nasa_power", False):
+        for name in ("lat", "lon", "date"):
+            if getattr(args, name, None) is None:
+                errors.append(f"--nasa-power requires --{name}")
+        if errors:
+            print(json.dumps({"status": "error", "stage": "validate_inputs",
+                              "errors": errors}))
+            sys.exit(1)
+        return
 
     if args.speed_unit not in SPEED_CONVERSIONS:
         errors.append(
@@ -241,6 +471,20 @@ def process(args):
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # NASA POWER scalar mode: emit the wind.simple block, not ft/min arrays.
+    if getattr(args, "nasa_power", False):
+        block = nasa_power_simple_wind(
+            args.lat, args.lon, args.date,
+            fuel_bed_depth_ft=args.fuel_bed_depth_ft,
+            hours=args.window_hours,
+            waf_override=args.waf,
+            start_offset_hours=args.start_offset_hours,
+        )
+        out_path = output_dir / "wind_simple.json"
+        with open(str(out_path), "w") as f:
+            json.dump(block, f, indent=2)
+        return {"wind_simple": str(out_path), "block": block}
+
     grid_shape = tuple(args.grid_shape) if args.grid_shape else (225, 225)
 
     # Step 1: Read data
@@ -306,6 +550,24 @@ def main():
                         help="Column name for wind speed in CSV")
     parser.add_argument("--dir-col", type=str, default=None,
                         help="Column name for wind direction in CSV")
+
+    # NASA POWER scalar mode (S3 for wind.simple)
+    parser.add_argument("--nasa-power", action="store_true",
+                        help="Derive a wind.simple block (MIDFLAME mph + 'TO' "
+                             "degrees) from NASA POWER for one fire-day")
+    parser.add_argument("--lat", type=float, default=None)
+    parser.add_argument("--lon", type=float, default=None)
+    parser.add_argument("--date", type=str, default=None,
+                        help="Burn-window start date, YYYY-MM-DD (UTC)")
+    parser.add_argument("--start-offset-hours", type=float, default=0.0,
+                        help="Hours after 00 UTC of --date when the burn "
+                             "window opens (use 12 - lon/15 for local noon)")
+    parser.add_argument("--window-hours", type=int, default=24,
+                        help="Burn window length in hours (default 24)")
+    parser.add_argument("--fuel-bed-depth-ft", type=float, default=1.0,
+                        help="Representative fuel bed depth for the WAF")
+    parser.add_argument("--waf", type=float, default=None,
+                        help="Override the Albini-Baughman wind adjustment factor")
 
     # Grid configuration
     parser.add_argument("--grid-shape", type=int, nargs=2, default=None,

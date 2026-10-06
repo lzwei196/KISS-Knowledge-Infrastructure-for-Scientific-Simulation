@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -36,7 +36,7 @@
 | for claims and thresholds | `docs/gathered_papers.json` (11 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-06 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -47,12 +47,14 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | tool (exact path) | invocation |
 |---|---|
-| `tools/convert_landfire_to_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_landfire_to_simfire.py --help` |
-| `tools/convert_wind_to_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_wind_to_simfire.py --help` |
-| `tools/parse_simfire_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_simfire_output.py --help` |
-| `tools/run_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_simfire.py --help` |
+| `tools/convert_landfire_to_simfire.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/convert_landfire_to_simfire.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/convert_wind_to_simfire.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/convert_wind_to_simfire.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/derive_fire_environment.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/derive_fire_environment.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/mtbs_perimeter_to_grid.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/mtbs_perimeter_to_grid.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/parse_simfire_output.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/parse_simfire_output.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/run_simfire.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/run_simfire.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
 
-*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # SimFire — Wildfire Spread Simulation (Knowledge Infrastructure)

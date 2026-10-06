@@ -1,5 +1,9 @@
 # knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
 # the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+# CURATED OVERRIDE 2026-10-06 (real-engine wiring): binary.path now points at the PATCHED-FORK
+# headless engine, `package.engine_fork` and the 5th tool were added by hand. generate_ki_manifest.py
+# does not know these fields -- re-apply them after any regeneration
+# (record: KISSPATH_HOME/ki_fix_campaign/reviews/GIFMod/).
 
 package:
   name: GIFMod
@@ -12,8 +16,20 @@ package:
   scientific_reference_version: GIFMod (Massoudieh et al. 2017 framework; block-connector variably-saturated
     flow + ADR reactive transport)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GIFMod/source/repo/bindata/GIFMod
+    path: KISSPATH_HOME/engine_builds_20261006/gifmod/install/GIFMod
     type: ELF
+    launcher: KISSPATH_HOME/engine_builds_20261006/gifmod/install/gifmod_headless.sh
+    tool: tools/run_gifmod_engine.py
+  engine_fork:
+    note: PATCHED FORK of upstream GIFMod (upstream is GUI-only); patches listed in SKILL.md "Real engine"
+    upstream_repo: https://github.com/USEPA/GIFMod
+    upstream_commit: 2a314750418099ca51a100d824381924ba982c91
+    patches: QPainterPath include; cmath include; headless driver in main.cpp (--wizard/--script/--model,
+      auto-closes modal dialogs); return statements added to 20 non-void functions; optional GIFMOD_DEBUG_WIZ print
+    build: Qt 5.15.15 (conda env KISSPATH_HOME/engine_builds_20261006/gifmod/qt_env), GCC 13.3
+    previous_binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GIFMod/source/repo/bindata/GIFMod
+      (unpatched upstream build; GUI-only, cannot run headless)
+    test_case: test_cases/simple_pond
 pipeline:
   stages:
   - s0_configuration
@@ -22,12 +38,13 @@ pipeline:
   - s6_execution
   - s7_output_parsing
 tools:
-  count: 4
+  count: 5
   files:
   - tools/convert_forcing.py
   - tools/convert_soil_params.py
   - tools/parse_gifmod_output.py
   - tools/run_gifmod.py
+  - tools/run_gifmod_engine.py
 inputs:
   forcing:
   - name: Precipitation
@@ -106,7 +123,7 @@ validation:
   metrics:
     best_r: 0.772
 summary:
-  total_tools: 4
+  total_tools: 5
   total_stage_docs: 5
   total_diagnostic_triplets: 15
   generated: '2026-08-15'

@@ -7,6 +7,7 @@ import py_compile
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -15,6 +16,12 @@ KI_DIR = Path(__file__).resolve().parent
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
 SOURCE_DIR = Path(os.environ["GIFMOD_SOURCE_DIR"]) if os.environ.get("GIFMOD_SOURCE_DIR") else None
 BINARY_ENV = os.environ.get("GIFMOD_BINARY")
+# REAL engine = patched fork with a headless driver (SKILL.md "Real engine"). Same lookup as
+# tools/run_gifmod_engine.py: $GIFMOD_BINARY (direct) -> $GIFMOD_HEADLESS (wrapper) -> server wrapper.
+HEADLESS_ENV = os.environ.get("GIFMOD_HEADLESS")
+DEFAULT_WRAPPER = Path("KISSPATH_HOME/engine_builds_20261006/gifmod/install/gifmod_headless.sh")
+RUN_ENGINE = KI_DIR / "tools" / "run_gifmod_engine.py"
+DRIVER_MARK = b"HEADLESS: running forward model"
 
 
 def fix(message):
@@ -24,7 +31,8 @@ def fix(message):
 def check(kind, subject, critical, passed, fix_text=""):
     subject = str(subject)
     status = "pass" if passed else "fail"
-    print(f"  {status.upper():<5} {kind:<8} {subject}")
+    shown = "WARN" if not passed and not critical else status.upper()
+    print(f"  {shown:<5} {kind:<8} {subject}")
     if not passed and fix_text:
         print(f"        Fix: {fix_text}")
     return {
@@ -72,7 +80,8 @@ def check_tool_compiles(path):
     if not path.is_file():
         return check("data", subject, True, False, fix(f"Restore KI tool {path}"))
     try:
-        py_compile.compile(str(path), doraise=True)
+        with tempfile.TemporaryDirectory(prefix="gifmod_pyc_") as tmp:  # keep __pycache__ out of the KI
+            py_compile.compile(str(path), cfile=str(Path(tmp) / "x.pyc"), doraise=True)
     except py_compile.PyCompileError as exc:
         return check("import", subject.resolve(), True, False, fix(f"Fix Python syntax/importability: {exc.msg}"))
     return check("import", subject.resolve(), True, True)
@@ -163,14 +172,15 @@ def first_binary(source_dir=None):
     return None
 
 
-def check_source_available():
+def check_source_available(critical=False):
+    """Upstream source tree: only needed to REBUILD; the run uses the installed patched engine."""
     source_dir = first_source_dir()
     if source_dir is None:
         searched = [str(p) for p in candidate_source_dirs()]
         return None, check(
             "data",
-            "GIFMod source repository",
-            True,
+            "GIFMod source repository (rebuild only)",
+            critical,
             False,
             fix(
                 "Install the USEPA GIFMod source repository in this KI/model tree, "
@@ -182,7 +192,7 @@ def check_source_available():
         return source_dir, check(
             "data",
             source_dir,
-            True,
+            critical,
             False,
             fix("Set GIFMOD_SOURCE_DIR to the existing USEPA GIFMod source repository"),
         )
@@ -190,11 +200,11 @@ def check_source_available():
         return source_dir, check(
             "data",
             source_dir.resolve(),
-            True,
+            critical,
             False,
             fix("Set GIFMOD_SOURCE_DIR to the repository root containing GIFMod.pro"),
         )
-    return source_dir, check("data", source_dir.resolve(), True, True)
+    return source_dir, check("data", source_dir.resolve(), critical, True)
 
 
 def check_binary_exists(source_dir=None):
@@ -270,6 +280,127 @@ def check_binary_starts(binary):
     )
 
 
+def has_driver(binary):
+    tail = b""
+    with open(binary, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 22), b""):
+            if DRIVER_MARK in tail + chunk:
+                return True
+            tail = chunk[-len(DRIVER_MARK):]
+    return False
+
+
+def wrapper_target(wrapper):
+    """Same literal grammar as tools/run_gifmod_engine.py: bash/sh shebang, comments, literal
+    'export NAME=value ...' / 'unset NAME ...' (no OMP_* etc.), ONE final 'exec /abs/binary "$@"'.
+    Returns (binary or None, reason)."""
+    import re
+    shebang = re.compile(r"^#!(/bin/bash|/bin/sh|/usr/bin/env bash)\s*$")
+    export = re.compile(r"^export( [A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9_./:,+-]*)+$")
+    unset = re.compile(r"^unset( [A-Za-z_][A-Za-z0-9_]*)+$")
+    exec_line = re.compile(r'^exec (/[A-Za-z0-9_./+-]+) "\$@"$')
+    forbidden = re.compile(r"^(OMP_|GOMP_|KMP_|OPENBLAS_|MKL_)")
+    try:
+        lines = Path(wrapper).read_text(errors="replace").splitlines()
+    except OSError as exc:
+        return None, f"cannot read wrapper: {exc}"
+    if not lines or not shebang.match(lines[0]):
+        return None, "first line must be #!/bin/bash, #!/bin/sh or #!/usr/bin/env bash"
+    body = [l.rstrip() for l in lines[1:] if l.strip() and not l.lstrip().startswith("#")]
+    if not body:
+        return None, "wrapper has no exec line"
+    for l in body[:-1]:
+        if export.match(l):
+            names = [w.split("=", 1)[0] for w in l.split()[1:]]
+        elif unset.match(l):
+            names = l.split()[1:]
+        else:
+            return None, f"unsupported wrapper line (only literal export/unset before exec): {l!r}"
+        if any(forbidden.match(n) for n in names):
+            return None, "wrapper may not set thread variables (OMP_* etc.)"
+    m = exec_line.match(body[-1])
+    if not m:
+        return None, f'last line must be exactly: exec /absolute/binary "$@" (found {body[-1]!r})'
+    return Path(m.group(1)), ""
+
+
+def check_real_engine():
+    """The REAL (patched-fork, headless) engine: critical -- this KI has no other run path."""
+    checks = []
+    if BINARY_ENV:
+        mode, launch, src = "direct", Path(BINARY_ENV).expanduser().absolute(), "$GIFMOD_BINARY"
+    elif HEADLESS_ENV:
+        mode, launch, src = "wrapper", Path(HEADLESS_ENV).expanduser().absolute(), "$GIFMOD_HEADLESS"
+    else:
+        mode, launch, src = "wrapper", DEFAULT_WRAPPER, "server default"
+    hint = ("Install the patched headless GIFMod (SKILL.md 'Real engine') or set GIFMOD_BINARY / "
+            "GIFMOD_HEADLESS to it")
+    c = check_file(launch, f"GIFMod {mode} ({src})", critical=True, executable=True)
+    checks.append(c)
+    if c["status"] != "pass":
+        return checks
+    if mode == "direct":
+        binary, why = launch, ""
+    else:
+        binary, why = wrapper_target(launch)
+    if binary is None or not Path(binary).is_file():
+        checks.append(check("binary", f"wrapper target of {launch}: {binary}", True, False,
+                            fix(f"wrapper not accepted ({why or 'target missing'}); {hint}")))
+        return checks
+    binary = Path(binary)
+    c = check_file(binary, "patched GIFMod binary", critical=True, executable=True)
+    checks.append(c)
+    if c["status"] != "pass":
+        return checks
+    checks.append(check_ldd(binary))
+    ok = has_driver(binary)
+    checks.append(check("binary", f"headless driver in {binary.resolve()}", True, ok,
+                        "" if ok else fix(f"binary has no headless driver (unpatched upstream is GUI-only); {hint}")))
+    for res in ("formulas.txt", "GIFModGUIPropList.csv", "templates/Simple_pond.wiz"):
+        checks.append(check_file(binary.parent / res, f"GIFMod runtime resource {res}", critical=True, nonempty=True))
+    if not all(c["status"] == "pass" for c in checks):
+        return checks
+    checks.append(check_smoke_run(launch if mode == "wrapper" else None, binary if mode == "direct" else None))
+    return checks
+
+
+def check_smoke_run(wrapper, binary):
+    """End-to-end proof: official Simple_pond template, 30 days, through tools/run_gifmod_engine.py."""
+    subject = "smoke run: run_gifmod_engine.py --wizard Simple_pond (30 days)"
+    with tempfile.TemporaryDirectory(prefix="gifmod_preflight_") as tmp:
+        cmd = [sys.executable, str(RUN_ENGINE), "--wizard", "Simple_pond",
+               "--param", "project_start_date=1/1/2020 12:00 AM", "--param", "project_end_date=1/31/2020 12:00 AM",
+               "--param", "ini_Depth=1", "--param", "Area=100", "--run-dir", str(Path(tmp) / "run"),
+               "--timeout", "150"]
+        cmd += ["--wrapper", str(wrapper)] if wrapper else ["--binary", str(binary)]
+        # the tool has its own 150 s limit and kills its engine; on our watchdog (or Ctrl-C) it gets
+        # SIGTERM so it can still clean up its engine processes by PID.
+        p = subprocess.Popen(cmd, cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            out, err = p.communicate(timeout=240)
+        except BaseException as exc:
+            p.terminate()
+            try:
+                p.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.communicate()
+            if isinstance(exc, subprocess.TimeoutExpired):
+                return check("run", subject, True, False, fix("smoke run did not finish within 240 s"))
+            raise
+        if p.returncode != 0:
+            last = (err or out).strip().splitlines()[:2]
+            return check("run", subject, True, False, fix(f"smoke run exit {p.returncode}: {' | '.join(last)[:300]}"))
+        try:
+            st = json.loads((Path(tmp) / "run" / "gifmod_engine_summary.json").read_text())["stats"]["experiment1"]["hydro"]
+            good = (st["S_Pond"]["n"] == 3002 and st["S_Pond"]["min"] == st["S_Pond"]["max"] == 100.0
+                    and st["H_Pond"]["min"] == st["H_Pond"]["max"] == 1.0)
+        except (OSError, KeyError, ValueError) as exc:
+            return check("run", subject, True, False, fix(f"smoke summary unreadable: {exc}"))
+        return check("run", subject, True, good,
+                     "" if good else fix("smoke run finished but pond storage/head are not 100 m3 / 1 m"))
+
+
 def check_build_helper(name, install_hint):
     path = shutil.which(name)
     if path:
@@ -316,30 +447,35 @@ def main():
         KI_DIR / "tools" / "convert_soil_params.py",
         KI_DIR / "tools" / "parse_gifmod_output.py",
         KI_DIR / "tools" / "run_gifmod.py",
+        RUN_ENGINE,
     ):
         checks.append(check_tool_compiles(tool))
         checks.append(check_tool_help(tool))
 
-    source_dir, source_check = check_source_available()
+    print("\n  REAL engine (patched fork, headless driver) -- critical:")
+    engine_checks = check_real_engine()
+    checks.extend(engine_checks)
+
+    print("\n  Rebuild-only checks (non-critical):")
+    source_dir, source_check = check_source_available(critical=False)
     checks.append(source_check)
     if source_dir is not None and source_check["status"] == "pass":
-        checks.append(check_file(source_dir / "GIFMod.pro", "GIFMod qmake project", critical=True, nonempty=True))
-        checks.append(check_dir(source_dir / "src", "GIFMod source tree", critical=True, nonempty=True))
-        checks.append(check_dir(source_dir / "src" / "GUI", "GIFMod GUI source tree", critical=True, nonempty=True))
+        checks.append(check_file(source_dir / "GIFMod.pro", "GIFMod qmake project", critical=False, nonempty=True))
+        checks.append(check_dir(source_dir / "src", "GIFMod source tree", critical=False, nonempty=True))
+        checks.append(check_dir(source_dir / "src" / "GUI", "GIFMod GUI source tree", critical=False, nonempty=True))
     checks.append(check_build_helper("make", "Install build-essential/make for GIFMod rebuilds"))
     checks.append(check_qmake())
 
-    binary, binary_check = check_binary_exists(source_dir if source_check["status"] == "pass" else None)
-    checks.append(binary_check)
-    if binary is not None and binary_check["status"] == "pass":
-        checks.append(check_ldd(binary))
-        checks.append(check_binary_starts(binary))
-
     passed = sum(1 for c in checks if c["status"] == "pass")
-    failed = len(checks) - passed
-    print(f"\n  Results: {passed} passed, {failed} failed")
-    if failed:
+    critical_failed = sum(1 for c in checks if c["status"] != "pass" and c.get("critical"))
+    warned = len(checks) - passed - critical_failed
+    engine_ok = all(c["status"] == "pass" for c in engine_checks)
+    print(f"\n  Results: {passed} passed, {critical_failed} critical failed, {warned} warnings")
+    print(f"  REAL engine (tools/run_gifmod_engine.py): {'READY' if engine_ok else 'NOT READY'}")
+    if critical_failed:
         print(f"  STATUS: PREFLIGHT FAILED - fix blockers above; start with {DIAGNOSTICS}")
+    elif warned:
+        print("  STATUS: PREFLIGHT PASSED WITH WARNINGS - engine ready; WARN lines only matter for rebuilding")
     else:
         print("  STATUS: PREFLIGHT PASSED - safe to proceed with GIFMod execution")
     emit_report(MODEL_ID, checks)

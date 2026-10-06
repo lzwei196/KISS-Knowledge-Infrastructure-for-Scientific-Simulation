@@ -1,0 +1,74 @@
+{
+  "test_case": "GIFMod simple_pond (official upstream wizard template Simple_pond, 30 days)",
+  "engine": {
+    "name": "GIFMod (Green Infrastructure Flexible Model) - PATCHED FORK with headless driver",
+    "version": "upstream USEPA/GIFMod commit 2a314750418099ca51a100d824381924ba982c91 + local patches (gifmod_patches.diff)",
+    "binary": "GIFMod (Linux ELF, Qt 5.15.15, GCC 13.3) run via gifmod_headless.sh (QT_QPA_PLATFORM=offscreen)",
+    "binary_sha256": "1d83043c6413b28a10cec5a26a3d203d1c86d4a2e848e0bae38830ef5b999f25",
+    "source": "https://github.com/USEPA/GIFMod (upstream); patched local copy built 2026-10-06",
+    "license": "see upstream USEPA/GIFMod LICENSE (US EPA / Catholic University of America)",
+    "patches": [
+      "src/GUI/qcustomplot.h: #include <QPainterPath> (Qt>=5.14 build fix)",
+      "src/GUI/utility_funcs.cpp: #include <cmath> (build fix)",
+      "src/GUI/main.cpp: headless driver --wizard/--param/--save, --script, --model; fills template defaults; exit 0 only with results (2 load/open, 3 wizard errors, 4 no results)",
+      "20 non-void functions in 12 files: added final return (undefined behaviour under GCC 13 -O2 caused an endless loop)",
+      "main.cpp driver: auto-closes modal dialogs every 300 ms (end-of-run 'Simulation Finished!' box)",
+      "src/GUI/Wizard/wiz_assigned_value.cpp: optional GIFMOD_DEBUG_WIZ debug print"
+    ]
+  },
+  "ki": {
+    "model": "GIFMod",
+    "run_tool": "tools/run_gifmod_engine.py"
+  },
+  "inputs_source": {
+    "Simple_pond.wiz": "upstream bindata/templates/Simple_pond.wiz at commit 2a31475 (unmodified; byte-identical to upstream src/resources/Templates/Simple_pond.wiz and to the installed templates/ copy)",
+    "simple_pond_w_rxns.png": "upstream bindata/templates/simple_pond_w_rxns.png (template icon; not used by the headless run)",
+    "wizard_answers.json": "OURS: answers to the 4 template questions without a default"
+  },
+  "simulation": {
+    "template": "Simple_pond",
+    "start": "2020-01-01",
+    "end": "2020-01-31",
+    "pond_area_m2": 100,
+    "initial_depth_m": 1,
+    "constituents": [
+      "DO",
+      "NH3",
+      "NOx",
+      "DOC"
+    ],
+    "reactions": [
+      "Nitrification",
+      "Aerobic Growth",
+      "Anoxic Growth"
+    ],
+    "template_defaults": {
+      "mu_n": 0.5,
+      "mu_s": 5,
+      "Kn": 1,
+      "Kon": 0.1,
+      "Kos": 0.05,
+      "Ks": 50,
+      "mu_anox": 10,
+      "KNo3": 10
+    }
+  },
+  "files": {
+    "gifmod_patches.diff": {
+      "bytes": 13917,
+      "sha256": "5f31f58380f120bdac8bbc351b4800ffb20db310edc0ed46385d66a19cff8756"
+    },
+    "inputs/Simple_pond.wiz": {
+      "bytes": 3125,
+      "sha256": "b988a60f562a621e576ab74406e3c587724e27746e50354fc6780d61fd04744a"
+    },
+    "inputs/simple_pond_w_rxns.png": {
+      "bytes": 27570,
+      "sha256": "62e7f169f2d16f4abd0364c09333769282cff4a5402ae050f0250acec52716ce"
+    },
+    "inputs/wizard_answers.json": {
+      "bytes": 305,
+      "sha256": "c1e5f3c3fd36c77115d668f9a659e593788f847497f7025b915697f5b08b7543"
+    }
+  }
+}

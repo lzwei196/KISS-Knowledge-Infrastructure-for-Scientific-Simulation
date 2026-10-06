@@ -1,0 +1,7 @@
+{
+  "note": "OUR answers to the 4 questions of the official Simple_pond template that have no default (the other 8 parameters use the template defaults). Not an upstream file.",
+  "project_start_date": "1/1/2020 12:00 AM",
+  "project_end_date": "1/31/2020 12:00 AM",
+  "ini_Depth": "1",
+  "Area": "100"
+}

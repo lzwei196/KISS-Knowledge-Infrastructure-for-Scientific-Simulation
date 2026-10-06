@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (15 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -51,8 +51,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
 | `tools/parse_gifmod_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gifmod_output.py --help` |
 | `tools/run_gifmod.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gifmod.py --help` |
+| `tools/run_gifmod_engine.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gifmod_engine.py --help` |
 
-*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # GIFMod Knowledge Infrastructure
@@ -63,11 +64,74 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Version            | 0.1.0                                              |
 | Model              | GIFMod 0.1.26                                      |
 | Domain             | Urban water quality / green infrastructure         |
-| Language           | C++14 (Qt5 GUI)                                    |
+| Language           | C++14 (Qt5 GUI); server engine = PATCHED FORK with a headless driver (see "Real engine") |
 | License            | GPL-3.0                                            |
 | Repository         | https://github.com/USEPA/GIFMod                   |
 | Authors            | US EPA                                             |
 | Validation         | synthetic (pipeline test)                          |
+
+---
+
+## Real engine on this server: a PATCHED FORK of upstream GIFMod
+
+Upstream GIFMod (https://github.com/USEPA/GIFMod) is a Qt GUI with **no command-line run
+mode** (the CLI lines in its `main.cpp` are commented out). To run it without a person at the
+screen, the server engine is built from a **patched copy** of upstream commit
+`2a314750418099ca51a100d824381924ba982c91` (2020-05-25). It is a fork, not the upstream program.
+Patches (full diff: `test_cases/simple_pond/gifmod_patches.diff`, 16 files, +90 lines):
+
+1. `src/GUI/qcustomplot.h`: `#include <QPainterPath>` (needed with Qt >= 5.14; build fix).
+2. `src/GUI/utility_funcs.cpp`: `#include <cmath>` (`fmod`; build fix).
+3. `src/GUI/main.cpp`: **headless driver** — `--wizard T.wiz [--param name=value ...] --save out.GIFMod`,
+   `--script S --save out.GIFMod`, `--model M.GIFMod`. It fills wizard parameters that have a
+   template default (prints `DEFAULT: name=value`), builds/saves the model, calls the GUI's own
+   "Run Model" action, prints `HEADLESS:` lines and returns 0 only if results exist
+   (2 = cannot load/open input, 3 = wizard validation errors, 4 = no results).
+4. 20 non-void functions in 12 files got a final `return {};` (or a static empty object) where
+   upstream falls off the end. Under GCC 13 -O2 this undefined behaviour made the wizard loop
+   forever until out of memory. These returns only change paths that had no defined result.
+5. The driver closes any modal dialog every 300 ms and prints its text (the solver ends with a
+   "Simulation Finished!" box that would otherwise wait forever).
+6. `src/GUI/Wizard/wiz_assigned_value.cpp`: optional debug print when `GIFMOD_DEBUG_WIZ` is set (off by default).
+
+Build: Qt 5.15.15 (conda env `KISSPATH_HOME/engine_builds_20261006/gifmod/qt_env`), GCC 13.
+Binary `KISSPATH_HOME/engine_builds_20261006/gifmod/install/GIFMod` (needs `formulas.txt`,
+`GIFModGUIPropList.csv` and `templates/` next to it); wrapper `install/gifmod_headless.sh`
+(sets `QT_QPA_PLATFORM=offscreen LC_ALL=C LANG=C`). No X server / xvfb needed.
+Scientific equivalence of the fork with upstream is not proven beyond the official test case.
+
+Run it ONLY through `tools/run_gifmod_engine.py` (python_env):
+```bash
+KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gifmod_engine.py \
+    --wizard Simple_pond --param 'project_start_date=1/1/2020 12:00 AM' \
+    --param 'project_end_date=1/31/2020 12:00 AM' --param ini_Depth=1 --param Area=100 \
+    --run-dir /scratch/pond_run
+# or: --model /path/project.GIFMod   |   --script /path/model.scr   (lines like: add 'Pond' :Name=Pond,Bottom area=100)
+```
+Engine lookup: `--binary` (run directly) / `--wrapper` → `$GIFMOD_BINARY` / `$GIFMOD_HEADLESS` →
+`KISSPATH_HOME/engine_builds_20261006/gifmod/install/gifmod_headless.sh`; a binary without the
+headless driver (e.g. an unpatched upstream build) or a wrapper that is not a literal
+shebang + `export NAME=value` / `unset` lines (no OMP_* thread variables) + one final
+`exec /abs/binary "$@"` script is refused with exit 3. Limits: `--timeout` ≤ 1080 s
+(default 900), `--threads` 1–4 (OMP_NUM_THREADS, default 4).
+Staging: every run uses a fresh, empty run dir; the model is saved/copied there and GIFMod
+writes its outputs next to it. A project/script that sets its own "Working path", or names an
+input file (time series etc.) that is relative and not in the run dir (use `--copy-siblings`
+to copy the other files of its folder; sub-folders are not copied) or absolute and missing, is
+refused with exit 2 before the engine starts (file-valued properties are taken from the
+engine's own `GIFModGUIPropList.csv`; wizard file parameters must be absolute paths). Absolute input files are read in place and listed
+in the summary. A run is good ONLY if
+the engine exits 0, prints `HEADLESS: run invoked=1 hasResults=1`, `temp.log` shows
+"Simulation ended." and "<experiment> finished" for every solved experiment (no "failed"), and
+`hydro_output_<experiment>.txt` parses. Exit codes: 0 ok, 1 run failed, 2 bad command line,
+3 engine missing/unpatched. Outputs: GIFMod files in the run dir plus
+`gifmod_outputs_long.csv` (experiment, family, file, variable, t_serial_day, value) and
+`gifmod_engine_summary.json` (per-variable n / first-last time / min / max / mean / final).
+
+Known engine quirks: column `LAI_*` of `hydro_output_*` is uninitialised memory (tiny random
+values like 6.95e-310) — never use it; each run rewrites `install/gmon.out` (upstream `GIFMod.pro`
+builds with gprof `-pg`) and appends to `install/recentFiles.txt`. Official test case:
+`test_cases/simple_pond/` (bundled upstream wizard template Simple_pond, 30 days).
 
 ---
 
@@ -101,8 +165,9 @@ with Jacobian-based iteration. It supports multi-phase transport (dissolved, sor
 colloidal, gaseous), user-defined reaction networks in Petersen matrix format, and
 optimization via genetic algorithms (GA) or MCMC sampling.
 
-The model is primarily a Qt5 GUI application. There is no standalone CLI executable;
-automation is achieved through the built-in JavaScript scripting engine (Duktape).
+The model is primarily a Qt5 GUI application. Upstream has no standalone CLI executable;
+automation is achieved through the built-in JavaScript scripting engine (Duktape). On this
+server the patched fork adds a headless driver — see "Real engine" above.
 Input is specified through project files (.GIFMod format) containing block/connector
 definitions and parameter tables. Output is columnar time series of head, flow,
 concentration, and mass balance at each block.
@@ -151,8 +216,8 @@ msbuild GIFMod.vcxproj /p:Configuration=Release
 ### 2.4 Test Command
 
 ```bash
-# GIFMod is GUI-only; verify build succeeded:
-./builds/release/GIFMod --help 2>&1 || echo "GUI app, no CLI help"
+# Upstream GIFMod is GUI-only (no CLI). On this server, check the patched headless engine with:
+KISSPATH_PYTHON_ENV/bin/python {KI}/preflight_check.py   # includes a Simple_pond smoke run
 ```
 
 ---
@@ -167,8 +232,8 @@ msbuild GIFMod.vcxproj /p:Configuration=Release
 | 3 | Land Cover         | (manual / GUI)                  | Assign block types and vegetation properties       |
 | 4 | Forcing            | `convert_forcing.py`            | Convert met data to GIFMod time series format      |
 | 5 | Model Parameters   | `configure_gifmod.py`           | Set hydraulic conductivity, porosity, dispersivity |
-| 6 | Execution          | `run_gifmod.py`                 | Build and execute GIFMod binary                    |
-| 7 | Output Parsing     | `parse_gifmod_output.py`        | Extract time series to CSV                         |
+| 6 | Execution          | `run_gifmod_engine.py`          | Run the patched headless engine (wizard/script/model) and check it finished; `run_gifmod.py` only builds (its `--mode run` cannot run headless) |
+| 7 | Output Parsing     | `run_gifmod_engine.py`          | Writes `gifmod_outputs_long.csv`; `parse_gifmod_output.py` does NOT read real GIFMod output (see 8.1) |
 | 8 | Validation         | (external)                      | Compare with observations                          |
 
 ---
@@ -223,7 +288,8 @@ section and `dag.yaml` disagree, `dag.yaml` wins.
 |---------------------------|-------|-------------------------------|-------|----------------------------------------------------|
 | convert_forcing.py        | s4    | tools/convert_forcing.py      | ~200  | Convert met forcing to GIFMod CSV time series      |
 | convert_soil_params.py    | s2    | tools/convert_soil_params.py  | ~180  | Convert HWSD soil data to GIFMod block properties  |
-| run_gifmod.py             | s6    | tools/run_gifmod.py           | ~160  | Build and execute GIFMod, manage output            |
+| run_gifmod.py             | s6    | tools/run_gifmod.py           | ~160  | Build GIFMod from source (`--mode build`). Its `--mode run` cannot run a model: upstream GIFMod ignores the project argument and just opens the GUI |
+| run_gifmod_engine.py      | s6/s7 | tools/run_gifmod_engine.py    | ~450  | REAL engine: run the patched headless GIFMod (wizard/script/model), honest success checks, parse outputs to CSV |
 | parse_gifmod_output.py    | s7    | tools/parse_gifmod_output.py  | ~180  | Parse GIFMod columnar output to CSV                |
 
 ---
@@ -366,7 +432,12 @@ observable output's variable name, unit, description, and validation rank.
 
 ### 8.1 Time Series Output
 
-GIFMod produces columnar text output:
+**Real format (checked 2026-10-06 on the engine's own output):** `hydro_output_<exp>.txt`,
+`wq_output_<exp>.txt`, `output_MB<exp>.txt` start with a `names, A, B, ...` line and a
+`//t, A, t, B, ...` line; each data row then holds one `(t, value)` pair per variable (each
+variable has its own time column). Time is a serial day number (43831 = 2020-01-01).
+`tools/run_gifmod_engine.py` parses this; `parse_gifmod_output.py` does not (it expects the
+simplified layout below and fails honestly with exit 1). Simplified layout from older notes:
 
 ```
 Time        Block1_Head  Block1_Conc  Block2_Head  Block2_Conc
@@ -515,11 +586,8 @@ ki/
 ## 15. Quick Start
 
 ```bash
-# 1. Build GIFMod
-cd /path/to/GIFMod/source/repo
-sudo apt-get install qt5-default liblapack-dev libblas-dev
-qmake GIFMod.pro CONFIG+=release
-make -j$(nproc)
+# 1. Engine: already built on this server (patched fork, see "Real engine"); check it
+python3 preflight_check.py
 
 # 2. Convert soil parameters
 python3 ki/tools/convert_soil_params.py \
@@ -533,14 +601,10 @@ python3 ki/tools/convert_forcing.py \
   --precip-unit mm/hr \
   --temp-unit celsius
 
-# 4. Build and run model (GUI-based)
-./builds/release/GIFMod
+# 4. Run the model headless (wizard template, GIFMod script, or saved .GIFMod project)
+python3 ki/tools/run_gifmod_engine.py --model my_project.GIFMod --run-dir run1
 
-# 5. Parse output
-python3 ki/tools/parse_gifmod_output.py \
-  --input model_output.txt \
-  --output results.csv \
-  --variables Head,Flow,Concentration
+# 5. Parsed output is written by step 4: run1/gifmod_outputs_long.csv + run1/gifmod_engine_summary.json
 ```
 
 ---
@@ -633,7 +697,7 @@ where Kd = partition coefficient (L/kg), S = sorbed concentration (mg/kg).
 
 ## 19. Known Limitations
 
-1. **GUI-only**: No command-line interface for batch processing; scripting via Duktape JS
+1. **GUI-only upstream**: upstream has no command-line run mode; this server uses a patched fork with a headless driver (see "Real engine")
 2. **No parallel domain decomposition**: Single-node only (OpenMP for linear algebra)
 3. **1D blocks**: Each block is 0D or 1D; no full 2D/3D spatial resolution
 4. **No built-in GIS**: Block geometry must be defined manually or via scripts

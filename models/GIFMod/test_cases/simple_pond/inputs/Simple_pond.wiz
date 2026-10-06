@@ -1,0 +1,36 @@
+name: Simple pond
+icon: simple_pond_w_rxns.png
+settings: {type=Project settings, Simulation start time = param[project_start_date], Simulation end time=param[project_end_date]}
+major_block: {name=value[Pond], type=value[Pond], Initial water depth=param[ini_Depth], Bottom area=param[Area]}
+entity: {name=DO, type=Constituent}
+entity: {name=NH3, type=Constituent}
+entity: {name=NOx, type=Constituent}
+entity: {name=DOC, type=Constituent}
+entity: {type=Reaction parameter, name=~mu_n, Value=param[mu_n]}
+entity: {type=Reaction parameter, name=~mu_s, Value=param[mu_s]}
+entity: {type=Reaction parameter, name=Kn, Value=param[Kn]}
+entity: {type=Reaction parameter, name=Kon, Value=param[Kon]}
+entity: {type=Reaction parameter, name=Kos, Value=param[Kos]}
+entity: {type=Reaction parameter, name=Ks, Value=param[Ks]}
+entity: {type=Reaction parameter, name=~mu_anox, Value=param[mu_anox]}
+entity: {type=Reaction parameter, name=Kno3, Value=param[KNo3]}
+entity: {type=Reaction, name=Nitrification, rate=~mu_n*(NH3/(NH3+Kn))*(DO/(DO+Kon)), stch[DO]=-1, stch[NH3]=-0.219, stch[NOx]=0.219}
+entity: {type=Reaction, name=Aerobic Growth, rate=~mu_s*(DOC/(DOC+Ks))*(DO/(DO+Kos)), stch[DO]=-1, stch[NH3]=-0.1, stch[DOC]=-1}
+entity: {type=Reaction, name=Anoxic Growth, rate=~mu_anox*(DOC/(DOC+Ks))*(Kos/(DO+Kos))*(NOx/(NOx+Kno3)), stch[NH3]=0.1, stch[NOx]=-0.35,stch[DOC]=-1}
+parameter: {name=project_start_date, delegate=date_time, question=Enter Project Start Date, prop_list_item=Simulation start date}
+parameter: {name=project_end_date, delegate=date_time, question=Enter Project End Date, prop_list_item=Simulation end time}
+parameter: {name=ini_Depth, delegate=float, question=Initial Water Depth, object_type=Pond, prop_list_item=Initial water depth}
+parameter: {name=Area, delegate=float, question=Bottom area, prop_list_item=Bottom area }
+parameter: {name=mu_n, delegate=float, question=Maximum nitrification rate constant (mg/L.day), default=0.5}
+parameter: {name=mu_s, delegate=float, question=Maximum BOD decay rate (mg/L.day), default=5}
+parameter: {name=Kn, delegate=float, question=Nitrogen half saturation constant in nitrification (mg/L), default=1}
+parameter: {name=Kon, delegate=float, question=Oxygen half saturation constant in nitrification (mg/L), default=0.1}
+parameter: {name=Kos, delegate=float, question=Oxygen half saturation constant in BOD decay (mg/L), default=0.05}
+parameter: {name=Ks, delegate=float, question=Substrate half saturation constant in BOD decay (mg/L), default=50}
+parameter: {name=mu_anox, delegate=float, question=Maximum denitrification rate (mg/L.day), default=10}
+parameter: {name=KNo3, delegate=float, question=Nitrate hald saturation constant in denitrification (mg/L), default=10}
+parameter_group: {name=g1, description=Geometric Charachteristics, parameter=ini_Depth, parameter=Area}
+parameter_group: {name=g2, description=Reaction Parameters, parameter=mu_n, parameter=mu_s, parameter=Kn, parameter=Kon, parameter=Kos, parameter=Ks, parameter=mu_anox, parameter=KNo3}
+parameter_group: {name=g4, description=Project Settings, parameter=project_start_date, parameter=project_end_date}
+
+

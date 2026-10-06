@@ -1,0 +1,24 @@
+{
+  "description": "Expected results for GIFMod's official Simple_pond wizard template (USEPA/GIFMod commit 2a314750418099ca51a100d824381924ba982c91, bindata/templates/Simple_pond.wiz, unmodified): one pond with 4 constituents (DO, NH3, NOx, DOC) and 3 reactions (nitrification, aerobic and anoxic growth), 2020-01-01 to 2020-01-31. Our 4 required wizard answers are in inputs/wizard_answers.json (depth 1 m, area 100 m2); the other 8 parameters use the template defaults. There is no inflow and no initial concentration, so the pond stays at 100 m3 / 1 m head and all concentrations stay 0: the case proves the full build-model + solve + write-output path of the engine, not a water-quality result. Run with the PATCHED-FORK headless GIFMod through tools/run_gifmod_engine.py. Upstream ships no reference output; values were recorded from our own runs: two clean runs on 2026-10-06 (and a re-run of the saved .GIFMod, and the same model built from a GIFMod script) gave byte-identical wq_output and output_MB files and identical hydro_output apart from the LAI_Pond column (uninitialised memory in the engine; not checked).",
+  "engine_version": "GIFMod patched fork of USEPA/GIFMod 2a31475 (headless driver + build fixes, gifmod_patches.diff), Qt 5.15.15, GCC 13.3; binary sha256 1d83043c6413b28a10cec5a26a3d203d1c86d4a2e848e0bae38830ef5b999f25",
+  "numeric_checks": [
+    {"name": "finished", "expected": 1, "tol": 0, "why": "engine exit 0, 'HEADLESS: run invoked=1 hasResults=1', temp.log 'experiment1 finished' and 'Simulation ended.' (checked by the run tool), no failed experiment"},
+    {"name": "model_check_errors", "expected": 0, "tol": 0, "why": "GIFMod's own model check: '0 Errors'"},
+    {"name": "model_check_warnings", "expected": 3, "tol": 0, "why": "GIFMod's own model check: 3 warnings (pond Length, Width and Manning's n unset; not used by a lone pond)"},
+    {"name": "hydro_records", "expected": 3002, "tol": 0, "why": "hydro_output time records (output every 0.01 day)"},
+    {"name": "t_first", "expected": 43831.0, "tol": 1e-09, "why": "first output time = 2020-01-01 (serial day)"},
+    {"name": "t_last", "expected": 43861.01, "tol": 1e-06, "why": "last output time; the engine writes one record past the 2020-01-31 end (43861)"},
+    {"name": "storage_min", "expected": 100.0, "tol": 1e-09, "why": "pond storage S_Pond (m3) never drops: 100 m2 x 1 m, no inflow or outflow"},
+    {"name": "storage_max", "expected": 100.0, "tol": 1e-09, "why": "pond storage never rises"},
+    {"name": "head_min", "expected": 1.0, "tol": 1e-09, "why": "pond head H_Pond (m) stays at the initial depth"},
+    {"name": "head_max", "expected": 1.0, "tol": 1e-09, "why": "pond head stays at the initial depth"},
+    {"name": "evaporation_max_abs", "expected": 0.0, "tol": 1e-12, "why": "E_Pond is 0 (no climate forcing)"},
+    {"name": "wq_max_abs_all", "expected": 0.0, "tol": 1e-12, "why": "all 8 water-quality series (DO, DOC, NH3, NOx; aqueous and sorbed) stay 0 - no initial or inflow concentration"},
+    {"name": "mb_records", "expected": 101, "tol": 0, "why": "records in output_MBexperiment1.txt (solver-step sampled; last at 43861.0145)"},
+    {"name": "mb_max_abs", "expected": 0.0, "tol": 1e-12, "why": "water mass-balance error of the pond is 0 at every record"}
+  ],
+  "recorded_on": "2026-10-06",
+  "recorded_with": "tools/run_gifmod_engine.py (live KI /mnt/disk1/Hydrocraft_server/models/GIFMod/knowledge_infrastructure) -> /home/server/engine_builds_20261006/gifmod/install/gifmod_headless.sh -> install/GIFMod --wizard Simple_pond.wiz --param ... --save <run>/Simple_pond.GIFMod",
+  "reference": "Own repeat runs; upstream GIFMod ships no reference output for its wizard templates.",
+  "notes": "LAI_Pond in hydro_output is uninitialised memory (values like 6.95e-310 that change run to run) and is excluded. The engine is a locally patched fork; equivalence with upstream GIFMod is not proven beyond this case."
+}

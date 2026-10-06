@@ -1,0 +1,328 @@
+diff --git a/src/GUI/BTC.cpp b/src/GUI/BTC.cpp
+index b6d7171..acf3140 100644
+--- a/src/GUI/BTC.cpp
++++ b/src/GUI/BTC.cpp
+@@ -203,6 +203,7 @@ double CTimeSeries::interpol(const double &x)
+ 		return C[0];
+ 
+ 
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ CTimeSeries CTimeSeries::MA_smooth(int span)
+diff --git a/src/GUI/ConstituentTableModel.cpp b/src/GUI/ConstituentTableModel.cpp
+index 6f76a5c..f37e8ae 100644
+--- a/src/GUI/ConstituentTableModel.cpp
++++ b/src/GUI/ConstituentTableModel.cpp
+@@ -75,6 +75,7 @@ QVariant ConstituentTableModel::data(const QModelIndex & index, int role) const
+ 		return node->constituentInitialCondition()[row].Model;
+ 	if (col == 3)
+ 		return node->constituentInitialCondition()[row].Value;
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ bool ConstituentTableModel::setData(const QModelIndex & index, const QVariant & value, int role)
+diff --git a/src/GUI/ConstituentTableModelPlant.cpp b/src/GUI/ConstituentTableModelPlant.cpp
+index ca141fa..3e2ba9f 100644
+--- a/src/GUI/ConstituentTableModelPlant.cpp
++++ b/src/GUI/ConstituentTableModelPlant.cpp
+@@ -42,6 +42,7 @@ QVariant ConstituentTableModelPlant::data(const QModelIndex & index, int role) c
+ 		return node->NutrientHalfSaturationConstant()[row].Constituent;
+ 	if (col == 1)
+ 		return node->NutrientHalfSaturationConstant()[row].Value;
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ bool ConstituentTableModelPlant::setData(const QModelIndex & index, const QVariant & value, int role)
+diff --git a/src/GUI/Expression.cpp b/src/GUI/Expression.cpp
+index 212784b..6cf1483 100644
+--- a/src/GUI/Expression.cpp
++++ b/src/GUI/Expression.cpp
+@@ -254,6 +254,7 @@ double CExpression::calc(Wizard_Script_Reader *W)
+ 			return func(function, term_vals[0], term_vals[1]);
+ 	}
+ 	
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ double CExpression::func(QString &f, double val)
+@@ -286,6 +287,7 @@ double CExpression::oprt(QString &f, double val1, double val2)
+ 	if (f == "-") return val1 + val2;
+ 	if (f == "/") return val1 * val2;
+ 	if (f == "*") return val1*val2;
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ double CExpression::oprt(QString &f, int i1, int i2, Wizard_Script_Reader *W)
+@@ -374,6 +376,7 @@ int corresponding_parenthesis(QString S, int i)
+ 		}
+ 		return -1;
+ 	}
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ bool parantheses_balance(QString S)
+diff --git a/src/GUI/GA.cpp b/src/GUI/GA.cpp
+index db4face..6da5463 100644
+--- a/src/GUI/GA.cpp
++++ b/src/GUI/GA.cpp
+@@ -779,6 +779,7 @@ int CGA::get_act_paramno(int i)
+ 			return j;
+ 		}
+ 	}
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ double CGA::getfromoutput(string filename)
+@@ -1317,6 +1318,7 @@ int CGA::get_time_series(int i)
+ 			return i - l;
+ 		}
+ 	}
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ 
+diff --git a/src/GUI/GWidget.cpp b/src/GUI/GWidget.cpp
+index 57e6021..0af3885 100644
+--- a/src/GUI/GWidget.cpp
++++ b/src/GUI/GWidget.cpp
+@@ -2070,6 +2070,7 @@ GraphWidget* GraphWidget::unCompact12(QList<QMap<QString, QVariant>> &list, bool
+ 			return this;
+ 		}
+ 	}
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ 
+@@ -3363,6 +3364,7 @@ QString GraphWidget::updateRelativePaths(QString oldPath, QString newPath)
+ 
+ 	var = "Precipitation time series";
+ 	e->setValue(var, updateRelativePath(e->getValue(var), oldPath, newPath));
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ QString GraphWidget::defaultDir() const
+ { 
+diff --git a/src/GUI/ObservedConstituentTableModel.cpp b/src/GUI/ObservedConstituentTableModel.cpp
+index f94c8eb..d304021 100644
+--- a/src/GUI/ObservedConstituentTableModel.cpp
++++ b/src/GUI/ObservedConstituentTableModel.cpp
+@@ -76,6 +76,7 @@ QVariant ObservedConstituentTableModel::data(const QModelIndex & index, int role
+ */
+ 	//	if (col == 3)
+ //		return node->constituentInitialCondition[row].Value;
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ bool ObservedConstituentTableModel::setData(const QModelIndex & index, const QVariant & value, int role)
+diff --git a/src/GUI/PropModel.cpp b/src/GUI/PropModel.cpp
+index 53f245d..ca52b4d 100644
+--- a/src/GUI/PropModel.cpp
++++ b/src/GUI/PropModel.cpp
+@@ -109,6 +109,7 @@ QVariant PropModel<Node>::data(const QModelIndex & index, int role) const
+ 			return parent->getProp(VariableName, items, role);
+ 
+ 	}
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ template<>
+ bool PropModel<Node>::setData(const QModelIndex & index, const QVariant & value, int role)
+@@ -194,6 +195,7 @@ QVariant PropModel<Edge>::data(const QModelIndex & index, int role) const
+ 	}
+ 	if (col == 1)
+ 		return parent->getProp(VariableName, role);
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ template<>
+ bool PropModel<Edge>::setData(const QModelIndex & index, const QVariant & value, int role)
+@@ -306,6 +308,7 @@ QVariant PropModel<Entity>::data(const QModelIndex & index, int role) const
+ //		//qDebug() << QString("data for (%1, %2) role %3").arg(row).arg(col).arg(role);
+ 	if (col == 1)
+ 		return parent->getProp(VariableName, role);
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ template<>
+ bool PropModel<Entity>::setData(const QModelIndex & index, const QVariant & value, int role)
+diff --git a/src/GUI/Well.cpp b/src/GUI/Well.cpp
+index 2cac47a..5310f42 100644
+--- a/src/GUI/Well.cpp
++++ b/src/GUI/Well.cpp
+@@ -386,4 +386,5 @@ int CWell::get_numparams(string S, int nbins)
+ 		return 3;
+ 	if (dist == "generalized inverse gamma")
+ 		return 4;
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+\ No newline at end of file
+diff --git a/src/GUI/Wizard/Wizard_Script_Reader.cpp b/src/GUI/Wizard/Wizard_Script_Reader.cpp
+index 026d7da..ef66139 100644
+--- a/src/GUI/Wizard/Wizard_Script_Reader.cpp
++++ b/src/GUI/Wizard/Wizard_Script_Reader.cpp
+@@ -182,6 +182,7 @@ bool Wizard_Script_Reader::add_command(QString line)
+ 		}
+ 	}
+ 
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ Wizard_Script_Reader::~Wizard_Script_Reader()
+diff --git a/src/GUI/Wizard/wiz_assigned_value.cpp b/src/GUI/Wizard/wiz_assigned_value.cpp
+index c6d09cb..9e12e22 100644
+--- a/src/GUI/Wizard/wiz_assigned_value.cpp
++++ b/src/GUI/Wizard/wiz_assigned_value.cpp
+@@ -1,3 +1,5 @@
++#include <cstdio>
++#include <cstdlib>
+ #include "wiz_assigned_value.h"
+ #include "wiz_entity.h"
+ 
+@@ -10,6 +12,7 @@ wiz_assigned_value::wiz_assigned_value()
+ 
+ wiz_assigned_value::wiz_assigned_value(QString s)
+ {
++	if (getenv("GIFMOD_DEBUG_WIZ")) fprintf(stderr, "WIZVAL[%s]\n", s.toStdString().c_str());
+ 	if (s.split("=").size() < 2)
+ 	{
+ 		_last_error = "Syntax error in '" + s + "'";
+diff --git a/src/GUI/mProp.cpp b/src/GUI/mProp.cpp
+index 73f78a0..3cdddbc 100644
+--- a/src/GUI/mProp.cpp
++++ b/src/GUI/mProp.cpp
+@@ -379,6 +379,7 @@ bool conditionConformed(QString condition, QString value, GraphWidget *gw)
+ 		if (condition.contains(']')) return ((value.toFloat() > condition.remove('(').remove(']').split(':')[0].toFloat()) && (value.toFloat() <= condition.remove('(').remove(']').split(':')[1].toFloat()));
+ 		if (condition.contains(')')) return ((value.toFloat() > condition.remove('(').remove(')').split(':')[0].toFloat()) && (value.toFloat() < condition.remove('(').remove(')').split(':')[1].toFloat()));
+ 	}
++	return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ }
+ 
+ bool mProp::areTheSame(const QList<mProp>a, const QList<mProp>b)
+diff --git a/src/GUI/main.cpp b/src/GUI/main.cpp
+index 881a0ee..74516e5 100644
+--- a/src/GUI/main.cpp
++++ b/src/GUI/main.cpp
+@@ -3,6 +3,15 @@
+ #include <QtWidgets/QApplication>
+ #include "qdebug.h"
+ #include "scriptingengine.h"
++#include "GWidget.h"
++#include "Wizard/Wizard_Script_Reader.h"
++#include "Command.h"
++#include "XString.h"
++#include <QFileInfo>
++#include <QTextStream>
++#include <QTimer>
++#include <QMessageBox>
++#include <cstdio>
+ #ifdef GIFMOD
+ int main(int argc, char *argv[])
+ {
+@@ -18,6 +27,62 @@ int main(int argc, char *argv[])
+     ScriptingEngine::registerClass<JSTest>();	
+     mainGUIwindow.show();
+ 	mainGUIwindow.afterInit();
++	// ---- headless driver (added 2026-10-06, engine_builds) ----
++	// GIFMod --wizard T.wiz [--param name=value ...] --save out.GIFMod   (build model from a bundled template, save, run)
++	// GIFMod --script S.scr --save out.GIFMod                           (build model from a GIFMod script, save, run)
++	// GIFMod --model M.GIFMod                                            (load saved project, run)
++	{
++		QStringList a = GUI.arguments();
++		QString wizFile, scrFile, modelFile, saveFile; QMap<QString,QString> params;
++		for (int i = 1; i < a.size(); i++) {
++			if (a[i] == "--wizard" && i+1 < a.size()) wizFile = a[++i];
++			else if (a[i] == "--script" && i+1 < a.size()) scrFile = a[++i];
++			else if (a[i] == "--model" && i+1 < a.size()) modelFile = a[++i];
++			else if (a[i] == "--save" && i+1 < a.size()) saveFile = a[++i];
++			else if (a[i] == "--param" && i+1 < a.size()) { QString kv = a[++i]; int k = kv.indexOf('='); params[kv.left(k)] = kv.mid(k+1); }
++		}
++		if (!wizFile.isEmpty() || !scrFile.isEmpty() || !modelFile.isEmpty()) {
++			QTextStream out(stdout);
++			qputenv("GIFMOD_HEADLESS", "1");
++			// auto-dismiss any modal dialog (e.g. "Simulation Finished!") so the run never waits for a click
++			QTimer *modalKiller = new QTimer(&GUI);
++			QObject::connect(modalKiller, &QTimer::timeout, [&]() {
++				QWidget *m = QApplication::activeModalWidget();
++				if (m) { QMessageBox *mb = qobject_cast<QMessageBox*>(m); fprintf(stdout, "HEADLESS: auto-closed dialog '%s': %s\n", m->windowTitle().toStdString().c_str(), mb ? mb->text().toStdString().c_str() : ""); fflush(stdout); m->close(); }
++			});
++			modalKiller->start(300);
++			if (!modelFile.isEmpty()) {
++				bool lok = false; QMetaObject::invokeMethod(&mainGUIwindow, "loadModel", Qt::DirectConnection, Q_RETURN_ARG(bool, lok), Q_ARG(QString, QFileInfo(modelFile).absoluteFilePath()));
++				if (!lok) { out << "HEADLESS: cannot load " << modelFile << endl; return 2; }
++			} else {
++				QList<CCommand> commands;
++				if (!wizFile.isEmpty()) {
++					Wizard_Script_Reader wiz(QFileInfo(wizFile).absoluteFilePath());
++					wiz.mproplist = mainGUIwindow.mainGraphWidget->mList;
++					for (QString k : wiz.get_parameters().keys()) { QString dv = wiz.get_parameters()[k].get_parameter("default").value.trimmed(); if (!dv.isEmpty() && !params.contains(k)) { XString x(dv); wiz.get_parameters()[k].set_value(x); out << "DEFAULT: " << k << "=" << dv << endl; } }
++					for (QString k : params.keys()) { XString x(params[k]); wiz.get_parameters()[k].set_value(x); }
++					QStringList errors = wiz.validate();
++					if (errors.size()) { out << "HEADLESS: wizard errors:" << endl << errors.join("\n") << endl; return 3; }
++					commands = wiz.get_script_commands();
++				} else {
++					QFile f(scrFile); if (!f.open(QIODevice::ReadOnly)) { out << "HEADLESS: cannot open " << scrFile << endl; return 2; }
++					QTextStream ss(&f); while (!ss.atEnd()) { QString l = ss.readLine(); if (l.trimmed().size()) commands.append(CCommand(l)); }
++				}
++				for (int i = 0; i < commands.size(); i++) out << "CMD: " << commands[i].toQString() << endl;
++				mainGUIwindow.mainGraphWidget->runCommands(commands);
++				if (saveFile.isEmpty()) saveFile = "headless_model.GIFMod";
++				mainGUIwindow.setModelFileName(QFileInfo(saveFile).absoluteFilePath());
++				QMetaObject::invokeMethod(&mainGUIwindow, "on_action_Save_triggered", Qt::DirectConnection);
++				out << "HEADLESS: model saved to " << QFileInfo(saveFile).absoluteFilePath() << endl;
++			}
++			out << "HEADLESS: running forward model" << endl; out.flush();
++			bool ok = QMetaObject::invokeMethod(&mainGUIwindow, "on_actionRun_Model_triggered", Qt::DirectConnection);
++			mainGUIwindow.mainGraphWidget->logW->writetotempfile();
++			out << "HEADLESS: run invoked=" << ok << " hasResults=" << mainGUIwindow.mainGraphWidget->hasResults << endl;
++			return mainGUIwindow.mainGraphWidget->hasResults ? 0 : 4;
++		}
++	}
++	// ---- end headless driver ----
+ 	QEventLoop loop;
+ 	return GUI.exec();
+ }
+diff --git a/src/GUI/qcustomplot.h b/src/GUI/qcustomplot.h
+index 1183e55..8cd5ec3 100644
+--- a/src/GUI/qcustomplot.h
++++ b/src/GUI/qcustomplot.h
+@@ -30,6 +30,7 @@
+ #include <QPointer>
+ #include <QWidget>
+ #include <QPainter>
++#include <QPainterPath>
+ #include <QPaintEvent>
+ #include <QMouseEvent>
+ #include <QPixmap>
+diff --git a/src/GUI/results.h b/src/GUI/results.h
+index c06bff7..67a0ec3 100644
+--- a/src/GUI/results.h
++++ b/src/GUI/results.h
+@@ -56,16 +56,19 @@ public:
+ 		int index = indexOf(parameter);
+ 		if (index != -1)
+ 			return percentiles[index];
++		return {}; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ 	}
+ 	CBTC& posterior(const QString &parameter) {
+ 		int index = indexOf(parameter);
+ 		if (index != -1)
+ 			return posteriors.BTC[index];
++		static CBTC empty_btc; return empty_btc; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ 	}
+ 	CBTC& prior(const QString &parameter) {
+ 		int index = indexOf(parameter);
+ 		if (index != -1)
+ 			return priors.BTC[index];
++		static CBTC empty_btc; return empty_btc; /* added 2026-10-06: missing return was UB under GCC 13 -O2 */
+ 	}
+ 	CBTCSet realization(const QString &observation);
+ 	CBTCSet noiseRealization(const QString &observation);
+diff --git a/src/GUI/utility_funcs.cpp b/src/GUI/utility_funcs.cpp
+index 163f346..79de4fe 100644
+--- a/src/GUI/utility_funcs.cpp
++++ b/src/GUI/utility_funcs.cpp
+@@ -9,6 +9,7 @@
+ #endif // QT_version
+ 
+ #include <utility_funcs.h>
++#include <cmath>
+ 
+ double min(double x, double y)
+ {

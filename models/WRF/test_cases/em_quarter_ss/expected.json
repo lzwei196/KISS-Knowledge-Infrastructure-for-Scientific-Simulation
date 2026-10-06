@@ -1,0 +1,97 @@
+{
+  "description": "Expected results for the official WRF idealized case test/em_quarter_ss (WRF 4.7.1, commit f15568cc): 3D supercell thunderstorm (Weisman-Klemp sounding, quarter-circle shear), 41x41x40 mass points, dx 2 km, dt 12 s, 60 min, Kessler microphysics, no radiation/PBL/surface. WRF ships NO reference output for this case: all values are OWN-RUN values (regression values), not official reference results.",
+  "engine_version": "WRF 4.7.1 (master f15568ccc1447780e3bd664b9f0196edd784bf33; noahmp e5c08598, MYNN-EDMF 90f36c25, MMM-physics 0ea59b1c = 20240626-MPASv8.2); ideal + wrf built 2026-10-06 for WRF_CASE=EM_QUARTER_SS, serial, GNU stanza toolchain (gfortran/gcc 13.3.0)",
+  "numeric_checks": [
+    {
+      "name": "n_times",
+      "expected": 3,
+      "tol": 0,
+      "why": "records in wrfout_d01_0001-01-01_00:00:00: 00:00, 00:30, 01:00 (history_interval 30 min, run 60 min, one file)"
+    },
+    {
+      "name": "xtime_last_min",
+      "expected": 60,
+      "tol": 0,
+      "why": "XTIME of the last record [minutes since start] = run_minutes 60"
+    },
+    {
+      "name": "n_mass_points",
+      "expected": 67240,
+      "tol": 0,
+      "why": "mass-grid size west_east 41 x south_north 41 x bottom_top 40 (namelist e_we/e_sn/e_vert 42/42/41 are staggered sizes)"
+    },
+    {
+      "name": "nonfinite_values",
+      "expected": 0,
+      "tol": 0,
+      "why": "NaN/Inf count in W, T, QRAIN, QCLOUD, RAINNC, U over all records"
+    },
+    {
+      "name": "w_max_30min",
+      "expected": 30.183046340942383,
+      "tol": 3.018304634094238e-05,
+      "why": "max vertical velocity W [m/s] (vertically staggered grid), whole domain, record 1 (30 min): the supercell updraft; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "w_max_60min",
+      "expected": 43.29169845581055,
+      "tol": 4.3291698455810545e-05,
+      "why": "max W [m/s], whole domain, record 2 (60 min); tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "w_min_60min",
+      "expected": -12.708855628967285,
+      "tol": 1.2708855628967284e-05,
+      "why": "min W [m/s] (downdraft), whole domain, record 2 (60 min); tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "t_pert_min_60min",
+      "expected": -7.183441162109375,
+      "tol": 7.1834411621093745e-06,
+      "why": "min T [K] = perturbation potential temperature (theta - 300 K), whole domain, 60 min: the rain-cooled cold pool; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "t_pert_max_60min",
+      "expected": 190.67379760742188,
+      "tol": 0.00019067379760742188,
+      "why": "max T [K] (theta - 300 K), whole domain, 60 min: set by the warm stratosphere near the model top; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "qrain_max_60min",
+      "expected": 0.015297668054699898,
+      "tol": 1.5297668054699898e-08,
+      "why": "max rain water mixing ratio QRAIN [kg/kg], whole domain, 60 min (Kessler microphysics); tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "qcloud_max_60min",
+      "expected": 0.007739522494375706,
+      "tol": 7.739522494375705e-09,
+      "why": "max cloud water mixing ratio QCLOUD [kg/kg], whole domain, 60 min; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "rainnc_max_60min",
+      "expected": 36.61370086669922,
+      "tol": 3.6613700866699214e-05,
+      "why": "max accumulated grid-scale rain RAINNC [mm] at the surface, 60 min; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "rainnc_mean_60min",
+      "expected": 1.0463823457445576,
+      "tol": 1.0463823457445575e-06,
+      "why": "domain-mean RAINNC [mm], 60 min; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    },
+    {
+      "name": "u_absmax_60min",
+      "expected": 53.90291213989258,
+      "tol": 5.3902912139892575e-05,
+      "why": "max |U| [m/s] (x-staggered grid), whole domain, 60 min; tol = 1e-6 relative, PROVISIONAL: proven only for this build (two runs bit-identical), not across compilers"
+    }
+  ],
+  "finished_check": "ideal rc 0 and 'SUCCESS COMPLETE IDEAL INIT'; wrf rc 0 and 'SUCCESS COMPLETE WRF' in the program output",
+  "recorded_on": "2026-10-06",
+  "recorded_with": "two direct serial runs (ideal then wrf, OMP_NUM_THREADS=1) in fresh dirs with /home/server/engine_builds_20261006/wrf/install_quarter_ss/bin/{ideal,wrf} (sha256 ideal 8fa575b2e168f07a2318a3f7fcd078b25c25052c8a96f710cddef4a99ee4652e, wrf 3d63fcca218855f5d3b905c8568d958c0bb1b77650237cfb9a13b0fc2ef1e314); wrfinput_d01 (179 variables) and wrfout (162 variables) identical in every variable, wrfout byte-identical",
+  "reference": "https://github.com/wrf-model/WRF test/em_quarter_ss (no reference outputs shipped)",
+  "notes": [
+    "Inputs namelist.input and input_sounding taken with git show f15568cc:test/em_quarter_ss/<file>, unmodified. README.quarter_ss is the upstream case description (information only)."
+  ]
+}

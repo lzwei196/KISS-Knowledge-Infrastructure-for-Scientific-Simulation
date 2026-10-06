@@ -1,0 +1,39 @@
+{
+  "test_case": "WRF test/em_quarter_ss (official idealized 3D supercell case)",
+  "engine": {
+    "name": "WRF (ARW)",
+    "version": "4.7.1, commit f15568ccc1447780e3bd664b9f0196edd784bf33; submodules noahmp e5c0859874407859936739e8be8741f9aed369ee, MYNN-EDMF 90f36c25259ec1960b24325f5b29ac7c5adeac73; MMM-physics 0ea59b1cd673006ee7a9a9958c533a6a0e354243 (20240626-MPASv8.2)",
+    "binary": "ideal + wrf built for WRF_CASE=EM_QUARTER_SS: /home/server/engine_builds_20261006/wrf/install_quarter_ss/bin/ideal (sha256 8fa575b2e168f07a2318a3f7fcd078b25c25052c8a96f710cddef4a99ee4652e), .../bin/wrf (sha256 3d63fcca218855f5d3b905c8568d958c0bb1b77650237cfb9a13b0fc2ef1e314); serial, GNU stanza toolchain, gfortran/gcc 13.3.0, built 2026-10-06",
+    "source": "https://github.com/wrf-model/WRF test/em_quarter_ss (namelist.input, input_sounding, README.quarter_ss via git show f15568cc, unmodified)",
+    "license": "public domain (NCAR/UCAR notice, LICENSE_WRF.txt)"
+  },
+  "ki": {
+    "model": "WRF",
+    "run_tool": "none (tools/run_wrf.py has no ideal stage; ideal and wrf run directly)"
+  },
+  "simulation": {
+    "grid": "41x41x40 mass points (e_we/e_sn/e_vert 42/42/41 staggered), dx=dy=2 km, ztop 20 km",
+    "time": "dt 12 s, 60 min, history every 30 min (3 records in one wrfout file)",
+    "physics": "Kessler microphysics (mp_physics=1), no radiation/PBL/surface/cumulus; diff_opt=2 km_opt=2",
+    "command": "ideal; wrf (serial, OMP_NUM_THREADS=1) in the folder with namelist.input + input_sounding",
+    "runtime": "about 10 s"
+  },
+  "files": {
+    "LICENSE_WRF.txt": {
+      "bytes": 1027,
+      "sha256": "b30611d35ad1922bc741e86d21e1a897234c1a9c9e2af28076e021f565dfbec6"
+    },
+    "inputs/README.quarter_ss": {
+      "bytes": 1594,
+      "sha256": "6cc08793ed9e9b68594e38978799bbf93fc9f9f1e39f81c6dfa94832213589ac"
+    },
+    "inputs/input_sounding": {
+      "bytes": 14469,
+      "sha256": "554a8b9c216c70d259747fd8afd6bd2bb3148bbc3b00cc4ef64e6efe3389a480"
+    },
+    "inputs/namelist.input": {
+      "bytes": 4849,
+      "sha256": "19c3453e1a8401d3e6d7e1a95ef05532b741165fe711d61e29347dc9da8a5d25"
+    }
+  }
+}

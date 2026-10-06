@@ -270,6 +270,15 @@ Parameters can be overridden on the command line:
 ./example_1ptracer params.input -Problem.Name my_run -TimeLoop.TEnd 10000
 ```
 
+Server program (since 2026-10-06): the clean build of the official DuMux 3.10 commit
+`KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer`
+(preflight default; `$DUMUX_BIN` overrides). Run it through the tool (use absolute paths):
+`KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/DuMux/knowledge_infrastructure/tools/run_dumux.py --source_dir KISSPATH_HOME/engine_builds_20261006/dumux/src/dumux --build_dir KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer --target example_1ptracer --skip_build --binary KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer --params /abs/path/run_dir/params.input --work_dir /abs/path/run_dir`.
+It runs the official bottom-top flow and ignores `Problem.FlowDirection`, `Problem.PressureLeft`,
+`Problem.PressureRight`; `run_dumux.py` refuses those keys with it. Those keys, and reproducing any run
+made before 2026-10-06 with the older build of a KI-edited `problem_1p.hh` (its default FlowDirection=0 is a
+left-right flow), need that older build: `--binary KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer`.
+
 ---
 
 ## 6. Output Description

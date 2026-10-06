@@ -100,6 +100,7 @@
   "notes": [
     "Run command = official ctest command plus -Problem.FlowDirection 1. The server binary was built from a KI-edited problem_1p.hh whose default (FlowDirection 0) is left-right flow; with the default it crashes at step 136 (BiCGSTAB defect=inf). FlowDirection 1 selects the unedited official bottom-top code path; the full-field fuzzy compare against the official references proves the results are the official ones. An unedited build ignores the key.",
     "Our run vs official references: pressure, permeability, max tracer and max velocity identical to all printed digits; tracer mean differs by 1.5e-8 relative, mean vertical velocity by 1.7e-9 relative.",
-    "Two runs (default 192 OpenMP threads and 4 threads) gave byte-identical output files."
+    "Two runs (default 192 OpenMP threads and 4 threads) gave byte-identical output files.",
+    "2026-10-06: values unchanged. The server default is now a clean build of the official commit (/home/server/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer); it passes all checks with the official command (no FlowDirection key), and its output files are byte-identical to the older build run with -Problem.FlowDirection 1. run_reference.py adds that key only with --flow-direction-flag on."
   ]
 }

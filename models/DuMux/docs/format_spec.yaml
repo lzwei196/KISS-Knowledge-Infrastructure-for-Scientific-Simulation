@@ -477,7 +477,10 @@ known_issues:
   symptom: NSE improves dramatically (e.g., -0.21 → +0.26) when flow direction is changed from E-W to
     N-S or vice versa. The model captures less than 30% of observed head variance.
   diagnosis: "FlowDirection=0 (E-W) was chosen but the dominant head gradient is N-S (or vice versa).;\
-    \ The modified problem_1p.hh supports three flow directions:\n  FlowDirection=0: E-W (Dirichlet left/right,\
+    \ The modified problem_1p.hh supports three flow directions (only the older KI-edited build reads them:\
+    \ run_dumux.py --binary KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer;\
+    \ the clean official build, the server default since 2026-10-06, ignores these keys; runs made with the\
+    \ older build are reproduced only with it):\n  FlowDirection=0: E-W (Dirichlet left/right,\
     \ x-axis). Use for W→E aquifer drainage.\n  FlowDirection=2: N-S (Dirichlet bottom/top, y-axis). Use\
     \ for Alpi"
   remedy: 'Compute r(lon, p_obs) and r(lat, p_obs) to determine dominant gradient direction before writing

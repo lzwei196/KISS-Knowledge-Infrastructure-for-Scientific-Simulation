@@ -2,8 +2,8 @@
   "test_case": "DuMux examples/1ptracer (official DuMux example, ctest example_1ptracer)",
   "engine": {
     "name": "DuMux",
-    "version": "3.10 (releases/3.10, commit 3e151aebf005bf500c0d0e05563c0e8c41583eef, git describe 3.10.0-11-g3e151aebf); DUNE 2.10",
-    "binary": "example_1ptracer (compiled example program; server build at /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer)",
+    "version": "3.10 (releases/3.10, commit 3e151aebf005bf500c0d0e05563c0e8c41583eef, git describe 3.10.0-11-g3e151aebf); DUNE 2.10: dune-common 2988ac1d85f59c949a73524be60631ffdb26d2e3, dune-geometry 5673e95ac364ad3498aed9eaf65e0d224384d15a, dune-grid 954436b88247e904628ec4d7c8bb7b2eaac08900, dune-istl 21c67275b17e93918365177f93f42e4aaa9afd23, dune-localfunctions ddbf693b5f9c867b2d58d418fe130bbe92c06a99",
+    "binary": "example_1ptracer (compiled example program). Server default: clean build of the official commits (no local edits), /home/server/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer, sha256 c1a81191f542afc19a5d46faaaf7df6777e6c31ed5997fe7afa341a473ad741c, built 2026-10-06 (Release -O3 -march=native, OpenMP, no MPI, gcc 13.3.0). Older KI-edited build (needs --flow-direction-flag on): /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer, sha256 b2086b2fdf0da996a8633202ec11d84555f4b600c1991773e4f8b5c23f5fd531",
     "source": "https://git.iws.uni-stuttgart.de/dumux-repositories/dumux.git examples/1ptracer, test/references/test_1ptracer_*-reference.vtu, bin/testing/dumux_fuzzycompare_legacy.py (all taken with git show HEAD, unmodified)",
     "license": "GPL-3.0-or-later (DuMux, see LICENSE.md upstream)"
   },
@@ -15,15 +15,11 @@
     "grid": "2D unit square, 50 x 50 cells (2500 cells, 2601 points), cell-centred TPFA",
     "stages": "1) steady single-phase flow (pressure, seeded random permeability with a lower-permeability lens); 2) tracer transport with the flow velocity",
     "time": "dt 10 s, TEnd 5000 s, 500 steps, output every 500 s (11 tracer files)",
-    "command": "example_1ptracer params.input -Problem.Name example_1ptracer -Problem.FlowDirection 1",
+    "command": "example_1ptracer params.input -Problem.Name example_1ptracer (official ctest command; with --flow-direction-flag on, for the older KI-edited build only, -Problem.FlowDirection 1 is added)",
     "threads": "DUMUX_NUM_THREADS=4 / OMP_NUM_THREADS=4 (results do not depend on it)",
     "runtime": "under 1 s with 4 threads"
   },
   "files": {
-    "compare/__pycache__/dumux_fuzzycompare_legacy.cpython-312.pyc": {
-      "bytes": 27213,
-      "sha256": "47151839b20e3130e731e97cba39add129156e511c1033bc261144e593bd6c12"
-    },
     "compare/dumux_fuzzycompare_legacy.py": {
       "bytes": 28784,
       "sha256": "415a768eb1a7b2701e0e21501b2f0bad9aebe03e6e467ba2e0410d34fb44f7f9"

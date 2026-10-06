@@ -38,6 +38,105 @@ DEFAULT_TIMEOUT = 600  # seconds (10 minutes)
 # all threads gave byte-identical output files.
 DEFAULT_THREADS = 4
 
+# Server builds of example_1ptracer (2026-10-06):
+#  - clean official build (DuMux releases/3.10 3e151aeb, no local edits), the server default:
+CLEAN_1PTRACER_BIN = ("KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/"
+                      "examples/1ptracer/example_1ptracer")
+CLEAN_1PTRACER_SHA256 = {"c1a81191f542afc19a5d46faaaf7df6777e6c31ed5997fe7afa341a473ad741c"}
+#  - older build of a KI-edited problem_1p.hh (before 2026-10-06 the server default). Its
+#    default Problem.FlowDirection=0 is a left-right flow, not the official bottom-top flow;
+#    runs made with it are reproduced only with it (pass it with --binary):
+EDITED_1PTRACER_BIN = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/"
+                       "dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer")
+# Keys read ONLY by the KI-edited build. The clean build would ignore them without an error.
+EDITED_ONLY_KEYS = ("Problem.FlowDirection", "Problem.PressureLeft", "Problem.PressureRight")
+
+
+def _sha256(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _ini_keys(path: str) -> set:
+    """Full key names in a DUNE INI file, read the way Dune::ParameterTreeParser::readINITree
+    does (dune-common 2.10): '#' lines skipped; '[x]' sets the prefix (text after ']'
+    ignored); '#' ends a key line; key = prefix + text before '='; a value starting with
+    ' or \" runs over the following lines until the closing quote."""
+    keys, prefix = set(), ""
+    with open(path, errors="replace") as fh:
+        lines = fh.read().split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i].lstrip()
+        i += 1
+        if not line or line[0] == "#":
+            continue
+        if line[0] == "[":
+            pos = line.find("]")
+            if pos != -1:
+                prefix = line[1:pos].strip()
+                prefix = prefix + "." if prefix else ""
+            continue
+        line = line.split("#", 1)[0]
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        keys.add(prefix + key.strip())
+        value = value.lstrip()
+        if value and value[0] in "'\"":
+            quote, value = value[0], value[1:]
+            while not value.rstrip().endswith(quote) and i < len(lines):
+                value += "\n" + lines[i]
+                i += 1
+    return keys
+
+
+def _resolve_exe(binary_path: str, work_dir: str):
+    """Absolute path of the program subprocess will start (relative paths are taken from
+    work_dir, as subprocess does with cwd=work_dir; bare names from PATH); None if not found."""
+    import shutil
+    if os.path.isabs(binary_path):
+        exe = binary_path
+    elif os.sep in binary_path:
+        exe = os.path.join(work_dir or os.getcwd(), binary_path)
+    else:
+        exe = shutil.which(binary_path)
+    return os.path.abspath(exe) if exe and os.path.isfile(exe) else None
+
+
+def edited_only_keys_used(exe: str, params_file: str, work_dir: str,
+                          overrides: dict = None) -> list:
+    """Edited-build-only keys that a run asks for while the program is the clean build.
+
+    exe must be the absolute program path that will run. The parameter file is found the way
+    DuMux 3.10 Parameters::init does: -ParameterFile override, else the first argument, else
+    '<program>.input', else 'params.input' (relative names from work_dir). Returns [] when the
+    program is not the known clean example_1ptracer build or no such key is used. Raises
+    OSError/ValueError when the program or parameter file cannot be read.
+    """
+    if _sha256(exe) not in CLEAN_1PTRACER_SHA256:
+        return []
+    overrides = overrides or {}
+    used = set(overrides)
+    wd = work_dir or os.getcwd()
+    pf = overrides.get("ParameterFile") or params_file
+    if pf:
+        pf = pf if os.path.isabs(pf) else os.path.join(wd, pf)
+        if not os.path.isfile(pf):
+            raise ValueError(f"parameter file not found: {pf}")
+    else:
+        for cand in (exe + ".input", os.path.join(wd, "params.input")):
+            if os.path.isfile(cand):
+                pf = cand
+                break
+    if pf:
+        used |= _ini_keys(pf)
+    return sorted(k for k in EDITED_ONLY_KEYS if k in used)
+
 
 def _thread_env(threads=None) -> dict:
     """Environment for the engine with one OpenMP/DuMux thread limit.
@@ -344,7 +443,26 @@ def run_simulation(
     Returns:
         dict with success, returncode, stdout, stderr, runtime_s
     """
-    cmd = [binary_path]
+    exe = _resolve_exe(binary_path, work_dir)
+    if exe is None:
+        msg = f"program not found: {binary_path} (work dir {work_dir}). Not run."
+        print(f"  ERROR: {msg}")
+        return {"success": False, "returncode": -1, "stderr": msg, "runtime_s": 0.0}
+    try:
+        bad = edited_only_keys_used(exe, params_file, work_dir, overrides)
+    except (OSError, ValueError) as exc:
+        msg = f"could not check the run's parameters: {exc}. Not run."
+        print(f"  ERROR: {msg}")
+        return {"success": False, "returncode": -1, "stderr": msg, "runtime_s": 0.0}
+    if bad:
+        msg = (f"{', '.join(bad)} set, but {exe} is the clean official DuMux build, "
+               f"which ignores these keys (it always runs the official bottom-top flow). These "
+               f"keys need the older KI-edited build: pass --binary {EDITED_1PTRACER_BIN} "
+               f"(or set DUMUX_BIN to it). Not run.")
+        print(f"  ERROR: {msg}")
+        return {"success": False, "returncode": -1, "stderr": msg, "runtime_s": 0.0}
+
+    cmd = [exe]
     if params_file:
         cmd.append(params_file)
 

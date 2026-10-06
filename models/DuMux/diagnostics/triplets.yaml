@@ -528,7 +528,10 @@
   diagnosis:
     root_cause: "FlowDirection=0 (E-W) was chosen but the dominant head gradient is N-S (or vice versa)."
     explanation: >
-      The modified problem_1p.hh supports three flow directions:
+      The modified problem_1p.hh supports three flow directions (only the older KI-edited build
+      reads them: run_dumux.py --binary KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer;
+      the clean official build, the server default since 2026-10-06, ignores these keys;
+      runs made with the older build are reproduced only with it):
         FlowDirection=0: E-W (Dirichlet left/right, x-axis). Use for W→E aquifer drainage.
         FlowDirection=2: N-S (Dirichlet bottom/top, y-axis). Use for Alpine→coastal drainage.
         FlowDirection=1: Legacy formula (hardcoded, not physically useful for km-scale).

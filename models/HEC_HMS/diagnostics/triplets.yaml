@@ -1,7 +1,7 @@
 # ============================================================================
 # HEC-HMS Diagnostic Triplets
 # ============================================================================
-# 18 diagnostic triplets covering 6 failure domains.
+# 22 diagnostic triplets covering 6 failure domains (dt_119-dt_122: real engine, 2026-10-06).
 # Generated during HEC-HMS knowledge dissection for HydroCraft platform.
 # ============================================================================
 
@@ -52,7 +52,7 @@
     manual_steps:
       - "Check temperature range in forcing CSV — should be -30 to +45°C"
       - "If values > 200, they are in Kelvin — subtract 273.15"
-    prevention: "convert_forcing_to_hms checks for T > 100 and auto-converts"
+    prevention: "convert_forcing_to_hms converts K to degC only from the file's own units attribute (K/kelvin); it never guesses units from magnitude and stops on missing or inconsistent units"
   severity: silent
   cross_references: [dt_101]
 
@@ -410,19 +410,19 @@
     error_pattern: "missing data"
     detection_method: visual_inspection
   diagnosis:
-    root_cause: "Missing precipitation days filled with zero instead of NaN or interpolated"
+    root_cause: "Missing precipitation days filled with zero (a hand-made or old forcing file); missing days must stop the run, not be filled"
     explanation: >
       When CMFD NetCDF files have missing days (corrupt files, gaps), filling with
       zero precipitation creates artificial dry spells. This is indistinguishable from
       real dry periods but can severely underestimate total runoff volume.
     affected_components: [convert_forcing_to_hms]
   remedy:
-    action: "Flag missing days as NaN. Interpolate short gaps (<3 days). Report long gaps."
+    action: "Do not fill. convert_forcing_to_hms stops when any requested date or value is missing (fill_count is always 0); use a complete source or a shorter period."
     tool_to_run: convert_forcing_to_hms
     manual_steps:
       - "Count consecutive zero-precipitation days — > 30 days is suspicious"
       - "Cross-reference with nearby stations or alternative forcing datasets"
-    prevention: "convert_forcing_to_hms logs gap statistics and warns if > 5 consecutive missing days"
+    prevention: "convert_forcing_to_hms requires the source calendar to cover every requested date and every value to be valid; it records fill_count 0 in basin_info.json"
   severity: medium
   cross_references: [dt_115]
 
@@ -450,3 +450,100 @@
     prevention: "run_hec_hms validates k is in [0.01, 0.999]"
   severity: silent
   cross_references: []
+
+# --- Real engine (HEC-HMS 4.14 headless, added 2026-10-06) ---
+
+- id: dt_119
+  stage: s6_run
+  failure_domain: runtime
+  symptom:
+    description: "Headless HEC-HMS exits 0 and the Jython script finishes, but the run produced no results (or old ones are read back)."
+    error_pattern: "ERROR 41941|ERROR 40052|Found \"\\d+\" errors in basin model"
+    detection_method: log_inspection
+  diagnosis:
+    root_cause: "Project.computeRun() returns None and the JVM exits 0 even when HMS refuses the compute; the errors are only in the run log"
+    explanation: >
+      Verified 2026-10-06 on the castro sample with 'Snyder Tp: -0.2': the log has
+      'ERROR 41941: Invalid Snyder lag ...' and 'ERROR 40052: Found "3" errors in basin
+      model', computeRun returned None, java exit code was 0, and no results file was
+      written. A caller that trusts the exit code, or reads a results/RUN_<run>.results or
+      <run>.dss left over from an earlier run, reports a run that never happened.
+    affected_components: [run_hms_engine]
+  remedy:
+    action: "Use tools/run_hms_engine.py. In a project copy it first deletes the run's old log and results file and the run's own RUN:<run> DSS records (the DSS file itself is kept; it may hold inputs), then requires 'Finished computing simulation run \"<run>\"', no 'ERROR <n>:' line, and a fresh, parseable results file; otherwise it exits 3 or 4."
+    tool_to_run: run_hms_engine
+    manual_steps:
+      - "grep '^ERROR' <project>/<run>.log"
+      - "Check results/RUN_<run>.results mtime is after the run start"
+    prevention: "run_hms_engine.py success = log + fresh results checks, never the exit code alone"
+  severity: silent
+  cross_references: [dt_112]
+
+- id: dt_120
+  stage: s7_postprocess
+  failure_domain: format
+  symptom:
+    description: "A DSS read by pathname finds nothing although HEC-HMS shows the series (e.g. //Outlet/FLOW//5MIN/RUN:Current/)."
+    error_pattern: "no DSS path matches"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "DSS 7 catalogs write the E part as '5Minute' / '10Minute' / '1Hour', while HMS results files and users write '5MIN' / '10MIN'"
+    explanation: >
+      castro Current.dss lists //Outlet/FLOW/16Jan1973/5Minute/RUN:Current/ while
+      RUN_Current.results names //Outlet/FLOW//5MIN/RUN:Current/. A literal pathname match
+      on the catalog fails. The D part (block start date) also differs per block.
+    affected_components: [run_hms_engine, parse_hms_output]
+  remedy:
+    action: "Export with run_hms_engine.py --export ELEMENT:PARAM or --export_dss FILE::PATH; it ignores the D part and treats MIN and MINUTE as the same E part."
+    tool_to_run: run_hms_engine
+    manual_steps:
+      - "List the catalog: HecDss.open(f).getCatalogedPathnames()"
+    prevention: "Never hard-code a DSS E part when matching against a catalog"
+  severity: medium
+  cross_references: [dt_109]
+
+- id: dt_121
+  stage: s7_postprocess
+  failure_domain: unit_conversion
+  symptom:
+    description: "Discharge from a HEC-HMS sample or US project is about 35x larger than the m3/s observations (or the reverse)."
+    error_pattern: "units=CFS"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "English-unit HMS projects (Unit System: English, e.g. castro) store FLOW in CFS, volumes in AC-FT, areas in MI2, depths in IN"
+    explanation: >
+      The dag unit for discharge is m^3/s. castro Outlet peak is 540.2749 CFS = 15.299 m^3/s.
+      Mixing a CFS series with m^3/s obs gives PBIAS near +3400 %; mixing AC-FT with mm over
+      km2 breaks the water balance.
+    affected_components: [run_hms_engine]
+  remedy:
+    action: "Use the 'value_m3s' column that run_hms_engine.py adds for FLOW in CFS (x 0.028316846592); convert AC-FT with 1233.48184 m3 and MI2 with 2.589988 km2."
+    tool_to_run: run_hms_engine
+    manual_steps:
+      - "Read the '# units=' header line of each exported CSV"
+    prevention: "Score only value_m3s against m3/s observations"
+  severity: silent
+  cross_references: [dt_108, dt_114]
+
+- id: dt_122
+  stage: s6_run
+  failure_domain: runtime
+  symptom:
+    description: "hec-hms.sh stops with a display / Xvfb error, or Java throws HeadlessException, on a server with no screen."
+    error_pattern: "DISPLAY|Xvfb|HeadlessException"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "The official hec-hms.sh launcher checks for DISPLAY or a running Xvfb before starting the GUI-capable JVM"
+    explanation: >
+      The headless launcher run_hms_headless.sh (engine build dir) is the same java call as
+      hec-hms.sh with -Djava.awt.headless=true and no display check. A stray DISPLAY from an
+      ssh session can still make Java try to reach an X server.
+    affected_components: [run_hms_engine, preflight_check]
+  remedy:
+    action: "Run through tools/run_hms_engine.py (uses the headless launcher and removes DISPLAY from the engine environment). Do not edit hec-hms.sh."
+    tool_to_run: run_hms_engine
+    manual_steps:
+      - "env -u DISPLAY KISSPATH_HOME/engine_builds_20261006/HEC_HMS/run_hms_headless.sh -script compute.py"
+    prevention: "preflight_check.py runs a Jython smoke script through the same launcher with DISPLAY removed"
+  severity: error
+  cross_references: [dt_119]

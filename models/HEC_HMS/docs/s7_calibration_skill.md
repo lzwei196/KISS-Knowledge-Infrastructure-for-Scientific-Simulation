@@ -37,7 +37,10 @@ against observed discharge using the GLUE-style random sampler implemented in
      --basin_shp KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
      --start_date 1980-01-01 \
      --end_date 1990-12-31 \
+     --pet_csv /path/to/pet_daily.csv \
      --output_dir ./forcing_out
+   # --pet_csv is required: columns date,pet_mm (mm/day) from an identified
+   # source or derivation; the converter never computes PET itself.
    ```
 
 2. Run GLUE-style calibration on the post-spinup validation window:

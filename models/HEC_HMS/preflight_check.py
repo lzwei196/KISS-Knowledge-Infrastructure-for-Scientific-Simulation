@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -12,8 +13,13 @@ MODEL_ID = "HEC-HMS"
 KI_DIR = Path(__file__).resolve().parent
 TOOLS_DIR = KI_DIR / "tools"
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
-PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
-BINARY = (TOOLS_DIR / "run_hec_hms.py").resolve()
+PYTHON_ENV = Path(os.environ.get("KI_PYTHON", sys.executable))
+# The REAL engine: official USACE HEC-HMS 4.14 Linux build, headless launcher.
+# Same default as tools/run_hms_engine.py; override with env HMS_ENGINE.
+# Made absolute here: the smoke run below is launched with cwd = a temp folder.
+ENGINE = Path(os.path.abspath(os.environ.get("HMS_ENGINE", "KISSPATH_HOME/engine_builds_20261006/HEC_HMS/run_hms_headless.sh")))
+ENGINE_TOOL = TOOLS_DIR / "run_hms_engine.py"
+JYTHON_SMOKE = "from hms.model import Project\nfrom hms import Hms\nprint('HMS_JYTHON_OK')\nHms.shutdownEngine()\n"
 
 
 def fix_text(action):
@@ -105,10 +111,40 @@ def main():
         fix_text(f"restore executable HydroCraft Python interpreter: {PYTHON_ENV}"),
     )
 
-    # The manifest declares this Python entrypoint as the KI binary. The subject
-    # is the executable realpath so the gate can compare it with the models DB.
-    check_file(checks, BINARY, "HEC-HMS Python executable", critical=True, executable=True)
-    check_command(checks, os.path.realpath(BINARY), [str(PYTHON_ENV), str(BINARY), "--help"], critical=True)
+    # The REAL engine. Subjects are the launcher realpath so the gate can
+    # compare it with the models DB binary_path.
+    eng_real = os.path.realpath(ENGINE)
+    eng_ok = ENGINE.is_file() and os.access(ENGINE, os.X_OK)
+    add_check(checks, "binary", eng_real, True, eng_ok,
+              fix_text(f"restore the headless HEC-HMS launcher {ENGINE} (see its BUILD_LOG.md) or set HMS_ENGINE"))
+    hms_home = Path(eng_real).parent / "HEC-HMS-4.14"
+    for rel in ("hms.jar", "jre/bin/java", "bin/javaHeclib"):
+        add_check(checks, "data", hms_home / rel, True, (hms_home / rel).exists(),
+                  fix_text(f"HEC-HMS install is incomplete ({hms_home / rel} missing); re-extract the official 4.14 tarball"))
+    # Run the engine: a Jython script that imports the HMS API. The JVM exits 0
+    # even when a script fails, so the marker line is the pass condition.
+    marker_ok, extra = False, ""
+    if eng_ok:
+        with tempfile.TemporaryDirectory() as td:
+            sp = Path(td) / "smoke.py"
+            sp.write_text(JYTHON_SMOKE)
+            env = dict(os.environ)
+            env.pop("DISPLAY", None)
+            try:
+                proc = subprocess.run([str(ENGINE), "-script", str(sp)], cwd=td, env=env,
+                                      text=True, capture_output=True, timeout=90)
+                marker_ok = proc.returncode == 0 and "HMS_JYTHON_OK" in proc.stdout
+                if not marker_ok:
+                    extra = f" (rc={proc.returncode}; {(proc.stderr or proc.stdout).strip()[-160:]})"
+            except Exception as exc:
+                extra = f" ({exc})"
+    add_check(checks, "run", eng_real + extra, True, marker_ok,
+              fix_text(f"make the headless engine run a Jython script: env -u DISPLAY {ENGINE} -script smoke.py"))
+    check_command(checks, f"{ENGINE_TOOL.name} --help",
+                  [str(PYTHON_ENV), str(ENGINE_TOOL), "--help"], critical=True)
+
+    # tools/run_hec_hms.py (checked below) is the Python SURROGATE: it is kept
+    # for the legacy calibration loop and is never the model of record.
 
     for module in ("numpy", "pandas"):
         check_python_import(checks, module, critical=True)
@@ -118,6 +154,7 @@ def main():
         check_python_import(checks, module, critical=True)
 
     for rel in (
+        "tools/run_hms_engine.py",
         "tools/run_hec_hms.py",
         "tools/convert_forcing_to_hms.py",
         "tools/convert_soil_to_hms.py",

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Automated calibration for HEC-HMS using GLUE-style random sampling.
+SURROGATE calibration -- runs the Python stand-in tools/run_hec_hms.py, NOT the
+real HEC-HMS engine. Parameters found here are for the stand-in only; they are
+not HEC-HMS calibrated parameters. Real-engine runs: tools/run_hms_engine.py.
+
+Automated calibration (GLUE-style random sampling) of the stand-in.
 
 Samples parameter space (CN, Ia_ratio, k_recession, q_base_init, recharge_fraction)
 and selects the parameter set that maximizes KGE (or NSE) against observed discharge.

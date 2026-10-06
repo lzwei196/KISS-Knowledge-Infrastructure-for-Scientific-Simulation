@@ -27,16 +27,16 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (7 tools; the REAL engine is `tools/run_hms_engine.py`) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-06 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -47,24 +47,25 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | tool (exact path) | invocation |
 |---|---|
-| `tools/calibrate_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calibrate_hms.py --help` |
+| `tools/calibrate_hms.py` (**SURROGATE, not HEC-HMS**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calibrate_hms.py --help` |
 | `tools/convert_forcing_to_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_hms.py --help` |
 | `tools/convert_soil_to_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_hms.py --help` |
 | `tools/parse_hms_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_hms_output.py --help` |
-| `tools/run_hec_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hec_hms.py --help` |
+| `tools/run_hec_hms.py` (**SURROGATE, not HEC-HMS**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hec_hms.py --help` |
+| `tools/run_hms_engine.py` (**default run route: the REAL engine**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hms_engine.py --help` |
 | `tools/validate_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/validate_hms.py --help` |
 
-*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # HEC-HMS (Hydrologic Engineering Center — Hydrologic Modeling System) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-hec-hms` v1.0.0
-**Model**: HEC-HMS 4.12 (USACE Hydrologic Engineering Center)
+**Model**: HEC-HMS 4.14 (USACE Hydrologic Engineering Center), official Linux build, run headless by `tools/run_hms_engine.py`
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-28
-**Stats**: 6 tools | 7 skill documents | 18 diagnostic triplets | ~2,800 lines of validated Python
-**Validation status**: `production_validated` (Bengbu, Huai River, 1981-1990)
+**Stats**: 7 tools | 7 skill documents | 22 diagnostic triplets
+**Validation status (2026-10-06)**: the REAL engine reproduces the USACE castro sample exactly (runs Current + Future, 54/54 element peaks/volumes/peak times; Outlet peak 540.2749050 cfs) and, for run Current, scores NSE 0.858 / KGE 0.811 / r 0.933 / PBIAS +0.98 % against the observed Castro Valley outlet flow of 16 Jan 1973 (USACE parameters, no calibration by us; see Validation). The older Bengbu numbers came from the Python SURROGATE `run_hec_hms.py` and are NOT HEC-HMS results.
 
 ---
 
@@ -72,7 +73,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Data Sources**: `convert_forcing_to_hms.py` reads daily CMFD NetCDFs with declared units and geographic coordinates in declared degrees; partial-day values (time bounds/steps not a whole day) and values outside NetCDF valid_range/valid_min/valid_max fail. It requires an explicit `--pet_csv` (`date,pet_mm`, mm/day); there is no automatic Hargreaves fallback or assumed temperature range. Missing required dates/active cells fail before writing. Temperature is required by default; `--temperature_mode unused` explicitly omits it only for a model with no temperature-dependent process. See [S4](docs/s4_forcing_conversion_skill.md).
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 See `data_ki/HWSD/SKILL.md` for soil property documentation.
@@ -81,7 +82,9 @@ See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous rainfall-runoff simulation using HEC-HMS methodology on any gauged basin, **without the proprietary HEC-HMS GUI**. The 6 validated Python tools implement the core HEC-HMS algorithms (SCS-CN loss, SCS Unit Hydrograph transform, Muskingum routing, linear reservoir baseflow) and integrate with HydroCraft's forcing, soil, and observation infrastructure.
+**Real engine**: `tools/run_hms_engine.py` runs the official USACE HEC-HMS 4.14 binary headless (Jython API: `Project.open` -> `computeRun`) on an HMS project folder, checks the run log and a fresh results file, exports DSS series to CSV and can compare against reference results. This is the model of record.
+
+**SURROGATE**: `tools/run_hec_hms.py` (and `calibrate_hms.py`, which calls it) is a HydroCraft Python stand-in for SCS-CN + SCS UH + Linear Reservoir + Muskingum. It is NOT HEC-HMS; never report its output as a HEC-HMS result. It stays only for the legacy daily CSV workflow (Quick Start steps 1-6). The forcing/soil tools (`convert_*_to_hms.py`) still write CSV/JSON for the surrogate; they do not yet write HMS `.basin`/`.met`/`.gage`/DSS files, so a new basin for the real engine needs an HMS project built outside these tools (open gap).
 
 **What HEC-HMS does**: Event-based and continuous rainfall-runoff simulation. Computes:
 - Precipitation losses (infiltration) via SCS Curve Number, Green-Ampt, or Initial+Constant
@@ -98,17 +101,20 @@ This knowledge infrastructure enables autonomous rainfall-runoff simulation usin
 
 ## Installation
 
-### Proprietary Binary (if available)
+### Official USACE executable (required for HEC-HMS results)
 
 ```
-HEC-HMS 4.12:   <install_dir>/HEC-HMS/hec-hms.sh
-Platform:        Linux x86-64 (Java 11+ required)
-Source:          https://www.hec.usace.army.mil/software/hec-hms/
+HEC-HMS 4.14:    KISSPATH_HOME/engine_builds_20261006/HEC_HMS/HEC-HMS-4.14/ (bundled JRE)
+Headless launcher (KI binary): KISSPATH_HOME/engine_builds_20261006/HEC_HMS/run_hms_headless.sh
+                 (same java call as hec-hms.sh + -Djava.awt.headless=true, no DISPLAY check; env HMS_ENGINE overrides)
+Build log:       KISSPATH_HOME/engine_builds_20261006/HEC_HMS/BUILD_LOG.md
+Source:          https://github.com/HydrologicEngineeringCenter/hec-downloads/releases/download/1.0.47/HEC-HMS-4.14-linux64.tar.gz
 License:         US Government Public Domain (binary distribution)
-CLI execution:   hec-hms.sh -script compute.py
+KI run tool:     python3 tools/run_hms_engine.py --project <p>.hms --run <Run> --workdir <dir>
+Official samples: HEC-HMS-4.14/samples.zip (castro, river_bend, tenk, tifton)
 ```
 
-### Python Implementation (HydroCraft)
+### Python SURROGATE (HydroCraft, not HEC-HMS)
 
 ```
 Tools:           ki/tools/*.py
@@ -116,11 +122,19 @@ Dependencies:    numpy, pandas, xarray, netCDF4, geopandas, shapely, matplotlib,
 Python:          3.10+
 ```
 
-HEC-HMS is proprietary Java software. The HydroCraft implementation provides equivalent
-algorithms in Python for integration with the HydroCraft forcing/observation pipeline.
-Core algorithms (SCS-CN, SCS UH, Muskingum) are public domain USDA/USACE methods.
+The official HEC-HMS distribution is available without charge from USACE. The HydroCraft Python stand-in is a SURROGATE; no equivalence with the real engine has been shown.
 
-### Test example
+### Test example (real engine — official castro sample)
+
+```
+mkdir -p /tmp/hms_samples && cd /tmp/hms_samples && unzip -q KISSPATH_HOME/engine_builds_20261006/HEC_HMS/HEC-HMS-4.14/samples.zip 'samples/castro/*'
+python3 tools/run_hms_engine.py --project /tmp/hms_samples/samples/castro/castro.hms \
+  --run Current --run Future --workdir /tmp/hms_castro_run --export Outlet:FLOW \
+  --reference_results /tmp/hms_samples/samples/castro/results
+# expect exit 0, reference n_mismatch 0, Outlet peak 540.2749050 cfs
+```
+
+### Surrogate test example (NOT HEC-HMS)
 
 ```
 python3 ki/tools/run_hec_hms.py \
@@ -144,8 +158,9 @@ python3 ki/tools/run_hec_hms.py \
 | 3 | Land Cover | `convert_soil_to_hms.py` | Yes | AVHRR → CN adjustment by land use |
 | 4 | Forcing Conversion | `convert_forcing_to_hms.py` | Yes | CMFD/MSWX → HEC-HMS precipitation + PET |
 | 5 | Model Parameters | — | — | Set loss, transform, routing, baseflow methods |
-| 6 | Model Execution | `run_hec_hms.py` | No | Run SCS-CN + SCS UH + Muskingum + baseflow |
-| 7 | Output Parsing | `parse_hms_output.py` | No | Extract discharge time series to CSV |
+| 6 | Model Execution (REAL engine) | `run_hms_engine.py` | No | HEC-HMS 4.14 headless on an HMS project; log + fresh-results checks; DSS export to CSV |
+| 6s | Model Execution (SURROGATE) | `run_hec_hms.py` | No | Python stand-in, NOT HEC-HMS (legacy daily CSV workflow only) |
+| 7 | Output Parsing | `run_hms_engine.py` exports / `parse_hms_output.py` (surrogate CSV) | No | Discharge time series to CSV |
 | 8 | Routing (optional) | — | — | Channel routing already integrated in run |
 
 ---
@@ -191,10 +206,11 @@ unit checklist for the HEC-HMS pipeline and known unit traps.
 |---|------|-------|-------|---------|
 | 1 | `convert_forcing_to_hms.py` | s4 | ~450 | CMFD/MSWX NetCDF → daily precip (mm) + PET (mm) |
 | 2 | `convert_soil_to_hms.py` | s2-s3 | ~350 | HWSD + AVHRR → SCS Curve Number + soil properties |
-| 3 | `run_hec_hms.py` | s6 | ~600 | Execute SCS-CN + SCS UH + Muskingum + baseflow |
+| 3 | `run_hms_engine.py` | s6 | ~400 | REAL engine: run HEC-HMS 4.14 headless, check log/results, export DSS, compare to reference |
+| 3s | `run_hec_hms.py` | s6 | ~430 | SURROGATE (not HEC-HMS): Python SCS-CN + SCS UH + Muskingum + baseflow |
 | 4 | `parse_hms_output.py` | s7 | ~250 | Parse output CSV → standardized discharge CSV |
 | 5 | `validate_hms.py` | s7 | ~350 | Compare simulated vs observed Q, compute metrics |
-| 6 | `calibrate_hms.py` | s5 | ~400 | Automated CN + baseflow calibration (GLUE-style) |
+| 6 | `calibrate_hms.py` | s5 | ~290 | SURROGATE calibration (GLUE-style) of `run_hec_hms.py`; not HEC-HMS parameters |
 
 ---
 
@@ -296,7 +312,23 @@ to pandas datetime, 2400 must map to 00:00 of the next day.
 
 ## Validation
 
-### Bengbu Basin, Huai River (Station 51080)
+### Real engine — Castro Valley, California (official USACE sample, 2026-10-06)
+
+| Item | Value |
+|------|-------|
+| Project | `castro` from HEC-HMS 4.14 `samples.zip` (Castro Valley Urban Study), run `Current` (basin `Castro 1`, met `GageWts`, control `Jan73`) |
+| Event | 16 Jan 1973 03:00-12:55, 5-min step; Fire Dept. 10-min rain gage (Thiessen weights) |
+| Methods | Initial+Constant loss, Snyder UH, Recession baseflow, Modified Puls reach routing (as shipped) |
+| Area | 5.51 mi2 (14.27 km2) at junction `Outlet` |
+| Observation | gage `Out`, `castro.dss /CASTRO VALLEY/OUTLET/FLOW//10MIN/OBS/` (CFS), paired at the 60 shared 10-min times |
+| Official example | runs Current + Future match the USACE-shipped `RUN_*.results` exactly (54/54 values) |
+| Scored (run Current, m3/s) | NSE 0.858, KGE 0.811, r 0.933, PBIAS +0.98 % (ki_tools_common.metrics.all_metrics) |
+| HMS's own statistics (5-min, HMS-interpolated obs) | NSE 0.863, r 0.935, PBIAS 1.03 %, modified KGE 0.806 |
+| Water balance (KDT run 2026-10-06) | P 39.2 mm = loss 18.4 + excess 20.8 mm; outlet 20.97 mm; closes to 0.0 mm |
+| Caveat | parameters are the USACE ones, probably fitted to this same storm, so this is not an independent test |
+| Reproduce | `run_hms_engine.py --project castro/castro.hms --run Current --workdir OUT --export Outlet:FLOW --export_dss "castro.dss::/CASTRO VALLEY/OUTLET/FLOW//10MIN/OBS/"`; pair `OUT/exports/Current_Outlet_FLOW.csv` with `dss_CASTRO_VALLEY_OUTLET_FLOW_10MIN_OBS.csv` on `value_m3s` at the 60 shared times; `ki_tools_common.metrics.all_metrics(obs, sim)` (re-checked 2026-10-06: NSE 0.85793) |
+
+### Bengbu Basin, Huai River (Station 51080) — SURROGATE only, not HEC-HMS (and Bengbu is the excluded guardrail case)
 
 | Item | Value |
 |------|-------|
@@ -327,8 +359,16 @@ wins if this body ever disagrees with `docs/validation_convention.yaml`.
 | `runoff_depth` | `pbias` | zero_centered | `abs(PBIAS) <= 5.0` (`moriasi2015`) | `abs(PBIAS) <= 10.0` (`moriasi2015`) | `abs(PBIAS) <= 15.0` (`moriasi2015`) | `moriasi2015` |
 | `loss` | `pbias` | zero_centered | no cited threshold | no cited threshold | no cited threshold | none |
 
-Achieved metric values are produced by `validate_hms.py` for the Bengbu validation
-run; this body section records the cited pass-bands used to judge those values.
+Real-engine metric values come from `run_hms_engine.py` exports scored with
+`ki_tools_common.metrics` (Castro Valley, above). The older Bengbu values came from
+`validate_hms.py` on SURROGATE output. This section records the cited pass-bands used
+to judge those values.
+
+The models DB still stores the surrogate's Bengbu metrics (NSE 0.909 / KGE 0.948 / r 0.955)
+for HEC-HMS. `knowledge_infrastructure.yaml` lists them only under
+`validation.surrogate_metrics_not_hec_hms`; its `validation.metrics` hold the real-engine
+Castro Valley score (NSE 0.858, 60 points, in-sample). Regenerating the manifest from the DB
+would project the surrogate metrics again -- re-check it after any regeneration.
 
 ---
 
@@ -461,12 +501,23 @@ End:
 
 ## Quick Start
 
+### 0. Real engine (model of record)
+```bash
+python3 tools/run_hms_engine.py --project /path/<project>.hms --run <RunName> \
+  --workdir ./hms_run --export <OutletElement>:FLOW \
+  [--export_dss "<file>.dss::/A/B/FLOW//10MIN/OBS/"] [--reference_results <dir>]
+# outputs: hms_run/exports/*.csv (value + value_m3s for CFS flow), hms_run/hms_engine_run.json
+```
+
+Steps 1-6 below are the SURROGATE daily-CSV workflow (NOT HEC-HMS).
+
 ### 1. Convert forcing data
 ```bash
 python3 ki/tools/convert_forcing_to_hms.py \
   --forcing_dir KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/ \
   --basin_shp KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
   --start_date 1980-01-01 --end_date 1990-12-31 \
+  --pet_csv /path/to/source_documented_daily_pet.csv \
   --output_dir ./forcing_out/
 ```
 
@@ -540,6 +591,10 @@ python3 ki/tools/calibrate_hms.py \
 | dt_116 | parameter_range | medium | Lag time unrealistic for basin size |
 | dt_117 | data_quality | medium | Missing precipitation days filled with zero |
 | dt_118 | unit_conversion | silent | PET in mm/month vs mm/day |
+| dt_119 | runtime | silent | Real engine exits 0 although HMS refused the run (errors only in the log) |
+| dt_120 | format | medium | DSS catalog E part `5Minute` vs `5MIN` — pathname match fails |
+| dt_121 | unit_conversion | silent | English-unit projects: CFS / AC-FT / MI2 / IN vs m3/s |
+| dt_122 | runtime | error | hec-hms.sh needs DISPLAY/Xvfb; use the headless launcher |
 
 ---
 
@@ -593,7 +648,8 @@ ki/
 ├── tools/
 │   ├── convert_forcing_to_hms.py    # CMFD/MSWX → HEC-HMS forcing
 │   ├── convert_soil_to_hms.py       # HWSD + AVHRR → CN + soil params
-│   ├── run_hec_hms.py               # Execute SCS-CN + SCS UH + routing
+│   ├── run_hms_engine.py            # REAL engine: HEC-HMS 4.14 headless + checks + DSS export
+│   ├── run_hec_hms.py               # SURROGATE (not HEC-HMS): Python SCS-CN + SCS UH + routing
 │   ├── parse_hms_output.py          # Extract discharge CSV
 │   ├── validate_hms.py              # Compare sim vs obs, compute metrics
 │   └── calibrate_hms.py            # Automated GLUE-style calibration

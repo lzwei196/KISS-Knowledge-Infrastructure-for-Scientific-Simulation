@@ -3,124 +3,79 @@
 
 model:
   name: LPJ-GUESS
-  language: python
+  language: C++
   implementation:
-    id: lpj-guess-analytic
-    version: HydroCraft analytic reimplementation
-    provenance: Python; analytic reimplementation of LPJ-GUESS core flux processes (LUE GPP, Q10 Ra/Rh,
-      NEE), not the full LPJ-GUESS Fortran/C++ binary.
-  scientific_reference_version: LPJ-GUESS core flux physics (Smith et al. 2001/2014; Sitch et al. 2003;
-    Monteith 1972 LUE) — analytic reimplementation of GPP/Ra/Rh/NEE
+    id: lpj-guess-4.1.1
+    version: 4.1.1 research release (Zenodo 10.5281/zenodo.8065737)
+    provenance: C++ engine built 2026-10-06 from the official release (cmake Release, g++ 13.3, NetCDF
+      linked) at KISSPATH_HOME/engine_builds_20261006/LPJ_GUESS/build/guess; driven by tools/run_lpjguess_engine.py.
+      The Python light-use-efficiency stand-in (tools/run_lpjguess.py) is a SURROGATE and is NOT described
+      by this dag; its old contract is kept apart in docs/surrogate_lpjguess_lue_dag.yaml.
+  scientific_reference_version: LPJ-GUESS 4.1.1 (Smith et al. 2001, 2014; Sitch et al. 2003) — real engine
 inputs:
   forcing:
-  - name: SW_IN
-    unit: W/m2
+  - name: temp
+    unit: K
     category: forcing
     source_kind: forcing
-    model_input_format: daily total incoming shortwave radiation at the site
-    notes: Must be total incoming shortwave, not net radiation; PAR derived as SW_IN*0.48.
-  - name: TA
-    unit: deg C
+    model_input_format: CF NetCDF, standard_name air_temperature, daily mean
+    notes: Rejected unless units == 'K'.
+  - name: prec
+    unit: kg m-2 s-1
     category: forcing
     source_kind: forcing
-    model_input_format: daily air temperature at the site
-    notes: Drives parabolic GPP temperature scalar and Q10 Ra/Rh; expects deg C (not Kelvin).
-  - name: VPD
-    unit: hPa
+    model_input_format: CF NetCDF, standard_name precipitation_flux, daily mean
+    notes: mm/day / 86400.
+  - name: insol
+    unit: W m-2
     category: forcing
     source_kind: forcing
-    model_input_format: daily vapour pressure deficit at the site
-    notes: Drives exponential VPD limitation scalar; parameters VPD_0/VPD_1 are in hPa.
-  - name: P
-    unit: mm/day
+    model_input_format: CF NetCDF, standard_name surface_downwelling_shortwave_flux_in_air, 24-h mean
+    notes: Not net radiation, not MJ.
+  - name: min_temp
+    unit: K
     category: forcing
     source_kind: forcing
-    model_input_format: daily precipitation at the site (optional)
-    notes: Optional; for water balance. Not required by the documented analytic flux equations.
+    model_input_format: CF NetCDF air_temperature, daily minimum
+    notes: Needed for BVOC/GWGEN; supplied anyway.
+  - name: max_temp
+    unit: K
+    category: forcing
+    source_kind: forcing
+    model_input_format: CF NetCDF air_temperature, daily maximum
+    notes: ''
+  - name: relhum
+    unit: '1'
+    category: forcing
+    source_kind: forcing
+    model_input_format: CF NetCDF relative_humidity as a 0-1 fraction
+    notes: Derived from specific humidity, pressure, temperature.
+  - name: wind
+    unit: m s-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: CF NetCDF wind_speed
+    notes: 10 m wind from the loader.
+  - name: co2
+    unit: ppm
+    category: forcing
+    source_kind: forcing
+    model_input_format: text '<year> <ppm>' per consecutive year (file_co2)
+    notes: Built by build_lpjguess_co2_file.py (Law Dome + NOAA Mauna Loa).
   parameters:
-  - name: LUE_max
-    unit: gC/MJ PAR
-    category: parameters
-    source_kind: calibrated
-    model_input_format: site/PFT light-use-efficiency coefficient
-    notes: Typical 1.0-3.0; ENF 1.0-1.5, DBF 1.2-2.0, grassland 0.8-1.5.
-  - name: T_opt
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: optimal photosynthesis temperature (default 20)
-  - name: T_min
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: minimum photosynthesis temperature (default -2)
-  - name: T_max
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: maximum photosynthesis temperature (default 38)
-  - name: VPD_0
-    unit: hPa
-    category: parameters
-    source_kind: default
-    model_input_format: VPD threshold before GPP decline (default 10)
-  - name: VPD_1
-    unit: hPa
-    category: parameters
-    source_kind: default
-    model_input_format: VPD at which GPP halves (default 35)
-  - name: Ra_base
-    unit: fraction
-    category: parameters
-    source_kind: default
-    model_input_format: base autotrophic respiration / GPP ratio (default 0.5)
-  - name: Ra_Q10
-    unit: dimensionless
-    category: parameters
-    source_kind: default
-    model_input_format: Q10 for maintenance respiration (default 2.0)
-  - name: Ra_Tref
-    unit: deg C
-    category: parameters
-    source_kind: default
-    model_input_format: reference temperature for maintenance respiration (default 15)
-  - name: Rh_base
-    unit: umol/m2/s
-    category: parameters
-    source_kind: default
-    model_input_format: base heterotrophic respiration rate (default 2.0)
-    notes: An absolute rate in umol/m2/s, unlike GPP/Ra which are derived fluxes.
-  - name: Rh_Q10
-    unit: dimensionless
-    category: parameters
-    source_kind: default
-    model_input_format: Q10 for decomposition (default 2.0)
-  - name: Rh_Tref
-    unit: deg C
-    category: parameters
-    source_kind: default
-    model_input_format: reference temperature for decomposition (default 15)
-  - name: C_pool_scale
-    unit: dimensionless
-    category: parameters
-    source_kind: default
-    model_input_format: static scaling factor for soil C pool effect on Rh (default 1.0)
-    notes: Static multiplier; this implementation does not dynamically evolve a soil C pool.
-  - name: leaf_N
-    unit: gN/m2 leaf
+  - name: soil code
+    unit: categorical
     category: parameters
     source_kind: dataset_lookup
-    model_input_format: leaf nitrogen content per area (optional)
-  - name: SLA
-    unit: m2/kgC
+    model_input_format: LPJ soil class (soils_lpj.dat, 0.5-degree map) of the cell holding the site; run
+      tool writes an exact site line
+    notes: Sets texture-based water holding and thermal properties.
+  - name: PFT parameters
+    unit: mixed
     category: parameters
-    source_kind: dataset_lookup
-    model_input_format: specific leaf area (optional)
-  - name: Vcmax_base
-    unit: umol/m2/s
-    category: parameters
-    source_kind: dataset_lookup
-    model_input_format: base Vcmax at 25 deg C (optional, Farquhar scaling)
+    source_kind: user_provided
+    model_input_format: pft blocks in global.ins (shipped values, Smith et al. 2014)
+    notes: Not calibrated by the KI.
   initial_conditions: []
   boundary_conditions:
   - name: vegmode
@@ -128,7 +83,7 @@ inputs:
     category: boundary_conditions
     source_kind: user_provided
     model_input_format: '''cohort'' (individual-based) or ''population'' (area-averaged) vegetation mode'
-    notes: Vegetation-dynamics control of the full LPJ-GUESS; not exercised by the analytic flux reimplementation.
+    notes: global.ins default 'cohort'.
   - name: npatch
     unit: count
     category: boundary_conditions
@@ -145,13 +100,18 @@ inputs:
     source_kind: user_provided
     model_input_format: climatically appropriate PFTs enabled with bioclimatic filtering (T_min, T_max,
       GDD)
+  - name: firemodel
+    unit: categorical
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: GLOBFIRM (KI default) | NOFIRE | BLAZE (needs SimfireInput.bin)
 outputs:
   primary:
   - name: GPP
     unit: umol/m2/s
     description: Gross Primary Production (terrestrial vegetation carbon assimilation flux).
     validation_rank: 1
-    emitted_in: model output table
+    emitted_in: mgpp.out (kgC m-2 month-1; GPP minus leaf respiration); converted to umol/m2/s by parse_lpjguess_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -163,14 +123,17 @@ outputs:
         determining_metric: nse
         caveats:
         - Eddy-covariance GPP is a partitioning-derived flux, not a direct measurement.
-        - Internal flux may be gC/m2/day; convert to umol/m2/s (x0.9649) before comparison.
+        - Internal flux may be gC/m2/day; convert to umol/m2/s (1 gC/m2/day = 0.9636 umol/m2/s) before
+          comparison.
+        - Engine GPP excludes leaf dark respiration (commonoutput.cpp 'GPP-LeafResp'); expect it a few
+          percent below partitioned tower GPP (dt_lpjguess_025).
       detrending_options:
       - none
   - name: Ra
     unit: umol/m2/s
     description: Autotrophic respiration (terrestrial vegetation carbon respiration flux).
     validation_rank: 3
-    emitted_in: model output table
+    emitted_in: mra.out; converted to umol/m2/s by parse_lpjguess_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -188,7 +151,7 @@ outputs:
     unit: umol/m2/s
     description: Heterotrophic respiration (soil/litter decomposition).
     validation_rank: 4
-    emitted_in: model output table
+    emitted_in: mrh.out; converted to umol/m2/s by parse_lpjguess_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -205,7 +168,7 @@ outputs:
     unit: umol/m2/s
     description: Ecosystem respiration (Ra + Rh).
     validation_rank: 5
-    emitted_in: model output table
+    emitted_in: mra.out + mrh.out; converted to umol/m2/s by parse_lpjguess_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -222,7 +185,7 @@ outputs:
     unit: umol/m2/s
     description: Net Ecosystem Exchange (Reco - GPP); positive = net source, negative = net sink.
     validation_rank: 6
-    emitted_in: model output table
+    emitted_in: mnee.out (= mrh - mnpp; fire C excluded); converted to umol/m2/s by parse_lpjguess_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -241,7 +204,7 @@ outputs:
     unit: umol/m2/s
     description: Net Primary Production (terrestrial vegetation carbon production flux; GPP - Ra).
     validation_rank: 2
-    emitted_in: model output table
+    emitted_in: mnpp.out (= mgpp - mra); converted to umol/m2/s by parse_lpjguess_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -268,36 +231,43 @@ outputs:
   secondary: []
 known_issues:
 - id: dt_lpjguess_001
-  symptom: GPP and respiration unrealistically high (~300 degC regime). Temperature-dependent scalars
-    saturated. Parabolic temperature response returns zero but Q10 respiration explodes.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in, NOT the LPJ-GUESS engine; the real engine
+    wants K and kg m-2 s-1, see dt_lpjguess_023) -- GPP and respiration unrealistically high (~300 degC
+    regime). Temperature-dependent scalars saturated. Parabolic temperature response returns zero but
+    Q10 resp
   diagnosis: Air temperature forcing supplied in Kelvin instead of degrees Celsius. CMFD and MSWX provide
     temperature in K, but LPJ-GUESS expects deg C.
   remedy: Subtract 273.15 from all temperature values before passing to LPJ-GUESS. Validate that TA values
     fall within -50 to +55 deg C range.
 - id: dt_lpjguess_002
-  symptom: Precipitation effectively zero. Vegetation dies from permanent drought. Water balance shows
-    no input despite using CMFD data.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in, NOT the LPJ-GUESS engine; the real engine
+    wants K and kg m-2 s-1, see dt_lpjguess_023) -- Precipitation effectively zero. Vegetation dies from
+    permanent drought. Water balance shows no input despite using CMFD data.
   diagnosis: Precipitation left in kg/m2/s (CMFD native unit) instead of converted to mm/day. A typical
     value of 1.15e-5 kg/m2/s (1 mm/day) is interpreted as near-zero mm/day.
   remedy: Multiply CMFD precipitation by 86400 to convert from kg/m2/s to mm/day. For MSWX (mm/3hr), sum
     8 timesteps per day. Validate daily P is in the 0-300 mm/day range.
 - id: dt_lpjguess_003
-  symptom: VPD scalar (f_VPD) always near 1.0 — no moisture stress on GPP. Transpiration unrealistically
-    high for arid sites.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in, NOT the LPJ-GUESS engine; the real engine
+    wants K and kg m-2 s-1, see dt_lpjguess_023) -- VPD scalar (f_VPD) always near 1.0 — no moisture stress
+    on GPP. Transpiration unrealistically high for arid sites.
   diagnosis: VPD supplied in kPa instead of hPa. LPJ-GUESS VPD parameters (VPD_0=10 hPa, VPD_1=35 hPa)
     expect hPa. A value of 1.5 kPa (= 15 hPa) appears as 1.5 hPa, far below the VPD_0 threshold.
   remedy: Multiply VPD by 10 to convert from kPa to hPa. FLUXNET provides hPa natively. If source data
     is in Pa, divide by 100. Validate that typical daytime VPD is 5-40 hPa.
 - id: dt_lpjguess_004
-  symptom: GPP output in gC/m2/day does not match eddy-covariance tower observations reported in umol
-    CO2/m2/s. Values appear off by a factor of ~7200.
+  symptom: 'SURROGATE-era entry (for the REAL engine parse_lpjguess_engine_output.py converts kgC m-2
+    month-1 to gC m-2 d-1 and umol m-2 s-1 with 1e6/12.011/86400 = 0.9636, not 0.9649) -- GPP output in
+    gC/m2/day does not match eddy-covariance tower observations reported in umol CO2/m2/s. Values appear
+    off by a '
   diagnosis: Failure to apply the gC-to-umol flux unit conversion. LPJ-GUESS internal GPP is in gC/m2/day
     but FLUXNET observations are in umol CO2/m2/s. The conversion factor is 1e6 / 12.011 / 86400.
   remedy: Convert GPP from gC/m2/day to umol/m2/s by multiplying by 1e6 / (12.011 * 86400) = 0.9649. Alternatively,
     convert observations to gC/m2/day by dividing by 0.9649.
 - id: dt_lpjguess_005
-  symptom: Model refuses to start or silently produces wrong PFT configuration. Instruction file (.ins)
-    parameters appear to be ignored.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Model refuses to
+    start or silently produces wrong PFT configuration. Instruction file (.ins) parameters appear to be
+    ignored.
   diagnosis: LPJ-GUESS instruction file (.ins) uses a strict keyword-value format. Missing quotes around
     string values, wrong section nesting (param block not closed with a closing brace), or trailing whitespace
     after values causes silent parse failure.
@@ -305,16 +275,19 @@ known_issues:
     brace has a matching closing brace, and PFT definitions follow the ''pft "PFT_NAME" { ... }'' pattern.
     Use a reference .ins from the LPJ-GUESS distribution as template.'
 - id: dt_lpjguess_006
-  symptom: Model reports zero gridcells or crashes immediately. Gridlist file appears to exist but no
-    sites are processed.
+  symptom: REAL ENGINE, general (demo/cru input) -- with -input cf the gridlist holds array INDICES x
+    y, not lon lat (dt_lpjguess_024) -- Model reports zero gridcells or crashes immediately. Gridlist
+    file appears to exist but no sites are processed.
   diagnosis: 'Gridlist file has wrong format. LPJ-GUESS expects a whitespace-delimited text file with
     columns: longitude latitude [description]. Common errors include comma-separated values, header rows,
     lat/lon in reversed order, or coordinates outside -180 to 180 / -90 to 90 range.'
   remedy: Reformat gridlist as space-separated longitude latitude per line with no header. Verify longitude
     precedes latitude. Remove any header lines or trailing blank lines.
 - id: dt_lpjguess_007
-  symptom: Forcing data read error. Model cannot find or parse daily meteorological driver files. Errors
-    referencing 'getclimate' or input file dimensions.
+  symptom: REAL ENGINE -- the CSV sentence in the remedy is for the SURROGATE only; for the engine build
+    CF NetCDF with build_lpjguess_cf_forcing.py (dt_lpjguess_023, dt_lpjguess_024) -- Forcing data read
+    error. Model cannot find or parse daily meteorological driver files. Errors referencing 'getclimate'
+    or in
   diagnosis: 'Driver data NetCDF or binary files have dimension ordering or variable naming that does
     not match the LPJ-GUESS CF input specification. Common issues: time dimension not named ''time'',
     spatial dimensions not matching gridlist, or missing calendar attribute.'
@@ -322,8 +295,8 @@ known_issues:
     land). Variable names must match the instruction file input specification. Use convert_forcing_to_lpjguess.py
     to produce correctly formatted forcing CSV with SW_IN, TA, VPD, P columns.
 - id: dt_lpjguess_008
-  symptom: Tropical simulation dominated by boreal/temperate PFTs. Vegetation composition unrealistic
-    for the climate zone.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Tropical simulation
+    dominated by boreal/temperate PFTs. Vegetation composition unrealistic for the climate zone.
   diagnosis: All PFTs enabled in the instruction file without bioclimatic filtering. LPJ-GUESS PFTs have
     bioclimatic limits (T_min, T_max, GDD requirements) but if the instruction file includes boreal PFTs
     for a tropical gridcell, competition dynamics can produce unrealistic assemblages during spinup.
@@ -331,8 +304,9 @@ known_issues:
     boreal needle-leaved PFTs (BNE, BINE, BNS). For boreal sites, disable tropical broadleaved PFTs (TrBE,
     TrIBE, TrBR). Consult the bioclimatic limit table in the LPJ-GUESS documentation.
 - id: dt_lpjguess_009
-  symptom: Model runs in population mode but user expects individual-based (cohort) dynamics. Vegetation
-    structure lacks age-class diversity. No gap dynamics or light competition.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Model runs in population
+    mode but user expects individual-based (cohort) dynamics. Vegetation structure lacks age-class diversity.
+    No gap dynamics or light competition.
   diagnosis: Instruction file sets 'ifbgestab 0' and 'ifsme 0' or uses 'vegmode "population"' instead
     of 'vegmode "cohort"'. Population mode uses area-averaged representation without individual-level
     competition.
@@ -340,8 +314,9 @@ known_issues:
     1) and stochastic mortality (ifsme 1) for individual-based dynamics with gap model behavior. Use npatch
     >= 25 for statistical robustness.
 - id: dt_lpjguess_010
-  symptom: Simulation completes but vegetation carbon pools are still drifting. Soil carbon has not reached
-    equilibrium. NEE has a persistent non-zero trend during the 'stable' reference period.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Simulation completes
+    but vegetation carbon pools are still drifting. Soil carbon has not reached equilibrium. NEE has a
+    persistent non-zero trend during the 'stable' reference period.
   diagnosis: Spinup length (nyear_spinup) too short for soil carbon pools to equilibrate. Slow soil organic
     matter pools (century-scale turnover) require 500-1000+ years of spinup, especially in boreal/permafrost
     systems.
@@ -349,8 +324,9 @@ known_issues:
     systems. Monitor the trend in total ecosystem carbon (vegetation + soil + litter) over the last 100
     spinup years — drift should be less than 1 gC/m2/yr.
 - id: dt_lpjguess_011
-  symptom: GPP systematically 2-3x higher than FLUXNET observations across all sites. Temperature and
-    VPD responses appear correct but absolute magnitude is wrong.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in, NOT the LPJ-GUESS engine, which has no
+    such parameter) -- GPP systematically 2-3x higher than FLUXNET observations across all sites. Temperature
+    and VPD responses appear correct but absolute magnitude is wrong.
   diagnosis: LUE_max (maximum light use efficiency) parameter set too high. Default range is 1.0-3.0 gC/MJ
     PAR. A value at the upper end (3.0) overestimates GPP for most ecosystems. Temperate forests typically
     require 1.2-2.0 gC/MJ.
@@ -358,8 +334,9 @@ known_issues:
     1.0-1.5, DBF 1.2-2.0, grassland 0.8-1.5 gC/MJ PAR. Use differential evolution optimization against
     the validation period.'
 - id: dt_lpjguess_012
-  symptom: GPP peaks at wrong time of year. Summer GPP too low relative to spring/autumn. Temperature
-    response curve appears shifted.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in, NOT the LPJ-GUESS engine, which has no
+    such parameter) -- GPP peaks at wrong time of year. Summer GPP too low relative to spring/autumn.
+    Temperature response curve appears shifted.
   diagnosis: T_opt (optimal photosynthesis temperature) parameter mismatched for the PFT or climate zone.
     Default T_opt=20 degC is appropriate for temperate broadleaf but too low for tropical (T_opt=28-30)
     and too high for boreal (T_opt=15-18) ecosystems.
@@ -367,8 +344,9 @@ known_issues:
     18-25 degC, tropical evergreen 25-32 degC. Also verify T_min and T_max bracket the observed growing-season
     temperature range.'
 - id: dt_lpjguess_013
-  symptom: Heterotrophic respiration (Rh) far too high in winter or too low in summer. Soil respiration
-    seasonal cycle has wrong amplitude.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in, NOT the LPJ-GUESS engine, which has no
+    such parameter) -- Heterotrophic respiration (Rh) far too high in winter or too low in summer. Soil
+    respiration seasonal cycle has wrong amplitude.
   diagnosis: Rh_Q10 parameter (Q10 for decomposition) inappropriate for the soil environment. Default
     Rh_Q10=2.0 may be too high for warm soils (amplifying summer Rh) or too low for cold soils (underestimating
     temperature sensitivity).
@@ -376,8 +354,9 @@ known_issues:
     temperate, and 2.5-3.5 for boreal/permafrost soils. Also check Rh_base (default 2.0 umol/m2/s) and
     Rh_Tref (default 15 degC) for consistency.'
 - id: dt_lpjguess_014
-  symptom: NEE does not equal Reco - GPP. Carbon budget fails to close. Small but persistent residual
-    accumulates over multi-year simulations.
+  symptom: SURROGATE ONLY (tools/run_lpjguess.py LUE stand-in; the REAL engine writes mnee = mrh - mnpp
+    itself, dt_lpjguess_034) -- NEE does not equal Reco - GPP. Carbon budget fails to close. Small but
+    persistent residual accumulates over multi-year simulations.
   diagnosis: Numerical precision loss in the daily carbon balance computation. When GPP and Reco are both
     large (~10-20 umol/m2/s) but NEE is small (~0.5 umol/m2/s), floating-point subtraction loses significant
     digits. Also check that Ra + Rh = Reco is enforced consistently.
@@ -385,8 +364,9 @@ known_issues:
     stored Reco. Verify the sign convention: NEE = Reco - GPP (positive = source, negative = sink). Tolerance
     for carbon balance closure should be < 0.01 gC/m2/day.'
 - id: dt_lpjguess_015
-  symptom: Vegetation dynamics produce unrealistic monoculture after long simulation. A single PFT dominates
-    100% of patches despite diverse initial conditions.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Vegetation dynamics
+    produce unrealistic monoculture after long simulation. A single PFT dominates 100% of patches despite
+    diverse initial conditions.
   diagnosis: Competitive exclusion in cohort mode without adequate disturbance. If stochastic disturbance
     (fire, windthrow) is disabled or its return interval is too long, the most competitive PFT outcompetes
     all others over centuries. The disturbance regime parameter (distinterval) controls gap creation frequen
@@ -394,8 +374,8 @@ known_issues:
     to ecologically appropriate values (50-200 years for temperate forests, 80-400 years for boreal).
     Increase npatch to 50-100 for better sampling of stochastic dynamics.
 - id: dt_lpjguess_016
-  symptom: Spinup never converges. Soil organic carbon continues increasing after 1000 model years. Annual
-    NEE oscillates without stabilizing.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Spinup never converges.
+    Soil organic carbon continues increasing after 1000 model years. Annual NEE oscillates without stabilizing.
   diagnosis: Nitrogen deposition set to modern (elevated) values during spinup instead of pre-industrial
     levels. Modern N deposition (1-10 kgN/ha/yr) continuously fertilizes the ecosystem, preventing C pool
     equilibrium. Pre-industrial N deposition was 0.1-0.5 kgN/ha/yr.
@@ -403,8 +383,9 @@ known_issues:
     N deposition only for the historical simulation period. Monitor total ecosystem carbon trend — convergence
     criterion is drift < 0.5 gC/m2/yr over the last 100 spinup years.
 - id: dt_lpjguess_017
-  symptom: Strong NEE source (positive) for the first 30-50 years of the transient run after spinup completes.
-    Ecosystem appears to lose carbon despite stable climate.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Strong NEE source
+    (positive) for the first 30-50 years of the transient run after spinup completes. Ecosystem appears
+    to lose carbon despite stable climate.
   diagnosis: CO2 concentration mismatch between spinup (pre-industrial ~280 ppm) and transient run start
     (modern ~370 ppm). The abrupt CO2 jump stimulates GPP, increasing N demand beyond supply, which causes
     N limitation-induced carbon pool adjustment and temporary net carbon loss.
@@ -412,8 +393,9 @@ known_issues:
     year, or use the transient CO2 trajectory from 1850 onward. Discard the first 50 years of transient
     output as equilibration if an abrupt CO2 jump is unavoidable.
 - id: dt_lpjguess_018
-  symptom: Output files contain only annual values but user needs monthly or daily resolution. Monthly
-    carbon flux seasonality cannot be analyzed.
+  symptom: REAL ENGINE, general LPJ-GUESS knowledge (not reproduced on this server) -- Output files contain
+    only annual values but user needs monthly or daily resolution. Monthly carbon flux seasonality cannot
+    be analyzed.
   diagnosis: Instruction file output section specifies only annual output tables (e.g., 'file_cmass',
     'file_anpp') without enabling monthly output files (e.g., 'file_mnpp', 'file_mgpp'). LPJ-GUESS distinguishes
     annual and monthly outputs by filename prefix convention.
@@ -421,3 +403,159 @@ known_issues:
     ''file_mgpp'', ''file_mra'', ''file_mrh'', ''file_mnee'', ''file_mlai''. For daily output (if supported
     by the version), add the corresponding daily file declarations. Verify output directory has write
     permissions.'
+- id: dt_lpjguess_019
+  symptom: guess -input cf exits with signal 11 (rc 139 / -11) after about 1 s; guess.log is empty (2
+    bytes) and no .out file is written. Happens as soon as the .ins sets searchradius_soil.
+  diagnosis: 'Engine bug in 4.1.1: CFInput::CFInput() (modules/cfinput.cpp line 346) builds a throw-away
+    local `SoilInput soilinput;` whose constructor registers searchradius_soil against that temporary
+    object. Setting the parameter in the .ins writes to freed stack memory.'
+  remedy: 'Never set searchradius_soil with -input cf (run_lpjguess_engine.py refuses it, exit 2). Give
+    the soil map an exact line for the site instead: the cf mode copies soils_lpj.dat and appends ''<lon>
+    <lat> <code>'' using the code of the 0.5-degree cell holding the site. Do not patch the engine build.'
+  severity: fatal
+- id: dt_lpjguess_020
+  symptom: guess exits 99 within 0.1 s; guess.log ends 'Coordinate at 13.565200, 50.962400 could not be
+    found in the soil map, and no search radius specified.'
+  diagnosis: SoilInput::find_closest_point looks up the EXACT grid-cell lon/lat (taken from the NetCDF
+    lat/lon variables) in the soil-code file. The shipped soils_lpj.dat only has 0.5-degree cell centres
+    (x.25/x.75), so a tower coordinate never matches, and the search radius cannot be used (see dt_lpjguess_019).
+  remedy: 'Use run_lpjguess_engine.py cf: it writes run/soils_site.dat = shipped map + one line for the
+    site with the code of the cell (floor(2x)/2+0.25) that holds it, and reports the cell and code in
+    its JSON (''soil'': {...}).'
+  severity: fatal
+- id: dt_lpjguess_021
+  symptom: guess -input cf stops with 'Not enough data to build spinup, at least 30 years needed' (exit
+    99).
+  diagnosis: CFInput::load_spinup_data builds the spin-up climate from the FIRST 30 full years of the
+    NetCDF files (CFInput::NYEAR_SPINUP_DATA = 30). A FLUXNET tower's own met record (FULLSET or ERAI,
+    1989-2014 = 26 yr) is too short.
+  remedy: Build >= 30 years of daily forcing with build_lpjguess_cf_forcing.py (it refuses shorter periods,
+    exit 2). NASA POWER 1984-2014 (31 yr) works globally; CMFD 1979+ in China; MSWX 1980+ globally (MSWX
+    1979 has a faulty time axis).
+  severity: fatal
+- id: dt_lpjguess_022
+  symptom: 'guess exits 99 with ''GlobalCO2File::load_file: could not open CO2 file'', ''... line N -
+    bad year specified'', or ''Tried to get CO2 value after last year in file''.'
+  diagnosis: The 4.1.1 release ships no CO2 file (global_cf.ins points at c:/co2/co2_1901_2018.txt). The
+    reader needs one '<year> <ppm>' line per consecutive year and must reach the last forcing year; years
+    before the first line get the first value.
+  remedy: 'Build it from real records with build_lpjguess_co2_file.py (Law Dome spline before 1959 + NOAA
+    Mauna Loa annual means). Stored copy: models/LPJ_GUESS/inputs/co2/co2_1901_2014.txt (296.2 ppm in
+    1901, 398.81 in 2014). Extend --end_year when forcing goes past 2014.'
+  severity: fatal
+- id: dt_lpjguess_023
+  symptom: guess exits 99 with 'Temperature variable doesn't seem to be in Kelvin', 'Precipitation is
+    given as flux but does not have the correct unit (kg m-2 s-1)', 'Insolation variable given as radiation
+    but unit doesn't seem to be in W m-2' or 'Relative Humidity must be dimensionless'.
+  diagnosis: 'cfinput.cpp checks the units and standard_name attributes literally: temp/min_temp/max_temp
+    air_temperature K; prec precipitation_flux kg m-2 s-1 (or precipitation_amount kg m-2); insol surface_downwelling_shortwave_flux_in_air
+    W m-2 (24-h mean); relhum relative_humidity ''1'' (a fraction, not %); win'
+  remedy: Use build_lpjguess_cf_forcing.py, which converts degC -> K (+273.15), mm/day -> kg m-2 s-1 (/86400)
+    and RH to a 0-1 fraction, and writes those exact attributes. If you write files yourself, copy its
+    attributes.
+  severity: fatal
+- id: dt_lpjguess_024
+  symptom: guess exits 99 with 'The gridlist for netCDF input must be in X,Y coordinates', or simulates
+    the wrong cell / skips cells silently.
+  diagnosis: 'With -input cf the gridlist (param file_gridlist_cf) is read as INTEGER array indices ''x
+    y [label]'' into the NetCDF lon/lat dimensions (CFInput::init: iss >> rlon >> rlat). The demo/cru
+    modules use real lon/lat instead, which is what dt_lpjguess_006 describes.'
+  remedy: For a 1x1 point file the gridlist line is '0 0 <site>' (written by build_lpjguess_cf_forcing.py
+    as gridlist_cf.txt). For multi-cell files, write the index of each cell, not its coordinates.
+  severity: fatal
+- id: dt_lpjguess_025
+  symptom: Engine monthly GPP (mgpp.out) sits a few to ~10 percent below tower GPP_NT_VUT_REF even where
+    LAI and timing look right.
+  diagnosis: commonoutput.cpp declares file_mgpp as 'Monthly GPP-LeafResp'; canexch.cpp reports Fluxes::GPP
+    = assim, the net assimilation after leaf dark respiration. Partitioned tower GPP includes leaf respiration.
+  remedy: Report it as a known definitional offset; do not 'fix' it by scaling. When the bias is much
+    larger than ~10 percent, look at vegetation composition (dt_lpjguess_027) before parameters.
+  severity: silent
+- id: dt_lpjguess_026
+  symptom: 'Water balance P - ET - Q misses by ~13 percent (DE-Tha 1984-2014: residual 2913 mm of 22408
+    mm) and modelled ET looks ~25 percent low against tower LE when maet.out alone is used as ET.'
+  diagnosis: patch.maet accumulates aet_total = root water uptake (transpiration) in soil.cpp; soil evaporation
+    goes to mevap and canopy interception to mintercep (canexch.cpp). aaet.out is likewise transpiration
+    only.
+  remedy: Total ET = maet + mevap + mintercep (parse_lpjguess_engine_output.py does this for the ET score
+    and the water-balance check). With total ET the DE-Tha balance closes to 0.4 percent.
+  severity: silent
+- id: dt_lpjguess_027
+  symptom: 'At a planted conifer site the engine grows broadleaf trees: DE-Tha cmass.out is TeBS-dominated,
+    monthly GPP is zero all winter and summer peaks are low (GPP PBIAS -35 percent, NEE NSE ~0) while
+    r is still 0.96.'
+  diagnosis: global.ins runs all 12 global PFTs as potential natural vegetation (Natural stand type, no
+    management). Tharandt is a planted Norway spruce stand; the engine's competition outcome is temperate
+    broadleaf summergreen (TeBS).
+  remedy: 'First report the default (untuned) run. To represent the real stand, switch PFTs off through
+    the run tool, e.g. --set ''pft "TeBS" ( include 0 )'' for every PFT not present. DE-Tha with only
+    BNE + C3G: GPP NSE 0.69 -> 0.80, PBIAS -35 -> -26 percent, RECO NSE 0.85 -> 0.87. Label such runs
+    as a configur'
+  severity: degraded
+- id: dt_lpjguess_028
+  symptom: With firemodel BLAZE the engine exits 99 with 'Could not open  for input' (empty file_simfire)
+    or 'BLAZE is switched on WITHOUT info on either specific humidity and pressure or relative humidity'.
+  diagnosis: global.ins sets firemodel BLAZE, which reads SimfireInput.bin (file_simfire, not shipped,
+    not on the server) and needs relative humidity. The demo module only supports GLOBFIRM/NOFIRE.
+  remedy: run_lpjguess_engine.py defaults to firemodel GLOBFIRM and refuses BLAZE unless --simfire_file
+    is given (exit 2). Note the choice in any result.
+  severity: fatal
+- id: dt_lpjguess_029
+  symptom: load_daily_forcing('nasa_power', ...) raises 'srad_wm2 is missing on 365 of 365 days' for 1981-1983,
+    or 'lrad_wm2 is missing on 366 of 366 days' for any year.
+  diagnosis: POWER all-sky shortwave starts in 1984; the loader's lrad_wm2 is not filled for POWER. LPJ-GUESS
+    needs shortwave but not longwave.
+  remedy: build_lpjguess_cf_forcing.py calls the loader with on_missing='nan' and then checks only the
+    variables LPJ-GUESS uses (gaps there -> exit 3). Start NASA POWER runs in 1984 or later.
+  severity: fatal
+- id: dt_lpjguess_030
+  symptom: 'A wrapper that greps guess.log for ''Error'' reports success for a run that stopped: engine
+    failure messages (soil map, CO2, units) do not start with ''Error''.'
+  diagnosis: CommandLineShell::fail() writes the bare message to guess.log/stdout and calls exit(99).
+    A segfault leaves an almost empty guess.log and rc -11.
+  remedy: Success = rc 0 AND a line 'Finished' in guess.log AND every expected .out file has rows AND
+    the last Year equals the forcing end year (cf) -- exactly what run_lpjguess_engine.py checks (exit
+    3/4 otherwise).
+  severity: silent
+- id: dt_lpjguess_031
+  symptom: run_lpjguess_engine.py (older draft) stopped with 'param "file_soildata" found 2 times in the
+    template (expected 1)'.
+  diagnosis: global_cf.ins carries an active param "file_soildata" line and a commented copy '!param "file_soildata"
+    ...'. A pattern that ignores the leading '!' matches both.
+  remedy: 'Edit only active lines: the tool''s set_str_param anchors at line start and skips ''!'' lines,
+    and still fails closed when the active match count is not exactly 1.'
+  severity: fatal
+- id: dt_lpjguess_032
+  symptom: run_lpjguess_engine.py example exits 5 ('output differs from reference').
+  diagnosis: 'The demo (global_demo.ins, 13 cells, years 500-599) is deterministic: on 2026-10-07 all
+    19 .out files were byte-identical to the build-time run in <engine>/run_global_demo. A difference
+    means the binary, the shipped .ins/env files or the reference changed.'
+  remedy: Check the binary realpath and mtime against BUILD_LOG.md and diff the .ins files against src/data/ins
+    before trusting any other result. Do not raise --tolerance to make it pass.
+  severity: warning
+- id: dt_lpjguess_033
+  symptom: A KI result shows GPP NSE ~0.90 for LPJ-GUESS from run_lpjguess.py with LUE_max/T_opt/VPD parameters.
+  diagnosis: run_lpjguess.py (with convert_forcing_to_lpjguess.py, convert_parameters_to_lpjguess.py,
+    parse_output_lpjguess.py) is a Python light-use-efficiency SURROGATE calibrated per site; LPJ-GUESS
+    has no LUE_max parameter. Its skill says nothing about the real engine.
+  remedy: 'Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. Real-engine
+    reference (untuned, DE-Tha 1996-2014 monthly): GPP NSE 0.69, r 0.96.'
+  severity: silent
+- id: dt_lpjguess_034
+  symptom: Monthly NEE has the right timing (r 0.83 at DE-Tha) but far too small a sink (obs -1.67, engine
+    -0.28 gC m-2 d-1; NSE ~0).
+  diagnosis: mnee = mrh - mnpp (positive = source) and leaves out fire and harvest C. The 500-year spin-up
+    (calendar years before the forcing; 296 ppm before 1901, the real CO2 record after) grows unmanaged
+    natural vegetation, so the engine has no young-stand or management legacy; a growing managed forest
+    is a m
+  remedy: Score NEE but read it with that caveat; compare GPP and RECO first. Annual cflux.out carries
+    the full NEE including fire for budget work.
+  severity: degraded
+- id: dt_lpjguess_035
+  symptom: Engine log says nothing, but N-limited GPP is lower than expected for a polluted region (e.g.
+    central Europe).
+  diagnosis: The Lamarque GlobalNitrogenDeposition.bin is not on the server; with file_ndep '' NDepData::getndep
+    sets a FIXED pre-industrial deposition (2 kgN/ha/yr) for spin-up AND the historic period.
+  remedy: State this in results. If a site's modern N deposition matters, obtain the Lamarque file and
+    pass --ndep_file.
+  severity: degraded

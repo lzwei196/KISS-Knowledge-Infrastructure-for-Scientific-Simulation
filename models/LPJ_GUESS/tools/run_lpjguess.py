@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+*** SURROGATE -- NOT THE LPJ-GUESS MODEL ***
+Part of the Python light-use-efficiency stand-in (LUE GPP, Q10 Ra/Rh). It
+does not run, read or write the real LPJ-GUESS engine and its numbers must
+never be reported as LPJ-GUESS results. For the real engine use
+run_lpjguess_engine.py, build_lpjguess_cf_forcing.py, build_lpjguess_co2_file.py
+and parse_lpjguess_engine_output.py (triplet dt_lpjguess_033).
+
 run_lpjguess.py
 Execution wrapper for LPJ-GUESS analytic reimplementation.
 
@@ -628,7 +635,7 @@ def run_model(forcing_path, params_path, output_path,
     output_ok = validate_outputs(output_path, n_expected=len(df_out))
 
     # --- Summary ---
-    print(f"\n--- Run Summary ---")
+    print(f"\n--- Run Summary (SURROGATE: Python LUE stand-in, NOT LPJ-GUESS) ---")
     print(f"  Forcing rows: {len(df_forcing)}")
     print(f"  GPP mean: {np.nanmean(result['GPP']):.3f} umol/m2/s")
     print(f"  GPP max:  {np.nanmax(result['GPP']):.3f} umol/m2/s")
@@ -638,6 +645,7 @@ def run_model(forcing_path, params_path, output_path,
 
     return {
         "status": "success" if output_ok else "warning",
+        "implementation": "SURROGATE (Python LUE stand-in, not the LPJ-GUESS engine; dt_lpjguess_033)",
         "output_path": output_path,
         "n_rows": len(df_out),
         "duration_s": round(duration, 2),
@@ -657,7 +665,7 @@ def run_model(forcing_path, params_path, output_path,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Run LPJ-GUESS analytic model",
+        description="SURROGATE (Python LUE stand-in, NOT the LPJ-GUESS engine; real engine: run_lpjguess_engine.py). Run the LPJ-GUESS-like analytic LUE model",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--forcing", required=True,

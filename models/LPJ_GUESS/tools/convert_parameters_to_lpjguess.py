@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+*** SURROGATE -- NOT THE LPJ-GUESS MODEL ***
+Part of the Python light-use-efficiency stand-in (LUE GPP, Q10 Ra/Rh). It
+does not run, read or write the real LPJ-GUESS engine and its numbers must
+never be reported as LPJ-GUESS results. For the real engine use
+run_lpjguess_engine.py, build_lpjguess_cf_forcing.py, build_lpjguess_co2_file.py
+and parse_lpjguess_engine_output.py (triplet dt_lpjguess_033).
+
 convert_parameters_to_lpjguess.py
 Convert site and PFT ecophysiological parameters to LPJ-GUESS parameter JSON.
 
@@ -532,7 +539,7 @@ def convert_parameters(pft=None, output_path=None, overrides=None,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Convert site/PFT parameters to LPJ-GUESS parameter JSON",
+        description="SURROGATE (Python LUE stand-in, NOT the LPJ-GUESS engine; real engine: run_lpjguess_engine.py). Convert site/PFT parameters to the surrogate's LUE parameter JSON",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Available PFT names:\n"

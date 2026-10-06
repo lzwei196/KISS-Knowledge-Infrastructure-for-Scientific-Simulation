@@ -1,0 +1,6 @@
+numpy
+pandas
+netCDF4
+matplotlib
+pyyaml
+# plus ki_tools_common (HydroCraft shared library) on the import path

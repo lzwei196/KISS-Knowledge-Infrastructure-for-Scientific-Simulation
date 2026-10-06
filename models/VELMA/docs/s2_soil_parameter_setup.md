@@ -1,5 +1,7 @@
 # Stage 2: Soil Parameter Setup
 
+**REAL engine:** soil parameters are the `/soil/<name>/...` blocks and the soil map of the VELMA configuration xml; change them with `run_velma_engine.py --kv=/soil/<name>/<key>,<value>` (the xml is never edited). Everything below is for the Python SURROGATE only (not VELMA).
+
 ## Purpose
 Create the four-layer VELMA parameter JSON used by `tools/run_velma.py`. The converter maps texture, HWSD/SoilGrids CSV extracts, or manual soil values into layer porosity, field capacity, wilting point, saturated hydraulic conductivity, routing defaults, snow parameters, and calibration bounds.
 

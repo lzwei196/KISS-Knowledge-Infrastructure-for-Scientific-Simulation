@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA VELMA. This parser reads the surrogate's output JSON/CSV (not EPA VELMA DailyResults.csv).
+It belongs to the Python lumped 4-layer stand-in (tools/run_velma.py), a HydroCraft
+re-implementation; its numbers are never VELMA results. The real model is EPA VELMA 2.1
+(JVelma.jar), run by tools/run_velma_engine.py with weather drivers from
+tools/build_velma_weather_from_source.py (P mm/day, T deg C).
+The surrogate's full I/O contract is docs/surrogate_velma_4layer_dag.yaml.
+
 parse_output_velma.py -- Parse VELMA simulation output and compute validation
 metrics against observed discharge.
 
@@ -424,7 +431,7 @@ def process(args, log):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse VELMA output and compute validation metrics.",
+        description="SURROGATE output only (NOT EPA VELMA): parse the Python stand-in's output. Real-engine output is DailyResults.csv / velma_daily_runoff.csv from run_velma_engine.py.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 CRITICAL:

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA VELMA. This runner is the stand-in itself.
+It belongs to the Python lumped 4-layer stand-in (tools/run_velma.py), a HydroCraft
+re-implementation; its numbers are never VELMA results. The real model is EPA VELMA 2.1
+(JVelma.jar), run by tools/run_velma_engine.py with weather drivers from
+tools/build_velma_weather_from_source.py (P mm/day, T deg C).
+The surrogate's full I/O contract is docs/surrogate_velma_4layer_dag.yaml.
+
 run_velma.py -- Execute VELMA analytic multi-layer soil hydrology model.
 
 Runs the VELMA-inspired lumped daily model with 4-layer soil water balance,
@@ -249,13 +256,10 @@ def velma_4layer(prec_mm, temp_K, srad_Wm2, params_dict, area_km2):
         T = float(temp_K[t])
         R = float(srad_Wm2[t])
 
-        # Handle NaN in forcing
-        if not np.isfinite(P):
-            P = 0.0
-        if not np.isfinite(T):
-            T = 288.0
-        if not np.isfinite(R):
-            R = 150.0
+        # Forcing is checked complete before the loop; a missing value here
+        # is a caller error and stops (no 0 mm / 288 K / 150 W/m2 stand-ins).
+        if not (np.isfinite(P) and np.isfinite(T) and np.isfinite(R)):
+            raise ValueError(f"non-finite forcing on day index {t}: P={P}, T={T}, R={R}")
 
         # --- Snow accumulation / melt (degree-day) ---
         if T < t_snow:
@@ -369,7 +373,19 @@ def load_forcing(forcing_path):
     dates = pd.DatetimeIndex(output["dates"])
     prec = np.array(output["prec_mm_d"], dtype=float)
     temp = np.array(output["temp_K"], dtype=float)
-    srad = np.array(output.get("srad_Wm2", [200.0] * len(prec)), dtype=float)
+    # This runner computes PET from radiation, so it is required: a forcing
+    # file made with --solar-mode unused (native Java P/T only) has none, and
+    # a made-up constant would drive PET.
+    if output.get("srad_Wm2") is None:
+        raise ValueError(f"{forcing_path} has no srad_Wm2 (solar_mode="
+                         f"{output.get('solar_mode', data.get('solar_mode'))!r}); this runner needs "
+                         f"radiation for PET. Rebuild the forcing with --solar-mode required.")
+    srad = np.array(output["srad_Wm2"], dtype=float)
+    for name, arr in (("prec_mm_d", prec), ("temp_K", temp), ("srad_Wm2", srad)):
+        if arr.shape != (len(dates),) or not np.isfinite(arr).all():
+            bad = np.flatnonzero(~np.isfinite(arr))[:5].tolist() if arr.shape == (len(dates),) else "shape"
+            raise ValueError(f"{forcing_path}: {name} must have one finite value per day "
+                             f"(problem at {bad}); nothing is filled")
 
     return dates, prec, temp, srad
 
@@ -625,7 +641,7 @@ def run_calibrate(args, log):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run VELMA 4-layer soil hydrology model.",
+        description="SURROGATE (NOT EPA VELMA): Run VELMA-inspired Python 4-layer stand-in. The real engine is run_velma_engine.py.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 CRITICAL:
@@ -677,11 +693,14 @@ CRITICAL:
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
+    # every output names its implementation: this is the SURROGATE, never EPA VELMA
+    result["implementation"] = "SURROGATE velma-python-4layer (NOT EPA VELMA; real engine = run_velma_engine.py)"
     with open(args.output, "w") as f:
         json.dump(result, f, indent=2)
 
     status = result["status"]
-    print(f"\n[run_velma] Status: {status}, mode: {args.mode}")
+    print("\n[run_velma] SURROGATE -- NOT EPA VELMA (Python lumped 4-layer stand-in)")
+    print(f"[run_velma] Status: {status}, mode: {args.mode}")
     print(f"  Output: {args.output}")
     if status == "success":
         out = result["output"]

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA VELMA. This converter writes the surrogate's 4-layer params JSON (not an EPA VELMA soil block).
+It belongs to the Python lumped 4-layer stand-in (tools/run_velma.py), a HydroCraft
+re-implementation; its numbers are never VELMA results. The real model is EPA VELMA 2.1
+(JVelma.jar), run by tools/run_velma_engine.py with weather drivers from
+tools/build_velma_weather_from_source.py (P mm/day, T deg C).
+The surrogate's full I/O contract is docs/surrogate_velma_4layer_dag.yaml.
+
 convert_soil_to_velma.py -- Convert soil data to VELMA 4-layer soil parameters.
 
 Translates soil properties from HWSD, SoilGrids, or manual input into the
@@ -407,7 +414,7 @@ def process(args, log):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert soil data to VELMA 4-layer parameters.",
+        description="SURROGATE input only (NOT EPA VELMA): soil data to the Python stand-in's 4-layer params JSON. The real engine reads soil from its XML configuration.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 VELMA layer structure:

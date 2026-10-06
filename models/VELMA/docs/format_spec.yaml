@@ -3,164 +3,130 @@
 
 model:
   name: VELMA
-  language: python
+  language: java
   implementation:
-    id: velma-python-4layer
-    version: run_velma.py velma_4layer (lumped daily reimplementation)
-    provenance: Python; self-contained lumped daily 4-layer analytic water-balance engine (velma_4layer
-      in run_velma.py); not the EPA Java spatial VELMA.
-  scientific_reference_version: VELMA-inspired lumped daily 4-layer water-balance model (Python re-implementation;
-    conceptually after EPA VELMA 2.0 soil-column hydrology, Stieglitz-family layered drainage)
+    id: epa-velma-2.1-java
+    version: VELMA_2.1.1.0 (JVelma.jar, gov.epa.velmasimulator.VelmaSimulatorCmdLine)
+    provenance: 'Official EPA release VELMA2.1-PROGRAM-MAR2022.ZIP (EPA Science Inventory deid=354355);
+      launcher KISSPATH_HOME/engine_builds_20261006/VELMA/run_velma_headless.sh (java -Djava.awt.headless=true
+      -cp jars/JVelma.jar gov.epa.velmasimulator.VelmaSimulatorCmdLine); build log KISSPATH_HOME/engine_builds_20261006/VELMA/BUILD_LOG.md.
+      Official BlueRiver_Example (HJA WS10, 1969-2008) reproduced through tools/run_velma_engine.py: engine
+      NSE 0.7954119608437563, DailyResults.csv byte-identical to the build-log run.'
+    run_tool: tools/run_velma_engine.py
+    surrogate:
+      id: velma-python-4layer
+      tool: tools/run_velma.py
+      contract: docs/surrogate_velma_4layer_dag.yaml
+      status: SURROGATE - not EPA VELMA; never report its output as VELMA
+  scientific_reference_version: EPA VELMA 2.1 (JVelma.jar VELMA_2.1.1.0, EPA VELMA2.1-PROGRAM-MAR2022);
+    process science per the VELMA 2.0 User Manual (McKane et al., US EPA 2014), its 2.1 supplement (MAR2022)
+    and Abdelnour et al. 2011 (WRR, doi:10.1029/2010WR010165), 2013 (WRR, doi:10.1029/2012WR012994)
 inputs:
   forcing:
   - name: precipitation
     unit: mm/d
     category: forcing
     source_kind: forcing
-    model_input_format: forcing JSON field prec_mm_d (basin-average daily series)
-    notes: Basin-averaged daily precipitation consumed each timestep; partitioned to rain/snow by t_snow
-      threshold.
+    model_input_format: 'DefaultWeatherModel rainDriverDataFileName (and VelmaInputs input_rain): text
+      file, one value per line, no header, exactly one line per day from forcing_start-01-01; built by
+      tools/build_velma_weather_from_source.py'
+    notes: 'Applied uniformly to every cell of the delineated watershed; the snow model splits it into
+      rain and snow. Never fill or invent days: the builder stops on a missing day, and run_velma_engine.py
+      refuses a file with fewer rows than forcing_start..eyear or values outside 0..1000 mm/day.'
   - name: air temperature
-    unit: K
+    unit: degC
     category: forcing
     source_kind: forcing
-    model_input_format: forcing JSON field temp_K (basin-average daily series)
-    notes: Expected in Kelvin; model subtracts 273.15 internally. Non-finite values silently replaced
-      with 288 K inside the loop. Passing Celsius collapses PET to 0 and forces all precip to snow.
-  - name: incoming solar radiation
-    unit: W/m2
-    category: forcing
-    source_kind: forcing
-    model_input_format: forcing JSON field srad_Wm2 (basin-average daily series)
-    notes: Drives PET via Rn = srad*0.0864/2.45. Expected W/m2 (~100-300 daily mean); MJ/m2/d or kJ/m2/d
-      mis-units produce catastrophic PET errors. Non-finite values silently replaced with 150 W/m2.
+    model_input_format: 'DefaultWeatherModel airTemperatureDriverDataFileName (and VelmaInputs input_at):
+      daily mean air temperature, one value per line, no header, one line per day from forcing_start-01-01'
+    notes: Degrees Celsius, NOT Kelvin (the Kelvin JSON of convert_forcing_to_velma.py belongs to the
+      surrogate only). run_velma_engine.py refuses values outside -60..50.
   parameters:
-  - name: layer porosity fraction (layer_porosity)
-    unit: v/v fraction
+  - name: simulation configuration (VELMA xml)
+    unit: per key (mm, mm/day, fractions, degC, gC/m2, gN/m2)
     category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON layer_porosity[4]
-    notes: Per-layer void-space fraction; layer_cap = porosity*LAYER_THICK. Must be <1.0 (percent values
-      inflate capacity 100x).
-  - name: layer field-capacity fraction (layer_fc_frac)
-    unit: fraction of layer_cap
-    category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON layer_fc_frac[4]
-  - name: layer wilting-point fraction (layer_wp_frac)
-    unit: fraction of layer_cap
-    category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON layer_wp_frac[4]
-  - name: saturated hydraulic conductivity (layer_ks_mm_d)
-    unit: mm/d
+    source_kind: user_provided
+    model_input_format: <configuration>.xml (groups startups, calibration, cover, disturbance, soil, weather,
+      cellDataWriter); read by VelmaSimulatorCmdLine; every change is passed as --kv=/group/props/key,value
+      and the xml is never edited
+    notes: The KI runs an existing configuration (the EPA BlueRiver_Example for HJA WS10). A VELMA 2.0
+      configuration needs the 2.1 humus migration (dt_velma_025), which run_velma_engine.py does by default.
+  - name: digital elevation model (input_dem) and grid geometry (cell, ncol, nrow, outx, outy)
+    unit: m
     category: parameters
     source_kind: dataset_lookup
-    model_input_format: params JSON layer_ks_mm_d[4]
-    notes: Default from Rawls/Clapp-Hornberger texture lookup with depth scaling. mm/h instead of mm/d
-      makes percolation 24x too slow.
-  - name: vertical percolation rate coefficients (perc1-3)
-    unit: 1/d (fraction of above-FC storage)
+    model_input_format: flat-processed ESRI ASCII grid named by VelmaInputs input_dem; cell size `cell`
+      (m); outlet cell outx/outy
+    notes: Must be flat-processed (JPDEM) before the run. The outlet cell defines the delineated watershed
+      whose average every DailyResults.csv column reports.
+  - name: soil parameters per soil type (/soil/<name>) and soil map
+    unit: surfaceKs mm/d; decay factors 1/mm; porosityFraction, fieldCapacity, wiltPoint m3/m3; soilColumnDepth
+      mm; initialHumusCarbon gC/m2
     category: parameters
     source_kind: calibrated
-    model_input_format: params JSON perc1, perc2, perc3
-    notes: L4 percolation is hardcoded to 0.0; only three percolation coefficients are honored by the
-      engine.
-  - name: lateral flow coefficients (klat1-4)
-    unit: 1/d
+    model_input_format: xml /soil/<name>/<key> (surfaceKs, ksLateralExponentialDecayFactor, ksVerticalExponentialDecayFactor,
+      porosityFraction, fieldCapacity, wiltPoint, soilColumnDepth, setSoilLayerWeights or setSoilLayerThicknesses,
+      humusCtoN, initialHumusCarbon, humusNmaxDecay, nitrification keys); map soilParametersIndexMapFileName
+      (ASCII grid of soil ids)
+    notes: In VELMA 2.1 humusCtoN, initialHumusCarbon and humusNmaxDecay are SOIL keys; humusCtoN = 0
+      gives NaN on day 1 (run_velma_engine.py refuses it).
+  - name: cover parameters per cover type (/cover/<name>) with cover and age maps
+    unit: per key (PET coefficients, gC/m2 pools, C:N ratios, day-of-year)
     category: parameters
     source_kind: calibrated
-    model_input_format: params JSON klat1..klat4
-  - name: baseflow recession coefficient (k_base)
-    unit: 1/d
+    model_input_format: xml /cover/<name>/<key> (petParam1, petParam2, temperaturePetOff, noTranspirationPetFraction,
+      initial biomass/detritus pools, C:N ratios, mortality and uptake keys); maps coverSpeciesIndexMapFileName
+      and coverAgeMapFileName
+  - name: snow model parameters (snowFormationTemperature, snowMeltTemperature, snowMeltRate, rainOnSnowEffect)
+    unit: degC, degC, mm/degC/d, fraction
     category: parameters
     source_kind: calibrated
-    model_input_format: params JSON k_base
-    notes: Draws L4 down to wilting point (not field capacity); too-low values let L4 grow without bound.
-  - name: fast/slow reservoir recession (k_fast, k_slow)
-    unit: 1/d
-    category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON k_fast, k_slow
-  - name: PET scale factor (pet_scale)
-    unit: unitless
-    category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON pet_scale
-    notes: Linear multiplier on PET; reasonable range [0.3,2.5], typical 0.8-1.5. Hargreaves PET is linearly
-      sensitive to it.
-  - name: degree-day melt factor (ddf)
-    unit: mm/d/K
-    category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON ddf
-  - name: basin area
-    unit: km2
-    category: parameters
-    source_kind: user_provided
-    model_input_format: scalar used in mm/d->m3/s conversion (area*MM_D_KM2_TO_M3_S)
-    notes: Wrong area unit (ha vs km2) directly biases discharge magnitude.
-  - name: direct-runoff fraction (f_direct)
-    unit: fraction
-    category: parameters
-    source_kind: calibrated
-    model_input_format: params JSON f_direct
+    model_input_format: xml /weather/DefaultWeatherModel/<key>
+    notes: Below snowFormationTemperature all of the day's precipitation is snow; above snowMeltTemperature
+      melt = snowMeltRate x (airT - snowMeltTemperature) + rainOnSnowEffect x rain (VELMA 2.0 User Manual
+      sec. 6).
   initial_conditions:
-  - name: per-layer soil water (sw[4])
-    unit: mm
+  - name: start state spatial maps (spin-up end state)
+    unit: per map (mm, m3/m3, gC/m2, gN/m2)
     category: initial_conditions
-    source_kind: default
-    model_input_format: initialized to field capacity fc.copy()
-    notes: Starting far from equilibrium produces a strong first-year transient; first year (2-3 for L4)
-      discarded as spin-up.
-  - name: snow water equivalent (swe)
-    unit: mm
-    category: initial_conditions
-    source_kind: default
-    model_input_format: init 0.0
-    notes: SWE=0 default; mid-winter start in a snow-dominated basin misses the first spring melt peak.
-  - name: fast/slow routing storage (S_fast, S_slow)
-    unit: mm
-    category: initial_conditions
-    source_kind: default
-    model_input_format: init 0.0
+    source_kind: derived
+    model_input_format: folder of .asc state maps given by /startups/VelmaStartups.properties/setStartStateSpatialDataLocationName
+      (run_velma_engine.py --start-state-dir), written by an earlier run's setEndStateSpatialDataLocationName
+      (--end-state-dir)
+    notes: Without a start state the run starts from the xml initial values (soil water starts at porosity).
+      Use a spin-up run that carries the site history (e.g. the 1975 WS10 clearcut) and discard the first
+      year after any change of weather source.
   boundary_conditions:
-  - name: snow/rain and melt temperature thresholds (t_snow, t_melt)
-    unit: K
-    category: boundary_conditions
-    source_kind: default
-    model_input_format: params JSON t_snow, t_melt (default 273.15)
-  - name: routing split fraction (split)
-    unit: fraction
-    category: boundary_conditions
-    source_kind: calibrated
-    model_input_format: params JSON split (fraction of total runoff to fast reservoir)
-    notes: split->1.0 starves baseflow and overestimates peaks 2-5x; calibration bound typically [0.2,0.7].
-  - name: run mode (simulate vs calibrate)
-    unit: switch
+  - name: simulation and forcing years (syear, eyear, forcing_start, forcing_end)
+    unit: year
     category: boundary_conditions
     source_kind: user_provided
-    model_input_format: CLI mode selector; calibrate mode invokes differential_evolution against observed
-      discharge
-  - name: calibration window start / warmup
-    unit: date / days
+    model_input_format: xml /calibration/VelmaInputs.properties/<key> or run_velma_engine.py --syear/--eyear/--forcing-start
+    notes: Driver row 1 is forcing_start-01-01; syear must be >= forcing_start.
+  - name: observed runoff for the engine's own Nash-Sutcliffe (input_runoff)
+    unit: mm/d
     category: boundary_conditions
     source_kind: user_provided
-    model_input_format: --cal-start and warmup_days (default 365)
-    notes: Calibration start must exclude the spin-up year or the optimizer overfits the initial transient.
-  - name: observed discharge (calibrate mode)
-    unit: m3/s
+    model_input_format: one value per line from forcing_start-01-01 (run_velma_engine.py --observed-runoff);
+      used only for NashSutcliffeCoefficients.txt
+    notes: Read BY ROW from forcing_start; cut the file when forcing_start moves (dt_velma_028). It does
+      not change the simulation.
+  - name: disturbance schedule (/disturbance/<name>)
+    unit: year / day-of-year / fractions
     category: boundary_conditions
     source_kind: user_provided
-    model_input_format: aligned observed series Q_obs_m3s for objective/metrics
+    model_input_format: xml disturbance blocks, e.g. HarvestLsrDisturbanceModel with initializeActiveYears,
+      initializeActiveJdays and harvest fractions
 outputs:
   primary:
   - name: Q_sim_m3s
     unit: m3/s
-    description: Simulated daily discharge at the basin outlet (lumped fast+slow reservoir release scaled
-      by basin area).
+    description: Daily outlet discharge = Runoff_All(mm/day)_Delineated_Average x area / 86400 s, written
+      by run_velma_engine.py; area = --area-km2 (pass the gauged drainage area when comparing with a gauge)
+      or else the engine's delineated area.
     validation_rank: 1
-    emitted_in: simulation CSV / metrics JSON (parse_output_velma)
+    emitted_in: <output-root>/<run_index>/velma_daily_runoff.csv (column Q_sim_m3s), from the engine's
+      DailyResults.csv
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -170,8 +136,11 @@ outputs:
         - magnitude_accuracy
         determining_metric: nse
         caveats:
-        - First year (2-3 years for deep L4) is spin-up and must be excluded (default warmup 365 d).
-        - Lumped single-outlet discharge; cannot be compared to interior/distributed gauges.
+        - Score only after spin-up, and drop at least the first year after a change of weather source
+          (e.g. station weather -> MSWX).
+        - 'Use the same area on both sides (gauged area); the delineated area can differ (WS10: 14.58
+          ha delineated vs 10.2 ha gauged, dt_velma_030).'
+        - A single outlet hydrograph; interior gauges need a cell or reach output (CellDataWriter, ReachFlowResults.csv).
       - obs_shape: point_snapshot
         comparison_mode: scalar_comparison
         metric_families:
@@ -181,11 +150,30 @@ outputs:
         - Single-instant comparison only meaningful for peak/low-flow magnitude checks.
       detrending_options:
       - none
+  - name: mean_runoff_mm_d
+    unit: mm/d
+    description: Daily outlet runoff depth averaged over the delineated watershed (Runoff_All(mm/day)_Delineated_Average);
+      the series the engine itself compares with input_runoff.
+    validation_rank: 2
+    emitted_in: DailyResults.csv column Runoff_All(mm/day)_Delineated_Average; velma_daily_runoff.csv
+      column runoff_mm_d
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare with observed runoff depth over the same watershed (gauge discharge / gauged area).
+      detrending_options:
+      - none
   - name: mean_et_mm_d
     unit: mm/d
-    description: Diagnostic basin-mean actual evapotranspiration.
+    description: Daily actual evapotranspiration averaged over the delineated watershed (ET(mm/day)_Delineated_Average);
+      PET is in PET(mm/day)_Delineated_Average.
     validation_rank: 3
-    emitted_in: metrics JSON diagnostics
+    emitted_in: DailyResults.csv column ET(mm/day)_Delineated_Average
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -195,38 +183,44 @@ outputs:
         - temporal_pattern_match
         determining_metric: nse
         caveats:
-        - PET is a radiation/temperature approximation, not an energy-balance closure; expect bias against
-          flux-tower ET.
+        - Hamon PET is temperature based; expect bias against flux-tower ET where radiation or humidity
+          controls ET.
       - obs_shape: regional_aggregate_time_series
         comparison_mode: time_series_comparison
         metric_families:
         - magnitude_accuracy
         determining_metric: pbias
         caveats:
-        - Basin-lumped mean; compare only to basin-aggregated ET products.
+        - Watershed average; compare only with watershed-aggregated ET products.
       detrending_options:
       - none
-  - name: mean_runoff_mm_d
-    unit: mm/d
-    description: Diagnostic basin-mean total runoff (surface + lateral + baseflow before routing).
-    validation_rank: 2
-    emitted_in: metrics JSON diagnostics
+  - name: final_sw_mm[4]
+    unit: m3/m3
+    description: Soil water of layers 1-4 averaged over the delineated watershed (Soil_Moisture(mm)_Delineated_Average_Layer_1..4).
+      The values are a volumetric FRACTION despite the '(mm)' header; mm = fraction x layer thickness
+      (dt_velma_029). The name is kept for the validation convention.
+    validation_rank: 4
+    emitted_in: DailyResults.csv columns Soil_Moisture(mm)_Delineated_Average_Layer_1..4 (daily; the last
+      row is the end state)
     observability:
       comparable_obs_shapes:
-      - obs_shape: point_time_series
-        comparison_mode: time_series_comparison
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
         metric_families:
         - magnitude_accuracy
         determining_metric: pbias
         caveats:
-        - Pre-routing runoff depth, not the routed hydrograph.
+        - Watershed-average layer water; only loosely comparable to point soil-moisture probes, and only
+          as a volumetric fraction.
       detrending_options:
       - none
   - name: final_swe_mm
     unit: mm
-    description: End-state snow water equivalent.
+    description: 'Snow store (mm of water) averaged over the delineated watershed (Snow_Depth(mm)_Delineated_Average):
+      the snow model adds the day''s snow precipitation and removes melt (VELMA 2.0 User Manual sec. 6).'
     validation_rank: 5
-    emitted_in: metrics JSON diagnostics
+    emitted_in: DailyResults.csv column Snow_Depth(mm)_Delineated_Average (daily; the last row is the
+      end state)
     observability:
       comparable_obs_shapes:
       - obs_shape: point_snapshot
@@ -235,31 +229,15 @@ outputs:
         - magnitude_accuracy
         determining_metric: pbias
         caveats:
-        - Basin-lumped SWE; degree-day snow only, no radiation melt.
-      detrending_options:
-      - none
-  - name: final_sw_mm[4]
-    unit: mm
-    description: End-state per-layer soil water storage.
-    validation_rank: 4
-    emitted_in: metrics JSON diagnostics
-    observability:
-      comparable_obs_shapes:
-      - obs_shape: point_snapshot
-        comparison_mode: scalar_comparison
-        metric_families:
-        - magnitude_accuracy
-        determining_metric: pbias
-        caveats:
-        - Lumped column storage; only loosely comparable to point soil-moisture probes.
+        - Temperature-index snow with weather uniform over the watershed; no elevation lapse in the DefaultWeatherModel.
       detrending_options:
       - none
   secondary: []
 known_issues:
 - id: dt_velma_001
-  symptom: 'Simulated streamflow is near zero for the entire simulation period. Annual runoff ratio is
-    far below 1%. Precipitation in the forcing file has mean daily values around 0.01-0.05 instead of
-    the expected 1-5 mm/d range.
+  symptom: '[SURROGATE + REAL engine drivers] Simulated streamflow is near zero for the entire simulation
+    period. Annual runoff ratio is far below 1%. Precipitation in the forcing file has mean daily values
+    around 0.01-0.05 instead of the expected 1-5 mm/d range.
 
     '
   diagnosis: Precipitation left in kg/m2/s (CMFD native) instead of mm/d; CMFD precipitation is in kg/m2/s,
@@ -272,32 +250,35 @@ known_issues:
     handli'
   severity: silent
 - id: dt_velma_002
-  symptom: 'Simulated streamflow is approximately 8x higher than observed. Flooding events appear far
-    too frequently. Water balance shows precipitation greatly exceeding realistic values.
+  symptom: '[SURROGATE + REAL engine drivers] Simulated streamflow is approximately 8x higher than observed.
+    Flooding events appear far too frequently. Water balance shows precipitation greatly exceeding realistic
+    values.
 
     '
   diagnosis: CMFD 3-hourly precipitation (mm/3h) summed incorrectly or passed as mm/d directly; Some CMFD
     products provide precipitation in mm/3h. There are 8 three-hour intervals per day, so 8 values must
     be summed per day. If each 3-hourly value is incorrectly treated as a daily value, the effective precipitat
-  remedy: 'Sum 8 three-hourly precipitation values per day to get mm/d; convert_forcing_to_velma.py; [''Inspect
-    CMFD temporal resolution: check if files have 8 records per day'', ''Sum daily: precip_mmd = sum(precip_mm3h[0:8])
-    for each day'', ''Verify result: annual total 300-2000 mm for most basins'']; Check CMFD p'
+  remedy: 'Sum 8 three-hourly precipitation values per day to get mm/d BEFORE convert_forcing_to_velma.py
+    (it reads already-daily NetCDF only and does not aggregate); convert_forcing_to_velma.py; [''Inspect
+    CMFD temporal resolution: check if files have 8 records per day'', ''Sum daily: precip_mmd = sum(precip_mm3'
   severity: silent
 - id: dt_velma_003
-  symptom: 'PET is always zero. Actual ET is zero across all four soil layers. Snow never melts even in
-    summer. Model output shows perpetual snow accumulation with SWE growing indefinitely.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] PET is always zero. Actual ET is zero
+    across all four soil layers. Snow never melts even in summer. Model output shows perpetual snow accumulation
+    with SWE growing indefinitely.
 
     '
-  diagnosis: Temperature passed in Celsius instead of Kelvin; VELMA expects temperature in Kelvin. Internally
-    (line 454 of run_validation.py), the model converts to Celsius via T_C = temp_K - 273.15. If temperature
-    is already in Celsius (e.g., 15 C), the model computes T_C = 15 - 273.15 = -258 C. This yields s_r
-  remedy: 'Add 273.15 to temperature values before passing to VELMA; convert_forcing_to_velma.py; [''Check
-    temperature range in forcing: should be 250-320 K, not -20 to 40'', ''If values are in Celsius range,
-    apply: temp_K = temp_C + 273.15'', ''Do NOT pre-convert to Celsius -- VELMA handles conversion internally'']'
+  diagnosis: Temperature passed in Celsius instead of Kelvin; The legacy Python adapter expects temperature
+    in Kelvin. EPA Java weather files require Celsius. Internally (line 454 of run_validation.py), the
+    model converts to Celsius via T_C = temp_K - 273.15. If temperature is already in Celsius (e.g., 15
+    C), th
+  remedy: Confirm runtime units. Legacy Python JSON requires Kelvin; convert Celsius with +273.15. EPA
+    Java weather files require Celsius; convert JSON Kelvin with -273.15 exactly once.; convert_forcing_to_velma.py
   severity: silent
 - id: dt_velma_004
-  symptom: 'PET is unrealistically high (>50 mm/d). Soil layers L1-L3 are depleted within days of simulation
-    start. Streamflow is dominated by surface runoff with no subsurface contribution.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] PET is unrealistically high (>50 mm/d).
+    Soil layers L1-L3 are depleted within days of simulation start. Streamflow is dominated by surface
+    runoff with no subsurface contribution.
 
     '
   diagnosis: 'Solar radiation in MJ/m2/d instead of W/m2; VELMA expects solar radiation in W/m2 for the
@@ -310,8 +291,9 @@ known_issues:
     86.4'']; V'
   severity: silent
 - id: dt_velma_005
-  symptom: 'Percolation from Layer 1 to Layer 2 is extremely slow. Water accumulates in the top 10 cm
-    layer, causing excessive surface runoff. Hydrograph is overly flashy with no baseflow recession.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Percolation from Layer 1 to Layer 2 is
+    extremely slow. Water accumulates in the top 10 cm layer, causing excessive surface runoff. Hydrograph
+    is overly flashy with no baseflow recession.
 
     '
   diagnosis: Hydraulic conductivity (Ksat) in mm/h instead of mm/d; HWSD and many soil databases report
@@ -324,9 +306,9 @@ known_issues:
     soil texture'']; Alw'
   severity: silent
 - id: dt_velma_006
-  symptom: 'Soil layer capacities are 100x too large. Layers never fill to field capacity. Model produces
-    zero runoff and zero lateral flow for years because all precipitation is absorbed into enormous soil
-    storage.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Soil layer capacities are 100x too large.
+    Layers never fill to field capacity. Model produces zero runoff and zero lateral flow for years because
+    all precipitation is absorbed into enormous soil storage.
 
     '
   diagnosis: Porosity specified as percent (e.g., 45) instead of fraction (0.45); VELMA computes layer
@@ -339,9 +321,9 @@ known_issues:
     100'']; Vali'
   severity: silent
 - id: dt_velma_007
-  symptom: 'Simulated discharge (m3/s) is orders of magnitude different from observed gauge data even
-    though the hydrograph shape looks reasonable. NSE is strongly negative despite good timing of peaks
-    and recessions.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Simulated discharge (m3/s) is orders of
+    magnitude different from observed gauge data even though the hydrograph shape looks reasonable. NSE
+    is strongly negative despite good timing of peaks and recessions.
 
     '
   diagnosis: 'Basin area in hectares instead of km2 in the mm/d-to-m3/s conversion; VELMA converts runoff
@@ -354,8 +336,9 @@ known_issues:
     against shapefil'
   severity: silent
 - id: dt_velma_008
-  symptom: 'Model crashes with a JSON parsing error or KeyError when reading forcing data. Error message
-    references missing keys such as ''precip_mm'', ''temp_K'', or ''srad_Wm2'' in the forcing JSON file.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Model crashes with a JSON parsing error
+    or KeyError when reading forcing data. Error message references missing keys such as ''precip_mm'',
+    ''temp_K'', or ''srad_Wm2'' in the forcing JSON file.
 
     '
   diagnosis: 'Forcing JSON file uses wrong key names or has corrupted structure; The VELMA Python tools
@@ -368,8 +351,9 @@ known_issues:
     conver'
   severity: fatal
 - id: dt_velma_009
-  symptom: 'NetCDF read fails with ''variable not found'' error when extracting CMFD forcing data. The
-    error references variable names like ''prec'', ''tmp'', or ''dswrf'' that do not exist in the file.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] NetCDF read fails with ''variable not
+    found'' error when extracting CMFD forcing data. The error references variable names like ''prec'',
+    ''tmp'', or ''dswrf'' that do not exist in the file.
 
     '
   diagnosis: CMFD variable names differ between product versions or are aliased; CMFD V0100 and V0200
@@ -381,11 +365,10 @@ known_issues:
     ds = xarray.open_dataset(''file.nc''); print(list(ds.data_vars))", ''Update variable names in convert_forcing_t'
   severity: fatal
 - id: dt_velma_010
-  symptom: 'Calibration with differential evolution produces parameters that yield excellent training
-    metrics (NSE > 0.9) but terrible validation performance (NSE < 0). The calibrated hydrograph perfectly
-    matches the calibration period but fails completely outside it.
-
-    '
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Calibration with differential evolution
+    produces parameters that yield excellent training metrics (NSE > 0.9) but terrible validation performance
+    (NSE < 0). The calibrated hydrograph perfectly matches the calibration period but fails completely
+    out'
   diagnosis: 'Calibration period includes the spinup year, allowing parameter overfitting to initial transient;
     VELMA requires a spinup year (e.g., 1980) to equilibrate the 4-layer soil water storage before the
     calibration period begins (e.g., 1981-1985). If the spinup year is included in the calibration window, '
@@ -394,9 +377,9 @@ known_issues:
     'Verify that cal-start and cal-end define the actual calibration window']; Always reserve the firs
   severity: silent
 - id: dt_velma_011
-  symptom: 'When running the original Java VELMA via VelmaSimRunner.jar, the model produces no output
-    or incorrect spatial results. The XML configuration file is accepted without error but the simulation
-    behavior is wrong.
+  symptom: '[REAL Java engine] When running the original Java VELMA via VelmaSimRunner.jar, the model
+    produces no output or incorrect spatial results. The XML configuration file is accepted without error
+    but the simulation behavior is wrong.
 
     '
   diagnosis: 'XML configuration references wrong DEM, soil map, or cover map file paths; The Java VELMA
@@ -408,8 +391,9 @@ known_issues:
     ''On Linux, replace backslashes with forward slashes'', ''Use absolute paths to avoid working-direct'
   severity: silent
 - id: dt_velma_012
-  symptom: 'Simulated hydrograph is extremely flashy with sharp peaks and no sustained baseflow recession.
-    Peak flows are overestimated by 2-5x while dry-season flows are near zero.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Simulated hydrograph is extremely flashy
+    with sharp peaks and no sustained baseflow recession. Peak flows are overestimated by 2-5x while dry-season
+    flows are near zero.
 
     '
   diagnosis: Routing split parameter too high, sending nearly all runoff to the fast reservoir; The dual
@@ -422,8 +406,9 @@ known_issues:
     split: [0'
   severity: silent
 - id: dt_velma_013
-  symptom: 'Simulated ET is much too high (>2000 mm/yr in a temperate basin) or much too low (<100 mm/yr).
-    Soil layers dry out too quickly or never lose water to atmosphere. Water balance does not close properly.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Simulated ET is much too high (>2000 mm/yr
+    in a temperate basin) or much too low (<100 mm/yr). Soil layers dry out too quickly or never lose
+    water to atmosphere. Water balance does not close properly.
 
     '
   diagnosis: PET scale parameter (pet_scale) out of reasonable range; The pet_scale parameter multiplies
@@ -435,9 +420,9 @@ known_issues:
     [0'
   severity: silent
 - id: dt_velma_014
-  symptom: 'Layer 4 (deep groundwater, 150-300 cm) accumulates water indefinitely. Groundwater storage
-    grows without bound over multi-year simulations. Baseflow contribution is negligible despite large
-    L4 storage.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Layer 4 (deep groundwater, 150-300 cm)
+    accumulates water indefinitely. Groundwater storage grows without bound over multi-year simulations.
+    Baseflow contribution is negligible despite large L4 storage.
 
     '
   diagnosis: 'Baseflow recession rate (k_base) and lateral flow coefficient (klat4) too low; Layer 4 drains
@@ -450,9 +435,9 @@ known_issues:
     wider bounds f'
   severity: silent
 - id: dt_velma_015
-  symptom: 'Model output contains NaN values in discharge timeseries. Soil water storage in one or more
-    layers becomes NaN or negative. Python raises RuntimeWarning about invalid values in multiply or divide
-    operations.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Model output contains NaN values in discharge
+    timeseries. Soil water storage in one or more layers becomes NaN or negative. Python raises RuntimeWarning
+    about invalid values in multiply or divide operations.
 
     '
   diagnosis: 'Soil water storage drops below zero due to simultaneous over-extraction by ET and lateral
@@ -464,8 +449,9 @@ known_issues:
     for the offending layer'', ''Ensure model code enforces SW_i >= 0 after each extraction'', ''If modif'
   severity: fatal
 - id: dt_velma_016
-  symptom: 'Water balance does not close. The sum of ET + streamflow + storage change does not equal precipitation
-    over multi-year periods. The residual grows over time and exceeds 5-10% of total precipitation.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Water balance does not close. The sum
+    of ET + streamflow + storage change does not equal precipitation over multi-year periods. The residual
+    grows over time and exceeds 5-10% of total precipitation.
 
     '
   diagnosis: Backflow from saturated receiving layers not properly accounted in mass balance; When water
@@ -478,8 +464,9 @@ known_issues:
     each t'
   severity: silent
 - id: dt_velma_017
-  symptom: 'Java VELMA fails to start with ''java.lang.OutOfMemoryError: Java heap space'' or the process
-    is killed by the OS. The model was configured for a large watershed with many spatial cells.
+  symptom: '[REAL Java engine] Java VELMA fails to start with ''java.lang.OutOfMemoryError: Java heap
+    space'' or the process is killed by the OS. The model was configured for a large watershed with many
+    spatial cells.
 
     '
   diagnosis: Default JVM heap size is insufficient for the watershed grid resolution; Java VELMA stores
@@ -491,8 +478,9 @@ known_issues:
     memor'
   severity: fatal
 - id: dt_velma_018
-  symptom: 'Running the Python reimplementation fails with ''ModuleNotFoundError: No module named numpy''
-    or similar import errors for scipy, xarray, or netCDF4.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Running the Python reimplementation fails
+    with ''ModuleNotFoundError: No module named numpy'' or similar import errors for scipy, xarray, or
+    netCDF4.
 
     '
   diagnosis: Required Python dependencies not installed in the active environment; The VELMA Python reimplementation
@@ -504,8 +492,9 @@ known_issues:
     xarr'
   severity: fatal
 - id: dt_velma_019
-  symptom: 'Basin-averaged forcing values are unrealistic (e.g., precipitation is zero or temperature
-    is constant). The forcing converter runs without error but produces flat or missing timeseries.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Basin-averaged forcing values are unrealistic
+    (e.g., precipitation is zero or temperature is constant). The forcing converter runs without error
+    but produces flat or missing timeseries.
 
     '
   diagnosis: Basin shapefile does not overlap with the CMFD grid domain; The forcing converter uses the
@@ -518,8 +507,9 @@ known_issues:
     do'
   severity: silent
 - id: dt_velma_020
-  symptom: 'Basin-averaged precipitation is suspiciously low or high compared to nearby weather stations
-    or known climatology. The forcing converter selects too few or too many CMFD grid cells.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Basin-averaged precipitation is suspiciously
+    low or high compared to nearby weather stations or known climatology. The forcing converter selects
+    too few or too many CMFD grid cells.
 
     '
   diagnosis: Basin area is very small relative to CMFD 0.25-degree grid resolution; CMFD V0200 has 0.25-degree
@@ -532,8 +522,9 @@ known_issues:
     '''
   severity: silent
 - id: dt_velma_021
-  symptom: 'First 1-2 years of simulation show a strong artificial drying or wetting trend that does not
-    correspond to forcing data. Streamflow is abnormally high or low for the first year before stabilizing.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] First 1-2 years of simulation show a strong
+    artificial drying or wetting trend that does not correspond to forcing data. Streamflow is abnormally
+    high or low for the first year before stabilizing.
 
     '
   diagnosis: Initial soil water storage for the 4 layers set far from equilibrium; VELMA initializes each
@@ -546,9 +537,9 @@ known_issues:
     2-3 ye
   severity: silent
 - id: dt_velma_022
-  symptom: 'Snow water equivalent (SWE) at the start of simulation is zero, but the simulation begins
-    in mid-winter. The model produces unrealistically low streamflow during the first spring melt season
-    because there is no snowpack to melt.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Snow water equivalent (SWE) at the start
+    of simulation is zero, but the simulation begins in mid-winter. The model produces unrealistically
+    low streamflow during the first spring melt season because there is no snowpack to melt.
 
     '
   diagnosis: Simulation start date is mid-winter with no initial SWE specified; VELMA initializes SWE
@@ -559,8 +550,9 @@ known_issues:
     January, estimate initial SWE from climatology or SNODAS data', 'At minimum, discard the first wate
   severity: silent
 - id: dt_velma_023
-  symptom: 'Calibration via differential evolution fails to converge. After 80 iterations the objective
-    function has barely improved. Parameter values oscillate wildly between iterations without settling.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Calibration via differential evolution
+    fails to converge. After 80 iterations the objective function has barely improved. Parameter values
+    oscillate wildly between iterations without settling.
 
     '
   diagnosis: Calibration bounds are too wide, creating a 14-dimensional search space too large for the
@@ -573,9 +565,9 @@ known_issues:
     a two-stage c'
   severity: silent
 - id: dt_velma_024
-  symptom: 'Layer thickness values are 10x too small. Layer 1 is computed as 10 mm instead of 100 mm.
-    Layer capacities are minuscule, causing immediate saturation and 100% surface runoff from even light
-    rainfall.
+  symptom: '[SURROGATE only: tools/run_velma.py, NOT EPA VELMA] Layer thickness values are 10x too small.
+    Layer 1 is computed as 10 mm instead of 100 mm. Layer capacities are minuscule, causing immediate
+    saturation and 100% surface runoff from even light rainfall.
 
     '
   diagnosis: 'Layer thickness specified in cm instead of mm; VELMA expects layer thickness in mm (L1:
@@ -586,4 +578,83 @@ known_issues:
     ''Standard VELMA layers: L1=100mm, L2=400mm, L3=1000mm, L4=1500mm'', ''If values are 10, 40, 100,
     150 -- they are in cm; multiply by 10'']; Verify layer capacity = porosity * thickness produces values
     mat'
+  severity: silent
+- id: dt_velma_025
+  symptom: 'The REAL VELMA 2.1 engine stops on day 1 of a VELMA 2.0-era configuration (e.g. the official
+    BlueRiver_Example) and exits 1.
+
+    '
+  diagnosis: In VELMA 2.1 humusCtoN, initialHumusCarbon and humusNmaxDecay are SOIL parameters; a 2.0
+    config sets them only in the cover block, so the soil reads 0 and initialHumusN = 0/0 = NaN.; Found
+    by decompiling JVelma.jar 2.1 (SoilParameters.getInitialHumusN = initialHumusCarbon/humusCtoN; see
+    KISSPATH_HOME
+  remedy: Run through tools/run_velma_engine.py with the default --humus-migration auto (adds the three
+    --kv=/soil/<soil>/<key>,<cover value> overrides; refuses if cover blocks disagree); ['--kv="/soil/Soil3_sandy_loam/humusCtoN,35.7"
+    --kv="/soil/Soil3_sandy_loam/initialHumusCarbon,15000.0" --kv="/soil/Soil3_
+  severity: fatal
+- id: dt_velma_026
+  symptom: 'Real-engine run gives no snow all year or absurd ET/PET, or run_velma_engine.py refuses the
+    temperature driver as "not deg C".
+
+    '
+  diagnosis: The surrogate's forcing JSON (convert_forcing_to_velma.py) is Kelvin; the EPA engine's DefaultWeatherModel
+    files are deg C and mm/day, one value per row, no header, row 1 = forcing_start-01-01.; The official
+    BlueRiver_Example drivers (WS10_Precip_1969-2008.csv, WS10_Temperature_1969-2008.csv) are si
+  remedy: 'Build engine drivers with tools/build_velma_weather_from_source.py (deg C, mm/day, every day,
+    no filling) and pass them with --rain-file / --temp-file / --forcing-start; [''Never feed the Kelvin
+    JSON or add 273.15 for the real engine'']; run_velma_engine.py refuses T outside -60..50 and files
+    shorter '
+  severity: silent
+- id: dt_velma_027
+  symptom: 'A real-engine run is taken as successful because java exited 0, but the run did not complete,
+    or a failed run leaves a partial output folder that a later step reads.
+
+    '
+  diagnosis: The exit code alone is not the success signal; the engine log and DailyResults.csv are.;
+    run_velma_engine.py requires exit 0 AND "Simulation run completed" AND no FAIL!/NaN TRAPPED/ exception
+    lines AND exactly one DailyResults.csv row per day of syear..eyear (dates checked in order) with finite
+    Runo
+  remedy: Always run the engine through tools/run_velma_engine.py and read velma_engine_summary.json (status
+    must be success); ['Read <output-root>/<run_index>_engine_stdout.txt for the first FAIL!/SEVERE line'];
+    Use --overwrite only on purpose; the tool refuses an existing output folder
+  severity: silent
+- id: dt_velma_028
+  symptom: 'The engine''s own Nash-Sutcliffe (NashSutcliffeCoefficients.txt) is near zero or negative
+    after moving forcing_start / syear, while the hydrograph looks fine.
+
+    '
+  diagnosis: input_runoff (observed mm/day) and input_stream_chem are read BY ROW from forcing_start;
+    the official files start 1969-01-01.; When forcing_start moves (e.g. to 1980 for MSWX), the observed
+    files must be cut to start on the same day. 1969-1979 is 4017 rows (leap years 1972/1976). A shifted
+    file pair
+  remedy: Cut the observed runoff and stream chemistry files to start at forcing_start-01-01 and pass
+    them with --observed-runoff / --kv=/calibration/VelmaInputs.properties/input_stream_chem,<file>; ['Rows
+    to skip = number of days from the file start to forcing_start-01-01']; Score with dated series (date
+    col
+  severity: silent
+- id: dt_velma_029
+  symptom: 'Soil water from the real engine looks far too small (values between 0 and 0.45 "mm"), or a
+    water balance built from DailyResults.csv soil columns is off by the whole soil store.
+
+    '
+  diagnosis: 'The DailyResults.csv columns Soil_Moisture(mm)_Delineated_Average_Layer_1..4 hold a volumetric
+    water fraction (m3/m3), not mm, despite the "(mm)" in the header.; At WS10 the values never exceed
+    the soil porosityFraction 0.453 (official example day 1: layers 3-4 = 0.453; MSWX run 1980-2008: layer
+    1 r'
+  remedy: Multiply each layer fraction by that layer's thickness in mm before using it as a storage; ['Read
+    soilColumnDepth and setSoilLayerWeights (or setSoilLayerThicknesses) of the soil block in the configuration
+    xml']; Compare soil moisture to probes as a volumetric fraction, never as mm
+  severity: silent
+- id: dt_velma_030
+  symptom: 'Real-engine discharge in m3/s is about 40 % higher than the gauge although runoff depth (mm/day)
+    agrees, or two runs of the same site report different Q_sim_m3s for the same runoff.
+
+    '
+  diagnosis: Runoff_All is a depth (mm/day) averaged over the engine's DELINEATED watershed; turning it
+    into m3/s needs an area, and the delineated area can differ from the gauged area.; At WS10 the engine
+    delineates 162 cells x 30 m x 30 m = 0.1458 km2 (ReachSummary.csv), while the gauged area is 10.2
+    ha = 0.10
+  remedy: 'Pass --area-km2 <gauged drainage area> when Q_sim_m3s will be compared with a gauge, or compare
+    runoff depths (mm/day) directly; [''Check velma_engine_summary.json q_area_km2 before scoring Q_sim_m3s''];
+    Score the same area on both sides; the scale-free metrics (NSE, KGE, r, PBIAS) do not change when '
   severity: silent

@@ -27,16 +27,17 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
-| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (30 entries; 001-024 written for the SURROGATE, 025-030 for the real engine) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity = the REAL EPA VELMA 2.1 engine (the Python SURROGATE's separate contract is `docs/surrogate_velma_4layer_dag.yaml`): every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-07 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -47,34 +48,146 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | tool (exact path) | invocation |
 |---|---|
-| `tools/convert_forcing_to_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_velma.py --help` |
-| `tools/convert_soil_to_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_velma.py --help` |
-| `tools/parse_output_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_velma.py --help` |
-| `tools/run_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_velma.py --help` |
+| `tools/build_velma_weather_from_source.py` (**REAL engine weather drivers**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_velma_weather_from_source.py --help` |
+| `tools/convert_forcing_to_velma.py` (**SURROGATE input, not VELMA**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_velma.py --help` |
+| `tools/convert_soil_to_velma.py` (**SURROGATE input, not VELMA**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_velma.py --help` |
+| `tools/parse_output_velma.py` (**SURROGATE output, not VELMA**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_velma.py --help` |
+| `tools/run_velma.py` (**SURROGATE, not VELMA**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_velma.py --help` |
+| `tools/run_velma_engine.py` (**REAL engine, default run route**) | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_velma_engine.py --help` |
 
-*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # VELMA Knowledge Infrastructure
 
 **Package**: hydrocraft-velma v1.0.0
 **Model**: VELMA (Visualizing Ecosystem Land Management Assessments)
-**Domain**: Multi-layer ecohydrological soil water balance
-**Language**: Java (original, USEPA); Python (analytic reimplementation)
+**Domain**: Spatially distributed ecohydrology (water, carbon, nitrogen) on a DEM grid
+**Language**: Java — the REAL EPA VELMA 2.1 engine (`tools/run_velma_engine.py`).
+Python `tools/run_velma.py` is a SURROGATE (lumped 4-layer stand-in), not VELMA.
+
+## REAL ENGINE — EPA VELMA 2.1 (use this for every result)
+
+The real engine is installed: `KISSPATH_HOME/engine_builds_20261006/VELMA/run_velma_headless.sh`
+(= `java -Djava.awt.headless=true -Xmx8g -cp jars/JVelma.jar gov.epa.velmasimulator.VelmaSimulatorCmdLine`,
+reports `VELMA_2.1.1.0`). Build log and official example run:
+`KISSPATH_HOME/engine_builds_20261006/VELMA/BUILD_LOG.md`.
+
+**SURROGATE WARNING.** `tools/run_velma.py` (and `convert_forcing_to_velma.py` /
+`convert_soil_to_velma.py` / `parse_output_velma.py`, which feed it) is a Python
+re-implementation written for this KI: one lumped 4-layer bucket with linear
+reservoirs. It is NOT the EPA model and its numbers must never be reported as
+VELMA results. Every section below whose heading says SURROGATE (1, 2's Python part,
+4, 6b, 7, 8, 9, 10, 11, 12) describes that stand-in, not EPA VELMA. Its full I/O
+contract is `docs/surrogate_velma_4layer_dag.yaml`; `dag.yaml` describes the real engine.
+
+### Real-engine tools
+
+| Stage | Tool | What it does |
+|---|---|---|
+| weather drivers | `tools/build_velma_weather_from_source.py` | cmfd / mswx / nasa_power at --lat/--lon via `ki_tools_common.load_forcing` -> one-column daily files: P **mm/day**, mean air T **deg C** (never Kelvin). MSWX read SERIALLY (exfat), P+Tair only, per-year cache (resumable). |
+| run + check | `tools/run_velma_engine.py` | drives the engine headless with `--kv` overrides (the xml is never edited), does the 2.0->2.1 humus migration, and judges success from the log + `DailyResults.csv`. Writes `velma_engine_summary.json` and `velma_daily_runoff.csv` (date, runoff_mm_d, Q_sim_m3s). Exit 0 ok / 2 refused input / 3 engine failed / 4 exit 0 but checks failed. |
+
+### Official example (reproduce first)
+
+```bash
+PY=KISSPATH_PYTHON_ENV/bin/python
+W=<work dir>; mkdir -p $W/inputs
+cp -r KISSPATH_HOME/engine_builds_20261006/VELMA/runs/inputs/BlueRiver_Example $W/inputs/
+$PY tools/run_velma_engine.py \
+  --config $W/inputs/BlueRiver_Example/BlueRiver_WS10_Example_Configuration.xml \
+  --input-root $W/inputs --output-root $W/out
+# expect: status success, engine_nse = 0.7954119608437563, RMSE 3.6089 mm/d,
+#         14610 days 1969-2008, ~60 s; DailyResults.csv byte-identical to the build-log run
+#         (sha256 d690b67f2af3acd11721eb27f5c7e5f2d6ad8155cadd9f645ae670634b053ce8)
+```
+
+### Validated results (real engine)
+
+| Case | Weather | Period | Engine NSE (mm/d) | Notes |
+|---|---|---|---|---|
+| Official BlueRiver_Example, HJA WS10 (OR) | HJA station P/T shipped with the example | 1969-2008 | 0.7954 (RMSE 3.609 mm/d) | 2026-10-06, `run_velma_engine.py`, matches the build log exactly; official parameters, no calibration |
+| HJA WS10 real case | MSWX (nearest 0.1 deg cell), P + Tair via `build_velma_weather_from_source.py` | 1981-2008 scored (1980 warm-up) | 0.5933 | **Validation** (no calibration by us). Daily Q, 10,227 days: NSE 0.593, KGE 0.560, PBIAS -14.3 %, r 0.787 -> meets the convention bands (NSE >= 0.5, abs PBIAS <= 15 %). Spin-up 1969-79 on station weather (1975 clearcut), state carried into 1980. Same window with station weather: NSE 0.796. EPA set the parameters up for WS10 with station weather, so this tests the weather input, not a new site. Reproduce: `KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_VELMA/score_ws10_mswx.py` |
+
+Mean annual (official example): rain+snow 2217 mm, simulated runoff 1715 mm (observed 1483 mm), ET 698 mm.
+
+### Real-engine traps (see triplets dt_velma_025..030)
+
+- **2.0 config on the 2.1 engine stops on day 1** with `NaN TRAPPED! nitrificationAmount=NaN`:
+  in 2.1 `humusCtoN`, `initialHumusCarbon`, `humusNmaxDecay` are SOIL keys.
+  `run_velma_engine.py` copies them from the cover block (default `--humus-migration auto`);
+  with `--humus-migration off` the same run exits 3 (proven).
+- **Weather files are deg C and mm/day, one value per row, no header, row 1 = forcing_start-01-01**,
+  every day present. The Kelvin JSON of `convert_forcing_to_velma.py` is for the surrogate only.
+  `run_velma_engine.py` refuses temperatures outside -60..50 (Kelvin) and short files.
+- **Observed runoff (`input_runoff`) and stream chemistry files are read BY ROW from
+  `forcing_start`** — when you move forcing_start, cut these files to the same first day.
+- **Spin-up / restart**: `--end-state-dir D` saves the end-of-run spatial maps; the next run
+  takes `--start-state-dir D` (VELMA manual 2.0 sec. 20-21). Tested at WS10: a 1969-78 spin-up +
+  1979-80 restart matches the continuous run to 0.06 mm/d runoff. Use it when the new weather
+  product starts after the site history you need (e.g. the 1975 WS10 clearcut, MSWX from 1980).
+- **Exit code 0 is not enough**: the tool also needs `Simulation run completed`, no `FAIL!`/
+  `NaN TRAPPED`/exception lines, and one DailyResults row per day.
+- **Outputs**: `Runoff_All(mm/day)_Delineated_Average` is the outlet runoff the engine
+  scores against `input_runoff` (mm/day over the DELINEATED area, from ReachSummary.csv;
+  WS10: 162 cells x 30 m = 14.6 ha vs 10.2 ha gauged). `Soil_Moisture(mm)_..._Layer_n`
+  columns hold a volumetric fraction (start value = porosity), despite the "(mm)" label.
+- **Water balance**: the engine's own outputs do not close: official example 1969-2008
+  P 2217 - ET 698 - Q 1715 = -196 mm/yr (-8.8 % of P). This is engine accounting, not
+  a unit error in your inputs; report it, do not "fix" it.
+- The output folder `<output-root>/<run_index>` must not exist (use `--overwrite`).
+- MSWX `P/P_1979.nc` has a faulty time axis: the shared loader refuses 1979; start MSWX runs in 1980.
+
+---
+
 **License**: Public domain (USEPA)
 **Created**: 2026-03-30
-**Validation**: Bengbu station (51080), Huai River Basin, China (1980--1990)
+
+The facts block below is the OLD Python SURROGATE's (Bengbu, Huai River); it is not a VELMA result.
+
+**Surrogate validation**: Bengbu station (51080), Huai River Basin, China (1980--1990)
 
 | Metric | Value |
 |--------|-------|
-| Tools | 4 |
+| Tools (surrogate era) | 4 |
 | Pipeline stages | 7 |
-| Diagnostic triplets | 14 |
+| Diagnostic triplets (surrogate era) | 14 |
 | Validation basin | Huai River at Bengbu |
-| Calibration NSE | 0.80 |
-| Validation KGE | 0.80 |
+| Calibration NSE (surrogate) | 0.80 |
+| Validation KGE (surrogate) | 0.80 |
 
 ---
+
+## Repair scope and runtime identity
+
+`tools/convert_forcing_to_velma.py` now rejects missing fields, dates, active-grid
+values and invalid physical values before writing output. It performs no filling,
+interpolation, date intersection, truncation or rounding of forcing values.
+The calendar must contain every day of every requested year, including leap days.
+Already-daily input is required; subdaily records must be validated and aggregated
+upstream. All polygon features are reprojected from their declared CRS and used;
+no selected grid-cell centres is an error. Spatial means retain the existing equal
+cell weights and require all selected values to be present.
+
+The hydrology equations, JSON schema and Kelvin temperature contract described
+below belong to the local **Python analytic approximation** in `run_velma.py`.
+They are not evidence of equivalence to EPA's original distributed Java model.
+The historical Bengbu performance numbers below apply only to that local
+approximation and have not been independently reproduced by this repair.
+The KI preflight now checks the REAL engine (launcher, JVelma.jar banner,
+`run_velma_engine.py`) as critical, and the Python surrogate as non-critical.
+
+EPA Java uses precipitation in mm and air temperature in Celsius in its weather
+files, plus the native spatial maps and XML configuration. The converter's
+explicit `--solar-mode unused` omits solar (never fabricates it) for preparing
+P/T inputs for that native route. Export `temp_K - 273.15` to the native Celsius
+file exactly once; the JSON itself is not a native Java input. Do not pass the
+solar-omitting JSON to the Python runner. (2026-10-07: `dag.yaml` now describes the
+real engine; the surrogate's contract moved to `docs/surrogate_velma_4layer_dag.yaml`.)
+
+Official documentation: [required inputs](https://usepa.github.io/VELMA_Public/version/2.1/getting_started/Required_Input_Files.html),
+[Java example](https://usepa.github.io/VELMA_Public/version/2.1/getting_started/Quickstart.html),
+[command line](https://usepa.github.io/VELMA_Public/version/2.1/getting_started/VelmaSimRunner.html).
 
 ## Data Preparation
 
@@ -87,14 +200,14 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 
 
-## 1. Overview
+## 1. Overview of the Python SURROGATE (NOT EPA VELMA)
 
-VELMA is a physically-based ecohydrological model developed by the US EPA
-Office of Research and Development. It simulates coupled water, carbon, and
-nutrient cycles across watersheds using a vertically-layered soil column
-approach. This KI focuses on the hydrological core.
+EPA VELMA itself is a spatially distributed ecohydrological model (DEM grid,
+4-layer soil column per cell, coupled water, carbon and nitrogen); `dag.yaml`
+describes it. Everything in this section is the Python SURROGATE
+(`tools/run_velma.py`), a lumped stand-in written for this KI.
 
-Core physics:
+Surrogate physics:
 
 - **Multi-layer soil water balance (4 layers)**: Tracks water storage in 4
   vertical layers (L1: 0-10 cm, L2: 10-50 cm, L3: 50-150 cm, L4: 150-300 cm).
@@ -152,7 +265,7 @@ a simplification of its distributed architecture.
 
 ## 2. Installation
 
-### Analytic reimplementation (Python)
+### Python SURROGATE (not VELMA)
 
 The VELMA Java source is available from USEPA but requires specific runtime
 configuration. This KI provides a Python analytic reimplementation of the
@@ -163,13 +276,11 @@ core hydrological physics.
 pip install numpy pandas xarray geopandas scipy matplotlib shapely netCDF4
 ```
 
-### Original Java application (when available)
+### Real EPA VELMA 2.1 engine (installed)
 
-```bash
-# Download from USEPA VELMA website
-# Requires Java 8+ and VelmaSimRunner.jar
-java -jar VelmaSimRunner.jar --config velma_config.xml
-```
+Installed at `KISSPATH_HOME/engine_builds_20261006/VELMA/` (Java 21, `jars/JVelma.jar`,
+launcher `run_velma_headless.sh`). Always run it through `tools/run_velma_engine.py`
+(see REAL ENGINE above); `preflight_check.py` checks the launcher, the jar banner and the tool.
 
 ### Dependencies
 
@@ -187,6 +298,10 @@ java -jar VelmaSimRunner.jar --config velma_config.xml
 ---
 
 ## 3. Pipeline
+
+**Real engine pipeline** (use this): `build_velma_weather_from_source.py` -> `run_velma_engine.py`
+(official example config + site maps; optional spin-up with `--end-state-dir` / `--start-state-dir`).
+The table below is the **Python SURROGATE** pipeline (not VELMA):
 
 | # | Stage                  | Tool                           | Description                                               |
 |---|------------------------|--------------------------------|-----------------------------------------------------------|
@@ -215,7 +330,9 @@ Per-stage operating docs live under `docs/`:
 
 ---
 
-## 4. Unit Table and Unit Trap Table
+## 4. Unit Table and Unit Trap Table (Python SURROGATE inputs)
+
+The REAL engine takes precipitation in mm/day and air temperature in deg C (one value per line); see REAL ENGINE above and dt_velma_026. The rest of this section is the surrogate's.
 
 These unit conversions cause **silent failures** if wrong. VELMA expects
 specific units at each interface -- errors propagate without warnings.
@@ -264,7 +381,7 @@ units are almost certainly wrong (kg/m2/s vs mm/d). If PET is absurdly high
 (>50 mm/d), temperature is probably still in Kelvin being subtracted by 273.15
 a second time.
 
-**CRITICAL**: VELMA expects temperature in Kelvin. The model converts to Celsius
+**CRITICAL (SURROGATE only)**: the Python surrogate expects temperature in Kelvin (the REAL VELMA engine expects deg C). The surrogate converts to Celsius
 internally (line 454 of run_validation.py: `T_C = temp_K - 273.15`). Do NOT
 pre-convert temperature to Celsius -- doing so causes negative Kelvin-equivalent
 values and zero PET.
@@ -275,10 +392,12 @@ values and zero PET.
 
 | Tool                       | Stage       | Script                           | Purpose                                         |
 |----------------------------|-------------|----------------------------------|-------------------------------------------------|
-| `convert_forcing_to_velma` | s1_forcing  | `tools/convert_forcing_to_velma.py` | CMFD NetCDF to daily P (mm/d) + T (K) + srad |
-| `convert_soil_to_velma`    | s2_params   | `tools/convert_soil_to_velma.py`    | HWSD to 4-layer soil parameters               |
-| `run_velma`                | s5_execute  | `tools/run_velma.py`                | Execute lumped 4-layer model                  |
-| `parse_output_velma`       | s6_output   | `tools/parse_output_velma.py`       | Parse discharge, compute NSE/KGE/PBIAS        |
+| `run_velma_engine`         | s5_execute (REAL) | `tools/run_velma_engine.py`  | Run EPA VELMA 2.1 JVelma.jar headless + success checks |
+| `build_velma_weather_from_source` | s1_forcing (REAL) | `tools/build_velma_weather_from_source.py` | cmfd/mswx/nasa_power -> engine P (mm/d) + T (deg C) drivers |
+| `convert_forcing_to_velma` | s1_forcing (SURROGATE) | `tools/convert_forcing_to_velma.py` | CMFD NetCDF to daily P (mm/d) + T (K) + srad |
+| `convert_soil_to_velma`    | s2_params (SURROGATE) | `tools/convert_soil_to_velma.py`    | HWSD to 4-layer soil parameters               |
+| `run_velma`                | s5_execute (SURROGATE) | `tools/run_velma.py`     | Python stand-in, NOT VELMA                    |
+| `parse_output_velma`       | s6_output (SURROGATE) | `tools/parse_output_velma.py`       | Parse discharge, compute NSE/KGE/PBIAS        |
 
 All tools follow the **validate -> process -> validate** pattern:
 1. Parse CLI arguments with `argparse`
@@ -291,40 +410,38 @@ All tools follow the **validate -> process -> validate** pattern:
 
 ## 6. Output Description
 
-**Source**: `dag.yaml`. The dag is the model's identity; if this section and
+**Source**: `dag.yaml` (the REAL engine). The dag is the model's identity; if this section and
 `dag.yaml` ever disagree, `dag.yaml` wins and this section is the bug.
 
 **Headline output** (the dag's rank-1 variable -- the one this model is judged by):
 
-> `Q_sim_m3s` -- Simulated daily discharge at the basin outlet (lumped fast+slow reservoir release scaled by basin area). (`m3/s`)
+> `Q_sim_m3s` -- daily outlet discharge = `Runoff_All(mm/day)_Delineated_Average` x area / 86400 s,
+> written by `run_velma_engine.py` to `velma_daily_runoff.csv`; pass `--area-km2 <gauged area>` when
+> comparing with a gauge (`m3/s`).
 
-Other dag outputs: `mean_et_mm_d`, `mean_runoff_mm_d`, `final_swe_mm`,
-`final_sw_mm[4]`.
+| Output variable (dag `var`) | Rank | Unit | Engine source |
+|-----------------------------|------|------|---------------|
+| `Q_sim_m3s` | 1 | `m3/s` | `velma_daily_runoff.csv` Q_sim_m3s (from Runoff_All) |
+| `mean_runoff_mm_d` | 2 | `mm/d` | DailyResults `Runoff_All(mm/day)_Delineated_Average` (daily) |
+| `mean_et_mm_d` | 3 | `mm/d` | DailyResults `ET(mm/day)_Delineated_Average` (daily) |
+| `final_sw_mm[4]` | 4 | `m3/m3` | DailyResults `Soil_Moisture(mm)_Delineated_Average_Layer_1..4` -- a FRACTION despite "(mm)" (dt_velma_029) |
+| `final_swe_mm` | 5 | `mm` | DailyResults `Snow_Depth(mm)_Delineated_Average` (snow store, mm of water) |
 
-| Output variable (dag `var`) | Rank | Unit | Description |
-|-----------------------------|------|------|-------------|
-| `Q_sim_m3s` | 1 | `m3/s` | Simulated daily discharge at the basin outlet (lumped fast+slow reservoir release scaled by basin area). |
-| `mean_et_mm_d` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
-| `mean_runoff_mm_d` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
-| `final_swe_mm` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
-| `final_sw_mm[4]` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
-
-Use `Q_sim_m3s` for the headline validation and observed-discharge binding.
-The other outputs are supporting dag outputs; read `dag.yaml` before making
-unit, medium, rank, or description claims about them.
+All DailyResults columns are averages over the engine's delineated watershed. The SURROGATE's
+outputs (same names, different meaning) are in `docs/surrogate_velma_4layer_dag.yaml`.
 
 ---
 
-## 6. Critical Domain Knowledge
+## 6b. Critical Domain Knowledge (Python SURROGATE)
 
-These non-obvious facts cause silent failures. Each links to a diagnostic triplet.
+These non-obvious facts cause silent failures in the SURROGATE pipeline. Each links to a diagnostic triplet. Item 1 (precipitation units) also applies to the real engine's drivers.
 
 1. **dt_001**: CMFD precipitation is in kg/m2/s (= mm/s). Multiply by 86400
    to get mm/d. The explicit constant is `CMFD_PRECIP_KGM2S_TO_MMDAY = 86400.0`.
    Forgetting this makes precipitation ~0.03 mm/d instead of ~2.7 mm/d,
    producing near-zero runoff.
 
-2. **dt_004 / dt_005**: VELMA expects temperature in Kelvin. The model converts
+2. **dt_004 / dt_005**: The SURROGATE expects temperature in Kelvin (the real engine: deg C). The model converts
    to Celsius internally for PET computation. If you pass Celsius, the model
    subtracts 273.15 from values like 15, yielding -258 C and zero PET. This
    is a common mistake because most other hydrology models expect Celsius.
@@ -359,7 +476,7 @@ These non-obvious facts cause silent failures. Each links to a diagnostic triple
 
 ---
 
-## 7. VELMA Parameters (lumped 4-layer model)
+## 7. SURROGATE Parameters (lumped 4-layer stand-in; not EPA VELMA parameters)
 
 | Parameter   | Symbol    | Unit   | Range         | Sensitivity | Description                                |
 |-------------|-----------|--------|---------------|-------------|--------------------------------------------|
@@ -380,7 +497,7 @@ These non-obvious facts cause silent failures. Each links to a diagnostic triple
 
 ---
 
-## 8. Multi-Layer Soil Physics
+## 8. SURROGATE Soil Physics (lumped 4-layer stand-in; not EPA VELMA)
 
 ### Layer structure
 
@@ -453,7 +570,7 @@ else:
 
 ---
 
-## 9. Validated Results
+## 9. Historical Python SURROGATE results (not VELMA; not revalidated here)
 
 **Basin**: Huai River at Bengbu (Station 51080), China
 **Area**: 121,330 km2
@@ -470,6 +587,9 @@ Objective: -(0.5*NSE + 0.5*KGE - 0.002*|PBIAS|) on 1981--1985 calibration period
 Spinup year: 1980.
 
 ### Performance bars from validation convention
+
+(The numbers discussed right below are the SURROGATE's Bengbu numbers. The real engine's WS10
+result is under REAL ENGINE -> Validated results.)
 
 **Source**: `docs/validation_convention.yaml`. The convention is the authority
 for metric direction, pass-bands, and citation keys; if these bars and the
@@ -492,7 +612,7 @@ absolute-PBIAS threshold of 15.0 (`ortuani2020`, `golmohammadi2014`).
 
 ---
 
-## 10. Coupling Points
+## 10. Coupling Points (Python SURROGATE pipeline)
 
 | Source              | Target              | Variable     | Unit    | Notes                                |
 |---------------------|---------------------|--------------|---------|--------------------------------------|
@@ -506,7 +626,7 @@ absolute-PBIAS threshold of 15.0 (`ortuani2020`, `golmohammadi2014`).
 
 ---
 
-## 11. Data Requirements
+## 11. Data Requirements (Python SURROGATE pipeline; the real engine needs a VELMA configuration + P/T drivers)
 
 | Data Type            | Source            | Unit          | Required | Path / Notes                              |
 |----------------------|-------------------|---------------|----------|-------------------------------------------|
@@ -522,10 +642,10 @@ absolute-PBIAS threshold of 15.0 (`ortuani2020`, `golmohammadi2014`).
 
 ---
 
-## 12. Quick Start
+## 12. Quick Start (Python SURROGATE -- NOT VELMA; for VELMA results use REAL ENGINE above)
 
 ```bash
-# 1. Convert CMFD forcing to VELMA format
+# SURROGATE ONLY. 1. Convert CMFD forcing to the surrogate's Kelvin JSON
 python ki/tools/convert_forcing_to_velma.py \
   --forcing-dir /path/to/CMFD/Data_forcing_01dy_025deg \
   --shapefile /path/to/basin.shp \
@@ -566,7 +686,7 @@ python ki/tools/run_velma.py \
 
 ---
 
-## 13. Diagnostic Triplets Summary
+## 13. Diagnostic Triplets Summary (surrogate-era entries; real-engine entries dt_velma_025..030 are listed under REAL ENGINE)
 
 | ID     | Stage      | Failure Domain    | Severity | Symptom                                          |
 |--------|------------|-------------------|----------|--------------------------------------------------|
@@ -593,8 +713,12 @@ python ki/tools/run_velma.py \
 ki/
   SKILL.md                             # This file -- agent entry point
   tools/
-    convert_forcing_to_velma.py        # Stage 1: CMFD/ERA5 -> daily P, T(K), srad
-    convert_soil_to_velma.py           # Stage 2: Soil data -> 4-layer params
-    run_velma.py                       # Stage 5: Execute lumped 4-layer model
-    parse_output_velma.py              # Stage 6: Parse output + metrics
+    run_velma_engine.py                # REAL engine: EPA VELMA 2.1 headless + success checks
+    build_velma_weather_from_source.py # REAL engine: P (mm/day) + T (deg C) driver files
+    convert_forcing_to_velma.py        # SURROGATE Stage 1: CMFD/ERA5 -> daily P, T(K), srad
+    convert_soil_to_velma.py           # SURROGATE Stage 2: Soil data -> 4-layer params
+    run_velma.py                       # SURROGATE Stage 5: Python lumped 4-layer stand-in (NOT VELMA)
+    parse_output_velma.py              # SURROGATE Stage 6: Parse output + metrics
+  dag.yaml                             # REAL engine contract (model identity)
+  docs/surrogate_velma_4layer_dag.yaml # SURROGATE contract (not VELMA)
 ```

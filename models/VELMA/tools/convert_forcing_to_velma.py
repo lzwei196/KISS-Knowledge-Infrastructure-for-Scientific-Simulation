@@ -1,41 +1,19 @@
 #!/usr/bin/env python3
-"""
-convert_forcing_to_velma.py -- Convert global gridded climate data to VELMA
-daily forcing format.
+"""SURROGATE -- NOT EPA VELMA. This converter writes the surrogate's Kelvin forcing JSON (not an EPA VELMA input).
+It belongs to the Python lumped 4-layer stand-in (tools/run_velma.py), a HydroCraft
+re-implementation; its numbers are never VELMA results. The real model is EPA VELMA 2.1
+(JVelma.jar), run by tools/run_velma_engine.py with weather drivers from
+tools/build_velma_weather_from_source.py (P mm/day, T deg C).
+The surrogate's full I/O contract is docs/surrogate_velma_4layer_dag.yaml.
 
-Reads CMFD (or ERA5) NetCDF files containing precipitation, temperature, and
-solar radiation, masks them to a basin using a shapefile, computes basin-average
-daily values, and writes output as JSON with the converted time series.
+Strict daily forcing preparation for the legacy Python VELMA adapter.
 
-VELMA expects:
-  - Precipitation:    mm/d     (daily total)
-  - Temperature:      K        (Kelvin -- model converts to C internally)
-  - Solar radiation:  W/m2     (daily mean, for Hargreaves PET)
-  - Wind speed:       m/s      (optional, not used in current PET)
-  - Surface pressure: Pa       (optional)
-  - Specific humidity:kg/kg    (optional)
-
-CRITICAL UNIT TRAPS:
-  - CMFD precipitation is in kg/m2/s (= mm/s). Multiply by 86400 for mm/d.
-    Forgetting this produces ~0.03 mm/d instead of ~2.7 mm/d (dt_001).
-  - CMFD temperature is in K.  VELMA expects Kelvin -- do NOT subtract 273.15.
-    The model converts to Celsius internally at line 454 of run_validation.py.
-    Pre-converting to Celsius causes T_C = C - 273.15 = negative hundreds,
-    yielding zero PET and zero ET (dt_004).
-  - CMFD solar radiation is in W/m2. If source is MJ/m2/d, divide by 0.0864.
-    Wrong srad units make PET off by an order of magnitude (dt_006).
-  - ERA5 precipitation may be in m/d. Multiply by 1000 for mm/d (dt_003).
-  - If mean precip > 50 mm/d, likely units are wrong (mm/3h not mm/d).
-  - If mean precip < 0.1 mm/d, likely units are wrong (kg/m2/s not mm/d).
-
-Usage:
-    python convert_forcing_to_velma.py \\
-        --forcing-dir /path/to/CMFD/Data_forcing_01dy_025deg \\
-        --shapefile /path/to/basin.shp \\
-        --years 1980-1990 \\
-        --prec-var prec --temp-var temp --srad-var srad \\
-        --prec-unit kg/m2/s --temp-unit K --srad-unit W/m2 \\
-        --output forcing.json
+JSON uses P in mm/day, temperature in Kelvin and solar in W/m2.
+EPA's original Java model uses Celsius weather files, not this JSON schema.
+Explicit --solar-mode unused omits solar for native Java P/T preparation;
+it must not be used with the Python runner. No values or dates are filled.
+Only already-daily NetCDF sources are supported; subdaily inputs must be
+validated and aggregated upstream. All requested years must be complete.
 """
 
 import argparse
@@ -70,7 +48,6 @@ except ImportError:
 # Precipitation: CMFD is kg/m2/s = mm/s.  Model needs mm/d.
 CMFD_PRECIP_KGM2S_TO_MMDAY = 86400.0   # kg/m2/s -> mm/d  (1 kg/m2/s = 1 mm/s * 86400 s/d)
 M_D_TO_MM_D = 1000.0                    # m/d -> mm/d
-MM_3H_TO_MM_D = 1.0                     # mm/3h values must be SUMMED (8 per day), not scaled
 
 # Temperature: VELMA expects Kelvin internally.
 # If source is Celsius, ADD 273.15.  If source is already K, no conversion.
@@ -104,7 +81,7 @@ def validate_inputs(args):
     except (ValueError, IndexError):
         errors.append(f"Cannot parse year range '{args.years}'. Use YYYY-YYYY format.")
 
-    valid_prec_units = ["kg/m2/s", "mm/d", "m/d", "mm/3h"]
+    valid_prec_units = ["kg/m2/s", "mm/d", "m/d"]
     if args.prec_unit not in valid_prec_units:
         errors.append(
             f"Invalid prec unit '{args.prec_unit}'. Must be one of {valid_prec_units}")
@@ -141,7 +118,7 @@ def convert_precipitation(values, from_unit):
       kg/m2/s -> mm/d:  multiply by CMFD_PRECIP_KGM2S_TO_MMDAY (86400)
       m/d     -> mm/d:  multiply by 1000
       mm/d    -> mm/d:  no conversion
-      mm/3h   -> mm/d:  values should already be daily sums; pass through
+      mm/3h is rejected: validate and aggregate subdaily data upstream.
     """
     if from_unit == "mm/d":
         return values
@@ -150,8 +127,7 @@ def convert_precipitation(values, from_unit):
     elif from_unit == "m/d":
         return values * M_D_TO_MM_D
     elif from_unit == "mm/3h":
-        # Assumes input is already daily sum of 8 x 3-hourly values
-        return values
+        raise ValueError("mm/3h is subdaily. Validate all eight steps and aggregate upstream; supply daily totals as mm/d")
     else:
         raise ValueError(f"Unknown precipitation unit: {from_unit}")
 
@@ -159,7 +135,7 @@ def convert_precipitation(values, from_unit):
 def convert_temperature(values, from_unit):
     """Convert temperature to Kelvin.
 
-    CRITICAL: VELMA expects Kelvin. The model subtracts 273.15 internally.
+    CRITICAL: The legacy Python adapter expects Kelvin. The model subtracts 273.15 internally.
     Pre-converting to Celsius causes the model to compute T_C = C - 273.15,
     giving values like -258 C, which makes PET = 0 and ET = 0 (dt_004).
     """
@@ -190,320 +166,169 @@ def convert_solar_radiation(values, from_unit):
         raise ValueError(f"Unknown solar radiation unit: {from_unit}")
 
 
+def _daily_index(index, years, label):
+    dates = pd.DatetimeIndex(index)
+    expected = pd.date_range(f"{years[0]}-01-01", f"{years[-1]}-12-31")
+    if dates.tz is not None or dates.hasnans or not dates.normalize().equals(expected):
+        raise ValueError(f"{label}: require exactly one ordered record per requested day, including leap days; no duplicate, missing or extra dates")
+    return dates.normalize()
+
+
 def load_and_mask_cmfd(forcing_dir, shapefile, years, prec_var, temp_var,
-                       srad_var, file_pattern, log):
-    """Load CMFD NetCDF files, mask to basin, return basin-average daily series.
+                       srad_var, file_pattern, log, source_units=None):
+    """Read complete daily fields. Never reduce over missing active cells.
 
-    Parameters
-    ----------
-    forcing_dir : str
-        Directory containing NetCDF files.
-    shapefile : str
-        Path to basin boundary shapefile.
-    years : list of int
-        Years to load.
-    prec_var, temp_var, srad_var : str
-        Variable names for precipitation, temperature, solar radiation in filenames.
-    file_pattern : str
-        Filename pattern with {var} and {year} placeholders.
-    log : list
-        Accumulates log messages.
-
-    Returns
-    -------
-    prec_raw : pd.Series
-        Basin-average precipitation in source units, indexed by date.
-    temp_raw : pd.Series
-        Basin-average temperature in source units, indexed by date.
-    srad_raw : pd.Series
-        Basin-average solar radiation in source units, indexed by date.
+    Cell centres covered by the union of all basin polygons receive equal
+    weight, preserving the existing arithmetic spatial-mean convention.
+    A field with no selected centre is an error, not a bounding-box fallback.
+    Passing srad_var=None explicitly omits the unused solar field.
     """
     gdf = gpd.read_file(shapefile)
-    basin_bounds = gdf.total_bounds  # [minx, miny, maxx, maxy]
-    log.append(f"Basin bounds: lon [{basin_bounds[0]:.2f}, {basin_bounds[2]:.2f}], "
-               f"lat [{basin_bounds[1]:.2f}, {basin_bounds[3]:.2f}]")
-
-    basin_geom = gdf.geometry.iloc[0]
-    mask_2d_cache = {}
-
-    def load_var(var_name, years_list):
-        """Load a single variable across years, mask, return basin-avg series."""
-        datasets = []
-        for yr in years_list:
-            fn = file_pattern.format(var=var_name, year=yr)
-            full_path = os.path.join(forcing_dir, fn)
-            if not os.path.isfile(full_path):
-                log.append(f"[WARN] File not found: {full_path}")
-                continue
-            ds = xr.open_dataset(full_path)
-            datasets.append(ds)
-
-        if not datasets:
-            raise FileNotFoundError(
-                f"No files found for variable '{var_name}' in {forcing_dir}")
-
-        combined = xr.concat(datasets, dim="time")
-
-        # Determine coordinate names (CMFD uses 'x' and 'y')
-        lon_name = "x" if "x" in combined.dims else "longitude"
-        lat_name = "y" if "y" in combined.dims else "latitude"
-
-        # Crop to basin bounding box with buffer
-        buf = 0.125
-        lon_vals = combined[lon_name].values
-        lat_vals = combined[lat_name].values
-        mask_x = (lon_vals >= basin_bounds[0] - buf) & (lon_vals <= basin_bounds[2] + buf)
-        mask_y = (lat_vals >= basin_bounds[1] - buf) & (lat_vals <= basin_bounds[3] + buf)
-        cropped = combined.isel(
-            **{lon_name: mask_x, lat_name: mask_y})
-
-        # Build 2D mask from shapefile geometry (cached)
-        cache_key = (cropped[lon_name].shape, cropped[lat_name].shape)
-        if cache_key not in mask_2d_cache:
-            lons, lats = np.meshgrid(
-                cropped[lon_name].values, cropped[lat_name].values)
-            mask_arr = np.zeros(lons.shape, dtype=bool)
-            for i in range(lons.shape[0]):
-                for j in range(lons.shape[1]):
-                    mask_arr[i, j] = basin_geom.contains(
-                        Point(lons[i, j], lats[i, j]))
-            mask_2d_cache[cache_key] = mask_arr
-            log.append(f"Basin mask for {var_name}: {mask_arr.sum()} / "
-                       f"{mask_arr.size} cells inside polygon")
-
-        mask_2d = mask_2d_cache[cache_key]
-        if mask_2d.sum() == 0:
-            log.append("[WARN] Zero cells in polygon -- falling back to bounding box")
-            mask_2d = np.ones_like(mask_2d, dtype=bool)
-
-        # Compute basin-average time series
-        data_vars = [v for v in cropped.data_vars]
-        if len(data_vars) != 1:
-            log.append(f"[WARN] Expected 1 data var for {var_name}, "
-                       f"found {data_vars}; using first")
-        vname = data_vars[0]
-        data = cropped[vname].values  # (time, lat, lon)
-
-        n_times = data.shape[0]
-        basin_avg = np.zeros(n_times)
-        for t in range(n_times):
-            vals = data[t][mask_2d]
-            vals = vals[np.isfinite(vals)]
-            basin_avg[t] = np.mean(vals) if len(vals) > 0 else np.nan
-
-        dates = pd.DatetimeIndex(cropped.time.values)
-        series = pd.Series(basin_avg, index=dates, name=var_name)
-        series = series[~series.index.duplicated(keep='first')]
-        return series
-
-    results = {}
-    for var_name in [prec_var, temp_var, srad_var]:
-        try:
-            results[var_name] = load_var(var_name, years)
-            log.append(f"Loaded {var_name}: {len(results[var_name])} days")
-        except FileNotFoundError as e:
-            log.append(f"[WARN] {e}")
-
-    prec_raw = results.get(prec_var)
-    temp_raw = results.get(temp_var)
-    srad_raw = results.get(srad_var)
-
-    return prec_raw, temp_raw, srad_raw
+    if gdf.crs is None or gdf.empty or gdf.geometry.is_empty.any() or not gdf.geometry.is_valid.all():
+        raise ValueError("Basin polygons require an explicit CRS and valid nonempty geometry")
+    gdf = gdf.to_crs("EPSG:4326")
+    basin = gdf.geometry.union_all()
+    bounds = basin.bounds
+    result = []
+    for var in (prec_var, temp_var, srad_var):
+        if var is None:
+            result.append(None)
+            continue
+        chunks = []
+        for year in years:
+            path = os.path.join(forcing_dir, file_pattern.format(var=var, year=year))
+            if not os.path.isfile(path):
+                raise FileNotFoundError(f"Required {var} source is missing: {path}")
+            with xr.open_dataset(path) as ds:
+                if var not in ds:
+                    raise ValueError(f"Requested variable {var!r} not in {path}")
+                field = ds[var]
+                pair = next(((lat, lon) for lat, lon in
+                             (("lat", "lon"), ("latitude", "longitude"), ("y", "x"))
+                             if lat in field.dims and lon in field.dims), None)
+                if pair is None or set(field.dims) != {"time", *pair}:
+                    raise ValueError(f"{var}: expected time and two geographic coordinate dimensions")
+                lat, lon = pair
+                for coord, limit in ((lat, 90), (lon, 180)):
+                    axis = ds[coord]
+                    values = np.asarray(axis.values, dtype=float)
+                    if axis.ndim != 1 or not np.isfinite(values).all() or np.any(np.abs(values) > limit) or len(np.unique(values)) != len(values):
+                        raise ValueError(f"{var}: invalid geographic {coord} coordinates")
+                    unit = str(axis.attrs.get("units", "")).lower()
+                    if unit and unit not in ("degree", "degrees", "degrees_north", "degrees_east", "degree_north", "degree_east"):
+                        raise ValueError(f"{var}: {coord} must be geographic degrees, found {unit}")
+                mapping = field.attrs.get("grid_mapping")
+                if mapping and mapping in ds and ds[mapping].attrs.get("grid_mapping_name", "latitude_longitude") != "latitude_longitude":
+                    raise ValueError(f"{var}: projected grids require explicit geographic reprojection first")
+                sub = field.isel({lon: (ds[lon] >= bounds[0]) & (ds[lon] <= bounds[2]),
+                                  lat: (ds[lat] >= bounds[1]) & (ds[lat] <= bounds[3])}).transpose("time", lat, lon)
+                xx, yy = np.meshgrid(sub[lon].values, sub[lat].values)
+                mask = np.array([basin.covers(Point(x, y)) for x, y in zip(xx.ravel(), yy.ravel())], dtype=bool).reshape(xx.shape)
+                if not mask.any():
+                    raise ValueError(f"{var}: no grid cell centres covered by basin polygon; supply suitable resolution")
+                dates = _daily_index(sub.time.values, [year], var)
+                active = np.asarray(sub.values[:, mask], dtype=float)
+                if not np.isfinite(active).all():
+                    raise ValueError(f"{var}: missing or infinite value in an active grid cell; repair source data explicitly")
+                if source_units:
+                    if var == prec_var:
+                        checked = convert_precipitation(active, source_units['prec'])
+                        validate_outputs(checked, None, None, log)
+                    elif var == temp_var:
+                        validate_outputs(None, convert_temperature(active, source_units['temp']), None, log)
+                    else:
+                        validate_outputs(None, None, convert_solar_radiation(active, source_units['srad']), log)
+                chunks.append(pd.Series(active.mean(axis=1), index=dates, name=var))
+                log.append(f"{path}: {len(dates)} complete days; {int(mask.sum())} active cells; equal-weight mean")
+        series = pd.concat(chunks)
+        _daily_index(series.index, years, var)
+        result.append(series)
+    return tuple(result)
 
 
 def validate_outputs(prec_mm_d, temp_K, srad_Wm2, log):
-    """Validate converted output values for physical plausibility.
-
-    Returns True if outputs pass basic sanity checks, False if critical
-    issues are detected.
-    """
-    ok = True
-
-    # --- Precipitation checks ---
-    if prec_mm_d is not None:
-        mean_p = np.nanmean(prec_mm_d)
-        max_p = np.nanmax(prec_mm_d)
-
-        if mean_p < 0.1:
-            log.append(
-                f"[CRITICAL] Mean precip = {mean_p:.4f} mm/d -- likely still in "
-                "kg/m2/s (forgot x 86400). dt_001")
-            ok = False
-        elif mean_p > 50:
-            log.append(
-                f"[CRITICAL] Mean precip = {mean_p:.1f} mm/d -- likely in mm/3h "
-                "not mm/d, or source units wrong. dt_002")
-            ok = False
-
-        if max_p > 500:
-            log.append(
-                f"[WARN] Max precip = {max_p:.1f} mm/d -- plausible for extreme "
-                "events but verify units")
-        if np.any(prec_mm_d < 0):
-            log.append("[CRITICAL] Negative precipitation values detected")
-            ok = False
-
-    # --- Temperature checks (should be in Kelvin) ---
-    if temp_K is not None:
-        mean_t = np.nanmean(temp_K)
-        min_t = np.nanmin(temp_K)
-        max_t = np.nanmax(temp_K)
-
-        if mean_t < 200:
-            log.append(
-                f"[CRITICAL] Mean temp = {mean_t:.1f} K -- this is < -73 C, "
-                "likely Celsius values that weren't converted to K. dt_004")
-            ok = False
-        elif mean_t > 340:
-            log.append(
-                f"[CRITICAL] Mean temp = {mean_t:.1f} K -- this is > 67 C, "
-                "likely double conversion or wrong source unit")
-            ok = False
-        elif 230 < mean_t < 320:
-            log.append(f"Temperature range OK: [{min_t:.1f}, {max_t:.1f}] K "
-                       f"= [{min_t-273.15:.1f}, {max_t-273.15:.1f}] C")
-        else:
-            log.append(f"[WARN] Mean temp = {mean_t:.1f} K -- unusual, verify units")
-
-    # --- Solar radiation checks (should be in W/m2) ---
-    if srad_Wm2 is not None:
-        mean_r = np.nanmean(srad_Wm2)
-        max_r = np.nanmax(srad_Wm2)
-
-        if mean_r < 10:
-            log.append(
-                f"[CRITICAL] Mean srad = {mean_r:.1f} W/m2 -- suspiciously low, "
-                "likely in MJ/m2/d (need / 0.0864). dt_006")
-            ok = False
-        elif mean_r > 500:
-            log.append(
-                f"[WARN] Mean srad = {mean_r:.1f} W/m2 -- unusually high, "
-                "verify source units")
-
-    return ok
+    """Enforce per-value finite/physical checks, allowing real zero rain/solar."""
+    for name, values in (("precipitation", prec_mm_d), ("temperature", temp_K), ("solar radiation", srad_Wm2)):
+        if values is None:
+            continue
+        values = np.asarray(values, dtype=float)
+        if not values.size or not np.isfinite(values).all():
+            raise ValueError(f"{name}: all required values must be finite")
+        if name == "temperature":
+            if np.any((values < 173.15) | (values > 343.15)):
+                raise ValueError("temperature outside [-100, 70] Celsius; verify explicitly declared units")
+        elif np.any(values < 0):
+            raise ValueError(f"{name}: negative values are invalid")
+    return True
 
 
 def process(args, log):
-    """Main processing pipeline: load -> convert -> validate -> write.
-
-    Returns the result dictionary.
-    """
-    # Parse years
-    parts = args.years.split("-")
-    y_start, y_end = int(parts[0]), int(parts[1])
-    years = list(range(y_start, y_end + 1))
-
-    log.append(f"Processing VELMA forcing for {y_start}-{y_end} ({len(years)} years)")
-    log.append(f"Forcing dir: {args.forcing_dir}")
-    log.append(f"Shapefile: {args.shapefile}")
-
-    # Load and mask
-    prec_raw, temp_raw, srad_raw = load_and_mask_cmfd(
-        args.forcing_dir, args.shapefile, years,
-        args.prec_var, args.temp_var, args.srad_var,
-        args.file_pattern, log)
-
-    if prec_raw is None:
-        return {"status": "error", "errors": ["No precipitation data loaded"], "log": log}
-    if temp_raw is None:
-        return {"status": "error", "errors": ["No temperature data loaded"], "log": log}
-
-    # Convert units
-    prec_mm_d = convert_precipitation(prec_raw.values, args.prec_unit)
-    temp_K = convert_temperature(temp_raw.values, args.temp_unit)
-
-    srad_Wm2 = None
-    if srad_raw is not None:
-        srad_Wm2 = convert_solar_radiation(srad_raw.values, args.srad_unit)
-    else:
-        log.append("[WARN] No solar radiation data. Using default 200 W/m2.")
-        srad_Wm2 = np.full(len(prec_mm_d), 200.0)
-
-    # Log conversion summary
-    log.append(f"Precipitation: {args.prec_unit} -> mm/d | "
-               f"mean={np.nanmean(prec_mm_d):.2f}, "
-               f"max={np.nanmax(prec_mm_d):.1f} mm/d")
-    log.append(f"Temperature: {args.temp_unit} -> K | "
-               f"mean={np.nanmean(temp_K):.1f}, "
-               f"range=[{np.nanmin(temp_K):.1f}, {np.nanmax(temp_K):.1f}] K")
-    log.append(f"Solar radiation: {args.srad_unit} -> W/m2 | "
-               f"mean={np.nanmean(srad_Wm2):.1f} W/m2")
-
-    # Validate outputs
-    outputs_ok = validate_outputs(prec_mm_d, temp_K, srad_Wm2, log)
-    if not outputs_ok:
-        log.append("[CRITICAL] Output validation failed -- check unit conversions")
-
-    # Align dates
-    dates = prec_raw.index
-    if temp_raw is not None:
-        dates = dates.intersection(temp_raw.index)
-
-    n = min(len(prec_mm_d), len(temp_K), len(srad_Wm2), len(dates))
-    prec_mm_d = prec_mm_d[:n]
-    temp_K = temp_K[:n]
-    srad_Wm2 = srad_Wm2[:n]
-    dates = dates[:n]
-
-    # Handle NaN
-    nan_prec = np.isnan(prec_mm_d).sum()
-    nan_temp = np.isnan(temp_K).sum()
-    nan_srad = np.isnan(srad_Wm2).sum()
-    if nan_prec > 0:
-        log.append(f"[WARN] {nan_prec} NaN in precipitation -- filled with 0")
-        prec_mm_d = np.nan_to_num(prec_mm_d, nan=0.0)
-    if nan_temp > 0:
-        log.append(f"[WARN] {nan_temp} NaN in temperature -- interpolated")
-        temp_K = pd.Series(temp_K).interpolate().bfill().ffill().values
-    if nan_srad > 0:
-        log.append(f"[WARN] {nan_srad} NaN in solar radiation -- filled with 200")
-        srad_Wm2 = np.nan_to_num(srad_Wm2, nan=200.0)
-
-    # Build output
+    start, end = map(int, args.years.split("-"))
+    if start > end:
+        raise ValueError("Start year exceeds end year")
+    years = list(range(start, end + 1))
+    solar_mode = getattr(args, "solar_mode", "required")
+    if solar_mode not in ("required", "unused"):
+        raise ValueError("solar_mode must be required or unused")
+    source_units = {'prec': args.prec_unit, 'temp': args.temp_unit, 'srad': args.srad_unit}
+    raw = load_and_mask_cmfd(args.forcing_dir, args.shapefile, years,
+                            args.prec_var, args.temp_var,
+                            args.srad_var if solar_mode == "required" else None,
+                            args.file_pattern, log, source_units=source_units)
+    for name, series in zip(("precipitation", "temperature", "solar radiation"), raw[:3 if solar_mode == "required" else 2]):
+        if series is None:
+            raise ValueError(f"Missing required {name} source; no replacement is permitted")
+        _daily_index(series.index, years, name)
+        if not np.isfinite(np.asarray(series.values, dtype=float)).all():
+            raise ValueError(f"{name}: missing or infinite daily values")
+    prec = convert_precipitation(np.asarray(raw[0].values, dtype=float), args.prec_unit)
+    temp = convert_temperature(np.asarray(raw[1].values, dtype=float), args.temp_unit)
+    solar = convert_solar_radiation(np.asarray(raw[2].values, dtype=float), args.srad_unit) if solar_mode == "required" else None
+    validate_outputs(prec, temp, solar, log)
+    dates = _daily_index(raw[0].index, years, "precipitation")
+    sources = []
+    for var in (args.prec_var, args.temp_var, args.srad_var if solar_mode == 'required' else None):
+        if var is None:
+            continue
+        for year in years:
+            path = os.path.join(args.forcing_dir, args.file_pattern.format(var=var, year=year))
+            # Files exist for the real loader; unit tests may inject series.
+            if os.path.isfile(path):
+                import hashlib
+                with open(path, "rb") as handle:
+                    digest = hashlib.file_digest(handle, "sha256").hexdigest()
+                sources.append({'path': os.path.abspath(path), 'sha256': digest, 'variable': var, 'year': year})
     output = {
-        "dates": [d.strftime("%Y-%m-%d") for d in dates],
-        "prec_mm_d": [round(float(v), 4) for v in prec_mm_d],
-        "temp_K": [round(float(v), 2) for v in temp_K],
-        "srad_Wm2": [round(float(v), 2) for v in srad_Wm2],
-        "n_days": n,
-        "year_range": f"{y_start}-{y_end}",
-        "source_units": {
-            "prec": args.prec_unit,
-            "temp": args.temp_unit,
-            "srad": args.srad_unit,
-        },
-        "target_units": {
-            "prec": "mm/d",
-            "temp": "K",
-            "srad": "W/m2",
-        },
-        "conversion_constants": {
-            "CMFD_PRECIP_KGM2S_TO_MMDAY": CMFD_PRECIP_KGM2S_TO_MMDAY,
-            "C_TO_K": C_TO_K,
-            "MJ_M2_D_TO_W_M2": MJ_M2_D_TO_W_M2,
-        },
+        "dates": dates.strftime("%Y-%m-%d").tolist(),
+        "prec_mm_d": prec.tolist(), "temp_K": temp.tolist(),
+        "n_days": len(dates), "year_range": args.years,
+        "filled_values": 0, "solar_mode": solar_mode,
+        "source_units": {key: value for key, value in source_units.items() if key != 'srad' or solar is not None},
+        "target_units": {"prec": "mm/d", "temp": "K"},
+        "sources": sources,
+        "spatial_method": "equal-weight mean of all finite polygon-covered cell centres; no partial-cell or missing-cell renormalization",
+        "runtime_contract": "Legacy Python JSON uses Kelvin. EPA Java weather files require Celsius; subtract 273.15 exactly once when exporting.",
         "statistics": {
-            "prec_mean_mm_d": round(float(np.mean(prec_mm_d)), 2),
-            "prec_max_mm_d": round(float(np.max(prec_mm_d)), 1),
-            "prec_annual_mm": round(float(np.mean(prec_mm_d) * 365.25), 0),
-            "temp_mean_K": round(float(np.mean(temp_K)), 2),
-            "temp_min_K": round(float(np.min(temp_K)), 2),
-            "temp_max_K": round(float(np.max(temp_K)), 2),
-            "srad_mean_Wm2": round(float(np.mean(srad_Wm2)), 1),
+            "prec_mean_mm_d": float(prec.mean()), "prec_max_mm_d": float(prec.max()),
+            "prec_total_mm": float(prec.sum()), "temp_mean_K": float(temp.mean()),
+            "temp_min_K": float(temp.min()), "temp_max_K": float(temp.max()),
         },
     }
-
+    if solar is not None:
+        output['srad_Wm2'] = solar.tolist()
+        output['target_units']['srad'] = 'W/m2'
+        output['statistics']['srad_mean_Wm2'] = float(solar.mean())
     return {"status": "success", "output": output, "log": log}
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert CMFD/ERA5 NetCDF forcing to VELMA daily format.",
+        description="SURROGATE input only (NOT EPA VELMA): convert CMFD/ERA5 NetCDF forcing to the Python stand-in's Kelvin JSON. For the real engine use build_velma_weather_from_source.py.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 CRITICAL UNIT TRAPS:
   dt_001: CMFD precip is kg/m2/s. Multiply by 86400 for mm/d.
-  dt_004: VELMA expects temperature in Kelvin. Do NOT pre-convert to Celsius.
+  Legacy Python JSON uses Kelvin; EPA Java weather files require Celsius.
   dt_006: Solar radiation must be in W/m2 (CMFD default). If MJ/m2/d, divide by 0.0864.
 """)
     parser.add_argument("--forcing-dir", required=True,
@@ -519,7 +344,7 @@ CRITICAL UNIT TRAPS:
     parser.add_argument("--srad-var", default="srad",
                         help="Solar radiation variable name in filenames (default: srad)")
     parser.add_argument("--prec-unit", default="kg/m2/s",
-                        choices=["kg/m2/s", "mm/d", "m/d", "mm/3h"],
+                        choices=["kg/m2/s", "mm/d", "m/d"],
                         help="Precipitation unit in source data (default: kg/m2/s)")
     parser.add_argument("--temp-unit", default="K",
                         choices=["K", "C", "F"],
@@ -527,6 +352,8 @@ CRITICAL UNIT TRAPS:
     parser.add_argument("--srad-unit", default="W/m2",
                         choices=["W/m2", "MJ/m2/d", "kJ/m2/d"],
                         help="Solar radiation unit in source data (default: W/m2)")
+    parser.add_argument("--solar-mode", choices=["required", "unused"], default="required",
+                        help="required for legacy Python runner; unused omits solar for native Java P/T preparation")
     parser.add_argument("--file-pattern", default="{var}_ITPCAS-CMFD_V0200_B-01_01dy_025deg_{year}01-{year}12.nc",
                         help="Filename pattern with {var} and {year} placeholders")
     parser.add_argument("--output", required=True,
@@ -543,7 +370,11 @@ CRITICAL UNIT TRAPS:
 
     # Process
     log = []
-    result = process(args, log)
+    try:
+        result = process(args, log)
+    except (ValueError, OSError, KeyError) as exc:
+        print(json.dumps({"status": "error", "errors": [str(exc)], "log": log}), file=sys.stderr)
+        return 1
 
     # Write output
     output_dir = os.path.dirname(args.output)
@@ -551,7 +382,7 @@ CRITICAL UNIT TRAPS:
         os.makedirs(output_dir, exist_ok=True)
 
     with open(args.output, "w") as f:
-        json.dump(result, f, indent=2)
+        json.dump(result, f, indent=2, allow_nan=False)
 
     status = result["status"]
     print(f"\n[convert_forcing_to_velma] Status: {status}")
@@ -560,15 +391,15 @@ CRITICAL UNIT TRAPS:
         n = result["output"]["n_days"]
         stats = result["output"]["statistics"]
         print(f"  Days: {n}")
-        print(f"  Mean precip: {stats['prec_mean_mm_d']} mm/d "
-              f"({stats['prec_annual_mm']} mm/yr)")
+        print(f"  Mean precip: {stats['prec_mean_mm_d']} mm/d")
         print(f"  Mean temp: {stats['temp_mean_K']} K "
               f"({stats['temp_mean_K'] - 273.15:.1f} C)")
-        print(f"  Mean srad: {stats['srad_mean_Wm2']} W/m2")
+        if 'srad_mean_Wm2' in stats:
+            print(f"  Mean srad: {stats['srad_mean_Wm2']} W/m2")
     for entry in log:
         if "[CRITICAL]" in entry or "[WARN]" in entry:
             print(f"  {entry}")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

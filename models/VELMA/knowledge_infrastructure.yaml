@@ -1,98 +1,134 @@
-# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
-# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+# knowledge_infrastructure.yaml -- the KI's manifest. Shape projected from dag.yaml + KI contents;
+# validation hand-written 2026-10-07 so the real engine's numbers and the SURROGATE's numbers stay apart.
 
 package:
   name: VELMA
-  language: python
+  language: java
   implementation:
-    id: velma-python-4layer
-    version: run_velma.py velma_4layer (lumped daily reimplementation)
-    provenance: Python; self-contained lumped daily 4-layer analytic water-balance engine (velma_4layer
-      in run_velma.py); not the EPA Java spatial VELMA.
-  scientific_reference_version: VELMA-inspired lumped daily 4-layer water-balance model (Python re-implementation;
-    conceptually after EPA VELMA 2.0 soil-column hydrology, Stieglitz-family layered drainage)
+    id: epa-velma-2.1-java
+    version: VELMA_2.1.1.0 (JVelma.jar, gov.epa.velmasimulator.VelmaSimulatorCmdLine)
+    provenance: 'Official EPA release VELMA2.1-PROGRAM-MAR2022.ZIP (EPA Science Inventory deid=354355);
+      launcher KISSPATH_HOME/engine_builds_20261006/VELMA/run_velma_headless.sh (java -Djava.awt.headless=true
+      -cp jars/JVelma.jar gov.epa.velmasimulator.VelmaSimulatorCmdLine); build log KISSPATH_HOME/engine_builds_20261006/VELMA/BUILD_LOG.md.
+      Official BlueRiver_Example (HJA WS10, 1969-2008) reproduced through tools/run_velma_engine.py: engine
+      NSE 0.7954119608437563, DailyResults.csv byte-identical to the build-log run.'
+    run_tool: tools/run_velma_engine.py
+    surrogate:
+      id: velma-python-4layer
+      tool: tools/run_velma.py
+      contract: docs/surrogate_velma_4layer_dag.yaml
+      status: SURROGATE - not EPA VELMA; never report its output as VELMA
+  scientific_reference_version: EPA VELMA 2.1 (JVelma.jar VELMA_2.1.1.0, EPA VELMA2.1-PROGRAM-MAR2022);
+    process science per the VELMA 2.0 User Manual (McKane et al., US EPA 2014), its 2.1 supplement (MAR2022)
+    and Abdelnour et al. 2011 (WRR, doi:10.1029/2010WR010165), 2013 (WRR, doi:10.1029/2012WR012994)
   binary:
-    path: KISSPATH_KI_ROOT/VELMA/knowledge_infrastructure/tools/run_velma.py
-    type: Python
+    path: KISSPATH_HOME/engine_builds_20261006/VELMA/run_velma_headless.sh
+    type: Java
+  run_tool: tools/run_velma_engine.py
+  run_tool_note: default run route = the REAL EPA VELMA 2.1 engine (JVelma.jar, headless) via tools/run_velma_engine.py;
+    weather drivers from tools/build_velma_weather_from_source.py
+  surrogate_tools_not_this_model:
+  - tools/run_velma.py
+  - tools/convert_forcing_to_velma.py
+  - tools/convert_soil_to_velma.py
+  - tools/parse_output_velma.py
+  surrogate_contract: docs/surrogate_velma_4layer_dag.yaml
 pipeline:
-  stages: []
+  stages:
+  - s1_forcing_preparation
+  - s2_soil_parameter_setup
+  - s3_model_configuration
+  - s4_pet_computation
+  - s5_execution
+  - s6_output_parsing
+  - s7_calibration
 tools:
-  count: 4
+  count: 6
   files:
+  - tools/build_velma_weather_from_source.py
   - tools/convert_forcing_to_velma.py
   - tools/convert_soil_to_velma.py
   - tools/parse_output_velma.py
   - tools/run_velma.py
+  - tools/run_velma_engine.py
 inputs:
   forcing:
   - name: precipitation
     unit: mm/d
   - name: air temperature
-    unit: K
-  - name: incoming solar radiation
-    unit: W/m2
+    unit: degC
   parameters:
-  - name: layer porosity fraction (layer_porosity)
-    unit: v/v fraction
-  - name: layer field-capacity fraction (layer_fc_frac)
-    unit: fraction of layer_cap
-  - name: layer wilting-point fraction (layer_wp_frac)
-    unit: fraction of layer_cap
-  - name: saturated hydraulic conductivity (layer_ks_mm_d)
-    unit: mm/d
-  - name: vertical percolation rate coefficients (perc1-3)
-    unit: 1/d (fraction of above-FC storage)
-  - name: lateral flow coefficients (klat1-4)
-    unit: 1/d
-  - name: baseflow recession coefficient (k_base)
-    unit: 1/d
-  - name: fast/slow reservoir recession (k_fast, k_slow)
-    unit: 1/d
-  - name: PET scale factor (pet_scale)
-    unit: unitless
-  - name: degree-day melt factor (ddf)
-    unit: mm/d/K
-  - name: basin area
-    unit: km2
-  - name: direct-runoff fraction (f_direct)
-    unit: fraction
+  - name: simulation configuration (VELMA xml)
+    unit: per key (mm, mm/day, fractions, degC, gC/m2, gN/m2)
+  - name: digital elevation model (input_dem) and grid geometry (cell, ncol, nrow, outx, outy)
+    unit: m
+  - name: soil parameters per soil type (/soil/<name>) and soil map
+    unit: surfaceKs mm/d; decay factors 1/mm; porosityFraction, fieldCapacity, wiltPoint m3/m3; soilColumnDepth
+      mm; initialHumusCarbon gC/m2
+  - name: cover parameters per cover type (/cover/<name>) with cover and age maps
+    unit: per key (PET coefficients, gC/m2 pools, C:N ratios, day-of-year)
+  - name: snow model parameters (snowFormationTemperature, snowMeltTemperature, snowMeltRate, rainOnSnowEffect)
+    unit: degC, degC, mm/degC/d, fraction
   initial_conditions:
-  - name: per-layer soil water (sw[4])
-    unit: mm
-  - name: snow water equivalent (swe)
-    unit: mm
-  - name: fast/slow routing storage (S_fast, S_slow)
-    unit: mm
+  - name: start state spatial maps (spin-up end state)
+    unit: per map (mm, m3/m3, gC/m2, gN/m2)
   boundary_conditions:
-  - name: snow/rain and melt temperature thresholds (t_snow, t_melt)
-    unit: K
-  - name: routing split fraction (split)
-    unit: fraction
-  - name: run mode (simulate vs calibrate)
-    unit: switch
-  - name: calibration window start / warmup
-    unit: date / days
-  - name: observed discharge (calibrate mode)
-    unit: m3/s
+  - name: simulation and forcing years (syear, eyear, forcing_start, forcing_end)
+    unit: year
+  - name: observed runoff for the engine's own Nash-Sutcliffe (input_runoff)
+    unit: mm/d
+  - name: disturbance schedule (/disturbance/<name>)
+    unit: year / day-of-year / fractions
 io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
   observable:
   - Q_sim_m3s
-  - mean_et_mm_d
   - mean_runoff_mm_d
-  - final_swe_mm
+  - mean_et_mm_d
   - final_sw_mm[4]
+  - final_swe_mm
   other: []
 validation:
-  tier: not_runnable
-  tier_justification: 'measured: NSE=0.902, KGE=0.950, R=0.951'
+  tier: tested
+  tier_justification: 'REAL engine: official EPA BlueRiver_Example (HJA WS10, 1969-2008) reproduced exactly
+    through run_velma_engine.py (engine NSE 0.7954119608437563, DailyResults.csv byte-identical to the
+    build log). Real case: HJA WS10 with MSWX weather, daily Q 1981-01-01..2008-12-31, 10,227 days, VALIDATION
+    (no calibration by us; EPA example parameters): NSE 0.593, KGE 0.560, PBIAS -14.3 %, r 0.787 -> meets
+    the convention bands NSE >= 0.5 and |PBIAS| <= 15 %'
   metrics:
-    best_nse: 0.9016
-    best_kge: 0.9504
-    best_r: 0.9506
+    official_example_ws10_station_1969_2008_engine_nse: 0.7954
+    ws10_mswx_1981_2008_nse: 0.5933
+    ws10_mswx_1981_2008_kge: 0.5596
+    ws10_mswx_1981_2008_pbias_pct: -14.3
+    ws10_mswx_1981_2008_r: 0.7872
+  metrics_source:
+    engine: REAL EPA VELMA 2.1 (tools/run_velma_engine.py), not the Python surrogate
+    role: 'validation: no parameter calibrated by us; EPA BlueRiver_Example parameters as shipped. EPA
+      set them up for WS10 with station weather, so this tests the MSWX weather input, not transfer to
+      a new site'
+    run: spin-up 1969-1979 on the official HJA station weather (incl. 1975 clearcut, --end-state-dir),
+      then 1980-2008 from that state with MSWX P/Tair (nearest 0.1 deg cell 44.205N -122.262E, build_velma_weather_from_source.py
+      --source mswx); 1980 = warm-up, not scored
+    scored_series: Runoff_All(mm/day)_Delineated_Average vs the official WS10 streamflow (mm/day, EPA
+      velma_v2.0.zip), both x 10.2 ha / 86400 -> m3/s; 1981-01-01..2008-12-31, every day paired (10,227)
+    reproduce: KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_VELMA/score_ws10_mswx.py (ki_tools_common.metrics.all_metrics
+      and plain numpy agree; the engine's own NashSutcliffeCoefficients.txt gives 0.59326293)
+    reference_same_window_station_weather: NSE 0.796, KGE 0.819, PBIAS +14.5 %, r 0.898 (official example
+      run, 1981-2008)
+  surrogate_metrics_not_velma:
+    note: OLD Python SURROGATE (tools/run_velma.py, lumped 4-layer stand-in) at Bengbu, Huai River (121,330
+      km2, daily, CMFD); calibration period 1981-1985 in-sample. These are NOT VELMA results; the models
+      DB row still carries them as best_nse/best_kge/best_r, so a regenerated manifest would project them
+      again -- re-check after any regeneration.
+    tool: tools/run_velma.py
+    nse: 0.9016
+    kge: 0.9504
+    r: 0.9506
+    validation_1986_1990_nse: 0.8011
 summary:
-  total_tools: 4
-  total_stage_docs: 0
-  total_diagnostic_triplets: 24
-  generated: '2026-08-15'
-  generated_by: generate_ki_manifest.py (projection; regenerate any time)
+  total_tools: 6
+  total_stage_docs: 7
+  total_diagnostic_triplets: 30
+  generated: '2026-10-07'
+  generated_by: hand-written in the projected shape (generate_ki_manifest.py would re-project the surrogate's
+    DB metrics; see validation.surrogate_metrics_not_velma)

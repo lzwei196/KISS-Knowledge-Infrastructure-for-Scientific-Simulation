@@ -1,5 +1,7 @@
 # Stage 3: Model Configuration
 
+**REAL engine:** the configuration is the VELMA xml (DEM, soil/cover/age maps, parameter blocks, years); `run_velma_engine.py` applies changes as `--kv` overrides and does the 2.0->2.1 humus migration. Everything below is for the Python SURROGATE only (not VELMA).
+
 ## Purpose
 Assemble the forcing, parameter file, basin area, run mode, and calibration window before invoking `tools/run_velma.py`. This is a manual stage in `SKILL.md`; it has no separate converter script.
 

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """
+*** SURROGATE — NOT THE QUINCY MODEL. This tool belongs to the Python stand-in (an analytic
+re-implementation, monthly step, no C-N-P pools). Its output must never be reported as QUINCY
+output. The real engine is driven by tools/run_quincy_engine.py (see SKILL.md). ***
+
 convert_parameters_to_quincy.py
 Convert and validate PFT (Plant Functional Type) parameters for QUINCY.
 
@@ -702,7 +706,7 @@ def do_list(filepath):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QUINCY PFT parameter converter and validator. "
+        description="SURROGATE (Python stand-in, NOT the QUINCY engine; for the real engine use run_quincy_engine.py / parse_quincy_engine_output.py): QUINCY PFT parameter converter and validator. "
                     "Manages coupled C-N-P parameters for QUINCY simulations."
     )
     parser.add_argument("--fin", default=None,

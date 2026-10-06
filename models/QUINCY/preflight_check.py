@@ -1,303 +1,113 @@
 #!/usr/bin/env python3
-"""Preflight check for the QUINCY knowledge infrastructure."""
+"""Preflight check for the QUINCY knowledge infrastructure (REAL engine qs.bin).
 
+Checks, before any site run: the engine binary exists, is executable, is the one the models
+DB names, and actually runs (built-in test_canopy self-test through tools/run_quincy_engine.py,
+compared byte for byte with the build-log run = the KI's reference check, critical; test_radiation
+likewise, non-critical); dag.yaml (real engine) and the surrogate contract file exist; the engine data file
+(lctlib), the namelist template, the CO2 record and the engine source used for parameter-name
+checks are present; the Python imports the tools need work; every engine tool starts (--help).
+
+Ends with one line PREFLIGHT_REPORT=<json>. Exit 0 = ready, 1 = a critical check failed
+(fixes are printed; see diagnostics/triplets.yaml).
+The Python stand-in (tools/run_quincy.py) is a SURROGATE and is deliberately NOT run here.
+Interpreter for the checks: $KI_PYTHON, else KISSPATH_PYTHON_ENV/bin/python,
+else the interpreter running this script.
+"""
 from __future__ import annotations
 
-import csv
 import json
 import os
-import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-
 MODEL_ID = "QUINCY"
 KI_DIR = Path(__file__).resolve().parent
-DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
-PYTHON = sys.executable
+DIAG = KI_DIR / "diagnostics" / "triplets.yaml"
+_PY_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
+PYTHON = os.environ.get("KI_PYTHON") or (str(_PY_ENV) if _PY_ENV.exists() else sys.executable)
+DB = Path("KISSPATH_ROOT/hydrocraft.db")
+# QUINCY_ENGINE_ROOT: the engine build folder (binary, src/data, src/src, run_builtin_* references)
+ENGINE_ROOT = Path(os.environ.get("QUINCY_ENGINE_ROOT", "KISSPATH_HOME/engine_builds_20261006/QUINCY")).expanduser().absolute()
+BINARY = Path(os.environ.get("QUINCY_BIN", ENGINE_ROOT / "src/x86_64-gfortran/bin/qs.bin")).expanduser().absolute()
+REFERENCES = {"test_canopy": (ENGINE_ROOT / "run_builtin_test_canopy", True),
+              "test_radiation": (ENGINE_ROOT / "run_builtin_test_radiation", False)}
+ENGINE_TOOLS = ["run_quincy_engine.py", "build_quincy_climate.py", "build_quincy_site_config.py",
+                "edit_quincy_parameters.py", "parse_quincy_engine_output.py", "score_quincy_vs_fluxnet.py"]
+CHECKS = []
 
 
-def emit_report(model_id, checks):
-    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}, sort_keys=True))
-    failed_critical = [c for c in checks if c["status"] != "pass" and c.get("critical")]
-    sys.exit(1 if failed_critical else 0)
+def check(kind, subject, critical, ok, fix=""):
+    CHECKS.append({"kind": kind, "subject": str(subject), "critical": bool(critical),
+                   "status": "pass" if ok else "fail", "fix": "" if ok else f"{fix} (see {DIAG})"})
+    print(f"  {'OK  ' if ok else 'FAIL'} {kind}: {subject}" + ("" if ok else f"\n       Fix: {fix}"))
+    return ok
 
 
-def check(kind, subject, critical, status, fix=""):
-    item = {
-        "kind": kind,
-        "subject": str(subject),
-        "critical": bool(critical),
-        "status": status,
-        "fix": fix,
-    }
-    label = "OK" if status == "pass" else "FAIL"
-    print(f"  {label:<4} {kind}: {subject}")
-    if status != "pass" and fix:
-        print(f"       Fix: {fix}")
-    return item
-
-
-def check_file(path, label, critical=True, executable=False):
-    path = Path(path)
-    subject = path if label is None else f"{label}: {path}"
-    if not path.is_file():
-        return check(
-            "data",
-            subject,
-            critical,
-            "fail",
-            f"Restore or regenerate {path}. See {DIAGNOSTICS} for recovery.",
-        )
-    if executable and not os.access(path, os.X_OK):
-        return check(
-            "data",
-            subject,
-            critical,
-            "fail",
-            f"chmod +x {path}; if execution still fails, check {DIAGNOSTICS}.",
-        )
-    if path.stat().st_size == 0:
-        return check(
-            "data",
-            subject,
-            critical,
-            "fail",
-            f"Replace empty file {path}. See {DIAGNOSTICS} for recovery.",
-        )
-    return check("data", subject, critical, "pass")
-
-
-def read_manifest_binary_path():
-    manifest = KI_DIR / "knowledge_infrastructure.yaml"
-    if not manifest.is_file():
-        return None
-    text = manifest.read_text(encoding="utf-8", errors="replace")
-    match = re.search(r"(?ms)^\s*binary:\s*\n(?:\s+.*\n)*?\s+path:\s*(\S+)\s*$", text)
-    return Path(match.group(1)) if match else None
-
-
-def check_import(module, critical=True):
-    cmd = [PYTHON, "-c", f"import {module}"]
-    proc = subprocess.run(cmd, cwd=KI_DIR, capture_output=True, text=True, timeout=10)
-    subject = f"{module} via {PYTHON}"
-    if proc.returncode == 0:
-        return check("import", subject, critical, "pass")
-    detail = (proc.stderr or proc.stdout).strip().splitlines()
-    reason = detail[-1] if detail else f"import {module} failed"
-    return check(
-        "import",
-        subject,
-        critical,
-        "fail",
-        f"Install {module} for {PYTHON}: {reason}. Check {DIAGNOSTICS} for known fixes.",
-    )
-
-
-def check_binary_start(script, critical=True):
-    script = Path(script)
-    real_script = Path(os.path.realpath(script))
-    if not real_script.is_file():
-        return check(
-            "binary",
-            real_script,
-            critical,
-            "fail",
-            f"Restore the QUINCY execution wrapper at {real_script}. See {DIAGNOSTICS}.",
-        )
-    if not os.access(real_script, os.X_OK):
-        return check(
-            "binary",
-            real_script,
-            critical,
-            "fail",
-            f"chmod +x {real_script}; then rerun this preflight. See {DIAGNOSTICS}.",
-        )
-    cmd = [PYTHON, str(real_script), "--help"]
-    proc = subprocess.run(cmd, cwd=KI_DIR, capture_output=True, text=True, timeout=10)
-    if proc.returncode == 0 and "Run QUINCY analytic model" in (proc.stdout + proc.stderr):
-        return check("binary", real_script, critical, "pass")
-    detail = (proc.stderr or proc.stdout).strip().splitlines()
-    reason = detail[-1] if detail else f"{real_script} --help failed"
-    return check(
-        "binary",
-        real_script,
-        critical,
-        "fail",
-        f"Fix wrapper startup for {real_script}: {reason}. Check {DIAGNOSTICS}.",
-    )
-
-
-def check_manifest_binary_matches(manifest_path, expected_path, critical=True):
-    subject = f"manifest binary path: {manifest_path}"
-    if manifest_path is None:
-        return check(
-            "data",
-            subject,
-            critical,
-            "fail",
-            f"Add package.implementation.binary.path to knowledge_infrastructure.yaml. See {DIAGNOSTICS}.",
-        )
-    manifest_real = Path(os.path.realpath(manifest_path))
-    expected_real = Path(os.path.realpath(expected_path))
-    if manifest_real == expected_real:
-        return check("data", subject, critical, "pass")
-    return check(
-        "data",
-        subject,
-        critical,
-        "fail",
-        f"Set binary.path to {expected_real}; current resolved path is {manifest_real}. See {DIAGNOSTICS}.",
-    )
-
-
-def check_csv_columns(path, required_columns, label, critical=True):
-    path = Path(path)
-    if not path.is_file():
-        return check(
-            "data",
-            f"{label}: {path}",
-            critical,
-            "fail",
-            f"Restore fixture {path}. Check {DIAGNOSTICS} for recovery.",
-        )
+def db_binary():
     try:
-        with path.open(newline="", encoding="utf-8") as fh:
-            reader = csv.reader(fh)
-            header = next(reader)
-    except Exception as exc:
-        return check(
-            "data",
-            f"{label}: {path}",
-            critical,
-            "fail",
-            f"Repair readable CSV header for {path}: {exc}. See {DIAGNOSTICS}.",
-        )
-    missing = [col for col in required_columns if col not in header]
-    if missing:
-        return check(
-            "data",
-            f"{label}: {path}",
-            critical,
-            "fail",
-            f"Required columns missing: {missing}. Regenerate with tools/convert_forcing_to_quincy.py; see {DIAGNOSTICS}.",
-        )
-    return check("data", f"{label}: {path}", critical, "pass")
-
-
-def check_sample_run(runner, forcing, params, critical=True):
-    runner = Path(runner)
-    forcing = Path(forcing)
-    params = Path(params)
-    with tempfile.TemporaryDirectory(prefix="quincy_preflight_") as tmpdir:
-        output = Path(tmpdir) / "quincy_output.csv"
-        cmd = [
-            PYTHON,
-            str(runner),
-            "--forcing",
-            str(forcing),
-            "--params",
-            str(params),
-            "--output",
-            str(output),
-            "--lat",
-            "32.92",
-        ]
-        proc = subprocess.run(cmd, cwd=KI_DIR, capture_output=True, text=True, timeout=30)
-        if proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout).strip().splitlines()
-            reason = detail[-1] if detail else "sample model run failed"
-            return check(
-                "run",
-                f"sample QUINCY execution: {runner}",
-                critical,
-                "fail",
-                f"Fix model execution failure: {reason}. Check {DIAGNOSTICS} first.",
-            )
-        if not output.is_file() or output.stat().st_size == 0:
-            return check(
-                "run",
-                f"sample QUINCY execution: {runner}",
-                critical,
-                "fail",
-                f"Model exited 0 but did not write {output}. Check {DIAGNOSTICS}.",
-            )
-        return check("run", f"sample QUINCY execution: {runner}", critical, "pass")
+        con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
+        row = con.execute("select binary_path from models where id=?", (MODEL_ID,)).fetchone()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
 
 
 def main():
-    print(f"{' PREFLIGHT: QUINCY ':=^60}")
-    print(f"  KI directory: {KI_DIR}")
-    print(f"  Python: {PYTHON}")
-    print()
-
-    runner = KI_DIR / "tools" / "run_quincy.py"
-    tool_files = [
-        KI_DIR / "tools" / "convert_forcing_to_quincy.py",
-        KI_DIR / "tools" / "convert_parameters_to_quincy.py",
-        KI_DIR / "tools" / "parse_output_quincy.py",
-        runner,
-    ]
-    required_files = [
-        (KI_DIR / "SKILL.md", "skill document", True),
-        (KI_DIR / "knowledge_infrastructure.yaml", "KI manifest", True),
-        (KI_DIR / "dag.yaml", "DAG", True),
-        (DIAGNOSTICS, "diagnostic triplets", True),
-        (KI_DIR / "docs" / "format_spec.yaml", "format spec", False),
-        (KI_DIR / "bengbu_params.json", "Bengbu parameter fixture", True),
-        (KI_DIR / "outputs" / "bengbu_quincy_forcing.csv", "Bengbu forcing fixture", True),
-    ]
-
-    checks = []
-    for path, label, critical in required_files:
-        checks.append(check_file(path, label, critical=critical))
-    for path in tool_files:
-        checks.append(check_file(path, "tool script", critical=True))
-
-    manifest_binary_path = read_manifest_binary_path()
-    checks.append(check_manifest_binary_matches(manifest_binary_path, runner, critical=True))
-    checks.append(check_import("numpy", critical=True))
-    checks.append(check_binary_start(runner, critical=True))
-    checks.append(
-        check_csv_columns(
-            KI_DIR / "outputs" / "bengbu_quincy_forcing.csv",
-            ["SW_IN", "TA", "VPD", "PRECIP", "CO2", "DAYLENGTH"],
-            "QUINCY forcing columns",
-            critical=True,
-        )
-    )
-    checks.append(
-        check_sample_run(
-            runner,
-            KI_DIR / "outputs" / "bengbu_quincy_forcing.csv",
-            KI_DIR / "bengbu_params.json",
-            critical=True,
-        )
-    )
-
-    print()
-    failed = [c for c in checks if c["status"] != "pass"]
-    print(f"  Results: {len(checks) - len(failed)} passed, {len(failed)} failed")
-    if failed:
-        print(f"  Recovery: check {DIAGNOSTICS} before changing wrappers or inputs.")
-    else:
-        print("  STATUS: PREFLIGHT PASSED")
-    emit_report(MODEL_ID, checks)
+    print(f"{' PREFLIGHT: QUINCY (real engine) ':=^60}")
+    real = Path(os.path.realpath(BINARY))
+    ok_bin = check("binary", real, True, real.is_file() and os.access(real, os.X_OK),
+                   f"engine missing or not executable at {real}; rebuild per {ENGINE_ROOT}/BUILD_LOG.md")
+    dbb = db_binary()
+    check("binary", f"models DB binary_path == {real}", True,
+          dbb is not None and os.path.realpath(dbb) == str(real),
+          f"models DB says {dbb!r}; point models.binary_path at {real} or set QUINCY_BIN")
+    for path, label, crit in [
+            (ENGINE_ROOT / "src/data/lctlib_quincy_nlct14.def", "engine PFT library (lctlib)", True),
+            (ENGINE_ROOT / "src/data/fluxnet2_siteset_pft_info.csv", "engine FLUXNET site PFT list", True),
+            (ENGINE_ROOT / "src/src/quincy_standalone/mo_qs_set_parameters.f90", "engine source (parameter names)", False),
+            (KI_DIR / "templates/qs.namelist.template", "namelist template", True),
+            (KI_DIR / "dag.yaml", "dag.yaml (real engine contract)", True),
+            (KI_DIR / "docs/surrogate/surrogate_quincy_analytic_dag.yaml", "SURROGATE contract (not QUINCY)", False),
+            (Path("KISSPATH_KI_ROOT/QUINCY/inputs/co2/co2_1901_2014.txt"), "CO2 record", True),
+            (Path("KISSPATH_KI_ROOT/QUINCY/inputs/co2/co2_annmean_mlo.txt"), "CO2 record (MLO)", True),
+            (Path("KISSPATH_OBS/fluxnet/sites"), "FLUXNET2015 sites (forcing + obs)", False)]:
+        check("data", f"{label}: {path}", crit, path.exists(), f"restore {path}")
+    for mod, crit in [("numpy", True), ("pandas", True), ("yaml", True), ("ki_tools_common.load_forcing", True),
+                      ("ki_tools_common.metrics", True), ("ki_tools_common.soil_utils", False), ("matplotlib", False)]:
+        r = subprocess.run([PYTHON, "-c", f"import {mod}"], capture_output=True, text=True, timeout=60)
+        check("import", mod, crit, r.returncode == 0, f"install {mod} for {PYTHON}: {r.stderr.strip()[-200:]}")
+    for t in ENGINE_TOOLS:
+        p = KI_DIR / "tools" / t
+        r = subprocess.run([PYTHON, str(p), "--help"], capture_output=True, text=True, timeout=60) if p.exists() else None
+        check("tool", p, True, r is not None and r.returncode == 0, f"restore/repair {p}")
+    if ok_bin:
+        for mode, (ref, crit) in REFERENCES.items():
+            with tempfile.TemporaryDirectory(prefix="quincy_preflight_") as tmp:
+                cmd = [PYTHON, str(KI_DIR / "tools/run_quincy_engine.py"), "--mode", mode,
+                       "--run_dir", str(Path(tmp) / "run"), "--binary", str(real), "--reference_dir", str(ref)]
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                try:
+                    res = json.loads(r.stdout.strip().splitlines()[-1])
+                except (ValueError, IndexError):
+                    res = {}
+                ok = r.returncode == 0 and res.get("reproduced") is True
+                check("run", f"engine self-test {mode} reproduces the build-time run byte for byte "
+                      f"({res.get('files_identical')}/{res.get('files_compared')} files vs {ref})", crit, ok,
+                      f"self-test {mode} did not reproduce (exit {r.returncode}): {(r.stdout + r.stderr).strip()[-300:]}")
+    failed = [c for c in CHECKS if c["status"] != "pass"]
+    print(f"\n  Results: {len(CHECKS) - len(failed)} passed, {len(failed)} failed")
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": MODEL_ID, "checks": CHECKS}, sort_keys=True))
+    sys.exit(1 if any(c["critical"] for c in failed) else 0)
 
 
 if __name__ == "__main__":
     try:
         main()
     except subprocess.TimeoutExpired as exc:
-        checks = [
-            check(
-                "run",
-                exc.cmd if isinstance(exc.cmd, str) else " ".join(exc.cmd),
-                True,
-                "fail",
-                f"Command timed out. Check {DIAGNOSTICS} for QUINCY runtime recovery.",
-            )
-        ]
-        emit_report(MODEL_ID, checks)
+        check("run", exc.cmd if isinstance(exc.cmd, str) else " ".join(map(str, exc.cmd)), True, False, "command timed out")
+        print("PREFLIGHT_REPORT=" + json.dumps({"model_id": MODEL_ID, "checks": CHECKS}, sort_keys=True))
+        sys.exit(1)

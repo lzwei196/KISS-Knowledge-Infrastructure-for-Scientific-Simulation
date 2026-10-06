@@ -320,6 +320,6 @@ validation:
     validated_when: "R2 >= 0.7 against FLUXNET sensible heat, with available-energy closure and sign convention checked."
     evidence_strength: strong
     confidence: 0.7
-    notes: "QUINCY computes H as an Rn-LE residual; no structural limitation is asserted because the fetched papers support only general FLUXNET energy-partition benchmarking."
+    notes: "The real QUINCY engine computes H from its surface energy balance (the old Python surrogate used an Rn-LE residual); no structural limitation is asserted because the fetched papers support only general FLUXNET energy-partition benchmarking."
 
 deferred_paywalled: []

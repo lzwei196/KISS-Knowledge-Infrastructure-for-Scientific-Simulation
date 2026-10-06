@@ -9,6 +9,13 @@
 > You MUST NOT substitute a simplified Python formula, regression equation,
 > or hand-coded approximation in place of the real model.
 >
+> **WASP-specific (2026-10-06):** this KI has TWO run paths. The REAL engine is US EPA
+> WASP 8.5.0 (`waspccli.exe` under WINE), run with `tools/run_wasp_engine.py`. The older
+> `tools/run_wasp.py` is an analytic Python SURROGATE ("WASP-inspired"), NOT EPA WASP;
+> its numbers are not WASP results. When a task asks for WASP, use the real engine. If the
+> real engine is missing, report that — never run the surrogate in its place. Use the
+> surrogate only when the task explicitly asks for it, and label its results "surrogate".
+>
 >
 > Before starting, run: `python preflight_check.py` (in this KI directory)
 > to verify that the model binary/package and required data are available.
@@ -27,7 +34,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -51,26 +58,65 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/convert_parameters_to_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters_to_wasp.py --help` |
 | `tools/parse_output_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_wasp.py --help` |
 | `tools/run_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wasp.py --help` |
+| `tools/run_wasp_engine.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wasp_engine.py --help` |
 
-*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # WASP Knowledge Infrastructure
 
 **Package**: hydrocraft-wasp v1.0.0
-**Model**: WASP (Water Analysis Simulation Program) -- Analytic Reimplementation
+**Model**: WASP (Water Analysis Simulation Program) -- real EPA WASP 8.5.0 engine (`tools/run_wasp_engine.py`) + analytic SURROGATE (`tools/run_wasp.py`, not EPA WASP)
 **Domain**: Lake and reservoir water quality modeling
-**Language**: Python (analytic reimplementation of WASP core physics)
+**Language**: real engine = EPA Windows binaries under WINE; surrogate = Python (analytic reimplementation of WASP core physics)
 **License**: Public domain (EPA)
 **Created**: 2026-03-30
-**Validation**: Lake Erie Central Basin, WQP observations (Temp R=0.885, DO Cal R=0.816)
+**Validation**: SURROGATE only — Lake Erie Central Basin, WQP observations (Temp R=0.885, DO Cal R=0.816); the real EPA engine has only its official repeat-run test case (`test_cases/steady_state/`)
 
 | Metric | Value |
 |--------|-------|
-| Tools | 4 |
+| Tools | 5 |
 | Pipeline stages | 6 |
 | Diagnostic triplets | 26 |
 | Validation lake | Lake Erie Central Basin |
+
+---
+
+## 0. Two run paths: REAL EPA WASP engine vs SURROGATE
+
+| | REAL engine | SURROGATE |
+|---|---|---|
+| tool | `tools/run_wasp_engine.py` | `tools/run_wasp.py` (+ `convert_*_to_wasp.py`, `parse_output_wasp.py`) |
+| what runs | US EPA WASP 8.5.0 `C:\WASP8\wasp\bin\waspccli.exe` under WINE 9 (official installer `wasp-version-8.5.0-install-64-bit-10-25-2025.exe`, sha256 `2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4`; banner "Wasp suite version 8.5.0 … Model master e86fb43") | analytic Python formulas "inspired by" WASP (sections 1, 7, 8 below) |
+| input | a WASP input file `.wif` (built in the WASP GUI or taken from an EPA example) | JSON parameters / WQP CSV |
+| output | `<model>.OUT` (setup echo + run statistics), `<model>.BMD2` (results, binary), CSV via EPA `BMD2_Extract.exe` | JSON / CSV of the analytic model |
+| results are | WASP results | NOT WASP results — always label them "surrogate" |
+
+Everything below — "Data Preparation" and sections 1–10 (pipeline stages, converters,
+parser, parameters, Streeter-Phelps formulas, Lake Erie validation numbers) — describes the
+SURROGATE, except the subsection "Real engine" in section 2. The converters do not build
+`.wif` files and `parse_output_wasp.py` does not read `.BMD2`.
+
+Real-engine call (python_env; engine found by `--wineprefix` → `$WASP_WINEPREFIX` →
+`KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix`, wine by `--wine` → `$WASP_WINE` → PATH):
+```bash
+KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wasp_engine.py \
+    --wif /path/to/model.wif --run-dir /scratch/wasp_run1 --extract-all
+# list the variables of a result file:
+KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wasp_engine.py --list-variables /scratch/wasp_run1/model.BMD2
+```
+The tool copies the `.wif` into a fresh run dir (`--copy-siblings` also copies the other files
+of its folder; sub-folders and absolute paths inside the `.wif` are not staged), runs the
+engine within one time budget (`--timeout`, default 900 s, max 1080 s, engine + extraction),
+and counts the run as good ONLY if the engine
+prints "run successfully closed out", writes `.OUT` + a valid `.BMD2`, and prints no ERROR
+lines other than "Failed to locate time function" (older example files read by 8.5 print
+these; they are counted in the summary, their effect on results is not checked). The wine
+exit code is not used (waspccli returns 2 even on good runs). Exit codes: 0 ok, 1 run or
+extraction failed, 2 bad command line, 3 WINE/engine missing (nothing run). Results:
+`<run-dir>/<model>_extract.csv` (Date_Time, Segment, one column per variable) and
+`<run-dir>/wasp_engine_summary.json`. Official test case: `test_cases/steady_state/`
+(EPA "Steady State" example river, 10 segments, DO/CBOD).
 
 ---
 
@@ -168,7 +214,13 @@ Key characteristics:
 
 ## 2. Installation
 
-### Analytic reimplementation (Python)
+### Real engine (EPA WASP 8.5.0 under WINE)
+
+Installed on this server in the WINE prefix `KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix`
+(`C:\WASP8`, headless install of the official EPA installer; no display needed). Needs `wine`
+(WINE 9.0, `/usr/bin/wine`). Run it only through `tools/run_wasp_engine.py` (section 0).
+
+### Analytic reimplementation (Python) — SURROGATE only
 
 ```bash
 # No compilation needed -- pure Python
@@ -293,7 +345,8 @@ If depth values are > 100 in a lake context, units may be feet or cm.
 |----------------------------|------------|----------------------------------|-------------------------------------------------------|
 | `convert_forcing_to_wasp`  | s1_forcing | `tools/convert_forcing_to_wasp.py` | WQP/NLA CSV to cleaned observation time series      |
 | `convert_parameters_to_wasp`| s2_params | `tools/convert_parameters_to_wasp.py`| Lake morphometry + kinetic + thermal parameters    |
-| `run_wasp`                 | s3_execute | `tools/run_wasp.py`                | Execute seasonal T/DO model + profiles + TSI        |
+| `run_wasp`                 | s3_execute | `tools/run_wasp.py`                | SURROGATE: execute analytic seasonal T/DO model + profiles + TSI (not EPA WASP) |
+| `run_wasp_engine`          | real engine | `tools/run_wasp_engine.py`        | REAL EPA WASP 8.5.0: run a `.wif` under WINE, check close-out, extract `.BMD2` to CSV |
 | `parse_output_wasp`        | s4_output  | `tools/parse_output_wasp.py`       | Parse T/DO profiles, compute R/RMSE/bias, TSI       |
 
 All tools follow the **validate -> process -> validate** pattern:
@@ -421,7 +474,7 @@ Typical parameter values for lakes:
 
 ---
 
-## 9. Validated Results (Lake Erie Central Basin)
+## 9. Validated Results (Lake Erie Central Basin) — SURROGATE model, not EPA WASP
 
 | Metric                  | Calibration | Validation |
 |-------------------------|-------------|------------|

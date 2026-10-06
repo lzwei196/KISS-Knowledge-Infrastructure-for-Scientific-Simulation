@@ -1,0 +1,23 @@
+{
+  "description": "Expected results for EPA's official WASP 'Steady State' example (SteadyState.wif from steady-state-example.zip, EPA WASP model examples): a 10-segment river (kinematic-wave flow, upstream boundary + NPDES point source) with 5 systems (Upstream BOD, NPDES BOD, DO, Solids, Temp), 4.96 days, output every 0.014 d. Run with the REAL EPA WASP 8.5.0 engine (waspccli.exe under WINE) through the KI tool tools/run_wasp_engine.py; values read from SteadyState.BMD2 with EPA's BMD2_Extract.exe. EPA ships no reference output for this example, so the values were recorded from our own runs: two clean runs on 2026-10-06 gave byte-identical .OUT, .BMD2 and extracted CSV (deterministic). Segment 1 = 'Downstream' (river outlet), segment 9 = 'PointSource'.",
+  "engine_version": "EPA WASP 8.5.0 (banner: Wasp suite version 8.5.0, Gui develop af12325 dirty, Model master e86fb43), installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe, under WINE 9.0",
+  "numeric_checks": [
+    {"name": "closed_out", "expected": 1, "tol": 0, "why": "engine printed 'WASP8 run successfully closed out' (finished normally; the tool also requires .OUT and a valid .BMD2)"},
+    {"name": "n_segments", "expected": 10, "tol": 0, "why": "BMD2 header: 10 river segments"},
+    {"name": "n_variables", "expected": 9, "tol": 0, "why": "BMD2 header: 9 output variables"},
+    {"name": "n_output_times", "expected": 355, "tol": 0, "why": "records per segment, 2012-07-01 00:00 to 2012-07-05 22:58"},
+    {"name": "known_time_function_errors", "expected": 31, "tol": 0, "why": "diagnostic baseline: WASP 8.5 prints 31 'Failed to locate time function' lines for this 2017 file; a change means the engine reads the file differently"},
+    {"name": "do_final_seg1", "var": "Dissolved Oxygen", "segment": 1, "stat": "final", "expected": 7.234781, "tol": 0.0001, "why": "DO (mg/L) at the river outlet at the end"},
+    {"name": "do_final_seg9", "var": "Dissolved Oxygen", "segment": 9, "stat": "final", "expected": 5.7412233, "tol": 0.0001, "why": "DO (mg/L) at the point-source segment at the end (oxygen sag)"},
+    {"name": "do_max_seg1", "var": "Dissolved Oxygen", "segment": 1, "stat": "max", "expected": 11.52054, "tol": 0.0001, "why": "largest DO (mg/L) at the outlet during the run"},
+    {"name": "cbod_final_seg1", "var": "Total CBOD", "segment": 1, "stat": "final", "expected": 105.90371, "tol": 0.001, "why": "total CBOD (mg/L) at the outlet at the end"},
+    {"name": "cbod_final_seg9", "var": "Total CBOD", "segment": 9, "stat": "final", "expected": 117.00803, "tol": 0.001, "why": "total CBOD (mg/L) at the point-source segment at the end"},
+    {"name": "temp_final_seg9", "var": "Water Temperature", "segment": 9, "stat": "final", "expected": 21.372213, "tol": 0.0001, "why": "water temperature (deg C) at the point-source segment at the end"},
+    {"name": "flow_final_seg1", "var": "Flow Out of Segment", "segment": 1, "stat": "final", "expected": 0.3567161, "tol": 1e-06, "why": "outflow (m3/s) of the outlet segment; close to the 0.14 + 0.22 m3/s boundary inflows"},
+    {"name": "volume_final_seg1", "var": "Volume", "segment": 1, "stat": "final", "expected": 2653.1342, "tol": 0.001, "why": "volume (m3) of the outlet segment at the end"}
+  ],
+  "recorded_on": "2026-10-06",
+  "recorded_with": "tools/run_wasp_engine.py (live KI /mnt/disk1/Hydrocraft_server/models/WASP/knowledge_infrastructure) -> wine C:\\WASP8\\wasp\\bin\\waspccli.exe SteadyState.wif; WINEPREFIX /home/server/engine_builds_20261006/wasp/wineprefix; extraction with C:\\WASP8\\wasp\\bin\\BMD2_Extract.exe",
+  "reference": "Own runs (no official EPA reference output exists for this example). Two clean runs were byte-identical.",
+  "notes": "The run prints 31 'ERROR: Failed to locate time function' lines (the example was saved by WASP 8 in 2017 and is read by 8.5) and the wine exit code is 2, yet the engine closes out normally and writes all outputs. Whether the missing time functions change the science of this example has NOT been checked; these values are a repeat-run baseline for this engine build, not a validated physical result. Water temperature starts from 0 and is still rising at the end of this short run."
+}

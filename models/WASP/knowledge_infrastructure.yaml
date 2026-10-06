@@ -1,5 +1,9 @@
 # knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
 # the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+# CURATED OVERRIDE 2026-10-06 (real-engine wiring): `package.real_engine`, the SURROGATE label in
+# `package.implementation.provenance`, and the 5th tool were added by hand. generate_ki_manifest.py
+# does not know these fields yet -- re-add them after any regeneration
+# (record: KISSPATH_HOME/ki_fix_campaign/reviews/WASP/).
 
 package:
   name: WASP
@@ -7,22 +11,38 @@ package:
   implementation:
     id: hydrocraft-wasp
     version: 1.0.0
-    provenance: Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain
-      lineage) for lakes and reservoirs.
+    provenance: 'SURROGATE: Python; analytic reimplementation of WASP core water-quality processes (EPA
+      public-domain lineage) for lakes and reservoirs. NOT EPA WASP; the real engine is package.real_engine.'
   scientific_reference_version: WASP (US EPA Water Analysis Simulation Program) core water-quality physics;
     analytic lake/reservoir reimplementation (temperature, DO, BOD, TSI)
   binary:
     path: KISSPATH_KI_ROOT/WASP/knowledge_infrastructure/tools/run_wasp.py
     type: Python
+    role: legacy analytic SURROGATE (not EPA WASP)
+  real_engine:
+    name: US EPA WASP (Water Quality Analysis Simulation Program)
+    version: 8.5.0
+    runtime_banner: Wasp suite version 8.5.0, Gui develop af12325 dirty, Model master e86fb43
+    exe: C:\WASP8\wasp\bin\waspccli.exe
+    exe_host_path: KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix/drive_c/WASP8/wasp/bin/waspccli.exe
+    launcher: wine (WINE 9.0, /usr/bin/wine)
+    wineprefix: KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix
+    discovery: --wineprefix -> $WASP_WINEPREFIX -> wineprefix above; --wine -> $WASP_WINE -> PATH
+    result_extractor: C:\WASP8\wasp\bin\BMD2_Extract.exe (EPA, same install)
+    installer: wasp-version-8.5.0-install-64-bit-10-25-2025.exe (epa.gov)
+    installer_sha256: 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4
+    tool: tools/run_wasp_engine.py
+    test_case: test_cases/steady_state
 pipeline:
   stages: []
 tools:
-  count: 4
+  count: 5
   files:
   - tools/convert_forcing_to_wasp.py
   - tools/convert_parameters_to_wasp.py
   - tools/parse_output_wasp.py
   - tools/run_wasp.py
+  - tools/run_wasp_engine.py
 inputs:
   forcing:
   - name: water temperature
@@ -96,7 +116,7 @@ validation:
   metrics:
     best_r: 0.996
 summary:
-  total_tools: 4
+  total_tools: 5
   total_stage_docs: 0
   total_diagnostic_triplets: 26
   generated: '2026-08-15'

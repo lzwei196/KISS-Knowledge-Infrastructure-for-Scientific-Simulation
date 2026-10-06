@@ -1,0 +1,28 @@
+{
+  "description": "Expected results for the official DHSVM Chiwawa test case (DHSVM-PNNL repo TestCase/Chiwawa, config INPUT.Chiwawa.Baseline unchanged): Chiwawa River basin, WA, USA, 425 x 300 grid at 90 m (55046 active pixels), 3-hour step, 10/01/1970-00 to 10/01/1971-00 (the official period, one water year), Livneh gridded forcing, network flow routing. Checks: normal finish + Mass.Final.Balance terms + streamflow and snow numbers.",
+  "engine_version": "DHSVM Version 3.2 (DHSVM-PNNL git e6f333d0e70ed72345d52f1ab83e35317fa92458, 2022-07-21)",
+  "numeric_checks": [
+    {"name": "returncode", "expected": 0, "tol": 0, "why": "DHSVM exits normally"},
+    {"name": "end_of_model_run", "expected": 1, "tol": 0, "why": "model's own end line 'END OF MODEL RUN' in stdout"},
+    {"name": "n_streamflow_steps", "expected": 2920, "tol": 0, "why": "365 days x 8 three-hour steps in Streamflow.Only"},
+    {"name": "n_aggregated_steps", "expected": 2922, "tol": 0, "why": "rows in Aggregated.Values (own run)"},
+    {"name": "mb_total_inflow_mm", "expected": 1566.438, "tol": 0.002, "why": "Mass.Final.Balance Total Inflow"},
+    {"name": "mb_precip_mm", "expected": 1575.694, "tol": 0.002, "why": "Mass.Final.Balance Precip/Inflow"},
+    {"name": "mb_total_outflow_mm", "expected": 1469.245, "tol": 0.002, "why": "Mass.Final.Balance Total Outflow"},
+    {"name": "mb_et_mm", "expected": 174.35, "tol": 0.002, "why": "Mass.Final.Balance ET"},
+    {"name": "mb_channel_int_mm", "expected": 1294.895, "tol": 0.002, "why": "Mass.Final.Balance ChannelInt (water to the channels)"},
+    {"name": "mb_storage_change_mm", "expected": 97.157, "tol": 0.002, "why": "Mass.Final.Balance Storage Change"},
+    {"name": "mb_final_swq_mm", "expected": 137.985, "tol": 0.002, "why": "Mass.Final.Balance Final SWQ (snow left on 10/01/1971)"},
+    {"name": "mb_final_soil_moisture_mm", "expected": 344.184, "tol": 0.002, "why": "Mass.Final.Balance Final Soil Moisture"},
+    {"name": "mb_mass_error_mm", "expected": -0.036, "tol": 0.002, "why": "Mass.Final.Balance Mass Error: water balance closes to 0.036 mm over the year"},
+    {"name": "flow_mean_m3_per_step", "expected": 197716.97226027396, "tol": 1.0, "why": "mean of Streamflow.Only (m3 per 3-h step) at the Chiwawa outlet"},
+    {"name": "flow_max_m3_per_step", "expected": 3140400.0, "tol": 1.0, "why": "peak of Streamflow.Only"},
+    {"name": "flow_last_m3_per_step", "expected": 73709.0, "tol": 1.0, "why": "last value of Streamflow.Only (10/01/1971-00)"},
+    {"name": "swq_max_basin_mean_m", "expected": 1.45061, "tol": 0.00001, "why": "peak basin-mean snow water equivalent (Swq column of Aggregated.Values)"},
+    {"name": "nan_inf_tokens_in_outputs", "expected": 0, "tol": 0, "why": "no NaN/Inf values in any output file"}
+  ],
+  "recorded_on": "2026-10-06",
+  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM run through the KI tool tools/run_dhsvm.py on the unchanged official inputs (pack DHSVM/chiwawa_v1)",
+  "reference": "The DHSVM repo ships no reference outputs for Chiwawa (the output/ folder is not tracked), so the numbers come from our own runs: two clean runs (one through the KI tool, one direct) gave byte-identical output files (Aggregated.Values, Mass.Balance, Mass.Final.Balance, Stream.Flow, Streamflow.Only, saturation_extent.txt).",
+  "notes": "The official period is one water year and runs in about 2-3 minutes, so nothing was shortened. Mass.Final.Balance prints 3 decimals, so tol 0.002 mm there; Streamflow.Only prints 5 significant digits."
+}

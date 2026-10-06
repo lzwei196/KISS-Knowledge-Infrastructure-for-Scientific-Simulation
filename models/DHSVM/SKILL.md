@@ -68,6 +68,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Tools**: 5 validated Python scripts
 - **Diagnostics**: 18 triplets across 6 failure domains
 - **Validation**: Chiwawa watershed test case
+- **Foundation test case** (KISS `test_cases/chiwawa/`): official TestCase/Chiwawa; its 3.66 GB data is the Netdisk pack `/KISS_test_case_packs/DHSVM/chiwawa_v1` — share https://pan.baidu.com/s/1ksx24w8Uz4XfO2Fy1KjDwQ code `upbs` (server copy `KISSPATH_HOME/ki_test_case_packs/DHSVM/chiwawa_v1`); `run_reference.py` downloads it if missing and checks every file (bytes + sha256) before running.
 - **Created**: 2026-03-25
 
 ---

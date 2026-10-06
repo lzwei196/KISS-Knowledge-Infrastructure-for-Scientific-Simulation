@@ -1045,7 +1045,14 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         tool = st.get("tool")
         if tool is not None and not isinstance(tool, str):
             errs.append(f"step {st.get('id')!r} tool must be a path string or null"); continue
-        for problem in validate_step_environment(st.get("env")):
+        environment_errors = validate_step_environment(st.get("env"))
+        if (for_review and not environment_errors and st.get("env")
+                and project is not None and ki_roots.get(ki) is not None):
+            try:
+                step_environment(st, project, ki_roots[ki])
+            except (OSError, ValueError, RuntimeError) as error:
+                environment_errors.append(str(error))
+        for problem in environment_errors:
             errs.append(f"step {st.get('id')!r} {problem}")
         if any(not isinstance(st.get(k), list) or
                any(not isinstance(v, str) for v in st[k]) for k in ("inputs", "outputs")):

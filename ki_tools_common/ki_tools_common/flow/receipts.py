@@ -695,6 +695,43 @@ def _diagnostic_stream_log(path: Path) -> bool:
     return name in {"stdout.log", "stderr.log"} or name.endswith((".stdout.log", ".stderr.log"))
 
 
+def _validate_png(path: Path) -> tuple[bool, str]:
+    """Check real PNG integrity and pixel decoding, never numeric model content."""
+    try:
+        import warnings
+        from PIL import Image
+        # Pillow stops at IEND without checking its CRC/truncation. Walk only
+        # chunk headers (seek over payloads) to require a complete first IEND
+        # and no trailing/duplicate chunks; Pillow verifies the other chunks.
+        with path.open("rb") as stream:
+            if stream.read(8) != b"\x89PNG\r\n\x1a\n":
+                raise ValueError("invalid PNG signature")
+            while True:
+                header = stream.read(8)
+                if len(header) != 8:
+                    raise ValueError("PNG is missing a complete IEND chunk")
+                length = int.from_bytes(header[:4], "big")
+                if header[4:] == b"IEND":
+                    if length != 0 or stream.read(4) != b"\xae\x42\x60\x82" or stream.read(1):
+                        raise ValueError("PNG IEND length/CRC or trailing data is invalid")
+                    break
+                stream.seek(length + 4, 1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path) as picture:
+                if picture.format != "PNG":
+                    raise ValueError("file is not a PNG image")
+                width, height = picture.size
+                picture.verify()
+            # verify() checks PNG chunk integrity; load() also detects a valid
+            # container whose compressed pixel stream is incomplete/corrupt.
+            with Image.open(path) as picture:
+                picture.load()
+        return True, f"{width}x{height} PNG decoded; presentation artifact, excluded from numeric model evidence"
+    except Exception as error:
+        return False, f"PNG decode/verification failed: {type(error).__name__}: {error}"
+
+
 def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None = None,
                      run_facts: dict | None = None, physical: bool = True) -> dict:
     """Return {"status": passed|failed|warning, "checks": [...]}.
@@ -731,6 +768,7 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
     positive_needed = physical and _positive_required(rank1)
 
     any_numeric = False
+    any_presentation = False
     for out in outputs:
         p = Path(out)
         if not p.is_file():
@@ -742,6 +780,11 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
         if p.stat().st_size == 0:
             add(f"non_empty:{p.name}", False, "0 bytes"); continue
         add(f"exists_non_empty:{p.name}", True, f"{p.stat().st_size} bytes")
+        if p.suffix.lower() == ".png":
+            valid, detail = _validate_png(p)
+            add(f"png_decode:{p.name}", valid, detail)
+            any_presentation |= valid
+            continue
         vals, n, note = _load_series(p, rank1_vars)
         if vals is None:
             # an output the app cannot inspect is a FAIL for NetCDF (the model's main output
@@ -774,7 +817,7 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
             # physical=False (a preparation step): a constant file can be legitimate (a mask
             # of ones) — no check emitted, so prep validation is not downgraded to 'warning'.
             add(f"not_constant:{p.name}", False, f"all values == {finite[0]}")
-    if not any_numeric:
+    if not any_numeric and (physical or not any_presentation):
         add("any_numeric_output", False, "no output file had numeric content to check", level="warn")
 
     fails = [c for c in checks if not c["ok"] and c["level"] == "fail"]

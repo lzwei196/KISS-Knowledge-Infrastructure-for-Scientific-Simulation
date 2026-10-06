@@ -44,6 +44,7 @@ calibration_hidden = [
     "pymoo.functions.compiled.stochastic_ranking",
 ]
 harness_hidden = [
+    "PIL.Image", "PIL.PngImagePlugin",
     "ki_tools_common",
     "ki_tools_common.harness",
     "ki_tools_common.harness.ki_harness",
@@ -96,7 +97,7 @@ a = Analysis(
     # silently adding hundreds of MB to a release.
     excludes=[
         "torch", "torchvision", "torchaudio", "pandas", "matplotlib",
-        "PIL", "pyarrow", "IPython", "jedi", "botocore", "boto3",
+        "pyarrow", "IPython", "jedi", "botocore", "boto3",
         "fsspec", "lxml", "dask", "numba", "mpi4py", "pathos",
     ],
     noarchive=False,

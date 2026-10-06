@@ -36,6 +36,10 @@ that the forcing is suitable for a new site.
 - A new plan cannot describe staging or scientific checks in a custom
   `tool: null` step. It must bind a real KI tool or a reviewed project data tool.
   Only the canonical host preflight may omit its tool.
+- Review applies the same environment-path containment checks as execution.
+  An external `CRHM_BIN` value was previously accepted at review and rejected
+  before launch. The corrected plan uses the explicitly declared executable
+  argument and retains `TZ=UTC0` for the reference case clock.
 
 ## What the GUI rerun established
 
@@ -63,7 +67,74 @@ reference failure, despite the successful installation check. The agent's
 suggestion that the extra lines are harmless is not established without a
 separate comparison.
 
-At the time of this source report, the clean CRHM native rerun remains pending. Installation
-checks, accepted plans and application regression tests are separate evidence
-from reference-case execution and field validation. The active downloaded KI
-snapshot is separate from the source repository's bundled model tree.
+The clean CRHM project (`92b9274afaba`) ran BadLake through the GUI on October 6.
+The reviewed staging tool made exact copies of the two original inputs, then
+the KI's `run_crhm.py` launched the declared Windows CRHM executable. The native
+run returned zero and the unchanged reference criteria passed:
+
+| Check | Result |
+| --- | --- |
+| Hourly records | 26,280; no gaps or nonfinite values |
+| First / last record | 1973-01-01 01:00 / 1976-01-01 00:00 |
+| Final basin flow | 0.07; expected 0.07 ± 0.02 |
+| Final basin groundwater flow | 0.04638228; expected 0.04638228 ± 0.005 |
+| Input size and SHA-256 | Both original files match |
+
+The native receipt is `CRHM_20261006T161053_df7152`; the independent reference
+check receipt is `CRHM_20261006T161120_e293ed`. The KI parser subsequently
+produced the CSV (`CRHM_20261006T161124_1aaa98`). A separate read-only audit
+confirmed the timestamps, row widths, finite values, original tolerances and
+input hashes. Raw output SHA-256:
+`565cd81b897ca6906be2e4b186120ed6bf8c017bd9435a9b28980a581d630839`.
+
+The KI plotting tool generated five PNGs and returned zero, but its first host
+receipt failed: the generic output validator decoded PNG binary content as
+numeric text and found a spurious nonfinite token. All five images passed
+independent image decoding. This is a Desktop receipt-validation defect, not a
+CRHM model or data-service failure. The original failed plotting receipt
+(`CRHM_20261006T161133_a55b4b`) is preserved.
+
+The host fix validates PNG structure and decoded pixels, declares Pillow in
+source dependencies and includes its decoder in all three bundle specifications.
+Images remain presentation artifacts: image-only output cannot complete a
+physical model step, and a valid figure cannot hide invalid numerical output.
+
+The GUI retry passed under the existing approval
+(`CRHM_20261006T163234_8c67b8`) in a separate `plots_retry` directory. Completion
+initially remained blocked because the five original failed-attempt files were
+still present without passing output evidence. After preserving exact copies of
+those files, the failed receipt and its log in the external test archive, DS
+regenerated only the original figure paths through the approved KI plot tool.
+Receipt `CRHM_20261006T163517_1fae22` passed all five PNG integrity checks.
+The host then reported **Completed**, with the earlier failed attempt retained
+as superseded history. No model, raw check or parser was rerun; their recorded
+input/output hashes and the original scientific criteria are unchanged. The
+figures use a short title; the case-clock interpretation remains explicit in
+the accompanying result explanation.
+
+These are reference-case results, not a new-site calibration or validation
+against field observations. Installation checks, accepted plans and application
+regression tests remain separate evidence. The active downloaded KI snapshot is
+separate from the source repository's bundled model tree. No fresh VIC native
+run or claim that all 127 models pass is included in this test.
+
+## Application regression evidence
+
+The broad Desktop run recorded 2,224 passed, four outdated assertion failures
+and 35 skips. After correcting those assertions, the affected and related
+Desktop suites recorded 509 passed and one skip. The configured shared-library
+release-workflow suite recorded 407 passed and seven skips. These suites
+overlap; their pass counts must not be added. The original broad run is not
+reported as failure-free. Subsequent focused tests cover the final staging,
+environment review and PNG validation changes.
+
+The final PNG/environment follow-up recorded 106 Desktop tests passed and 119
+shared tests passed with three skips. It exercises the actual Desktop dispatcher
+and signed receipts: PNG-only `run`, `model_run` and `route` steps cannot
+complete; a plotting `process` can. Corrupt chunks, incomplete pixel streams,
+truncated or invalid PNG end markers and unavailable decoders fail validation.
+The `model_run` label now receives the existing numerical model-output checks.
+
+This source update does not certify a newly frozen executable or installer.
+The published Windows installer remains 0.6.56; packaging changes need the
+separate build and installed-application smoke tests before a new release.

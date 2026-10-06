@@ -21,13 +21,18 @@ Desktop update agents should read the JSON manifest first and use this file to e
 - Custom executable checks require real tool bindings and passing run evidence.
   DS planning diagnostics, continued-project evidence, calibration result displays,
   browser reconnect behavior and prepared-data status handling are improved.
+- Plan review catches environment paths that execution would reject. PNG figures
+  are checked with an image decoder instead of the numeric-text parser; model
+  runs still require numerical output evidence. Pillow is declared and included
+  in bundle specifications, pending a future installer build and smoke test.
 - The [October 6 test report](docs/issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md)
   distinguishes application tests, installation checks and native reference results.
   SHAW's strict Trial test still has an output line-count mismatch. Downloaded KI
   revision `8352acb8` is separate from this repository's bundled model tree.
 - Windows 开发源码：修复 KI 与共享工具更新一致性、旧文件混入新项目、验证状态刷新及
   不可执行计划；增加观测数据 KI 和受审阅的本地读取流程。安装检查与科学结果分别记录，
-  不将 SHAW 算例的行数不符标记为通过。本条不是新安装包发布声明。
+  不将 SHAW 算例的行数不符标记为通过。PNG 图片改用图像解码校验，不能代替模型数值结果；
+  计划审批前检查环境路径。CRHM 原生参考算例已通过。本条不是新安装包发布声明。
 
 ## v0.6.56 — Windows illustrated quickstarts and desktop introduction
 

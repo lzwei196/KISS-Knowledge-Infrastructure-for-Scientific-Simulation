@@ -406,7 +406,7 @@ class FlowSession:
         logs_dir.mkdir(parents=True, exist_ok=True)
         log = logs_dir / f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}_{secrets.token_hex(6)}.log"
         log.write_text(stdout_tail, encoding="utf-8", errors="replace")
-        physical = kind in ("run", "route", "calibrate")
+        physical = kind in ("run", "model_run", "route", "calibrate")
         from .catalog import KI
         package_meta = KI(ki, Path(ki_root)).meta
         data_ki = ({"name": ki, "version": package_meta.get("version"),

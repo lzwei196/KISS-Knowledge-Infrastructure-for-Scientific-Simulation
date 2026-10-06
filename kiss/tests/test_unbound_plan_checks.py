@@ -90,3 +90,16 @@ def test_project_data_binding_cannot_be_used_for_a_model_run(tmp_path):
         ki, _cfg(project), project_mode=True, flow=flow))
     plan["steps"][0].update(kind="model_run", tool=authored["tool"], project_data_tool=authored["project_data_tool"])
     assert any("never model execution" in error for error in flow.write_plan(plan, inventory))
+
+
+def test_live_crhm_external_binary_environment_is_rejected_at_submission(tmp_path):
+    ki, project, flow, plan, inventory = case(tmp_path)
+    plan["steps"][0]["env"] = {"CRHM_BIN": str(tmp_path / "shared-bin/crhm.exe"), "TZ": "UTC0"}
+    result = api.execute_tool("write_plan", {"plan": plan, "data_inventory": inventory},
+                              ki, _cfg(project), project_mode=True, flow=flow)
+    assert result.startswith("PLAN NOT WRITTEN")
+    assert "env path for 'CRHM_BIN' is outside the project and KI" in result
+    assert not (project / "runs/plan.json").exists()
+    del plan["steps"][0]["env"]["CRHM_BIN"]
+    assert flow.write_plan(plan, inventory) == []
+    assert json.loads((project / "runs/plan.json").read_text())["steps"][0]["env"] == {"TZ": "UTC0"}

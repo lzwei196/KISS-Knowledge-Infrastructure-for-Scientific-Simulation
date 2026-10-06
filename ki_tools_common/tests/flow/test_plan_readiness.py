@@ -57,6 +57,49 @@ def test_review_allows_pending_user_input_but_execution_needs_a_source(documents
     assert any("still missing" in error for error in plan.validate(pj, inv, ["M"], roots, for_execution=True))
 
 
+def test_review_rejects_external_environment_path_before_approval(documents, tmp_path):
+    pj, inv, roots = documents
+    project = tmp_path / "project"
+    project.mkdir()
+    pj["steps"][0]["env"] = {"CRHM_BIN": str(tmp_path / "shared-bin/crhm.exe"), "TZ": "UTC0"}
+    errors = plan.validate(pj, inv, ["M"], roots, for_review=True, project=project)
+    assert errors == ["step 'run' env path for 'CRHM_BIN' is outside the project and KI"]
+    # Execution still applies its existing runtime guard to old approved plans.
+    assert plan.validate(pj, inv, ["M"], roots, for_execution=True, project=project) == []
+    with pytest.raises(ValueError, match="outside the project and KI"):
+        plan.step_environment(pj["steps"][0], project, roots["M"])
+    # A draft/server caller without both roots retains schema-only validation.
+    assert plan.validate(pj, inv, ["M"], roots, for_review=True) == []
+
+
+@pytest.mark.parametrize("value", ["project", "ki", "${PROJECT}/inputs/deck.prj", "${KI_ROOT}/tools"])
+def test_review_accepts_runtime_valid_environment_paths_and_literal_timezone(documents, tmp_path, value):
+    pj, inv, roots = documents
+    project = tmp_path / "project"
+    project.mkdir()
+    value = str(project / "inputs/deck.prj") if value == "project" else str(roots["M"] / "tools") if value == "ki" else value
+    pj["steps"][0]["env"] = {"MODEL_INPUT": value, "TZ": "UTC0"}
+    before = deepcopy(pj)
+    assert plan.validate(pj, inv, ["M"], roots, for_review=True, project=project) == []
+    assert plan.step_environment(pj["steps"][0], project, roots["M"])["TZ"] == "UTC0"
+    assert pj == before
+
+
+def test_review_uses_resolved_environment_path_containment(documents, tmp_path):
+    pj, inv, roots = documents
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "external"
+    outside.mkdir()
+    try:
+        (project / "alias").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("host cannot create symbolic links")
+    pj["steps"][0]["env"] = {"MODEL_INPUT": "${PROJECT}/alias/data.txt"}
+    assert any("outside the project and KI" in error for error in
+               plan.validate(pj, inv, ["M"], roots, for_review=True, project=project))
+
+
 @pytest.mark.parametrize("source", [
     {"chosen_source": "nasa_power"}, {"dataset_id": "cmfd_v1", "delivery": "served"},
     {"dataset_id": "cmfd_v1", "delivery": "subset"}, {"decision": "use the KI default"},

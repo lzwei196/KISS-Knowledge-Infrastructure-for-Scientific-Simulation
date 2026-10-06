@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 flow = [
     "PyYAML>=6.0",
+    "Pillow>=10.4",
 ]
 netcdf = [
     "xarray>=0.19",

@@ -1,0 +1,104 @@
+{
+  "description": "Expected results for the official COAWST test application Inlet_test, Coupled variant (Projects/Inlet_test/Coupled, COAWST 3.8 commit 79bd6033689b): ROMS (75x70x8, 720 steps of 60 s = 12 h, sediment + morphology, analytical forcing) two-way coupled with SWAN (76x71 curvilinear grid, 36 directions) through MCT every 600 s, 1 ocean + 1 wave MPI rank. COAWST ships NO reference output for this case: all values below are OWN-RUN values (regression values), not official reference results.",
+  "engine_version": "COAWST 3.8 (main, commit 79bd6033689b80b1d52f9868d52dfaf6c6e3979b; ROMS/TOMS 4.1, SWAN 41.45, MCT 2.6.0); coawstM built for INLET_TEST on 2026-10-06 (gfortran 13.3.0, Open MPI 4.1.6, netCDF-Fortran 4.5.4)",
+  "numeric_checks": [
+    {
+      "name": "his_records",
+      "expected": 13,
+      "tol": 0,
+      "why": "ROMS history records: t=0 plus every NHIS=60 steps of 60 s up to NTIMES=720 (12 h)"
+    },
+    {
+      "name": "his_last_time_s",
+      "expected": 43200,
+      "tol": 0,
+      "why": "last ocean_time in ocean_his_coupled.nc = 720 x 60 s"
+    },
+    {
+      "name": "roms_last_step",
+      "expected": 720,
+      "tol": 0,
+      "why": "ROMS reached the last step 720 at 0001-01-01 12:00:00 (step line in the log)"
+    },
+    {
+      "name": "coupling_exchanges",
+      "expected": 73,
+      "tol": 0,
+      "why": "ROMS received SWAN data 73 times: at start and every 600 s coupling interval for 12 h (log lines 'ROMS grid 1 recv data from SWAN grid 1'); proves two-way coupling ran"
+    },
+    {
+      "name": "station_records",
+      "expected": 721,
+      "tol": 0,
+      "why": "ocean_sta.nc records: NSTA=1, so every step 0..720"
+    },
+    {
+      "name": "nonfinite_values_end",
+      "expected": 0,
+      "tol": 0,
+      "why": "count of NaN/Inf in final free surface and wave height over wet cells"
+    },
+    {
+      "name": "zeta_max_end_m",
+      "expected": 0.2484125941991806,
+      "tol": 2.484125941991806e-07,
+      "why": "max free surface [m] over wet cells at t=12 h; tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "ubar_absmax_end_ms",
+      "expected": 1.5585823059082031,
+      "tol": 1.558582305908203e-06,
+      "why": "max |depth-mean u| [m/s] at t=12 h (inlet jet); tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "Hwave_max_end_m",
+      "expected": 1.1573752164840698,
+      "tol": 1.1573752164840698e-06,
+      "why": "max wave height [m] passed from SWAN to ROMS (Hwave in ocean_his) at t=12 h; tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "Hwave_mean_end_m",
+      "expected": 0.5101067423820496,
+      "tol": 5.101067423820495e-07,
+      "why": "mean wave height [m] over wet cells at t=12 h; tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "swan_hsig_nc_max_end_m",
+      "expected": 1.1574153900146484,
+      "tol": 1.1574153900146484e-06,
+      "why": "max significant wave height [m] in SWAN's own hsig.nc at the last output (12 h); tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "swan_point1_hsig_end_m",
+      "expected": 0.89239,
+      "tol": 8.9239e-07,
+      "why": "SWAN Hsig [m] at output point 'point1' (5000, 10000) in point1.table, last row; tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "bath_change_absmax_m",
+      "expected": 1.0567665100097656,
+      "tol": 1.0567665100097655e-06,
+      "why": "max |bathymetry change| [m] over 12 h from sediment morphology (SED_MORPH, bath[-1]-bath[0]); tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "sand_01_max_end_kgm3",
+      "expected": 15.692375183105469,
+      "tol": 1.5692375183105468e-05,
+      "why": "max suspended sand concentration [kg/m3] at t=12 h; tol = 1e-6 relative (two runs were bit-identical)"
+    },
+    {
+      "name": "roms_kinetic_energy_end",
+      "expected": 0.02740462,
+      "tol": 2.740462e-08,
+      "why": "ROMS domain kinetic energy printed at step 720; tol = 1e-6 relative (two runs were bit-identical)"
+    }
+  ],
+  "finished_check": "KI tool JSON: model returncode 0 and status success/completed_with_warnings, plus the model line 'ROMS/TOMS: DONE' in the run log",
+  "recorded_on": "2026-10-06",
+  "recorded_with": "run 1: direct 'mpirun -np 2 coawstM Projects/Inlet_test/Coupled/coupling_inlet_test.in' in a fresh dir; run 2: KI tools/run_coawst.py (--nprocs 2) in a fresh dir. Both from /home/server/engine_builds_20261006/coawst/COAWST/coawstM (sha256 c9cfaf10ea99796573d75b1d378cadf73ca15b739ebcc5274922f290e3614e97). All 892 NetCDF variables in the 7 output .nc files and all SWAN .mat/.table/.spc2d/restart files were identical between the two runs (only SWAN's PRINT01 log differs, by its start time stamp).",
+  "reference": "https://github.com/DOI-USGS/COAWST (Projects/Inlet_test/Coupled; no reference outputs shipped)",
+  "notes": [
+    "Inputs are the 12 tracked files of Projects/Inlet_test/Coupled plus ROMS/External/varinfo.dat, taken with git show 79bd6033689b:<path>, unmodified. The scrip_weights file named in coupling_inlet_test.in is not tracked and is not read (no MCT_INTERP_* option in inlet_test.h; ocean and wave share one grid). ocean_ini/bndry/clm/frc.nc named in ocean_inlet_test.in do not exist and are not read (analytical options); the run proves this.",
+    "run_reference.py places a byte-identical copy of coupling_inlet_test.in at the run root because the KI tool runs the model in the config file's folder (see README, Known KI gaps)."
+  ]
+}

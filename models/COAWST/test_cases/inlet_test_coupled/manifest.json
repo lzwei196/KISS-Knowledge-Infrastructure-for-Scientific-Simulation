@@ -1,0 +1,76 @@
+{
+  "test_case": "COAWST Projects/Inlet_test/Coupled (official COAWST test application INLET_TEST; ROMS + SWAN coupled through MCT)",
+  "engine": {
+    "name": "COAWST",
+    "version": "3.8 (main, commit 79bd6033689b80b1d52f9868d52dfaf6c6e3979b, 2026-03-11); ROMS/TOMS 4.1, SWAN 41.45, MCT 2.6.0",
+    "binary": "coawstM built for INLET_TEST (header Projects/Inlet_test/Coupled/inlet_test.h): /home/server/engine_builds_20261006/coawst/COAWST/coawstM, sha256 c9cfaf10ea99796573d75b1d378cadf73ca15b739ebcc5274922f290e3614e97, built 2026-10-06 from git archive of the commit with the official build_coawst.sh (copy with MY_ROOT_DIR and MCT paths only), gfortran 13.3.0, Open MPI 4.1.6, netCDF-Fortran 4.5.4; build env FC=mpif90 for SWAN's CMake",
+    "source": "https://github.com/DOI-USGS/COAWST Projects/Inlet_test/Coupled (12 tracked files) + ROMS/External/varinfo.dat, all via git show 79bd6033:<path>, unmodified",
+    "license": "COAWST: public domain (USGS) + CC0 1.0 (LICENSE.md); ROMS: MIT/X-style (ROMS/License_ROMS.txt); SWAN: GPL-3.0; MCT: Argonne copyright (Lib/MCT/COPYRIGHT)"
+  },
+  "ki": {
+    "model": "COAWST",
+    "run_tool": "tools/run_coawst.py (--binary, --config coupling_inlet_test.in at the run root, --nprocs 2)"
+  },
+  "simulation": {
+    "ocean": "ROMS 75x70x8, DT 60 s, NTIMES 720 (12 h), analytical initial/forcing/open-boundary (ANA_*), sediment (suspended sand, bed load, morphology), SSW_BBL, WEC_VF, GLS mixing",
+    "waves": "SWAN 76x71 curvilinear, 36 directions, 0.04-1.0 Hz, nonstationary 60 s, 12 h; boundary JONSWAP Hs 1 m Tp 10 s on the north side",
+    "coupling": "MCT, ocean<->wave every 600 s (73 exchanges), same grid, no SCRIP interpolation",
+    "mpi_ranks": 2,
+    "command": "mpirun -np 2 coawstM coupling_inlet_test.in (via tools/run_coawst.py, run from the folder holding Projects/ and ROMS/)",
+    "runtime": "about 9 minutes"
+  },
+  "files": {
+    "inputs/Projects/Inlet_test/Coupled/ana_fsobc.h": {
+      "bytes": 3625,
+      "sha256": "9369c3b155b2f0bbb7877bb853b681c927b02961f18709d2778a64855da3f147"
+    },
+    "inputs/Projects/Inlet_test/Coupled/ana_sediment.h": {
+      "bytes": 11447,
+      "sha256": "43fbdf2e173845af491127de7099d5f6014b065db951e162e5d8f596eb7a7305"
+    },
+    "inputs/Projects/Inlet_test/Coupled/coupling_inlet_test.in": {
+      "bytes": 7348,
+      "sha256": "de8832a66fdab7dd7129771c237843d7ba2cf18da414cd6776bdb07dd16375ce"
+    },
+    "inputs/Projects/Inlet_test/Coupled/inlet_test.h": {
+      "bytes": 2534,
+      "sha256": "9028ee411d8afe35300e2dde18a34a3000742aacfc624d054f4233bb663bf388"
+    },
+    "inputs/Projects/Inlet_test/Coupled/inlet_test_bathy.bot": {
+      "bytes": 83232,
+      "sha256": "721ddd112ca9dad5c58b9fb003146eac01228ae9826af6afb284b55d0b7722f0"
+    },
+    "inputs/Projects/Inlet_test/Coupled/inlet_test_grid.nc": {
+      "bytes": 1235004,
+      "sha256": "7a1d4484a77407be459d72c2f3ac03cac1cb1eccacd09c732acc2ff771a2a783"
+    },
+    "inputs/Projects/Inlet_test/Coupled/inlet_test_grid_coord.grd": {
+      "bytes": 144144,
+      "sha256": "608fd73181f9c2b023ad9acf9f0d111e171ae7cea31184cd8641b3dc7e0b3dd3"
+    },
+    "inputs/Projects/Inlet_test/Coupled/inlet_test_mudl.bot": {
+      "bytes": 83232,
+      "sha256": "db52a73df3e685268dd32b092b6f806c25ef8b15de69196263a84d3aabea1f39"
+    },
+    "inputs/Projects/Inlet_test/Coupled/ocean_inlet_test.in": {
+      "bytes": 167334,
+      "sha256": "381afcf6e73979471238997a48cae8bce4d4f67851a9a85378fa740419690dba"
+    },
+    "inputs/Projects/Inlet_test/Coupled/sediment_inlet_test.in": {
+      "bytes": 55462,
+      "sha256": "282ae9a2b44fd3be69bdc88d89d60d455ad2399fb5415c3d4cf032b0721952f5"
+    },
+    "inputs/Projects/Inlet_test/Coupled/stations_inlet_test.in": {
+      "bytes": 17294,
+      "sha256": "f0b4f42df6d87b268ab0a0476c68047498ddc9af4ef746653b606b79693b7657"
+    },
+    "inputs/Projects/Inlet_test/Coupled/swan_inlet_test.in": {
+      "bytes": 3952,
+      "sha256": "63430f49810595518039a3322d26c88d908459d08ba1e52c8b04366ad63a7349"
+    },
+    "inputs/ROMS/External/varinfo.dat": {
+      "bytes": 260737,
+      "sha256": "ca101d907193c968436f43d8b572026f4597a2487e796ea335f19569a35a672c"
+    }
+  }
+}

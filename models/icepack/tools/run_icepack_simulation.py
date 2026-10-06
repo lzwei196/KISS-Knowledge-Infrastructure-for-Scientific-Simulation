@@ -17,10 +17,60 @@ import logging
 import time
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:  # loaded under the icepack runtime (see ensure_model_runtime)
+    np = None
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+# icepack needs Firedrake, which python_env does not have. Model runtime (same as
+# preflight_check.py): --python, else $ICEPACK_PYTHON, else the server Firedrake venv
+# (Firedrake 2026.10.0 + upstream icepack master c9a29780). The chosen interpreter is used
+# as-is: no fallback to another one. The tool re-launches itself under it when needed.
+DEFAULT_MODEL_PYTHON = "KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python"
+_REEXEC_MARK = "_ICEPACK_TOOL_REEXEC"
+
+
+def ensure_model_runtime(python_arg, argv):
+    """Run under the selected icepack/Firedrake interpreter, re-launching if needed.
+
+    Exits 3 with a clear message if that interpreter is missing or cannot import
+    numpy, firedrake and icepack."""
+    explicit = python_arg or os.environ.get("ICEPACK_PYTHON", "").strip() or None
+    target = os.path.abspath(explicit) if explicit else DEFAULT_MODEL_PYTHON
+    source = "--python" if python_arg else ("ICEPACK_PYTHON" if explicit else "server default")
+    if os.path.abspath(sys.executable) != target:
+        if os.environ.get(_REEXEC_MARK):
+            logger.error("Re-launch ended in %s, not the selected icepack runtime %s (%s). NOT run.",
+                         sys.executable, target, source)
+            sys.exit(3)
+        if not (os.path.isfile(target) and os.access(target, os.X_OK)):
+            logger.error("icepack runtime %s (%s) not found or not executable. NOT run.",
+                         target, source)
+            sys.exit(3)
+        logger.info("Re-launching under the icepack runtime (%s): %s", source, target)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        env = dict(os.environ, **{_REEXEC_MARK: "1"})
+        try:
+            os.execve(target, [target, os.path.abspath(__file__)] + argv, env)
+        except OSError as exc:
+            logger.error("Could not start icepack runtime %s (%s): %s. NOT run.", target, source, exc)
+            sys.exit(3)
+    try:
+        import numpy  # noqa: F401
+        import firedrake  # noqa: F401
+        import icepack  # noqa: F401
+    except ImportError as exc:
+        logger.error("icepack runtime %s (%s) cannot import numpy + firedrake + icepack: %s. "
+                     "Use %s or set ICEPACK_PYTHON / --python to a Python that has them. NOT run.",
+                     target, source, exc, DEFAULT_MODEL_PYTHON)
+        sys.exit(3)
+    global np
+    if np is None:
+        import numpy as np
 
 
 def validate_inputs(config: dict) -> dict:
@@ -336,7 +386,11 @@ def validate_outputs(results: dict) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="Run icepack glacier simulation")
     parser.add_argument("--config", required=True, help="Path to JSON config file")
+    parser.add_argument("--python", default=None,
+                        help="Python with firedrake + icepack (default: $ICEPACK_PYTHON, else "
+                             + DEFAULT_MODEL_PYTHON + ")")
     args = parser.parse_args()
+    ensure_model_runtime(args.python, sys.argv[1:])
 
     with open(args.config) as f:
         config = json.load(f)

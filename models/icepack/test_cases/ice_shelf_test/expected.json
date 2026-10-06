@@ -1,0 +1,95 @@
+{
+  "description": "Expected results for icepack's own official test test/ice_shelf_test.py (icepack master c9a29780). Floating ice shelf, 20 km x 20 km, thickness 500 m -> 400 m, inflow 100 m/yr, T = 254.15 K; the diagnostic (momentum) solve is compared with the exact solution of Greve & Blatter on refined meshes. Pass rules: (a) the 4 official pytest tests pass with their own assert limits; (b) each printed convergence slope is above its official limit (official_min) AND equal to the value recorded on this server within tol. The test file prints slopes with 6 significant digits.",
+  "engine_version": "icepack 1.1.0 (upstream master c9a29780) on firedrake 2026.10.0, PETSc 3.26.0, Python 3.12.3",
+  "numeric_checks": [
+    {
+      "name": "pytest_returncode",
+      "expected": 0,
+      "tol": 0,
+      "why": "official pytest run finished with no failure"
+    },
+    {
+      "name": "pytest_tests",
+      "expected": 4,
+      "tol": 0,
+      "why": "4 official tests: convergence[icepack], convergence[petsc], parameterization, side_friction"
+    },
+    {
+      "name": "pytest_failures",
+      "expected": 0,
+      "tol": 0,
+      "why": "every official assert holds"
+    },
+    {
+      "name": "pytest_errors",
+      "expected": 0,
+      "tol": 0,
+      "why": "no test errors (firedrake/icepack present)"
+    },
+    {
+      "name": "pytest_skipped",
+      "expected": 0,
+      "tol": 0,
+      "why": "no test silently skipped"
+    },
+    {
+      "name": "slope_icepack_degree1",
+      "expected": 1.90382,
+      "tol": 0.001,
+      "official_min": 1.8,
+      "why": "mesh-convergence rate of the 'icepack' diagnostic solver, CG degree 1, error vs the exact ice-shelf solution; official assert slope > degree + 0.8"
+    },
+    {
+      "name": "slope_icepack_degree2",
+      "expected": 2.91626,
+      "tol": 0.001,
+      "official_min": 2.8,
+      "why": "mesh-convergence rate of the 'icepack' diagnostic solver, CG degree 2, error vs the exact ice-shelf solution; official assert slope > degree + 0.8"
+    },
+    {
+      "name": "slope_icepack_degree3",
+      "expected": 3.89358,
+      "tol": 0.001,
+      "official_min": 3.8,
+      "why": "mesh-convergence rate of the 'icepack' diagnostic solver, CG degree 3, error vs the exact ice-shelf solution; official assert slope > degree + 0.8"
+    },
+    {
+      "name": "slope_petsc_degree1",
+      "expected": 1.90382,
+      "tol": 0.001,
+      "official_min": 1.8,
+      "why": "mesh-convergence rate of the 'petsc' diagnostic solver, CG degree 1, error vs the exact ice-shelf solution; official assert slope > degree + 0.8"
+    },
+    {
+      "name": "slope_petsc_degree2",
+      "expected": 2.91626,
+      "tol": 0.001,
+      "official_min": 2.8,
+      "why": "mesh-convergence rate of the 'petsc' diagnostic solver, CG degree 2, error vs the exact ice-shelf solution; official assert slope > degree + 0.8"
+    },
+    {
+      "name": "slope_petsc_degree3",
+      "expected": 3.91985,
+      "tol": 0.001,
+      "official_min": 3.8,
+      "why": "mesh-convergence rate of the 'petsc' diagnostic solver, CG degree 3, error vs the exact ice-shelf solution; official assert slope > degree + 0.8"
+    },
+    {
+      "name": "slope_parameterization_degree2",
+      "expected": 2.49858,
+      "tol": 0.001,
+      "official_min": 1.95,
+      "why": "convergence rate with the viscosity written in terms of rheology B (CG degree 2); official assert slope > degree - 0.05"
+    },
+    {
+      "name": "side_friction_passed",
+      "expected": 1,
+      "tol": 0,
+      "why": "official sanity test: side-wall friction slows the shelf (norm(u) < norm(u_initial))"
+    }
+  ],
+  "recorded_on": "2026-10-06",
+  "recorded_with": "/home/server/engine_builds_20261006/firedrake/venv/bin/python -m pytest ice_shelf_test.py (OMP_NUM_THREADS=1), serial",
+  "reference": "official limits: the assert lines in inputs/ice_shelf_test.py (github.com/icepack/icepack, test/ice_shelf_test.py at c9a29780). Slope values: recorded from real runs on this server (no official reference file ships with the test).",
+  "notes": "Official limits are the assert lines of the test file. Recorded slopes repeated exactly (6 printed digits) in 3 clean runs on 2026-10-06 (direct pytest, and run_reference.py twice). The KI run tool cannot drive this test (README, Known KI gaps); pytest runs under the KI's model interpreter (same lookup as preflight_check.py)."
+}

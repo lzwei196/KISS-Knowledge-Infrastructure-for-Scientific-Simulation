@@ -14,6 +14,18 @@ MODEL_ID = "icepack"
 KI_DIR = Path(__file__).resolve().parent
 PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
+# icepack needs Firedrake, which python_env does not have. The model runtime is the
+# Firedrake 2026.10 venv with upstream icepack master c9a29780 (built 2026-10-06).
+# $ICEPACK_PYTHON overrides it; an explicit value is used as-is, with no fallback.
+DEFAULT_MODEL_PYTHON = Path("KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python")
+IMPORT_TIMEOUT = 180
+
+
+def model_python() -> tuple[Path, str]:
+    explicit = os.environ.get("ICEPACK_PYTHON", "").strip()
+    if explicit:
+        return Path(os.path.abspath(explicit)), "ICEPACK_PYTHON"
+    return DEFAULT_MODEL_PYTHON, "server default"
 
 
 def make_check(kind: str, subject: str, critical: bool, status: str, fix: str = "") -> dict:
@@ -63,7 +75,8 @@ def check_python_executable(path: Path) -> dict:
             diagnostics_fix(f"Make the interpreter executable: chmod +x {path}"),
         )
 
-    realpath = str(path.resolve())
+    # Report the path itself: a venv python and python_env share one realpath.
+    realpath = f"{path} (realpath {path.resolve()})"
     try:
         proc = subprocess.run(
             [str(path), "-c", "import sys; print(sys.executable)"],
@@ -93,12 +106,13 @@ def check_python_executable(path: Path) -> dict:
     return make_check("binary", realpath, True, "pass")
 
 
-def check_import(module: str, critical: bool = True) -> dict:
-    subject = f"{PYTHON_ENV}:{module}"
+def check_import(module: str, critical: bool = True, python: Path = PYTHON_ENV,
+                 source: str = "python_env") -> dict:
+    subject = f"{python}:{module} ({source})"
     try:
         proc = subprocess.run(
             [
-                str(PYTHON_ENV),
+                str(python),
                 "-c",
                 f"import importlib; importlib.import_module({module!r}); print('ok')",
             ],
@@ -106,7 +120,7 @@ def check_import(module: str, critical: bool = True) -> dict:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=45,
+            timeout=IMPORT_TIMEOUT,
             cwd=str(KI_DIR),
         )
     except Exception as exc:  # pragma: no cover - defensive runtime guard
@@ -128,8 +142,27 @@ def check_import(module: str, critical: bool = True) -> dict:
         subject,
         critical,
         "fail",
-        diagnostics_fix(f"Install or activate the package providing import {module!r}: {message}"),
+        diagnostics_fix(
+            f"{python} ({source}) cannot import {module!r}: {message}. Use the Firedrake venv "
+            f"{DEFAULT_MODEL_PYTHON}, or set ICEPACK_PYTHON to a Python with firedrake + icepack"
+        ),
     )
+
+
+def report_versions(python: Path) -> None:
+    """Print which icepack/firedrake the model runtime really uses (information only)."""
+    code = ("import icepack, firedrake, importlib.metadata as m; "
+            "print('icepack', m.version('icepack'), icepack.__file__); "
+            "print('firedrake', m.version('firedrake'))")
+    try:
+        proc = subprocess.run([str(python), "-c", code], check=False, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=IMPORT_TIMEOUT, cwd=str(KI_DIR))
+    except Exception:  # pragma: no cover - information only
+        return
+    if proc.returncode == 0:
+        for line in proc.stdout.strip().splitlines():
+            print(f"        Detail: {line}")
 
 
 def check_py_compile(path: Path, critical: bool = True) -> dict:
@@ -176,9 +209,15 @@ def main() -> None:
 
     checks: list[dict] = []
     checks.append(check_python_executable(PYTHON_ENV))
+    # python_env still runs the convert tools, which need numpy.
+    checks.append(check_import("numpy", critical=True))
 
+    # The model runtime (icepack + Firedrake) is the Firedrake venv, not python_env.
+    py, source = model_python()
+    runtime_checks = [check_python_executable(py)]
     for module in ("numpy", "icepack", "firedrake"):
-        checks.append(check_import(module, critical=True))
+        runtime_checks.append(check_import(module, critical=True, python=py, source=source))
+    checks.extend(runtime_checks)
 
     for path, label in (
         (KI_DIR / "SKILL.md", "model skill"),
@@ -198,6 +237,8 @@ def main() -> None:
         print(f"  {marker:<5} {check['kind']}: {check['subject']}")
         if check["status"] != "pass":
             print(f"        Fix: {check['fix']}")
+    if all(c["status"] == "pass" for c in runtime_checks):
+        report_versions(py)
 
     print(f"\n  Results: {len(checks) - len(failures)} passed, {len(failures)} failed")
     emit_report(checks)

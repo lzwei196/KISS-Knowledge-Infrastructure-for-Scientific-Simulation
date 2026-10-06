@@ -49,8 +49,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 |---|---|
 | `tools/convert_thickness_to_icepack.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_thickness_to_icepack.py --help` |
 | `tools/convert_velocity_to_icepack.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_velocity_to_icepack.py --help` |
-| `tools/parse_icepack_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_icepack_output.py --help` |
-| `tools/run_icepack_simulation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_icepack_simulation.py --help` |
+| `tools/parse_icepack_output.py` | `"${ICEPACK_PYTHON:-KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python}" {KI}/tools/parse_icepack_output.py --help` (needs firedrake + icepack (parser: only --type checkpoint): python_env has none; Firedrake venv, or $ICEPACK_PYTHON) |
+| `tools/run_icepack_simulation.py` | `"${ICEPACK_PYTHON:-KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python}" {KI}/tools/run_icepack_simulation.py --help` (needs firedrake + icepack (parser: only --type checkpoint): python_env has none; Firedrake venv, or $ICEPACK_PYTHON) |
 
 *4 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
@@ -118,6 +118,8 @@ source firedrake/bin/activate
 ```
 
 ### Install icepack
+
+**On this server** (2026-10-06): icepack runs in the Firedrake venv `KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python` (Firedrake 2026.10.0, PETSc 3.26, upstream icepack master c9a29780, version string 1.1.0); override with `$ICEPACK_PYTHON`. The KI's own icepack source copy (b3528bed) fails on this Firedrake; python_env has neither package.
 
 ```bash
 # Inside the Firedrake venv

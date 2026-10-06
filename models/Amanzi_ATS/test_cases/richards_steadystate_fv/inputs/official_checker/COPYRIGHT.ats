@@ -1,0 +1,37 @@
+=============================================================================
+ATS: COPYRIGHT
+=============================================================================
+
+Amanzi is being developed as a multi-lab open-source community code.
+Although, copyright is asserted by each lab on the contributions of
+its employees, Amanzi has a single open-source license, namely the
+three-clause BSD license.  Terms of use, redistribution and
+modification, as well as the disclaimer are given in the BSD license
+at LICENSE.
+
+----------------------------------------------
+Los Alamos National Laboratory:
+----------------------------------------------
+ 
+  Copyright (c) 2011-2014, Los Alamos National Security, LLC
+  All rights reserved.
+   
+  Copyright 2011-2014. Los Alamos National Security, LLC. This software was
+  produced under U.S. Government contract DE-AC52-06NA25396 for Los Alamos
+  National Laboratory (LANL), which is operated by Los Alamos National
+  Security, LLC for the U.S. Department of Energy. The U.S. Government has
+  rights to use, reproduce, and distribute this software.  NEITHER THE
+  GOVERNMENT NOR LOS ALAMOS NATIONAL SECURITY, LLC MAKES ANY WARRANTY,
+  EXPRESS OR IMPLIED, OR ASSUMES ANY LIABILITY FOR THE USE OF THIS
+  SOFTWARE.  If software is modified to produce derivative works, such
+  modified software should be clearly marked, so as not to confuse it with
+  the version available from LANL.
+
+  Additionally, this library is free software; you can redistribute it
+  and/or modify it under the terms of the three-clause BSD license
+  that is included at the end of this document.
+
+----------------------------------------------
+Oak Ridge National Laboratory:
+----------------------------------------------
+ 

@@ -1,0 +1,64 @@
+{
+  "test_case": "Amanzi_ATS richards_steadystate_fv (official ats-regression-tests 01_richards_steadystate / fv)",
+  "engine": {
+    "name": "ATS (Amanzi Advanced Terrestrial Simulator)",
+    "version": "1.6.0_86114e29 (Amanzi 42cadd93)",
+    "binary": "/home/server/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats",
+    "source": "github.com/amanzi/amanzi 42cadd93 + github.com/amanzi/ats 86114e29; tests github.com/amanzi/ats-regression-tests 1f1e27e5 (case files identical at 28ca01bb)",
+    "license": "BSD-3-Clause (ATS, Amanzi, ats-regression-tests)"
+  },
+  "ki": {
+    "model": "Amanzi_ATS",
+    "tool": "tools/run_amanzi.py"
+  },
+  "simulation": {
+    "what": "steady-state Richards flow, finite volume, generated 1 x 1 x 100 cell column, one step (end time 1 s) to steady state",
+    "cells": 100,
+    "mpi_ranks": 1,
+    "runtime_s": 0.3,
+    "peak_rss_gb": 0.07,
+    "check": "official regression_tests.py --check-only against fv.regression.gold/checkpoint00001.h5 with richards_steadystate.cfg tolerances"
+  },
+  "files": {
+    "inputs/fv.regression.gold/ats_version.txt": {
+      "bytes": 53,
+      "sha256": "60bd65b29931b9fbe5fe0cd228d5750b7d4dbc2a744573cf60b492b0c2736ab0"
+    },
+    "inputs/fv.regression.gold/checkpoint00001.h5": {
+      "bytes": 42680,
+      "sha256": "bb512190b840340d276ab19cf1943bd45f63bab158b3672b156f403b0db66c38"
+    },
+    "inputs/fv.xml": {
+      "bytes": 16924,
+      "sha256": "de87ec024b79baca07567a15281c59797fc07c45c8d953c49983e2a091108aeb"
+    },
+    "inputs/official_checker/COPYRIGHT.ats": {
+      "bytes": 1736,
+      "sha256": "02fd6e607c242011f026ffcb0059fd94d68d5207fc768ed8942217c6623f1f03"
+    },
+    "inputs/official_checker/COPYRIGHT.ats-regression-tests": {
+      "bytes": 2579,
+      "sha256": "c89e3aea0cc2542a6fc734eda97f7db148790cf33c12fdbd05557918c674a308"
+    },
+    "inputs/official_checker/LICENSE.ats": {
+      "bytes": 1728,
+      "sha256": "efce298035a8cd6eb9b71cb9dcf9d4b7ebc9b9498741f8420b089efc9644a208"
+    },
+    "inputs/official_checker/LICENSE.ats-regression-tests": {
+      "bytes": 1728,
+      "sha256": "efce298035a8cd6eb9b71cb9dcf9d4b7ebc9b9498741f8420b089efc9644a208"
+    },
+    "inputs/official_checker/regression_tests.py": {
+      "bytes": 9735,
+      "sha256": "fbe666a0136a472e09c04cc2b265ababe165ebca1e99d2d4de9334e70672b3a9"
+    },
+    "inputs/official_checker/test_manager.py": {
+      "bytes": 68199,
+      "sha256": "27dcce6948563898d1aa1bb02718936472fffe21efd6b43f025685acab809ee1"
+    },
+    "inputs/richards_steadystate.cfg": {
+      "bytes": 347,
+      "sha256": "d0839ba4df39fc21e7fefe12efdbc56024b54885e05ced22dc38b1c891e424fc"
+    }
+  }
+}

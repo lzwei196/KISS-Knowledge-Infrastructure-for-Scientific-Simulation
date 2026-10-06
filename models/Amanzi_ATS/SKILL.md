@@ -132,6 +132,8 @@ git clone -b master http://github.com/amanzi/amanzi $AMANZI_SRC_DIR
 export PATH=${AMANZI_DIR}/bin:${PATH}
 ```
 
+**On this server** (2026-10-06): ATS 1.6.0_86114e29 (Amanzi 42cadd93, geochemistry off) is at `KISSPATH_HOME/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats`; it runs without any environment set (sourcing `KISSPATH_HOME/engine_builds_20261006/ats/ats_env.sh` is optional, e.g. for ATS python utils). `tools/run_amanzi.py` uses `--binary`, else `$ATS_BIN`, else this path; `preflight_check.py` uses `$ATS_BIN`, else this path. PATH is not searched (a bare name given to `--binary`/`$ATS_BIN` is).
+
 ### Third-Party Libraries (TPLs)
 
 | TPL | Purpose | Required |

@@ -6,12 +6,17 @@ import json
 import os
 import shutil
 import sys
+import types
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from kiss_cli import kdtstudio, ki_verification as gate
+
+# Remember the optional installed source before the suite isolates APPDATA.
+# Tests only read/copy it; all verifier execution uses a temporary engine/KI.
+_REVIEWED_ENGINE_TEST_SOURCE = kdtstudio.engine_root()
 
 
 @pytest.fixture
@@ -344,3 +349,67 @@ def test_reopening_studio_invalidates_bare_and_desktop_acceptance(case, tmp_path
     job = _verified_studio_job(candidate, tmp_path)
     state = kdtstudio.continue_modifying(job["id"])
     assert not state["can_import"] and not state["can_export_bare"]
+
+
+def test_portable_tool_index_adapter_is_private_and_keeps_exact_paths(monkeypatch, tmp_path):
+    helper = types.ModuleType("ki_projection_common")
+    original = lambda root: [str(Path("tools") / "nested" / "reader.py")]
+    helper.tool_files = original
+    monkeypatch.setitem(sys.modules, "ki_projection_common", helper)
+    verifier = types.ModuleType("fixture_verifier")
+    exec("def verify(root, *, kind=None):\n"
+         " from ki_projection_common import tool_files\n"
+         " return tool_files(root)\n", verifier.__dict__)
+    adapted = gate._portable_tool_index_verifier(verifier)
+    assert adapted(tmp_path, kind="process_model") == ["tools/nested/reader.py"]
+    assert helper.tool_files is original
+    assert verifier.verify(tmp_path) == original(tmp_path)
+    assert adapted.__builtins__ is not verifier.verify.__builtins__
+
+
+def test_previous_path_policy_acceptance_requires_reverification(case):
+    candidate, _ = case
+    with mock.patch.object(gate, "GATE_POLICY", "ki-draft-kdt-v1"):
+        old = gate.verify_candidate(candidate)
+    with pytest.raises(gate.VerificationError, match="another gate contract"):
+        gate.require_current(candidate, old)
+    assert gate.current_report(candidate) is None
+
+
+@pytest.mark.parametrize("listed", [True, False])
+def test_real_pinned_verifier_portable_tool_index_preserves_other_failures(tmp_path, monkeypatch, listed):
+    # Exercise the actual reviewed verifier on a synthetic KI only. Copy the
+    # installed engine so imports cannot create caches in its pinned checkout.
+    original_engine = _REVIEWED_ENGINE_TEST_SOURCE
+    with mock.patch.object(kdtstudio, "engine_root", return_value=original_engine):
+        if not original_engine.is_dir() or not kdtstudio.engine_status().get("installed"):
+            pytest.skip("Reviewed KDT engine is not installed on this test host")
+    engine = tmp_path / "engine"
+    shutil.copytree(original_engine, engine, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    monkeypatch.setenv("GEOFORGE_KDT_ENGINE", str(engine))
+    monkeypatch.setenv("GEOFORGE_KI_VERIFICATION_HOME", str(tmp_path / "host-acceptance"))
+    monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "host-keys"))
+    candidate = tmp_path / "candidate"
+    (candidate / "tools/nested").mkdir(parents=True)
+    marker = tmp_path / "untrusted-code-ran"
+    for relative in ("tools/nested/reader.py", "tools/nested/_private.py"):
+        (candidate / relative).write_text(f"raise RuntimeError('Tool must not execute: {marker}')\n", encoding="utf-8")
+    (candidate / "preflight_check.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\nprint('PREFLIGHT_REPORT={{}}')\n", encoding="utf-8")
+    (candidate / "SKILL.md").write_text(
+        "# Synthetic KI\nMANDATORY EXECUTION POLICY\n"
+        "<!-- KI-TOOL-INDEX:BEGIN -->\n" +
+        ("`tools/nested/reader.py`\n" if listed else "`tools/other/reader.py`\n") +
+        "<!-- KI-TOOL-INDEX:END -->\n", encoding="utf-8")
+    before = gate.content_digest(candidate)
+    report = gate.verify_candidate(candidate, desktop=False)
+    index_failures = [item for item in report["failures"] if "KI-TOOL-INDEX is missing" in item]
+    assert bool(index_failures) is not listed
+    if not listed:
+        assert len(index_failures) == 1 and "missing 1 public tool" in index_failures[0]
+        assert "tools/nested/reader.py" in index_failures[0]
+        assert "_private.py" not in index_failures[0]
+    assert not any("tool-index check could not run" in item for item in report["warnings"])
+    assert any("docs/gathered_papers.json missing" in item for item in report["failures"])
+    assert not report["ok"] and not report["kdt"]["ok"]
+    assert gate.content_digest(candidate) == before and not marker.exists()

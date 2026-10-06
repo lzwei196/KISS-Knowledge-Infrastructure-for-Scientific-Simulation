@@ -15,13 +15,14 @@ import shutil
 import sys
 import tempfile
 import time
+import types
 import uuid
 from pathlib import Path
 
 from . import doctor, firstrun
 from .catalog import KI
 
-GATE_POLICY = "ki-draft-kdt-v1"
+GATE_POLICY = "ki-draft-kdt-v2-portable-tool-index"
 KINDS = ("process_model", "task_workflow")
 
 
@@ -163,6 +164,36 @@ def _preflight_interpreter() -> str:
     return str(resolved)
 
 
+def _portable_tool_index_verifier(gate):
+    """Adapt only KDT's imported tool-path spelling, without changing its gate.
+
+    The pinned projection helper returns native ``str(relative_path)`` while
+    KDT compares those strings to portable slash paths in SKILL.md. Give this
+    loaded verifier a private import view; do not monkeypatch the shared helper
+    or process-wide imports while another project may be using them.
+    """
+    verify = gate.verify
+    local_builtins = dict(verify.__builtins__)
+    original_import = local_builtins["__import__"]
+
+    def portable_import(name, globals=None, locals=None, fromlist=(), level=0):
+        module = original_import(name, globals, locals, fromlist, level)
+        if name != "ki_projection_common" or level != 0 or "tool_files" not in fromlist:
+            return module
+        view = types.ModuleType(module.__name__)
+        view.__dict__.update(module.__dict__)
+        original = module.tool_files
+        view.tool_files = lambda root: [Path(path).as_posix() for path in original(root)]
+        return view
+
+    local_builtins["__import__"] = portable_import
+    local_globals = {**verify.__globals__, "__builtins__": local_builtins}
+    compatible = types.FunctionType(verify.__code__, local_globals, verify.__name__,
+                                    verify.__defaults__, verify.__closure__)
+    compatible.__kwdefaults__ = verify.__kwdefaults__
+    return compatible
+
+
 def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool = True,
                      name: str | None = None) -> dict:
     """Run the actual installed KDT gate on an isolated, unchanged snapshot.
@@ -221,7 +252,7 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
                 # Only the safe stub runs under a real interpreter; replacing
                 # global sys.executable would affect concurrent model work.
                 gate.sys = _GateRuntimeSys(_preflight_interpreter())
-            result = gate.verify(snapshot, kind=kind)
+            result = _portable_tool_index_verifier(gate)(snapshot, kind=kind)
         if not isinstance(result, dict):
             raise VerificationError("KDT returned an invalid verification report")
         if content_digest(snapshot) != isolated_digest or content_digest(root) != before:

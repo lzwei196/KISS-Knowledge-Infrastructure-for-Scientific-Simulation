@@ -25,7 +25,8 @@ function element(key){
   return elements.get(key);
 }
 element('#msg').value=input.draft||'Existing project question.';
-const context={CUR:{id:'original'},PENDING_ATTACHMENTS:new Map(),UPLOADING:new Map(),
+// The full page declares this optional controller before setControls().
+const context={CUR:{id:'original'},INVESTIGATION:null,PENDING_ATTACHMENTS:new Map(),UPLOADING:new Map(),
   DRAFTS:new Map(),INFLIGHT:new Map(),console,$:element,
   chineseUI:()=>Boolean(input.zh),currentProviderReady:()=>true,updateActivityUI(){},
   renderAttachments(){renders.push(context.CUR?.id);},

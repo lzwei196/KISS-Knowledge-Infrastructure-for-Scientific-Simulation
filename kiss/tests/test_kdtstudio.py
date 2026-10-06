@@ -251,6 +251,46 @@ class KdtStudioTests(unittest.TestCase):
         self.assertEqual(names, ["Inspect inputs", "Execute task", "Validate outputs"])
         self.assertNotIn("Run the model binary", json.dumps(scaffold))
 
+    def test_repair_probe_preserves_seeded_candidate_despite_generated_scaffold(self):
+        for kind in ("process_model", "task_workflow"):
+            for succeeds in (True, False):
+                with self.subTest(kind=kind, succeeds=succeeds):
+                    (self.engine / "auto_dissect.py").write_text(
+                        "import json\nfrom pathlib import Path\n"
+                        "class State:\n"
+                        " def __init__(self, value): self.state=value\n"
+                        "def run_pipeline(config):\n"
+                        " output=Path(config['output_dir']); output.mkdir(parents=True,exist_ok=True)\n"
+                        " (output/'knowledge_infrastructure.yaml').write_text('three-stage generated stub')\n"
+                        " (output/'added-stub.txt').write_text('new-package seed only')\n"
+                        " wd=Path(config['work_dir'])\n"
+                        " (wd/'probe_report.json').write_text(json.dumps({'source_root':config['source_path']}))\n"
+                        " (wd/'io_graph.json').write_text('{}')\n"
+                        f" status={'completed' if succeeds else 'failed'!r}\n"
+                        " return State({'stages':{'s0_acquire':{'status':'completed'},'s1_pipeline_map':{'status':status}}})\n",
+                        encoding="utf-8")
+                    created = self._create(ki_kind=kind)
+                    root, candidate = Path(created["root"]), Path(created["candidate"])
+                    (candidate / "tools").mkdir()
+                    expected = {"SKILL.md": b"exact seeded KI\r\n",
+                                "knowledge_infrastructure.yaml": b"existing full project contract\r\n",
+                                "tools/reader.py": b"# retained bound reader\n"}
+                    for relative, content in expected.items():
+                        (candidate / relative).write_bytes(content)
+                    before = kdtstudio.tree_digest(candidate)
+                    if succeeds:
+                        result = kdtstudio.run_probe(created["id"], preserve_candidate=True)
+                        self.assertEqual(result["status"], "probed")
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "probe did not complete"):
+                            kdtstudio.run_probe(created["id"], preserve_candidate=True)
+                    self.assertEqual(before, kdtstudio.tree_digest(candidate))
+                    self.assertEqual(expected, {p.relative_to(candidate).as_posix(): p.read_bytes()
+                                               for p in candidate.rglob("*") if p.is_file()})
+                    self.assertTrue((root / "probe/probe_report.json").is_file())
+                    self.assertTrue((root / "probe/io_graph.json").is_file())
+                    self.assertEqual(list((root / "probe").glob("seed-*")), [])
+
     def test_gate_uses_safe_copy_and_export_is_digest_bound(self):
         created = self._create(ki_kind="task_workflow")
         root = Path(created["root"])

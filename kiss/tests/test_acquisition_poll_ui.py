@@ -330,7 +330,8 @@ function element(selector){
 const acquiring={goal:'A',status:'working',flow_state:'ACQUIRING',acquisition:{active:true,status:'waiting',
   automatic:[{id:'forcing',dataset_id:'cmfd-A',status:'pending',job_status:'running'}],
   manual:[{id:'yearbook',dataset_id:'yearbook-A',status:'waiting'}]}};
-const context={console,Date,CUR:{id:'A'},RUN:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
+// The full page declares this optional controller before openSession().
+const context={console,Date,CUR:{id:'A'},RUN:null,INVESTIGATION:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
   CHAT_FOLLOW:true,INFLIGHT:new Map(),DATA_ACTIONS:new Set(),$:element,sessionBusy:()=>false,
   chineseUI:()=>false,document:{hidden:false,querySelectorAll:()=>[],querySelector:()=>null},
   runButtonLabel:()=>'Project status',runStateText:()=>'',closeActionPicker(){},drawSessions(){},

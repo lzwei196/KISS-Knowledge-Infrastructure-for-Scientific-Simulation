@@ -1069,14 +1069,39 @@ def _write_task_scaffold(root: Path, doc: dict) -> None:
     )
 
 
-def run_probe(job_id: str, emit: Callable[[str], object] | None = None) -> dict:
+def run_probe(job_id: str, emit: Callable[[str], object] | None = None, *,
+              preserve_candidate: bool = False) -> dict:
+    """Inspect source, optionally keeping an exact seeded project KI untouched.
+
+    KDT's source mapper also emits a new-package scaffold. A repair probe must
+    send that output elsewhere; merging it into an existing KI corrupts its
+    contract before the repair author even starts.
+    """
+    if not preserve_candidate:
+        return _run_probe(job_id, emit)
+    root, _doc = _meta(job_id)
+    candidate = root / "candidate"
+    _reject_symlinks(candidate)
+    before = tree_digest(candidate)
+    if not before:
+        raise ValueError("The seeded repair candidate cannot be fingerprinted")
+    with tempfile.TemporaryDirectory(prefix="seed-", dir=root / "probe") as scratch:
+        try:
+            return _run_probe(job_id, emit, _probe_output=Path(scratch))
+        finally:
+            if tree_digest(candidate) != before:
+                raise RuntimeError("The preserved repair candidate changed during source probing; authoring is blocked")
+
+
+def _run_probe(job_id: str, emit: Callable[[str], object] | None = None, *,
+               _probe_output: Path | None = None) -> dict:
     say = emit or (lambda _text: None)
     root, doc = _meta(job_id)
     config = {
         "model_name": doc["model_name"],
         "domain": doc["domain"],
         "work_dir": str(root / "probe"),
-        "output_dir": str(root / "candidate"),
+        "output_dir": str(_probe_output or root / "candidate"),
         "from_stage": 0,
         "to_stage": 2,
         "url": doc["source"] if doc["source_type"] == "git" else "",
@@ -1143,7 +1168,7 @@ def run_probe(job_id: str, emit: Callable[[str], object] | None = None) -> dict:
         stages = state.state.get("stages") or {}
         ok = all((stages.get(name) or {}).get("status") == "completed"
                  for name in ("s0_acquire", "s1_pipeline_map"))
-        if ok and str(doc.get("ki_kind") or "process_model") == "task_workflow":
+        if ok and _probe_output is None and str(doc.get("ki_kind") or "process_model") == "task_workflow":
             _write_task_scaffold(root, doc)
         if ok:
             _bump_revision(doc)

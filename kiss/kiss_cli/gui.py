@@ -41,7 +41,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_guard, ki_updates, ki_verification, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI, bundled_data_dir
 from .manifest import Manifest
-from . import software_verification
+from . import software_verification, ki_investigation, ki_review_agents
 
 def _installation_config_after_setup(cfg):
     """Read the installer's saved environment before independent verification."""
@@ -190,6 +190,109 @@ CHAT_KEEPALIVE = "\u200b"
 # a second HTTP request can tell the browser more than "the streaming socket is
 # still open" while the first request is blocked inside an agent or tool.
 _LIVE_AGENT_RUNS: dict[str, dict] = {}
+_PROJECT_OPERATIONS: dict[str, tuple[str, str]] = {}
+_PROJECT_OPERATIONS_LOCK = threading.Lock()
+
+
+def _claim_project_operation(sid: str, label: str) -> str:
+    """One host project mutation/review operation at a time, including chat."""
+    with _PROJECT_OPERATIONS_LOCK:
+        if sid in _PROJECT_OPERATIONS:
+            raise ValueError(f"{_PROJECT_OPERATIONS[sid][1]} is still running; wait or stop it first")
+        token = secrets.token_hex(12)
+        _PROJECT_OPERATIONS[sid] = (token, label)
+        return token
+
+
+def _release_project_operation(sid: str, token: str) -> None:
+    with _PROJECT_OPERATIONS_LOCK:
+        if _PROJECT_OPERATIONS.get(sid, (None,))[0] == token:
+            _PROJECT_OPERATIONS.pop(sid, None)
+
+
+def _investigation_view(job: dict | None) -> dict | None:
+    """Keep provider reports as attributed analysis, never native pass evidence."""
+    if not job or job.get("status") == "none":
+        return None
+    context, draft, verification = (job.get(key) or {} for key in ("context", "draft", "verification"))
+    status = {"created": "queued", "review_failed": "partial", "author_failed": "failed", "verification_failed": "failed",
+              "apply_failed": "failed", "interrupted": "failed", "recovery_required": "failed"}.get(
+                  job.get("status"), job.get("status", "failed"))
+    if job.get("interrupted"):
+        status = "failed"
+    reviewers = []
+    labels = {"contract_runtime": "KI contract and runtime", "data_science": "Data and scientific interpretation",
+              "reproducibility_risks": "Reproducibility and repair risks"}
+    for reviewer in job.get("reviewers") or []:
+        role = reviewer.get("role") or reviewer.get("id")
+        report = reviewer.get("report") or {}
+        reviewers.append({**reviewer, "id": role, "label": labels.get(role, role),
+                          "status": "queued" if reviewer.get("status") == "pending" else reviewer.get("status"),
+                          "summary": report.get("summary", "")})
+    repair = None
+    if draft:
+        repair = {"ki_name": draft.get("ki_name"), "kdt_job_id": draft.get("studio_job_id"),
+                  "status": status, "verification_id": verification.get("id"),
+                  "candidate_path": draft.get("path"), "author_report": job.get("author_report"),
+                  "author_report_meta": job.get("author_report_meta"),
+                  "retryable": job.get("retryable", True) and job.get("status") not in {
+                      "apply_failed", "applying", "recovery_required"},
+                  "can_verify": job.get("status") in {"draft", "verification_failed", "verified"} or (
+                      job.get("status") == "interrupted" and job.get("retryable") is True and
+                      job.get("interrupted_operation") == "verifying"),
+                  "can_apply": bool(job.get("can_apply")),
+                  "blocked_reason": job.get("stale_reason") or job.get("error") or verification.get("error") or "",
+                  "verification": verification}
+    return {**job, "status": status, "llm_model": job.get("model", ""), "context_digest": context.get("digest"),
+            "coverage": context, "reviewers": reviewers, "report": job.get("combined_report"),
+            "selected_kis": list((job.get("ki_roots") or {}).keys()) or job.get("selected_kis", []),
+            "repair": repair}
+
+
+def _repair_history(session: dict) -> tuple[dict, str]:
+    """Keep old attempts in the transcript, outside the new agent conversation."""
+    repair = session.get("ki_repair_resume") or {}
+    since = repair.get("history_started_at")
+    if not isinstance(since, (int, float)):
+        return session, ""
+    current = {**session, "messages": [m for m in session.get("messages", [])
+               if isinstance(m.get("ts"), (int, float)) and m["ts"] >= since]}
+    seed = ("[HOST KI REPAIR HANDOFF]\n" + str(repair.get("message", "")) +
+            "\nEarlier attempts remain in memory/transcript.jsonl as historical evidence. "
+            "Read the current project plan and revised KI before proposing the next plan. "
+            "Earlier approvals, tool results and failed commands do not authorize this revision.\n" +
+            "Investigation summary (analysis, not native validation):\n" +
+            str(repair.get("summary", "")) + "\n")
+    return current, seed
+
+
+def _reconcile_ki_repair(session: dict, project: Path, job: dict | None = None) -> bool:
+    """Recover the memory handoff even if the app closed just after adoption."""
+    job = job or ki_investigation.latest_applied(project)
+    adoption = (job or {}).get("apply") or {}
+    generation = adoption.get("generation")
+    if not generation or session.get("ki_repair_generation") == generation:
+        return False
+    report = job.get("combined_report") or {}
+    report_path = project / "memory" / f"ki-repair-{generation}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = report_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"job_id": job["id"], "generation": generation,
+        "context_digest": (job.get("context") or {}).get("digest"), "report": report,
+        "verification": job.get("verification"), "native_verified": False},
+        ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(report_path)
+    summary = str(report.get("summary") or "See the saved independent reports.")
+    if len(summary) > 3000:
+        summary = summary[:3000] + "\n[Summary shortened; the complete report is saved below.]"
+    session["cli_sessions"] = {}
+    session["ki_repair_generation"] = generation
+    session["ki_repair_resume"] = {"job_id": job["id"],
+        "message": adoption.get("resume_reason", "Review the revised KI and plan before continuing."),
+        "context_digest": (job.get("context") or {}).get("digest"),
+        "history_started_at": adoption.get("applied_at") or job["updated_at"],
+        "summary": summary + f"\nComplete report: {report_path.relative_to(project).as_posix()}"}
+    return True
 _LIVE_AGENT_RUNS_LOCK = threading.Lock()
 _FINISHED_AGENT_RUN_TTL = 15 * 60
 _MAX_LIVE_AGENT_RUNS = 128
@@ -1394,8 +1497,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _setup_ok_for(self, s: dict) -> bool:
         try:
+            if ki_investigation.pending_preflight(sessions.project_path(self.workroot, s))["pending"]:
+                return False
             return all(self._status_for(self._ki(n)).get("can_run") for n in (s.get("models") or []))
-        except KeyError:
+        except (KeyError, ValueError, OSError):
             return False
 
     def _session_data(self, s: dict) -> dict:
@@ -1543,6 +1648,10 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/i18n.js":
             script = PAGE.parent / "i18n.js"
             return self._send(200, script.read_bytes(), "text/javascript; charset=utf-8")
+
+        if route == "/investigation.js":
+            return self._send(200, (PAGE.parent / "investigation.js").read_bytes(),
+                              "text/javascript; charset=utf-8")
 
         if route == "/api/clipboard":
             return self._json({"text": clipboard.read_text()})
@@ -2079,6 +2188,9 @@ class Handler(BaseHTTPRequestHandler):
                     continue
             return self._json(calibration.project_state(project, kis))
 
+        if route.startswith("/api/session/") and route.endswith("/investigation"):
+            return self._project_investigation(route.split("/")[3])
+
         if route.startswith("/api/session/") and route.endswith("/request"):
             sid = route.split("/")[3]
             if not sessions.valid_id(sid):
@@ -2543,6 +2655,14 @@ class Handler(BaseHTTPRequestHandler):
                         [self._ki(name) for name in s.get("models") or []],
                     )
             return self._json(sessions.for_client(self.workroot, s))
+
+        if route.startswith("/api/session/") and "/investigation/" in route:
+            parts = route.strip("/").split("/")
+            if len(parts) == 5 and parts[4] == "start":
+                return self._project_investigation(parts[2], action="start", req=req)
+            if len(parts) == 6 and parts[5] in {"cancel", "draft", "build", "verify", "apply"}:
+                return self._project_investigation(parts[2], action=parts[5], job_id=parts[4], req=req)
+            return self._json({"error": "unknown investigation action"}, 404)
 
         if route.startswith("/api/session/") and route.endswith("/chat"):
             return self._stream_session_chat(route.split("/")[3], req)
@@ -3648,8 +3768,146 @@ verification are different states; never claim this test verified the KI."""
                            "package_status": "valid", "state": "Active",
                            "verification": acceptance, "findings": findings})
 
+    # --- independent project investigation --------------------------------
+    def _investigation_roots(self, session: dict, project: Path) -> dict[str, Path]:
+        names = list(dict.fromkeys([*(session.get("models") or []),
+            *(projectrun.load(project).get("selected_kis") or [])]))
+        roots = {}
+        for name in names:
+            # Diagnosis must work even when the KI is dirty. Do not use _ki(),
+            # materialize, enroll, or run scientific code from this read path.
+            ki = self.catalog.get(name)
+            home = project_paths._model_home(project, ki.name)
+            live = home / "ki"
+            if live.exists():
+                project_paths.execution_config(project, ki.name, live)
+                roots[ki.name] = live
+            else:
+                roots[ki.name] = ki.root
+        return roots
+
+    def _project_investigation(self, sid: str, *, action=None, job_id=None, req=None):
+        if not sessions.valid_id(sid):
+            return self._json({"error": "invalid session id"}, 400)
+        req = req or {}
+        session = sessions.load(self.workroot, sid)
+        if not session:
+            return self._json({"error": "no such session"}, 404)
+        project = sessions.project_path(self.workroot, session)
+        token = None
+        try:
+            if action is None:
+                job = ki_investigation.get(project)
+                want = session.get("provider") or settings.load().get("default_provider") or ""
+                capability = ki_review_agents.capability(want)
+                with _PROJECT_OPERATIONS_LOCK:
+                    running = _PROJECT_OPERATIONS.get(sid)
+                reason = (f"{running[1]} is running" if running else capability.get("reason", ""))
+                return self._json({"job": _investigation_view(job),
+                    "available": bool(capability.get("supported") and not running), "reason": reason,
+                    "capability": capability, "busy": bool(running)})
+            if action == "cancel":
+                return self._json({"job": _investigation_view(ki_investigation.cancel(project, job_id))})
+            token = _claim_project_operation(sid, "KI investigation")
+            if _agent_run_snapshot(sid).get("state") in {"running", "finishing"}:
+                raise ValueError("The project agent is still running; stop it before investigating or applying a repair")
+            progress = project_status.snapshot(project)["progress"]
+            if (progress.get("acquisition") or {}).get("active"):
+                raise ValueError("Project data acquisition is active; wait or stop it before freezing the project")
+            if action == "start":
+                want = str(req.get("provider") or session.get("provider") or
+                           settings.load().get("default_provider") or "")
+                model = str(req.get("llm_model") or session.get("llm_model") or "")
+                if error := self._validate_binding({"provider": want, "llm_model": model}):
+                    raise ValueError(error)
+                capability = ki_review_agents.capability(want)
+                if not capability.get("supported"):
+                    raise ValueError(capability.get("reason") or "This connection has no read-only review profile")
+                roots = self._investigation_roots(session, project)
+                job = ki_investigation.create(project, session, roots, want, model,
+                                              str(req.get("issue") or "Investigate this project's current issue"))
+                job_id = job["id"]
+                def work():
+                    return ki_investigation.run_reviews(project, job_id,
+                        lambda role, context, digest, stop, emit: ki_review_agents.review(
+                            role, context, digest, provider=want, model=model,
+                            stop_event=stop, emit=emit, managed_roots=list(roots.values())))
+            else:
+                job = ki_investigation.get(project, job_id)
+                if action == "draft":
+                    return self._json({"job": _investigation_view(ki_investigation.create_draft(
+                        project, job_id, str(req.get("ki_name") or "")))})
+                if action == "apply":
+                    job = ki_investigation.apply(project, job_id,
+                        str(req.get("verification_id") or ""), quiescent=True)
+                    resume = (job.get("apply") or {}).get("resume_reason") or (
+                        "Continue this project using the accepted KI repair. Recheck the repaired KI's "
+                        "software and revise the plan for approval before scientific execution. "
+                        "Keep earlier outputs and failed attempts as historical evidence.")
+                    with sessions.lock(sid):
+                        current = sessions.load(self.workroot, sid)
+                        _reconcile_ki_repair(current, project, job)
+                        sessions.save(self.workroot, current)
+                    # The response triggers a fresh chat immediately. Release
+                    # only after adoption and memory persistence, before the
+                    # client can receive that response and start its next turn.
+                    _release_project_operation(sid, token)
+                    token = None
+                    return self._json({"job": _investigation_view(job), "resume_message": resume})
+                if action == "build":
+                    previous_verification = job.get("verification")
+                    job = ki_investigation.mark_authoring(project, job_id)
+                    def work():
+                        extra = ("Repair this project-linked KI using the frozen investigation evidence and "
+                            "the three independent reports in this workspace. Preserve scientific input "
+                            "contracts and acceptance criteria. Follow KDT; never edit the live project.\n" +
+                            json.dumps(job.get("combined_report"), ensure_ascii=False))
+                        if previous_verification:
+                            extra += ("\n[PREVIOUS HOST KDT CHECK — address these actual failures first]\n" +
+                                      json.dumps(previous_verification, ensure_ascii=False))
+                        outcome = ki_review_agents.author_draft(job["draft"]["studio_job_id"],
+                            provider=job["provider"], model=job.get("model", ""), task_extra=extra,
+                            stop_event=ki_investigation.stop_event(project, job_id), emit=lambda _: None,
+                            managed_roots=[Path(p) for p in job.get("ki_roots", {}).values()])
+                        return ki_investigation.mark_authored(project, job_id,
+                            error=None if outcome.get("status") == "completed" else outcome.get("error", "Authoring interrupted"),
+                            author_report=outcome.get("raw_response"))
+                elif action == "verify":
+                    job = ki_investigation.mark_verifying(project, job_id)
+                    def work():
+                        return ki_investigation.verify_draft(project, job_id)
+                else:
+                    raise ValueError("unknown investigation action")
+            # Retain the operation lease until every background worker exits.
+            worker_token = token
+            def worker():
+                try:
+                    work()
+                except Exception as error:
+                    ki_investigation.fail(project, job_id, str(error))
+                finally:
+                    _release_project_operation(sid, worker_token)
+            threading.Thread(target=worker, name=f"ki-investigation-{job_id}", daemon=True).start()
+            token = None
+            return self._json({"job": _investigation_view(job)}, 202)
+        except (ValueError, RuntimeError, OSError, KeyError) as error:
+            return self._json({"error": str(error)}, 409)
+        finally:
+            if token:
+                _release_project_operation(sid, token)
+
     # --- session chat ------------------------------------------------------
     def _stream_session_chat(self, sid: str, req) -> None:
+        try:
+            token = _claim_project_operation(sid, "Project agent")
+        except ValueError as error:
+            return self._json({"error": str(error)}, 409)
+        try:
+            return self._stream_session_chat_owned(sid, req)
+        finally:
+            _release_project_operation(sid, token)
+
+    def _stream_session_chat_owned(self, sid: str, req) -> None:
         if not sessions.valid_id(sid):
             return self._json({"error": "invalid session id"}, 400)
         text = (req.get("message") or "").strip()
@@ -3667,6 +3925,11 @@ verification are different states; never claim this test verified the KI."""
             s = sessions.load(self.workroot, sid)
             if not s:
                 return self._json({"error": "no such session"}, 404)
+            try:
+                if _reconcile_ki_repair(s, sessions.project_path(self.workroot, s)):
+                    sessions.save(self.workroot, s)
+            except (ValueError, OSError, RuntimeError) as error:
+                return self._json({"error": f"Cannot recover the KI repair handoff: {error}"}, 409)
             available_files = {
                 item["relative_path"] for item in sessions.input_files(
                     self.workroot, s, limit=10_000)
@@ -3682,7 +3945,12 @@ verification are different states; never claim this test verified the KI."""
                     attachments.append(path)
             # History is built BEFORE the new message is appended — appending
             # first replayed the current message twice in the same prompt.
-            history = sessions.transcript(s)
+            history_session, repair_seed = _repair_history(s)
+            history = repair_seed + sessions.transcript(history_session)
+            prior = [dict(message, text=sessions.message_text(message))
+                     for message in history_session.get("messages", [])[-20:]]
+            if repair_seed:
+                prior.insert(0, {"role": "user", "text": repair_seed})
             sessions.append_message(self.workroot, s,
                                     {"role": "user", "text": text,
                                      "attachments": attachments})
@@ -3786,8 +4054,10 @@ verification are different states; never claim this test verified the KI."""
 
         def _setup_ok(kis_names) -> bool:
             try:
+                if ki_investigation.pending_preflight(project)["pending"]:
+                    return False
                 return all(self._status_for(self._ki(n)).get("can_run") for n in kis_names)
-            except KeyError:
+            except (KeyError, ValueError, OSError):
                 return False
 
         # Registered before the flow runs: a Stop right after sending reaches this
@@ -3859,8 +4129,6 @@ verification are different states; never claim this test verified the KI."""
             if _user_stopped(runtime_events):
                 out("\n[stopped by the user]\n")
                 return
-            prior = [dict(message, text=sessions.message_text(message))
-                     for message in s["messages"][:-1][-20:]]
             if names:
                 flow_turn = self._chat_with_models(
                     names, want, history + "\nUSER: " + agent_text,
@@ -4340,6 +4608,47 @@ verification are different states; never claim this test verified the KI."""
                        extra_env=self._agent_runtime_env(project),
                        flow_policy=(auto_turn.policy if auto_turn is not None else None))
 
+    def _repair_preflight(self, project, resolved_with_cfg, out, runtime_events=None) -> bool:
+        """Check the adopted project bytes, independently of shared setup badges."""
+        pending = ki_investigation.pending_preflight(project)
+        if not pending["pending"]:
+            return True
+        available = {ki.name: (ki, cfg) for ki, cfg in resolved_with_cfg}
+        for name, record in pending["kis"].items():
+            if record.get("passed"):
+                continue
+            if name not in available:
+                out(f"[Repaired KI {name} still needs its project preflight; select it before continuing.]\n")
+                return False
+            ki, cfg = available[name]
+            if _user_stopped(runtime_events):
+                return False
+            if Path(ki.root).resolve() != (Path(project) / "models" / name / "ki").resolve():
+                raise ValueError("Repair preflight must use the adopted project KI")
+            ki_guard.require_intact(ki.root)
+            digest = ki_verification.content_digest(ki.root)
+            if digest != record["digest"]:
+                raise ValueError("The repaired KI changed before preflight; investigate its current revision")
+            check = install.run_preflight(ki, cfg.python, cfg, project=project,
+                stop=lambda: _user_stopped(runtime_events), turn_id=(runtime_events or {}).get("_turn_id"))
+            if check.ok:
+                # A repaired manifest can add requirements without changing the
+                # preflight script. Both must pass for this exact project KI.
+                with install.cancellation_context(project, stop=lambda: _user_stopped(runtime_events),
+                        turn_id=(runtime_events or {}).get("_turn_id")):
+                    requirements = software_verification.requirements(self._manifest(ki), cfg,
+                        dependency_check=lambda dependency: self._status_for(self._ki(dependency)).get("can_run"))
+                if not requirements.ok:
+                    check = install.Step("preflight", False, requirements.detail,
+                                         commands=[*check.commands, *requirements.commands])
+            passed = bool(check.ok and not _user_stopped(runtime_events))
+            ki_investigation.record_preflight(project, name, digest, passed)
+            out(f"\nRepaired {name} project preflight: {'PASS' if passed else 'FAIL'}\n")
+            if not passed:
+                out(check.detail.rstrip() + "\nScientific execution remains blocked.\n")
+                return False
+        return not ki_investigation.pending_preflight(project)["pending"]
+
     def _chat_with_models(self, names, want, task, out, project: Path, llm=None,
                           prior=None, bare_task=None, skill_names=None,
                           mcp_names=None, session=None, cli_state=None,
@@ -4367,6 +4676,9 @@ verification are different states; never claim this test verified the KI."""
         setup_wd = self._workdir(ki)
         setup_wd.mkdir(parents=True, exist_ok=True)
         needs_setup = not self._status_for(ki).get("can_run")
+        repair_pending = ki_investigation.pending_preflight(project)["pending"]
+        repair_setup = False
+        repair_turn = None
         setup_deferred = False
         if flow_pre is not None and flow_pre.gated and needs_setup and not flowrun.setup_allowed(project):
             # codex desktop review #3: under the flow the software is set up AFTER the plan is
@@ -4405,6 +4717,40 @@ verification are different states; never claim this test verified the KI."""
                 return
             resolved = [item[0] for item in resolved_with_cfg]
             cfg = resolved_with_cfg[0][1]
+            if repair_pending and flowrun.setup_allowed(project):
+                # Host preflight is its own bounded setup turn after the revised
+                # plan is approved. It cannot inherit a shared KI's old pass.
+                repair_turn = flowrun.setup_turn(project, resolved, cfg, kind, pname,
+                    database_access_mode=obs_access.effective_mode(settings.database_access_mode()))
+                preflight_messages = []
+                def report_preflight(piece):
+                    preflight_messages.append(piece)
+                    return out(piece)
+                if Handler._repair_preflight(self, project, resolved_with_cfg, report_preflight, runtime_events):
+                    flowrun.setup_verified(project, resolved, cfg)
+                    return repair_turn
+                if _user_stopped(runtime_events):
+                    return repair_turn
+                # Give the provider a bounded chance to repair the recorded
+                # environment. Repeated failed probes alone cannot fix it.
+                repair_setup = True
+                needs_setup = True
+                declarations = [{"ki": k.name, "python_deps": self._manifest(k).python_deps,
+                                 "depends_on": self._manifest(k).depends_on} for k in resolved]
+                setup_contract = (
+                    "[REPAIRED PROJECT KI SOFTWARE SETUP]\n"
+                    "Fix only this KI's recorded Python environment or runtime dependencies. "
+                    "Use the unchanged adopted project KI and its existing path bindings. "
+                    "Do not edit KI files, input data, scientific criteria, shared status records "
+                    "or project configuration; do not run simulations, examples or calibration. "
+                    "The host will rerun the exact project preflight and dependency checks. "
+                    "A missing coupled KI needs its own verified setup; report it clearly.\n"
+                    f"Recorded Python: {cfg.python}\nDeclared requirements: " +
+                    json.dumps(declarations, ensure_ascii=False) + "\nHost check:\n" +
+                    "".join(preflight_messages))
+            if repair_pending and (flow_pre is None or not flow_pre.gated):
+                out("[The repaired KI requires a new approved plan and project preflight before execution.]\n")
+                return None
         project_rules = SESSION_PROJECT_RULES.format(project=project)
         run_rules = projectrun.prompt_block(project)
         skill_rules = skilllib.prompt_block(skill_names)
@@ -4483,7 +4829,7 @@ verification are different states; never claim this test verified the KI."""
                         software_status_rules + "\n\n" + ki_source_rules +
                         "\n\n" + language_rules + "\n\n" + RESPONSE_PRESENTATION_RULES)
         elif flow_pre is not None and flow_pre.gated and needs_setup:
-            flow_turn = flowrun.setup_turn(
+            flow_turn = repair_turn or flowrun.setup_turn(
                 project, resolved, cfg, kind, pname,
                 database_access_mode=database_mode)
         if kind == "api":
@@ -4523,7 +4869,7 @@ verification are different states; never claim this test verified the KI."""
                     prov, run_ki, cfg, system, bare_task or task,
                     model=llm, history=prior,
                     setup_mode=needs_setup,
-                    setup_context={"run_builtin": run_builtin,
+                    setup_context={**({} if repair_setup else {"run_builtin": run_builtin}),
                                    "project_root": project,
                                    "installation_only": needs_setup,
                                    "_turn_id": (runtime_events or {}).get("_turn_id")},
@@ -4535,12 +4881,19 @@ verification are different states; never claim this test verified the KI."""
                 out,
             )
             if needs_setup and not _user_stopped(runtime_events):
-                ok = self._record_agent_preflight(
+                ok = (Handler._repair_preflight(self, project, resolved_with_cfg, out, runtime_events)
+                      if repair_setup else self._record_agent_preflight(
                     ki, run_ki, cfg, setup_wd, lambda _piece: True,
                     project=project, stop=lambda: _user_stopped(runtime_events),
-                    turn_id=(runtime_events or {}).get("_turn_id"))
+                    turn_id=(runtime_events or {}).get("_turn_id")))
                 if ok and flow_turn is not None:
-                    flowrun.setup_verified(project, resolved, cfg)
+                    if repair_pending and not repair_setup:
+                        local_pairs = self._session_workspaces(project, kis)
+                        ok = Handler._repair_preflight(self, project, local_pairs, out, runtime_events)
+                        if ok:
+                            flowrun.setup_verified(project, [k for k, _ in local_pairs], local_pairs[0][1])
+                    else:
+                        flowrun.setup_verified(project, resolved, cfg)
             return flow_turn
         avail = providers.available()
         if not avail:
@@ -4628,6 +4981,7 @@ verification are different states; never claim this test verified the KI."""
         flow_fp = flow_turn.fingerprint_extra if flow_turn is not None else ""
         fingerprint_src = "\x00".join([
             prov.name, str(llm or ""), *sorted(names or []),
+            str((session or {}).get("ki_repair_generation", "")),
             *sorted(skill_names or []), *sorted(mcp_names or []),
             str(getattr(cfg, "relocation", "")), setup_contract or "",
             calibration_rules, session_rules, flow_fp,
@@ -4655,12 +5009,19 @@ verification are different states; never claim this test verified the KI."""
         if flow_turn is not None:
             flow_turn.provider_succeeded = bool(completed and completed.get("returncode") == 0)
         if needs_setup and not _user_stopped(runtime_events):
-            ok = self._record_agent_preflight(
+            ok = (Handler._repair_preflight(self, project, resolved_with_cfg, out, runtime_events)
+                  if repair_setup else self._record_agent_preflight(
                 ki, resolved[0], cfg, setup_wd, lambda _piece: True,
                 project=project, stop=lambda: _user_stopped(runtime_events),
-                turn_id=(runtime_events or {}).get("_turn_id"))
+                turn_id=(runtime_events or {}).get("_turn_id")))
             if ok and flow_turn is not None:
-                flowrun.setup_verified(project, resolved, cfg)
+                if repair_pending and not repair_setup:
+                    local_pairs = self._session_workspaces(project, kis)
+                    ok = Handler._repair_preflight(self, project, local_pairs, out, runtime_events)
+                    if ok:
+                        flowrun.setup_verified(project, [k for k, _ in local_pairs], local_pairs[0][1])
+                else:
+                    flowrun.setup_verified(project, resolved, cfg)
         return flow_turn
 
     # --- chat --------------------------------------------------------------

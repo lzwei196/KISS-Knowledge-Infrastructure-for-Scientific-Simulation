@@ -297,6 +297,13 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .planreview{display:grid;gap:10px;margin:4px 0 2px}.planreview .prsec{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--surface)}.planreview h4{margin:0 0 6px;font-size:12px;letter-spacing:.02em;color:var(--fg-2);text-transform:uppercase}.planreview .prgoal{font-size:13.5px;line-height:1.5;color:var(--fg)}.planreview .prmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.planreview .prtag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--fg-2)}.planreview .prgroup{margin:6px 0 0}.planreview .prgroup b{font-size:12px}.planreview .prgroup ul{margin:3px 0 0;padding-left:18px;font-size:12px;line-height:1.45}.planreview .prgroup code{font-size:11px}.planreview .pr-auto b{color:var(--ok)}.planreview .pr-manual b{color:var(--warn)}.planreview .pr-missing b{color:var(--block)}.planreview .pr-gen b,.planreview .pr-other b{color:var(--fg-3)}.planreview ol.prsteps{margin:0;padding-left:20px;font-size:12px;line-height:1.5}.planreview ol.prsteps code{font-size:11px}.planreview .prkind{font-size:10.5px;padding:1px 6px;border-radius:6px;background:var(--raised);border:1px solid var(--line);margin-left:5px;color:var(--fg-3)}.planreview .prblock{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--surface))}.planreview .prblock ul{margin:2px 0 0;padding-left:18px;font-size:12px}.planreview details{font-size:12px;color:var(--fg-3)}.planreview details pre{white-space:pre-wrap;font-size:11.5px;margin:6px 0 0;color:var(--fg-2)}
 .projectbtn.run-working{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}.projectbtn.run-waiting{color:var(--warn);border-color:var(--warn)}
 .projectbtn.run-complete{color:var(--ok);border-color:var(--ok)}.projectbtn.run-failed{color:var(--block);border-color:var(--block)}
+#investigationpanel{width:min(640px,96vw);visibility:hidden;pointer-events:none}
+#investigationpanel.open{visibility:visible;pointer-events:auto}
+.investigation-meta{display:block;color:var(--fg-2);font-size:11px;overflow-wrap:anywhere;margin:4px 0}
+.investigation-details pre,.investigation-report-text{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:440px;overflow:auto}
+.investigation-details{margin-top:9px}.investigation-error{color:var(--block)!important}
+.investigation-finding{padding:10px 0;border-top:1px solid var(--line)}.investigation-finding li{overflow-wrap:anywhere}
+.investigation-actions{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}
 .acquisitionnote{padding:10px 12px;margin:0 0 8px;border:1px solid var(--line);border-radius:12px;background:var(--brand-50);font-size:12px;line-height:1.5}
 .acquisitionnote[hidden]{display:none}.acquisitionnote b{display:block}.acquisitionnote p{margin:4px 0;white-space:pre-line;overflow-wrap:anywhere}.acquisitionnote small{color:var(--fg-2)}.acquisitionnote button{float:right;padding:4px 8px;font-size:11px;margin-left:8px}
 #opendata[data-state]:not([data-state=""])::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;background:currentColor;vertical-align:middle}
@@ -326,6 +333,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <button class="projectbtn" id="openproject" disabled title="Open this chat's local project folder">▣ Folder</button>
     <button class="projectbtn" id="opendata" disabled title="See what GeoForge is doing in this project">◇ <span id="runlabel">Project status</span></button>
     <button class="projectbtn" id="openview" disabled title="Open this chat's dynamic Project View">▤ <span id="viewlabel">Project view</span></button>
+    <button class="projectbtn" id="openinvestigation" aria-controls="investigationpanel" aria-expanded="false" title="Review KI issues with three independent agents">⌕ <span id="investigation-label">Investigate KI</span></button>
     <div class="agenttools">
       <span class="agentlabel">AI CONNECTION</span>
       <div class="seg" id="kindtog" title="Use an installed agent or a direct API key">
@@ -514,6 +522,12 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><div><h2 style="margin:0">Usage guides</h2><div class="hint" style="margin:0">Offline guides for setup, scientific runs, and calibration.</div></div></div>
     <div class="guidecards">
       <article class="guidecard">
+        <h3 id="guide-investigation-title">Investigate and repair a KI</h3>
+        <p id="guide-investigation-steps"></p>
+        <p class="hint" id="guide-investigation-limit"></p>
+        <div class="guidelinks"><button id="guide-investigation-open" disabled>Open this project's investigation</button></div>
+      </article>
+      <article class="guidecard">
         <h3>Quickstart · 3 pages</h3>
         <p>1. Set up the agent · 2. Set up a KI · 3. Run end to end</p>
         <div class="guidelinks"><a class="primary" data-guide="quickstart" data-guide-format="html" href="/guide/quickstart/en.html" target="_blank" rel="noopener">Read guide</a><a data-guide="quickstart" data-guide-format="pdf" href="/guide/quickstart/en.pdf" target="_blank" rel="noopener">Open PDF</a></div>
@@ -552,10 +566,25 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <span class="hint" id="view-msg" style="align-self:center;margin:0"></span>
     </div>
   </section>
+  <section class="inspector" id="investigationpanel" aria-labelledby="investigation-title" aria-hidden="true" inert>
+    <div class="inspecthead"><span class="mark">⌕</span><h2 id="investigation-title">KI investigation</h2><button id="investigation-close" aria-label="Close">✕</button></div>
+    <div class="inspectbody">
+      <p class="hint" id="investigation-intro"></p>
+      <label id="investigation-issue-label" for="investigation-issue">What should they investigate?</label>
+      <textarea id="investigation-issue" rows="3" maxlength="12000" style="width:100%"></textarea>
+      <p class="hint" id="investigation-binding"></p>
+      <div class="investigation-actions"><button class="primary" id="investigation-start">Start 3 independent reviews</button><button id="investigation-cancel" hidden>Cancel investigation</button><button id="investigation-refresh">Refresh</button></div>
+      <div id="investigation-message" class="hint" role="status" aria-live="polite"></div>
+      <div id="investigation-report"></div>
+      <div id="investigation-ki-row" hidden><label id="investigation-ki-label" for="investigation-ki">KI to repair</label><select id="investigation-ki"></select></div>
+      <div class="investigation-actions"><button id="investigation-draft" hidden>Create repair draft</button><button id="investigation-build" hidden>Build repair with agent</button><button id="investigation-verify" hidden>Verify with KDT</button><button class="primary" id="investigation-apply" hidden>Apply repair and continue</button></div>
+    </div>
+  </section>
 </main>
 <div class="ki-update-toast" id="ki-update-toast"><b id="ki-update-title">KI library</b><small id="ki-update-message"></small><div class="ki-update-actions"><button class="primary" id="ki-update-view">View report</button><button id="ki-update-dismiss">Dismiss</button></div></div>
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
+<script src="/investigation.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -587,6 +616,7 @@ function artifactImage(alt,raw,sid){
 const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_data_tool:"Prepared a project data tool",run_project_data_tool:"Ran a project data tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command",search_observation_data:"Searched GeoForge Database",search_catalogue:"Searched GeoForge Database",describe_dataset:"Read dataset schema",estimate_clip:"Estimated a server clip",download_observation_data:"Downloaded from GeoForge Database",fetch_data:"Downloaded a data file",write_plan:"Wrote the plan",run_calibration:"Ran a calibration",search_diagnostics:"Searched KDT diagnostics",responding:"Generating a response"};
 const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令",search_observation_data:"已检索 GeoForge 数据库",search_catalogue:"已检索 GeoForge 数据库",describe_dataset:"已读取数据集字段",estimate_clip:"已估算服务器裁剪",download_observation_data:"已从 GeoForge 数据库下载",fetch_data:"已下载数据文件",write_plan:"已写入计划",run_calibration:"已运行校准",search_diagnostics:"已检索 KDT 诊断",responding:"正在生成回复"};
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
+let INVESTIGATION=null;
 let KI_UPDATE_REVISION="",KI_UPDATE_POLL=null,KI_UPDATE_REFRESHING=null,KI_UPDATE_NOTICE="";
 function drawCatalogStatus(){
   if(CUR)drawModelLabel();
@@ -1068,6 +1098,7 @@ async function openSession(id){
   ]);
   if(seq!==OPEN_SEQ)return;
   CUR=next;
+  if(INVESTIGATION)INVESTIGATION.sync();
   drawSessions();
   $("#title").textContent=CUR.title;
   drawModelLabel();
@@ -1569,6 +1600,7 @@ function setControls(on){
   $("#openproject").disabled=!CUR;
   $("#opendata").disabled=!CUR;
   $("#openview").disabled=!CUR;
+  if(INVESTIGATION)INVESTIGATION.sync();
   $("#skills").disabled=!available||active;
   $("#attach").disabled=!available||active||uploading;
   updateActivityUI();
@@ -1707,7 +1739,7 @@ function projectViewPrompt(){
   if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。把所有展示文件放在 artifacts/。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
   return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Put all display files under artifacts/. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
 }
-$("#openview").onclick=async()=>{$("#datapanel").classList.remove("open");$("#viewpanel").classList.add("open");await refreshProjectView(true);resumeProjectMedia();};
+$("#openview").onclick=async()=>{if(INVESTIGATION)INVESTIGATION.close();$("#datapanel").classList.remove("open");$("#viewpanel").classList.add("open");await refreshProjectView(true);resumeProjectMedia();};
 $("#view-close").onclick=()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");};
 $("#view-refresh").onclick=()=>refreshProjectView(true);
 $("#view-folder").onclick=()=>$("#openproject").click();
@@ -2200,7 +2232,7 @@ async function refreshData(){
   };
   const calibrationFiles=$("#calibration-files");if(calibrationFiles)calibrationFiles.onclick=()=>{$("#datapanel").classList.remove("open");$("#chatfiles").click();};
 }
-$("#opendata").onclick=async()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#datapanel").classList.add("open");await refreshData();};
+$("#opendata").onclick=async()=>{if(INVESTIGATION)INVESTIGATION.close();pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#datapanel").classList.add("open");await refreshData();};
 $("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
 $("#data-agent").onclick=async()=>{
   $("#datapanel").classList.remove("open");$("#msg").focus();
@@ -2681,5 +2713,25 @@ setInterval(()=>refreshAcquisitionProgress().catch(()=>{}),5000);
 setInterval(()=>{if(!CUR)return;if($("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});else refreshViewStatus().catch(()=>{});},5000);
 $("#ki-update-view").onclick=()=>location.href="/library?updates=1";
 $("#ki-update-dismiss").onclick=()=>$("#ki-update-toast").classList.remove("open");
+async function resumeInvestigation(sid,message){
+  if(!CUR||CUR.id!==sid)throw new Error(chineseUI()?"请打开原项目后继续。":"Open the original project to continue.");
+  await openSession(sid);
+  if(!CUR||CUR.id!==sid||sessionBusy(sid)||!currentProviderReady())
+    throw new Error(chineseUI()?"项目或 AI 暂不可用，请在对话中继续。":"The project or AI is unavailable; continue in chat when ready.");
+  const draft=$("#msg").value;
+  $("#msg").value=message;
+  try{await send();}
+  finally{
+    if(CUR&&CUR.id===sid&&(!$("#msg").value||$("#msg").value===message)){
+      $("#msg").value=draft;DRAFTS.set(sid,draft);
+    }else if((!CUR||CUR.id!==sid)&&(!DRAFTS.get(sid)||DRAFTS.get(sid)===message))DRAFTS.set(sid,draft);
+  }
+}
+if(window.GeoForgeInvestigation)INVESTIGATION=GeoForgeInvestigation.create({
+  $,chinese:chineseUI,session:()=>CUR,busy:sid=>sessionBusy(sid)||sessionUploading(sid),
+  ready:currentProviderReady,binding:()=>({provider:$("#prov").value||CUR?.provider||"",llm_model:$("#llm").value||CUR?.llm_model||""}),
+  beforeOpen:()=>{pauseProjectMedia();$("#datapanel").classList.remove("open");$("#viewpanel").classList.remove("open");},
+  resume:resumeInvestigation,
+});
 loadAll().finally(watchKiUpdates);
 </script></body></html>

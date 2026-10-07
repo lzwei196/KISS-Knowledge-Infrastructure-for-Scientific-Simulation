@@ -7,14 +7,20 @@ on:
         description: Existing release tag to receive the Windows assets
         required: true
         default: windows-v0.6.58
+      reuse_0658_source_validation:
+        description: Reuse the pinned successful 0.6.58 source tests for a packaging-only retry
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   validate-source:
     outputs:
       source_commit: ${{ steps.source.outputs.commit }}
+      source_validation_run: ${{ steps.source.outputs.validation_run }}
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -35,8 +41,50 @@ jobs:
           $commit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { throw 'cannot resolve the application revision' }
           "commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $validationRun = if ('${{ inputs.reuse_0658_source_validation }}' -eq 'true') { '37564645167' } else { '${{ github.run_id }}' }
+          "validation_run=$validationRun" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Verify the approved source validation identity
+        if: inputs.reuse_0658_source_validation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # This narrow reuse is bound to one reviewed application commit, run,
+          # successful source job and the exact report bytes recorded below.
+          if ('${{ steps.source.outputs.commit }}' -ne 'abaffb5b493de60a31ea3b0afebb8538a30a3a9f') { throw 'source reuse is only approved for the unchanged 0.6.58 application' }
+          $run = gh api 'repos/${{ github.repository }}/actions/runs/37564645167' | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne 'fe38a9dc92199a41b640679e407b01752ae55f06') { throw 'source validation workflow identity mismatch' }
+          $job = gh api 'repos/${{ github.repository }}/actions/jobs/112609487734' | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $job.run_id -ne 37564645167 -or $job.name -ne 'validate-source' -or $job.conclusion -ne 'success') { throw 'approved source validation job did not pass' }
+
+      - name: Restore the approved source validation reports
+        if: inputs.reuse_0658_source_validation
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-source-validation-37564645167
+          run-id: 37564645167
+          github-token: ${{ github.token }}
+          path: .
+
+      - name: Verify exact source validation report bytes
+        if: inputs.reuse_0658_source_validation
+        shell: pwsh
+        run: |
+          $expected = @{
+            'desktop-regression.xml' = 'd7703b2b3970691ef41f175f69e195a336b1d05c296d07713d81d6a91465b7fb'
+            'shared-regression.xml' = 'dd5a8dd9aaec39f0cf0cd617766f5e23d1a3532921e5bb497b2c446fa24bf6c6'
+          }
+          foreach ($name in $expected.Keys) {
+            if ((Get-FileHash -LiteralPath $name -Algorithm SHA256).Hash.ToLower() -ne $expected[$name]) { throw "source validation report differs: $name" }
+            [xml]$report = Get-Content -LiteralPath $name -Raw
+            foreach ($suite in $report.testsuites.testsuite) {
+              if ([int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0) { throw "source validation report failed: $name" }
+            }
+          }
 
       - name: Install test dependencies
+        if: ${{ !inputs.reuse_0658_source_validation }}
         shell: pwsh
         run: |
           # Scientific helper tests need these optional packages; the desktop
@@ -44,12 +92,14 @@ jobs:
           python -m pip install --quiet pyinstaller pytest truststore certifi pandas==2.3.1 xarray==2025.7.1 matplotlib==3.10.5 -e kiss -e ki_tools_common -r kiss/requirements-calibration.txt
 
       - name: Release boundary regressions
+        if: ${{ !inputs.reuse_0658_source_validation }}
         shell: pwsh
         run: |
           python -m pytest kiss/tests/test_data_reader_runtime.py kiss/tests/test_session_upload_safety.py kiss/tests/test_ki_guard.py 'kiss/tests/test_runtime.py::AgentSetupTests::test_julia_probe_uses_workspace_runtime_project_and_depot' -q -o faulthandler_timeout=180
           if ($LASTEXITCODE -ne 0) { throw 'release boundary regression tests failed' }
 
       - name: Shared-library regression tests
+        if: ${{ !inputs.reuse_0658_source_validation }}
         shell: pwsh
         run: |
           # Both trees contain a top-level tests package; use separate interpreters.
@@ -57,6 +107,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'shared-library regression tests failed' }
 
       - name: Source regression tests
+        if: ${{ !inputs.reuse_0658_source_validation }}
         shell: pwsh
         run: |
           python -m pytest kiss/tests -q --durations=20 -o faulthandler_timeout=180 --junitxml=desktop-regression.xml
@@ -119,9 +170,14 @@ jobs:
       - name: Build the self-contained desktop folder
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --distpath dist-windows --workpath build-windows kiss/GeoForgeDesktopWindows.spec
+          # Inno Setup cannot read some bundled paths below GitHub's long
+          # checkout directory. Build the same source into a short temp root.
+          $distDir = Join-Path $env:RUNNER_TEMP 'gf/dist'
+          $workDir = Join-Path $env:RUNNER_TEMP 'gf/build'
+          python -m PyInstaller --noconfirm --clean --distpath "$distDir" --workpath "$workDir" kiss/GeoForgeDesktopWindows.spec
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
           $version = python -c "import tomllib;print(tomllib.load(open('kiss/pyproject.toml','rb'))['project']['version'])"
-          $bundle = "dist-windows/GeoForge Desktop $version Windows"
+          $bundle = Join-Path $distDir "GeoForge Desktop $version Windows"
           if (!(Test-Path "$bundle/_internal/python311.dll")) { throw 'python311.dll missing' }
           if ((Get-ChildItem "$bundle/_internal/models" -Directory).Count -ne 127) { throw 'expected 127 KI packages' }
           if (!(Select-String -LiteralPath "$bundle/_internal/kiss_cli/web/app.html" -Pattern 'Enable Kimi with full computer access' -Quiet)) { throw 'Windows Kimi setting missing' }
@@ -139,6 +195,7 @@ jobs:
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           & $iscc "/DAppVersion=$env:APP_VERSION" "/DSourceDir=$((Resolve-Path $env:BUNDLE).Path)" "/DOutputDir=$((Get-Location).Path)/installer-output" kiss/installer/GeoForgeDesktopWindows.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
           $installer = (Resolve-Path "installer-output/GeoForge-Desktop-Setup-v$env:APP_VERSION-Windows-x64.exe").Path
           $testDir = Join-Path $env:RUNNER_TEMP 'GeoForge-release-test'
           $process = Start-Process $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',("/DIR=`"$testDir`"") -WindowStyle Hidden -Wait -PassThru
@@ -163,7 +220,8 @@ jobs:
             version = $env:APP_VERSION
             source_commit = (git rev-parse HEAD)
             workflow_commit = '${{ github.sha }}'
-            source_regression_tests = 'passed in validate-source; see attached JUnit reports and Actions job logs'
+            source_validation_run = '${{ needs.validate-source.outputs.source_validation_run }}'
+            source_regression_tests = 'passed; see source_validation_run, exact attached JUnit reports and validate-source provenance checks'
             frozen = Get-Content windows-frozen-smoke.json -Raw | ConvertFrom-Json
             installed = Get-Content windows-installed-smoke.json -Raw | ConvertFrom-Json
             installer_exit_code = 0

@@ -12,7 +12,9 @@ permissions:
   contents: write
 
 jobs:
-  build-and-publish:
+  validate-source:
+    outputs:
+      source_commit: ${{ steps.source.outputs.commit }}
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -26,13 +28,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install build dependencies
+      - name: Record the tested application revision
+        id: source
+        shell: pwsh
+        run: |
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'cannot resolve the application revision' }
+          "commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install test dependencies
         shell: pwsh
         run: |
           # Scientific helper tests need these optional packages; the desktop
           # spec deliberately excludes them from the bundled application.
           python -m pip install --quiet pyinstaller pytest truststore certifi pandas==2.3.1 xarray==2025.7.1 matplotlib==3.10.5 -e kiss -e ki_tools_common -r kiss/requirements-calibration.txt
-          choco install innosetup -y --no-progress
 
       - name: Release boundary regressions
         shell: pwsh
@@ -53,6 +62,60 @@ jobs:
           python -m pytest kiss/tests -q --durations=20 -o faulthandler_timeout=180 --junitxml=desktop-regression.xml
           if ($LASTEXITCODE -ne 0) { throw 'application regression tests failed' }
 
+      - name: Keep successful source regression reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-source-validation-${{ github.run_id }}
+          path: |
+            desktop-regression.xml
+            shared-regression.xml
+          if-no-files-found: error
+          overwrite: true
+
+  build-and-publish:
+    needs: validate-source
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Require the application revision that passed validation
+        shell: pwsh
+        run: |
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $commit -ne '${{ needs.validate-source.outputs.source_commit }}') { throw 'application tag changed after source validation' }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build and release-check dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --quiet pyinstaller pytest truststore certifi pandas==2.3.1 xarray==2025.7.1 matplotlib==3.10.5 -e kiss -e ki_tools_common -r kiss/requirements-calibration.txt
+          choco install innosetup -y --no-progress
+
+      - name: Load standalone checks from the workflow revision
+        shell: pwsh
+        run: |
+          # Fetch only the check source; HEAD and application files stay at the tag.
+          git fetch --no-tags --depth=1 origin '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'cannot fetch the release-check revision' }
+          python -c "from pathlib import Path,PurePosixPath; import subprocess,sys; out=Path('release-checks'); out.mkdir(exist_ok=True); [(out/PurePosixPath(p).name).write_bytes(subprocess.check_output(['git','show',sys.argv[1]+':'+p])) for p in ('tools/windows_release_smoke.py','tools/test_windows_release_asset_bytes.py')]" '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'cannot extract standalone release checks' }
+          python -m pytest release-checks/test_windows_release_asset_bytes.py -q
+          if ($LASTEXITCODE -ne 0) { throw 'standalone release-check regressions failed' }
+
+      - name: Restore successful source regression reports
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-source-validation-${{ github.run_id }}
+          path: .
+
       - name: Build the self-contained desktop folder
         shell: pwsh
         run: |
@@ -68,7 +131,7 @@ jobs:
       - name: Test the frozen application outside the checkout
         shell: pwsh
         run: |
-          python tools/windows_release_smoke.py "$env:BUNDLE" --report windows-frozen-smoke.json
+          python release-checks/windows_release_smoke.py "$env:BUNDLE" --report windows-frozen-smoke.json
           if ($LASTEXITCODE -ne 0) { throw 'frozen application smoke failed' }
 
       - name: Build and test the installer
@@ -82,7 +145,7 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "installer exited $($process.ExitCode)" }
           if (!(Test-Path "$testDir/_internal/python311.dll")) { throw 'installed Python DLL missing' }
           if ((Get-ChildItem "$testDir/_internal/models" -Directory).Count -ne 127) { throw 'installed KI count is not 127' }
-          python tools/windows_release_smoke.py "$testDir" --report windows-installed-smoke.json
+          python release-checks/windows_release_smoke.py "$testDir" --report windows-installed-smoke.json
           if ($LASTEXITCODE -ne 0) { throw 'installed application smoke failed' }
           $uninstall = Join-Path $testDir 'unins000.exe'
           $process = Start-Process $uninstall -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -WindowStyle Hidden -Wait -PassThru
@@ -99,7 +162,8 @@ jobs:
           $validation = @{
             version = $env:APP_VERSION
             source_commit = (git rev-parse HEAD)
-            source_regression_tests = 'passed; see Actions job logs'
+            workflow_commit = '${{ github.sha }}'
+            source_regression_tests = 'passed in validate-source; see attached JUnit reports and Actions job logs'
             frozen = Get-Content windows-frozen-smoke.json -Raw | ConvertFrom-Json
             installed = Get-Content windows-installed-smoke.json -Raw | ConvertFrom-Json
             installer_exit_code = 0
@@ -122,7 +186,7 @@ jobs:
           }
           Copy-Item "docs/manual/$edition/validation.json" release-assets/guide-validation.json
           Copy-Item "docs/manual/$edition/quickstart-illustrated-validation.json" release-assets/quickstart-illustrated-validation.json
-          Get-ChildItem release-assets -File | Sort-Object Name | Get-FileHash -Algorithm SHA256 |
+          Get-ChildItem release-assets -File | Where-Object Name -ne SHA256SUMS-Windows.txt | Sort-Object Name | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } |
             Set-Content release-assets/SHA256SUMS-Windows.txt -Encoding utf8
 

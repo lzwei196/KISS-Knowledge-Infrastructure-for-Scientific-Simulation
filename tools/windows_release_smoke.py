@@ -41,6 +41,13 @@ def check_investigation_assets(app: str, script: str, bundled_script: str) -> No
     assert "global.GeoForgeInvestigation={create}" in script, "Investigation UI entrypoint missing"
 
 
+def check_investigation_asset_file(app: str, script: str, bundled_path: Path) -> None:
+    # HTTP decoding preserves CRLF. read_text() performs universal-newline
+    # translation, so it cannot establish equality with the served payload.
+    # Decode the actual file bytes without normalizing either side.
+    check_investigation_assets(app, script, bundled_path.read_bytes().decode("utf-8"))
+
+
 def guide_edition(manifest: dict) -> str:
     """Documentation can retain its reviewed edition across app-only releases."""
     edition = manifest.get("guides", {}).get("edition", manifest["version"])
@@ -204,8 +211,8 @@ def check(bundle: Path, report: dict) -> None:
             routes = ["/", "/setup", "/library", "/i18n.js", "/clipboard.js", "/investigation.js"]
             for route in routes:
                 assert len(fetch(route)) > 100, f"Empty asset: {route}"
-            check_investigation_assets(fetch("/"), fetch("/investigation.js"),
-                (internal / "kiss_cli/web/investigation.js").read_text(encoding="utf-8"))
+            check_investigation_asset_file(fetch("/"), fetch("/investigation.js"),
+                internal / "kiss_cli/web/investigation.js")
             report["investigation_ui_assets"] = "passed; no reviewer or model was invoked"
             # These guides must work without GitHub or any network provider.
             guide_routes = []

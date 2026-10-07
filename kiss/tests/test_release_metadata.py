@@ -117,7 +117,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn('version=version_info', spec)
         self.assertIn('if len(ki_packages) != 127:', spec)
         self.assertNotIn('(str(REPO / "models"), "models")', spec)
-        self.assertEqual(workflow.count('python tools/windows_release_smoke.py'), 2)
+        self.assertEqual(workflow.count('python release-checks/windows_release_smoke.py'), 2)
 
 
 if __name__ == "__main__":

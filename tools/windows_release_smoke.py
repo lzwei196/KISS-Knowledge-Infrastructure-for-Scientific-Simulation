@@ -21,6 +21,26 @@ import urllib.request
 import yaml
 
 
+BUNDLED_DATA_KIS = {"Agrometeo_Quebec_Observations", "HYDAT_Observations"}
+
+
+def check_catalogue(rows: list[dict], scientific: set[str], data: set[str]) -> None:
+    names = [row["name"] for row in rows]
+    expected = scientific | data
+    assert len(names) == len(set(names)), "Bundled catalogue contains duplicate KI names"
+    assert set(names) == expected, (
+        f"Bundled catalogue mismatch: missing={sorted(expected - set(names))}, "
+        f"unexpected={sorted(set(names) - expected)}")
+
+
+def check_investigation_assets(app: str, script: str, bundled_script: str) -> None:
+    assert 'id="openinvestigation"' in app, "Main chat investigation control missing"
+    assert 'id="investigation-title"' in app, "Investigation panel header missing"
+    assert '<script src="/investigation.js"></script>' in app, "Investigation script reference missing"
+    assert script == bundled_script, "Investigation script payload differs from bundled asset"
+    assert "global.GeoForgeInvestigation={create}" in script, "Investigation UI entrypoint missing"
+
+
 def guide_edition(manifest: dict) -> str:
     """Documentation can retain its reviewed edition across app-only releases."""
     edition = manifest.get("guides", {}).get("edition", manifest["version"])
@@ -55,6 +75,10 @@ def check(bundle: Path, report: dict) -> None:
     assert len(packages) == 127, f"Expected 127 KI directories, got {len(packages)}"
     assert all((p / "SKILL.md").is_file() for p in packages)
     assert all((p / "docs" / "install.windows.md").is_file() for p in packages)
+    data_packages = sorted(p for p in (internal / "data_kis").iterdir() if p.is_dir())
+    data_names = {p.name for p in data_packages}
+    assert data_names == BUNDLED_DATA_KIS, f"Unexpected bundled data KIs: {sorted(data_names)}"
+    assert all((p / "SKILL.md").is_file() for p in data_packages)
     recipes = [p for p in packages if (p / "kiss.windows.yaml").is_file()]
     assert len(recipes) == 23, f"Expected 23 Windows recipes, got {len(recipes)}"
     for package in recipes:
@@ -63,7 +87,8 @@ def check(bundle: Path, report: dict) -> None:
                                  f"{package.name}.yaml").read_text("utf-8"))
         assert embedded == shared, f"Conflicting recipe copies: {package.name}"
     report.update(ki_count=len(packages), windows_notes=len(packages),
-                  windows_recipes=len(recipes), python_dll="python311.dll")
+                  windows_recipes=len(recipes), python_dll="python311.dll",
+                  data_ki_count=len(data_packages), data_kis=sorted(data_names))
     with tempfile.TemporaryDirectory(prefix="geoforge-release-smoke-") as temporary:
         isolated = Path(temporary)
         env = os.environ.copy()
@@ -176,9 +201,12 @@ def check(bundle: Path, report: dict) -> None:
                     if time.monotonic() > deadline:
                         raise RuntimeError("Frozen HTTP server did not start in 90 seconds")
                     time.sleep(0.5)
-            routes = ["/", "/setup", "/library", "/i18n.js", "/clipboard.js"]
+            routes = ["/", "/setup", "/library", "/i18n.js", "/clipboard.js", "/investigation.js"]
             for route in routes:
                 assert len(fetch(route)) > 100, f"Empty asset: {route}"
+            check_investigation_assets(fetch("/"), fetch("/investigation.js"),
+                (internal / "kiss_cli/web/investigation.js").read_text(encoding="utf-8"))
+            report["investigation_ui_assets"] = "passed; no reviewer or model was invoked"
             # These guides must work without GitHub or any network provider.
             guide_routes = []
             for kind in ("manual", "quickstart", "calibration"):
@@ -201,7 +229,8 @@ def check(bundle: Path, report: dict) -> None:
                 "passed": True, "edition": expected_guide_edition, "routes": guide_routes,
             }
             models = json.loads(fetch("/api/models"))
-            assert {m["name"] for m in models} == {p.name for p in packages}
+            check_catalogue(models, {p.name for p in packages}, data_names)
+            report["catalogue_count"] = len(models)
             assert "KI HARNESS v1" in fetch("/api/prompt/MODFLOW6")
             flow = json.loads(fetch("/api/flow-status"))
             assert flow.get("ready"), flow

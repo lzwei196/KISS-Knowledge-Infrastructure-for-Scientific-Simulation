@@ -1,6 +1,18 @@
 # GeoForge Desktop user manual
 
-## Development: updating the KI library / 开发中：更新 KI 库
+## Windows 0.6.57: KI investigation and updates / KI 排查与更新
+
+Open **Investigate KI / 排查 KI** inside a project to start three independent
+reviews of the same frozen context. Read the reports, create a repair draft,
+build it with the agent, and verify it with KDT. **Apply repair and continue**
+requires a passing exact-revision check and an explicit click; it preserves
+history and returns to a fresh plan review and software preflight. The Guide
+menu contains the same instructions in English and Chinese. Structural checks
+and reviewer reports do not replace native model or scientific validation.
+
+在项目中打开 **排查 KI**：三方独立审查 → 阅读报告 → 创建修复草稿 → Agent 编写修复 →
+KDT 验证 → 明确点击“应用修复并继续”。应用后保留历史，重新审核计划并检查实际 KI 版本。
+结构验证和审查报告不能替代模型运行及科学验证。
 
 Open **KI Library**, check for updates, and read the report's active revision and
 component sources. A data KI marked as bundled fallback was not updated from
@@ -32,9 +44,9 @@ proposal to deliver a companion data KI with a dataset.
 [数据读取工具与本地补充方案](../DATA-READER-FALLBACK.md)介绍正在开发的项目读取器流程、
 HYDAT／魁北克实例，以及下载时提供配套数据 KI 的独立建议。
 
-## 0.6.55 guide edition, bundled with Windows 0.6.56 / Windows 0.6.56 内置手册
+## 0.6.55 guide edition, bundled with Windows 0.6.57 / Windows 0.6.57 内置手册
 
-Windows [0.6.56](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56) includes the October 2 illustrated quickstarts in both the installer and portable app. The guide edition remains 0.6.55 because the documented application workflow is unchanged.
+Windows [0.6.57](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.57) includes the October 2 illustrated quickstarts in both the installer and portable app. The PDFs retain their reviewed 0.6.55 edition; the new investigation workflow is documented above and in the app's Guide menu.
 
 The app's **Guide / 使用指南** menu includes three offline guides, each in English and Simplified Chinese:
 

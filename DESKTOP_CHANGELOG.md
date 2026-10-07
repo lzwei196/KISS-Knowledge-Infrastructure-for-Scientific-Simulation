@@ -6,7 +6,29 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
-## Windows development source — 2026-10-06 (not a new installer release)
+## v0.6.57 — Windows KI investigation, repair and revision enforcement
+
+- Investigate KI opens three independent reviewer conversations over the same
+  frozen project evidence. Read their reports, create a KDT repair draft, verify
+  it, then explicitly apply it. Adoption preserves history, starts fresh provider
+  memory and requires a new plan review and exact-revision software preflight.
+- Repair drafts preserve project bindings. Author retries receive prior host
+  failures; KDT verification can be retried without another authoring turn.
+  Incomplete reports and rejected packages cannot activate. The Windows tool-index
+  check now handles portable slash paths without weakening exact-path validation.
+- English and Chinese Guide menus explain the workflow. Review mode supports API
+  connections and checked Claude/Codex CLI profiles; the shared edit gate applies
+  across all providers. Unsupported review profiles are reported explicitly.
+- Source validation: 2,522 tests and 356 subtests passed, 35 skipped. Live DeepSeek
+  GUI testing completed all three CRHM reviews; the draft remained blocked for
+  missing literature metadata and a nonportable binary reference. This is not a
+  new native model or calibration acceptance. Compiled/installer validation is
+  recorded in the release's Windows-release-validation.json asset.
+- Windows 0.6.57 新增三方独立 KI 排查、KDT 修复草稿与显式应用流程。应用后保留历史，
+  重置 Agent 工作上下文，重新审核计划并检查实际 KI 版本。三方报告不替代模型或科学验证；
+  KDT 未通过的草稿不能应用。中英文使用指南已说明操作步骤。
+
+### Included October 6 application fixes
 
 - KI draft enforcement is shared across CLI and API providers. KDT and Desktop
   package acceptance is signed by the host and bound to exact candidate and
@@ -33,7 +55,7 @@ Desktop update agents should read the JSON manifest first and use this file to e
 - Plan review catches environment paths that execution would reject. PNG figures
   are checked with an image decoder instead of the numeric-text parser; model
   runs still require numerical output evidence. Pillow is declared and included
-  in bundle specifications, pending a future installer build and smoke test.
+  in the Windows bundle; compiled checks are recorded in the release validation.
 - The [October 6 test report](docs/issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md)
   distinguishes application tests, installation checks and native reference results.
   SHAW's strict Trial test still has an output line-count mismatch. Downloaded KI
@@ -41,7 +63,7 @@ Desktop update agents should read the JSON manifest first and use this file to e
 - Windows 开发源码：修复 KI 与共享工具更新一致性、旧文件混入新项目、验证状态刷新及
   不可执行计划；增加观测数据 KI 和受审阅的本地读取流程。安装检查与科学结果分别记录，
   不将 SHAW 算例的行数不符标记为通过。PNG 图片改用图像解码校验，不能代替模型数值结果；
-  计划审批前检查环境路径。CRHM 原生参考算例已通过。本条不是新安装包发布声明。
+  计划审批前检查环境路径。此前 CRHM 原生参考算例已通过；本次打包不构成新的科学验证。
 
 ## v0.6.56 — Windows illustrated quickstarts and desktop introduction
 

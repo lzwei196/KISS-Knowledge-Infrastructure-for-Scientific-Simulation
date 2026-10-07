@@ -36,6 +36,7 @@ for your study.
 | **KI Library and KI Observatory** | Find models, check their setup state on this machine and explore the workflow each KI describes. |
 | **KI Studio with KDT** | Have an agent build a model or task/workflow KI from your source and supporting material; inspect its checks before importing it. The reviewed KDT engine is installed separately. |
 | **GeoForge Database** | Activate this optional integration with a Database token for built-in catalogue search and reviewed data retrieval. Some files require manual delivery. |
+| **Investigate KI** | Ask three independent reviewer conversations to inspect the same frozen project evidence, compare findings and prepare a separate repair draft. |
 | **Calibration** | Run a real model through its adapter, review parameter bounds and the fitting/holdout protocol, then examine scores and run evidence. |
 
 Data access and software checks help prepare a run. They do not establish that
@@ -44,13 +45,13 @@ model predicts your study site accurately.
 
 ## Download and install
 
-### Windows x64 — 0.6.56
+### Windows x64 — 0.6.57
 
-Download from the [**Windows 0.6.56 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56):
+Download from the [**Windows 0.6.57 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.57):
 
-- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Setup-v0.6.56-Windows-x64.exe)
-- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-v0.6.56-Windows-x64.zip)
-- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/SHA256SUMS-Windows.txt)
+- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Setup-v0.6.57-Windows-x64.exe)
+- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-v0.6.57-Windows-x64.zip)
+- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/SHA256SUMS-Windows.txt)
 
 No separate Python installation is needed for the desktop application. Model
 binaries, compilers and model-specific environments may still need setup. Open
@@ -84,17 +85,17 @@ kiss gui                         # opens the local graphical interface
 
 The **three-page quickstart** follows one real SHAW example: **connect DeepSeek
 → set up the KI and model → approve the run and inspect outputs**. It includes
-actual interface screenshots and a preview of the verified model output, in
+actual interface screenshots and a preview from that documented example, in
 both English and Simplified Chinese.
 
 | Guide | English | 简体中文 |
 |---|---|---|
-| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
-| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
-| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.56/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
+| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
 
 The app's **Guide / 使用指南** menu opens the same guides as offline HTML or PDF.
-These are the updated **0.6.55 guide edition**, included with Windows 0.6.56;
+These are the unchanged **0.6.55 guide edition**, included with Windows 0.6.57;
 the document filenames retain that edition number. [Guide sources and earlier
 editions](docs/manual/README.md) are also available in the repository.
 
@@ -116,6 +117,24 @@ GeoForge's completion checks use recorded execution and output validation; an
 agent's message saying “done” is not sufficient. A passing installation check
 only establishes the checked runtime requirements. Scientific suitability and
 validation remain specific to your model, data and research question.
+
+## Investigate and repair a project KI
+
+Open **Investigate KI / 排查 KI** in a project and describe the issue. Three
+independent conversations review the same frozen project context and report
+cited findings, uncertainties and tests not run. Use a configured API connection
+or a supported Claude Code/Codex CLI profile; reviewer agreement is not a model
+test result.
+
+After all three reports finish, choose **Create repair draft → Build repair with
+agent → Verify with KDT**. Inspect the repair summary, draft folder and changed
+files before explicitly choosing **Apply repair and continue**. The project
+keeps its earlier records and returns to fresh plan review and preflight.
+
+New or edited KI packages follow **Draft → Verified → Active** checks shared
+across providers. KDT and Desktop verification establish package structure;
+native model tests and scientific validation require separate evidence. The
+**Guide / 使用指南** menu includes this workflow in English and Chinese.
 
 ## The literature
 
@@ -278,7 +297,7 @@ kiss doctor                  # what would stop a KI working elsewhere
 ## Validation scope
 
 - The Desktop catalogue contains **127 model KI packages**; they are not all installed or verified on every platform.
-- Windows acceptance includes assisted setup and actual native SHAW, VIC and CRHM example runs. The calibration test recovers a publisher reference parameter; it is not field-observation validation.
+- Earlier [Windows example-run evidence](docs/WINDOWS_E2E_CRHM_VIC_SHAW_2026-10-01.md) and [calibration evidence](docs/WINDOWS_CALIBRATION_2026-10-02.md) retain their dated scope. The new investigation and structural checks do not certify a native run or scientific result.
 - Setup can require compiler/runtime repairs, licensed software, protected downloads or other user input. Check the selected KI on your own machine.
 - Windows x64 and macOS Apple Silicon have separate releases. The builds are unsigned; use the matching release files and checksums.
 

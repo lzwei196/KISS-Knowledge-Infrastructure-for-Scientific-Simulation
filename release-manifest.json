@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.56",
-  "release_date": "2026-10-02",
+  "version": "0.6.57",
+  "release_date": "2026-10-07",
   "source": {
     "branch": "windows-version",
-    "code_commit": "28f3e1425f12640998183603ee3120cebc73d9ed",
+    "code_commit": "da36f70c7a970b2117efadd0dc6868c714c31c14",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.56",
-    "commit_scope": "Application implementation is unchanged from application_code_commit. code_commit pins the version bump, illustrated guides and release checks. Later commits change source pointers, README and audit reports only. Windows-release-validation.json records the build commit and exact release tag commit.",
+    "release_tag": "windows-v0.6.57",
+    "commit_scope": "Application implementation is pinned by application_code_commit. The release commit updates version, documentation, packaging checks and audit metadata only. Windows-release-validation.json records the exact build and tag commit.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
-    "checked_main_commit": "9e5e649e895bc21360df9cb883ae5ef3043effc7",
-    "build_label": "windows-0.6.56-20261002",
+    "checked_main_commit": "44a17f35f3fc9500eab7ffc18f57e21063faa233",
+    "build_label": "windows-0.6.57-20261007",
     "working_tree": false,
-    "application_code_commit": "3bf10f2e1de0720a5c5c5b2c46825f9051606579"
+    "application_code_commit": "da36f70c7a970b2117efadd0dc6868c714c31c14"
   },
   "ki_library": {
     "package_count": 127,
@@ -28,9 +28,36 @@
     ],
     "windows_overlay_commit": "9000f4d16dedfc85bd9bc7a326363047a58d7457",
     "windows_installation_notes": 127,
-    "windows_platform_recipes": 23
+    "windows_platform_recipes": 23,
+    "bundled_model_tree_commit": "3bf10f2e1de0720a5c5c5b2c46825f9051606579",
+    "data_ki_count": 2,
+    "data_kis": [
+      "HYDAT_Observations",
+      "Agrometeo_Quebec_Observations"
+    ],
+    "desktop_catalogue_count": 129,
+    "shared_tools_commit": "201123aa1f0fbaadbc485223b2c2891e1a5f1570",
+    "scope": "127 scientific KI packages retain the previous release snapshot. Two observation data KIs and revised shared helpers are bundled. Downloaded Library updates are separate revisions and remain subject to host verification."
   },
   "changes": [
+    {
+      "id": "project-ki-investigation-and-repair",
+      "area": "agent-workflow",
+      "summary": "Three independent reviews use the same frozen project context. Their reports guide a separate KDT repair draft. Explicit adoption requires host verification, preserves historical evidence, resets provider memory and requires fresh plan approval and exact-KI software preflight.",
+      "user_action": "Open Investigate KI in a project. Review all three reports, create and build a draft, verify with KDT, then explicitly Apply repair and continue. API and checked Claude/Codex CLI review profiles are supported; other CLI review profiles report their limitation."
+    },
+    {
+      "id": "shared-ki-revision-enforcement",
+      "area": "knowledge-infrastructure",
+      "summary": "All CLI and API providers share the host KI gate. Acceptance binds candidate and verifier content; edits invalidate it. Imports, Library updates, tool dispatch and software verification reject unaccepted drift. Windows KDT index checks normalize relative path separators without bypassing exact tool matching.",
+      "user_action": "Recheck changed KI revisions. Existing legacy baselines are not new structural or scientific passes. A rejected draft remains available for correction."
+    },
+    {
+      "id": "windows-project-data-and-evidence-fixes",
+      "area": "desktop-runtime",
+      "summary": "KI updates keep installation recipes and shared helpers consistent. Projects retain their KI/helper revision. Bundled observation KIs, reviewed local readers, environment-path checks, decoded PNG evidence, calibration displays and reconnect handling improve the desktop workflow.",
+      "user_action": "Read the October 6 test reports for dated model evidence and remaining reference-case differences. A package or software pass does not prove field-observation skill."
+    },
     {
       "id": "windows-illustrated-quickstart-bundle",
       "area": "documentation-and-packaging",
@@ -388,26 +415,26 @@
     }
   },
   "validation": {
-    "status": "Documentation and packaging update; new focused checks, frozen bundle checks and clean installer acceptance are recorded in Windows-release-validation.json. Scientific engine and model tools are unchanged.",
-    "prior_release": "windows-v0.6.55",
-    "prior_release_source_tests": {
-      "desktop_passed": 1727,
+    "status": "Application source regression passed; frozen bundle, installed executable and installer lifecycle evidence is recorded in Windows-release-validation.json.",
+    "prior_release": "windows-v0.6.56",
+    "source_application_commit": "da36f70c7a970b2117efadd0dc6868c714c31c14",
+    "source_regression_tests": {
+      "desktop_passed": 2522,
       "desktop_skipped": 35,
-      "desktop_subtests_passed": 337,
-      "shared_passed": 371,
-      "shared_skipped": 7
+      "desktop_subtests_passed": 356,
+      "source_files_hashed": 346,
+      "source_changed_during_run": []
     },
-    "prior_release_source_files_hashed": 363,
-    "source_test_scope": "Prior full suite results are historical evidence, not fresh 0.6.56 runs. Fresh focused tests and package checks are reported in the release validation asset.",
+    "source_test_scope": "The unchanged application implementation passed the full Desktop suite at application_code_commit. Release metadata checks and shared-library tests are recorded separately in the release validation asset.",
     "evidence_documents": [
-      "docs/WINDOWS_RELEASE_0.6.55_2026-10-02.md",
-      "docs/WINDOWS_CALIBRATION_2026-10-02.md",
-      "docs/WINDOWS_E2E_CRHM_VIC_SHAW_2026-10-01.md"
+      "docs/issues/KI-DRAFT-ENFORCEMENT-2026-10-06.md",
+      "docs/issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md",
+      "docs/WINDOWS_CALIBRATION_2026-10-02.md"
     ],
     "release_evidence_asset": "Windows-release-validation.json",
-    "end_to_end": "Unchanged CRHM, VIC and SHAW implementation inherits the dated October 1 acceptance evidence. No new AI-provider turn or native scientific run was performed for this documentation release.",
-    "calibration": "Calibration implementation is unchanged. See the 0.6.55 reference-recovery and six-backend validation report; this release freshly checks frozen calibration readiness only.",
-    "known_upstream_limits": "Reference recovery is not calibration against field observations. No authenticated GeoForge Database transfer or all-model scientific acceptance is claimed. Detached Git Bash process supervision and general CLI setup command enforcement remain limited; see the known-issues report."
+    "end_to_end": "Live DeepSeek GUI review completed three independent CRHM reports and authored a draft; real KDT rejected missing literature metadata and a nonportable binary path. The draft was not adopted. Dated native model evidence remains separate; no new model run is claimed for this packaging release.",
+    "calibration": "Frozen dependency/backend readiness is checked during release validation. Native or observed-data calibration accuracy is not certified by these packaging checks.",
+    "known_upstream_limits": "Some KI candidates do not satisfy current KDT package requirements. Scientific and native reference acceptance remain model-specific; all-model forcing coverage is not claimed. Vendor CLI processes are not an OS sandbox. Review profiles support APIs and checked Claude/Codex CLIs; edit/adoption enforcement applies across providers."
   },
   "agent_update_protocol": [
     "Read release-manifest.json before changing an installation.",
@@ -432,6 +459,6 @@
     "edition": "0.6.55",
     "quickstart_revision": "illustrated-2026-10-02",
     "validation": "docs/manual/0.6.55/validation.json",
-    "scope": "The unchanged scientific workflow uses the 0.6.55 guide edition, including the October 2 illustrated quickstart revision, now bundled in the 0.6.56 installer and portable app."
+    "scope": "Reviewed 0.6.55 PDF/HTML guide edition, including the October 2 illustrated quickstarts, bundled with Windows 0.6.57. The new KI investigation flow is documented in the in-app Guide menu and docs/manual/README.md."
   }
 }

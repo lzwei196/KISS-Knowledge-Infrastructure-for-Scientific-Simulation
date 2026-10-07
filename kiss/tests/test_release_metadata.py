@@ -12,6 +12,30 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 class ReleaseMetadataTests(unittest.TestCase):
+    def test_windows_smoke_catalogue_requires_scientific_and_data_kis_exactly(self):
+        smoke = runpy.run_path(str(REPO / "tools/windows_release_smoke.py"))
+        scientific = {"CRHM", "SHAW"}
+        data = smoke["BUNDLED_DATA_KIS"]
+        rows = [{"name": name} for name in sorted(scientific | data)]
+        smoke["check_catalogue"](rows, scientific, data)
+        invalid = [rows[:-1], rows + [{"name": "Unbundled_KI"}], rows + [rows[0]]]
+        for value in invalid:
+            with self.subTest(rows=value), self.assertRaises(AssertionError):
+                smoke["check_catalogue"](value, scientific, data)
+
+    def test_windows_smoke_checks_investigation_control_and_exact_javascript(self):
+        check = runpy.run_path(str(REPO / "tools/windows_release_smoke.py"))["check_investigation_assets"]
+        app = (REPO / "kiss/kiss_cli/web/app.html").read_text(encoding="utf-8")
+        script = (REPO / "kiss/kiss_cli/web/investigation.js").read_text(encoding="utf-8")
+        check(app, script, script)
+        for old, new in (('id="openinvestigation"', 'id="missing-control"'),
+                         ('id="investigation-title"', 'id="missing-header"'),
+                         ('src="/investigation.js"', 'src="/missing.js"')):
+            with self.subTest(missing=old), self.assertRaises(AssertionError):
+                check(app.replace(old, new), script, script)
+        with self.assertRaisesRegex(AssertionError, "payload differs"):
+            check(app, script + "\n// stale asset", script)
+
     def test_smoke_accepts_an_explicit_guide_edition_and_legacy_manifests(self):
         guide_edition = runpy.run_path(str(REPO / "tools" / "windows_release_smoke.py"))["guide_edition"]
         self.assertEqual(guide_edition({"version": "0.6.55"}), "0.6.55")

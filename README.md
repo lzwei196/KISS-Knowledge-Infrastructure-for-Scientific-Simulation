@@ -45,18 +45,23 @@ model predicts your study site accurately.
 
 ## Download and install
 
-### Windows x64 — 0.6.57
+### Windows x64 — 0.6.58
 
-Download from the [**Windows 0.6.57 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.57):
+Download from the [**Windows 0.6.58 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.58):
 
-- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Setup-v0.6.57-Windows-x64.exe)
-- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-v0.6.57-Windows-x64.zip)
-- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/SHA256SUMS-Windows.txt)
+- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Setup-v0.6.58-Windows-x64.exe)
+- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-v0.6.58-Windows-x64.zip)
+- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/SHA256SUMS-Windows.txt)
 
 No separate Python installation is needed for the desktop application. Model
 binaries, compilers and model-specific environments may still need setup. Open
 **KI Library → Set up with agent** and check the final verification result;
 installation can require your help.
+
+Windows reliability fixes keep bundled observation readers verifiable in fresh
+builds, prefer the project's managed Julia runtime, and reject linked upload
+destinations. An invalid legacy KI no longer blocks unrelated valid packages;
+the invalid package remains blocked until repaired and verified.
 
 ### macOS Apple Silicon
 
@@ -90,12 +95,12 @@ both English and Simplified Chinese.
 
 | Guide | English | 简体中文 |
 |---|---|---|
-| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
-| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
-| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.57/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
+| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
 
 The app's **Guide / 使用指南** menu opens the same guides as offline HTML or PDF.
-These are the unchanged **0.6.55 guide edition**, included with Windows 0.6.57;
+These are the unchanged **0.6.55 guide edition**, included with Windows 0.6.58;
 the document filenames retain that edition number. [Guide sources and earlier
 editions](docs/manual/README.md) are also available in the repository.
 

@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.57",
+  "version": "0.6.58",
   "release_date": "2026-10-07",
   "source": {
     "branch": "windows-version",
-    "code_commit": "da36f70c7a970b2117efadd0dc6868c714c31c14",
+    "code_commit": "fe78ba61347de172f3320fffb4d055caa5ed82ef",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.57",
+    "release_tag": "windows-v0.6.58",
     "commit_scope": "Application implementation is pinned by application_code_commit. The release commit updates version, documentation, packaging checks and audit metadata only. Windows-release-validation.json records the exact build and tag commit.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "44a17f35f3fc9500eab7ffc18f57e21063faa233",
-    "build_label": "windows-0.6.57-20261007",
+    "build_label": "windows-0.6.58-20261007",
     "working_tree": false,
-    "application_code_commit": "da36f70c7a970b2117efadd0dc6868c714c31c14"
+    "application_code_commit": "fe78ba61347de172f3320fffb4d055caa5ed82ef"
   },
   "ki_library": {
     "package_count": 127,
@@ -40,6 +40,12 @@
     "scope": "127 scientific KI packages retain the previous release snapshot. Two observation data KIs and revised shared helpers are bundled. Downloaded Library updates are separate revisions and remain subject to host verification."
   },
   "changes": [
+    {
+      "id": "windows-clean-checkout-and-runtime-boundaries",
+      "area": "desktop-runtime",
+      "summary": "Pinned observation readers retain exact LF source bytes during Windows Git checkout. Invalid KI trees remain rejected without blocking unrelated catalogue migration. Project-managed Julia takes priority over system Julia. Windows uploads use native exclusive file creation and reject symlink/reparse targets, including links inserted after inspection.",
+      "user_action": "Recheck affected observation-reader setups. Invalid KI packages still require KDT acceptance after repair; no integrity check is bypassed."
+    },
     {
       "id": "project-ki-investigation-and-repair",
       "area": "agent-workflow",
@@ -415,17 +421,10 @@
     }
   },
   "validation": {
-    "status": "Application source regression passed; frozen bundle, installed executable and installer lifecycle evidence is recorded in Windows-release-validation.json.",
+    "status": "Publication requires the tagged Windows Actions build to pass source regression, frozen-runtime and installer lifecycle checks. Exact results are attached to the release.",
     "prior_release": "windows-v0.6.56",
-    "source_application_commit": "da36f70c7a970b2117efadd0dc6868c714c31c14",
-    "source_regression_tests": {
-      "desktop_passed": 2522,
-      "desktop_skipped": 35,
-      "desktop_subtests_passed": 356,
-      "source_files_hashed": 346,
-      "source_changed_during_run": []
-    },
-    "source_test_scope": "The unchanged application implementation passed the full Desktop suite at application_code_commit. Release metadata checks and shared-library tests are recorded separately in the release validation asset.",
+    "source_application_commit": "fe78ba61347de172f3320fffb4d055caa5ed82ef",
+    "source_test_scope": "desktop-regression.xml and shared-regression.xml contain the full hosted Windows test results for the release tag. Windows-release-validation.json records the exact build commit and compiled/installed checks.",
     "evidence_documents": [
       "docs/issues/KI-DRAFT-ENFORCEMENT-2026-10-06.md",
       "docs/issues/KI-UPDATE-DESKTOP-RETEST-2026-10-06.md",
@@ -434,7 +433,11 @@
     "release_evidence_asset": "Windows-release-validation.json",
     "end_to_end": "Live DeepSeek GUI review completed three independent CRHM reports and authored a draft; real KDT rejected missing literature metadata and a nonportable binary path. The draft was not adopted. Dated native model evidence remains separate; no new model run is claimed for this packaging release.",
     "calibration": "Frozen dependency/backend readiness is checked during release validation. Native or observed-data calibration accuracy is not certified by these packaging checks.",
-    "known_upstream_limits": "Some KI candidates do not satisfy current KDT package requirements. Scientific and native reference acceptance remain model-specific; all-model forcing coverage is not claimed. Vendor CLI processes are not an OS sandbox. Review profiles support APIs and checked Claude/Codex CLIs; edit/adoption enforcement applies across providers."
+    "known_upstream_limits": "Some KI candidates do not satisfy current KDT package requirements. Scientific and native reference acceptance remain model-specific; all-model forcing coverage is not claimed. Vendor CLI processes are not an OS sandbox. Review profiles support APIs and checked Claude/Codex CLIs; edit/adoption enforcement applies across providers.",
+    "source_regression_test_assets": [
+      "desktop-regression.xml",
+      "shared-regression.xml"
+    ]
   },
   "agent_update_protocol": [
     "Read release-manifest.json before changing an installation.",
@@ -459,6 +462,6 @@
     "edition": "0.6.55",
     "quickstart_revision": "illustrated-2026-10-02",
     "validation": "docs/manual/0.6.55/validation.json",
-    "scope": "Reviewed 0.6.55 PDF/HTML guide edition, including the October 2 illustrated quickstarts, bundled with Windows 0.6.57. The new KI investigation flow is documented in the in-app Guide menu and docs/manual/README.md."
+    "scope": "Reviewed 0.6.55 PDF/HTML guide edition, including the October 2 illustrated quickstarts, bundled with Windows 0.6.58. The new KI investigation flow is documented in the in-app Guide menu and docs/manual/README.md."
   }
 }

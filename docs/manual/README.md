@@ -1,6 +1,14 @@
 # GeoForge Desktop user manual
 
-## Windows 0.6.57: KI investigation and updates / KI 排查与更新
+## Windows 0.6.58: KI investigation and updates / KI 排查与更新
+
+Windows reliability fixes keep bundled observation readers verifiable in fresh
+builds, prefer the project's managed Julia runtime, and reject linked upload
+destinations. An invalid legacy KI no longer blocks unrelated valid packages;
+the invalid package remains blocked until repaired and verified.
+
+Windows 可靠性修复：保持观测读取器在全新构建中的文件校验一致，优先使用项目管理的 Julia，
+拒绝写入链接目标。单个无效的旧 KI 不再阻塞其他有效包；该无效包仍须修复并验证。
 
 Open **Investigate KI / 排查 KI** inside a project to start three independent
 reviews of the same frozen context. Read the reports, create a repair draft,
@@ -44,9 +52,9 @@ proposal to deliver a companion data KI with a dataset.
 [数据读取工具与本地补充方案](../DATA-READER-FALLBACK.md)介绍正在开发的项目读取器流程、
 HYDAT／魁北克实例，以及下载时提供配套数据 KI 的独立建议。
 
-## 0.6.55 guide edition, bundled with Windows 0.6.57 / Windows 0.6.57 内置手册
+## 0.6.55 guide edition, bundled with Windows 0.6.58 / Windows 0.6.58 内置手册
 
-Windows [0.6.57](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.57) includes the October 2 illustrated quickstarts in both the installer and portable app. The PDFs retain their reviewed 0.6.55 edition; the new investigation workflow is documented above and in the app's Guide menu.
+Windows [0.6.58](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.58) includes the October 2 illustrated quickstarts in both the installer and portable app. The PDFs retain their reviewed 0.6.55 edition; the new investigation workflow is documented above and in the app's Guide menu.
 
 The app's **Guide / 使用指南** menu includes three offline guides, each in English and Simplified Chinese:
 
@@ -60,7 +68,7 @@ The three quickstart pages cover agent setup, KI setup, and a real SHAW example 
 
 三页快速指南分别介绍 Agent 配置、KI 配置及使用公开官方输入完成真实 SHAW 运行。完整手册保留详细 FSM2 实例，补充 Windows 上已验证的 SHAW、VIC 和 CRHM 运行。校准指南说明适配器、训练/留出方案及真实原生 SHAW 参考恢复测试；参考恢复不等同于实测观测验证。
 
-See [sources, build instructions and scope](./0.6.55/README.md). Current Windows release: [`windows-v0.6.56`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.56).
+See [sources, build instructions and scope](./0.6.55/README.md). Current Windows release: [`windows-v0.6.58`](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.58).
 
 ## 0.6.54 (previous Windows edition)
 

@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.6.57"
+  #define AppVersion "0.6.58"
 #endif
 #ifndef SourceDir
   #error SourceDir must point to the packaged "GeoForge Desktop <version> Windows" folder

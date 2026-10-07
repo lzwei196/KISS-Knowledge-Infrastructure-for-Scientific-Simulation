@@ -6,6 +6,23 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## v0.6.58 — Windows checkout and runtime compatibility fixes
+
+- Preserve the approved observation-reader bytes during Windows Git checkout;
+  exact source hashes remain enforced. A rejected KI tree no longer blocks
+  unrelated valid packages, and remains rejected after an unverified repair.
+- Prefer project-managed Julia over a system installation, keeping the project
+  runtime and depot together. Failed managed probes do not switch runtimes.
+- Create Windows uploads atomically without following a final symlink or
+  reparse point, including a link inserted after the initial inspection.
+- Includes the three-reviewer KI investigation and KDT repair workflow below.
+  The 0.6.57 candidate was withheld after clean CI exposed these compatibility
+  failures. The new tag must pass the full hosted suite and compiled installation
+  checks before publication; exact reports accompany the downloads.
+- Windows 0.6.58 修复全新检出时的观测读取器字节变化、项目 Julia 被系统版本覆盖、
+  无效 KI 影响其他包，以及上传路径符号链接问题。严格校验继续生效，未经 KDT 验证的
+  修复不能自动获得信任；发布附件记录完整测试与安装检查结果。
+
 ## v0.6.57 — Windows KI investigation, repair and revision enforcement
 
 - Investigate KI opens three independent reviewer conversations over the same
@@ -19,7 +36,7 @@ Desktop update agents should read the JSON manifest first and use this file to e
 - English and Chinese Guide menus explain the workflow. Review mode supports API
   connections and checked Claude/Codex CLI profiles; the shared edit gate applies
   across all providers. Unsupported review profiles are reported explicitly.
-- Source validation: 2,522 tests and 356 subtests passed, 35 skipped. Live DeepSeek
+- Local source validation: 2,522 tests and 356 subtests passed, 35 skipped. Live DeepSeek
   GUI testing completed all three CRHM reviews; the draft remained blocked for
   missing literature metadata and a nonportable binary reference. This is not a
   new native model or calibration acceptance. Compiled/installer validation is

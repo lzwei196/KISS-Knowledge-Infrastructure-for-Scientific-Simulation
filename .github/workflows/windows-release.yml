@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing release tag to receive the Windows assets
         required: true
-        default: windows-v0.6.57
+        default: windows-v0.6.58
 
 permissions:
   contents: write
@@ -14,6 +14,7 @@ permissions:
 jobs:
   build-and-publish:
     runs-on: windows-latest
+    timeout-minutes: 60
     env:
       PYTHONUTF8: "1"
     steps:
@@ -31,13 +32,19 @@ jobs:
           python -m pip install --quiet pyinstaller pytest truststore certifi -e kiss -e ki_tools_common -r kiss/requirements-calibration.txt
           choco install innosetup -y --no-progress
 
+      - name: Release boundary regressions
+        shell: pwsh
+        run: |
+          python -m pytest kiss/tests/test_data_reader_runtime.py kiss/tests/test_session_upload_safety.py kiss/tests/test_ki_guard.py 'kiss/tests/test_runtime.py::AgentSetupTests::test_julia_probe_uses_workspace_runtime_project_and_depot' -q -o faulthandler_timeout=180
+          if ($LASTEXITCODE -ne 0) { throw 'release boundary regression tests failed' }
+
       - name: Source regression tests
         shell: pwsh
         run: |
-          python -m pytest kiss/tests -q
+          python -m pytest kiss/tests -q --durations=20 -o faulthandler_timeout=180 --junitxml=desktop-regression.xml
           if ($LASTEXITCODE -ne 0) { throw 'application regression tests failed' }
           # Both trees contain a top-level tests package; use separate interpreters.
-          python -m pytest ki_tools_common/ki_tools_common/tests ki_tools_common/tests/flow ki_tools_common/tests/test_units.py ki_tools_common/tests/test_climate_scenarios.py -q
+          python -m pytest ki_tools_common/ki_tools_common/tests ki_tools_common/tests/flow ki_tools_common/tests/test_units.py ki_tools_common/tests/test_climate_scenarios.py -q --junitxml=shared-regression.xml
           if ($LASTEXITCODE -ne 0) { throw 'shared-library regression tests failed' }
 
       - name: Build the self-contained desktop folder
@@ -95,15 +102,27 @@ jobs:
           }
           $validation | ConvertTo-Json -Depth 8 | Set-Content Windows-release-validation.json -Encoding utf8
 
+      - name: Stage downloads and documentation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          Copy-Item "installer-output/GeoForge-Desktop-Setup-v$env:APP_VERSION-Windows-x64.exe","GeoForge-Desktop-v$env:APP_VERSION-Windows-x64.zip",release-manifest.json,DESKTOP_CHANGELOG.md,Windows-release-validation.json,windows-frozen-smoke.json,windows-installed-smoke.json,desktop-regression.xml,shared-regression.xml -Destination release-assets
+          $edition = (Get-Content release-manifest.json -Raw | ConvertFrom-Json).guides.edition
+          foreach ($kind in @('Quickstart','Manual','Calibration')) {
+            foreach ($language in @('EN','ZH-CN')) {
+              $sourceLanguage = if ($language -eq 'EN') { 'en' } else { 'zh-CN' }
+              Copy-Item "kiss/kiss_cli/web/guides/$($kind.ToLower())-$sourceLanguage.pdf" "release-assets/GeoForge-Desktop-$kind-$language-v$edition.pdf"
+            }
+          }
+          Copy-Item "docs/manual/$edition/validation.json" release-assets/guide-validation.json
+          Copy-Item "docs/manual/$edition/quickstart-illustrated-validation.json" release-assets/quickstart-illustrated-validation.json
+          Get-ChildItem release-assets -File | Sort-Object Name | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content release-assets/SHA256SUMS-Windows.txt -Encoding utf8
+
       - name: Attach assets to the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ inputs.tag }}" \
-            "installer-output/GeoForge-Desktop-Setup-v${APP_VERSION}-Windows-x64.exe" \
-            "GeoForge-Desktop-v${APP_VERSION}-Windows-x64.zip" \
-            SHA256SUMS-Windows.txt \
-            release-manifest.json DESKTOP_CHANGELOG.md \
-            Windows-release-validation.json \
-            windows-frozen-smoke.json windows-installed-smoke.json --clobber
+          gh release upload "${{ inputs.tag }}" release-assets/* --clobber

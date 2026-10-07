@@ -10,7 +10,8 @@ Exit 0 PASS, 2 run or checks failed, 3 engine/WINE/KI tool missing (nothing fake
 analytic surrogate tools/run_wasp.py is never used here).
 
 Run tool: --run-tool -> <this KI>/tools/run_wasp_engine.py (HERE.parents[1]/tools).
-Engine:   --wineprefix -> $WASP_WINEPREFIX -> tool default; --wine -> $WASP_WINE -> PATH
+Engine:   --wineprefix -> $WASP_WINEPREFIX -> $WASP_ENGINE_ROOT/wineprefix -> this server's
+          KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix; --wine -> $WASP_WINE -> PATH
           (passed through to the run tool, which owns the lookup).
 """
 import argparse
@@ -24,7 +25,7 @@ import tempfile
 import os
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).expanduser().absolute().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 DEFAULT_TOOL = HERE.parents[1] / "tools" / "run_wasp_engine.py"
 WIF = "SteadyState.wif"
@@ -79,18 +80,19 @@ def check_summary(summary_path):
     return fails
 
 
-SERVER_WINEPREFIX = "/home/server/engine_builds_20261006/wasp/wineprefix"
+SERVER_WINEPREFIX = "KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix"
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--run-tool", help=f"KI real-engine run tool (default {DEFAULT_TOOL})")
-    ap.add_argument("--wineprefix", help="WINE prefix with C:\\WASP8 (else $WASP_WINEPREFIX, else tool default)")
+    ap.add_argument("--wineprefix", help="WINE prefix with C:\\WASP8 (else $WASP_WINEPREFIX, else "
+                                         "$WASP_ENGINE_ROOT/wineprefix, else the server install)")
     ap.add_argument("--wine", help="wine executable (else $WASP_WINE, else PATH)")
     ap.add_argument("--keep", action="store_true", help="keep the temp run dir")
     a = ap.parse_args()
 
-    tool = Path(a.run_tool).resolve() if a.run_tool else DEFAULT_TOOL
+    tool = Path(a.run_tool).expanduser().absolute() if a.run_tool else DEFAULT_TOOL
     if not tool.is_file():
         print(f"MISSING DEPENDENCY: KI run tool {tool} not found. NOT run.", file=sys.stderr)
         return 3
@@ -102,7 +104,8 @@ def main():
         # The KI tool's built-in default is a server path (a KISSPATH placeholder in the
         # public repo), so pass the prefix explicitly: --wineprefix, $WASP_WINEPREFIX,
         # else this server's install if it exists.
-        if not (a.wineprefix or os.environ.get("WASP_WINEPREFIX")) and Path(SERVER_WINEPREFIX).is_dir():
+        if (not (a.wineprefix or os.environ.get("WASP_WINEPREFIX") or os.environ.get("WASP_ENGINE_ROOT"))
+                and Path(SERVER_WINEPREFIX).is_dir()):
             a.wineprefix = SERVER_WINEPREFIX
         cmd = [sys.executable, str(tool), "--wif", str(tmp / WIF), "--run-dir", str(tmp / "run"),
                "--extract-all", "--timeout", str(TOOL_BUDGET_S)]

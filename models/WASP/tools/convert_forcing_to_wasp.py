@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA WASP. This tool belongs to the KI's analytic Python stand-in (sinusoidal
+temperature, Streeter-Phelps DO, Carlson TSI). Its numbers are NOT WASP results; label them
+"surrogate". The real EPA WASP 8.5 route is build_wasp_weather_from_source.py ->
+build_wasp_lake_case.py -> run_wasp_engine.py -> parse_wasp_engine_output.py.
+
 convert_forcing_to_wasp.py -- Convert lake observation data to WASP forcing format.
 
 Reads WQP (Water Quality Portal) lake observation CSV files and EPA NLA
@@ -704,7 +709,7 @@ def validate_outputs(output, log):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert WQP/NLA lake data to WASP forcing format")
+        description="SURROGATE (analytic Python stand-in, NOT EPA WASP): convert WQP/NLA lake data to the surrogate's forcing JSON. The real engine reads .wif files built by tools/build_wasp_lake_case.py.")
 
     # Data sources
     parser.add_argument("--wqp-dir", default=None,
@@ -753,6 +758,7 @@ def main():
     result = {
         "status": "success" if outputs_ok else "warning",
         "model": "WASP",
+        "implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never report its numbers as WASP results",
         "output": output,
         "log": log,
     }

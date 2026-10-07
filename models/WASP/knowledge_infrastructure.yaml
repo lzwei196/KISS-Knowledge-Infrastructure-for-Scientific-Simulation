@@ -1,105 +1,99 @@
-# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
-# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
-# CURATED OVERRIDE 2026-10-06 (real-engine wiring): `package.real_engine`, the SURROGATE label in
-# `package.implementation.provenance`, and the 5th tool were added by hand. generate_ki_manifest.py
-# does not know these fields yet -- re-add them after any regeneration
-# (record: KISSPATH_HOME/ki_fix_campaign/reviews/WASP/).
+# knowledge_infrastructure.yaml -- the KI's manifest. Shape projected from dag.yaml + KI contents;
+# package and validation hand-written 2026-10-07 so the real engine's numbers and the SURROGATE's
+# numbers stay apart (generate_ki_manifest.py would re-project the surrogate's DB metrics).
 
 package:
   name: WASP
-  language: python
+  language: fortran/c++ (closed-source EPA Windows binaries)
   implementation:
-    id: hydrocraft-wasp
-    version: 1.0.0
-    provenance: 'SURROGATE: Python; analytic reimplementation of WASP core water-quality processes (EPA
-      public-domain lineage) for lakes and reservoirs. NOT EPA WASP; the real engine is package.real_engine.'
-  scientific_reference_version: WASP (US EPA Water Analysis Simulation Program) core water-quality physics;
-    analytic lake/reservoir reimplementation (temperature, DO, BOD, TSI)
-  binary:
-    path: KISSPATH_KI_ROOT/WASP/knowledge_infrastructure/tools/run_wasp.py
-    type: Python
-    role: legacy analytic SURROGATE (not EPA WASP)
-  real_engine:
-    name: US EPA WASP (Water Quality Analysis Simulation Program)
+    id: usepa-wasp-8.5.0
     version: 8.5.0
-    runtime_banner: Wasp suite version 8.5.0, Gui develop af12325 dirty, Model master e86fb43
-    exe: C:\WASP8\wasp\bin\waspccli.exe
-    exe_host_path: KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix/drive_c/WASP8/wasp/bin/waspccli.exe
-    launcher: wine (WINE 9.0, /usr/bin/wine)
-    wineprefix: KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix
-    discovery: --wineprefix -> $WASP_WINEPREFIX -> wineprefix above; --wine -> $WASP_WINE -> PATH
-    result_extractor: C:\WASP8\wasp\bin\BMD2_Extract.exe (EPA, same install)
-    installer: wasp-version-8.5.0-install-64-bit-10-25-2025.exe (epa.gov)
-    installer_sha256: 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4
-    tool: tools/run_wasp_engine.py
-    test_case: test_cases/steady_state
-pipeline:
-  stages: []
-tools:
-  count: 5
-  files:
+    provenance: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe)
+      from the official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+      run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older
+      Python tools run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not
+      this implementation.
+    run_tool: tools/run_wasp_engine.py
+    surrogate:
+      id: wasp-analytic-py
+      tool: tools/run_wasp.py
+      contract: docs/surrogate/surrogate_wasp_analytic_dag.yaml
+      status: SURROGATE - Python analytic stand-in (sinusoidal temperature, Streeter-Phelps DO, Carlson TSI),
+        not EPA WASP; never report its output as WASP
+  scientific_reference_version: US EPA WASP 8.5.0 (Water Quality Analysis Simulation Program), Advanced
+    Eutrophication model (multi-algae.dll) with the WASP heat module; runtime banner 'Wasp suite version
+    8.5.0, Gui develop af12325 dirty, Model master e86fb43'
+  binary:
+    path: KISSPATH_HOME/engine_builds_20261006/wasp/run_wasp.sh
+    type: PE32_wine
+  run_tool: tools/run_wasp_engine.py
+  run_tool_note: default run route = the REAL EPA WASP 8.5 engine (waspccli.exe under WINE) via tools/run_wasp_engine.py;
+    cases built from EPA's SteadyState.wif by tools/build_wasp_lake_case.py through EPA's wasptool API (tools/wasp_wif_api.py),
+    weather from tools/build_wasp_weather_from_source.py, obs from tools/prepare_wqp_lake_obs.py, output read and
+    scored by tools/parse_wasp_engine_output.py. Engine found by --wineprefix -> $WASP_WINEPREFIX -> $WASP_ENGINE_ROOT/wineprefix
+    -> KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix
+  surrogate_tools_not_this_model:
+  - tools/run_wasp.py
   - tools/convert_forcing_to_wasp.py
   - tools/convert_parameters_to_wasp.py
   - tools/parse_output_wasp.py
+  surrogate_contract: docs/surrogate/surrogate_wasp_analytic_dag.yaml
+pipeline:
+  stages:
+  - s1_forcing_preparation
+  - s2_parameter_setup
+  - s3_model_execution
+  - s4_output_parsing
+  - s5_calibration
+  - s6_tsi_analysis
+tools:
+  count: 10
+  files:
+  - tools/build_wasp_lake_case.py
+  - tools/build_wasp_weather_from_source.py
+  - tools/convert_forcing_to_wasp.py
+  - tools/convert_parameters_to_wasp.py
+  - tools/parse_output_wasp.py
+  - tools/parse_wasp_engine_output.py
+  - tools/prepare_wqp_lake_obs.py
   - tools/run_wasp.py
   - tools/run_wasp_engine.py
+  - tools/wasp_wif_api.py
 inputs:
   forcing:
-  - name: water temperature
+  - name: solar_radiation
+    unit: W/m2
+  - name: air_temperature
     unit: deg C
-  - name: dissolved_oxygen
-    unit: mg/L
-  - name: chlorophyll_a
-    unit: ug/L
-  - name: depth
-    unit: m
-  - name: day_of_year
-    unit: integer 1-366
-  - name: secchi_depth
-    unit: m
-  - name: total_phosphorus
-    unit: ug/L
+  - name: dew_point_temperature
+    unit: deg C
+  - name: wind_speed
+    unit: m/s
+  - name: cloud_cover
+    unit: fraction 0-1
   parameters:
-  - name: T_mean
-    unit: deg C
-  - name: amplitude
-    unit: deg C
-  - name: phase
-    unit: day
-  - name: kd
-    unit: 1/d
-  - name: ka
-    unit: 1/d
-  - name: BOD0
-    unit: mg/L
-  - name: DO_offset
-    unit: mg/L
-  - name: T_surface
-    unit: deg C
-  - name: T_bottom
-    unit: deg C
-  - name: thermo_depth
+  - name: segment_depth
     unit: m
-  - name: thermo_width
-    unit: m
-  - name: z_max
-    unit: m
-  - name: z_mean
-    unit: m
-  - name: area
-    unit: km2
-  - name: volume
+  - name: segment_volume
     unit: m3
-  - name: SOD
+  - name: elevation
+    unit: m a.s.l.
+  - name: latitude_longitude
+    unit: degrees
+  - name: sediment_oxygen_demand
     unit: g O2/m2/d
-  - name: depletion_rate
-    unit: per meter below thermocline
+  - name: cbod_decay_rate
+    unit: 1/d at 20 C
+  - name: global_reaeration_rate
+    unit: 1/d at 20 C
+  - name: ice_switch
+    unit: 0/1/2
   initial_conditions:
-  - name: D0
-    unit: mg/L
-  - name: BOD0
-    unit: mg/L
-  boundary_conditions: []
+  - name: initial_concentrations
+    unit: system units (mg/L, deg C)
+  boundary_conditions:
+  - name: boundary_concentrations_and_flows
+    unit: system units; m3/s
 io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
   observable:
@@ -111,13 +105,70 @@ outputs:
   - TSI
   other: []
 validation:
-  tier: not_runnable
-  tier_justification: 'measured: R=0.996'
+  tier: tested
+  tier_justification: 'REAL engine. Official EPA Steady State example (test_cases/steady_state) reproduces the
+    recorded run exactly through run_wasp_engine.py (13/13 checks; EPA ships no reference output, so this is a
+    repeat-run check). Real case: Lake Erie Central Basin surface layer 2005-2014, VALIDATION of the untuned
+    engine (nothing calibrated), station-day rows of 11 GLNPO stations, samples <= 5 m: water temperature
+    NSE 0.992 (very good); DO all data NSE -0.011 (headline, below the 0.5 bar). The cruise-QC subset is the
+    same 176 rows (only dead-sensor cruises are excluded and they have no in-range values). The deck has no
+    algae or nutrients (not configured yet), so simulated DO is about 1.03 x saturation.'
   metrics:
-    best_r: 0.996
+    steady_state_example_checks_passed: 13
+    steady_state_example_checks_total: 13
+    erie_cb_do_all_station_day_2005_2014_nse: -0.011
+    erie_cb_do_all_station_day_2005_2014_kge: 0.6053
+    erie_cb_do_all_station_day_2005_2014_r: 0.6712
+    erie_cb_do_all_station_day_2005_2014_pbias_pct: 20.01
+    erie_cb_do_all_station_day_2005_2014_rmse_mg_l: 2.9137
+    erie_cb_do_all_station_day_2005_2014_n: 176
+    erie_cb_do_all_per_station_median_nse: -0.0136
+    erie_cb_do_sensor_qc_station_day_2005_2014_nse: -0.011
+    erie_cb_do_sensor_qc_station_day_2005_2014_n: 176
+    erie_cb_temperature_station_day_2005_2014_nse: 0.9915
+    erie_cb_temperature_station_day_2005_2014_kge: 0.9533
+    erie_cb_temperature_station_day_2005_2014_r: 0.997
+    erie_cb_temperature_station_day_2005_2014_pbias_pct: 2.80
+    erie_cb_temperature_station_day_2005_2014_rmse_degc: 0.9609
+    erie_cb_temperature_station_day_2005_2014_n: 197
+    erie_cb_temperature_per_station_median_nse: 0.9916
+    erie_cb_network_mean_do_all_nse: -0.2074
+    erie_cb_network_mean_temperature_nse: 0.9939
+    erie_cb_sim_do_over_saturation_mean: 1.027
+  metrics_source:
+    engine: REAL EPA WASP 8.5.0 waspccli.exe under WINE 9.0 via tools/run_wasp_engine.py, not the Python surrogate
+    role: 'validation: nothing calibrated. Engine defaults and literature values; box depth 12 m = August
+      mixed-layer depth read from GLNPO temperature profiles; SOD 0, CBOD 1 mg/L decaying 0.1/d, global Ka 0
+      (engine computes wind reaeration), DO0 13 mg/L and T0 2 C on 2004-01-01 (one spin-up year)'
+    run: 'EPA SteadyState.wif edited through EPA''s wasptool API into 10 isolated 12 m Flow-Routing boxes at 41.95 N,
+      81.55 W (elevation 174 m), NASA POWER daily weather 2004-2014; run dir KISSPATH_KI_ROOT/WASP/detached/real_case/c5fa2a53d2794a7c82a8b5ba157f79f0
+      (rebuilt through the current tools on 2026-10-07: identical 20459 API commands and byte-identical extract)'
+    scored_series: 'segment 1 daily means of BMD2 Dissolved Oxygen and Water Temperature vs WQP wqp_lakes Lake_Erie_Central,
+      EPA GLNPO Great Lake stations ER30 ER31 ER32 ER36 ER37 ER38 ER42 ER43 ER73 ER78M ER95B, samples <= 5 m depth
+      (PRFL depth), one row per station-day (176 DO, 197 temperature), April and August cruises 2005-2014'
+    do_obs_qc: 'whole-cruise sensor QC in prepare_wqp_lake_obs.py from the cruise''s own data (dt_wasp_041).
+      Excluded only with proof of a sensor fault: 2009-08 and 2010-04 sensor_dead (all values negative, no in-range
+      rows). Diagnostic only, data kept: 2012-04, 2012-08, 2013-04 sat_offset_unconfirmed; 2005-04, 2006-08
+      winkler_disagree_unmatched_depth (GLNPO Winkler has no depth). The headline is all data. Sensitivity only,
+      not a result: without the 5 diagnostic cruises DO NSE 0.804 (n 124).'
+    known_limits: no algae and no nutrients in the deck (not configured yet; simulated DO about 1.03 x saturation,
+      dt_wasp_042); single well-mixed layer (no stratification); only April and August observed
+    reproduce: tools/prepare_wqp_lake_obs.py (do, temperature; --max-depth-m 5) then tools/parse_wasp_engine_output.py
+      on run/erie_cb_surface_extract.csv (docs/s4_output_parsing.md); review evidence in KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_WASP
+  surrogate_metrics_not_wasp:
+    note: OLD Python SURROGATE (tools/run_wasp.py, analytic re-implementation). Its Lake Erie numbers were scored
+      mostly against tributary stream samples (dt_wasp_035). These are NOT EPA WASP results; the models DB row
+      may still carry best_r 0.996, so a regenerated manifest would project it again -- re-check after any
+      regeneration.
+    tool: tools/run_wasp.py
+    thermal_profile_r: 0.996
+    temperature_validation_r: 0.885
+    do_calibration_r: 0.816
+    do_validation_r: 0.413
 summary:
-  total_tools: 5
-  total_stage_docs: 0
-  total_diagnostic_triplets: 26
-  generated: '2026-08-15'
-  generated_by: generate_ki_manifest.py (projection; regenerate any time)
+  total_tools: 10
+  total_stage_docs: 6
+  total_diagnostic_triplets: 43
+  generated: '2026-10-07'
+  generated_by: hand-written in the projected shape (generate_ki_manifest.py would re-project the surrogate's DB
+    metrics; see validation.surrogate_metrics_not_wasp)

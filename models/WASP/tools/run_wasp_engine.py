@@ -28,7 +28,8 @@ What it does
   5. Writes a JSON summary (engine banner, exe + extractor sha256, input sha256, checks, stats).
 
 Engine discovery (an invalid explicit setting fails; no fallback; missing engine -> exit 3):
-  WINE prefix : --wineprefix -> $WASP_WINEPREFIX -> KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix
+  WINE prefix : --wineprefix -> $WASP_WINEPREFIX -> $WASP_ENGINE_ROOT/wineprefix
+                -> KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix (this server's install)
   wine        : --wine       -> $WASP_WINE       -> `wine` on PATH
   engine      : <prefix>/drive_c/WASP8/wasp/bin/waspccli.exe   (C:\\WASP8\\wasp\\bin\\waspccli.exe)
 
@@ -57,7 +58,7 @@ import tempfile
 import time
 from pathlib import Path
 
-DEFAULT_WINEPREFIX = "KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix"
+DEFAULT_ENGINE_ROOT = "KISSPATH_HOME/engine_builds_20261006/wasp"  # engine build folder (holds wineprefix/)
 ENGINE_WIN = r"C:\WASP8\wasp\bin\waspccli.exe"
 EXTRACT_WIN = r"C:\WASP8\wasp\bin\BMD2_Extract.exe"
 ENGINE_REL = Path("drive_c/WASP8/wasp/bin/waspccli.exe")
@@ -87,15 +88,17 @@ def resolve_engine(args):
         prefix, src_p = args.wineprefix, "--wineprefix"
     elif os.environ.get("WASP_WINEPREFIX"):
         prefix, src_p = os.environ["WASP_WINEPREFIX"], "$WASP_WINEPREFIX"
+    elif os.environ.get("WASP_ENGINE_ROOT"):
+        prefix, src_p = str(Path(os.environ["WASP_ENGINE_ROOT"]).expanduser() / "wineprefix"), "$WASP_ENGINE_ROOT"
     else:
-        prefix, src_p = DEFAULT_WINEPREFIX, "server default"
+        prefix, src_p = str(Path(DEFAULT_ENGINE_ROOT) / "wineprefix"), "server default"
     if args.wine:
         wine, src_w = args.wine, "--wine"
     elif os.environ.get("WASP_WINE"):
         wine, src_w = os.environ["WASP_WINE"], "$WASP_WINE"
     else:
         wine, src_w = shutil.which("wine"), "PATH"
-    prefix = Path(prefix).expanduser().resolve()
+    prefix = Path(prefix).expanduser().absolute()
     missing = []
     if not wine or not (Path(wine).is_file() and os.access(wine, os.X_OK)):
         missing.append(f"wine executable not usable ({src_w}): {wine!r}")
@@ -108,7 +111,7 @@ def resolve_engine(args):
         print("MISSING ENGINE: the real EPA WASP engine is not available; nothing was run. "
               "(tools/run_wasp.py is an analytic surrogate, not a substitute.)", file=sys.stderr)
         sys.exit(3)
-    return str(Path(wine).absolute()), prefix, engine, prefix / EXTRACT_REL
+    return str(Path(wine).expanduser().absolute()), prefix, engine, prefix / EXTRACT_REL
 
 
 def installed_version(prefix):
@@ -329,7 +332,8 @@ def main():
                                       "(default: a fresh ./wasp_engine_<stem>_<UTC time>_XXXX)")
     ap.add_argument("--copy-siblings", action="store_true",
                     help="also copy the other regular files in the .wif's folder (not sub-folders)")
-    ap.add_argument("--wineprefix", help=f"WINE prefix holding C:\\WASP8 (else $WASP_WINEPREFIX, else {DEFAULT_WINEPREFIX})")
+    ap.add_argument("--wineprefix", help="WINE prefix holding C:\\WASP8 (else $WASP_WINEPREFIX, else "
+                                         f"$WASP_ENGINE_ROOT/wineprefix, else {DEFAULT_ENGINE_ROOT}/wineprefix)")
     ap.add_argument("--wine", help="wine executable (else $WASP_WINE, else wine on PATH)")
     ap.add_argument("--timeout", type=float, default=900.0,
                     help="total wall-time budget in s for engine + extraction (default 900, max 1080)")
@@ -375,15 +379,15 @@ def main():
         if not segments_req or min(segments_req) < 1:
             ap.error(f"bad --segments {args.segments!r}")
 
-    wif = Path(args.wif).expanduser().resolve()
+    wif = Path(args.wif).expanduser().absolute()
     if not wif.is_file():
         fail(f"no such .wif: {wif}", 2)
     wine, prefix, engine, extract_exe = resolve_engine(args)
     stem = wif.stem
 
     if args.run_dir:
-        run_dir = Path(args.run_dir).expanduser().resolve()
-        if run_dir == wif.parent:
+        run_dir = Path(args.run_dir).expanduser().absolute()
+        if run_dir.resolve() == wif.parent.resolve():
             fail("--run-dir must not be the .wif's own folder", 2)
         if run_dir.exists() and (not run_dir.is_dir() or any(run_dir.iterdir())):
             fail(f"--run-dir {run_dir} exists and is not an empty directory; use a fresh one", 2)
@@ -405,7 +409,7 @@ def main():
     print(f"WASP engine : {engine} (wine {wine}, WINEPREFIX {prefix})")
     print(f"Run dir     : {run_dir}")
     log_path = run_dir / "waspccli_stdout.log"
-    sj = Path(args.summary_json).expanduser().resolve() if args.summary_json else run_dir / "wasp_engine_summary.json"
+    sj = Path(args.summary_json).expanduser().absolute() if args.summary_json else run_dir / "wasp_engine_summary.json"
     deadline = time.time() + args.timeout
     try:
         rc, wall = run_bounded([wine, ENGINE_WIN, wif.name], run_dir, wine_env(prefix), args.timeout, log_path)

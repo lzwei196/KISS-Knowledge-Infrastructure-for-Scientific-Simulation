@@ -22,13 +22,17 @@ source, and 5 systems (Upstream BOD, NPDES BOD, DO, Solids, Temp), run for 4.96 
 ## Run
 ```
 python run_reference.py                    # uses <KI>/tools/run_wasp_engine.py; 0=PASS 2=FAIL 3=missing
-python run_reference.py --run-tool /mnt/disk1/Hydrocraft_server/models/WASP/knowledge_infrastructure/tools/run_wasp_engine.py
+python run_reference.py --run-tool KISSPATH_KI_ROOT/WASP/knowledge_infrastructure/tools/run_wasp_engine.py
+# a copy of the KI on another machine: point it at that machine's WASP install
+WASP_ENGINE_ROOT=/path/to/wasp python run_reference.py      # uses /path/to/wasp/wineprefix
+WASP_WINEPREFIX=/path/to/wineprefix WASP_WINE=/usr/bin/wine python run_reference.py
 ```
 It copies `SteadyState.wif` to a fresh temp dir and runs it through the KI's real-engine tool
 (`wine C:\WASP8\wasp\bin\waspccli.exe SteadyState.wif`). The tool checks the engine's own line
 "run successfully closed out", the `.OUT` file and a valid `.BMD2`, then extracts all 9
 variables for all 10 segments with EPA's `BMD2_Extract.exe`. The engine is found by
-`--wineprefix` → `$WASP_WINEPREFIX` → `/home/server/engine_builds_20261006/wasp/wineprefix`,
+`--wineprefix` → `$WASP_WINEPREFIX` → `$WASP_ENGINE_ROOT/wineprefix` →
+`KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix` (this server),
 and wine by `--wine` → `$WASP_WINE` → PATH. If the engine or WINE is missing the script prints
 `MISSING DEPENDENCY` and exits 3; it never runs the KI's analytic surrogate instead.
 

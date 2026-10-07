@@ -3,160 +3,114 @@
 
 model:
   name: WASP
-  language: python
+  language: fortran/c++ (closed-source EPA Windows binaries)
   implementation:
-    id: hydrocraft-wasp
-    version: 1.0.0
-    provenance: Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain
-      lineage) for lakes and reservoirs.
-  scientific_reference_version: WASP (US EPA Water Analysis Simulation Program) core water-quality physics;
-    analytic lake/reservoir reimplementation (temperature, DO, BOD, TSI)
+    id: usepa-wasp-8.5.0
+    version: 8.5.0
+    provenance: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe)
+      from the official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+      run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older
+      Python tools run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not
+      this implementation and not described by this dag; their own contract is docs/surrogate/surrogate_wasp_analytic_dag.yaml.
+  scientific_reference_version: US EPA WASP 8.5.0 (Water Quality Analysis Simulation Program), Advanced
+    Eutrophication model (multi-algae.dll) with the WASP heat module; runtime banner 'Wasp suite version
+    8.5.0, Gui develop af12325 dirty, Model master e86fb43'
 inputs:
   forcing:
-  - name: water temperature
+  - name: solar_radiation
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: time function Solar Radiation - 1 (ISC 4), daily-mean breakpoints, days relative
+      to the seed date
+    notes: from load_daily_forcing srad_wm2
+  - name: air_temperature
     unit: deg C
     category: forcing
     source_kind: forcing
-    model_input_format: observed surface/profile temperature time series in Celsius
-    notes: Model performs no internal conversion; Benson-Krause adds 273.15 internally, so inputs must
-      be Celsius.
-  - name: dissolved_oxygen
-    unit: mg/L
+    model_input_format: time function Air Temperature Function 1 (ISC 17)
+  - name: dew_point_temperature
+    unit: deg C
+    category: forcing
+    source_kind: derived
+    model_input_format: time function Dew Point Function 1 (ISC 29)
+    notes: Magnus inverse of specific humidity and surface pressure
+  - name: wind_speed
+    unit: m/s
     category: forcing
     source_kind: forcing
-    model_input_format: observed DO concentration time series
-  - name: chlorophyll_a
-    unit: ug/L
+    model_input_format: time function Wind Speed Function 1 (ISC 21); 10 m wind from the loader
+  - name: cloud_cover
+    unit: fraction 0-1
     category: forcing
-    source_kind: forcing
-    model_input_format: observed Chl-a; drives TSI(Chl-a)
-  - name: depth
-    unit: m
-    category: forcing
-    source_kind: forcing
-    model_input_format: observation depth for profile modes
-  - name: day_of_year
-    unit: integer 1-366
-    category: forcing
-    source_kind: forcing
-    model_input_format: day-of-year index driving the sinusoidal seasonal model
-  - name: secchi_depth
-    unit: m
-    category: forcing
-    source_kind: forcing
-    model_input_format: Secchi transparency; drives TSI(Secchi)
-  - name: total_phosphorus
-    unit: ug/L
-    category: forcing
-    source_kind: forcing
-    model_input_format: TP concentration; drives TSI(TP)
+    source_kind: derived
+    model_input_format: time function Cloud Cover Function 1 (ISC 25); a 0-1 FRACTION (tenths gives 70
+      C water, percent hangs the engine)
+    notes: Kasten-Czeplak inverse of shortwave / FAO-56 clear-sky shortwave
   parameters:
-  - name: T_mean
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: annual average surface temperature (sinusoidal model); typical 2-30
-  - name: amplitude
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: seasonal temperature swing; typical 3-18
-  - name: phase
-    unit: day
-    category: parameters
-    source_kind: calibrated
-    model_input_format: day-of-year of temperature peak (~130 NH); typical 90-170
-  - name: kd
-    unit: 1/d
-    category: parameters
-    source_kind: calibrated
-    model_input_format: BOD deoxygenation rate; 0.05-0.3 typical for lakes
-  - name: ka
-    unit: 1/d
-    category: parameters
-    source_kind: calibrated
-    model_input_format: atmospheric reaeration rate; 0.1-1.0 typical for lakes
-  - name: BOD0
-    unit: mg/L
-    category: parameters
-    source_kind: calibrated
-    model_input_format: background/initial BOD loading; 1-10 typical for lakes
-    notes: Dual role — calibration parameter in the seasonal DO model and an initial condition for the
-      time-dependent deficit solution.
-  - name: DO_offset
-    unit: mg/L
-    category: parameters
-    source_kind: calibrated
-    model_input_format: systematic DO correction; typical -3 to 3
-  - name: T_surface
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: epilimnion (summer surface) temperature; typical 15-30
-  - name: T_bottom
-    unit: deg C
-    category: parameters
-    source_kind: calibrated
-    model_input_format: hypolimnion temperature; typical 4-15
-  - name: thermo_depth
+  - name: segment_depth
     unit: m
     category: parameters
-    source_kind: calibrated
-    model_input_format: depth of maximum dT/dz; typical 3-30
-  - name: thermo_width
-    unit: m
-    category: parameters
-    source_kind: calibrated
-    model_input_format: thermocline transition thickness; typical 0.5-10
-  - name: z_max
-    unit: m
-    category: parameters
-    source_kind: dataset_lookup
-    model_input_format: maximum lake depth (morphometry)
-  - name: z_mean
-    unit: m
-    category: parameters
-    source_kind: dataset_lookup
-    model_input_format: mean depth = volume / surface area
-  - name: area
-    unit: km2
-    category: parameters
-    source_kind: dataset_lookup
-    model_input_format: lake surface area
-  - name: volume
+    source_kind: user_provided
+    model_input_format: DMULT with DEXP 0 and INITIALDEPTH under Flow Routing (flow option 7)
+  - name: segment_volume
     unit: m3
     category: parameters
+    source_kind: derived
+    model_input_format: VOLUME = area x depth
+  - name: elevation
+    unit: m a.s.l.
+    category: parameters
     source_kind: dataset_lookup
-    model_input_format: total lake volume
-  - name: SOD
+    model_input_format: constant 57 and segment parameter 24 (DO saturation pressure); needs the 'used'
+      flag
+  - name: latitude_longitude
+    unit: degrees
+    category: parameters
+    source_kind: user_provided
+    model_input_format: constants 2 and 3
+  - name: sediment_oxygen_demand
     unit: g O2/m2/d
     category: parameters
     source_kind: calibrated
-    model_input_format: sediment oxygen demand; typical 0.1-3.0
-  - name: depletion_rate
-    unit: per meter below thermocline
+    model_input_format: segment parameter 32 (temperature-corrected with constant 61)
+  - name: cbod_decay_rate
+    unit: 1/d at 20 C
     category: parameters
     source_kind: calibrated
-    model_input_format: hypolimnetic DO depletion rate; oligotrophic 0.01-0.03, eutrophic 0.05-0.15
+    model_input_format: constant 47, one instance per CBOD system
+  - name: global_reaeration_rate
+    unit: 1/d at 20 C
+    category: parameters
+    source_kind: calibrated
+    model_input_format: constant 55; 0 = engine computes hydraulic/wind reaeration
+  - name: ice_switch
+    unit: 0/1/2
+    category: parameters
+    source_kind: user_provided
+    model_input_format: constant 501
   initial_conditions:
-  - name: D0
-    unit: mg/L
+  - name: initial_concentrations
+    unit: system units (mg/L, deg C)
     category: initial_conditions
     source_kind: user_provided
-    model_input_format: initial oxygen deficit (DO_sat - DO) for the Streeter-Phelps deficit solution
-  - name: BOD0
-    unit: mg/L
-    category: initial_conditions
+    model_input_format: INITC per system and segment
+  boundary_conditions:
+  - name: boundary_concentrations_and_flows
+    unit: system units; m3/s
+    category: boundary_conditions
     source_kind: user_provided
-    model_input_format: initial BOD for first-order decay (time-dependent mode)
-  boundary_conditions: []
+    model_input_format: BOUNDFUNC per system/boundary, NOQFUNC per flow function; in the KI box case flows
+      are 1e-4 m3/s and boundaries equal the initial values
 outputs:
   primary:
   - name: temperature_timeseries
     unit: deg C
-    description: Seasonal surface water temperature time series (sinusoidal annual cycle).
+    description: Lake/river surface-water temperature time series per segment (WASP 8.5 heat balance),
+      daily mean of the BMD2 variable 'Water Temperature'.
     validation_rank: 4
-    emitted_in: WASP output (seasonal time-series mode)
+    emitted_in: <model>.BMD2 'Water Temperature' (deg C) via run_wasp_engine.py --extract; daily means
+      by parse_wasp_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -166,14 +120,17 @@ outputs:
         - magnitude_accuracy
         determining_metric: nse
         caveats:
-        - Single seasonal cycle; cannot reproduce interannual variability. Exclude warmup year.
+        - Engine output; in the KI lake-box case it is the temperature of a 12 m well-mixed surface layer
+          - compare with surface (<= 5 m) samples, not whole-column means.
       detrending_options:
       - none
   - name: do_timeseries
     unit: mg/L
-    description: Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps).
+    description: Dissolved-oxygen concentration time series in lake/river surface water per segment (WASP
+      8.5), daily mean of the BMD2 variable 'Dissolved Oxygen'.
     validation_rank: 1
-    emitted_in: WASP output (seasonal time-series mode)
+    emitted_in: <model>.BMD2 'Dissolved Oxygen' (mg/L) via run_wasp_engine.py --extract; daily means by
+      parse_wasp_engine_output.py
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -183,14 +140,21 @@ outputs:
         - magnitude_accuracy
         determining_metric: nse
         caveats:
-        - Steady-state seasonal simplification; reduced skill where interannual loading variability dominates.
+        - 'The KI box case has no phytoplankton or nutrients configured (no photosynthetic supersaturation,
+          no algal respiration) and no stratification: simulated DO stays near saturation (Lake Erie:
+          1.03 x). Not configured yet - a scope limit, not an engine fault (dt_wasp_042).'
+        - 'Obs: whole GLNPO CTD cruises can have a failed DO sensor (dt_wasp_041). The headline is ALL
+          data (do_all, station-day rows); the cruise-QC subset (do_sensor_qc, only proven sensor faults
+          left out) is reported next to it, never instead.'
       detrending_options:
       - none
   - name: temperature_profile
     unit: deg C
-    description: 1-D vertical lake/reservoir water-column temperature profile vs depth (logistic thermocline).
+    description: Vertical lake/reservoir water-column temperature profile vs depth (WASP 8.5 layered segments
+      or Lake 1D-vertical flow option).
     validation_rank: 5
-    emitted_in: WASP output (profile mode)
+    emitted_in: NOT produced by the current KI builder (single well-mixed box); needs a layered deck (surface/subsurface
+      segments) or flow option 5 Lake (1D-Vertical)
     observability:
       comparable_obs_shapes:
       - obs_shape: point_snapshot
@@ -199,15 +163,16 @@ outputs:
         - magnitude_accuracy
         determining_metric: pbias
         caveats:
-        - Per-depth comparison; valid only for summer stratification (Jun-Aug NH) given fixed thermocline
-          depth.
+        - No KI tool emits this yet; do not score until a layered deck exists.
       detrending_options:
       - none
   - name: do_profile
     unit: mg/L
-    description: 1-D vertical lake/reservoir water-column DO profile vs depth (epilimnion/hypolimnion).
+    description: Vertical lake/reservoir water-column dissolved-oxygen profile vs depth (WASP 8.5 layered
+      segments or Lake 1D-vertical flow option).
     validation_rank: 2
-    emitted_in: WASP output (profile mode)
+    emitted_in: NOT produced by the current KI builder (single well-mixed box); needs a layered deck or
+      flow option 5 Lake (1D-Vertical)
     observability:
       comparable_obs_shapes:
       - obs_shape: point_snapshot
@@ -216,15 +181,18 @@ outputs:
         - magnitude_accuracy
         determining_metric: pbias
         caveats:
-        - Hypolimnetic depletion depends on SOD/depletion_rate set per lake productivity; summer-stratification
-          only.
+        - No KI tool emits this yet; hypolimnetic hypoxia (Lake Erie Central Basin, Aug) needs a bottom
+          layer with SOD.
       detrending_options:
       - none
   - name: do_saturation
     unit: mg/L
-    description: Benson-Krause DO saturation in lake/reservoir water as a function of water temperature.
+    description: Dissolved-oxygen saturation concentration in lake/river surface water at the simulated
+      water temperature and site pressure.
     validation_rank: 3
-    emitted_in: WASP output (diagnostic)
+    emitted_in: computed by parse_wasp_engine_output.py (APHA 1992 fresh-water equation x standard-atmosphere
+      pressure ratio) from the engine's 'Water Temperature'; the engine's own saturation is not written
+      to the BMD2 by the KI case
     observability:
       comparable_obs_shapes:
       - obs_shape: point_snapshot
@@ -233,15 +201,17 @@ outputs:
         - magnitude_accuracy
         determining_metric: pbias
         caveats:
-        - Closed-form function of temperature; comparison is effectively a check of the temperature input.
+        - Diagnostic of the temperature output; the engine's DO in the box case sits ~2.5 % above this
+          value on average.
       detrending_options:
       - none
   - name: TSI
     unit: dimensionless
-    description: Carlson Trophic State Index for lake/reservoir water from Chl-a, Secchi, and/or TP (Carlson
-      1977 scale).
+    description: Carlson Trophic State Index for lake/reservoir water from chlorophyll-a, Secchi depth
+      and/or total phosphorus.
     validation_rank: 6
-    emitted_in: WASP output (TSI mode)
+    emitted_in: 'NOT produced: the KI case deck has no phytoplankton/phosphorus systems; would be post-processed
+      from Advanced Eutrophication chlorophyll and TP output'
     observability:
       comparable_obs_shapes:
       - obs_shape: point_snapshot
@@ -251,8 +221,7 @@ outputs:
         - ranking_quality
         determining_metric: spearman
         caveats:
-        - TSI(Chl-a)/TSI(Secchi)/TSI(TP) agree only for algae-dominated systems; divergence diagnoses
-          non-algal turbidity or P-limitation.
+        - No KI tool emits this from the real engine; the old value came from the SURROGATE.
       - obs_shape: point_time_series
         comparison_mode: time_series_comparison
         metric_families:
@@ -535,3 +504,159 @@ known_issues:
     to preserve a stratified transition; convert_parameters_to_wasp; ['Run tools/convert_parameters_to_wasp.py
     and inspect parameters.thermal.thermo_depth, parameters.thermal.thermo_width, and parameters.morph
   severity: silent
+- id: dt_wasp_027
+  symptom: 'A value written with wasptool (e.g. PCONSTPARAM seg 32 1 0.5 for SOD, PCONSTVALUEBYISC 57
+    1 174 for elevation) echoes back correctly and reads back with G..., but the run behaves as if it
+    was never set: BMD2 ''Described Sediment Oxygen Demand'' stays 0, and the .OUT ''Segment Parameters''
+    / ''Constants &'
+  diagnosis: Each segment parameter, constant and time function in a .wif carries a 'used' flag. The engine
+    only reads items whose flag is 1. In EPA's SteadyState.wif params 8, 9, 11, 13, 24, 32, constants
+    2, 3, 57, 58, 52, 56 and cloud time function 25 have used=0. The API stores the value but the engine
+    ignore
+  remedy: 'Set the flag with the value: PPARAMISUSED <isc> 1 1, PCONSTISUSED <isc> <inst> 1, PTFISUSED
+    <isc> 1 1 (build_wasp_lake_case.py does this). Then confirm the item appears in the .OUT echo of the
+    run.'
+  severity: silent
+- id: dt_wasp_028
+  symptom: Simulated DO of a high-altitude water body is biased high by roughly the pressure ratio (about
+    +38 % at 2700 m) while the timing (r) is good.
+  diagnosis: 'WASP 8.5 does correct DO saturation for elevation (constant 57 ''Elevation above Sea Level''
+    and segment parameter 24): a 1-year test gave DO x 0.724 at 2700 m vs 0 m, matching p/p0 = 0.72. But
+    both items are ''used = 0'' in the EPA template (dt_wasp_027), so a copied deck silently runs at sea
+    level. (T'
+  remedy: Pass --elev to build_wasp_lake_case.py (sets constant 57 and param 24 with used flags) and check
+    '57 ... Elevation above Sea Level' in the .OUT echo.
+  severity: silent
+- id: dt_wasp_029
+  symptom: Water temperature climbs to 45-70 C with cloud cover given in tenths (0-10); with percent (0-100)
+    waspccli spins at 100 % CPU and never closes out.
+  diagnosis: 'The engine''s database (epa.sqlite) defines Cloud Cover Function as ''unitless or fraction'';
+    EPA''s heat-module guide says ''percent''. Tested on WASP 8.5: only a 0-1 fraction gives physical
+    results (Lake Erie 12 m box peaks near 25 C in August).'
+  remedy: Write cloud_frac in [0,1] (build_wasp_weather_from_source.py) and keep build_wasp_lake_case.py
+    --cloud-scale 1.
+  severity: silent
+- id: dt_wasp_030
+  symptom: After PSEEDDATE, GNOQFUNC/GBOUNDFUNC/GPRINTFUNC show days like 2738.0 at point 1; the template's
+    flows and boundaries now start years after the run start.
+  diagnosis: Breakpoints are stored as absolute dates and displayed/written as days relative to the CURRENT
+    seed date (2738 d = 2005-01-01 to 2012-07-01). Weather written before the seed change is shifted.
+  remedy: Put PSEEDDATE first, then rewrite every flow, boundary, print and time-function series with
+    days relative to the new start (build_wasp_lake_case.py orders commands this way).
+  severity: silent
+- id: dt_wasp_031
+  symptom: 'ERROR: wasptool rejected a command: ERROR while processing command: Unrecognized command:
+    G...  (exit 1), or ''returned N result blocks for M commands''.'
+  diagnosis: Keyword misspelt, wrong number of arguments, or wasptool crashed (WINE page fault) part way;
+    e.g. PNUMSEG 1 on the 10-segment template followed by GNOQS crashed (flows still point at segments
+    2-10).
+  remedy: Use only keywords listed in docs/s2_parameter_setup.md; never shrink the segment count of a
+    template - isolate unused segments instead (tiny flows), as build_wasp_lake_case.py does.
+  severity: fatal
+- id: dt_wasp_032
+  symptom: wine waspccli.exe returns exit code 2 although the run printed 'WASP8 run successfully closed
+    out' and wrote .OUT and .BMD2.
+  diagnosis: waspccli's exit status is not meaningful under WINE (2 on the official EPA example, 0 after
+    a killed hang).
+  remedy: 'Judge success like run_wasp_engine.py: close-out line + fresh .OUT + valid .BMD2 header + no
+    ERROR line other than the known ''Failed to locate time function''.'
+  severity: warning
+- id: dt_wasp_033
+  symptom: waspccli.exe stays at 100 % CPU with no new output; run_wasp_engine.py stops it at --timeout
+    and exits 1.
+  diagnosis: A physically impossible deck (seen with cloud cover 0-100, dt_wasp_029) makes the solver
+    step forever.
+  remedy: Check the weather CSV ranges (validate_outputs in build_wasp_weather_from_source.py) and the
+    case JSON; rerun a 1-year window first (about 5 s per simulated year for the lake box).
+  severity: fatal
+- id: dt_wasp_034
+  symptom: 'Every run built from EPA''s SteadyState.wif prints 31 lines ''ERROR: Failed to locate time
+    function, isc=NN tfindex=1''.'
+  diagnosis: The 2017 example lacks instance 1 of some time functions (atmospheric deposition, benthic
+    fluxes) that 8.5 looks up; those processes then get no forcing. The used weather functions (4, 17,
+    21, 25, 29) are present.
+  remedy: Treat 31 as the expected count (run_wasp_engine.py counts them); a different count means the
+    deck is read differently - investigate before trusting results.
+  severity: warning
+- id: dt_wasp_035
+  symptom: Scoring a lake model against data/obs/water_quality/wqp/Lake_Erie_Central gives poor or odd
+    skill; sites like 21OHIO_WQX-F01S34 dominate.
+  diagnosis: 'The folder was pulled by drainage area: of 1,269 resolved stations 733 are River/Stream,
+    166 Well, 122 Stream and only 60 ''Great Lake''. The CSVs have no coordinates or site type. The earlier
+    SURROGATE ''Lake Erie'' scores used these mixed data.'
+  remedy: Use prepare_wqp_lake_obs.py --site-types 'Great Lake' --bbox ... (WQP Station service lookup,
+    cached).
+  severity: silent
+- id: dt_wasp_036
+  symptom: Network-mean August DO of the lake stations is ~7 mg/L or lower, far below a surface-layer
+    model, and varies with how many deep casts a station had.
+  diagnosis: EPA_GLNPO CTD values carry no depth column; averaging them mixes epilimnion and hypoxic hypolimnion.
+    The depth is only in ResultCommentText ('- E073A12-PRFL-15' = 15 m).
+  remedy: Use prepare_wqp_lake_obs.py --max-depth-m 5 for surface comparisons (parses PRFL-<z>; values
+    without a parsable depth are dropped and counted).
+  severity: silent
+- id: dt_wasp_037
+  symptom: 'Some GLNPO cruises show surface (<= 5 m) DO far below saturation (2012-04, 2013-04: whole-column
+    median 37-39 % of saturation in a mixed April column; 2012-08: 19 % in a stratified column). With
+    them the Lake Erie DO NSE is about 0 (all data); without them about 0.8 (sensitivity only).'
+  diagnosis: A sensor fault is likely for some of these cruises, but low DO alone does not prove it (summer
+    hypolimnetic depletion is real) and no same-depth Winkler sample exists to check them. So they are
+    DIAGNOSTIC (sat_offset_unconfirmed), not excluded. See dt_wasp_041.
+  remedy: 'Score with prepare_wqp_lake_obs.py + parse_wasp_engine_output.py: the headline is ALWAYS do_all
+    (every station-day); do_sensor_qc (value_qc) leaves out only cruises with proven sensor faults and
+    is reported next to it. Read flagged_cruises / diagnostic_cruises in scores.json; a number without
+    the di'
+  severity: degraded
+- id: dt_wasp_038
+  symptom: A 20 m box peaks near 20.6 C in August while surface obs are 23-26 C.
+  diagnosis: 'A well-mixed box spreads surface heat over its whole depth. Lake Erie Central Basin August
+    profiles: 23.8 C down to about 12 m, thermocline 12-18 m.'
+  remedy: Use the observed summer mixed-layer depth (12 m for the Central Basin) when comparing with surface
+    samples; a whole-column comparison needs a layered deck.
+  severity: degraded
+- id: dt_wasp_039
+  symptom: After PPRINTFUNC k day 1.0 the BMD2 still holds about 48 records per day (192,865 times for
+    4,018 days) and BMD2_Extract writes large CSVs.
+  diagnosis: 'Not resolved: the print-interval function written through the API is not what controls BMD2
+    output in this deck (the template''s own interval is 0.014 d).'
+  remedy: Extract only the needed variables and segments (--extract ... --segments 1) and average to days
+    in parse_wasp_engine_output.py.
+  severity: warning
+- id: dt_wasp_040
+  symptom: A report quotes WASP DO/temperature skill (e.g. R=0.885) but the run used tools/run_wasp.py.
+  diagnosis: run_wasp.py, convert_*_to_wasp.py and parse_output_wasp.py are an analytic Python SURROGATE
+    (sinusoid + Streeter-Phelps), not EPA WASP.
+  remedy: For WASP results use build_wasp_weather_from_source.py -> build_wasp_lake_case.py -> run_wasp_engine.py
+    -> parse_wasp_engine_output.py; label any surrogate number 'surrogate'.
+  severity: silent
+- id: dt_wasp_041
+  symptom: GLNPO LG301 (Seabird CTD) DO is 100 % negative for whole cruises (2009-08, 2010-04) and the
+    0-25 mg/L range filter removes them without a word; other cruises sit far from saturation over the
+    whole column. Every record is 'Accepted' with no qualifier, so WQP status flags do not catch it.
+  diagnosis: The CTD oxygen sensor failed or drifted for the whole cruise. A per-day rule on the obs value
+    (e.g. obs DO < 80 % of saturation) drops good days of a bad cruise and keeps bad days, and low DO
+    alone is not proof of a sensor fault (summer hypolimnion depletion is real).
+  remedy: 'prepare_wqp_lake_obs.py runs cruise QC on the cruise''s own data (all depths, before the range
+    filter), sensor methods only (LG301, LG501Y; Winkler LG501/LG501A never flagged). EXCLUDING flags
+    need proof that the sensor is wrong: sensor_dead (> 50 % negative) or winkler_disagree (CTD vs Winkler
+    at th'
+  severity: silent
+- id: dt_wasp_042
+  symptom: Simulated surface DO is on average about 1.03 x saturation (scores.json sim_do_over_sat_mean)
+    and never shows algal supersaturation or depletion; DO PBIAS is about +20 % against all data.
+  diagnosis: 'The KI lake-box case keeps only the template''s CBOD, DO, solids and temperature systems:
+    no phytoplankton, no nutrients, SOD 0. DO is then reaeration toward saturation minus a small CBOD
+    demand. This is a scope limit of the KI builder, NOT an engine fault; nutrient/algae systems are not
+    configured y'
+  remedy: Report it as a limit. Do not tune reaeration or SOD to hide it. Algae/nutrient systems (Advanced
+    Eutrophication) are a later capability to build in build_wasp_lake_case.py.
+  severity: degraded
+- id: dt_wasp_043
+  symptom: ki_tools_common preflight_forcing.py says 'Unable to detect data source' for the weather CSV
+    written by build_wasp_weather_from_source.py --source nasa_power.
+  diagnosis: The shared forcing preflight knows gridded sources (CMFD/MSWX folders), not a single-point
+    CSV. The weather tool's own validate_outputs() already refuses missing days, NaN and out-of-range
+    values.
+  remedy: 'Minor and not fixed: rely on build_wasp_weather_from_source.py''s exit code (it fails on any
+    validation error) and check its printed means; record the preflight message as a warning.'
+  severity: warning

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA WASP. This tool belongs to the KI's analytic Python stand-in (sinusoidal
+temperature, Streeter-Phelps DO, Carlson TSI). Its numbers are NOT WASP results; label them
+"surrogate". The real EPA WASP 8.5 route is build_wasp_weather_from_source.py ->
+build_wasp_lake_case.py -> run_wasp_engine.py -> parse_wasp_engine_output.py.
+
 convert_parameters_to_wasp.py -- Convert lake and kinetic parameters to WASP format.
 
 Generates the parameter set required by the WASP water quality model:
@@ -623,7 +628,7 @@ def validate_output_params(params, log):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert lake/kinetic parameters to WASP format")
+        description="SURROGATE (analytic Python stand-in, NOT EPA WASP): lake/kinetic parameters for the surrogate. The real engine's values are set in the .wif by tools/build_wasp_lake_case.py / wasp_wif_api.py.")
 
     # Mode selection
     parser.add_argument("--lake-preset", default=None,
@@ -720,6 +725,7 @@ def main():
     output_data = {
         "status": "success" if params_ok else "warning",
         "model": "WASP",
+        "implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never report its numbers as WASP results",
         "parameters": params,
         "bounds": {name: list(bounds) for name, bounds in PARAM_BOUNDS.items()},
         "param_details": {

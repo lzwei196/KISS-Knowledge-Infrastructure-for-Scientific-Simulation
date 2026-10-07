@@ -17,7 +17,7 @@
     {"name": "volume_final_seg1", "var": "Volume", "segment": 1, "stat": "final", "expected": 2653.1342, "tol": 0.001, "why": "volume (m3) of the outlet segment at the end"}
   ],
   "recorded_on": "2026-10-06",
-  "recorded_with": "tools/run_wasp_engine.py (live KI /mnt/disk1/Hydrocraft_server/models/WASP/knowledge_infrastructure) -> wine C:\\WASP8\\wasp\\bin\\waspccli.exe SteadyState.wif; WINEPREFIX /home/server/engine_builds_20261006/wasp/wineprefix; extraction with C:\\WASP8\\wasp\\bin\\BMD2_Extract.exe",
+  "recorded_with": "tools/run_wasp_engine.py (live KI KISSPATH_KI_ROOT/WASP/knowledge_infrastructure) -> wine C:\\WASP8\\wasp\\bin\\waspccli.exe SteadyState.wif; WINEPREFIX KISSPATH_HOME/engine_builds_20261006/wasp/wineprefix; extraction with C:\\WASP8\\wasp\\bin\\BMD2_Extract.exe",
   "reference": "Own runs (no official EPA reference output exists for this example). Two clean runs were byte-identical.",
   "notes": "The run prints 31 'ERROR: Failed to locate time function' lines (the example was saved by WASP 8 in 2017 and is read by 8.5) and the wine exit code is 2, yet the engine closes out normally and writes all outputs. Whether the missing time functions change the science of this example has NOT been checked; these values are a repeat-run baseline for this engine build, not a validated physical result. Water temperature starts from 0 and is still rising at the end of this short run."
 }

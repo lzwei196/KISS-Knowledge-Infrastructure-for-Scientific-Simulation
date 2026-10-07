@@ -1,5 +1,8 @@
 # s5 Calibration
 
+> **SURROGATE ONLY — not EPA WASP.** This stage uses the KI's analytic Python stand-in (`tools/run_wasp.py`). Its numbers are not WASP results; label them "surrogate". The real engine has no calibration or TSI tool yet (see SKILL.md §10 and §12).
+
+
 ## Purpose
 
 Calibrate the seasonal temperature and dissolved-oxygen models against observations using `tools/run_wasp.py --mode calibrate`. This stage uses Nelder-Mead optimization to estimate the three seasonal temperature parameters and four seasonal DO parameters, then reports calibration and validation metrics.

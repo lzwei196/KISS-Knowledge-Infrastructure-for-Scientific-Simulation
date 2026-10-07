@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA WASP. This tool belongs to the KI's analytic Python stand-in (sinusoidal
+temperature, Streeter-Phelps DO, Carlson TSI). Its numbers are NOT WASP results; label them
+"surrogate". The real EPA WASP 8.5 route is build_wasp_weather_from_source.py ->
+build_wasp_lake_case.py -> run_wasp_engine.py -> parse_wasp_engine_output.py.
+
 run_wasp.py -- Execute WASP analytic water quality model.
 
 Runs the WASP-inspired analytic lake water quality model with three modes:
@@ -538,6 +543,7 @@ def run_simulation(args):
     result = {
         "status": "success",
         "model": "WASP",
+        "implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never report its numbers as WASP results",
         "mode": "simulate",
         "output": output,
         "log": log,
@@ -724,6 +730,7 @@ def run_calibration(args):
     result = {
         "status": "success",
         "model": "WASP",
+        "implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never report its numbers as WASP results",
         "mode": "calibrate",
         "output": output,
         "log": log,
@@ -803,6 +810,7 @@ def run_profile(args):
     result = {
         "status": "success",
         "model": "WASP",
+        "implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never report its numbers as WASP results",
         "mode": "profile",
         "output": output,
         "log": log,
@@ -870,7 +878,7 @@ def validate_outputs(result, log):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run WASP analytic water quality model")
+        description="SURROGATE (analytic Python stand-in, NOT EPA WASP): run the analytic lake water-quality re-implementation. For the real EPA WASP 8.5 engine use tools/run_wasp_engine.py.")
     parser.add_argument("--mode", required=True,
                         choices=["simulate", "calibrate", "profile"],
                         help="Run mode")
@@ -892,6 +900,8 @@ def main():
                         help="Depth step for profile (default: 1.0 m)")
 
     args = parser.parse_args()
+    print("WARNING: SURROGATE run - analytic Python stand-in, NOT EPA WASP; use tools/run_wasp_engine.py "
+          "for the real engine and label these numbers 'surrogate'.", file=sys.stderr)
 
     # Step 1: validate inputs
     errors = validate_inputs(args)

@@ -825,3 +825,194 @@
   cross_references:
   - dt_wasp_014
   - dt_wasp_015
+
+# ========================================================================
+# REAL EPA WASP 8.5 ENGINE (added 2026-10-07, case wasp_real_engine_wiring_20261006).
+# Every entry below was observed on the real engine (waspccli.exe / wasptool.exe under WINE).
+# ========================================================================
+- id: dt_wasp_027
+  name: PUT accepted but ignored - "used" flag off
+  stage: s2_parameter_setup
+  failure_domain: configuration
+  severity: silent
+  symptom: "A value written with wasptool (e.g. PCONSTPARAM seg 32 1 0.5 for SOD, PCONSTVALUEBYISC 57 1 174 for elevation) echoes back correctly and reads back with G..., but the run behaves as if it was never set: BMD2 'Described Sediment Oxygen Demand' stays 0, and the .OUT 'Segment Parameters' / 'Constants & Kinetics' echo does not list it."
+  diagnosis: "Each segment parameter, constant and time function in a .wif carries a 'used' flag. The engine only reads items whose flag is 1. In EPA's SteadyState.wif params 8, 9, 11, 13, 24, 32, constants 2, 3, 57, 58, 52, 56 and cloud time function 25 have used=0. The API stores the value but the engine ignores it."
+  remedy: "Set the flag with the value: PPARAMISUSED <isc> 1 1, PCONSTISUSED <isc> <inst> 1, PTFISUSED <isc> 1 1 (build_wasp_lake_case.py does this). Then confirm the item appears in the .OUT echo of the run."
+  detection: "python tools/wasp_wif_api.py --wif case.wif --get 'GPARAMISUSED 32 1' 'GCONSTISUSED 57 1'  -> used must be 1; and grep the item in <model>.OUT"
+  cross_references: [dt_wasp_028, dt_wasp_031]
+
+- id: dt_wasp_028
+  name: DO saturation at sea level because elevation was never applied
+  stage: s2_parameter_setup
+  failure_domain: configuration
+  severity: silent
+  symptom: "Simulated DO of a high-altitude water body is biased high by roughly the pressure ratio (about +38 % at 2700 m) while the timing (r) is good."
+  diagnosis: "WASP 8.5 does correct DO saturation for elevation (constant 57 'Elevation above Sea Level' and segment parameter 24): a 1-year test gave DO x 0.724 at 2700 m vs 0 m, matching p/p0 = 0.72. But both items are 'used = 0' in the EPA template (dt_wasp_027), so a copied deck silently runs at sea level. (The old USEPA_WASP eutro5 KI had no elevation term at all; this engine has one.)"
+  remedy: "Pass --elev to build_wasp_lake_case.py (sets constant 57 and param 24 with used flags) and check '57 ... Elevation above Sea Level' in the .OUT echo."
+  detection: "tr -d '\\000' < run/<model>.OUT | grep 'Elevation above Sea Level'"
+  cross_references: [dt_wasp_027]
+
+- id: dt_wasp_029
+  name: Cloud cover in tenths or percent
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "Water temperature climbs to 45-70 C with cloud cover given in tenths (0-10); with percent (0-100) waspccli spins at 100 % CPU and never closes out."
+  diagnosis: "The engine's database (epa.sqlite) defines Cloud Cover Function as 'unitless or fraction'; EPA's heat-module guide says 'percent'. Tested on WASP 8.5: only a 0-1 fraction gives physical results (Lake Erie 12 m box peaks near 25 C in August)."
+  remedy: "Write cloud_frac in [0,1] (build_wasp_weather_from_source.py) and keep build_wasp_lake_case.py --cloud-scale 1."
+  detection: "awk -F, 'NR>2 && $6>1' weather.csv | head  -> must print nothing"
+  cross_references: [dt_wasp_034]
+
+- id: dt_wasp_030
+  name: Time series shifted after changing the start date
+  stage: s2_parameter_setup
+  failure_domain: configuration
+  severity: silent
+  symptom: "After PSEEDDATE, GNOQFUNC/GBOUNDFUNC/GPRINTFUNC show days like 2738.0 at point 1; the template's flows and boundaries now start years after the run start."
+  diagnosis: "Breakpoints are stored as absolute dates and displayed/written as days relative to the CURRENT seed date (2738 d = 2005-01-01 to 2012-07-01). Weather written before the seed change is shifted."
+  remedy: "Put PSEEDDATE first, then rewrite every flow, boundary, print and time-function series with days relative to the new start (build_wasp_lake_case.py orders commands this way)."
+  detection: "python tools/wasp_wif_api.py --wif case.wif --get GSEEDDATE 'GNOQFUNC 1 1 1' 'GBRKTF 17 1 1'  -> point 1 days must be 0.0"
+  cross_references: []
+
+- id: dt_wasp_031
+  name: wasp_wif_api.py refuses a command
+  stage: s2_parameter_setup
+  failure_domain: runtime
+  severity: fatal
+  symptom: "ERROR: wasptool rejected a command: ERROR while processing command: Unrecognized command: G...  (exit 1), or 'returned N result blocks for M commands'."
+  diagnosis: "Keyword misspelt, wrong number of arguments, or wasptool crashed (WINE page fault) part way; e.g. PNUMSEG 1 on the 10-segment template followed by GNOQS crashed (flows still point at segments 2-10)."
+  remedy: "Use only keywords listed in docs/s2_parameter_setup.md; never shrink the segment count of a template - isolate unused segments instead (tiny flows), as build_wasp_lake_case.py does."
+  detection: "python tools/wasp_wif_api.py --wif x.wif --get GNUMSEG"
+  cross_references: []
+
+- id: dt_wasp_032
+  name: wine exit code 2 on a good run
+  stage: s3_model_execution
+  failure_domain: runtime
+  severity: warning
+  symptom: "wine waspccli.exe returns exit code 2 although the run printed 'WASP8 run successfully closed out' and wrote .OUT and .BMD2."
+  diagnosis: "waspccli's exit status is not meaningful under WINE (2 on the official EPA example, 0 after a killed hang)."
+  remedy: "Judge success like run_wasp_engine.py: close-out line + fresh .OUT + valid .BMD2 header + no ERROR line other than the known 'Failed to locate time function'."
+  detection: "grep 'closed_out' run/wasp_engine_summary.json"
+  cross_references: [dt_wasp_033]
+
+- id: dt_wasp_033
+  name: Engine never finishes
+  stage: s3_model_execution
+  failure_domain: runtime
+  severity: fatal
+  symptom: "waspccli.exe stays at 100 % CPU with no new output; run_wasp_engine.py stops it at --timeout and exits 1."
+  diagnosis: "A physically impossible deck (seen with cloud cover 0-100, dt_wasp_029) makes the solver step forever."
+  remedy: "Check the weather CSV ranges (validate_outputs in build_wasp_weather_from_source.py) and the case JSON; rerun a 1-year window first (about 5 s per simulated year for the lake box)."
+  detection: "ps aux | grep '[w]aspccli'"
+  cross_references: [dt_wasp_029]
+
+- id: dt_wasp_034
+  name: 31 'Failed to locate time function' lines
+  stage: s3_model_execution
+  failure_domain: configuration
+  severity: warning
+  symptom: "Every run built from EPA's SteadyState.wif prints 31 lines 'ERROR: Failed to locate time function, isc=NN tfindex=1'."
+  diagnosis: "The 2017 example lacks instance 1 of some time functions (atmospheric deposition, benthic fluxes) that 8.5 looks up; those processes then get no forcing. The used weather functions (4, 17, 21, 25, 29) are present."
+  remedy: "Treat 31 as the expected count (run_wasp_engine.py counts them); a different count means the deck is read differently - investigate before trusting results."
+  detection: "grep known_time_function_errors run/wasp_engine_summary.json"
+  cross_references: []
+
+- id: dt_wasp_035
+  name: Lake obs are mostly river samples
+  stage: s4_output_parsing
+  failure_domain: validation
+  severity: silent
+  symptom: "Scoring a lake model against data/obs/water_quality/wqp/Lake_Erie_Central gives poor or odd skill; sites like 21OHIO_WQX-F01S34 dominate."
+  diagnosis: "The folder was pulled by drainage area: of 1,269 resolved stations 733 are River/Stream, 166 Well, 122 Stream and only 60 'Great Lake'. The CSVs have no coordinates or site type. The earlier SURROGATE 'Lake Erie' scores used these mixed data."
+  remedy: "Use prepare_wqp_lake_obs.py --site-types 'Great Lake' --bbox ... (WQP Station service lookup, cached)."
+  detection: "python tools/prepare_wqp_lake_obs.py ... prints the station count and type kept"
+  cross_references: [dt_wasp_036]
+
+- id: dt_wasp_036
+  name: GLNPO profile values have no depth column
+  stage: s4_output_parsing
+  failure_domain: validation
+  severity: silent
+  symptom: "Network-mean August DO of the lake stations is ~7 mg/L or lower, far below a surface-layer model, and varies with how many deep casts a station had."
+  diagnosis: "EPA_GLNPO CTD values carry no depth column; averaging them mixes epilimnion and hypoxic hypolimnion. The depth is only in ResultCommentText ('- E073A12-PRFL-15' = 15 m)."
+  remedy: "Use prepare_wqp_lake_obs.py --max-depth-m 5 for surface comparisons (parses PRFL-<z>; values without a parsable depth are dropped and counted)."
+  detection: "grep -c 'PRFL-' <lake>_Dissolved_oxygen_DO.csv"
+  cross_references: [dt_wasp_035, dt_wasp_037]
+
+- id: dt_wasp_037
+  name: Observed surface DO far below saturation
+  stage: s4_output_parsing
+  failure_domain: validation
+  severity: degraded
+  symptom: "Some GLNPO cruises show surface (<= 5 m) DO far below saturation (2012-04, 2013-04: whole-column median 37-39 % of saturation in a mixed April column; 2012-08: 19 % in a stratified column). With them the Lake Erie DO NSE is about 0 (all data); without them about 0.8 (sensitivity only)."
+  diagnosis: "A sensor fault is likely for some of these cruises, but low DO alone does not prove it (summer hypolimnetic depletion is real) and no same-depth Winkler sample exists to check them. So they are DIAGNOSTIC (sat_offset_unconfirmed), not excluded. See dt_wasp_041."
+  remedy: "Score with prepare_wqp_lake_obs.py + parse_wasp_engine_output.py: the headline is ALWAYS do_all (every station-day); do_sensor_qc (value_qc) leaves out only cruises with proven sensor faults and is reported next to it. Read flagged_cruises / diagnostic_cruises in scores.json; a number without the diagnostic cruises is a sensitivity check, never the result."
+  detection: "python -c \"import json;d=json.load(open('scores/scores.json'));print(d['headline'],d.get('flagged_cruises'),d.get('diagnostic_cruises'))\""
+  cross_references: [dt_wasp_036, dt_wasp_041]
+
+- id: dt_wasp_038
+  name: Box depth sets summer temperature
+  stage: s2_parameter_setup
+  failure_domain: configuration
+  severity: degraded
+  symptom: "A 20 m box peaks near 20.6 C in August while surface obs are 23-26 C."
+  diagnosis: "A well-mixed box spreads surface heat over its whole depth. Lake Erie Central Basin August profiles: 23.8 C down to about 12 m, thermocline 12-18 m."
+  remedy: "Use the observed summer mixed-layer depth (12 m for the Central Basin) when comparing with surface samples; a whole-column comparison needs a layered deck."
+  detection: "compare the August maximum of sim_daily_seg1.csv 'Water Temperature' with obs_temperature_surface5m.csv"
+  cross_references: []
+
+- id: dt_wasp_039
+  name: Print interval edit has no effect
+  stage: s3_model_execution
+  failure_domain: configuration
+  severity: warning
+  symptom: "After PPRINTFUNC k day 1.0 the BMD2 still holds about 48 records per day (192,865 times for 4,018 days) and BMD2_Extract writes large CSVs."
+  diagnosis: "Not resolved: the print-interval function written through the API is not what controls BMD2 output in this deck (the template's own interval is 0.014 d)."
+  remedy: "Extract only the needed variables and segments (--extract ... --segments 1) and average to days in parse_wasp_engine_output.py."
+  detection: "grep n_times run/wasp_engine_summary.json"
+  cross_references: []
+
+- id: dt_wasp_040
+  name: Surrogate numbers reported as WASP
+  stage: s3_model_execution
+  failure_domain: validation
+  severity: silent
+  symptom: "A report quotes WASP DO/temperature skill (e.g. R=0.885) but the run used tools/run_wasp.py."
+  diagnosis: "run_wasp.py, convert_*_to_wasp.py and parse_output_wasp.py are an analytic Python SURROGATE (sinusoid + Streeter-Phelps), not EPA WASP."
+  remedy: "For WASP results use build_wasp_weather_from_source.py -> build_wasp_lake_case.py -> run_wasp_engine.py -> parse_wasp_engine_output.py; label any surrogate number 'surrogate'."
+  detection: "check that the run directory holds <model>.BMD2 and wasp_engine_summary.json with closed_out true"
+  cross_references: []
+
+- id: dt_wasp_041
+  name: Whole-cruise DO sensor faults in WQP/GLNPO data
+  stage: s4_output_parsing
+  failure_domain: data
+  severity: silent
+  symptom: "GLNPO LG301 (Seabird CTD) DO is 100 % negative for whole cruises (2009-08, 2010-04) and the 0-25 mg/L range filter removes them without a word; other cruises sit far from saturation over the whole column. Every record is 'Accepted' with no qualifier, so WQP status flags do not catch it."
+  diagnosis: "The CTD oxygen sensor failed or drifted for the whole cruise. A per-day rule on the obs value (e.g. obs DO < 80 % of saturation) drops good days of a bad cruise and keeps bad days, and low DO alone is not proof of a sensor fault (summer hypolimnion depletion is real)."
+  remedy: "prepare_wqp_lake_obs.py runs cruise QC on the cruise's own data (all depths, before the range filter), sensor methods only (LG301, LG501Y; Winkler LG501/LG501A never flagged). EXCLUDING flags need proof that the sensor is wrong: sensor_dead (> 50 % negative) or winkler_disagree (CTD vs Winkler at the same depth within 1 m, ratio outside 0.85-1.15; near anoxia, Winkler < 1 mg/L, a difference > 0.5 mg/L). Saturation offsets (sat_offset_unconfirmed) and Winkler of unknown depth (winkler_disagree_unmatched_depth) are DIAGNOSTIC only and the data stay in. Each station-day row keeps value (all data) and value_qc (excluded cruises left out)."
+  detection: "python -c \"import json;d=json.load(open('obs_do_surface5m.cruise_qc.json'));[print(c,r['flags'],r['diagnostic_flags'],r['col_sat_median'],r['column_mixed'],r['winkler_ratio']) for c,r in d['cruises'].items() if r['flags'] or r['diagnostic_flags']]\""
+  cross_references: [dt_wasp_036, dt_wasp_037]
+
+- id: dt_wasp_042
+  name: Simulated DO stays at saturation (no algae or nutrients in the deck)
+  stage: s2_parameter_setup
+  failure_domain: configuration
+  severity: degraded
+  symptom: "Simulated surface DO is on average about 1.03 x saturation (scores.json sim_do_over_sat_mean) and never shows algal supersaturation or depletion; DO PBIAS is about +20 % against all data."
+  diagnosis: "The KI lake-box case keeps only the template's CBOD, DO, solids and temperature systems: no phytoplankton, no nutrients, SOD 0. DO is then reaeration toward saturation minus a small CBOD demand. This is a scope limit of the KI builder, NOT an engine fault; nutrient/algae systems are not configured yet."
+  remedy: "Report it as a limit. Do not tune reaeration or SOD to hide it. Algae/nutrient systems (Advanced Eutrophication) are a later capability to build in build_wasp_lake_case.py."
+  detection: "python -c \"import json;print(json.load(open('scores/scores.json'))['sim_do_over_sat_mean'])\""
+  cross_references: [dt_wasp_037]
+
+- id: dt_wasp_043
+  name: preflight_forcing cannot identify a point NASA POWER CSV
+  stage: s1_forcing_preparation
+  failure_domain: data
+  severity: warning
+  symptom: "ki_tools_common preflight_forcing.py says 'Unable to detect data source' for the weather CSV written by build_wasp_weather_from_source.py --source nasa_power."
+  diagnosis: "The shared forcing preflight knows gridded sources (CMFD/MSWX folders), not a single-point CSV. The weather tool's own validate_outputs() already refuses missing days, NaN and out-of-range values."
+  remedy: "Minor and not fixed: rely on build_wasp_weather_from_source.py's exit code (it fails on any validation error) and check its printed means; record the preflight message as a warning."
+  detection: "head -1 weather_nasa_power.csv  (# source=nasa_power ...)"
+  cross_references: []

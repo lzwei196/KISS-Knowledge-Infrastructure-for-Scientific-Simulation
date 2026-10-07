@@ -29,7 +29,9 @@ jobs:
       - name: Install build dependencies
         shell: pwsh
         run: |
-          python -m pip install --quiet pyinstaller pytest truststore certifi -e kiss -e ki_tools_common -r kiss/requirements-calibration.txt
+          # Scientific helper tests need these optional packages; the desktop
+          # spec deliberately excludes them from the bundled application.
+          python -m pip install --quiet pyinstaller pytest truststore certifi pandas==2.3.1 xarray==2025.7.1 matplotlib==3.10.5 -e kiss -e ki_tools_common -r kiss/requirements-calibration.txt
           choco install innosetup -y --no-progress
 
       - name: Release boundary regressions
@@ -38,14 +40,18 @@ jobs:
           python -m pytest kiss/tests/test_data_reader_runtime.py kiss/tests/test_session_upload_safety.py kiss/tests/test_ki_guard.py 'kiss/tests/test_runtime.py::AgentSetupTests::test_julia_probe_uses_workspace_runtime_project_and_depot' -q -o faulthandler_timeout=180
           if ($LASTEXITCODE -ne 0) { throw 'release boundary regression tests failed' }
 
+      - name: Shared-library regression tests
+        shell: pwsh
+        run: |
+          # Both trees contain a top-level tests package; use separate interpreters.
+          python -m pytest ki_tools_common/ki_tools_common/tests ki_tools_common/tests/flow ki_tools_common/tests/test_units.py ki_tools_common/tests/test_climate_scenarios.py -q --junitxml=shared-regression.xml
+          if ($LASTEXITCODE -ne 0) { throw 'shared-library regression tests failed' }
+
       - name: Source regression tests
         shell: pwsh
         run: |
           python -m pytest kiss/tests -q --durations=20 -o faulthandler_timeout=180 --junitxml=desktop-regression.xml
           if ($LASTEXITCODE -ne 0) { throw 'application regression tests failed' }
-          # Both trees contain a top-level tests package; use separate interpreters.
-          python -m pytest ki_tools_common/ki_tools_common/tests ki_tools_common/tests/flow ki_tools_common/tests/test_units.py ki_tools_common/tests/test_climate_scenarios.py -q --junitxml=shared-regression.xml
-          if ($LASTEXITCODE -ne 0) { throw 'shared-library regression tests failed' }
 
       - name: Build the self-contained desktop folder
         shell: pwsh

@@ -382,6 +382,44 @@ def test_fresh_installed_library_bootstraps_only_once(active, monkeypatch):
     assert "added-later" in second["errors"] and not ki_guard.is_managed(added)
 
 
+def test_invalid_bootstrap_ki_does_not_block_unrelated_catalogue(active, monkeypatch):
+    installed = active.parent.parent / "installed-models"
+    broken = installed / "invalid-tree"
+    shutil.copytree(active, broken)
+    (broken / "SKILL.md").write_text("independently rejected KI", encoding="utf-8")
+    readers = active.parent.parent / "data-readers"
+    reader = readers / "reader"
+    shutil.copytree(active, reader)
+    (reader / "SKILL.md").write_text("valid shipped reader", encoding="utf-8")
+    monkeypatch.setattr(ki_guard, "_legacy_installation_roots", lambda: [installed, readers])
+    original_digest = ki_verification.content_digest
+    # The structural verifier returns None for an unsupported symlink or an
+    # unreadable tree. Exercise that public outcome without requiring Windows
+    # symlink creation privileges in the test process.
+    def structural_digest(root):
+        return None if Path(root).name == broken.name else original_digest(root)
+    monkeypatch.setattr(ki_verification, "content_digest", structural_digest)
+
+    result = ki_guard.enroll_catalogue(Catalog(readers))
+    assert result["legacy_migration"] and result["enrolled"] == ["reader"] and not result["errors"]
+    ki_guard.require_intact(reader)
+    inventory, created = ki_guard._legacy_inventory()
+    assert not created
+    assert inventory["excluded"] == [{"root": str(broken.absolute()),
+        "reason": f"Cannot establish a regular, contained KI tree: {broken}"}]
+    assert all(item["root"] != str(broken.absolute()) for item in inventory["models"])
+    assert flowgate.load().receipts.verify(ki_guard._home() / "catalogues", inventory)
+    rejected = ki_guard.enroll_catalogue(Catalog(installed))
+    assert broken.name in rejected["errors"] and not ki_guard.is_managed(broken)
+
+    # Repairing the filesystem later cannot turn a rejected first-use package
+    # into a fresh legacy baseline. It still needs current KDT acceptance.
+    monkeypatch.setattr(ki_verification, "content_digest", original_digest)
+    rejected_again = ki_guard.enroll_catalogue(Catalog(installed))
+    assert "cannot restart migration" in rejected_again["errors"][broken.name]
+    assert not ki_guard.is_managed(broken)
+
+
 def test_prior_signed_catalogue_migrates_recorded_hash_not_current_bytes(active, monkeypatch):
     installed = active.parent.parent / "older-installation"
     old = installed / "old"

@@ -701,24 +701,24 @@ def _interpreter(p: Path, python: str | None = None) -> list[str] | None:
 
 
 def _managed_julia(cfg) -> Path | None:
-    """Find Julia installed privately by a setup agent for this KI."""
+    """Prefer this KI's installed Julia; use PATH only without a managed runtime."""
+    if cfg is not None:
+        roles = getattr(cfg, "roles", {}) or {}
+        binaries = Path(roles.get("binaries", Path(cfg.root) / "binaries"))
+        candidates = [
+            binaries / "julia" / "bin" / "julia.exe",
+            binaries / "julia" / "bin" / "julia",
+        ]
+        for pattern in ("julia-*/bin/julia.exe", "julia-*/bin/julia"):
+            try:
+                candidates.extend(binaries.glob(pattern))
+            except OSError:
+                continue
+        managed = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if managed is not None:
+            return managed
     found = shutil.which("julia")
-    if found:
-        return Path(found)
-    if cfg is None:
-        return None
-    roles = getattr(cfg, "roles", {}) or {}
-    binaries = Path(roles.get("binaries", Path(cfg.root) / "binaries"))
-    candidates = [
-        binaries / "julia" / "bin" / "julia.exe",
-        binaries / "julia" / "bin" / "julia",
-    ]
-    for pattern in ("julia-*/bin/julia.exe", "julia-*/bin/julia"):
-        try:
-            candidates.extend(binaries.glob(pattern))
-        except OSError:
-            continue
-    return next((candidate for candidate in candidates if candidate.is_file()), None)
+    return Path(found) if found else None
 
 
 def _probe_julia_project(ki, cfg, timeout: int) -> tuple[bool, str]:

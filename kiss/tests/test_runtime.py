@@ -3775,20 +3775,59 @@ class AgentSetupTests(unittest.TestCase):
                 encoding="utf-8",
             )
             cfg = SimpleNamespace(root=root, roles={"binaries": binaries})
+            system_julia = root / "system-julia.exe"
+            system_julia.write_bytes(b"MZ")
             completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
-            with mock.patch.object(
-                    runnable.subprocess, "run", return_value=completed) as run:
+            with mock.patch.object(runnable.shutil, "which", return_value=str(system_julia)), \
+                    mock.patch.object(runnable.subprocess, "run", return_value=completed) as run:
                 ok, detail = runnable._probe_julia_project(
                     SimpleNamespace(root=root / "ki"), cfg, 25)
             self.assertTrue(ok)
             self.assertIn("Wflow", detail)
             argv = run.call_args.args[0]
             self.assertTrue(os.path.samefile(argv[0], julia))
+            self.assertEqual(argv[1], f"--project={project}")
             self.assertEqual(argv[-1], "using Wflow")
             self.assertEqual(
                 run.call_args.kwargs["env"]["JULIA_DEPOT_PATH"],
                 str(binaries / "julia_depot"),
             )
+
+    def test_julia_runtime_uses_path_only_without_a_managed_runtime(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            system_julia = root / "system-julia.exe"
+            system_julia.write_bytes(b"MZ")
+            cfg = SimpleNamespace(root=root, roles={"binaries": root / "missing-binaries"})
+            for workspace in (cfg, None):
+                with self.subTest(workspace=workspace), \
+                        mock.patch.object(runnable.shutil, "which", return_value=str(system_julia)) as which:
+                    selected = runnable._managed_julia(workspace)
+                    self.assertTrue(os.path.samefile(selected, system_julia))
+                    which.assert_called_once_with("julia")
+                with self.subTest(workspace=workspace, system_missing=True), \
+                        mock.patch.object(runnable.shutil, "which", return_value=None):
+                    self.assertIsNone(runnable._managed_julia(workspace))
+
+    def test_failed_managed_julia_probe_does_not_switch_to_system_runtime(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            binaries = root / "custom-runtimes"
+            julia = binaries / "julia" / "bin" / "julia.exe"
+            julia.parent.mkdir(parents=True)
+            julia.write_bytes(b"MZ")
+            project = root / "ki" / "julia"
+            project.mkdir(parents=True)
+            (project / "Project.toml").write_text("[deps]\n", encoding="utf-8")
+            cfg = SimpleNamespace(root=root, roles={"binaries": binaries})
+            failed = subprocess.CompletedProcess([], 1, stdout="", stderr="managed runtime dependency failure")
+            with mock.patch.object(runnable.shutil, "which", return_value=str(root / "system-julia.exe")), \
+                    mock.patch.object(runnable.subprocess, "run", return_value=failed) as run:
+                ok, detail = runnable._probe_julia_project(SimpleNamespace(root=root / "ki"), cfg, 25)
+            self.assertFalse(ok)
+            self.assertIn("managed runtime dependency failure", detail)
+            self.assertEqual(run.call_count, 1)
+            self.assertTrue(os.path.samefile(run.call_args.args[0][0], julia))
 
     def test_numbered_workspace_venv_is_a_python_candidate(self):
         with tempfile.TemporaryDirectory() as td:

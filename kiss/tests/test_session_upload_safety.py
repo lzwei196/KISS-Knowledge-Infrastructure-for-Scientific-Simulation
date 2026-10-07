@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -83,6 +84,67 @@ def test_symlink_target_is_never_followed(upload_project, tmp_path, monkeypatch,
         assert outside.read_bytes() == b"original"
     else:
         assert not outside.exists()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_fallback_rejects_link_entry_before_open(upload_project, tmp_path, monkeypatch, existing):
+    workroot, session, project = upload_project
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    outside = tmp_path / "outside.csv"
+    if existing:
+        outside.write_bytes(b"original")
+    target = project / "inputs/uploads/data.csv"
+    target.symlink_to(outside)
+    assert os.path.lexists(target)
+    assert target.exists() is existing
+    opened = []
+    def forbidden(*args):
+        opened.append(args)
+        raise AssertionError("A known reparse target must be rejected before opening it")
+    monkeypatch.setattr(sessions, "_open_upload_new", forbidden)
+    with pytest.raises(ValueError, match="upload target"):
+        sessions.save_upload(workroot, session, "data.csv", b"private")
+    assert not opened and target.is_symlink()
+    assert outside.read_bytes() == b"original" if existing else not outside.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows reparse-point creation boundary")
+def test_windows_link_inserted_after_lstat_is_never_opened(upload_project, tmp_path, monkeypatch):
+    workroot, session, project = upload_project
+    outside = tmp_path / "outside.csv"
+    target = project / "inputs/uploads/data.csv"
+    original = sessions._open_upload_new
+    intercepted = []
+    def insert_link_then_open(path, flags):
+        path = Path(path)
+        if not intercepted:
+            assert path == target and not os.path.lexists(path)
+            # The ordinary lstat has already found no entry. Replace that
+            # state before the real native CREATE_NEW/OPEN_REPARSE_POINT call.
+            path.symlink_to(outside)
+            intercepted.append(path)
+        return original(path, flags)
+    monkeypatch.setattr(sessions, "_open_upload_new", insert_link_then_open)
+    saved = sessions.save_upload(workroot, session, "data.csv", b"private")
+    assert intercepted == [target]
+    assert saved != target and not saved.is_symlink()
+    assert saved.read_bytes() == b"private"
+    assert target.is_symlink() and not outside.exists()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows reparse-point creation boundary")
+def test_windows_native_create_refuses_existing_link_without_lstat(tmp_path, existing):
+    outside = tmp_path / "outside.csv"
+    if existing:
+        outside.write_bytes(b"original")
+    link = tmp_path / "upload.csv"
+    link.symlink_to(outside)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY
+    with pytest.raises(FileExistsError):
+        sessions._open_upload_new(link, flags)
+    assert link.is_symlink()
+    assert outside.read_bytes() == b"original" if existing else not outside.exists()
 
 
 def test_generic_and_targeted_uploads_keep_sanitized_paths_and_state(upload_project):

@@ -176,6 +176,7 @@ def _legacy_inventory() -> tuple[dict, bool]:
             except (OSError, ValueError, TypeError) as error:
                 raise KIIntegrityError(f"Cannot read legacy KI inventory: {error}") from error
         records: dict[tuple[str, str], dict] = {}
+        excluded: list[dict[str, str]] = []
 
         def add(root, digest, origin):
             if (not isinstance(root, str) or not isinstance(digest, str)
@@ -218,10 +219,19 @@ def _legacy_inventory() -> tuple[dict, bool]:
                     if root.is_dir() and (root / "SKILL.md").is_file():
                         if os.path.normcase(str(root.absolute())) in recorded_roots:
                             continue  # Recorded original bytes outrank edited disk bytes.
-                        add(str(root.absolute()), _digest(root), "installed_bootstrap")
+                        try:
+                            add(str(root.absolute()), _digest(root), "installed_bootstrap")
+                        except (OSError, ValueError, RuntimeError) as error:
+                            # One linked/unreadable package must not prevent
+                            # valid, unrelated installed KIs from migrating.
+                            # No digest is admitted for this root; recording
+                            # the rejection in the once-only signed inventory
+                            # also prevents a later fix from restarting trust.
+                            excluded.append({"root": str(root.absolute()), "reason": str(error)})
         doc = receipts.sign(authority, {
             "schema_version": 1, "origin": "one_time_legacy_inventory",
             "models": sorted(records.values(), key=lambda item: (item["root"], item["digest"])),
+            "excluded": sorted(excluded, key=lambda item: item["root"]),
         })
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_name(path.name + f".{uuid.uuid4().hex[:8]}.tmp")

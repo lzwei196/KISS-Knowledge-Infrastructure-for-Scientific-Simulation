@@ -2,3 +2,6 @@ docs/manual/*.pdf binary
 # These files are checked against a byte-level SHA-256 manifest. Keep the
 # canonical LF payload on Windows as well as on macOS/Linux.
 ki_tools_common/ki_tools_common/flow/data/** text eol=lf
+# The bundled observation readers declare the exact source-byte SHA-256 in
+# kiss.yaml. Git must not rewrite their LF payload during Windows checkout.
+kiss/data_kis/*/tools/read_observations.py text eol=lf

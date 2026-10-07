@@ -538,6 +538,45 @@ def open_in_file_manager(workroot: Path, s: dict,
     return target
 
 
+def _open_upload_new(path: Path, flags: int) -> int:
+    """Exclusively create a file without following a Windows final reparse point.
+
+    Some Windows CRT versions follow dangling links even with O_EXCL. Native
+    CREATE_NEW plus OPEN_REPARSE_POINT tests the directory entry itself; a link
+    appearing after the caller's lstat is a collision, never an upload target.
+    """
+    import os
+
+    if os.name != "nt":
+        return os.open(path, flags, 0o600)
+    import ctypes
+    from ctypes import wintypes
+    import errno
+    import msvcrt
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    # GENERIC_WRITE, no sharing, CREATE_NEW, NORMAL | OPEN_REPARSE_POINT.
+    handle = create(str(path), 0x40000000, 0, None, 1, 0x80 | 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        error = ctypes.get_last_error()
+        if error in (80, 183):  # ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(path))
+        raise ctypes.WinError(error)
+    try:
+        # Ownership passes to the CRT descriptor, then to fdopen below.
+        return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+    except BaseException:
+        close(handle)
+        raise
+
+
 def save_upload(workroot: Path, s: dict, filename: str, data: bytes, item: str = "") -> Path:
     """Save a browser-supplied input without allowing path traversal.
 
@@ -601,11 +640,21 @@ def save_upload(workroot: Path, s: dict, filename: str, data: bytes, item: str =
                 if fd_walk:
                     fd = os.open(name, flags | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
                 else:
-                    fd = os.open(folder / name, flags, 0o600)
+                    target = folder / name
+                    try:
+                        info = target.lstat()  # exists() misses dangling links.
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        if (stat.S_ISLNK(info.st_mode) or
+                                getattr(info, "st_file_attributes", 0)
+                                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+                            raise ValueError("upload target must not be a symlink or reparse point")
+                    fd = _open_upload_new(target, flags)
                 break
             except FileExistsError:
-                # Exclusive creation handles both concurrent uploads and
-                # dangling symlinks; a timestamp alone can overwrite a file.
+                # Atomic exclusive creation handles concurrent uploads and a
+                # link inserted after inspection; never reuse an existing name.
                 name = f"{stem}-{uuid.uuid4().hex}{suffix}"
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)

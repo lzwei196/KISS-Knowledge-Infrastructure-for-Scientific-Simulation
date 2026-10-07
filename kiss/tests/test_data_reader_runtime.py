@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import shutil
+import subprocess
 from types import SimpleNamespace
 import venv
 
@@ -12,6 +13,43 @@ from kiss_cli.catalog import KI
 from kiss_cli.manifest import Manifest
 
 SOURCE = Path(__file__).resolve().parents[1]
+
+
+def test_pinned_readers_survive_windows_git_checkout(tmp_path):
+    """Exercise Git's actual checkout filter, not a text/hash normalization."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    shutil.copy2(SOURCE.parent / ".gitattributes", repository / ".gitattributes")
+    shutil.copytree(SOURCE / "data_kis", repository / "kiss/data_kis",
+                    ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+    git = shutil.which("git")
+    assert git, "Git is required to test Windows release checkout integrity"
+
+    def run(*arguments):
+        subprocess.run([git, "-c", "core.autocrlf=true", "-c", "core.safecrlf=false", *arguments],
+                       cwd=repository, check=True, capture_output=True, timeout=30)
+
+    run("init", "--quiet")
+    run("add", "--", ".gitattributes", "kiss/data_kis")
+    checkout = tmp_path / "checkout"
+    run("checkout-index", "--all", f"--prefix={checkout.as_posix()}/")
+    for name in python_script.DATA_READERS:
+        ki = KI(name, checkout / "kiss/data_kis" / name)
+        manifest = Manifest.load(ki.root / "kiss.yaml")
+        runner = python_script.resolve(ki, manifest.python_script)
+        assert b"\r\n" not in runner.read_bytes()
+        assert runner.read_bytes() == (SOURCE / "data_kis" / name / "tools/read_observations.py").read_bytes()
+
+
+@pytest.mark.parametrize("name", list(python_script.DATA_READERS))
+def test_newline_only_reader_drift_still_fails_exact_hash(package, name):
+    ki, manifest, _cfg = package(name)
+    runner = ki.root / "tools/read_observations.py"
+    raw = runner.read_bytes()
+    assert b"\r\n" not in raw
+    runner.write_bytes(raw.replace(b"\n", b"\r\n"))
+    with pytest.raises(ValueError, match="SHA256 mismatch"):
+        python_script.resolve(ki, manifest.python_script)
 
 
 @pytest.fixture(scope="module")

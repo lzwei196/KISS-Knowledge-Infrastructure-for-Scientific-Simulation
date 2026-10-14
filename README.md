@@ -149,19 +149,29 @@ valid for your study.
 
 #### Desktop Windows
 
-**Windows x64 0.6.58:** [release notes and assets](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.58) · [installer](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Setup-v0.6.58-Windows-x64.exe) · [portable ZIP](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-v0.6.58-Windows-x64.zip) · [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/SHA256SUMS-Windows.txt).
+**Windows x64 0.6.60:** [release notes and assets](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.60) · [installer](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Setup-v0.6.60-Windows-x64.exe) · [portable ZIP](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-v0.6.60-Windows-x64.zip) · [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/SHA256SUMS-Windows.txt).
 
 The Windows desktop application includes its own Python runtime and KI packages. Model
 binaries, compilers and model-specific environments may still need installation;
 use **KI Library → Set up with agent** and check verification. Setup can require
 assistance.
 
-Windows reliability fixes keep bundled observation readers verifiable in fresh
-builds, prefer the project's managed Julia runtime, and reject linked upload
-destinations. An invalid legacy KI no longer blocks unrelated valid packages;
-the invalid package remains blocked until repaired and verified.
+Windows 0.6.60 improves setup and path adaptation after KI updates, reuses
+compatible KDT-approved maintenance repairs, checks ready input paths and tool
+arguments before approval, and continues an approved run after project
+preflight. Completion now reports verified execution separately from scientific
+validation. The Codex launcher also correctly composes sandbox arguments for
+fresh and resumed commands.
 
-**New in 0.6.58: investigate and repair a project KI.** Open **Investigate KI /
+Earlier reviewed DeepSeek GUI testing completed a native DSSAT reference run, the KDT-repaired
+reader, observation extraction and comparison with four verified execution
+records. That test used an installed runtime and a separately approved KI
+repair; the bundled 127-KI library is retained from the preceding release.
+Updated KI packages remain subject to validation. Provider sign-in and compatible
+CLI/model settings are still required. Changed helpers can require projects and
+repairs to be verified again. See the release notes for exact scope and final-build checks.
+
+**Investigate and repair a project KI.** Open **Investigate KI /
 排查 KI** to run three independent reviewer conversations against the same frozen
 project context. Read their evidence and uncertainties, then choose **Create
 repair draft → Build repair with agent → Verify with KDT**. Review the repair
@@ -178,13 +188,13 @@ pass. The in-app **Guide / 使用指南** menu explains the workflow in both lan
 set up the KI and software, then approve the run and inspect real outputs.
 Both languages include actual interface screenshots and an output preview
 from that documented example. The unchanged **0.6.55 guide edition** is included
-in Windows 0.6.58; filenames retain the document edition number.
+in Windows 0.6.60; filenames retain the document edition number.
 
 | Guide | English | 简体中文 |
 |---|---|---|
-| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
-| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
-| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.58/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
+| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
 
 Inside Windows Desktop, **Guide / 使用指南** opens the same documents as offline
 HTML or PDF. These replace the older 0.6.24 manuals as the current Windows

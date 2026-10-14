@@ -122,25 +122,28 @@ def test_even_current_previous_publication_is_freshly_bound_to_new_origin(case):
 def test_changed_evidence_policy_rechecks_equal_bytes(case, changed):
     c = case
     snapshot, meta, old_report = current_published_previous(c)
-    if changed == "profile":
-        c.monkeypatch.setattr(publication, "profile_digest", lambda: "e" * 64)
-        field, value = "profile_digest", "e" * 64
-    elif changed == "doctor":
-        c.monkeypatch.setattr(doctor, "VALIDATION_POLICY_VERSION", "fixture-new-doctor")
-        field, value = "doctor_policy", "fixture-new-doctor"
-    else:
-        c.monkeypatch.setattr(kdtstudio, "engine_source_digest", lambda *_: "e" * 64)
-        c.monkeypatch.setattr(kdtstudio, "engine_status", lambda: {
-            "installed": True, "commit": kdtstudio.REVIEWED_COMMIT, "source_digest": "e" * 64})
-        field, value = "engine_source_digest", "e" * 64
-    with pytest.raises(ValueError):
-        publication.require_snapshot(snapshot, meta)
-    c.manager._validate(c.incoming)
-    row, = c.manager._ki_verification
-    assert len(c.engine.seen) == 1 and row["state"] == "PublishedPackageAccepted"
-    assert row["report"][field] == value and old_report[field] != value
-    publication.require_current(c.incoming / "models/Demo", row["report"],
-                                name="Demo", origin=c.manager._published_origin)
+    # Restore these overrides before the fixture's outer isolated_engine
+    # context restores the real host functions.
+    with c.monkeypatch.context() as changed_policy:
+        if changed == "profile":
+            changed_policy.setattr(publication, "profile_digest", lambda: "e" * 64)
+            field, value = "profile_digest", "e" * 64
+        elif changed == "doctor":
+            changed_policy.setattr(doctor, "VALIDATION_POLICY_VERSION", "fixture-new-doctor")
+            field, value = "doctor_policy", "fixture-new-doctor"
+        else:
+            changed_policy.setattr(kdtstudio, "engine_source_digest", lambda *_: "e" * 64)
+            changed_policy.setattr(kdtstudio, "engine_status", lambda: {
+                "installed": True, "commit": kdtstudio.REVIEWED_COMMIT, "source_digest": "e" * 64})
+            field, value = "engine_source_digest", "e" * 64
+        with pytest.raises(ValueError):
+            publication.require_snapshot(snapshot, meta)
+        c.manager._validate(c.incoming)
+        row, = c.manager._ki_verification
+        assert len(c.engine.seen) == 1 and row["state"] == "PublishedPackageAccepted"
+        assert row["report"][field] == value and old_report[field] != value
+        publication.require_current(c.incoming / "models/Demo", row["report"],
+                                    name="Demo", origin=c.manager._published_origin)
 
 
 @pytest.mark.parametrize("damage", ["source", "source_new_upstream", "baseline"])

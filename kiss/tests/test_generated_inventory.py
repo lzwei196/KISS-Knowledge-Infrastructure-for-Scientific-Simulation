@@ -37,9 +37,11 @@ def case(tmp_path, monkeypatch):
         {"id": "dssat_data_bundle", "dataset_id": "dssat_data", "status": "missing", "required_by": ["DSSAT"],
          "local_paths": ["inputs/observations/dssat_data"], "needs_user": False, "agent_resolvable": True},
         {"id": "dssat_data_bundle_report", "status": "missing", "required_by": ["DSSAT"],
-         "local_paths": ["outputs/diagnosis/report.json"], "needs_user": False, "agent_resolvable": True},
+         "local_paths": ["outputs/diagnosis/report.json"], "output_validation": "json_report_v1",
+         "needs_user": False, "agent_resolvable": True},
         {"id": "final", "status": "missing", "required_by": ["DSSAT"],
-         "local_paths": ["outputs/diagnosis/final.json"], "needs_user": False, "agent_resolvable": True}]}
+         "local_paths": ["outputs/diagnosis/final.json"], "output_validation": "json_report_v1",
+         "needs_user": False, "agent_resolvable": True}]}
     return project, root, plan, inventory
 
 

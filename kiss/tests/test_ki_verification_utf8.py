@@ -20,6 +20,7 @@ _TEXT = "river water — température 水温\n"
 def gbk_default(monkeypatch):
     """Exercise the affected default independently of the test host's locale."""
     original = Path.open
+    original_read_text = Path.read_text
 
     def open_with_gbk(self, mode="r", buffering=-1, encoding=None,
                       errors=None, newline=None):
@@ -27,7 +28,15 @@ def gbk_default(monkeypatch):
             encoding = "gbk"
         return original(self, mode, buffering, encoding, errors, newline)
 
+    def read_text_with_locale(self, encoding=None, errors=None):
+        # UTF-8 mode resolves an omitted encoding before calling Path.open.
+        # Keep this fixture's legacy default explicit, without changing an
+        # encoding supplied by the host's private UTF-8 adapter.
+        return original_read_text(self, encoding="locale" if encoding is None else encoding,
+                                  errors=errors)
+
     monkeypatch.setattr(Path, "open", open_with_gbk)
+    monkeypatch.setattr(Path, "read_text", read_text_with_locale)
 
 
 def test_utf8_adapter_is_private_and_propagates_to_helper_paths(tmp_path, monkeypatch, gbk_default):

@@ -37,7 +37,9 @@ def case(tmp_path, monkeypatch):
     tool = root / "tools/run.py"
     # It records arguments, so the test launches real Python without a model run.
     tool.write_text("import json,sys\nfrom pathlib import Path\n"
-                    "Path('launched.json').write_text(json.dumps(sys.argv[1:]))\n")
+                    "Path('launched.json').write_text(json.dumps(sys.argv[1:]))\n"
+                    "Path('outputs').mkdir(exist_ok=True)\n"
+                    "Path('outputs/runtime.json').write_text(json.dumps({'arguments':sys.argv[1:]}))\n")
     cfg = project_paths.model_config(project, "CRHM", paths.KissConfig.default(project))
     cfg.python = sys.executable
     cfg.roles["binaries"] = binaries
@@ -98,6 +100,17 @@ def test_checked_external_file_alias_is_allowed_as_named_runtime_only(case, caps
     result = invoke(case, adapter, arguments, capsys)
     assert (result[0] == 0) if adapter == "cli" else result.startswith("exit_code=0")
     assert json.loads((case.project / "launched.json").read_text()) == arguments
+    receipt_path = next((case.project / ".geoforge/receipts/model-runs").glob("*.json"))
+    doc = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert case.flow.flow.receipts.verify(case.project, doc)
+    assert doc["command"][-len(arguments):] == arguments
+    assert doc["input_coverage"]["runtime_arguments"] == [{
+        "argument_index": 1 if form == "separate" else 0, "option": "--crhm_exe",
+        "path": str(case.alias), "target": str(case.external.resolve())}]
+    assert doc["input_coverage"]["argument_count"] == len(arguments)
+    assert doc["inputs"] == [{"path": str(case.external.resolve()),
+        "bytes": case.external.stat().st_size,
+        "sha256": case.flow.flow.receipts.sha256_file(case.external)}]
 
 
 @pytest.mark.parametrize("adapter", ["api", "cli"])
@@ -207,3 +220,174 @@ def test_alias_retargeted_during_verification_cannot_get_a_pass(case, monkeypatc
     result = pv.verify(case.project, case.ki, Manifest.load(case.ki.root / "kiss.yaml"))
     assert not result["ok"]
     assert not pv.status(case.project, case.ki)["can_run"]
+
+
+def _retarget_same_bytes(case):
+    other = case.external.with_name("other.exe")
+    other.write_bytes(case.external.read_bytes())
+    other.chmod(0o755)
+    case.alias.unlink()
+    case.alias.symlink_to(other)
+
+
+def _approve_runtime_output(case):
+    # A harmless real wrapper report makes these currentness tests start with
+    # a genuine passed receipt, without pretending the fake native bytes ran.
+    case.flow.plan["steps"][0].update(kind="check", outputs=["report"])
+    case.flow.inventory = {"schema_version": "1.0", "items": [{"id": "report", "status": "missing",
+        "local_paths": ["outputs/runtime.json"], "output_validation": "json_report_v1"}]}
+    case.flow.flow.plan.write_artifacts(case.project, case.flow.plan, case.flow.inventory)
+    case.flow.flow.approval.approve(case.project, by="user")
+    case.flow.reload_artifacts()
+
+
+@pytest.mark.parametrize("damage", ["same-byte-retarget", "target-bytes", "target-removed"])
+def test_runtime_receipt_alone_detects_current_binding_and_target_damage(case, capsys, damage):
+    _approve_runtime_output(case)
+    verify(case)
+    invoke(case, "api", ["--crhm_exe", str(case.alias)], capsys)
+    receipt_path = next((case.project / ".geoforge/receipts/model-runs").glob("*.json"))
+    before = receipt_path.read_bytes()
+    assert case.flow.evidence()["receipts_verified"]
+    if damage == "same-byte-retarget":
+        _retarget_same_bytes(case)
+    elif damage == "target-bytes":
+        case.external.write_bytes(case.external.read_bytes().replace(b"native", b"edited"))
+    else:
+        case.external.unlink()
+    # No project-verification status call: the signed run evidence itself
+    # checks the original alias location, even when target bytes are identical.
+    evidence = case.flow.evidence()
+    assert evidence["stale_steps"] == ["CRHM:run"]
+    assert not evidence["receipts_verified"]
+    assert receipt_path.read_bytes() == before
+    assert case.flow.flow.receipts.verify(case.project, json.loads(before))
+
+
+@pytest.mark.parametrize("when", ["capture", "after-capture", "run", "receipt"])
+def test_runtime_retarget_during_attempt_never_earns_a_pass(case, capsys, monkeypatch, when):
+    _approve_runtime_output(case)
+    verify(case)
+    receipts = case.flow.flow.receipts
+    if when == "capture":
+        original = receipts._file_entry
+        def capture(path, project):
+            result = original(path, project)
+            if Path(path) == case.external.resolve():
+                _retarget_same_bytes(case)
+            return result
+        monkeypatch.setattr(receipts, "_file_entry", capture)
+    elif when == "after-capture":
+        original = case.flow.capture_step_inputs
+        def capture(*args, **kwargs):
+            result = original(*args, **kwargs)
+            _retarget_same_bytes(case)
+            return result
+        monkeypatch.setattr(case.flow, "capture_step_inputs", capture)
+    elif when == "run":
+        original = execution.run_process
+        def run(*args, **kwargs):
+            result = original(*args, **kwargs)
+            _retarget_same_bytes(case)
+            return result
+        monkeypatch.setattr(execution, "run_process", run)
+    else:
+        original = case.flow.record_tool_run
+        def record(*args, **kwargs):
+            _retarget_same_bytes(case)
+            return original(*args, **kwargs)
+        monkeypatch.setattr(case.flow, "record_tool_run", record)
+    arguments = ["--crhm_exe", str(case.alias)]
+    if when in {"capture", "after-capture"}:
+        denied(case, "api", arguments, capsys)
+    else:
+        invoke(case, "api", arguments, capsys)
+        doc = json.loads(next((case.project / ".geoforge/receipts/model-runs").glob("*.json")).read_text())
+        assert doc["validation"]["status"] == "failed"
+        assert any(row["check"] == "runtime_argument_binding" and not row["ok"]
+                   for row in doc["validation"]["checks"])
+        assert not case.flow.evidence()["receipts_verified"]
+
+
+def _authorization(case, arguments):
+    from kiss_cli import runtime_arguments
+    return runtime_arguments.validate(project=case.project, ki="CRHM", ki_root=case.ki.root,
+        cfg=case.cfg, arguments=arguments, cwd=case.project, allow_runtime=True)
+
+
+@pytest.mark.parametrize("form", ["separate", "equals"])
+def test_checked_tilde_runtime_alias_captures_the_canonical_target(case, capsys, monkeypatch, form):
+    home = case.project.parent
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("HOME", str(home))
+    verify(case)
+    alias = "~/" + case.alias.relative_to(home).as_posix()
+    arguments = ["--binary", alias] if form == "separate" else ["--binary=" + alias]
+    result = invoke(case, "api", arguments, capsys)
+    assert result.startswith("exit_code=0")
+    doc = json.loads(next((case.project / ".geoforge/receipts/model-runs").glob("*.json")).read_text())
+    assert doc["inputs"][0]["path"] == str(case.external.resolve())
+    assert doc["command"][-len(arguments):] == arguments
+    assert case.flow.evidence()["stale_steps"] == []
+
+
+@pytest.mark.parametrize("scope", ["file", "directory"])
+def test_verified_runtime_never_allows_inventory_aliases(case, scope):
+    verify(case)
+    arguments = ["--binary", str(case.alias)]
+    auth = _authorization(case, arguments)
+    raw = case.alias if scope == "file" else case.alias.parent
+    inventory = {"items": [{"id": "data", "local_paths": [str(raw)]}]}
+    with pytest.raises(ValueError, match="alias"):
+        case.flow.flow.receipts.capture_inputs(case.project, {"inputs": ["data"]}, inventory,
+            arguments, case.project, runtime_authorization=auth)
+
+
+@pytest.mark.parametrize("damage", ["raw-dict", "arguments", "cwd", "unused", "duplicate", "target-alias"])
+def test_capture_rejects_forged_or_mismatched_runtime_context(case, damage):
+    from dataclasses import asdict, replace
+    verify(case)
+    arguments = ["--binary", str(case.alias)]
+    auth = _authorization(case, arguments)
+    if damage == "raw-dict":
+        auth = asdict(auth)
+    elif damage == "arguments":
+        arguments[0] = "--output"
+    elif damage == "cwd":
+        auth = replace(auth, cwd=str(case.project / "elsewhere"))
+    elif damage == "unused":
+        auth = replace(auth, bindings=((9, "--binary", str(case.alias), str(case.external)),))
+    elif damage == "duplicate":
+        auth = replace(auth, bindings=auth.bindings + auth.bindings)
+    else:
+        auth = replace(auth, bindings=((1, "--binary", str(case.alias), str(case.alias)),))
+    with pytest.raises(ValueError):
+        case.flow.flow.receipts.capture_inputs(case.project, {}, {}, arguments, case.project,
+                                              runtime_authorization=auth)
+
+
+def test_request_and_plan_cannot_inject_runtime_authorization(case):
+    verify(case)
+    undeclared = case.binaries / "undeclared.exe"
+    undeclared.symlink_to(case.external)
+    forged = {"bindings": [[1, "--binary", str(undeclared), str(case.external)]]}
+    case.flow.plan["steps"][0]["runtime_authorization"] = forged
+    case.flow.flow.plan.write_artifacts(case.project, case.flow.plan, case.flow.inventory)
+    case.flow.flow.approval.approve(case.project, by="user")
+    case.flow.reload_artifacts()
+    with pytest.raises(api.ToolError, match="escapes"):
+        api.execute_tool("run_ki_tool", {"tool_path": "tools/run.py", "plan_step_id": "CRHM:run",
+            "arguments": ["--binary", str(undeclared)], "runtime_authorization": forged},
+            case.ki, case.cfg, project_mode=True, flow=case.flow)
+    assert not (case.project / "launched.json").exists()
+
+
+def test_tampered_runtime_mapping_does_not_verify(case, capsys):
+    verify(case)
+    invoke(case, "api", ["--binary", str(case.alias)], capsys)
+    path = next((case.project / ".geoforge/receipts/model-runs").glob("*.json"))
+    doc = json.loads(path.read_text())
+    doc["input_coverage"]["runtime_arguments"][0]["target"] = str(case.alias)
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert not case.flow.flow.receipts.verify(case.project, doc)
+    assert not case.flow.evidence()["receipts_verified"]

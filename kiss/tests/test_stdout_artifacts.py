@@ -34,6 +34,8 @@ def approved(tmp_path, monkeypatch, source=None, *, contract=True, maximum=10485
     ctx.inventory["items"].append({"id": "readout", "required_by": ["M"], "status": "missing",
         "acceptable_sources": ["reviewed reader stdout"], "local_paths": ["outputs/check/readout.json"],
         "agent_resolvable": True, "needs_user": False, "decision": "Produced by the approved reader"})
+    if not contract:
+        ctx.inventory["items"][-1]["output_validation"] = "json_report_v1"
     assert ctx.flow.write_plan(ctx.plan, ctx.inventory) == []
     ctx.flow.flow.approval.approve(ctx.project, by="auto")
     ctx.flow.reload_artifacts()

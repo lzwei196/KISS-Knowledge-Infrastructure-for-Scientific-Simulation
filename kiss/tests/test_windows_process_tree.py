@@ -20,7 +20,12 @@ from kiss_cli import execution, processes
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows process trees")
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-_SLEEP = [sys.executable, "-c", "import time; time.sleep(60)"]
+# These fixtures exercise one direct wrapper root. Windows venv python.exe is
+# an additional launcher process, so use the base interpreter even when the
+# test harness itself runs in a venv. Launcher-wrapper trees are a separate
+# topology; do not silently substitute one for the assertions below.
+_PYTHON = getattr(sys, "_base_executable", sys.executable)
+_SLEEP = [_PYTHON, "-c", "import time; time.sleep(60)"]
 _BOTH = processes._PROCESS_TERMINATE | processes._PROCESS_QUERY_LIMITED_INFORMATION
 
 
@@ -35,7 +40,7 @@ def _spawner(pidfile: Path, child: list[str], then: str) -> list[str]:
         "    f.write(f'{os.getpid()} {child.pid}')\n"
         "os.replace(pidfile + '.tmp', pidfile)\n"
         + then)
-    return [sys.executable, "-c", code]
+    return [_PYTHON, "-c", code]
 
 
 def _launch(argv: list[str]) -> subprocess.Popen:

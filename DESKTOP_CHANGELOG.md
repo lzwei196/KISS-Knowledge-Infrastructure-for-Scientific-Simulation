@@ -21,11 +21,17 @@ Desktop update agents should read the JSON manifest first and use this file to e
   from appearing in another chat.
 - Include the runtime-data identity source in frozen builds. Correct duplicate
   Codex sandbox flags and option placement for resumed commands.
-- A reviewed DeepSeek GUI DSSAT reference workflow produced four valid execution
+- Accept an explicitly verified native executable alias during input capture,
+  recording its target bytes and checking that the alias still points to the
+  approved executable. Ordinary data-input aliases remain subject to strict checks.
+- Clean up tracked child processes when a Windows wrapper exits. Let the actual
+  virtual-environment wrapper save its run record during bounded graceful Stop.
+- Earlier reviewed DeepSeek GUI DSSAT testing (v51, rechecked under v52) produced four valid execution
   records: native replay, repaired KI reader, MZA observation reader and comparison.
   Yield was 2293 versus 2929 kg/ha (−21.71%); one pair cannot establish NSE or skill.
   The test used an installed runtime and a separately KDT-approved local KI repair;
-  it does not establish out-of-box readiness of the unchanged bundled library.
+  it does not establish out-of-box readiness of the unchanged bundled library or
+  a fresh run of this final release. Changed helpers can require verification again.
 - The last checked main-library update accepted 110 packages and rejected 17 before
   activation. The previous validated library remains selected. Server-side KI
   repairs, broader native coverage and provider configuration remain separate work.
@@ -33,8 +39,10 @@ Desktop update agents should read the JSON manifest first and use this file to e
   attached Windows-release-validation.json and JUnit reports. The six offline
   EN/ZH PDF guides retain reviewed edition 0.6.55.
 - Windows 0.6.59 改进 KI 更新后的安装与路径适配、KDT 维护修复、计划与输出校验、
-  预检后自动继续运行，以及状态显示。已通过 DS GUI 完成 DSSAT 参考算例的实际运行、
-  读取和观测对比；该测试使用独立验证的本地 KI 修复，不代表全部随包模型已安装或科学验证。
+  预检后自动继续运行，以及状态显示；修复已验证的原生程序路径别名处理、子进程清理，
+  以及虚拟环境下停止时的运行记录保存。此前 v51/v52 的 DS GUI 测试已完成 DSSAT 参考算例
+  的实际运行、读取和观测对比；该测试使用独立验证的本地 KI 修复，不代表本次最终版本的
+  新一轮端到端测试，也不代表全部随包模型已安装或科学验证。辅助工具变更后可能需要重新验证。
   下载附件提供源代码、便携版与安装版检查记录；中英文离线指南继续保留0.6.55版次。
 
 ## v0.6.58 — Windows checkout and runtime compatibility fixes

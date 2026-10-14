@@ -4,8 +4,8 @@ import json
 import pytest
 
 from kiss_cli import flowrun, project_status
-from test_execution_continuation import c, run_step
-from test_execution_evidence_currentness import case, approve, run
+from .test_execution_continuation import c, run_step
+from .test_execution_evidence_currentness import case, approve, run
 
 
 @pytest.mark.parametrize('change', ['delete', 'rewrite'])

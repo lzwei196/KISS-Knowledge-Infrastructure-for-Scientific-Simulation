@@ -345,10 +345,12 @@ class FlowSession:
                 return str(st.get("kind") or "process")
         return "process"
 
-    def capture_step_inputs(self, step: dict, arguments: list[str], cwd: Path) -> dict:
+    def capture_step_inputs(self, step: dict, arguments: list[str], cwd: Path, *,
+                            runtime_authorization=None) -> dict:
         """Pre-launch read scope comes from this step's approved inventory."""
         try:
-            return self.flow.receipts.capture_inputs(self.project, step, self.inventory or {}, arguments, cwd)
+            return self.flow.receipts.capture_inputs(self.project, step, self.inventory or {}, arguments, cwd,
+                **({"runtime_authorization": runtime_authorization} if runtime_authorization is not None else {}))
         except (OSError, ValueError, TypeError, RuntimeError) as error:
             raise FlowDenied(f"Cannot capture approved inputs: {error}") from error
 
@@ -514,7 +516,11 @@ class FlowSession:
                             **({"project_data_tool": step["project_data_tool"]}
                                if "project_data_tool" in step else
                                {"data_ki": data_ki} if data_ki is not None else {}))
-        summary = {"receipt": str(path), "run_id": json.loads(path.read_text(encoding="utf-8"))["run_id"],
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+        # Receipt creation may fail a runtime binding that changed while output
+        # validation ran. Report the signed result, not the earlier local one.
+        validation = recorded["validation"]
+        summary = {"receipt": str(path), "run_id": recorded["run_id"],
                    "outputs": [p.relative_to(self.project).as_posix()
                                if _under(p, self.project) else str(p)
                                for p in outputs][:50],

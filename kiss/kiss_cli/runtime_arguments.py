@@ -1,7 +1,8 @@
 """Constrain tool path arguments and expose a checked native runtime by name.
 
-This is an argument capability for trusted KI tools, not an OS sandbox. A
-binding pins the declaration's resolved location, not executable contents.
+This is an argument capability for trusted KI tools, not an OS sandbox. The
+preflight binding pins the declaration's resolved location; execution receipts
+also capture the native target bytes and the alias-to-target mapping.
 """
 from __future__ import annotations
 
@@ -65,7 +66,7 @@ def _runtime_option(option: str, model: str) -> bool:
     return option in allowed
 
 
-def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False) -> None:
+def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False):
     """Check API and CLI arguments immediately before common dispatch.
 
     Only an exact named native runtime or declared support-data root can leave
@@ -78,6 +79,7 @@ def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False) 
             not all(isinstance(value, str) and len(value) <= 4000 for value in arguments)):
         raise ValueError("arguments must be a list of short strings")
     receipt = None
+    runtime_bindings = []
     for index, token in enumerate(arguments):
         option = ""
         value = token
@@ -114,6 +116,7 @@ def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False) 
                 if (any(roles.get(role) and candidate.is_relative_to(_lexical(roles[role]))
                         for role in ("binaries", "home")) and
                         bindings.get(str(candidate)) == str(resolved) and resolved.is_file()):
+                    runtime_bindings.append((index, option, str(candidate), str(resolved)))
                     continue
             elif option == "--runtime-data":
                 # status() rechecks the contract, aliases and all actual file
@@ -125,3 +128,11 @@ def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False) 
                         resolved.is_dir()):
                     continue
         raise ValueError("tool argument path escapes the project and KI: " + value)
+    if runtime_bindings:
+        # This in-process capability is created only after checking the current
+        # signed project preflight. Request/plan JSON cannot supply it. Load the
+        # same bundled module as FlowSession so its type has one runtime identity.
+        from .flowgate import load
+        return load().receipts.RuntimeArgumentCapture(
+            str(project), str(cwd), tuple(arguments), tuple(runtime_bindings))
+    return None

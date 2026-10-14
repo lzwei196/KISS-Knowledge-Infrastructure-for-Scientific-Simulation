@@ -338,7 +338,7 @@ def test_installer_stop_from_emit_does_not_start_next_phase(tmp_path, monkeypatc
     project = tmp_path / "project"
     project.mkdir()
     (project / "status.json").write_text('{"ok":true,"verified_at":123,"installation_ready":true}')
-    ki_root = tmp_path / "ki"
+    ki_root = tmp_path / "Demo"
     ki_root.mkdir()
     (ki_root / "SKILL.md").write_text("# Local setup fixture\n")
     invoked = []

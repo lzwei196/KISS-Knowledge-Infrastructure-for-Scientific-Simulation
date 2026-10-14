@@ -6,8 +6,8 @@ import time
 import pytest
 
 from kiss_cli import execution, flowrun, gui, project_status, projectrun, setup
-from test_execution_continuation import c, run_step
-from test_project_status_render import evaluate, fixture_data
+from .test_execution_continuation import c, run_step
+from .test_project_status_render import evaluate, fixture_data
 
 
 def question(c, **extra):

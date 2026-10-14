@@ -440,6 +440,14 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
         doc["declared_outputs"] = declared_outputs
     if input_snapshot is not None:
         doc["input_coverage"] = input_snapshot["input_coverage"]
+        runtime_errors = _runtime_coverage_errors(project, doc)
+        if runtime_errors:
+            # Keep a failed attempt if the binding changed during execution or
+            # validation. Never sign it as a passed run of the verified target.
+            doc["validation"] = {**doc["validation"], "status": "failed",
+                "checks": [*doc["validation"].get("checks", []),
+                           {"check": "runtime_argument_binding", "ok": False,
+                            "level": "fail", "detail": "; ".join(runtime_errors)}]}
     if execution_status is not None:
         doc.update(execution_status=execution_status, process_started=process_started,
                    binary_actually_ran=process_started is True)
@@ -1076,6 +1084,85 @@ MAX_INPUT_FILES = 4096
 MAX_INPUT_ENTRIES = 8192
 
 
+def _runtime_binding_rows(project, arguments, bindings, cwd):
+    """Check exact named runtime tokens without granting inventory path access."""
+    if not isinstance(bindings, (list, tuple)) or not bindings or len(bindings) > 100:
+        raise ValueError("Invalid runtime argument bindings")
+    rows, seen = [], set()
+    for binding in bindings:
+        if not isinstance(binding, (list, tuple)) or len(binding) != 4:
+            raise ValueError("Malformed runtime argument binding")
+        index, option, alias, target = binding
+        if (type(index) is not int or index < 0 or index >= len(arguments) or index in seen
+                or not isinstance(option, str) or not option.startswith("--")
+                or not isinstance(alias, str) or not isinstance(target, str)):
+            raise ValueError("Malformed runtime argument binding")
+        token = arguments[index]
+        if token.startswith("--") and "=" in token:
+            actual_option, value = token.split("=", 1)
+        else:
+            actual_option, value = (arguments[index - 1] if index else ""), token
+        candidate = Path(value).expanduser()
+        lexical = Path(os.path.abspath(candidate if candidate.is_absolute() else Path(cwd) / candidate))
+        source = Path(alias)
+        resolved = _input_path(project, target)
+        if (actual_option != option or "=" in option or not source.is_absolute()
+                or str(source) != str(Path(os.path.abspath(source))) or lexical != source
+                or not Path(target).is_absolute() or str(resolved) != target
+                or source.resolve(strict=True) != resolved or not resolved.is_file()):
+            raise ValueError("Verified runtime argument binding changed: " + alias)
+        seen.add(index)
+        rows.append({"argument_index": index, "option": option, "path": alias, "target": target})
+    return rows
+
+
+@dataclass(frozen=True)
+class RuntimeArgumentCapture:
+    """Internal host capability, never accepted from request or plan JSON.
+
+    The desktop constructs this only after authenticated runtime validation.
+    This is not a sandbox against trusted Python code, which can already sign
+    receipts. Immutable tuples bind the exact invocation and lexical paths.
+    """
+    project: str
+    cwd: str
+    arguments: tuple[str, ...]
+    bindings: tuple[tuple[int, str, str, str], ...]
+
+    def checked_bindings(self, project, arguments, cwd):
+        if (str(Path(project).resolve()) != self.project or str(Path(cwd).resolve()) != self.cwd
+                or tuple(arguments) != self.arguments or not isinstance(self.arguments, tuple)
+                or not isinstance(self.bindings, tuple)
+                or any(not isinstance(binding, tuple) for binding in self.bindings)):
+            raise ValueError("Runtime argument authorization differs from this invocation")
+        return _runtime_binding_rows(Path(project).resolve(), arguments, self.bindings, cwd)
+
+
+def _runtime_coverage_errors(project, receipt):
+    coverage = receipt.get("input_coverage") or {}
+    if "runtime_arguments" not in coverage:
+        return []  # Legacy receipts retain their existing coverage policy.
+    try:
+        rows = coverage["runtime_arguments"]
+        count = coverage.get("argument_count")
+        command = receipt.get("command")
+        if (not isinstance(rows, list) or not rows or not isinstance(command, list)
+                or not all(isinstance(token, str) for token in command)
+                or type(count) is not int or not 0 < count <= min(100, len(command))
+                or any(not isinstance(row, dict) or set(row) !=
+                       {"argument_index", "option", "path", "target"} for row in rows)):
+            raise ValueError("Malformed recorded runtime argument coverage")
+        bindings = [(row["argument_index"], row["option"], row["path"], row["target"]) for row in rows]
+        _runtime_binding_rows(project, command[-count:], bindings, receipt.get("cwd", ""))
+        recorded = {entry.get("path") for entry in receipt.get("inputs") or [] if isinstance(entry, dict)}
+        argument_files = set(coverage.get("argument_files") or [])
+        if any(_rel(Path(row["target"]), project) not in recorded & argument_files for row in rows):
+            raise ValueError("Recorded runtime target lacks its signed input hash")
+        return []
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
+        return [str(error)]
+
+
 def _input_bindings(step, inventory):
     bindings = []
     for ident in step.get("inputs") or []:
@@ -1140,13 +1227,20 @@ def _input_directory(project, path):
     return {"path": _rel(path, project), "files": sorted(files), "subdirectories": sorted(directories)}
 
 
-def capture_inputs(project: Path, step: dict, inventory: dict, arguments: list[str], cwd: Path) -> dict:
+def capture_inputs(project: Path, step: dict, inventory: dict, arguments: list[str], cwd: Path, *,
+                   runtime_authorization: RuntimeArgumentCapture | None = None) -> dict:
     """Capture declared physical inputs before launch, plus literal file arguments.
 
     Descriptive inventory rows may have no local paths. Argument directories
     are never traversed: only a reviewed inventory directory grants that scope.
     """
     project = Path(project).resolve()
+    runtime_rows = []
+    if runtime_authorization is not None:
+        if not isinstance(runtime_authorization, RuntimeArgumentCapture):
+            raise ValueError("Runtime argument capture requires host authorization")
+        runtime_rows = runtime_authorization.checked_bindings(project, arguments, cwd)
+    runtime_by_index = {row["argument_index"]: row for row in runtime_rows}
     bindings = _input_bindings(step, inventory)
     files, directories, argument_files = set(), {}, set()
     for binding in bindings:
@@ -1160,7 +1254,13 @@ def capture_inputs(project: Path, step: dict, inventory: dict, arguments: list[s
                 files.add(_rel(path, project))
             else:
                 raise ValueError(f"Approved input {binding['id']!r} is missing: {raw}")
-    for token in arguments:
+    for index, token in enumerate(arguments):
+        if index in runtime_by_index:
+            # The checked canonical target, not the alias token's spelling
+            # (which may contain '~'), is the signed physical input.
+            path = _input_path(project, runtime_by_index[index]["target"])
+            argument_files.add(_rel(path, project))
+            continue
         value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
         candidate = Path(value)
         candidate = candidate if candidate.is_absolute() else Path(cwd) / candidate
@@ -1180,10 +1280,15 @@ def capture_inputs(project: Path, step: dict, inventory: dict, arguments: list[s
                 after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_ino):
             raise ValueError("Approved input changed during pre-launch capture: " + raw)
         entries.append(entry)
-    return {"inputs": entries, "input_coverage": {"version": 1,
+    if runtime_authorization is not None:
+        runtime_authorization.checked_bindings(project, arguments, cwd)
+    coverage = {"version": 1,
         "inventory_bindings": bindings, "files": sorted(files),
         "argument_files": sorted(argument_files),
-        "directories": [directories[p] for p in sorted(directories)]}}
+        "directories": [directories[p] for p in sorted(directories)]}
+    if runtime_rows:
+        coverage.update(runtime_arguments=runtime_rows, argument_count=len(arguments))
+    return {"inputs": entries, "input_coverage": coverage}
 
 
 def _approved_output_paths(project, step, inventory):
@@ -1244,7 +1349,7 @@ def _input_coverage_errors(project, step, inventory, receipt, directory_observat
                 expected_files.add(relative)
         if files != expected_files:
             raise ValueError("Recorded input coverage omits or adds approved files")
-        return []
+        return _runtime_coverage_errors(project, receipt)
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
         return [str(error)]
 

@@ -21,6 +21,8 @@ def fresh_project(tmp_path, *, snapshot=True):
     cfg = project_paths.model_config(project, "SHAW", shared)
     handler = object.__new__(gui.Handler)
     handler.library_root = library
+    handler.repo_root = library
+    handler.workroot = tmp_path / "work"
     handler._config = lambda _ki: shared
     return handler, KI("SHAW", source), project, cfg, shared, shared_live
 

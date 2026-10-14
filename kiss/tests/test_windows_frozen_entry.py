@@ -211,6 +211,8 @@ def test_frozen_stderr_that_cannot_raise_keeps_exact_diagnostics(monkeypatch):
 def test_every_frozen_child_command_exits_on_a_crash(monkeypatch, capsys):
     # fetch is forwarded to the windowed exe by the Agent bridge like run-tool.
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(cli, "cmd_list", mock.Mock(side_effect=RuntimeError("boom")))
+    def cmd_list(_args):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(cli, "cmd_list", cmd_list)
     assert cli.main(["list"]) == 1
     assert "RuntimeError: boom" in capsys.readouterr().err

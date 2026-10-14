@@ -65,12 +65,13 @@ preflight. Completion now reports verified execution separately from scientific
 validation. The Codex launcher also correctly composes sandbox arguments for
 fresh and resumed commands.
 
-DeepSeek GUI testing completed a native DSSAT reference run, the KDT-repaired
+Earlier reviewed DeepSeek GUI testing completed a native DSSAT reference run, the KDT-repaired
 reader, observation extraction and comparison with four verified execution
 records. That test used an installed runtime and a separately approved KI
 repair; the bundled 127-KI library is retained from the preceding release.
 Updated KI packages remain subject to validation. Provider sign-in and compatible
-CLI/model settings are still required. See the release notes for exact scope.
+CLI/model settings are still required. Changed helpers can require projects and
+repairs to be verified again. See the release notes for exact scope and final-build checks.
 
 ### macOS Apple Silicon
 

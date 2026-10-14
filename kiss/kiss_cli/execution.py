@@ -216,24 +216,33 @@ def _terminate_tree_windows(proc, *, grace: float) -> None:
     recycled PID is never signalled.
     """
     from . import processes
+    tracker = getattr(proc, "_geoforge_process_tree", None)
+    protected = tracker.grace_entries() if tracker is not None and grace > 0 else []
     try:
         root_created = processes._windows_creation_time(proc.pid)
-        descendants = processes.windows_descendants(proc.pid)
+        descendants = (tracker.refresh() if tracker is not None
+                       else processes.windows_descendants(proc.pid))
     except (OSError, TypeError, ValueError):
         root_created, descendants = None, []
-    processes.terminate_snapshot(descendants)
+    processes.terminate_snapshot([entry for entry in descendants if entry not in protected])
 
     def escalate():
         try:
+            observed = descendants
             deadline = time.monotonic() + grace
             while time.monotonic() < deadline:
-                if proc.poll() is not None and not processes.any_alive(descendants):
+                if tracker is not None:
+                    observed = tracker.refresh()
+                    processes.terminate_snapshot(
+                        [entry for entry in observed if entry not in protected])
+                if proc.poll() is not None and not processes.any_alive(observed):
                     break
                 time.sleep(min(0.05, max(0, deadline - time.monotonic())))
-            late = processes.windows_descendants(proc.pid, root_created=root_created)
+            late = (tracker.refresh() if tracker is not None else
+                    processes.windows_descendants(proc.pid, root_created=root_created))
             if proc.poll() is None:
                 processes.terminate_process_tree(proc)
-            processes.terminate_snapshot(descendants + late)
+            processes.terminate_snapshot(observed + late)
         except Exception:  # noqa: BLE001 — Stop cleanup is best effort
             pass
         finally:
@@ -356,7 +365,7 @@ def run_process(command: list[str] | str, *, cwd, env, timeout: float | None,
     timeout or an unobservable outcome also ends the whole tree. Never retries.
     """
     exit_code, started, detail, stdout, stderr, error = None, None, "", "", "", None
-    proc = None
+    proc, tracker = None, None
     stopped, done = threading.Event(), threading.Event()
     # Capture once. Even a fast Stop/new-turn between watcher polls cannot
     # revive a process already supervised on behalf of the previous turn.
@@ -401,6 +410,11 @@ def run_process(command: list[str] | str, *, cwd, env, timeout: float | None,
                                 text=True, encoding=encoding, errors=errors, **launch)
         started = True
         LIVE_PROCESSES.add(proc)
+        if os.name == "nt" and isinstance(proc, _POPEN):
+            from .processes import WindowsProcessTracker
+            tracker = WindowsProcessTracker(proc, command)
+            proc._geoforge_process_tree = tracker
+            tracker.start()
         if project is not None or stop is not None:
             threading.Thread(target=watch_for_stop, daemon=True).start()
         stdout, stderr = proc.communicate(timeout=timeout)
@@ -441,6 +455,11 @@ def run_process(command: list[str] | str, *, cwd, env, timeout: float | None,
                     stdout, stderr = collected_out, collected_err
                 if cleanup_note:
                     detail += f"\n{cleanup_note}"
+            if tracker is not None:
+                try:
+                    tracker.close()
+                except (Exception, KeyboardInterrupt) as exc:
+                    detail += f"\nprocess tree cleanup failed: {type(exc).__name__}"
             for pipe in (proc.stdout, proc.stderr):
                 if pipe is not None:
                     try:
@@ -607,7 +626,7 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
             raise flowgate.FlowDenied(f"project KI verification required for {ki}: {exc}") from exc
     from . import runtime_arguments
     try:
-        runtime_arguments.validate(project=project, ki=ki, ki_root=requested_root, cfg=cfg,
+        runtime_authorization = runtime_arguments.validate(project=project, ki=ki, ki_root=requested_root, cfg=cfg,
             arguments=arguments, cwd=cwd, allow_runtime=not project_data_tool)
     except (OSError, ValueError, RuntimeError) as exc:
         raise flowgate.FlowDenied(str(exc)) from exc
@@ -623,7 +642,8 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
             return str(path.resolve()) not in approved_outputs
         capture_arguments = [token for token in capture_arguments if consumed_argument(token)]
         capture_arguments += request["input_files"]
-    input_snapshot = flow.capture_step_inputs(step, capture_arguments, cwd) if flow is not None else None
+    input_snapshot = flow.capture_step_inputs(step, capture_arguments, cwd,
+        **({"runtime_authorization": runtime_authorization} if runtime_authorization is not None else {})) if flow is not None else None
     output_preimages = None
     if project_data_tool:
         try:
@@ -640,6 +660,11 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         if flow.approval_status() != "OK" or approval_id != flow.flow.approval.approval_id(
                 flow.flow.approval.read(project)):
             raise flowgate.FlowDenied("approval changed before execution; no process was launched")
+    if runtime_authorization is not None:
+        try:
+            runtime_authorization.checked_bindings(project, arguments, cwd)
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise flowgate.FlowDenied(str(exc)) from exc
     started = time.time()
     stdout_capture = flow is not None and "stdout_artifact" in step
     run = run_process(command, cwd=cwd, env=child_env, timeout=timeout, project=project,
@@ -649,6 +674,11 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         # Not an attempt: no receipt, so a step that already passed is not demoted.
         raise flowgate.FlowDenied("stopped by the user; no process was launched")
     exit_code, status, detail = run.returncode, run.status, run.detail
+    if runtime_authorization is not None:
+        try:
+            runtime_authorization.checked_bindings(project, arguments, cwd)
+        except (OSError, ValueError, RuntimeError) as exc:
+            exit_code, status, detail = 1, "failed", str(exc)
     try:
         ki_guard.require_intact(requested_root, required=(requested_root / "SKILL.md").is_file())
     except ki_guard.KIIntegrityError as exc:

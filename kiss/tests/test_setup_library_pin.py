@@ -39,6 +39,7 @@ def libraries(tmp_path, monkeypatch):
     root.mkdir(parents=True)
     cfg = paths.KissConfig.default(root)
     cfg.python, cfg.relocation = sys.executable, "none"
+    setup.prepare_common(cfg, library_a)
     (root / "kiss.toml").write_text(cfg.dumps(), encoding="utf-8")
     (root / "CLAUDE.md").write_text("Fixture setup instructions", encoding="utf-8")
     source_ki = catalogue_a.get("Demo")

@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import threading
+import time
 
 
 # --- Windows process table -------------------------------------------------
@@ -56,6 +58,9 @@ def _kernel32():
     k32.TerminateProcess.restype = wintypes.BOOL
     k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     k32.GetExitCodeProcess.restype = wintypes.BOOL
+    k32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
     k32.CloseHandle.argtypes = [wintypes.HANDLE]
     k32.CloseHandle.restype = wintypes.BOOL
     return k32, PROCESSENTRY32W
@@ -210,6 +215,166 @@ def any_alive(entries: list[tuple[int, int]]) -> bool:
         _windows_running(pid, created) for pid, created in entries)
 
 
+def _windows_image(pid: int, created: int) -> str | None:
+    """Read the full image path through an identity-checked process handle."""
+    import ctypes
+    from ctypes import wintypes
+
+    k32, _ = _kernel32()
+    handle = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return None
+    try:
+        if not _handle_running(k32, handle, created):
+            return None
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if k32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return os.path.normcase(str(Path(buffer.value).resolve()))
+    finally:
+        k32.CloseHandle(handle)
+    return None
+
+
+def _venv_images(command) -> tuple[str, str] | None:
+    """Exact launcher/base images for an explicitly selected Python venv.
+
+    This is only a read-only hint for a caller that already grants wrapper
+    grace. A name alone never grants grace; the live process images must also
+    match these paths. An absent/ambiguous configuration grants nothing.
+    """
+    if not isinstance(command, (list, tuple)) or not command:
+        return None
+    try:
+        launcher = Path(command[0])
+        if not launcher.is_absolute() or launcher.name.lower() not in {"python.exe", "pythonw.exe"}:
+            return None
+        launcher = launcher.resolve()
+        config = launcher.parent.parent / "pyvenv.cfg"
+        if launcher.parent.name.lower() != "scripts" or config.stat().st_size > 65536:
+            return None
+        values = {}
+        for line in config.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep:
+                key = key.strip().lower()
+                if key in values:
+                    return None
+                values[key] = value.strip()
+        home = Path(values["home"])
+        if not home.is_absolute():
+            return None
+        # `executable` records the creator and can itself be a venv launcher.
+        # `home` identifies the base; its full live image is checked separately.
+        home = home.resolve()
+        base = home / launcher.name
+        if not launcher.is_file() or not base.is_file():
+            return None
+        return os.path.normcase(str(launcher)), os.path.normcase(str(base.resolve()))
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError):
+        return None
+
+
+class WindowsProcessTracker:
+    """Retain observed descendants while the command is alive.
+
+    Every identity is pinned to its creation time. New children are admitted
+    only while their parent's identity is still present, never by a dead
+    parent's remembered PID. Polling cannot capture an intermediate process
+    that starts and exits entirely between snapshots; this is not OS process
+    containment. Already observed descendants survive gaps in the parent chain.
+    """
+
+    def __init__(self, proc: subprocess.Popen, command):
+        self.proc = proc
+        self.root = (proc.pid, _windows_creation_time(proc.pid))
+        self.images = _venv_images(command)
+        self._known: set[tuple[int, int]] = set()
+        self._parents: dict[tuple[int, int], tuple[int, int]] = {}
+        self._lock = threading.Lock()
+        self._done = threading.Event()
+        self._thread = threading.Thread(target=self._watch, daemon=True,
+                                        name="geoforge-process-tree")
+
+    def start(self) -> None:
+        self.refresh()
+        self._thread.start()
+
+    def refresh(self) -> list[tuple[int, int]]:
+        with self._lock:
+            try:
+                table = _windows_process_table()
+                children: dict[int, list[int]] = {}
+                for child, parent in table.items():
+                    if child != parent:
+                        children.setdefault(parent, []).append(child)
+                todo, seen = [self.root, *self._known], set()
+                while todo:
+                    parent, parent_created = todo.pop()
+                    identity = (parent, parent_created)
+                    if identity in seen or parent_created is None:
+                        continue
+                    seen.add(identity)
+                    if _windows_creation_time(parent) != parent_created:
+                        continue
+                    for child in children.get(parent, ()):
+                        if child in {self.root[0], os.getpid()}:
+                            continue
+                        created = _windows_creation_time(child)
+                        if created is None or created < parent_created:
+                            continue
+                        # Recheck after inspecting the child: a parent that
+                        # disappeared or changed identity grants no new ancestry.
+                        if _windows_creation_time(parent) != parent_created:
+                            break
+                        entry = (child, created)
+                        self._known.add(entry)
+                        self._parents[entry] = identity
+                        todo.append(entry)
+                # Keep each surviving child independently of its parent. Dead
+                # identities cannot help future admission and must not build up
+                # during long compiler/agent runs with many short-lived children.
+                self._known = {entry for entry in self._known if _windows_running(*entry)}
+                self._parents = {entry: parent for entry, parent in self._parents.items()
+                                 if entry in self._known}
+            except OSError:
+                pass                          # retained identities still remain useful
+            return list(self._known)
+
+    def grace_entries(self) -> list[tuple[int, int]]:
+        """Only the unique, verified venv interpreter child may join root grace."""
+        self.refresh()
+        if not self.images or self.root[1] is None:
+            return []
+        launcher, base = self.images
+        if _windows_image(*self.root) != launcher:
+            return []
+        with self._lock:
+            candidates = [entry for entry in self._known
+                          if self._parents.get(entry) == self.root
+                          and _windows_image(*entry) == base]
+        return candidates if len(candidates) == 1 else []
+
+    def _watch(self) -> None:
+        while not self._done.wait(0.05):
+            entries = self.refresh()
+            if self.proc.poll() is not None:
+                # A surviving child may still hold our stdout pipe open, so
+                # cleanup must not wait for communicate() to return first.
+                terminate_snapshot(entries)
+                return
+
+    def close(self) -> None:
+        self._done.set()
+        if self._thread.ident is not None:
+            self._thread.join(timeout=2)
+        entries = self.refresh()
+        terminate_snapshot(entries)
+        deadline = time.monotonic() + 2
+        while any_alive(entries) and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+
 def _taskkill_tree(pid: int) -> bool:
     system_root = os.environ.get("SystemRoot", r"C:\Windows")
     taskkill = Path(system_root) / "System32" / "taskkill.exe"
@@ -238,6 +403,15 @@ def terminate_process_tree(proc: subprocess.Popen) -> None:
     process group created for this command on POSIX.
     """
     if os.name == "nt":
+        tracker = getattr(proc, "_geoforge_process_tree", None)
+        if tracker is not None:
+            descendants = tracker.refresh()
+            try:
+                proc.kill()                   # Popen's original handle pins the root
+            except OSError:
+                pass
+            terminate_snapshot(descendants + tracker.refresh())
+            return
         # Snapshot first: taskkill /T cannot find the descendants of a root
         # that has already exited (an npm .cmd shim, a build script), and it
         # follows parent PIDs unchecked, so it can kill an unrelated older

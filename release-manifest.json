@@ -5,7 +5,7 @@
   "release_date": "2026-10-15",
   "source": {
     "branch": "windows-version",
-    "code_commit": "f0a64b49746cc95e5350905a30289469f8f7bdab",
+    "code_commit": "878b3ddb172b7057efe6db0f024ce8c47dea856e",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
     "release_tag": "windows-v0.6.59",
     "commit_scope": "Application implementation is pinned by application_code_commit. Windows-release-validation.json identifies the exact release tag/build commit and final checks.",
@@ -13,7 +13,7 @@
     "checked_main_commit": "889a6e70332e31b21911efb0a08ac2fa2a067e03",
     "build_label": "windows-0.6.59-20261015",
     "working_tree": false,
-    "application_code_commit": "f0a64b49746cc95e5350905a30289469f8f7bdab",
+    "application_code_commit": "878b3ddb172b7057efe6db0f024ce8c47dea856e",
     "previous_release_tag": "windows-v0.6.58"
   },
   "ki_library": {
@@ -38,7 +38,7 @@
     ],
     "desktop_catalogue_count": 129,
     "shared_tools_commit": "201123aa1f0fbaadbc485223b2c2891e1a5f1570",
-    "desktop_flow_commit": "f0a64b49746cc95e5350905a30289469f8f7bdab",
+    "desktop_flow_commit": "878b3ddb172b7057efe6db0f024ce8c47dea856e",
     "scope": "Bundled 127 scientific KIs and 2 observation data KIs retain the prior release snapshot. Updated desktop/shared-flow code is pinned by source.application_code_commit. Downloaded Library updates and local KDT-approved repairs are separate; the DSSAT acceptance used those separate revisions."
   },
   "changes": [
@@ -66,6 +66,16 @@
       "id": "windows-packaging-and-cli",
       "area": "packaging",
       "summary": "Bundle runtime_data source identity and correctly compose Codex fresh/resumed sandbox arguments."
+    },
+    {
+      "id": "verified-native-runtime-aliases",
+      "area": "execution",
+      "summary": "Carry verified native executable aliases into signed input evidence, pin target bytes and reject retargeted aliases without relaxing ordinary input path checks."
+    },
+    {
+      "id": "windows-process-supervision",
+      "area": "execution",
+      "summary": "Clean up observed child processes after wrapper exit and preserve the actual virtual-environment wrapper during bounded graceful Stop so it can record the outcome."
     }
   ],
   "compatibility": {

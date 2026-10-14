@@ -258,7 +258,10 @@ def test_api_checks_concrete_binding_before_launch_and_receipts_same_approval(ad
     monkeypatch.setattr(calibration, "ensure_project", lambda *a, **k: {})
     run = Mock(return_value={"report": {"status": "completed", "promotable": False}, "run_id": "one"})
     monkeypatch.setattr(calibration, "run_project", run)
+    input_snapshot = {"inputs": [], "input_coverage": {"version": 1,
+        "inventory_bindings": [], "files": [], "argument_files": [], "directories": []}}
     flow = SimpleNamespace(check_tool=lambda name: None, approval_id="current-signed-id", inventory={"items": []},
+                           capture_step_inputs=Mock(return_value=input_snapshot),
                            record_tool_run=Mock(return_value={"run_id": "receipt"}))
     def checked(step_id, ki_name, runner_path, binding):
         assert step_id == "fit" and ki_name == "Demo"
@@ -275,6 +278,7 @@ def test_api_checks_concrete_binding_before_launch_and_receipts_same_approval(ad
         with pytest.raises(api.ToolError, match="wrong approved calibration"):
             call()
         run.assert_not_called()
+        flow.capture_step_inputs.assert_not_called()
         flow.record_tool_run.assert_not_called()
     else:
         assert json.loads(call())["receipt"]["run_id"] == "receipt"
@@ -284,3 +288,8 @@ def test_api_checks_concrete_binding_before_launch_and_receipts_same_approval(ad
         receipt = flow.record_tool_run.call_args.kwargs
         assert receipt["expected_approval_sha256"] == "current-signed-id"
         assert str(root / "calibration.yaml") in receipt["input_arguments"]
+        flow.capture_step_inputs.assert_called_once_with(
+            {"id": "fit", "inputs": []},
+            [str((root / "calibration.yaml").resolve()), str((root / "tools/calib_run.py").resolve())],
+            project.resolve())
+        assert receipt["input_snapshot"] is input_snapshot

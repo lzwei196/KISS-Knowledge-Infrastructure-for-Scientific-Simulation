@@ -62,7 +62,8 @@ Windows 0.6.59 improves setup and path adaptation after KI updates, reuses
 compatible KDT-approved maintenance repairs, checks ready input paths and tool
 arguments before approval, and continues an approved run after project
 preflight. Completion now reports verified execution separately from scientific
-validation. The Codex launcher also handles fresh and resumed commands correctly.
+validation. The Codex launcher also correctly composes sandbox arguments for
+fresh and resumed commands.
 
 DeepSeek GUI testing completed a native DSSAT reference run, the KDT-repaired
 reader, observation extraction and comparison with four verified execution

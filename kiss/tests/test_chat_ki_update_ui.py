@@ -14,8 +14,8 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="Node is required")
 RUNNER = r"""
 const fs=require('node:fs'),vm=require('node:vm');
 const page=fs.readFileSync(process.argv[1],'utf8'),input=JSON.parse(fs.readFileSync(0,'utf8'));
-const elements=new Map(),timers=new Map(),requests=[],snapshots=[],events={};
-let nextTimer=1,step={},releaseUpdate,releaseStatus,holdStatus=false,headerDraws=0;
+const elements=new Map(),timers=new Map(),requests=[],snapshots=[],events={},runRefreshes=[];
+let nextTimer=1,step={},releaseUpdate,releaseStatus,holdStatus=false,headerDraws=0,providerFocusRefreshes=0;
 const oldStatus={CRHM:{state:'verified',label:'Verified on this machine'},SHAW:{state:'verified'}};
 const newStatus={CRHM:{state:'setup_needed',label:'Recheck updated KI'},SHAW:{state:'setup_needed'}};
 const oldModels=[{name:'CRHM',reference:'old CRHM'},{name:'SHAW'}];
@@ -38,6 +38,8 @@ const context={console,Date,$:element,CUR:session,MODELS:oldModels,STATUS:oldSta
   PROV:{providers:[]},LAST_PROVIDER_CHECK:0,LAST_STATUS_CHECK:0,STATUS_REFRESHING:null,
   chineseUI:()=>!!input.zh,esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;'),
   drawModelLabel(){headerDraws++;},refreshSessionList(){},refreshProviders(){},
+  refreshProvidersOnFocus(){providerFocusRefreshes++;},
+  refreshRun(id,force){runRefreshes.push({id,force});},
   pauseProjectMedia(){},resumeProjectMedia(){},
   document:{hidden:false,querySelectorAll:()=>[],addEventListener:(name,fn)=>events[name]=fn},
   window:{addEventListener:(name,fn)=>events[name]=fn},
@@ -73,6 +75,8 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function snapshot(){return {
   revision:vm.runInContext('KI_UPDATE_REVISION',context),models:context.MODELS,status:context.STATUS,
   timerDelays:[...timers.values()].map(t=>t.delay),requests:[...requests],headerDraws,
+  runRefreshes:[...runRefreshes],
+  providerFocusRefreshes,
   picker:element('#mrows').innerHTML,pendingSelection:[...context.PICK],query:element('#mq').value,
   session:context.CUR,sameSession:context.CUR===session,composer:element('#msg').value,
   draft:context.DRAFTS.get('case'),provider:element('#prov').value,model:element('#llm').value,
@@ -183,6 +187,10 @@ def test_returning_to_chat_checks_catalogue_without_waiting_for_timer(event):
     assert old["revision"] == "old" and result["revision"] == "new"
     assert "Recheck updated KI" in result["picker"] and result["sameSession"]
     assert result["timerDelays"] == [5000]
+    assert old["runRefreshes"] == []
+    assert result["runRefreshes"] == [{"id": "case", "force": True}]
+    assert old["providerFocusRefreshes"] == 0
+    assert result["providerFocusRefreshes"] == (1 if event == "focus" else 0)
 
 
 def test_updated_notice_remains_bilingual():

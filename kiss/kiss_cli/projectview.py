@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 import re
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,7 +81,96 @@ def _safe_asset(project: Path, value: str, *, must_exist: bool = True) -> tuple[
 
 def resolve_asset(project: Path, relative: str) -> tuple[Path, str]:
     """Resolve an asset for the HTTP layer without permitting traversal."""
+    if str(relative).startswith("outputs/"):
+        return _safe_report(project, relative), "application/json"
     return _safe_asset(project, relative, must_exist=True)
+
+
+def _safe_report(project: Path, value: str) -> Path:
+    """Only ordinary original JSON reports, never project internals or aliases."""
+    if (not isinstance(value, str) or len(value) > 1600 or "\\" in value or ":" in value
+            or any(ord(c) < 32 for c in value)):
+        raise ProjectViewError("report links need a literal outputs/ JSON path")
+    parts = value.split("/")
+    if (len(parts) < 2 or parts[0] != "outputs" or any(
+            not part or part.startswith(".") or part.endswith((".", " ")) for part in parts)
+            or Path(value).suffix.casefold() != ".json"):
+        raise ProjectViewError("report links must name an existing outputs/ JSON file")
+    root = Path(project).absolute()
+    path = root.joinpath(*parts)
+    try:
+        if path.resolve() != path or not path.resolve().is_relative_to(root):
+            raise ProjectViewError("report links cannot use aliases")
+        for item in (path, *path.parents):
+            info = item.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise ProjectViewError("report links cannot use linked or reparse-point paths")
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ProjectViewError("report links require an ordinary file without hardlinks")
+        if info.st_size > MAX_ASSET_BYTES:
+            raise ProjectViewError("project report is larger than 100 MB")
+    except OSError as error:
+        raise ProjectViewError("project report is missing or unreadable") from error
+    return path
+
+
+def _report_identity(project: Path, relative: str) -> dict:
+    path = _safe_report(project, relative)
+    before = path.stat()
+    digest = hashlib.sha256()
+    total = 0
+    with path.open("rb") as handle:
+        while chunk := handle.read(min(1024 * 1024, before.st_size - total + 1)):
+            total += len(chunk)
+            if total > before.st_size:
+                raise ProjectViewError("project report changed while being read")
+            digest.update(chunk)
+    after = _safe_report(project, relative).stat()
+    if (total != before.st_size or
+            (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+            (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+        raise ProjectViewError("project report changed while being read")
+    return {"path": relative, "sha256": digest.hexdigest(), "bytes": total,
+            "source": "project-output", "scope": "technical-file-association"}
+
+
+def _report_receipts(project: Path) -> dict:
+    """Current latest tool receipt associations, not scientific validation."""
+    try:
+        from . import flowgate
+        flow = flowgate.load()
+        flow.states.FlowContext.load(project)  # Reject corrupt/stale host state.
+        if flow.approval.check(project) != "OK":
+            return {}
+        plan, inventory = flow.plan.read_artifacts(project)
+        approval = flow.approval.read(project)
+        proof = flow.receipts.evidence(project, plan, approval, inventory=inventory, output_dirs=())
+        statuses = {row["run_id"]: row for row in proof.get("runs", [])}
+        latest, writers = {}, {}
+        rank = {"passed": 0, "failed": 2}
+        docs = [(p, doc) for p, doc, ok in flow.receipts._read_all(project, flow.receipts.RUNS_SUB)
+                if ok and doc.get("run_id") in statuses]
+        for p, doc in sorted(docs, key=lambda row: (flow.receipts._finished_at(row[1]),
+                rank.get(statuses[row[1]["run_id"]].get("validation"), 1))):
+            latest[doc.get("plan_step_id")] = (p, doc)
+            for entry in doc.get("outputs", []):
+                writers[str(entry.get("path"))] = doc["run_id"]
+        result = {}
+        for step_id, (p, doc) in latest.items():
+            if (step_id not in proof.get("steps_passed", []) or step_id in proof.get("stale_steps", [])
+                    or statuses[doc["run_id"]].get("validation") != "passed"
+                    or doc.get("exit_code") != 0 or doc.get("execution_status") not in (None, "succeeded")):
+                continue
+            for entry in doc.get("outputs", []):
+                if writers.get(str(entry.get("path"))) != doc["run_id"]:
+                    continue
+                result[str(entry.get("path"))] = {"sha256": entry.get("sha256"), "bytes": entry.get("bytes"),
+                    "receipt": {"path": p.relative_to(project).as_posix(), "run_id": doc["run_id"],
+                                "plan_step_id": step_id}}
+        return result
+    except Exception:  # Unknown evidence never promotes an original file to a current receipt.
+        return {}
 
 
 def _table_preview(path: Path) -> dict:
@@ -174,10 +264,17 @@ def _normalize_panel(project: Path, raw: dict, index: int) -> dict:
             raise ProjectViewError(f"metric panel {panel['id']} needs a string or numeric value")
         panel["value"] = _text(value, 160)
     else:
-        path, mime = _safe_asset(project, str(raw.get("path") or ""))
+        report = kind == "file" and str(raw.get("path") or "").startswith("outputs/")
+        if report:
+            path = _safe_report(project, str(raw["path"]))
+            mime = "application/json"
+        else:
+            path, mime = _safe_asset(project, str(raw.get("path") or ""))
         relative = path.relative_to(_project_root(project)).as_posix()
         panel["path"] = relative
         panel["mime"] = mime
+        if report:
+            panel["file_provenance"] = _report_identity(project, relative)
         if kind == "table" and path.suffix.casefold() != ".csv":
             raise ProjectViewError("table panels currently require a CSV artifact")
         if kind == "table":
@@ -255,11 +352,22 @@ def _receipted_outputs(project: Path) -> dict | None:
 
 
 def _label_panels(project: Path, panels: list[dict]) -> list[dict]:
+    reports = _report_receipts(project) if any("file_provenance" in p for p in panels) else {}
     receipted = _receipted_outputs(project)
-    if receipted is None:
-        return panels
     for panel in panels:
         rel = str(panel.get("path") or "")
+        if "file_provenance" in panel:
+            provenance = panel["file_provenance"]
+            entry = reports.get(rel, {})
+            if entry.get("sha256") == provenance["sha256"] and entry.get("bytes") == provenance["bytes"]:
+                provenance["receipt"] = entry["receipt"]
+                panel["evidence"] = "receipt_bound"
+            else:
+                panel["evidence"] = "unvalidated"
+            panel["revision"] = _panel_revision(project, panel)
+            continue
+        if receipted is None:
+            continue
         status = receipted.get(rel)
         if status == "passed":
             panel["evidence"] = "verified"
@@ -273,8 +381,8 @@ def _label_panels(project: Path, panels: list[dict]) -> list[dict]:
 
 def publish(project: Path, spec: dict, *, source: str = "agent") -> dict:
     """Validate and atomically publish one project view manifest."""
+    normalized = _normalize(Path(project), spec, source=source)
     project = _project_root(project)
-    normalized = _normalize(project, spec, source=source)
     normalized["updated_at"] = datetime.now(timezone.utc).isoformat()
     target = _artifacts_root(project) / MANIFEST_NAME
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -353,6 +461,7 @@ def _automatic(project: Path) -> dict:
 
 def load(project: Path) -> dict:
     """Load a published view, or safely assemble one from existing artifacts."""
+    supplied_project = Path(project)
     project = _project_root(project)
     manifest = _artifacts_root(project) / MANIFEST_NAME
     if not manifest.is_file():
@@ -361,7 +470,7 @@ def load(project: Path) -> dict:
         if manifest.stat().st_size > MAX_MANIFEST_BYTES:
             raise ProjectViewError("project view manifest is larger than 256 KB")
         raw = json.loads(manifest.read_text(encoding="utf-8"))
-        result = _normalize(project, raw, source=_text(raw.get("source") or "agent", 40))
+        result = _normalize(supplied_project, raw, source=_text(raw.get("source") or "agent", 40))
         result["updated_at"] = _text(raw.get("updated_at"), 80)
         result["customized"] = True
         return result

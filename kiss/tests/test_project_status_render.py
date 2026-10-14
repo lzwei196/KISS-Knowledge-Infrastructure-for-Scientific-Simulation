@@ -57,6 +57,10 @@ vm.runInContext(extract('const sizeLabel=','let SUBSET_TIMER=null;'),context);
     await element(input.selector).onclick();
     result={picked:context.picked,sent:context.sent,copied:context.copied,
       pending:context.PENDING_ACTIONS.get(context.CUR.id)};
+  }else if(input.mode==='completion'){
+    vm.runInContext(extract('function runStateText(run){','function drawRunStatus'),context);
+    result={title:context.runStateText(input.data.project_status.progress),
+      summary:context.runStatusSummary(input.data.project_status.progress)};
   }else if(input.mode==='activity'){
     vm.runInContext(extract('function agentLiveState(flight){','function agentActivityTitle'),context);
     vm.runInContext(extract('function agentStateText(flight,compact=false){','function liveWaitingHtml'),context);
@@ -128,6 +132,55 @@ def test_current_stage_does_not_check_off_earlier_scientific_steps(stage):
     assert '<span class="stepdot">✓</span>' not in html
 
 
+@pytest.mark.parametrize("zh", [False, True])
+@pytest.mark.parametrize("scope", ["data_preparation", "approved_execution"])
+def test_technical_completion_is_explicit_and_does_not_check_off_scientific_stages(scope, zh):
+    data = fixture_data()
+    data["project_status"]["progress"].update(
+        status="complete", stage="results", execution_complete=True,
+        completion_scope=scope, data_preparation_complete=scope == "data_preparation",
+        science_complete=False, scientific_validation="not_established",
+        summary="Approved execution completed with current evidence. "
+                "Independent scientific validation is not established.")
+    result = evaluate(data, zh=zh)
+    expected = (("数据准备已完成" if scope == "data_preparation" else "已批准的执行已完成")
+                if zh else ("Data preparation completed" if scope == "data_preparation"
+                            else "Approved execution completed"))
+    assert expected in result["html"]
+    assert ("尚未确立独立科学验证" if zh else
+            "Independent scientific validation is not established") in result["html"]
+    assert "data-execution-completion" in result["html"]
+    assert 'runstep done' not in result["html"]
+    assert '<span class="stepdot">✓</span>' not in result["html"]
+    assert "Run the real scientific model" not in result["html"]
+    assert "Project complete" not in result["html"]
+    tooltip = evaluate(data, zh=zh, mode="completion")
+    assert tooltip["title"] == expected
+    assert ("尚未确立独立科学验证" if zh else
+            "Independent scientific validation is not established") in tooltip["summary"]
+
+
+def test_legacy_completion_without_host_completion_flag_remains_unconfirmed():
+    data = fixture_data()
+    data["project_status"]["progress"].update(status="complete", stage="results")
+    result = evaluate(data)
+    assert "Completion unconfirmed" in result["html"]
+    assert "data-execution-completion" not in result["html"]
+    assert 'runstep done' not in result["html"]
+
+
+@pytest.mark.parametrize("status", ["failed", "waiting_for_user", "working"])
+def test_pending_or_failed_status_is_not_localized_as_completion(status):
+    data = fixture_data()
+    data["project_status"]["progress"].update(
+        status=status, execution_complete=True, completion_scope="approved_execution",
+        summary="Host still requires attention")
+    result = evaluate(data, zh=True)
+    assert "Host still requires attention" in result["html"]
+    assert "data-execution-completion" not in result["html"]
+    assert "已批准的执行已完成" not in result["html"]
+
+
 def test_plan_summary_renders_host_severity_and_count_not_local_count_rules():
     data = fixture_data()
     # Deliberately incompatible legacy counts must not override the projection.
@@ -139,8 +192,8 @@ def test_plan_summary_renders_host_severity_and_count_not_local_count_rules():
 
 @pytest.mark.parametrize("status,label", [
     ("present_unverified", "Present; not verified"),
-    ("acquired", "Acquired; scientific checks pending"),
-    ("produced", "Produced; scientific checks pending"),
+    ("acquired", "Acquired (download receipt)"),
+    ("produced", "Produced (tool receipt)"),
 ])
 def test_file_presence_and_production_are_not_scientific_readiness(status, label):
     data = fixture_data()

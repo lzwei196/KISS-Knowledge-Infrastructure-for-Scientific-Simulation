@@ -44,9 +44,12 @@ def needed(plan: dict | None, inventory: dict | None, project: Path | None = Non
     """Inventory items the host must bring in: named delivery, consumed by a step,
     not already on disk under a path the plan names."""
     steps = [s for s in (plan or {}).get("steps") or [] if isinstance(s, dict)]
+    generated = _flow().plan.generated_item_ids(plan or {})
     out = []
     for item in (inventory or {}).get("items") or []:
         if not isinstance(item, dict) or item.get("delivery") not in ACQUIRABLE:
+            continue
+        if str(item.get("id")) in generated:
             continue
         if item.get("status") == "ready" and project is not None and _local_present(project, item):
             continue

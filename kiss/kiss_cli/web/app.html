@@ -312,7 +312,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
 </style></head>
 <body>
 <aside>
-  <div class="brand"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><b>GeoForge</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
+  <div class="brand"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><b>GeoForge</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px">Checking AI connections…</span></div>
   <button class="newbtn" id="newsess" disabled>＋ New chat</button>
   <div class="slist" id="slist"></div>
   <div class="sidefoot">
@@ -472,6 +472,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto KI</b>. A green badge means the scientific software passed its check on this machine. You can still discuss KIs that need setup.</div>
     <input id="mq" placeholder="Search KIs…" autocomplete="off" style="margin-bottom:8px">
     <div id="mrows" style="max-height:46vh;overflow-y:auto"></div>
+    <p id="m-error" class="hint" role="alert" style="color:var(--block)"></p>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="primary" id="m-apply">Apply</button>
       <button id="m-clear">Use Auto KI</button>
@@ -572,11 +573,16 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <p class="hint" id="investigation-intro"></p>
       <label id="investigation-issue-label" for="investigation-issue">What should they investigate?</label>
       <textarea id="investigation-issue" rows="3" maxlength="12000" style="width:100%"></textarea>
+      <div><label id="investigation-source-label" for="investigation-source">KI source to investigate</label><select id="investigation-source"><option value="">Current project</option></select><p class="hint" id="investigation-source-help"></p></div>
       <p class="hint" id="investigation-binding"></p>
-      <div class="investigation-actions"><button class="primary" id="investigation-start">Start 3 independent reviews</button><button id="investigation-cancel" hidden>Cancel investigation</button><button id="investigation-refresh">Refresh</button></div>
+      <div class="investigation-actions"><button class="primary" id="investigation-start">Start 3 independent reviews</button><button id="investigation-retry" hidden>Retry incomplete reviews</button><button id="investigation-cancel" hidden>Cancel investigation</button><button id="investigation-refresh">Refresh</button></div>
+      <p class="hint" id="investigation-retry-help" hidden></p>
       <div id="investigation-message" class="hint" role="status" aria-live="polite"></div>
       <div id="investigation-report"></div>
       <div id="investigation-ki-row" hidden><label id="investigation-ki-label" for="investigation-ki">KI to repair</label><select id="investigation-ki"></select></div>
+      <div id="investigation-mode-row" hidden><label id="investigation-mode-label" for="investigation-mode">Repair workflow</label><select id="investigation-mode"><option value="authoring">Full authoring</option><option value="maintenance">Maintenance — reuse unchanged evidence</option></select><p class="hint" id="investigation-mode-help"></p></div>
+      <div id="investigation-recipe-row" hidden><label id="investigation-recipe-label" for="investigation-recipe">Maintenance recipe</label><select id="investigation-recipe"><option value="tool_inventory">Tool inventory</option><option value="preflight_reporting">Preflight reporting</option></select></div>
+      <div id="investigation-author-row" hidden><label id="investigation-author-label" for="investigation-author-notes">Repair instructions (optional)</label><textarea id="investigation-author-notes" maxlength="12000" rows="4"></textarea><p class="hint" id="investigation-author-help"></p></div>
       <div class="investigation-actions"><button id="investigation-draft" hidden>Create repair draft</button><button id="investigation-build" hidden>Build repair with agent</button><button id="investigation-verify" hidden>Verify with KDT</button><button class="primary" id="investigation-apply" hidden>Apply repair and continue</button></div>
     </div>
   </section>
@@ -722,7 +728,7 @@ function md(t,sid=CUR&&CUR.id,streaming=false){const work=extractWork(t,streamin
 
 let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null, VIEW=null,
     PROJECT_LOCATION={default_parent:""},
-    PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
+    PROV={providers:[],any_usable:false,check_state:"loading"}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
 const PENDING_ACTIONS=new Map();
 let VIEW_RENDERED_KEY="";
 // Work is isolated by chat. A slow model in one project must never freeze
@@ -738,6 +744,47 @@ let KIND=localStorage.getItem("kiss.kind")||"cli";
 // Which session KIND was last synced from; null means "not yet".
 let KIND_SYNCED_FOR;
 let STATUS_REFRESHING=null,LAST_STATUS_CHECK=0;
+
+// Project readiness is distinct from the shared library's installation status.
+const PROJECT_KI_STATUS=new Map(),PROJECT_STATUS_READS=new Map(),PROJECT_STATUS_PENDING=new Map(),SESSION_SUMMARIES=new Map();
+function rememberSessionSummary(s){
+  if(!s?.id||!Array.isArray(s.messages))return;
+  const n=Number.isInteger(s.message_count)&&s.message_count>=0?s.message_count:s.messages.length;
+  SESSION_SUMMARIES.set(s.id,{project_path:s.project_path||"",models:[...(s.models||[])],
+    skills:[...(s.skills||[])],mcps:[...(s.mcps||[])],n,metadata_loaded:true});
+}
+function mergeSessionSummaries(rows){
+  return rows.map(row=>{
+    if(!row.external){SESSION_SUMMARIES.delete(row.id);return {...row,metadata_loaded:true};}
+    const known=SESSION_SUMMARIES.get(row.id);
+    // An external list row is only a pointer: its []/0 values are not a read.
+    return known&&known.project_path===(row.project_path||"")?{...row,...known}:
+      {...row,models:[],n:null,metadata_loaded:false};
+  });
+}
+function sessionSummaryText(s){
+  if(s.metadata_loaded===false)return chineseUI()?"外部项目 · 消息尚未读取":"External project · Messages not loaded";
+  const names=Array.isArray(s.models)?s.models:[];
+  return `${names.length?names.join(", "):"Auto KI"} · ${s.n} messages`;
+}
+function invalidateProjectStatus(id){
+  if(!id)return;
+  PROJECT_KI_STATUS.delete(id);
+  PROJECT_STATUS_PENDING.delete(id);
+  PROJECT_STATUS_READS.set(id,(PROJECT_STATUS_READS.get(id)||0)+1);
+}
+function projectHeaderStatus(){
+  const saved=CUR&&PROJECT_KI_STATUS.get(CUR.id);
+  const names=Array.isArray(CUR?.models)&&CUR.models.length?CUR.models:(saved?.selected_kis||[]);
+  const unique=[...new Set(names)];
+  const matching=saved&&saved.revision===KI_UPDATE_REVISION&&unique.length===saved.selected_kis.length&&
+    unique.every(name=>saved.selected_kis.includes(name));
+  const rows=matching?saved.project_preflights:[];
+  const passed=unique.filter(name=>rows.filter(row=>row.name===name).length===1&&
+    rows.some(row=>row.name===name&&row.state==="verified"&&row.can_run===true));
+  const failed=rows.some(row=>unique.includes(row.name)&&["failed","stale","cancelled"].includes(row.state));
+  return {names:unique,known:Boolean(matching),passed,failed,pending:unique.filter(name=>!passed.includes(name))};
+}
 
 function stateClass(n){
   const s=(STATUS[n]||{}).state;
@@ -786,7 +833,11 @@ async function loadAll(){
     }
     if(!boot)throw lastError||new Error("backend not reachable");
     [SESSIONS,MODELS,SKILLS,MCP,PROJECT_LOCATION]=boot;
+    SESSIONS=mergeSessionSummaries(SESSIONS);
     drawSessions(); drawProviders();
+    // Provider readiness is independent of catalog verification. Start it
+    // before openSession can wait on a slow machine-wide status scan.
+    void refreshProviders(false,false);
     const requested=new URLSearchParams(location.search).get("session");
     if(requested&&SESSIONS.some(s=>s.id===requested)){
       await openSession(requested);
@@ -806,17 +857,9 @@ async function loadAll(){
       $("#msg").focus();
     }
     setControls(true);
-    // Model verification and CLI authentication can touch many files or wait
-    // on an external command.  Populate those badges after the usable shell is
-    // visible so a slow Windows disk or CLI cannot look like an app freeze.
-    setTimeout(async()=>{
-      try{
-        [,PROV]=await Promise.all([
-          refreshMachineStatus(true,true),
-          fetch("/api/providers").then(r=>r.json())]);
-        drawProviders();drawLocalSettings();drawProxyProviderSettings();if(CUR)drawModelLabel();
-      }catch(_error){}
-    },750);
+    // Catalog verification may touch many files; it must not delay provider
+    // metadata or turn an unknown connection into a setup-needed warning.
+    setTimeout(()=>{void refreshMachineStatus(true,true);},750);
     if(autoSendSession){
       if(currentProviderReady())setTimeout(()=>{if(CUR&&CUR.id===autoSendSession&&!sessionBusy(autoSendSession))send();},80);
       else $("#hint").textContent=chineseUI()?"新对话已经创建，问题已填入。连接 AI 后点击发送。":"The new chat is ready with the question filled in. Connect an AI, then press Send.";
@@ -836,7 +879,7 @@ async function refreshSessionList(){
     // Conversations may be created by another GeoForge window or by a test
     // through the local API. Keep the sidebar live without replacing the
     // conversation currently being read or its unsent draft.
-    SESSIONS=fresh;drawSessions();
+    SESSIONS=mergeSessionSummaries(fresh);drawSessions();
   }catch(_error){}finally{SESSION_REFRESHING=false;}
 }
 const RUN_GROUPS=[
@@ -847,13 +890,25 @@ const RUN_GROUPS=[
   {name:"Results",stages:["results"],detail:"Save and explain the results"},
 ];
 function runGroupIndex(stage){const i=RUN_GROUPS.findIndex(g=>g.stages.includes(stage));return i<0?0:i;}
+function runCompletionTitle(run){
+  const zh=chineseUI();
+  if(run.execution_complete!==true)return zh?"完成状态尚未确认":"Completion unconfirmed";
+  return run.completion_scope==="data_preparation"&&run.data_preparation_complete===true?
+    (zh?"数据准备已完成":"Data preparation completed"):(zh?"已批准的执行已完成":"Approved execution completed");
+}
+function runStatusSummary(run){
+  if(run?.status!=="complete"||run.execution_complete!==true||!chineseUI())return run?.summary||"";
+  return run.completion_scope==="data_preparation"&&run.data_preparation_complete===true?
+    "数据准备已完成，当前已批准的执行记录已核验。尚未确立独立科学验证。":
+    "已批准的执行已完成，当前执行记录已核验。尚未确立独立科学验证。";
+}
 function runButtonLabel(){return chineseUI()?"项目状态":"Project status";}
 function runStateText(run){
   if(!run||!run.goal)return "";
   const zh=chineseUI();
   if(run.status==="working")return zh?"进行中":"Working";
   if(run.status==="waiting_for_user")return zh?"需要你":"Needs you";
-  if(run.status==="complete")return zh?"已完成":"Complete";
+  if(run.status==="complete")return runCompletionTitle(run);
   if(run.status==="failed")return zh?"需要处理":"Needs attention";
   if(run.status==="unknown")return zh?"尚未确认":"Unconfirmed";
   return zh?"就绪":"Ready";
@@ -869,12 +924,33 @@ function drawRunStatus(run=RUN){
   if(RUN&&RUN.status==="complete")b.classList.add("run-complete");
   if(RUN&&RUN.status==="failed")b.classList.add("run-failed");
   const state=runStateText(RUN);
-  b.title=(state?state+" · ":"")+(RUN&&RUN.summary?RUN.summary:(chineseUI()?"查看 GeoForge 在这个项目中正在做什么":"See what GeoForge is doing in this project"));
+  b.title=(state?state+" · ":"")+(runStatusSummary(RUN)||(chineseUI()?"查看 GeoForge 在这个项目中正在做什么":"See what GeoForge is doing in this project"));
 }
-async function refreshRun(id=CUR&&CUR.id){
+async function refreshRun(id=CUR&&CUR.id,force=false){
   if(!id)return null;
-  const r=await fetch(`/api/session/${id}/run`);if(!r.ok){if(r.status===404)ACQUISITION_TRACKED.delete(id);return null;}
-  const run=await r.json();rememberAcquisition(id,run);if(CUR&&CUR.id===id)drawRunStatus(run);return run;
+  if(force){invalidateProjectStatus(id);if(CUR?.id===id)drawModelLabel();}
+  const revision=KI_UPDATE_REVISION,pending=PROJECT_STATUS_PENDING.get(id);
+  if(pending&&pending.revision===revision)return pending.promise;
+  const read=(PROJECT_STATUS_READS.get(id)||0)+1,entry={revision,promise:null};
+  PROJECT_STATUS_READS.set(id,read);
+  PROJECT_STATUS_PENDING.set(id,entry);
+  entry.promise=(async()=>{
+    try{
+      const r=await fetch(`/api/session/${id}/run`,{cache:"no-store"});
+      if(!r.ok){if(r.status===404)ACQUISITION_TRACKED.delete(id);throw new Error(`project status ${r.status}`);}
+      const run=await r.json();
+      if(PROJECT_STATUS_READS.get(id)!==read||revision!==KI_UPDATE_REVISION)return null;
+      if(run.session!==id||!Array.isArray(run.selected_kis)||!Array.isArray(run.project_preflights))throw new Error("Invalid project status");
+      PROJECT_KI_STATUS.set(id,{selected_kis:[...run.selected_kis],project_preflights:run.project_preflights,revision});
+      rememberAcquisition(id,run);
+      if(CUR?.id===id){drawRunStatus(run);drawModelLabel();}
+      return run;
+    }catch(_error){
+      if(PROJECT_STATUS_READS.get(id)===read){PROJECT_KI_STATUS.delete(id);if(CUR?.id===id)drawModelLabel();}
+      return null;
+    }finally{if(PROJECT_STATUS_PENDING.get(id)===entry)PROJECT_STATUS_PENDING.delete(id);}
+  })();
+  return entry.promise;
 }
 const ACQUISITION_TRACKED=new Map(),ACQUISITION_POLLING=new Set(),ACQUISITION_REFRESHING=new Set();
 let ACQUISITION_READ_AT=0;
@@ -964,7 +1040,7 @@ function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
     <div class="sess ${CUR&&CUR.id===s.id?'sel':''} ${INFLIGHT.has(s.id)?'running':''}" data-id="${esc(s.id)}">
       <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="Archive chat; project files are kept" ${INFLIGHT.has(s.id)?"disabled":""}>✕</button></div>
-      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}${INFLIGHT.has(s.id)?` · <span class="sessionworking">${esc(agentStateText(INFLIGHT.get(s.id),true))}</span>`:""}</div>
+      <div class="m">${esc(sessionSummaryText(s))}${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}${INFLIGHT.has(s.id)?` · <span class="sessionworking">${esc(agentStateText(INFLIGHT.get(s.id),true))}</span>`:""}</div>
     </div>`).join("");
   document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
     if(ev.target.classList.contains("del")) return; openSession(e.dataset.id);});
@@ -1008,6 +1084,9 @@ function currentProviderReady(){
 }
 function drawProviders(){
   const sel=$("#prov");
+  const checking=PROV.check_state==="loading"||(!PROV.check_state&&!PROV.providers.length);
+  const failed=PROV.check_state==="error",unconfirmed=checking||failed;
+  const checkLabel=failed?"AI connection check failed — Recheck":"Checking AI connections…";
   // Adopt the session's own kind when the session CHANGES, so reopening one
   // shows how it actually runs. Doing this on every redraw meant the click
   // that switched to API was immediately overruled by the session still
@@ -1028,20 +1107,26 @@ function drawProviders(){
     const n=candidates.filter(p=>p.usable).length;
     const installed=b.dataset.k==="cli"?candidates.filter(p=>p.installed).length:n;
     b.classList.toggle("on",b.dataset.k===KIND);
-    b.classList.toggle("none",installed===0);
-    b.title=n?`${n} ready`:installed?`${installed} installed — sign-in or recheck needed`
+    b.classList.toggle("none",!unconfirmed&&installed===0);
+    b.title=unconfirmed?checkLabel:n?`${n} ready`:installed?`${installed} installed — sign-in or recheck needed`
       :(b.dataset.k==="api"?"No API key yet — add one in Settings":"No agent CLI installed on this machine");});
   sel.innerHTML=mine.map(p=>
     `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(providerOptionLabel(p))}</option>`).join("")
-    ||'<option value="">(none)</option>';
+    ||`<option value="">${unconfirmed?checkLabel:"(none)"}</option>`;
   const usable=PROV.providers.filter(p=>p.usable);
   sel.value = (cur&&mine.find(p=>p.name===cur&&p.usable))?cur:
               (PROV.default&&mine.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
               (usableHere[0]||mine.find(p=>p.installed)||mine[0]||{}).name||"";
-  $("#nprov").textContent=usable.length?`${usable.length} AI ready`:"AI setup needed";
+  $("#nprov").textContent=checking?checkLabel:failed
+    ?(usable.length?`${usable.length} AI ready · recheck needed`:checkLabel)
+    :usable.length?`${usable.length} AI ready`:"AI setup needed";
   const gap=$("#kindgap");
   if(gap) gap.remove();
-  if(!usableHere.length){
+  if(failed){
+    $("#chat").insertAdjacentHTML("beforebegin",
+      '<div class="banner" id="kindgap">Could not check AI connections. <button id="quick-recheck">Recheck</button></div>');
+    const quick=$("#quick-recheck");if(quick)quick.onclick=()=>refreshProviders(true);
+  }else if(!checking&&!usableHere.length){
     const installed=mine.filter(p=>p.installed);
     const states=installed.map(p=>`${esc(p.label)}: ${providerIssue(p)}`).join("; ");
     const what = KIND==="api"
@@ -1054,7 +1139,7 @@ function drawProviders(){
     const quick=$("#quick-recheck");if(quick)quick.onclick=()=>refreshProviders(true);
   }
   const old=$("#gatebanner"); if(old) old.remove();
-  if(!PROV.any_usable){
+  if(!unconfirmed&&!PROV.any_usable){
     $("#chat").insertAdjacentHTML("beforebegin",
       `<div class="banner" id="gatebanner"><b>Connect an AI to begin.</b> Open AI Settings to add a key or configure a local agent.</div>`);}
   setControls(true);
@@ -1098,6 +1183,8 @@ async function openSession(id){
   ]);
   if(seq!==OPEN_SEQ)return;
   CUR=next;
+  rememberSessionSummary(CUR);SESSIONS=mergeSessionSummaries(SESSIONS);
+  invalidateProjectStatus(id);
   if(INVESTIGATION)INVESTIGATION.sync();
   drawSessions();
   $("#title").textContent=CUR.title;
@@ -1119,21 +1206,18 @@ async function openSession(id){
   await maybeShowAction(id);
 }
 function drawModelLabel(){
-  const ms=CUR?CUR.models:[];
+  const status=projectHeaderStatus(),ms=status.names,zh=chineseUI();
   $("#mlabel").textContent=ms.length?(ms.length===1?ms[0]:`${ms.length} KIs`):"Auto KI";
-  const badge=$("#kistatus");
-  if(!ms.length){badge.className="statuspill";badge.textContent="Chooses for each task";}
-  else{
-    const verified=ms.filter(n=>(STATUS[n]||{}).state==="verified").length;
-    const failed=ms.some(n=>(STATUS[n]||{}).state==="failed");
-    badge.className=`statuspill ${verified===ms.length?"ok":failed?"block":"warn"}`;
-    badge.textContent=ms.length===1?stateLabel(ms[0]):`${verified}/${ms.length} verified on this machine`;
-  }
-  const old=$("#kibanner"); if(old) old.remove();
-  const pending=ms.filter(n=>!(STATUS[n]||{}).can_run);
-  if(pending.length){
-    const href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}`:"/library";
-    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${pending.length===1?"is":"are"} not verified on this machine. You can keep chatting, but the scientific software must pass before it runs. <a href="${href}">${pending.length===1?"Let the agent set it up":"Open KI Library"}</a></div>`);
+  const badge=$("#kistatus"),old=$("#kibanner");if(old)old.remove();
+  badge.title=zh?"此项目当前 KI、运行环境和数据的技术预检；不等于独立科学验证。":"Technical preflight of this project's current KI, runtime and data; independent scientific validation is separate.";
+  if(!ms.length){badge.className="statuspill";badge.textContent=zh?"按任务选择 KI":"Chooses for each task";return;}
+  if(!status.known){badge.className="statuspill";badge.textContent=zh?"项目预检尚未确认":"Project preflight unconfirmed";return;}
+  badge.className=`statuspill ${!status.pending.length?"ok":status.failed?"block":"warn"}`;
+  badge.textContent=ms.length===1&&!status.pending.length?(zh?"项目预检通过":"Project preflight passed"):
+    `${status.passed.length}/${ms.length} ${zh?"项目预检通过":"project preflights passed"}`;
+  if(status.pending.length){
+    const pending=status.pending,href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}&session=${encodeURIComponent(CUR.id)}`:"/library";
+    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${zh?"尚无当前项目预检通过的证据。可继续讨论；执行前必须通过项目检查。":"does not have a current passing project preflight. You can keep chatting; project checks must pass before execution."} <a href="${href}">${zh?"查看项目设置":"Review project setup"}</a></div>`);
   }
 }
 function addTurn(who,cls){
@@ -1359,6 +1443,7 @@ async function maybeShowAction(id){
   if(!id||!CUR||CUR.id!==id||sessionBusy(id))return;
   const r=await fetch(`/api/session/${id}/request`);if(!r.ok)return;
   const data=await r.json(),request=data.request;
+  if(!CUR||CUR.id!==id||sessionBusy(id))return;
   if(!request||request.status!=="waiting"||!questionOptions(request).length)return;
   const key=`${id}:${request.id||request.title}:${request.created_at||""}`;if(SEEN_ACTIONS.has(key))return;
   if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
@@ -1566,6 +1651,7 @@ async function send(){
   try{
   const response=await fetch("/api/session/"+target);if(!response.ok)throw new Error("Could not refresh chat");
   const s=await response.json();
+  rememberSessionSummary(s);
   const i=SESSIONS.findIndex(x=>x.id===target);
   if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.message_count??s.messages.length;
            SESSIONS[i].models=s.models;SESSIONS[i].skills=s.skills||[];
@@ -1699,6 +1785,7 @@ function viewPanel(panel){
   let body="";
   if(kind==="metric")body=`<div class="view-metric"><strong>${esc(panel.value)}</strong>${panel.unit?`<span>${esc(panel.unit)}</span>`:""}${panel.status?`<small>${esc(panel.status)}</small>`:""}</div>`;
   else if(kind==="table")body=viewTable(panel);
+  else if(kind==="file")body=`<a class="view-file" href="${esc(url)}" download="${esc((panel.path||"").split("/").pop())}" rel="noreferrer"><span class="mark">↧</span><span>${esc(panel.path||panel.title)}</span></a>`;
   else if(panel.mime==="video/mp4"||panel.mime==="video/webm")body=`<video class="view-video" src="${esc(url)}" controls autoplay muted loop playsinline preload="metadata"></video>`;
   else if((panel.mime||"").startsWith("image/"))body=`<a href="${esc(url)}" target="_blank" rel="noreferrer"><img class="view-media" src="${esc(url)}" alt="${esc(panel.title)}" loading="lazy"></a>`;
   else body=`<a class="view-file" href="${esc(url)}" target="_blank" rel="noreferrer"><span class="mark">${kind==="model3d"?"3D":"↗"}</span><span>${esc(panel.path||panel.title)}</span></a>`;
@@ -1736,8 +1823,8 @@ async function refreshProjectView(open=true){
 function pauseProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.pause());}
 function resumeProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.play().catch(()=>{}));}
 function projectViewPrompt(){
-  if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。把所有展示文件放在 artifacts/。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
-  return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Put all display files under artifacts/. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
+  if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。媒体展示文件放在 artifacts/；file 面板可以直接链接已有 outputs/**/*.json 报告的原始路径。不要用图表代替报告，也不要为了发布链接而复制报告文件。文件链接或回执绑定不代表科学验证。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
+  return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Keep media display files under artifacts/. A file panel may directly link an existing outputs/**/*.json report at its original path. Never substitute a chart for a report or copy report bytes merely to publish a link. A file link or receipt binding does not establish scientific validation. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
 }
 $("#openview").onclick=async()=>{if(INVESTIGATION)INVESTIGATION.close();$("#datapanel").classList.remove("open");$("#viewpanel").classList.add("open");await refreshProjectView(true);resumeProjectMedia();};
 $("#view-close").onclick=()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");};
@@ -1803,6 +1890,76 @@ function calibrationResultCard(latest,zh){
     (zh?"配置检查通过并不自动证明模型通过了独立的科学验证。":"Passing configured checks does not establish independent scientific validation.");
   return `<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">${zh?"最近一次校准":"Latest calibration"} · ${esc(latest.ki||'KI')}</b><span class="actiontag ${latest.promotable===true?'ok':'warn'}">${latest.promotable===true?(zh?'配置检查已通过':'Configured checks passed'):(zh?'未提升为正式配置':'Not promoted')}</span></div><small>${esc(latest.algorithm||'optimizer')} · ${esc(latest.status||'unknown status')}${losses?` · ${zh?'最佳损失':'best loss'} ${losses}`:''}</small><small>${zh?"请求的优化预算":"Requested optimizer budget"}: ${count(latest.requested_optimizer_budget??latest.budget)} · ${zh?"优化评估":"Optimizer evaluations"}: ${count(latest.optimizer_evaluations??latest.n_evaluations)} · ${zh?"模型启动次数":"Native model launches"}: ${count(latest.native_launch_count)}</small><b>${zh?"拟合期指标":"Training metrics"}</b>${training||`<small>${zh?'未记录':'not recorded'}</small>`}${checkTable}${meta.activation_only?`<small>${zh?'这是功能启用测试，不代表流域已校准。':'Activation test; this does not mean the basin is calibrated.'}</small>`:''}<small>${caveat}</small>${latest.reason?`<small>${esc(latest.reason)}</small>`:''}<small>${zh?'报告':'Report'}: <code>${esc(latest.report_path||'')}</code></small></div>`;
 }
+const OUTPUT_ARCHIVE_ACTIONS=new Set(), OUTPUT_ARCHIVE_FEEDBACK=new Map(), OUTPUT_ARCHIVE_READS=new Map();
+function archiveItemReady(item){
+  return item&&item.eligible===true&&typeof item.path==="string"&&item.path.length>0&&/^[a-f0-9]{64}$/.test(item.sha256||"")&&Number.isSafeInteger(item.size)&&item.size>=0&&/^[a-f0-9]{64}$/.test(item.context_sha256||"");
+}
+function outputArchiveLinks(record,sid,zh){
+  if(!record||!/^[a-f0-9]{32}$/.test(record.id||""))return "";
+  const base=`/api/session/${encodeURIComponent(sid)}/archived-unreceipted/${record.id}`;
+  return `<a href="${base}" download>${zh?"下载归档文件":"Download archived file"}</a> · <a href="${base}/audit" download>${zh?"下载审计记录":"Download audit record"}</a>`;
+}
+function outputArchiveFeedback(sid){
+  if(CUR?.id!==sid||!$("#output-archive-feedback"))return;
+  const feedback=OUTPUT_ARCHIVE_FEEDBACK.get(sid),node=$("#output-archive-feedback");
+  node.setAttribute("role",feedback?.error?"alert":"status");
+  node.innerHTML=esc(feedback?.message||"")+(feedback?.archive?`<small><code>${esc(feedback.archive.path||"")}</code> · ${outputArchiveLinks(feedback.archive,sid,chineseUI())}</small>`:"");
+}
+function outputArchiveCard(payload,sid,zh){
+  const items=Array.isArray(payload.items)?payload.items:[],archives=Array.isArray(payload.archives)?payload.archives:[];
+  if(!items.length&&!archives.length&&!payload.busy&&!payload.reason&&!OUTPUT_ARCHIVE_FEEDBACK.has(sid))return "";
+  const busy=payload.busy===true||OUTPUT_ARCHIVE_ACTIONS.has(sid);
+  const rows=items.map((item,index)=>`<div class="dataitem"><code>${esc(item.path||"")}</code><small>${esc(sizeLabel(item.size))}${item.sha256?` · SHA-256 ${esc(item.sha256)}`:""}</small>${item.reason?`<small>${esc(item.reason)}</small>`:""}${archiveItemReady(item)?`<button data-archive-output="${index}" ${busy?'disabled':''}>${zh?"归档以供审查":"Archive for review"}</button>`:""}</div>`).join("");
+  const saved=archives.map(record=>`<div class="dataitem"><code>${esc(record.path||"")}</code><small>${esc(sizeLabel(record.size))} · SHA-256 ${esc(record.sha256||"")}</small><small>${outputArchiveLinks(record,sid,zh)}</small></div>`).join("");
+  return `<section class="datacard"><h3>${zh?"需要审查的额外文件":"Additional files needing review"}</h3><p class="hint">${zh?"归档会把选中的额外文件移到项目审查归档，保留原始字节和审计记录。归档不验证文件，也不重新运行模型。":"Archiving moves the selected extra file into the project's review archive, preserving its bytes and audit record. It does not validate the file or rerun the model."}</p>${busy||payload.reason?`<small>${esc(payload.reason||(zh?"项目正在处理，请稍后重试。":"The project is busy; try again when it is idle."))}</small>`:""}${rows}<p id="output-archive-feedback" role="status" aria-live="polite"></p>${saved?`<details open><summary>${zh?"已归档以供审查":"Archived for review"}</summary>${saved}</details>`:""}</section>`;
+}
+async function archiveUnreceiptedArtifact(sid,item,button){
+  if(CUR?.id!==sid||OUTPUT_ARCHIVE_ACTIONS.has(sid)||!archiveItemReady(item))return;
+  if(sessionBusy()){
+    OUTPUT_ARCHIVE_FEEDBACK.set(sid,{error:true,message:chineseUI()?"请等待当前操作完成后再归档。":"Wait for the current operation to finish before archiving."});
+    outputArchiveFeedback(sid);return;
+  }
+  OUTPUT_ARCHIVE_ACTIONS.add(sid);OUTPUT_ARCHIVE_READS.delete(sid);button.disabled=true;
+  OUTPUT_ARCHIVE_FEEDBACK.set(sid,{message:chineseUI()?"正在归档…":"Archiving…"});outputArchiveFeedback(sid);
+  let archived=false;
+  try{
+    const response=await fetch(`/api/session/${encodeURIComponent(sid)}/archive-unreceipted-artifact`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:item.path,
+        expected_sha256:item.sha256,expected_size:item.size,expected_context_sha256:item.context_sha256})});
+    const result=await response.json();
+    if(!response.ok||result.ok!==true||!outputArchiveLinks(result.archive,sid,false))
+      throw new Error(result.error||(chineseUI()?"未能确认归档；请刷新项目状态。":"Archiving was not confirmed; refresh project status."));
+    archived=true;
+    OUTPUT_ARCHIVE_FEEDBACK.set(sid,{archive:result.archive,message:chineseUI()?"已归档以供审查。计划和运行记录未更改；继续项目以重新检查完成状态。":"Archived for review. Plan and run records are unchanged; continue the project to reassess completion."});
+  }catch(error){OUTPUT_ARCHIVE_FEEDBACK.set(sid,{error:true,message:error.message||String(error)});}
+  finally{OUTPUT_ARCHIVE_ACTIONS.delete(sid);if(CUR?.id===sid){button.disabled=false;outputArchiveFeedback(sid);}}
+  if(archived&&CUR?.id===sid){
+    try{await refreshData();}
+    catch(error){OUTPUT_ARCHIVE_FEEDBACK.set(sid,{...OUTPUT_ARCHIVE_FEEDBACK.get(sid),error:true,message:(chineseUI()?"文件已归档，但状态刷新失败：":"File archived, but status refresh failed: ")+(error.message||String(error))});outputArchiveFeedback(sid);}
+  }
+}
+async function refreshUnreceiptedArtifacts(sid){
+  if(CUR?.id!==sid||OUTPUT_ARCHIVE_ACTIONS.has(sid)||!$("#unreceipted-artifacts"))return;
+  const token={};OUTPUT_ARCHIVE_READS.set(sid,token);
+  const current=()=>CUR?.id===sid&&OUTPUT_ARCHIVE_READS.get(sid)===token&&!OUTPUT_ARCHIVE_ACTIONS.has(sid)&&$("#unreceipted-artifacts");
+  try{
+    const response=await fetch(`/api/session/${encodeURIComponent(sid)}/unreceipted-artifacts`,{cache:"no-store"});
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.error||(chineseUI()?"无法读取额外文件状态。":"Could not read additional file status."));
+    if(!current())return;
+    $("#unreceipted-artifacts").innerHTML=outputArchiveCard(payload,sid,chineseUI());outputArchiveFeedback(sid);
+    document.querySelectorAll("#unreceipted-artifacts [data-archive-output]").forEach(button=>{
+      const item=(payload.items||[])[Number(button.dataset.archiveOutput)];
+      button.onclick=()=>{if(payload.busy===true||!item)return;return archiveUnreceiptedArtifact(sid,item,button);};
+    });
+  }catch(error){
+    if(!current())return;
+    $("#unreceipted-artifacts").innerHTML=`<section class="datacard"><h3>${chineseUI()?"额外文件状态未确认":"Additional file status unconfirmed"}</h3><p role="alert">${esc(error.message||String(error))}</p><p id="output-archive-feedback" role="status"></p><button id="output-archive-retry">${chineseUI()?"重新检查":"Check again"}</button></section>`;
+    outputArchiveFeedback(sid);
+    const retry=$("#output-archive-retry");if(retry)retry.onclick=()=>refreshUnreceiptedArtifacts(sid);
+  }
+}
+
 function renderData(data){
   const files=data.files||[];
   const referenceFiles=data.reference_files||[];
@@ -1816,18 +1973,22 @@ function renderData(data){
   const runModels=(run.selected_kis||[]).length?run.selected_kis:models.map(m=>m.name);
   const activeData=Boolean(prep.active&&runModels.length);
   const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
-  const softwareLabel=sw.total?`${sw.ready||0} / ${sw.total} software verified`:'Auto KI';
-  const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.status==="unknown"?"Status unconfirmed":run.goal?"Ready to continue":"Ready when you are";
+  const preflights=projection.project_preflights||[];
+  const selectedPreflights=runModels.map(name=>preflights.filter(row=>row.name===name));
+  const softwareLabel=runModels.length?`${selectedPreflights.filter(rows=>rows.length===1&&rows[0].state==="verified"&&rows[0].can_run===true).length} / ${runModels.length} ${chineseUI()?'项目预检通过':'project preflights passed'}`:'Auto KI';
+  const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?runCompletionTitle(run):run.status==="failed"?"Project needs attention":run.status==="unknown"?"Status unconfirmed":run.goal?"Ready to continue":"Ready when you are";
   const stateClass=run.status==="complete"?"ok":run.status==="waiting_for_user"?"warn":run.status==="failed"?"block":"";
-  const current=run.stage?runGroupIndex(run.stage):-1, allDone=run.status==="complete";
+  const current=run.stage?runGroupIndex(run.stage):-1, executionDone=run.status==="complete"&&run.execution_complete===true;
   const zhP=chineseUI();
   const progressTitle=waiting?(zhP?"项目进度":"Progress"):esc(stateLabel);
   const progressEvidence=run.source?statusEvidenceText({source:run.source,age_seconds:run.age_seconds}):"";
-  const progress=`<div class="datacard"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${progressTitle}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div><div class="hint" style="margin:0 0 8px">${esc(run.summary||(run.goal?"":(zhP?"在对话中描述科学目标即可开始。":"Describe the scientific goal in chat to begin.")))}</div>${run.goal?`<div class="dataitem"><b>${zhP?"目标":"Goal"}</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0">${modelchips}</div>`:""}<div class="runsteps">${RUN_GROUPS.map((group,i)=>{
-    // Stage identifies current focus, not proof that earlier scientific checks passed.
-    const done=allDone,active=Boolean(run.goal)&&!allDone&&i===current;
-    return `<div class="runstep ${done?'done':active?'active':''}"><span class="stepdot">${done?'✓':active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
-  }).join("")}</div>${progressEvidence?`<small class="hint" data-status-evidence>${esc(progressEvidence)}</small>`:""}</div>`;
+  const progressStages=executionDone?`<div class="dataitem" data-execution-completion>${zhP?"当前已批准的执行记录已核验。":"Current approved execution records verified."}</div>`:
+    `<div class="runsteps">${RUN_GROUPS.map((group,i)=>{
+      // Focus and technical completion cannot prove all scientific stages.
+      const active=Boolean(run.goal)&&run.status!=="complete"&&i===current;
+      return `<div class="runstep ${active?'active':''}"><span class="stepdot">${active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
+    }).join("")}</div>`;
+  const progress=`<div class="datacard"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${progressTitle}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div><div class="hint" style="margin:0 0 8px">${esc(runStatusSummary(run)||(run.goal?"":(zhP?"在对话中描述科学目标即可开始。":"Describe the scientific goal in chat to begin.")))}</div>${run.goal?`<div class="dataitem"><b>${zhP?"目标":"Goal"}</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0">${modelchips}</div>`:""}${progressStages}${progressEvidence?`<small class="hint" data-status-evidence>${esc(progressEvidence)}</small>`:""}</div>`;
   const sourceFiles=files.filter(f=>!/(^|\/)README(?:\.[^/]*)?$/i.test(f.relative_path||f.name||""));
   const datasetChecks=plans.flatMap(plan=>(plan.datasets||[]).map(item=>({...item,model:plan.model||"KI"})));
   // A later project stage is not evidence that each input was validated.
@@ -1909,7 +2070,9 @@ function renderData(data){
     :request.kind==="download"
     ?`${request.expected_path?`<small style="display:block;margin-top:6px">${zhUI?"放置到":"Place at"}: <code>${esc(request.expected_path)}</code> <button class="tiny" id="request-copy-path" style="margin-left:6px">${zhUI?"复制路径":"Copy path"}</button></small>`:""}<div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap">${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button class="primary">${zhUI?"打开下载链接":"Open download link"}</button></a>`:""}<button id="request-done">${zhUI?"文件已放好，继续":"Files are in place, continue"}</button></div>`
     :`${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">${zhUI?"打开官方页面":"Open official page"}</button></a>`:""}${(request.options||[]).length?`<button class="primary" id="request-respond" style="margin-top:7px">${zhUI?"回答这个问题":"Respond"}</button>`:""}`):"";
-  const human=waiting?`<div class="datacard" id="human-request" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${zhUI?"需要你处理":"One thing needs you"}</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b>${(request.rows||[]).length?"":`<div class="hint" style="margin:4px 0;white-space:pre-wrap">${esc(request.message||'')}</div>`}${requestActions}</div>`:
+  const earlier=projection.request_history;
+  const human=waiting?`<div class="datacard" id="human-request" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${zhUI?"需要你处理":"One thing needs you"}</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b>${(request.rows||[]).length?"":`<div class="hint" style="margin:4px 0;white-space:pre-wrap">${esc(request.message||'')}</div>`}${requestActions}</div>`:earlier?.status==='historical'
+    ?`<div class="datacard" id="earlier-user-question"><h3>${zhUI?"先前未回答的问题":"Earlier unanswered question"}</h3><div class="hint">${zhUI?"已批准的工作流程已在后续对话中完成。此问题保留供参考，未被回答，也未授予任何权限。":"The approved workflow completed in a later turn. This question is kept for reference; it has not been answered and grants no permission."}</div><details><summary>${esc(earlier.title||'Earlier question')}</summary><div style="white-space:pre-wrap">${esc(earlier.message||'')}</div></details></div>`:
     `<div class="datacard" id="no-user-action"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
   const filecard=`<div class="datacard"><h3>Project files · ${files.length}</h3>
     ${files.length?`<table class="filetable">${files.map(f=>`<tr><td><b>${esc(f.name)}</b><br><span style="color:var(--fg-3)">${esc(f.relative_path)}</span></td><td style="text-align:right">${sizeLabel(f.size)}</td></tr>`).join("")}</table>`:
@@ -1922,11 +2085,11 @@ function renderData(data){
   const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. Every declared requirement can now be opened and questioned in the main data card above. This section keeps file-path checks, project files, and optional literature for audit and debugging.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${filecard}${literature}</div></details>`;
   const pd=data.plan_data;
   const bindingNote=pd&&pd.binding_status&&pd.binding_status.status==="needs_review"?`<section class="datacard"><h3>${zhUI?"数据关联需要检查":"Data binding needs review"}</h3><p>${esc(pd.binding_status.message)}</p></section>`:"";
-  const pdLabel={done:[zhUI?"文件已到位":"Files available","ok"],present_unverified:[zhUI?"文件存在，尚未核实":"Present; not verified","warn"],acquired:[zhUI?"已下载，待科学检查":"Acquired; scientific checks pending","warn"],produced:[zhUI?"工具已生成，待科学检查":"Produced; scientific checks pending","warn"],waiting_for_you:[zhUI?"等你处理":"Waiting for you","warn"],pending:[zhUI?"尚未准备":"Pending",""],failed:[zhUI?"下载失败":"Fetch failed","block"],unused:[zhUI?"计划中未用到":"No step uses it",""],missing:[zhUI?"缺失":"Missing","block"]};
+  const pdLabel={done:[zhUI?"文件已到位":"Files available","ok"],present_unverified:[zhUI?"文件存在，尚未核实":"Present; not verified","warn"],acquired:[zhUI?"已下载（下载回执）":"Acquired (download receipt)","warn"],produced:[zhUI?"已生成（工具回执）":"Produced (tool receipt)","warn"],waiting_for_you:[zhUI?"等你处理":"Waiting for you","warn"],pending:[zhUI?"尚未准备":"Pending",""],failed:[zhUI?"下载失败":"Fetch failed","block"],unused:[zhUI?"计划中未用到":"No step uses it",""],missing:[zhUI?"缺失":"Missing","block"]};
   const pdGroup={fetch:zhUI?"GeoForge 自动下载":"GeoForge fetches",you:zhUI?"需要你处理":"You",run:zhUI?"运行时自动准备":"The run prepares itself"};
   const dataSummary=projection.data_summary||{severity:"warn",label:zhUI?"数据状态尚未确认":"Data status unconfirmed"};
   const summaryCount=Number.isFinite(dataSummary.available)&&Number.isFinite(dataSummary.total)?`${dataSummary.available}/${dataSummary.total} · `:"";
-  const planData=pd&&Array.isArray(pd.items)&&pd.items.length?`<div class="datacard" id="plan-data"><div class="data-overview-head"><div><h3>${zhUI?"本次计划的数据":"Data in this plan"} · ${pd.total}</h3><div class="hint" style="margin:1px 0 0">${zhUI?"来自已批准/已提交的数据清单；状态由 receipt 和本地文件决定，不是 Agent 的说法。":"From the submitted data inventory; status comes from receipts and files on disk, not from the agent's words."}</div></div><span class="statuspill ${esc(dataSummary.severity||"")}" data-plan-data-summary>${esc(summaryCount+(dataSummary.label||""))}</span></div>${["fetch","you","run"].map(g=>{const rows=pd.items.filter(i=>i.group===g);if(!rows.length)return "";return `<div style="margin-top:8px"><b style="font-size:12px">${esc(pdGroup[g])} (${rows.length})</b>${rows.map(i=>{const [lab,cls]=pdLabel[i.status]||[i.status,""];return `<div class="dataitem" style="padding:5px 0"><div style="display:flex;gap:7px;align-items:flex-start"><span style="flex:1"><code>${esc(i.id)}</code>${i.dataset_id&&i.dataset_id!==i.id?` ← <code>${esc(i.dataset_id)}</code>`:""}${i.size_label?` · ${esc(i.size_label)}`:""}${i.for&&i.for.length?` <small>${esc(i.for.join(", "))}</small>`:""}${itemNote(i,zhUI)?`<small style="display:block">${esc(itemNote(i,zhUI))}</small>`:""}${i.how==="provide"&&!["done","acquired","produced","present_unverified"].includes(i.status)?`<button class="tiny pd-upload" data-item="${esc(i.id)}" style="margin-top:4px">${zhUI?"上传文件":"Upload files"}</button>`:""}</span><span class="actiontag ${cls}">${esc(lab)}</span></div></div>`;}).join("")}</div>`;}).join("")}</div>`:"";
+  const planData=pd&&Array.isArray(pd.items)&&pd.items.length?`<div class="datacard" id="plan-data"><div class="data-overview-head"><div><h3>${zhUI?"本次计划的数据":"Data in this plan"} · ${pd.total}</h3><div class="hint" style="margin:1px 0 0">${zhUI?"显示已提交清单的文件可用性和技术回执；独立科学验证是另一项检查。":"File availability and technical receipts from the submitted inventory. Independent scientific validation is separate."}</div></div><span class="statuspill ${esc(dataSummary.severity||"")}" data-plan-data-summary>${esc(summaryCount+(dataSummary.label||""))}</span></div>${["fetch","you","run"].map(g=>{const rows=pd.items.filter(i=>i.group===g);if(!rows.length)return "";return `<div style="margin-top:8px"><b style="font-size:12px">${esc(pdGroup[g])} (${rows.length})</b>${rows.map(i=>{const [lab,cls]=pdLabel[i.status]||[i.status,""];return `<div class="dataitem" style="padding:5px 0"><div style="display:flex;gap:7px;align-items:flex-start"><span style="flex:1"><code>${esc(i.id)}</code>${i.dataset_id&&i.dataset_id!==i.id?` ← <code>${esc(i.dataset_id)}</code>`:""}${i.size_label?` · ${esc(i.size_label)}`:""}${i.for&&i.for.length?` <small>${esc(i.for.join(", "))}</small>`:""}${itemNote(i,zhUI)?`<small style="display:block">${esc(itemNote(i,zhUI))}</small>`:""}${i.how==="provide"&&!["done","acquired","produced","present_unverified"].includes(i.status)?`<button class="tiny pd-upload" data-item="${esc(i.id)}" style="margin-top:4px">${zhUI?"上传文件":"Upload files"}</button>`:""}</span><span class="actiontag ${cls}">${esc(lab)}</span></div></div>`;}).join("")}</div>`;}).join("")}</div>`:"";
   const actionNames={manual_download:zhUI?"需要手动下载":"Manual download needed",agent_download:zhUI?"可由 Agent 发起下载（批准后）":"Agent can download after approval",agent_prepare:zhUI?"由 Agent 准备（上游数据就绪后）":"Agent prepares after upstream inputs are ready",agent_validate:zhUI?"已有文件，Agent 下一步检查和准备":"Files present: agent checks and prepares next",check_coverage:zhUI?"先核实数据覆盖与格式":"Check coverage and format first",choose_data:zhUI?"需要重新选择数据":"Choose another dataset"};
   actionNames.agent_download=zhUI?"方案批准后由 GeoForge 下载，Agent 准备和检查":"GeoForge downloads after plan approval; agent prepares and checks";
   actionNames.acquire_subset=zhUI?"方案批准后由 GeoForge 裁剪并下载，Agent 准备和检查":"GeoForge subsets and downloads after plan approval; agent prepares and checks";
@@ -1941,7 +2104,7 @@ function renderData(data){
   const observations=Array.isArray(projection.observations)?projection.observations:[];
   const evidenceDetails=observations.length?`<section class="datacard" id="status-evidence"><h3>${zhUI?"状态依据":"Status evidence"}</h3>${observations.map(observation=>`<div class="dataitem"><small>${esc(statusEvidenceText(observation))}</small></div>`).join("")}</section>`:"";
   const details=`<details class="datacard" id="status-details"><summary style="cursor:pointer"><b>${zhP?"更多细节":"Details"}</b> <small class="hint">${zhP?"下载任务记录、项目文件夹、目录搜索、数据来源、校准":"acquisition log, folders, catalogue search, data sources, calibration"}</small></summary>${evidenceDetails}${preparations}${subsets}${bindingNote}${resolutionCard}${dataActions}${dataOverview}${obsCatalogue}${dataSources}${calibrationCard}${advanced}</details>`;
-  return `${waiting?human:""}${progress}${planData||""}${details}`;
+  return `${waiting?human:""}${progress}${earlier?.status==='historical'&&!waiting?human:""}${planData||""}<div id="unreceipted-artifacts"></div>${details}`;
 }
 let SUBSET_TIMER=null;
 
@@ -2170,13 +2333,14 @@ async function explainDataItem(data,lane,item){
 async function refreshData(){
   if(!CUR)return;
   const requestedSession=CUR.id;
-  if(DATA_ACTIONS.has(requestedSession))return;
+  if(DATA_ACTIONS.has(requestedSession)||OUTPUT_ARCHIVE_ACTIONS.has(requestedSession))return;
   $("#databody").innerHTML='<span class="spin"></span>reading project status…';
   const r=await fetch(`/api/session/${CUR.id}/data`), data=await r.json();
-  if(!CUR||CUR.id!==requestedSession||DATA_ACTIONS.has(requestedSession))return;
+  if(!CUR||CUR.id!==requestedSession||DATA_ACTIONS.has(requestedSession)||OUTPUT_ARCHIVE_ACTIONS.has(requestedSession))return;
   LAST_PREP=r.ok?data:null;
   $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
   if(r.ok){
+    refreshUnreceiptedArtifacts(requestedSession);
     refreshPreparationEstimates(requestedSession).catch(error=>{
       if(CUR?.id===requestedSession&&$("#preparation-estimates"))$("#preparation-estimates").textContent=error.message;
     });
@@ -2311,16 +2475,28 @@ function drawPick(){
   document.querySelectorAll(".pickrow").forEach(e=>e.onclick=()=>{
     const n=e.dataset.n; PICK.has(n)?PICK.delete(n):PICK.add(n); drawPick();});
 }
-$("#pickmodels").onclick=()=>{PICK=new Set(CUR?CUR.models:[]); drawPick(); $("#mpick").classList.add("open");};
+$("#pickmodels").onclick=()=>{PICK=new Set(CUR?CUR.models:[]);$("#m-error").textContent=""; drawPick(); $("#mpick").classList.add("open");};
 $("#mq").addEventListener("input",drawPick);
 $("#m-close").onclick=()=>$("#mpick").classList.remove("open");
 $("#m-clear").onclick=()=>{PICK.clear(); drawPick();};
 $("#m-apply").onclick=async()=>{
-  if(!await ensureSession())return;
-  CUR=await (await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[...PICK]})})).json();
-  drawModelLabel(); drawSessions(); $("#mpick").classList.remove("open");
-  if($("#datapanel").classList.contains("open")) refreshData();
+  const button=$("#m-apply");if(button.disabled)return;
+  button.disabled=true;$("#m-error").textContent="";
+  try{
+    if(!await ensureSession())return;
+    const target=CUR.id;
+    const response=await fetch(`/api/session/${target}/update`,{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[...PICK]})});
+    const saved=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(saved.error||`${chineseUI()?"未能保存 KI 选择":"Could not save KI selection"} (${response.status})`);
+    if(saved.id!==target||!Array.isArray(saved.models))throw new Error(chineseUI()?"服务器返回了无效的对话信息；请刷新后重试。":"The server returned invalid chat information; refresh and try again.");
+    if(CUR?.id!==target)return;
+    CUR=saved;rememberSessionSummary(saved);invalidateProjectStatus(target);
+    SESSIONS=mergeSessionSummaries(SESSIONS);drawModelLabel();drawSessions();$("#mpick").classList.remove("open");
+    void refreshRun(target);
+    if($("#datapanel").classList.contains("open"))refreshData();
+  }catch(error){$("#m-error").textContent=error.message||String(error);}
+  finally{button.disabled=false;}
 };
 
 /* skills: chat-composer picker and /skill-name commands */
@@ -2452,17 +2628,43 @@ function drawLocalSettings(){
   box.querySelectorAll("[data-key]").forEach(i=>i.oninput=()=>{SETTINGS_KEYS[i.dataset.key]=i.value;});
   box.querySelectorAll("[name=s-default]").forEach(r=>r.onchange=()=>{$("#s-def").value=r.value;box.querySelectorAll(".provcard").forEach(c=>c.classList.toggle("default",c.contains(r)));});
 }
-let LAST_PROVIDER_CHECK=0;
+let LAST_PROVIDER_CHECK=0,PROVIDER_REFRESHING=null;
 let SETTINGS_PROXY_EFFECTIVE="";
 let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","network:obs","cli:claude","cli:codex"]);
 let SETTINGS_PLATFORM="";
-async function refreshProviders(showStatus=false){
+async function refreshProviders(showStatus=false,force=true){
   const note=$("#s-local-msg");if(showStatus&&note)note.textContent="checking…";
-  try{
-    PROV=await (await fetch("/api/providers?refresh=1")).json();
-    LAST_PROVIDER_CHECK=Date.now();drawProviders();drawLocalSettings();
-    if(showStatus&&note)note.textContent="checked";
-  }catch(e){if(showStatus&&note)note.textContent="could not recheck";}
+  if(!PROVIDER_REFRESHING){
+    PROV={...PROV,check_state:"loading"};drawProviders();
+    PROVIDER_REFRESHING=Promise.resolve().then(async()=>{
+      try{
+        const r=await fetch(force?"/api/providers?refresh=1":"/api/providers",{cache:"no-store"});
+        if(!r.ok)throw new Error(`providers ${r.status}`);
+        const fresh=await r.json();
+        if(!fresh||!Array.isArray(fresh.providers)||typeof fresh.any_usable!=="boolean"||
+           fresh.providers.some(p=>!p||typeof p.name!=="string"||!["cli","api"].includes(p.kind)||typeof p.usable!=="boolean"))
+          throw new Error("invalid provider response");
+        PROV={...fresh,check_state:"ready"};
+        drawProviders();drawLocalSettings();drawProxyProviderSettings();if(CUR)drawModelLabel();
+        return true;
+      }catch(_error){
+        // Retain the last successful list, but never present a failed fetch as
+        // proof that credentials or local agents are missing.
+        PROV={...PROV,check_state:"error"};drawProviders();
+        return false;
+      }finally{
+        LAST_PROVIDER_CHECK=Date.now();PROVIDER_REFRESHING=null;
+      }
+    });
+  }
+  const ok=await PROVIDER_REFRESHING;
+  if(showStatus&&note)note.textContent=ok?"checked":"could not recheck";
+  return ok;
+}
+function refreshProvidersOnFocus(){
+  const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
+  const retry=PROV.check_state==="error"||PROV.check_state==="loading"||(!PROV.check_state&&!PROV.providers.length);
+  if(!PROVIDER_REFRESHING&&(waiting||retry)&&Date.now()-LAST_PROVIDER_CHECK>3000)return refreshProviders(false);
 }
 function drawProxyProviderSettings(){
   const box=$("#s-proxy-providers");if(!box)return;
@@ -2688,14 +2890,15 @@ window.addEventListener("focus",()=>{
   refreshSessionList();
   watchKiUpdates();
   refreshMachineStatus(true,true);
-  const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
-  if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
+  void refreshRun(CUR&&CUR.id,true);
+  refreshProvidersOnFocus();
 });
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)pauseProjectMedia();
   else{
     watchKiUpdates();
     refreshMachineStatus(true,true);
+    void refreshRun(CUR&&CUR.id,true);
     if($("#viewpanel").classList.contains("open"))resumeProjectMedia();
   }
 });

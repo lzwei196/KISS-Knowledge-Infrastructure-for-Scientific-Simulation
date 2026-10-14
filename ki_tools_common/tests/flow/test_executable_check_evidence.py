@@ -62,13 +62,13 @@ def test_executable_check_is_required_and_must_pass_under_current_approval(case,
         }
     model_receipt = record(case, "model")
     before = model_receipt.read_bytes()
-    proof = receipts.evidence(project, plan, approval)
+    proof = receipts.evidence(project, plan, approval, inventory={"items": []})
     assert proof["executable_steps"] == ["check", "model"]
     assert proof["steps_missing"] == ["check"]
     assert proof["steps_passed"] == ["model"]
     assert proof["validation"] == "incomplete" and not proof["receipts_verified"]
     record(case, "check", status=status, approval=check_approval, typed=typed)
-    proof = receipts.evidence(project, plan, approval)
+    proof = receipts.evidence(project, plan, approval, inventory={"items": []})
     passed = status == "passed" and check_approval == "current"
     assert proof["receipts_verified"] is passed
     assert proof["steps_missing"] == ([] if passed else ["check"])
@@ -81,7 +81,7 @@ def test_null_host_preflight_does_not_require_a_run_receipt(case):
     project, plan, approval, _tools = case
     plan["steps"].pop()
     record(case, "model")
-    proof = receipts.evidence(project, plan, approval)
+    proof = receipts.evidence(project, plan, approval, inventory={"items": []})
     assert proof["executable_steps"] == ["model"]
     assert proof["steps_missing"] == []
     assert proof["validation"] == "passed" and proof["receipts_verified"]

@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 from urllib.parse import quote, urlsplit
 
-from . import doctor, firstrun, ki_platform_overlay, ki_verification, paths, reference_portability, settings, tls
+from . import doctor, firstrun, ki_platform_overlay, ki_verification, paths, published_acceptance, reference_portability, settings, tls
 from .catalog import KI, Catalog, installation_platform
 
 
@@ -45,12 +45,23 @@ ARCHIVE_ROOT = f"https://codeload.github.com/{REPOSITORY}/zip"
 MAX_ARCHIVE_BYTES = 900 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ARCHIVE_FILES = 50_000
+MAX_JSON_BYTES = 16 * 1024 * 1024
 SNAPSHOT_MANIFEST = ".geoforge-library.json"
+
+
+class _HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Official update identities must remain authenticated across redirects."""
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        if urlsplit(new_url).scheme.lower() != "https":
+            raise RuntimeError("KI updater refused a redirect without HTTPS; the current library was kept")
+        return super().redirect_request(request, response, code, message, headers, new_url)
 
 
 def _validation_policy() -> str:
     return (getattr(doctor, "VALIDATION_POLICY_VERSION", "ki-doctor-v1")
-            + ":" + ki_verification.GATE_POLICY)
+            + ":" + ki_verification.GATE_POLICY + ":" + published_acceptance.POLICY
+            + ":" + published_acceptance.profile_digest())
 
 
 class SnapshotValidationError(RuntimeError):
@@ -168,10 +179,7 @@ def _snapshot_content_hash(root: Path) -> str:
 def _snapshot_valid(root: Path) -> bool:
     marker = root / SNAPSHOT_MANIFEST
     if not marker.exists():
-        state = _read_json(update_root() / "state.json")
-        recorded_new = (state.get("active_snapshot") == root.name
-                        and bool((state.get("component_trees") or {}).get("shared_tools")))
-        return bool(re.fullmatch(r"[0-9a-f]{16}-[0-9a-f]{16}", root.name)) and not recorded_new
+        return False
     meta = _read_json(marker)
     trees = meta.get("trees")
     if meta.get("schema_version") != 1 or not isinstance(trees, dict):
@@ -187,8 +195,14 @@ def _snapshot_valid(root: Path) -> bool:
     if trees.get("data_kis") is not None and not re.fullmatch(r"[0-9a-f]{40}", str(trees["data_kis"])):
         return False
     try:
-        return bool(meta.get("content_sha256")) and meta["content_sha256"] == _snapshot_content_hash(root)
-    except OSError:
+        if not meta.get("content_sha256") or meta["content_sha256"] != _snapshot_content_hash(root):
+            return False
+        # Unsigned historical snapshots must be re-fetched under the current
+        # contract. Removing fields cannot downgrade a signed snapshot to an
+        # older acceptance mode; the bundled library remains the fallback.
+        published_acceptance.require_snapshot(root, meta)
+        return True
+    except (OSError, ValueError, TypeError):
         return False
 
 
@@ -222,6 +236,22 @@ def _atomic_json(path: Path, value: dict) -> None:
     temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     temp.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
     temp.replace(path)
+
+
+def _selection_bytes(path: Path) -> bytes | None:
+    """Missing selection is distinct from an unreadable selection."""
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _selection_value(value: bytes | None) -> dict:
+    try:
+        decoded = json.loads(value) if value is not None else {}
+    except (ValueError, UnicodeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
 
 
 def active_library_root(reference: Path | None = None) -> Path | None:
@@ -265,7 +295,7 @@ def _guards_guidance() -> bool:
     return installation_platform() == "windows"
 
 
-def _platform_guidance(library_root: Path) -> dict[str, set[str]]:
+def _platform_guidance(library_root: Path, *, source_models: list[str] | None = None) -> dict[str, set[str]]:
     """This platform's installation notes and recipe per KI.
 
     Resolved through ``catalog.KI`` so the check follows exactly the files the
@@ -278,7 +308,7 @@ def _platform_guidance(library_root: Path) -> dict[str, set[str]]:
     if not platform or not models.is_dir():
         return out
     for path in models.iterdir():
-        if not (path / "SKILL.md").is_file():
+        if not (path.name in source_models if source_models is not None else (path / "SKILL.md").is_file()):
             continue
         ki = KI(path.name, path)
         kinds = out.setdefault(path.name, set())
@@ -290,7 +320,7 @@ def _platform_guidance(library_root: Path) -> dict[str, set[str]]:
     return out
 
 
-def _lost_guidance(before: Path, after: Path) -> list[str]:
+def _lost_guidance(before: Path, after: Path, *, source_models: list[str] | None = None) -> list[str]:
     """Guidance ``before`` ships for a KI that ``after`` keeps but without it.
 
     File presence is compared rather than commit ancestry: it needs no
@@ -298,7 +328,7 @@ def _lost_guidance(before: Path, after: Path) -> list[str]:
     library branch does not contain, so "newer" is not "complete".  A KI
     removed upstream takes its notes with it and is reported as removed.
     """
-    old = _platform_guidance(before)
+    old = _platform_guidance(before, source_models=source_models)
     new = _platform_guidance(after)
     return sorted(f"{name}: {kind}" for name, kinds in old.items()
                   if name in new for kind in kinds - new[name])
@@ -391,15 +421,26 @@ class UpdateManager:
         self._archive_ref = f"refs/heads/{self.branch}"
         self._source_commit = ""
         self._component_trees: dict[str, str | None] = {}
+        self._published_origin = None
+        self._activation = None
+        self._activation_unresolved = False
+        self._overlay_source_root = self.current_library_root
+        self._overlay_source_files = self._overlay_inputs(self.current_library_root)
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         previous = _read_json(update_root() / "last-report.json")
+        prior_activation = previous.get("activation")
         if previous.get("state") == "checking":
             previous = {
                 **previous,
                 "state": "idle",
+                "progress": None,
                 "summary": "The previous KI update check was interrupted. Choose Check to retry.",
             }
+        elif (prior_activation or {}).get("outcome") == "uncertain":
+            previous = {**previous, "state": "idle", "progress": None, "error": None,
+                "summary": "GeoForge restarted with the current library. Check for KI updates again."}
+        current_meta = _read_json(self.current_library_root / SNAPSHOT_MANIFEST)
         self._report = {
             **(previous or {
             "state": "idle",
@@ -407,39 +448,306 @@ class UpdateManager:
             }),
             "source_url": REPOSITORY_URL,
             "branch": self.branch,
+            # A previous session's callback outcome cannot describe the new
+            # process. Its constructor root is the actual loaded catalogue.
+            "activation": None, "previous_activation": prior_activation,
+            "active_revision": current_meta.get("revision"),
             "components": component_sources(self.current_library_root),
-            "windows_overlay": _read_json(self.current_library_root / SNAPSHOT_MANIFEST).get("windows_overlay"),
-            "reference_cases": _read_json(self.current_library_root / SNAPSHOT_MANIFEST).get("reference_cases"),
+            "windows_overlay": current_meta.get("windows_overlay"),
+            "reference_cases": current_meta.get("reference_cases"),
         }
 
     def status(self) -> dict:
         with self._lock:
             return json.loads(json.dumps(self._report))
 
+    @staticmethod
+    def _overlay_inputs(root: Path) -> dict:
+        """Capture only inputs used by the existing platform overlay."""
+        candidates = set((root / "kiss/manifests").glob("*.yaml"))
+        candidates.update((root / "models").glob("*/kiss*.yaml"))
+        candidates.update((root / "models").glob("*/docs/install.windows.md"))
+        return {p.relative_to(root).as_posix(): hashlib.sha256(
+                    ki_platform_overlay._read(root, p)).hexdigest()
+                for p in sorted(candidates) if p.is_file()}
+
+    def _check_overlay_source(self, overlay: dict) -> None:
+        """Retained guidance is existing host content, never upstream authorship."""
+        if not overlay.get("files"):
+            return
+        from . import ki_guard
+        from . import published_kdt
+        import sys
+        root = self.current_library_root
+        current = self._overlay_inputs(root)
+        if root != self._overlay_source_root:
+            if not _snapshot_valid(root):
+                raise ValueError("Retained guidance source has no intact snapshot")
+            self._overlay_source_root, self._overlay_source_files = root, current
+        if current != self._overlay_source_files:
+            raise ValueError("Platform guidance changed during this update attempt")
+        missing_ki_baseline = False
+        for item in overlay["files"]:
+            for key in ("source", "base_generic", "excluded_platform_duplicate"):
+                record = item.get(key)
+                if record and current.get(record["path"]) != record["sha256"]:
+                    raise ValueError("Platform overlay source differs from its captured host baseline")
+            relative = Path(item["source"]["path"])
+            if relative.parts[:1] == ("models",):
+                source_ki = root / "models" / relative.parts[1]
+                if ki_guard.is_managed(source_ki):
+                    # A changed registered KI must not escape its guard through
+                    # the narrower official-guidance authentication route.
+                    ki_guard.require_intact(source_ki)
+                else:
+                    missing_ki_baseline = True
+        if missing_ki_baseline:
+            from . import platform_guidance_provenance
+            object_root = None
+            if not platform_guidance_provenance.has_git_object_store(root):
+                # An extracted snapshot has no .git directory. The application
+                # checkout can supply hash-checked objects, never trust in its
+                # working files or permission to enroll the selected source KI.
+                checkout = Path(__file__).resolve().parents[2]
+                if platform_guidance_provenance.has_git_object_store(checkout):
+                    object_root = checkout
+            evidence = platform_guidance_provenance.authenticate(
+                root, overlay, request_json=self._request_json, object_root=object_root)
+            if self._overlay_inputs(root) != current:
+                raise ValueError("Platform guidance changed during authentication")
+            overlay["host_source"] = {"root": str(root),
+                "scope": platform_guidance_provenance.SCOPE,
+                "evidence": evidence}
+            return
+        # Generic recipes can live outside an enrolled KI. Keep an explicit
+        # signed first-use inventory for this app build, rather than silently
+        # recapturing changed generic inputs on each retry or restart.
+        authority = published_acceptance._authority(root)
+        identity = {"root": str(root), "app_source": published_kdt._module_identity(sys.modules[__name__])}
+        key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
+        baseline_path = authority / "guidance" / f"{key}.json"
+        baseline = _read_json(baseline_path)
+        payload = {"scope": "existing_host_guidance_baseline", **identity, "files": current}
+        if baseline_path.exists():
+            if (not published_acceptance._authentic(root, baseline)
+                    or any(baseline.get(k) != v for k, v in payload.items())):
+                raise ValueError("Platform guidance differs from its signed host baseline")
+        else:
+            baseline = published_acceptance._sign(root, payload)
+            _atomic_json(baseline_path, baseline)
+        overlay["host_source"] = {"root": str(root), "scope": "existing_host_guidance",
+            "inputs_sha256": hashlib.sha256(json.dumps(current, sort_keys=True).encode()).hexdigest(),
+            "baseline": baseline}
+
     def _set(self, **values) -> None:
         with self._lock:
+            if "state" in values and values["state"] != "checking":
+                values.setdefault("progress", None)
             self._report = {**self._report, **values,
                             "source_url": REPOSITORY_URL,
                             "branch": self.branch}
             _atomic_json(update_root() / "last-report.json", self._report)
 
+    def _begin_attempt(self) -> None:
+        """Separate this attempt's progress/findings from the previous result."""
+        with self._lock:
+            self._activation = None
+            self._ki_verification = []
+            # Refusal caching still avoids downloading the same known-incomplete
+            # source. Its old error is not a finding from the new attempt.
+            self._previous_refusal = self._report.get("refused") or {}
+            self._set(state="checking", started_at=time.time(), checked_at=None,
+                summary="Checking the main KI revision…", source_commit=None,
+                network_route=None, error=None, refused=None, validation_failure=None,
+                activation=None, report_persistence_error=None,
+                ki_verification=[], added=[], updated=[], removed=[], changes=[],
+                warning_count=0, warnings=[], package_count=None, unchanged_count=0,
+                archive_sha256=None, archive_cache_reused=None,
+                progress={"stage": "check_main", "checked": None, "total": None, "current": None})
+
+    def _progress(self, stage: str, *, checked: int | None = None,
+                  total: int | None = None, current: str | None = None) -> None:
+        """Report completed checks, never elapsed-time estimates or pass counts."""
+        labels = {"check_main": "Checking the main KI revision…",
+                  "raw_windows": "Authenticating Windows installation support…",
+                  "download": "Obtaining the KI archive…",
+                  "extract": "Extracting the KI archive…",
+                  "compose": "Preparing platform installation guidance…",
+                  "validate": "Checking KI packages…",
+                  "activate": "Finalizing and activating the checked library…"}
+        if stage not in labels:
+            raise ValueError("Unknown KI update progress stage")
+        if ((checked is None) != (total is None) or
+                (checked is not None and (type(checked) is not int or type(total) is not int
+                                         or not 0 <= checked <= total))):
+            raise ValueError("Invalid KI update check counts")
+        summary = labels[stage]
+        if checked is not None:
+            summary += f" {checked}/{total} checks finished."
+        if current:
+            summary += f" Current package: {current}."
+        self._set(progress={"stage": stage, "checked": checked, "total": total,
+                            "current": current}, summary=summary)
+
+    def _windows_guidance(self) -> dict | None:
+        """Resolve raw platform inputs independently of the active KI snapshot."""
+        if installation_platform() != "windows":
+            return None
+        from . import raw_windows_guidance
+        return raw_windows_guidance.prepare(None, request_json=self._request_json,
+            request_bytes=self._request_bytes, object_root=Path(__file__).resolve().parents[2])
+
+    def _check_retained_guidance_integrity(self) -> None:
+        """New official inputs cannot conceal an altered registered active KI."""
+        from . import ki_guard
+        root = self.current_library_root
+        current = self._overlay_inputs(root)
+        if root != self._overlay_source_root:
+            if not _snapshot_valid(root):
+                raise ValueError("Retained guidance source has no intact snapshot")
+            self._overlay_source_root, self._overlay_source_files = root, current
+        if current != self._overlay_source_files:
+            raise ValueError("Platform guidance changed during this update attempt")
+        # A registered KI remains guarded even when its guidance is stored in
+        # kiss/manifests, or a local guidance file was deleted before this
+        # manager was constructed. Metadata discovery is not KI membership.
+        current_catalog = Catalog(root / "models", data_dir=data_ki_root(root))
+        for ki in current_catalog:
+            if ki_guard.is_managed(ki.root):
+                ki_guard.require_intact(ki.root)
+
     def start(self) -> bool:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return False
-            self._report = {
-                **self._report,
-                "state": "checking",
-                "summary": "Checking the GeoForge repository for KI updates…",
-                "started_at": time.time(),
-                "source_url": REPOSITORY_URL,
-                "branch": self.branch,
-            }
-            _atomic_json(update_root() / "last-report.json", self._report)
+            if self._activation_unresolved:
+                self._activation_error_report(
+                    RuntimeError("Restart GeoForge before another KI update; library activation is uncertain"),
+                    checked_at=time.time(), validation_failure=None)
+                return False
+            try:
+                self._begin_attempt()
+            except Exception as error:
+                self._activation_error_report(error, checked_at=time.time(), validation_failure=None)
+                return False
             self._thread = threading.Thread(
                 target=self._run, daemon=True, name="geoforge-ki-update")
             self._thread.start()
             return True
+
+    def _activate_candidate(self, candidate: Path, *, state_path: Path,
+                            expected_state: bytes | None, new_state: dict | None = None) -> None:
+        """Switch this session before saving its selection, with explicit recovery.
+
+        Compare the exact selection captured before validation, both before and
+        after the callback. These checks detect observed concurrent changes;
+        they are not a cross-process compare-and-swap. No failure path writes
+        an old pointer over another process's selection.
+        """
+        previous = self.current_library_root
+        result = {"outcome": "unchanged", "previous_root": str(previous),
+                  "candidate_root": str(candidate), "current_root": str(previous),
+                  "saved_selection": "unchanged", "restart_required": False}
+        self._activation = result
+        callback_started = write_started = False
+        try:
+            if _selection_bytes(state_path) != expected_state:
+                result["saved_selection"] = "foreign"
+                raise RuntimeError("The saved library selection changed during this update; it was not overwritten")
+            callback_started = candidate != previous or new_state is not None
+            if callback_started:
+                self.activate(candidate)
+            if _selection_bytes(state_path) != expected_state:
+                result["saved_selection"] = "foreign"
+                raise RuntimeError("The saved library selection changed during activation; it was not overwritten")
+            if new_state is not None:
+                write_started = True
+                _atomic_json(state_path, new_state)
+                if _selection_value(_selection_bytes(state_path)) != new_state:
+                    result["saved_selection"] = "foreign"
+                    raise RuntimeError("The saved library selection changed while activation was being saved")
+        except Exception as error:
+            result["error"] = str(error)[:2000]
+            # A writer may report failure after the atomic replacement already
+            # committed. Reconcile against the actual pointer before rollback.
+            try:
+                observed = _selection_bytes(state_path)
+            except OSError as read_error:
+                result.update(outcome="uncertain", current_root=None,
+                    saved_selection="unknown", restart_required=True,
+                    state_error=str(read_error)[:2000])
+                self._activation_unresolved = True
+                raise
+            if write_started and _selection_value(observed) == new_state:
+                self.current_library_root = candidate
+                result.update(outcome="committed", current_root=str(candidate),
+                              saved_selection="candidate")
+                raise
+            if observed != expected_state:
+                result["saved_selection"] = "foreign"
+            if callback_started:
+                try:
+                    self.activate(previous)
+                except Exception as rollback_error:
+                    result.update(outcome="uncertain", current_root=None,
+                        restart_required=True, rollback_error=str(rollback_error)[:2000])
+                    self._activation_unresolved = True
+                else:
+                    self.current_library_root = previous
+                    result.update(outcome="restored", current_root=str(previous))
+            raise
+        self.current_library_root = candidate
+        result.update(outcome="committed", current_root=str(candidate), saved_selection="candidate")
+
+    def _activation_bindings(self) -> dict:
+        """Only label bindings proven for this session, never a prior report."""
+        empty = {"active_revision": None, "components": {},
+                 "windows_overlay": None, "reference_cases": None}
+        if not self._activation or self._activation.get("outcome") == "uncertain":
+            return empty
+        root = Path(self._activation["current_root"])
+        try:
+            meta = _read_json(root / SNAPSHOT_MANIFEST)
+            return {"active_revision": meta.get("revision"),
+                    "components": component_sources(root),
+                    "windows_overlay": meta.get("windows_overlay"),
+                    "reference_cases": meta.get("reference_cases")}
+        except Exception as error:
+            # Activation can be committed even if ancillary display data fails.
+            self._activation["binding_report_error"] = str(error)[:2000]
+            return empty
+
+    def _activation_error_report(self, error: Exception, *, checked_at: float,
+                                 validation_failure: dict | None) -> None:
+        result = self._activation
+        outcome = (result or {}).get("outcome")
+        summary = {
+            "committed": "The new KI library is active, but finishing the update reported an error.",
+            "restored": "KI activation failed. The previous library was restored for this session.",
+            "uncertain": "KI library activation is uncertain. Restart GeoForge before continuing.",
+        }.get(outcome, "Could not update the KI library. GeoForge kept the current library.")
+        if result and result.get("saved_selection") == "foreign":
+            summary += " The saved selection changed separately and was not overwritten."
+        try:
+            route = settings.proxy_url_for(settings.GITHUB_PROXY_TARGET) or "direct"
+        except Exception:
+            route = None  # Ancillary settings cannot conceal the activation outcome.
+        values = dict(state="error", checked_at=checked_at, summary=summary,
+            network_route=route,
+            error=str(error)[:2000], source_commit=self.status().get("source_commit"),
+            validation_failure=validation_failure, ki_verification=self._ki_verification,
+            activation=result, added=[], updated=[], removed=[], changes=[], warning_count=0)
+        if result:
+            values.update(self._activation_bindings())
+        try:
+            self._set(**values)
+        except Exception as report_error:
+            # Disk full/permissions must not leave a live worker saying checking
+            # or replace a committed outcome with a false kept-library claim.
+            with self._lock:
+                self._report = {**self._report, **values, "progress": None,
+                    "report_persistence_error": str(report_error)[:2000],
+                    "source_url": REPOSITORY_URL, "branch": self.branch}
 
     def wait(self, timeout: float | None = None) -> dict:
         thread = self._thread
@@ -454,10 +762,30 @@ class UpdateManager:
             "X-GitHub-Api-Version": "2022-11-28",
         })
         with self._open(request, timeout=30) as response:
-            value = json.loads(response.read().decode("utf-8"))
+            body = response.read(MAX_JSON_BYTES + 1)
+            if len(body) > MAX_JSON_BYTES:
+                raise RuntimeError("GitHub JSON response exceeded the safe size limit")
+            value = json.loads(body.decode("utf-8"))
         if not isinstance(value, dict):
             raise RuntimeError("GitHub returned an invalid repository response")
         return value
+
+    def _request_bytes(self, url: str, *, max_bytes: int) -> bytes:
+        """Bounded metadata download using the same saved verified HTTPS route."""
+        parsed = urlsplit(url)
+        if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com":
+            raise ValueError("Windows guidance requires the official HTTPS raw-content host")
+        if not 0 < max_bytes <= ki_platform_overlay.MAX_GUIDANCE_BYTES:
+            raise ValueError("Invalid Windows guidance download limit")
+        request = urllib.request.Request(url, headers={"User-Agent": "GeoForge-Desktop-KI-Updater"})
+        with self._open(request, timeout=30) as response:
+            declared = int(response.headers.get("Content-Length") or 0)
+            if declared > max_bytes:
+                raise RuntimeError("Windows guidance file exceeds its byte limit")
+            body = response.read(max_bytes + 1)
+            if len(body) > max_bytes:
+                raise RuntimeError("Windows guidance file exceeds its byte limit")
+            return body
 
     def _proxy_url(self) -> str:
         proxy = settings.proxy_url_for(settings.GITHUB_PROXY_TARGET)
@@ -469,15 +797,22 @@ class UpdateManager:
 
     def _open(self, request: urllib.request.Request, *, timeout: int):
         """Open one updater request through the dedicated saved route."""
+        if urlsplit(request.full_url).scheme.lower() != "https":
+            raise ValueError("KI updater requests require HTTPS")
         proxy = self._proxy_url()
         handlers = [
             urllib.request.ProxyHandler(
                 {"http": proxy, "https": proxy} if proxy else {}),
             urllib.request.HTTPSHandler(context=tls.context()),
+            _HTTPSOnlyRedirectHandler(),
         ]
         return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
 
     def _remote_revision(self) -> tuple[str, str, str]:
+        # A failed retry must not retain the last attempt's pinned identity.
+        self._source_commit = ""
+        self._component_trees = {}
+        self._archive_ref = f"refs/heads/{self.branch}"
         commit = self._request_json(
             f"{API_ROOT}/commits/{quote(self.branch, safe='')}")
         commit_sha = str(commit.get("sha") or "")
@@ -581,6 +916,7 @@ class UpdateManager:
             "quarantine_path": str(target), "report_path": str(target / "validation-report.json"),
             "windows_overlay": overlay, "error": str(error),
             "reference_cases": getattr(self, "_reference_case_summary", None),
+            "ki_verification": getattr(self, "_ki_verification", []),
             "findings": getattr(error, "findings", []),
             "portability_scanner": "catalog.Portability.scan / paths.scan_text",
             "portability_files": getattr(error, "portability_files", []),
@@ -639,7 +975,11 @@ class UpdateManager:
                 resolved.relative_to(root)
             except ValueError as error:
                 raise RuntimeError(f"KI archive symbolic link escapes the snapshot: {link}") from error
-            target.symlink_to(link)
+            # Windows stores the literal target spelling: a POSIX '../stage'
+            # target creates a link that cannot be traversed even when the
+            # directory exists. Use the already-validated native Path spelling
+            # while preserving a relative link and its actual target type.
+            target.symlink_to(link_path, target_is_directory=resolved.is_dir())
 
     def _validate(self, root: Path) -> tuple[int, int, list[dict]]:
         self._reference_case_summary = None
@@ -655,6 +995,7 @@ class UpdateManager:
         catalog = Catalog(root / "models", data_dir=data_ki_root(root))
         if not len(catalog):
             raise RuntimeError("the downloaded snapshot contains no KIs")
+        self._progress("validate", checked=0, total=len(catalog), current=None)
         findings = []
         for ki in catalog:
             findings.extend(doctor.check_ki(ki))
@@ -667,36 +1008,56 @@ class UpdateManager:
             raise SnapshotValidationError(
                 f"downloaded KI snapshot failed {len(blocked)} blocking checks: {preview}",
                 [vars(finding).copy() for finding in findings], _portability_files(catalog, root))
-        # Existing shipped packages retain their previous status. Every new or
-        # edited KI must pass the same host KDT gate as Studio and ZIP imports.
-        # An unchanged package is not relabelled as KDT/native-test verified.
+        # Distribution and authoring are distinct evidence contracts. Official
+        # downloads carry metadata-only papers; edits/imports retain the full
+        # authoring gate. Every incoming package receives current publication
+        # evidence tied to this origin. An intact existing baseline proves only
+        # preservation of those old bytes, never that today's gate accepts them.
         current = Catalog(self.current_library_root / "models",
                           data_dir=data_ki_root(self.current_library_root))
+        from . import ki_guard
+        package_failures = []
         for ki in catalog:
+            self._progress("validate", checked=len(self._ki_verification),
+                           total=len(catalog), current=ki.name)
             previous = current.packages.get(ki.name)
-            if previous and _file_digests(previous.root) == _file_digests(ki.root):
-                self._ki_verification.append({"name": ki.name, "state": "unchanged_existing"})
-                continue
+            report = None
             try:
-                report = ki_verification.verify_candidate(
-                    ki.root, name=ki.name, kind=ki_verification.detect_kind(ki.root))
+                # A differing upstream package must not hide a locally changed
+                # registered KI by falling through to fresh verification.
+                if previous and ki_guard.is_managed(previous.root):
+                    ki_guard.require_intact(previous.root)
+                if self._published_origin is None:
+                    raise ValueError("Official update origin is missing")
+                report = published_acceptance.verify_candidate(ki.root, name=ki.name,
+                    kind=ki_verification.detect_kind(ki.root), origin=self._published_origin)
                 if not report.get("ok"):
                     details = report.get("failures") or [
                         f["detail"] for f in (report.get("desktop") or {}).get("findings", [])
                         if f.get("severity") == doctor.BLOCK]
                     raise ValueError("; ".join(details[:5]) or "KI package validation failed")
-                ki_verification.require_current(ki.root, report)
+                published_acceptance.require_current(ki.root, report, name=ki.name,
+                                                     origin=self._published_origin)
             except (ValueError, RuntimeError, OSError) as error:
-                raise SnapshotValidationError(
-                    f"{ki.name}: KDT verification required before activation: {error}",
-                    [{"ki": ki.name, "severity": doctor.BLOCK,
-                      "check": "kdt-verification", "detail": str(error), "count": 1}],
-                    _portability_files(catalog, root)) from error
-            self._ki_verification.append({"name": ki.name, "state": "Verified",
+                package_failures.append({"ki": ki.name, "severity": doctor.BLOCK,
+                    "check": "kdt-verification", "detail": str(error), "count": 1})
+                self._ki_verification.append({"name": ki.name, "state": "PublicationRejected",
+                                             "detail": str(error), "report": report})
+                self._progress("validate", checked=len(self._ki_verification),
+                               total=len(catalog), current=None)
+                continue
+            self._ki_verification.append({"name": ki.name, "state": "PublishedPackageAccepted",
                 "candidate_digest": report["candidate_digest"],
-                "software_execution": report.get("software_execution")})
+                "software_execution": report.get("software_execution"), "report": report})
+            self._progress("validate", checked=len(self._ki_verification),
+                           total=len(catalog), current=None)
         if before != _snapshot_content_hash(root):
             raise RuntimeError("KI snapshot changed during verification; activation refused")
+        if package_failures:
+            preview = "; ".join(f"{item['ki']}: published KDT verification required before activation: "
+                                f"{item['detail']}" for item in package_failures[:3])
+            raise SnapshotValidationError(f"{len(package_failures)} KI package(s) rejected. {preview}",
+                                          package_failures, _portability_files(catalog, root))
         self._validated_content_hash = before
         warnings = [finding for finding in findings if finding.severity == doctor.WARN]
         # Binding caveats must not disappear behind unrelated package warnings.
@@ -731,22 +1092,52 @@ class UpdateManager:
         checked_at = time.time()
         validation_failure = None
         self._reference_case_summary = None
+        self._published_origin = None
+        self._ki_verification = []
+        if not self._activation_unresolved:
+            self._activation = None
         try:
+            if self._activation_unresolved:
+                raise RuntimeError("Restart GeoForge before another KI update; library activation is uncertain")
+            if self.status().get("state") != "checking":
+                self._begin_attempt()
+            self._progress("check_main")
             revision, models_sha, manifests_sha = self._remote_revision()
             upstream_revision = revision
+            self._set(source_commit=self._source_commit)
+            # Resolve the independent raw platform component before the fast
+            # path: main may be unchanged while its Windows guidance advances.
+            if installation_platform() == "windows":
+                self._progress("raw_windows")
+            component = self._windows_guidance()
+            windows_id = None
+            if component is not None:
+                from . import raw_windows_guidance
+                evidence = raw_windows_guidance.require_current(component["root"], component["evidence"])
+                windows_id = evidence["component_id"]
+                self._check_retained_guidance_integrity()
+            request_revision = (_revision_identity(self._component_trees, windows_id)
+                                if component is not None else revision)
             route = self._proxy_url() or "direct"
+            self._set(network_route=route)
             state_path = update_root() / "state.json"
-            state = _read_json(state_path)
+            # Keep the exact bytes read before lengthy validation. Reading the
+            # dict and fingerprint separately could accept an intervening edit.
+            expected_state = _selection_bytes(state_path)
+            state = _selection_value(expected_state)
             active = active_library_root(self.current_library_root)
+            if active is not None and active.name != str(state.get("active_snapshot") or ""):
+                raise RuntimeError("The saved library selection changed while it was being read")
+            active_meta = _read_json(active / SNAPSHOT_MANIFEST) if active is not None else {}
+            active_windows = (((active_meta.get("windows_overlay") or {}).get("composition") or {})
+                              .get("windows") or {}).get("component_id")
             if (state.get("validation_policy") == _validation_policy() and
+                    state.get("windows_component_id") == windows_id and active_windows == windows_id and
                     (state.get("revision") == revision or
                  (state.get("upstream_revision") == revision and
                   state.get("overlay_policy") == ki_platform_overlay.POLICY_VERSION)) and
                     active is not None):
-                if active != self.current_library_root:
-                    self.activate(active)
-                    self.current_library_root = active
-                active_meta = _read_json(active / SNAPSHOT_MANIFEST)
+                self._activate_candidate(active, state_path=state_path, expected_state=expected_state)
                 self._set(
                     state="up_to_date", checked_at=checked_at,
                     active_revision=state.get("revision") or revision,
@@ -760,6 +1151,7 @@ class UpdateManager:
                     components=component_sources(self.current_library_root),
                     windows_overlay=active_meta.get("windows_overlay"),
                     reference_cases=active_meta.get("reference_cases"),
+                    activation=self._activation,
                 )
                 return
             guard = _guards_guidance()
@@ -768,13 +1160,13 @@ class UpdateManager:
                 # The same revision checked against the same library would be
                 # refused again; do not download ~90 MB on every launch to see it.
                 reference = _guidance_fingerprint(self.current_library_root)
-                refused = self.status().get("refused") or {}
-                if (refused.get("revision") == revision and
+                refused = getattr(self, "_previous_refusal", {})
+                if (refused.get("revision") == request_revision and
                         refused.get("reference") == reference and
                         refused.get("policy") == ki_platform_overlay.POLICY_VERSION):
                     self._set(checked_at=checked_at, network_route=route,
                               source_commit=self._source_commit,
-                              **self._refusal(revision, reference,
+                              **self._refusal(request_revision, reference,
                                               list(refused.get("lost") or [])))
                     return
 
@@ -786,23 +1178,38 @@ class UpdateManager:
                 archive = Path(temporary.name)
             stage, archive_meta, source_hash, overlay = "download", {}, None, None
             try:
+                self._progress("download")
                 archive_meta = self._obtain_archive(archive)
                 stage = "extraction"
+                self._progress("extract")
                 self._extract(archive, incoming)
                 self._cache_archive(archive, archive_meta)
                 source_hash = _snapshot_content_hash(incoming)
                 stage = "windows_overlay"
-                overlay = ki_platform_overlay.apply_windows_overlay(
-                    self.current_library_root, incoming,
-                    platform=installation_platform(), upstream_commit=self._source_commit,
-                    source_identity=self.current_library_root.name)
-                if overlay.get("files"):
+                self._progress("compose")
+                if component is not None:
+                    from . import ki_guidance_composition
+                    overlay = ki_guidance_composition.compose(component, incoming,
+                        source_commit=self._source_commit, archive_sha256=archive_meta["sha256"],
+                        source_content_sha256=source_hash)
+                    self._check_retained_guidance_integrity()
+                else:
+                    overlay = ki_platform_overlay.apply_windows_overlay(
+                        self.current_library_root, incoming,
+                        platform=installation_platform(), upstream_commit=self._source_commit,
+                        source_identity=self.current_library_root.name)
+                    self._check_overlay_source(overlay)
+                if overlay.get("files") or component is not None:
                     revision = _revision_identity(self._component_trees, overlay["overlay_id"])
+                retained_overlay = overlay if overlay.get("files") or component is not None else None
                 # Windows install notes and recipes live only on the Windows
                 # branch; a main snapshot without them would silently take
                 # this machine's installation guidance away.
                 lost = (_lost_guidance(self.current_library_root, incoming)
                         if guard else [])
+                if component is not None:
+                    lost = sorted(set(lost) | set(_lost_guidance(component["root"], incoming,
+                        source_models=component["evidence"]["models"])))
                 if lost:
                     failure = SnapshotValidationError("Required platform installation guidance is missing",
                         [{"ki": row.split(":", 1)[0], "severity": doctor.BLOCK,
@@ -812,24 +1219,34 @@ class UpdateManager:
                     self._set(checked_at=checked_at, network_route=route,
                               source_commit=self._source_commit,
                               validation_failure=validation_failure,
-                              **self._refusal(revision, reference, lost))
+                              **self._refusal(request_revision, reference, lost))
                     return
                 stage = "package_validation"
+                self._progress("validate")
+                self._published_origin = published_acceptance._issue_origin(incoming,
+                    source_commit=self._source_commit, archive_sha256=archive_meta["sha256"],
+                    source_content_sha256=source_hash,
+                    overlay=retained_overlay,
+                    trees=self._component_trees)
                 package_count, warning_count, warnings = self._validate(incoming)
                 diff = _library_diff(self.current_library_root, incoming)
                 helper_changed = (_file_digests(self.current_library_root / "ki_tools_common") !=
                                   _file_digests(incoming / "ki_tools_common"))
                 if _snapshot_content_hash(incoming) != self._validated_content_hash:
                     raise RuntimeError("KI snapshot changed after verification; activation refused")
+                self._progress("activate")
                 _atomic_json(incoming / SNAPSHOT_MANIFEST, {
                     "schema_version": 1, "revision": revision,
                     "source_commit": self._source_commit, "trees": self._component_trees,
                     "upstream_revision": upstream_revision,
+                    "windows_component_id": windows_id,
                     "validation_policy": _validation_policy(),
                     "reference_cases": getattr(self, "_reference_case_summary", None),
                     "ki_verification": self._ki_verification,
+                    "publication_acceptance": published_acceptance._seal_snapshot(incoming,
+                        origin=self._published_origin, rows=self._ki_verification, revision=revision),
                     "warning_count": warning_count, "warnings": warnings,
-                    "windows_overlay": overlay if overlay.get("files") else None,
+                    "windows_overlay": retained_overlay,
                     "content_sha256": _snapshot_content_hash(incoming)})
                 snapshot = home / "snapshots" / revision
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
@@ -845,11 +1262,14 @@ class UpdateManager:
                     shutil.rmtree(incoming)
                 else:
                     incoming.replace(snapshot)
+                if not _snapshot_valid(snapshot):
+                    raise RuntimeError("Signed publication acceptance is invalid; activation refused")
                 new_state = {
                     "active_snapshot": revision,
                     "revision": revision,
                     "upstream_revision": upstream_revision,
                     "overlay_policy": ki_platform_overlay.POLICY_VERSION,
+                    "windows_component_id": windows_id,
                     "models_tree": models_sha,
                     "manifests_tree": manifests_sha,
                     "package_count": package_count,
@@ -859,9 +1279,8 @@ class UpdateManager:
                     "component_trees": self._component_trees,
                     "validation_policy": _validation_policy(),
                 }
-                _atomic_json(state_path, new_state)
-                self.activate(snapshot)
-                self.current_library_root = snapshot
+                self._activate_candidate(snapshot, state_path=state_path,
+                                         expected_state=expected_state, new_state=new_state)
                 changed_count = len(diff["added"]) + len(diff["updated"]) + len(diff["removed"]) + int(helper_changed)
                 summary = (
                     f"KI library updated: {len(diff['added'])} added, "
@@ -880,7 +1299,8 @@ class UpdateManager:
                     components=component_sources(snapshot),
                     reference_cases=getattr(self, "_reference_case_summary", None),
                     ki_verification=self._ki_verification,
-                    windows_overlay=overlay if overlay.get("files") else None, **diff)
+                    activation=self._activation,
+                    windows_overlay=retained_overlay, **diff)
             except Exception as error:
                 if incoming.exists():
                     try:
@@ -900,14 +1320,5 @@ class UpdateManager:
         # A malformed remote archive should never leave the UI saying
         # "checking" forever merely because its exact exception type was new.
         except Exception as error:
-            self._set(
-                state="error", checked_at=checked_at,
-                summary=("Could not update the KI library. GeoForge kept the last "
-                         "validated version."),
-                network_route=(settings.proxy_url_for(
-                    settings.GITHUB_PROXY_TARGET) or "direct"),
-                error=str(error)[:2000],
-                source_commit=self._source_commit,
-                validation_failure=validation_failure,
-                added=[], updated=[], removed=[], changes=[], warning_count=0,
-            )
+            self._activation_error_report(error, checked_at=checked_at,
+                                          validation_failure=validation_failure)

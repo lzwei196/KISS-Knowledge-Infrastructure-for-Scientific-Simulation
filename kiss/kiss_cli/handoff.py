@@ -79,7 +79,7 @@ def _fmt_remaining(result, man) -> str:
     return "\n".join(out)
 
 
-def render(ki, result, man, cfg) -> str:
+def render(ki, result, man, cfg, *, preflight_command: str = "") -> str:
     """Build the canonical instruction document for one KI install."""
     meta = ki.meta or {}
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -149,19 +149,24 @@ Required forcing variables: {', '.join(ki.forcing_vars) or 'see dag.yaml'}
 ## Verification
 
 ```
-{cfg.python} preflight_check.py
+{preflight_command or 'Use the GeoForge run_preflight tool.'}
 ```
+
+On Windows, run the supplied host command in PowerShell. Do not run
+preflight_check.py directly inside the protected KI; the host retains an
+execution copy and its check output separately.
 
 Every check must pass before you trust any simulation output.
 """
     return doc
 
 
-def write(ki, result, man, cfg, dest: Path, *, skill: bool = True) -> list[Path]:
+def write(ki, result, man, cfg, dest: Path, *, skill: bool = True,
+          preflight_command: str = "") -> list[Path]:
     """Write the instruction document under every agent's expected filename."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
-    body = render(ki, result, man, cfg)
+    body = render(ki, result, man, cfg, preflight_command=preflight_command)
     written: list[Path] = []
 
     canonical = dest / "CLAUDE.md"
@@ -191,7 +196,8 @@ def write(ki, result, man, cfg, dest: Path, *, skill: bool = True) -> list[Path]
     return written
 
 
-def write_setup(ki, man, cfg, dest: Path, *, built_in_command: str) -> list[Path]:
+def write_setup(ki, man, cfg, dest: Path, *, built_in_command: str,
+                preflight_command: str = "") -> list[Path]:
     """Write the server-style autonomous setup contract for every CLI agent."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -214,7 +220,13 @@ software's real preflight passes or a person must do something you cannot.
    `{built_in_command}`
 
 4. Read `status.json` and the full command output. Fix the first real cause.
-5. Run `{cfg.python} {ki.root / 'preflight_check.py'}` after every meaningful fix.
+5. Run the host preflight command after every meaningful fix:
+
+   `{preflight_command or 'Use the GeoForge run_preflight tool.'}`
+
+   On Windows, run the supplied host commands in PowerShell. Do not run
+   preflight_check.py directly inside the protected KI. GeoForge checks a
+   byte-identical execution copy so startup output cannot pollute the KI.
 6. Keep repairing and retrying in this same task. Never claim success until
    preflight passes, and never substitute a fake or simplified model.
 

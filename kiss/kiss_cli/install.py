@@ -12,12 +12,16 @@ from __future__ import annotations
 import os
 import contextlib
 import contextvars
+import copy
+import hashlib
 import json
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 import zipfile
 import uuid
@@ -34,6 +38,8 @@ _CANCELLATION = contextvars.ContextVar("installation_cancellation", default=None
 
 class InstallStopped(RuntimeError):
     """The owning chat stopped this installation; no subsequent step may run."""
+
+    output: str = ""
 
 
 @contextlib.contextmanager
@@ -88,6 +94,8 @@ class Step:
     #: This is not success, but presenting it as an independent failure hides
     #: the real cause (for example: clone failed -> preflight missing binary).
     skipped: bool = False
+    #: Host observations, never an agent's assertion of scientific success.
+    evidence: dict = field(default_factory=dict)
 
     @property
     def mark(self) -> str:
@@ -114,8 +122,12 @@ class InstallResult:
 
 
 def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
-         env: dict | None = None) -> tuple[int, str]:
-    """Run a command, returning (rc, combined output). Never raises on failure."""
+         env: dict | None = None, *, full_output: bool = False) -> tuple[int, str]:
+    """Return rc and combined output; preflight can retain the complete capture.
+
+    Other installation callers keep their established 8,000-character tail.
+    Cancellation still raises, carrying collected output for host evidence.
+    """
     check_cancelled()
     context = _CANCELLATION.get()
     if context is not None:
@@ -129,12 +141,18 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
         result = execution.run_process(
             argv, cwd=cwd or Path.cwd(), env={**os.environ, **(env or {})},
             timeout=timeout, project=project, stop=stop, turn_id=turn_id)
-        if result.status in {"stopped", "interrupted"}:
-            raise InstallStopped(result.detail or "Stopped by the user")
-        check_cancelled()
+        output = result.stdout + result.stderr + ("\n" + result.detail if result.detail else "")
+        output = output if full_output else output[-8000:]
+        try:
+            if result.status in {"stopped", "interrupted"}:
+                raise InstallStopped(result.detail or "Stopped by the user")
+            check_cancelled()
+        except InstallStopped as exc:
+            exc.output = output
+            raise
         rc = result.returncode if result.returncode is not None else (
             124 if result.status == "timed_out" else 127)
-        return rc, (result.stdout + result.stderr + ("\n" + result.detail if result.detail else ""))[-8000:]
+        return rc, output
     shell = isinstance(cmd, str)
     try:
         p = subprocess.run(
@@ -142,7 +160,8 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
             capture_output=True, text=True, errors="replace",
             env={**os.environ, **env} if env else None,
         )
-        return p.returncode, (p.stdout + p.stderr)[-8000:]
+        output = p.stdout + p.stderr
+        return p.returncode, output if full_output else output[-8000:]
     except subprocess.TimeoutExpired:
         return 124, f"timed out after {timeout}s"
     except FileNotFoundError as e:
@@ -525,6 +544,28 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
 
     notes: list[str] = []
 
+    def require_destination(link: Path) -> None:
+        """Aliases may expose a selected tree, never write through external/ KI parents."""
+        check_cancelled()
+        if cfg is None or not getattr(cfg, "root", None):
+            raise ValueError(f"Cannot place an alias without a setup workspace: {link}")
+        workspace = Path(cfg.root).resolve()
+        lexical = Path(link).absolute()
+        parent = lexical.parent.resolve()
+        destination = parent / lexical.name
+        # Compare the real parent, including Windows' short/long user-profile
+        # spelling. Do not resolve the final entry through a dangling alias.
+        if destination == workspace or not parent.is_relative_to(workspace):
+            raise ValueError(f"KI alias destination is outside the setup workspace: {link}")
+        protected = {workspace / "ki"}
+        if getattr(ki, "root", None):
+            protected.add(Path(ki.root).resolve())
+        for boundary in protected:
+            if destination.is_relative_to(boundary) or parent.is_relative_to(boundary):
+                raise ValueError(f"KI alias destination would modify a protected KI: {link}")
+        if os.path.lexists(link):
+            raise ValueError(f"KI alias destination already exists or is a dangling link: {link}")
+
     def link_directory(link: Path, target: Path) -> None:
         """Create a directory alias without requiring Windows Developer Mode."""
         try:
@@ -564,6 +605,11 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
         p = Path(decl)
         return p if p.is_absolute() else None
 
+    declared_binaries = runnable.declared(ki)
+    if binary and not declared_binaries:
+        notes.append("No executable path could be bound statically from the KI preflight; "
+                     "no additional executable aliases were created. Verify the declared layout with the agent.")
+
     # Some source-built models expect the whole checkout under KISSPATH_HOME
     # while manifests correctly install software under the binaries role.
     # When the declared executable and built executable have the same suffix,
@@ -576,7 +622,7 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
         except ValueError:
             rel_binary = None
         if rel_binary and rel_binary.parts:
-            for decl in runnable.declared(ki):
+            for decl in declared_binaries:
                 want = resolve(decl)
                 if want is None or len(want.parts) < len(rel_binary.parts):
                     continue
@@ -592,6 +638,7 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
                     declared_root = declared_root.parent
                 if declared_root == prefix or declared_root.exists():
                     continue
+                require_destination(declared_root)
                 try:
                     declared_root.parent.mkdir(parents=True, exist_ok=True)
                     link_directory(declared_root, prefix)
@@ -613,6 +660,7 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
         have = ki_root / want.name
         if not have.is_dir():
             continue
+        require_destination(want)
         try:
             want.parent.mkdir(parents=True, exist_ok=True)
             link_directory(want, have)
@@ -622,12 +670,13 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
 
     if not binary or not binary.is_file():
         return notes
-    for decl in runnable.declared(ki):
+    for decl in declared_binaries:
         want = resolve(decl)
         if want is None or want.exists():
             continue
         if want.name != binary.name:
             continue                    # a different artefact, not this binary
+        require_destination(want)
         try:
             want.parent.mkdir(parents=True, exist_ok=True)
             want.symlink_to(binary)
@@ -651,12 +700,22 @@ def place_agent_install(man: Manifest, binary: Path | None,
     Preserve the complete distribution tree (or adjacent Windows DLLs for a
     single-file ``produces`` value) before the final runnable verdict.
     """
+    check_cancelled()
     if (binary is None or not Path(binary).is_file() or man.acquire is None or
             not man.acquire.produces):
         return binary, []
-    binary = Path(binary)
-    prefix = Path(cfg.roles["binaries"]) / (man.install_dir or man.model)
+    import stat
+    from pathlib import PureWindowsPath
+
+    binary = Path(binary).absolute()
     relative = Path(man.acquire.produces)
+    install_dir = Path(man.install_dir or man.model)
+    for value in (relative, install_dir):
+        if (not value.parts or value.is_absolute() or value.drive
+                or PureWindowsPath(str(value)).drive or PureWindowsPath(str(value)).root
+                or ".." in value.parts):
+            raise ValueError("Install directory and product must be bounded relative paths")
+    prefix = Path(cfg.roles["binaries"]).absolute() / install_dir
     if (os.name == "nt" and
             binary.name.lower() == relative.name.lower() + ".exe"):
         # Manifests inherited from POSIX commonly omit the native suffix.
@@ -664,8 +723,6 @@ def place_agent_install(man: Manifest, binary: Path | None,
         # its adjacent DLLs still land at the path find_binary() probes.
         relative = relative.with_name(relative.name + ".exe")
     expected = prefix / relative
-    if expected.is_file():
-        return expected, []
     if binary.name.lower() != expected.name.lower():
         return binary, []
 
@@ -676,28 +733,144 @@ def place_agent_install(man: Manifest, binary: Path | None,
         os.path.normcase(p) for p in parts)
 
     if len(parts) > 1 and suffix_matches:
-        source_package = binary
-        for _ in range(len(parts) - 1):
-            source_package = source_package.parent
-        destination_package = prefix / parts[0]
-        destination_package.parent.mkdir(parents=True, exist_ok=True)
-        if destination_package.exists():
-            shutil.copytree(source_package, destination_package,
-                            dirs_exist_ok=True)
-            notes.append(
-                f"completed agent install {source_package} -> {destination_package}")
-        else:
+        # The *whole* declared suffix identifies the distribution root. With
+        # build/bin/model.exe, retaining only build/ loses sibling Data/.
+        source = binary
+        for _ in parts:
+            source = source.parent
+        source = source.resolve()
+        if (man.acquire.strategy == "download"
+                and source == Path(cfg.roles["binaries"]).resolve()):
+            # Download agents may extract an archive's named top-level folder
+            # directly under binaries/. The first component is already part
+            # of the declared product, so place only that package folder at
+            # the same relative location; never copy the binaries container
+            # (including other models and the destination) into itself.
+            package = source / parts[0]
+            info = package.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                    or getattr(info, "st_file_attributes", 0) &
+                    getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)):
+                raise ValueError("Downloaded package staging directory must be a real directory")
+            source = package.resolve()
+            prefix = prefix / parts[0]
+        destination = prefix.resolve()
+        if source == destination:
+            return expected, []
+        home = Path.home().resolve()
+        if source == Path(source.anchor) or source == home or source in home.parents:
+            raise ValueError("Cannot place a distribution from a disk or home directory")
+        if source in destination.parents or destination in source.parents:
+            raise ValueError("Source and destination distribution roots overlap")
+        if not prefix.parent.resolve().is_relative_to(Path(cfg.roles["binaries"]).resolve()):
+            raise ValueError("Install distribution parent escapes the configured binaries root")
+
+        def linked(info):
+            return (stat.S_ISLNK(info.st_mode) or
+                    getattr(info, "st_file_attributes", 0) &
+                    getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+        def same_bytes(left, right):
+            check_cancelled()
+            if left.stat().st_size != right.stat().st_size:
+                return False
+            with left.open("rb") as a, right.open("rb") as b:
+                while True:
+                    check_cancelled()
+                    chunk = a.read(1 << 20)
+                    if chunk != b.read(1 << 20):
+                        return False
+                    if not chunk:
+                        return True
+
+        # Inspect every conflict before creating anything. Existing partial
+        # installs may be completed, but different files and unrelated aliases
+        # require an explicit repair decision; never merge with overwrite.
+        plans = []
+        pending = [(source, prefix)]
+        while pending:
+            check_cancelled()
+            src, dst = pending.pop()
+            src_info = src.lstat()
             try:
-                destination_package.symlink_to(
-                    source_package, target_is_directory=True)
-                notes.append(
-                    f"linked agent install {destination_package} -> {source_package}")
+                dst_info = dst.lstat()
+            except FileNotFoundError:
+                dst_info = None
+            if dst_info is not None:
+                try:
+                    if os.path.samefile(src, dst):
+                        continue
+                except OSError:
+                    pass
+                if linked(dst_info):
+                    raise ValueError(f"Install distribution conflict at {dst}: unrelated alias")
+            if stat.S_ISLNK(src_info.st_mode):
+                if dst_info is not None:
+                    raise ValueError(f"Install distribution conflict at {dst}: source is an alias")
+                target = src.resolve(strict=True)
+                plans.append(("link", target, dst))
+            elif linked(src_info):
+                raise ValueError(f"Unsupported distribution reparse point: {src}")
+            elif stat.S_ISDIR(src_info.st_mode):
+                if dst_info is not None and not stat.S_ISDIR(dst_info.st_mode):
+                    raise ValueError(f"Install distribution conflict at {dst}: expected directory")
+                if dst_info is None:
+                    plans.append(("directory", src, dst))
+                for child in src.iterdir():
+                    check_cancelled()
+                    pending.append((child, dst / child.name))
+            elif stat.S_ISREG(src_info.st_mode):
+                if dst_info is None:
+                    plans.append(("file", src, dst))
+                elif not stat.S_ISREG(dst_info.st_mode) or not same_bytes(src, dst):
+                    raise ValueError(f"Install distribution conflict at {dst}: different file")
+            else:
+                raise ValueError(f"Unsupported distribution file type: {src}")
+
+        if not plans:
+            return expected, []
+        check_cancelled()
+        prefix.parent.mkdir(parents=True, exist_ok=True)
+        if not os.path.lexists(prefix):
+            try:
+                prefix.symlink_to(source, target_is_directory=True)
+                return expected, [f"linked complete distribution {prefix} -> {source}"]
             except OSError:
-                shutil.copytree(source_package, destination_package,
-                                dirs_exist_ok=True)
-                notes.append(
-                    f"copied agent install {source_package} -> {destination_package}")
+                # Developer Mode may be disabled. Exclusive creation below
+                # also prevents a concurrently-created target being replaced.
+                pass
+        for kind, src, dst in sorted(plans, key=lambda row: len(row[2].parts)):
+            check_cancelled()
+            if kind == "directory":
+                dst.mkdir()
+            elif kind == "link":
+                dst.symlink_to(src, target_is_directory=src.is_dir())
+            else:
+                created = None
+                try:
+                    with src.open("rb") as source_file, dst.open("xb") as target_file:
+                        created = os.fstat(target_file.fileno())
+                        while True:
+                            check_cancelled()
+                            chunk = source_file.read(1 << 20)
+                            if not chunk:
+                                break
+                            target_file.write(chunk)
+                except BaseException:
+                    # Only discard this newly-created partial file. A stopped
+                    # copy can then resume without conflicting with itself.
+                    if created is not None:
+                        try:
+                            if os.path.samestat(created, dst.lstat()):
+                                dst.unlink()
+                        except OSError:
+                            pass
+                    raise
+                shutil.copystat(src, dst)
+        notes.append(f"completed distribution {source} -> {prefix}; existing files preserved")
     else:
+        if expected.is_file():
+            return expected, []
         expected.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(binary, expected)
         copied = [binary.name]
@@ -711,37 +884,225 @@ def place_agent_install(man: Manifest, binary: Path | None,
     return (expected if expected.is_file() else binary), notes
 
 
+PREFLIGHT_POLICY = "ki-preflight-scratch-v2-full-output"
+
+
+def _preflight_directory(path: Path, *, create: bool = False) -> None:
+    """Never follow a child-owned link while recording host evidence."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        if not create:
+            raise
+        path.mkdir()
+        info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+            or getattr(info, "st_file_attributes", 0) &
+            getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)):
+        raise ValueError("Preflight evidence directory is a link or reparse point")
+
+
+def _preflight_inputs(root: Path) -> dict:
+    """Record canonical bytes and alias bindings, without expanding aliases."""
+    from . import ki_tree
+    inventory = ki_tree.scan(root)
+    result, total = {}, 0
+    for entry in inventory.entries:
+        check_cancelled()
+        row = {"kind": entry.kind}
+        if entry.kind == "file":
+            digest = hashlib.sha256()
+            with (root / entry.relative).open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1 << 20), b""):
+                    total += len(chunk)
+                    if total > ki_tree.MAX_BYTES:
+                        raise ValueError("Preflight copy exceeds the KI byte limit")
+                    digest.update(chunk)
+                    check_cancelled()
+            row["sha256"] = digest.hexdigest()
+        elif entry.kind == "link":
+            row["target"] = entry.target
+        result[entry.relative] = row
+    return result
+
+
 def run_preflight(ki, python: str, cfg=None, *, project=None, stop=None, turn_id=None) -> Step:
-    """Run the KI's own preflight_check.py, inside the sandbox when configured."""
+    """Execute exact KI bytes in retained scratch; never mutate/adopt active KI.
+
+    This contains cwd/__file__ startup products, not arbitrary absolute writes
+    or other same-user programs. No runtime paths or preflight report subjects
+    are rewritten. Parent-relative assumptions can fail visibly in the copy.
+    """
     from . import ki_guard
+    context = (contextlib.nullcontext() if _CANCELLATION.get() is not None else
+               cancellation_context(project or getattr(cfg, "root", None), stop=stop, turn_id=turn_id))
     try:
-        ki_guard.require_intact(ki.root, required=(Path(ki.root) / "SKILL.md").is_file())
-    except ki_guard.KIIntegrityError as exc:
-        return Step("preflight", False, str(exc))
-    if not ki.preflight:
-        return Step("preflight", False, "this KI ships no preflight_check.py")
-    argv = [python, str(ki.preflight)]
-    if cfg is not None and cfg.relocation == "sandbox":
-        from .paths import have_sandbox, sandbox_command
-        if have_sandbox():
-            argv = sandbox_command(cfg, argv, cwd=ki.root)
-    env = {"PYTHONDONTWRITEBYTECODE": "1"}
-    if cfg is not None:
-        from .paths import with_ki_tools_common, with_python_runtime
-        env = with_python_runtime(python, with_ki_tools_common(cfg, env))
-    try:
-        context = (contextlib.nullcontext() if _CANCELLATION.get() is not None else
-                   cancellation_context(project or getattr(cfg, "root", None), stop=stop, turn_id=turn_id))
+        # Keep ownership and cancellation live through final evidence writes.
         with context, ki_guard.worker(ki.root):
-            rc, out = _run(argv, cwd=ki.root, timeout=600, env=env)
+            return _run_preflight_copy(ki, python, cfg, project=project)
     except InstallStopped as exc:
-        return Step("preflight", False, str(exc), commands=[" ".join(argv)])
-    tail = "\n".join(out.strip().splitlines()[-25:])
+        return Step("preflight", False, str(exc), evidence={
+            "policy": PREFLIGHT_POLICY, "state": "cancelled", "ok": False,
+            "source_root": str(ki.root), "launch_attempted": False})
+
+
+def _preflight_record(attempt: Path, evidence: dict, ancestors: list[Path]) -> None:
+    for directory in ancestors:
+        _preflight_directory(directory)
+    temporary = attempt / ("record-" + uuid.uuid4().hex[:8] + ".tmp")
+    with temporary.open("x", encoding="utf-8") as stream:
+        json.dump(evidence, stream, ensure_ascii=False, indent=2)
+    if evidence["ok"]:
+        check_cancelled()
+    os.replace(temporary, attempt / "execution.json")
+    if evidence["ok"]:
+        check_cancelled()
+
+
+def _run_preflight_copy(ki, python: str, cfg, *, project) -> Step:
+    from . import ki_copy, ki_guard, ki_tree, ki_verification, software_verification
+    source = Path(ki.root).absolute()
+    required = (source / "SKILL.md").is_file()
+    evidence = {"policy": PREFLIGHT_POLICY, "source_root": str(source),
+                "python": str(python), "state": "failed", "source_intact": False,
+                "returncode": None, "created_paths": [], "changed_inputs": [],
+                "launch_attempted": False, "scope": "preflight_execution_only",
+                "readiness_receipt": False}
+    argv, out, problems, attempt, ancestors = [], "", [], None, []
+    rc, before, inputs = None, None, None
     try:
-        ki_guard.require_intact(ki.root, required=(Path(ki.root) / "SKILL.md").is_file())
-    except ki_guard.KIIntegrityError as exc:
-        return Step("preflight", False, f"{exc}\n{tail}", commands=[" ".join(argv)])
-    return Step("preflight", rc == 0, tail, commands=[" ".join(argv)])
+        ki_guard.require_intact(source, required=required)
+        if not ki.preflight:
+            raise ValueError("this KI ships no preflight_check.py")
+        preflight = Path(ki.preflight).absolute()
+        relative = preflight.relative_to(source)
+        if not preflight.resolve().is_relative_to(source.resolve()):
+            raise ValueError("Preflight script is outside the exact KI")
+        before = ki_verification.content_digest(source)
+        if not before:
+            raise ValueError("Cannot fingerprint the exact preflight KI")
+        launch_cfg = copy.deepcopy(cfg)
+        runtime = software_verification.runtime_identity(cfg) if cfg is not None else None
+        evidence.update(source_digest=before, runtime_identity=runtime)
+        base = Path(project or getattr(cfg, "root", None) or source.parent).resolve()
+        if base == source.resolve() or base.is_relative_to(source.resolve()):
+            raise ValueError("Preflight evidence must remain outside the protected KI")
+        evidence["workspace_root"] = str(base)
+        attempt_id = uuid.uuid4().hex[:12]
+        storage_parts = (".geoforge", "preflight")
+        # Python's host I/O can use extended paths, but a native model's
+        # cwd/__file__ handling often cannot. Keep an explicitly reported
+        # short host-temp copy when a nested Windows project would cross
+        # that boundary. This does not relocate the selected runtime/data.
+        longest = max((len(entry.relative) for entry in ki_tree.scan(source).entries), default=0)
+        normal_copy = base.joinpath(*storage_parts, attempt_id, "ki")
+        if os.name == "nt" and len(str(normal_copy)) + 1 + longest >= 240:
+            base = Path(tempfile.gettempdir()).resolve()
+            storage_parts = ("geoforge-preflight",)
+            if base == source.resolve() or base.is_relative_to(source.resolve()):
+                raise ValueError("Short preflight storage is inside the protected KI")
+            evidence["storage_scope"] = "host_temp_long_path"
+        else:
+            evidence["storage_scope"] = "workspace"
+        _preflight_directory(base)
+        ancestors.append(base)
+        parent = base
+        for part in storage_parts:
+            parent = parent / part
+            _preflight_directory(parent, create=True)
+            ancestors.append(parent)
+        attempt = parent / attempt_id
+        attempt.mkdir()
+        ancestors.append(attempt)
+        scratch = attempt / "ki"
+        evidence.update(execution_root=str(scratch), record_path=str(attempt / "execution.json"))
+        check_cancelled()
+        ki_copy.copytree(source, scratch)
+        copied = ki_verification.content_digest(scratch)
+        if copied != before or ki_verification.content_digest(source) != before:
+            raise ValueError("KI changed while preparing its execution copy")
+        evidence["execution_digest"] = copied
+        inputs = _preflight_inputs(scratch)
+        if ki_verification.content_digest(scratch) != before:
+            raise ValueError("Execution copy changed before launch")
+        argv = [str(python), str(scratch / relative)]
+        if launch_cfg is not None and launch_cfg.relocation == "sandbox":
+            from .paths import have_sandbox, sandbox_command
+            if have_sandbox():
+                argv = sandbox_command(launch_cfg, argv, cwd=scratch)
+        env = {"PYTHONDONTWRITEBYTECODE": "1"}
+        if launch_cfg is not None:
+            from .paths import with_ki_tools_common, with_python_runtime
+            env = with_python_runtime(python, with_ki_tools_common(launch_cfg, env))
+        evidence["launch_attempted"] = True
+        rc, out = _run(argv, cwd=scratch, timeout=600, env=env, full_output=True)
+        check_cancelled()
+        after = _preflight_inputs(scratch)
+        changed = [name for name, row in inputs.items() if after.get(name) != row]
+        evidence["changed_inputs"] = changed[:200]
+        evidence["created_paths"] = sorted(after.keys() - inputs.keys())[:200]
+        evidence["created_path_count"] = len(after.keys() - inputs.keys())
+        if changed:
+            raise ValueError("Preflight changed copied KI input(s): " + ", ".join(changed[:10]))
+        if cfg is not None and software_verification.runtime_identity(cfg) != runtime:
+            raise ValueError("Preflight runtime binding changed during execution")
+        ki_guard.require_intact(source, required=required)
+        if ki_verification.content_digest(source) != before:
+            raise ValueError("Original KI changed during preflight execution")
+        evidence["source_intact"] = True
+        check_cancelled()
+        evidence["state"] = "completed" if rc == 0 else "failed"
+    except InstallStopped as exc:
+        out = exc.output or out
+        evidence["state"] = "cancelled"
+        problems.append(str(exc))
+    except (OSError, ValueError, RuntimeError) as exc:
+        problems.append(str(exc))
+    finally:
+        # Preserve the original integrity failure even after cancellation or
+        # a child crash; this is never a recovery or automatic re-enrollment.
+        if before is not None:
+            try:
+                ki_guard.require_intact(source, required=required)
+                if ki_verification.content_digest(source) != before:
+                    raise ValueError("Original KI changed during preflight execution")
+                evidence["source_intact"] = True
+            except (OSError, ValueError, RuntimeError) as exc:
+                evidence["source_intact"] = False
+                evidence["state"] = "failed" if evidence["state"] != "cancelled" else "cancelled"
+                problems.append(str(exc))
+        evidence["returncode"] = rc
+        evidence["command"] = argv
+        evidence["ok"] = evidence["state"] == "completed" and not problems
+        if attempt is not None:
+            try:
+                for directory in ancestors:
+                    _preflight_directory(directory)
+                output = attempt / ("output-" + uuid.uuid4().hex[:8] + ".txt")
+                with output.open("x", encoding="utf-8", newline="") as stream:
+                    stream.write(out)
+                evidence["output_path"] = str(output)
+                evidence["output_chars"] = len(out)
+                # The supervisor may report a timeout or interrupted stream;
+                # this states only that the host retains everything captured.
+                evidence["output_truncated"] = False
+                try:
+                    _preflight_record(attempt, evidence, ancestors)
+                except InstallStopped as exc:
+                    evidence.update(ok=False, state="cancelled")
+                    problems.append(str(exc))
+                    _preflight_record(attempt, evidence, ancestors)
+            except (OSError, ValueError, RuntimeError) as exc:
+                evidence.update(ok=False, state="failed")
+                problems.append("Cannot retain preflight evidence: " + str(exc))
+    location = ("Preflight execution copy: " + evidence["execution_root"]
+                if "execution_root" in evidence else "Preflight was not executed")
+    tail = "\n".join(out[-8000:].strip().splitlines()[-25:])
+    output_location = ("Full captured output: " + evidence["output_path"]
+                       if "output_path" in evidence else "")
+    detail = "\n".join(filter(None, [location, output_location, *problems, tail]))
+    return Step("preflight", evidence.get("ok", False), detail,
+                commands=[" ".join(argv)] if argv else [], evidence=evidence)
 
 
 def check_data(man: Manifest, cfg) -> Step:

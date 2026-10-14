@@ -78,6 +78,33 @@ def test_author_is_planning_only_no_execution_and_source_not_a_ki_tool(tmp_path)
                          ki, _cfg(project), project_mode=True, flow=fs)
 
 
+def test_api_author_returns_explicit_typed_output_binding_without_execution(tmp_path):
+    ki, project, fs, _plan_doc, _inv, _authored = case(tmp_path)
+    contracts = [
+        {"output_id": "weather", "path": "outputs/prepared/weather.csv", "format": "pcse_weather_csv_v1", "date_format": "%Y%m%d"},
+        {"output_id": "agro", "path": "outputs/prepared/agro.yaml", "format": "pcse_agromanagement_yaml_v1", "campaign_start": "1980-06-01"},
+    ]
+    result = json.loads(api.execute_tool("write_project_data_tool", {
+        "ki": "M", "name": "typed_converter", "source": "# prepared for review only\n", "purpose": "converter",
+        "output_formats": contracts}, ki, _cfg(project), project_mode=True, flow=fs))
+    assert result["project_data_tool"]["version"] == 2
+    assert result["project_data_tool"]["output_formats"] == contracts
+    assert result["executed"] is False and not (project / "outputs").exists()
+    schema = next(t for t in api.tool_schemas(ki, project_mode=True, flow=fs) if t["name"] == "write_project_data_tool")
+    assert "output_formats" in schema["input_schema"]["properties"]
+    assert "output_formats" not in schema["input_schema"]["required"]
+
+
+@pytest.mark.parametrize("contract", [None, [], [{"output_id":"a", "path":"outputs/a.csv", "format":"anything"}]])
+def test_api_explicit_invalid_output_formats_do_not_silently_become_v1(tmp_path, contract):
+    ki, project, fs, _plan_doc, _inv, _authored = case(tmp_path)
+    with pytest.raises(api.ToolError):
+        api.execute_tool("write_project_data_tool", {
+            "ki": "M", "name": "invalid_typed", "source": "pass", "purpose": "converter", "output_formats": contract},
+            ki, _cfg(project), project_mode=True, flow=fs)
+    assert not any(path.name == "invalid_typed.py" for path in project.rglob("*.py"))
+
+
 def test_project_reader_authoring_cannot_enroll_an_unknown_ki_implicitly(tmp_path):
     ki, project, fs, _plan_doc, _inventory, _authored = case(tmp_path)
     unregistered = tmp_path / "unregistered-ki"

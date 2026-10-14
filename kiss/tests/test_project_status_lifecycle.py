@@ -83,13 +83,16 @@ def _run_receipt(env, *, passed):
     output = env.project / "outputs" / "q.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("t,q\n1,0.5\n", encoding="utf-8")
+    from ki_tools_common.flow import declared_outputs
+    declared = declared_outputs.binding(env.project, env.plan["steps"][0], env.inventory)
     return env.flow.receipts.record_run(
         env.project, ki="M", executable=str(env.tool), command=[str(env.tool)],
         cwd=str(env.project), started_at=1.0, finished_at=2.0,
         exit_code=0 if passed else 1, inputs=[], outputs=[output],
         approval_sha256=env.fs.approval_id, plan_step_id="M:run",
         execution_status="succeeded" if passed else "failed", process_started=True,
-        validation={"status": "passed" if passed else "failed", "checks": []})
+        validation={"status": "passed" if passed else "failed", "checks": []},
+        declared_outputs=declared)
 
 
 def test_pending_review_survives_idle_chat_and_remains_unsigned(status_project):
@@ -299,7 +302,7 @@ def test_snapshot_does_not_trust_unsigned_generated_output_summary(status_projec
     env = status_project
     env.inventory["items"].append({
         "id": "q", "required_by": ["M"], "status": "resolved", "acceptable_sources": [],
-        "local_paths": [], "agent_resolvable": True, "needs_user": False,
+        "local_paths": ["outputs/q.csv"], "agent_resolvable": True, "needs_user": False,
     })
     _save(env)
     _approve(env)
@@ -317,7 +320,7 @@ def test_snapshot_generated_output_uses_current_signed_step_proof(status_project
     env = status_project
     env.inventory["items"].append({
         "id": "q", "required_by": ["M"], "status": "resolved", "acceptable_sources": [],
-        "local_paths": [], "agent_resolvable": True, "needs_user": False,
+        "local_paths": ["outputs/q.csv"], "agent_resolvable": True, "needs_user": False,
     })
     _save(env)
     _approve(env)

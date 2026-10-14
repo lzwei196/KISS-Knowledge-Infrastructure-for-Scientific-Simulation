@@ -348,7 +348,8 @@ def _stop_process(proc) -> tuple[str, str, str]:
 
 def run_process(command: list[str] | str, *, cwd, env, timeout: float | None,
                 project: Path | None = None, stdin=None, stop=None,
-                turn_id: str | None = None, graceful_stop: bool = False) -> ProcessRun:
+                turn_id: str | None = None, graceful_stop: bool = False,
+                encoding: str | None = None, errors: str = "replace") -> ProcessRun:
     """Launch once in a session of its own, wait, and leave no process tree behind.
 
     With ``project``, its stop marker refuses the launch or ends the run. A
@@ -397,7 +398,7 @@ def run_process(command: list[str] | str, *, cwd, env, timeout: float | None,
             stdin = subprocess.DEVNULL
         proc = subprocess.Popen(command, cwd=str(cwd), env=env, stdin=stdin,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, errors="replace", **launch)
+                                text=True, encoding=encoding, errors=errors, **launch)
         started = True
         LIVE_PROCESSES.add(proc)
         if project is not None or stop is not None:
@@ -520,6 +521,16 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     if flow is not None:
         approval_id = _fresh_approval(flow, project)
         step = flow.check_step_tool(plan_step_id, ki, tool)
+        try:
+            flow.flow.plan.require_step_invocation(step, project, arguments, cwd)
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            raise flowgate.FlowDenied(str(exc)) from exc
+        if "stdout_artifact" in step:
+            from ki_tools_common.flow import stdout_artifacts
+            try:
+                stdout_artifacts.before_launch(step, project, flow.inventory, arguments, cwd)
+            except (OSError, ValueError, TypeError) as exc:
+                raise flowgate.FlowDenied(str(exc)) from exc
         if project_data_tool:
             from . import project_data_tools
             _, reviewed_args, reviewed_cwd, reviewed_timeout = project_data_tools.invocation(
@@ -585,9 +596,55 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     if flow is not None and (flow.approval_status() != "OK" or approval_id !=
                             flow.flow.approval.approval_id(flow.flow.approval.read(project))):
         raise flowgate.FlowDenied("approval changed before execution; no process was launched")
+    if not project_data_tool:
+        # The shared installation pass does not verify this project's projected
+        # KI. Recheck at dispatch as well as in the GUI: old EXECUTING states and
+        # direct CLI wrappers must not bypass a missing or stale project check.
+        from . import project_verification
+        try:
+            project_verification.require_current(project, ki, requested_root, cfg=cfg)
+        except (OSError, ValueError) as exc:
+            raise flowgate.FlowDenied(f"project KI verification required for {ki}: {exc}") from exc
+    from . import runtime_arguments
+    try:
+        runtime_arguments.validate(project=project, ki=ki, ki_root=requested_root, cfg=cfg,
+            arguments=arguments, cwd=cwd, allow_runtime=not project_data_tool)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise flowgate.FlowDenied(str(exc)) from exc
+    capture_arguments = list(arguments)
+    if project_data_tool:
+        # Existing destination arguments are output preimages, not consumed
+        # input files. The host already rejected overlap with every read grant.
+        approved_outputs = set(request["declared_output_files"])
+        def consumed_argument(token):
+            value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+            path = Path(value)
+            path = path if path.is_absolute() else cwd / path
+            return str(path.resolve()) not in approved_outputs
+        capture_arguments = [token for token in capture_arguments if consumed_argument(token)]
+        capture_arguments += request["input_files"]
+    input_snapshot = flow.capture_step_inputs(step, capture_arguments, cwd) if flow is not None else None
+    output_preimages = None
+    if project_data_tool:
+        try:
+            output_preimages = project_data_tools.preserve_output_preimages(project, request,
+                approval_sha256=approval_id, step_id=plan_step_id)
+            request["existing_outputs"] = [{**row, "path": str(project / row["path"])}
+                for row in (output_preimages or {}).get("outputs", [])]
+            encoded_request = json.dumps(request, ensure_ascii=False)
+            if len(encoded_request) > 20000:
+                raise ValueError("project data invocation is too large; select fewer precise output files")
+            command = [str(cfg.python), "-I", "-S", str(worker), str(tool), encoded_request]
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            raise flowgate.FlowDenied(str(exc)) from exc
+        if flow.approval_status() != "OK" or approval_id != flow.flow.approval.approval_id(
+                flow.flow.approval.read(project)):
+            raise flowgate.FlowDenied("approval changed before execution; no process was launched")
     started = time.time()
+    stdout_capture = flow is not None and "stdout_artifact" in step
     run = run_process(command, cwd=cwd, env=child_env, timeout=timeout, project=project,
-                      stop=stop, turn_id=turn_id)
+                      stop=stop, turn_id=turn_id,
+                      **({"encoding": "utf-8", "errors": "strict"} if stdout_capture else {}))
     if run.status == "stopped" and run.process_started is False:
         # Not an attempt: no receipt, so a step that already passed is not demoted.
         raise flowgate.FlowDenied("stopped by the user; no process was launched")
@@ -608,8 +665,11 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
                 started_at=started, finished_at=finished, exit_code=exit_code,
                 before=before, plan_step_id=plan_step_id,
                 stdout_tail=(output + ("\n" + detail if detail else ""))[-20000:],
+                captured_stdout=run.stdout if stdout_capture else None,
                 expected_approval_sha256=approval_id,
                 execution_status=status, process_started=run.process_started,
+                input_snapshot=input_snapshot,
+                output_preimages=output_preimages,
                 data_input_files=request["input_files"] if project_data_tool else None,
                 input_arguments=list(arguments) + (request["input_files"] if project_data_tool else []))
         except Exception as exc:

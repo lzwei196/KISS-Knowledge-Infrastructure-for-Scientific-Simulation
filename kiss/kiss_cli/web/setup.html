@@ -100,8 +100,12 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
         </div>
         <div class="controls"><select id="provider"></select>
           <select id="llm"></select>
-          <button class="primary" id="start">Start agent setup</button>
+          <button class="primary" id="start" disabled>Start agent setup</button>
+          <button id="preparedata" style="display:none">Prepare required data</button>
+          <button id="stop" style="display:none">Stop setup</button>
           <button id="chat" style="display:none">Use KI in chat</button></div>
+        <div class="agent-note" id="jobnotice" role="status"></div>
+        <div class="agent-note" id="requiredatanote" role="status"></div>
         <div class="agent-note">The agent reads this KI and its KDT diagnostics, installs inside the model workspace, checks the real software, and repairs failures until it passes or needs you.</div>
         <div class="activity" id="setupactivity" aria-live="polite">
           <div class="activity-main"><span class="agent-orbit" aria-hidden="true"></span>
@@ -136,9 +140,35 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
 <script>
-const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"";
+const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"",DATA_SESSION=params.get("session")||"";
 const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[c]));
 let STATE=null, PROVIDERS=[], busy=false, rawLog="",runStartedAt=0,lastSignalAt=0,installPathDirty=false,existingPathDirty=false,selectedInstallMode=null;
+let dataPreparing=false;
+let submitting=false,streaming=false,awaitingStatus=false,stopPending=false,stoppingJobId="",jobNotice="",statusUnavailable=false,stateMutationEpoch=0,stateLoadPromise=null;
+function activeSetupJob(){return !!(STATE&&STATE.job&&["running","stopping"].includes(STATE.job.state))}
+function projectSetup(){return !!(typeof DATA_SESSION!=="undefined"&&DATA_SESSION)}
+function setupStopping(){return !!(STATE&&STATE.job&&(STATE.job.state==="stopping"||stoppingJobId===STATE.job.id))}
+function unfinishedSetupJob(){return !!(STATE&&STATE.job&&["failed","cancelled","interrupted","waiting_for_user"].includes(STATE.job.state))}
+function setupJobLabel(){
+  const state=STATE&&STATE.job&&STATE.job.state;
+  if(STATE?.job?.provider==="project-preflight"){const labels=isZh()?{running:"正在检查项目",stopping:"正在停止…",completed:"项目检查已通过",failed:"项目检查失败",cancelled:"项目检查已取消"}:{running:"Checking project",stopping:"Stopping…",completed:"Project check passed",failed:"Project check failed",cancelled:"Project check cancelled"};return setupStopping()?labels.stopping:labels[state]||""}
+  const labels=isZh()?{running:"正在设置",stopping:"正在停止…",completed:"设置尝试已结束",failed:"设置失败",cancelled:"设置已取消",interrupted:"设置已中断",waiting_for_user:"等待你的操作"}:
+    {running:"Setup running",stopping:"Stopping…",completed:"Setup attempt finished",failed:"Setup failed",cancelled:"Setup cancelled",interrupted:"Setup interrupted",waiting_for_user:"Waiting for you"};
+  return setupStopping()?labels.stopping:labels[state]||"";
+}
+function acceptSetupJob(job){
+  // A mutation response supersedes any status request started before it.
+  stateMutationEpoch++;STATE={...(STATE||{}),job};
+  if(!job||job.id!==stoppingJobId||!["running","stopping"].includes(job.state))stoppingJobId="";
+}
+function requiredDataOperation(){return (typeof dataPreparing!=="undefined"&&dataPreparing)||!!(STATE?.job?.provider==="runtime-data"&&activeSetupJob())}
+function currentSetupLabel(){
+  if(setupStopping())return setupJobLabel();
+  if(statusUnavailable)return isZh()?"正在确认设置状态":"Checking setup status";
+  if(requiredDataOperation())return isZh()?"正在准备必需数据":"Preparing required data";
+  if(activeSetupJob())return isZh()?"正在设置":"Setup running";
+  return submitting?(isZh()?"正在提交设置":"Submitting setup"):(isZh()?"正在确认设置状态":"Checking setup status");
+}
 function fmtSize(n){return n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(1)+" KB":n+" B"}
 function isZh(){return !!(window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN")}
 function toolActivity(name){
@@ -157,10 +187,6 @@ function presentSetupLog(value){
     .replace(/(?:\s*\[\[GEOF_TOOL:[A-Za-z0-9_.-]+\]\]\s*)+/g,summarizeToolBlock)
     .replace(/\n{3,}/g,"\n\n").trimStart();
 }
-function latestActivity(){
-  const names=[...rawLog.matchAll(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g)];
-  return names.length?toolActivity(names[names.length-1][1]):(isZh()?"Agent 正在处理":"Agent working");
-}
 function setupPhase(){
   const text=rawLog.toLowerCase(),tail=text.slice(-2400),names=[...rawLog.matchAll(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g)].map(x=>x[1]);
   if(/geoforge final check|already verified and ready|最终检查/.test(tail))return 2;
@@ -172,19 +198,23 @@ function drawActivity(){
   const box=$("#setupactivity");if(!box)return;
   const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
   box.classList.toggle("on",busy&&!waiting);if(!busy||waiting)return;
-  const now=Date.now(),age=Math.max(0,Math.floor((now-(lastSignalAt||now))/1000)),phase=setupPhase();
-  $("#activitytitle").innerHTML=`${esc(latestActivity())}<span class="live-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;
-  $("#activitymeta").textContent=age<=14?(isZh()?`Agent 进程连接正常 · ${age} 秒前收到信号`:`Agent process connected · signal ${age}s ago`):(isZh()?`命令仍在运行 · 等待下一次 Agent 信号（${age} 秒）`:`Command still running · awaiting the next agent signal (${age}s)`);
-  $("#activitytime").textContent=duration(now-(runStartedAt||now));
+  const now=Date.now(),phase=setupPhase(),savedStart=STATE&&STATE.job&&STATE.job.started_at;
+  const started=(typeof savedStart==="number"?savedStart*1000:Date.parse(savedStart))||runStartedAt||now;
+  $("#activitytitle").innerHTML=`${esc(currentSetupLabel())}<span class="live-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;
+  $("#activitymeta").textContent=statusUnavailable?(isZh()?"状态连接暂不可用；正在尝试重新连接。":"Status connection unavailable; trying to reconnect."):
+    streaming?(isZh()?"实时显示已连接；请以日志中的检查结果为准。":"Live display connected; check the log for actual results."):
+      (isZh()?"正在刷新服务器保存的状态与日志。":"Refreshing the server's saved status and log.");
+  $("#activitytime").textContent=duration(now-started);
   const labels=isZh()?["1 · 读取 KI","2 · 安装与修复","3 · 最终验证"]:["1 · Read KI","2 · Install & repair","3 · Verify"];
   document.querySelectorAll(".phase").forEach((el,i)=>{el.textContent=labels[i];el.classList.toggle("done",i<phase);el.classList.toggle("active",i===phase)});
 }
 function drawRunState(){
   const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
   drawActivity();
-  if(!busy){$("#runstate").textContent="";return}
+  if(!busy){$("#runstate").textContent=setupJobLabel();return}
+  if(setupStopping()){$("#runstate").textContent=setupJobLabel();return}
   if(waiting){$("#runstate").textContent=isZh()?"正在等待你的授权":"Waiting for your permission";return}
-  $("#runstate").innerHTML=`<span class="spin"></span> ${esc(latestActivity())}`;
+  $("#runstate").innerHTML=`<span class="spin"></span> ${esc(currentSetupLabel())}`;
 }
 function managedWorkspacePermission(req){
   if(!req||req.kind!=="permission"||!STATE||!STATE.workdir)return false;
@@ -225,18 +255,21 @@ function drawInstallLocation(){
 }
 function chooseInstallMode(mode){if(busy)return;selectedInstallMode=mode;drawInstallLocation()}
 async function chooseInstallLocation(){
+  if(busy)return;
   const nativeApi=window.pywebview&&window.pywebview.api;
   if(!nativeApi||!nativeApi.choose_project_parent){alert(isZh()?"请直接在安装路径框中输入完整路径。":"Type the full path directly in the installation field.");return}
-  const picked=await nativeApi.choose_project_parent($("#installpath").value||"");if(!picked)return;
+  const picked=await nativeApi.choose_project_parent($("#installpath").value||"");if(!picked||busy)return;
   $("#installpath").value=picked;installPathDirty=true;drawInstallLocation();
 }
 async function chooseExistingLocation(kind){
+  if(busy)return;
   const nativeApi=window.pywebview&&window.pywebview.api,fn=kind==="file"?nativeApi&&nativeApi.choose_file:nativeApi&&nativeApi.choose_project_parent;
   if(!fn){alert(isZh()?"请直接输入已有软件的完整路径。":"Type the full existing software path directly.");return}
-  const picked=await fn.call(nativeApi,$("#existingpath").value||"");if(!picked)return;
+  const picked=await fn.call(nativeApi,$("#existingpath").value||"");if(!picked||busy)return;
   $("#existingpath").value=picked;existingPathDirty=true;drawInstallLocation();
 }
-async function saveInstallLocation(allowEmptyExisting=false){
+async function saveInstallLocation(allowEmptyExisting=false,forStart=false){
+  if(activeSetupJob()||(busy&&!forStart))return false;
   const value=$("#installpath").value.trim(),existing=$("#existingpath").value.trim(),mode=selectedInstallMode||"new";
   if(mode==="new"&&!value){alert(isZh()?"请选择安装工作区。":"Choose an installation workspace.");return false}
   if(mode==="existing"&&!existing&&!allowEmptyExisting){alert(isZh()?"请选择已有安装路径，或者让 Agent 自动查找。":"Choose the existing installation, or let the Agent find it.");return false}
@@ -244,7 +277,7 @@ async function saveInstallLocation(allowEmptyExisting=false){
   if(!installPathDirty&&!existingPathDirty&&mode===loc.installation_mode&&(mode!=="new"||value===loc.path)&&(mode!=="existing"||existing===(loc.existing_path||"")))return true;
   const r=await fetch("/api/setup-location",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,path:value,installation_mode:mode,existing_path:existing})});
   const d=await r.json().catch(()=>({}));if(!r.ok){alert(d.error||"Could not save installation folder");return false}
-  installPathDirty=false;existingPathDirty=false;await loadState();return true;
+  stateMutationEpoch++;installPathDirty=false;existingPathDirty=false;await loadState();return true;
 }
 function setupRecheckRequired(sw){return !!sw.requires_reverification||sw.primary_error?.name==="snapshot-changed";}
 function setupRecheckReason(){
@@ -252,7 +285,7 @@ function setupRecheckReason(){
     "The KI, installation recipe, or shared tools changed. Recheck the existing software against the current KI; previous reports and software are retained.";
 }
 function drawVerification(sw){
-  const zh=isZh(),recheck=setupRecheckRequired(sw),steps=sw.steps||[],history=busy||recheck;
+  const zh=isZh(),recheck=setupRecheckRequired(sw),steps=sw.steps||[],unfinished=unfinishedSetupJob(),history=busy||recheck||(unfinished&&STATE.job.state!=="failed");
   const recorded=zh?"已记录：":"Recorded: ";
   const stepRows=steps.map(s=>{
     const outcome=s.ok?(zh?"通过":"passed"):s.recovered?(zh?"已修复":"repaired"):s.deferred?(zh?"在各项目中处理":"handled in each project"):s.skipped?(zh?"已跳过":"skipped"):(zh?"失败":"failed");
@@ -261,25 +294,45 @@ function drawVerification(sw){
     return `<div class="step ${style}"><span class="icon">${icon}</span><div><b>${esc(s.name)}${history?' · '+recorded+outcome:s.recovered?' · '+outcome:s.deferred?' · '+outcome:''}</b>${s.detail?`<details><summary>${zh?'详情':'details'}</summary>${esc(s.detail)}</details>`:""}</div></div>`;
   }).join("");
   const when=sw.checked_at?`<div class="explain">${zh?'记录时间：':'Recorded check: '}${esc(sw.checked_at)}</div>`:"";
-  let message=busy?(zh?"验证正在进行。本次尝试的最终结果尚未确认。":"Verification is in progress. The final result of this attempt is not yet confirmed."):
-    recheck?setupRecheckReason():"";
+  let message=busy?(requiredDataOperation()?(zh?"正在准备必需的运行数据。此操作不会运行模型或完成软件验证。":"Preparing required runtime data. This operation does not run the model or verify the software."):(zh?"验证正在进行。本次尝试的最终结果尚未确认。":"Verification is in progress. The final result of this attempt is not yet confirmed.")):
+    recheck?setupRecheckReason():unfinished?(zh?"本次设置未完成。以下记录不代表本次验证通过。":"This setup did not complete. Recorded checks do not establish a pass for this attempt."):"";
   if(busy&&recheck)message+=' '+setupRecheckReason();
   $("#verification").innerHTML=(message?`<div class="explain">${esc(message)}</div>`:"")+
     (steps.length?(history?`<details class="request-details"><summary>${zh?'以前记录的检查结果 · 不代表当前验证通过':'Previously recorded checks · not a current verification pass'}</summary>${when}<div class="steps">${stepRows}</div></details>`:
       `${when}<div class="steps">${stepRows}</div>`):
       (message?"":`<div class="explain">${zh?'尚未检查。Agent 将运行 KI 预检。':'Not checked yet. The agent will run the KI preflight.'}</div>`));
 }
-function draw(){if(!STATE)return;const sw=STATE.software||{},recheck=setupRecheckRequired(sw),ok=!!sw.can_run&&!recheck,failed=sw.state==="failed";
+function draw(){if(!STATE)return;busy=submitting||streaming||awaitingStatus||activeSetupJob();
+  const sw=STATE.software||{},recheck=setupRecheckRequired(sw),unfinished=unfinishedSetupJob(),ok=!!sw.can_run&&!recheck&&!unfinished,failed=sw.state==="failed"||STATE.job?.state==="failed";
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
-  $("#statusbadge").className=`badge ${busy?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=busy?(isZh()?"正在验证":"Verification in progress"):sw.label||"Setup needed";
+  $("#statusbadge").className=`badge ${busy?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=setupStopping()?setupJobLabel():busy?(requiredDataOperation()?(isZh()?"正在准备必需数据":"Preparing required data"):(isZh()?"正在验证":"Verification in progress")):unfinished?setupJobLabel():sw.label||"Setup needed";
+  $("#provider").disabled=busy;$("#llm").disabled=busy;
+  const rd=STATE.required_data||{},dataAction=$("#preparedata");
+  dataAction.style.display=rd.declared?"":"none";
+  dataAction.textContent=isZh()?"准备必需数据":"Prepare required data";
+  dataAction.disabled=busy||!rd.can_prepare||installPathDirty||existingPathDirty||!!(selectedInstallMode&&selectedInstallMode!==(STATE.install_location||{}).installation_mode);
+  $("#requiredatanote").textContent=rd.declared?((isZh()?"只补齐已保存安装位置中声明的必需数据；之后仍需验证软件。":"Fills declared required data in the saved installation; software verification is still required.")+(rd.can_prepare?"":" "+(rd.detail||""))):"";
+  $("#stop").style.display=busy?"":"none";$("#stop").disabled=!activeSetupJob()||STATE.job?.can_stop===false||setupStopping()||stopPending;
+  $("#stop").textContent=setupStopping()||stopPending?(isZh()?"正在停止…":"Stopping…"):(isZh()?"停止设置":"Stop setup");
+  $("#jobnotice").textContent=statusUnavailable?(isZh()?"暂时无法读取服务器状态。连接恢复前将保留当前设置状态。":"Cannot read server status. Keeping the current setup state until the connection returns."):
+    jobNotice||(unfinished?`${setupJobLabel()}${STATE.job.detail?' · '+STATE.job.detail:''}`:"");
   const installMode=selectedInstallMode||(STATE.install_location||{}).installation_mode||"new";
   $("#chat").style.display=ok&&!busy?"":"none";$("#start").textContent=ok?"Re-check with agent":installMode==="existing"?(isZh()?"验证已有软件":"Verify existing software"):STATE.agent_ready?"Continue agent":"Start agent setup";
-  const log=$(".log");if(!busy&&STATE.log_tail){rawLog=STATE.log_tail;log.textContent=presentSetupLog(rawLog);log.scrollTop=log.scrollHeight;}
-  $("#logcontext").textContent=busy?(isZh()?"当前尝试的实时日志":"Live log for the current attempt"):STATE.log_tail?
+  const log=$(".log");if(!submitting&&!streaming&&typeof STATE.log_tail==="string"){rawLog=STATE.log_tail;log.textContent=presentSetupLog(rawLog);log.scrollTop=log.scrollHeight;}
+  $("#logcontext").textContent=busy?(streaming?(isZh()?"当前尝试的实时日志":"Live log for the current attempt"):(isZh()?"正在刷新当前尝试保存的日志":"Refreshing the saved log for the current attempt")):STATE.log_tail?
     recheck?(isZh()?"已保存的设置日志 · 不代表更新后的 KI 已验证":"Saved setup log · does not establish verification for the updated KI"):
       (isZh()?"已保存的设置日志 · 可能包含以前的尝试":"Saved setup log · may include earlier attempts"):"";
   const req=STATE.request,att=STATE.attention;
-  if(req&&req.status==="waiting"){
+  if(projectSetup()){
+    const pc=STATE.project_preflight||{},label=isZh()?"检查项目预检":"Check project preflight";
+    $(".install-location").style.display="none";
+    $("#start").textContent=label;$("#start").disabled=busy||!pc.can_check;
+    $("#provider").disabled=true;$("#llm").disabled=true;
+    $("#needbadge").className=ok?"badge ok":"badge warn";
+    $("#needbadge").textContent=busy?(isZh()?"正在检查项目":"Checking project"):ok?(isZh()?"项目预检已通过":"Project preflight passed"):(isZh()?"需要项目检查":"Project check required");
+    $("#need").innerHTML=`<div class="request"><h4>${esc(label)}</h4><p>${esc(pc.detail||"")}</p><p>${isZh()?"检查此项目已保存的 KI、运行环境和必需数据。不会修改共享安装，不会自动运行模型。":"Checks this project's saved KI, runtime and required data. Does not change shared installation readiness or automatically start the model."}</p><div class="controls"><button class="primary" id="retry">${esc(label)}</button></div></div>`;
+    $("#retry").disabled=busy||!pc.can_check;$("#retry").onclick=()=>startAgent(false);
+  }else if(req&&req.status==="waiting"){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Needs you now";
     const managed=managedWorkspacePermission(req);
     const link=req.url?`<p><a href="${esc(req.url)}" target="_blank" rel="noreferrer">Open the official page ↗</a></p>`:"";
@@ -288,15 +341,19 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},recheck=setupRechec
     const upload=(["download","licence"].includes(req.kind))?`<div class="upload"><input id="userfile" type="file"><button id="upload">Give file to agent</button></div>`:"";
     const managedNote=managed?`<div class="managed-permission">${isZh()?"GeoForge 可以安全地为这个模型工作区授予权限。无需打开终端或修改 Claude 的全局设置。":"GeoForge can safely grant this inside the model workspace. You do not need Terminal or a global Claude settings change."}</div>`:"";
     const report=String(req.message||"").length>650?`<details class="request-details"><summary>${isZh()?"查看完整技术报告":"View the full technical report"}</summary><div class="request-report">${esc(req.message)}</div></details>`:"";
-    const resumeLabel=managed?(isZh()?"允许此模型并继续":"Allow for this model — continue"):"I've done this — continue";
+    const resumeLabel=managed?(isZh()?"允许此模型并继续":"Allow for this model — continue"):(isZh()?"我已完成 — 继续":"I've done this — continue");
     $("#need").innerHTML=`<div class="request"><div class="label">${esc((req.kind||'ACTION').toUpperCase())}</div><h4>${esc(req.title)}</h4><p>${esc(requestSummary(req))}</p>${managedNote}${link}${path}
       ${command}${upload}
       ${report}<input id="note" type="text" placeholder="Optional note for the agent"><div class="controls"><button class="primary" id="resume">${esc(resumeLabel)}</button><button id="askhelp">I can't do this — help me</button></div></div>`;
-    $("#resume").onclick=resumeAgent;$("#askhelp").onclick=chatForHelp;if($("#upload"))$("#upload").onclick=uploadFile;if($("#copycommand"))$("#copycommand").onclick=async()=>{await GeoForgeClipboard.write(req.command);$("#copycommand").textContent="Copied"};$("#start").disabled=true;
+    $("#resume").onclick=resumeAgent;$("#resume").disabled=busy||!$("#provider").value;$("#askhelp").onclick=chatForHelp;if($("#upload")){$("#upload").onclick=uploadFile;$("#upload").disabled=busy}if($("#userfile"))$("#userfile").disabled=busy;if($("#note"))$("#note").disabled=busy;if($("#copycommand"))$("#copycommand").onclick=async()=>{await GeoForgeClipboard.write(req.command);$("#copycommand").textContent="Copied"};$("#start").disabled=true;
   }else if(busy){
     $("#needbadge").className="badge";$("#needbadge").textContent=isZh()?"正在处理":"Working";
     $("#need").innerHTML=`<div class="explain">${isZh()?"Agent 正在检查软件。目前没有需要你处理的请求；如需协助，将在这里显示。":"The agent is checking the software. No action is currently requested from you; a specific request will appear here if needed."}</div>`;
     $("#start").disabled=true;
+  }else if(unfinished){
+    $("#needbadge").className="badge warn";$("#needbadge").textContent=setupJobLabel();
+    $("#need").innerHTML=`<div class="request"><h4>${esc(setupJobLabel())}</h4><p>${esc(STATE.job.detail||(isZh()?"本次尝试未完成验证。可以重新开始设置。":"This attempt did not complete verification. You can start setup again."))}</p><div class="controls"><button class="primary" id="retry">${isZh()?"重新开始设置":"Retry setup"}</button></div></div>`;
+    $("#retry").disabled=!$("#provider").value;$("#retry").onclick=()=>startAgent(false);$("#start").disabled=!$("#provider").value;
   }else if(recheck){
     $("#needbadge").className="badge warn";$("#needbadge").textContent=isZh()?"需要重新检查":"Recheck required";
     $("#need").innerHTML=`<div class="request"><h4>${isZh()?"验证更新后的 KI":"Verify the updated KI"}</h4><p>${esc(setupRecheckReason())}</p><div class="controls"><button class="primary" id="retry">${isZh()?"让 Agent 重新检查":"Recheck with agent"}</button></div></div>`;
@@ -316,15 +373,60 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},recheck=setupRechec
   drawInstallLocation();drawRunState();
   drawVerification(sw);
 }
-async function loadState(){if(!MODEL){$("#title").textContent="No KI selected";return;}const r=await fetch("/api/setup/"+encodeURIComponent(MODEL));STATE=await r.json();draw();}
-async function startAgent(discoverExisting=false){if(busy)return;if(!await saveInstallLocation(discoverExisting))return;busy=true;rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;draw();const log=$(".log");log.textContent="";drawRunState();
-  try{const r=await fetch("/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value,discover_existing:!!discoverExisting})});
-    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`)}const rd=r.body.getReader(),dec=new TextDecoder();
-    for(;;){const{done,value}=await rd.read();if(done)break;lastSignalAt=Date.now();rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight;}rawLog+=dec.decode();}
-  catch(e){const zh=window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
-    rawLog+="\n"+(zh?"实时显示连接已中断。Agent 会在后台继续；此页面将从保存的日志中刷新状态。":"The live display was interrupted. The agent will continue in the background; this page will refresh from its saved log.")+"\n";log.textContent=presentSetupLog(rawLog)}
-  busy=false;$("#runstate").textContent="";drawActivity();await loadState();}
-async function resumeAgent(){await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note:$("#note").value})});await loadState();startAgent();}
+async function loadState(){
+  if(!MODEL){$("#title").textContent="No KI selected";return false}
+  // Interval ticks share one request, so a slow server still produces updates.
+  // Only mutations invalidate an in-flight read; their callers share one fresh
+  // read afterwards instead of applying a response captured before the change.
+  if(!stateLoadPromise){
+    const epoch=stateMutationEpoch;
+    stateLoadPromise=(async()=>{
+      try{const r=await fetch("/api/setup/"+encodeURIComponent(MODEL)+(typeof DATA_SESSION!=="undefined"&&DATA_SESSION?"?session="+encodeURIComponent(DATA_SESSION):""));if(!r.ok)throw new Error(`HTTP ${r.status}`);
+        const state=await r.json();if(epoch!==stateMutationEpoch)return {epoch,ok:false};
+        STATE=state;statusUnavailable=false;if(!submitting&&!streaming)awaitingStatus=false;
+        if(!STATE.job||STATE.job.id!==stoppingJobId||!activeSetupJob())stoppingJobId="";draw();return {epoch,ok:true};
+      }catch(e){if(epoch===stateMutationEpoch){statusUnavailable=true;draw()}return {epoch,ok:false}}
+    })().finally(()=>{stateLoadPromise=null});
+  }
+  const result=await stateLoadPromise;
+  return result.epoch===stateMutationEpoch?result.ok:loadState();
+}
+async function startAgent(discoverExisting=false,requiredDataOnly=false){
+  if(busy||!STATE)return;
+  if(requiredDataOnly&&(!STATE.required_data?.can_prepare||installPathDirty||existingPathDirty||!!(selectedInstallMode&&selectedInstallMode!==(STATE.install_location||{}).installation_mode)))return;
+  const projectCheck=projectSetup()&&!requiredDataOnly;
+  if(projectCheck&&(discoverExisting||!STATE.project_preflight?.can_check))return;
+  dataPreparing=requiredDataOnly;submitting=true;jobNotice="";draw();let sent=false;
+  try{
+    if((!requiredDataOnly&&!projectCheck&&!await saveInstallLocation(discoverExisting,true))||activeSetupJob())return;
+    rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;$(".log").textContent="";
+    sent=true;awaitingStatus=true;stateMutationEpoch++;
+    const r=await fetch(projectCheck?"/api/setup-project-preflight":requiredDataOnly?"/api/setup-required-data":"/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(projectCheck?{model:MODEL,session:DATA_SESSION}:requiredDataOnly?{model:MODEL,...(typeof DATA_SESSION!=="undefined"&&DATA_SESSION?{session:DATA_SESSION}:{})}:{model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value,discover_existing:!!discoverExisting})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));if("job" in d)acceptSetupJob(d.job);awaitingStatus=false;jobNotice=d.error||`HTTP ${r.status}`;return}
+    stateMutationEpoch++;streaming=true;submitting=false;draw();const rd=r.body.getReader(),dec=new TextDecoder(),log=$(".log");
+    for(;;){const{done,value}=await rd.read();if(done)break;lastSignalAt=Date.now();rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight}rawLog+=dec.decode();
+  }catch(e){jobNotice=sent?(isZh()?"实时连接已中断，正在查询服务器保存的状态。关闭实时显示不会停止设置。":"Live connection interrupted; checking the server's saved status. Closing the live display does not stop setup."):
+    (isZh()?"无法提交设置：":"Could not submit setup: ")+String(e.message||e);
+  }finally{if(sent)stateMutationEpoch++;submitting=false;streaming=false;dataPreparing=false;draw();await loadState()}
+}
+async function stopAgent(){
+  if(!activeSetupJob()||STATE.job?.can_stop===false||setupStopping()||stopPending)return;
+  const id=STATE.job.id;stopPending=true;jobNotice="";draw();
+  try{const projectCheck=STATE.job?.provider==="project-preflight";const r=await fetch(projectCheck?"/api/setup-project-preflight-stop":"/api/setup-stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,job_id:id,...(projectCheck?{session:DATA_SESSION}:{})})});
+    const d=await r.json();if("job" in d)acceptSetupJob(d.job);
+    if(r.ok){if(STATE.job?.id===id&&activeSetupJob())stoppingJobId=id}
+    else jobNotice=d.error||`HTTP ${r.status}`;
+  }catch(e){jobNotice=isZh()?"无法确认停止请求，正在刷新服务器状态。":"Could not confirm the stop request; refreshing server status."}
+  finally{stateMutationEpoch++;stopPending=false;draw();await loadState()}
+}
+async function resumeAgent(){
+  if(busy)return;const note=$("#note").value;submitting=true;draw();let resumed=false;
+  try{const r=await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note})});
+    const d=await r.json().catch(()=>({}));if(!r.ok){if("job" in d)acceptSetupJob(d.job);jobNotice=d.error||`HTTP ${r.status}`}else{stateMutationEpoch++;resumed=true;awaitingStatus=true}
+  }catch(e){jobNotice=isZh()?"无法提交继续请求。请重试。":"Could not submit the resume request. Please retry."}
+  finally{submitting=false;await loadState();draw()}
+  if(resumed&&!busy)await startAgent();
+}
 async function chatForHelp(){
   const block=(STATE.request&&STATE.request.status==="waiting")?STATE.request:(STATE.attention||{}),sw=STATE.software||{},primary=sw.primary_error||{};
   const zh=window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
@@ -333,13 +435,13 @@ async function chatForHelp(){
   if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Could not open help chat");return}const s=await r.json();
   sessionStorage.setItem(`kiss.draft.${s.id}`,details);location.href="/?session="+encodeURIComponent(s.id);
 }
-async function uploadFile(){const f=$("#userfile").files[0];if(!f)return;$("#upload").disabled=true;const r=await fetch(`/api/setup-upload?model=${encodeURIComponent(MODEL)}&name=${encodeURIComponent(f.name)}`,{method:"POST",body:f});
-  if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Upload failed");$("#upload").disabled=false;return}await loadState();startAgent();}
-async function useChat(){const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href="/?session="+encodeURIComponent(s.id)}
+async function uploadFile(){if(busy)return;const f=$("#userfile").files[0];if(!f)return;$("#upload").disabled=true;const r=await fetch(`/api/setup-upload?model=${encodeURIComponent(MODEL)}&name=${encodeURIComponent(f.name)}`,{method:"POST",body:f});
+  if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Upload failed");$("#upload").disabled=false;return}stateMutationEpoch++;await loadState();startAgent();}
+async function useChat(){if(projectSetup()){location.href="/?session="+encodeURIComponent(DATA_SESSION);return}const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href="/?session="+encodeURIComponent(s.id)}
 $("#installpath").oninput=()=>{installPathDirty=true;drawInstallLocation()};$("#existingpath").oninput=()=>{existingPathDirty=true;drawInstallLocation()};
 $("#modenew").onclick=()=>chooseInstallMode("new");$("#modeexisting").onclick=()=>chooseInstallMode("existing");$("#chooseinstall").onclick=chooseInstallLocation;$("#saveinstall").onclick=()=>saveInstallLocation(false);
 $("#chooseexistingfolder").onclick=()=>chooseExistingLocation("folder");$("#chooseexistingfile").onclick=()=>chooseExistingLocation("file");$("#saveexisting").onclick=()=>saveInstallLocation(false);$("#findexisting").onclick=()=>startAgent(true);
-$("#provider").onchange=drawLLM;$("#start").onclick=()=>startAgent(false);$("#chat").onclick=useChat;$("#theme").onclick=()=>{const d=document.body.hasAttribute("data-dark");d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");localStorage.setItem("kiss-dark",d?"0":"1")};
+$("#provider").onchange=()=>{drawLLM();draw()};$("#start").onclick=()=>startAgent(false);$("#preparedata").onclick=()=>startAgent(false,true);$("#stop").onclick=stopAgent;$("#chat").onclick=useChat;$("#theme").onclick=()=>{const d=document.body.hasAttribute("data-dark");d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");localStorage.setItem("kiss-dark",d?"0":"1")};
 if(localStorage.getItem("kiss-dark")==="1"||(localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))document.body.setAttribute("data-dark","");
 Promise.all([loadProviders(),loadState()]).then(()=>{draw();setInterval(loadState,1500);setInterval(drawRunState,1000)});
 </script></body></html>

@@ -10,14 +10,14 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from kiss_cli import catalog, ki_updates, settings
+from kiss_cli import catalog, ki_guard, ki_updates, settings
 from .test_ki_verification_boundaries import isolated_engine
 
 
 class KiUpdateTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.base = self.root / "base"
         self.home = self.root / "updates"
         self.base.mkdir()
@@ -29,11 +29,29 @@ class KiUpdateTests(unittest.TestCase):
         # KDT boundary, signatures and rejection paths have dedicated coverage.
         self.gate_fixture = isolated_engine(self.root)
         self.gate_fixture.__enter__()
+        # Transport-only tests do not contact a platform metadata service. An
+        # explicit Windows test below supplies real signed, fake-HTTPS inputs.
+        self._fixture_windows = False
+        self._raw_component = None
+        self.guidance_fixture = mock.patch.object(ki_updates.UpdateManager,
+            "_windows_guidance", autospec=True, side_effect=self._guidance_fixture)
+        self.guidance_fixture.start()
 
     def tearDown(self):
+        self.guidance_fixture.stop()
         self.gate_fixture.__exit__(None, None, None)
         self.env.stop()
         self.temp.cleanup()
+
+    def _guidance_fixture(self, manager):
+        if not self._fixture_windows:
+            return None
+        if self._raw_component is None:
+            from .test_raw_windows_guidance import prepare_fixture
+            files = {path.relative_to(self.base).as_posix(): path.read_bytes()
+                     for path in self.base.rglob("*") if path.is_file()}
+            self._raw_component = prepare_fixture(files)
+        return self._raw_component
 
     @staticmethod
     def _dag(name: str) -> str:
@@ -146,6 +164,7 @@ class KiUpdateTests(unittest.TestCase):
     def _on_platform(self, platform: str) -> None:
         # The guard and catalog.KI both ask this helper, so patching both runs
         # each platform's behaviour on any host.
+        self._fixture_windows = platform == "windows"
         for module in (ki_updates, catalog):
             patcher = mock.patch.object(
                 module, "installation_platform", return_value=platform)
@@ -169,8 +188,11 @@ class KiUpdateTests(unittest.TestCase):
         return files
 
     def _run_update(self, archive: Path, activated: list[Path], revision: str):
+        for ki in catalog.Catalog(self.base / "models").packages.values():
+            ki_guard.enroll(ki.root)
         manager = ki_updates.UpdateManager(
             self.base, activated.append, branch="main")
+        manager._source_commit = "d" * 40
         manager._component_trees = {"models": "a" * 40, "manifests": "b" * 40,
                                     "shared_tools": "c" * 40, "data_kis": None}
         with mock.patch.object(
@@ -196,8 +218,9 @@ class KiUpdateTests(unittest.TestCase):
 
         # Even if a supplement cannot restore these files, the original guard
         # must still refuse activation. Composition itself has separate tests.
-        with mock.patch.object(ki_updates.ki_platform_overlay, "apply_windows_overlay",
-                               return_value={"files": []}):
+        from kiss_cli import ki_guidance_composition
+        with mock.patch.object(ki_guidance_composition, "compose",
+                               return_value={"files": [], "overlay_id": "0" * 64}):
             report, _download = self._run_update(archive, activated, revision)
 
         # A deliberate refusal, not a failure: the window must not report it
@@ -208,7 +231,10 @@ class KiUpdateTests(unittest.TestCase):
         self.assertFalse((self.home / "snapshots" / revision).exists())
         self.assertIn("Demo: docs/install.windows.md", report["refused"]["lost"])
         self.assertIn("Demo: windows install recipe", report["refused"]["lost"])
-        self.assertEqual(report["refused"]["revision"], revision)
+        expected_revision = ki_updates._revision_identity(
+            {"models": "a" * 40, "manifests": "b" * 40, "shared_tools": "c" * 40, "data_kis": None},
+            self._raw_component["evidence"]["component_id"])
+        self.assertEqual(report["refused"]["revision"], expected_revision)
         self.assertIn("install", report["summary"])
         self.assertIn("kept the current KI library because", report["summary"])
         self.assertIn("Windows installation guidance", report["summary"])
@@ -223,7 +249,7 @@ class KiUpdateTests(unittest.TestCase):
         again, download = self._run_update(archive, activated, revision)
         download.assert_not_called()
         self.assertEqual(again["state"], "kept")
-        self.assertEqual(again["refused"]["revision"], revision)
+        self.assertEqual(again["refused"]["revision"], expected_revision)
         self.assertEqual(again["summary"], report["summary"])
         self.assertEqual(activated, [])
 
@@ -286,10 +312,11 @@ class KiUpdateTests(unittest.TestCase):
         # platform's notes; given the bundled library it must be ignored.
         self._on_platform("windows")
         snapshot = self._snapshot_without_bundled_guidance()
-        self.assertEqual(ki_updates.active_library_root(), snapshot)
+        # Legacy unsigned snapshots cannot bypass the publication envelope.
+        self.assertIsNone(ki_updates.active_library_root())
         self.assertIsNone(ki_updates.active_library_root(self.base))
 
-    def test_active_snapshot_missing_guidance_is_still_used_on_macos_and_linux(self):
+    def test_unsigned_snapshot_is_not_used_on_macos_and_linux(self):
         for platform in ("macos", "linux"):
             with self.subTest(platform=platform), \
                  mock.patch.object(ki_updates, "installation_platform",
@@ -297,29 +324,18 @@ class KiUpdateTests(unittest.TestCase):
                  mock.patch.object(catalog, "installation_platform",
                                    return_value=platform):
                 snapshot = self._snapshot_without_bundled_guidance()
-                self.assertEqual(ki_updates.active_library_root(), snapshot)
-                self.assertEqual(
-                    ki_updates.active_library_root(self.base), snapshot)
+                self.assertIsNone(ki_updates.active_library_root())
+                self.assertIsNone(ki_updates.active_library_root(self.base))
 
     def test_existing_revision_skips_archive_download(self):
         revision = "e" * 16 + "-" + "f" * 16
-        snapshot = self.home / "snapshots" / revision
-        self._write_ki(snapshot, "Demo", "validated")
-        self.home.mkdir(parents=True, exist_ok=True)
-        (self.home / "state.json").write_text(json.dumps({
-            "active_snapshot": revision,
-            "revision": revision,
-            "package_count": 1,
-            "validation_policy": ki_updates._validation_policy(),
-        }), encoding="utf-8")
-        manager = ki_updates.UpdateManager(
-            snapshot, lambda _path: None, branch="mac-version")
-        with mock.patch.object(
-                manager, "_remote_revision",
-                return_value=(revision, "e" * 40, "f" * 40)), \
-             mock.patch.object(manager, "_download") as download:
-            manager.start()
-            report = manager.wait(10)
+        self._write_ki(self.base, "Demo", "original")
+        archive = self._archive({"Demo": "validated"})
+        activated = []
+        first, first_download = self._run_update(archive, activated, revision)
+        self.assertEqual(first["state"], "updated", first)
+        first_download.assert_called_once()
+        report, download = self._run_update(archive, activated, revision)
         self.assertEqual(report["state"], "up_to_date")
         download.assert_not_called()
 

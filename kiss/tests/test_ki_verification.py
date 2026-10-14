@@ -12,7 +12,7 @@ from unittest import mock
 
 import pytest
 
-from kiss_cli import kdtstudio, ki_verification as gate
+from kiss_cli import kdtstudio, ki_copy, ki_verification as gate
 
 # Remember the optional installed source before the suite isolates APPDATA.
 # Tests only read/copy it; all verifier execution uses a temporary engine/KI.
@@ -148,7 +148,7 @@ def test_bare_acceptance_does_not_authorize_desktop_import_or_another_kind(case)
 @pytest.mark.parametrize("change_target", ["source", "snapshot"])
 def test_copy_drift_never_receives_an_attestation(case, change_target):
     candidate, _ = case
-    original = shutil.copytree
+    original = ki_copy.copytree
 
     def changing_copy(source, target, *args, **kwargs):
         result = original(source, target, *args, **kwargs)
@@ -157,7 +157,7 @@ def test_copy_drift_never_receives_an_attestation(case, change_target):
             (changed / "SKILL.md").write_text("changed during copy", encoding="utf-8")
         return result
 
-    with mock.patch.object(gate.shutil, "copytree", side_effect=changing_copy):
+    with mock.patch.object(ki_copy, "copytree", side_effect=changing_copy):
         with pytest.raises(gate.VerificationError, match="changed while preparing"):
             gate.verify_candidate(candidate)
     assert not list(gate._store().rglob("*.json"))
@@ -309,7 +309,7 @@ def test_studio_import_rejects_changed_desktop_projection(case, tmp_path):
 def test_studio_export_rejects_snapshot_copy_drift(case, tmp_path):
     candidate, _ = case
     job = _verified_studio_job(candidate, tmp_path)
-    original = shutil.copytree
+    original = ki_copy.copytree
 
     def changed_copy(source, target, *args, **kwargs):
         result = original(source, target, *args, **kwargs)
@@ -317,7 +317,7 @@ def test_studio_export_rejects_snapshot_copy_drift(case, tmp_path):
             (Path(target) / "SKILL.md").write_text("changed export bytes", encoding="utf-8")
         return result
 
-    with mock.patch.object(kdtstudio.shutil, "copytree", side_effect=changed_copy):
+    with mock.patch.object(ki_copy, "copytree", side_effect=changed_copy):
         with pytest.raises(ValueError, match="changed before export"):
             kdtstudio.export_zip(job["id"])
     assert not list((Path(job["root"]) / "exports").iterdir())

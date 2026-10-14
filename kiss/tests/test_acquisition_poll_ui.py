@@ -23,7 +23,7 @@ const page=fs.readFileSync(process.argv[1],'utf8');
 const input=JSON.parse(fs.readFileSync(0,'utf8')||'{}');
 const requests=[],timers=[],elements=new Map(),pending=[],unhandled=[],readReleases=[],sent=[];
 let now=0,posts=0,release=null;
-const run={goal:'Synthetic mixed acquisition',status:'waiting_for_user',stage:'acquiring',
+const run={session:'mixed',selected_kis:['M'],project_preflights:[],goal:'Synthetic mixed acquisition',status:'waiting_for_user',stage:'acquiring',
   summary:'Waiting for you to place: yearbook',flow_state:input.flow_state||'ACQUIRING',
   ready_to_start:Boolean(input.ready),
   acquisition:{active:!input.unsigned&&(input.flow_state||'ACQUIRING')==='ACQUIRING',status:'waiting',
@@ -33,14 +33,14 @@ const run={goal:'Synthetic mixed acquisition',status:'waiting_for_user',stage:'a
     manual:input.automatic_only?[]:[{id:'yearbook',dataset_id:'yearbook-fixture',status:'waiting',expected_path:'inputs/yearbook'}],
     counts:{automatic_pending:input.manual_only||input.automatic_done||input.unconfirmed?0:1,
       automatic_acquired:input.automatic_done?1:0,automatic_failed:0,manual_waiting:input.automatic_only?0:1}}};
-const otherRun={goal:'Other project',status:'ready',flow_state:input.other_acquiring?'ACQUIRING':'PLANNING',acquisition:null};
+const otherRun={session:'other',selected_kis:['M'],project_preflights:[],goal:'Other project',status:'ready',flow_state:input.other_acquiring?'ACQUIRING':'PLANNING',acquisition:null};
 function element(selector){
   if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',value:'',dataset:{},hidden:true,
     classList:{contains:()=>false,add(){},remove(){},toggle(){}},
     querySelectorAll:()=>[],style:{},setAttribute(){},removeAttribute(){}});
   return elements.get(selector);
 }
-const context={console,CUR:{id:'mixed',models:['M']},RUN:run,VIEW:null,SESSIONS:[],DRAFTS:new Map(),
+const context={console,KI_UPDATE_REVISION:'fixture',drawModelLabel(){},CUR:{id:'mixed',models:['M']},RUN:run,VIEW:null,SESSIONS:[],DRAFTS:new Map(),
   INFLIGHT:new Map(),DATA_ACTIONS:new Set(),LAST_PREP:null,$:element,
   document:{hidden:Boolean(input.hidden),querySelectorAll:()=>[]},chineseUI:()=>Boolean(input.zh),
   // Like the real send(): it reads the composer, then clears it and the chat's draft.
@@ -86,7 +86,9 @@ function shipped(start,end){
   if(a<0||b<0)throw new Error('Missing shipped JavaScript segment: '+start);
   vm.runInContext(page.slice(a,b),context);
 }
+shipped('// Project readiness is distinct','function stateClass');
 shipped('let SESSION_REFRESHING=false;','const RUN_GROUPS=');
+shipped('function runCompletionTitle(run){','function runButtonLabel');
 shipped('function drawRunStatus(','function drawSessions(){');
 context.runButtonLabel=()=>input.zh?'项目状态':'Project status';
 context.runStateText=()=>'';
@@ -327,11 +329,11 @@ function element(selector){
     querySelectorAll:()=>[],setAttribute(){},removeAttribute(){}});
   return elements.get(selector);
 }
-const acquiring={goal:'A',status:'working',flow_state:'ACQUIRING',acquisition:{active:true,status:'waiting',
+const acquiring={session:'A',selected_kis:[],project_preflights:[],goal:'A',status:'working',flow_state:'ACQUIRING',acquisition:{active:true,status:'waiting',
   automatic:[{id:'forcing',dataset_id:'cmfd-A',status:'pending',job_status:'running'}],
   manual:[{id:'yearbook',dataset_id:'yearbook-A',status:'waiting'}]}};
 // The full page declares this optional controller before openSession().
-const context={console,Date,CUR:{id:'A'},RUN:null,INVESTIGATION:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
+const context={console,Date,SESSIONS:[],KI_UPDATE_REVISION:'fixture',CUR:{id:'A'},RUN:null,INVESTIGATION:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
   CHAT_FOLLOW:true,INFLIGHT:new Map(),DATA_ACTIONS:new Set(),$:element,sessionBusy:()=>false,
   chineseUI:()=>false,document:{hidden:false,querySelectorAll:()=>[],querySelector:()=>null},
   runButtonLabel:()=>'Project status',runStateText:()=>'',closeActionPicker(){},drawSessions(){},
@@ -344,7 +346,7 @@ context.fetch=async url=>{
   if(url==='/api/session/B/run'){
     if(mode==='fail')return {ok:false,status:500,json:async()=>({error:'Synthetic failure'})};
     await new Promise(resolve=>releases.push(resolve));
-    return {ok:true,status:200,json:async()=>({goal:'B',status:'ready',flow_state:'PLANNING',acquisition:null})};
+    return {ok:true,status:200,json:async()=>({session:'B',selected_kis:[],project_preflights:[],goal:'B',status:'ready',flow_state:'PLANNING',acquisition:null})};
   }
   if(url.endsWith('/acquire'))return {ok:true,status:200,json:async()=>({run:acquiring})};
   throw new Error('unexpected '+url);
@@ -355,6 +357,8 @@ function shipped(start,end){
   if(a<0||b<0)throw new Error('Missing shipped JavaScript segment: '+start);
   vm.runInContext(page.slice(a,b),context);
 }
+shipped('// Project readiness is distinct','function stateClass');
+shipped('function runCompletionTitle(run){','function runButtonLabel');
 shipped('function drawRunStatus(','function drawViewStatus(');
 shipped('async function openSession(id){','function drawModelLabel(){');
 const flush=async()=>{for(let n=0;n<50;n++)await Promise.resolve();};

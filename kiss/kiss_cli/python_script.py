@@ -43,6 +43,7 @@ def resolve(ki, contract):
     return path
 
 def check(v, ki, contract, cfg, python, env=None, timeout=25):
+    from .runnable import _probe_run
     data_reader = getattr(ki, 'name', '') in DATA_READERS
     v.kind = 'data reader (Python)' if data_reader else 'declared python script'
     # This flag retains the source-entrypoint gate; no native binary is invented.
@@ -56,7 +57,7 @@ def check(v, ki, contract, cfg, python, env=None, timeout=25):
         v.present = v.shaped = True
         if cfg is None or not path.resolve().is_relative_to(Path(cfg.root).resolve()):
             raise ValueError('Declared runner must be in the configured workspace')
-        runtime = subprocess.run([python, '-c', 'import json,sys;print(json.dumps([sys.prefix,sys.base_prefix]))'],
+        runtime = _probe_run([python, '-c', 'import json,sys;print(json.dumps([sys.prefix,sys.base_prefix]))'],
                                  stdin=subprocess.DEVNULL, capture_output=True, text=True, errors='replace',
                                  env=env, timeout=10)
         if runtime.returncode:
@@ -71,7 +72,7 @@ def check(v, ki, contract, cfg, python, env=None, timeout=25):
         v.probe_command = [python, '-B', str(path), '--help']
         with tempfile.TemporaryDirectory(prefix='kiss-python-help-') as cwd:
             try:
-                result = subprocess.run(v.probe_command, cwd=cwd, env=env,
+                result = _probe_run(v.probe_command, cwd=cwd, env=env,
                                         stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                         errors='replace', timeout=min(max(timeout, 1), 25))
                 v.probe_returncode = result.returncode

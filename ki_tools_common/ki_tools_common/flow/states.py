@@ -151,6 +151,7 @@ _MOVES: dict[tuple[State, str], tuple[State, str | None]] = {
     # waiting for manual (Baidu) files, the user asks for a different plan instead
     (State.ACQUIRING, "modify"): (State.PLANNING, None),
     (State.SETUP_REQUIRED, "setup_started"): (State.SETUP_RUNNING, None),
+    (State.SETUP_REQUIRED, "replan"): (State.REPLAN_REQUIRED, None),
     (State.SETUP_RUNNING, "setup_verified"): (State.SETUP_VERIFIED, "preflight_ok"),
     (State.SETUP_RUNNING, "setup_failed"): (State.SETUP_REQUIRED, None),
     (State.SETUP_VERIFIED, "resume"): (State.APPROVED, None),

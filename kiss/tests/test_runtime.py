@@ -2774,7 +2774,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn('id="setupactivity"', page)
         self.assertIn('class="agent-orbit"', page)
         self.assertIn("lastSignalAt=Date.now()", page)
-        self.assertIn("Agent process connected", page)
+        self.assertIn("Live display connected; check the log for actual results.", page)
         self.assertIn("setInterval(drawRunState,1000)", page)
         self.assertIn("prefers-reduced-motion:reduce", page)
         self.assertIn('id="installpath"', page)
@@ -3257,7 +3257,7 @@ class AgentSetupTests(unittest.TestCase):
 
             with mock.patch("kiss_cli.handoff.write_setup"):
                 live, cfg = setup.prepare(
-                    ki, SimpleNamespace(), root / "work", root / "repo",
+                    ki, Manifest(model="Demo"), root / "work", root / "repo",
                     root / "repo" / "models",
                 )
 
@@ -3866,21 +3866,24 @@ class AgentSetupTests(unittest.TestCase):
 
     def test_agent_final_preflight_becomes_the_saved_verification_state(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
+            root = Path(td).resolve()
             live = root / "ki"
-            live.mkdir()
-            (live / "SKILL.md").write_text("# Demo setup fixture\n")
-            ki = KI("Demo", live)
+            source = root / "portable" / "Demo"
+            source.mkdir(parents=True)
+            (source / "SKILL.md").write_text("# Demo setup fixture\n")
+            ki = KI("Demo", source)
             from kiss_cli import ki_guard, ki_verification
-            ki_guard.enroll(live)
+            ki_guard.enroll(source)
             cfg = paths.KissConfig.default(root)
             cfg.python = sys.executable
+            (root / "kiss.toml").write_text(cfg.dumps(), encoding="utf-8")
+            setup.materialise_active(source, live, cfg)
             check = SimpleNamespace(
                 ok=True, detail="1 passed, 0 failed", commands=["check Demo"])
             with mock.patch.object(install, "run_preflight", return_value=check), \
                  mock.patch.object(setup, "clear_request"):
                 ok = gui.Handler._record_agent_preflight(
-                    None, ki, ki, cfg,
+                    None, ki, KI("Demo", live), cfg,
                     root, lambda _piece: True,
                 )
             status = json.loads((root / "status.json").read_text(encoding="utf-8"))
@@ -4271,8 +4274,10 @@ class AgentSetupTests(unittest.TestCase):
                 )
 
     def test_api_project_agent_can_prepare_files_with_shipped_ki_tools(self):
+        from kiss_cli import ki_guard, project_paths, project_verification
+
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
+            root = Path(td).resolve()
             project = root / "project"
             ki_root = project / "models" / "Demo" / "ki"
             tools = ki_root / "tools"
@@ -4284,6 +4289,10 @@ class AgentSetupTests(unittest.TestCase):
             binaries.mkdir()
             model_binary = binaries / "demo-model"
             model_binary.write_text("verified-shared-model")
+            model_binary.chmod(0o755)
+            (ki_root / "knowledge_infrastructure.yaml").write_text(
+                "model:\n  binary:\n    path: " + json.dumps(str(model_binary)) + "\n",
+                encoding="utf-8")
             package = common / "ki_tools_common"
             package.mkdir(parents=True)
             (package / "__init__.py").write_text("SOURCE = 'bundled-common'\n")
@@ -4293,12 +4302,18 @@ class AgentSetupTests(unittest.TestCase):
                 "import ki_tools_common\n"
                 "print('prepared-by-' + ki_tools_common.SOURCE)\n"
                 "if len(sys.argv) > 1:\n"
-                "    print('model=' + Path(sys.argv[1]).read_text())\n")
+                "    assert sys.argv[1] == '--binary'\n"
+                "    print('model=' + Path(sys.argv[2]).read_text())\n")
             cfg = paths.KissConfig.default(project)
             cfg.python = sys.executable
             cfg.roles.update(ki_tools_common=common, binaries=binaries)
+            cfg = project_paths.model_config(project, "Demo", cfg)
             (ki_root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
-            ki = SimpleNamespace(name="Demo", root=ki_root)
+            (ki_root / "preflight_check.py").write_text("print('Harmless preparation preflight passed')\n")
+            ki_guard.enroll(ki_root)
+            ki = KI(name="Demo", root=ki_root)
+            checked = project_verification.verify(project, ki, Manifest(model="Demo"))
+            self.assertTrue(checked["can_run"], checked)
 
             wrote = api.execute_tool(
                 "write_project_file",
@@ -4314,7 +4329,7 @@ class AgentSetupTests(unittest.TestCase):
             output = api.execute_tool(
                 "run_ki_tool", {
                     "tool_path": "tools/prepare.py",
-                    "arguments": [str(model_binary)],
+                    "arguments": ["--binary", str(model_binary)],
                 },
                 ki, cfg, project_mode=True,
             )

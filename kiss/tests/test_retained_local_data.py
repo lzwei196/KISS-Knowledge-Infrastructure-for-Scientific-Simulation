@@ -29,9 +29,9 @@ def test_explicit_dataset_id_is_not_hidden_by_local_source_label(tmp_path):
     assert len(errors) == 1 and "not in the GeoForge Database" in errors[0]
 
 
-def test_implicit_catalogue_selection_still_matches_dataset_names():
+def test_inventory_labels_do_not_implicitly_select_catalogue_datasets():
     inventory = {"items": [{"id": "agrometeo_quebec_archive", "status": "missing"}]}
     assert obs_access.stamp_inventory(inventory, catalogue={"datasets": [
         {"id": "agrometeo_quebec", "delivery": "manual", "size": 123}]}) == []
-    assert inventory["items"][0]["dataset_id"] == "agrometeo_quebec"
-    assert inventory["items"][0]["delivery"] == "manual"
+    assert "dataset_id" not in inventory["items"][0]
+    assert "delivery" not in inventory["items"][0]

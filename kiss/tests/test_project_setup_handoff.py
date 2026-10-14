@@ -57,12 +57,18 @@ def test_project_setup_recipe_precedes_host_preflight_and_only_verified_handoff(
         calls.append("setup-verified")
         assert actual_project == project and models == [ki] and config is cfg
 
+    def project_preflight(_handler, actual_project, pairs, out, events):
+        calls.append("project-preflight")
+        assert actual_project == project and pairs == [(ki, cfg)]
+        return True
+
     handler = SimpleNamespace(
         _ki=lambda _name: ki, _workdir=lambda _ki: setup_wd,
         _status_for=lambda _ki: {"can_run": False}, _manifest=lambda _ki: {},
-        repo_root=tmp_path, catalog=SimpleNamespace(models_dir=tmp_path),
+        repo_root=tmp_path, workroot=tmp_path, catalog=SimpleNamespace(models_dir=tmp_path),
         _helper_repo_root=lambda: tmp_path,
         _software_status_prompt=lambda *_args: "", _record_agent_preflight=preflight,
+        _session_workspaces=lambda *_args: [(ki, cfg)],
     )
     monkeypatch.setattr(gui.setup_flow, "prepare", prepare)
     monkeypatch.setattr(gui.prompt, "compose_multi", lambda *_args, **_kwargs: "KI contract")
@@ -76,10 +82,11 @@ def test_project_setup_recipe_precedes_host_preflight_and_only_verified_handoff(
     monkeypatch.setattr(flowrun, "setup_allowed", lambda _project: True)
     monkeypatch.setattr(flowrun, "setup_turn", lambda *_args, **_kwargs: setup_turn)
     monkeypatch.setattr(flowrun, "setup_verified", verified)
+    monkeypatch.setattr(gui.Handler, "_verify_project_preflight", project_preflight)
 
     result = gui.Handler._chat_with_models(
         handler, ["M"], "api:deepseek", "Install the approved model", lambda _piece: True,
         project, flow_pre=SimpleNamespace(gated=True), runtime_events=events)
 
     assert result is setup_turn
-    assert calls == ["agent", "builtin", "host-preflight"] + (["setup-verified"] if preflight_ok else [])
+    assert calls == ["agent", "builtin", "host-preflight"] + (["project-preflight", "setup-verified"] if preflight_ok else [])

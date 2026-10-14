@@ -1,0 +1,38 @@
+# Windows installation recipe carried inside the KI package.
+# Keep the legacy shared manifest in kiss/manifests synchronized for older apps.
+kiss_manifest_version: 1
+model: DSSAT
+binary_type: PE32
+verified: observed
+install_dir: DSSAT
+
+acquire:
+  strategy: build
+  repo: https://github.com/DSSAT/dssat-csm-os.git
+  ref: 40793f8d654ca033d027ec3a6cea53cf2f546602
+  commands:
+    - cmake -S . -B build -DCMAKE_BUILD_TYPE=RELEASE
+    - cmake --build build --parallel
+  produces: build/bin/dscsm048.exe
+  system_deps: [git, cmake, make, gfortran]
+
+system_deps: [git, cmake, make, gfortran]
+python_deps: [numpy, pandas, scipy, xarray, netCDF4]
+
+reference_case: build/bin/dscsm048.exe --version
+
+notes: >-
+  OBSERVED on Windows on 2026-09-06: DeepSeek staged a workspace-local WinLibs
+  UCRT GCC/gfortran release, cloned the official v4.8.5.41 commit above,
+  configured an out-of-source Ninja RELEASE build, linked the self-contained
+  build/bin/dscsm048.exe, and reached the real DSSAT command-line usage screen.
+  This tag already contains the two FORMAT corrections formerly patched by
+  the macOS v4.8.5.0 recipe.
+
+agent_hint: >-
+  DSSAT requires an out-of-source CMake build. The executable is
+  build/bin/dscsm048.exe and must retain access to the checkout's Data directory.
+  On Windows, use a pinned workspace-local WinLibs UCRT GCC/gfortran toolchain
+  and preserve the compiler runtime DLLs when no system gfortran is available.
+  Model-specific weather, soil, genotype, and management inputs are prepared
+  later for each simulation; they are not installation prerequisites.

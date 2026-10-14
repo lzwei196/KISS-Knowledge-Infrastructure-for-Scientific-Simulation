@@ -190,7 +190,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "line_count": {"type": "integer", "minimum": 1, "maximum": 2000,
                                    "description": "maximum lines to return; defaults to 1000"},
                     "ki": {"type": "string",
-                           "description": "which selected KI to read (multi-model chats); default: the primary KI"},
+                           "description": "KI name from the intake catalogue, or a selected KI in project work; use a KI-relative path"},
                 },
                 "required": ["path"],
             },
@@ -202,7 +202,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 "type": "object",
                 "properties": {"subdir": {"type": "string"},
                                "ki": {"type": "string",
-                                      "description": "which selected KI to list (multi-model chats)"}},
+                                      "description": "KI name from the intake catalogue, or a selected KI in project work"}},
             },
         },
         {
@@ -244,7 +244,8 @@ def tool_schemas(ki, *, setup_mode: bool = False,
             ),
             "input_schema": {
                 "type": "object",
-                "properties": {"keyword": {"type": "string"}},
+                "properties": {"keyword": {"type": "string"},
+                               "ki": {"type": "string", "description": "Optional catalogue KI name during task intake; otherwise the current KI"}},
                 "required": ["keyword"],
             },
         },
@@ -293,8 +294,9 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "Run one Python preparation tool shipped inside the selected KI. "
                     "Use this for data conversion, grid/soil/weather preparation, "
                     "configuration generation, validation, and model harness steps. "
-                    "Arguments may reference this chat project, this KI package, or "
-                    "the current KI's GeoForge-managed shared binaries directory. "
+                    "Arguments may reference this chat project or this KI package. "
+                    "A named executable option may reference the selected KI's exact "
+                    "declared native binary after project runtime verification. "
                     "Read the shipped tool or wrapper's documented flags; do not guess argument names. "
                     "Write generated scientific results to a fresh outputs/<run>/ or artifacts/ "
                     "directory consistent with the approved plan. An arbitrary runs/<name> "
@@ -333,6 +335,9 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "preserve raw values/flags/units and missingness; never invent model output or replace model science. "
                     "Return includes the exact tool path and project_data_tool binding: fill its arguments, cwd "
                     "and timeout_seconds, then include it in a kind=check or prepare plan step for normal review. "
+                    "The step must include the returned project_data_tool object; a tool path alone cannot bind it. "
+                    "For PCSE weather CSV with a metadata preamble or single-campaign agro YAML, supply explicit "
+                    "output_formats to receive a version 2 binding; preserve that binding in the plan. "
                     "This is trusted reviewed source, not an OS sandbox. Data outputs must be fresh outputs/ or "
                     "artifacts/ files, including staging. Unsupported formats pass structure checks only as exact "
                     "byte/hash copies of granted inputs; this is not scientific validation. No network, native "
@@ -340,6 +345,16 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 "input_schema": {"type": "object", "additionalProperties": False, "properties": {
                     "ki": {"type": "string"}, "name": {"type": "string", "description": "short Python identifier, without .py"},
                     "source": {"type": "string"}, "purpose": {"type": "string", "enum": ["reader", "converter", "check"]},
+                    "output_formats": {"type": "array", "minItems": 1, "description":
+                        "Optional typed output contracts. Each output_id must be in the plan step's outputs. "
+                        "Use pcse_weather_csv_v1 with date_format='%Y%m%d', or pcse_agromanagement_yaml_v1 "
+                        "with campaign_start='YYYY-MM-DD'. Paths must be literal fresh project-relative outputs/ or artifacts/ files.",
+                        "items": {"type": "object", "additionalProperties": False, "properties": {
+                            "output_id": {"type": "string"}, "path": {"type": "string"},
+                            "format": {"type": "string", "enum": ["pcse_weather_csv_v1", "pcse_agromanagement_yaml_v1"]},
+                            "date_format": {"type": "string", "enum": ["%Y%m%d"]},
+                            "campaign_start": {"type": "string"}},
+                            "required": ["output_id", "path", "format"]}},
                 }, "required": ["ki", "name", "source", "purpose"]},
             },
             {
@@ -444,7 +459,11 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "creating real artifacts. GeoForge renders the declared metrics, "
                     "images, animations, maps, CSV tables, files, and 3D-model "
                     "previews; it never executes model-written HTML or JavaScript. "
-                    "Every path must name an existing file below artifacts/."
+                    "Media paths must name existing files below artifacts/. "
+                    "A kind=file panel may directly link an existing outputs/**/*.json "
+                    "report at its original path. Never substitute a chart for a report "
+                    "or copy report bytes merely to publish a link. A file link or "
+                    "receipt binding does not establish scientific validation."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "version": {"type": "integer", "enum": [1]},
@@ -849,7 +868,13 @@ def _read_text_page(path: Path, start_line: object = 1,
         raise ToolError("start_line and line_count must be integers") from error
     if start < 1 or count < 1 or count > 2000:
         raise ToolError("start_line must be >= 1 and line_count must be 1..2000")
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    except OSError as error:
+        raise ToolError(
+            f"Cannot read {path.name}: {type(error).__name__}. "
+            "The file may be locked or unavailable; continue with other "
+            "evidence and do not change its permissions.") from error
     return "".join(lines[start - 1:start - 1 + count])[:60000]
 
 
@@ -996,6 +1021,37 @@ def _guard_local_dependency_shim_wheels(argv: list[str], cwd: Path,
                 "replaces fcntl or wurlitzer; patch the official consumer "
                 "source and rebuild/install it"
             )
+
+
+def _guard_setup_preflight_route(argv: list[str], cwd: Path,
+                                 ki_root: Path, python: str) -> None:
+    """Prevent known direct launches from writing startup files into a KI.
+
+    This checks the explicit command boundary, not arbitrary child code. The
+    normal post-command integrity check remains necessary for workspace scripts.
+    """
+    protected = ki_root.resolve()
+    if cwd == protected or protected in cwd.parents:
+        raise ToolError(
+            "Commands cannot use the protected KI as their working directory. "
+            "Use run_preflight for verification, read_ki_file for source, and "
+            "a workspace run directory for software commands.")
+    executable = Path(argv[0])
+    is_python = (executable.resolve() == Path(python).resolve() or
+                 re.fullmatch(r"python(?:\d+(?:\.\d+)*)?(?:\.exe)?",
+                              executable.name.lower()))
+    direct = [argv[0]] + (argv[1:] if is_python else [])
+    preflight = (protected / "preflight_check.py").resolve()
+    for argument in direct:
+        if argument.startswith("-"):
+            continue
+        candidate = Path(argument)
+        candidate = (candidate if candidate.is_absolute() else cwd / candidate).resolve()
+        if candidate == preflight:
+            raise ToolError(
+                "Use run_preflight to run this KI's preflight in its isolated "
+                "execution copy. Direct execution can create model output in "
+                "the protected KI and invalidate it.")
 
 
 def _guard_installation_only_command(argv: list[str], cwd: Path,
@@ -1504,18 +1560,6 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             "only a cheap executable startup or declared import probe"
         )
 
-    # A chat owns its scenario files, but the scientific software is installed
-    # once in the current KI's managed workspace.  That binary role is a narrow
-    # capability granted by GeoForge's config; it is not an arbitrary external
-    # filesystem permission.  KI tools may read/execute it directly without
-    # making the user copy large model installs into every chat project.
-    project_argument_roots = [project_root, workroot, root]
-    binary_role = (getattr(cfg, "roles", {}) or {}).get("binaries")
-    if binary_role:
-        binary_root = Path(binary_role).expanduser().resolve()
-        if binary_root not in project_argument_roots:
-            project_argument_roots.append(binary_root)
-
     def _inside(rel: str) -> Path:
         if Path(rel).is_absolute():
             raise ToolError(f"absolute paths are not accepted: {rel}")
@@ -1546,6 +1590,11 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     def _ki_scoped(rel: str) -> tuple[Path, Path]:
         """(path, ki_root) for read/list tools — another SELECTED KI may be named (kimi desktop
         review #1: multi-KI chats must reach every selected KI through the typed tools)."""
+        if intake_read_map is not None:
+            try:
+                return intake_read_map.resolve(args.get("ki"), rel)
+            except (ValueError, OSError) as e:
+                raise ToolError(f"Effective KI inspection unavailable: {e}") from None
         ki_root = root
         if flow is not None and args.get("ki"):
             from .flowgate import FlowDenied
@@ -1561,6 +1610,13 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(f"path escapes the KI package: {rel}")
         return p, ki_root
 
+    intake_read_map = (setup_context or {}).get("intake_ki_read_map")
+    if intake_read_map is not None:
+        from .ki_intake import ReadMap
+        if (not isinstance(intake_read_map, ReadMap) or flow is None
+                or str(getattr(flow.state, "value", flow.state)) != "RESOLVING_KIS"):
+            raise ToolError("Effective KI inspection is only available during read-only task intake")
+
     if name == "read_ki_file":
         p, _r = _ki_scoped(args.get("path", ""))
         if not p.is_file():
@@ -1569,6 +1625,8 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             p, args.get("start_line", 1), args.get("line_count", 1000))
 
     if name == "list_ki_files":
+        if intake_read_map is not None and not args.get("ki") and args.get("subdir", ".") in (None, "", "."):
+            return "\n".join(f"{model}/SKILL.md" for model in intake_read_map.entries)
         base, ki_root = _ki_scoped(args.get("subdir") or ".")
         names = _safe_relative_file_listing(base, ki_root, 400)
         return "\n".join(names) or "(empty)"
@@ -1586,15 +1644,22 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if not kw:
             raise ToolError("keyword required")
         hits: list[str] = []
-        for f in root.rglob("*"):
-            if not f.is_file() or "diagnostic" not in str(f.relative_to(root)):
-                continue
-            if root not in f.resolve().parents:
-                continue
-            for i, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-                if kw in line.lower():
-                    hits.append(
-                        f"{f.relative_to(root).as_posix()}:{i}: {line.strip()[:200]}")
+        try:
+            diagnostic_roots = (intake_read_map.diagnostic_roots(args.get("ki"))
+                                if intake_read_map is not None else [("", root)])
+        except (ValueError, OSError) as e:
+            raise ToolError(f"Effective KI inspection unavailable: {e}") from None
+        for model, diagnostic_root in diagnostic_roots:
+            for f in diagnostic_root.rglob("*"):
+                if not f.is_file() or "diagnostic" not in str(f.relative_to(diagnostic_root)):
+                    continue
+                if diagnostic_root not in f.resolve().parents:
+                    continue
+                for i, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                    if kw in line.lower():
+                        prefix = f"{model}/" if model else ""
+                        hits.append(
+                            f"{prefix}{f.relative_to(diagnostic_root).as_posix()}:{i}: {line.strip()[:200]}")
         return "\n".join(hits[:40]) or f"no diagnostics mention {kw!r}"
 
     if name in ("list_skills", "read_skill"):
@@ -1682,14 +1747,18 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         from .flowgate import FlowDenied
         if flow is None or flow.state.value not in {"PLANNING", "REPLAN_REQUIRED"}:
             raise ToolError("Project data source authoring is available only during planning or replan")
-        if set(args) != {"ki", "name", "source", "purpose"}:
-            raise ToolError("Provide only ki, name, source and purpose")
+        required = {"ki", "name", "source", "purpose"}
+        if not required <= set(args) or set(args) - required - {"output_formats"}:
+            raise ToolError("Provide ki, name, source, purpose and optional output_formats only")
+        if "output_formats" in args and (not isinstance(args["output_formats"], list) or not args["output_formats"]):
+            raise ToolError("output_formats must be a nonempty list of explicit supported output contracts")
         if not isinstance(args["ki"], str) or not args["ki"]:
             raise ToolError("ki must explicitly name a selected model")
         try:
             selected_name, _ = flow.ki_root_for(args["ki"], root)
+            format_args = {"output_formats": args["output_formats"]} if "output_formats" in args else {}
             return json.dumps(project_data_tools.write(project_root, selected_name, args["name"],
-                                                       args["source"], args["purpose"]), ensure_ascii=False)
+                                                       args["source"], args["purpose"], **format_args), ensure_ascii=False)
         except (FlowDenied, OSError, ValueError, TypeError, SyntaxError) as exc:
             raise ToolError(str(exc)) from None
 
@@ -1711,8 +1780,6 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 raise ToolError(str(e)) from None
             requested_tool_root = Path(tool_root)
             tool_root = requested_tool_root.resolve()
-            if tool_root != root and tool_root not in project_argument_roots:
-                project_argument_roots.append(tool_root)
         def _inside_tool_ki(rel: str, _root=tool_root) -> Path:
             # same containment rule as _inside, against the KI this call names (multi-KI runs)
             if Path(rel).is_absolute():
@@ -1770,12 +1837,6 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 fallback=cfg if len(selected) <= 1 else None)
         except (OSError, ValueError) as exc:
             raise ToolError(f"cannot resolve runtime for {tool_ki_name}: {exc}") from None
-        # Only the requested KI's software capability applies to this call,
-        # not the first model's installation that opened the conversation.
-        project_argument_roots = [project_root, tool_root]
-        binary_role = (getattr(tool_cfg, "roles", {}) or {}).get("binaries")
-        if binary_role:
-            project_argument_roots.append(Path(binary_role).expanduser().resolve())
         arguments = args.get("arguments") or []
         if (not isinstance(arguments, list) or len(arguments) > 100 or
                 not all(isinstance(x, str) and len(x) <= 4000 for x in arguments)):
@@ -1783,17 +1844,8 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         cwd = _inside_project(args.get("cwd") or ".")
         if not cwd.is_dir():
             raise ToolError(f"project directory does not exist: {args.get('cwd')}")
-        for token in arguments:
-            value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
-            if not (value.startswith(("/", "./", "../")) or
-                    "/" in value or "\\" in value):
-                continue
-            candidate = Path(value)
-            resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
-            if not any(
-                    resolved == base or base in resolved.parents
-                    for base in project_argument_roots):
-                raise ToolError(f"tool argument path escapes the project and KI: {value}")
+        # The common execution seam checks argument confinement for API and
+        # CLI together, after selecting and verifying this KI's launch config.
         timeout = max(1, min(int(args.get("timeout_seconds") or 600), 3600))
         from .execution import execute_ki_tool
         from .flowgate import FlowDenied
@@ -1842,6 +1894,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(str(exc)) from None
         expected_approval = None
         approved_step = None
+        calib_inputs = None
         if flow is not None:
             from . import flowgate as _fg
             from .flowgate import FlowDenied
@@ -1849,10 +1902,16 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 approved_step = flow.check_calibration_step(
                     args.get("plan_step_id"), ki.name, adapter_snapshot.runner_path, binding)
                 expected_approval = flow.approval_id
+                calib_inputs = flow.capture_step_inputs(approved_step,
+                    [str(adapter_snapshot.contract_path), str(adapter_snapshot.runner_path)], project_root)
             except FlowDenied as e:
                 raise ToolError(str(e)) from None
             calib_before = _fg._snapshot(project_root, subs=("inputs", "outputs", "artifacts", "runs/logs", "calibration/runs"))
         try:
+            # Calibration dispatches through its own runner, rather than the
+            # common KI-tool launcher. It needs the same exact-project check.
+            from . import project_verification
+            project_verification.require_current(project_root, ki.name, Path(ki.root))
             result = _calibration.run_project(
                 project=project_root,
                 ki_name=ki.name,
@@ -1897,6 +1956,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     before=calib_before, plan_step_id=args.get("plan_step_id"),
                     expected_approval_sha256=expected_approval,
                     input_arguments=input_paths,
+                    input_snapshot=calib_inputs,
                     calibration_result=result,
                     stdout_tail=str(result.get("log_tail") or ""),
                     execution_status=("stopped" if report.get("status") in {"stopped", "interrupted"} else None))
@@ -2331,6 +2391,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         cwd = _inside_work(args.get("cwd") or ".")
         if not cwd.is_dir():
             raise ToolError(f"command directory does not exist: {args.get('cwd')}")
+        _guard_setup_preflight_route(argv, cwd, root, cfg.python)
         if (bool((setup_context or {}).get("installation_only"))
                 or Path(argv[0]).name.lower() in {"r", "rscript", "julia", "octave", "octave-cli"}):
             _guard_installation_only_command(argv, cwd, workroot)
@@ -2919,6 +2980,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     """
     if flow is not None:
         flow.provider_succeeded = False
+        flow.continuation_blocked = False
     key = prov.key()
     if not key:
         yield f"[{prov.label}: set {prov.env_key} — get one at {prov.signup}]"
@@ -3063,6 +3125,9 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 except ToolError as e:
                     out = f"ERROR: {e}"
             handoff = handoff or _handoff_made(name, args, str(out))
+            if flow is not None and (str(out).startswith(('ERROR:', 'DENIED')) or
+                    (name == 'run_preflight' and str(out).startswith('FAIL'))):
+                flow.continuation_blocked = True
             results.append((call_id, out))
             if (name == "request_user_action" and flow is not None
                     and getattr(getattr(flow, "state", None), "value", "") in _HANDOFF_STATES

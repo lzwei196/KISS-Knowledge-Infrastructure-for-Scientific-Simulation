@@ -95,3 +95,41 @@ def test_partial_unsafe_extraction_is_quarantined_without_cached_validation():
         assert ki_updates.active_library_root() is None
     finally:
         case.tearDown()
+
+
+def test_retry_stopped_before_validation_does_not_reuse_previous_package_results():
+    case = updater_tests.KiUpdateTests()
+    case.setUp()
+    try:
+        archive = case._archive({"Demo": "remote"})
+        activated = []
+        manager = ki_updates.UpdateManager(case.base, activated.append)
+        manager._source_commit = "f" * 40
+        manager._component_trees = {"models": "a" * 40, "manifests": "b" * 40,
+                                    "shared_tools": "c" * 40, "data_kis": None}
+
+        def failed_validation(_root):
+            manager._ki_verification = [{"name": "Demo", "state": "PublicationRejected"}]
+            raise ValueError("first attempt package failure")
+
+        with mock.patch.object(manager, "_remote_revision", return_value=("a" * 32, "a" * 40, "b" * 40)), \
+             mock.patch.object(manager, "_download", side_effect=lambda target: shutil.copyfile(archive, target)), \
+             mock.patch.object(manager, "_validate", side_effect=failed_validation):
+            manager._run()
+        first = manager.status()
+        assert first["validation_failure"]["ki_verification"]
+        assert first["ki_verification"]
+
+        with mock.patch.object(manager, "_remote_revision", return_value=("a" * 32, "a" * 40, "b" * 40)), \
+             mock.patch.object(manager, "_check_overlay_source", side_effect=ValueError("guidance changed")), \
+             mock.patch.object(manager, "_validate", side_effect=AssertionError("must not validate")):
+            manager._run()
+        retry = manager.status()
+        assert retry["validation_failure"]["stage"] == "windows_overlay"
+        assert retry["validation_failure"]["ki_verification"] == []
+        assert retry["ki_verification"] == []
+        assert first["validation_failure"]["ki_verification"]  # Historical evidence survives.
+        assert activated == []
+        assert not (case.home / "state.json").exists()
+    finally:
+        case.tearDown()

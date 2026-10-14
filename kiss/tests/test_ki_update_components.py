@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 
-from kiss_cli import api, catalog, gui, ki_updates, paths, project_paths, prompt, setup
+from kiss_cli import api, catalog, gui, ki_guard, ki_updates, paths, project_paths, prompt, setup
 from . import test_ki_updates as updater_tests
 
 
@@ -153,6 +153,8 @@ def test_windows_supplement_activates_with_provenance_and_unchanged_guard(tmp_pa
         notes = case.base / "models/Demo/docs/install.windows.md"
         notes.parent.mkdir()
         notes.write_text("Retained Windows instructions.")
+        # The real GUI enrolls shipped KI bytes before constructing its updater.
+        ki_guard.enroll(case.base / "models/Demo")
         archive = case._archive({"Demo": "new model"}, extra={
             "models/Demo/kiss.yaml": generic.replace("numpy>=1", "numpy>=2")})
         activated = []
@@ -184,31 +186,37 @@ def test_windows_supplement_activates_with_provenance_and_unchanged_guard(tmp_pa
 
 @pytest.mark.parametrize("damage", ["helper", "marker", "data", "content"])
 def test_new_snapshot_damage_cannot_pass_as_legacy(tmp_path, monkeypatch, damage):
-    home = tmp_path / "updates"
-    monkeypatch.setenv("GEOFORGE_KI_UPDATE_HOME", str(home))
-    revision = "a" * 32
-    root = helper_snapshot(home / "snapshots" / revision)
-    (root / "models/M").mkdir(parents=True)
-    (root / "models/M/SKILL.md").write_text("model")
-    data = root / "kiss/data_kis"
-    data.mkdir(parents=True)
-    meta = {"schema_version": 1, "revision": revision, "trees": {
-        "models": "a" * 40, "manifests": "b" * 40,
-        "shared_tools": "c" * 40, "data_kis": "d" * 40},
-        "content_sha256": ki_updates._snapshot_content_hash(root)}
-    (root / ki_updates.SNAPSHOT_MANIFEST).write_text(json.dumps(meta))
-    (home / "state.json").write_text(json.dumps({"active_snapshot": revision,
-                                                 "component_trees": meta["trees"]}))
-    assert ki_updates.active_library_root() == root
-    if damage == "helper":
-        (root / "ki_tools_common/ki_tools_common/__init__.py").unlink()
-    elif damage == "marker":
-        (root / ki_updates.SNAPSHOT_MANIFEST).unlink()
-    elif damage == "data":
-        data.rmdir()
-    else:
-        (root / "models/M/SKILL.md").write_text("locally changed")
-    assert ki_updates.active_library_root() is None
+    # Start with an actual signed updater snapshot: handcrafted legacy markers
+    # are deliberately insufficient under the publication policy.
+    case = updater_tests.KiUpdateTests()
+    case.setUp()
+    try:
+        case._write_ki(case.base, "M", "old")
+        archive = case._archive({"M": "model"}, extra={
+            "kiss/data_kis/Data/SKILL.md": "data reader",
+            "kiss/data_kis/Data/preflight_check.py": "print('PREFLIGHT_REPORT={}')\n",
+            "kiss/data_kis/Data/dag.yaml": case._dag("Data"),
+        })
+        activated = []
+        report, _ = case._run_update(archive, activated, "a" * 32)
+        assert report["state"] == "updated", report
+        root, = activated
+        assert ki_updates.active_library_root() == root
+        if damage == "helper":
+            (root / "ki_tools_common/ki_tools_common/__init__.py").unlink()
+        elif damage == "marker":
+            (root / ki_updates.SNAPSHOT_MANIFEST).unlink()
+        elif damage == "data":
+            data = root / "kiss/data_kis"
+            for filename in ("SKILL.md", "preflight_check.py", "dag.yaml"):
+                (data / "Data" / filename).unlink()
+            (data / "Data").rmdir()
+            data.rmdir()
+        else:
+            (root / "models/M/SKILL.md").write_text("locally changed")
+        assert ki_updates.active_library_root() is None
+    finally:
+        case.tearDown()
 
 
 def test_compact_snapshot_identity_preserves_windows_path_budget():
@@ -230,10 +238,14 @@ def test_snapshot_identity_includes_validation_policy(monkeypatch):
 
 
 def test_reference_binding_warnings_are_visible_beyond_generic_preview(tmp_path, monkeypatch):
-    source = helper_snapshot(tmp_path / "source")
+    from .test_ki_verification_boundaries import isolated_engine
+    monkeypatch.setenv("GEOFORGE_KI_UPDATE_HOME", str(tmp_path / "updates"))
+    monkeypatch.setenv("GEOFORGE_KI_GUARD_HOME", str(tmp_path / "guard"))
+    source = helper_snapshot(tmp_path / "updates/.incoming-warnings")
     folder = source / "models/M"
     folder.mkdir(parents=True)
     (folder / "SKILL.md").write_text("reference case")
+    (folder / "preflight_check.py").write_text("print('PREFLIGHT_REPORT={}')\n")
     findings = [ki_updates.doctor.Finding("M", "WARN", "generic", f"warning{i}") for i in range(25)]
     findings += [ki_updates.doctor.Finding("M", "WARN", "reference-case-binding", "bind the executable", 2),
                  ki_updates.doctor.Finding("M", "WARN", "reference-case-provenance", "historical paths", 1)]
@@ -243,8 +255,15 @@ def test_reference_binding_warnings_are_visible_beyond_generic_preview(tmp_path,
         "test_cases/case/run_reference.py": [{"classification": "configurable_default"}],
         "test_cases/case/manifest.json": [{"classification": "runtime_binding_metadata"}],
         "test_cases/case/expected.json": [{"classification": "provenance"}]})
-    manager = ki_updates.UpdateManager(source, lambda _: None)
-    _packages, count, preview = manager._validate(source)
+    (tmp_path / "previous/models").mkdir(parents=True)
+    with isolated_engine(tmp_path):
+        manager = ki_updates.UpdateManager(tmp_path / "previous", lambda _: None)
+        manager._published_origin = ki_updates.published_acceptance._issue_origin(source,
+            source_commit="d" * 40, archive_sha256="a" * 64,
+            source_content_sha256=ki_updates._snapshot_content_hash(source), overlay=None,
+            trees={"models": "1" * 40, "manifests": "2" * 40,
+                   "shared_tools": "3" * 40, "data_kis": None})
+        _packages, count, preview = manager._validate(source)
     assert count == 27 and preview[0]["check"] == "reference-case-binding"
     summary = manager._reference_case_summary
     assert summary["native_verification"] == "not_performed"
@@ -258,20 +277,29 @@ def test_changed_validation_policy_rechecks_existing_component_revision():
     try:
         case._write_ki(case.base, "Demo", "old")
         archive = case._archive({"Demo": "new"})
+        trees = {"models": "a" * 40, "manifests": "b" * 40, "shared_tools": "c" * 40, "data_kis": None}
+        revision = ki_updates._revision_identity(trees)
+        # Seed a real accepted snapshot and matching saved pointer. Only its
+        # recorded validation policy becomes obsolete; the component revision
+        # remains the same, so policy must prevent an unchecked fast path.
+        seeded = []
+        first, _ = case._run_update(archive, seeded, revision)
+        assert first["state"] == "updated", first
+        state_path = case.home / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state["active_snapshot"] == seeded[0].name == revision
+        state["validation_policy"] = "obsolete-policy"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
         activated = []
         manager = ki_updates.UpdateManager(case.base, activated.append)
-        trees = {"models": "a" * 40, "manifests": "b" * 40, "shared_tools": "c" * 40, "data_kis": None}
         manager._component_trees = trees
-        revision = ki_updates._revision_identity(trees)
-        case.home.mkdir(parents=True)
-        (case.home / "state.json").write_text(json.dumps({"revision": revision,
-            "validation_policy": "obsolete-policy"}))
         with mock.patch.object(manager, "_remote_revision", return_value=(revision, "a" * 40, "b" * 40)), \
-             mock.patch.object(ki_updates, "active_library_root", return_value=case.base), \
              mock.patch.object(manager, "_download", side_effect=lambda target: __import__("shutil").copyfile(archive, target)) as download, \
              mock.patch.object(manager, "_validate", wraps=manager._validate) as validate:
             manager._run()
-        assert download.call_count == validate.call_count == 1 and len(activated) == 1
+        assert validate.call_count == 1 and len(activated) == 1, manager.status()
+        # Authenticated archive bytes can be reused; current package checks cannot.
+        assert download.call_count == 0
         marker = json.loads((activated[0] / ki_updates.SNAPSHOT_MANIFEST).read_text(encoding="utf-8"))
         assert marker["validation_policy"] == ki_updates._validation_policy()
         assert marker["reference_cases"]["native_verification"] == "not_performed"
@@ -312,6 +340,7 @@ def _snapshot_project(tmp_path):
     request = object.__new__(gui.Handler)
     request.repo_root = tmp_path / "app"
     request.library_root = snapshot
+    request.workroot = tmp_path / "workroot"
     request._config = lambda _: shared
     return request, project, catalog.KI("M", source), saved, live
 

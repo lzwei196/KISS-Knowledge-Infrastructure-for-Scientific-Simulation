@@ -12,7 +12,7 @@ error/cause/remedy knowledge for that model.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 try:
@@ -107,6 +107,8 @@ class Manifest:
     python_deps: list[str] = field(default_factory=list)
     system_deps: list[str] = field(default_factory=list)
     data: list[DataNeed] = field(default_factory=list)
+    #: Versioned model support tables, distinct from project forcing/observations.
+    runtime_data: dict | None = None
     #: command proving the install works, run after preflight
     reference_case: str | None = None
     #: output emitted by the real model early in startup.  Some compiled
@@ -133,6 +135,8 @@ class Manifest:
             raise ValueError(
                 f"{path}: verified={ver_status!r}, expected one of {VERIFICATION}"
             )
+        from .runtime_data import validate_contract
+        runtime_data = validate_contract(raw.get("runtime_data"))
         return cls(
             model=raw["model"],
             binary_type=raw.get("binary_type", ""),
@@ -148,6 +152,7 @@ class Manifest:
             python_deps=list(raw.get("python_deps") or []),
             system_deps=list(raw.get("system_deps") or []),
             data=[DataNeed.from_dict(d) for d in (raw.get("data") or [])],
+            runtime_data=runtime_data,
             reference_case=raw.get("reference_case"),
             startup_marker=raw.get("startup_marker", ""),
             notes=raw.get("notes", ""),
@@ -185,3 +190,11 @@ class Manifest:
     def trustworthy(self) -> bool:
         """True only when the full recipe was executed and observed to succeed."""
         return self.verified == "observed"
+
+
+def document(manifest: Manifest) -> dict:
+    """Canonical effective recipe; absent opt-in fields preserve legacy identities."""
+    value = asdict(manifest)
+    if value.get("runtime_data") is None:
+        value.pop("runtime_data", None)
+    return value

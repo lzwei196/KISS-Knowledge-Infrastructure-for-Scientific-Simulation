@@ -1,11 +1,12 @@
 """Real host-route/repair state integration; no providers or native models run."""
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import flowgate, gui, install, kdtstudio, ki_guard, ki_investigation as inv, paths, sessions
+from kiss_cli import flowgate, gui, install, kdtstudio, ki_guard, ki_investigation as inv, paths, project_paths, sessions
 from kiss_cli.catalog import KI
 from .test_ki_investigation import accepted, reviewer
 
@@ -36,6 +37,10 @@ def case(tmp_path, monkeypatch):
     (root/"tools/reader.py").write_text("def read(): return 1\n")
     (root/"preflight_check.py").write_text("print('Original preflight')\n")
     ki_guard.enroll(root)
+    shared_cfg = paths.KissConfig.default(project)
+    shared_cfg.python = sys.executable
+    project_cfg = project_paths.model_config(project, "M", shared_cfg)
+    (root.parent / paths.CONFIG_NAME).write_text(project_cfg.dumps(), encoding="utf-8")
     (project/"runs/plan.json").write_text(json.dumps({"selected_kis":["M"],
         "steps":[{"id":"read","ki":"M","tool":str(root/"tools/reader.py") }]}))
     (project/"runs/data-inventory.json").write_text('{"items": []}')
@@ -113,6 +118,48 @@ def test_investigation_cannot_start_during_owned_chat(case):
         assert status==409 and "Project agent" in response["error"]
         assert inv.get(case.project)["status"]=="none"
     finally: gui._release_project_operation(case.session["id"],token)
+
+
+def test_retry_uses_saved_connection_only_for_incomplete_role_and_holds_lease(case, monkeypatch):
+    job = inv.create(case.project, case.session, {"M": case.root},
+                     "api:deepseek", "original-model", "Repair the reader")
+    inv.run_reviews(case.project, job["id"], lambda role, *args:
+        {"status": "failed", "error": "Round limit reached"} if role == "reproducibility_risks"
+        else reviewer(role, *args))
+    before = inv.get(case.project, job["id"])
+    completed = [row for row in before["reviewers"] if row["status"] == "completed"]
+    threads, calls, bindings = [], [], []
+    class HeldThread:
+        def __init__(self, *, target, **kwargs): self.target = target; threads.append(self)
+        def start(self): pass
+    monkeypatch.setattr(gui, "threading", SimpleNamespace(Thread=HeldThread))
+    case.handler._validate_binding = lambda binding: bindings.append(binding)
+    def review(role, context, digest, **kwargs):
+        calls.append((role, kwargs))
+        return reviewer(role, context, digest, kwargs["stop_event"], kwargs["emit"])
+    monkeypatch.setattr(gui.ki_review_agents, "review", review)
+    body, code = case.handler._project_investigation(case.session["id"], action="retry",
+        job_id=job["id"], req={"provider": "different-provider", "llm_model": "different-model"})
+    assert code == 202 and body["busy"] and not body["available"]
+    assert bindings == [{"provider": "api:deepseek", "llm_model": "original-model"}]
+    assert not calls and len(threads) == 1
+    again, code = case.handler._project_investigation(case.session["id"], action="retry", job_id=job["id"])
+    assert code == 409 and "still running" in again["error"]
+    threads[0].target()
+    assert [role for role, _ in calls] == ["reproducibility_risks"]
+    assert calls[0][1]["provider"] == "api:deepseek"
+    assert calls[0][1]["model"] == "original-model"
+    after = inv.get(case.project, job["id"])
+    assert after["status"] == "reviewed"
+    assert [row for row in after["reviewers"] if row["role"] != "reproducibility_risks"] == completed
+    assert case.session["id"] not in gui._PROJECT_OPERATIONS
+
+
+def test_retry_rejects_completed_investigation_and_releases_lease(case):
+    job = make_draft(case)
+    body, code = case.handler._project_investigation(case.session["id"], action="retry", job_id=job["id"])
+    assert code == 409 and "incomplete reviews" in body["error"]
+    assert case.session["id"] not in gui._PROJECT_OPERATIONS
 
 
 def test_author_retry_receives_the_previous_host_gate_failure(case,monkeypatch):
@@ -227,7 +274,7 @@ def test_project_preflight_reads_adopted_bytes_and_only_pass_clears_readiness(ca
         return install.Step("preflight",passes,"Actual fixture probe outcome")
     monkeypatch.setattr(install,"run_preflight",probe)
     messages=[]
-    assert case.handler._repair_preflight(case.project,[(KI("M",case.root),cfg)],messages.append) is passes
+    assert case.handler._verify_project_preflight(case.project,[(KI("M",case.root),cfg)],messages.append) is passes
     assert seen==[(case.root,"print('Adopted preflight revision')\n",case.project)]
     assert inv.pending_preflight(case.project)["pending"] is not passes
     assert case.handler._setup_ok_for(case.session) is passes
@@ -286,7 +333,7 @@ def test_failed_repair_preflight_gets_bounded_setup_then_exact_project_recheck(
     source.mkdir(parents=True)
     (source / "SKILL.md").write_text("Library revision, not the adopted project revision")
     source_ki = KI("M", source)
-    cfg = paths.KissConfig.default(case.project)
+    cfg = project_paths.load_model_config(case.project, "M")
     saved_cfg_value = cfg.dumps()
     (case.project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
     saved_config = (case.project / paths.CONFIG_NAME).read_bytes()
@@ -335,14 +382,14 @@ def test_failed_repair_preflight_gets_bounded_setup_then_exact_project_recheck(
     monkeypatch.setattr(gui.prompt, "compose_multi", lambda _kis, _cfg, **kw: kw.get("task", "KI contract"))
 
     def preflight(ki, python, config, **kwargs):
-        assert ki.root == case.root and config is cfg and python == cfg.python
+        assert ki.root == case.root and config.dumps() == cfg.dumps() and python == cfg.python
         assert kwargs["project"] == case.project
         assert "Adopted preflight revision" in (ki.root / "preflight_check.py").read_text()
         probes.append(ki.root)
         return install.Step("preflight", True, "Adopted fixture script passed")
 
     def check_requirements(manifest, config, **kwargs):
-        assert manifest is adopted_manifest and config is cfg
+        assert manifest is adopted_manifest and config.dumps() == cfg.dumps()
         requirements.append(manifest.python_deps)
         passed = len(requirements) > 1 and outcome == "pass"
         if outcome == "stop_before_setup":

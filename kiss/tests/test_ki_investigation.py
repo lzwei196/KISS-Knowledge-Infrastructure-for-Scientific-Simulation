@@ -82,6 +82,204 @@ def verified(case, monkeypatch):
     return inv.verify_draft(case[0], job["id"])
 
 
+@pytest.fixture
+def portable_case(case, tmp_path, monkeypatch):
+    """Real projected trees/signatures; provider and KDT results remain fixtures."""
+    import sys
+    from kiss_cli import ki_adaptations as adapt, ki_updates, project_paths, setup
+    from kiss_cli.manifest import Manifest
+    monkeypatch.setenv("GEOFORGE_KI_ADAPTATION_HOME", str(tmp_path / "adaptations"))
+    library = tmp_path / "snapshot"
+    source = library / "models/M"
+    (source / "tools").mkdir(parents=True)
+    (source / "SKILL.md").write_text("# Portable reader fixture\n")
+    (source / "tools/reader.py").write_text(
+        "OUTPUT = 'KISSPATH_OUTPUTS/result.csv'\ndef read(): return 1\n")
+    helpers = library / "ki_tools_common"
+    helpers.mkdir()
+    (helpers / "helper.py").write_text("VALUE = 1\n")
+    (library / ki_updates.SNAPSHOT_MANIFEST).write_text(json.dumps({
+        "source_commit": "a" * 40, "trees": {"shared_tools": "b" * 40}}))
+    project = tmp_path / "portable-project"
+    home = project / "models/M"
+    home.mkdir(parents=True)
+    shared = paths.KissConfig.default(tmp_path / "shared-runtime")
+    shared.python, shared.relocation = sys.executable, "none"
+    setup.prepare_common(shared, library)
+    cfg = project_paths.model_config(project, "M", shared)
+    (home / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    live = home / "ki"
+    adapt.materialise(source, live, cfg, model="M", library_root=library, manifest=Manifest(model="M"))
+    (project / "runs").mkdir()
+    (project / "runs/plan.json").write_text(json.dumps({"selected_kis": ["M"],
+        "steps": [{"id": "read", "ki": "M", "tool": str(live / "tools/reader.py") }]}))
+    (project / "runs/data-inventory.json").write_text('{"items": []}')
+    flow = flowgate.load()
+    flow.approval.approve(project)
+    ctx = flow.states.FlowContext(project=project)
+    ctx.state = flow.states.State.FAILED
+    ctx.selected_kis = ["M"]
+    ctx.save()
+    return (project, live), library, cfg
+
+
+def test_portable_investigation_reviews_source_then_applies_exact_projection(portable_case, monkeypatch, tmp_path):
+    from kiss_cli import ki_adaptations as adapt, project_paths, project_verification
+    from kiss_cli.catalog import KI
+    from kiss_cli.manifest import Manifest
+    pair, library, cfg = portable_case
+    project, live = pair
+    config_path = live.parent / paths.CONFIG_NAME
+    original_config = config_path.read_bytes()
+    assert cfg.root == project and config_path.parent != cfg.root
+    accepted(monkeypatch)
+    job = draft(pair)
+    assert job["draft"]["authoring_scope"] == "portable"
+    evidence = Path(job["context"]["root"])
+    assert "KISSPATH_OUTPUTS" in (evidence / "portable_kis/M/tools/reader.py").read_text()
+    assert "KISSPATH_OUTPUTS" not in (evidence / "kis/M/tools/reader.py").read_text()
+    candidate = Path(job["draft"]["path"])
+    reader = candidate / "tools/reader.py"
+    reader.write_text(reader.read_text().replace("return 1", "return 2"))
+    result = inv.verify_draft(project, job["id"])
+    verification = result["verification"]
+    assert result["can_apply"] and verification["ok"]
+    assert verification["portable_digest"] != verification["candidate_digest"]
+    assert verification["changes"]["modified"] == ["tools/reader.py"]
+    assert verification["native_regression"]["verified"] is False
+    result = inv.apply(project, job["id"], verification["id"])
+    assert result["status"] == "applied" and result["apply"]["reusable"]
+    assert "return 2" in (live / "tools/reader.py").read_text()
+    assert inv.pending_preflight(project)["pending"]
+    assert flowgate.load().approval.check(project) != "OK"
+    assert project_verification.status(project, KI("M", live))["can_run"] is False
+    assert config_path.read_bytes() == original_config
+    other_project = tmp_path / "next-project"
+    other = other_project / "models/M"
+    other.mkdir(parents=True)
+    next_cfg = project_paths.model_config(other_project, "M", cfg)
+    (other / paths.CONFIG_NAME).write_text(next_cfg.dumps(), encoding="utf-8")
+    adapt.materialise(library / "models/M", other / "ki", next_cfg, model="M",
+                      library_root=library, manifest=Manifest(model="M"))
+    rebound = (other / "ki/tools/reader.py").read_text()
+    assert "return 2" in rebound and next_cfg.roles["outputs"].as_posix() in rebound
+    assert cfg.roles["outputs"].as_posix() not in rebound
+
+
+@pytest.mark.parametrize("failure", ["portable_gate", "runtime_gate", "candidate_drift", "binding_drift", "adoption"])
+def test_portable_repair_failure_never_publishes_reuse(portable_case, monkeypatch, failure):
+    from kiss_cli import ki_adaptations as adapt
+    pair, _, cfg = portable_case
+    project, live = pair
+    accepted(monkeypatch)
+    job = draft(pair)
+    candidate = Path(job["draft"]["path"])
+    reader = candidate / "tools/reader.py"
+    reader.write_text(reader.read_text().replace("return 1", "return 2"))
+    if failure.endswith("gate"):
+        original = gate.verify_candidate
+        def check(root, **kwargs):
+            is_portable = Path(root) == candidate
+            if is_portable == (failure == "portable_gate"):
+                return {"ok": False, "candidate_digest": gate.content_digest(root), "failures": ["fixture rejected"]}
+            return original(root, **kwargs)
+        monkeypatch.setattr(gate, "verify_candidate", check)
+    result = inv.verify_draft(project, job["id"])
+    if failure.endswith("gate"):
+        assert result["status"] == "verification_failed" and not result["can_apply"]
+    else:
+        if failure == "candidate_drift":
+            reader.write_text("def read(): return 3\n")
+        elif failure == "binding_drift":
+            cfg.python = "changed-python"
+            (live.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+        else:
+            def failed(*args, **kwargs):
+                raise ValueError("fixture adoption failed")
+            monkeypatch.setattr(ki_guard, "activate", failed)
+        with pytest.raises((ValueError, RuntimeError)):
+            inv.apply(project, job["id"], result["verification"]["id"])
+    assert "return 1" in (live / "tools/reader.py").read_text()
+    assert not list((adapt._home() / "registry").glob("*.json"))
+
+
+def _damage_project_config(project, live, cfg, damage):
+    import re
+    path = live.parent / paths.CONFIG_NAME
+    original = path.read_text(encoding="utf-8")
+    if damage in {"model_home_root", "foreign_root"}:
+        previous = cfg.root
+        cfg.root = live.parent if damage == "model_home_root" else project.parent / "foreign-project"
+        text = cfg.dumps()
+        cfg.root = previous
+    elif damage in {"missing_root", "missing_python"}:
+        key = "root" if damage == "missing_root" else "python"
+        text = re.sub(r"(?m)^" + key + r"\s*=.*\n", "", original)
+    elif damage == "ancestor_only":
+        (project / paths.CONFIG_NAME).write_text(original, encoding="utf-8")
+        path.unlink()
+        return path, None
+    else:
+        raise AssertionError(damage)
+    path.write_text(text, encoding="utf-8")
+    return path, path.read_bytes()
+
+
+@pytest.mark.parametrize("damage", ["model_home_root", "foreign_root", "missing_root", "missing_python", "ancestor_only"])
+def test_portable_capture_never_normalizes_or_inherits_invalid_config(portable_case, damage):
+    pair, _, cfg = portable_case
+    project, live = pair
+    path, altered = _damage_project_config(project, live, cfg, damage)
+    job = draft(pair)
+    assert job["draft"]["authoring_scope"] == "local"
+    assert not job["portable_projections"]
+    assert not (Path(job["context"]["root"]) / "portable_kis/M").exists()
+    assert (path.read_bytes() if path.exists() else None) == altered
+
+
+@pytest.mark.parametrize("damage", ["model_home_root", "foreign_root", "missing_root", "missing_python", "ancestor_only"])
+def test_verified_portable_apply_rejects_config_tampering_without_repair(portable_case, monkeypatch, damage):
+    from kiss_cli import ki_adaptations as adapt
+    pair, _, cfg = portable_case
+    project, live = pair
+    accepted(monkeypatch)
+    job = draft(pair)
+    reader = Path(job["draft"]["path"]) / "tools/reader.py"
+    reader.write_text(reader.read_text().replace("return 1", "return 2"))
+    verified = inv.verify_draft(project, job["id"])
+    assert verified["can_apply"]
+    path, altered = _damage_project_config(project, live, cfg, damage)
+    status = inv.get(project, job["id"])
+    assert not status["can_apply"] and status.get("stale_reason")
+    with pytest.raises((OSError, ValueError, RuntimeError)):
+        inv.apply(project, job["id"], verified["verification"]["id"])
+    assert (path.read_bytes() if path.exists() else None) == altered
+    assert "return 1" in (live / "tools/reader.py").read_text()
+    assert not list((adapt._home() / "registry").glob("*.json"))
+
+
+def test_registration_uses_strict_project_config_after_adoption(portable_case, monkeypatch):
+    from kiss_cli import ki_adaptations as adapt
+    pair, _, cfg = portable_case
+    project, live = pair
+    accepted(monkeypatch)
+    job = draft(pair)
+    reader = Path(job["draft"]["path"]) / "tools/reader.py"
+    reader.write_text(reader.read_text().replace("return 1", "return 2"))
+    verified = inv.verify_draft(project, job["id"])
+    original = ki_guard.activate
+    def drift(*args, **kwargs):
+        result = original(*args, **kwargs)
+        _damage_project_config(project, live, cfg, "foreign_root")
+        return result
+    monkeypatch.setattr(ki_guard, "activate", drift)
+    result = inv.apply(project, job["id"], verified["verification"]["id"])
+    assert result["status"] == "applied" and result["apply"]["reusable"] is False
+    assert "root" in result["apply"]["reuse_error"]
+    assert inv.pending_preflight(project)["pending"]
+    assert not list((adapt._home() / "registry").glob("*.json"))
+
+
 def test_packet_has_full_history_and_explicit_binary_large_omissions(case, monkeypatch):
     project, _ = case
     (project / "inputs/raw.bin").write_bytes(b"\0\xff")

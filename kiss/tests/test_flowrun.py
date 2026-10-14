@@ -1997,7 +1997,8 @@ def test_incomplete_turn_names_stale_steps_and_unvouched_files(tmp_path, monkeyp
     monkeypatch.setattr(type(t.session), "evidence", lambda self, **kw: {
         **real(self, **kw), "stale_steps": ["M:run"], "steps_missing": ["M:run"]})
     res = flowrun.after(project, t, "done", setup_ok=True)
-    assert "M:run" in res.message and "rewritten" in res.message
+    assert "M:run" in res.message and "input or output evidence is incomplete or has changed" in res.message
+    assert "earlier receipts are preserved" in res.message
 
 
 def test_a_stopped_run_is_resumable_not_a_failed_validation(tmp_path):

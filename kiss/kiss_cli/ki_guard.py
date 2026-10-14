@@ -98,8 +98,9 @@ def _digest(root: Path) -> str:
 def _copy(source: Path, target: Path) -> None:
     # Preserve exact bytes, including pre-existing caches. Hosted Python calls
     # suppress new bytecode; no source filename is silently excluded.
+    from . import ki_copy
     _digest(source)
-    shutil.copytree(_io(source), _io(target), symlinks=True)
+    ki_copy.copytree(_io(source), _io(target))
     if _digest(source) != _digest(target):
         raise KIIntegrityError("KI changed while copying; nothing was activated")
 
@@ -247,13 +248,14 @@ def enroll_catalogue(catalog) -> dict:
     binds legacy source bytes; this migration does not claim KDT verification.
     Individual failures are returned so unrelated KIs remain available.
     """
-    from . import flowgate, ki_verification
+    from . import flowgate, ki_verification, published_acceptance
     source = Path(catalog.models_dir).absolute()
     authority = _home() / "catalogues"
     key = hashlib.sha256(os.path.normcase(str(source)).encode()).hexdigest()[:12]
     path = _io(authority / f"{key}.json")
     receipts = flowgate.load().receipts
     result = {"enrolled": [], "errors": {}, "legacy_migration": False}
+    published = published_acceptance.catalogue_bindings(catalog)
     try:
         legacy, migrated = _legacy_inventory()
         legacy_digests = {item["digest"] for item in legacy["models"]}
@@ -286,7 +288,8 @@ def enroll_catalogue(catalog) -> dict:
                     recorded = bool(known_baseline and known_baseline.get("digest") == digest)
                     if not recorded and digest not in legacy_digests:
                         kind = ki_verification.detect_kind(root)
-                        if ki_verification.current_report(root, kind=kind) is None:
+                        if (ki_verification.current_report(root, kind=kind) is None
+                                and published.get(ki.name) != digest):
                             raise KIIntegrityError(
                                 "New catalogue KI has no current KDT acceptance or exact recorded legacy provenance; "
                                 "a new --models directory cannot restart migration")
@@ -403,6 +406,36 @@ def recover_drift(root: Path, *, quiescent: bool = False) -> Path | None:
 def activate(root: Path, draft: Path, report: dict, *, quiescent: bool = False) -> dict:
     """Explicit host adoption; callers own user review and project invalidation."""
     from .ki_verification import require_current, detect_kind
+    return _activate_checked(root, draft,
+        validate=lambda candidate: require_current(candidate, report, kind=detect_kind(candidate)),
+        origin="verified_candidate", quiescent=quiescent)
+
+
+def activate_maintenance(root: Path, draft: Path, report: dict, *, source: dict | None = None,
+                         quiescent: bool = False) -> dict:
+    """Adopt only an exact bounded maintenance revision of this active KI.
+
+    The separate receipt never satisfies the ordinary authoring/import gate.
+    The investigation caller still owns three reviews and project invalidation.
+    """
+    from . import ki_maintenance
+    root = Path(root).resolve()
+
+    def validate(candidate):
+        accepted = ki_maintenance.require_current(candidate, report, source=source)
+        provenance = accepted["source"]
+        if (Path(provenance["original_root"]).resolve() != root
+                or _digest(root) != provenance["base_digest"]):
+            raise KIIntegrityError("Maintenance evidence belongs to another active KI revision")
+        return accepted
+
+    return _activate_checked(root, draft, validate=validate,
+        origin="verified_maintenance_candidate", quiescent=quiescent)
+
+
+def _activate_checked(root: Path, draft: Path, *, validate, origin: str,
+                      quiescent: bool) -> dict:
+    """Shared replacement mechanics; each public entry owns its exact gate."""
     if not quiescent:
         raise KIIntegrityError("Stop active workers before adopting a KI revision")
     root, draft = Path(root).resolve(), Path(draft).resolve()
@@ -411,11 +444,11 @@ def activate(root: Path, draft: Path, report: dict, *, quiescent: bool = False) 
     with operation(root), _LOCK:
         _no_workers(root)
         require_intact(root)
-        require_current(draft, report, kind=detect_kind(draft))
+        validate(draft)
         digest = _digest(draft)
         replacement = root.parent / f".ki-adopt-{uuid.uuid4().hex[:12]}"
         _copy(draft, replacement)
-        require_current(draft, report, kind=detect_kind(draft))
+        validate(draft)
         if _digest(replacement) != digest:
             raise KIIntegrityError("Candidate copy does not match the verified bytes")
         backup = _entry(root) / digest[:12]
@@ -423,11 +456,12 @@ def activate(root: Path, draft: Path, report: dict, *, quiescent: bool = False) 
             _copy(replacement, backup)
         if _digest(backup) != digest:
             raise KIIntegrityError("Candidate backup failed its content check")
+        require_intact(root)
         previous = root.parent / f"ki-previous-{uuid.uuid4().hex[:12]}"
         _io(root).rename(_io(previous))
         try:
             _io(replacement).rename(_io(root))
-            return _save(root, digest, origin="verified_candidate")
+            return _save(root, digest, origin=origin)
         except (OSError, ValueError):
             # Preserve both revisions; a failed state update must not activate.
             if root.exists():

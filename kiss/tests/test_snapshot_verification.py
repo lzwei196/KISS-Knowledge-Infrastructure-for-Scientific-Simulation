@@ -1,4 +1,6 @@
 """Updated KIs cannot inherit an unrelated machine verification result."""
+from dataclasses import asdict, replace
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -23,6 +25,9 @@ def example(tmp_path):
         "kiss_manifest_version": 1, "model": "Demo", "verified": "unverified"}))
     (library / ki_updates.SNAPSHOT_MANIFEST).write_text(json.dumps({
         "content_sha256": "a" * 64, "trees": {"shared_tools": "b" * 40}}))
+    shared = library / "ki_tools_common" / "ki_tools_common"
+    shared.mkdir(parents=True)
+    (shared / "__init__.py").write_text("# fixture helpers\n", encoding="utf-8")
     workroot = tmp_path / "work"
     workspace = workroot / "demo"
     workspace.mkdir(parents=True)
@@ -34,6 +39,8 @@ def example(tmp_path):
     ki = catalog.KI("Demo", source)
     cfg = paths.KissConfig.default(workspace)
     cfg.python = sys.executable
+    setup.prepare_common(cfg, library)
+    (workspace / "kiss.toml").write_text(cfg.dumps(), encoding="utf-8")
     ki_guard.enroll(source)
     setup.materialise_active(source, workspace / "ki", cfg)
     return handler, ki, cfg, binary
@@ -52,6 +59,7 @@ def expected(handler, ki):
 
 def current_status(handler, ki, cfg):
     return write_status(cfg, verification_identity=expected(handler, ki),
+                        runtime_identity=software_verification.runtime_identity(cfg),
                         ki_content_digest=ki_verification.content_digest(cfg.root / "ki"))
 
 
@@ -76,19 +84,103 @@ def test_matching_snapshot_identity_is_verified(example):
 
 
 @pytest.mark.parametrize("change", ["ki", "helpers", "recipe"])
-def test_each_effective_component_invalidates_saved_verification(example, change):
+def test_each_effective_component_invalidates_saved_verification(example, change, tmp_path):
     handler, ki, cfg, _ = example
     current_status(handler, ki, cfg)
+    old_identity = expected(handler, ki)
+    updated = tmp_path / "updated-snapshot"
+    shutil.copytree(handler.library_root, updated)
+    new_ki = catalog.KI(ki.name, updated / "models" / ki.name)
     if change == "recipe":
-        doc = yaml.safe_load(ki.manifest.read_text())
+        doc = yaml.safe_load(new_ki.manifest.read_text())
         doc["python_deps"] = ["new-scientific-package>=2"]
-        ki.manifest.write_text(yaml.safe_dump(doc))
+        new_ki.manifest.write_text(yaml.safe_dump(doc))
+    elif change == "ki":
+        (new_ki.root / "SKILL.md").write_text("Updated Demo instructions")
     else:
-        marker = handler.library_root / ki_updates.SNAPSHOT_MANIFEST
-        meta = json.loads(marker.read_text())
-        if change == "ki": meta["content_sha256"] = "c" * 64
-        else: meta["trees"]["shared_tools"] = "d" * 40
-        marker.write_text(json.dumps(meta))
+        (updated / "ki_tools_common/ki_tools_common/__init__.py").write_text("# changed helper behavior\n")
+    ki_guard.enroll(new_ki.root)  # independently accepted source fixture
+    handler.library_root = updated
+    assert expected(handler, new_ki) != old_identity
+    status = handler._status_for(new_ki)
+    assert not status["can_run"]
+    assert status["primary_error"]["name"] == "snapshot-changed"
+
+
+def test_unrelated_snapshot_changes_preserve_current_verification(example, tmp_path):
+    handler, ki, cfg, binary = example
+    status_path = current_status(handler, ki, cfg)
+    before = status_path.read_bytes()
+    old_identity = expected(handler, ki)
+    updated = tmp_path / "updated-snapshot"
+    shutil.copytree(handler.library_root, updated)
+    other = updated / "models/Other"
+    other.mkdir()
+    (other / "SKILL.md").write_text("Another model was updated")
+    (updated / ki_updates.SNAPSHOT_MANIFEST).write_text(json.dumps({
+        "content_sha256": "c" * 64, "source_commit": "d" * 40,
+        "trees": {"shared_tools": "e" * 40, "models": "f" * 40}}))
+    new_ki = catalog.KI(ki.name, updated / "models" / ki.name)
+    ki_guard.enroll(new_ki.root)
+    handler.library_root = updated
+    assert expected(handler, new_ki) == old_identity
+    assert handler._status_for(new_ki)["can_run"]
+    assert status_path.read_bytes() == before
+    assert binary.read_bytes() == b"existing native bytes"
+
+
+def test_effective_recipe_change_invalidates_without_a_ki_tree_change(example):
+    handler, ki, _cfg, _binary = example
+    man = handler._manifest(ki)
+    before = software_verification.identity(ki, man, handler.library_root)
+    changed = replace(man, python_deps=["new-package>=2"])
+    assert software_verification.identity(ki, changed, handler.library_root) != before
+
+
+def test_old_whole_library_identity_requires_one_fresh_check(example, monkeypatch):
+    handler, ki, cfg, binary = example
+    legacy = {"schema_version": 1, "ki": "models/Demo", "library_content": "a" * 64,
+              "shared_tools": "b" * 40, "effective_manifest": asdict(handler._manifest(ki))}
+    path = current_status(handler, ki, cfg)
+    state = json.loads(path.read_text())
+    state["verification_identity"] = hashlib.sha256(json.dumps(legacy, sort_keys=True).encode()).hexdigest()
+    path.write_text(json.dumps(state))
+    before = path.read_bytes()
+    assert not handler._status_for(ki)["can_run"]
+    assert path.read_bytes() == before
+    assert binary.read_bytes() == b"existing native bytes"
+    monkeypatch.setattr(software_verification, "requirements", lambda *a, **kw:
+                        install.Step("manifest-requirements", True, "fresh fixture requirement check"))
+    assert handler._record_agent_preflight(ki, working_ki(ki, cfg), cfg, cfg.root, lambda _: None,
+        check=install.Step("preflight", True, "fresh fixture preflight"))
+    assert handler._status_for(ki)["can_run"]
+    assert json.loads(path.read_text())["verification_identity"] == expected(handler, ki)
+
+
+@pytest.mark.parametrize("component", ["ki", "helpers"])
+def test_missing_relevant_bytes_fail_closed(example, component, tmp_path):
+    handler, ki, cfg, _ = example
+    current_status(handler, ki, cfg)
+    source = ki.root if component == "ki" else handler.library_root / "ki_tools_common"
+    source.rename(tmp_path / "retained-missing-component")
+    with pytest.raises((ValueError, OSError)):
+        expected(handler, ki)
+    assert not handler._status_for(ki)["can_run"]
+
+
+@pytest.mark.parametrize("component", ["ki", "helpers"])
+def test_relevant_external_directory_alias_fails_closed(example, component, tmp_path):
+    handler, ki, cfg, _ = example
+    current_status(handler, ki, cfg)
+    source = ki.root if component == "ki" else handler.library_root / "ki_tools_common"
+    external = tmp_path / "external-component"
+    source.rename(external)
+    try:
+        source.symlink_to(external, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"Directory symlinks unavailable: {error}")
+    with pytest.raises((ValueError, OSError)):
+        expected(handler, ki)
     assert not handler._status_for(ki)["can_run"]
 
 
@@ -140,7 +232,7 @@ def test_failed_native_preflight_clears_identity(example):
 def test_interrupted_snapshot_setup_invalidates_previous_success(example, monkeypatch):
     handler, ki, cfg, binary = example
     write_status(cfg, verification_identity=expected(handler, ki))
-    monkeypatch.setattr(install, "runtime_python", lambda *_: (_ for _ in ()).throw(ValueError("setup interrupted")))
+    monkeypatch.setattr(setup, "prepare_python", lambda *a, **k: (_ for _ in ()).throw(ValueError("setup interrupted")))
     with pytest.raises(ValueError, match="interrupted"):
         gui.run_install(ki, handler._manifest(ki), cfg.root, lambda _: None, handler.library_root)
     assert not json.loads((cfg.root / "status.json").read_text())["ok"]

@@ -591,7 +591,7 @@ def test_stamp_inventory_pins_catalogue_facts_and_flags_unknown_ids():
     assert obs_access.stamp_inventory(child, catalogue=catalogue)  # parent existence is not child proof
 
 
-def test_stamp_inventory_matches_display_names_to_a_unique_id():
+def test_stamp_inventory_does_not_promote_display_names_to_selected_ids():
     catalogue = {"datasets": [*_RECORDS,
                               {"id": "avhrr_landcover", "name": "AVHRR 1km land cover", "delivery": "manual"},
                               {"id": "hwsd_china", "delivery": "manual"},
@@ -603,8 +603,13 @@ def test_stamp_inventory_matches_display_names_to_a_unique_id():
     ]}
     assert obs_access.stamp_inventory(inventory, catalogue=catalogue) == []
     assert inventory["items"][2]["dataset_id"] == "cmfd_huai_daily_025"     # named after the dataset
+    assert "dataset_id" not in inventory["items"][0]
+    assert "dataset_id" not in inventory["items"][1]
+    # Discovery labels are not acquisition authority, even for a unique match.
+    inventory["items"][0]["chosen_source"] = "avhrr_landcover"
+    inventory["items"][1]["dataset_id"] = "hwsd_china_raster"
+    assert obs_access.stamp_inventory(inventory, catalogue=catalogue) == []
     assert inventory["items"][0]["dataset_id"] == "avhrr_landcover"
-    # both hwsd_china and hwsd_china_raster fit; the more specific one covers the other
     assert inventory["items"][1]["dataset_id"] == "hwsd_china_raster"
     ambiguous = {"items": [{"id": "x", "status": "missing", "chosen_source": "cmfd china daily huai"}]}
     obs_access.stamp_inventory(ambiguous, catalogue=catalogue)

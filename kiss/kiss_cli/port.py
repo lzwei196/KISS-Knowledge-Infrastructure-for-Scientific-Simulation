@@ -386,24 +386,33 @@ class MaterialiseReport:
 
 
 def validate_materialisation_destination(dest: Path) -> Path:
-    """Reject existing destination aliases before refreshing generated files.
+    """Reject escaping, broken or cyclic destination aliases before refresh.
 
     Resolve the parent (which may use an OS alias such as /tmp) but never
-    follow a symlink at the destination or inside its existing tree. A refresh
-    may otherwise overwrite unrelated files via either a directory or file
-    link. Callers own the parent directory; Desktop separately validates the
+    follow a symlink at the destination root. Internal aliases are inventoried
+    without traversal; materialise separately checks their source mapping and
+    writes only canonical entries. Callers own the parent directory; Desktop validates the
     project/models/<KI> namespace. No links are removed or repaired here.
     """
+    import stat
     dest = Path(dest).expanduser()
-    if dest.is_symlink():
-        raise ValueError(f"KI destination is a symlink; review it before refreshing: {dest}")
+    try:
+        info = dest.lstat()
+    except FileNotFoundError:
+        info = None
+    if info is not None and (stat.S_ISLNK(info.st_mode)
+            or getattr(info, "st_file_attributes", 0) &
+            getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)):
+        raise ValueError(f"KI destination is a symlink or reparse point; review it before refreshing: {dest}")
     dest = dest.resolve()
     if dest.exists():
         if not dest.is_dir():
             raise ValueError(f"KI destination is not a directory: {dest}")
-        for path in dest.rglob("*"):
-            if path.is_symlink():
-                raise ValueError(f"KI destination contains a symlink; review it before refreshing: {path}")
+        from . import ki_tree
+        try:
+            ki_tree.scan(dest)
+        except ValueError as error:
+            raise ValueError(f"KI destination contains an unsafe symlink or entry: {error}") from error
     return dest
 
 
@@ -418,16 +427,34 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
     The original package is never modified; ``dest`` is a working copy.
     """
     import shutil
+    from . import ki_copy, ki_tree
 
     ki_root = Path(ki_root)
+    inventory = ki_tree.scan(ki_root)
+    source_identity = ki_tree.digest(ki_root)
+    if not source_identity:
+        raise ValueError("Cannot establish KI source identity before materialisation")
     dest = validate_materialisation_destination(dest)
+    source_root = ki_root.resolve()
+    if source_root == dest or source_root in dest.parents or dest in source_root.parents:
+        raise ValueError("KI source and materialisation destination must be separate trees")
+    aliases = {entry.relative: entry.target for entry in inventory.entries if entry.kind == "link"}
+    if dest.exists():
+        for entry in ki_tree.scan(dest).entries:
+            if entry.kind == "link" and aliases.get(entry.relative) != entry.target:
+                raise ValueError("KI destination alias differs from the source; review before refreshing")
     rep = MaterialiseReport(dest=dest)
     dest.mkdir(parents=True, exist_ok=True)
 
-    for src in sorted(ki_root.rglob("*")):
-        rel = src.relative_to(ki_root)
+    for entry in inventory.entries:
+        if entry.kind == "link":
+            continue
+        rel = Path(entry.relative)
+        src = ki_root / rel
         out = dest / rel
-        if src.is_dir():
+        if out.is_symlink():
+            raise ValueError("Canonical KI destination entry was replaced by an alias")
+        if entry.kind == "directory":
             out.mkdir(parents=True, exist_ok=True)
             continue
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -473,4 +500,20 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
         rep.tokens_replaced += n
         rep.unresolved |= unresolved
 
+    for entry in inventory.entries:
+        if entry.kind != "link":
+            continue
+        out = dest / entry.relative
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if not out.is_symlink():
+            if out.exists():
+                raise ValueError("KI alias destination is occupied by a regular entry")
+            out.symlink_to(ki_copy.link_target(entry), target_is_directory=(dest / entry.target).is_dir())
+        rep.skipped += 1
+    if ki_tree.digest(ki_root) != source_identity:
+        raise ValueError("KI source changed during materialisation")
+    actual_aliases = {entry.relative: entry.target for entry in ki_tree.scan(dest).entries
+                      if entry.kind == "link"}
+    if actual_aliases != aliases:
+        raise ValueError("KI aliases changed during materialisation")
     return rep

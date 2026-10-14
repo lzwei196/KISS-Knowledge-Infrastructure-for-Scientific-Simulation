@@ -151,16 +151,73 @@ _RESULT_LOCATIONS = (
 )
 
 
+_DECLARED_OUTPUTS_NOTE = (
+    "[ORDINARY KI OUTPUT VALIDATION]\n"
+    "Inspect the shipped tool's output contract before submitting the plan. Give each ordinary KI "
+    "output a matching inventory item with exact future local_paths and status:'missing', and use "
+    "that item ID in the producer's outputs and any later consumer's inputs. A future declared "
+    "output path is permitted; it is not evidence that the file exists. Keep scientific results "
+    "and structured reports in separate items because every path in an item uses the same validator. "
+    "Ordinary outputs keep numeric scientific validation by default. For a structured JSON "
+    "reader/diagnostic report, explicitly set output_validation:'json_report_v1' on its inventory "
+    "item, for example {id:'reader_report', required_by:['Example'], status:'missing', "
+    "local_paths:['outputs/check/reader_report.json'], output_validation:'json_report_v1', "
+    "agent_resolvable:true, needs_user:false, rationale:'Produced by read_results; consumed by compare'}. "
+    "This requires a fresh, nonempty UTF-8 JSON object/array within 4 MiB, unique keys and finite "
+    "numbers; it supplies no numeric model evidence or scientific validation. Native numeric "
+    "results must retain their scientific checks; physical model steps still need scientific outputs. "
+    "A .json extension does not choose the role. Before a new review, every ordinary .json output "
+    "must explicitly select the report contract above OR output_role:'scientific_result' with "
+    "output_validation absent. The latter only confirms intent: existing scientific numeric checks "
+    "still apply and may reject unsupported JSON. Never relabel a scientific result as a report "
+    "to bypass failed validation. Do not put either field on input-only items or outputs from "
+    "project_data_tool, stdout_artifact or calibration; those use their own typed contracts. "
+    "The host reports contract errors before approval. Correct the plan and inventory together; "
+    "if already approved, replan and obtain approval before running again into fresh paths. "
+    "Never change past receipts or rename extensions to evade validation.\n"
+)
+
+
+_STDOUT_ARTIFACT_NOTE = (
+    "[SHIPPED KI STDOUT CHECKS]\n"
+    "If a shipped KI reader/check prints JSON instead of writing a result file, keep its code "
+    "unchanged and declare stdout_artifact on its approved kind:'check' step. Use the canonical "
+    "absolute path to the shipped KI tool, an explicit literal command array containing only "
+    "its documented arguments (not the interpreter or tool path), and cwd:'.' (project root). "
+    "For example, stdout_artifact: "
+    '{"version":1,"output_id":"readout_json","path":"outputs/check/readout.json",'
+    '"format":"json_v1","max_bytes":1048576}. '
+    "Include output_id exactly once in step.outputs and never in step.inputs. Add exactly one "
+    "matching inventory item: id:'readout_json', local_paths:['outputs/check/readout.json'], "
+    "status:'missing', with this check named as its producer. This explicit capture contract "
+    "requires local_paths to contain the "
+    "same literal future path, but do not mark it ready before capture. Use a fresh .json path "
+    "under outputs/ or artifacts/; no overwrite, aliases or collision with other inventory files. "
+    "Choose integer max_bytes from 1 to 1048576 before approval. Invoke the same approved "
+    "arguments via the usual run_ki_tool or run-tool receipt path; no extra API argument is needed. "
+    "The host captures full successful stdout, separately from stderr and diagnostic tails. "
+    "Only a nonempty JSON object/array with finite numbers and no duplicate keys is accepted "
+    "within the declared byte limit; a failed, stopped, truncated or oversized result cannot "
+    "supply this evidence. Do not add shell redirection, wrap/reimplement the KI reader, run it "
+    "directly outside the receipt path, or copy its diagnostic tail into an artifact. This "
+    "contract is unavailable for tool:null, project_data_tool, calibration or model-run steps. "
+    "Its signed receipt is check evidence only, never model-execution evidence or scientific "
+    "validation. A planned model run still needs its own native result evidence.\n"
+)
+
+
 _PLAN_SCHEMA_NOTE = (
     "[PLAN FILES — WRITE EXACTLY THESE]\n"
     "  runs/plan.json           : {schema_version:'1.0', goal, selected_kis:[…], coupling:[…], "
     "steps:[{id, ki, tool:'<absolute path to a shipped tool under <KI>/tools/, a protocol-declared sN_stage/ script, or the model binary the KI declares under binary.path in knowledge_infrastructure.yaml; or null>', kind, inputs:[inventory "
-    "ids], outputs:[…], status:'planned', env?:{NAME:'value'}}], scientific_choices:[{id, kind, options, picked, "
+    "ids], outputs:[…], status:'planned', env?:{NAME:'value'}, command?:[literal tool arguments], cwd?:'.', "
+    "stdout_artifact?:{version,output_id,path,format,max_bytes}}], scientific_choices:[{id, kind, options, picked, "
     "high_impact:true|false, decision?}], unresolved_questions:[…], created_at}\n"
     "  runs/data-inventory.json : {schema_version:'1.0', delivery_preference?:'auto'|'manual', items:[{id, required_by:[KI…], "
     "status:'missing'|'resolved'|'ready', acceptable_sources:[…], chosen_source, dataset_id?, "
     "local_paths:[…], agent_resolvable:bool, needs_user:bool, rationale?, decision?, acquisition_id?, "
-    "delivery_preference?:'auto'|'manual', "
+    "delivery_preference?:'auto'|'manual', output_validation?:'json_report_v1', "
+    "output_role?:'scientific_result', "
     "requirements?:{bbox:[west,south,east,north],start:'YYYY-MM-DD',end:'YYYY-MM-DD',variable:'prec,temp'}}]}\n"
     "  Save known data requirements per inventory item; do not invent unknown grid or dates. "
     "Search with those same filters. The project's status panel uses requirements to compare "
@@ -201,8 +258,10 @@ _PLAN_SCHEMA_NOTE = (
     "requirement explain the five links in its rationale and the plan's inputs/outputs: "
     "requirement -> selected source or value -> actual/planned files -> preparation -> consuming "
     "step. Name the producer step for generated files; use the same inventory ID in that step's "
-    "outputs and the consumer's inputs. Record planned target paths in the rationale, not as "
-    "existing local_paths. A requirement may need several files and a file may serve several "
+    "outputs and the consumer's inputs. For declared tool outputs, record exact future local_paths "
+    "and status:'missing'; explain the producer and intended validation role in rationale. Future "
+    "paths do not make an item ready. For other unresolved inputs, describe intended paths only "
+    "in rationale until a source is bound. A requirement may need several files and a file may serve several "
     "requirements. Keep unresolved links explicit instead of inventing a source or tool.\n"
     "  When continuing after an earlier phase, inspect and reuse its existing input and output "
     "files. Declare retained files as ready local inputs with their exact local_paths and "
@@ -304,11 +363,14 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         f"[MODE: PLANNING — design the run for {names}; NO execution]",
         study_design_questions(),
         _RESULT_LOCATIONS,
+        _DECLARED_OUTPUTS_NOTE,
+        _STDOUT_ARTIFACT_NOTE,
         "[LOCAL DATA FALLBACK] If a suitable data reader accompanies the data or is shipped by a selected KI, "
         "review and use it. A data KI is optional. When the available tool surface includes write_project_data_tool, "
         "a missing reader/converter is an implementation task: write a small local Python adapter during planning, "
         "not a reason to stop or ask the user to program it. The tool returns an explicit source hash and binding; "
-        "include those with exact arguments/cwd/timeout in a check or prepare step for review. Do not execute "
+        "include the returned project_data_tool object with exact arguments/cwd/timeout in a check or prepare "
+        "step for review. A project_tools path without this binding is not a KI tool; do not move it into the KI. Do not execute "
         "scripts simply because they came with a download. Keep raw inputs unchanged; preserve units, clocks, "
         "flags and missingness. This trusted reviewed-source path is not an OS sandbox and cannot run models.",
         "[DATA ADAPTER INPUTS/OUTPUTS] Declare exact local inventory inputs. Besides acquired project files, "
@@ -317,6 +379,16 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "granted. Stage only into fresh outputs/ or artifacts/, preserving raw sources. Unsupported output "
         "formats are accepted only as exact byte/hash copies of explicitly granted inputs, labelled "
         "unchanged_input_copy; this proves copying, not scientific validity. Use KI plotting tools for figures.",
+        "[TYPED DATA OUTPUTS] For PCSE weather CSV (including its site metadata preamble) or a single-campaign "
+        "PCSE agromanagement YAML, pass output_formats to write_project_data_tool. The returned version 2 "
+        "project_data_tool binding must remain in the approved step. Each contract names output_id (one of "
+        "step.outputs), literal fresh project-relative path, and format: pcse_weather_csv_v1 with "
+        "date_format:'%Y%m%d', or pcse_agromanagement_yaml_v1 with campaign_start:'YYYY-MM-DD'. "
+        "Do not rename formats or disguise extensions to avoid validation. Preserve all weather metadata "
+        "and non-date tokens for a date-only conversion; an extracted crop campaign must retain its original "
+        "values. The worker has only the Python standard library, so do not import pandas or yaml there. "
+        "The host separately validates these formats and binds the results to signed receipts; format "
+        "acceptance does not establish scientific validity.",
         "[THREE PHASES] Planning settles the scientific choices with the user; no downloads or "
         "input preparation. After the user approves the settled plan, acquisition does "
         "download/import only (including approved server subsets). KI execution then inspects "
@@ -538,6 +610,8 @@ def execution_block(kis: dict[str, Path], plan: dict, approval: dict, project: P
             "receipt. Outputs that no receipt names cannot make the project 'done'."
             + (_DB_ACQUIRED_NOTE if host_acquired else "") + "\n")
     lines.append(_RESULT_LOCATIONS)
+    lines.append(_DECLARED_OUTPUTS_NOTE)
+    lines.append(_STDOUT_ARTIFACT_NOTE)
     if provider == "api":
         lines.append(
             "[MISSING DATA READER] If no suitable shipped reader/converter exists and write_project_data_tool "

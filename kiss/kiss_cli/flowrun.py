@@ -24,6 +24,7 @@ import re
 import shutil
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from . import flowgate, plan_review, projectrun, setup as setup_flow
 from .acquire import INTENT_LOCK as _ACQ_INTENT_LOCK
 
 APPROVAL_REQUEST_ID_PREFIX = plan_review.APPROVAL_REQUEST_ID_PREFIX
+PROJECT_PREFLIGHT_REQUEST_ID_PREFIX = "flow-project-preflight-"
 # continue_now follows only setup finishing AFTER the user approved (after() below): never "auto"
 RUN_AFTER_SETUP = "Software verified. Starting your approved plan in a new session…"
 REPLAN_MARKER = "REPLAN_REQUIRED"
@@ -318,6 +320,12 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
     ctx = flow.states.FlowContext.load(project)
     S = flow.states.State
 
+    # Failed host checks need an explicit choice, not another implicit setup turn.
+    with _ACQ_INTENT_LOCK:
+        recovery = _project_preflight_recovery(flow, ctx, project, names, action, pending, note or text)
+    if recovery is not None:
+        return recovery
+
     # A queued acquisition change never starts an agent from its background tick.
     # Hand the saved user instruction to this next ordinary chat turn exactly once.
     with _ACQ_INTENT_LOCK:
@@ -453,6 +461,138 @@ def pre(project: Path, text: str, names: list[str], catalog, action: dict | None
 
 
 BLOCKED_REQUEST_ID = "flow-acquisition-blocked"
+
+
+def _failed_project_preflight_context(flow, ctx, project: Path) -> dict | None:
+    """Authenticate a failed attempt and recheck its exact project binding, without running it."""
+    from . import project_verification as verification
+    from .catalog import KI
+    if ctx.state is not flow.states.State.SETUP_REQUIRED or not ctx.selected_kis \
+            or flow.approval.check(project) != "OK":
+        return None
+    approval = flow.approval.read(project)
+    if list(approval.get("selected_kis") or []) != list(ctx.selected_kis):
+        return None
+    failed = []
+    for name in ctx.selected_kis:
+        ki = KI(name, Path(project) / "models" / name / "ki")
+        result = verification.status(project, ki)
+        if result["state"] in ("stale", "pending", "cancelled"):
+            return None
+        if result["state"] != "failed":
+            continue
+        doc = result["receipt"]
+        if not doc.get("attempt_id") or not doc.get("checks"):
+            return None
+        try:
+            target, home, exact = verification._target(project, ki)
+            _cfg, _man, identity = verification._identity(target, home, exact, None, doc)
+        except (OSError, ValueError, TypeError, RuntimeError):
+            return None
+        if any(doc.get(key) != value for key, value in identity.items()):
+            return None
+        failed.append({"model": name, "attempt_id": doc["attempt_id"],
+                       "receipt_sha256": verification._hash(doc)})
+    if not failed:
+        return None
+    return {"project": str(Path(project).resolve()), "selected_kis": list(ctx.selected_kis),
+            "approval_id": flow.approval.approval_id(approval), "failed_checks": failed}
+
+
+def _project_recovery_path(project: Path) -> Path:
+    path = Path(project).resolve() / ".geoforge" / "project-preflight-recovery.json"
+    if path.parent.resolve() != path.parent or path.resolve() != path:
+        raise ValueError("Project preflight recovery record is aliased")
+    return path
+
+
+def _read_project_recovery(flow, project: Path) -> dict | None:
+    try:
+        path = _project_recovery_path(project)
+        if path.stat().st_size > 65536:
+            return None
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict) or doc.get("policy") != "project-preflight-recovery-v1" \
+                or not flow.receipts.verify(project, doc):
+            return None
+        return doc
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _project_preflight_card(flow, project: Path, context: dict) -> dict:
+    from . import obs_access
+    # Validate both destinations before writing either member of the transaction.
+    record = _project_recovery_path(project)
+    request_path = Path(project).resolve() / setup_flow.REQUEST_FILE
+    if request_path.parent.resolve() != request_path.parent or request_path.resolve() != request_path:
+        raise ValueError("Project preflight recovery request is aliased")
+    request_id = PROJECT_PREFLIGHT_REQUEST_ID_PREFIX + uuid.uuid4().hex[:16]
+    signed = flow.receipts.sign(project, {"policy": "project-preflight-recovery-v1",
+                                         "request_id": request_id, "context": context})
+    obs_access._atomic_json(record, signed)
+    # Build the host-owned card in memory and replace atomically. The generic
+    # request writer opens the old file in place, which could follow a hardlink.
+    doc = {"id": request_id, "status": "waiting", "created_at": time.time(),
+        "kind": "choice", "title": "Project checks need attention",
+        "message": "The approved project's checks did not pass. Review and revise the plan to investigate "
+                   "missing data or setup requirements. The revised plan needs your approval before any "
+                   "download or execution. Retry reruns the project checks; if they pass, GeoForge continues "
+                   "the already approved plan.",
+        "allow_note": True,
+        "options": [
+            {"id": "revise", "label": "Review and revise plan",
+             "response": "Review the failed project checks and revise the plan."},
+            {"id": "retry", "label": "Retry project preflight",
+             "response": "Retry the approved project's preflight checks."},
+        ]}
+    obs_access._atomic_json(request_path, doc)
+    projectrun.report(project, {"status": "waiting_for_user", "summary": doc["title"],
+                               "blocker": doc}, source="flow")
+    return doc
+
+
+def _project_preflight_recovery(flow, ctx, project: Path, names: list[str],
+                               action: dict | None, pending: dict | None, note: str) -> Pre | None:
+    selected = list(ctx.selected_kis or names)
+    current = setup_flow.request(project, archive_obsolete=False)
+    current_id = str((current or {}).get("id", ""))
+    action_id = str((action or {}).get("request_id", ""))
+    is_card = current_id.startswith(PROJECT_PREFLIGHT_REQUEST_ID_PREFIX)
+    is_action = action_id.startswith(PROJECT_PREFLIGHT_REQUEST_ID_PREFIX)
+    refused = "That project-check choice is no longer current. Review the current project status before continuing."
+    if ctx.state is not flow.states.State.SETUP_REQUIRED:
+        return Pre(selected, message=refused) if is_card or is_action else None
+    context = _failed_project_preflight_context(flow, ctx, project)
+    if context is None:
+        return Pre(selected, message=refused) if is_card or is_action else None
+    # A license, data choice or other outstanding request must not be overwritten.
+    if current and current.get("status") == "waiting" and not is_card:
+        return Pre(selected, message="Resolve the current request before choosing how to recover the failed project checks.")
+    record = _read_project_recovery(flow, project)
+    valid = bool(is_card and current.get("status") == "waiting" and record
+                 and record.get("request_id") == current_id and record.get("context") == context)
+    if action is not None:
+        if not valid or not pending or pending.get("id") != current_id or action_id != current_id \
+                or action.get("option_id") not in ("revise", "retry"):
+            return Pre(selected, message=refused)
+        # Recheck before the consent transaction; never clear a stale request first.
+        if _reload(flow, ctx, project) is not flow.states.State.SETUP_REQUIRED \
+                or _failed_project_preflight_context(flow, ctx, project) != context:
+            return Pre(selected, message=refused)
+        if action["option_id"] == "revise":
+            reason = note.strip()[:4000] or "Review the failed project checks and revise the plan."
+            flow.approval.revoke(project, reason)  # revoke before granting planning writes
+            ctx.move("replan")
+            setup_flow.clear_request(project)
+            projectrun.set_stage(project, display_stage(flow, ctx.state), "Reviewing the failed project checks")
+            return Pre(selected, replan_reason=reason)
+        setup_flow.clear_request(project)
+        return Pre(selected)  # the existing host setup path must perform the real checks
+    if not valid:
+        _project_preflight_card(flow, project, context)
+    return Pre(selected, message="Project checks did not pass. Choose ‘Review and revise plan’ to investigate, "
+                                "or ‘Retry project preflight’ to run the checks again.")
 
 
 def _acquisition_card(project: Path, result: dict) -> dict:
@@ -1092,6 +1232,7 @@ class Result:
     message: str = ""
     retry_planning: bool = False
     revision: str = ""
+    execution_continuation: dict | None = None
 
 
 def claim_planning_repair(result: Result, rejected: set[str]) -> bool:
@@ -1186,14 +1327,14 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         # Every pinned GeoForge Database id becomes a verified fact on the item
         # (delivery, size, coverage) before the user sees the card.
         from . import obs_access
-        stamp_errors = obs_access.stamp_inventory(inv, project=project)
+        stamp_errors = obs_access.stamp_inventory(inv, project=project, plan=pj)
         if stamp_errors:
             return _planning_failure(project, t, stamp_errors, repair=True)
         # Fresh clip numbers on the card: re-estimate every attached clip now and
         # stamp again so the sizes the user reads are seconds old, not minutes.
         from . import obs_subset
         obs_subset.refresh_inventory(project, inv)
-        stamp_errors = obs_access.stamp_inventory(inv, project=project)
+        stamp_errors = obs_access.stamp_inventory(inv, project=project, plan=pj)
         if stamp_errors:
             return _planning_failure(project, t, stamp_errors, repair=True)
         # Catalogue stamping can normalize source ids. Review the final data
@@ -1227,6 +1368,11 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             fs.move("run_finished"); fs.move("validation_failed")
             projectrun.set_stage(project, display_stage(flow, fs.state),
                                  "A run failed validation — see runs/evidence.json")
+            if ev.get("plan_errors"):
+                return Result(message=(
+                    "**GeoForge verification:** the approved plan contains invalid steps: "
+                    + "; ".join(ev["plan_errors"][:5])
+                    + ". Revise the plan and submit it for review again; completion is not verified."))
         elif ev["receipts_verified"] and ev["validation"] == "passed":
             fs.move("run_finished")
             fs.move("validated", {"receipts_verified": True, "validation": "passed"})
@@ -1267,13 +1413,18 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             if stale or (unvouched and not missing):
                 why = []
                 if stale:
-                    why.append("these steps passed on input files that were rewritten afterwards; rerun them: "
+                    why.append("input or output evidence is incomplete or has changed; check the files "
+                               "and rerun these steps (earlier receipts are preserved): "
                                + ", ".join(stale))
                 if unvouched:
                     why.append("these files are not vouched for by a passing receipted run (left by a failed "
                                "attempt or written outside run-tool); regenerate or remove them: "
                                + ", ".join(f"`{f}`" for f in unvouched[:10]))
                 return Result(message="**GeoForge verification:** not complete yet — " + "; ".join(why) + ".")
+            from . import execution_continuation
+            ticket = execution_continuation.offer(t)
+            if ticket is not None:
+                return Result(execution_continuation=ticket)
             # The agent's prose is not evidence.  Say in the chat what the receipts say,
             # so a turn that describes work it never ran is contradicted right there.
             if t.started_at and (reply or "").strip() and _receipts_since(project, t.started_at) == 0:
@@ -1655,6 +1806,19 @@ def setup_turn(project: Path, resolved, cfg, provider_kind: str, provider_name: 
     pp = flow.policy.for_state(fs.state, provider, project, ki_roots)
     projectrun.set_stage(project, display_stage(flow, fs.state), "Setting up the scientific software")
     return Turn(fs, False, "", False, pp, f"flow:{fs.state.value}", None, {}, kind="setup")
+
+
+def project_setup_failed(project: Path, resolved, detail: str) -> None:
+    """Keep failed project checks out of scientific execution without auto-repair."""
+    flow = _flow()
+    fs = flowgate.FlowSession.open(project, {k.name: Path(k.root) for k in resolved})
+    if fs.state is flow.states.State.SETUP_RUNNING:
+        fs.move("setup_failed")
+    elif fs.state is flow.states.State.EXECUTING:
+        fs.move("drift")
+    projectrun.set_stage(project, display_stage(flow, fs.state), detail)
+    with _ACQ_INTENT_LOCK:
+        _project_preflight_recovery(flow, fs.ctx, project, list(fs.ctx.selected_kis), None, None, "")
 
 
 def setup_verified(project: Path, resolved, cfg) -> None:

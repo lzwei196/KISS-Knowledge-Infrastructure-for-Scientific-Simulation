@@ -11,10 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform
-import re
-import shutil
-import subprocess
 import time
 from pathlib import Path
 
@@ -207,10 +203,12 @@ def record(model: str, workspace: Path, cfg, *, ki_root: Path | None = None,
     value["installation_mode"] = selected_mode
     value["existing_path"] = selected_existing or None
     # A discovery-mode agent may identify the exact candidate it used after
-    # inspecting several indexed hits. Preserve that evidence across the
+    # inspecting several bounded hits. Preserve that evidence across the
     # deterministic verifier's final record rewrite.
     value["resolved_existing_path"] = previous.get("resolved_existing_path")
     value["discovery_candidates"] = previous.get("discovery_candidates") or []
+    value["discovery_report"] = previous.get("discovery_report")
+    value["discovered_at"] = previous.get("discovered_at")
     if verified is not None:
         value["verified"] = bool(verified)
         value["verified_at"] = now if verified else None
@@ -221,6 +219,22 @@ def record(model: str, workspace: Path, cfg, *, ki_root: Path | None = None,
     # history; all current readers use the workspace record above. Updating
     # verification timestamps must not look like a KI source edit.
     return value
+
+
+def invalidate_verification(workspace: Path) -> None:
+    """Revoke an existing receipt without claiming a replacement runtime."""
+    path = Path(workspace).expanduser().resolve() / RECORD_FILE
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    except ValueError:
+        value = {}
+    if not isinstance(value, dict):
+        value = {}
+    value.update(verified=False, verified_at=None, updated_at=time.time())
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
 
 
 def info(workroot: Path, model: str) -> dict:
@@ -253,113 +267,24 @@ def info(workroot: Path, model: str) -> dict:
                           "folder" if existing and existing.is_dir() else None),
         "discovery_candidates": (local_record.get("discovery_candidates") or [])[:24]
         if isinstance(local_record, dict) else [],
+        "discovery_report": local_record.get("discovery_report")
+        if isinstance(local_record, dict) else None,
     }
 
 
 def search_candidates(model: str, hints=(), *, limit: int = 24) -> list[str]:
-    """Find plausible existing installations without crawling personal data.
+    """Compatibility view of the bounded discovery worker's unverified hits.
 
-    This is candidate discovery, never verification.  The setup agent still
-    has to inspect a hit and make the KI's real preflight pass.  PATH and the
-    operating system's indexed search cover normal package managers and apps;
-    a user-selected path remains available for private or unindexed builds.
+    Standalone Setup consumes the full report directly so an incomplete search
+    is never presented as proof that the model is absent.
     """
-    raw_hints = [str(model), *[str(x) for x in hints if str(x).strip()]]
-    names: list[str] = []
-    for raw in raw_hints:
-        base = Path(raw).name.strip()
-        for value in (base, re.sub(r"[^A-Za-z0-9_.+-]", "", base),
-                      re.sub(r"[^A-Za-z0-9]", "", base)):
-            if len(value) >= 2 and value.casefold() not in {
-                    item.casefold() for item in names}:
-                names.append(value)
-
-    found: list[Path] = []
-
-    def add(value) -> None:
-        if len(found) >= limit:
-            return
-        try:
-            path = Path(value).expanduser().resolve(strict=False)
-        except (OSError, RuntimeError):
-            return
-        if not path.exists() or path == Path.home().resolve() or path == Path(path.anchor):
-            return
-        if any(path == prior for prior in found):
-            return
-        found.append(path)
-
-    # Exact executable names on PATH are the highest quality and cheapest hits.
-    for name in names:
-        hit = shutil.which(name)
-        if hit:
-            add(hit)
-
-    bin_roots = [Path("/opt/homebrew/bin"), Path("/usr/local/bin"), Path("/usr/bin")]
-    if platform.system() == "Windows":
-        for key in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
-            raw = os.environ.get(key)
-            if raw:
-                bin_roots.append(Path(raw))
-    for root in bin_roots:
-        if not root.is_dir():
-            continue
-        for name in names:
-            for spelling in (name, name.lower(), name.upper(), name + ".exe"):
-                add(root / spelling)
-
-    # Direct application/package matches cover standard GUI installations.
-    app_roots = [Path("/Applications"), Path.home() / "Applications"]
-    for root in app_roots:
-        if not root.is_dir():
-            continue
-        try:
-            children = list(root.iterdir())
-        except OSError:
-            continue
-        tokens = [re.sub(r"[^a-z0-9]", "", n.casefold()) for n in names]
-        for child in children:
-            compact = re.sub(r"[^a-z0-9]", "", child.name.casefold())
-            if any(token and token in compact for token in tokens):
-                add(child)
-
-    # Spotlight searches the index instead of recursively opening the user's
-    # disk.  Keep the result small and let the agent verify every candidate.
-    if platform.system() == "Darwin" and shutil.which("mdfind"):
-        for name in names[:6]:
-            query = f"kMDItemFSName == '*{name.replace(chr(39), '')}*'cd"
-            try:
-                result = subprocess.run(
-                    ["mdfind", query], capture_output=True, text=True,
-                    errors="replace", timeout=8,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                continue
-            for line in result.stdout.splitlines()[:80]:
-                if any(part in line for part in (
-                        "/.Trash/", "/Library/Caches/", "/node_modules/")):
-                    continue
-                add(line)
-                if len(found) >= limit:
-                    break
-            if len(found) >= limit:
-                break
-    elif platform.system() == "Windows":
-        for name in names[:6]:
-            try:
-                result = subprocess.run(
-                    ["where.exe", name], capture_output=True, text=True,
-                    errors="replace", timeout=5,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                continue
-            for line in result.stdout.splitlines():
-                add(line)
-
-    return [str(path) for path in found]
+    from . import install, setup_discovery
+    with install.scratch_directory("setup-discovery-", None) as temporary:
+        report = setup_discovery.discover(model, hints, root=Path(temporary), limit=limit)
+    return report["candidates"]
 
 
-def record_discovery(workspace: Path, candidates: list[str]) -> Path:
+def record_discovery(workspace: Path, candidates: list[str], *, report: dict | None = None) -> Path:
     """Save bounded discovery evidence for the setup agent and later audit."""
     workspace = Path(workspace).expanduser().resolve()
     path = workspace / RECORD_FILE
@@ -367,9 +292,13 @@ def record_discovery(workspace: Path, candidates: list[str]) -> Path:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         value = {}
-    value["discovery_candidates"] = [str(Path(item).expanduser().resolve(strict=False))
-                                     for item in candidates[:24]]
+    # The supervised worker already canonicalized these candidates. Resolving
+    # a network/junction path again here could block the host outside its budget.
+    value["discovery_candidates"] = ([str(item) for item in candidates[:24]] if report is not None
+        else [str(Path(item).expanduser().resolve(strict=False)) for item in candidates[:24]])
     value["discovered_at"] = time.time()
+    if report is not None:
+        value["discovery_report"] = report
     workspace.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")

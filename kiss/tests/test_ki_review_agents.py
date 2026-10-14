@@ -342,16 +342,81 @@ def author_report(status="completed"):
         "remaining_issues": []})
 
 
-def test_api_author_edits_only_draft_and_does_not_verify_or_adopt(draft, monkeypatch):
+def test_maintenance_author_uses_bounded_recipe_scope_without_new_authoring_prompt(draft, monkeypatch):
+    root, candidate, active, states = draft
+    monkeypatch.setattr(kdtstudio, "build_prompt", lambda _: pytest.fail("Maintenance must not demand new authoring evidence"))
+    def turn(_prov, _model, _system, messages, _tools, _key, **_kwargs):
+        prompt = messages[0]["content"]
+        assert "Maintenance KDT profile: preflight_reporting" in prompt
+        assert "Do not create gathered_papers.json" in prompt
+        assert "host has already applied a bounded deterministic recipe" in prompt
+        assert "whole current KDT structural and desktop" in prompt
+        return author_report(), [], {"role": "assistant", "content": author_report()}
+    monkeypatch.setattr(api, "_openai_turn", turn)
+    result = review.author_draft("fixture", provider="api:deepseek", repair_mode="maintenance",
+        maintenance_recipe="preflight_reporting", stop_event=threading.Event(), emit=lambda _: None,
+        managed_roots=[active])
+    assert result["status"] == "completed" and result["verified"] is False
+    ki_guard.require_intact(active)
+
+
+@pytest.mark.parametrize("recipe", ["package_contract", "wofost_parameter_routing"])
+def test_additional_maintenance_recipes_keep_their_exact_audit_scope(draft, monkeypatch, recipe):
+    _root, _candidate, active, _states = draft
+    def turn(_prov, _model, _system, messages, _tools, _key, **_kwargs):
+        prompt = messages[0]["content"]
+        assert f"Maintenance KDT profile: {recipe}" in prompt
+        if recipe == "wofost_parameter_routing":
+            assert "exact host-generated stage 6 WOFOST" in prompt
+            assert "existing absent-key defaults" in prompt
+            assert "real PCSE interface regression tests" in prompt
+            assert "Do not edit stage 5" in prompt
+        else:
+            assert "Do not change model code" in prompt
+        return author_report(), [], {"role": "assistant", "content": author_report()}
+    monkeypatch.setattr(api, "_openai_turn", turn)
+    result = review.author_draft("fixture", provider="api:deepseek", repair_mode="maintenance",
+        maintenance_recipe=recipe, stop_event=threading.Event(), emit=lambda _: None, managed_roots=[active])
+    assert result["status"] == "completed" and result["verified"] is False
+    ki_guard.require_intact(active)
+
+
+def test_routing_audit_rejects_download_only_without_provider(draft, monkeypatch):
+    monkeypatch.setattr(api, "_openai_turn", lambda *a, **kw: pytest.fail("must not start provider"))
+    result = review.author_draft("fixture", provider="api:deepseek", repair_mode="maintenance",
+        maintenance_recipe="wofost_parameter_routing", draft_only=True,
+        stop_event=threading.Event(), emit=lambda _: None)
+    assert result["status"] == "failed" and "selected project runtime" in result["error"]
+
+
+@pytest.mark.parametrize("scope,recipe", [("portable", "tool_inventory"), ("local", "arbitrary")])
+def test_maintenance_author_rejects_unbounded_scope_before_provider(draft, scope, recipe):
+    result = review.author_draft("fixture", provider="api:deepseek", repair_mode="maintenance",
+        maintenance_recipe=recipe, authoring_scope=scope, stop_event=threading.Event(), emit=lambda _: None)
+    assert result["status"] == "failed"
+    assert "supported project-local recipe" in result["error"]
+
+
+@pytest.mark.parametrize("scope", ["local", "portable"])
+def test_api_author_edits_only_draft_and_does_not_verify_or_adopt(draft, monkeypatch, scope):
     root, candidate, active, states = draft
     observed = []
     def turn(_prov, _model, system, messages, tools, _key, **_kwargs):
         observed.append(deepcopy(messages))
         assert {t["name"] for t in tools} == review._AUTHOR_READ_TOOLS | review._AUTHOR_WRITE_TOOLS
-        assert "preserve materialized project bindings" in system
+        binding = "portable KISSPATH" if scope == "portable" else "materialized project"
+        assert f"preserve {binding} bindings" in system
         if len(observed) == 1:
-            assert "not a new portable KI" in messages[0]["content"]
-            assert "Do not replace paths" in messages[0]["content"]
+            prompt = messages[0]["content"]
+            if scope == "portable":
+                assert "[PORTABLE KI REPAIR" in prompt
+                assert "preserving its KISSPATH role tokens" in prompt
+                assert "separately project the repaired source" in prompt
+                assert "portable_kis/ and kis/" in prompt
+                assert "not a new portable KI" not in prompt
+            else:
+                assert "not a new portable KI" in prompt
+                assert "Do not replace paths" in prompt
             assert "ONE cohesive minimal repair" in messages[0]["content"]
             return "", [
                 ("ok", "write_work_file", {"path": "candidate/tools/fix.py", "content": "# reviewed repair draft\n"}),
@@ -361,8 +426,9 @@ def test_api_author_edits_only_draft_and_does_not_verify_or_adopt(draft, monkeyp
         return author_report(), [], {"role": "assistant", "content": author_report()}
     monkeypatch.setattr(api, "_openai_turn", turn)
     result = review.author_draft("fixture", provider="api:deepseek", task_extra="Fix the reader only.",
-        stop_event=threading.Event(), emit=lambda _: None, managed_roots=[active])
+        stop_event=threading.Event(), emit=lambda _: None, managed_roots=[active], authoring_scope=scope)
     assert result["status"] == "completed" and result["draft_ready"]
+    assert result["authoring_scope"] == scope
     assert result["verified"] is False and result["native_execution_verified"] is False
     assert (candidate / "tools/fix.py").read_text() == "# reviewed repair draft\n"
     assert not (root / "evidence/fake.txt").exists()
@@ -372,14 +438,21 @@ def test_api_author_edits_only_draft_and_does_not_verify_or_adopt(draft, monkeyp
 
 
 @pytest.mark.parametrize("name", ["claude", "codex"])
-def test_cli_author_write_root_is_candidate_only_and_session_is_fresh(draft, monkeypatch, name):
+@pytest.mark.parametrize("scope", ["local", "portable"])
+def test_cli_author_write_root_is_candidate_only_and_session_is_fresh(draft, monkeypatch, name, scope):
     root, candidate, active, states = draft
     cli_help(monkeypatch)
     def fake_run(prov, prompt, cwd, **kwargs):
         assert cwd == candidate and not prov.resume_argv
         grants = kwargs["pol"].all_grants()
         assert [Path(g.path) for g in grants if g.kind == "write"] == [candidate]
-        assert "Preserve their resolved path" in prompt
+        if scope == "portable":
+            assert "[PORTABLE KI REPAIR" in prompt
+            assert "preserving its KISSPATH role tokens" in prompt
+            assert "separately project the repaired source" in prompt
+            assert "not a new portable KI" not in prompt
+        else:
+            assert "Preserve their resolved path" in prompt
         if name == "codex":
             assert kwargs["flow_policy"].planning_worktree
             assert kwargs["flow_policy"].argv_delta == ["--sandbox", "workspace-write"]
@@ -390,10 +463,25 @@ def test_cli_author_write_root_is_candidate_only_and_session_is_fresh(draft, mon
         yield author_report()
     monkeypatch.setattr(providers, "run", fake_run)
     result = review.author_draft("fixture", provider="cli:" + name, task_extra="Repair candidate only.",
-        stop_event=threading.Event(), emit=lambda _: None, managed_roots=[active])
+        stop_event=threading.Event(), emit=lambda _: None, managed_roots=[active], authoring_scope=scope)
     assert result["status"] == "completed" and not result["verified"]
+    assert result["authoring_scope"] == scope
+    assert not result["native_execution_verified"]
     assert states[-1] == "built"
     ki_guard.require_intact(active)
+
+
+def test_author_unknown_scope_fails_before_probe_or_provider(draft, monkeypatch):
+    _root, _candidate, active, states = draft
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Invalid host scope must not start a provider")
+    monkeypatch.setattr(api, "_openai_turn", forbidden)
+    monkeypatch.setattr(providers, "run", forbidden)
+    result = review.author_draft("fixture", provider="api:deepseek", authoring_scope="invented",
+        stop_event=threading.Event(), emit=lambda _: None, managed_roots=[active])
+    assert result["status"] == "failed"
+    assert "Unknown host repair authoring scope" in result["error"]
+    assert not states and not result["verified"] and not result["native_execution_verified"]
 
 
 def test_author_provider_error_retains_partial_draft_as_failed(draft, monkeypatch):

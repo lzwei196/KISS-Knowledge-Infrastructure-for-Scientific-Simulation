@@ -183,12 +183,12 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         return Response("waiting", message=blocked)
     try:
         if repinned:
-            errors = obs_access.stamp_inventory(inv, project=project)
+            errors = obs_access.stamp_inventory(inv, project=project, plan=pj)
         else:
             # Refresh before persisting same-click picks. If the request fails,
             # the original reviewed files/card stay valid and real answers remain.
             changed = obs_subset.refresh_inventory(project, inv)
-            stamp_errors = obs_access.stamp_inventory(inv, project=project) if changed else []
+            stamp_errors = obs_access.stamp_inventory(inv, project=project, plan=pj) if changed else []
             for error in stamp_errors:
                 changed.setdefault("inventory", []).append(error)
         # Remote estimates may take time: bind the files that remain after that
@@ -263,7 +263,7 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         return Response("waiting", message=f"The selected KI workspace is not ready for approval: {error}. "
                         "Refresh its project workspace and review again; no execution was approved.")
     if errors := flow.plan.validate(pj, inv, list(execution_roots), execution_roots,
-                                    for_execution=True, project=project):
+                                    for_review=True, for_execution=True, project=project):
         flow.plan.write_artifacts(project, pj, inv)
         setup_flow.clear_request(project)
         ctx.move("modify")
@@ -301,8 +301,7 @@ def input_groups(plan: dict, inv: dict, project: Path | None = None) -> dict:
     from . import obs_access
     flow = flowgate.load()
     items = [it for it in inv.get("items") or [] if isinstance(it, dict)]
-    produced = {str(o) for st in plan.get("steps") or [] if isinstance(st, dict)
-                for o in st.get("outputs") or []}
+    produced = flow.plan.generated_item_ids(plan)
     declared = ()
     for root in _ki_roots_for(plan, project).values():
         declared = declared + flow.declared.declared_inputs(str(root))
@@ -1002,8 +1001,9 @@ def issue(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
             why.append(f"{c.get('kind') or 'choice'} {c.get('id')}: defaults to "
                        f"{c.get('picked')} unless you pick another")
     why = list(extra_why or []) + list(why)
-    manual = [it for it in inv.get("items") or []
-              if isinstance(it, dict) and it.get("delivery") == "manual"]
+    from . import acquire
+    manual = [it for it in acquire.needed(pj, inv, project)
+              if it.get("delivery") == "manual"]
     if manual:
         why.append("manual download needed: " + ", ".join(
             f"{it.get('dataset_id') or it.get('id')}"
@@ -1011,7 +1011,7 @@ def issue(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
                if (it.get('catalogue') or {}).get('size') else "")
             for it in manual[:6]))
     ready = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots,
-                               for_execution=True, project=fs.project)
+                               for_review=True, for_execution=True, project=fs.project)
     card = _card(flow, fs, pj, inv, provider_note)
     if why:
         card["message"] += "\n\nWaiting on you\n  " + "\n  ".join(why[:8])

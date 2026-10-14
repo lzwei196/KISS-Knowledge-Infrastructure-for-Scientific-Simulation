@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import contextvars
+from contextlib import closing, ExitStack
 import hashlib
 import hmac
 import io
@@ -31,6 +33,7 @@ import shutil
 import sys
 import threading
 import time
+import tomllib
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
@@ -41,17 +44,297 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import acquire, api, calibration, clipboard, doctor, flowrun, handoff, harness_runtime, install, install_locations, kdtstudio, ki_guard, ki_updates, ki_verification, mcp, obs_access, observatory, paths, plan_review, policy, port, preparation, project_paths, project_status, projectrun, projectview, prompt, providers, recipe, runnable, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI, bundled_data_dir
 from .manifest import Manifest
-from . import software_verification, ki_investigation, ki_review_agents
+from . import software_verification, ki_investigation, ki_review_agents, setup_jobs, setup_discovery, runtime_data, artifact_archive
 
-def _installation_config_after_setup(cfg):
-    """Read the installer's saved environment before independent verification."""
-    root = Path(cfg.root).resolve()
-    if not (root / "kiss.toml").is_file():
-        raise FileNotFoundError(f"installation configuration missing: {root / 'kiss.toml'}")
-    current = paths.KissConfig.load(root)
-    if Path(current.root).resolve() != root:
+def _installation_config_after_setup(cfg, *, root: Path | None = None):
+    """Read one exact saved binding; never substitute a parent or stale config."""
+    root = Path(root if root is not None else cfg.root).expanduser().resolve()
+    if Path(cfg.root).expanduser().resolve() != root:
         raise ValueError("setup changed the installation workspace root")
+    config_path = root / paths.CONFIG_NAME
+    if not config_path.is_file():
+        raise FileNotFoundError(f"installation configuration missing: {config_path}")
+    text = config_path.read_text(encoding="utf-8")
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        # Preserve legacy Windows path compatibility without rewriting the
+        # installer's file or reading a second, potentially different binding.
+        raw = tomllib.loads(paths._repair_backslash_strings(text))
+    values = raw.get("kiss")
+    if not isinstance(values, dict):
+        raise ValueError("installation configuration requires a [kiss] table")
+    for name in ("root", "python"):
+        value = values.get(name)
+        if not isinstance(value, str) or not value.strip() or "\0" in value:
+            raise ValueError(f"installation configuration requires a nonempty kiss.{name} string")
+    if Path(values["root"]).expanduser().resolve() != root:
+        raise ValueError("setup changed the installation workspace root")
+    role_paths = raw.get("paths", {})
+    if not isinstance(role_paths, dict):
+        raise ValueError("installation configuration [paths] must be a table")
+    for name, value in role_paths.items():
+        if not isinstance(value, str) or not value.strip() or "\0" in value:
+            raise ValueError(f"installation configuration paths.{name} must be a nonempty string")
+    current = paths.KissConfig.default(root)
+    current.python = values["python"]
+    current.relocation = values.get("relocation", current.relocation)
+    if current.relocation not in ("none", "sandbox", "port", "symlink"):
+        raise ValueError("installation configuration has an unsupported relocation mode")
+    current.roles.update({name: Path(value).expanduser() for name, value in role_paths.items()})
     return current
+
+
+def _runtime_binding_check(cfg, expected: str, *, root: Path) -> install.Step:
+    """Do not certify settings saved while a different runtime was checked."""
+    try:
+        saved = _installation_config_after_setup(cfg, root=root)
+        unchanged = (software_verification.runtime_identity(cfg) == expected and
+                     software_verification.runtime_identity(saved) == expected)
+    except (OSError, ValueError, TypeError) as error:
+        return install.Step("runtime-config", False,
+                            f"Cannot verify saved installation configuration: {error}")
+    return install.Step("runtime-config", unchanged,
+                        "Saved runtime bindings match the completed check." if unchanged else
+                        "Runtime settings changed during verification. Recheck the saved configuration.")
+
+
+def _setup_projection_check(ki, live_ki, cfg, *, library_root=None) -> install.Step:
+    """Prove that the setup KI and helpers use the saved runtime's paths.
+
+    Re-running an old materialized preflight with a new launcher does not
+    update its embedded engine/data/helper paths. Signed projection lineage
+    must still match. Legacy copies can be compared with a fresh, disposable
+    projection, but this check never replaces, enrolls or adopts active files.
+    """
+    from . import helper_identity, ki_adaptations
+    try:
+        live = Path(live_ki.root).absolute()
+        expected = Path(cfg.root).resolve() / "ki"
+        if live != expected or live.resolve() != expected or live_ki.name != ki.name:
+            raise ValueError("Final setup verification requires this installation workspace's exact KI")
+        ki_guard.require_intact(live)
+        ki_guard.require_intact(ki.root)
+        lineage = ki_adaptations.projection(live, cfg)
+        if lineage is not None and lineage["upstream_digest"] != ki_verification.content_digest(ki.root):
+            raise ValueError("The active KI projection belongs to a different selected portable source")
+        if lineage is None:
+            if Path(ki.root).resolve() == live:
+                raise ValueError("This legacy KI has no portable source proving its saved runtime paths")
+            with install.scratch_directory(".setup-binding-", None) as temporary:
+                candidate = Path(temporary) / "ki"
+                report, _paths = ki_adaptations.project_runtime(
+                    ki.root, candidate, cfg, model=ki.name, target_root=live)
+                if (report.unresolved or report.corrupted or
+                        helper_identity.package_files(candidate) != helper_identity.package_files(live)):
+                    raise ValueError("The active legacy KI differs from its final saved runtime projection")
+        common = cfg.roles.get("ki_tools_common")
+        source = Path(library_root) / "ki_tools_common" if library_root is not None else None
+        # Admitted stdlib readers may have no helper package. If either side
+        # exists, however, the bound helper cannot be omitted from this proof.
+        if (common is not None and Path(common).exists()) or (source is not None and source.exists()):
+            if common is None or not Path(common).is_dir() or source is None or not source.is_dir():
+                raise ValueError("The saved shared helpers or their selected portable source are missing")
+            common = Path(common)
+            actual = helper_identity.package_files(common)
+            if not actual:
+                raise ValueError("The saved shared helper package is empty")
+            marker = common / helper_identity.MARKER
+            pinned = common.parent.name == "ktc" and re.fullmatch(r"[0-9a-f]{12}", common.name)
+            if marker.exists() or pinned:
+                binding, actual, legacy = helper_identity.checked_marker(common)
+                if not legacy:
+                    wanted = {"policy": setup_flow.COMMON_MATERIALISATION_POLICY,
+                              "source_files": helper_identity.package_files(source),
+                              "python": str(cfg.python), "relocation": cfg.relocation,
+                              "platform": sys.platform,
+                              "roles": {key: str(value) for key, value in cfg.roles.items()
+                                        if key != "ki_tools_common"}}
+                    if binding != wanted:
+                        raise ValueError("The saved shared helpers were projected for different source/runtime paths")
+            # Also prove legacy helpers and marker consistency against the
+            # selected source; a marker alone is not publisher provenance.
+            with install.scratch_directory(".setup-helpers-", None) as temporary:
+                candidate = Path(temporary) / "helpers"
+                report = port.materialise(source, candidate, cfg)
+                if (report.unresolved or report.corrupted or
+                        helper_identity.package_files(candidate) != actual):
+                    raise ValueError("The saved shared helpers differ from their final runtime projection")
+        return install.Step("runtime-projection", True,
+                            "Setup KI and shared helpers match the final saved runtime paths.")
+    except (OSError, ValueError, TypeError, RuntimeError) as error:
+        return install.Step("runtime-projection", False,
+            f"Cannot verify the saved runtime projection: {error}. "
+            "The active KI and helpers were preserved. Restore their previous saved runtime paths, "
+            "or select an unused Model installation workspace in Setup and use Existing installation "
+            "to bind the intended engine before running setup again. A fresh project's independently "
+            "projected KI can also be checked against the saved runtime; this installation is not verified.")
+
+
+def _place_selected_existing_install(ki, man, cfg, selected: str) -> dict:
+    """Connect one explicit selection; discovering a candidate grants no adoption."""
+    from pathlib import PureWindowsPath
+
+    install.check_cancelled()
+    selected_path = Path(selected).expanduser()
+    if not selected_path.is_absolute() or not selected_path.exists():
+        raise ValueError(f"Selected existing installation is missing or not absolute: {selected_path}")
+    report = {"schema_version": 1, "state": "not_placed", "model": ki.name,
+              "selected_path": str(selected_path), "notes": [], "checked_at": time.time(),
+              "verified": False}
+    product = getattr(getattr(man, "acquire", None), "produces", None)
+    if not product or getattr(man.acquire, "strategy", None) == "pip":
+        report["reason"] = "No native executable placement contract; the agent must inspect the selected path."
+        return report
+    relative = Path(product)
+    if (not relative.parts or relative.is_absolute() or relative.drive or
+            PureWindowsPath(product).drive or PureWindowsPath(product).root or ".." in relative.parts):
+        raise ValueError("The selected installation requires a bounded relative manifest product.")
+    variants = [relative]
+    if os.name == "nt" and relative.suffix.lower() != ".exe":
+        variants.insert(0, relative.with_name(relative.name + ".exe"))
+    if selected_path.is_dir():
+        candidates = [(selected_path / variant, variant) for variant in variants]
+    elif selected_path.is_file():
+        candidates = [(selected_path, variant) for variant in variants
+                      if tuple(os.path.normcase(p) for p in selected_path.parts[-len(variant.parts):]) ==
+                      tuple(os.path.normcase(p) for p in variant.parts)]
+    else:
+        candidates = []
+    matches = [(candidate, variant) for candidate, variant in candidates if candidate.is_file()]
+    if not matches:
+        report["reason"] = (f"Selected path does not match the exact declared product {product}; "
+                            "the agent must inspect this path without a broader search.")
+        return report
+    binary, native_relative = matches[0]
+    distribution = binary
+    for _ in native_relative.parts:
+        distribution = distribution.parent
+    distribution = distribution.resolve()
+    if not binary.resolve().is_relative_to(distribution):
+        raise ValueError("Selected executable escapes its declared distribution.")
+    workspace = Path(cfg.root).resolve()
+    if not Path(cfg.roles["binaries"]).resolve().is_relative_to(workspace):
+        raise ValueError("Existing software placement must stay inside this setup workspace.")
+    prefix = Path(cfg.roles["binaries"]) / (man.install_dir or ki.name)
+    # The compatibility helper preserves existing paths. Detect a conflicting
+    # declared checkout before it can silently leave the KI using other bytes.
+    expected = []
+    for declaration in runnable.declared(ki):
+        want = Path(port.unsubstitute(declaration, cfg)[0])
+        if not want.is_absolute():
+            continue
+        tails = [native_relative.parts]
+        if os.name == "nt" and native_relative.suffix.lower() == ".exe":
+            tails.append(native_relative.with_suffix("").parts)
+        if want.parts[-len(native_relative.parts):] not in tails:
+            continue
+        checkout = want
+        for _ in native_relative.parts:
+            checkout = checkout.parent
+        if not checkout.parent.resolve().is_relative_to(workspace):
+            raise ValueError(f"Declared installation path is outside the setup workspace: {checkout}")
+        if os.path.lexists(checkout):
+            if not any(target.exists() and os.path.samefile(checkout, target)
+                       for target in (distribution, prefix)):
+                raise ValueError(f"Existing installation conflict at the KI's declared path: {checkout}")
+        expected.append((checkout, native_relative))
+    managed, notes = install.place_agent_install(man, binary, cfg)
+    install.check_cancelled()
+    notes.extend(install.place_where_the_ki_expects(ki, managed, cfg, prefix))
+    for checkout, product_path in expected:
+        if not (checkout / product_path).is_file():
+            raise ValueError(f"Could not place the selected installation at {checkout / product_path}")
+    install.check_cancelled()
+    report.update(state="placed", source_binary=str(binary),
+                  managed_binary=str(managed), notes=notes)
+    return report
+
+
+def _project_check_allowed_by_shared_status(status: dict, *, shared_root: Path) -> bool:
+    """Allow exact project checks after KI staleness or data-only preparation.
+
+    A shared installation badge describes its own KI, not the enrolled KI and
+    saved configuration used by this project. These provenance-only failures,
+    or a completed data-only action awaiting verification, need the project's
+    real preflight, rather than executing or
+    rewriting the old shared KI. This grants no readiness: project integrity,
+    runtime bindings, manifest requirements and its exact receipt still apply.
+    Missing/failed software, active setup and unknown failures keep their
+    existing installation gate.
+    """
+    if status.get("can_run"):
+        return True
+    error = status.get("primary_error")
+    if not (isinstance(error, dict)
+            and error.get("name") in {"ki-edit", "ki-revision", "snapshot-changed", "verification-required",
+                                      "runtime-projection"}):
+        return False
+    # Those status reasons precede runtime-config checks. Do not let _config's
+    # legacy interpreter discovery substitute base Python for a missing saved
+    # launcher when preparing an independently checked project pair.
+    try:
+        saved = _installation_config_after_setup(
+            paths.KissConfig.default(shared_root), root=shared_root)
+        selected = Path(saved.python)
+        if not selected.is_absolute() or not selected.is_file():
+            return False
+        # Mirror runtime_python's frozen-launcher recognition without invoking
+        # interpreter discovery (which may run probes). Keep venv symlink
+        # spelling in the saved config; resolving here is comparison only.
+        if getattr(sys, "frozen", False):
+            candidate = selected.resolve()
+            if (candidate == Path(sys.executable).resolve() or
+                    (".app/Contents/MacOS/" in candidate.as_posix()
+                     and candidate.name.lower() in {"geoforge desktop", "kiss"})):
+                return False
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _existing_setup_binding(workroot: Path, model: str) -> dict:
+    """Pass the user-selected mode to every host installer entry point."""
+    entry = install_locations._read_index(workroot).get("models", {}).get(model.casefold()) or {}
+    if not isinstance(entry, dict) or entry.get("installation_mode") != "existing":
+        return {"installation_mode": "new", "existing_path": None}
+    return {"installation_mode": "existing", "existing_path": entry.get("existing_path") or None}
+
+
+def _start_runtime_verification(root: Path, model: str) -> None:
+    """Revoke old readiness before any new verification operation can fail."""
+    status_path = root / "status.json"
+    prior = ki_updates._read_json(status_path)
+    prior.update(model=model, ok=False, verified_at=None, verification_identity=None,
+                 runtime_identity=None, ki_content_digest=None,
+                 primary_error={"name": "verification-pending", "detail": "Software verification has not completed."})
+    status_path.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+
+
+def _setup_job_cleanup(root: Path, model: str, state: str) -> None:
+    """Commit unsuccessful setup without leaving a late verification PASS.
+
+    The job manager calls this while serializing finalization with Stop and
+    before releasing the installation lease. Logs and partial files survive.
+    """
+    if state == "completed":
+        return
+    status_path = root / "status.json"
+    prior = ki_updates._read_json(status_path)
+    error = prior.get("primary_error")
+    if state in {"cancelled", "interrupted"} or not error or prior.get("ok"):
+        error = {"name": "setup-" + state, "detail":
+                 f"Setup {state.replace('_', ' ')}; verification did not complete."}
+    prior.update(model=model, ok=False, verified_at=None, verification_identity=None,
+                 runtime_identity=None, ki_content_digest=None, installation_ready=False,
+                 primary_error=error)
+    status_path.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+    install_locations.invalidate_verification(root)
+    probe_path = root / "installation-test.json"
+    if probe_path.is_file():
+        probe = ki_updates._read_json(probe_path)
+        probe.update(usable=False, state=state, summary=error["detail"])
+        probe_path.write_text(json.dumps(probe, indent=2), encoding="utf-8")
 
 
 PAGE = (Path(__file__).parent / "web" / "app.html")
@@ -94,7 +377,7 @@ def _grant_setup_execution(pol: policy.Policy, cfg) -> None:
         pol.add("exec", command, "software setup build tool")
 
 
-def _with_heartbeats(stream, interval: float = 12.0):
+def _with_heartbeats(stream, interval: float = 12.0, *, on_close=None):
     """Yield ``None`` while a blocking provider stream is still alive.
 
     Agent CLIs legitimately spend minutes inside one build or regression-test
@@ -105,6 +388,7 @@ def _with_heartbeats(stream, interval: float = 12.0):
     model semantics.
     """
     events: queue.Queue[tuple[str, object]] = queue.Queue()
+    pump_done = threading.Event()
 
     def pump() -> None:
         try:
@@ -113,23 +397,43 @@ def _with_heartbeats(stream, interval: float = 12.0):
         except BaseException as error:
             events.put(("error", error))
         finally:
+            pump_done.set()
             events.put(("done", None))
 
-    threading.Thread(
-        target=pump, daemon=True, name="geoforge-agent-stream"
-    ).start()
-    while True:
-        try:
-            kind, payload = events.get(timeout=interval)
-        except queue.Empty:
-            yield None
-            continue
-        if kind == "piece":
-            yield payload
-        elif kind == "error":
-            raise payload
-        else:
-            return
+    context = contextvars.copy_context()
+    worker = threading.Thread(
+        target=lambda: context.run(pump), daemon=True, name="geoforge-agent-stream"
+    )
+    worker.start()
+    try:
+        while True:
+            try:
+                kind, payload = events.get(timeout=interval)
+            except queue.Empty:
+                yield None
+                continue
+            if kind == "piece":
+                yield payload
+            elif kind == "error":
+                raise payload
+            else:
+                return
+    finally:
+        if on_close is not None:
+            try:
+                if not pump_done.is_set():
+                    on_close()
+            finally:
+                # Consumer errors (including a full log disk) must not release
+                # setup ownership while the provider still runs in this thread.
+                # The HTTP control thread remains available to show Stopping.
+                worker.join()
+
+
+def _consume_setup_stream(stream, job, emit, heartbeat) -> None:
+    with closing(_with_heartbeats(stream, on_close=job.request_stop)) as pieces:
+        for piece in pieces:
+            heartbeat() if piece is None else emit(piece)
 
 
 def _installation_import_contract(ki, man) -> str:
@@ -232,12 +536,19 @@ def _investigation_view(job: dict | None) -> dict | None:
     repair = None
     if draft:
         repair = {"ki_name": draft.get("ki_name"), "kdt_job_id": draft.get("studio_job_id"),
+                  "authoring_scope": draft.get("authoring_scope", "local"),
+                  "repair_mode": draft.get("repair_mode", "authoring"),
+                  "maintenance_recipe": draft.get("maintenance_recipe"),
+                  "maintenance_projection": draft.get("maintenance_projection"),
+                  "draft_only": draft.get("repair_mode") == "maintenance" and not draft.get("project_local"),
                   "status": status, "verification_id": verification.get("id"),
                   "candidate_path": draft.get("path"), "author_report": job.get("author_report"),
                   "author_report_meta": job.get("author_report_meta"),
                   "retryable": job.get("retryable", True) and job.get("status") not in {
-                      "apply_failed", "applying", "recovery_required"},
-                  "can_verify": job.get("status") in {"draft", "verification_failed", "verified"} or (
+                      "apply_failed", "applying", "recovery_required"} and (
+                      job.get("status") != "failed" or job.get("can_recover_failed_draft") is True),
+                  "failure_phase": "verification" if job.get("status") == "verification_failed" else "",
+                  "can_verify": job.get("can_recover_failed_draft") is True or job.get("status") in {"draft", "verification_failed", "verified"} or (
                       job.get("status") == "interrupted" and job.get("retryable") is True and
                       job.get("interrupted_operation") == "verifying"),
                   "can_apply": bool(job.get("can_apply")),
@@ -507,6 +818,7 @@ def _stop_everything() -> None:
         live = [sid for sid, events in _LIVE_AGENT_RUNS.items() if not events.get("finished_at")]
     for sid in live:
         _stop_agent_run(sid)
+    setup_jobs.stop_all()
     execution.kill_live_processes()
     execution.wait_for_stops()
 
@@ -571,6 +883,13 @@ def _agent_run_snapshot(session_id: str) -> dict:
             project_state = projectrun.load(project)
         except OSError:
             project_state = {}
+        # Planning/acquisition are host Flow phases, not a stale agent-reported
+        # model substage. This is display-only; no permission or state change.
+        flow_state = flowrun.current_state(project)
+        if flow_state in {"PLANNING", "PLAN_REVIEW", "REPLAN_REQUIRED", "WAITING_FOR_USER", "ACQUIRING"}:
+            project_state["stage"] = projectrun.flow_display_stage(flow_state)
+        elif not flow_state:
+            project_state["stage"] = None  # Unreadable or unauthenticated Flow.
         try:
             file_evidence = _project_file_evidence(
                 project, float(started), events.get("_file_evidence"))
@@ -704,8 +1023,11 @@ one before asking for a plot, analysis, literature search, or document.
   `publish_project_view`; CLI agents write the same version-1 JSON contract to
   `{project}/artifacts/project-view.json` only after its referenced artifacts
   exist. Supported panel kinds are metric, image, animation, map, table, file,
-  and model3d. A metric needs `value`; every other kind needs a `path` below
-  `artifacts/`. Optional top-level fields are summary, layout (`grid` or
+  and model3d. A metric needs `value`; media need a `path` below `artifacts/`.
+  A `file` panel may directly link an existing `outputs/**/*.json` report at
+  its original path. Never substitute a chart for a report or copy report bytes
+  merely to publish a link. A file link or receipt binding does not establish
+  scientific validation. Optional top-level fields are summary, layout (`grid` or
   `single`), skills, and kis. Optional panel fields are id, caption, status,
   unit, and renderer. Do not write HTML or JavaScript: GeoForge owns rendering.
 - For time-varying hydrodynamics, prefer a real GIF, WebP, MP4, or WebM artifact
@@ -1021,6 +1343,14 @@ class Handler(BaseHTTPRequestHandler):
 
     protocol_version = "HTTP/1.1"
 
+    def handle_one_request(self) -> None:
+        # BaseHTTPRequestHandler reuses this instance for keep-alive requests.
+        # Cache a catalogue's setup lookups within one request, never across
+        # requests: another tab/connection may have saved a new install folder.
+        self._install_location_index = None
+        self._default_status_files = None
+        super().handle_one_request()
+
     def log_message(self, *a):  # keep the console clean
         pass
 
@@ -1330,9 +1660,15 @@ class Handler(BaseHTTPRequestHandler):
             self._resolved_workroot = base
         return base / ki.name.lower()
 
-    def _status_for(self, ki) -> dict:
+    def _status_for(self, ki, *, include_setup_job: bool = True) -> dict:
         """User-facing software state for one KI on this machine."""
         wd = self._workdir(ki)
+        job = setup_jobs.status(self.workroot, ki.name) if include_setup_job else None
+        if job and job.get("state") in {"running", "stopping"}:
+            return {"state": "setup", "label": "Setup " + job["state"],
+                    "can_run": False, "requires_reverification": True,
+                    "primary_error": {"name": "setup-active", "detail":
+                        "This setup attempt must finish before software can be used."}}
         status_files = getattr(self, "_default_status_files", None)
         if status_files is None:
             status_files = {}
@@ -1391,6 +1727,45 @@ class Handler(BaseHTTPRequestHandler):
                                 "The previous software check passed, but this installed KI "
                                 "has no current exact-revision verification. Run software "
                                 "verification again; the previous report remains in history."}}
+                if ok:
+                    runtime_error = None
+                    runtime_error_name = "runtime-config"
+                    try:
+                        saved_cfg = _installation_config_after_setup(
+                            paths.KissConfig.default(wd), root=wd)
+                        if st.get("runtime_identity") != software_verification.runtime_identity(saved_cfg):
+                            runtime_error = ("The interpreter or path settings changed, or the previous "
+                                             "check did not record them. Recheck this installation; "
+                                             "the previous report and files are retained.")
+                        else:
+                            # Older final checks could certify a changed config
+                            # after probing literals from the prior projection.
+                            # Read only its signed binding here: UI polling must
+                            # not reproject files or rerun adaptation/KDT checks.
+                            from . import ki_adaptations
+                            try:
+                                lineage = ki_adaptations._read(ki_adaptations._location(live))
+                                if lineage is not None and (
+                                        lineage.get("kind") != "projection" or
+                                        lineage.get("live_root") != str(live.absolute()) or
+                                        lineage.get("projected_digest") != st["ki_content_digest"] or
+                                        lineage.get("runtime_identity") != st["runtime_identity"]):
+                                    raise ValueError("The saved runtime differs from the KI's signed projection binding")
+                            except (OSError, ValueError, TypeError, RuntimeError) as error:
+                                runtime_error_name = "runtime-projection"
+                                runtime_error = (f"Cannot verify saved runtime projection: {error}. "
+                                    "Restore the previous runtime paths or prepare a fresh setup workspace/project; "
+                                    "the existing KI, helpers and previous report were preserved.")
+                    except (OSError, ValueError, TypeError) as error:
+                        runtime_error = f"Cannot verify saved installation configuration: {error}"
+                    if runtime_error:
+                        return {"state": "setup", "label": "Recheck runtime projection" if runtime_error_name == "runtime-projection" else "Recheck runtime settings", "can_run": False,
+                                "setup_kind": setup_kind, "requires_reverification": True,
+                                "checked_at": st.get("checked_at"), "verified_at": None,
+                                "previous_verification_passed": True,
+                                "software_version": st.get("software_version"),
+                                "steps": st.get("steps", []),
+                                "primary_error": {"name": runtime_error_name, "detail": runtime_error}}
                 library = getattr(self, "library_root", None)
                 if ok and library is not None and (Path(library) / ki_updates.SNAPSHOT_MANIFEST).is_file():
                     try:
@@ -1408,6 +1783,16 @@ class Handler(BaseHTTPRequestHandler):
                                 "installation against this library; the previous report and binaries are retained."},
                             "setup_kind": setup_kind, "requires_reverification": True,
                         }
+                if ok:
+                    data_check = runtime_data.check(self._manifest(ki), saved_cfg)
+                    if not data_check.ok:
+                        return {"state": "setup", "label": "Required runtime data needs attention",
+                                "can_run": False, "setup_kind": setup_kind,
+                                "requires_reverification": True,
+                                "checked_at": st.get("checked_at"), "verified_at": None,
+                                "previous_verification_passed": True,
+                                "steps": st.get("steps", []),
+                                "primary_error": {"name": "runtime-data", "detail": data_check.detail}}
                 if ki.name == "APEX" and _stale_apex1501_verification(st):
                     return {
                         "state": "setup",
@@ -1422,9 +1807,11 @@ class Handler(BaseHTTPRequestHandler):
                             "APEX0806 binary this KI actually runs."),
                         "setup_kind": setup_kind,
                     }
+                waiting_check = (not ok and isinstance(st.get("primary_error"), dict)
+                                 and st["primary_error"].get("name") == "verification-required")
                 return {
-                    "state": "verified" if ok else "failed",
-                    "label": "Verified on this machine" if ok else "Verification failed",
+                    "state": "verified" if ok else "setup" if waiting_check else "failed",
+                    "label": "Verified on this machine" if ok else "Verification required" if waiting_check else "Verification failed",
                     "can_run": ok,
                     "checked_at": st.get("checked_at"),
                     "verified_at": st.get("verified_at") if ok else None,
@@ -1495,15 +1882,31 @@ class Handler(BaseHTTPRequestHandler):
             deps.append({"name": name, **self._status_for(dep)})
         return build_data_plan(ki, man, self._config(ki), self._status_for(ki), deps)
 
-    def _setup_ok_for(self, s: dict) -> bool:
+    def _project_setup_ok(self, project: Path, names) -> bool:
+        """Read exact project evidence without preparing files or running checks."""
+        from . import project_verification
         try:
-            if ki_investigation.pending_preflight(sessions.project_path(self.workroot, s))["pending"]:
+            if ki_investigation.pending_preflight(project)["pending"]:
                 return False
-            return all(self._status_for(self._ki(n)).get("can_run") for n in (s.get("models") or []))
+            for name in names:
+                source = self._ki(name)
+                if not _project_check_allowed_by_shared_status(
+                        self._status_for(source), shared_root=self._workdir(source)):
+                    return False
+                working = type(source)(name=name, root=Path(project) / "models" / name / "ki")
+                if not project_verification.status(project, working).get("can_run"):
+                    return False
+            return True
         except (KeyError, ValueError, OSError):
             return False
 
+    def _setup_ok_for(self, s: dict) -> bool:
+        return Handler._project_setup_ok(
+            self, sessions.project_path(self.workroot, s), s.get("models") or [])
+
     def _session_data(self, s: dict) -> dict:
+        from . import project_verification
+
         project = sessions.project_path(self.workroot, s)
         # A project that is fetching its approved data advances on every panel poll,
         # so a server clip finishes without the user having to type anything.
@@ -1528,8 +1931,21 @@ class Handler(BaseHTTPRequestHandler):
                 ki = self._ki(name)
             except KeyError:
                 continue
+            # A retained project has its own adopted KI and saved role bindings.
+            # Reading its data panel must neither rematerialise it nor substitute
+            # an unrelated shared-library pass or requirement declaration.
+            home = project_paths._model_home(project, ki.name)
+            if (home / "ki").exists() or (home / paths.CONFIG_NAME).exists():
+                ki = KI(ki.name, home / "ki")
+                ki_guard.require_intact(ki.root, required=True)
+                cfg = project_verification._config(project, home, ki.name)
+                man = self._manifest(ki)
+                software = project_verification.status(project, ki, man)
+            else:
+                man = self._manifest(ki)
+                cfg = self._session_config(project, ki)
+                software = self._status_for(ki)
             kis.append(ki)
-            man = self._manifest(ki)
             deps = []
             for dep_name in man.depends_on:
                 try:
@@ -1538,13 +1954,12 @@ class Handler(BaseHTTPRequestHandler):
                 except KeyError:
                     deps.append({"name": dep_name, "state": "missing",
                                  "label": "KI not found", "can_run": False})
-            cfg = self._session_config(project, ki)
             role_paths[ki.name] = {
                 role: path for role, path in cfg.roles.items()
                 if role in {"data", "data_ki", "forcing", "obs", "static"}
             }
             plans.append(build_data_plan(
-                ki, man, cfg, self._status_for(ki), deps))
+                ki, man, cfg, software, deps))
         files = sessions.input_files(self.workroot, s)
         project_preparation = preparation.build(
             kis, plans, project, files, auto_ki=not bool(effective_models),
@@ -2142,6 +2557,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self._session_data(s))
             except KeyError as e:
                 return self._json({"error": str(e)}, 400)
+            except (ValueError, RuntimeError, OSError) as e:
+                return self._json({"error": str(e)}, 409)
+
+        if route.startswith("/api/session/") and route.endswith("/unreceipted-artifacts"):
+            return self._project_artifact_archive(route.split("/")[3])
+
+        if route.startswith("/api/session/") and "/archived-unreceipted/" in route:
+            parts = route.strip('/').split('/')
+            if len(parts) in {5, 6} and (len(parts) == 5 or parts[5] == 'audit'):
+                return self._download_archived_artifact(parts[2], parts[4], audit=len(parts) == 6)
+            return self._json({"error": "Invalid archived artifact route."}, 400)
 
         if route.startswith("/api/session/") and route.endswith("/agent-status"):
             sid = route.split("/")[3]
@@ -2160,8 +2586,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "no such session"}, 404)
             project = sessions.project_path(self.workroot, s)
             report = projectrun.load(project, selected_kis=s.get("models") or [])
-            return self._json(project_status.snapshot(
-                project, report=report, activity=_agent_run_snapshot(sid))["progress"])
+            status = project_status.snapshot(
+                project, report=report, activity=_agent_run_snapshot(sid))
+            return self._json({**status["progress"], "session": sid,
+                               "project_preflights": status["project_preflights"]})
 
         if route.startswith("/api/session/") and route.endswith("/calibration"):
             sid = route.split("/")[3]
@@ -2217,17 +2645,24 @@ class Handler(BaseHTTPRequestHandler):
 
         if route.startswith("/api/setup/"):
             try:
-                ki = self._ki(route.rsplit("/", 1)[-1])
+                # Status and Stop must remain available even if an agent's
+                # KI edit has made the package fail its integrity gate.
+                ki = self.catalog.get(unquote(route.rsplit("/", 1)[-1]))
             except KeyError as e:
                 return self._json({"error": str(e)}, 404)
             return self._json({
                 "name": ki.name,
                 "reference": (ki.meta or {}).get("reference"),
                 "version": (ki.meta or {}).get("version"),
-                "manifest_verified": self._manifest(ki).verified,
+                "manifest_verified": self._manifest_verified(ki),
+                "job": setup_jobs.status(self.workroot, ki.name),
+                "required_data": self._required_data_state(ki,
+                    session_id=(parse_qs(urlparse(self.path).query).get("session") or [None])[0]),
                 "install_location": install_locations.info(
                     self.workroot, ki.name),
                 **setup_flow.setup_state(self._workdir(ki), self._status_for(ki)),
+                **self._setup_project_preflight_state(ki,
+                    (parse_qs(urlparse(self.path).query).get("session") or [None])[0]),
             })
 
         if route == "/api/models":
@@ -2320,6 +2755,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": f"blocked unsafe local request: {reason}"}, 403)
         if route.startswith('/api/session/') and '/preparations/' in route and n > 60 * 1024:
             return self._json({'error': 'Preparation request is too large'}, 413)
+        if route.startswith('/api/session/') and route.endswith('/archive-unreceipted-artifact') and n > 8192:
+            return self._json({'error': 'Archive request is too large'}, 413)
         if route == "/api/import_ki":
             if n > 300 * 1024 * 1024:
                 return self._json({"error": "zip larger than 300 MB"}, 413)
@@ -2341,12 +2778,17 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             name = (query.get("model") or [""])[0]
             filename = (query.get("name") or ["download"])[0]
+            data = self.rfile.read(n)
             try:
                 ki = self._ki(name)
-                saved = setup_flow.save_upload(self._workdir(ki), filename,
-                                               self.rfile.read(n))
-                setup_flow.resume(self._workdir(ki),
-                                  f"Uploaded {saved.name} through the Setup page.")
+                root = self._workdir(ki)
+                with setup_jobs.idle_guard(self.workroot, ki.name, root):
+                    if install_locations.resolve(self.workroot, ki.name) != root:
+                        return self._json({"error": "Installation folder changed; reload before uploading."}, 409)
+                    saved = setup_flow.save_upload(root, filename, data)
+                    setup_flow.resume(root, f"Uploaded {saved.name} through the Setup page.")
+            except setup_jobs.BusyError as error:
+                return self._json({"error": str(error), "job": error.job}, 409)
             except (KeyError, ValueError, OSError) as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "path": str(saved)})
@@ -2557,6 +2999,9 @@ class Handler(BaseHTTPRequestHandler):
             calibration.ensure_project(sessions.project_path(self.workroot, s))
             return self._json(sessions.for_client(self.workroot, s))
 
+        if route.startswith("/api/session/") and route.endswith("/archive-unreceipted-artifact"):
+            return self._project_artifact_archive(route.split("/")[3], req=req, action=True)
+
         if route.startswith("/api/session/") and route.endswith("/acquire"):
             # An explicit, same-origin host command, separate from read-only
             # status. It advances approved downloads without invoking an agent.
@@ -2650,9 +3095,20 @@ class Handler(BaseHTTPRequestHandler):
                 if "models" in req:
                     projectrun.select_kis(
                         sessions.project_path(self.workroot, s), s.get("models") or [])
+                    # Selection also serves diagnosis of a broken KI. Never
+                    # enroll it or copy an unchecked calibration runner just
+                    # because its catalogue name was selected in the picker.
+                    intact_kis = []
+                    for name in s.get("models") or []:
+                        ki = self.catalog.get(name)
+                        try:
+                            ki_guard.require_intact(ki.root)
+                        except (ValueError, RuntimeError, OSError):
+                            continue
+                        intact_kis.append(ki)
                     calibration.ensure_project(
                         sessions.project_path(self.workroot, s),
-                        [self._ki(name) for name in s.get("models") or []],
+                        intact_kis,
                     )
             return self._json(sessions.for_client(self.workroot, s))
 
@@ -2660,7 +3116,7 @@ class Handler(BaseHTTPRequestHandler):
             parts = route.strip("/").split("/")
             if len(parts) == 5 and parts[4] == "start":
                 return self._project_investigation(parts[2], action="start", req=req)
-            if len(parts) == 6 and parts[5] in {"cancel", "draft", "build", "verify", "apply"}:
+            if len(parts) == 6 and parts[5] in {"cancel", "retry", "draft", "build", "verify", "apply"}:
                 return self._project_investigation(parts[2], action=parts[5], job_id=parts[4], req=req)
             return self._json({"error": "unknown investigation action"}, 404)
 
@@ -2673,33 +3129,66 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/setup-agent":
             return self._stream_agent_setup(req)
 
+        if route == "/api/setup-project-preflight":
+            return self._stream_setup_project_preflight(req)
+
+        if route == "/api/setup-project-preflight-stop":
+            return self._stop_setup_project_preflight(req)
+
+        if route == "/api/setup-required-data":
+            return self._stream_required_data(req)
+
+        if route == "/api/setup-stop":
+            if any(not isinstance(req.get(key), str) or not req[key].strip()
+                   for key in ("model", "job_id")):
+                return self._json({"error": "model and job_id are required"}, 400)
+            try:
+                # Do not require an intact KI merely to stop its setup.
+                job = setup_jobs.stop(self.workroot, str(req["model"]),
+                                      str(req["job_id"]))
+            except (KeyError, TypeError) as error:
+                return self._json({"error": str(error)}, 400)
+            except ValueError as error:
+                return self._json({"error": str(error), "job":
+                    setup_jobs.status(self.workroot, str(req.get("model", "")))}, 409)
+            return self._json({"ok": True, "job": job})
+
         if route == "/api/setup-location":
             try:
                 ki = self._ki(req["model"])
                 mode = str(req.get("installation_mode") or "new")
-                if mode == "existing":
-                    install_locations.select_mode(
-                        self.workroot, ki.name, mode,
-                        req.get("existing_path") or None)
-                    target = install_locations.resolve(self.workroot, ki.name)
-                    target.mkdir(parents=True, exist_ok=True)
-                else:
-                    target = install_locations.select(
-                        self.workroot, ki.name, req.get("path") or "")
-                    install_locations.select_mode(self.workroot, ki.name, "new")
-                cfg_file = target / paths.CONFIG_NAME
-                if not cfg_file.exists():
-                    cfg = paths.KissConfig.default(target)
-                    cfg.python = install.runtime_python(cfg.python)
-                    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-                else:
-                    cfg = paths.KissConfig.load(target)
-                binding = install_locations.info(self.workroot, ki.name)
-                install_locations.record(
-                    ki.name, target, cfg,
-                    installation_mode=binding["installation_mode"],
-                    existing_path=binding.get("existing_path"),
-                )
+                guard_root = (install_locations.resolve(self.workroot, ki.name)
+                              if mode == "existing" else
+                              install_locations._validate_target(req.get("path") or ""))
+                with setup_jobs.idle_guard(self.workroot, ki.name, guard_root):
+                    if (mode == "existing" and
+                            install_locations.resolve(self.workroot, ki.name) != guard_root):
+                        return self._json({"error": "Installation folder changed; reload before saving."}, 409)
+                    if mode == "existing":
+                        install_locations.select_mode(
+                            self.workroot, ki.name, mode,
+                            req.get("existing_path") or None)
+                        target = install_locations.resolve(self.workroot, ki.name)
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target = install_locations.select(
+                            self.workroot, ki.name, req.get("path") or "")
+                        install_locations.select_mode(self.workroot, ki.name, "new")
+                    cfg_file = target / paths.CONFIG_NAME
+                    if not cfg_file.exists():
+                        cfg = paths.KissConfig.default(target)
+                        cfg.python = install.runtime_python(cfg.python)
+                        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+                    else:
+                        cfg = paths.KissConfig.load(target)
+                    binding = install_locations.info(self.workroot, ki.name)
+                    install_locations.record(
+                        ki.name, target, cfg,
+                        installation_mode=binding["installation_mode"],
+                        existing_path=binding.get("existing_path"),
+                    )
+            except setup_jobs.BusyError as error:
+                return self._json({"error": str(error), "job": error.job}, 409)
             except KeyError as error:
                 return self._json({"error": str(error)}, 404)
             except (ValueError, OSError) as error:
@@ -2720,23 +3209,28 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 ki = self._ki(req["model"])
                 setup_root = self._workdir(ki)
-                current = setup_flow.request(setup_root)
-                if (current and current.get("kind") == "permission" and
-                        current.get("expected_path") and
-                        any(str(option.get("id", "")).startswith("allow-kimi-read")
-                            for option in current.get("options") or [])):
-                    saved_posture, approved = policy.Policy.load_approved(setup_root)
-                    setup_policy = policy.Policy(
-                        model=ki.name,
-                        posture=saved_posture or policy.Posture.WORKSPACE_WRITE,
-                        approved=approved,
-                    )
-                    setup_policy.approve(
-                        "read", current["expected_path"],
-                        "approved by the user for Kimi model setup",
-                    )
-                    setup_policy.save(setup_root)
-                doc = setup_flow.resume(setup_root, req.get("note") or "")
+                with setup_jobs.idle_guard(self.workroot, ki.name, setup_root):
+                    if install_locations.resolve(self.workroot, ki.name) != setup_root:
+                        return self._json({"error": "Installation folder changed; reload before resuming."}, 409)
+                    current = setup_flow.request(setup_root)
+                    if (current and current.get("kind") == "permission" and
+                            current.get("expected_path") and
+                            any(str(option.get("id", "")).startswith("allow-kimi-read")
+                                for option in current.get("options") or [])):
+                        saved_posture, approved = policy.Policy.load_approved(setup_root)
+                        setup_policy = policy.Policy(
+                            model=ki.name,
+                            posture=saved_posture or policy.Posture.WORKSPACE_WRITE,
+                            approved=approved,
+                        )
+                        setup_policy.approve(
+                            "read", current["expected_path"],
+                            "approved by the user for Kimi model setup",
+                        )
+                        setup_policy.save(setup_root)
+                    doc = setup_flow.resume(setup_root, req.get("note") or "")
+            except setup_jobs.BusyError as error:
+                return self._json({"error": str(error), "job": error.job}, 409)
             except (KeyError, TypeError) as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": bool(doc), "request": doc})
@@ -2788,8 +3282,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _session_config(self, project: Path, ki) -> paths.KissConfig:
         """Join a shared software install to one chat's scenario directories."""
+        from dataclasses import replace
         project = Path(project).resolve()
         shared = self._config(ki)
+        shared = replace(shared, roles=dict(shared.roles))
         # Migrate workspaces created by older desktop builds where the model
         # binary could be verified while GeoForge's own shared Python library
         # was never copied into place.
@@ -2801,6 +3297,15 @@ class Handler(BaseHTTPRequestHandler):
             saved = paths.KissConfig.load(saved_path.parent)
             candidate = saved.roles.get("ki_tools_common")
             if candidate is not None and Path(candidate).is_dir():
+                from . import helper_identity
+                # A retained project can keep an older immutable helper
+                # revision, but its recorded bytes must still be intact.
+                # Do not compare it with the latest library or silently
+                # recreate a damaged revision during continuation.
+                if ((Path(candidate) / helper_identity.MARKER).exists()
+                        or (Path(candidate).parent.name == "ktc"
+                            and re.fullmatch(r"[0-9a-f]{12}", Path(candidate).name))):
+                    helper_identity.checked_marker(Path(candidate))
                 bound_common = candidate
             elif (candidate is not None and Path(candidate).parent.name == "ktc"
                   and re.fullmatch(r"[0-9a-f]{12}", Path(candidate).name)):
@@ -2811,9 +3316,25 @@ class Handler(BaseHTTPRequestHandler):
             # Existing studies retain their helper binding; a library update
             # must not rewrite their pinned helper files during continuation.
             shared.roles["ki_tools_common"] = bound_common
-        elif getattr(self, "repo_root", None) is not None:
-            setup_flow.prepare_common(shared, self._helper_repo_root())
         cfg = project_paths.model_config(project, ki.name, shared)
+        if bound_common is None and getattr(self, "repo_root", None) is not None:
+            # A fresh study owns a fresh projected KI/helper pair. Setup may
+            # have selected another interpreter after its original helpers
+            # were materialized. Rebinding that active setup copy would
+            # overwrite another workspace's provenance; project the selected
+            # source against this project's final runtime/scenario bindings
+            # instead. A separate helper home keeps different KIs apart while
+            # retaining cfg.root's project execution semantics.
+            helper_home = saved_path.parent
+            for destination in (helper_home / "ktc", helper_home / "ki_tools_common"):
+                if destination.resolve() != destination:
+                    raise ValueError("Fresh project helper destination is aliased; "
+                                     "restore its project-owned directory before continuing: "
+                                     + str(destination))
+            helper_cfg = replace(cfg, root=helper_home, roles={**cfg.roles,
+                "ki_tools_common": helper_home / "ki_tools_common"})
+            cfg.roles["ki_tools_common"] = setup_flow.prepare_common(
+                helper_cfg, self._helper_repo_root())
         for role in ("data", "forcing", "obs", "static", "outputs",
                      "forcing_rechunked"):
             cfg.roles[role].mkdir(parents=True, exist_ok=True)
@@ -2851,14 +3372,27 @@ class Handler(BaseHTTPRequestHandler):
             if saved.python != cfg.python or saved.roles != cfg.roles:
                 raise ValueError(f"Existing project path bindings changed; explicitly repair the retained KI/helper pair before continuing: {saved_path}")
         else:
-            # Bundled development libraries retain the legacy refresh behavior.
-            # Fresh snapshot projects receive the new KI and its matching helpers.
-            port.materialise(ki.root, live, cfg)
-            if not snapshot_library:
+            # Fresh projects bind the selected KI to their final runtime paths.
+            # Existing enrolled projects keep the saved pair above.
+            from . import ki_adaptations
+            complete_projection = snapshot_library or ki.name == "WOFOST"
+            if complete_projection:
+                projection = ki_adaptations.materialise(ki.root, live, cfg,
+                    model=ki.name, manifest=self._manifest(ki),
+                    library_root=Path(library) if library else None)
+            else:
+                projection, path_projection = ki_adaptations.project_runtime(ki.root, live, cfg,
+                    model=ki.name, target_root=live)
+                if path_projection is not None:
+                    raise ValueError("This path contract requires complete recorded projection")
+            if projection.unresolved or projection.corrupted:
+                raise ValueError("Project KI path projection failed; correct its bindings before continuing")
+            if not complete_projection:
                 shared_live = Path(self._config(ki).root) / "ki"
                 _copy_missing_assets(shared_live, live)
-            # A snapshot defines the complete KI, including intentionally absent
-            # tools and reference files. Old installed working copies must not
+            # A snapshot or recognized path contract defines the complete KI,
+            # including intentionally absent tools and reference files.
+            # Old installed working copies must not
             # add removed code or cases back. Runtime binaries remain accessible
             # through cfg's shared installation paths, outside the project KI.
             saved_path.write_text(cfg.dumps(), encoding="utf-8")
@@ -2894,18 +3428,414 @@ class Handler(BaseHTTPRequestHandler):
         return resolved
 
     # --- install -----------------------------------------------------------
-    def _stream_init(self, req) -> None:
+    def _with_setup_library(self, operation, *args):
+        """Keep one standalone attempt on its captured catalogue generation.
+
+        Activation replaces class attributes while the provider is running.
+        Instance bindings keep preparation, coupled-KI checks, manifests,
+        helpers and final verification on the same library. A handler serves
+        one request at a time; setup joins its worker before this scope ends.
+        """
+        catalogue = getattr(self, "catalog", None)
+        library = getattr(self, "library_root", getattr(self, "repo_root", None))
+        errors = dict(getattr(self, "catalogue_integrity_errors", {}))
+        if catalogue is not None and getattr(catalogue, "models_dir", None) is not None:
+            # Both Catalog.discover/custom-directory startup and activation
+            # derive the library from this catalogue's models directory. Read
+            # one catalogue reference, not separately changing class fields.
+            # Imported/data KIs still retain their own roots within that view.
+            captured_root = Path(catalogue.models_dir).parent
+            if (library is not None and Path(library) != captured_root or
+                    getattr(self, "catalog", None) is not catalogue or
+                    getattr(self, "library_root", getattr(self, "repo_root", None)) != library):
+                return self._json({"error": "KI library changed while setup was starting; start again."}, 409)
+            library = captured_root
+        bindings = {"library_root": library,
+                    "catalogue_integrity_errors": errors}
+        if catalogue is not None:
+            bindings["catalog"] = catalogue
+        absent = object()
+        previous = {key: vars(self).get(key, absent) for key in bindings}
+        try:
+            for key, value in bindings.items():
+                setattr(self, key, value)
+            return operation(*args)
+        finally:
+            for key, value in previous.items():
+                if value is absent:
+                    vars(self).pop(key, None)
+                else:
+                    setattr(self, key, value)
+            # A keep-alive request after this scope must read the current
+            # installation map and status files alongside its current library.
+            self._install_location_index = None
+            self._default_status_files = None
+
+    def _setup_project_preflight_binding(self, ki, sid):
+        """Read an existing project pair; never prepare, repair or enroll it."""
+        from . import helper_identity, project_verification
+        if not isinstance(sid, str) or not sessions.valid_id(sid):
+            raise ValueError("Invalid project session.")
+        session = sessions.load(self.workroot, sid)
+        if not session:
+            raise ValueError("Project session does not exist.")
+        project = sessions.project_path(self.workroot, session).resolve()
+        selected = {*session.get("models", []), *(projectrun.load(project).get("selected_kis") or [])}
+        if ki.name not in selected:
+            raise ValueError("This KI is not selected in the project.")
+        root = self._workdir(ki)
+        if not _project_check_allowed_by_shared_status(self._status_for(ki), shared_root=root):
+            raise ValueError("The shared runtime needs installation or repair before this project check.")
+        shared = _installation_config_after_setup(paths.KissConfig.default(root), root=root)
+        selected_python = Path(shared.python)
+        if not selected_python.is_absolute() or not selected_python.is_file():
+            raise ValueError("The exact saved shared interpreter is missing; no runtime fallback is allowed.")
+        if getattr(sys, "frozen", False):
+            resolved_python = selected_python.resolve()
+            if (resolved_python == Path(sys.executable).resolve() or
+                    (".app/Contents/MacOS/" in resolved_python.as_posix() and
+                     resolved_python.name.lower() in {"geoforge desktop", "kiss"})):
+                raise ValueError("The saved runtime selects the desktop launcher instead of Python.")
+        home = project_paths._model_home(project, ki.name)
+        working = KI(ki.name, home / "ki")
+        ki_guard.require_intact(working.root)
+        cfg = project_verification._config(project, home, ki.name)
+        if cfg.python != shared.python or any(cfg.roles.get(role) != shared.roles.get(role)
+                for role in ("binaries", "python_env", "home")):
+            raise ValueError("Project and selected shared runtime bindings differ; repair the saved binding explicitly.")
+        common = cfg.roles.get("ki_tools_common")
+        if common is None or not Path(common).is_dir():
+            raise ValueError("The saved project shared helpers are missing.")
+        common = Path(common)
+        if ((common / helper_identity.MARKER).exists() or
+                (common.parent.name == "ktc" and re.fullmatch(r"[0-9a-f]{12}", common.name))):
+            binding, _files, legacy = helper_identity.checked_marker(common)
+            if not legacy and (binding.get("python") != cfg.python or
+                    binding.get("relocation") != cfg.relocation or binding.get("roles") !=
+                    {key: str(value) for key, value in cfg.roles.items() if key != "ki_tools_common"}):
+                raise ValueError("Pinned project helpers belong to a different saved runtime binding.")
+        self._manifest(working)
+        identity = (str(project), str(root), ki_verification.content_digest(working.root),
+                    software_verification.runtime_identity(cfg),
+                    software_verification.runtime_identity(shared))
+        return project, working, cfg, identity
+
+    def _setup_project_preflight_state(self, ki, sid):
+        if sid is None:
+            return {}
+        from . import project_verification
+        result = {"state": "unverified", "can_run": False, "detail": "Project check required"}
+        available = False
+        try:
+            project, working, _cfg, _identity = self._setup_project_preflight_binding(ki, sid)
+            result = project_verification.status(project, working)
+            available = True
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+            result["detail"] = str(error)
+        with _LIVE_AGENT_RUNS_LOCK:
+            live = dict(_LIVE_AGENT_RUNS.get(sid) or {}) if isinstance(sid, str) else {}
+        ours = live.get("provider") == "project-preflight" and live.get("model") == ki.name
+        job = None
+        if ours:
+            job = {"id": live.get("_turn_id"), "provider": "project-preflight", "model": ki.name,
+                   "state": live.get("check_state", "running"), "detail": live.get("detail", ""),
+                   "started_at": live.get("started_at"), "can_stop": not live.get("finished_at")}
+        shared_job = setup_jobs.status(self.workroot, ki.name)
+        if shared_job and shared_job.get("state") in {"running", "stopping"}:
+            job = shared_job
+        receipt = result.get("receipt") or {}
+        detail = result["detail"]
+        return {"project_preflight": {"session": sid, "can_check": available, "detail": detail},
+                "job": job, "request": None, "attention": None, "agent_ready": False,
+                "software": {**result, "label": "Project preflight passed" if result["can_run"] else "Project preflight required",
+                    "steps": receipt.get("checks", []), "checked_at": receipt.get("checked_at")},
+                "log_tail": live.get("check_log", "") if ours else detail}
+
+    def _stop_setup_project_preflight(self, req):
+        if not isinstance(req, dict):
+            return self._json({"error": "Invalid project preflight Stop request."}, 400)
+        sid, model, turn = req.get("session"), req.get("model"), req.get("job_id")
+        with _LIVE_AGENT_RUNS_LOCK:
+            live = _LIVE_AGENT_RUNS.get(sid) if isinstance(sid, str) else None
+            if (not live or live.get("provider") != "project-preflight" or not turn or
+                    live.get("model") != model or live.get("_turn_id") != turn or live.get("finished_at")):
+                return self._json({"error": "This project preflight attempt is no longer active."}, 409)
+            live["_handle"].stopped.set()
+            live["check_state"] = "stopping"
+        return self._json({"ok": True, "stopped": True})
+
+    def _stream_setup_project_preflight(self, req):
+        if not isinstance(req, dict) or not isinstance(req.get("session"), str) or not sessions.valid_id(req["session"]):
+            return self._json({"error": "A valid project session is required."}, 400)
+        sid, token = req["session"], None
+        try:
+            token = _claim_project_operation(sid, "Project preflight")
+            if _agent_run_snapshot(sid).get("state") in {"running", "finishing"}:
+                raise ValueError("The project agent is active; wait or stop it first.")
+            return self._with_setup_library(self._stream_setup_project_preflight_pinned, req)
+        except (ValueError, setup_jobs.BusyError) as error:
+            return self._json({"error": str(error)}, 409)
+        finally:
+            if token is not None:
+                _release_project_operation(sid, token)
+
+    def _stream_setup_project_preflight_pinned(self, req):
+        from . import execution, project_verification
+        sid = req["session"]
         try:
             ki = self._ki(req["model"])
-        except KeyError as e:
-            return self._json({"error": str(e)}, 404)
-        self._open_stream()
+            project, working, cfg, identity = self._setup_project_preflight_binding(ki, sid)
+            if (project_status.snapshot(project)["progress"].get("acquisition") or {}).get("active"):
+                raise ValueError("Project acquisition is active; wait or stop it first.")
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+            return self._json({"error": str(error)}, 400)
+        # This lease excludes installers without revoking the shared status or
+        # creating a setup job that would block its own project verification.
+        with setup_jobs.idle_guard(self.workroot, ki.name, self._workdir(ki)):
+            if self._setup_project_preflight_binding(ki, sid)[3] != identity:
+                raise ValueError("The selected project/runtime binding changed; reload and retry.")
+            events = {"provider": "project-preflight", "model": ki.name, "project": str(project),
+                      "_handle": api.TurnHandle(), "_turn_id": execution.begin_turn(project),
+                      "check_state": "running", "check_log": ""}
+            _register_agent_run(sid, events)
+            opened = False
+            def emit(piece):
+                events["check_log"] = (events["check_log"] + piece)[-32000:]
+                events["last_visible_output_at"] = time.time()
+                return self._chunk(piece)
+            passed, detail = False, "Project preflight did not complete."
+            try:
+                self._open_stream()
+                opened = True
+                emit("Checking the exact saved project KI: " + str(working.root) + "\n")
+                passed = self._verify_project_preflight(project, [(working, cfg)], emit, events)
+                if self._setup_project_preflight_binding(ki, sid)[3] != identity:
+                    raise ValueError("The selected project/runtime binding changed during verification.")
+                detail = ("Project preflight passed. Return to the project to continue; no model was started."
+                          if passed else "Project preflight failed; scientific execution remains blocked.")
+            except Exception as error:
+                passed, detail = False, str(error)
+            finally:
+                # Stop and finalization share this lock. A late accepted Stop
+                # cannot leave a reusable pass from this attempt behind.
+                with _LIVE_AGENT_RUNS_LOCK:
+                    stopped = _user_stopped(events)
+                    if stopped or not passed:
+                        current = project_verification.status(project, working)
+                        receipt = current.get("receipt") or {}
+                        if current.get("can_run") and receipt.get("started_at", 0) >= events["started_at"]:
+                            project_verification._finish(project, working, {**receipt, "ok": False,
+                                "state": "cancelled" if stopped else "failed", "detail": detail})
+                            ki_investigation.record_preflight(project, working.name,
+                                receipt["ki_content_digest"], False)
+                    state = "cancelled" if stopped else "completed" if passed else "failed"
+                    if stopped:
+                        detail = "Project preflight stopped by the user."
+                    events.update(state="finished", check_state=state, detail=detail, finished_at=time.time())
+                if opened:
+                    emit(detail + "\n")
+                    self._end_stream()
+
+    def _required_data_binding(self, ki, *, session_id=None):
+        """Resolve one saved runtime and exact source; never project or adopt files."""
+        root = self._workdir(ki)
+        if not (root / "ki").is_dir() or not ki_guard.is_managed(root / "ki"):
+            raise ValueError("Set up this managed software installation first.")
+        cfg = _installation_config_after_setup(paths.KissConfig.default(root), root=root)
+        effective = ki
+        project_identity = None
+        if session_id is not None:
+            from . import project_verification
+            if not sessions.valid_id(session_id):
+                raise ValueError("Invalid project session.")
+            session = sessions.load(self.workroot, session_id)
+            if not session:
+                raise ValueError("Project session does not exist.")
+            project = sessions.project_path(self.workroot, session).resolve()
+            selected = {*session.get("models", []), *(projectrun.load(project).get("selected_kis") or [])}
+            if ki.name not in selected:
+                raise ValueError("This KI is not selected in the project.")
+            home = project_paths._model_home(project, ki.name)
+            effective = KI(ki.name, home / "ki")
+            ki_guard.require_intact(effective.root)
+            project_cfg = project_verification._config(project, home, ki.name)
+            if not effective.manifest:
+                raise ValueError("The project KI needs its own approved runtime-data manifest.")
+            record = ki_updates._read_json(root / install_locations.RECORD_FILE)
+            if record.get("model") != ki.name or record.get("workspace") != str(root):
+                raise ValueError("The selected shared installation has no matching managed record.")
+            if (project_cfg.python != cfg.python or
+                    project_cfg.roles.get("binaries") != cfg.roles.get("binaries")):
+                raise ValueError("The project and managed installation runtime bindings differ.")
+            project_identity = software_verification.runtime_identity(project_cfg)
+        ki_guard.require_intact(effective.root)
+        man = self._manifest(effective)
+        if not getattr(man, "runtime_data", None):
+            raise ValueError("This KI does not declare required runtime data.")
+        if man.model != ki.name:
+            raise ValueError("The runtime-data manifest belongs to another model.")
+        if session_id is not None:
+            role = man.runtime_data["target"]["role"]
+            if project_cfg.roles.get(role) != cfg.roles.get(role):
+                raise ValueError("The project runtime-data target differs from the managed installation.")
+        identity = (str(effective.root), ki_verification.content_digest(effective.root),
+                    software_verification.runtime_identity(cfg), project_identity)
+        return effective, man, cfg, identity
+
+    def _required_data_state(self, ki, *, session_id=None) -> dict:
+        """Read-only availability; preparation never grants software readiness."""
         try:
-            run_install(ki, self._manifest(ki), self._workdir(ki), self._chunk, self._helper_repo_root(),
-                        dependency_check=lambda name: self._status_for(self._ki(name)).get("can_run"))
-        except Exception as e:
-            self._chunk(f"\nkiss: {type(e).__name__}: {e}\n")
-        self._end_stream()
+            if session_id is None:
+                ki_guard.require_intact(ki.root)
+            if session_id is None and not getattr(self._manifest(ki), "runtime_data", None):
+                return {"declared": False, "can_prepare": False}
+            effective, man, cfg, _identity = self._required_data_binding(ki, session_id=session_id)
+            check = runtime_data.check(man, cfg)
+            return {"declared": True, "can_prepare": True, "present": check.ok,
+                    "detail": check.detail, "scope": "project" if session_id else "installation",
+                    "ki_root": str(effective.root)}
+        except Exception as error:
+            # Status and Stop remain available for invalid YAML or a dirty KI.
+            return {"declared": True, "can_prepare": False, "detail": str(error)}
+
+    def _stream_required_data(self, req) -> None:
+        if not isinstance(req, dict):
+            return self._json({"error": "Required data request must be an object."}, 400)
+        sid, token = req.get("session"), None
+        try:
+            if sid is not None:
+                if not isinstance(sid, str) or not sessions.valid_id(sid):
+                    return self._json({"error": "Invalid project session."}, 400)
+                token = _claim_project_operation(sid, "Required runtime data preparation")
+                if _agent_run_snapshot(sid).get("state") in {"running", "finishing"}:
+                    raise ValueError("The project agent is active; wait or stop it first.")
+                session = sessions.load(self.workroot, sid)
+                if not session:
+                    raise ValueError("Project session does not exist.")
+                project = sessions.project_path(self.workroot, session)
+                if (project_status.snapshot(project)["progress"].get("acquisition") or {}).get("active"):
+                    raise ValueError("Project acquisition is active; wait or stop it first.")
+            return self._with_setup_library(self._stream_required_data_pinned, req)
+        except ValueError as error:
+            return self._json({"error": str(error)}, 409)
+        finally:
+            if token is not None:
+                _release_project_operation(sid, token)
+
+    def _stream_required_data_pinned(self, req) -> None:
+        sid = req.get("session")
+        try:
+            # A guarded adopted project KI may be valid even when the current
+            # catalogue revision requires maintenance. Never substitute it.
+            ki = self.catalog.get(req["model"]) if sid else self._ki(req["model"])
+            root = self._workdir(ki)
+            effective, man, cfg, identity = self._required_data_binding(ki, session_id=sid)
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+            return self._json({"error": str(error)}, 400)
+        try:
+            job = setup_jobs.start(self.workroot, ki.name, root, "runtime-data")
+        except setup_jobs.BusyError as error:
+            return self._json({"error": str(error), "job": error.job}, 409)
+        state, detail = "failed", "Required runtime data preparation did not complete."
+        opened = False
+        try:
+            def require_current():
+                if install_locations.resolve(self.workroot, ki.name) != root:
+                    raise ValueError("Installation folder changed; reload before preparing data.")
+                _ki, current_man, _cfg, current_identity = self._required_data_binding(ki, session_id=sid)
+                if current_man != man or current_identity != identity:
+                    raise ValueError("The selected KI or saved runtime changed during data preparation.")
+            require_current()
+            with (root / setup_flow.LOG_FILE).open("a", encoding="utf-8") as log:
+                self._open_stream()
+                opened = True
+                def emit(piece):
+                    log.write(piece)
+                    log.flush()
+                    self._chunk(piece)
+                emit("Preparing declared runtime data from the selected KI: " + str(effective.root) + "\n")
+                with install.cancellation_context(root, stop=job.handle.stopped.is_set,
+                                                  turn_id=job.turn_id):
+                    job.update(phase="runtime-data", detail="Preparing declared runtime data; no model or preflight runs.")
+                    result = runtime_data.prepare(man, cfg, allow_acquire=True)
+                    job.check_cancelled()
+                    require_current()
+                    emit(result.detail.rstrip() + "\n")
+                    detail = ("Required runtime data prepared. Run software verification next; "
+                              "data preparation does not establish readiness." if result.ok else result.detail)
+                    status = ki_updates._read_json(root / "status.json")
+                    status.update(ok=False, verified_at=None, verification_identity=None,
+                                  runtime_identity=None, ki_content_digest=None,
+                                  primary_error={"name": "verification-required" if result.ok else "runtime-data",
+                                                 "detail": detail})
+                    steps = [step for step in status.get("steps", [])
+                             if isinstance(step, dict) and step.get("name") != "runtime-data"]
+                    steps.append({"name": "runtime-data", "ok": result.ok, "skipped": result.skipped,
+                                  "detail": result.detail[:4000], "commands": result.commands[:20],
+                                  "evidence": getattr(result, "evidence", {})})
+                    status["steps"] = steps
+                    ki_updates._atomic_json(root / "status.json", status)
+                    job.check_cancelled()
+                    state = "completed" if result.ok else "failed"
+                    emit(detail + "\n")
+        except install.InstallStopped:
+            state, detail = "cancelled", "Required runtime data preparation stopped by the user."
+        except Exception as error:
+            detail = f"{type(error).__name__}: {error}"
+            if opened:
+                self._chunk("\nRequired runtime data preparation failed: " + detail + "\n")
+        finally:
+            job.finish(state, detail, cleanup=lambda final: _setup_job_cleanup(root, ki.name, final))
+            if opened:
+                self._end_stream()
+
+    def _stream_init(self, req) -> None:
+        return self._with_setup_library(self._stream_init_pinned, req)
+
+    def _stream_init_pinned(self, req) -> None:
+        try:
+            ki = self._ki(req["model"])
+        except (KeyError, TypeError) as error:
+            return self._json({"error": str(error)}, 404)
+        root = self._workdir(ki)
+        try:
+            job = setup_jobs.start(self.workroot, ki.name, root, "builtin")
+        except setup_jobs.BusyError as error:
+            return self._json({"error": str(error), "job": error.job}, 409)
+        state, detail = "failed", "Built-in setup did not complete."
+        opened = False
+        try:
+            if install_locations.resolve(self.workroot, ki.name) != root:
+                raise ValueError("Installation folder changed before setup started; start again.")
+            with (root / setup_flow.LOG_FILE).open("a", encoding="utf-8") as log:
+                self._open_stream()
+                opened = True
+                def emit(piece):
+                    log.write(piece)
+                    log.flush()
+                    self._chunk(piece)
+                    return True
+                with install.cancellation_context(root, stop=job.handle.stopped.is_set,
+                                                  turn_id=job.turn_id), \
+                        runnable.cancellation_context(root, stop=job.handle.stopped.is_set,
+                                                      turn_id=job.turn_id):
+                    run_install(ki, self._manifest(ki), root, emit, self._helper_repo_root(),
+                                project=root, stop=job.handle.stopped.is_set, turn_id=job.turn_id,
+                                **_existing_setup_binding(self.workroot, ki.name),
+                                dependency_check=lambda name: self._status_for(self._ki(name)).get("can_run"))
+                    job.check_cancelled()
+                    if self._status_for(ki, include_setup_job=False).get("can_run"):
+                        state, detail = "completed", "Software verification passed."
+        except install.InstallStopped:
+            state, detail = "cancelled", "Stopped by the user."
+        except Exception as error:
+            detail = f"{type(error).__name__}: {error}"
+            if opened:
+                self._chunk(f"\nSetup failed: {detail}\n")
+        finally:
+            job.finish(state, detail, cleanup=lambda final: _setup_job_cleanup(root, ki.name, final))
+            if opened:
+                self._end_stream()
 
     def _validate_binding(self, req) -> str | None:
         """Reject unknown providers, models and LLM names at the door.
@@ -2927,9 +3857,15 @@ class Handler(BaseHTTPRequestHandler):
                     else list(api.PROVIDERS[pname].models))
             if pool and llm not in pool:
                 return f"{want} does not offer model {llm!r}; choose from {pool}"
+        if "models" in req and (not isinstance(req["models"], list) or
+                any(not isinstance(name, str) for name in req["models"])):
+            return "models must be a list of KI names"
         for m in req.get("models") or []:
             try:
-                self._ki(m)
+                # Name selection grants no execution or enrollment. In
+                # particular, users must be able to select a known broken KI
+                # in order to investigate its authenticated update source.
+                self.catalog.get(m)
             except KeyError:
                 return f"unknown KI {m!r}"
         if "skills" in req:
@@ -2954,8 +3890,35 @@ class Handler(BaseHTTPRequestHandler):
         """Turn the agent's final preflight into the one verification truth."""
         import time as _time
 
-        check = check or install.run_preflight(live_ki, cfg.python, cfg,
+        root = Path(root).expanduser().resolve()
+        _start_runtime_verification(root, ki.name)
+        config_valid = False
+        checked_runtime = None
+        try:
+            current = _installation_config_after_setup(cfg, root=root)
+        except (OSError, ValueError, TypeError) as error:
+            check = install.Step("runtime-config", False,
+                                 f"Cannot verify saved installation configuration: {error}")
+        else:
+            # An early preflight belongs to the binding that produced it.
+            # Keep venv launcher spelling: resolving its symlink can select
+            # the base interpreter and lose the environment it represents.
+            binding_changed = (current.python != cfg.python or
+                               current.roles != cfg.roles or
+                               current.relocation != cfg.relocation)
+            cfg = current
+            config_valid = True
+            checked_runtime = software_verification.runtime_identity(cfg)
+            projection_check = _setup_projection_check(
+                ki, live_ki, cfg, library_root=getattr(self, "library_root", None) or getattr(self, "repo_root", None))
+            if not projection_check.ok:
+                check = projection_check
+            elif check is None or binding_changed:
+                check = install.run_preflight(live_ki, cfg.python, cfg,
                                                project=project, stop=stop, turn_id=turn_id)
+        # Keep the execution evidence even if a later manifest/runtime check
+        # rejects overall readiness. Its scope is the preflight execution only.
+        preflight_evidence = dict(getattr(check, "evidence", {}) or {})
         if ki_guard.is_managed(live_ki.root):
             try:
                 ki_guard.require_intact(live_ki.root)
@@ -2963,11 +3926,11 @@ class Handler(BaseHTTPRequestHandler):
                 check = install.Step("preflight", False, str(error))
         verification_identity = None
         requirements = None
-        if self is not None and getattr(self, "library_root", None) is not None:
+        if self is not None:
             try:
                 man = self._manifest(ki)
-                verification_identity = software_verification.identity(ki, man, self.library_root)
-                if check.ok and verification_identity is not None:
+                verification_identity = software_verification.identity(ki, man, getattr(self, "library_root", None))
+                if check.ok:
                     requirements = software_verification.requirements(
                         man, cfg, dependency_check=lambda name: self._status_for(self._ki(name)).get("can_run"))
                     if not requirements.ok:
@@ -2980,6 +3943,15 @@ class Handler(BaseHTTPRequestHandler):
         if ((stop is not None and stop()) or
                 (project is not None and execution.stop_requested(project, turn_id=turn_id))):
             check = install.Step("preflight", False, "Stopped by the user; verification was interrupted.")
+        if check.ok:
+            binding_check = _runtime_binding_check(cfg, checked_runtime, root=root)
+            if not binding_check.ok:
+                check = binding_check
+            else:
+                projection_check = _setup_projection_check(
+                    ki, live_ki, cfg, library_root=getattr(self, "library_root", None) or getattr(self, "repo_root", None))
+                if not projection_check.ok:
+                    check = projection_check
         emit(f"\nGeoForge final check: {'PASS' if check.ok else 'FAIL'}\n")
         if check.detail:
             emit(check.detail.rstrip() + "\n")
@@ -3011,7 +3983,8 @@ class Handler(BaseHTTPRequestHandler):
             steps.append({"name": requirements.name, "ok": requirements.ok, "skipped": False,
                           "detail": requirements.detail[:4000], "commands": requirements.commands[:20]})
         steps.append({"name": "preflight", "ok": check.ok, "skipped": False,
-                      "detail": check.detail[:4000], "commands": check.commands[:20]})
+                      "detail": check.detail[:4000], "commands": check.commands[:20],
+                      "evidence": preflight_evidence})
         now = _time.time()
         status.update({
             "model": ki.name,
@@ -3019,23 +3992,32 @@ class Handler(BaseHTTPRequestHandler):
             "checked_at": now,
             "verified_at": now if check.ok else None,
             "verification_identity": verification_identity if check.ok else None,
+            "runtime_identity": checked_runtime if check.ok else None,
             "software_version": (ki.meta or {}).get("version"),
             "primary_error": None if check.ok else {
-                "name": "preflight", "detail": check.detail[:4000]},
+                "name": getattr(check, "name", "preflight"), "detail": check.detail[:4000]},
             "steps": steps,
             "agent_setup": True,
+            "installation_only": False,
+            "installation_ready": None,
         })
         status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
-        install_locations.record(
-            ki.name, root, cfg,
-            ki_root=getattr(live_ki, "root", Path(root) / "ki"),
-            verified=check.ok)
+        if config_valid:
+            install_locations.record(
+                ki.name, root, cfg,
+                ki_root=getattr(live_ki, "root", root / "ki"),
+                verified=check.ok)
+        else:
+            install_locations.invalidate_verification(root)
         if check.ok:
             setup_flow.clear_request(root)
         return check.ok
 
     def _stream_agent_setup(self, req) -> None:
         """Run the same shell-capable KI agent loop used by the server."""
+        return self._with_setup_library(self._stream_agent_setup_pinned, req)
+
+    def _stream_agent_setup_pinned(self, req) -> None:
         try:
             ki = self._ki(req["model"])
         except (KeyError, TypeError) as e:
@@ -3062,7 +4044,33 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "setup is waiting for the user action shown on this page"},
                               409)
 
-        self._open_stream()
+        try:
+            job = setup_jobs.start(self.workroot, ki.name, root, want,
+                                   installation_only=installation_only)
+        except setup_jobs.BusyError as error:
+            return self._json({"error": str(error), "job": error.job}, 409)
+        state, detail = "failed", "Setup did not complete."
+        try:
+            # The destination may have been changed by another request between
+            # resolution and reservation. Never start against that stale path.
+            if install_locations.resolve(self.workroot, ki.name) != root:
+                raise ValueError("Installation folder changed before setup started; start again.")
+            with install.cancellation_context(root, stop=job.handle.stopped.is_set,
+                                              turn_id=job.turn_id), \
+                    runnable.cancellation_context(root, stop=job.handle.stopped.is_set,
+                                                  turn_id=job.turn_id):
+                state, detail = self._run_agent_setup(
+                    req, ki, root, want, llm, waiting, job)
+        except install.InstallStopped:
+            state, detail = "cancelled", "Stopped by the user. Partial files and logs were retained."
+        except Exception as error:
+            detail = f"Setup failed: {type(error).__name__}: {error}"
+        finally:
+            job.finish(state, detail, cleanup=lambda final: _setup_job_cleanup(root, ki.name, final))
+
+    def _run_agent_setup(self, req, ki, root, want, llm, waiting, job):
+        """Stream a reserved attempt; disconnection never releases its lease."""
+        installation_only = bool(req.get("installation_only"))
         log_path = root / setup_flow.LOG_FILE
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_file = log_path.open("a", encoding="utf-8")
@@ -3090,46 +4098,86 @@ class Handler(BaseHTTPRequestHandler):
                 client_connected = self._chunk("\u200b")
         resumed = waiting if waiting and waiting.get("status") == "ready" else None
         try:
+            self._open_stream()
+            job.check_cancelled()
             emit(f"Preparing the {ki.name} agent workspace…\n")
             binding = install_locations.info(self.workroot, ki.name)
             live_ki, cfg = setup_flow.prepare(
                 ki, self._manifest(ki), root, self._helper_repo_root(), self.catalog.models_dir)
+            # Only the user-owned location index is an explicit selection.
+            # info() may also return an agent-recorded discovery candidate.
+            selection = install_locations._read_index(self.workroot).get("models", {}).get(ki.name.casefold()) or {}
+            if (binding.get("installation_mode") == "existing" and
+                    isinstance(selection, dict) and selection.get("existing_path")):
+                job.update(phase="preparing", detail="Connecting the selected existing installation.")
+                placement = _place_selected_existing_install(
+                    live_ki, self._manifest(ki), cfg, str(selection["existing_path"]))
+                job.check_cancelled()
+                placement.update(job_id=job.id, turn_id=job.turn_id)
+                setup_jobs._write(root / ".geoforge" / "existing-placement.json", placement)
+                emit("Connected the selected existing installation; KI verification is still required.\n"
+                     if placement["state"] == "placed" else
+                     "Selected installation was not automatically placed: " + placement["reason"] + "\n")
+                for note in placement["notes"]:
+                    emit(f"  {note}\n")
             existing_paths: list[str] = []
+            discovery_report = None
             if binding.get("installation_mode") == "existing":
                 if binding.get("existing_path"):
                     existing_paths.append(str(binding["existing_path"]))
-                if req.get("discover_existing"):
+                if req.get("discover_existing") or not existing_paths:
                     man = self._manifest(ki)
-                    hints = [man.install_dir]
+                    hints = [man.install_dir] if man.install_dir else []
                     if man.acquire and man.acquire.produces:
                         hints.append(man.acquire.produces)
                     hints.extend(Path(item).name for item in runnable.declared(live_ki))
-                    emit("Searching indexed and standard installation locations…\n")
-                    discovered = install_locations.search_candidates(
-                        ki.name, hints, limit=24)
-                    for candidate in discovered:
-                        if candidate not in existing_paths:
-                            existing_paths.append(candidate)
-                    install_locations.record_discovery(root, existing_paths)
+                    job.update(phase="discovery", detail="Checking bounded installation locations.")
+                    emit("Checking PATH and standard installation locations within the discovery budget…\n")
+                    discovery_report = setup_discovery.discover(
+                        ki.name, hints, root=root, existing_paths=existing_paths,
+                        limit=24, timeout=8, stop=job.handle.stopped.is_set, turn_id=job.turn_id)
+                    job.check_cancelled()
+                    discovery_report.update(job_id=job.id, turn_id=job.turn_id)
+                    setup_jobs._write(root / ".geoforge" / "setup-discovery.json", discovery_report)
+                    existing_paths = list(discovery_report["candidates"])
+                    install_locations.record_discovery(root, existing_paths, report=discovery_report)
+                    if not discovery_report.get("complete"):
+                        emit("Discovery is incomplete: " + str(discovery_report.get("reason") or
+                             "a search limit was reached") + ".\n")
                     if existing_paths:
                         emit(f"Found {len(existing_paths)} candidate location(s); "
-                             "the agent will verify them against the KI.\n")
+                             "these are unverified paths. The agent will check them against the KI.\n")
                     else:
-                        emit("No likely installation was found automatically; "
-                             "the agent will ask for a path instead of reinstalling.\n")
+                        setup_flow.request_user(root, {
+                            "kind": "choice", "title": "Choose the existing installation path",
+                            "message": "No candidate was returned by this bounded search. This does not "
+                                "mean the software is absent. Choose the installation folder or executable "
+                                "in 'Use software already installed', save the path, then continue. "
+                                "To install a new copy instead, select that mode explicitly.",
+                            "resume_hint": "Use the selected path. Do not repeat a whole-drive search.",
+                        })
+                        emit("No candidate was returned within this search scope. "
+                             "Choose the existing installation path to continue.\n")
+                        return "waiting_for_user", "Choose an existing installation path; bounded discovery returned no candidate."
+                    job.update(phase="preparing", detail="Discovery candidates recorded; verification is still required.")
             if resumed:
                 setup_flow.clear_request(root)
+            job.check_cancelled()
             initial_check = (None if installation_only else
-                             install.run_preflight(live_ki, cfg.python, cfg))
+                             install.run_preflight(live_ki, cfg.python, cfg, project=root,
+                                                   stop=job.handle.stopped.is_set, turn_id=job.turn_id))
             if initial_check is not None and initial_check.ok:
                 # A previous pass may already have completed the install while
                 # the live browser stream was interrupted. Trust the KI's real
                 # deterministic check and do not spend another model turn
                 # rebuilding or second-guessing working scientific software.
                 if self._record_agent_preflight(
-                        ki, live_ki, cfg, root, emit, check=initial_check):
+                        ki, live_ki, cfg, root, emit, check=initial_check,
+                        project=root, stop=job.handle.stopped.is_set, turn_id=job.turn_id
+                        ) and self._status_for(ki, include_setup_job=False).get("can_run"):
                     emit(f"\n{ki.name} is already verified and ready to use.\n")
-                    return
+                    job.check_cancelled()
+                    return "completed", "Software verification passed."
                 initial_check = install.Step("preflight", False,
                     "The KI preflight passed, but current manifest requirements still need attention. "
                     "Read status.json for the exact missing requirements.")
@@ -3171,7 +4219,9 @@ verification are different states; never claim this test verified the KI."""
                 existing_paths=existing_paths,
                 installation_only=installation_only,
                 manifest_hint=manifest_hint,
+                discovery_report=discovery_report,
             )
+            job.check_cancelled()
             kind, _, pname = want.partition(":")
             if not pname:
                 kind, pname = "cli", kind
@@ -3183,12 +4233,17 @@ verification are different states; never claim this test verified the KI."""
                     output.append(piece)
                     return emit(piece)
 
+                job.check_cancelled()
                 run_install(
                     ki, self._manifest(ki), root, capture, self._helper_repo_root(),
                     provider_id=want if ":" in want else f"cli:{want}",
-                    installation_only=installation_only,
+                    installation_only=installation_only, project=root,
+                    stop=job.handle.stopped.is_set, turn_id=job.turn_id,
+                    installation_mode=binding.get("installation_mode") or "new",
+                    existing_path=selection.get("existing_path") if isinstance(selection, dict) else None,
                     dependency_check=lambda name: self._status_for(self._ki(name)).get("can_run"),
                 )
+                job.check_cancelled()
                 return "".join(output)
 
             if kind == "api":
@@ -3197,13 +4252,13 @@ verification are different states; never claim this test verified the KI."""
                     prov, live_ki, cfg, system, task, model=llm,
                     setup_mode=True, setup_context={
                         "run_builtin": run_builtin,
+                        "project_root": root, "_turn_id": job.turn_id,
                         "existing_roots": existing_paths,
                         "installation_only": installation_only,
                     },
-                    presentation="log",
+                    presentation="log", handle=job.handle,
                 )
-                for piece in _with_heartbeats(stream):
-                    heartbeat() if piece is None else emit(piece)
+                _consume_setup_stream(stream, job, emit, heartbeat)
             else:
                 prov = providers.PROVIDERS[pname]
                 pol = policy.Policy.derive(
@@ -3229,7 +4284,7 @@ verification are different states; never claim this test verified the KI."""
                     external_grants.append(str(grant_root))
                 full = system + "\n\n[TASK]\n" + task
                 extra = [str(live_ki.root), str(root), *external_grants]
-                runtime_events: dict = {}
+                runtime_events = job.events
                 run_kw = dict(extra_dirs=extra, cfg=cfg, ki_root=live_ki.root, pol=pol,
                               model=llm, runtime_events=runtime_events)
                 # Continue the CLI's own setup conversation after the user's action:
@@ -3239,25 +4294,32 @@ verification are different states; never claim this test verified the KI."""
                 state: dict = {}
                 resumed_ok = False
                 if resumed and stored and prov.can_resume():
-                    short = setup_flow.resume_message(resumed, root)
+                    short = setup_flow.resume_task(
+                        resumed, root,
+                        installation_mode=binding.get("installation_mode") or "new",
+                        existing_paths=existing_paths,
+                        installation_only=installation_only,
+                        discovery_report=discovery_report)
                     held: list[str] = []
-                    for piece in _with_heartbeats(providers.run(
-                            prov, short, root, resume=stored, session_out=state, **run_kw)):
-                        if piece is None:
-                            heartbeat(); continue
+                    def emit_resumed(piece):
                         if not state.get("produced"):
-                            held.append(piece); continue
+                            held.append(piece)
+                            return
                         for earlier in held:
                             emit(earlier)
                         held.clear()
                         emit(piece)
+                    _consume_setup_stream(providers.run(
+                        prov, short, root, resume=stored, session_out=state, **run_kw),
+                        job, emit_resumed, heartbeat)
                     resumed_ok = bool(state.get("produced"))
                     if not resumed_ok:
                         state = {}      # the CLI dropped that session: start over below
+                job.check_cancelled()
                 if not resumed_ok:
                     stream = providers.run(prov, full, root, session_out=state, **run_kw)
-                    for piece in _with_heartbeats(stream):
-                        heartbeat() if piece is None else emit(piece)
+                    _consume_setup_stream(stream, job, emit, heartbeat)
+                job.check_cancelled()
                 if state.get("session_id") and state.get("returncode") == 0:
                     setup_flow.remember_cli_session(root, prov.name, state["session_id"])
                 permission_event = runtime_events.get("permission")
@@ -3273,6 +4335,7 @@ verification are different states; never claim this test verified the KI."""
                         str(connection_event.get("service") or ""),
                     )
 
+            job.check_cancelled()
             if installation_only:
                 cfg = _installation_config_after_setup(cfg)
                 harvested = {}
@@ -3299,6 +4362,7 @@ verification are different states; never claim this test verified the KI."""
                     live_ki, man, cfg, timeout=25,
                     python=cfg.python, harvested=harvested,
                 )
+                job.check_cancelled()
                 # Providers commonly create a conventional project venv but
                 # omit the final bookkeeping edit.  The deterministic probe
                 # knows which interpreter actually imported the official
@@ -3334,9 +4398,13 @@ verification are different states; never claim this test verified the KI."""
                          "not run.\n")
                 else:
                     emit(f"\nInstallation probe failed: {verdict.summary()}\n")
-                return
+                return ("completed" if verdict.usable else "failed"), verdict.summary()
 
-            self._record_agent_preflight(ki, live_ki, cfg, root, emit)
+            job.check_cancelled()
+            verified = self._record_agent_preflight(
+                ki, live_ki, cfg, root, emit, project=root,
+                stop=job.handle.stopped.is_set, turn_id=job.turn_id)
+            job.check_cancelled()
             handoff_req = setup_flow.request(root)
             if not handoff_req:
                 # Machine-wide package changes are intentionally outside the
@@ -3344,15 +4412,22 @@ verification are different states; never claim this test verified the KI."""
                 # failure into the structured handoff the Setup page renders,
                 # even if the model stopped before making that tool call.
                 handoff_req = setup_flow.request_for_system_dependencies(
-                    root, self._status_for(ki))
+                    root, self._status_for(ki, include_setup_job=False))
             if handoff_req and handoff_req.get("status") == "waiting":
                 emit("\nPaused for the user. The required action is shown beside this log.\n")
-            elif self._status_for(ki).get("can_run"):
+                return "waiting_for_user", "The required user action is shown beside the log."
+            elif verified and self._status_for(ki, include_setup_job=False).get("can_run"):
                 emit(f"\n{ki.name} is verified and ready to use.\n")
+                return "completed", "Software verification passed."
             else:
                 emit("\nThe check still fails. Continue the agent for another repair pass.\n")
+                return "failed", "Software verification still fails; see the saved log."
+        except install.InstallStopped:
+            emit("\nSetup stopped by the user. Partial files and logs were retained.\n")
+            return "cancelled", "Stopped by the user."
         except Exception as e:
             emit(f"\nsetup agent failed: {type(e).__name__}: {e}\n")
+            return "failed", f"{type(e).__name__}: {e}"
         finally:
             log_file.close()
             self._end_stream()
@@ -3638,6 +4713,7 @@ verification are different states; never claim this test verified the KI."""
                     return emit(piece)
 
                 run_install(ki, Manifest.load(path), wd, candidate_emit, self._helper_repo_root(),
+                            **_existing_setup_binding(self.workroot, ki.name),
                             dependency_check=lambda name: self._status_for(self._ki(name)).get("can_run"))
                 try:
                     status = json.loads((wd / "status.json").read_text(encoding="utf-8"))
@@ -3674,6 +4750,7 @@ verification are different states; never claim this test verified the KI."""
         import tempfile
         import time
         import zipfile
+        from . import ki_copy, ki_tree
 
         query = parse_qs(urlparse(self.path).query)
         validate_only = (query.get("validate") or [""])[0] == "1"
@@ -3690,14 +4767,41 @@ verification are different states; never claim this test verified the KI."""
             expanded = sum(m.file_size for m in zf.infolist())
             if expanded > 1024 * 1024 * 1024:
                 return self._json({"error": "expanded KI is larger than 1 GB"}, 413)
-            for m in zf.infolist():
+            members = zf.infolist()
+            if len(members) > 20000:
+                return self._json({"error": "KI archive has too many entries"}, 413)
+            links, names = [], set()
+            for m in members:
                 # Reject traversal outright rather than sanitising it.
                 p = Path(m.filename)
-                if p.is_absolute() or ".." in p.parts:
+                if p.anchor or p.is_absolute() or ".." in p.parts:
                     return self._json({"error": f"unsafe path in zip: {m.filename}"}, 400)
+                key = os.path.normcase(p.as_posix().rstrip("/"))
+                if key in names:
+                    return self._json({"error": f"duplicate path in zip: {m.filename}"}, 400)
+                names.add(key)
                 if stat.S_ISLNK(m.external_attr >> 16):
-                    return self._json({"error": f"symbolic links are not accepted: {m.filename}"}, 400)
-            zf.extractall(tmp)
+                    if m.file_size > 4096:
+                        return self._json({"error": "KI alias target is too long"}, 400)
+                    links.append((p, m))
+            # Defer aliases until regular files exist, so extraction cannot
+            # write through a link. The final KI root must contain every target.
+            try:
+                for m in members:
+                    if not stat.S_ISLNK(m.external_attr >> 16):
+                        zf.extract(m, tmp)
+                for relative, m in links:
+                    spelling = Path(zf.read(m).decode("utf-8", errors="strict"))
+                    if spelling.anchor or spelling.is_absolute():
+                        raise ValueError("KI alias targets must be relative")
+                    target = tmp / relative
+                    resolved = (target.parent / spelling).resolve()
+                    if not resolved.is_relative_to(tmp.resolve()):
+                        raise ValueError("KI alias target escapes the archive")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.symlink_to(spelling, target_is_directory=resolved.is_dir())
+            except (OSError, ValueError, RuntimeError) as error:
+                return self._json({"error": str(error)}, 400)
 
             root = tmp
             entries = [e for e in root.iterdir() if not e.name.startswith("__MACOSX")]
@@ -3708,6 +4812,10 @@ verification are different states; never claim this test verified the KI."""
             if not (root / "SKILL.md").is_file():
                 return self._json({"error": "no SKILL.md at the package root — "
                                             "a KI must carry its protocol"}, 400)
+            try:
+                ki_tree.scan(root)
+            except (OSError, ValueError, RuntimeError) as error:
+                return self._json({"error": str(error)}, 400)
             if name in self.catalog.packages:
                 return self._json({"error": f"a KI named {name!r} already exists; "
                                             "rename the zip and re-import"}, 409)
@@ -3723,7 +4831,10 @@ verification are different states; never claim this test verified the KI."""
                 return self._json(report, 422)
             # This marker describes origin, never authority. Acceptance lives
             # in the host store and covers these final bytes, including it.
-            (root / ".geoforge-import.json").write_text(json.dumps({
+            origin_marker = root / ".geoforge-import.json"
+            if origin_marker.is_symlink():
+                origin_marker.unlink()
+            origin_marker.write_text(json.dumps({
                 "schema_version": 2, "package_origin": "imported",
             }, indent=2), encoding="utf-8")
             try:
@@ -3751,7 +4862,7 @@ verification are different states; never claim this test verified the KI."""
             # destination bytes before publishing the catalogue entry.
             with tempfile.TemporaryDirectory(prefix=".ki-import-", dir=dest.parent) as staging:
                 candidate = Path(staging) / "candidate"
-                shutil.copytree(root, candidate)
+                ki_copy.copytree(root, candidate)
                 try:
                     ki_verification.require_current(candidate, acceptance)
                     if dest.exists():
@@ -3786,6 +4897,87 @@ verification are different states; never claim this test verified the KI."""
                 roots[ki.name] = ki.root
         return roots
 
+    def _archive_project_binding(self, sid):
+        if not isinstance(sid, str) or not sessions.valid_id(sid):
+            raise ValueError('Invalid project session.')
+        # Unlike project_path/load, this does not migrate or create a project.
+        project = sessions._find_project(self.workroot, sid)
+        if project is None:
+            raise ValueError('An existing project session is required.')
+        artifact_archive._ordinary(project, directory=True)
+        session, _ = artifact_archive._read_json(project / 'session.json')
+        if not isinstance(session, dict) or session.get('id') != sid:
+            raise ValueError('The registered project session does not match.')
+        models = session.get('models')
+        if not isinstance(models, list) or not models or any(not isinstance(m, str) for m in models):
+            raise ValueError('The project needs its existing selected models.')
+        return project, models
+
+    def _project_artifact_archive(self, sid, *, req=None, action=False):
+        token = None
+        try:
+            project, models = self._archive_project_binding(sid)
+            token = _claim_project_operation(sid, 'Artifact archive inspection')
+            def check_idle():
+                if _agent_run_snapshot(sid).get('state') in {'running', 'finishing'}:
+                    raise ValueError('The project agent is active; wait or stop it first.')
+                if self._archive_project_binding(sid) != (project, models):
+                    raise ValueError('The selected project changed; refresh before archiving.')
+                if (project_status.snapshot(project)['progress'].get('acquisition') or {}).get('active'):
+                    raise ValueError('Project acquisition is active; wait or stop it first.')
+            check_idle()
+            with ExitStack() as stack:
+                stack.enter_context(acquire.INTENT_LOCK)
+                for name in sorted(set(models)):
+                    stack.enter_context(setup_jobs.idle_guard(self.workroot, name,
+                        install_locations.resolve(self.workroot, name)))
+                check_idle()
+                if not action:
+                    result = artifact_archive.preview(project, models)
+                else:
+                    fields = {'path', 'expected_sha256', 'expected_size', 'expected_context_sha256'}
+                    if not isinstance(req, dict) or set(req) != fields:
+                        raise ValueError('Archive needs only the exact current preview fields.')
+                    row = artifact_archive.archive(project, models, **req,
+                        session_id=sid, check_idle=check_idle)
+                    prefix = f'/api/session/{sid}/archived-unreceipted/{row["id"]}'
+                    row.update(download_url=prefix, audit_url=prefix + '/audit')
+                    result = {'ok': True, 'archive': row,
+                        'note': 'Archived for review; plan and receipts unchanged. Continue the project to reassess completion.'}
+                return self._json(result)
+        except (ValueError, OSError, RuntimeError, setup_jobs.BusyError) as error:
+            if not action:
+                return self._json({'items': [], 'archives': [], 'busy': True, 'reason': str(error)})
+            return self._json({'error': str(error)}, 409)
+        finally:
+            if token is not None:
+                _release_project_operation(sid, token)
+
+    def _download_archived_artifact(self, sid, ident, *, audit=False):
+        try:
+            project, _ = self._archive_project_binding(sid)
+            path, doc = artifact_archive.archived_file(project, ident, audit=audit)
+            # Read from a verified ordinary, bounded file. No generic .geoforge
+            # browsing or agent-produced path is exposed by this endpoint.
+            with artifact_archive._open_read(path) as stream:
+                body = stream.read(artifact_archive.MAX_BYTES + 1)
+            if len(body) > artifact_archive.MAX_BYTES:
+                raise ValueError('Archived file exceeds the download limit.')
+            if (not audit and hashlib.sha256(body).hexdigest() != doc['sha256']) or (
+                    audit and json.loads(body.decode('utf-8')) != doc):
+                raise ValueError('Archived bytes changed during download inspection.')
+            artifact_archive.archived_file(project, ident, audit=audit)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''" + quote(path.name))
+            self.send_header('Cache-Control', 'no-store')
+            self._set_browser_security_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except (ValueError, OSError, RuntimeError) as error:
+            return self._json({'error': str(error)}, 409)
+
     def _project_investigation(self, sid: str, *, action=None, job_id=None, req=None):
         if not sessions.valid_id(sid):
             return self._json({"error": "invalid session id"}, 400)
@@ -3803,9 +4995,11 @@ verification are different states; never claim this test verified the KI."""
                 with _PROJECT_OPERATIONS_LOCK:
                     running = _PROJECT_OPERATIONS.get(sid)
                 reason = (f"{running[1]} is running" if running else capability.get("reason", ""))
+                source_choices = [{key: row[key] for key in ("id", "name", "source_commit")}
+                    for row in ki_investigation.rejected_update_sources(session.get("models") or [])]
                 return self._json({"job": _investigation_view(job),
                     "available": bool(capability.get("supported") and not running), "reason": reason,
-                    "capability": capability, "busy": bool(running)})
+                    "capability": capability, "busy": bool(running), "rejected_sources": source_choices})
             if action == "cancel":
                 return self._json({"job": _investigation_view(ki_investigation.cancel(project, job_id))})
             token = _claim_project_operation(sid, "KI investigation")
@@ -3823,9 +5017,16 @@ verification are different states; never claim this test verified the KI."""
                 capability = ki_review_agents.capability(want)
                 if not capability.get("supported"):
                     raise ValueError(capability.get("reason") or "This connection has no read-only review profile")
-                roots = self._investigation_roots(session, project)
+                publication_sources = None
+                if req.get("source_id"):
+                    selected = ki_investigation.resolve_rejected_update_source(req["source_id"], session.get("models") or [])
+                    roots = {selected["name"]: Path(selected["root"])}
+                    publication_sources = {selected["name"]: selected["report"]}
+                else:
+                    roots = self._investigation_roots(session, project)
                 job = ki_investigation.create(project, session, roots, want, model,
-                                              str(req.get("issue") or "Investigate this project's current issue"))
+                    str(req.get("issue") or "Investigate this project's current issue"),
+                    publication_sources=publication_sources)
                 job_id = job["id"]
                 def work():
                     return ki_investigation.run_reviews(project, job_id,
@@ -3836,7 +5037,9 @@ verification are different states; never claim this test verified the KI."""
                 job = ki_investigation.get(project, job_id)
                 if action == "draft":
                     return self._json({"job": _investigation_view(ki_investigation.create_draft(
-                        project, job_id, str(req.get("ki_name") or "")))})
+                        project, job_id, str(req.get("ki_name") or ""),
+                        repair_mode=str(req.get("repair_mode") or "authoring"),
+                        maintenance_recipe=str(req.get("maintenance_recipe") or "")))})
                 if action == "apply":
                     job = ki_investigation.apply(project, job_id,
                         str(req.get("verification_id") or ""), quiescent=True)
@@ -3854,8 +5057,29 @@ verification are different states; never claim this test verified the KI."""
                     _release_project_operation(sid, token)
                     token = None
                     return self._json({"job": _investigation_view(job), "resume_message": resume})
-                if action == "build":
+                if action == "retry":
+                    if job.get("can_retry_review") is not True:
+                        raise ValueError(job.get("retry_review_reason") or "No incomplete review is eligible for retry")
+                    # Retry the recorded connection, never the chat's newer
+                    # selection or request-supplied provider/model.
+                    want, model = job["provider"], job.get("model", "")
+                    if error := self._validate_binding({"provider": want, "llm_model": model}):
+                        raise ValueError(error)
+                    capability = ki_review_agents.capability(want)
+                    if not capability.get("supported"):
+                        raise ValueError(capability.get("reason") or "This connection has no read-only review profile")
+                    roots = [Path(root) for root in job.get("ki_roots", {}).values()]
+                    def work():
+                        return ki_investigation.retry_incomplete_reviews(project, job_id,
+                            lambda role, context, digest, stop, emit: ki_review_agents.review(
+                                role, context, digest, provider=want, model=model,
+                                stop_event=stop, emit=emit, managed_roots=roots))
+                elif action == "build":
+                    author_notes = req.get("author_notes", "")
+                    if not isinstance(author_notes, str) or len(author_notes) > 12000 or "\0" in author_notes:
+                        raise ValueError("Repair instructions must be text of at most 12000 characters without NUL.")
                     previous_verification = job.get("verification")
+                    previous_error = job.get("error")
                     job = ki_investigation.mark_authoring(project, job_id)
                     def work():
                         extra = ("Repair this project-linked KI using the frozen investigation evidence and "
@@ -3865,9 +5089,21 @@ verification are different states; never claim this test verified the KI."""
                         if previous_verification:
                             extra += ("\n[PREVIOUS HOST KDT CHECK — address these actual failures first]\n" +
                                       json.dumps(previous_verification, ensure_ascii=False))
+                        if previous_error:
+                            extra += ("\n[PREVIOUS HOST REPAIR ERROR — still unresolved until checked]\n" +
+                                      str(previous_error))
+                        if author_notes.strip():
+                            extra += ("\n[USER REPAIR REFINEMENT — within the same reviewed scope]\n" +
+                                      author_notes + "\nThese instructions do not change the frozen reviews, "
+                                      "expand repair authority, or waive KDT and adoption requirements.")
                         outcome = ki_review_agents.author_draft(job["draft"]["studio_job_id"],
                             provider=job["provider"], model=job.get("model", ""), task_extra=extra,
+                            author_notes=author_notes,
                             stop_event=ki_investigation.stop_event(project, job_id), emit=lambda _: None,
+                            authoring_scope=job["draft"].get("authoring_scope", "local"),
+                            repair_mode=job["draft"].get("repair_mode", "authoring"),
+                            maintenance_recipe=job["draft"].get("maintenance_recipe", ""),
+                            draft_only=job["draft"].get("repair_mode") == "maintenance" and not job["draft"].get("project_local"),
                             managed_roots=[Path(p) for p in job.get("ki_roots", {}).values()])
                         return ki_investigation.mark_authored(project, job_id,
                             error=None if outcome.get("status") == "completed" else outcome.get("error", "Authoring interrupted"),
@@ -3889,7 +5125,8 @@ verification are different states; never claim this test verified the KI."""
                     _release_project_operation(sid, worker_token)
             threading.Thread(target=worker, name=f"ki-investigation-{job_id}", daemon=True).start()
             token = None
-            return self._json({"job": _investigation_view(job)}, 202)
+            return self._json({"job": _investigation_view(job), "busy": True,
+                               "available": False, "reason": "KI investigation is running"}, 202)
         except (ValueError, RuntimeError, OSError, KeyError) as error:
             return self._json({"error": str(error)}, 409)
         finally:
@@ -3967,8 +5204,9 @@ verification are different states; never claim this test verified the KI."""
             # must not mark it "ready" first.
             flow_pending = None
             if pending and str(pending.get("id", "")) in (flowrun.BLOCKED_REQUEST_ID, acquire.MANUAL_REQUEST_ID) \
-                    or pending and str(pending.get("id", "")).startswith(flowrun.APPROVAL_REQUEST_ID_PREFIX):
-                # flow-owned choice cards (plan approval, acquisition blocked) are consumed by
+                    or pending and str(pending.get("id", "")).startswith((flowrun.APPROVAL_REQUEST_ID_PREFIX,
+                                                                        flowrun.PROJECT_PREFLIGHT_REQUEST_ID_PREFIX)):
+                # Flow-owned approval, acquisition and failed-preflight cards are consumed by
                 # flowrun.pre(); the generic handler must not mark them answered first
                 flow_pending, pending = pending, None
             if pending and pending.get("status") == "waiting":
@@ -4053,12 +5291,7 @@ verification are different states; never claim this test verified the KI."""
         flow_pre = None
 
         def _setup_ok(kis_names) -> bool:
-            try:
-                if ki_investigation.pending_preflight(project)["pending"]:
-                    return False
-                return all(self._status_for(self._ki(n)).get("can_run") for n in kis_names)
-            except (KeyError, ValueError, OSError):
-                return False
+            return Handler._project_setup_ok(self, project, kis_names)
 
         # Registered before the flow runs: a Stop right after sending reaches this
         # turn, not the previous finished one.
@@ -4234,11 +5467,39 @@ verification are different states; never claim this test verified the KI."""
                             # Its verdict ("Completed." or "GeoForge verification: not
                             # complete yet — …") is the user's only explanation of
                             # where the run stands; dropping it left "Ready to continue".
+                            flow_turn = exec_turn
                             res = flowrun.after(project, exec_turn, "".join(buf),
                                                 provider_note=flowrun.describe_policy(exec_turn),
                                                 setup_ok=_setup_ok(names))
                             if res.message:
                                 out("\n\n" + res.message)
+                    if (res.execution_continuation and failure is None
+                            and not _user_stopped(runtime_events) and flow_turn is not None):
+                        # Exactly one provider re-entry in this user turn. The
+                        # common signed scope blocks repeats of passed steps.
+                        from . import execution_continuation
+                        ticket = res.execution_continuation
+                        continuation_task = agent_text + '\n\n' + execution_continuation.prompt(ticket)
+                        with execution_continuation.scoped(flow_turn, ticket,
+                                stopped=lambda: _user_stopped(runtime_events),
+                                turn_id=runtime_events.get('_turn_id')):
+                            out('\n\nGeoForge is continuing the still-pending steps of your approved plan. '
+                                'Passed steps will not be repeated.\n\n')
+                            start = len(buf)
+                            continued = self._chat_with_models(
+                                names, want, history + '\nUSER: ' + continuation_task,
+                                out, project, llm, prior=prior, bare_task=continuation_task,
+                                skill_names=skill_names, mcp_names=mcp_names,
+                                session=s, cli_state=cli_state, runtime_events=runtime_events,
+                                flow_pre=flowrun.Pre(names=list(names)))
+                            if continued is not None:
+                                res = flowrun.after(project, continued, ''.join(buf[start:]),
+                                    provider_note=flowrun.describe_policy(continued), setup_ok=_setup_ok(names))
+                                if res.message:
+                                    out('\n\n' + res.message)
+                                if flowrun.current_state(project) == 'EXECUTING':
+                                    out('\n\nThe bounded continuation ended with approved steps still pending. '
+                                        'No further automatic retry was started; inspect Project status to continue.')
             except Exception as e:  # noqa: BLE001
                 out(f"\n[GeoForge flow: could not close the turn — {type(e).__name__}: {e}]")
             generated = [rel for rel, state in _artifact_state(project).items()
@@ -4471,6 +5732,16 @@ verification are different states; never claim this test verified the KI."""
         else:
             intake_rules = ""
             intake_database_rules = ""
+        intake_read_map = None
+        if gated:
+            from . import ki_intake
+            try:
+                intake_read_map = ki_intake.build(
+                    self.catalog, workdir_for=self._workdir, manifest_for=self._manifest,
+                    library_root=getattr(self, "library_root", None))
+            except Exception as e:
+                out(f"[GeoForge effective KI inspection unavailable: {e}]")
+                return
         local_status = {ki.name: self._status_for(ki) for ki in self.catalog}
         project_rules = SESSION_PROJECT_RULES.format(project=project)
         run_rules = projectrun.prompt_block(project)
@@ -4481,7 +5752,7 @@ verification are different states; never claim this test verified the KI."""
         active_kis = []
         active_cfg = None
         verified_kis = []
-        for name in projectrun.load(project).get("selected_kis") or []:
+        for name in ([] if gated else projectrun.load(project).get("selected_kis") or []):
             try:
                 selected = self._ki(name)
             except KeyError:
@@ -4490,7 +5761,7 @@ verification are different states; never claim this test verified the KI."""
                 verified_kis.append(selected)
             active_kis.append(selected)
         try:
-            materialized = self._session_workspaces(project, verified_kis)
+            materialized = [] if gated else self._session_workspaces(project, verified_kis)
         except Exception as e:
             out(f"[could not prepare selected KI workspaces: {e}]")
             return
@@ -4506,7 +5777,7 @@ verification are different states; never claim this test verified the KI."""
         mcp_rules = mcp.prompt_block(
             mcp_names, client=pname, direct_api=(kind == "api"))
         language_rules = response_language_rules(bare_task or task)
-        catalogue_rules = sessions.catalogue_block(self.catalog, local_status)
+        catalogue_rules = sessions.catalogue_block(self.catalog, local_status, read_map=intake_read_map)
         if gated:
             # Intake is a distinct architectural phase.  Do not mix in the legacy Auto-KI
             # rules that say "read SKILL.md and follow it", project-preparation rules that
@@ -4518,8 +5789,7 @@ verification are different states; never claim this test verified the KI."""
                       plan_review.settled_answers_block(project) +
                       "\n\n" + RESPONSE_PRESENTATION_RULES +
                       "\n\n" + language_rules)
-            full = (system + f"\nmodels_root: {self.catalog.models_dir}"
-                    + "\n\n[TASK]\n" + task)
+            full = system + "\n\n[TASK]\n" + task
         else:
             system = (catalogue_rules + "\n\n" + sessions.AUTO_RULES + "\n\n" +
                       project_rules + "\n\n" + PROJECT_PREPARATION_RULES + "\n\n" +
@@ -4555,6 +5825,7 @@ verification are different states; never claim this test verified the KI."""
                 api.run(prov, ki, cfg, system, bare_task or task,
                         model=llm, history=prior,
                         setup_context={"project_root": project,
+                                       "intake_ki_read_map": intake_read_map,
                                        "_turn_id": (runtime_events or {}).get("_turn_id")},
                         project_mode=True,
                         flow=(auto_turn.session if auto_turn is not None else None),
@@ -4572,7 +5843,7 @@ verification are different states; never claim this test verified the KI."""
             prov = avail[0]
         wd = project
         cfg = paths.KissConfig.default(wd)
-        if not (wd / paths.CONFIG_NAME).exists():
+        if not gated and not (wd / paths.CONFIG_NAME).exists():
             (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
         skill_dirs = [str(Path(item["path"]).parent)
                       for item in skilllib.selected(skill_names)]
@@ -4583,6 +5854,15 @@ verification are different states; never claim this test verified the KI."""
         if not gated:
             pol.add("write", project, "scenario inputs, outputs, runs and artifacts")
         pol.add("read", self.catalog.models_dir, "the bundled KI library")
+        inspection_roots = intake_read_map.read_roots(self.catalog.models_dir) if intake_read_map else []
+        for root in inspection_roots[1:]:
+            pol.add("read", root, "effective KI source for read-only intake")
+        if intake_read_map is not None:
+            # Inspection grants never become selected/runtime KI bindings.
+            auto_turn.policy = auto_turn.session.flow.policy.for_state(
+                auto_turn.session.state, pname, project,
+                {f"inspection-{i}": root for i, root in enumerate(inspection_roots)},
+                wrappers=auto_turn.wrappers)
         for skill_root in skill_roots:
             pol.add("read", skill_root, "installed agent skills")
         if framework:
@@ -4598,6 +5878,7 @@ verification are different states; never claim this test verified the KI."""
                        bare_prompt=bare_task, wd=wd, out=out,
                        session=session, cli_state=cli_state,
                        extra_dirs=[str(self.catalog.models_dir), *skill_roots,
+                                   *(str(root) for root in inspection_roots[1:]),
                                    *skill_dirs,
                                    *([str(framework)] if framework else []),
                                    *flowrun.wrapper_access_roots(
@@ -4607,6 +5888,46 @@ verification are different states; never claim this test verified the KI."""
                        runtime_events=runtime_events,
                        extra_env=self._agent_runtime_env(project),
                        flow_policy=(auto_turn.policy if auto_turn is not None else None))
+
+    def _verify_project_preflight(self, project, resolved_with_cfg, out, runtime_events=None) -> bool:
+        """Verify every exact project binding without writing shared readiness."""
+        from . import project_verification
+        pending = ki_investigation.pending_preflight(project)
+        selected = {ki.name for ki, _ in resolved_with_cfg}
+        if any(name not in selected for name, item in pending["kis"].items()
+               if not item.get("passed")):
+            out("[Select every repaired KI that still needs its project preflight.]\n")
+            return False
+        for working, _cfg in resolved_with_cfg:
+            if _user_stopped(runtime_events):
+                return False
+            source = self._ki(working.name)
+            if not _project_check_allowed_by_shared_status(
+                    self._status_for(source), shared_root=self._workdir(source)):
+                out(f"[{working.name} shared runtime needs verification before its project check.]\n")
+                return False
+            item = pending["kis"].get(working.name)
+            if item and not item.get("passed"):
+                if ki_verification.content_digest(working.root) != item["digest"]:
+                    out(f"[{working.name} changed after repair adoption; investigate its current revision.]\n")
+                    return False
+            result = project_verification.verify(
+                project, working, self._manifest(working),
+                stop=lambda: _user_stopped(runtime_events),
+                turn_id=(runtime_events or {}).get("_turn_id"),
+                dependency_check=lambda name: self._status_for(self._ki(name)).get("can_run"))
+            passed = bool(result.get("can_run") and not _user_stopped(runtime_events))
+            if item and not item.get("passed"):
+                ki_investigation.record_preflight(project, working.name, item["digest"], passed)
+            out(f"\n{working.name} exact project preflight: {'PASS' if passed else 'FAIL'}\n")
+            if not passed:
+                out(str(result.get("detail") or "Project verification failed.").rstrip() +
+                    "\nScientific execution remains blocked. Use the KI investigation workflow "
+                    "for a source repair; installation success is not a project pass.\n")
+                return False
+        # A later KI's check must not invalidate a previously checked binding.
+        return all(project_verification.status(project, working).get("can_run")
+                   for working, _cfg in resolved_with_cfg) and not _user_stopped(runtime_events)
 
     def _repair_preflight(self, project, resolved_with_cfg, out, runtime_events=None) -> bool:
         """Check the adopted project bytes, independently of shared setup badges."""
@@ -4675,7 +5996,8 @@ verification are different states; never claim this test verified the KI."""
                 return None
         setup_wd = self._workdir(ki)
         setup_wd.mkdir(parents=True, exist_ok=True)
-        needs_setup = not self._status_for(ki).get("can_run")
+        needs_setup = not _project_check_allowed_by_shared_status(
+            self._status_for(ki), shared_root=setup_wd)
         repair_pending = ki_investigation.pending_preflight(project)["pending"]
         repair_setup = False
         repair_turn = None
@@ -4717,22 +6039,33 @@ verification are different states; never claim this test verified the KI."""
                 return
             resolved = [item[0] for item in resolved_with_cfg]
             cfg = resolved_with_cfg[0][1]
+            project_check_pending = not Handler._project_setup_ok(self, project, names)
+            if (flow_pre is not None and flow_pre.gated and project_check_pending and not repair_pending
+                    and flowrun.setup_allowed(project)):
+                # A fresh project needs the same exact-byte check as a repaired
+                # one, after plan approval and acquisition, never while planning.
+                repair_turn = flowrun.setup_turn(project, resolved, cfg, kind, pname,
+                    database_access_mode=obs_access.effective_mode(settings.database_access_mode()))
+                if Handler._verify_project_preflight(self, project, resolved_with_cfg, out, runtime_events):
+                    flowrun.setup_verified(project, resolved, cfg)
+                else:
+                    flowrun.project_setup_failed(project, resolved,
+                        "Project verification did not pass; inspect the exact KI check above.")
+                return repair_turn
             if repair_pending and flowrun.setup_allowed(project):
-                # Host preflight is its own bounded setup turn after the revised
-                # plan is approved. It cannot inherit a shared KI's old pass.
+                # Retain the existing adopted-KI environment repair turn. Its
+                # final check now also produces the exact-project receipt.
                 repair_turn = flowrun.setup_turn(project, resolved, cfg, kind, pname,
                     database_access_mode=obs_access.effective_mode(settings.database_access_mode()))
                 preflight_messages = []
                 def report_preflight(piece):
                     preflight_messages.append(piece)
                     return out(piece)
-                if Handler._repair_preflight(self, project, resolved_with_cfg, report_preflight, runtime_events):
+                if Handler._verify_project_preflight(self, project, resolved_with_cfg, report_preflight, runtime_events):
                     flowrun.setup_verified(project, resolved, cfg)
                     return repair_turn
                 if _user_stopped(runtime_events):
                     return repair_turn
-                # Give the provider a bounded chance to repair the recorded
-                # environment. Repeated failed probes alone cannot fix it.
                 repair_setup = True
                 needs_setup = True
                 declarations = [{"ki": k.name, "python_deps": self._manifest(k).python_deps,
@@ -4748,6 +6081,12 @@ verification are different states; never claim this test verified the KI."""
                     f"Recorded Python: {cfg.python}\nDeclared requirements: " +
                     json.dumps(declarations, ensure_ascii=False) + "\nHost check:\n" +
                     "".join(preflight_messages))
+            if project_check_pending and flowrun.current_state(project) == "EXECUTING":
+                out("[The project's KI or runtime verification is missing or stale. "
+                    "Review the current binding and approve a revised plan before execution.]\n")
+                flowrun.project_setup_failed(project, resolved,
+                    "Project verification changed; review the current plan and runtime.")
+                return None
             if repair_pending and (flow_pre is None or not flow_pre.gated):
                 out("[The repaired KI requires a new approved plan and project preflight before execution.]\n")
                 return None
@@ -4860,6 +6199,7 @@ verification are different states; never claim this test verified the KI."""
                 run_install(
                     ki, self._manifest(ki), setup_wd, capture, self._helper_repo_root(),
                     installation_only=True, project=project,
+                    **_existing_setup_binding(self.workroot, ki.name),
                     stop=lambda: _user_stopped(runtime_events),
                     turn_id=(runtime_events or {}).get("_turn_id"))
                 return "".join(captured)
@@ -4881,19 +6221,21 @@ verification are different states; never claim this test verified the KI."""
                 out,
             )
             if needs_setup and not _user_stopped(runtime_events):
-                ok = (Handler._repair_preflight(self, project, resolved_with_cfg, out, runtime_events)
+                ok = (Handler._verify_project_preflight(self, project, resolved_with_cfg, out, runtime_events)
                       if repair_setup else self._record_agent_preflight(
                     ki, run_ki, cfg, setup_wd, lambda _piece: True,
                     project=project, stop=lambda: _user_stopped(runtime_events),
                     turn_id=(runtime_events or {}).get("_turn_id")))
                 if ok and flow_turn is not None:
-                    if repair_pending and not repair_setup:
-                        local_pairs = self._session_workspaces(project, kis)
-                        ok = Handler._repair_preflight(self, project, local_pairs, out, runtime_events)
-                        if ok:
-                            flowrun.setup_verified(project, [k for k, _ in local_pairs], local_pairs[0][1])
+                    local_pairs = resolved_with_cfg if repair_setup else self._session_workspaces(project, kis)
+                    if repair_setup or Handler._verify_project_preflight(self, project, local_pairs, out, runtime_events):
+                        flowrun.setup_verified(project, [k for k, _ in local_pairs], local_pairs[0][1])
                     else:
-                        flowrun.setup_verified(project, resolved, cfg)
+                        flowrun.project_setup_failed(project, [k for k, _ in local_pairs],
+                            "Shared installation passed, but this project's verification did not.")
+                elif not ok and flow_turn is not None:
+                    flowrun.project_setup_failed(project, resolved,
+                        "Software or project verification did not pass; inspect the exact KI check above.")
             return flow_turn
         avail = providers.available()
         if not avail:
@@ -5009,19 +6351,21 @@ verification are different states; never claim this test verified the KI."""
         if flow_turn is not None:
             flow_turn.provider_succeeded = bool(completed and completed.get("returncode") == 0)
         if needs_setup and not _user_stopped(runtime_events):
-            ok = (Handler._repair_preflight(self, project, resolved_with_cfg, out, runtime_events)
+            ok = (Handler._verify_project_preflight(self, project, resolved_with_cfg, out, runtime_events)
                   if repair_setup else self._record_agent_preflight(
                 ki, resolved[0], cfg, setup_wd, lambda _piece: True,
                 project=project, stop=lambda: _user_stopped(runtime_events),
                 turn_id=(runtime_events or {}).get("_turn_id")))
             if ok and flow_turn is not None:
-                if repair_pending and not repair_setup:
-                    local_pairs = self._session_workspaces(project, kis)
-                    ok = Handler._repair_preflight(self, project, local_pairs, out, runtime_events)
-                    if ok:
-                        flowrun.setup_verified(project, [k for k, _ in local_pairs], local_pairs[0][1])
+                local_pairs = resolved_with_cfg if repair_setup else self._session_workspaces(project, kis)
+                if repair_setup or Handler._verify_project_preflight(self, project, local_pairs, out, runtime_events):
+                    flowrun.setup_verified(project, [k for k, _ in local_pairs], local_pairs[0][1])
                 else:
-                    flowrun.setup_verified(project, resolved, cfg)
+                    flowrun.project_setup_failed(project, [k for k, _ in local_pairs],
+                        "Shared installation passed, but this project's verification did not.")
+            elif not ok and flow_turn is not None:
+                flowrun.project_setup_failed(project, resolved,
+                    "Software or project verification did not pass; inspect the exact KI check above.")
         return flow_turn
 
     # --- chat --------------------------------------------------------------
@@ -5129,7 +6473,8 @@ verification are different states; never claim this test verified the KI."""
 def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
                 *, provider_id: str = "",
                 installation_only: bool = False, project=None,
-                stop=None, turn_id=None, dependency_check=None) -> None:
+                stop=None, turn_id=None, dependency_check=None,
+                installation_mode: str = "new", existing_path: str | None = None) -> None:
     """Run installation under the owning chat's cancellation scope."""
     from contextlib import nullcontext
     context = (nullcontext() if install._CANCELLATION.get() is not None else
@@ -5138,7 +6483,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         with context:
             return _run_install(ki, man, root, emit, repo_root,
                                 provider_id=provider_id, installation_only=installation_only,
-                                dependency_check=dependency_check)
+                                dependency_check=dependency_check,
+                                installation_mode=installation_mode, existing_path=existing_path)
     except install.InstallStopped as exc:
         root.mkdir(parents=True, exist_ok=True)
         status_path = root / "status.json"
@@ -5147,6 +6493,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         except (OSError, ValueError):
             status = {}
         status.update(model=ki.name, ok=False, verified_at=None, verification_identity=None,
+                      runtime_identity=None,
                       installation_ready=False, interrupted=True, checked_at=time.time(),
                       primary_error={"name": "interrupted", "detail": str(exc)})
         status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
@@ -5155,31 +6502,35 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
 
 def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
                  *, provider_id: str = "", installation_only: bool = False,
-                 dependency_check=None) -> None:
+                 dependency_check=None, installation_mode: str = "new",
+                 existing_path: str | None = None) -> None:
     """The same six steps as ``kiss init``, streamed line by line."""
+    source_ki = ki
     root.mkdir(parents=True, exist_ok=True)
+    # Every KI loses its previous ready verdict when a new attempt starts,
+    # including bundled/imported packages without a snapshot identity.
+    _start_runtime_verification(root, ki.name)
     verification_identity = software_verification.identity(ki, man, repo_root)
-    if verification_identity is not None:
-        # Beginning a new verification invalidates its prior successful verdict,
-        # even when an exception interrupts setup before the final writer.
-        status_path = root / "status.json"
-        prior = ki_updates._read_json(status_path)
-        prior.update(model=ki.name, ok=False, verified_at=None, verification_identity=None,
-                     primary_error={"name": "verification-pending", "detail": "Current snapshot verification has not completed."})
-        status_path.write_text(json.dumps(prior, indent=2), encoding="utf-8")
     cfg_file = root / paths.CONFIG_NAME
     if cfg_file.exists():
-        cfg = paths.KissConfig.load(root)
+        try:
+            cfg = setup_flow.load_runtime_config(root)
+        except (OSError, ValueError, TypeError) as error:
+            status = ki_updates._read_json(root / "status.json")
+            status["primary_error"] = {"name": "runtime-config", "detail": str(error)}
+            ki_updates._atomic_json(root / "status.json", status)
+            _setup_job_cleanup(root, ki.name, "failed")
+            emit(f"Cannot prepare saved runtime configuration: {error}\n")
+            return
         emit(f"using {cfg_file}\n")
     else:
         cfg = paths.KissConfig.default(root)
-        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-        emit(f"wrote {cfg_file}\n")
-    cfg.python = install.runtime_python(cfg.python)
     network_env = (settings.with_provider_proxy(provider_id, {})
                    if provider_id else None)
 
-    strategy = man.acquire.strategy if man.acquire else "none"
+    if installation_mode not in {"new", "existing"}:
+        raise ValueError("Installation mode must be new or existing")
+    strategy = "existing" if installation_mode == "existing" else man.acquire.strategy if man.acquire else "none"
     emit(f"\ninitialising {ki.name} (strategy: {strategy})\n\n")
     result = install.InstallResult(model=ki.name)
 
@@ -5193,71 +6544,93 @@ def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         install.check_cancelled()
         return s
 
-    # Materialise, then operate on the working copy — identical to `kiss init`.
-    # Skipping this ran preflight against the repository package with its
-    # KISSPATH_* placeholders still in place, so the GUI and the CLI disagreed
-    # about what "installed" meant.
-    if (Path(repo_root) / ki_updates.SNAPSHOT_MANIFEST).is_file() and install.needs_shared_tools(ki, man):
-        setup_flow.prepare_common(cfg, repo_root)
-    live = root / "ki"
-    install.check_cancelled()
-    mrep = setup_flow.materialise_active(ki.root, live, cfg)
-    ok = not mrep.unresolved and not mrep.corrupted
-    result.add(install.Step(
-        "materialise", ok,
-        f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
-        "; ".join(filter(None, [
-            f"unresolved: {', '.join(sorted(mrep.unresolved))}" if mrep.unresolved else "",
-            f"corrupted by your path values: {'; '.join(mrep.corrupted[:3])}"
-            if mrep.corrupted else "",
-        ]))))
+    # Select the final runtime and helper binding before making an immutable
+    # working copy. Later switching Python leaves literal paths in that copy
+    # pointing at the previous interpreter even when kiss.toml is current.
     total = 7 if installation_only else 8
-    emit(f"  {f'[1/{total}] materialise KI':<22} {'ok' if ok else 'FAILED'}"
-         f"  ({mrep.tokens_replaced} paths written)\n")
-    if mrep.undeliverable_files:
-        emit(f"      note: {mrep.undeliverable_files} files reference the author's "
-             "private tooling; those instructions cannot be followed\n")
-    ki = type(ki)(name=ki.name, root=live)
-
-    install.check_cancelled()
-    step(f"[2/{total}] python env", install.ensure_python_env(cfg))
-    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-
-    step(f"[3/{total}] ki_tools_common", install.install_ki_tools_common(cfg, repo_root)
+    live = root / "ki"
+    python_step = step(f"[1/{total}] python env", setup_flow.prepare_python(cfg, live))
+    if python_step.ok:
+        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+    step(f"[2/{total}] ki_tools_common", (
+         install.Step("ki-tools-common", False, "not run because Python preparation failed", skipped=True)
+         if not python_step.ok else install.install_ki_tools_common(cfg, repo_root)
          if install.needs_shared_tools(ki, man) else
-         install.Step("ki_tools_common", True, "Not required: source-bound stdlib data reader", skipped=True))
+         install.Step("ki_tools_common", True, "Not required: source-bound stdlib data reader", skipped=True)))
+    if result.ok:
+        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+        install.check_cancelled()
+        mrep = setup_flow.materialise_active(ki.root, live, cfg, manifest=man, library_root=repo_root)
+        ok = not mrep.unresolved and not mrep.corrupted
+        step(f"[3/{total}] materialise KI", install.Step(
+            "materialise", ok,
+            f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
+            "; ".join(filter(None, [
+                f"unresolved: {', '.join(sorted(mrep.unresolved))}" if mrep.unresolved else "",
+                f"corrupted by your path values: {'; '.join(mrep.corrupted[:3])}"
+                if mrep.corrupted else "",
+            ]))))
+        if mrep.undeliverable_files:
+            emit(f"      note: {mrep.undeliverable_files} files reference the author's "
+                 "private tooling; those instructions cannot be followed\n")
+        ki = type(ki)(name=ki.name, root=live)
+    else:
+        step(f"[3/{total}] materialise KI", install.Step(
+            "materialise", False, "not run because runtime preparation failed", skipped=True))
     step(f"[4/{total}] system deps", install.check_system_deps(man.system_deps))
     step(f"[5/{total}] python deps", install.install_python_deps(
-        man.python_deps, cfg.python, env=network_env))
+        man.python_deps, cfg.python, env=network_env) if python_step.ok else
+        install.Step("python-deps", False, "not run because Python preparation failed", skipped=True))
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     blocker = next((prior for prior in result.steps if not prior.ok), None)
     if blocker:
-        strategy = man.acquire.strategy if man.acquire else "none"
         s, binary = install.Step(
             f"acquire[{strategy}]", False,
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
+    elif installation_mode == "existing":
+        if existing_path:
+            placement = _place_selected_existing_install(ki, man, cfg, str(existing_path))
+            setup_jobs._write(root / ".geoforge" / "existing-placement.json", placement)
+            placed = placement["state"] == "placed"
+            detail = ("Selected existing distribution connected; no download or build was run.\n" +
+                      "\n".join(placement["notes"]) if placed else placement["reason"])
+            s = install.Step("acquire[existing]", placed, detail)
+            binary = Path(placement["managed_binary"]) if placed else None
+        else:
+            s, binary = install.Step("acquire[existing]", False,
+                "Choose an existing installation path or let the agent inspect the discovered candidates. "
+                "Built-in setup will not download or build software in existing-installation mode."), None
     else:
         install.check_cancelled()
         s, binary = install.acquire(man, prefix, cfg.python, env=network_env, ki=ki)
     result.binary = binary
     install.check_cancelled()
-    for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
-        emit(f"      {note}\n")
+    if result.ok:
+        for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
+            emit(f"      {note}\n")
     step(f"[6/{total}] acquire", s)
+    if getattr(man, "runtime_data", None):
+        step("required runtime data", runtime_data.prepare(man, cfg, allow_acquire=installation_mode == "new", env=network_env)
+             if result.ok else install.Step("runtime-data", False,
+                 "not run because runtime preparation or acquisition failed", skipped=True))
     if man.depends_on:
         emit(f"      couples with: {', '.join(man.depends_on)}\n")
     install.check_cancelled()
+    checked_runtime = software_verification.runtime_identity(cfg)
     if installation_only:
-        verdict = runnable.check(ki, man, cfg, timeout=25, python=cfg.python)
+        verdict = runnable.check(ki, man, cfg, timeout=25, python=cfg.python) if result.ok else None
         step(f"[7/{total}] runnable", install.Step(
-            "runnable", verdict.usable, verdict.summary(),
+            "runnable", bool(verdict and verdict.usable),
+            verdict.summary() if verdict else "not run because runtime preparation or acquisition failed",
+            skipped=verdict is None,
         ))
     else:
         step("[7/8] data", install.check_data(man, cfg))
-        if verification_identity is not None:
-            step("manifest requirements", software_verification.requirements(
-                man, cfg, dependency_check=dependency_check))
+        step("manifest requirements", software_verification.requirements(
+            man, cfg, dependency_check=dependency_check))
+        if result.ok:
+            step("runtime projection", _setup_projection_check(source_ki, ki, cfg, library_root=repo_root))
         blocker = next((prior for prior in result.steps if not prior.ok), None)
         if blocker:
             preflight = install.Step(
@@ -5268,8 +6641,14 @@ def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         else:
             preflight = install.run_preflight(ki, cfg.python, cfg)
         step("[8/8] preflight", preflight)
+        if result.ok:
+            step("runtime settings", _runtime_binding_check(cfg, checked_runtime, root=root))
+        if result.ok:
+            step("runtime projection", _setup_projection_check(source_ki, ki, cfg, library_root=repo_root))
     install.check_cancelled()
-    written = handoff.write(ki, result, man, cfg, root)
+    written = handoff.write(ki, result, man, cfg, root,
+        preflight_command=setup_flow.runtime_command(Path(repo_root) / "models", ki.name, root,
+                                                     action="preflight"))
     emit(f"  {'      agent handoff':<22} ok ({len(written)} files)\n\n")
 
     # The UI's status chips read this back: the verifier's verdict, per step,
@@ -5283,6 +6662,7 @@ def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         "model": ki.name, "ok": result.ok, "checked_at": checked_at, "interrupted": False,
         "verified_at": checked_at if result.ok and not installation_only else None,
         "verification_identity": verification_identity if result.ok and not installation_only else None,
+        "runtime_identity": checked_runtime if result.ok and not installation_only else None,
         "ki_content_digest": (ki_verification.content_digest(ki.root)
                               if result.ok and not installation_only else None),
         "installation_only": installation_only,
@@ -5291,7 +6671,8 @@ def _run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
         "primary_error": ({"name": primary.name, "detail": primary.detail[:4000]}
                           if primary else None),
         "steps": [{"name": s.name, "ok": s.ok, "skipped": s.skipped,
-                   "detail": s.detail[:4000], "commands": s.commands[:20]}
+                   "detail": s.detail[:4000], "commands": s.commands[:20],
+                   "evidence": getattr(s, "evidence", {})}
                   for s in result.steps],
     }, indent=2), encoding="utf-8")
     install.check_cancelled()

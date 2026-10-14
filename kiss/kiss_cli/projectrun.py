@@ -263,8 +263,10 @@ def load(project: Path, *, goal: str = "", selected_kis: list[str] | None = None
 
 
 def begin_turn(project: Path, message: str, selected_kis: list[str] | None = None) -> dict:
-    from . import execution
+    from . import execution, setup
+    captured_request = setup.capture_request_turn(project)
     turn_id = execution.begin_turn(project)
+    setup.bind_request_turn(project, turn_id, captured_request)
     state = load(project, goal=message, selected_kis=selected_kis)
     if not state.get("goal"):
         state["goal"] = _short(message, 1000)
@@ -332,7 +334,17 @@ def select_kis(project: Path, names: list[str]) -> dict:
 def finish_turn(project: Path, *, request: dict | None = None,
                 failed: str | None = None) -> dict:
     from .execution import stop_requested
+    from . import setup
     state = load(project)
+    current_request = setup.request(project, archive_obsolete=False)
+    if current_request and (not request or request.get("kind") == "choice"):
+        # A late callback must use the current projection, not its old popup.
+        request = current_request
+    if request and request.get("status") == "historical":
+        request = None
+        state.pop("blocker", None)
+        if state.get("status") == "waiting_for_user":
+            state.update(status="idle", summary="Earlier question retained as unanswered history")
     if stop_requested(project):
         state.update({"status": "idle", "summary": STOPPED_SUMMARY})
         state.pop("blocker", None)

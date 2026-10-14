@@ -233,3 +233,196 @@ def test_parsed_option_fallback_preserves_explicit_binding(tmp_path, source):
 def test_option_fallback_cannot_overwrite_or_bypass_explicit_binding(tmp_path, source):
     ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', source)
     assert blocked(ki)
+
+
+BRANCH_FALLBACK = '''\
+import argparse, os, shutil
+DEFAULT = "PATH_VALUE"
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--binary')
+    a = ap.parse_args()
+    if a.binary:
+        binary, source = a.binary, '--binary'
+    elif os.environ.get('DEMO_BIN'):
+        binary, source = os.environ['DEMO_BIN'], 'environment'
+    else:
+        binary, source = DEFAULT, 'server default'
+    return binary
+'''.replace('PATH_VALUE', SERVER)
+
+
+def test_cli_if_elif_tuple_selection_is_overridable(tmp_path):
+    ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', BRANCH_FALLBACK)
+    assert not blocked(ki)
+
+
+@pytest.mark.parametrize('source', [
+    BRANCH_FALLBACK.replace('if a.binary:', 'if a.unrelated:'),
+    BRANCH_FALLBACK.replace("a.binary, '--binary'", "None, '--binary'"),
+    BRANCH_FALLBACK.replace("binary, source = a.binary", "ignored, source = a.binary"),
+    BRANCH_FALLBACK.replace('a = ap.parse_args()', 'a = ap.parse_args()\n    a.binary = None'),
+    BRANCH_FALLBACK.replace('a = ap.parse_args()', 'a = ap.parse_args()\n    a: object = other'),
+    BRANCH_FALLBACK.replace('return binary', 'binary = DEFAULT\n    return binary'),
+    BRANCH_FALLBACK + '\nrun(DEFAULT)\n',
+])
+def test_branch_override_must_control_the_actual_default(tmp_path, source):
+    ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', source)
+    assert blocked(ki)
+
+
+EARLY_SELECTOR = '''\
+import argparse, os, shutil
+DEFAULT = "PATH_VALUE"
+class Missing(Exception):
+    pass
+def select_binary(arg):
+    explicit = [('--binary', arg), ('environment', os.environ.get('DEMO_BIN'))]
+    for label, candidate in explicit:
+        if candidate:
+            if not os.path.isfile(candidate):
+                raise Missing('missing')
+            version = binary_version(candidate)
+            if version != '1.0':
+                raise Missing('version')
+            return candidate
+    for candidate in (shutil.which('demo'), DEFAULT):
+        if candidate and os.path.isfile(candidate) and binary_version(candidate) == '1.0':
+            return candidate
+    raise Missing(f'no binary; server default {DEFAULT}')
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--binary')
+    a = ap.parse_args()
+    return select_binary(a.binary)
+'''.replace('PATH_VALUE', SERVER)
+
+
+def test_explicit_selector_returns_before_fallback_and_version_probe(tmp_path):
+    ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', EARLY_SELECTOR)
+    assert not blocked(ki)
+
+
+@pytest.mark.parametrize('source', [
+    EARLY_SELECTOR.replace('return candidate', 'break', 1),
+    EARLY_SELECTOR.replace("raise Missing('version')", 'continue'),
+    EARLY_SELECTOR.replace("('--binary', arg)", "('--binary', None)"),
+    EARLY_SELECTOR.replace('select_binary(a.binary)', 'select_binary(None)'),
+    EARLY_SELECTOR.replace('if candidate:', 'if False:', 1),
+    EARLY_SELECTOR.replace('for label, candidate in explicit:', 'explicit[0] = ("ignored", None)\n    for label, candidate in explicit:'),
+    EARLY_SELECTOR.replace('def select_binary(arg):', 'def select_binary(arg):\n    arg: str = None'),
+    EARLY_SELECTOR.replace('def select_binary(arg):', 'def select_binary(arg):\n    arg += "ignored"'),
+    EARLY_SELECTOR.replace('def select_binary(arg):', 'def select_binary(arg):\n    (arg := None)'),
+    EARLY_SELECTOR.replace('def select_binary(arg):', 'def select_binary(arg):\n    del arg'),
+])
+def test_fallback_selector_requires_unmodified_early_exit(tmp_path, source):
+    ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', source)
+    assert blocked(ki)
+
+
+ENV_SELECTOR = '''\
+import os as _os
+def downloader():
+    import shutil as _sh
+    for candidate in (_os.environ.get('BAIDUPCS_BIN'), _sh.which('BaiduPCS-Py'), 'PATH_VALUE'):
+        if candidate and _os.path.isfile(candidate) and _os.access(candidate, _os.X_OK):
+            return candidate
+    return None
+'''.replace('PATH_VALUE', SERVER)
+
+
+def test_env_path_last_default_selector_supports_verified_import_aliases(tmp_path):
+    ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', ENV_SELECTOR)
+    assert not blocked(ki)
+
+
+@pytest.mark.parametrize('source', [
+    ENV_SELECTOR.replace("_os.environ.get('BAIDUPCS_BIN')", 'None'),
+    ENV_SELECTOR.replace('import os as _os', 'import fake_os as _os'),
+    ENV_SELECTOR.replace('import shutil as _sh', 'import shutil as _sh\n    _os = fake'),
+    ENV_SELECTOR.replace('import shutil as _sh', "import shutil as _sh\n    _os.environ['BAIDUPCS_BIN'] = ''"),
+    ENV_SELECTOR.replace('import shutil as _sh', 'import shutil as _sh\n    _os.environ.clear()'),
+    ENV_SELECTOR.replace('import shutil as _sh', 'import shutil as _sh\n    env = _os.environ\n    env.clear()'),
+    ENV_SELECTOR.replace('import os as _os', 'import os as _os\nfrom fake_os import os as _os'),
+    ENV_SELECTOR.replace('return candidate', 'break'),
+    ENV_SELECTOR.replace('if candidate and', 'run(candidate)\n        if candidate and'),
+])
+def test_env_selector_does_not_hide_mutation_or_execution(tmp_path, source):
+    ki, _ = package(tmp_path, 'test_cases/demo/run_reference.py', source)
+    assert blocked(ki)
+
+
+PACK_SELECTOR = '''\
+import argparse, json, os
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
+MAN = json.loads((HERE / 'manifest.json').read_text())
+def resolve_pack(pack, explicit_arg):
+    explicit = explicit_arg or os.environ.get('DEMO_PACK_DIR')
+    if explicit:
+        if not Path(explicit).is_dir():
+            raise ValueError('missing pack')
+        check_pack(explicit, pack['files'])
+        return explicit
+    if Path(pack['server_default']).is_dir():
+        check_pack(pack['server_default'], pack['files'])
+        return pack['server_default']
+    return download_pack(pack)
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--pack-dir')
+    a = ap.parse_args()
+    return resolve_pack(MAN['pack'], a.pack_dir)
+'''
+
+
+def _pack_case(tmp_path, runner):
+    ki, _ = package(tmp_path, 'test_cases/demo/manifest.json',
+                    json.dumps({'pack': {'server_default': SERVER, 'files': {}}}))
+    (ki.root / 'test_cases/demo/run_reference.py').write_text(runner)
+    return ki
+
+
+def test_manifest_pack_default_needs_companion_explicit_override_proof(tmp_path):
+    ki = _pack_case(tmp_path, PACK_SELECTOR)
+    assert not blocked(ki)
+    rows = reference_portability.classify_reference_paths(ki)['test_cases/demo/manifest.json']
+    assert rows[0]['classification'] == 'runtime_binding_metadata'
+
+
+@pytest.mark.parametrize('runner', [
+    '', PACK_SELECTOR.replace('return explicit', 'pass'),
+    PACK_SELECTOR.replace('resolve_pack(MAN[\'pack\'], a.pack_dir)', 'resolve_pack(MAN[\'pack\'], None)'),
+    PACK_SELECTOR.replace("'manifest.json'", "'other.json'"),
+    PACK_SELECTOR + "\nrun(MAN['pack']['server_default'])\n",
+    PACK_SELECTOR + "\nrun(MAN['pack'])\n",
+    PACK_SELECTOR + "\nrun(MAN['pack']['server_' + 'default'])\n",
+    PACK_SELECTOR.replace('    if explicit:', '    explicit: str = None\n    if explicit:'),
+    PACK_SELECTOR.replace('    if explicit:', '    execute(pack)\n    if explicit:'),
+    PACK_SELECTOR.replace('    if explicit:', '    def hidden():\n        return pack["server_" + "default"]\n    execute(hidden())\n    if explicit:'),
+    PACK_SELECTOR.replace('if explicit:', 'if False:'),
+    PACK_SELECTOR.replace('a = ap.parse_args()', 'a = ap.parse_args()\n    a.pack_dir = None'),
+])
+def test_pack_metadata_is_not_blanket_exempted(tmp_path, runner):
+    assert blocked(_pack_case(tmp_path, runner))
+
+
+@pytest.mark.parametrize('filename,body', [
+    ('expected.json', json.dumps({'notes': ['Historical build ' + SERVER], 'numeric_checks': []})),
+    ('manifest.json', json.dumps({'engine': {'build': 'Build notes: ' + SERVER}})),
+    ('run_reference.py', '# Historical build ' + SERVER + '\nprint("ready")\n'),
+])
+def test_narrow_reference_comments_and_build_notes_are_provenance(tmp_path, filename, body):
+    ki, file = package(tmp_path, 'test_cases/demo/' + filename, body)
+    before = file.read_bytes()
+    assert not blocked(ki)
+    assert file.read_bytes() == before
+
+
+@pytest.mark.parametrize('body', [
+    json.dumps({'notes': {'execute': SERVER}}),
+    json.dumps({'notes': [SERVER], 'numeric_checks': [{'file': SERVER}]}),
+])
+def test_notes_cannot_exempt_paths_used_by_scientific_fields(tmp_path, body):
+    ki, _ = package(tmp_path, 'test_cases/demo/expected.json', body)
+    assert blocked(ki)

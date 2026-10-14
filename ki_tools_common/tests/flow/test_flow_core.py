@@ -362,7 +362,7 @@ def test_receipts_require_binding_sign_verify_and_reject_forgery(tmp_path):
     assert not receipts.verify(tmp_path, doc)
     forged = dict(doc); forged["signature"] = {"alg": "HMAC-SHA256", "key_id": receipts.project_id(tmp_path), "value": "00" * 32}
     (tmp_path / receipts.RECEIPT_DIR / receipts.RUNS_SUB / "forged.json").write_text(json.dumps(forged))
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert ev["runs_total"] == 2 and ev["runs_bound"] == 1
     assert any(r["why"] == "signature" for r in ev["rejected_receipts"])
 
@@ -372,28 +372,28 @@ def test_evidence_binds_to_current_approval_steps_and_artifacts(tmp_path):
     good = tmp_path / "outputs" / "q.csv"; good.parent.mkdir(); good.write_text("t,q\n1,0.5\n2,1.2\n3,0.9\n")
     stray = tmp_path / "outputs" / "handmade.csv"; stray.write_text("1\n")
     rp = _run(tmp_path, good, a)
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert "outputs/handmade.csv" in ev["unreceipted_artifacts"] and ev["validation"] == "incomplete"
     v = receipts.validate_outputs(ki, [good], run_facts={"errored": False, "output_nonempty": True})
     assert v["status"] == "passed"
     receipts.update_validation(tmp_path, rp, v)
     stray.unlink()
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert ev["validation"] == "passed" and ev["receipts_verified"] is True and ev["steps_missing"] == []
     # a receipt for a step that is not in the plan, or for another approval, does not count
     _run(tmp_path, good, a, step="M:ghost")
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert any("not in the approved plan" in r["why"] for r in ev["rejected_receipts"])
     _run(tmp_path, good, a, approval_sha="deadbeef")
-    assert any("not bound to the current approval" in r["why"] for r in receipts.evidence(tmp_path, pj, a)["rejected_receipts"])
+    assert any("not bound to the current approval" in r["why"] for r in receipts.evidence(tmp_path, pj, a, inventory=inv)["rejected_receipts"])
     # a multi-step plan needs EVERY executable step passed
     pj2 = json.loads(json.dumps(pj)); pj2["steps"].append({"id": "M:route", "ki": "M", "tool": None, "kind": "route",
                                                             "inputs": [], "outputs": [], "status": "planned"})
-    ev = receipts.evidence(tmp_path, pj2, a)
+    ev = receipts.evidence(tmp_path, pj2, a, inventory=inv)
     assert ev["steps_missing"] == ["M:route"] and ev["receipts_verified"] is False
     # replay of an old approval: after re-approval the old receipts no longer bind
     pj["goal"] = "v2"; plan.write_artifacts(tmp_path, pj, inv); a2 = approval.approve(tmp_path, by="auto")
-    ev = receipts.evidence(tmp_path, pj, a2)
+    ev = receipts.evidence(tmp_path, pj, a2, inventory=inv)
     assert ev["runs_bound"] == 0 and ev["receipts_verified"] is False
 
 
@@ -409,7 +409,7 @@ def test_retry_supersedes_a_failed_attempt_but_keeps_history(tmp_path):
                             started_at=finished - 1, finished_at=finished, exit_code=1 if errored else 0,
                             inputs=[], outputs=[target], plan_step_id="M:run",
                             approval_sha256=approval.approval_id(a), validation=v)
-        return receipts.evidence(tmp_path, pj, a)
+        return receipts.evidence(tmp_path, pj, a, inventory=inv)
 
     ev = attempt(1001, errored=True)
     assert ev["validation"] == "failed" and ev["receipts_verified"] is False
@@ -430,7 +430,7 @@ def test_retry_supersedes_a_failed_attempt_but_keeps_history(tmp_path):
     assert ev["steps_missing"] == [] and "outputs/q_full.csv" in ev["unreceipted_artifacts"]
     assert ev["validation"] == "incomplete" and ev["receipts_verified"] is False
     broken.unlink()
-    assert receipts.evidence(tmp_path, pj, a)["validation"] == "passed"
+    assert receipts.evidence(tmp_path, pj, a, inventory=inv)["validation"] == "passed"
 
 
 def test_a_result_built_on_a_superseded_partial_file_is_stale(tmp_path):
@@ -438,17 +438,22 @@ def test_a_result_built_on_a_superseded_partial_file_is_stale(tmp_path):
     tool = str(tmp_path / "M" / "tools" / "run.py")
     pj["steps"].insert(0, {"id": "M:prep", "ki": "M", "tool": tool, "kind": "process",
                            "inputs": [], "outputs": ["forcing"], "status": "planned"})
+    inv["items"][0]["local_paths"] = ["outputs/forcing.csv"]
     plan.write_artifacts(tmp_path, pj, inv); a = approval.approve(tmp_path, by="auto")
     forcing = tmp_path / "outputs" / "forcing.csv"; forcing.parent.mkdir()
     q = tmp_path / "outputs" / "q.csv"
 
     def attempt(step, finished, errored, out, inputs=()):
-        v = receipts.validate_outputs(ki, [out], run_facts={"errored": errored, "output_nonempty": True})
+        from ki_tools_common.flow import declared_outputs
+        approved_step = next(s for s in pj["steps"] if s["id"] == step)
+        v, output_binding = declared_outputs.validate(tmp_path, ki, approved_step, inv, [out],
+            run_facts={"errored": errored, "output_nonempty": True}, physical=step == "M:run")
         receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3", command=["/usr/bin/python3", tool],
                             cwd=str(tmp_path), started_at=finished - 1, finished_at=finished,
                             exit_code=1 if errored else 0, inputs=list(inputs), outputs=[out],
-                            plan_step_id=step, approval_sha256=approval.approval_id(a), validation=v)
-        return receipts.evidence(tmp_path, pj, a)
+                            plan_step_id=step, approval_sha256=approval.approval_id(a), validation=v,
+                            declared_outputs=output_binding)
+        return receipts.evidence(tmp_path, pj, a, inventory=inv)
 
     forcing.write_text("t,q\n1,0.5\n")                  # prep crashes half way through
     attempt("M:prep", 1001, True, forcing)
@@ -473,7 +478,7 @@ def test_same_second_failure_beats_a_warning_whatever_the_file_order(tmp_path):
                             cwd=str(tmp_path), started_at=1, finished_at=2, exit_code=0, inputs=[],
                             outputs=[out], plan_step_id="M:run", approval_sha256=approval.approval_id(a),
                             run_id=rid, validation={"status": status, "checks": []})
-    assert receipts.evidence(tmp_path, pj, a)["validation"] == "failed"
+    assert receipts.evidence(tmp_path, pj, a, inventory=inv)["validation"] == "failed"
 
 
 def test_validate_outputs_rank1_aliases_all_zero_and_unaffirmed(tmp_path):
@@ -623,7 +628,7 @@ def _drive(tmp_path, *, needs_user=False, high=False, run_ok=True, all_zero=Fals
     ctx.move("run_finished")
     v = receipts.validate_outputs(ki, [out], run_facts={"errored": not run_ok, "output_nonempty": True})
     receipts.update_validation(tmp_path, rp, v)
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     if ev["validation"] == "passed" and ev["receipts_verified"]:
         ctx.move("validated", {"receipts_verified": True, "validation": "passed"})
     else:
@@ -689,10 +694,10 @@ def test_evidence_assurance_label_and_missing_key(tmp_path, monkeypatch):
     ki = _fake_ki(tmp_path); pj, inv = _write_plan(tmp_path, ki); a = approval.approve(tmp_path, by="auto")
     out = tmp_path / "outputs" / "q.csv"; out.parent.mkdir(); out.write_text("1\n2\n")
     _run(tmp_path, out, a)
-    assert receipts.evidence(tmp_path, pj, a, enforcement="exact")["assurance"] == "cryptographic"
-    assert receipts.evidence(tmp_path, pj, a, enforcement="approximate")["assurance"] == "containment"
+    assert receipts.evidence(tmp_path, pj, a, enforcement="exact", inventory=inv)["assurance"] == "cryptographic"
+    assert receipts.evidence(tmp_path, pj, a, enforcement="approximate", inventory=inv)["assurance"] == "containment"
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path.parent / "elsewhere"))   # key gone
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert ev["runs_bound"] == 0 and ev["receipts_verified"] is False
     assert approval.check(tmp_path) == "FORGED"
 
@@ -732,7 +737,7 @@ def test_evidence_binds_receipt_to_the_approved_tool_and_download_steps(tmp_path
     wrong = receipts.record_run(tmp_path, ki="M", executable="/bin/true", command=["/bin/true", "/tmp/other.py"],
                                 cwd=str(tmp_path), started_at=1.0, finished_at=2.0, exit_code=0, inputs=[],
                                 outputs=[out], plan_step_id="M:run", approval_sha256=approval.approval_id(a))
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert any("not the approved tool" in r["why"] for r in ev["rejected_receipts"]) and ev["runs_bound"] == 0
     wrong.unlink()
     right = receipts.record_run(tmp_path, ki="M", executable="/usr/bin/python3",
@@ -741,14 +746,14 @@ def test_evidence_binds_receipt_to_the_approved_tool_and_download_steps(tmp_path
                                 outputs=[out], plan_step_id="M:run", approval_sha256=approval.approval_id(a))
     receipts.update_validation(tmp_path, right, receipts.validate_outputs(
         ki, [out], run_facts={"errored": False, "output_nonempty": True}))
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert ev["runs_bound"] == 1 and ev["steps_missing"] == ["M:get_forcing"] and not ev["receipts_verified"]
     # the download step is satisfied only by a bound download receipt naming it
     raw = tmp_path / "inputs" / "raw" / "forcing" / "f.csv"; raw.parent.mkdir(parents=True); raw.write_text("1\n")
     receipts.record_download(tmp_path, item_id="forcing", source="x", request_url="https://x/f.csv",
                              http_status=200, raw_files=[raw], approval_sha256=approval.approval_id(a),
                              plan_step_id="M:get_forcing")
-    ev = receipts.evidence(tmp_path, pj, a)
+    ev = receipts.evidence(tmp_path, pj, a, inventory=inv)
     assert ev["steps_missing"] == [] and ev["receipts_verified"] is True and ev["validation"] == "passed"
 
 
@@ -789,7 +794,7 @@ def test_temp_files_live_under_protected_tree_and_evidence_scans_all_writable_tr
     a = approval.approve(tmp_path, by="auto")
     assert not list((tmp_path / "runs").glob("*.tmp")) and (tmp_path / ".geoforge" / "tmp").is_dir()
     stray = tmp_path / "artifacts" / "handmade.png"; stray.parent.mkdir(); stray.write_bytes(b"x")
-    assert "artifacts/handmade.png" in receipts.evidence(tmp_path, pj, a)["unreceipted_artifacts"]
+    assert "artifacts/handmade.png" in receipts.evidence(tmp_path, pj, a, inventory=inv)["unreceipted_artifacts"]
 
 
 def test_declared_inputs_and_host_bookkeeping_are_not_unvouched_outputs(tmp_path):

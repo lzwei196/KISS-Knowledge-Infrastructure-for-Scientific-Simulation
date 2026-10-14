@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 from urllib.parse import urlparse
 
-from . import doctor, firstrun, ki_verification
+from . import doctor, firstrun, ki_guard, ki_verification
 from .catalog import KI
 
 try:
@@ -563,15 +563,37 @@ def add_evidence(job_id: str, *, kind: str, source_type: str,
             raise ValueError("the selected evidence file or folder does not exist")
         if root.resolve() == source or root.resolve().is_relative_to(source):
             raise ValueError("select the evidence itself, not a parent of the KI workspace")
-        count, size = _evidence_tree_size(source)
+        count, size = _evidence_tree_size(ki_guard._io(source))
         target_dir = root / "evidence" / kind
-        target_dir.mkdir(parents=True, exist_ok=True)
+        ki_guard._io(target_dir).mkdir(parents=True, exist_ok=True)
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", source.name)[:100] or "evidence"
         target = target_dir / f"{evidence_id}-{safe_name}"
-        if source.is_dir():
-            shutil.copytree(source, target)
+        source_io, target_io = ki_guard._io(source), ki_guard._io(target)
+        is_directory = source_io.is_dir()
+        # Reserve an exclusively new destination before copying, so failure
+        # cleanup cannot remove an older attachment (including a UUID collision).
+        if is_directory:
+            target_io.mkdir(exist_ok=False)
         else:
-            shutil.copy2(source, target)
+            with target_io.open("xb"):
+                pass
+        try:
+            if is_directory:
+                shutil.copytree(source_io, target_io, dirs_exist_ok=True)
+            else:
+                shutil.copy2(source_io, target_io)
+        except Exception:
+            # Only this invocation's freshly reserved path is eligible. The
+            # source and any previously registered evidence remain untouched.
+            resolved_target = target.resolve()
+            if (resolved_target != target.absolute() or
+                    not resolved_target.is_relative_to(root.resolve())):
+                raise ValueError("Evidence destination changed; refusing unsafe cleanup")
+            if target_io.is_symlink() or not is_directory:
+                target_io.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(target_io)
+            raise
         record.update({
             "value": str(target.relative_to(root)),
             "display": source.name,
@@ -1081,7 +1103,7 @@ def run_probe(job_id: str, emit: Callable[[str], object] | None = None, *,
         return _run_probe(job_id, emit)
     root, _doc = _meta(job_id)
     candidate = root / "candidate"
-    _reject_symlinks(candidate)
+    _validate_candidate_tree(candidate)
     before = tree_digest(candidate)
     if not before:
         raise ValueError("The seeded repair candidate cannot be fingerprinted")
@@ -1369,55 +1391,21 @@ def mark_build_finished(job_id: str, *, failed: str | None = None) -> None:
     _write_meta(root, doc)
 
 
-def _reject_symlinks(root: Path) -> None:
-    count = 0
-    total = 0
-    for path in root.rglob("*"):
-        count += 1
-        if count > MAX_TREE_FILES:
-            raise ValueError(f"candidate has more than {MAX_TREE_FILES} entries")
-        if path.is_symlink():
-            raise ValueError(f"candidate contains a symbolic link: {path.relative_to(root)}")
-        if path.is_file():
-            total += path.stat().st_size
-            if total > MAX_TREE_BYTES:
-                raise ValueError("candidate is larger than 2 GB")
+def _validate_candidate_tree(root: Path) -> None:
+    """Require a bounded physical tree with only safe same-KI aliases."""
+    from . import ki_tree
+    ki_tree.scan(root, max_entries=MAX_TREE_FILES, max_bytes=MAX_TREE_BYTES)
 
 
 def tree_digest(root: Path) -> str | None:
-    root = Path(root)
-    if not root.is_dir():
-        return None
-    try:
-        _reject_symlinks(root)
-    except (OSError, ValueError):
-        return None
-    digest = hashlib.sha256()
-    for path in sorted((p for p in root.rglob("*") if p.is_file()), key=lambda p: str(p.relative_to(root))):
-        rel = path.relative_to(root).as_posix()
-        digest.update(rel.encode("utf-8"))
-        digest.update(b"\0")
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(chunk)
-    return digest.hexdigest()
+    from . import ki_tree
+    return ki_tree.digest(root, max_entries=MAX_TREE_FILES, max_bytes=MAX_TREE_BYTES)
 
 
 def tree_signature(root: Path) -> list[list[object]] | None:
     """Cheap change detector for UI status; never substitutes for digest."""
-    root = Path(root)
-    if not root.is_dir():
-        return None
-    try:
-        _reject_symlinks(root)
-        return [
-            [path.relative_to(root).as_posix(), path.stat().st_size,
-             path.stat().st_mtime_ns]
-            for path in sorted((p for p in root.rglob("*") if p.is_file()),
-                               key=lambda p: str(p.relative_to(root)))
-        ]
-    except (OSError, ValueError):
-        return None
+    from . import ki_tree
+    return ki_tree.signature(root, max_entries=MAX_TREE_FILES, max_bytes=MAX_TREE_BYTES)
 
 
 def verify(job_id: str) -> dict:
@@ -1548,17 +1536,27 @@ def export_zip(job_id: str) -> tuple[Path, bytes]:
 
 def _export_verified_tree(source: Path, path: Path, expected_digest: str) -> None:
     """Export a stable copy; a concurrent edit never becomes accepted bytes."""
+    from . import ki_copy, ki_tree
+    import stat
     temporary = path.with_name(path.name + f".{uuid.uuid4().hex}.tmp")
     try:
         with tempfile.TemporaryDirectory(prefix="geoforge-ki-export-") as td:
             snapshot = Path(td) / "candidate"
-            shutil.copytree(source, snapshot)
+            ki_copy.copytree(source, snapshot)
             if (tree_digest(source) != expected_digest or
                     tree_digest(snapshot) != expected_digest):
                 raise ValueError("KI changed before export; verify the unchanged draft again")
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for file in sorted(p for p in snapshot.rglob("*") if p.is_file()):
-                    archive.write(file, file.relative_to(snapshot).as_posix())
+                for entry in ki_tree.scan(snapshot).entries:
+                    if entry.kind == "link":
+                        info = zipfile.ZipInfo(entry.relative)
+                        info.create_system = 3
+                        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+                        archive.writestr(info, ki_copy.link_target(entry).as_posix())
+                    elif entry.kind == "directory":
+                        archive.writestr(entry.relative + "/", b"")
+                    else:
+                        archive.write(snapshot / entry.relative, entry.relative)
             if (tree_digest(source) != expected_digest or
                     tree_digest(snapshot) != expected_digest):
                 raise ValueError("KI changed during export; verify the unchanged draft again")
@@ -1583,13 +1581,14 @@ def adapt_for_desktop(job_id: str) -> dict:
     if not state["can_export_bare"]:
         raise ValueError("verify the unchanged bare KI before Desktop adaptation")
     ki_verification.require_current(candidate, acceptance, desktop=False)
-    _reject_symlinks(candidate)
+    _validate_candidate_tree(candidate)
 
     desktop = root / "desktop-candidate"
     staging = root / ".desktop-candidate.tmp"
     if staging.exists():
         shutil.rmtree(staging)
-    shutil.copytree(candidate, staging)
+    from . import ki_copy
+    ki_copy.copytree(candidate, staging)
     ki_verification.require_current(staging, acceptance, desktop=False)
     ki_verification.require_current(candidate, acceptance, desktop=False)
     changes: list[dict[str, str]] = []

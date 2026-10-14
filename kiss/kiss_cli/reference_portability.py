@@ -1,14 +1,16 @@
 """Classify reference-case paths without rewriting source or claiming a test pass.
 
 Only four top-level case files are eligible. Executable defaults need a bounded
-AST proof connecting their actual uses to an explicit argparse option. Unknown
+AST proof connecting their actual uses to an explicit CLI/environment binding. Unknown
 code shapes remain blocked; simply declaring an unrelated option proves nothing.
 """
 from __future__ import annotations
 
 import ast
+import io
 import json
 from pathlib import Path
+import tokenize
 
 from . import paths
 
@@ -16,6 +18,11 @@ from . import paths
 class _Runner:
     def __init__(self, text):
         self.tree = ast.parse(text)
+        lines = text.splitlines()
+        self.comments = {token.start[0]: token.string
+                         for token in tokenize.generate_tokens(io.StringIO(text).readline)
+                         if token.type == tokenize.COMMENT and
+                         not lines[token.start[0] - 1][:token.start[1]].strip()}
         self.parent = {c: n for n in ast.walk(self.tree) for c in ast.iter_child_nodes(n)}
         self.functions = {n.name: n for n in self.tree.body if isinstance(n, ast.FunctionDef)}
         self.assignments = {}
@@ -52,6 +59,203 @@ class _Runner:
                 if isinstance(par, ast.Assign) and len(par.targets) == 1 and isinstance(par.targets[0], ast.Name):
                     self.parsed[(self.scope(n), par.targets[0].id)] = key
 
+    def qualified(self, node):
+        """Resolve ordinary import aliases, refusing rebound module names."""
+        if isinstance(node, ast.Attribute):
+            base = self.qualified(node.value)
+            return base + '.' + node.attr if base else None
+        if not isinstance(node, ast.Name):
+            return None
+        imports = {a.name for item in ast.walk(self.tree) if isinstance(item, ast.Import)
+                   for a in item.names if (a.asname or a.name) == node.id}
+        imports.update((item.module or '') + '.' + a.name
+                       for item in ast.walk(self.tree) if isinstance(item, ast.ImportFrom)
+                       for a in item.names if (a.asname or a.name) == node.id)
+        if not imports:
+            return node.id
+        if len(imports) != 1 or any(
+                (isinstance(item, ast.Name) and item.id == node.id and isinstance(item.ctx, (ast.Store, ast.Del))) or
+                (isinstance(item, ast.arg) and item.arg == node.id) or
+                (isinstance(item, (ast.FunctionDef, ast.ClassDef)) and item.name == node.id)
+                for item in ast.walk(self.tree)):
+            return None
+        return next(iter(imports))
+
+    def environment_override(self, node):
+        """A named, unmodified environment binding can head an env-only selector."""
+        if not (isinstance(node, ast.Call) and self.qualified(node.func) == 'os.environ.get'
+                and len(node.args) == 1 and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str) and node.args[0].value and not node.keywords):
+            return False
+        key = node.args[0].value
+        for item in ast.walk(self.tree):
+            if isinstance(item, ast.Attribute) and self.qualified(item) == 'os.environ':
+                parent = self.parent.get(item)
+                # An escaped mapping can be cleared or updated through its
+                # alias. Only direct reads participate in this small proof.
+                if not (isinstance(parent, ast.Attribute) and parent.value is item
+                        and parent.attr in {'get', 'items', 'keys', 'values', 'copy'}
+                        and isinstance(parent.ctx, ast.Load)):
+                    if not (isinstance(parent, ast.Subscript) and parent.value is item
+                            and isinstance(parent.ctx, ast.Load)):
+                        return False
+            if isinstance(item, ast.Attribute) and isinstance(item.ctx, (ast.Store, ast.Del)):
+                name = self.qualified(item)
+                if name and (name == 'os.environ' or name.startswith('os.environ.')):
+                    return False
+            if (isinstance(item, ast.Subscript) and isinstance(item.ctx, (ast.Store, ast.Del))
+                    and self.qualified(item.value) == 'os.environ'):
+                if not isinstance(item.slice, ast.Constant) or item.slice.value == key:
+                    return False
+            if isinstance(item, ast.Call) and self.qualified(item.func) in {
+                    'os.environ.clear', 'os.environ.update', 'os.environ.pop', 'os.environ.setdefault',
+                    'os.environ.__setitem__', 'os.environ.__delitem__'}:
+                if (not item.args or not isinstance(item.args[0], ast.Constant)
+                        or item.args[0].value == key or self.qualified(item.func) in {'os.environ.clear', 'os.environ.update'}):
+                    return False
+        return True
+
+    @staticmethod
+    def _selected_assignment(statement):
+        # The optional second item is a diagnostic source label, never code.
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+            return None
+        target, value = statement.targets[0], statement.value
+        if isinstance(target, ast.Name):
+            return target.id, value
+        if (isinstance(target, ast.Tuple) and isinstance(value, ast.Tuple)
+                and len(target.elts) == len(value.elts) == 2
+                and all(isinstance(t, ast.Name) for t in target.elts)
+                and isinstance(value.elts[1], ast.Constant)):
+            return target.elts[0].id, value.elts[0]
+        return None
+
+    def branch_default(self, node):
+        """A parsed option selects the same destination before an else default."""
+        statement = next((p for p in self.ancestors(node) if isinstance(p, ast.stmt)), None)
+        selected = self._selected_assignment(statement)
+        if not selected or node not in ast.walk(selected[1]):
+            return False
+        child = statement
+        while isinstance(self.parent.get(child), ast.If):
+            guard = self.parent[child]
+            if child not in guard.orelse:
+                return False
+            if len(guard.body) == 1:
+                explicit = self._selected_assignment(guard.body[0])
+                if (explicit and explicit[0] == selected[0] and self.override(guard.test)
+                        and ast.dump(explicit[1]) == ast.dump(guard.test)):
+                    return True
+            child = guard
+        return False
+
+    @staticmethod
+    def _returns_binding(guard, binding):
+        """No normal path through this true branch reaches later defaults."""
+        if (not isinstance(guard, ast.If) or guard.orelse or not guard.body
+                or ast.dump(guard.test) != ast.dump(binding)):
+            return False
+        last = guard.body[-1]
+        if not (isinstance(last, ast.Return) and last.value is not None
+                and ast.dump(last.value) == ast.dump(binding)):
+            return False
+        return not any(isinstance(n, (ast.Break, ast.Continue, ast.For, ast.While,
+                                      ast.Try, ast.With, ast.Yield, ast.YieldFrom, ast.Await))
+                       for statement in guard.body for n in ast.walk(statement))
+
+    def prior_override_return(self, node):
+        """Prove a prior explicit selector returns before this fallback is reached.
+
+        Supports a direct if or a labelled explicit-candidate loop. It does not
+        bless the fallback's commands as pure: an explicit binding bypasses that
+        entire region, including version probes and missing-engine diagnostics.
+        """
+        scope = self.scope(node)
+        if not isinstance(scope, ast.FunctionDef):
+            return False
+        statement = node
+        while self.parent.get(statement) is not scope:
+            statement = self.parent.get(statement)
+            if statement is None:
+                return False
+        for preceding in scope.body[:scope.body.index(statement)]:
+            if (isinstance(preceding, ast.If) and self.override(preceding.test)
+                    and self._returns_binding(preceding, preceding.test)):
+                return True
+            if not (isinstance(preceding, ast.For) and not preceding.orelse
+                    and isinstance(preceding.target, ast.Tuple) and len(preceding.target.elts) == 2
+                    and all(isinstance(t, ast.Name) for t in preceding.target.elts)
+                    and isinstance(preceding.iter, ast.Name) and len(preceding.body) == 1):
+                continue
+            assignment = self.assignment(preceding.iter)
+            values = assignment.value if assignment else None
+            if (not isinstance(values, (ast.List, ast.Tuple)) or not values.elts
+                    or not isinstance(values.elts[0], (ast.List, ast.Tuple))
+                    or len(values.elts[0].elts) != 2 or not self.override(values.elts[0].elts[1])
+                    or self.loads(preceding.iter.id, scope) != [preceding.iter]):
+                continue
+            candidate = ast.Name(id=preceding.target.elts[1].id, ctx=ast.Load())
+            if self._returns_binding(preceding.body[0], candidate):
+                return True
+        return False
+
+    def pack_override(self):
+        """Do not exempt pack.server_default without its companion runner proof."""
+        keys = [n for n in ast.walk(self.tree) if isinstance(n, ast.Constant) and n.value == 'server_default']
+        if not keys:
+            return False
+        for key in keys:
+            access = self.parent.get(key)
+            if not (isinstance(access, ast.Subscript) and access.slice is key
+                    and isinstance(access.ctx, ast.Load) and isinstance(access.value, ast.Name)
+                    and self.prior_override_return(access)):
+                return False
+            scope = self.scope(access)
+            if not scope.args.args or access.value.id != scope.args.args[0].arg:
+                return False
+            # A whole mapping or a computed key could consume the same default
+            # without a literal server_default node. Check every pack use, not
+            # just the syntactically obvious key accesses.
+            # Include closure reads in local helpers; a nested function can
+            # otherwise consume the mapping before the explicit-path branch.
+            for use in (n for n in ast.walk(scope) if isinstance(n, ast.Name)
+                        and isinstance(n.ctx, ast.Load) and n.id == access.value.id):
+                parent = self.parent.get(use)
+                if (isinstance(parent, ast.Subscript) and parent.value is use
+                        and isinstance(parent.ctx, ast.Load) and isinstance(parent.slice, ast.Constant)
+                        and isinstance(parent.slice.value, str)):
+                    continue
+                if (isinstance(parent, ast.Call) and use in parent.args
+                        and self.prior_override_return(use)):
+                    continue
+                return False
+            calls = self.function_calls(scope)
+            if not calls:
+                return False
+            for call in calls:
+                source = call.args[0] if call.args else None
+                if not (isinstance(source, ast.Subscript) and isinstance(source.slice, ast.Constant)
+                        and source.slice.value == 'pack' and isinstance(source.value, ast.Name)):
+                    return False
+                assignment = self.assignment(source.value)
+                expected = "json.loads((HERE / 'manifest.json').read_text())"
+                if not assignment or ast.unparse(assignment.value) != expected:
+                    return False
+                # The loaded manifest may only supply this proven resolver.
+                # No aliases, unknown consumers or dynamic lookups are proof.
+                for use in self.loads(source.value.id, self.scope(assignment)):
+                    field = self.parent.get(use)
+                    consumer = self.parent.get(field)
+                    if not (isinstance(field, ast.Subscript) and field.value is use
+                            and isinstance(field.ctx, ast.Load) and isinstance(field.slice, ast.Constant)
+                            and field.slice.value == 'pack' and consumer in calls
+                            and consumer.args and consumer.args[0] is field):
+                        return False
+                here = self.assignments.get((self.tree, 'HERE'), [])
+                if len(here) != 1 or ast.unparse(here[0].value) != 'Path(__file__).resolve().parent':
+                    return False
+        return True
+
     def scope(self, n):
         while n in self.parent:
             n = self.parent[n]
@@ -67,8 +271,23 @@ class _Runner:
                 break
 
     def assignment(self, n):
-        values = self.assignments.get((self.scope(n), n.id), self.assignments.get((self.tree, n.id), []))
+        scope = self.scope(n)
+        if self.unsupported_write(n.id, scope):
+            return None
+        values = self.assignments.get((scope, n.id), self.assignments.get((self.tree, n.id), []))
+        if values and self.unsupported_write(n.id, self.scope(values[0])):
+            return None
         return values[0] if len(values) == 1 else None
+
+    def unsupported_write(self, name, scope):
+        for node in ast.walk(scope):
+            if (isinstance(node, ast.Name) and node.id == name and self.scope(node) is scope
+                    and isinstance(node.ctx, (ast.Store, ast.Del))):
+                parent = self.parent.get(node)
+                if not (isinstance(parent, ast.Assign) and len(parent.targets) == 1
+                        and parent.targets[0] is node):
+                    return True
+        return False
 
     def override(self, n, seen=frozenset()):
         if id(n) in seen:
@@ -78,7 +297,7 @@ class _Runner:
             parser = self.parsed.get((self.scope(n), n.value.id))
             key = self.scope(n), n.value.id
             assignments = self.assignments.get(key, [])
-            if len(assignments) != 1:
+            if len(assignments) != 1 or self.unsupported_write(n.value.id, self.scope(n)):
                 return False
             # Namespace mutation or passing the whole namespace to unknown
             # code means the option no longer proves an available override.
@@ -91,6 +310,8 @@ class _Runner:
         if isinstance(n, ast.BoolOp) and isinstance(n.op, ast.Or):
             return self.override(n.values[0], seen)
         if isinstance(n, ast.Name):
+            if self.unsupported_write(n.id, self.scope(n)):
+                return False
             assignment = self.assignment(n)
             if assignment:
                 return self.override(assignment.value, seen)
@@ -172,9 +393,9 @@ class _Runner:
         return False
 
     def pure_call(self, call):
-        allowed = {'Path', 'str', 'all', 'any', 'bool', 'os.path.isfile', 'os.path.isdir',
+        allowed = {'Path', 'pathlib.Path', 'str', 'all', 'any', 'bool', 'os.path.isfile', 'os.path.isdir',
                    'os.path.exists', 'os.path.abspath', 'os.path.join', 'os.access'}
-        if ast.unparse(call.func) in allowed:
+        if self.qualified(call.func) in allowed:
             return True
         return (isinstance(call.func, ast.Attribute) and call.func.attr in
                 {'is_file', 'is_dir', 'exists', 'resolve'} and
@@ -394,6 +615,8 @@ class _Runner:
             return True
         if self.guarded_option_default(n):
             return True
+        if self.branch_default(n) or self.prior_override_return(n):
+            return True
         if id(n) in seen:
             return False
         seen = seen | {id(n)}
@@ -405,6 +628,8 @@ class _Runner:
             if isinstance(p, (ast.Tuple, ast.List)):
                 containing = next((i for i, v in enumerate(p.elts) if n in ast.walk(v)), 0)
                 if any(self.override(v) for v in p.elts[:containing]) and self.selected(p):
+                    return True
+                if containing and self.environment_override(p.elts[0]) and self.selected(p):
                     return True
             if isinstance(p, ast.Call):
                 # A default passed into a local selector's parameter must be
@@ -434,17 +659,19 @@ class _Runner:
         return False
 
     def classify(self, line, path):
+        if path in self.comments.get(line, ''):
+            return 'provenance', 'Full-line Python comment; source bytes retained'
         strings = [n for n in ast.walk(self.tree) if isinstance(n, ast.Constant) and isinstance(n.value, str) and path in n.value and n.lineno <= line <= n.end_lineno]
         if not strings:
             return 'blocked', 'Path is not a proven configurable literal or provenance string'
         if all(self.diagnostic(n) for n in strings):
             return 'provenance', 'Runner docstring or printed diagnostic; no test outcome inferred'
         if all(self.safe_use(n) for n in strings):
-            return 'configurable_default', 'AST connects every default use to a parsed explicit option and candidate selection'
+            return 'configurable_default', 'AST connects every default use to an explicit CLI/environment binding and guarded selection'
         return 'blocked', 'Runner path has no bounded proof that every use is an overridable default'
 
 
-def _json_category(text, filename, matched):
+def _json_category(text, filename, matched, runner=None):
     try:
         doc = json.loads(text)
     except (ValueError, TypeError):
@@ -456,13 +683,20 @@ def _json_category(text, filename, matched):
         for key in ('recorded_with', 'engine_version', 'run_tweak'):
             if key in doc:
                 allowed.append(doc.pop(key))
+        notes = doc.get('notes')
+        if isinstance(notes, list) and all(isinstance(v, str) for v in notes):
+            allowed.extend(doc.pop('notes'))
         category = 'provenance'
     else:
         engine = doc.get('engine')
         if isinstance(engine, dict):
-            for key in ('binary', 'default_binary', 'binary_default', 'python', 'source'):
+            for key in ('binary', 'default_binary', 'binary_default', 'python', 'source', 'build'):
                 if key in engine:
                     allowed.append(engine.pop(key))
+        pack = doc.get('pack')
+        if (isinstance(pack, dict) and isinstance(pack.get('server_default'), str)
+                and runner is not None and runner.pack_override()):
+            allowed.append(pack.pop('server_default'))
         category = 'runtime_binding_metadata'
     if any(isinstance(v, str) and matched in v for v in allowed) and matched not in json.dumps(doc, ensure_ascii=False):
         return category, 'Known recorded provenance or external engine-binding field; source bytes retained'
@@ -484,10 +718,12 @@ def classify_reference_paths(ki) -> dict[str, list[dict]]:
         except (OSError, UnicodeError):
             continue
         runner = None
-        if rel.name == 'run_reference.py':
+        if rel.name in {'run_reference.py', 'manifest.json'}:
             try:
-                runner = _Runner(text)
-            except (SyntaxError, ValueError):
+                companion = file.with_name('run_reference.py')
+                if not companion.is_symlink():
+                    runner = _Runner(text if rel.name == 'run_reference.py' else companion.read_text(encoding='utf-8'))
+            except (OSError, UnicodeError, SyntaxError, ValueError, tokenize.TokenError):
                 pass
         rows = []
         for number, line in enumerate(text.splitlines(), 1):
@@ -495,7 +731,7 @@ def classify_reference_paths(ki) -> dict[str, list[dict]]:
                 if rel.name == 'README.md':
                     category, reason = 'provenance', 'Reference-case documentation; local runtime binding still required'
                 elif rel.suffix == '.json':
-                    category, reason = _json_category(text, rel.name, matched)
+                    category, reason = _json_category(text, rel.name, matched, runner)
                 elif runner is not None:
                     category, reason = runner.classify(number, matched)
                 else:

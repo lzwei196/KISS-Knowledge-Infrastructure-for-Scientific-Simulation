@@ -368,13 +368,47 @@ function updateZh(){return window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN"}
 function updateNames(title,items){return (items||[]).length?`<b>${esc(title)}</b><div class="update-list">${items.map(x=>`<span class="update-name">${esc(x)}</span>`).join("")}</div>`:""}
 let KIUPDATE_STARTING=false, KIUPDATE_SEQUENCE=0;
 let KIUPDATE_STATUS_ERROR="", KIUPDATE_ACTION_ERROR="", KIUPDATE_VIEW_ERROR="";
+function updateStage(stage){
+  const labels={check_main:["Checking main revision…","正在检查主分支版本……"],
+    raw_windows:["Checking Windows support…","正在验证 Windows 安装支持……"],
+    download:["Obtaining KI archive…","正在获取 KI 归档……"],
+    extract:["Extracting KI archive…","正在解压 KI 归档……"],
+    compose:["Preparing platform guidance…","正在准备平台安装指导……"],
+    validate:["Checking KI packages…","正在检查 KI 软件包……"],
+    activate:["Finalizing library activation…","正在完成 KI 库启用检查……"]};
+  return Object.hasOwn(labels,stage)?updateText(...labels[stage]):"";
+}
+function updateProgress(u){
+  const p=u.state==="checking"?u.progress:null;
+  if(!p||typeof p!=="object")return "";
+  let label=updateStage(p.stage);if(!label)return "";
+  if(p.stage==="validate"&&Number.isInteger(p.checked)&&Number.isInteger(p.total)&&p.checked>=0&&p.checked<=p.total){
+    label+=updateText(` ${p.checked}/${p.total} checks finished.`,` 已完成 ${p.checked}/${p.total} 项检查。`);
+  }
+  if(typeof p.current==="string"&&p.current)label+=updateText(` Current package: ${p.current}.`,` 当前软件包：${p.current}。`);
+  return label;
+}
+function updateActivationOutcome(u){
+  const value=u.activation?.outcome;
+  return ["unchanged","restored","committed","uncertain"].includes(value)?value:"";
+}
+function updateRestartRequired(u){return u.activation?.restart_required===true}
+function updateActivationSummary(u){
+  const outcome=updateActivationOutcome(u);
+  if(outcome==="uncertain")return updateText("The update could not confirm which KI library is active. Review the activation details.","本次更新无法确认当前启用的 KI 库。请查看启用诊断。");
+  if(u.state!=="error")return "";
+  if(outcome==="committed")return updateText("The new KI library is active, but a later update step failed.","新 KI 库已启用，但后续更新步骤失败。");
+  if(outcome==="restored")return updateText("The update did not complete. This session returned to its previous KI library.","更新未完成。当前会话已恢复使用之前的 KI 库。");
+  return "";
+}
 function updateSummary(u){
   if(u.state==="disabled")return updateText("KI updates are unavailable in this server session.","当前服务未启用 KI 更新。");
+  const activation=updateActivationSummary(u);if(activation)return activation;
+  if(u.state==="checking")return updateProgress(u)||updateText("Checking the GeoForge repository for KI updates…","正在从 GeoForge 仓库检查 KI 更新……");
   if(!updateZh())return u.summary||"KI update status is not available.";
-  if(u.state==="checking")return "正在从 GeoForge 仓库检查 KI 更新……";
   if(u.state==="updated")return `KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`;
   if(u.state==="up_to_date")return "KI 库已经是最新版本。";
-  if(u.state==="error")return "KI 更新未完成；GeoForge 已继续使用上一次验证通过的版本。";
+  if(u.state==="error")return "KI 更新未完成；GeoForge 保留了当前 KI 库。";
   if(u.state==="kept")return "GeoForge 保留了当前 KI 库，因为仓库中的版本会移除本机平台的安装说明或安装配方。";
   return "尚未检查 KI 更新。";
 }
@@ -391,13 +425,15 @@ function updateComponents(components){
   return rows.length?`<b>${updateText("Active component sources","当前组件来源")}</b>${rows.join("")}`:"";
 }
 function updateWindowsOverlay(overlay){
-  if(!overlay||!Array.isArray(overlay.files)||!overlay.files.length)return "";
+  if(!overlay||!Array.isArray(overlay.files)||(!overlay.files.length&&!overlay.composition))return "";
   const count=mode=>overlay.files.filter(row=>row?.mode===mode).length;
   const notes=count("retained_windows_notes"),retained=count("retained_windows_recipe"),composed=count("three_way_rebase")+count("platform_contract_overlay");
   const pins=[overlay.upstream_commit?`${updateText("upstream commit","上游提交")} ${String(overlay.upstream_commit).slice(0,12)}`:"",overlay.overlay_id?`${updateText("overlay digest","补充层摘要")} ${String(overlay.overlay_id).slice(0,12)}`:""].filter(Boolean).join(" · ");
+  const windowsCommit=overlay.composition?.windows?.source_commit;
   return `<div class="update-detail"><b>${updateText("Active Windows support","当前 Windows 支持")}</b><br>${updateText("Repository KIs with retained or composed Windows installation support.","仓库 KI 加上保留或组合生成的 Windows 安装支持。")}`+
     `<br>${notes} ${updateText("retained documents","份保留的说明")} · ${retained} ${updateText("retained recipes","份保留的安装配方")} · ${composed} ${updateText("composed recipes","份组合生成的安装配方")}`+
     (overlay.source_identity?`<br><small style="overflow-wrap:anywhere">${updateText("Platform support source","平台支持来源")}: ${esc(overlay.source_identity)}</small>`:"")+
+    (windowsCommit?`<br><small>${updateText("Raw Windows guidance commit","原始 Windows 安装指导提交")}: ${esc(String(windowsCommit).slice(0,12))}</small>`:"")+
     (pins?`<br><small>${esc(pins)}</small>`:"")+
     (overlay.setup_reverification_required?`<div class="finding WARN">${updateText("Setup must be verified again for the combined KI and Windows recipe. This library update does not verify model installation or scientific results.","组合后的 KI 与 Windows 安装配方需要重新验证安装。本次库更新不代表模型安装或科学结果已通过验证。")}</div>`:"")+"</div>";
 }
@@ -406,6 +442,8 @@ function updateValidationFailure(failure){
   const findings=Array.isArray(failure.findings)?failure.findings.filter(row=>row&&typeof row==="object"):[];
   const files=Array.isArray(failure.portability_files)?failure.portability_files.filter(row=>row&&typeof row==="object"):[];
   const blockers=findings.filter(row=>row.severity==="BLOCK").length;
+  const checkStatus=blockers?`${blockers} ${updateText("blocking package findings","项阻塞性软件包检查结果")}`:
+    updateText("Update stopped; package acceptance was not completed","更新已停止；软件包验收尚未完成");
   const value=(en,zh,text)=>text===undefined||text===null||text===""?"":`<div><b>${updateText(en,zh)}:</b> <code>${esc(text)}</code></div>`;
   const identity=value("Candidate commit","候选提交",failure.source_commit)+value("Check stage","检查阶段",failure.stage)+
     value("Quarantined candidate","隔离的候选文件",failure.quarantine_path)+value("Full report file","完整报告文件",failure.report_path)+
@@ -413,13 +451,15 @@ function updateValidationFailure(failure){
     value("Archive SHA-256","归档 SHA-256",failure.archive_sha256)+value("Source content SHA-256","源内容 SHA-256",failure.source_content_sha256)+
     value("Candidate content SHA-256","候选内容 SHA-256",failure.candidate_content_sha256)+
     value("Candidate overlay digest","候选补充层摘要",failure.windows_overlay?.overlay_id)+
-    value("Candidate platform support source","候选平台支持来源",failure.windows_overlay?.source_identity);
+    value("Candidate platform support source","候选平台支持来源",failure.windows_overlay?.source_identity)+
+    value("Raw Windows guidance commit","原始 Windows 安装指导提交",failure.windows_overlay?.composition?.windows?.source_commit)+
+    value("Composition policy","组合策略",failure.windows_overlay?.composition?.policy);
   const rows=findings.map(row=>`<div class="update-detail"><b>${esc(row.severity)} · ${esc(row.ki)} · ${esc(row.check)}</b><div style="white-space:pre-wrap">${esc(row.detail)}</div>`+
     (row.count>1?`<small>${updateText("Reported occurrences","报告中的出现次数")}: ${esc(row.count)}</small>`:"")+"</div>").join("");
   const paths=files.map(row=>`<details class="update-detail"><summary>${esc(row.ki)} · <code>${esc(row.path)}</code></summary>`+
     value("File SHA-256","文件 SHA-256",row.sha256)+(Array.isArray(row.matches)?row.matches:[]).filter(match=>match&&typeof match==="object").map(match=>
       `<div>${updateText("Line","行")} ${esc(match.line)} · ${updateText("role","角色")} <code>${esc(match.role)}</code> · <code>${esc(match.path)}</code></div>`).join("")+"</details>").join("");
-  return `<details class="update-detail" style="overflow-wrap:anywhere"><summary><b>${failure.activated===false?updateText("Inactive candidate diagnostics","未启用候选版本的诊断"):updateText("Candidate diagnostics","候选版本诊断")}</b> · ${blockers} ${updateText("blocking package findings","项阻塞性软件包检查结果")}</summary>`+
+  return `<details class="update-detail" style="overflow-wrap:anywhere"><summary><b>${failure.activated===false?updateText("Inactive candidate diagnostics","未启用候选版本的诊断"):updateText("Candidate diagnostics","候选版本诊断")}</b> · ${checkStatus}</summary>`+
     (failure.activated===false?`<p>${updateText("This candidate was not activated; the active component sources above are unchanged. These static package findings do not establish that model execution failed.","此候选版本未启用；上方当前组件来源保持不变。这些静态软件包检查结果不代表模型运行失败。")}</p>`:"")+
     (failure.error?`<div style="white-space:pre-wrap">${esc(failure.error)}</div>`:"")+identity+
     `<details class="update-detail"><summary>${updateText("All package findings","全部软件包检查结果")} (${findings.length})</summary>${rows||updateText("No structured findings were recorded for this failure.","本次失败未记录结构化检查结果。")}</details>`+
@@ -438,30 +478,57 @@ function updateReferenceCases(cases){
     updateNames(updateText("Affected KIs","涉及的 KI"),Array.isArray(cases.affected_kis)?cases.affected_kis:[])+
     (warnings.length?`<details><summary>${updateText("Reference-case findings","参考案例检查结果")} (${warnings.length})</summary>${warnings.map(row=>`<div class="update-detail"><b>${esc(row.ki)} · ${esc(row.check)}</b><div style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.detail)}</div></div>`).join("")}</details>`:"")+"</div>";
 }
+function updateActivationDetails(u){
+  const outcome=updateActivationOutcome(u),a=u.activation;
+  if(!outcome||(u.state!=="error"&&!updateRestartRequired(u)))return "";
+  const value=(en,zh,text)=>typeof text!=="string"||!text?"":`<div><b>${updateText(en,zh)}:</b> <code>${esc(text)}</code></div>`;
+  const selections={unchanged:["Unchanged","未改变"],candidate:["Candidate snapshot","候选快照"],
+    foreign:["Changed outside this update","已被本次更新之外的操作修改"],unknown:["Not confirmed","尚未确认"]};
+  const selection=Object.hasOwn(selections,a.saved_selection)?updateText(...selections[a.saved_selection]):updateText("Not recorded","未记录");
+  return `<details class="update-detail" style="overflow-wrap:anywhere"><summary><b>${updateText("Library activation diagnostics","KI 库启用诊断")}</b></summary>`+
+    value("Previous session library","当前会话之前的库",a.previous_root)+value("Candidate library","候选库",a.candidate_root)+
+    (outcome==="uncertain"?`<div><b>${updateText("Current session library","当前会话使用的库")}:</b> ${updateText("Not confirmed","尚未确认")}</div>`:value("Current session library","当前会话使用的库",a.current_root))+
+    `<div><b>${updateText("Saved library selection","已保存的库选择")}:</b> ${esc(selection)}</div>`+
+    `<p>${updateText("The current session and saved selection are reported separately; they may differ after an activation failure.","当前会话与已保存的库选择分别记录；启用失败后，两者可能不同。")}</p>`+
+    value("Activation error","启用错误",a.error)+value("Restore error","恢复错误",a.rollback_error)+"</details>";
+}
 function drawKiUpdate(){
   const u=KIUPDATE||{},checking=u.state==="checking",disabled=u.state==="disabled",inProgress=checking||KIUPDATE_STARTING;
+  const currentAttempt=checking&&!!u.progress;
+  const activation=updateActivationOutcome(u),restartRequired=updateRestartRequired(u);
   const issue=KIUPDATE_STATUS_ERROR||KIUPDATE_ACTION_ERROR||KIUPDATE_VIEW_ERROR;
   const route=u.network_route?` · ${updateText("route","线路")}: ${u.network_route==="direct"?updateText("direct","直连"):u.network_route}`:"";
   $("#kiupdatelabel").textContent=disabled?updateText("Updates unavailable","更新不可用"):issue?updateText("Update issue","更新问题"):
-    checking||KIUPDATE_STARTING?updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):
+    checking||KIUPDATE_STARTING?(checking?updateStage(u.progress?.stage):"")||updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):
     u.state==="error"?updateText("Update issue","更新问题"):u.state==="kept"?updateText("Library kept","已保留当前库"):updateText("KI updates","KI 更新");
   const notice=(title,detail)=>detail?`<div class="finding WARN"><b>${esc(title)}</b> · ${esc(detail)}</div>`:"";
   $("#updatesummary").innerHTML=notice(updateText("Could not read current status; the last recorded status is shown.","无法读取当前状态；下方显示上次记录。"),KIUPDATE_STATUS_ERROR)+
     notice(updateText("Could not start the update check","无法启动更新检查"),KIUPDATE_ACTION_ERROR)+
     notice(updateText("Could not refresh the library view","无法刷新 KI 库视图"),KIUPDATE_VIEW_ERROR)+
-    `<b>${esc(KIUPDATE_STARTING?updateText("Starting the update check…","正在启动更新检查……"):updateSummary(u))}</b><br><small>${esc(u.branch||"")}${u.checked_at?` · ${inProgress?updateText("Previous check: ","上次检查："):""}${esc(when(u.checked_at))}`:""}${u.source_commit?` · ${inProgress?updateText("Previous checked commit: ","上次检查的提交："):updateText("Checked commit: ","已检查的提交：")}${esc(String(u.source_commit).slice(0,12))}`:""}${esc(route)}</small>`;
+    `<b role="status" aria-live="polite">${esc(KIUPDATE_STARTING?updateText("Starting the update check…","正在启动更新检查……"):updateSummary(u))}</b><br><small>${esc(u.branch||"")}${currentAttempt&&u.started_at?` · ${updateText("Started: ","开始时间：")}${esc(when(u.started_at))}`:""}${u.checked_at?` · ${inProgress?updateText("Previous check: ","上次检查："):""}${esc(when(u.checked_at))}`:""}${u.source_commit?` · ${currentAttempt?updateText("Candidate commit: ","候选提交："):inProgress?updateText("Previous checked commit: ","上次检查的提交："):updateText("Checked commit: ","已检查的提交：")}${esc(String(u.source_commit).slice(0,12))}`:""}${esc(route)}</small>`;
   const changes=(u.changes||[]).map(row=>`<div class="update-detail"><b>${esc(row.name)}</b>${updateNames(updateText("Added files","新增文件"),row.added_files)}${updateNames(updateText("Changed files","更新文件"),row.updated_files)}${updateNames(updateText("Removed files","移除文件"),row.removed_files)}</div>`).join("");
   const disabledReason=u.reason||u.summary||updateText("Open GeoForge Desktop with its KI updater enabled.","请使用启用了 KI 更新功能的 GeoForge Desktop。");
+  const rejectedPackages=new Set((Array.isArray(u.validation_failure?.findings)?u.validation_failure.findings:[])
+    .filter(row=>row?.severity==="BLOCK"&&typeof row.ki==="string").map(row=>row.ki)).size;
+  const updateError=u.error&&rejectedPackages?updateText(
+    `${rejectedPackages} KI packages need corrections before activation. Open the diagnostics for details.`,
+    `${rejectedPackages} 个 KI 软件包需要修正后才能启用。展开下方诊断查看详情。`):u.error;
+  const failureTitle=activation==="uncertain"?updateText("Active library not confirmed","当前启用的库尚未确认"):
+    activation==="committed"?updateText("New library is active; follow-up failed","新库已启用；后续步骤失败"):
+    activation==="restored"?updateText("Previous library restored for this session","当前会话已恢复之前的库"):
+    updateText("Current library kept safely","已安全保留当前 KI 库");
   $("#updatedetails").innerHTML=(disabled?`<div class="finding WARN"><b>${updateText("Updater disabled","更新功能未启用")}</b> · ${esc(disabledReason)}<br>${updateText("This session cannot start an update check.","本次服务无法启动更新检查。")}</div>`:"")+
-    updateWindowsOverlay(u.windows_overlay)+updateComponents(u.components)+updateReferenceCases(u.reference_cases)+(inProgress?"":
-    notice(updateText("Current library kept safely","已安全保留当前 KI 库"),u.error)+
+    (activation==="uncertain"?"":updateWindowsOverlay(u.windows_overlay)+updateComponents(u.components)+updateReferenceCases(u.reference_cases))+(inProgress?"":
+    notice(failureTitle,updateError||updateActivationSummary(u))+
+    (restartRequired?notice(updateText("Restart required","需要重新启动"),updateText("Restart GeoForge before trying another KI update. This session could not establish a safe active-library state.","再次尝试更新 KI 前，请重新启动 GeoForge。当前会话无法确认可靠的启用状态。")):"")+
+    updateActivationDetails(u)+
     updateValidationFailure(u.validation_failure)+
     updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+
     (u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:""));
-  $("#updatescope").textContent=updateText("New or edited KIs must pass KDT and Desktop package checks before activation. GeoForge checks the exact files again before applying them. Existing projects keep their KI revision; software and reference-case results require separate checks. These rules apply to every CLI and API provider.","新增或修改的 KI 必须通过 KDT 和桌面软件包检查才能启用；应用前再次核对文件内容。现有项目保留原 KI 版本，软件运行和参考算例结果需另行验证。所有 CLI 与 API 提供方遵守相同规则。");
-  $("#updateretry").disabled=checking||disabled||KIUPDATE_STARTING;
-  $("#updateretry").textContent=disabled?updateText("Unavailable","不可用"):KIUPDATE_STARTING?updateText("Starting…","正在启动……"):checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");
-  $("#updateretry").title=disabled?disabledReason:"";
+  $("#updatescope").textContent=updateText("Every incoming KI must pass current KDT and Desktop package checks before activation. GeoForge checks the exact files again before applying them. Existing projects keep their KI revision; software and reference-case results require separate checks. These rules apply to every CLI and API provider.","每个传入的 KI 都必须通过当前 KDT 和桌面软件包检查才能启用；应用前再次核对文件内容。现有项目保留原 KI 版本，软件运行和参考算例结果需另行验证。所有 CLI 与 API 提供方遵守相同规则。");
+  $("#updateretry").disabled=checking||disabled||KIUPDATE_STARTING||restartRequired;
+  $("#updateretry").textContent=disabled?updateText("Unavailable","不可用"):restartRequired?updateText("Restart required","需要重新启动"):KIUPDATE_STARTING?updateText("Starting…","正在启动……"):checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");
+  $("#updateretry").title=disabled?disabledReason:restartRequired?updateText("Restart GeoForge before retrying.","请重新启动 GeoForge 后再试。"):"";
   $("#updatesource").href=safeUrl(u.source_url)||"#";
 }
 async function kiUpdateJSON(url,options){
@@ -499,7 +566,7 @@ async function loadKiUpdate(open=false){
   if(sequence===KIUPDATE_SEQUENCE){drawKiUpdate();scheduleKiUpdatePoll();}
 }
 async function checkKiUpdate(){
-  if(KIUPDATE_STARTING||KIUPDATE?.state==="checking"||KIUPDATE?.state==="disabled")return;
+  if(KIUPDATE_STARTING||KIUPDATE?.state==="checking"||KIUPDATE?.state==="disabled"||updateRestartRequired(KIUPDATE||{}))return;
   KIUPDATE_STARTING=true;KIUPDATE_SEQUENCE++;clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=null;
   KIUPDATE_ACTION_ERROR="";drawKiUpdate();
   try{

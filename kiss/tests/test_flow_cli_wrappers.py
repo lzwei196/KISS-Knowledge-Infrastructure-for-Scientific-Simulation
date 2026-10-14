@@ -13,7 +13,9 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "kiss"))
 
-from kiss_cli import cli, flowrun, ki_guard, paths, project_paths  # noqa: E402
+from kiss_cli import cli, flowrun, ki_guard, paths, project_paths, project_verification  # noqa: E402
+from kiss_cli.catalog import KI  # noqa: E402
+from kiss_cli.manifest import Manifest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +29,7 @@ def _project_with_ki(tmp_path):
     (root / "SKILL.md").write_text("# M\n> **MANDATORY EXECUTION POLICY**\n> run it\n\n")
     (root / "dag.yaml").write_text("outputs:\n- var: discharge\n  validation_rank: 1\n  unit: m3/s\n"
                                    "processes:\n  modules:\n  - id: run\n")
+    (root / "preflight_check.py").write_text("print('Harmless CLI fixture preflight passed')\n", encoding="utf-8")
     (root / "tools" / "run.py").write_text(
         "import sys, pathlib\nout = pathlib.Path(sys.argv[1]); out.parent.mkdir(parents=True, exist_ok=True)\n"
         "out.write_text('t,q\\n1,0.5\\n2,1.2\\n')\n")
@@ -39,8 +42,18 @@ def _project_with_ki(tmp_path):
     return project, SimpleNamespace(name="M", root=root)
 
 
-def _approve(project, ki):
+def _verify_project(project, ki):
+    # Finish authoring fixture tools before enrolling/verifying their exact
+    # project bytes. A shared install pass cannot authorize this namespace.
     ki_guard.enroll(ki.root)
+    verified = project_verification.verify(project, KI(ki.name, ki.root), Manifest(model=ki.name))
+    assert verified["ok"], verified
+    assert "Harmless CLI fixture preflight passed" in verified["receipt"]["checks"][0]["detail"]
+    project_verification.require_current(project, ki.name, ki.root)
+
+
+def _approve(project, ki):
+    _verify_project(project, ki)
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     t = flowrun.turn(project, [ki], SimpleNamespace(root=project, python=sys.executable, roles={}),
                      "cli", "claude", None, "run M for 2003")
@@ -91,7 +104,7 @@ def test_run_tool_uses_only_environment_from_the_approved_step(
         "out.parent.mkdir(parents=True, exist_ok=True)\n"
         "out.write_text(json.dumps({'ki': os.environ['VIC_KI_ROOT'], "
         "'secret': 'TEST_API_KEY' in os.environ}))\n")
-    ki_guard.enroll(ki.root)
+    _verify_project(project, ki)
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
     turn = flowrun.turn(
         project, [ki], SimpleNamespace(root=project, python=sys.executable, roles={}),

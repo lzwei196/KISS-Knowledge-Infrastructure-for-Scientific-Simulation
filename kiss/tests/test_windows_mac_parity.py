@@ -100,27 +100,27 @@ PROV.providers=[{name:'api:deepseek',label:'DeepSeek'},{name:'cli:codex',label:'
 assert.match(settingsProviderOptions('api:deepseek'), /value="api:deepseek" selected>DeepSeek/);
 assert.equal((settingsProviderOptions('api:deepseek').match(/value="api:deepseek"/g)||[]).length,1);
 """
-    # Execute the shipped deferred startup callback: guarded status refresh must
-    # still populate provider settings after both async reads finish.
-    start = page.index("setTimeout(async()=>{", page.index("async function loadAll("))
-    end = page.index("},750);", start) + len("},750);")
-    startup = page[start:end]
+    # Provider metadata is populated independently from slow catalog checks.
+    # Exercise the actual refresh function, retaining settings/model redraws.
+    start = page.index("async function refreshProviders(")
+    end = page.index("\nfunction refreshProvidersOnFocus(", start)
+    refresh = page[start:end]
     script += """
 (async()=>{
-  let PROV={providers:[]},callback;
+  let PROV={providers:[]},PROVIDER_REFRESHING=null,LAST_PROVIDER_CHECK=0;
   const CUR={id:'existing-chat'},calls=[];
-  const fresh={providers:[{name:'api:deepseek',usable:true}]};
-  function setTimeout(fn,delay){assert.equal(delay,750);callback=fn;}
-  async function refreshMachineStatus(redraw,force){assert.equal(redraw,true);assert.equal(force,true);calls.push('status');return {};}
-  async function fetch(url){assert.equal(url,'/api/providers');return {json:async()=>fresh};}
+  const fresh={providers:[{name:'api:deepseek',kind:'api',usable:true}],any_usable:true};
+  const $=()=>null;
+  async function fetch(url,options){assert.equal(url,'/api/providers');assert.equal(options.cache,'no-store');return {ok:true,json:async()=>fresh};}
   function drawProviders(){calls.push('providers');}
   function drawLocalSettings(){calls.push('local');}
   function drawProxyProviderSettings(){calls.push('proxy');}
   function drawModelLabel(){calls.push('model');}
-""" + startup + """
-  await callback();
-  assert.equal(PROV,fresh);
-  assert.deepEqual(calls,['status','providers','local','proxy','model']);
+""" + refresh + """
+  assert.equal(await refreshProviders(false,false),true);
+  assert.deepEqual(PROV,{...fresh,check_state:'ready'});
+  assert.deepEqual(calls,['providers','providers','local','proxy','model']);
+  assert.equal(PROVIDER_REFRESHING,null);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
     result = subprocess.run([shutil.which("node"), "-e", script], capture_output=True, text=True,

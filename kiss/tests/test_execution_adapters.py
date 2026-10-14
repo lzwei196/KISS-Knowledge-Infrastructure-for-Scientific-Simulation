@@ -13,7 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import api, cli, flowgate, ki_guard, paths, project_paths
+from kiss_cli import api, cli, execution, flowgate, ki_guard, paths, project_paths, project_verification
+from kiss_cli.catalog import KI
+from kiss_cli.manifest import Manifest
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +32,7 @@ def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=No
         "# M\n> **MANDATORY EXECUTION POLICY**\n> run the declared tool\n\n")
     (root / "dag.yaml").write_text(
         "outputs:\n- var: discharge\n  validation_rank: 1\n  unit: m3/s\n")
+    (root / "preflight_check.py").write_text("print('Harmless adapter fixture preflight passed')\n")
     tool = root / "tools" / tool_name
     tool.write_text(source)
     if tool.suffix != ".py":
@@ -44,6 +47,8 @@ def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=No
     (root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
     neutral = project_paths.project_config(project, python=sys.executable)
     (project / paths.CONFIG_NAME).write_text(neutral.dumps(), encoding="utf-8")
+    verified = project_verification.verify(project, KI("M", root), Manifest(model="M"))
+    assert verified["ok"], verified
     fs = flowgate.FlowSession.open(project, {"M": root}, python=sys.executable)
     fs.move("task_received")
     fs.move("kis_resolved", {"selected_kis": ["M"]})
@@ -174,10 +179,14 @@ def test_execution_cannot_gain_a_receipt_if_approval_changes_during_run(
 
 
 @pytest.mark.parametrize("adapter", ["direct", "cli"])
-def test_missing_interpreter_returns_a_signed_not_launched_attempt(tmp_path, capsys, adapter):
+def test_interpreter_unavailable_after_verification_returns_signed_not_launched_attempt(tmp_path, capsys, monkeypatch, adapter):
     ctx = _project(tmp_path, "from pathlib import Path\nPath('launched').write_text('bad')\n")
-    ctx.cfg.python = ctx.project / "absent-interpreter"
-    (ctx.ki.root.parent / paths.CONFIG_NAME).write_text(ctx.cfg.dumps(), encoding="utf-8")
+    # Changing the configured interpreter now invalidates verification. Inject
+    # a real launch-boundary error instead: the checked binding is unchanged,
+    # but the executable has become unavailable since the successful check.
+    def missing(*_args, **_kwargs):
+        raise FileNotFoundError("absent-interpreter")
+    monkeypatch.setattr(execution.subprocess, "Popen", missing)
     output, errors = _invoke(adapter, ctx, capsys)
     assert "Could not launch KI tool" in output + errors
     assert "absent-interpreter" in output + errors

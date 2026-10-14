@@ -31,7 +31,7 @@ context.fetch=async(url,init={})=>{
   }
   if(input.deferRead)await new Promise(resolve=>release=resolve);
   const saved=input.reads?.[Math.min(readCount++,input.reads.length-1)];
-  return response(saved||{job:input.job||null,available:input.available!==false,reason:input.reason||''});
+  return response(saved||{job:input.job||null,available:input.available!==false,reason:input.reason||'',rejected_sources:input.rejectedSources||[]});
 };
 vm.createContext(context);vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
 const controller=context.GeoForgeInvestigation.create({$,chinese:()=>!!input.zh,session:()=>context.session,
@@ -59,9 +59,19 @@ const tick=()=>new Promise(setImmediate);
     context.session={id:'b'};controller.sync();await tick();
     $('#investigation-issue').value='Project B draft';$('#investigation-issue').input();
     context.session={id:'a'};controller.sync();await tick();
+  }else if(input.mode==='repairChoices'){
+    if(input.selected){$('#investigation-ki').value=input.selected;$('#investigation-ki').change();}
+    $('#investigation-mode').value=input.repairMode;
+    $('#investigation-mode').change();
+    $('#investigation-recipe').value=input.recipe;
+    $('#investigation-recipe').change();
+    if(input.switchKi){$('#investigation-ki').value=input.switchKi;$('#investigation-ki').change();}
   }else if(input.action){
     $('#investigation-issue').value=input.issue??'Check the SHAW output reader';
     if(input.selected)$('#investigation-ki').value=input.selected;
+    if(input.repairMode)$('#investigation-mode').value=input.repairMode;
+    if(input.recipe)$('#investigation-recipe').value=input.recipe;
+    if(input.sourceId)$('#investigation-source').value=input.sourceId;
     const first=$('#investigation-'+input.action).onclick();await tick();
     if(input.double)await $('#investigation-'+input.action).onclick();
     if(input.deferMutation){
@@ -98,6 +108,82 @@ def job(status="reviewed", **extra):
 def verified(**extra):
     return job("verified", repair={"ki_name": "SHAW", "kdt_job_id": "kdt-1", "status": "verified",
                "can_apply": True, "can_verify": True, "verification_id": "exact-verification", **extra})
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_combined_maintenance_recipe_has_explicit_bilingual_scope(zh):
+    result = evaluate(zh=zh, job=verified(repair_mode="maintenance", maintenance_recipe="package_contract"))
+    label = "工具清单 + 预检报告" if zh else "Tool inventory + preflight reporting"
+    assert label in result["nodes"]["#investigation-recipe"]["html"]
+    assert label in result["nodes"]["#investigation-report"]["html"]
+    assert ("本机安装或科学结果" if zh else "native installation or scientific results") in result["nodes"]["#investigation-report"]["html"]
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_wofost_routing_recipe_names_its_runtime_requirement_and_limits(zh):
+    value = verified(ki_name="WOFOST", repair_mode="maintenance",
+                     maintenance_recipe="wofost_parameter_routing")
+    value["selected_kis"] = ["WOFOST"]
+    result = evaluate(zh=zh, job=value, mode="repairChoices", repairMode="maintenance",
+                      recipe="wofost_parameter_routing")
+    nodes = result["nodes"]
+    assert ("真实 PCSE 参数测试" if zh else "real PCSE parameter tests") in nodes["#investigation-mode-help"]["text"]
+    assert ("第 5 阶段保持原样" if zh else "Stage 5 is unchanged") in nodes["#investigation-report"]["html"]
+    assert ("科学验证" if zh else "scientific validation") in nodes["#investigation-report"]["html"]
+
+
+@pytest.mark.parametrize("rejected", [False, True])
+@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths"])
+def test_wofost_routing_is_not_offered_for_other_models_or_rejected_download(rejected, recipe):
+    value = job(selected_kis=["WOFOST"] if rejected else ["SHAW"])
+    if rejected:
+        value["maintenance_sources"] = {"WOFOST": {"source_scope": "signed_official_publication_source"}}
+    result = evaluate(job=value, repairMode="maintenance", recipe=recipe)
+    assert recipe not in result["nodes"]["#investigation-recipe"]["html"]
+
+
+@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths"])
+def test_wofost_routing_request_retains_explicit_recipe_and_model(recipe):
+    result = evaluate(job=job(selected_kis=["WOFOST"]), action="draft", selected="WOFOST",
+                      repairMode="maintenance", recipe=recipe)
+    assert result["requests"][-1]["body"] == {
+        "ki_name": "WOFOST", "repair_mode": "maintenance", "maintenance_recipe": recipe}
+
+
+@pytest.mark.parametrize("selected,switch_to,offered", [("DSSAT", "WOFOST", True), ("WOFOST", "DSSAT", False)])
+@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths"])
+def test_routing_choice_tracks_the_selected_model_in_a_multi_model_review(selected, switch_to, offered, recipe):
+    result = evaluate(job=job(selected_kis=["DSSAT", "WOFOST"]), mode="repairChoices",
+                      selected=selected, switchKi=switch_to, repairMode="maintenance",
+                      recipe=recipe)
+    node = result["nodes"]["#investigation-recipe"]
+    assert (recipe in node["html"]) is offered
+    if not offered:
+        assert node["value"] == "tool_inventory"
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_runtime_paths_explain_scope_and_do_not_claim_preflight_success(zh):
+    value = verified(ki_name="WOFOST", repair_mode="maintenance", maintenance_recipe="wofost_runtime_paths",
+                     verification={"report": {"path_binding_regression": {"ok": True, "status": "passed"}}})
+    value["selected_kis"] = ["WOFOST"]
+    result = evaluate(zh=zh, job=value, mode="repairChoices", repairMode="maintenance", recipe="wofost_runtime_paths")
+    nodes = result["nodes"]
+    assert ("保留所有检查及版本要求" if zh else "Preserve every check and version requirement") in nodes["#investigation-mode-help"]["text"]
+    assert ("仍须重新预检并运行模型" if zh else "fresh preflight and model run still required") in nodes["#investigation-report"]["html"]
+    value["repair"]["verification"]["report"]["path_binding_regression"] = {"ok": False, "status": "failed", "error": "Changed <runtime> binding"}
+    html = evaluate(zh=zh, job=value)["nodes"]["#investigation-report"]["html"]
+    assert "Changed &lt;runtime&gt; binding" in html and "Changed <runtime> binding" not in html
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_parameter_fixture_summary_shows_success_limits_and_failure_reason(zh):
+    report = {"interface_regression": {"ok": True, "status": "passed", "fixture_count": 53}}
+    html = evaluate(zh=zh, job=verified(verification={"report": report}))["nodes"]["#investigation-report"]["html"]
+    assert ("53 项通过；未运行模型" if zh else "53 passed; no model run") in html
+    report["interface_regression"] = {"ok": False, "status": "failed", "error": "Missing <PCSE> runtime"}
+    html = evaluate(zh=zh, job=verified(verification={"report": report}))["nodes"]["#investigation-report"]["html"]
+    assert "Missing &lt;PCSE&gt; runtime" in html and "Missing <PCSE> runtime" not in html
 
 
 @pytest.mark.parametrize("zh", [False, True])
@@ -229,10 +315,74 @@ def test_partial_report_cannot_become_repair_or_completed_consensus():
     assert not [r for r in result["requests"] if r["method"] == "POST"]
 
 
+@pytest.mark.parametrize("zh", [False, True])
+def test_retry_submits_current_job_once_without_new_provider_or_issue(zh):
+    value = job("partial", can_retry_review=True, retry_review_roles=["reproducibility_risks"])
+    value["reviewers"][2].update(status="failed", error="Round limit reached")
+    result = evaluate(job=value, zh=zh, action="retry", deferMutation=True, double=True,
+        mutated={"job": value, "busy": True, "available": False})
+    writes = [r for r in result["requests"] if r["method"] == "POST"]
+    assert writes == [{"url": "/api/session/a/investigation/review-1/retry", "method": "POST", "body": {}}]
+    nodes = result["nodes"]
+    assert nodes["#investigation-retry"]["text"] == ("重试未完成的审查" if zh else "Retry incomplete reviews")
+    assert ("原 AI 连接" if zh else "original AI connection") in nodes["#investigation-retry-help"]["text"]
+    assert nodes["#investigation-draft"]["hidden"]
+    assert nodes["#investigation-retry"]["disabled"]
+    assert result["timers"] == 1 and not result["resumes"]
+
+
+@pytest.mark.parametrize("extra", [{"can_retry_review": False}, {"can_retry_review": True, "busy": True}])
+def test_retry_cannot_be_triggered_without_host_eligibility_or_while_busy(extra):
+    busy = extra.get("busy", False)
+    result = evaluate(job=job("partial", can_retry_review=extra["can_retry_review"]), action="retry", busy=busy)
+    assert not [r for r in result["requests"] if r["method"] == "POST"]
+
+
 def test_draft_uses_explicit_selected_ki():
     result=evaluate(job=job(),action="draft",selected="CRHM",mutated={"job":job("drafting")})
     assert result["requests"][-1]["body"] == {"ki_name": "CRHM"}
     assert result["requests"][-1]["url"].endswith("/review-1/draft")
+
+
+@pytest.mark.parametrize("recipe", ["tool_inventory", "preflight_reporting", "package_contract"])
+def test_maintenance_draft_sends_only_explicit_mode_recipe_and_ki(recipe):
+    result=evaluate(job=job(),action="draft",selected="SHAW",repairMode="maintenance",recipe=recipe)
+    assert result["requests"][-1]["body"] == {
+        "ki_name":"SHAW", "repair_mode":"maintenance", "maintenance_recipe":recipe}
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_maintenance_report_explains_reuse_limits_and_optional_agent_audit(zh):
+    value=verified(repair_mode="maintenance",maintenance_recipe="tool_inventory",
+        maintenance_projection={"changed_files":["knowledge_infrastructure.yaml <unsafe>"]})
+    result=evaluate(job=value,zh=zh)
+    html=result["nodes"]["#investigation-report"]["html"]
+    assert ("已发布元数据" if zh else "published metadata") in html
+    assert ("当前项目" if zh else "this project") in html
+    assert ("论文全文" if zh else "full-text literature") in html
+    assert "&lt;unsafe&gt;" in html and "<unsafe>" not in html
+    assert ("可选" if zh else "optional") in result["nodes"]["#investigation-build"]["text"]
+
+
+def test_rejected_source_start_sends_only_server_offered_opaque_identity():
+    result=evaluate(action="start",sourceId="source-id",rejectedSources=[{
+        "id":"source-id","name":"VIC","source_commit":"a"*40}])
+    assert result["requests"][-1]["body"]["source_id"] == "source-id"
+    assert "report" not in result["requests"][-1]["body"] and "root" not in result["requests"][-1]["body"]
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_rejected_verified_draft_has_no_apply_and_no_adoption_claim(zh):
+    value=verified(repair_mode="maintenance",maintenance_recipe="preflight_reporting",draft_only=True,can_apply=False)
+    value["maintenance_sources"]={"VIC":{"source_scope":"signed_official_publication_source"}}
+    result=evaluate(job=value,zh=zh)
+    assert result["nodes"]["#investigation-apply"]["hidden"]
+    assert result["nodes"]["#investigation-mode"]["value"] == "maintenance"
+    assert result["nodes"]["#investigation-mode"]["disabled"]
+    html=result["nodes"]["#investigation-report"]["html"]
+    assert ("未应用" if zh else "not applied") in html
+    assert ("未改变任何项目" if zh else "has not changed any project KI") in html
+    assert ("绑定到当前项目" if zh else "paths stay bound to this project") not in html
 
 
 @pytest.mark.parametrize("action", ["build", "verify"])

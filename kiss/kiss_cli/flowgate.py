@@ -153,7 +153,7 @@ def load():
         # discovering the incomplete bundle halfway through a project.
         for sub in (
                 "states", "resolve", "plan", "approval", "contracts",
-                "receipts", "policy", "tools", "project_tools", "build_data", "declared", "decisions", "ki_inputs"):
+                "receipts", "policy", "tools", "project_tools", "project_data_formats", "stdout_artifacts", "declared_outputs", "build_data", "declared", "decisions", "ki_inputs"):
             importlib.import_module(f"ki_tools_common.flow.{sub}")
     except Exception as error:
         raise FlowUnavailable(
@@ -266,6 +266,11 @@ class FlowSession:
         belong to `ki`, and — when it names a tool — that tool must be the one about to run."""
         if self.approval_status() != "OK":
             raise FlowDenied("no valid approval — runs happen only in an approved plan")
+        from . import execution_continuation
+        try:
+            execution_continuation.require_step(self, plan_step_id)
+        except (OSError, ValueError, RuntimeError, TypeError) as error:
+            raise FlowDenied(str(error)) from error
         if not plan_step_id:
             raise FlowDenied("plan_step_id is required: name the approved plan step this run executes")
         step = next((s for s in (self.plan or {}).get("steps") or []
@@ -340,15 +345,25 @@ class FlowSession:
                 return str(st.get("kind") or "process")
         return "process"
 
+    def capture_step_inputs(self, step: dict, arguments: list[str], cwd: Path) -> dict:
+        """Pre-launch read scope comes from this step's approved inventory."""
+        try:
+            return self.flow.receipts.capture_inputs(self.project, step, self.inventory or {}, arguments, cwd)
+        except (OSError, ValueError, TypeError, RuntimeError) as error:
+            raise FlowDenied(f"Cannot capture approved inputs: {error}") from error
+
     def record_tool_run(self, *, ki: str, ki_root: Path, command: list[str], cwd: Path,
                         started_at: float, finished_at: float, exit_code: int | None,
                         before: dict, plan_step_id: str | None, stdout_tail: str = "",
+                        captured_stdout: str | None = None,
                         forcing_source: str | None = None,
                         expected_approval_sha256: str | None = None,
                         execution_status: str | None = None,
                         process_started: bool | None = None,
                         input_arguments: list[str] | None = None,
                         data_input_files: list[str] | None = None,
+                        input_snapshot: dict | None = None,
+                        output_preimages: dict | None = None,
                         calibration_result: dict | None = None) -> dict:
         """Write the signed run receipt + validation for one tool/model run and return a
         small summary for the agent. Receipts are bound to the current approval; an
@@ -365,6 +380,18 @@ class FlowSession:
         if not any(str(s.get("id")) == str(plan_step_id) for s in (self.plan or {}).get("steps") or []):
             raise FlowDenied(f"plan_step_id {plan_step_id!r} is not a step of the approved plan")
         kind = self.step_kind(plan_step_id)
+        step = next(s for s in self.plan["steps"] if str(s.get("id")) == str(plan_step_id))
+        stdout_binding, stdout_validation = None, None
+        declared_binding = None
+        if "stdout_artifact" in step:
+            from ki_tools_common.flow import stdout_artifacts
+            stdout_binding = stdout_artifacts.binding(step, self.project, self.inventory)
+            # Capturing is a host write under the same approval. Do not use the
+            # combined/truncated diagnostic tail as a result artifact.
+            stdout_validation = stdout_artifacts.capture(
+                step, self.project, self.inventory, captured_stdout,
+                exit_code=exit_code, execution_status=execution_status, process_started=process_started,
+                command=command, cwd=cwd)
         subs = ("inputs", "outputs", "artifacts", "runs/logs")
         if kind == "calibrate":
             subs += ("calibration/runs",)
@@ -413,11 +440,27 @@ class FlowSession:
                     "implementation": package_meta.get("impl_id")}
                    if package_meta.get("package_kind") == "task_workflow"
                    and package_meta.get("package_role") == "data_reader" else None)
-        if "project_data_tool" in step or data_ki is not None:
+        if stdout_validation is not None:
+            validation = stdout_validation
+            capture_path = self.project / step["stdout_artifact"]["path"]
+            others = [p for p in outputs if p != capture_path]
+            if others:
+                other_validation = r.validate_outputs(ki_root, others, physical=False,
+                    run_facts={"errored": exit_code != 0, "output_nonempty": any(
+                        p.is_file() and p.stat().st_size > 0 for p in others)})
+                validation["checks"].extend(other_validation["checks"])
+                if other_validation["status"] != "passed" and validation["status"] == "passed":
+                    validation["status"] = other_validation["status"]
+            if capture_path not in outputs:
+                validation["checks"].append({"check": "stdout_artifact_fresh", "ok": False,
+                                             "level": "fail", "detail": "Host capture was not a fresh output"})
+                validation["status"] = "failed"
+        elif "project_data_tool" in step or data_ki is not None:
             from . import project_data_tools
             validation = project_data_tools.validate_outputs(
                 self.project, outputs, exit_code,
-                input_files=data_input_files if "project_data_tool" in step else None)
+                input_files=data_input_files if "project_data_tool" in step else None,
+                step=step if "project_data_tool" in step else None)
         elif typed_calibration:
             validation = calibration.validate_receipt_result(calibration_result, step["calibration"])
             report_path = self.project / str(calibration_result.get("report_path") or "")
@@ -437,14 +480,22 @@ class FlowSession:
             if exit_code != 0 or not fresh_report or not report_matches or not runtime_bound:
                 validation["status"] = "failed"
         else:
-            validation = r.validate_outputs(
-                ki_root, outputs,
-                run_facts={"errored": exit_code != 0, "output_nonempty": any(
-                    p.is_file() and p.stat().st_size > 0 for p in outputs)},
-                physical=physical)
+            if step.get("outputs"):
+                from ki_tools_common.flow import declared_outputs
+                validation, declared_binding = declared_outputs.validate(
+                    self.project, ki_root, step, self.inventory, outputs,
+                    run_facts={"errored": exit_code != 0}, physical=physical)
+            else:
+                validation = r.validate_outputs(
+                    ki_root, outputs,
+                    run_facts={"errored": exit_code != 0, "output_nonempty": any(
+                        p.is_file() and p.stat().st_size > 0 for p in outputs)},
+                    physical=physical)
         if execution_status == "stopped":
             # The user's Stop is its own outcome: neither passed nor failed, the step is still to do.
             validation["status"] = "stopped"
+        if output_preimages is not None:
+            validation["output_preimages"] = output_preimages
         # Validation may take time; do not attach this attempt to a later approval.
         if expected_approval_sha256 is not None and (self.approval_status() != "OK" or
                 self.flow.approval.approval_id(self.flow.approval.read(self.project)) != expected_approval_sha256):
@@ -457,6 +508,9 @@ class FlowSession:
                             forcing_source=forcing_source,
                             validation=validation, execution_status=execution_status,
                             process_started=process_started,
+                            input_snapshot=input_snapshot,
+                            stdout_artifact=stdout_binding,
+                            declared_outputs=declared_binding,
                             **({"project_data_tool": step["project_data_tool"]}
                                if "project_data_tool" in step else
                                {"data_ki": data_ki} if data_ki is not None else {}))
@@ -466,7 +520,9 @@ class FlowSession:
                                for p in outputs][:50],
                    "validation": validation["status"], "execution_status": execution_status,
                    "failed_checks": [c["check"] for c in validation["checks"] if not c["ok"]][:12]}
-        if "project_data_tool" in step:
+        if stdout_binding is not None:
+            summary.update(execution_scope="ki_check_stdout_artifact", model_executed=False, step_kind="check")
+        elif "project_data_tool" in step:
             summary.update(execution_scope="project_data_tool", model_executed=False, step_kind=kind)
         elif data_ki is not None:
             summary.update(execution_scope="data_ki", model_executed=False, step_kind=kind)

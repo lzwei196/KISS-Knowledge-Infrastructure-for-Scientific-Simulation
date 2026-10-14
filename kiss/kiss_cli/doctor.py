@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 BLOCK, WARN, INFO = "BLOCK", "WARN", "INFO"
-VALIDATION_POLICY_VERSION = "ki-doctor-reference-cases-v1"
+VALIDATION_POLICY_VERSION = "ki-doctor-reference-cases-v2"
 
 #: Artefacts every KI is expected to ship, and whether absence is fatal.
 EXPECTED = [

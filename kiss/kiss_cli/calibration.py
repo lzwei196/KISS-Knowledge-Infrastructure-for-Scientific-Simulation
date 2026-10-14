@@ -629,10 +629,21 @@ def _runtime_ki(project: Path, ki_name: str, ki_path: Path,
         if not path.resolve().is_relative_to(project):
             raise ValueError("calibration runtime must stay inside this project")
     try:
-        shutil.copytree(source, staging, symlinks=False)
-        (staging / "calibration.yaml").write_bytes(snapshot.contract_bytes)
-        (staging / "tools").mkdir(parents=True, exist_ok=True)
-        (staging / "tools" / "calib_run.py").write_bytes(snapshot.runner_bytes)
+        from . import ki_copy
+        ki_copy.copytree(source, staging)
+        tools_root = staging / "tools"
+        if tools_root.is_symlink():
+            raise ValueError("Calibration adapter requires a canonical tools directory")
+        contract = staging / "calibration.yaml"
+        runner = tools_root / "calib_run.py"
+        # Adapter-owned files are replacements, not writes through aliases to
+        # other KI tools or instructions. Keep those canonical bytes intact.
+        for target in (contract, runner):
+            if target.is_symlink():
+                target.unlink()
+        contract.write_bytes(snapshot.contract_bytes)
+        tools_root.mkdir(parents=True, exist_ok=True)
+        runner.write_bytes(snapshot.runner_bytes)
         if destination.exists():
             shutil.rmtree(destination)
         staging.replace(destination)

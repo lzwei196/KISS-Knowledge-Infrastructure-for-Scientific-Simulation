@@ -48,6 +48,8 @@ calibration_hidden = [
 
 harness_hidden = [
     "PIL.Image", "PIL.PngImagePlugin",
+    "kiss_cli.artifact_archive",
+    "kiss_cli.execution_continuation",
     "ki_tools_common",
     "ki_tools_common.harness",
     "ki_tools_common.harness.ki_harness",
@@ -63,6 +65,10 @@ harness_hidden = [
     "ki_tools_common.flow.receipts",
     "ki_tools_common.flow.policy",
     "ki_tools_common.flow.tools",
+    "ki_tools_common.flow.project_tools",
+    "ki_tools_common.flow.project_data_formats",
+    "ki_tools_common.flow.stdout_artifacts",
+    "ki_tools_common.flow.declared_outputs",
     "ki_tools_common.flow.build_data",
 ]
 
@@ -70,6 +76,8 @@ datas = [
     (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
     # Launched by the configured Python beside execution.__file__, outside PYZ.
     (str(SOURCE / "kiss_cli" / "_project_data_worker.py"), "kiss_cli"),
+    # Runtime-data receipts hash these exact source bytes, including in PYZ builds.
+    (str(SOURCE / "kiss_cli" / "runtime_data.py"), "kiss_cli"),
     (str(REPO / "models"), "models"),
     (str(SOURCE / "system_kis"), "system_kis"),
     (str(SOURCE / "data_kis"), "data_kis"),

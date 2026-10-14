@@ -22,7 +22,7 @@ from pathlib import Path
 from . import doctor, firstrun
 from .catalog import KI
 
-GATE_POLICY = "ki-draft-kdt-v2-portable-tool-index"
+GATE_POLICY = "ki-draft-kdt-v4-contained-aliases"
 KINDS = ("process_model", "task_workflow")
 
 
@@ -164,13 +164,29 @@ def _preflight_interpreter() -> str:
     return str(resolved)
 
 
+class _GateTextPath(type(Path())):
+    """Keep the verifier's default text reads independent of the host locale.
+
+    The reviewed gate derives its paths from ``Path(ki_dir)`` and passes those
+    paths into the projection helper. Path operations preserve this subclass,
+    so helper reads use the same UTF-8 contract without changing shared modules.
+    Explicit encodings and error policies remain the verifier's decision.
+    """
+
+    def read_text(self, encoding=None, errors=None, **kwargs):
+        return super().read_text(encoding="utf-8" if encoding is None else encoding,
+                                 errors=errors, **kwargs)
+
+
 def _portable_tool_index_verifier(gate):
-    """Adapt only KDT's imported tool-path spelling, without changing its gate.
+    """Adapt KDT's text encoding and tool-path spelling, preserving its checks.
 
     The pinned projection helper returns native ``str(relative_path)`` while
     KDT compares those strings to portable slash paths in SKILL.md. Give this
-    loaded verifier a private import view; do not monkeypatch the shared helper
-    or process-wide imports while another project may be using them.
+    loaded verifier a private import view and UTF-8-default Path class. The
+    gate runs in this process, so changing a child environment's PYTHONUTF8
+    would not repair its locale-dependent reads. Do not monkeypatch pathlib,
+    the shared helper, or process-wide imports during concurrent project work.
     """
     verify = gate.verify
     local_builtins = dict(verify.__builtins__)
@@ -187,7 +203,8 @@ def _portable_tool_index_verifier(gate):
         return view
 
     local_builtins["__import__"] = portable_import
-    local_globals = {**verify.__globals__, "__builtins__": local_builtins}
+    local_globals = {**verify.__globals__, "__builtins__": local_builtins,
+                     "Path": _GateTextPath}
     compatible = types.FunctionType(verify.__code__, local_globals, verify.__name__,
                                     verify.__defaults__, verify.__closure__)
     compatible.__kwdefaults__ = verify.__kwdefaults__
@@ -196,6 +213,13 @@ def _portable_tool_index_verifier(gate):
 
 def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool = True,
                      name: str | None = None) -> dict:
+    """Accept an authoring draft; publication evidence cannot satisfy this gate."""
+    report = _check_candidate(root, kind=kind, desktop=desktop, name=name)
+    return _seal(root, report, persist=True)
+
+
+def _check_candidate(root: Path, *, kind: str = "process_model", desktop: bool = True,
+                     name: str | None = None, _gate_adapter=None) -> dict:
     """Run the actual installed KDT gate on an isolated, unchanged snapshot.
 
     Missing KDT never falls back to doctor or an agent's claimed success.
@@ -204,6 +228,7 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
     isolated preflight is deferred. Native regression remains a separate gate.
     """
     from . import kdtstudio
+    from . import ki_copy
     root = Path(root).resolve()
     if kind not in KINDS:
         raise VerificationError(f"Unsupported KI kind: {kind!r}")
@@ -212,7 +237,7 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
         raise VerificationError("The candidate KI is empty")
     before = content_digest(root)
     if not before:
-        raise VerificationError("Cannot hash KI candidate; symbolic links or oversized trees are not accepted")
+        raise VerificationError("Cannot hash KI candidate; unsafe links or oversized trees are not accepted")
     engine = kdtstudio.engine_status()
     if not engine.get("installed"):
         reason = "modified" if engine.get("dirty") else "unavailable"
@@ -221,7 +246,7 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
     findings: list[dict] = []
     with tempfile.TemporaryDirectory(prefix="geoforge-kdt-gate-") as td:
         snapshot = Path(td) / "candidate"
-        shutil.copytree(root, snapshot)
+        ki_copy.copytree(root, snapshot)
         if content_digest(snapshot) != before or content_digest(root) != before:
             raise VerificationError("KI changed while preparing verification; retry on an unchanged draft")
         if desktop:
@@ -236,6 +261,10 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
                 ast.parse(source)
             except SyntaxError as error:
                 failures.append(f"preflight_check.py has invalid Python syntax at line {error.lineno}")
+            # The deferred preflight must not overwrite a canonical tool that
+            # the original preflight happened to alias inside the candidate.
+            if preflight.is_symlink():
+                preflight.unlink()
             preflight.write_text(
                 "import json\n"
                 "report={'checks':[{'kind':'run','subject':'deferred',"
@@ -247,6 +276,8 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
         isolated_digest = content_digest(snapshot)
         with kdtstudio._engine_imports():
             gate = kdtstudio._load_engine_module("verify_ki_structure.py", "gate")
+            if _gate_adapter is not None:
+                gate = _gate_adapter(gate)
             if _frozen_windows():
                 # Keep KDT's required preflight file and real report check.
                 # Only the safe stub runs under a real interpreter; replacing
@@ -285,4 +316,4 @@ def verify_candidate(root: Path, *, kind: str = "process_model", desktop: bool =
     }
     if content_digest(root) != before:
         raise VerificationError("KI changed before acceptance could be recorded")
-    return _seal(root, report, persist=True)
+    return report

@@ -15,7 +15,7 @@ import zipfile
 
 import pytest
 
-from kiss_cli import gui, kdtstudio, ki_updates, ki_verification
+from kiss_cli import gui, kdtstudio, ki_guard, ki_updates, ki_verification, published_kdt
 
 
 def package_files(name="Demo", skill="# Example KI\n"):
@@ -55,10 +55,18 @@ def isolated_engine(root):
         return {"ok": state.ok, "failures": [] if state.ok else ["fixture KDT failure"],
                 "warnings": [], "info": {}}
 
+    original_init = ki_updates.UpdateManager.__init__
+    def mocked_transport_init(manager, *args, **kwargs):
+        original_init(manager, *args, **kwargs)
+        # These transport fixtures replace _remote_revision, which normally
+        # supplies this exact commit. Individual tests may replace it later.
+        manager._source_commit = "d" * 40
+
     with ExitStack() as stack:
         stack.enter_context(mock.patch.dict(os.environ, {
             "GEOFORGE_KI_VERIFICATION_HOME": str(root / "acceptance"),
             "GEOFORGE_FLOW_KEYS": str(root / "keys"),
+            "GEOFORGE_KI_GUARD_HOME": str(root / "guard"),
         }))
         stack.enter_context(mock.patch.object(kdtstudio, "engine_status", lambda: {
             "installed": state.installed, "commit": kdtstudio.REVIEWED_COMMIT,
@@ -66,6 +74,10 @@ def isolated_engine(root):
         stack.enter_context(mock.patch.object(kdtstudio, "engine_source_digest", lambda *_: "f" * 64))
         stack.enter_context(mock.patch.object(kdtstudio, "_engine_imports", nullcontext))
         stack.enter_context(mock.patch.object(kdtstudio, "_load_engine_module", lambda *_: SimpleNamespace(verify=verify)))
+        # Both structural engine profiles are explicit test doubles. Receipt
+        # hashing/signing, updater provenance and catalogue enrollment stay real.
+        stack.enter_context(mock.patch.object(published_kdt, "gate_view", lambda gate, **_kw: gate))
+        stack.enter_context(mock.patch.object(ki_updates.UpdateManager, "__init__", mocked_transport_init))
         yield state
 
 
@@ -137,11 +149,13 @@ def test_import_rechecks_the_hidden_copied_tree_before_publication(tmp_path, eng
 def updater(tmp_path, monkeypatch, *, changed=True, data_ki=False):
     base = tmp_path / "base"
     write_package(base / "models/Demo", skill="# Existing KI\n")
+    ki_guard.enroll(base / "models/Demo")
     archive_path = tmp_path / "source.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         prefix = "repository/"
         archive.writestr(prefix + "ki_tools_common/pyproject.toml", '[project]\nname="ki_tools_common"\nversion="0.1.0"\n')
         archive.writestr(prefix + "ki_tools_common/ki_tools_common/__init__.py", "")
+        archive.writestr(prefix + "kiss/manifests/Demo.yaml", "verified: unverified\n")
         for relative, text in package_files(skill="# Changed KI\n" if changed else "# Existing KI\n").items():
             archive.writestr(prefix + "models/Demo/" + relative, text)
         if data_ki:
@@ -150,10 +164,13 @@ def updater(tmp_path, monkeypatch, *, changed=True, data_ki=False):
     activated = []
     manager = ki_updates.UpdateManager(base, activated.append)
     manager._source_commit = "d" * 40
-    manager._component_trees = {"models": "a" * 40, "manifests": None,
+    manager._component_trees = {"models": "a" * 40, "manifests": "b" * 40,
                                 "shared_tools": "c" * 40, "data_kis": "e" * 40 if data_ki else None}
-    monkeypatch.setattr(manager, "_remote_revision", lambda: ("a" * 32, "a" * 40, None))
+    monkeypatch.setattr(manager, "_remote_revision", lambda: ("a" * 32, "a" * 40, "b" * 40))
     monkeypatch.setattr(manager, "_download", lambda target: shutil.copyfile(archive_path, target))
+    # This fixture exercises package acceptance. Authenticated Windows transport
+    # and composition are covered separately; never make a live metadata request.
+    monkeypatch.setattr(manager, "_windows_guidance", lambda: None)
     return manager, activated
 
 
@@ -172,14 +189,28 @@ def test_updated_ki_gate_failure_preserves_active_library_and_quarantines(tmp_pa
     assert Path(report["validation_failure"]["quarantine_path"]).is_dir()
 
 
-def test_unchanged_shipped_ki_is_retained_without_claiming_kdt_pass(tmp_path, engine, monkeypatch):
-    engine.installed = False
+@pytest.mark.parametrize("installed", [False, True])
+def test_unchanged_shipped_ki_requires_current_publication_acceptance(tmp_path, engine, monkeypatch, installed):
+    engine.installed = installed
     manager, activated = updater(tmp_path, monkeypatch, changed=False)
+    previous = tmp_path / "base/models/Demo"
+    baseline = ki_guard.require_intact(previous)
     manager._run()
-    assert len(activated) == 1
-    assert engine.seen == []
+    assert ki_guard.require_intact(previous) == baseline
+    if not installed:
+        assert activated == [] and engine.seen == []
+        assert manager.status()["state"] == "error"
+        assert "KDT verification required" in manager.status()["error"]
+        assert manager.status()["ki_verification"][0]["state"] == "PublicationRejected"
+        assert not (tmp_path / "updates/state.json").exists()
+        return
+    assert len(activated) == 1 and len(engine.seen) == 1
     meta = json.loads((activated[0] / ki_updates.SNAPSHOT_MANIFEST).read_text(encoding="utf-8"))
-    assert meta["ki_verification"] == [{"name": "Demo", "state": "unchanged_existing"}]
+    row, = meta["ki_verification"]
+    assert row["name"] == "Demo" and row["state"] == "PublishedPackageAccepted"
+    assert row["candidate_digest"] == ki_verification.content_digest(previous)
+    assert row["report"]["ok"] is True and row["report"]["native_regression"]["verified"] is False
+    assert "previous_baseline" not in row
     assert meta["reference_cases"]["native_verification"] == "not_performed"
 
 
@@ -188,7 +219,7 @@ def test_new_data_ki_cannot_bypass_the_shared_gate(tmp_path, engine, monkeypatch
     manager, activated = updater(tmp_path, monkeypatch, changed=False, data_ki=True)
     manager._run()
     assert activated == []
-    assert "DataReader: KDT verification required" in manager.status()["error"]
+    assert "DataReader: published KDT verification required" in manager.status()["error"]
 
 
 @pytest.mark.parametrize("mutation_point", ["after_validation", "before_activation"])

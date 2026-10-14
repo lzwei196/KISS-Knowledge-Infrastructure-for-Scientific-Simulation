@@ -1,16 +1,35 @@
 """Bind machine verification to the effective snapshot and its requirements."""
 from __future__ import annotations
 
-from dataclasses import asdict
+from .manifest import document as manifest_document
 import hashlib
 import json
 from pathlib import Path
 
-from . import install, ki_updates, paths
+from . import helper_identity, install, ki_updates, ki_verification, paths
+
+
+def runtime_identity(cfg) -> str:
+    """Identify checked path bindings, not the contents of an installed runtime.
+
+    Keep launcher and role spelling: following a symlink can erase which
+    virtual environment or versioned installation the user selected.
+    """
+    payload = {"schema_version": 1,
+               "root": str(Path(cfg.root).expanduser().resolve()),
+               "python": str(cfg.python),
+               "roles": {name: str(value) for name, value in cfg.roles.items()},
+               "relocation": cfg.relocation}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def identity(ki, man, library_root: Path | None) -> str | None:
-    """Bundled legacy installs retain their behavior; snapshots require evidence."""
+    """Bind snapshot readiness to relevant bytes, not an unrelated library update.
+
+    Schema 2 deliberately invalidates older whole-snapshot receipts once. Only
+    a fresh verification may establish this narrower identity; this function
+    neither migrates a receipt nor grants package/adoption acceptance.
+    """
     if library_root is None:
         return None
     root = Path(library_root)
@@ -20,15 +39,22 @@ def identity(ki, man, library_root: Path | None) -> str | None:
     try:
         source = Path(ki.root).resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
+        if Path(ki.root).absolute().is_relative_to(root.absolute()):
+            raise ValueError("Snapshot KI path escapes its library root")
         # A user-imported or application KI is not part of this snapshot.
         return None
     meta = ki_updates._read_json(marker)
     content = meta.get("content_sha256")
-    helpers = (meta.get("trees") or {}).get("shared_tools")
+    trees = meta.get("trees")
+    helpers = trees.get("shared_tools") if isinstance(trees, dict) else None
     if not content or not helpers:
         raise ValueError("Active KI snapshot lacks its verification identity")
-    payload = {"schema_version": 1, "ki": source, "library_content": content,
-               "shared_tools": helpers, "effective_manifest": asdict(man)}
+    digest = ki_verification.content_digest(ki.root)
+    if not digest:
+        raise ValueError("Cannot fingerprint the selected snapshot KI")
+    payload = {"schema_version": 2, "ki": source, "ki_content": digest,
+               "shared_tools": helper_identity.source_identity(root),
+               "effective_manifest": manifest_document(man)}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -61,6 +87,10 @@ def requirements(man, cfg, *, dependency_check=None) -> install.Step:
     """Read-only check in the recorded interpreter; never install or run a model."""
     failures = []
     commands = []
+    from . import runtime_data
+    data_check = runtime_data.check(man, cfg)
+    if not data_check.ok:
+        failures.append(data_check.detail)
     if man.python_deps:
         argv = [cfg.python, "-c", _REQUIREMENT_PROBE, json.dumps(man.python_deps)]
         env = paths.with_python_runtime(cfg.python, paths.with_ki_tools_common(cfg, {}))
@@ -77,4 +107,4 @@ def requirements(man, cfg, *, dependency_check=None) -> install.Step:
             failures.append(f"Coupled KI requires current verification: {name}")
     return install.Step("manifest-requirements", not failures,
                         "\n".join(failures) if failures else "Current manifest requirements satisfied",
-                        commands=commands)
+                        commands=commands, evidence={"runtime_data": data_check.evidence} if data_check.evidence else {})

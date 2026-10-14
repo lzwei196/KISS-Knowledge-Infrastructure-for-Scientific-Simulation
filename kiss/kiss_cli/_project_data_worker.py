@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import statistics
 import sys
 from urllib.parse import unquote, urlsplit, parse_qs
@@ -39,6 +40,8 @@ def main():
     library_roots = [Path(sys.base_prefix).resolve() / "Lib", Path(sys.base_prefix).resolve() / "lib",
                      Path(sys.prefix).resolve() / "Lib", Path(sys.prefix).resolve() / "lib"]
     created = set()
+    existing_outputs = {Path(row["path"]).absolute(): row
+                        for row in request.get("existing_outputs") or []}
 
     def under(p, roots):
         return any(p == root or root in p.parents for root in roots)
@@ -55,6 +58,36 @@ def main():
             raise PermissionError("project data scripts cannot open arbitrary file descriptors")
         return Path(os.fsdecode(raw)).resolve()
 
+    def replacement_matches(p, raw):
+        # Resolve neither links nor hardlinks into a granted replacement. The
+        # host saved these exact old bytes, and concurrent edits must not be lost.
+        literal = Path(os.path.abspath(os.fsdecode(raw)))
+        if literal != p or literal.is_symlink() or not p.is_file():
+            return False
+        for candidate in (literal, *literal.parents):
+            info = candidate.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                return False
+        before = p.stat()
+        row = existing_outputs[p]
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_size != row["bytes"]):
+            return False
+        digest = hashlib.sha256()
+        with p.open("rb") as stream:
+            remaining = row["bytes"]
+            while remaining:
+                block = stream.read(min(1024 * 1024, remaining))
+                if not block:
+                    return False
+                digest.update(block)
+                remaining -= len(block)
+            if stream.read(1):
+                return False
+        after = p.stat()
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        return identity(before) == identity(after) and digest.hexdigest() == row["sha256"]
+
     def audit(event, args):
         if event.startswith(("socket.", "subprocess.", "ctypes.", "os.exec", "os.spawn")) or event in {
                 "os.system", "os.fork", "os.forkpty", "os.posix_spawn", "os.startfile",
@@ -66,8 +99,10 @@ def main():
             writing = (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
                 isinstance(flags, int) and bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)))
             if writing:
-                if not writable(p) or (p.exists() and p not in created):
-                    raise PermissionError("project data writes require fresh outputs/ or artifacts/ files; raw inputs are immutable")
+                if (not writable(p) or (p not in created and (
+                        (p in existing_outputs and not replacement_matches(p, args[0]))
+                        or (p not in existing_outputs and p.exists())))):
+                    raise PermissionError("project data writes require fresh or exact approved preserved output files; raw inputs are immutable")
                 created.add(p)
             elif not readable(p):
                 raise PermissionError("project data read is outside approved inputs and runtime libraries")

@@ -18,7 +18,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import execution, flowgate, ki_guard, paths
+from kiss_cli import execution, flowgate, ki_guard, paths, project_verification
+from kiss_cli.catalog import KI
+from kiss_cli.manifest import Manifest
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +28,7 @@ def _isolated_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
 
 
-def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None):
+def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None, declared_binary=None):
     project = (tmp_path / "project").resolve()
     root = project / "models" / "M" / "ki"
     (root / "tools").mkdir(parents=True)
@@ -35,6 +37,10 @@ def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None):
         "# M\n> **MANDATORY EXECUTION POLICY**\n> run the declared tool\n\n")
     (root / "dag.yaml").write_text(
         "outputs:\n- var: discharge\n  validation_rank: 1\n  unit: m3/s\n")
+    (root / "preflight_check.py").write_text("print('Harmless execution fixture preflight passed')\n")
+    if declared_binary is not None:
+        (root / "knowledge_infrastructure.yaml").write_text(
+            "model:\n  binary:\n    path: " + json.dumps(str(declared_binary)) + "\n", encoding="utf-8")
     tool = root / "tools" / ("run.py" if python_tool else "run.sh")
     tool.write_text(source or "print('local execution fixture')\n" if python_tool
                     else "#!/bin/sh\nprintf 'local execution fixture'\n")
@@ -47,6 +53,8 @@ def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None):
     cfg.python = Path(sys.executable)
     (project / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
     (root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    verified = project_verification.verify(project, KI("M", root), Manifest(model="M"))
+    assert verified["ok"], verified
     fs = flowgate.FlowSession.open(project, {"M": root}, python=sys.executable)
     fs.move("task_received")
     fs.move("kis_resolved", {"selected_kis": ["M"]})
@@ -558,22 +566,25 @@ def test_requested_ki_uses_its_runtime_not_first_or_last_model(
         tmp_path, monkeypatch, adapter):
     from kiss_cli import api, cli, project_paths
 
-    ctx = _project(tmp_path)
-    other_root = ctx.project / "models" / "A" / "ki"
-    other_root.mkdir(parents=True)
     shared = paths.KissConfig.default(tmp_path / "installed-M")
-    shared.python = str(tmp_path / "installed-M" / "python")
+    shared.python = sys.executable
     shared.roles["binaries"].mkdir(parents=True)
     common = shared.roles["ki_tools_common"] / "ki_tools_common"
     common.mkdir(parents=True)
     (common / "__init__.py").write_text("# fixture shared package\n")
     binary = shared.roles["binaries"] / "model"
     binary.write_text("fixture executable")
+    binary.chmod(0o755)
+    ctx = _project(tmp_path, declared_binary=binary)
+    other_root = ctx.project / "models" / "A" / "ki"
+    other_root.mkdir(parents=True)
     # The saved M fixture initially uses project-wide defaults; remove it so
     # this test gets the normal per-model output paths of a fresh workspace.
     (ctx.root.parent / paths.CONFIG_NAME).unlink()
     model = project_paths.model_config(ctx.project, "M", shared)
     (ctx.root.parent / paths.CONFIG_NAME).write_text(model.dumps(), encoding="utf-8")
+    verified = project_verification.verify(ctx.project, KI("M", ctx.root), Manifest(model="M"))
+    assert verified["ok"], verified
     wrong = paths.KissConfig.default(ctx.project)
     wrong.python = str(tmp_path / "installed-A" / "python")
     wrong.roles["outputs"] = ctx.project / "outputs" / "A"
@@ -592,14 +603,14 @@ def test_requested_ki_uses_its_runtime_not_first_or_last_model(
     if adapter == "api":
         result = api.execute_tool("run_ki_tool", {
             "ki": "M", "tool_path": "tools/run.py", "plan_step_id": "M:run",
-            "arguments": [str(binary)],
+            "arguments": ["--binary", str(binary)],
         }, SimpleNamespace(name="A", root=other_root), wrong,
             project_mode=True, flow=ctx.flow)
         assert "exit_code=0" in result
     else:
         assert cli.cmd_run_tool(SimpleNamespace(
             project=str(ctx.project), step="M:run", ki="M", tool="tools/run.py",
-            argv=[str(binary)])) == 0
+            argv=["--binary", str(binary)])) == 0
     assert len(launches) == 1
     command, options = launches[0]
     assert command[0] == shared.python

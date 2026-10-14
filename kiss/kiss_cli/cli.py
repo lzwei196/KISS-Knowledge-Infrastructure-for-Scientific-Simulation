@@ -132,7 +132,7 @@ def cmd_doctor(args) -> int:
 def cmd_init(args) -> int:
     cat = _catalog(args)
     ki = cat.get(args.model)
-    from . import ki_guard
+    from . import ki_guard, setup
     baseline = ki_guard.enroll_catalogue(cat)
     if ki.name in baseline["errors"]:
         raise ki_guard.KIIntegrityError(baseline["errors"][ki.name])
@@ -143,96 +143,128 @@ def cmd_init(args) -> int:
     # commands could not see each other's work: `kiss init MODFLOW6` followed
     # by `kiss verify MODFLOW6` reported the model missing.
     default_workroot = Path.home() / "kiss"
-    if args.workdir:
-        root = install_locations.select(default_workroot, ki.name, args.workdir)
-    else:
-        root = install_locations.resolve(default_workroot, ki.name)
+    root = (Path(args.workdir).expanduser().resolve() if args.workdir else
+            install_locations.resolve(default_workroot, ki.name))
+    # A GUI handoff can target a nondefault work root. Read only these two
+    # known registries, before select() could carry another workspace's mode
+    # into this one. An unrelated global registration is not this selection.
+    registration = None
+    for registry in (root.parent, default_workroot):
+        entry = install_locations._read_index(registry).get("models", {}).get(ki.name.casefold())
+        if (isinstance(entry, dict) and isinstance(entry.get("workspace"), str) and
+                Path(entry["workspace"]).expanduser().resolve() == root and
+                entry.get("model") == ki.name):
+            registration = entry
+            break
+    existing_mode = bool(registration and registration.get("installation_mode") == "existing")
+    if args.workdir and registration is None:
+        root = install_locations.select(default_workroot, ki.name, root)
+        install_locations.select_mode(default_workroot, ki.name, "new")
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
     if cfg_file.exists():
-        cfg = paths.KissConfig.load(root)
+        cfg = setup.load_runtime_config(root)
         print(_c("dim", f"using existing {cfg_file}"))
     else:
         cfg = paths.KissConfig.default(root)
         cfg.python = args.python or install.runtime_python(sys.executable)
         cfg.relocation = args.relocation
-        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-        print(f"  wrote {cfg_file}")
 
     man = _manifest_for(ki, repo_root)
+    strategy = "existing" if existing_mode else man.acquire.strategy if man.acquire else "none"
     print(_c("b", f"\ninitialising {ki.name}") +
-          _c("dim", f"  (strategy: {man.acquire.strategy if man.acquire else 'none'})\n"))
+          _c("dim", f"  (strategy: {strategy})\n"))
 
     result = install.InstallResult(model=ki.name)
 
-    # Materialise the KI: a working copy with this machine's real paths written
-    # in place of the KISSPATH_* placeholders. Everything downstream — preflight,
-    # the model's own tools, its config files — then sees true paths.
-    from . import ki_updates, setup
-    if (repo_root / ki_updates.SNAPSHOT_MANIFEST).is_file() and install.needs_shared_tools(ki, man):
-        setup.prepare_common(cfg, repo_root)
-        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+    # Finish choosing the runtime before freezing those paths into KI files.
     live = root / "ki"
-    mrep = setup.materialise_active(ki.root, live, cfg)
-    # A file that stopped parsing once the real path was written in is a failure,
-    # not a footnote — writing broken JSON/YAML silently is the whole class of
-    # bug this installer exists to avoid.
-    ok = not mrep.unresolved and not mrep.corrupted
-    result.add(install.Step(
-        "materialise", ok,
-        f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
-        f"unresolved placeholders: {', '.join(sorted(mrep.unresolved))} "
-        f"— add these roles to {paths.CONFIG_NAME}"))
-    print(f"  [1/8] materialise KI .. {_c('ok' if ok else 'BLOCK', 'ok' if ok else 'FAILED')}"
-          + _c("dim", f"  ({mrep.tokens_replaced} paths written)"))
-    if mrep.unresolved:
-        print(_c("dim", "        unresolved: " + ", ".join(sorted(mrep.unresolved))))
-    for c in mrep.corrupted[:5]:
-        print(_c("dim", f"        corrupted by your path values: {c}"))
-    if mrep.undeliverable_files:
-        print(_c("dim", f"        note: {mrep.undeliverable_files} files reference the "
-                        "author's private tooling; those instructions cannot be followed"))
-    # From here on the KI in use is the materialised copy, not the package.
-    ki = type(ki)(name=ki.name, root=live)
-
-    s = result.add(install.ensure_python_env(cfg))
-    if s.ok and not args.python:
+    python_step = result.add(setup.prepare_python(cfg, live, explicit_python=args.python))
+    if python_step.ok:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-    print(f"  [2/8] python env ...... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [1/8] python env ...... {_c('ok' if python_step.ok else 'BLOCK', python_step.mark)}")
 
-    s = result.add(install.install_ki_tools_common(cfg, repo_root)
+    s = result.add(install.Step("ki-tools-common", False,
+                               "not run because Python preparation failed", skipped=True)
+                   if not python_step.ok else install.install_ki_tools_common(cfg, repo_root)
                    if install.needs_shared_tools(ki, man) else
                    install.Step("ki_tools_common", True, "Not required: source-bound stdlib data reader", skipped=True))
-    print(f"  [3/8] ki_tools_common . {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [2/8] ki_tools_common . {_c('ok' if s.ok else 'BLOCK', s.mark)}")
     if not s.ok:
         print(_c("dim", "        " + s.detail.strip().splitlines()[0][:100]))
+
+    if result.ok:
+        cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+        mrep = setup.materialise_active(ki.root, live, cfg, manifest=man, library_root=repo_root)
+        ok = not mrep.unresolved and not mrep.corrupted
+        s = result.add(install.Step(
+            "materialise", ok,
+            f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
+            f"unresolved: {', '.join(sorted(mrep.unresolved))}; corrupted: {'; '.join(mrep.corrupted[:3])}"))
+        if mrep.undeliverable_files:
+            print(_c("dim", f"        note: {mrep.undeliverable_files} files reference the "
+                            "author's private tooling; those instructions cannot be followed"))
+        ki = type(ki)(name=ki.name, root=live)
+    else:
+        s = result.add(install.Step("materialise", False,
+                                   "not run because runtime preparation failed", skipped=True))
+    print(f"  [3/8] materialise KI .. {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     s = result.add(install.check_system_deps(man.system_deps))
     print(f"  [4/8] system deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
-    s = result.add(install.install_python_deps(man.python_deps, cfg.python))
+    s = result.add(install.install_python_deps(man.python_deps, cfg.python) if python_step.ok else
+                   install.Step("python-deps", False, "not run because Python preparation failed", skipped=True))
     print(f"  [5/8] python deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     blocker = next((step for step in result.steps if not step.ok), None)
     if blocker:
-        strategy = man.acquire.strategy if man.acquire else "none"
         s, binary = install.Step(
             f"acquire[{strategy}]", False,
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
+    elif existing_mode:
+        # The GUI host owns adoption. CLI init may verify an already-placed
+        # product, but must not turn an existing-software handoff into a build.
+        from pathlib import PureWindowsPath
+        product = str(man.acquire.produces or "") if man.acquire else ""
+        relative = Path(product)
+        bounded = bool(product and not relative.is_absolute() and not relative.drive and
+                       not PureWindowsPath(product).drive and not PureWindowsPath(product).root and
+                       ".." not in relative.parts)
+        candidates = [prefix / relative] if bounded else []
+        if candidates and os.name == "nt" and relative.suffix.lower() != ".exe":
+            candidates.insert(0, candidates[0].with_name(relative.name + ".exe"))
+        binary = next((candidate for candidate in candidates if candidate.is_file()), None)
+        s = install.Step("acquire[existing]", binary is not None,
+            "Using the already-placed existing product; no download or build was run." if binary else
+            "Existing-installation mode: the declared product is not placed in this workspace. "
+            "Use GUI setup to connect the selected package, or let the agent inspect that exact path. "
+            "CLI init will not download or build replacement software.")
     else:
         s, binary = install.acquire(man, prefix, cfg.python, ki=ki)
     result.add(s)
     result.binary = binary
-    for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
-        print(_c("dim", f"        {note}"))
+    if result.ok and not existing_mode:
+        for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
+            print(_c("dim", f"        {note}"))
     print(f"  [6/8] acquire ......... {_c('ok' if s.ok else 'WARN' if s.skipped else 'BLOCK', s.mark)}")
     if not s.ok:
         print(_c("dim", "        " + s.detail.strip().splitlines()[0][:100]))
 
     if man.depends_on:
         print(_c("dim", f"        couples with: {', '.join(man.depends_on)}"))
+
+    if man.runtime_data is not None:
+        from . import runtime_data
+        blocker = next((step for step in result.steps if not step.ok), None)
+        data_step = (install.Step("runtime-data", False,
+                     "Not prepared because earlier setup requirements failed", skipped=True) if blocker else
+                     runtime_data.check(man, cfg) if existing_mode else
+                     runtime_data.prepare(man, cfg, allow_acquire=True))
+        result.add(data_step)
+        print(f"  required runtime data: {data_step.mark} — {data_step.detail}")
 
     s = result.add(install.check_data(man, cfg))
     print(f"  [7/8] data ............ {_c('ok' if s.ok else 'WARN', s.mark)}")
@@ -249,7 +281,8 @@ def cmd_init(args) -> int:
     print(f"  [8/8] preflight ....... "
           f"{_c('ok' if s.ok else 'WARN' if s.skipped else 'BLOCK', s.mark)}")
 
-    written = handoff.write(ki, result, man, cfg, root)
+    written = handoff.write(ki, result, man, cfg, root,
+        preflight_command=setup.runtime_command(cat.models_dir, ki.name, root, action="preflight"))
     install_locations.record(
         ki.name, root, cfg, ki_root=ki.root, verified=result.ok)
     print(f"    agent handoff ... {_c('ok', 'ok')} ({len(written)} files)")
@@ -357,8 +390,10 @@ def _worker_entry(handler):
     """
     @functools.wraps(handler)
     def run(args) -> int:
+        result = 1
         try:
-            return handler(args)
+            result = handler(args)
+            return result
         except _REPORTED_ERRORS:
             raise
         except Exception:
@@ -366,6 +401,18 @@ def _worker_entry(handler):
                 import traceback
                 traceback.print_exc(file=sys.stderr)
             return 1
+        finally:
+            if handler.__name__ == 'cmd_run_tool' and result != 0:
+                # A vendor CLI can exit successfully after describing a tool
+                # refusal. Preserve that observed refusal for the host's
+                # continuation decision without inventing a model receipt.
+                try:
+                    from . import execution_continuation
+                    execution_continuation.record_cli_failure(
+                        _flow_project(getattr(args, 'project', None)),
+                        getattr(args, 'step', None), result)
+                except Exception as error:
+                    print(f'Could not record execution refusal: {error}', file=sys.stderr)
     return run
 
 
@@ -413,9 +460,16 @@ def cmd_run_tool(args) -> int:
                 raise KeyboardInterrupt
         signal.signal(signal.SIGTERM, interrupt)
     try:
+        # run-tool has no separate cwd switch. Its approved plan is the one
+        # source for that directory; legacy plans retain the project root.
+        step = fs.check_step_tool(args.step, args.ki, tool)
+        try:
+            _approved_args, approved_cwd = fs.flow.plan.step_invocation(step, project)
+        except (OSError, TypeError, ValueError, RuntimeError) as error:
+            raise flowgate.FlowDenied(str(error)) from error
         result = execute_ki_tool(
             flow=fs, cfg=cfg, project=project, ki=args.ki, ki_root=ki_root,
-            tool=tool, arguments=argv, cwd=project, plan_step_id=args.step,
+            tool=tool, arguments=argv, cwd=approved_cwd or project, plan_step_id=args.step,
             python_tool=tool.suffix == ".py", timeout=None)
     except flowgate.FlowDenied as e:
         print(f"run-tool refused: {e}", file=sys.stderr)
@@ -611,6 +665,12 @@ def cmd_install_download_worker(args) -> int:
     return install.run_download_worker(args.request_path)
 
 
+@_worker_entry
+def cmd_setup_discovery_worker(args) -> int:
+    from . import setup_discovery
+    return setup_discovery.worker_main(args.request_path, args.result_path)
+
+
 # --- wiring -----------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -666,6 +726,12 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--check", action="store_true", help="validate the shipped files")
     q.add_argument("--json", action="store_true")
     q.set_defaults(fn=cmd_papers)
+
+    q = sub.add_parser("preflight", help="run the installed KI check in an isolated execution copy")
+    q.add_argument("model")
+    q.add_argument("-w", "--workdir", required=True, help="the exact prepared setup workspace")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(fn=cmd_preflight)
 
     q = sub.add_parser("verify", help="prove a model actually runs on this machine")
     q.add_argument("model", nargs="?", help="one model, or all of them if omitted")
@@ -760,7 +826,50 @@ def build_parser() -> argparse.ArgumentParser:
     q = sub.add_parser("_install-download-worker", help=argparse.SUPPRESS)
     q.add_argument("request_path", type=Path)
     q.set_defaults(fn=cmd_install_download_worker)
+    q = sub.add_parser("_setup-discovery-worker", help=argparse.SUPPRESS)
+    q.add_argument("request_path", type=Path)
+    q.add_argument("result_path", type=Path)
+    q.set_defaults(fn=cmd_setup_discovery_worker)
     return p
+
+
+def cmd_preflight(args) -> int:
+    """Diagnostic check only; never adopt KI changes or write a ready receipt."""
+    from dataclasses import asdict
+    from . import ki_guard, setup, software_verification
+
+    root = Path(args.workdir).expanduser().resolve()
+    try:
+        ki = _catalog(args).get(args.model)
+        ki_guard.require_intact(ki.root)
+        live = root / "ki"
+        ki_guard.require_intact(live)
+        cfg = gui._installation_config_after_setup(paths.KissConfig.default(root), root=root)
+        before = software_verification.runtime_identity(cfg)
+        repo_root = ki.root.parent.parent
+        setup.materialise_active(ki.root, live, cfg,
+            manifest=_manifest_for(ki, repo_root), library_root=repo_root)
+        step = install.run_preflight(type(ki)(name=ki.name, root=live), cfg.python,
+                                     cfg, project=root)
+        manifest = _manifest_for(type(ki)(name=ki.name, root=live), repo_root)
+        if step.ok and manifest.runtime_data is not None:
+            from . import runtime_data
+            checked = runtime_data.check(manifest, cfg)
+            step.evidence["runtime_data"] = checked.evidence
+            if not checked.ok:
+                step.ok = False
+                step.detail += "\n" + checked.detail
+        after = gui._installation_config_after_setup(cfg, root=root)
+        if software_verification.runtime_identity(after) != before:
+            step.ok = False
+            step.detail = "Runtime binding changed during preflight.\n" + step.detail
+    except (OSError, ValueError, KeyError, ki_guard.KIIntegrityError) as exc:
+        step = install.Step("preflight", False, str(exc))
+    if args.json:
+        print(json.dumps(asdict(step), ensure_ascii=False, indent=2))
+    else:
+        print(f"{'PASS' if step.ok else 'FAIL'}\n{step.detail}")
+    return 0 if step.ok else 1
 
 
 def cmd_verify(args) -> int:
@@ -809,13 +918,13 @@ def cmd_verify(args) -> int:
             # structured per-model result rather than aborting --json output.
             live = root / "ki"
             if cfg is not None and live.is_dir():
-                setup.materialise_active(ki.root, live, cfg)
+                setup.materialise_active(ki.root, live, cfg, manifest=man, library_root=repo_root)
                 ki = type(ki)(name=ki.name, root=live)
             ki_guard.require_intact(ki.root)
             v = runnable.check(ki, man, cfg, harvested,
                                timeout=args.timeout, python=py)
             ki_guard.require_intact(ki.root)
-        except ki_guard.KIIntegrityError as exc:
+        except (ki_guard.KIIntegrityError, OSError, ValueError) as exc:
             v = runnable.Verdict(ki.name, kind="unknown", python=str(py or ""),
                                  detail=f"KI integrity gate: {exc}")
         runnable.save(workroot, v)
@@ -928,11 +1037,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # Before anything looks for agent CLIs or API keys: a double-clicked app
     # gets launchd's bare PATH, not the user's shell PATH.
-    from . import shellenv
-    shellenv.adopt()
-
     if argv is None:
         argv = _sys.argv[1:]
+    if not argv or argv[0] != "_setup-discovery-worker":
+        from . import shellenv
+        shellenv.adopt()
+    # Discovery inherits the parent's prepared PATH. Starting a login shell
+    # here could consume its entire deadline before any candidate is checked.
     # A bare launch means "open the app". The first real macOS test was someone
     # double-clicking the binary and getting `error: the following arguments
     # are required: cmd` — correct for a CLI, wrong for a desktop app.

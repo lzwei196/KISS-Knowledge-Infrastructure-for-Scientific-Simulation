@@ -401,7 +401,8 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
                forcing_source: str | None = None, validation: dict | None = None,
                run_id: str | None = None, execution_status: str | None = None,
                process_started: bool | None = None, project_data_tool: dict | None = None,
-               data_ki: dict | None = None) -> Path:
+               data_ki: dict | None = None, stdout_artifact: dict | None = None,
+               declared_outputs: dict | None = None, input_snapshot: dict | None = None) -> Path:
     if not approval_sha256 or not plan_step_id:
         raise ReceiptError("a run receipt must name the approval it runs under and the plan step "
                            "it executes (codex review #2)")
@@ -409,6 +410,12 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
     rid = run_id or f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}_" \
                     f"{secrets.token_hex(3)}"
     outs = [_file_entry(f, project) for f in outputs]
+    if declared_outputs is not None:
+        roles = {row["path"]: ("declared_json_report" if row["validation"] == "json_report_v1"
+                             else "declared_scientific_result")
+                 for row in declared_outputs.get("outputs", [])}
+        for entry in outs:
+            entry["output_role"] = roles.get(entry["path"], "supporting_execution_artifact")
     exe_sha = sha256_file(exe) if exe.is_file() else None
     doc = {
         "kind": "run", "run_id": rid, "ki": ki,
@@ -417,17 +424,22 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
         "command": [str(c) for c in command], "cwd": str(cwd),
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(started_at)),
         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(finished_at)),
+        "finished_at_epoch": finished_at,
         "runtime_seconds": round(max(0.0, finished_at - started_at), 3),
         "exit_code": exit_code,
         "binary_actually_ran": exit_code is not None,
         "stdout_log": stdout_log, "stderr_log": stderr_log,
-        "inputs": [_file_entry(f, project) for f in inputs],
+        "inputs": input_snapshot["inputs"] if input_snapshot is not None else [_file_entry(f, project) for f in inputs],
         "outputs": outs, "output_files_count": sum(1 for o in outs if not o.get("missing")),
         "forcing_source": forcing_source,
         "plan_step_id": plan_step_id, "approval_sha256": approval_sha256,
         "validation": validation or {"status": "not_run", "checks": []},
         "wrapper_pid": os.getpid(), "recorded_at": _now(),
     }
+    if declared_outputs is not None:
+        doc["declared_outputs"] = declared_outputs
+    if input_snapshot is not None:
+        doc["input_coverage"] = input_snapshot["input_coverage"]
     if execution_status is not None:
         doc.update(execution_status=execution_status, process_started=process_started,
                    binary_actually_ran=process_started is True)
@@ -436,6 +448,9 @@ def record_run(project: Path, *, ki: str, executable: str, command: list[str], c
                    project_data_tool=project_data_tool)
     elif data_ki is not None:
         doc.update(execution_scope="data_ki", model_executed=False, data_ki=data_ki)
+    if stdout_artifact is not None:
+        doc.update(stdout_artifact=stdout_artifact, execution_scope="ki_check_stdout_artifact",
+                   model_executed=False)
     return _write(project, RUNS_SUB, rid, doc)
 
 
@@ -846,9 +861,7 @@ def _read_all(project: Path, sub: str) -> list[tuple[Path, dict, bool]]:
     return out
 
 
-EXECUTABLE_STEP_KINDS = (
-    "process", "run", "model_run", "calibrate", "route", "couple", "prepare", "download",
-)
+from .plan import EXECUTABLE_STEP_KINDS
 
 
 @dataclass(frozen=True)
@@ -993,6 +1006,9 @@ def find_download(project: Path, item: dict, *, approval_sha256: str = "",
 
 def _finished_at(run: dict) -> float:
     """Parsed, so a UTC-offset change between attempts cannot reorder them."""
+    epoch = run.get("finished_at_epoch")
+    if type(epoch) in (int, float) and math.isfinite(epoch):
+        return epoch
     try:
         return datetime.strptime(run["finished_at"], "%Y-%m-%dT%H:%M:%S%z").timestamp()
     except (KeyError, TypeError, ValueError):
@@ -1056,6 +1072,219 @@ def _historical_outputs(project: Path, runs: list[tuple[Path, dict, bool]],
 #: renders when the agent publishes it through its own tool (presentation, not data).
 HOST_BOOKKEEPING = frozenset({"calibration/framework.json", "artifacts/project-view.json"})
 
+MAX_INPUT_FILES = 4096
+MAX_INPUT_ENTRIES = 8192
+
+
+def _input_bindings(step, inventory):
+    bindings = []
+    for ident in step.get("inputs") or []:
+        matches = [item for item in (inventory or {}).get("items") or []
+                   if isinstance(item, dict) and item.get("id") == ident]
+        if len(matches) != 1:
+            raise ValueError(f"Input {ident!r} needs exactly one approved inventory item")
+        paths = matches[0].get("local_paths") or []
+        if not isinstance(paths, list) or any(not isinstance(raw, str) for raw in paths):
+            raise ValueError(f"Input {ident!r} local_paths must be an array of literal paths")
+        bindings.append({"id": ident, "local_paths": paths})
+    return bindings
+
+
+def _input_path(project, raw):
+    if (not isinstance(raw, str) or not raw or len(raw) > 4096
+            or any(c in raw for c in "\0\r\n*?[]")):
+        raise ValueError("Approved input paths must be literal file or data-directory paths")
+    value = raw.replace("${PROJECT}", str(project))
+    if "${" in value:
+        raise ValueError("Approved input path uses an unresolved expansion")
+    candidate = Path(value).expanduser()
+    if candidate.drive and not candidate.is_absolute():
+        raise ValueError("Approved input paths cannot be drive-relative")
+    path = Path(os.path.abspath(candidate if candidate.is_absolute() else project / candidate))
+    if path.resolve() != path or path.is_symlink():
+        raise ValueError("Approved input path contains an alias: " + raw)
+    for host in (project / ".geoforge", project / ".git", keys_dir().resolve()):
+        if path == host or host in path.parents:
+            raise ValueError("Host metadata is not an approved physical input: " + raw)
+    return path
+
+
+def _input_directory(project, path):
+    """Enumerate only an explicitly approved data directory, with finite bounds."""
+    if (path == project or path in project.parents or path == Path.home().resolve()
+            or path.parent == path or path in keys_dir().resolve().parents):
+        raise ValueError("Approved input directory is too broad; name the exact data directory or files")
+    files, directories, pending, count = [], [], [path], 0
+    while pending:
+        parent = pending.pop()
+        children = []
+        with os.scandir(parent) as entries:
+            for entry in entries:
+                count += 1
+                if count > MAX_INPUT_ENTRIES:
+                    raise ValueError("Approved input directory exceeds the entry limit; name precise input files")
+                children.append(Path(entry.path))
+        for child in sorted(children):
+            child = _input_path(project, str(child))
+            if not child.is_relative_to(path):
+                raise ValueError("Approved input directory contains an escaping path")
+            if child.is_dir():
+                directories.append(_rel(child, project))
+                pending.append(child)
+            elif child.is_file():
+                files.append(_rel(child, project))
+                if len(files) > MAX_INPUT_FILES:
+                    raise ValueError("Approved input directory exceeds the file limit; name precise input files")
+            else:
+                raise ValueError("Approved input directory contains a nonordinary entry")
+    return {"path": _rel(path, project), "files": sorted(files), "subdirectories": sorted(directories)}
+
+
+def capture_inputs(project: Path, step: dict, inventory: dict, arguments: list[str], cwd: Path) -> dict:
+    """Capture declared physical inputs before launch, plus literal file arguments.
+
+    Descriptive inventory rows may have no local paths. Argument directories
+    are never traversed: only a reviewed inventory directory grants that scope.
+    """
+    project = Path(project).resolve()
+    bindings = _input_bindings(step, inventory)
+    files, directories, argument_files = set(), {}, set()
+    for binding in bindings:
+        for raw in binding["local_paths"]:
+            path = _input_path(project, raw)
+            if path.is_dir():
+                listing = _input_directory(project, path)
+                directories[listing["path"]] = listing
+                files.update(listing["files"])
+            elif path.is_file():
+                files.add(_rel(path, project))
+            else:
+                raise ValueError(f"Approved input {binding['id']!r} is missing: {raw}")
+    for token in arguments:
+        value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+        candidate = Path(value)
+        candidate = candidate if candidate.is_absolute() else Path(cwd) / candidate
+        if candidate.is_file():
+            path = _input_path(project, str(candidate))
+            argument_files.add(_rel(path, project))
+    all_files = files | argument_files
+    if len(all_files) > MAX_INPUT_FILES:
+        raise ValueError("Approved input capture exceeds the file limit; select precise input files")
+    entries = []
+    for raw in sorted(all_files):
+        path = project / raw
+        before = path.stat()
+        entry = _file_entry(path, project)
+        after = path.stat()
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns, before.st_ino) != (
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_ino):
+            raise ValueError("Approved input changed during pre-launch capture: " + raw)
+        entries.append(entry)
+    return {"inputs": entries, "input_coverage": {"version": 1,
+        "inventory_bindings": bindings, "files": sorted(files),
+        "argument_files": sorted(argument_files),
+        "directories": [directories[p] for p in sorted(directories)]}}
+
+
+def _approved_output_paths(project, step, inventory):
+    return {_rel(_input_path(project, raw), project)
+            for item in (inventory or {}).get("items") or []
+            if isinstance(item, dict) and item.get("id") in (step.get("outputs") or [])
+            for raw in item.get("local_paths") or []}
+
+
+def _input_coverage_errors(project, step, inventory, receipt, directory_observations):
+    """A legacy file entry can prove file coverage; directory membership needs a snapshot."""
+    try:
+        bindings = _input_bindings(step, inventory)
+        physical = [raw for binding in bindings for raw in binding["local_paths"]]
+        coverage = receipt.get("input_coverage")
+        rows = receipt.get("inputs") or []
+        recorded = {row.get("path") for row in rows if isinstance(row, dict)}
+        if coverage is None:
+            for raw in physical:
+                path = _input_path(project, raw)
+                if path.is_dir() or _rel(path, project) not in recorded:
+                    raise ValueError("Legacy receipt lacks complete approved input coverage: " + raw)
+            return []
+        if (not isinstance(coverage, dict) or coverage.get("version") != 1
+                or coverage.get("inventory_bindings") != bindings
+                or not isinstance(coverage.get("files"), list)
+                or not isinstance(coverage.get("argument_files"), list)
+                or not isinstance(coverage.get("directories"), list)):
+            raise ValueError("Recorded input coverage differs from the approved inventory")
+        files = set(coverage["files"])
+        if not files.issubset(recorded) or not set(coverage["argument_files"]).issubset(recorded):
+            raise ValueError("Recorded input coverage lacks its signed file hashes")
+        directories = {row["path"]: row for row in coverage["directories"]}
+        expected_files = set()
+        own_outputs = ({row.get("path") for row in receipt.get("outputs") or []}
+                       & _approved_output_paths(project, step, inventory))
+        for raw in physical:
+            path = _input_path(project, raw)
+            relative = _rel(path, project)
+            if relative in directories:
+                previous = directories[relative]
+                if relative not in directory_observations:
+                    directory_observations[relative] = _input_directory(project, path)
+                current = directory_observations[relative]
+                # A tool can intentionally transform an input file or emit a
+                # receipted result within its input case. Extra unreceipted
+                # members can change wildcard/default reads and make it stale.
+                output_parents = {_rel(parent, project) for raw_output in own_outputs
+                                  for parent in (project / raw_output).parents
+                                  if parent != path and parent.is_relative_to(path)}
+                new_directories = set(current["subdirectories"]) - set(previous["subdirectories"])
+                if (set(current["files"]) - own_outputs != set(previous["files"]) - own_outputs
+                        or set(previous["subdirectories"]) - set(current["subdirectories"])
+                        or new_directories - output_parents):
+                    raise ValueError("Approved input directory membership changed: " + relative)
+                expected_files.update(previous["files"])
+            else:
+                expected_files.add(relative)
+        if files != expected_files:
+            raise ValueError("Recorded input coverage omits or adds approved files")
+        return []
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
+        return [str(error)]
+
+
+def _current_file_status(project: Path, entry, observations: dict, *, output=False) -> str:
+    """Compare signed bytes with one call-local observation, including same-size edits.
+
+    No result is cached across evidence calls. Only recorded files are read;
+    shared inputs/outputs are hashed once, not once per dependent receipt.
+    """
+    if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
+            or not entry["path"] or entry.get("missing")
+            or type(entry.get("bytes")) is not int or entry["bytes"] < 0
+            or not isinstance(entry.get("sha256"), str) or len(entry["sha256"]) != 64):
+        return "malformed"
+    try:
+        path = Path(os.path.abspath(project / entry["path"]))
+        if output and (not _inside(path, project) or path.resolve() != path):
+            return "unsafe"
+        key = os.path.normcase(str(path))
+        if key not in observations:
+            if not path.is_file():
+                observations[key] = (None, None, "missing" if not path.exists() else "unsafe")
+            else:
+                before = path.stat()
+                # Do not read unexpectedly enlarged files just to reject them.
+                if before.st_size != entry["bytes"]:
+                    return "changed"
+                digest = sha256_file(path)
+                after = path.stat()
+                identity = lambda st: (st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino)
+                observations[key] = (after.st_size, digest,
+                                     "intact" if identity(before) == identity(after) else "changed")
+        size, digest, state = observations[key]
+        if state != "intact":
+            return state
+        return "intact" if (size, digest) == (entry["bytes"], entry["sha256"]) else "changed"
+    except (OSError, ValueError, RuntimeError):
+        return "unsafe"
+
 
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
@@ -1083,9 +1312,18 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     cur = str(sig.get("value") or "") if isinstance(sig, dict) else ""
     selected = set(plan.get("selected_kis") or approval.get("selected_kis") or [])
     steps = {str(s.get("id")): s for s in (plan.get("steps") or []) if isinstance(s, dict)}
-    exec_steps = {sid for sid, s in steps.items()
-                  if ((s.get("kind") or "process") in EXECUTABLE_STEP_KINDS
-                      or (s.get("kind") == "check" and s.get("tool")))}
+    from .plan import step_kind
+    plan_errors, invalid_steps, exec_steps = [], set(), set()
+    for sid, step in steps.items():
+        try:
+            kind = step_kind(step)
+        except ValueError as error:
+            plan_errors.append(f"step {sid!r}: {error}")
+            invalid_steps.add(sid)
+            exec_steps.add(sid)
+        else:
+            if kind in EXECUTABLE_STEP_KINDS or step.get("tool"):
+                exec_steps.add(sid)
 
     runs = _read_all(project, RUNS_SUB)
     # An in-process status query can share its already computed inspection with
@@ -1094,6 +1332,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
           if _download_inspection is None else _download_inspection)
     rejected: list[dict] = []
     bound_runs: list[dict] = []
+    typed_output_failures: dict[int, str] = {}
 
     def _same_file(a: str | None, b: str | None) -> bool:
         if not a or not b:
@@ -1124,6 +1363,39 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         if why:
             rejected.append({"path": str(p), "why": why})
         else:
+            step = steps[sid]
+            from .plan import invocation_receipt_errors
+            invocation_errors = invocation_receipt_errors(step, project, d)
+            if invocation_errors:
+                typed_output_failures[id(d)] = "; ".join(invocation_errors)
+            from . import declared_outputs
+            if ("declared_outputs" in d or (declared_outputs.ordinary(step)
+                    and d.get("execution_scope") not in {"data_ki", "project_data_tool", "ki_check_stdout_artifact"})):
+                errors = declared_outputs.receipt_errors(project, step, inventory, d, check_files=False)
+                if errors:
+                    typed_output_failures[id(d)] = "; ".join(
+                        [typed_output_failures[id(d)], *errors] if id(d) in typed_output_failures else errors)
+            if "stdout_artifact" in step or "stdout_artifact" in d:
+                from .stdout_artifacts import receipt_errors
+                errors = receipt_errors(project, step, inventory, d)
+                if errors:
+                    typed_output_failures[id(d)] = "; ".join(errors)
+            approved_data = step.get("project_data_tool")
+            recorded_data = d.get("project_data_tool")
+            if ((isinstance(approved_data, dict) and approved_data.get("version") == 2)
+                    or (isinstance(recorded_data, dict) and recorded_data.get("version") == 2)):
+                from .project_tools import typed_output_errors
+                if (approved_data != recorded_data or not isinstance(approved_data, dict)
+                        or approved_data.get("version") != 2
+                        or d.get("execution_scope") != "project_data_tool"
+                        or d.get("model_executed") is not False):
+                    errors = ["typed data receipt does not match the approved binding"]
+                else:
+                    errors = typed_output_errors(project, step, d.get("validation"), d.get("outputs"))
+                if errors:
+                    # Retain this authentic attempt in latest-attempt ordering.
+                    # Dropping it could make an older passing run win instead.
+                    typed_output_failures[id(d)] = "; ".join(errors)
             bound_runs.append(d)
     bound_dl: list[dict] = []
     for result in dl:
@@ -1131,14 +1403,24 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
             bound_dl.append(result.receipt)
         else:
             rejected.append({"path": str(result.path), "why": result.reason})
+    passed_downloads = {str(d.get("plan_step_id")) for d in bound_dl
+                        if str(d.get("plan_step_id")) in steps
+                        and str(d.get("plan_step_id")) not in invalid_steps
+                        and steps[str(d.get("plan_step_id"))].get("kind") == "download"
+                        and d.get("raw_files") and not any(f.get("missing") for f in d["raw_files"])}
 
     # Every attempt keeps its receipt, but each step stands on its LATEST bound attempt and each
     # output file on the latest attempt that wrote it. So a retry supersedes a failure, a later
     # failure counts again, and a file only a failed attempt wrote is not vouched for by a pass.
-    # ponytail: ordered by signed wall-clock finished_at (same second: failed > other > passed);
-    # a backwards clock step between attempts could reorder them. Add a signed attempt counter
-    # to record_run if that ever matters.
-    status = lambda d: (d.get("validation") or {}).get("status")  # noqa: E731
+    # New receipts retain subsecond ordering; legacy timestamps and exact ties
+    # retain the conservative failed > other > passed rule. A backwards wall
+    # clock jump remains a limitation of historical attempt ordering.
+    def status(d):
+        validation = d.get("validation")
+        recorded = validation.get("status") if isinstance(validation, dict) else None
+        if id(d) in typed_output_failures and recorded not in {"failed", "stopped"}:
+            return "failed"
+        return recorded
     rank = {"passed": 0, "failed": 2}
     attempts = sorted(bound_runs, key=lambda d: (_finished_at(d), rank.get(status(d), 1)))
     latest: dict[str, dict] = {}
@@ -1147,12 +1429,79 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         latest[str(d.get("plan_step_id"))] = d
         for o in d.get("outputs") or []:
             writer[o.get("path")] = (d, o.get("sha256"))
-    receipted_outputs = {path for path, (d, _) in writer.items() if status(d) == "passed"}
-    # A pass is stale when a file it read has since been rewritten by another attempt
-    # (e.g. it consumed the partial output of an upstream attempt that was then retried).
-    stale_steps = sorted(sid for sid, d in latest.items() if status(d) == "passed" and any(
-        i.get("path") in writer and writer[i["path"]][0] is not d and writer[i["path"]][1] != i.get("sha256")
-        for i in d.get("inputs") or []))
+    observations, directory_observations, stale_reasons, invalid_output_files = {}, {}, {}, []
+
+    def stale(sid, reason):
+        reasons = stale_reasons.setdefault(sid, [])
+        if reason not in reasons:
+            reasons.append(reason)
+
+    # Only the latest owner of a path must still have its bytes on disk. Earlier
+    # approved stages can intentionally produce and then transform the same file.
+    receipted_outputs = set()
+    for path, (d, _) in writer.items():
+        if status(d) != "passed":
+            continue
+        entry = next(o for o in d.get("outputs") or [] if o.get("path") == path)
+        current = _current_file_status(project, entry, observations, output=True)
+        if current == "intact":
+            receipted_outputs.add(path)
+        else:
+            sid = str(d.get("plan_step_id"))
+            invalid_output_files.append({"path": path, "plan_step_id": sid, "reason": current})
+            if latest.get(sid) is d:
+                stale(sid, f"Recorded output {path!r} is {current}")
+
+    dependencies = {sid: set() for sid in latest}
+    for sid, d in latest.items():
+        if status(d) != "passed":
+            continue
+        for reason in _input_coverage_errors(project, steps[sid], inventory, d, directory_observations):
+            stale(sid, reason)
+        own_outputs = ({o.get("path") for o in d.get("outputs") or []}
+                       & _approved_output_paths(project, steps[sid], inventory))
+        for entry in d.get("inputs") or []:
+            path = entry.get("path") if isinstance(entry, dict) else None
+            # An in-place transform owns the resulting output version. Its
+            # original input version is not expected to survive its own write.
+            if path in own_outputs:
+                continue
+            current = _current_file_status(project, entry, observations)
+            if current != "intact":
+                stale(sid, f"Recorded input {path!r} is {current}")
+            if path in writer:
+                producer, digest = writer[path]
+                producer_id = str(producer.get("plan_step_id"))
+                if producer_id != sid:
+                    dependencies[sid].add(producer_id)
+                    if digest != entry.get("sha256"):
+                        stale(sid, f"Recorded input {path!r} was replaced by step {producer_id!r}")
+    # Receipt inputs cover literal file arguments. Plan item edges also cover
+    # tools that locate inputs through a case/configuration or modify them in
+    # place, so stale upstream provenance cannot leave downstream passes current.
+    producers = {}
+    for sid, step in steps.items():
+        if sid in dependencies:
+            dependencies[sid].update(producers[item] for item in step.get("inputs") or []
+                                     if item in producers and producers[item] != sid)
+        for item in step.get("outputs") or []:
+            producers[item] = sid
+    pending = True
+    while pending:
+        pending = False
+        for sid, required in dependencies.items():
+            if status(latest[sid]) != "passed" or sid in stale_reasons:
+                continue
+            unavailable = sorted(p for p in required if p not in passed_downloads and (
+                p in stale_reasons or p in invalid_steps or p not in latest or status(latest[p]) != "passed"))
+            if unavailable:
+                stale(sid, "Upstream step evidence is not current: " + ", ".join(unavailable))
+                pending = True
+    stale_steps = sorted(stale_reasons)
+    # Unchanged bytes from stale runs remain reviewable but cannot vouch for
+    # current artifacts or allow continuation to consume stale evidence.
+    receipted_outputs = {path for path in receipted_outputs
+                         if str(writer[path][0].get("plan_step_id")) not in stale_reasons}
     superseded = [{"plan_step_id": d.get("plan_step_id"), "run_id": d.get("run_id"),
                    "finished_at": d.get("finished_at"), "command": d.get("command")}
                   for d in attempts if status(d) == "failed"
@@ -1220,15 +1569,12 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                         and rel not in historical_paths and not declared_child):
                     unreceipted.append(rel)
 
-    passed_steps = {sid for sid, d in latest.items() if status(d) == "passed" and sid not in stale_steps}
+    passed_steps = {sid for sid, d in latest.items()
+                    if status(d) == "passed" and sid not in stale_steps and sid not in invalid_steps}
     # codex R2 #2: a planned 'download' step is satisfied by a bound download receipt that
     # names it and whose raw files all exist (no missing entries)
-    for d in bound_dl:
-        sid = str(d.get("plan_step_id"))
-        if sid in steps and (steps[sid] or {}).get("kind") == "download" and \
-                (d.get("raw_files") or []) and not any(f.get("missing") for f in d.get("raw_files") or []):
-            passed_steps.add(sid)
-    failed_any = any(status(d) == "failed" for d in latest.values())
+    passed_steps.update(passed_downloads)
+    failed_any = bool(plan_errors) or any(status(d) == "failed" for d in latest.values())
     missing_steps = sorted(exec_steps - passed_steps)
     complete = bool(bound_runs) and not missing_steps and not unreceipted and not failed_any
     # A direct API wall does not turn reviewed, agent-authored Python into an
@@ -1247,14 +1593,21 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         "unreceipted_artifacts": unreceipted[:200],
         "executable_steps": sorted(exec_steps), "steps_passed": sorted(passed_steps),
         "steps_missing": missing_steps, "stale_steps": stale_steps,
+        "plan_errors": plan_errors, "stale_step_reasons": stale_reasons,
+        "invalid_output_files": invalid_output_files,
         "superseded_failures": superseded,
         "validation": "failed" if failed_any else ("passed" if complete else "incomplete"),
         "receipts_verified": complete,
         "runs": [{"run_id": d.get("run_id"), "ki": d.get("ki"), "exit_code": d.get("exit_code"),
                   "outputs": d.get("output_files_count"),
-                  "validation": (d.get("validation") or {}).get("status"),
+                  "validation": status(d),
+                  **({"validation_reason": typed_output_failures[id(d)]}
+                     if id(d) in typed_output_failures else {}),
                   "plan_step_id": d.get("plan_step_id"),
-                  **({"execution_scope": ("data_ki" if d.get("execution_scope") == "data_ki"
+                  **({"execution_scope": "ki_check_stdout_artifact", "model_executed": False,
+                      "step_kind": "check"}
+                     if "stdout_artifact" in (steps.get(str(d.get("plan_step_id"))) or {}) else
+                     {"execution_scope": ("data_ki" if d.get("execution_scope") == "data_ki"
                                           else "project_data_tool"), "model_executed": False,
                       "step_kind": (steps.get(str(d.get("plan_step_id"))) or {}).get("kind")}
                      if d.get("execution_scope") in {"project_data_tool", "data_ki"} or

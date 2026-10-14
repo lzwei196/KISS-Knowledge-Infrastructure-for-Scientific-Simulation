@@ -126,7 +126,7 @@ def test_builtin_setup_stops_before_later_steps(stopped_chat, tmp_path, monkeypa
     ki_guard.enroll(ki_root)
     started, late = tmp_path / "installer-started", tmp_path / "installer-late"
     script = f"import pathlib,time;pathlib.Path({str(started)!r}).touch();time.sleep(3)"
-    def python_env(cfg):
+    def python_env(cfg, **kwargs):
         rc, out = install._run([sys.executable, "-c", script])
         return install.Step("python-env", rc == 0, out)
     monkeypatch.setattr(install, "ensure_python_env", python_env)
@@ -331,8 +331,9 @@ def test_stop_interrupts_download_blocked_http_read(stopped_chat, tmp_path, work
         server_thread.join(2)
 
 
-@pytest.mark.parametrize("boundary,expected", [("initialising", []), ("[2/8]", ["materialise", "python-env"]),
-                                               ("[3/8]", ["materialise", "python-env", "common"])])
+@pytest.mark.parametrize("boundary,expected", [("initialising", []), ("[1/8]", ["python-env"]),
+                                               ("[2/8]", ["python-env", "common"]),
+                                               ("[3/8]", ["python-env", "common", "materialise"])])
 def test_installer_stop_from_emit_does_not_start_next_phase(tmp_path, monkeypatch, boundary, expected):
     project = tmp_path / "project"
     project.mkdir()

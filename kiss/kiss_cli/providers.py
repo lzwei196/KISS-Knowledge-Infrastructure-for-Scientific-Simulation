@@ -192,8 +192,13 @@ class Provider:
             selected = (f"kimi-code/{model}"
                         if self.name == "kimi" and "/" not in model else model)
             out += [self.model_flag, selected]
-        for d in extra_dirs or []:
-            out += ["--add-dir", d]
+        directory_args = [arg for d in extra_dirs or [] for arg in ("--add-dir", d)]
+        if self.name == "codex" and resume and self.resume_argv:
+            # --add-dir belongs to exec, not its resume subcommand.
+            at = out.index("exec") + 1
+            out[at:at] = directory_args
+        else:
+            out += directory_args
         head = _launcher(self.path() or self.binary)
         return head + out[1:] if out and out[0] == self.binary else out
 
@@ -791,7 +796,7 @@ def _session_id_from_stream_json(line: str) -> str | None:
 
 def _strip_flags(argv: list[str], flags: tuple[str, ...]) -> list[str]:
     """Remove ``--flag`` and, for value-taking flags, the value that follows it."""
-    valued = {"--permission-mode", "--sandbox", "--approval-mode", "--tools"}
+    valued = {"--permission-mode", "--sandbox", "-s", "--approval-mode", "--tools"}
     variadic = {"--allowedTools", "--allowed-tools", "--disallowedTools", "--add-dir"}
     out: list[str] = []
     skip = False
@@ -802,6 +807,8 @@ def _strip_flags(argv: list[str], flags: tuple[str, ...]) -> list[str]:
         many = False
         if skip:
             skip = False
+            continue
+        if "-s" in flags and tok in {"-sread-only", "-sworkspace-write", "-sdanger-full-access"}:
             continue
         key = tok.split("=", 1)[0]
         if key in flags:
@@ -1022,6 +1029,12 @@ def _run(provider: Provider, prompt: str, cwd: Path,
             if flow_policy is not None:
                 # the flow state's argv replaces the base mapping (plan v3 B6/B7)
                 drop = tuple(getattr(flow_policy, "drop_flags", ()) or ())
+                if provider.name == "codex" and any(
+                        arg.split("=", 1)[0] in {"--sandbox", "-s"}
+                        for arg in getattr(flow_policy, "argv_delta", []) or []):
+                    # One selector, owned by the flow state. Keeping the base
+                    # mapper's mode beside it makes Codex reject the command.
+                    drop += ("--sandbox", "-s")
                 base_kept = _strip_flags(extra_args, drop + ("--allowedTools",))
                 # argv_delta is the exact tool wall (shared with the web, which asserts it
                 # carries no --permission-mode); argv_extra holds the desktop-only launcher
@@ -1030,7 +1043,12 @@ def _run(provider: Provider, prompt: str, cwd: Path,
                               + list(getattr(flow_policy, "argv_extra", []) or []))
                 argv = _strip_flags(argv, drop)
                 enforcement = _pol.Enforcement(getattr(flow_policy, "enforcement").value)
-            argv = argv + extra_args
+            if provider.name == "codex" and resume and provider.resume_argv:
+                # exec owns --sandbox; after resume this flag is unsupported.
+                at = argv.index("exec") + 1
+                argv[at:at] = extra_args
+            else:
+                argv = argv + extra_args
             if enforcement is not _pol.Enforcement.EXACT:
                 yield f"[{_pol.describe(enforcement, provider.label)}]\n\n"
         elif flow_policy is not None:

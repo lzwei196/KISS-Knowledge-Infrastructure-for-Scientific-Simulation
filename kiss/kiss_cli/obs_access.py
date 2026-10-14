@@ -1215,48 +1215,27 @@ def _known(text: str, by_id: dict) -> bool:
     return text in by_id
 
 
-def _tokens(text: str) -> set[str]:
-    return {t for t in re.split(r"[^a-z0-9]+", str(text).lower()) if t}
-
-
-def _fuzzy_id(text: str, by_id: dict) -> str | None:
-    """'AVHRR_1km_LANDCOVER_1981_1994' -> 'avhrr_landcover' when exactly one id fits."""
-    have = _tokens(text)
-    if len(have) < 2:
-        return None
-    hits = [rid for rid in by_id
-            if len(rt := _tokens(rid)) >= 2 and rt <= have]
-    if len(hits) == 1:
-        return hits[0]
-    # several fit: take the most specific one only when it covers all the others
-    # ('hwsd_china_raster' over 'hwsd_china' when the text mentions the raster)
-    best = max(hits, key=lambda rid: len(_tokens(rid)), default=None)
-    if best and all(_tokens(other) <= _tokens(best) for other in hits):
-        return best
-    return None
-
-
 def _pinned_id(item: dict, by_id: dict) -> str | None:
     # A replan may reuse an already acquired local file under a dataset-like
     # inventory name. Its name must not silently request another acquisition.
     # An explicit dataset_id still takes precedence and is validated normally.
     if not item.get("dataset_id") and item.get("chosen_source") == "existing_local":
         return None
-    # The item id itself is often the catalogue id (agents name items after datasets).
-    candidates = [item.get("dataset_id"), item.get("chosen_source"), item.get("id")]
-    for raw in candidates:
+    # Binding requests acquisition. Only exact selections count; fuzzy discovery
+    # matches must not turn a runtime tree or generated report into a download.
+    # Preserve exact legacy item IDs and annotated exact chosen-source IDs.
+    for field in ("dataset_id", "chosen_source", "id"):
+        raw = item.get(field)
         if not isinstance(raw, str) or not raw.strip():
             continue
         text = raw.strip()
         if _known(text, by_id):
             return text
         # tolerate "faostat_china (csv, served, 22 KB)" style annotations
-        head = re.split(r"[\s(,;:]", text, maxsplit=1)[0]
-        if head in by_id:
-            return head
-    for raw in candidates:
-        if isinstance(raw, str) and (fuzzy := _fuzzy_id(raw, by_id)):
-            return fuzzy
+        if field == "chosen_source":
+            head = re.split(r"[\s(,;:]", text, maxsplit=1)[0]
+            if head in by_id:
+                return head
     return None
 
 
@@ -1288,8 +1267,12 @@ def delivery_preference_errors(inventory: dict) -> list[str]:
     return errors
 
 
-def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: Path | None = None) -> list[str]:
-    """Attach catalogue facts to every inventory item pinned to a dataset id.
+def stamp_inventory(inventory: dict, *, catalogue: dict | None = None,
+                    project: Path | None = None, plan: dict | None = None) -> list[str]:
+    """Attach catalogue facts to external inputs with exact dataset selections.
+
+    With a plan, generated artifacts are excluded from name-based matching;
+    explicit acquisition fields on such artifacts require a revised submission.
 
     Sets ``dataset_id``, ``delivery`` and a ``catalogue`` block copied from the
     app's local catalogue copy, and upgrades ``missing`` to ``resolved`` because
@@ -1297,6 +1280,13 @@ def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: 
     not contain is an error returned to the agent; nothing is invented.
     Without a catalogue copy the inventory is left untouched.
     """
+    generated = set()
+    if plan is not None:
+        from . import flowgate
+        plan_contract = flowgate.load().plan
+        if errors := plan_contract.generated_source_errors(plan, inventory):
+            return errors
+        generated = plan_contract.generated_item_ids(plan)
     errors = delivery_preference_errors(inventory)
     if errors:
         return errors
@@ -1304,6 +1294,10 @@ def stamp_inventory(inventory: dict, *, catalogue: dict | None = None, project: 
     regular_items = []
     for item in (inventory or {}).get('items') or []:
         if not isinstance(item, dict):
+            continue
+        # A generated report can resemble a catalogue ID. Neither its name nor
+        # source notes select another download; the plan's producer is decisive.
+        if str(item.get("id")) in generated:
             continue
         if item.get('acquisition_id') or item.get('delivery') == 'subset':
             from . import obs_subset

@@ -89,6 +89,17 @@ def _evidence_stamp(project: Path, flow) -> tuple:
                 if isinstance(item, dict) and item.get("path"):
                     p = Path(item["path"])
                     files.add(p if p.is_absolute() else project / p)
+        # Prelaunch input coverage also records directory membership. Existing
+        # file stamps alone cannot notice a new file in an approved external
+        # input directory. Its parent (and each existing nested directory)
+        # changes metadata when a child is added, removed or replaced.
+        coverage = _dict(doc.get("input_coverage"))
+        for directory in coverage.get("directories") or []:
+            if isinstance(directory, dict):
+                for raw in [directory.get("path"), *(directory.get("subdirectories") or [])]:
+                    if isinstance(raw, str) and raw:
+                        p = Path(raw)
+                        files.add(p if p.is_absolute() else project / p)
     # Unreceipted work in progress under inputs/ is not evidence yet and may still be
     # growing: the host's dot-prefixed temp downloads (.subset-*, *.part) and a manual
     # copy waiting for the user's handoff. Receipted files were added above.
@@ -163,6 +174,24 @@ def _observation(source: str, timestamp, now: float, summary: str) -> dict:
             "summary": summary}
 
 
+def _project_preflights(project: Path, selected: list) -> list[dict]:
+    """Read the latest project proofs, separately from shared installation status."""
+    if not (project / ".geoforge" / "project-verification").exists():
+        return []
+    from . import project_paths, project_verification
+    from .catalog import KI
+    rows = []
+    for name in selected:
+        try:
+            root = project_paths._model_home(project, name) / "ki"
+            result = project_verification.status(project, KI(name, root))
+            rows.append({"name": name, "state": result["state"],
+                         "can_run": result.get("can_run") is True})
+        except (OSError, ValueError, TypeError, RuntimeError):
+            rows.append({"name": name, "state": "stale", "can_run": False})
+    return rows
+
+
 def _acquisition_progress(acquisition: dict, *, state: str, approval: str,
                           plan_data: dict | None) -> dict:
     """Small current-approval display; never infer scientific readiness.
@@ -228,7 +257,7 @@ def _data_summary(pd: dict | None, acquisition: dict | None = None) -> dict:
     elif counts.get("waiting_for_you"):
         severity, label = "warn", "Waiting for your input"
     elif available:
-        severity, label = "warn", "Files available; preparation and scientific checks still required"
+        severity, label = "warn", "Files available"
     elif rows:
         severity, label = "warn", "Data preparation pending"
     else:
@@ -257,25 +286,30 @@ def _technical(preparation: dict, plans: list, summary: dict) -> dict:
             label, cls, mark = "Files present; not validated", "warn", "•"
         lanes[str(lane.get("id"))] = {"label": label, "cls": cls, "mark": mark, "note": note}
     return {"overall": {"label": summary["label"], "cls": summary["severity"], "mark": "?",
-                        "note": "Acquisition, preparation and scientific validation are separate."},
+                        "note": "File availability only. Execution receipts establish technical completion; independent scientific validation is separate."},
             "lanes": lanes}
 
 
 def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dict,
               request: dict | None, proof: dict, approval: str, acquisition: dict,
               activity: dict, errors: list, observed_at, now: float,
-              acquisition_progress: dict, data_acquired: bool) -> dict:
+              acquisition_progress: dict, data_acquired: bool, preflights: list | None = None) -> dict:
     active = activity.get("state") == "running" and activity.get("process_alive") is True
+    preflights = preflights or []
+    failed_preflights = [row["name"] for row in preflights if row["state"] in {"failed", "cancelled", "stale"}]
     complete = (state == "COMPLETED" and approval == "OK"
+                and all(row["can_run"] for row in preflights)
                 and proof.get("receipts_verified") is True and proof.get("validation") == "passed")
     runs = proof.get("runs") or []
-    step_kinds = {str(step.get("id")): step.get("kind") for step in plan.get("steps") or []
-                  if isinstance(step, dict)}
+    # Plan kinds express scheduling/approval intent, not which child processes
+    # actually ran. A KI `check` can execute a native reference case, and a `run`
+    # can execute a reader. Only host-normalized data scopes support data-only
+    # wording; ordinary KI receipts establish approved execution, not its
+    # scientific role or independent scientific validation.
     data_only = bool(runs) and all(
-        isinstance(run, dict) and (
-            (run.get("execution_scope") in {"project_data_tool", "data_ki"}
-             and run.get("model_executed") is False)
-            or step_kinds.get(str(run.get("plan_step_id"))) in {"prepare", "check"})
+        isinstance(run, dict)
+        and run.get("execution_scope") in {"project_data_tool", "data_ki"}
+        and run.get("model_executed") is False
         for run in runs)
     data_complete = complete and data_only
     needs_approval = state in {"APPROVED", "ACQUIRING", "EXECUTING", "VERIFYING", "COMPLETED",
@@ -294,14 +328,28 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
         status, summary, actor = "waiting_for_user", str(request.get("title") or "One thing needs you"), "user"
     elif needs_approval and approval != "OK":
         status, summary, actor = "waiting_for_user", "The current plan needs approval before work can continue.", "user"
+    elif failed_preflights:
+        status, actor = "failed", "agent"
+        summary = ("Latest project preflight did not pass: " + ", ".join(failed_preflights)
+                   + ". Verify the current project KI before running; a shared installation pass is separate.")
+    elif proof.get("plan_errors"):
+        status, actor = "failed", "agent"
+        summary = ("The approved plan contains invalid steps. Revise the plan and review it again; "
+                   "completion is not verified.")
+    elif proof.get("stale_steps"):
+        status, actor = "failed", "agent"
+        summary = ("Input or output evidence is incomplete or has changed. Results are no longer current "
+                   "for these steps: " + ", ".join(proof["stale_steps"][:10])
+                   + ". Check the files and rerun the affected work; earlier receipts are preserved.")
     elif state in {"FAILED", "FAILED_VALIDATION"} or proof.get("validation") == "failed":
         status, summary, actor = "failed", "An execution attempt failed; agent diagnosis is needed.", "agent"
     elif state == "BLOCKED" or acquisition.get("status") == "failed":
         status, summary, actor = "failed", "Project work is blocked; inspect the acquisition or planning details.", "user"
     elif complete:
-        summary = ("This phase completed data preparation with current approved evidence. "
-                   "This alone does not establish completion of the full scientific workflow."
-                   if data_complete else "Flow completed with current approved execution evidence.")
+        summary = ("Data preparation completed with current approved execution evidence. "
+                   "Independent scientific validation is not established."
+                   if data_complete else "Approved execution completed with current evidence. "
+                   "Independent scientific validation is not established.")
         status, actor = "complete", "none"
     elif state == "COMPLETED":
         status, summary, actor = "failed", "Flow recorded completion, but current evidence does not establish it.", "agent"
@@ -326,13 +374,18 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
         status, summary, actor = "idle", "Project unfinished; no active agent turn is observed.", "agent"
         if state in {"", "NEW"} and not report.get("goal") and not plan.get("goal"):
             summary, actor = "Describe the scientific goal in chat to begin.", "user"
+    # A pending request or higher-priority evidence error must also suppress
+    # completion flags, even if a supplied proof snapshot reports a pass.
+    complete = complete and status == "complete"
+    data_complete = complete and data_only
     result = {**report, "status": status, "stage": stage or "understanding", "summary": summary,
               "goal": plan.get("goal") or report.get("goal") or "",
               "selected_kis": selected or report.get("selected_kis") or [],
-              "flow_state": state or None, "science_complete": complete and not data_only,
+              "flow_state": state or None, "execution_complete": complete,
+              "science_complete": False, "scientific_validation": "not_established",
               "data_preparation_complete": data_complete,
               "completion_scope": ("data_preparation" if data_complete else
-                                   "scientific_workflow" if complete else None),
+                                   "approved_execution" if complete else None),
               "next_actor": actor, "source": "Flow and signed evidence" if state else "Unverified project report",
               "observed_at": observed_at, "age_seconds": _age(observed_at, now),
               "acquisition": acquisition_progress, "ready_to_start": ready,
@@ -362,9 +415,11 @@ def snapshot(project: Path, *, report: dict | None = None, plans: list | None = 
     acquisition_history = _dict(acquire.status(project))
     acquisition = {}
     request = None
+    request_history = None
     try:
         # setup.request normally performs a legacy migration; status must not.
         request = setup_flow.request(project, archive_obsolete=False)
+        request_history = request if request and request.get("status") == "historical" else None
         request = request if request and request.get("status") == "waiting" else None
         request_path = project / setup_flow.REQUEST_FILE
         if request_path.is_file():
@@ -404,10 +459,11 @@ def snapshot(project: Path, *, report: dict | None = None, plans: list | None = 
     summary = _data_summary(pd, acquisition_progress)
     if errors:
         summary.update(severity="block", label="Status evidence needs inspection")
+    preflights = _project_preflights(project, selected)
     progress = _progress(report, state=state, stage=stage, selected=selected, plan=pj or {},
                          request=request, proof=proof, approval=approval, acquisition=acquisition,
                          activity=activity, errors=errors, observed_at=observed_at, now=now,
-                         acquisition_progress=acquisition_progress, data_acquired=acquired)
+                         acquisition_progress=acquisition_progress, data_acquired=acquired, preflights=preflights)
     observations = []
     if observed_at:
         observations.append(_observation("Flow state", observed_at, now, state))
@@ -425,7 +481,9 @@ def snapshot(project: Path, *, report: dict | None = None, plans: list | None = 
                              "age_seconds": activity.get("event_silence_seconds"),
                              "observed_at": None,
                              "summary": str(activity.get("activity_detail") or activity.get("state") or "unknown")})
-    return {"progress": progress, "request": request, "plan_data": pd, "data_summary": summary,
+    return {"progress": progress, "request": request, "request_history": request_history,
+            "plan_data": pd, "data_summary": summary,
+            "project_preflights": preflights,
             "technical": _technical(preparation, plans or [], summary), "observations": observations,
             "execution": proof, "acquisition": acquisition, "acquisition_history": acquisition_history,
             "evidence_checked_at": checked_at, "errors": errors}

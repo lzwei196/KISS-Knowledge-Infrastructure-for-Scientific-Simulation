@@ -984,7 +984,7 @@ def _neutralise(text: str) -> str:
     return _MARKER.sub(lambda m: m.group(1) + "> " + m.group(2), text)
 
 
-def catalogue_block(catalog, statuses: dict | None = None) -> str:
+def catalogue_block(catalog, statuses: dict | None = None, *, read_map=None) -> str:
     """The auto-routing index: every KI in one screenful.
 
     Generated from dag.yaml identity — the same source the SKILL.md
@@ -998,13 +998,24 @@ def catalogue_block(catalog, statuses: dict | None = None) -> str:
         "FIRST and follow it exactly; its tools are run by absolute path.",
         "",
     ]
+    if read_map is not None:
+        lines[3:5] = [
+            "Read the exact effective SKILL path below before proposing a workflow. API tools: use",
+            "ki='<name>', path='SKILL.md', or path='<name>/SKILL.md' without ki. List and diagnostics use the same effective source.",
+            "These are inspection sources, not project runtime paths or permission to run. Portable placeholders are bound during later project preparation.",
+        ]
     for ki in catalog:
         ref = (ki.meta or {}).get("reference") or (ki.meta or {}).get("model_id") or ki.name
         state = (statuses or {}).get(ki.name) or {}
         label = state.get("label") or "Software status unknown"
         lines.append(f"  {ki.name} — {str(ref)[:95]} — {label}")
+        if read_map is not None:
+            view = read_map.entries[ki.name]
+            lines.append(f"    Effective SKILL: {Path(view['root']) / 'SKILL.md'}")
+            lines.append(f"    Source: {view['origin']}. {view['notice']}")
         if (ki.meta or {}).get("package_role") == "data_reader":
-            lines.append(f"    Data KI: reads observations; does not simulate a model. SKILL: {ki.root / 'SKILL.md'}")
+            effective = Path(read_map.entries[ki.name]['root']) if read_map is not None else ki.root
+            lines.append(f"    Data KI: reads observations; does not simulate a model. SKILL: {effective / 'SKILL.md'}")
     return "\n".join(lines)
 
 

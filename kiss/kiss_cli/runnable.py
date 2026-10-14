@@ -22,6 +22,8 @@ The agent does not judge any of this — it reads the verdict and acts.
 from __future__ import annotations
 
 import ast
+import contextlib
+import contextvars
 import os
 import platform
 import re
@@ -33,6 +35,80 @@ import tomllib
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+_CANCELLATION = contextvars.ContextVar("runnable_cancellation", default=None)
+
+
+@contextlib.contextmanager
+def cancellation_context(project, *, stop=None, turn_id=None):
+    """Bind setup probes to their owning job without changing other callers."""
+    from . import execution
+    from .install import InstallStopped
+
+    if project is not None:
+        project = Path(project).resolve()
+        if turn_id is None:
+            inherited = execution.turn_environment(project)
+            if execution.stop_requested(project, env=inherited):
+                raise InstallStopped("Stopped by the user; runtime verification was interrupted.")
+            turn_id = inherited.get(execution.TURN_ID_ENV)
+    token = _CANCELLATION.set((project, stop, turn_id))
+    try:
+        _check_cancelled()
+        yield
+    finally:
+        _CANCELLATION.reset(token)
+
+
+def _check_cancelled():
+    context = _CANCELLATION.get()
+    if context is not None:
+        from . import execution
+        from .install import InstallStopped
+        project, stop, turn_id = context
+        if ((stop is not None and stop()) or
+                (project is not None and execution.stop_requested(project, turn_id=turn_id))):
+            raise InstallStopped("Stopped by the user; runtime verification was interrupted.")
+
+
+def _probe_run(command, **kwargs):
+    """Supervise this module's captured text probes only when setup opts in."""
+    context = _CANCELLATION.get()
+    if context is None:
+        return subprocess.run(command, **kwargs)
+    _check_cancelled()
+    supported = {"capture_output", "text", "encoding", "errors", "timeout", "cwd", "env", "stdin"}
+    if (kwargs.keys() - supported or kwargs.get("capture_output") is not True or
+            kwargs.get("text") is not True):
+        raise ValueError("Supervised runtime probes require captured text output and supported launch options")
+    from . import execution
+    from .install import InstallStopped
+    project, stop, turn_id = context
+    env = kwargs.get("env")
+    env = dict(os.environ if env is None else env)
+    if project is not None:
+        env = execution.turn_environment(project, turn_id=turn_id, env=env)
+    result = execution.run_process(
+        command, cwd=kwargs.get("cwd") or Path.cwd(), env=env,
+        timeout=kwargs.get("timeout"), stdin=kwargs.get("stdin"),
+        project=project, stop=stop, turn_id=turn_id,
+        encoding=kwargs.get("encoding"), errors=kwargs.get("errors") or "strict",
+    )
+    if result.status in {"stopped", "interrupted"}:
+        raise InstallStopped(result.detail or "Stopped by the user; runtime verification was interrupted.")
+    _check_cancelled()
+    if result.status == "timed_out":
+        # The supervisor has already ended the owned process tree. Its output
+        # is decoded text; the probe's timeout reader accepts text or bytes.
+        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"),
+                                        output=result.stdout, stderr=result.stderr)
+    if result.status not in {"succeeded", "failed"} or result.returncode is None:
+        if isinstance(result.error, Exception):
+            raise result.error
+        raise OSError(result.detail or "Runtime probe outcome could not be observed") from result.error
+    return subprocess.CompletedProcess(command, result.returncode, result.stdout, result.stderr)
+
 
 #: Flags that make a model print something and exit rather than start solving.
 #: Tried in order; a model that ignores all of them still counts as running if
@@ -255,24 +331,50 @@ def declared(ki) -> list[str]:
 
     Generated preflights also check data, documentation, and Python
     environments.  Treating the first literal ``check_file`` as the model
-    binary made CRHM's elevation NetCDF look executable.  Read only calls whose
-    own ``executable`` argument is true, while resolving their simple Path or
-    ``os.path`` assignments without executing the preflight.
+    binary made CRHM's elevation NetCDF look executable. Read calls whose own
+    ``executable`` argument is true, or the local check_executable contract
+    with an explicit file/execute check. Resolve simple static paths only.
     """
     pre = getattr(ki, "preflight", None)
     if not pre or not Path(pre).is_file():
         return []
-    text = Path(pre).read_text(encoding="utf-8", errors="replace")
+    with Path(pre).open(encoding="utf-8", errors="replace") as stream:
+        text = stream.read(1_048_577)
+    if len(text) > 1_048_576:
+        return []
     try:
         tree = ast.parse(text)
-    except SyntaxError:
+    except (SyntaxError, RecursionError):
         return []
 
     names = {"__file__": str(Path(pre))}
-    signatures: dict[str, tuple[int, int]] = {}
+    signatures: dict[str, tuple[int, int | None]] = {}
+
+    def executable_body(fn):
+        # This deliberately recognizes the generated straight-line contract,
+        # not an arbitrary function inferred from its name or a binary constant.
+        file_check = ast.dump(ast.parse("path.is_file()", mode="eval").body)
+        access_check = ast.dump(ast.parse("os.access(path, os.X_OK)", mode="eval").body)
+        return any(isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.BoolOp)
+                   and isinstance(stmt.value.op, ast.And) and len(stmt.value.values) == 2
+                   and {ast.dump(value) for value in stmt.value.values} == {file_check, access_check}
+                   for stmt in fn.body)
+
+    def scope_bindings(scope):
+        found = {node.id for node in ast.walk(scope)
+                 if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del))}
+        found.update(node.arg for node in ast.walk(scope) if isinstance(node, ast.arg))
+        found.update(node.name for node in ast.walk(scope)
+                     if node is not scope and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+        found.update(alias.asname or alias.name.split(".")[0]
+                     for node in ast.walk(scope) if isinstance(node, (ast.Import, ast.ImportFrom))
+                     for alias in node.names)
+        return found
+
     for stmt in tree.body:
         if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
+        signatures.pop(stmt.name, None)
         params = [arg.arg for arg in stmt.args.args]
         keyword_only = [arg.arg for arg in stmt.args.kwonlyargs]
         if "path" in params and ("executable" in params or
@@ -280,16 +382,59 @@ def declared(ki) -> list[str]:
             signatures[stmt.name] = (params.index("path"),
                                      (params.index("executable")
                                       if "executable" in params else -1))
+        elif (isinstance(stmt, ast.FunctionDef) and not stmt.decorator_list and
+              stmt.name == "check_executable" and "path" in params and
+              executable_body(stmt) and "os" not in scope_bindings(stmt) and
+              not any(isinstance(node, ast.Name) and node.id == "path" and
+                      isinstance(node.ctx, (ast.Store, ast.Del)) for node in ast.walk(stmt))):
+            signatures[stmt.name] = (params.index("path"), None)
 
     # Resolve module-level constants in source order.  A few generated KIs use
     # Path division; older ones use os.path.dirname/join.
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign):
             value = _static_path(stmt.value, names)
-            if value is not None:
-                for target in stmt.targets:
-                    if isinstance(target, ast.Name):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name):
+                    signatures.pop(target.id, None)
+                    if value is not None:
                         names[target.id] = value
+                    else:
+                        names.pop(target.id, None)
+                else:
+                    for assigned in ast.walk(target):
+                        if isinstance(assigned, ast.Name):
+                            names.pop(assigned.id, None)
+                            signatures.pop(assigned.id, None)
+
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    local_bindings = {node: scope_bindings(node) for node in ast.walk(tree)
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef))}
+    shadowed_names = set()
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if stmt.name in {"Path", "os", "str"} or stmt.name in names:
+                shadowed_names.add(stmt.name)
+            continue
+        if isinstance(stmt, ast.ClassDef):
+            shadowed_names.add(stmt.name)
+        if not isinstance(stmt, (ast.Assign, ast.Import, ast.ImportFrom)):
+            shadowed_names.update(scope_bindings(stmt))
+        if isinstance(stmt, ast.Assign):
+            shadowed_names.update(node.id for target in stmt.targets for node in ast.walk(target)
+                                  if isinstance(node, ast.Name) and node.id in {"Path", "os", "str"})
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            for alias in stmt.names:
+                name = alias.asname or alias.name.split(".")[0]
+                if alias.name == "*":
+                    shadowed_names.update({"Path", "os", "str", *names, *signatures})
+                    continue
+                if name not in {"Path", "os", "str"}:
+                    shadowed_names.add(name)
+                    continue
+                if not ((isinstance(stmt, ast.Import) and alias.name == "os" and name == "os") or
+                        (isinstance(stmt, ast.ImportFrom) and stmt.module == "pathlib" and alias.name == "Path" and name == "Path")):
+                    shadowed_names.add(name)
 
     out: list[str] = []
     for node in ast.walk(tree):
@@ -302,15 +447,32 @@ def declared(ki) -> list[str]:
         if signature is None:
             continue
         path_index, executable_index = signature
-        explicit = next((kw.value for kw in node.keywords
-                         if kw.arg == "executable"), None)
-        if explicit is None and executable_index >= 0 and len(node.args) > executable_index:
-            explicit = node.args[executable_index]
-        if not (isinstance(explicit, ast.Constant) and explicit.value is True):
+        path_arg = node.args[path_index] if len(node.args) > path_index else None
+        keyword_paths = [kw.value for kw in node.keywords if kw.arg == "path"]
+        if len(keyword_paths) > 1 or (path_arg is not None and keyword_paths):
             continue
-        if len(node.args) <= path_index:
+        path_arg = keyword_paths[0] if keyword_paths else path_arg
+        if path_arg is None or any(isinstance(arg, ast.Starred) for arg in node.args) or any(kw.arg is None for kw in node.keywords):
             continue
-        value = _static_path(node.args[path_index], names)
+        visible = names
+        if executable_index is None:
+            if not isinstance(node.func, ast.Name):
+                continue
+            blocked = set(shadowed_names)
+            owner = parents.get(node)
+            while owner is not None:
+                blocked.update(local_bindings.get(owner, ()))
+                owner = parents.get(owner)
+            if blocked & {func_name, "Path", "os", "str"}:
+                continue
+            visible = {name: value for name, value in names.items() if name not in blocked}
+        else:
+            explicit = next((kw.value for kw in node.keywords if kw.arg == "executable"), None)
+            if explicit is None and executable_index >= 0 and len(node.args) > executable_index:
+                explicit = node.args[executable_index]
+            if not (isinstance(explicit, ast.Constant) and explicit.value is True):
+                continue
+        value = _static_path(path_arg, visible)
         if value and value not in out:
             out.append(value)
     return out
@@ -459,7 +621,7 @@ def missing_imports(mods: list[str], python: str, cwd: Path | None = None,
         env.setdefault("MPLBACKEND", "Agg")
         # Locale decoding like the child's own stdout; a stray byte from an
         # import-time banner must not escape as an uncaught UnicodeDecodeError.
-        r = subprocess.run([python, "-c", probe], capture_output=True, text=True,
+        r = _probe_run([python, "-c", probe], capture_output=True, text=True,
                            errors="replace", timeout=180, cwd=str(cwd) if cwd else None, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return list(mods)
@@ -743,7 +905,7 @@ def _probe_julia_project(ki, cfg, timeout: int) -> tuple[bool, str]:
             env["JULIA_DEPOT_PATH"] = str(depot)
             break
     try:
-        result = subprocess.run(
+        result = _probe_run(
             [str(julia), f"--project={project}", "-e", code],
             # Julia writes UTF-8 whatever the Windows code page is.
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
@@ -789,7 +951,7 @@ def _missing_libs(p: Path) -> list[str]:
     if platform.system() != "Linux" or not shutil.which("ldd"):
         return []
     try:
-        r = subprocess.run(["ldd", str(p)], capture_output=True, text=True, timeout=30)
+        r = _probe_run(["ldd", str(p)], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [ln.split("=>")[0].strip() for ln in r.stdout.splitlines() if "not found" in ln]
@@ -890,7 +1052,7 @@ def _check_r_package(v, contract, man, cfg, timeout, env):
                                 ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
         with tempfile.TemporaryDirectory(prefix="kiss-r-package-probe-") as empty:
             # R >= 4.2 is UTF-8 native on Windows too, so its pipes are UTF-8, not cp936.
-            result = subprocess.run(v.probe_command, cwd=empty, env=clean_env,
+            result = _probe_run(v.probe_command, cwd=empty, env=clean_env,
                                     stdin=subprocess.DEVNULL, capture_output=True,
                                     text=True, encoding="utf-8", errors="replace",
                                     timeout=min(timeout, 25))
@@ -927,7 +1089,7 @@ def _check_julia_package(v, contract, cfg, timeout, env):
         clean_env.update(jpackage.startup_env(depot))
         with tempfile.TemporaryDirectory(prefix="kiss-julia-package-probe-") as empty:
             # Julia prints UTF-8 on every platform; the module path it reports is compared below.
-            result = subprocess.run(v.probe_command,cwd=empty,env=clean_env,
+            result = _probe_run(v.probe_command,cwd=empty,env=clean_env,
                                     stdin=subprocess.DEVNULL,capture_output=True,
                                     text=True,encoding="utf-8",errors="replace",
                                     timeout=jpackage.IMPORT_TIMEOUT_SECONDS)
@@ -980,7 +1142,7 @@ def _check_octave_package(v,contract,cfg,timeout,env):
             script=Path(empty)/"load_toolbox.m"; script.write_text(octpackage.PROBE,encoding="utf-8")
             v.probe_command=[str(runtime),*octpackage.probe_args(script,source,packages,c)]
             # Octave prints its UTF-8 strings unconverted; the class paths are compared below.
-            result=subprocess.run(v.probe_command,cwd=empty,env=clean_env,stdin=subprocess.DEVNULL,
+            result=_probe_run(v.probe_command,cwd=empty,env=clean_env,stdin=subprocess.DEVNULL,
                                   capture_output=True,text=True,encoding="utf-8",errors="replace",
                                   timeout=min(timeout,25))
         v.probe_output=result.stdout[-16000:]+result.stderr[-2000:]
@@ -1222,7 +1384,7 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
                                  for p in Path(probe_dir).rglob("*")}
                                 if v.model == "PHREEQC" else set())
                 try:
-                    r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                    r = _probe_run(argv, capture_output=True, text=True, timeout=timeout,
                                        errors="replace", cwd=probe_dir, stdin=subprocess.DEVNULL,
                                        env=probe_env)
                 finally:

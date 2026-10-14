@@ -1,0 +1,1938 @@
+{
+  "version": 1,
+  "source": {
+    "repo": "https://github.com/DSSAT/dssat-csm-os.git",
+    "commit": "40793f8d654ca033d027ec3a6cea53cf2f546602"
+  },
+  "target": {
+    "role": "home",
+    "path": "DSSAT/Data"
+  },
+  "files": [
+    {
+      "source": "Data/BatchFiles/Alfalfa.v48",
+      "path": "BatchFiles/Alfalfa.v48",
+      "sha256": "9fadb74992b42ee0d70238221bb1fb8fe2febc9c8e1051b476639451c62bd927",
+      "bytes": 2064,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/All.L48",
+      "path": "BatchFiles/All.L48",
+      "sha256": "0d82d157c30b3c66c103dc09d9b7182288f4f79f004cee0f017e59dd5eb739fa",
+      "bytes": 191629,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/All.v48",
+      "path": "BatchFiles/All.v48",
+      "sha256": "7073021c0dc8da0fdb19334bb4f11dbe7ad910e620bd23a0636df135e7118d87",
+      "bytes": 191315,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Amaranth.v48",
+      "path": "BatchFiles/Amaranth.v48",
+      "sha256": "407e3cfc3c1a9244a5e39c8e97fcaec6faa57a41366f66d7ba338c5d07901e88",
+      "bytes": 2340,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Bahia.v48",
+      "path": "BatchFiles/Bahia.v48",
+      "sha256": "d59d374af9f3562222a9eedfedf7bb3eeff9ada5c8833737f4e3684be2622323",
+      "bytes": 6242,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Bambara.v48",
+      "path": "BatchFiles/Bambara.v48",
+      "sha256": "6feb4243ac4af61b2676d63373612ae54cdd403d841db99e84b26c3882b97281",
+      "bytes": 1757,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Barley.v48",
+      "path": "BatchFiles/Barley.v48",
+      "sha256": "c91a00fa1f11d1b3ef0d0830eb5cdff1b5bb470a74699068e60b608d80a566e1",
+      "bytes": 2062,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/BellPepper.v48",
+      "path": "BatchFiles/BellPepper.v48",
+      "sha256": "0e8b1a7bf47b0fc40fad4b7f59eae2d72cdc5a08ff9f312fcb3284bb16776d94",
+      "bytes": 1047,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Bermuda.v48",
+      "path": "BatchFiles/Bermuda.v48",
+      "sha256": "bba51323f2ef0fd859c6b68c40c78338badddf3431d979348f3b640591bd1d1e",
+      "bytes": 922,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Brachiaria.v48",
+      "path": "BatchFiles/Brachiaria.v48",
+      "sha256": "b02e8aab781bd3ad1440326310812850c0a92c70cf780cab55c0bd81b4928506",
+      "bytes": 4502,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/CROPGRO.v48",
+      "path": "BatchFiles/CROPGRO.v48",
+      "sha256": "7cb0096ae5f10e3ce4ba4d7447e33cedb5c2b25840f971cc162e4c200540aeb6",
+      "bytes": 110337,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Cabbage.v48",
+      "path": "BatchFiles/Cabbage.v48",
+      "sha256": "8fe50b9fb7be48ed54d53b0202ba7d7eec3311c10a4cb3efab56089ac8a505c8",
+      "bytes": 4624,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Canola.v48",
+      "path": "BatchFiles/Canola.v48",
+      "sha256": "838ae64b274069626599fa6fe3dacd68c2e82be99a168570919bda31533223d4",
+      "bytes": 2190,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Carinata.v48",
+      "path": "BatchFiles/Carinata.v48",
+      "sha256": "ed617d04186d1e47ae4c87fb0a988ce9eb15c410b992763c3d00f353f8f5977e",
+      "bytes": 2698,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Cassava.v48",
+      "path": "BatchFiles/Cassava.v48",
+      "sha256": "95b20447e5e89103f54f838f90f3607a5576d9a98bff960d9a2e6e3d165fcc19",
+      "bytes": 2448,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Chia.v48",
+      "path": "BatchFiles/Chia.v48",
+      "sha256": "79d10294f8b231dfdfadc02a45b886ca6de23f045605c3ae9b3bf29ca838ba30",
+      "bytes": 1534,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Chickpea.v48",
+      "path": "BatchFiles/Chickpea.v48",
+      "sha256": "a17587bbe22ea3334ffab9920afc30b7a0b17203383b84b933350005e75cdd64",
+      "bytes": 8082,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Cotton.v48",
+      "path": "BatchFiles/Cotton.v48",
+      "sha256": "a114f96c30e63d6745d9e6b8dace6bae7de1745d91cdb5c2e712afd0fac813fa",
+      "bytes": 1038,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Cowpea.v48",
+      "path": "BatchFiles/Cowpea.v48",
+      "sha256": "7cc953f1e92e92776bb914c9379a5c045cca32ade758b1dbceacaff2fd2ab2f0",
+      "bytes": 2318,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Drybean.v48",
+      "path": "BatchFiles/Drybean.v48",
+      "sha256": "46b13a144de1bf9e8632c89b5f599a1e98d7ff10e86d18fb66335c701caf0fb1",
+      "bytes": 8721,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Fababean.v48",
+      "path": "BatchFiles/Fababean.v48",
+      "sha256": "334c33901556ff097a4d84c46e6a3c0c4a832df29c58db2f474d84c6a2353bb7",
+      "bytes": 1171,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Fallow.v48",
+      "path": "BatchFiles/Fallow.v48",
+      "sha256": "5ea67cad0fa993526433dfe5f1a33ed601845cde999826ca8ec46758ceb60aa1",
+      "bytes": 1934,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/GreenBean.v48",
+      "path": "BatchFiles/GreenBean.v48",
+      "sha256": "73822c828949afb1f93d45e11b9a74b906de37832b3152e4d13b6e3bf01f808c",
+      "bytes": 1045,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Guar.v48",
+      "path": "BatchFiles/Guar.v48",
+      "sha256": "1eaae4b8c7ba3518e7f3a7f846c6c6250b4744609383933449c2dea460b10e1c",
+      "bytes": 5374,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Guineagrass.v48",
+      "path": "BatchFiles/Guineagrass.v48",
+      "sha256": "a6802cc96818cd44fb51337f22a3950205d1836aabfc3df00f2270b814086796",
+      "bytes": 661,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Hemp.v48",
+      "path": "BatchFiles/Hemp.v48",
+      "sha256": "a2d25f4525a9c0fed57f4402cb80e6a19cfdd7941fd848fe288cc8324e9907b0",
+      "bytes": 2301,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Lentil.v48",
+      "path": "BatchFiles/Lentil.v48",
+      "sha256": "d8de7f92593fc3b49713af3c200e0002e988c21f7d34d1cf9dc077de0cec21ba",
+      "bytes": 15472,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Maize.v48",
+      "path": "BatchFiles/Maize.v48",
+      "sha256": "22e2f51ea6793ea874a75dbdf6068cca87a4d9f1bc3fab43220ccf7e22eaec11",
+      "bytes": 10124,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Peanut.v48",
+      "path": "BatchFiles/Peanut.v48",
+      "sha256": "efe60aaa4416a8c203df5a8908c040d1a09e6aa2682ca01505b200a905119b4c",
+      "bytes": 14606,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/PearlMillet.v48",
+      "path": "BatchFiles/PearlMillet.v48",
+      "sha256": "a02277ee175cf6031dbd7ee1d5de0188566666172e0d078fe9cb8fecbbf2ffee",
+      "bytes": 1177,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Pigeonpea.v48",
+      "path": "BatchFiles/Pigeonpea.v48",
+      "sha256": "7857df2313dfc5dbf07f051128b75244444d50e4ea684ac80b27293a53cf31b2",
+      "bytes": 789,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Pineapple.v48",
+      "path": "BatchFiles/Pineapple.v48",
+      "sha256": "bb5f6871102deb16de229be9f5d8cd51b9c3d97d6bf7b0f2ccebd4328c076749",
+      "bytes": 2324,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Potato.v48",
+      "path": "BatchFiles/Potato.v48",
+      "sha256": "0c403aae03868869e0ff041d5f43ecdd0cb593258f687d3e732a8d87584bb503",
+      "bytes": 7438,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Quinoa.v48",
+      "path": "BatchFiles/Quinoa.v48",
+      "sha256": "d8555f9bcc8f68b6f9acad81b162f9256f863e1d7f4dd8dcab97e9d8dcc5283b",
+      "bytes": 2446,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Rice.v48",
+      "path": "BatchFiles/Rice.v48",
+      "sha256": "2db9e06f3a9dc2fc307c61b3e798c9eb2b7f316c30fbdb38db85c2208563c877",
+      "bytes": 9226,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Rye.v48",
+      "path": "BatchFiles/Rye.v48",
+      "sha256": "4b76fb708a73545bc42ab42cdb18170580df23ddf336cb28a6ee4b8b95106eaa",
+      "bytes": 3560,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Safflower.v48",
+      "path": "BatchFiles/Safflower.v48",
+      "sha256": "a0b92301b8d5c2eb25d37a0f1aa83824e78bffde3c1f745d33991919d8d01129",
+      "bytes": 3988,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Sorghum.v48",
+      "path": "BatchFiles/Sorghum.v48",
+      "sha256": "6f6209d5014c0c42cc00372b7d14340c6750f137ab0611118028efda240966d7",
+      "bytes": 3216,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Soybean.v48",
+      "path": "BatchFiles/Soybean.v48",
+      "sha256": "d76b0afdc4d455855ae7f0f38dca52746f828e9094e676a973f732ff237d8ecd",
+      "bytes": 24592,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Strawberry.v48",
+      "path": "BatchFiles/Strawberry.v48",
+      "sha256": "69bc17f325f6c1a4b7349a4bdd7bd58ce80f2c0f7390a53cc7d6c467181d92b1",
+      "bytes": 1296,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Sugarbeet.v48",
+      "path": "BatchFiles/Sugarbeet.v48",
+      "sha256": "bc359dc9b8d4981cd632464bceec0ca3c275086d43ce832d76b4ebde730e922c",
+      "bytes": 2837,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Sugarcane.v48",
+      "path": "BatchFiles/Sugarcane.v48",
+      "sha256": "3d13bf3330cbc93ae286d3e29fcc2805fc21119bc0d5961bd5e262a9a336ce24",
+      "bytes": 5396,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Sunflower.v48",
+      "path": "BatchFiles/Sunflower.v48",
+      "sha256": "70ab0a778942b4d55867da17f97490881d7bb124f1112ea2c9a770f77720d9ef",
+      "bytes": 15380,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/SweetCorn.v48",
+      "path": "BatchFiles/SweetCorn.v48",
+      "sha256": "b96851bc15a6dcc010e0d31d095144ad10e2e86d1cf9ca4eb9463256866d48e8",
+      "bytes": 2197,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Tanier.v48",
+      "path": "BatchFiles/Tanier.v48",
+      "sha256": "bec841c6cc68d8c8da074c598498cefdd993fb94ef26ea0b158ab811d0545992",
+      "bytes": 781,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Taro.v48",
+      "path": "BatchFiles/Taro.v48",
+      "sha256": "f6f93f31bff22573f03273b9ed8922fdadfa2d16d774cc30e43f5915fa339c5d",
+      "bytes": 3210,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Teff.v48",
+      "path": "BatchFiles/Teff.v48",
+      "sha256": "0d5134bff26ab8a0e4afad93b29f1a593530b38c46156dac1056665a3aaa570e",
+      "bytes": 5246,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Tomato.v48",
+      "path": "BatchFiles/Tomato.v48",
+      "sha256": "ef4c73eb29ad4fa8010c16497e60d6b870d34c9903b2d34702fc6c3d0fb61da6",
+      "bytes": 1678,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Velvetbean.v48",
+      "path": "BatchFiles/Velvetbean.v48",
+      "sha256": "758d94a9f5e7b25376c9033aa0158a31974472f0495d844262dba27383304a2a",
+      "bytes": 1943,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/BatchFiles/Wheat.v48",
+      "path": "BatchFiles/Wheat.v48",
+      "sha256": "3a9e4bf21f6e1a7817714cfcd00ab813e12680597cf416474078af9b32ea5d08",
+      "bytes": 3980,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/DATA.CDE",
+      "path": "DATA.CDE",
+      "sha256": "c1105794462ed6c834f9ceca9926aafc32ed7611492a5d6aa1f398e326b7f2d3",
+      "bytes": 128081,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/DETAIL.CDE",
+      "path": "DETAIL.CDE",
+      "sha256": "7731047dedaacf88c42bc9277fe8595e987b4b5dbed7a6b89322918bbee9798f",
+      "bytes": 53859,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/DSCSM048.CTR",
+      "path": "DSCSM048.CTR",
+      "sha256": "32dcb36fee2da16729c971772104f0aca7e9b94ac2f793cf60c341a7d94c9ed9",
+      "bytes": 16701,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/DSSATPRO.L48.in",
+      "path": "DSSATPRO.L48.in",
+      "sha256": "44430f0b4339a6eb2ffea0580d631528113a9a303cd7712b1647b8c78e989d41",
+      "bytes": 6858,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/DSSATPRO.v48",
+      "path": "DSSATPRO.v48",
+      "sha256": "6f4dac9c8c8e867a991005738bacdeddc85ec980e21fc68d8e54c9aeb501d38b",
+      "bytes": 4712,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/GENCALC2.ABT",
+      "path": "Default/GENCALC2.ABT",
+      "sha256": "b534b8c91e7f96358a51f1073bb1e8abb2a57d0cb66fb033df745aa8b034d81f",
+      "bytes": 31658,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/GENCALC2.rul",
+      "path": "Default/GENCALC2.rul",
+      "sha256": "9b5c94148a76d1ea2f3babb3cfb34697d8abbc6478bd6573409c16be4e3a7c6c",
+      "bytes": 16514,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/Simulate.def",
+      "path": "Default/Simulate.def",
+      "sha256": "768d53c6f114bd2f9ae98aa74734de5deab4d3856943966780525b8fd4bb3939",
+      "bytes": 1240,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/Simulate_Forecast.def",
+      "path": "Default/Simulate_Forecast.def",
+      "sha256": "a25822644d46b142752e6775a5e2d23c908df7316111a96c825dfb564026c935",
+      "bytes": 1399,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/Simulate_Seasonal.def",
+      "path": "Default/Simulate_Seasonal.def",
+      "sha256": "9733d58d323b3ea5a912b198a7bb47852924b9035b0b83ab9a2234ca97079566",
+      "bytes": 1243,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/Simulate_Sequence.def",
+      "path": "Default/Simulate_Sequence.def",
+      "sha256": "656bfd312877914b70b96f49452374bb0a63c5b9d9e9c0e8e3e8bc4f7b82b767",
+      "bytes": 1238,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/Simulate_Spatial.def",
+      "path": "Default/Simulate_Spatial.def",
+      "sha256": "921b74780a683e8c80501c011778812b7d4f9c875151dd55334adec4e364e61a",
+      "bytes": 1237,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Default/Weather.var",
+      "path": "Default/Weather.var",
+      "sha256": "1b121cd51cd78de06bc2f34f731338102f7671a14b0b3c19e1eab03f8bac7fed",
+      "bytes": 7271,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/ECONOMIC.CDE",
+      "path": "ECONOMIC.CDE",
+      "sha256": "391c348d8c9b55fccf26292ff9e30627a7e08528f40bfdddcb155c12dce33778",
+      "bytes": 2847,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/GCOEFF.CDE",
+      "path": "GCOEFF.CDE",
+      "sha256": "dbd6def81d1f0d719465b83489b4fc0863a609783c3b128a0eb127b5077235ee",
+      "bytes": 3615,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/GRSTAGE.CDE",
+      "path": "GRSTAGE.CDE",
+      "sha256": "48ea89a73ae9c4d099b5da6e880bb068ff309e50b39b76d8f0e8d9728e52a153",
+      "bytes": 38146,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/ALFRM048.CUL",
+      "path": "Genotype/ALFRM048.CUL",
+      "sha256": "1bcbf52e8bc0685982f9b8aa5ce8d63bfb7c3977794c871428f98ead73d98f3b",
+      "bytes": 3287,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/ALFRM048.ECO",
+      "path": "Genotype/ALFRM048.ECO",
+      "sha256": "13f9df8639c138906bb99af69fa10f5076c052e8303e6d3e6f9a1c91917f80ec",
+      "bytes": 4956,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/ALFRM048.SPE",
+      "path": "Genotype/ALFRM048.SPE",
+      "sha256": "6644154dcdc160bff98b971f1051343cdd95ca05f57ac9fa8ce8775c6ac29b25",
+      "bytes": 22012,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/AMGRO048.CUL",
+      "path": "Genotype/AMGRO048.CUL",
+      "sha256": "3b7faa03e18a0feacec1b114dc99eb6dca72025abe08986a836d9010cdc0ed50",
+      "bytes": 3001,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/AMGRO048.ECO",
+      "path": "Genotype/AMGRO048.ECO",
+      "sha256": "86927059ffbae502fcd9e892de364cc75fcf2f640ebe7376121a1d4493f825e1",
+      "bytes": 3401,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/AMGRO048.SPE",
+      "path": "Genotype/AMGRO048.SPE",
+      "sha256": "42a83df7f7bd1bc56d9c61fe5822cfd685ac42754e7d9bd0793dbc2291e88e18",
+      "bytes": 7350,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BACER048.CUL",
+      "path": "Genotype/BACER048.CUL",
+      "sha256": "e21b70a06207572d8989462f20ed4bb37eaf89b634c8200fe8ac549af3e47f3d",
+      "bytes": 2848,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BACER048.ECO",
+      "path": "Genotype/BACER048.ECO",
+      "sha256": "ddc607ddbcb05f9ad53ba0556ee1bbbaca1f34df626b46fedc3e74d28c725ada",
+      "bytes": 4994,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BACER048.SPE",
+      "path": "Genotype/BACER048.SPE",
+      "sha256": "775fa8f37e72422900efd5c3726ded1c87e1d0c57af77d7daa242fa66ba454df",
+      "bytes": 9254,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BACRP048.CUL",
+      "path": "Genotype/BACRP048.CUL",
+      "sha256": "01327c35b16fb8fdd7f9b73d5b839b124f8a3a14620fa01b406679aa8f349668",
+      "bytes": 5049,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BACRP048.ECO",
+      "path": "Genotype/BACRP048.ECO",
+      "sha256": "3a26874cf68b31cab11da781a81020ad68934ee12f114f7c1c6165d722933c24",
+      "bytes": 7304,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BACRP048.SPE",
+      "path": "Genotype/BACRP048.SPE",
+      "sha256": "ef7d6d1dadf5633f4134af62f2cf00df53a7492f3bd58a24c7956bb04aa1e63a",
+      "bytes": 15986,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BCGRO048.CUL",
+      "path": "Genotype/BCGRO048.CUL",
+      "sha256": "4da146ebede207db1b8d1beae129d420ac2a3e929f658e92d776a87aa930f9cf",
+      "bytes": 2650,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BCGRO048.ECO",
+      "path": "Genotype/BCGRO048.ECO",
+      "sha256": "7a5c80b2e5e94ff6a7bea8cb0a7e4b9908f9036a5142256acf0fdc5e8aa89941",
+      "bytes": 3349,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BCGRO048.SPE",
+      "path": "Genotype/BCGRO048.SPE",
+      "sha256": "c6d36f206a601838fd64169d86b5fdbe754c3b7099ff0f68d13d37602635b4e6",
+      "bytes": 8318,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BGGRO048.CUL",
+      "path": "Genotype/BGGRO048.CUL",
+      "sha256": "9944538e9c8ce51e7e23649594f9484bdc4bedee2d9d365a6382e830a2e7de50",
+      "bytes": 3078,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BGGRO048.ECO",
+      "path": "Genotype/BGGRO048.ECO",
+      "sha256": "1dff25fa006c1f82b3574eb0cc0fe780cf1c5ec699e31500d6f8d58c725632c1",
+      "bytes": 3512,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BGGRO048.SPE",
+      "path": "Genotype/BGGRO048.SPE",
+      "sha256": "decb3382f7fc323606f6c6419dcf5ba73cebaf95aa3a32206cd15844c59def14",
+      "bytes": 9461,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BHFRM048.CUL",
+      "path": "Genotype/BHFRM048.CUL",
+      "sha256": "2262a051adce39f95f72155637465b84dbee0122b9e23c1959f3b0591a3fa27b",
+      "bytes": 2841,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BHFRM048.ECO",
+      "path": "Genotype/BHFRM048.ECO",
+      "sha256": "bd23825a33f7193a3d53a0c8262e11225659f7eedcf7326e830826b6a516c804",
+      "bytes": 3578,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BHFRM048.SPE",
+      "path": "Genotype/BHFRM048.SPE",
+      "sha256": "716e820e03e63fc812e1f983f115e4b26ad2619dedb105d2554dc1786d920168",
+      "bytes": 19826,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BHGRO048.CUL",
+      "path": "Genotype/BHGRO048.CUL",
+      "sha256": "f6b62a1d03359ec51003e69794453c3ed68aa7adca3a5c43fc82887ac0bf15ad",
+      "bytes": 3144,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BHGRO048.ECO",
+      "path": "Genotype/BHGRO048.ECO",
+      "sha256": "9ea16391ee85992d997668383fb365111735f66c7284f7a75e1e45c99bfacd9f",
+      "bytes": 2588,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BHGRO048.SPE",
+      "path": "Genotype/BHGRO048.SPE",
+      "sha256": "6c0d57e2d0d433c7a24988462f87e9cbcec6f79fa9bc7da9f07f5856dda68d22",
+      "bytes": 23594,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BMFRM048.CUL",
+      "path": "Genotype/BMFRM048.CUL",
+      "sha256": "10c26a92c8af544b91a33017ae343779b01ec0ea1627622fdc6cb5573b0e361d",
+      "bytes": 2634,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BMFRM048.ECO",
+      "path": "Genotype/BMFRM048.ECO",
+      "sha256": "a56e0387bd9e3e1e3ace8616f92fc43633f166a704701ef0d6d2cff110d08fdc",
+      "bytes": 3446,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BMFRM048.SPE",
+      "path": "Genotype/BMFRM048.SPE",
+      "sha256": "bcbe517a9091ed30bcbb1fa33cb6915bdfdd88e9120f2d18fad171c5602ddf08",
+      "bytes": 19351,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BNGRO048.CUL",
+      "path": "Genotype/BNGRO048.CUL",
+      "sha256": "6483b0217c7546f35da52db13a25b3d0576b7020ae1aeac8cdd7d633ec4fb6fd",
+      "bytes": 7242,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BNGRO048.ECO",
+      "path": "Genotype/BNGRO048.ECO",
+      "sha256": "c97c298f8a860037fb03cd826ca27ec071db129a4b775c730c6376bb8cb0b07b",
+      "bytes": 3662,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BNGRO048.SPE",
+      "path": "Genotype/BNGRO048.SPE",
+      "sha256": "938dab24a8255f474a075d84ddd83479bbc1b672506df2f3eb2127fde6cf9330",
+      "bytes": 9040,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BRFRM048.CUL",
+      "path": "Genotype/BRFRM048.CUL",
+      "sha256": "e3789f4d63e7ca73a207fd4f4a94766028a99bcc56ad41413f45f97909917719",
+      "bytes": 2631,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BRFRM048.ECO",
+      "path": "Genotype/BRFRM048.ECO",
+      "sha256": "c45e2c7f03f0e82fd533a4e2a1c1741e6f0e55e5921b8f980f278ed501e84f69",
+      "bytes": 3441,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BRFRM048.SPE",
+      "path": "Genotype/BRFRM048.SPE",
+      "sha256": "e46b9bc4748f7a681d20b3bea8e62b713efd1692faadf378f88abf3c5271f833",
+      "bytes": 20903,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BRGRO048.CUL",
+      "path": "Genotype/BRGRO048.CUL",
+      "sha256": "ddd93fa68fbce05087e88e1e5f127e1af99dcf461317ae6c702efc56c8f2b912",
+      "bytes": 3409,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BRGRO048.ECO",
+      "path": "Genotype/BRGRO048.ECO",
+      "sha256": "4e161488f05c41a42cae37d1884d18876817fdc97b7e6b31911f200bfb9aec2b",
+      "bytes": 2903,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BRGRO048.SPE",
+      "path": "Genotype/BRGRO048.SPE",
+      "sha256": "7e01cf69c8401cdc51cae24a0b2324a559b1c078ddc8a67aa073ef68fabd9141",
+      "bytes": 7224,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BSCER048.CUL",
+      "path": "Genotype/BSCER048.CUL",
+      "sha256": "443ebcf871fce5d8326d51c8b3d47103ef287cc933c6a3dc737b17812606ac8a",
+      "bytes": 1713,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BSCER048.ECO",
+      "path": "Genotype/BSCER048.ECO",
+      "sha256": "b493e42f568db6de1f36355767afaf7fee63c07cb5c15b400878ed7c59270815",
+      "bytes": 1610,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/BSCER048.SPE",
+      "path": "Genotype/BSCER048.SPE",
+      "sha256": "15015a45b551ca13b0ed3420ab44ab3e9613b5039730a94898a5f68376418db6",
+      "bytes": 5257,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CBGRO048.CUL",
+      "path": "Genotype/CBGRO048.CUL",
+      "sha256": "76abf9f7d656ffe4ff5f78f88b81d6a21665136d165311193d9c77bac9f394d4",
+      "bytes": 3294,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CBGRO048.ECO",
+      "path": "Genotype/CBGRO048.ECO",
+      "sha256": "520f8ee02f90eed472c7320048f65f20cfa7b2295742c1d791f2be65596c32bd",
+      "bytes": 3527,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CBGRO048.SPE",
+      "path": "Genotype/CBGRO048.SPE",
+      "sha256": "8455bd82b427ff6db49a25cefc63d6a75a4855253ef45bc7a5f5196ae558ef3d",
+      "bytes": 7223,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CHGRO048.CUL",
+      "path": "Genotype/CHGRO048.CUL",
+      "sha256": "dce2018a53a0817f5f6d8c25a800208df38235ceee3a00393b93f32573d6f88e",
+      "bytes": 7852,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CHGRO048.ECO",
+      "path": "Genotype/CHGRO048.ECO",
+      "sha256": "6f687327e3cdf6e272959182a49e6c279605f98e83296c476698ebcf03c0da45",
+      "bytes": 3156,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CHGRO048.SPE",
+      "path": "Genotype/CHGRO048.SPE",
+      "sha256": "35726d866e35081bd8c69b2056b5c0c709289a4d196ea150633e480c2287974d",
+      "bytes": 7503,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CIGRO048.CUL",
+      "path": "Genotype/CIGRO048.CUL",
+      "sha256": "b8dbc5a5bbf52b929074dcd33f4f88b6abecdb97ab3953a1152fed4ece8ea6da",
+      "bytes": 3397,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CIGRO048.ECO",
+      "path": "Genotype/CIGRO048.ECO",
+      "sha256": "ea831e11a1b504dbac2758e04121124ee957ca9ae85b9ecc63d8933f10b8f60b",
+      "bytes": 3028,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CIGRO048.SPE",
+      "path": "Genotype/CIGRO048.SPE",
+      "sha256": "6aa0b56a89e7872e49bd00633530d0d27bb305374efbcaaf79b5704d49698efa",
+      "bytes": 11352,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CNGRO048.CUL",
+      "path": "Genotype/CNGRO048.CUL",
+      "sha256": "86eaae8085713b555f465578c4755ec9870b3f3c1cb5f4471da60fadd9bd4129",
+      "bytes": 2941,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CNGRO048.ECO",
+      "path": "Genotype/CNGRO048.ECO",
+      "sha256": "7f27d650861b08f746783503da15c0e4ab7d2bfbce8d18ae2dad86a96bc0986a",
+      "bytes": 3349,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CNGRO048.SPE",
+      "path": "Genotype/CNGRO048.SPE",
+      "sha256": "779225b65ad73fe13bf55d6119d07d6072603cf2325fb2d93d124ced6ccc39f2",
+      "bytes": 7916,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/COGRO048.CUL",
+      "path": "Genotype/COGRO048.CUL",
+      "sha256": "78631a31e7b97224d007e382cc4b58aeb146e3dd65ed297814a65d4e4c11d73b",
+      "bytes": 7015,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/COGRO048.ECO",
+      "path": "Genotype/COGRO048.ECO",
+      "sha256": "1070fc8be4fe593bf7c8b58bceaff9bd64565625c4461e29bb6b16832e73dddc",
+      "bytes": 6019,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/COGRO048.SPE",
+      "path": "Genotype/COGRO048.SPE",
+      "sha256": "2d45a0456eb0536870542f1544750cdf2fe4bd678a4e0df8409deaff71bf78fd",
+      "bytes": 11235,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CPGRO048.CUL",
+      "path": "Genotype/CPGRO048.CUL",
+      "sha256": "837e6f76bb22bd134b3c71b5f4905f013b55c67fcbb1471d920c1b29002a5914",
+      "bytes": 5537,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CPGRO048.ECO",
+      "path": "Genotype/CPGRO048.ECO",
+      "sha256": "cea229dd83de3875d35389c0ad7362d1cdff6ee55709860b0826f827ff36e53c",
+      "bytes": 4081,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CPGRO048.SPE",
+      "path": "Genotype/CPGRO048.SPE",
+      "sha256": "dc336882f5fb1aaa96e9659159a0250c6ca72363003c6369a8585690d9d1bf65",
+      "bytes": 7937,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CSCAS048.CUL",
+      "path": "Genotype/CSCAS048.CUL",
+      "sha256": "ce8b366ed0c77d4e11823acde22ad4f17072c1d7f853d41047fd62312ee37121",
+      "bytes": 8645,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CSCAS048.ECO",
+      "path": "Genotype/CSCAS048.ECO",
+      "sha256": "79ee2317c00e263d217ed2e2dbb810c80efb46ecbed435a12f51a8ebfe41fb8d",
+      "bytes": 2651,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CSCAS048.SPE",
+      "path": "Genotype/CSCAS048.SPE",
+      "sha256": "a2cb40c58a9b5b50b835f7d29a278436f06de803c2b8916b72770c551d97730f",
+      "bytes": 11837,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CSYCA048.CUL",
+      "path": "Genotype/CSYCA048.CUL",
+      "sha256": "8fe6aa149381fba1f242e78243340ee57eb9379f22da14b99948362b3b9fb5ed",
+      "bytes": 5011,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CSYCA048.ECO",
+      "path": "Genotype/CSYCA048.ECO",
+      "sha256": "fb33f690d63eebc7e24b58cceaf1e901f1fc05a035eb0c501e465d3981de9e11",
+      "bytes": 4064,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/CSYCA048.SPE",
+      "path": "Genotype/CSYCA048.SPE",
+      "sha256": "6b00dcfc721bc680058239dd51d584a3f5d3c71f086c9806aec6d4612eb0f826",
+      "bytes": 8693,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/FBGRO048.CUL",
+      "path": "Genotype/FBGRO048.CUL",
+      "sha256": "4d4491d21328d006b7ccdc8c935fd2d0936283144b57fa0b92ae45cc57a714a3",
+      "bytes": 3295,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/FBGRO048.ECO",
+      "path": "Genotype/FBGRO048.ECO",
+      "sha256": "4681b5688610408c5bf8f055ce4d74a96c8ad9018a125362963bc6a8329a04bc",
+      "bytes": 3807,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/FBGRO048.SPE",
+      "path": "Genotype/FBGRO048.SPE",
+      "sha256": "317636c8a0e7e8fb2965fcbadd1ee559cc2fb9e0ddc20f1bfdeb85dadd5b75a1",
+      "bytes": 7694,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/G0GRO048.CUL",
+      "path": "Genotype/G0GRO048.CUL",
+      "sha256": "b74d0ba2140713b3880fd4a5b4f0a7b87c46ec58fa9107a084e951a081ced6ae",
+      "bytes": 2655,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/G0GRO048.ECO",
+      "path": "Genotype/G0GRO048.ECO",
+      "sha256": "3953c72ef37761314f8f42eb98c8793b0c4ae2ddd75c156650c4eeffd2513bc8",
+      "bytes": 2961,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/G0GRO048.SPE",
+      "path": "Genotype/G0GRO048.SPE",
+      "sha256": "e8d818b8ddd3600add2b629520d37f82f43bab6c4bcb18050b8912b6540a76f0",
+      "bytes": 23793,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GBGRO048.CUL",
+      "path": "Genotype/GBGRO048.CUL",
+      "sha256": "0909bb88f0be3bdbb1449db1c13e7c5c8dec58f8c29b82e7614c1d3f3948ca22",
+      "bytes": 3066,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GBGRO048.ECO",
+      "path": "Genotype/GBGRO048.ECO",
+      "sha256": "461791c54d84e176234b5737ce03d2eed827d2fcc08614181d2dc812a85eb318",
+      "bytes": 2994,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GBGRO048.SPE",
+      "path": "Genotype/GBGRO048.SPE",
+      "sha256": "82d22c6c094035ea039ada56b9f0fb55eba2b1061ff3a23b91cd60e17b654476",
+      "bytes": 9968,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GGFRM048.CUL",
+      "path": "Genotype/GGFRM048.CUL",
+      "sha256": "e3dc95a9c36029d79ed43206407446c3178b9c632107992ea2c670becea21044",
+      "bytes": 2307,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GGFRM048.ECO",
+      "path": "Genotype/GGFRM048.ECO",
+      "sha256": "fe806907b8f777c100c87e6a521e62ca1ce57ab379057318f14755dc30592150",
+      "bytes": 15417,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GGFRM048.SPE",
+      "path": "Genotype/GGFRM048.SPE",
+      "sha256": "c8a17d6bc1304355edc6f5e513a0ca0fc053860925279640d8414b515c3d26d3",
+      "bytes": 27132,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GYGRO048.CUL",
+      "path": "Genotype/GYGRO048.CUL",
+      "sha256": "63909be54f2252ff9d8b32418a782d1d5de5abf8825fe23eb2258cccabf5b78b",
+      "bytes": 3398,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GYGRO048.ECO",
+      "path": "Genotype/GYGRO048.ECO",
+      "sha256": "c3ea2a1d22ecfaed6fdb278a7dd9b57c91343620e1bd30b940602996539305fb",
+      "bytes": 2900,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/GYGRO048.SPE",
+      "path": "Genotype/GYGRO048.SPE",
+      "sha256": "d41c8997c5eafbbddc8f6985958f5c6a0d318200cf361c5501f80610f4b5f552",
+      "bytes": 15377,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/HMGRO048.CUL",
+      "path": "Genotype/HMGRO048.CUL",
+      "sha256": "5f66c332179f9a33b7c660da77264acde8edd949df3d056b01aa93d289aefc3c",
+      "bytes": 4144,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/HMGRO048.ECO",
+      "path": "Genotype/HMGRO048.ECO",
+      "sha256": "13826df592a529fa8278a5fd44634c740235694028a8464801040b6f4075356f",
+      "bytes": 2988,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/HMGRO048.SPE",
+      "path": "Genotype/HMGRO048.SPE",
+      "sha256": "c11ced20c731a910242061d4eb920c949ffcd1af3fc3c71b5e786334520d3ec9",
+      "bytes": 10492,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/LTGRO048.CUL",
+      "path": "Genotype/LTGRO048.CUL",
+      "sha256": "bb0e46d678967646b4a3dba61cd0e2deea9e2af80ddabac4be566e1051df791a",
+      "bytes": 3519,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/LTGRO048.ECO",
+      "path": "Genotype/LTGRO048.ECO",
+      "sha256": "2c2c7e09d748f7ba2462ddde191f0ace5e859d92846a7e4f4982d48ff989e7b4",
+      "bytes": 3273,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/LTGRO048.SPE",
+      "path": "Genotype/LTGRO048.SPE",
+      "sha256": "5c0a5d9fc508aad175c9e9ad385cc2194543c1611d1558d50ecd32f4f9b79cb0",
+      "bytes": 11300,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MLCER048.CUL",
+      "path": "Genotype/MLCER048.CUL",
+      "sha256": "1eb513d9244df9fb0b23ca12d1f7a214afdd6abd87383a6097b5b2efdffac272",
+      "bytes": 8833,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MLCER048.ECO",
+      "path": "Genotype/MLCER048.ECO",
+      "sha256": "782d371c97343fd25238414df58d344fdd56b586998395897110244437001b2d",
+      "bytes": 1291,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MLCER048.SPE",
+      "path": "Genotype/MLCER048.SPE",
+      "sha256": "21ea804ffbd0a05c34b206cb9a260a6c27d4857c67f534ad4a96d2c754e72ae5",
+      "bytes": 2595,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MZCER048.CUL",
+      "path": "Genotype/MZCER048.CUL",
+      "sha256": "912b57f969b20932e135a18471fae93114d1da82d800c5f5250b745b824f3463",
+      "bytes": 15917,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MZCER048.ECO",
+      "path": "Genotype/MZCER048.ECO",
+      "sha256": "c6c25858c18445ae55ac5c4ba52ab2783ffe3be8efe594c081abb1aa1b36fbb6",
+      "bytes": 1746,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MZCER048.SPE",
+      "path": "Genotype/MZCER048.SPE",
+      "sha256": "816fff7daa6a33491c8ca9c060235cae13b5beffd442b4a2e4606a6780d46ee4",
+      "bytes": 5180,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MZIXM048.CUL",
+      "path": "Genotype/MZIXM048.CUL",
+      "sha256": "542df04f6502e8c1a71bef23b2481e868ec2f43afe544d6378ac986acb2b1437",
+      "bytes": 12505,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MZIXM048.ECO",
+      "path": "Genotype/MZIXM048.ECO",
+      "sha256": "e29f8cc4e27fd1724b5d4f1b084d1a5e251629cbf2d0e3db71e1109d70b549b7",
+      "bytes": 2029,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/MZIXM048.SPE",
+      "path": "Genotype/MZIXM048.SPE",
+      "sha256": "b5ae19a303692b9534b47506c25155920150e234b1fc34bdc55bfdfdd16aec83",
+      "bytes": 5579,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PIALO048.CUL",
+      "path": "Genotype/PIALO048.CUL",
+      "sha256": "31f692f6acca700c2bcda5d8c9055166ac4b53106698e4648aaab35807614cd5",
+      "bytes": 1563,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PIALO048.SPE",
+      "path": "Genotype/PIALO048.SPE",
+      "sha256": "1608290acd1ffb23436444768087c83814555f15b439b8e6104b65109aa0ce14",
+      "bytes": 1475,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PNGRO048.CUL",
+      "path": "Genotype/PNGRO048.CUL",
+      "sha256": "b03927f992bd86a0b1d351c1522bdeb591c77d6ffd70111c5ac341ed28085c34",
+      "bytes": 9277,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PNGRO048.ECO",
+      "path": "Genotype/PNGRO048.ECO",
+      "sha256": "6f6fee49b33ab8195f8876b3f82e57a147e5375c3127b25914d82ee692caeb24",
+      "bytes": 6244,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PNGRO048.SPE",
+      "path": "Genotype/PNGRO048.SPE",
+      "sha256": "166f17f9a93eed5ab13d8394611b41c35bd4d18be94cbd6295c0e782368446b0",
+      "bytes": 9482,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PPGRO048.CUL",
+      "path": "Genotype/PPGRO048.CUL",
+      "sha256": "8967cdc9ebaa81f4263b7df90e74ed5ea7a2fc048f93e251de7447aadaa5cb29",
+      "bytes": 3701,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PPGRO048.ECO",
+      "path": "Genotype/PPGRO048.ECO",
+      "sha256": "2500e61447181cb2b747bb53aa7baa64456500f1b81b0c638c2a57de67666070",
+      "bytes": 3158,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PPGRO048.SPE",
+      "path": "Genotype/PPGRO048.SPE",
+      "sha256": "84abe0e0aeb3a631172ca6af8d602e38d992b0b2f6d6c59715f5596f3829363a",
+      "bytes": 9863,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PRGRO048.CUL",
+      "path": "Genotype/PRGRO048.CUL",
+      "sha256": "b9478780ccb21414fcfb5f34f4937a2ec49c9a733877ef083d1164d3125cab23",
+      "bytes": 3459,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PRGRO048.ECO",
+      "path": "Genotype/PRGRO048.ECO",
+      "sha256": "94ad5da851efe778af943769b644e592af77eb426f74087770424ae11cebf99f",
+      "bytes": 3636,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PRGRO048.SPE",
+      "path": "Genotype/PRGRO048.SPE",
+      "sha256": "ddca5da336f5cc08ab403f8e7a9f669fd5caa86f904d469f5cb3eab1e737ceb1",
+      "bytes": 9274,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PTSUB048.CUL",
+      "path": "Genotype/PTSUB048.CUL",
+      "sha256": "86b6ec034ccc44e214405894a0ef823c99677305f631444279a587f32f3b3ab6",
+      "bytes": 2765,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PTSUB048.ECO",
+      "path": "Genotype/PTSUB048.ECO",
+      "sha256": "8ecfb7ee22af9e2f10dd28c7d4f2a03ebf52724e20bcddbf68bf751cbfa2cc62",
+      "bytes": 428,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/PTSUB048.SPE",
+      "path": "Genotype/PTSUB048.SPE",
+      "sha256": "a6f5ef53d6d72b55a14717d20d62c76dba56fb25a34963b790ac7f5fd697c006",
+      "bytes": 1713,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/QUGRO048.CUL",
+      "path": "Genotype/QUGRO048.CUL",
+      "sha256": "186cf61985a595780dbafbe839c054dc6309b05267749abac6b079efd1d88c94",
+      "bytes": 3338,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/QUGRO048.ECO",
+      "path": "Genotype/QUGRO048.ECO",
+      "sha256": "e8938242ff5193d4d638b60db1012937d34cf1a7dcf8ea5edc12a4b9dce2533c",
+      "bytes": 3154,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/QUGRO048.SPE",
+      "path": "Genotype/QUGRO048.SPE",
+      "sha256": "3060acda4a85f815b53d2c7bf16e387eb50414f82050039d79cbcc0851fd2ac8",
+      "bytes": 9785,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/RICER048.CUL",
+      "path": "Genotype/RICER048.CUL",
+      "sha256": "353c975be8e0211615253f121f07fd98ec465997776ed063d9f2d84323a46836",
+      "bytes": 10316,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/RICER048.SPE",
+      "path": "Genotype/RICER048.SPE",
+      "sha256": "53ae24dc2be9ba933406b873bd55108af92b4ded5596bfaa470473d80b9a2ef8",
+      "bytes": 795,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/RYCER048.CUL",
+      "path": "Genotype/RYCER048.CUL",
+      "sha256": "7d133a90dcf1bb2f73b7e0260a776060fc1c26ee2bfd0d44c5df3404070cf61d",
+      "bytes": 1463,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/RYCER048.ECO",
+      "path": "Genotype/RYCER048.ECO",
+      "sha256": "8b7cfc0747a566ad30bfd9ff4fbec649f18cba739459260ff0c43626e3d987b1",
+      "bytes": 4992,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/RYCER048.SPE",
+      "path": "Genotype/RYCER048.SPE",
+      "sha256": "010a34f0169ea86b52d7097de61db7a32294772cd48bdcb47e6910a6a516c7c2",
+      "bytes": 9445,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SBGRO048.CUL",
+      "path": "Genotype/SBGRO048.CUL",
+      "sha256": "37d17de30cf11b6286abc3b1c34ce2a8f83b80d58f5b719b156a0efa2b863f11",
+      "bytes": 12423,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SBGRO048.ECO",
+      "path": "Genotype/SBGRO048.ECO",
+      "sha256": "b3d413249b373f38f84fce7afa8a77284ce8c0e6c1d5736639a7992e54d05a23",
+      "bytes": 6440,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SBGRO048.SPE",
+      "path": "Genotype/SBGRO048.SPE",
+      "sha256": "c841933ecd683f3624945ff0654ca6d26e80bb014e10bd92ec403159e03ce5a4",
+      "bytes": 9735,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCCAN048.CUL",
+      "path": "Genotype/SCCAN048.CUL",
+      "sha256": "69bd55f348af28b0bacc4b4ee51873deeca526e59c7c1269fa046a23eb306aa1",
+      "bytes": 14238,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCCAN048.ECO",
+      "path": "Genotype/SCCAN048.ECO",
+      "sha256": "497b2fa635045b9253d399613554036a376b2c6d9d12e808d4e0dec25df68ef5",
+      "bytes": 16049,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCCAN048.SPE",
+      "path": "Genotype/SCCAN048.SPE",
+      "sha256": "db9ad9816728ec6233c6c6ba479dedf12932dc4b7173473f780047054d025826",
+      "bytes": 6922,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCCSP048.CUL",
+      "path": "Genotype/SCCSP048.CUL",
+      "sha256": "75be1275695ae82e9dc38841e753a04ce04fde0c8e0d730ee65137cde6b7a09c",
+      "bytes": 21617,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCCSP048.ECO",
+      "path": "Genotype/SCCSP048.ECO",
+      "sha256": "6d80053521ea9cb28ddae9d37a3abc6dc47c7ccdec23af37c358db4c8a8939d3",
+      "bytes": 17391,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCCSP048.SPE",
+      "path": "Genotype/SCCSP048.SPE",
+      "sha256": "1c59b0253b2ea1f0d676b48ad326738498faacc7b193090f27800cb1f0209ab5",
+      "bytes": 10091,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCSAM048.CUL",
+      "path": "Genotype/SCSAM048.CUL",
+      "sha256": "b58ace050c1ddec85af2f189503a457ea563bb2ca1232c0c76802f01366191b9",
+      "bytes": 8683,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCSAM048.ECO",
+      "path": "Genotype/SCSAM048.ECO",
+      "sha256": "4e5217da8d22b6c2ef83badf4d2c25a42701df022057aa20d0df8207eeca12be",
+      "bytes": 7380,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SCSAM048.SPE",
+      "path": "Genotype/SCSAM048.SPE",
+      "sha256": "e6aa58f9ff60d65ad2eb58eb4b1661f162ac2668aa5739e5767a949c0e8222e7",
+      "bytes": 4766,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SFGRO048.CUL",
+      "path": "Genotype/SFGRO048.CUL",
+      "sha256": "c301a976ba90343cb0fcbe79de5ca0363176aade1a04cb63fcb53ff0182e34da",
+      "bytes": 4379,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SFGRO048.ECO",
+      "path": "Genotype/SFGRO048.ECO",
+      "sha256": "fd185bbcd1ea2fdc7cc1ab5a34469953aa18204842e0990a793047be94a37fb0",
+      "bytes": 3157,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SFGRO048.SPE",
+      "path": "Genotype/SFGRO048.SPE",
+      "sha256": "0117b6f624c3e411b3644b335545744fff22e728d3920f1df750fadfc5f62463",
+      "bytes": 16337,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SGCER048.CUL",
+      "path": "Genotype/SGCER048.CUL",
+      "sha256": "769e49325a42a76afeaf88de8da6e7ac524657ee11ef63dcc3cd8062f0f1b02e",
+      "bytes": 8835,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SGCER048.ECO",
+      "path": "Genotype/SGCER048.ECO",
+      "sha256": "bfc7aa84fdf97659e5b05dfdc0c8a659837f353bf92c8481e1df7b4f9595bbba",
+      "bytes": 1395,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SGCER048.SPE",
+      "path": "Genotype/SGCER048.SPE",
+      "sha256": "2cbc40642e78f256612963b7b2020b3b35b013829970779184cc783005be6167",
+      "bytes": 4792,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SRGRO048.CUL",
+      "path": "Genotype/SRGRO048.CUL",
+      "sha256": "4fa9ba7352052886a79381fc4a6057598e23cae88948f0bef97831443fdfa0e3",
+      "bytes": 8106,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SRGRO048.ECO",
+      "path": "Genotype/SRGRO048.ECO",
+      "sha256": "71c9c95ff54592177fd479476ad26a5873d0fbc23be7287885e93c5840bfb343",
+      "bytes": 10209,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SRGRO048.SPE",
+      "path": "Genotype/SRGRO048.SPE",
+      "sha256": "f6185791e541995d00760699c10c3b6f478fda51cae41e0e926296c9e2c913e9",
+      "bytes": 13851,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SUGRO048.CUL",
+      "path": "Genotype/SUGRO048.CUL",
+      "sha256": "13f0aca3706a65c17b3c3eb558bd5c60025d2711e7d307fe50906fc8e5931212",
+      "bytes": 11148,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SUGRO048.ECO",
+      "path": "Genotype/SUGRO048.ECO",
+      "sha256": "53e7d395b4e52344d638c9262b0d26c8bf9270b12b098cc38fa912574967aa5e",
+      "bytes": 9908,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SUGRO048.SPE",
+      "path": "Genotype/SUGRO048.SPE",
+      "sha256": "bcc6a5cef63995a224c4ae30abd081392249cdd869a57ddc04e802712518fedd",
+      "bytes": 17614,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SUOIL048.CUL",
+      "path": "Genotype/SUOIL048.CUL",
+      "sha256": "e89c6222d9164eadb5384e034a609fcdefcc629fa5dd0842fca97b115d7e5ed8",
+      "bytes": 2899,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SUOIL048.ECO",
+      "path": "Genotype/SUOIL048.ECO",
+      "sha256": "bd9f4cd4f974acbb27ff4d1d02cd9b58526e6f9ab0733127c4fc80fad6d7c444",
+      "bytes": 1381,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SUOIL048.SPE",
+      "path": "Genotype/SUOIL048.SPE",
+      "sha256": "1f3551ceda5db99e60ea47c1f4f96c8470dfed49be3e64351f0ed5a5af4c5caa",
+      "bytes": 5650,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SWCER048.CUL",
+      "path": "Genotype/SWCER048.CUL",
+      "sha256": "fba811c7d851082260157154ca3173a96f1d5e75c18c7423f5251cfad9ca3a0b",
+      "bytes": 2259,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SWCER048.ECO",
+      "path": "Genotype/SWCER048.ECO",
+      "sha256": "3e3c6f3335990b8b4b2208ee722beb2c4001aa5e61a1e2e2f3d130332ae7b77f",
+      "bytes": 1451,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/SWCER048.SPE",
+      "path": "Genotype/SWCER048.SPE",
+      "sha256": "3dbd78d5c841e5bf8a78d7935aef88b813409caa004a69a72b95fff279527d79",
+      "bytes": 4697,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TFAPS048.CUL",
+      "path": "Genotype/TFAPS048.CUL",
+      "sha256": "a016476bcb5c76343e0e1b5c7cbb35f32ac3dec1eba62657066acca404817b48",
+      "bytes": 3481,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TFAPS048.ECO",
+      "path": "Genotype/TFAPS048.ECO",
+      "sha256": "c0ef0c04e536e0b037fe8aa867b4507abcb34dfedb49739270f7f44cd3078aaa",
+      "bytes": 9052,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TFAPS048.SPE",
+      "path": "Genotype/TFAPS048.SPE",
+      "sha256": "623433f48661c5064ca5eef11d0181888b90eb0e055bda3c42d2944e5a271187",
+      "bytes": 11672,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TFCER048.CUL",
+      "path": "Genotype/TFCER048.CUL",
+      "sha256": "a91edb5d03f8a46d6ac064e5d83ab87c79ccd6a979c62fee86eda31c5fccae01",
+      "bytes": 7234,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TFCER048.SPE",
+      "path": "Genotype/TFCER048.SPE",
+      "sha256": "f2a5b4cc7e31681f14beff6f230a05c8c6b8237b6a4aa09b7bc90ee780dd6aa0",
+      "bytes": 795,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TMGRO048.CUL",
+      "path": "Genotype/TMGRO048.CUL",
+      "sha256": "3d747d1ab447b0fac40b890bbd825c18ca6ff48d7325a3386594d61b46444954",
+      "bytes": 3314,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TMGRO048.ECO",
+      "path": "Genotype/TMGRO048.ECO",
+      "sha256": "c6d9b38838569d778379caaa3b50e4f9d7b212fee8b0e2e2334379e541302ae8",
+      "bytes": 3126,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TMGRO048.SPE",
+      "path": "Genotype/TMGRO048.SPE",
+      "sha256": "ae57d11c8a3588cefb743e855424c5b1083c4f9b97b10b54c2a60e25d98e0b9d",
+      "bytes": 9735,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TNARO048.CUL",
+      "path": "Genotype/TNARO048.CUL",
+      "sha256": "65d9338207000f67d4e27c07b795de3e05f8f3497c823533bf1df357328e54ba",
+      "bytes": 1448,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TNARO048.SPE",
+      "path": "Genotype/TNARO048.SPE",
+      "sha256": "1cb4033ade23a01bd6e094cc8d8fb864cd9c12aed037f31134cdc22a7f49e156",
+      "bytes": 1210,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TRARO048.CUL",
+      "path": "Genotype/TRARO048.CUL",
+      "sha256": "c400c38264c00d7744d3fdd32936e5d72c3c9e06b2e532061f7ce844b35dcb8c",
+      "bytes": 2176,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/TRARO048.SPE",
+      "path": "Genotype/TRARO048.SPE",
+      "sha256": "3d1b1fa4fc8c803bb1b401d19385082358d16d56bffd58403f29a5599efc7bbc",
+      "bytes": 1224,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/VBGRO048.CUL",
+      "path": "Genotype/VBGRO048.CUL",
+      "sha256": "1a2e690e545afebd72c5cffa33e9b710c63696fd90955eb3ef816a8840aee81e",
+      "bytes": 5773,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/VBGRO048.ECO",
+      "path": "Genotype/VBGRO048.ECO",
+      "sha256": "a89b1e19bfe276ef54e1b4422a8d529cb31cef49f7f72c0ced713976bfb86e54",
+      "bytes": 3407,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/VBGRO048.SPE",
+      "path": "Genotype/VBGRO048.SPE",
+      "sha256": "402921b5f922c0b15ef674d316fa8c57b5af2a3f3afee9b4e55f36d89b9d2714",
+      "bytes": 7439,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHAPS048.CUL",
+      "path": "Genotype/WHAPS048.CUL",
+      "sha256": "ce45f2947b7e373540da984d427039ec68dd778185b7702cb4515ef0c7088fdb",
+      "bytes": 3599,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHAPS048.ECO",
+      "path": "Genotype/WHAPS048.ECO",
+      "sha256": "914752f2b2ccc07d070ec69c179b913fd7c1e3413b0fbd42f39bec76d9910727",
+      "bytes": 8510,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHAPS048.SPE",
+      "path": "Genotype/WHAPS048.SPE",
+      "sha256": "6885a8908b83fe087f41254c857b2294c03a82ad15f95f3458e012b592bf40c1",
+      "bytes": 11556,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHCER048.CUL",
+      "path": "Genotype/WHCER048.CUL",
+      "sha256": "d2be7c064bbfccba4f7fc18e6cd4f4d0fb3dbbcccb5e1cc0914a7c64f799bc57",
+      "bytes": 3050,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHCER048.ECO",
+      "path": "Genotype/WHCER048.ECO",
+      "sha256": "73980ea719b4b64bceffe79ec8e0e4fc4faa56811f4730db379008bae631998a",
+      "bytes": 6032,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHCER048.SPE",
+      "path": "Genotype/WHCER048.SPE",
+      "sha256": "c9d9cf93fbe02f38440d9e89a59c7a9a4454af05cbeb2e48503b7e197c8a190b",
+      "bytes": 9626,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHCRP048.CUL",
+      "path": "Genotype/WHCRP048.CUL",
+      "sha256": "46a9f9ad2bac055e360cd2722b827f5dc0882d5f2ce3626e7af06e3817e031f5",
+      "bytes": 5594,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHCRP048.ECO",
+      "path": "Genotype/WHCRP048.ECO",
+      "sha256": "1a286ec2fafa1b786dad04af5effbf2c0d88436a7a14ab7cd52b47b3bc7cc39c",
+      "bytes": 5863,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Genotype/WHCRP048.SPE",
+      "path": "Genotype/WHCRP048.SPE",
+      "sha256": "1ae36bcd7dcf103cf2679c1c8f2dde0663be78ac1d3d0592693c72ea99cff451",
+      "bytes": 15692,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/JDATE.CDE",
+      "path": "JDATE.CDE",
+      "sha256": "15913aaf381c16b90f991390ecdfead0b5ca01a72660fbe269e2c57c43a37a8e",
+      "bytes": 4014,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/MODEL.ERR",
+      "path": "MODEL.ERR",
+      "sha256": "369c23666f4df8c71fbfa3958c2e1ff7ab496d42254cae528e2b350242e93d48",
+      "bytes": 23702,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/OUTPUT.CDE",
+      "path": "OUTPUT.CDE",
+      "sha256": "c46fc65380f438a364a1e2d3f1098c42d37dc68b724bcfb17b42ae67df1b4ec7",
+      "bytes": 6702,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/PEST.CDE",
+      "path": "PEST.CDE",
+      "sha256": "a6201c878f6dcf1aab0ce736efb46faf6863f088c37756a0e3178996d9207b40",
+      "bytes": 715,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BGGRO048.PST",
+      "path": "Pest/BGGRO048.PST",
+      "sha256": "345781e577fba43f44c1c4d415f8139a8edc8cdab8d8f13e584d91bc6c1513f3",
+      "bytes": 2163,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BHGRO048.PST",
+      "path": "Pest/BHGRO048.PST",
+      "sha256": "c5656414ecb93ceede6336f290b277e5a0ecf37b677739605706366ff5a4b4cc",
+      "bytes": 2334,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BMFRM048.PST",
+      "path": "Pest/BMFRM048.PST",
+      "sha256": "63632bcf60b52cd4aa76dda54d29ee4e1a6df47401c1321f4fcf2b39c8c49ef4",
+      "bytes": 2340,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BNGRO048.PST",
+      "path": "Pest/BNGRO048.PST",
+      "sha256": "b14d20ee444970a75c7f9e9c2c911c2aeab86ce910a94705aa40b8b3ca96d528",
+      "bytes": 2621,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BRFRM048.PST",
+      "path": "Pest/BRFRM048.PST",
+      "sha256": "7c724db92a44271eb2771de6c602e867f0343ee4db3ce378cccb8f3e55caf9eb",
+      "bytes": 2338,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BRGRO048.PST",
+      "path": "Pest/BRGRO048.PST",
+      "sha256": "292e3bb5e371d9088baeef592aedf28a3feb5f89d8eacdf1868eaef2da36251f",
+      "bytes": 2339,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/BSCER048.PST",
+      "path": "Pest/BSCER048.PST",
+      "sha256": "cfb1df3574157c5ad9743bcae56dc8152307afaea523ec3b7930fd782f8ca74a",
+      "bytes": 1206,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/CHGRO048.PST",
+      "path": "Pest/CHGRO048.PST",
+      "sha256": "338a5fa5f58c72bac9e9964a58650c9154604c63ab392a228f70583f63c4294b",
+      "bytes": 2548,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/CIGRO048.PST",
+      "path": "Pest/CIGRO048.PST",
+      "sha256": "96ccb871191ce14b812dce8929a96dac14b02738c3dfb7c40a2589e904b7eba0",
+      "bytes": 2743,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/COGRO048.PST",
+      "path": "Pest/COGRO048.PST",
+      "sha256": "343da10efedbf9f16016574129af96ce47539004bcdf46d788c9cc0ec95aee19",
+      "bytes": 2745,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/CPGRO048.PST",
+      "path": "Pest/CPGRO048.PST",
+      "sha256": "506b0bb7add171e389ea6fa8f4bf5dc0cc64b8ebb00a8d606751570094519ed3",
+      "bytes": 2745,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/FBGRO048.PST",
+      "path": "Pest/FBGRO048.PST",
+      "sha256": "8f1eb643fa4ffc6ce5d544381f0b96aa3b744528103c25a21a89dda68c1c801c",
+      "bytes": 2748,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/GBGRO048.PST",
+      "path": "Pest/GBGRO048.PST",
+      "sha256": "503d3cb5f79774ee9beceeb9328e0190192594bee3f583f6826c03c8afe9087e",
+      "bytes": 2624,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/GYGRO048.PST",
+      "path": "Pest/GYGRO048.PST",
+      "sha256": "075655cf3af1deb20669046358186c4c2a7f406dd55502969ab6f9a556474430",
+      "bytes": 2743,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/LTGRO048.PST",
+      "path": "Pest/LTGRO048.PST",
+      "sha256": "597613a01ce0c3af434aca1b4fc9d945f73acfc1dbb976a5fe41072c08eeda2f",
+      "bytes": 2620,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/MLCER048.PST",
+      "path": "Pest/MLCER048.PST",
+      "sha256": "2c1676fbd998b3b46470e900b888b1fd71d3a1a52fa7b6ed64af6e1e9aad5aa0",
+      "bytes": 962,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/MZCER048.PST",
+      "path": "Pest/MZCER048.PST",
+      "sha256": "c842c6d5ea726f7b4bfce2eafc21b12409d48b90f61509fa1bab1fa2ca4f888e",
+      "bytes": 961,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/MZIXM048.PST",
+      "path": "Pest/MZIXM048.PST",
+      "sha256": "62c07104dfe13b2c96cd88b97042b8c24fef1e1024853e8be09e23444ecc3e6e",
+      "bytes": 961,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/PNGRO048.PST",
+      "path": "Pest/PNGRO048.PST",
+      "sha256": "c3310bc4367b5b11741a9365d78bafed84d0ecfd250f2cfe569665f68cbb4abf",
+      "bytes": 2152,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/PPGRO048.PST",
+      "path": "Pest/PPGRO048.PST",
+      "sha256": "962fe11ebdfafcc181bc76451d4efc0648c5fc755487ccb01faa82bd175cd4d2",
+      "bytes": 2746,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/QUGRO048.PST",
+      "path": "Pest/QUGRO048.PST",
+      "sha256": "9ad7edddf858709b8d470cd862e0e6a4f73413d3f05f5f873bea60544cbae1e2",
+      "bytes": 2745,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/SBGRO048.PST",
+      "path": "Pest/SBGRO048.PST",
+      "sha256": "962fe11ebdfafcc181bc76451d4efc0648c5fc755487ccb01faa82bd175cd4d2",
+      "bytes": 2746,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/SGCER048.PST",
+      "path": "Pest/SGCER048.PST",
+      "sha256": "e329be681efd3d70b56de0cb9ac83b16183f23a55b8322a1a1fb533b613b3a18",
+      "bytes": 963,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/SUOIL048.PST",
+      "path": "Pest/SUOIL048.PST",
+      "sha256": "8b9d0eaaf4b1d01006e3f48105d6f89a83abef65c31ebde5055bcd18a30bd9c1",
+      "bytes": 2197,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/TMGRO048.PST",
+      "path": "Pest/TMGRO048.PST",
+      "sha256": "cbb49e242dba4d2725af9ae86d031369f2b0db6883a06905a3925fbeef86ebed",
+      "bytes": 2546,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/VBGRO048.PST",
+      "path": "Pest/VBGRO048.PST",
+      "sha256": "186c5ce3f82b9c5a9b27e2116bb800601801403f2f234301ba07f0f3ff1ecfdc",
+      "bytes": 2750,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/Pest/WHAPS048.PST",
+      "path": "Pest/WHAPS048.PST",
+      "sha256": "8c3a3fceb0ae87d33bee99be919d719b8fa872a99d9cc69914f482072947a7b8",
+      "bytes": 1121,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/SIMULATION.CDE",
+      "path": "SIMULATION.CDE",
+      "sha256": "08cbecef707a360f8be744552ca660e1dc3e789044d8b74955a0cdfb9cc189b1",
+      "bytes": 10796,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/SOIL.CDE",
+      "path": "SOIL.CDE",
+      "sha256": "dc342803e2769041e3ef91551ff32d805b72f4f00b70999550e19ea5b3cb425f",
+      "bytes": 6304,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/StandardData/CO2048.WDA",
+      "path": "StandardData/CO2048.WDA",
+      "sha256": "d3d5b3f0984f62f894fc5f0bab03b26043ac35b2ed7afef3cac6f5c67b34ff7f",
+      "bytes": 16798,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/StandardData/FERCH048.SDA",
+      "path": "StandardData/FERCH048.SDA",
+      "sha256": "3a057e6423ade5e8b08b6a261cf040e38a4023ced64dfcd9cf6f02d2b85ad82c",
+      "bytes": 36465,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/StandardData/RESCH048.SDA",
+      "path": "StandardData/RESCH048.SDA",
+      "sha256": "0b99bcb647dded900fd54eb801a4f125ad317f51506b2abef3a73e6da81bc217",
+      "bytes": 4752,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/StandardData/SOMFR048.SDA",
+      "path": "StandardData/SOMFR048.SDA",
+      "sha256": "e4ecee518b423652333cc2345d68cbee9ee1f8bf21756ef96cb980ec908dad86",
+      "bytes": 12500,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/StandardData/SOMFX048.SDA",
+      "path": "StandardData/SOMFX048.SDA",
+      "sha256": "d0262963b36cc95b4cbe325983ec96e0f4fc70360f56b2bc675ee9a3271bb74b",
+      "bytes": 7319,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/StandardData/TILOP048.SDA",
+      "path": "StandardData/TILOP048.SDA",
+      "sha256": "37191c3cfdaa5ae46c3aa2bd74765eff1498d36fe405db6e2214859f10e55059",
+      "bytes": 10800,
+      "text_newlines": "lf_or_crlf"
+    },
+    {
+      "source": "Data/WEATHER.CDE",
+      "path": "WEATHER.CDE",
+      "sha256": "563d77b0784ce211c8e346fd9d02e00c698e791e16e3b0009547b4fea01e0bb6",
+      "bytes": 10114,
+      "text_newlines": "lf_or_crlf"
+    }
+  ]
+}

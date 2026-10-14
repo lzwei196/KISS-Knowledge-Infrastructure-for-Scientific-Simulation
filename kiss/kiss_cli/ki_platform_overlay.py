@@ -158,13 +158,22 @@ def _platform_contract(platform: dict, upstream: dict, name: str) -> dict:
 
 def apply_windows_overlay(before: Path, incoming: Path, *, platform: str = "windows",
                           architecture: str | None = None, upstream_commit: str | None = None,
-                          source_identity: str | None = None) -> dict:
+                          source_identity: str | None = None,
+                          source_models: list[str] | None = None) -> dict:
     """Prepare all changes, reject conflicts, then write missing staged guidance.
 
     before is read-only. Existing incoming files are never overwritten. The
     return value is a deterministic provenance manifest, not activation evidence.
+    An authenticated metadata-only component supplies its model inventory through
+    source_models; it does not need to copy executable KI content or fake SKILL.md.
+    The caller must authenticate that inventory and the selected input bytes.
     """
     before, incoming = Path(before).resolve(), Path(incoming).resolve()
+    if source_models is not None and (not isinstance(source_models, list)
+            or any(not isinstance(name, str) or not name or name in {".", ".."}
+                   or any(char in name for char in "/\\:\0") for name in source_models)
+            or len(source_models) != len(set(source_models))):
+        raise OverlayConflict("Invalid authenticated guidance model inventory")
     if before == incoming or before in incoming.parents or incoming in before.parents:
         raise OverlayConflict("Overlay source and staging libraries must be disjoint")
     architecture = (architecture or host_platform.machine()).lower()
@@ -183,7 +192,9 @@ def apply_windows_overlay(before: Path, incoming: Path, *, platform: str = "wind
     for ki in sorted(models.iterdir(), key=lambda path: path.name):
         _safe(incoming, ki)
         name = ki.name
-        if not (ki / "SKILL.md").is_file() or not (before / "models" / name / "SKILL.md").is_file():
+        source_present = (name in source_models if source_models is not None
+                          else (before / "models" / name / "SKILL.md").is_file())
+        if not (ki / "SKILL.md").is_file() or not source_present:
             continue
         _safe(before, before / "models" / name)
         old_notes = before / "models" / name / "docs" / "install.windows.md"
@@ -223,7 +234,16 @@ def apply_windows_overlay(before: Path, incoming: Path, *, platform: str = "wind
                     record["excluded_platform_duplicate"] = _record(before, base_path, base_body)
             # The old verified flag refers to a different KI/recipe combination.
             merged["verified"] = "unverified"
-            body = yaml.safe_dump(merged, sort_keys=False, allow_unicode=True).encode("utf-8")
+            # Preserve authenticated source bytes only when the whole resulting
+            # document is unchanged, including types and the reset above. Other
+            # compositions use one top-level order in both merge modes; nested
+            # recipe fields and command/dependency list order stay untouched.
+            if (old == merged and yaml.safe_dump(old, sort_keys=True) ==
+                    yaml.safe_dump(merged, sort_keys=True)):
+                body = old_body
+            else:
+                body = yaml.safe_dump(dict(sorted(merged.items())), sort_keys=False,
+                                      allow_unicode=True).encode("utf-8")
             record["retained_platform_fields"] = sorted(k for k in PLATFORM_FIELDS if k in merged and merged.get(k) == old.get(k))
             record["incoming_neutral_fields"] = sorted(k for k in NEUTRAL_FIELDS if k in upstream and merged.get(k) == upstream[k])
         target = _safe(incoming, ki / old_recipe.name)

@@ -50,7 +50,25 @@ INVENTORY_SCHEMA = {
     "item_required": ("id", "required_by", "status", "acceptable_sources", "chosen_source",
                       "local_paths", "agent_resolvable", "needs_user"),
     "item_status": ("missing", "resolved", "ready"),
+    "output_validation": ("json_report_v1",),
+    "output_role": ("scientific_result",),
 }
+
+# One vocabulary for authored plans, dispatch and receipt completion. Missing
+# kind retains the original process default; explicit malformed kinds do not.
+EXECUTABLE_STEP_KINDS = frozenset({
+    "process", "run", "model_run", "calibrate", "route", "couple", "prepare", "download",
+})
+STEP_KINDS = EXECUTABLE_STEP_KINDS | {"check"}
+
+
+def step_kind(step: dict) -> str:
+    kind = step.get("kind", "process")
+    if not isinstance(kind, str) or kind not in STEP_KINDS:
+        raise ValueError(f"unknown step kind {kind!r}; expected one of {', '.join(sorted(STEP_KINDS))}")
+    if kind == "download" and step.get("tool"):
+        raise ValueError("download steps cannot name an executable tool; use a separate process/check step")
+    return kind
 
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
@@ -129,6 +147,96 @@ def step_environment(step: dict, project: Path, ki_root: Path) -> dict[str, str]
             expanded = str(candidate)
         result[key] = expanded
     return result
+
+
+def step_invocation(step: dict, project: Path | None) -> tuple[list[str] | None, Path | None]:
+    """Read an authored invocation; absent fields retain legacy tool-only scope.
+
+    command is literal tool arguments, never a shell line or interpreter/tool
+    prefix. Typed data and calibration invocations keep their own contracts.
+    """
+    step_kind(step)
+    if "project_data_tool" in step or "calibration" in step:
+        return None, None
+    args = None
+    if "command" in step:
+        args = step["command"]
+        if (not isinstance(args, list) or len(args) > 100 or any(
+                not isinstance(value, str) or len(value) > 4000 or "\0" in value or "${" in value
+                for value in args)):
+            raise ValueError("command must be an explicit literal tool-argument array (no interpreter/tool prefix or expansion)")
+    if "command" not in step and "cwd" not in step:
+        return None, None
+    raw_cwd = step.get("cwd", ".")
+    if (not isinstance(raw_cwd, str) or not raw_cwd or len(raw_cwd) > 4000 or
+            "\0" in raw_cwd or "${" in raw_cwd):
+        raise ValueError("cwd must be a literal project directory")
+    path = Path(raw_cwd).expanduser()
+    if path.drive and not path.is_absolute():
+        raise ValueError("cwd cannot be drive-relative")
+    if project is None:
+        return args, None
+    project = Path(project).resolve()
+    path = (path if path.is_absolute() else project / path).resolve()
+    if not path.is_relative_to(project):
+        raise ValueError("approved cwd must stay inside the project")
+    return args, path
+
+
+def validate_step_invocation(step: dict, project: Path | None) -> list[str]:
+    try:
+        step_invocation(step, project)
+    except (OSError, TypeError, ValueError, RuntimeError) as error:
+        return [str(error)]
+    return []
+
+
+def typed_invocation_review_errors(step: dict) -> list[str]:
+    """Do not review fields the typed executor ignores; preserve old executions."""
+    binding = next((key for key in ("project_data_tool", "calibration") if key in step), None)
+    ignored = [key for key in ("command", "cwd") if key in step]
+    if binding is None or not ignored:
+        return []
+    correction = ("Set the actual arguments and working directory in project_data_tool.arguments "
+                  "and project_data_tool.cwd; an empty arguments array is valid when intentional."
+                  if binding == "project_data_tool" else
+                  "Configure the invocation through the typed calibration settings and reviewed adapter.")
+    return [f"{binding} ignores top-level {', '.join(ignored)}; remove those fields before review. "
+            + correction]
+
+
+def require_step_invocation(step: dict, project: Path, arguments, cwd) -> None:
+    expected_args, expected_cwd = step_invocation(step, project)
+    if expected_args is not None and arguments != expected_args:
+        raise ValueError("invocation arguments differ from the approved command; use its exact argument array or revise and re-approve the plan")
+    if expected_cwd is not None and Path(cwd).resolve() != expected_cwd:
+        raise ValueError("invocation working directory differs from the approved cwd; revise and re-approve the plan")
+
+
+def invocation_receipt_errors(step: dict, project: Path, receipt: dict) -> list[str]:
+    """An authentic but differently invoked attempt cannot complete this step."""
+    try:
+        args, expected_cwd = step_invocation(step, project)
+        if args is None and expected_cwd is None:
+            return []
+        command = receipt.get("command")
+        tool = step.get("tool")
+        if not isinstance(command, list) or not all(isinstance(value, str) for value in command):
+            raise ValueError("receipt command is not a literal argument array")
+        def same_path(value, expected):
+            return isinstance(value, str) and isinstance(expected, str) and Path(value).resolve() == Path(expected).resolve()
+        if args is not None and not (
+                len(command) == len(args) + 1 and same_path(command[0], tool) and command[1:] == args or
+                len(command) == len(args) + 2 and same_path(command[0], receipt.get("executable"))
+                and same_path(command[1], tool) and command[2:] == args):
+            raise ValueError("receipt arguments differ from the approved command")
+        raw_cwd = receipt.get("cwd")
+        if expected_cwd is not None and (not isinstance(raw_cwd, str) or not raw_cwd or
+                Path(raw_cwd).resolve() != expected_cwd):
+            raise ValueError("receipt working directory differs from the approved cwd")
+    except (OSError, TypeError, ValueError, RuntimeError) as error:
+        return [str(error)]
+    return []
 
 
 @dataclass(frozen=True)
@@ -851,6 +959,51 @@ def sha256(obj: Any) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
+def generated_item_ids(plan: dict) -> set[str]:
+    """Items produced before their first use, excluding acquisition steps.
+
+    A download's outputs are still external data. An input consumed before
+    (or by) its first producer is also external, e.g. an in-place transform.
+    This is classification only; normal plan/tool validation remains required.
+    """
+    producers, consumers, downloaded = {}, {}, set()
+    steps = plan.get("steps", []) if isinstance(plan, dict) else []
+    for index, step in enumerate(steps if isinstance(steps, list) else []):
+        if not isinstance(step, dict):
+            continue
+        for field, target in (("inputs", consumers), ("outputs", producers)):
+            values = step.get(field)
+            if not isinstance(values, list):
+                continue
+            if field == "outputs" and step.get("kind") == "download":
+                downloaded.update(value for value in values if isinstance(value, str) and value)
+                continue
+            for value in values:
+                if isinstance(value, str) and value:
+                    target.setdefault(value, index)
+    return {value for value, index in producers.items()
+            if value not in downloaded and (value not in consumers or index < consumers[value])}
+
+
+def generated_source_errors(plan: dict, inventory: dict) -> list[str]:
+    """Generated artifacts cannot also authorize external acquisition."""
+    generated = generated_item_ids(plan)
+    items = inventory.get("items", []) if isinstance(inventory, dict) else []
+    errors = []
+    for item in items if isinstance(items, list) else []:
+        if (not isinstance(item, dict) or not isinstance(item.get("id"), str)
+                or item["id"] not in generated):
+            continue
+        fields = [key for key in ("dataset_id", "acquisition_id") if item.get(key)]
+        if item.get("delivery") in ("served", "subset", "manual"):
+            fields.append("delivery")
+        if fields:
+            errors.append(f"generated item {item['id']!r} also requests external acquisition via "
+                          f"{', '.join(fields)}; remove acquisition fields from this output and "
+                          "keep the external source as a separate consumed input")
+    return errors
+
+
 def data_source_errors(plan: dict, inventory: dict) -> list[str]:
     """Keep a displayed data-source choice and its governed input in agreement.
 
@@ -864,7 +1017,7 @@ def data_source_errors(plan: dict, inventory: dict) -> list[str]:
     if not isinstance(choices, list) or not isinstance(items, list):
         return ["scientific choices and inventory items must be arrays"]
     by_id = {str(it.get("id")): it for it in items if isinstance(it, dict)}
-    errors: list[str] = []
+    errors: list[str] = generated_source_errors(plan, inventory)
     for choice in choices:
         if not isinstance(choice, dict) or choice.get("kind") != "data_source":
             continue
@@ -959,6 +1112,102 @@ def calibration_step_errors(step: dict, project: Path | None, *, check_files: bo
     return errors
 
 
+def output_contract_review_errors(plan: dict, inventory: dict) -> list[str]:
+    """Require a deliberate JSON result role on new reviews, without guessing it.
+
+    This is planning-only: old approvals keep their existing numeric validation
+    and receipt policy. The scientific role is an acknowledgment, never a new
+    validator or an exemption. Specialized producers own separate contracts.
+    """
+    from .declared_outputs import REPORT, ordinary
+
+    errors = []
+    steps = [step for step in plan.get("steps", []) if isinstance(step, dict)]
+    for item in inventory.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        producers = [step for step in steps if isinstance(step.get("outputs"), list)
+                     and item_id in step["outputs"]]
+        ordinary_output = bool(producers) and all(ordinary(step) for step in producers)
+        if "output_role" in item:
+            if item["output_role"] != "scientific_result":
+                errors.append(f"inventory item {item_id!r}: output_role supports only 'scientific_result'")
+            if not ordinary_output:
+                errors.append(f"inventory item {item_id!r}: output_role belongs only to ordinary KI-produced "
+                              "results; inputs and typed project tools/stdout/calibration use their own contracts")
+            if "output_validation" in item:
+                errors.append(f"inventory item {item_id!r}: choose either output_role:'scientific_result' "
+                              f"or output_validation:{REPORT!r}, not both")
+        paths = item.get("local_paths")
+        has_json_path = isinstance(paths, list) and any(
+            isinstance(path, str) and path.lower().endswith(".json") for path in paths)
+        if has_json_path and not ordinary_output and any(ordinary(step) for step in producers):
+            errors.append(f"inventory item {item_id!r}: JSON output mixes ordinary KI and specialized/download "
+                          "producers; use separate inventory IDs and each producer's own output contract")
+        if (ordinary_output and has_json_path and "output_validation" not in item
+                and "output_role" not in item):
+            errors.append(
+                f"inventory item {item_id!r}: JSON output needs an explicit validation role before review. "
+                f"For a structured reader/diagnostic report set output_validation:{REPORT!r}; "
+                "it checks strict JSON and freshness but supplies no numeric model evidence. "
+                "For an actual scientific result set output_role:'scientific_result' and leave "
+                "output_validation absent; existing numeric scientific checks still apply and may reject "
+                "unsupported JSON. Inspect the tool's output contract; do not classify by extension alone. "
+                "Keep native numeric outputs as scientific results and declare different roles as separate items.")
+    return errors
+
+
+def ready_input_review_errors(plan: dict, inventory: dict, project: Path | None) -> list[str]:
+    """Check new claims of local readiness without changing execution receipts.
+
+    Each local_paths entry is required, never a list of fallback candidates.
+    Pending acquisition and earlier plan outputs need not exist before review.
+    """
+    from .receipts import _input_path
+
+    by_id = {item["id"]: item for item in inventory.get("items", [])
+             if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    errors, produced, checked = [], set(), set()
+    for step in plan.get("steps", []):
+        if not isinstance(step, dict) or step.get("status") == "skipped":
+            continue
+        inputs = step.get("inputs")
+        for ident in inputs if isinstance(inputs, list) else []:
+            if not isinstance(ident, str) or ident in produced or ident in checked:
+                continue
+            item = by_id.get(ident)
+            if item is None or item.get("status") != "ready":
+                continue
+            checked.add(ident)
+            paths = item.get("local_paths")
+            if not isinstance(paths, list) or not paths or any(not isinstance(raw, str) for raw in paths):
+                continue  # The schema/empty-ready checks supply these diagnostics.
+            if project is None:
+                errors.append(f"step {step.get('id')!r}, ready input {ident!r}: project context is required "
+                              "to check local_paths before review")
+                continue
+            for raw in paths:
+                try:
+                    path = _input_path(Path(project).resolve(), raw)
+                    if path.is_file() or path.is_dir():
+                        continue
+                    problem = "path does not exist as a file or data directory"
+                except (OSError, ValueError, RuntimeError) as error:
+                    problem = str(error)
+                errors.append(
+                    f"step {step.get('id')!r}, ready input {ident!r}, path {raw!r}: {problem}. "
+                    "Every local_paths entry is required; "
+                    "they are not alternatives and preflight does not choose or rewrite them. "
+                    "Bind only existing inputs, or mark future inputs missing/resolved and declare their "
+                    "earlier producer or acquisition route.")
+        outputs = step.get("outputs")
+        if (step.get("status") != "failed" and isinstance(outputs, list)
+                and (step.get("tool") or step.get("kind") == "download")):
+            produced.update(ident for ident in outputs if isinstance(ident, str))
+    return errors
+
+
 def validate(plan: dict, inventory: dict, selected_kis: list[str],
              ki_roots: dict[str, Path] | None = None, *, for_execution: bool = False,
              for_review: bool = False, project: Path | None = None) -> list[str]:
@@ -1045,6 +1294,9 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         tool = st.get("tool")
         if tool is not None and not isinstance(tool, str):
             errs.append(f"step {st.get('id')!r} tool must be a path string or null"); continue
+        errs.extend(f"step {step_id!r}: {problem}" for problem in validate_step_invocation(st, project))
+        if for_review:
+            errs.extend(f"step {step_id!r}: {problem}" for problem in typed_invocation_review_errors(st))
         environment_errors = validate_step_environment(st.get("env"))
         if (for_review and not environment_errors and st.get("env")
                 and project is not None and ki_roots.get(ki) is not None):
@@ -1090,6 +1342,10 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
                         and not (it.get("dataset_id") or it.get("chosen_source") or it.get("local_paths"))
                         and str(inp) not in produced_earlier):
                     errs.append(f"step {st.get('id')!r} input {inp!r} is still missing")
+        if "stdout_artifact" in st:
+            from .stdout_artifacts import step_errors as stdout_step_errors
+            errs.extend(f"step {st.get('id')!r}: {problem}"
+                        for problem in stdout_step_errors(st, project, inventory))
         if "project_data_tool" in st:
             from .project_tools import step_errors
             errs.extend(f"step {st.get('id')!r}: {problem}" for problem in step_errors(st, project))
@@ -1126,6 +1382,11 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         if not isinstance(edge, dict) or ("edge_id" in edge and not isinstance(edge["edge_id"], str)):
             errs.append("coupling entries must be objects with a string edge_id when provided")
     errs.extend(data_source_errors(plan, inventory))
+    from .declared_outputs import plan_errors as declared_output_errors
+    errs.extend(declared_output_errors(plan, inventory, project))
+    if for_review:
+        errs.extend(output_contract_review_errors(plan, inventory))
+        errs.extend(ready_input_review_errors(plan, inventory, project))
     return errs
 
 

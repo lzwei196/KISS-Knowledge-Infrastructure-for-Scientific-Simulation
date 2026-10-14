@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from kiss_cli import api, calibration, cli, flowgate, plan_review, project_paths
+from kiss_cli import api, calibration, cli, flowgate, ki_guard, paths, plan_review, project_paths, project_verification
+from kiss_cli.catalog import KI
+from kiss_cli.manifest import Manifest
 
 
 @pytest.fixture
@@ -195,9 +198,15 @@ def _cli_case(case, monkeypatch):
     fs, plan, inv, _ = case
     root = fs.project / "models" / "M" / "ki"
     root.mkdir(parents=True)
+    (root / "SKILL.md").write_text("# Calibration fixture KI\n")
+    (root / "preflight_check.py").write_text("print('Harmless calibration fixture preflight passed')\n")
+    ki_guard.enroll(root)
     fs.ki_roots = {"M": root}
-    cfg = SimpleNamespace(root=fs.project, python="python", roles={})
-    monkeypatch.setattr(project_paths, "execution_config", lambda *args: cfg)
+    cfg = project_paths.model_config(fs.project, "M", paths.KissConfig.default(fs.project))
+    cfg.python = sys.executable
+    (root.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    verified = project_verification.verify(fs.project, KI("M", root), Manifest(model="M"))
+    assert verified["ok"], verified
     args = SimpleNamespace(project=fs.project, ki_path=root, model="M", plan_step_id="M:calibrate",
                            obs_shapes_json='{"temperature":"point_time_series"}', budget=None,
                            seed=0, algorithm=None, expected_case_id=None, determining_metric=None)

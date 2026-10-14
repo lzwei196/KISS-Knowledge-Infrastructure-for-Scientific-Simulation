@@ -229,6 +229,32 @@ def test_engine_source_edit_invalidates_previously_verified_candidate(case):
     assert refreshed["engine_source_digest"] != report["engine_source_digest"]
 
 
+@pytest.mark.parametrize("preceding", ["maintenance", "publication"])
+def test_engine_evidence_fixture_teardown_restores_real_digest_before_next_gate(case, tmp_path, preceding):
+    from . import test_ki_maintenance, test_published_acceptance
+    _, engine = case
+    original = kdtstudio.engine_source_digest
+    before = original()
+    fixture_module = test_ki_maintenance if preceding == "maintenance" else test_published_acceptance
+    # Exercise the actual preceding fixture and test body in pytest's teardown
+    # order: yield fixture first, then its monkeypatch dependency. This fails if
+    # an inner override survives long enough to reinstall the fixture double.
+    with pytest.MonkeyPatch.context() as patches:
+        scenario = fixture_module.case.__wrapped__(tmp_path / preceding, patches)
+        state = next(scenario)
+        try:
+            if preceding == "maintenance":
+                fixture_module.test_receipt_rejects_changed_or_stale_evidence(state, patches, "engine")
+            else:
+                fixture_module.test_snapshot_requires_current_engine_and_desktop_evidence(state, patches, "engine")
+        finally:
+            scenario.close()
+    assert kdtstudio.engine_source_digest is original
+    assert kdtstudio.engine_source_digest() == before
+    (engine / "teardown_probe.py").write_text("VALUE = 4\n", encoding="utf-8")
+    assert kdtstudio.engine_source_digest() != before
+
+
 def test_engine_edit_during_verification_is_rejected(case):
     candidate, engine = case
     target = engine / "changed_helper.py"

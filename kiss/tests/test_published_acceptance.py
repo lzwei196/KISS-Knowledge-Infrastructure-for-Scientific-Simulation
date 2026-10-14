@@ -316,13 +316,15 @@ def test_removing_publication_metadata_cannot_downgrade_to_unsigned_cache(case, 
 def test_snapshot_requires_current_engine_and_desktop_evidence(case, monkeypatch, change):
     root, meta = managed_snapshot(case)
     assert publication.require_snapshot(root, meta)
-    if change == "engine":
-        monkeypatch.setattr(kdtstudio, "engine_source_digest", lambda: "e" * 64)
-    else:
-        monkeypatch.setattr(publication.doctor, "VALIDATION_POLICY_VERSION", "next-doctor-policy")
-    with pytest.raises(ValueError, match="current signed acceptance"):
-        publication.require_snapshot(root, meta)
-    assert not ki_updates._snapshot_valid(root)
+    # The outer isolated_engine fixture must be the last engine patch to undo.
+    with monkeypatch.context() as changed:
+        if change == "engine":
+            changed.setattr(kdtstudio, "engine_source_digest", lambda: "e" * 64)
+        else:
+            changed.setattr(publication.doctor, "VALIDATION_POLICY_VERSION", "next-doctor-policy")
+        with pytest.raises(ValueError, match="current signed acceptance"):
+            publication.require_snapshot(root, meta)
+        assert not ki_updates._snapshot_valid(root)
 
 
 def test_publication_cannot_cross_authoring_registry_or_adoption(case):

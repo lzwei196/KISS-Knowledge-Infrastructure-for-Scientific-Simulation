@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing release tag to receive the Windows assets
         required: true
-        default: windows-v0.6.59
+        default: windows-v0.6.60
       reuse_0658_source_validation:
         description: Reuse the pinned successful 0.6.58 source tests for a packaging-only retry
         type: boolean
@@ -135,7 +135,8 @@ jobs:
           python -m pytest kiss/tests -q --durations=20 -o faulthandler_timeout=180 --junitxml=desktop-regression.xml
           if ($LASTEXITCODE -ne 0) { throw 'application regression tests failed' }
 
-      - name: Keep successful source regression reports
+      - name: Keep source regression reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-source-validation-${{ github.run_id }}

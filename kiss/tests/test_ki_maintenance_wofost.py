@@ -67,10 +67,12 @@ def test_semantic_variants_rejected_before_projection(tmp_path, old, new):
     assert _unsupported(tmp_path, raw.replace(old, new, 1)) == {}
 
 
-def test_comment_outside_block_is_preserved_but_block_comment_must_match(tmp_path):
-    raw = ORIGINAL.read_bytes()
-    base, candidate = _trees(tmp_path / "outside", b"# retained comment\n" + raw)
-    assert (candidate / recipe.TOOL_PATH).read_bytes().startswith(b"# retained comment\n")
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"])
+def test_comment_outside_block_is_preserved_but_block_comment_must_match(tmp_path, newline):
+    raw = ORIGINAL.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", newline)
+    prefix = b"# retained comment" + newline
+    base, candidate = _trees(tmp_path / "outside", prefix + raw)
+    assert (candidate / recipe.TOOL_PATH).read_bytes().startswith(prefix)
     changed = raw.replace(b"Use WAV only.", b"Use different values.")
     assert _unsupported(tmp_path / "inside", changed) == {}
 

@@ -155,22 +155,25 @@ def test_model_identity_cannot_be_changed(case):
                                   "policy", "engine", "engine_override"])
 def test_receipt_rejects_changed_or_stale_evidence(case, monkeypatch, what):
     report = verify(case)
-    if what == "source_signature":
-        report["source"]["name"] = "Other"
-    elif what == "report_signature":
-        report["checked_at"] = 0
-    elif what == "candidate":
-        (case.candidate / "tools/run.py").write_text("changed", encoding="utf-8")
-    elif what == "frozen":
-        (Path(case.source["base_root"]) / "tools/run.py").write_text("changed", encoding="utf-8")
-    elif what == "policy":
-        monkeypatch.setattr(maintenance, "POLICY", "different-policy")
-    elif what == "engine":
-        monkeypatch.setattr(kdtstudio, "engine_source_digest", lambda: "0" * 64)
-    else:
-        monkeypatch.setenv("GEOFORGE_KDT_ENGINE", str(case.root / "unreviewed"))
-    with pytest.raises(ValueError):
-        maintenance.require_current(case.candidate, report)
+    # Undo this inner override before case's isolated_engine restores the
+    # real functions; a later monkeypatch teardown would resurrect its double.
+    with monkeypatch.context() as changed:
+        if what == "source_signature":
+            report["source"]["name"] = "Other"
+        elif what == "report_signature":
+            report["checked_at"] = 0
+        elif what == "candidate":
+            (case.candidate / "tools/run.py").write_text("changed", encoding="utf-8")
+        elif what == "frozen":
+            (Path(case.source["base_root"]) / "tools/run.py").write_text("changed", encoding="utf-8")
+        elif what == "policy":
+            changed.setattr(maintenance, "POLICY", "different-policy")
+        elif what == "engine":
+            changed.setattr(kdtstudio, "engine_source_digest", lambda: "0" * 64)
+        else:
+            changed.setenv("GEOFORGE_KDT_ENGINE", str(case.root / "unreviewed"))
+        with pytest.raises(ValueError):
+            maintenance.require_current(case.candidate, report)
 
 
 def test_adoption_does_not_invalidate_frozen_source_receipt(case):

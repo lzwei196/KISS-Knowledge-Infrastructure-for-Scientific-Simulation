@@ -1,6 +1,7 @@
 """Stable composed bytes without semantic identities or acceptance exceptions."""
 import hashlib
 from pathlib import Path
+import subprocess
 
 import pytest
 import yaml
@@ -38,6 +39,36 @@ def test_actual_dssat_recipe_reproduces_previous_exact_package_bytes(tmp_path):
     assert row['output']['sha256'] == hashlib.sha256(expected).hexdigest()
     assert row['source']['sha256'] == hashlib.sha256(raw).hexdigest()
     assert result['setup_reverification_required'] is True
+
+
+@pytest.mark.parametrize('autocrlf', ['true', 'false', 'input'])
+def test_exact_guidance_fixtures_survive_git_checkout(tmp_path, autocrlf):
+    repo, checkout = tmp_path / 'repo', tmp_path / 'checkout'
+    repo.mkdir()
+    root = Path(__file__).resolve().parents[2]
+    (repo / '.gitattributes').write_bytes((root / '.gitattributes').read_bytes())
+    relative = Path('kiss/tests/fixtures/stable_windows_guidance')
+    payloads = {relative / path.name: path.read_bytes() for path in FIXTURES.iterdir()
+                if path.is_file()}
+    # The checkout rule preserves literal bytes; it must not normalize a future
+    # authenticated CRLF fixture just to make the current LF fixture pass.
+    payloads[relative / 'literal_crlf.yaml'] = b'# Exact CRLF fixture\r\nmodel: Demo\r\n'
+    for path, body in payloads.items():
+        target = repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+
+    def git(*args):
+        return subprocess.run(['git', '-C', str(repo), *args], check=True,
+                              capture_output=True).stdout
+
+    git('init', '--quiet')
+    git('-c', 'core.autocrlf=false', 'add', '--', '.gitattributes', relative.as_posix())
+    git('-c', f'core.autocrlf={autocrlf}', 'checkout-index', '--all',
+        '--prefix=' + checkout.as_posix() + '/')
+    for path, body in payloads.items():
+        assert git('show', ':' + path.as_posix()) == body
+        assert (checkout / path).read_bytes() == body
 
 
 @pytest.mark.parametrize('mode', ['three-way', 'platform'])

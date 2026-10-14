@@ -5,3 +5,6 @@ ki_tools_common/ki_tools_common/flow/data/** text eol=lf
 # The bundled observation readers declare the exact source-byte SHA-256 in
 # kiss.yaml. Git must not rewrite their LF payload during Windows checkout.
 kiss/data_kis/*/tools/read_observations.py text eol=lf
+# Golden overlay fixtures assert exact authenticated bytes, including newlines.
+# Preserve their literal Git payload instead of applying checkout conversion.
+kiss/tests/fixtures/stable_windows_guidance/** -text

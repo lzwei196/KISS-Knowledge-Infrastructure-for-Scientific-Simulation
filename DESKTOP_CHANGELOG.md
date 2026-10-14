@@ -6,8 +6,13 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
-## v0.6.59 — Windows setup, KI maintenance and execution evidence
+## v0.6.60 — Windows setup, KI maintenance and execution evidence
 
+- The 0.6.59 candidate was withheld after fresh hosted validation exposed test
+  fixture line-ending changes and verifier-mock leakage between tests. Preserve
+  byte-sensitive fixtures during checkout, exercise LF and CRLF maintenance
+  cases explicitly, and restore verifier mocks before later tests. Application
+  validation gates remain unchanged; this release requires a new full CI run.
 - Resolve project runtime paths against the selected KI, recipe and shared-tool
   revision. Refresh setup state after installation, maintenance and updates;
   obtain required runtime data when the supported delivery route is available.
@@ -38,12 +43,14 @@ Desktop update agents should read the JSON manifest first and use this file to e
 - Full release source, frozen-runtime and installer checks are recorded in the
   attached Windows-release-validation.json and JUnit reports. The six offline
   EN/ZH PDF guides retain reviewed edition 0.6.55.
-- Windows 0.6.59 改进 KI 更新后的安装与路径适配、KDT 维护修复、计划与输出校验、
+- Windows 0.6.60 改进 KI 更新后的安装与路径适配、KDT 维护修复、计划与输出校验、
   预检后自动继续运行，以及状态显示；修复已验证的原生程序路径别名处理、子进程清理，
   以及虚拟环境下停止时的运行记录保存。此前 v51/v52 的 DS GUI 测试已完成 DSSAT 参考算例
   的实际运行、读取和观测对比；该测试使用独立验证的本地 KI 修复，不代表本次最终版本的
   新一轮端到端测试，也不代表全部随包模型已安装或科学验证。辅助工具变更后可能需要重新验证。
   下载附件提供源代码、便携版与安装版检查记录；中英文离线指南继续保留0.6.55版次。
+  0.6.59 候选版因全新环境下的测试样本换行变化及测试模拟函数未正确还原而暂缓发布；
+  本版修复测试环境问题，保留应用校验规则，并重新执行完整 CI。
 
 ## v0.6.58 — Windows checkout and runtime compatibility fixes
 

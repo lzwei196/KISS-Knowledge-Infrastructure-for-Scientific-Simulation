@@ -6,6 +6,37 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## v0.6.59 — Windows setup, KI maintenance and execution evidence
+
+- Resolve project runtime paths against the selected KI, recipe and shared-tool
+  revision. Refresh setup state after installation, maintenance and updates;
+  obtain required runtime data when the supported delivery route is available.
+- Keep KI maintenance behind KDT, reuse valid existing evidence, and expose a
+  compatible approved repair to fresh Auto KI inspection. Earlier failed attempts
+  remain history and cannot satisfy the current approved plan.
+- Review exact ready input paths, typed-tool arguments and structured JSON output
+  contracts before approval. Continue execution after successful project preflight.
+- Report approved execution completion without implying independent scientific
+  validation. Reject stale output evidence and prevent delayed approval popups
+  from appearing in another chat.
+- Include the runtime-data identity source in frozen builds. Correct duplicate
+  Codex sandbox flags and option placement for resumed commands.
+- A reviewed DeepSeek GUI DSSAT reference workflow produced four valid execution
+  records: native replay, repaired KI reader, MZA observation reader and comparison.
+  Yield was 2293 versus 2929 kg/ha (−21.71%); one pair cannot establish NSE or skill.
+  The test used an installed runtime and a separately KDT-approved local KI repair;
+  it does not establish out-of-box readiness of the unchanged bundled library.
+- The last checked main-library update accepted 110 packages and rejected 17 before
+  activation. The previous validated library remains selected. Server-side KI
+  repairs, broader native coverage and provider configuration remain separate work.
+- Full release source, frozen-runtime and installer checks are recorded in the
+  attached Windows-release-validation.json and JUnit reports. The six offline
+  EN/ZH PDF guides retain reviewed edition 0.6.55.
+- Windows 0.6.59 改进 KI 更新后的安装与路径适配、KDT 维护修复、计划与输出校验、
+  预检后自动继续运行，以及状态显示。已通过 DS GUI 完成 DSSAT 参考算例的实际运行、
+  读取和观测对比；该测试使用独立验证的本地 KI 修复，不代表全部随包模型已安装或科学验证。
+  下载附件提供源代码、便携版与安装版检查记录；中英文离线指南继续保留0.6.55版次。
+
 ## v0.6.58 — Windows checkout and runtime compatibility fixes
 
 - Preserve the approved observation-reader bytes during Windows Git checkout;

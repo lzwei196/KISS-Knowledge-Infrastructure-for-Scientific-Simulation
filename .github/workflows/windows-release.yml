@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing release tag to receive the Windows assets
         required: true
-        default: windows-v0.6.58
+        default: windows-v0.6.59
       reuse_0658_source_validation:
         description: Reuse the pinned successful 0.6.58 source tests for a packaging-only retry
         type: boolean
@@ -30,6 +30,27 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
 
+      - name: Select Python for reviewed WOFOST provider fixtures
+        if: ${{ !inputs.reuse_0658_source_validation }}
+        id: wofost_python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the isolated WOFOST test dependency
+        if: ${{ !inputs.reuse_0658_source_validation }}
+        shell: pwsh
+        run: |
+          # The reviewed -I -S provider fixtures require a Python 3.12 base
+          # interpreter: venv prefix initialization is unavailable under -S.
+          # This separate interpreter does not change the Python 3.11 app build.
+          $fixturePython = '${{ steps.wofost_python.outputs.python-path }}'
+          & $fixturePython -I -B -m pip install --disable-pip-version-check --quiet pcse==6.0.13
+          if ($LASTEXITCODE -ne 0) { throw 'WOFOST provider fixture dependency installation failed' }
+          & $fixturePython -I -B -c "import sys, importlib.metadata; assert sys.version_info[:2] == (3, 12); assert sys.prefix == sys.base_prefix; assert importlib.metadata.version('pcse') == '6.0.13'"
+          if ($LASTEXITCODE -ne 0) { throw 'WOFOST provider fixture identity mismatch' }
+          "GEOFORGE_WOFOST_TEST_PYTHON=$fixturePython" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -52,6 +73,7 @@ jobs:
         run: |
           # This narrow reuse is bound to one reviewed application commit, run,
           # successful source job and the exact report bytes recorded below.
+          if ('${{ inputs.tag }}' -ne 'windows-v0.6.58') { throw 'legacy source reuse requires the explicit windows-v0.6.58 tag' }
           if ('${{ steps.source.outputs.commit }}' -ne 'abaffb5b493de60a31ea3b0afebb8538a30a3a9f') { throw 'source reuse is only approved for the unchanged 0.6.58 application' }
           $run = gh api 'repos/${{ github.repository }}/actions/runs/37564645167' | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne 'fe38a9dc92199a41b640679e407b01752ae55f06') { throw 'source validation workflow identity mismatch' }

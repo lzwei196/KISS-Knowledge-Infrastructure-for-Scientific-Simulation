@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.59",
+  "version": "0.6.60",
   "release_date": "2026-10-15",
   "source": {
     "branch": "windows-version",
-    "code_commit": "878b3ddb172b7057efe6db0f024ce8c47dea856e",
+    "code_commit": "38c463d7f751180b3dc0d0c0b10203baa4e3ed35",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.59",
+    "release_tag": "windows-v0.6.60",
     "commit_scope": "Application implementation is pinned by application_code_commit. Windows-release-validation.json identifies the exact release tag/build commit and final checks.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
     "checked_main_commit": "889a6e70332e31b21911efb0a08ac2fa2a067e03",
-    "build_label": "windows-0.6.59-20261015",
+    "build_label": "windows-0.6.60-20261015",
     "working_tree": false,
-    "application_code_commit": "878b3ddb172b7057efe6db0f024ce8c47dea856e",
+    "application_code_commit": "38c463d7f751180b3dc0d0c0b10203baa4e3ed35",
     "previous_release_tag": "windows-v0.6.58"
   },
   "ki_library": {
@@ -38,7 +38,7 @@
     ],
     "desktop_catalogue_count": 129,
     "shared_tools_commit": "201123aa1f0fbaadbc485223b2c2891e1a5f1570",
-    "desktop_flow_commit": "878b3ddb172b7057efe6db0f024ce8c47dea856e",
+    "desktop_flow_commit": "38c463d7f751180b3dc0d0c0b10203baa4e3ed35",
     "scope": "Bundled 127 scientific KIs and 2 observation data KIs retain the prior release snapshot. Updated desktop/shared-flow code is pinned by source.application_code_commit. Downloaded Library updates and local KDT-approved repairs are separate; the DSSAT acceptance used those separate revisions."
   },
   "changes": [
@@ -130,6 +130,6 @@
     "edition": "0.6.55",
     "quickstart_revision": "illustrated-2026-10-02",
     "validation": "docs/manual/0.6.55/validation.json",
-    "scope": "Unchanged reviewed 0.6.55 PDF/HTML edition, including illustrated three-page quickstarts in English and Chinese, bundled with Windows 0.6.59."
+    "scope": "Unchanged reviewed 0.6.55 PDF/HTML edition, including illustrated three-page quickstarts in English and Chinese, bundled with Windows 0.6.60."
   }
 }

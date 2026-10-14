@@ -3,7 +3,7 @@
   "engine": {
     "name": "RHESSys",
     "version": "rhessys7.4 (makefile VERSION 7.4; -version prints 5.14.3)",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4",
     "source": "https://github.com/RHESSys/RHESSys, commit f9d1bbf8d161aa55b6a51061dc320188ead44962 (2024-03-05, shallow clone); Testing/ and rhessys/test/rhessystest.py",
     "license": "no licence file in the RHESSys repository (public GitHub, academic model from UCSB/Tague lab)"
   },

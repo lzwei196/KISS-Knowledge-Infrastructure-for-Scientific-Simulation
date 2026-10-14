@@ -15,7 +15,7 @@
     {"name": "final_time_s", "expected": 1.0, "tol": 0, "why": "prj t_end = 1 s, one time step"}
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "ogs 6.5.7 at /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/venv/bin/ogs, vtkdiff from the same venv, run through KI tools/run_ogs.py with OMP_NUM_THREADS=1",
+  "recorded_with": "ogs 6.5.7 at KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenGeoSys/venv/bin/ogs, vtkdiff from the same venv, run through KI tools/run_ogs.py with OMP_NUM_THREADS=1",
   "reference": "https://github.com/ufz/ogs  Tests/Data/Parabolic/LiquidFlow/GravityDriven (commit a5c00a5059a8704fafb64cdf1756494ace6b727f) and ProcessLib/LiquidFlow/Tests.cmake",
   "notes": "Inputs are byte-for-byte the git HEAD files; nothing is changed. OMP_NUM_THREADS=1 is set only in the run environment (default would use all cores); a run with the default 192 threads also passes. Seen in our runs: pressure max abs error 6.9e-11 Pa, velocity max abs error 2.9e-19 m/s."
 }

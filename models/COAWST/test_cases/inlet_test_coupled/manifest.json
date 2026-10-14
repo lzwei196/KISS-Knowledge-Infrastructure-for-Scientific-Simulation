@@ -3,7 +3,7 @@
   "engine": {
     "name": "COAWST",
     "version": "3.8 (main, commit 79bd6033689b80b1d52f9868d52dfaf6c6e3979b, 2026-03-11); ROMS/TOMS 4.1, SWAN 41.45, MCT 2.6.0",
-    "binary": "coawstM built for INLET_TEST (header Projects/Inlet_test/Coupled/inlet_test.h): /home/server/engine_builds_20261006/coawst/COAWST/coawstM, sha256 c9cfaf10ea99796573d75b1d378cadf73ca15b739ebcc5274922f290e3614e97, built 2026-10-06 from git archive of the commit with the official build_coawst.sh (copy with MY_ROOT_DIR and MCT paths only), gfortran 13.3.0, Open MPI 4.1.6, netCDF-Fortran 4.5.4; build env FC=mpif90 for SWAN's CMake",
+    "binary": "coawstM built for INLET_TEST (header Projects/Inlet_test/Coupled/inlet_test.h): KISSPATH_HOME/engine_builds_20261006/coawst/COAWST/coawstM, sha256 c9cfaf10ea99796573d75b1d378cadf73ca15b739ebcc5274922f290e3614e97, built 2026-10-06 from git archive of the commit with the official build_coawst.sh (copy with MY_ROOT_DIR and MCT paths only), gfortran 13.3.0, Open MPI 4.1.6, netCDF-Fortran 4.5.4; build env FC=mpif90 for SWAN's CMake",
     "source": "https://github.com/DOI-USGS/COAWST Projects/Inlet_test/Coupled (12 tracked files) + ROMS/External/varinfo.dat, all via git show 79bd6033:<path>, unmodified",
     "license": "COAWST: public domain (USGS) + CC0 1.0 (LICENSE.md); ROMS: MIT/X-style (ROMS/License_ROMS.txt); SWAN: GPL-3.0; MCT: Argonne copyright (Lib/MCT/COPYRIGHT)"
   },

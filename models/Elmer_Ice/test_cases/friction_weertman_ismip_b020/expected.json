@@ -94,7 +94,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver (+ ElmerGrid from the same dir), serial, OMP_NUM_THREADS=4, run through tools/run_elmerice.py",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver (+ ElmerGrid from the same dir), serial, OMP_NUM_THREADS=4, run through tools/run_elmerice.py",
   "reference": "Official reference: the Reference Norm 56.70374 written in the official .sif by the test authors (L. Tavard, LGGE, 26.11.2015, rev 522ee2e). This run gave Norm = 56.7037392, relative error 1.38e-8.",
   "notes": "The OFFICIAL checks are reference_compare_passed and ns_final_norm. The other numbers were recorded from our own run; two clean runs gave the same values to all printed digits (9 significant digits), so the run repeats. VTU fields are read straight from the file because tools/parse_vtu_output.py cannot read Elmer's default binary (appended raw) VTU."
 }

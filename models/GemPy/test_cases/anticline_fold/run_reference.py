@@ -30,7 +30,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_gempy_model.py"
 PARSE_TOOL = TOOLS / "parse_gempy_output.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python"
 INPUTS = ("model2_surface_points.csv", "model2_orientations.csv")
 
 # Same calls as gempy/API/examples_generator.py::_generate_anticline_model,

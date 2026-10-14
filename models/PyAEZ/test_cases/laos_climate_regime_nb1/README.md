@@ -23,8 +23,8 @@ Settings are the notebook's own: lat 13.87 to 22.59, mask value 0, monthly data
 - Licence: MIT (Copyright 2023 GIC-AIT, FAO-UN).
 
 ## Engine
-PyAEZ Python package run from source: `PYTHONPATH=/mnt/disk1/Hydrocraft_server/models/PyAEZ/source/repo`
-with `/mnt/disk1/Hydrocraft_server/python_env/bin/python_with_gdal` (Python 3.12,
+PyAEZ Python package run from source: `PYTHONPATH=KISSPATH_KI_ROOT/PyAEZ/source/repo`
+with `KISSPATH_PYTHON_ENV/bin/python_with_gdal` (Python 3.12,
 numpy 2.4.4, numba 0.64.0, GDAL 3.12.4).
 
 ## How to run

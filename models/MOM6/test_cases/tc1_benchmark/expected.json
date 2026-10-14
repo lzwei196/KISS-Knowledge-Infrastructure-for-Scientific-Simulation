@@ -19,7 +19,7 @@
   ],
   "finished_normally": "KI tool run_mom6.py exits 0, MOM6 writes exitcode = 0, and the FMS clock table in the log lists 'Total runtime' and 'Termination'",
   "recorded_on": "2026-10-05",
-  "recorded_with": "run_reference.py via KI tools/run_mom6.py (1 rank and 2 ranks) on /home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6",
+  "recorded_with": "run_reference.py via KI tools/run_mom6.py (1 rank and 2 ranks) on KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6",
   "reference": "No official reference ocean.stats ships with MOM6 (.testing compares builds/layouts against each other). Values are from own real runs, repeated: byte-identical ocean.stats and chksum_diag across 2 x 1-rank runs and the 2-rank LAYOUT=2,1 run.",
   "notes": "The only change to inputs is made in the temp copy of the 2-rank run: MOM_override gets the line 'LAYOUT=2,1', exactly as MOM6's .testing/Makefile does for its layout test. It does not change results (that is what the identical-output checks prove). Empty INPUT/ and RESTART/ dirs are made in the temp dir (tc1 reads no files)."
 }

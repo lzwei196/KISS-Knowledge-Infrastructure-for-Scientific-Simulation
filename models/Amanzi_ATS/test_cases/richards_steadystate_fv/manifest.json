@@ -3,7 +3,7 @@
   "engine": {
     "name": "ATS (Amanzi Advanced Terrestrial Simulator)",
     "version": "1.6.0_86114e29 (Amanzi 42cadd93)",
-    "binary": "/home/server/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats",
+    "binary": "KISSPATH_HOME/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats",
     "source": "github.com/amanzi/amanzi 42cadd93 + github.com/amanzi/ats 86114e29; tests github.com/amanzi/ats-regression-tests 1f1e27e5 (case files identical at 28ca01bb)",
     "license": "BSD-3-Clause (ATS, Amanzi, ats-regression-tests)"
   },

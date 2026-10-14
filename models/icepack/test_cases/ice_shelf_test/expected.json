@@ -89,7 +89,7 @@
     }
   ],
   "recorded_on": "2026-10-06",
-  "recorded_with": "/home/server/engine_builds_20261006/firedrake/venv/bin/python -m pytest ice_shelf_test.py (OMP_NUM_THREADS=1), serial",
+  "recorded_with": "KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python -m pytest ice_shelf_test.py (OMP_NUM_THREADS=1), serial",
   "reference": "official limits: the assert lines in inputs/ice_shelf_test.py (github.com/icepack/icepack, test/ice_shelf_test.py at c9a29780). Slope values: recorded from real runs on this server (no official reference file ships with the test).",
   "notes": "Official limits are the assert lines of the test file. Recorded slopes repeated exactly (6 printed digits) in 3 clean runs on 2026-10-06 (direct pytest, and run_reference.py twice). The KI run tool cannot drive this test (README, Known KI gaps); pytest runs under the KI's model interpreter (same lookup as preflight_check.py)."
 }

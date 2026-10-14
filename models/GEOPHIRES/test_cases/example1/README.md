@@ -24,7 +24,7 @@ python run_reference.py    # 0=PASS 2=FAIL 3=engine missing
 ```
 It needs a Python that can import `geophires_x` and `geophires_x_client`. Lookup order:
 `--geophires-python` -> `$GEOPHIRES_PYTHON` -> `python3` on PATH -> server default
-`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv/bin/python`
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GEOPHIRES/venv/bin/python`
 (GEOPHIRES-X is not installed in python_env). The script copies `inputs/example1.txt` to a
 fresh temp dir, runs it through the KI's own `tools/run_geophires.py`, checks the result,
 then deletes the temp dir. It takes about 3 seconds.

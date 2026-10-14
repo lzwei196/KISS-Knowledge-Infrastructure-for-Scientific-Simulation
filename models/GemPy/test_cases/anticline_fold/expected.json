@@ -25,7 +25,7 @@
   ],
   "finished_check": "driver exits 0 and prints DRIVER_OK after gp.compute_model and gp.save_model",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python (Python 3.12, numpy 2.4.3), OMP_NUM_THREADS=4",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python (Python 3.12, numpy 2.4.3), OMP_NUM_THREADS=4",
   "reference": "Main check = GemPy's own approved array (official). numeric_checks = values from our own run; two clean runs gave byte-identical results (deterministic).",
   "notes": "Only change from the official generator: the CSV paths point to local copies in inputs/ instead of https://raw.githubusercontent.com/cgre-aachen/gempy_data/master/... (same bytes, checked by sha256 against commit cf00bc9). The run matches the official approved values to about 5e-9 (the approved file is printed with 8 decimals). Lithology ids 1,2,3 follow the stack order rock2, rock1, basement."
 }

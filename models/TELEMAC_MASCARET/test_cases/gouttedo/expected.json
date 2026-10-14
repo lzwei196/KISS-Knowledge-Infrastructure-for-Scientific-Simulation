@@ -23,7 +23,7 @@
     {"name": "run_volume_rel_error_cumulated", "expected": 0.0, "tol": 1e-10, "why": "RELATIVE ERROR CUMULATED ON VOLUME from the listing; own run gave 1.933094e-15"}
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "run_reference.py through the KI tool tools/run_telemac.py (telemac2d.py, serial) with /mnt/disk1/Hydrocraft_server/python_env/bin/python; two runs gave bit-identical result files",
+  "recorded_with": "run_reference.py through the KI tool tools/run_telemac.py (telemac2d.py, serial) with KISSPATH_PYTHON_ENV/bin/python; two runs gave bit-identical result files",
   "reference": "examples/telemac2d/gouttedo/f2d_gouttedo.slf (Git LFS, sha256 051a9303afab21bf0d458a7282781f33e09984bc178d7bbed9d5d980b3a31521) and vnv_gouttedo.py, TELEMAC-MASCARET repo https://gitlab.pam-retd.fr/otm/telemac-mascaret commit be14a123",
   "notes": "Observed on 2026-10-05: largest difference to the official reference over all records and variables was 5.7e-14 (last record: 0.0). Run-only tweak: run_reference.py makes an empty folder <workdir>/user_fortran/CMakeFiles/user_fortran.dir in the temp run dir before the run, because this build's user-Fortran link command writes a linker dependency file there. No input file or setting is changed; the result matches the official reference."
 }

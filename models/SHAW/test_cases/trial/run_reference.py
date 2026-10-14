@@ -30,7 +30,7 @@ INPUTS = HERE / "inputs"
 EXPECTED = json.loads((HERE / "expected.json").read_text())
 
 # default install on the build server; override with --shaw-bin or $SHAW_BIN
-_DEFAULT_BIN = "/mnt/disk1/Hydrocraft_server/model/shaw/shaw303"
+_DEFAULT_BIN = "KISSPATH_BINARIES/shaw/shaw303"
 
 
 def find_binary(arg):

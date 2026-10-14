@@ -109,7 +109,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (Python 3.12, numpy 2.4.4, scipy 1.18.1, networkx 3.6.1) + /home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen",
+  "recorded_with": "KISSPATH_PYTHON_ENV/bin/python (Python 3.12, numpy 2.4.4, scipy 1.18.1, networkx 3.6.1) + KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen",
   "reference": "own runs (no official reference outputs ship with this example)",
   "notes": "Counts must match exactly. Float tolerance is relative 1e-6 (runs repeat exactly; the small slack only allows for other numpy/scipy builds). Matrix diffusion is off in this example, so advective time equals total travel time."
 }

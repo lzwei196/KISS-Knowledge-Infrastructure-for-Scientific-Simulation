@@ -20,7 +20,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 PARSE_TOOL = HERE.parents[1] / "tools" / "parse_delft3d_output.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Delft3D/build_flow2d3d/d_hydro/d_hydro"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Delft3D/build_flow2d3d/d_hydro/d_hydro"
 
 
 def main():

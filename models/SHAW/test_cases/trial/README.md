@@ -66,7 +66,7 @@ found (reported explicitly — the case is **not** marked passed when it did not
 
 `shaw303` is built from the SHAW 3.0.3 Fortran source (`Shaw303.zip`,
 `compile.sh`). On the build server it lives at
-`/mnt/disk1/Hydrocraft_server/model/shaw/shaw303`. Set `SHAW_BIN` or pass
+`KISSPATH_BINARIES/shaw/shaw303`. Set `SHAW_BIN` or pass
 `--shaw-bin` to point `run_reference.py` at another build.
 
 ## Expected results (authentic, recorded from a clean run on 2026-10-04)

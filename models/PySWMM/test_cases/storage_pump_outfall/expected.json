@@ -131,7 +131,7 @@
   ],
   "finished_normally": "KI tool exit code 0 and JSON status 'completed'; report has 'Analysis begun on' and 'Analysis ended on' and no ERROR; statistics run exit code 0",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (pyswmm 2.1.0, swmm-toolkit 0.17.0), KI tools/run_pyswmm.py + a statistics pass that copies pyswmm's own test procedure",
+  "recorded_with": "KISSPATH_PYTHON_ENV/bin/python (pyswmm 2.1.0, swmm-toolkit 0.17.0), KI tools/run_pyswmm.py + a statistics pass that copies pyswmm's own test procedure",
   "reference": "Official values come from pyswmm/tests/test_nodes.py (test_storage_7, test_outfalls_8). Where the official test asserts two values (e.g. 4979 and 4980), expected = their middle and tol = half their gap + 0.1%. The official test uses pytest.approx(rel=UT_PRECISION) with UT_PRECISION=1 (meant as 1%, but pytest reads it as 100%), so it is very loose; the tolerance here is much tighter. Own-run values for this run (2026-10-05): SU1 flooding_volume 621394.5, J3 total_periods 208797, J3 pollutant 1756.2078, J3 cumulative_inflow 1876901.2 - each within 0.001% of the nearest official value.",
   "notes": "Two clean runs gave identical numbers. The pyswmm getters sim.runoff_error/flow_routing_error read inside the run return 0.0, while the report says -0.002% routing error; the report value is used here."
 }

@@ -23,7 +23,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 KI = HERE.parents[1]
 RUN_TOOL = KI / "tools" / "s8_execution" / "run_rzwqm2.py"
 PARSE_TOOL = KI / "tools" / "s9_result_parsing" / "parse_ana_output.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched"
+_DEF = "KISSPATH_BINARIES/rzwqm2/main_ryzen_patched"
 SCEN = "Irr-1-85DS"
 ANA_VARS = ["precipitation", "irrigation", "actual_evaporation", "actual_transpiration",
             "runoff", "stored_soil_water", "biomass_above", "grain_yield", "lai",

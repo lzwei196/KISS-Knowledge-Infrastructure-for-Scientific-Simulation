@@ -3,8 +3,8 @@
   "engine": {
     "name": "dfnWorks",
     "version": "git 821d476 (pydfnworks 2.10.0, DFNGen 2.3)",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen",
-    "python": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (imports pydfnworks from the same repo)",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen",
+    "python": "KISSPATH_PYTHON_ENV/bin/python (imports pydfnworks from the same repo)",
     "source": "https://github.com/lanl/dfnWorks, examples/graph_transport/driver.py (commit 821d4761e6f468c62429256c3f8b7c82a4f06e49)",
     "license": "LANL LA-CC-17-027; GNU LGPL v3 or later (see LICENSE.md in the dfnWorks repo)"
   },

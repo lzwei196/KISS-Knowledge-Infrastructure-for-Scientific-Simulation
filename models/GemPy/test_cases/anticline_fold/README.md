@@ -23,7 +23,7 @@ a 3D geological model from 36 surface points and 2 orientations by implicit inte
 
 ## Engine
 gempy `2026.0.1a2.dev0+ge46fee77b`, gempy_engine `2026.0.1a0`, Python 3.12, numpy 2.4.3,
-in `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python`
+in `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python`
 (gempy is not installed in the shared python_env). This is the Python the KI preflight uses.
 
 ## How to run

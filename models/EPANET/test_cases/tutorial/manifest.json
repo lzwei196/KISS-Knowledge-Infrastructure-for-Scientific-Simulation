@@ -4,7 +4,7 @@
     "name": "EPANET",
     "version": "2.2.0",
     "binary": "runepanet (+ libepanet2.so)",
-    "default_binary": "/mnt/disk1/Hydrocraft_server/models/EPANET/source/repo/SRC_engines/build/src/run/runepanet",
+    "default_binary": "KISSPATH_KI_ROOT/EPANET/source/repo/SRC_engines/build/src/run/runepanet",
     "source": "USEPA/EPANET2.2 git 598ee6cd214de07a0d62e7dafc1bdbf09173645a, User_Manual/docs/tutorial.inp + tutorial.out",
     "license": "MIT (EPANET, SRC_engines/LICENSE)"
   },

@@ -28,7 +28,7 @@ HERE = Path(__file__).resolve().parent
 MAN = json.loads((HERE / "manifest.json").read_text())
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_dhsvm.py"
-_DEF_BIN = "/mnt/disk1/Hydrocraft_server/models/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM"
+_DEF_BIN = "KISSPATH_KI_ROOT/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM"
 CONFIG = "INPUT.Chiwawa.Baseline"
 
 # ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ class _Share:
 def _pcs_bin():
     import shutil as _sh
     for c in (_os.environ.get("BAIDUPCS_BIN"), _sh.which("BaiduPCS-Py"),
-              "/mnt/disk1/Hydrocraft_server/python_env/bin/BaiduPCS-Py"):
+              "KISSPATH_PYTHON_ENV/bin/BaiduPCS-Py"):
         if c and _os.path.isfile(c) and _os.access(c, _os.X_OK):
             return c
     return None

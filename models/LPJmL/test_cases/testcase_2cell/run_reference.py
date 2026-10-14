@@ -18,7 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP_PATH = HERE / "expected.json"
 RUN_TOOL = HERE.parents[1] / "tools" / "run_lpjml.py"
-DEFAULT_BIN = "/home/server/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml"
+DEFAULT_BIN = "KISSPATH_HOME/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml"
 NEED_VERSION = "6.1.9"
 SUCCESS_LINE = "lpjml successfully terminated, 2 grid cells processed"
 CLEAR_ENV = ("LPJINPATH", "LPJOUTPATH", "LPJRESTARTPATH", "LPJOPTIONS", "LPJPREP", "LPJNOPP", "LPJROOT")

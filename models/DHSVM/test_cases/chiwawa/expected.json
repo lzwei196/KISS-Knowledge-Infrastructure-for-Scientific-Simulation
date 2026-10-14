@@ -22,7 +22,7 @@
     {"name": "nan_inf_tokens_in_outputs", "expected": 0, "tol": 0, "why": "no NaN/Inf values in any output file"}
   ],
   "recorded_on": "2026-10-06",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM run through the KI tool tools/run_dhsvm.py on the unchanged official inputs (pack DHSVM/chiwawa_v1)",
+  "recorded_with": "KISSPATH_KI_ROOT/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM run through the KI tool tools/run_dhsvm.py on the unchanged official inputs (pack DHSVM/chiwawa_v1)",
   "reference": "The DHSVM repo ships no reference outputs for Chiwawa (the output/ folder is not tracked), so the numbers come from our own runs: two clean runs (one through the KI tool, one direct) gave byte-identical output files (Aggregated.Values, Mass.Balance, Mass.Final.Balance, Stream.Flow, Streamflow.Only, saturation_extent.txt).",
   "notes": "The official period is one water year and runs in about 2-3 minutes, so nothing was shortened. Mass.Final.Balance prints 3 decimals, so tol 0.002 mm there; Streamflow.Only prints 5 significant digits."
 }

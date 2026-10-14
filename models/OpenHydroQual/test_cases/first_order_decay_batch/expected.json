@@ -19,7 +19,7 @@
   ],
   "finished_check": "return code 0 and the engine line 'Simulation finished!'",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest via the KI tools/run_ohq.py (--fix-paths, --resources <repo>/resources); output read with KI tools/parse_output.py and directly (interleaved t,value columns)",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest via the KI tools/run_ohq.py (--fix-paths, --resources <repo>/resources); output read with KI tools/parse_output.py and directly (interleaved t,value columns)",
   "reference": "inputs/exact_solution.csv (official, upstream git) and reference/OHQ_vs_Exact_Batch_first_order.pdf (official comparison plot)",
   "notes": [
     "The .ohq file names its templates with the developer's Windows paths (C:/Program Files (x86)/..., E:/Projects/...). run_ohq.py --fix-paths writes first_order_decay_fixed.ohq in the temp dir with only those 3 lines changed to the local resources/ dir; nothing else in the file changes. The engine would also fall back to its default template dir by file name, so the result does not depend on this change.",

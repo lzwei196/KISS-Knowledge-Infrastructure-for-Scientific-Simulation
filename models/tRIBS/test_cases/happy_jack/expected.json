@@ -88,7 +88,7 @@
     }
   ],
   "recorded_on": "2026-10-06",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/tRIBS/source/repo/build/tRIBS run through the KI tool tools/run_tribs.py on the unchanged official inputs (pack tRIBS/happy_jack_v1); python_env pytRIBS for the official tests",
+  "recorded_with": "KISSPATH_KI_ROOT/tRIBS/source/repo/build/tRIBS run through the KI tool tools/run_tribs.py on the unchanged official inputs (pack tRIBS/happy_jack_v1); python_env pytRIBS for the official tests",
   "reference": "Official parts: the 9 pass/fail tests and their thresholds come from the tRIBS repo black-box suite (copied unchanged into inputs/happy_jack_pytest/). The official results/reference.zip is used for the precip-total check. The other numbers are from our own runs: two clean runs gave bit-identical output files.",
   "notes": "The official reference.zip was made in March 2024 with an older tRIBS. The current tRIBS 5.3.0 adds an output column (ShortRadInSlope_W_m2) and gives somewhat different states (e.g. peak SWE 61.75 cm vs 54.92 cm in the reference; SWE correlation run vs reference ~0.96; ET 3359 vs 3406 mm). So the reference outputs are NOT a bit-for-bit target, and the official black-box tests do not use them either. run_reference.py prints this comparison as information only."
 }

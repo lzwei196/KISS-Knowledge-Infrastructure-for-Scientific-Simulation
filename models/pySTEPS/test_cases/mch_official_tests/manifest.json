@@ -3,7 +3,7 @@
   "engine": {
     "name": "pysteps",
     "version": "1.20.0",
-    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (import pysteps; tests in pysteps.tests)",
+    "binary": "KISSPATH_PYTHON_ENV/bin/python (import pysteps; tests in pysteps.tests)",
     "source": "pip wheel pysteps 1.20.0 (github.com/pySTEPS/pysteps); tests = pysteps/tests shipped in the package",
     "license": "BSD-3-Clause (pysteps)"
   },

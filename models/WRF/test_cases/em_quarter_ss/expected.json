@@ -89,7 +89,7 @@
   ],
   "finished_check": "ideal rc 0 and 'SUCCESS COMPLETE IDEAL INIT'; wrf rc 0 and 'SUCCESS COMPLETE WRF' in the program output",
   "recorded_on": "2026-10-06",
-  "recorded_with": "two direct serial runs (ideal then wrf, OMP_NUM_THREADS=1) in fresh dirs with /home/server/engine_builds_20261006/wrf/install_quarter_ss/bin/{ideal,wrf} (sha256 ideal 8fa575b2e168f07a2318a3f7fcd078b25c25052c8a96f710cddef4a99ee4652e, wrf 3d63fcca218855f5d3b905c8568d958c0bb1b77650237cfb9a13b0fc2ef1e314); wrfinput_d01 (179 variables) and wrfout (162 variables) identical in every variable, wrfout byte-identical",
+  "recorded_with": "two direct serial runs (ideal then wrf, OMP_NUM_THREADS=1) in fresh dirs with KISSPATH_HOME/engine_builds_20261006/wrf/install_quarter_ss/bin/{ideal,wrf} (sha256 ideal 8fa575b2e168f07a2318a3f7fcd078b25c25052c8a96f710cddef4a99ee4652e, wrf 3d63fcca218855f5d3b905c8568d958c0bb1b77650237cfb9a13b0fc2ef1e314); wrfinput_d01 (179 variables) and wrfout (162 variables) identical in every variable, wrfout byte-identical",
   "reference": "https://github.com/wrf-model/WRF test/em_quarter_ss (no reference outputs shipped)",
   "notes": [
     "Inputs namelist.input and input_sounding taken with git show f15568cc:test/em_quarter_ss/<file>, unmodified. README.quarter_ss is the upstream case description (information only)."

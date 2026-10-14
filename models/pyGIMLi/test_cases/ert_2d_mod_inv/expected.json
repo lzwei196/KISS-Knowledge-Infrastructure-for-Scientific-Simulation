@@ -144,7 +144,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python (pygimli 1.5.5.post1, pgcore 1.5.5), OMP_NUM_THREADS=4, MPLBACKEND=Agg",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python (pygimli 1.5.5.post1, pgcore 1.5.5), OMP_NUM_THREADS=4, MPLBACKEND=Agg",
   "reference": "official_checks are the upstream values asserted inside the official script (with the upstream tolerance, |chi2-value| < 0.1). numeric_checks were recorded from our own real runs (12 clean runs of the script, 4 runs of the KI tool). Exactly repeatable every time: simulated data (simple.dat byte-identical), mesh, the regular-grid inversion, and the KI-tool inversion of simple.dat. NOT bit-repeatable: the script's own first inversion (automatic mesh) gave 3 slightly different results (chi2 0.70378/0.70379/0.70821, min 22.9602-22.9664, max 146.710-146.741), so those two checks have wider tolerances; all stay inside the upstream assert.",
   "notes": "No change to the official script. Only the matplotlib backend is set to Agg (env var) so no windows open; this does not touch any numbers. The KI tool reads simple.dat as saved by the script; the file stores values with limited digits, so its model min/max differ from the script's own by about 1e-5 Ohm m."
 }

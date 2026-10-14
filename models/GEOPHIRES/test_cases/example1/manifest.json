@@ -3,7 +3,7 @@
   "engine": {
     "name": "GEOPHIRES-X",
     "version": "3.11.25",
-    "binary": "<python with geophires_x> -m geophires_x (server: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv/bin/python)",
+    "binary": "<python with geophires_x> -m geophires_x (server: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GEOPHIRES/venv/bin/python)",
     "source": "NREL/GEOPHIRES-X git, tests/examples/example1.txt + example1.out (commit 870971c89451aa98128a151dce9d54585c1df2fa)",
     "license": "MIT (GEOPHIRES-X, NREL)"
   },

@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_hecras.py"
-_DEF = "/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe"
+_DEF = "KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe"
 INPUTS = ("MIXED.PRJ", "MIXED.P01", "MIXED.f01", "MIXED.g01", "MIXED.g01.hdf",
           "MIXED.r01", "MIXED.rasmap")
 

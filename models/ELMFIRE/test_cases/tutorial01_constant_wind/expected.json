@@ -83,8 +83,8 @@
   ],
   "finished_normally_check": "01-run.sh return code 0 AND the engine line 'End of simulation reached successfully' in the log (01-run.sh itself always ends with exit 0, so the line is the real test)",
   "recorded_on": "2026-10-05",
-  "recorded_with": "elmfire_2025.1002 at /home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin, GDAL 3.12.4 command line tools, single process; run by run_reference.py",
-  "run_tweak": "Temp copy only: PATH_TO_GDAL in elmfire.data.in is changed from '/usr/bin' (official) to the folder holding gdal_translate on PATH (/home/server/.local/bin here), because the server has no GDAL in /usr/bin and ELMFIRE stops with 'gdal_translate: not found'. It only tells ELMFIRE where gdal_translate is (used to turn input .tif into .bsq); no model setting changes. A leftover local run in the tutorial folder from April 2026 (not official) also printed 3852.1 acres.",
+  "recorded_with": "elmfire_2025.1002 at KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin, GDAL 3.12.4 command line tools, single process; run by run_reference.py",
+  "run_tweak": "Temp copy only: PATH_TO_GDAL in elmfire.data.in is changed from '/usr/bin' (official) to the folder holding gdal_translate on PATH (KISSPATH_HOME/.local/bin here), because the server has no GDAL in /usr/bin and ELMFIRE stops with 'gdal_translate: not found'. It only tells ELMFIRE where gdal_translate is (used to turn input .tif into .bsq); no model setting changes. A leftover local run in the tutorial folder from April 2026 (not official) also printed 3852.1 acres.",
   "reference": "none official; own runs (repeat exact)",
   "sha256_informational": {
     "time_of_arrival_0000001_0019804.tif": "873b164bb20358062c55f59062f3caa2701e94aa9171a73a59850f6b9136afa9",

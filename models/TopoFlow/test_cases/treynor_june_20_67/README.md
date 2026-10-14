@@ -16,7 +16,7 @@ Only the files the run reads are kept: all files of the case folder (minus `cali
 | Engine | TopoFlow 3.71 (2023-09-25, as printed by the model), python package `topoflow` |
 | Source | github.com/peckhams/topoflow36, commit a1c07d0a72185cbd0baeff1ef77feadad09c3f88 (2025-10-09) |
 | Licence | MIT (Copyright (c) 2019 Scott D. Peckham) |
-| Engine python | `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python` |
+| Engine python | `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TopoFlow/venv/bin/python` |
 | KI | `TopoFlow`, run through `tools/run_topoflow.py` |
 
 ## Run

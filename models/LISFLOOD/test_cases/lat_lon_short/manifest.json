@@ -3,7 +3,7 @@
   "engine": {
     "name": "LISFLOOD",
     "version": "4.3.1 (lisflood-model)",
-    "binary": "lisflood (official conda env, default /home/server/miniconda3/envs/lisflood_official/bin/lisflood)",
+    "binary": "lisflood (official conda env, default KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood)",
     "environment": "LISFLOOD's own environment.yml at fe94c33: python 3.7, numpy 1.21.6, xarray 0.20.2, dask 2022.2.0, pandas 1.3.5, netCDF4 1.5.8, pcraster 4.3.3, gdal 3.5.0, lisflood-utilities 0.12.19",
     "source": "https://github.com/ec-jrc/lisflood-code, tests/data/LF_lat_lon_UseCase + tests/test_latlon.py (commit fe94c33b6bd9fe09fa7be43a6dd4fdc8a11f744c, VERSION 4.3.1)",
     "license": "EUPL-1.2 (LISFLOOD)"

@@ -49,7 +49,7 @@ Exit `0` = PASS, `2` = checks failed, `3` = the `crhm` binary was not found
 
 ## Engine / build
 
-Installed at `/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm`
+Installed at `KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm`
 (v4.7_16). Set `CRHM_BIN` or pass `--crhm-bin` for another build.
 
 ## Expected results (authentic, recorded 2026-10-04)

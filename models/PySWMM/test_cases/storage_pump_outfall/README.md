@@ -11,7 +11,7 @@ fills to its full 5 ft and overflows. Dynamic-wave routing at 1 s, 2015-11-01 14
 
 | | |
 |---|---|
-| Engine | pyswmm 2.1.0 + swmm-toolkit 0.17.0 (EPA SWMM 5.2.4), in `/mnt/disk1/Hydrocraft_server/python_env` |
+| Engine | pyswmm 2.1.0 + swmm-toolkit 0.17.0 (EPA SWMM 5.2.4), in `KISSPATH_PYTHON_ENV` |
 | Source | https://github.com/pyswmm/pyswmm, tag v2.1.0 (commit 80b9d55), `pyswmm/tests/data/model_storage_pump.inp` |
 | Licence | BSD-2-Clause (pyswmm) |
 | KI | `PySWMM`, run tool `tools/run_pyswmm.py` |

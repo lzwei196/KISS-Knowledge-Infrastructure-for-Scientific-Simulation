@@ -9,5 +9,5 @@
      "expected": 27.78, "tol": 0.2, "why": "end of simulation"}
   ],
   "recorded_on": "2026-10-04",
-  "recorded_with": "DLBreach_Barrier.exe via WINE, /mnt/disk1/Hydrocraft_server/model/dlbreach/bin"
+  "recorded_with": "DLBreach_Barrier.exe via WINE, KISSPATH_BINARIES/dlbreach/bin"
 }

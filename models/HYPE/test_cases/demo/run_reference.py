@@ -5,7 +5,7 @@ import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 import numpy as np
 HERE=Path(__file__).resolve().parent; EXP=json.loads((HERE/"expected.json").read_text())
-_DEF="/mnt/disk1/Hydrocraft_server/model/hype/hype"
+_DEF="KISSPATH_BINARIES/hype/hype"
 def load(fp):
     rows=[ln.split('\t') for ln in open(fp,errors="replace") if not ln.startswith('!') and ln.strip()]
     return rows[1:]

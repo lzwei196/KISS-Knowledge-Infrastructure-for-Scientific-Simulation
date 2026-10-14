@@ -3,7 +3,7 @@
   "engine": {
     "name": "TopoFlow",
     "version": "3.71 (2023-09-25), topoflow36 git a1c07d0a72185cbd0baeff1ef77feadad09c3f88",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python (python package topoflow, EMELI framework)",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TopoFlow/venv/bin/python (python package topoflow, EMELI framework)",
     "source": "https://github.com/peckhams/topoflow36 topoflow/examples/Treynor_Iowa_30m (commit a1c07d0, 2025-10-09)",
     "license": "MIT (Copyright (c) 2019 Scott D. Peckham)"
   },

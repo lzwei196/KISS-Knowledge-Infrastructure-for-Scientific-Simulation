@@ -3,7 +3,7 @@
   "engine": {
     "name": "SWAP",
     "version": "4.2.0",
-    "binary": "swap (server: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SWAP/source/repo/builddir/swap, sha256 a696efc5344daa53b3ddeebd3664656d0822959a5b2f4f863efc710469f1cf97)",
+    "binary": "swap (server: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SWAP/source/repo/builddir/swap, sha256 a696efc5344daa53b3ddeebd3664656d0822959a5b2f4f863efc710469f1cf97)",
     "source": "https://github.com/SWAP-model/swap, tests/cases/1.hupselbrook (commit 7587ca3a5f037a7276f1c86059632f921f710775, 2026-01-08)",
     "license": "LGPL-2.1 (SWAP, Wageningen Environmental Research)"
   },

@@ -3,7 +3,7 @@
   "engine": {
     "name": "PyAEZ",
     "version": "2.2 (git 792e1d4)",
-    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python_with_gdal + PYTHONPATH=/mnt/disk1/Hydrocraft_server/models/PyAEZ/source/repo",
+    "binary": "KISSPATH_PYTHON_ENV/bin/python_with_gdal + PYTHONPATH=KISSPATH_KI_ROOT/PyAEZ/source/repo",
     "source": "https://github.com/gicait/PyAEZ (commit 792e1d4231f6fa75beb98bbeed162a4fa9efbb56); inputs from data_input/, reference from data_output/NB1/",
     "license": "MIT (Copyright 2023 GIC-AIT, FAO-UN)"
   },

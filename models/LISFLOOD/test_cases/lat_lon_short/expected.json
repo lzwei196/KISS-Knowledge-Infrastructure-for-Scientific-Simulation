@@ -112,7 +112,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/miniconda3/envs/lisflood_official/bin/lisflood, started through the KI tool tools/run_lisflood.py (run_model)",
+  "recorded_with": "KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood, started through the KI tool tools/run_lisflood.py (run_model)",
   "reference": "inputs/reference/dis_short.tss and inputs/reference/chanqWin_short.tss (official, written by the LISFLOOD team on 2022-07-28 with run_lat_lon_createreference.xml)",
   "notes": "Settings changes are made only in the temp copy: StepStart, StepEnd, PathOut (same as the upstream test) and PathRoot set to the full temp path instead of $(SettingsPath) (same folder; needed because the KI run tool does not expand $(SettingsPath)). On 2026-10-05 our run gave dis_run.tss and chanqWin.tss with every value byte-identical to the official reference files (only the header line with file path and date differs). Two runs repeated exactly."
 }

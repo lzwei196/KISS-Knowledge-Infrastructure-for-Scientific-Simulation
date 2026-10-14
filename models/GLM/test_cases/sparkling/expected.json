@@ -17,6 +17,6 @@
     }
   ],
   "recorded_on": "2026-10-04",
-  "recorded_with": "glm 3.3.3 from /mnt/disk1/Hydrocraft_server/model/glm/bin/glm",
+  "recorded_with": "glm 3.3.3 from KISSPATH_BINARIES/glm/bin/glm",
   "note": "output_rows counts DATA rows (lake.csv has a header line on top)."
 }

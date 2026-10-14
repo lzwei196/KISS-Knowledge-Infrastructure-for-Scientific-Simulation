@@ -29,10 +29,10 @@ compiled with `f95` (gfortran 13.3) at run time, as TELEMAC always does.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--hometel DIR] [--build-dir DIR]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--hometel DIR] [--build-dir DIR]
 ```
 TELEMAC lookup: `--hometel` -> `$HOMETEL` -> `which telemac2d.py` -> server default
-(`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TELEMAC_MASCARET/source/repo`).
+(`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TELEMAC_MASCARET/source/repo`).
 Build dir: `--build-dir` -> `$BUILD_DIR` -> `<hometel>/builds/main_gfortran_release`.
 The script copies the inputs to a fresh temp dir, sets HOMETEL, BUILD_DIR, SYSTELCFG,
 PYTHONPATH and LD_LIBRARY_PATH, runs the case through the KI tool `tools/run_telemac.py`

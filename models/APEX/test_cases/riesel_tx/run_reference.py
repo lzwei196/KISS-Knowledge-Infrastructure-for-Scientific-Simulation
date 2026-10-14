@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/APEX/knowledge_infrastructure/reference/APEX0806.exe"
+_DEF = "KISSPATH_KI_ROOT/APEX/knowledge_infrastructure/reference/APEX0806.exe"
 REF_FORT = ("fort.102", "fort.108", "fort.112", "fort.128")
 _NUM = re.compile(r"[-+]?\d*\.?\d+(?:[EeDd][-+]?\d+)?")
 

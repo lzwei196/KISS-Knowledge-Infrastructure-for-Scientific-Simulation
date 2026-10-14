@@ -20,6 +20,6 @@
   ],
   "finished_check": "return code 0 from the KI run tool, and the screen output has '--> write regression output file: <path>/543_flow.regression' and 'Wall Clock Time:'; plus PFLOTRAN's own regression_tests.py --check-only prints 'All tests passed.' with exit 0",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/PFLOTRAN/source/repo/src/pflotran/pflotran (serial, 1 rank) run through the KI tools/run_pflotran.py; output compared by inputs/regression_tests.py",
+  "recorded_with": "KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran (serial, 1 rank) run through the KI tools/run_pflotran.py; output compared by inputs/regression_tests.py",
   "reference": "Official gold file regression_tests/default/543/543_flow.regression.gold from https://bitbucket.org/pflotran/pflotran at tag v6.0 (last changed in commit cfa897925e615ff6c60efbb8bc07a8d6a8313f71). Our runs match it exactly (every value in the file is the same digit for digit; the only extra line is the run time 'Time (seconds)', which the gold file does not hold)."
 }

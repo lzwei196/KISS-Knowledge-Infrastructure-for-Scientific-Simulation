@@ -33,8 +33,8 @@ check. The full use case folder is 34 MB; this package is about 21 MB.
 - It needs LISFLOOD's OFFICIAL conda env, built from the repo's own `environment.yml`:
   python 3.7, numpy 1.21.6, xarray 0.20.2, dask 2022.2.0, pandas 1.3.5, netCDF4 1.5.8,
   pcraster 4.3.3, gdal 3.5.0, lisflood-utilities 0.12.19.
-  On this server: `/home/server/miniconda3/envs/lisflood_official/bin/lisflood`.
-- Why this env: the older GeoForge env (`/home/server/miniconda3/envs/lisflood`, python 3.11,
+  On this server: `KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood`.
+- Why this env: the older GeoForge env (`KISSPATH_HOME/miniconda3/envs/lisflood`, python 3.11,
   newer xarray/dask) stops on these official files with an xarray/dask chunking error
   (the lat dimension is split into chunks inside `apply_ufunc`). The official env has the
   library versions the LISFLOOD team tested with.
@@ -47,7 +47,7 @@ python run_reference.py [--lisflood-bin /path/to/official_env/bin/lisflood] [--k
 ```
 
 Engine lookup order: `--lisflood-bin` -> `$LISFLOOD_BIN` -> `which lisflood` ->
-`/home/server/miniconda3/envs/lisflood_official/bin/lisflood`. Any python 3 can run the
+`KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood`. Any python 3 can run the
 script; it uses the `python` next to the chosen `lisflood` for the official comparator.
 
 The script copies `inputs/` to a fresh temp dir, makes the settings changes below in the
@@ -97,6 +97,6 @@ These were gaps in the KI run tool `tools/run_lisflood.py` and its preflight whe
 2. **Fixed in `11f9c59`:** the run tool now expands `$(SettingsPath)`. Before: it did not, so PathRoot is written as a full path in the temp copy.
 3. **Fixed in `11f9c59`:** the run tool now finds the engine via `--lisflood-bin` / `LISFLOOD_BIN` / `envs/lisflood`. Before: it called bare `lisflood` from PATH, so the script puts the official env's `bin/` first on PATH.
 4. **Fixed in `11f9c59`:** `validate_output` now accepts `.tss` (and other) output written by this run. Before: it looked only for `dis.nc`. The script still reads the `.tss` files itself to compare them with the official `TSSComparator`.
-5. **Partly fixed in `fa72538`, `709cd3a`:** the preflight now does a real start probe, uses the run tool's own engine lookup, and shows an info line for the `lisflood_official` env; still open: its default engine is still the older env `/home/server/miniconda3/envs/lisflood`, which fails on these official files (see above).
+5. **Partly fixed in `fa72538`, `709cd3a`:** the preflight now does a real start probe, uses the run tool's own engine lookup, and shows an info line for the `lisflood_official` env; still open: its default engine is still the older env `KISSPATH_HOME/miniconda3/envs/lisflood`, which fails on these official files (see above).
 
 The workaround in `run_reference.py` is kept so the case also runs with older tool versions.

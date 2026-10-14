@@ -4,7 +4,7 @@ Foundation case for the DLBreach KI. Exit 0 PASS, 2 checks failed, 3 missing dep
 import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 HERE=Path(__file__).resolve().parent; EXP=json.loads((HERE/"expected.json").read_text())
-_DEF="/mnt/disk1/Hydrocraft_server/model/dlbreach/bin/DLBreach_Barrier.exe"
+_DEF="KISSPATH_BINARIES/dlbreach/bin/DLBreach_Barrier.exe"
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--exe"); a=ap.parse_args()
     exe=next((c for c in (a.exe, os.environ.get("DLBREACH_BIN"), _DEF) if c and Path(c).exists()), None)

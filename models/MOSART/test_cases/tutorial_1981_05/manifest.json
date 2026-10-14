@@ -3,7 +3,7 @@
   "engine": {
     "name": "mosartwmpy",
     "version": "0.6.2",
-    "binary": "/mnt/disk1/Hydrocraft_server/models/MOSART/venv/bin/python (import mosartwmpy)",
+    "binary": "KISSPATH_KI_ROOT/MOSART/venv/bin/python (import mosartwmpy)",
     "source": "https://github.com/IMMM-SFA/mosartwmpy (engine: PyPI mosartwmpy 0.6.2; config notebooks/config.yaml from git commit 54d715e, version 0.7.0, file unchanged); data: Zenodo record 6959736 mosartwmpy_tutorial_1981_05.zip (md5 4a1cdd8329a2e2f82fa0653f2acc19ab), listed in mosartwmpy/data_manifest.yaml as 'tutorial'",
     "license": "mosartwmpy code: BSD 2-Clause (Copyright 2021 Battelle Memorial Institute); tutorial data: Zenodo licence 'other-open'"
   },

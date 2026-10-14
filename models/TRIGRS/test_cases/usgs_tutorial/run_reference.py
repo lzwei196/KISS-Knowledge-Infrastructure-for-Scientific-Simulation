@@ -29,8 +29,8 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_trigrs.py"
 PARSE_TOOL = TOOLS / "parse_trigrs_output.py"
-_SRC = "/mnt/disk1/Hydrocraft_server/models/TRIGRS/source/repo/source/trigrs_full/src"
-_DEF_TRG = (f"{_SRC}/TRIGRS/trg", "/mnt/disk1/Hydrocraft_server/models/TRIGRS/bin/trg")
+_SRC = "KISSPATH_KI_ROOT/TRIGRS/source/repo/source/trigrs_full/src"
+_DEF_TRG = (f"{_SRC}/TRIGRS/trg", "KISSPATH_KI_ROOT/TRIGRS/bin/trg")
 _DEF_TPX = (f"{_SRC}/TopoIndex/tpx",)
 PATH_EDITS = {
     "tpx_in.txt": [("data/dem.asc", "Data/tutorial/dem.asc"),

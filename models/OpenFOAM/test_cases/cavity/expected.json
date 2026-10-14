@@ -21,7 +21,7 @@
     "every final residual of the last step < 1e-3 (KI run tool threshold)"
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "blockMesh + foamRun from /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin (env from its etc/bashrc); foamRun run through the KI tools/run_openfoam.py, fields read through the KI tools/parse_openfoam_output.py",
+  "recorded_with": "blockMesh + foamRun from KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin (env from its etc/bashrc); foamRun run through the KI tools/run_openfoam.py, fields read through the KI tools/parse_openfoam_output.py",
   "reference": "None ships with the tutorial. The well-known Ghia et al. (1982) centreline data is for laminar Re=100 on fine grids and is not part of OpenFOAM, so it is not used.",
   "notes": "Tolerances are loose against the exact repeat (identical bytes) so that a rebuild with another compiler still passes; a change in the physics would move these numbers by far more."
 }

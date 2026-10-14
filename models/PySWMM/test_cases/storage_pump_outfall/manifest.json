@@ -3,7 +3,7 @@
   "engine": {
     "name": "pyswmm + swmm-toolkit (EPA SWMM)",
     "version": "pyswmm 2.1.0, swmm-toolkit 0.17.0, SWMM 5.2.4",
-    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (import pyswmm)",
+    "binary": "KISSPATH_PYTHON_ENV/bin/python (import pyswmm)",
     "source": "https://github.com/pyswmm/pyswmm pyswmm/tests/data/model_storage_pump.inp, tag v2.1.0 (commit 80b9d558f3f235cc347ac8eb9f03d01fe9c55463)",
     "license": "BSD-2-Clause (pyswmm)"
   },

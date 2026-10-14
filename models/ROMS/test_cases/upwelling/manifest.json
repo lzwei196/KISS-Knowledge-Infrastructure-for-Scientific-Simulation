@@ -3,7 +3,7 @@
   "engine": {
     "name": "ROMS",
     "version": "4.3 (git bf66be420a4df245b93aa4f64086a5c89ac71e1f, 2026-03-12)",
-    "binary": "romsS (serial), built with ROMS_APP=UPWELLING: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS",
+    "binary": "romsS (serial), built with ROMS_APP=UPWELLING: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS",
     "source": "github.com/myroms/roms, ROMS/External/roms_upwelling.in + ROMS/Include/upwelling.h (commit bf66be4)",
     "license": "MIT (License_ROMS.md, Copyright (c) 2002-2026 ROMS)"
   },

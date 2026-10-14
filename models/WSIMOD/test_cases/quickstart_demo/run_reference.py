@@ -18,7 +18,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_wsimod.py"
 PARSE_TOOL = TOOLS / "parse_wsimod_output.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/WSIMOD/source/repo"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/WSIMOD/source/repo"
 INPUTS = ("quickstart_demo.yaml", "timeseries_data.csv")
 
 

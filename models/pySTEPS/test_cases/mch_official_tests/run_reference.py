@@ -15,7 +15,7 @@ Foundation case for the pySTEPS KI. Steps:
 Exit 0 PASS, 2 checks failed, 3 engine/dependency missing.
 
 Python lookup: --python -> $PYSTEPS_PYTHON -> this python (if it has pysteps) ->
-server default /mnt/disk1/Hydrocraft_server/python_env/bin/python.
+server default KISSPATH_PYTHON_ENV/bin/python.
 The KI tools in tools/ are not used (they cannot drive pytest; see README "Known KI gaps").
 """
 import argparse, json, os, shutil, subprocess, sys, tempfile
@@ -24,7 +24,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
-_DEF = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+_DEF = "KISSPATH_PYTHON_ENV/bin/python"
 DEPS = "import pysteps, pysteps.tests, pytest, cv2, PIL, importlib.metadata as m; print(m.version('pysteps'))"
 THREADS = {k: "4" for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
                             "NUMEXPR_NUM_THREADS")}

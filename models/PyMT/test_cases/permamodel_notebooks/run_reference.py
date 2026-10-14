@@ -22,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_model.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyMT/venv/bin/python"
 DEFAULTS = HERE / "inputs" / "pymt_permamodel_0.2.3_data"
 
 # pymt keeps setup() parameters on the model object, so in the notebook each new

@@ -20,7 +20,7 @@
   ],
   "finished_normally": "run_hecras.py exit 0 with ok=true; RasSteady.exe return code 0 and its line 'Finished Steady Flow Simulation'",
   "recorded_on": "2026-10-05",
-  "recorded_with": "wine '/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe' MIXED.r01 (sha256 deaef5889cba19343ec3a116db10d4859fc6f06c3432b4041595390be09226f0), driven by the KI tools/run_hecras.py; output read with tools/parse_output_hecras.py and tools/validate_hecras.py",
+  "recorded_with": "wine 'KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe' MIXED.r01 (sha256 deaef5889cba19343ec3a116db10d4859fc6f06c3432b4041595390be09226f0), driven by the KI tools/run_hecras.py; output read with tools/parse_output_hecras.py and tools/validate_hecras.py",
   "reference": "Official reference = 'Observed WS' lines in the official MIXED.f01 (19 values, PF 1). Solver values = own run, repeated twice with identical output.",
   "notes": "No input change. run_hecras.py itself seeds MIXED.p01.tmp.hdf from MIXED.g01.hdf in its temp workspace (its normal step, which the HEC-RAS GUI would do). After 'Finished Steady Flow Simulation' RasSteady.exe prints an HDF5-DIAG 'H5Gopen2: not a location' message; return code is 0 and all results are written, so it is noise, not a failure. Tolerances (0.005 ft on WS) leave room for float differences on another WINE/CPU; on this server the run repeats exactly."
 }

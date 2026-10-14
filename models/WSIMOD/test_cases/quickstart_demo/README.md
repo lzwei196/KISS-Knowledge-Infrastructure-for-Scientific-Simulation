@@ -19,14 +19,14 @@ and leaves through an outlet. The model writes `flows.csv`, `tanks.csv` and `sur
 ## Engine
 Python package `wsimod` version `0.1.dev1+g2f55314d0`, run from the repo source by putting the
 repo folder on `PYTHONPATH` (it is not pip-installed in python_env). Python 3.12.3,
-pandas 3.0.0, numpy 2.4.4 (`/mnt/disk1/Hydrocraft_server/python_env/bin/python`).
+pandas 3.0.0, numpy 2.4.4 (`KISSPATH_PYTHON_ENV/bin/python`).
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--wsimod-src <wsi repo dir>]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--wsimod-src <wsi repo dir>]
 ```
 wsimod lookup: `--wsimod-src` -> `$WSIMOD_SRC` -> already importable -> server default
-`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/WSIMOD/source/repo`.
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/WSIMOD/source/repo`.
 The script copies `inputs/` to a fresh temp dir, runs the KI tool `tools/run_wsimod.py
 --mode api` (same code path as the official `wsimod` CLI), reads the output with
 `tools/parse_wsimod_output.py --summary` and pandas, checks `expected.json`, and deletes the

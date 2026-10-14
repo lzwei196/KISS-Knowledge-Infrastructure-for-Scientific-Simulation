@@ -105,6 +105,6 @@
   ],
   "finished_normally": "run tool tools/run_monica.py returns rc 0 and status 'success', and sim-out.csv is written (monica-run prints no success line; it is silent on success)",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/MONICA/bin/monica-run with MONICA_PARAMETERS=/mnt/disk1/Hydrocraft_server/models/MONICA/source/monica-parameters, via tools/run_monica.py",
+  "recorded_with": "KISSPATH_KI_ROOT/MONICA/bin/monica-run with MONICA_PARAMETERS=KISSPATH_KI_ROOT/MONICA/source/monica-parameters, via tools/run_monica.py",
   "reference": "own run (no matching official reference output ships with the example); output sha256 33ed06134972e98b27c60208aa0249d743ffcd7449728c355b84b5f946d2829c"
 }

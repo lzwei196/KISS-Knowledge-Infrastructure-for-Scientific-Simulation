@@ -22,7 +22,7 @@ It covers:
   pysteps-data has no licence file; it is the official pysteps example data.
 
 ## Engine
-`/mnt/disk1/Hydrocraft_server/python_env/bin/python` with pysteps 1.20.0,
+`KISSPATH_PYTHON_ENV/bin/python` with pysteps 1.20.0,
 opencv 4.11.0, Pillow 10.4.0, pytest 9.0.3.
 
 ## How to run
@@ -30,7 +30,7 @@ opencv 4.11.0, Pillow 10.4.0, pytest 9.0.3.
 python run_reference.py [--python /path/to/python]
 ```
 Python lookup: `--python` -> `$PYSTEPS_PYTHON` -> the python running the script (if it has
-pysteps) -> `/mnt/disk1/Hydrocraft_server/python_env/bin/python`.
+pysteps) -> `KISSPATH_PYTHON_ENV/bin/python`.
 Exit codes: 0 PASS, 2 checks failed, 3 dependency missing (nothing run).
 Takes about 90 s and 1.4 GB RAM (thread pools are set to 4).
 

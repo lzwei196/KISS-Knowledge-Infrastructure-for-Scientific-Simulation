@@ -25,7 +25,7 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_mosartwmpy.py"
 PARSE_TOOL = HERE.parents[1] / "tools" / "parse_mosart_output.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/MOSART/venv/bin/python"
+_DEF = "KISSPATH_KI_ROOT/MOSART/venv/bin/python"
 
 LAUNCHER = r'''
 import runpy, sys

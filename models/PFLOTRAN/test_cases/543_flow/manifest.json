@@ -3,7 +3,7 @@
   "engine": {
     "name": "PFLOTRAN",
     "version": "v6.0 (git fab315dc6559306f2f93b27571bf5add812dd820)",
-    "binary": "/mnt/disk1/Hydrocraft_server/models/PFLOTRAN/source/repo/src/pflotran/pflotran",
+    "binary": "KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran",
     "build": "PETSc 3.21, HDF5 1.14 (miniconda3 libs), OpenMPI",
     "source": "https://bitbucket.org/pflotran/pflotran, tag v6.0, files from regression_tests/default/543/ and regression_tests/regression_tests.py",
     "license": "LGPL (PFLOTRAN, see LICENSE in the PFLOTRAN repo)"

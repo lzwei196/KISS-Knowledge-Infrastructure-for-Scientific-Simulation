@@ -3,7 +3,7 @@
   "engine": {
     "name": "tRIBS",
     "version": "5.3.0 (Summer 2025), git 813aad5560a72c7529f8b6a5035a67c20f6a6fa0",
-    "binary": "tRIBS (serial build; server default /mnt/disk1/Hydrocraft_server/models/tRIBS/source/repo/build/tRIBS)",
+    "binary": "tRIBS (serial build; server default KISSPATH_KI_ROOT/tRIBS/source/repo/build/tRIBS)",
     "source": "https://github.com/tribshms/tRIBS",
     "license": "MIT (tRIBS code); CC-BY-4.0 (benchmark data, Zenodo 10909507)"
   },
@@ -27,7 +27,7 @@
     "share_url": "https://pan.baidu.com/s/1-7fewTfk2tuJxLJfKzR3wA",
     "share_pwd": "8ncs",
     "share_valid": "permanent (no expiry)",
-    "server_default": "/home/server/ki_test_case_packs/tRIBS/happy_jack_v1",
+    "server_default": "KISSPATH_HOME/ki_test_case_packs/tRIBS/happy_jack_v1",
     "file_count": 102,
     "total_bytes": 236838317,
     "source": {

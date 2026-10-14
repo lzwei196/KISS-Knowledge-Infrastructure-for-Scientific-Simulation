@@ -3,7 +3,7 @@
   "engine": {
     "name": "WRF (ARW)",
     "version": "4.7.1, commit f15568ccc1447780e3bd664b9f0196edd784bf33; submodules noahmp e5c0859874407859936739e8be8741f9aed369ee, MYNN-EDMF 90f36c25259ec1960b24325f5b29ac7c5adeac73; MMM-physics 0ea59b1cd673006ee7a9a9958c533a6a0e354243 (20240626-MPASv8.2)",
-    "binary": "ideal + wrf built for WRF_CASE=EM_QUARTER_SS: /home/server/engine_builds_20261006/wrf/install_quarter_ss/bin/ideal (sha256 8fa575b2e168f07a2318a3f7fcd078b25c25052c8a96f710cddef4a99ee4652e), .../bin/wrf (sha256 3d63fcca218855f5d3b905c8568d958c0bb1b77650237cfb9a13b0fc2ef1e314); serial, GNU stanza toolchain, gfortran/gcc 13.3.0, built 2026-10-06",
+    "binary": "ideal + wrf built for WRF_CASE=EM_QUARTER_SS: KISSPATH_HOME/engine_builds_20261006/wrf/install_quarter_ss/bin/ideal (sha256 8fa575b2e168f07a2318a3f7fcd078b25c25052c8a96f710cddef4a99ee4652e), .../bin/wrf (sha256 3d63fcca218855f5d3b905c8568d958c0bb1b77650237cfb9a13b0fc2ef1e314); serial, GNU stanza toolchain, gfortran/gcc 13.3.0, built 2026-10-06",
     "source": "https://github.com/wrf-model/WRF test/em_quarter_ss (namelist.input, input_sounding, README.quarter_ss via git show f15568cc, unmodified)",
     "license": "public domain (NCAR/UCAR notice, LICENSE_WRF.txt)"
   },

@@ -14,5 +14,5 @@
      "why": "first of the 3 annual output variables, final simulation year"}
   ],
   "recorded_on": "2026-10-04",
-  "recorded_with": "bgc from /mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+  "recorded_with": "bgc from KISSPATH_BINARIES/biome-bgc/bgc-src/bgc"
 }

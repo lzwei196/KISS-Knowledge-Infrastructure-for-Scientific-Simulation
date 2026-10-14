@@ -19,7 +19,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "s5_run" / "run_badlands.py"
 PARSE_TOOL = TOOLS / "s6_output" / "parse_badlands_output.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv/bin/python"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python"
 
 
 def imports_badlands(py):

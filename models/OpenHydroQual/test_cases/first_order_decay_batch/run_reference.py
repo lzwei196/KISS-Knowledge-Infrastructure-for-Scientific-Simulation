@@ -22,7 +22,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_ohq.py"
 PARSE_TOOL = TOOLS / "parse_output.py"
-_DEF_BIN = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/"
+_DEF_BIN = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/"
             "source/repo/OHQLibTest/OHQLibTest")
 INPUTS = ("first_order_decay.ohq", "exact_solution.csv")
 CONC = "Reactor (1)_A:concentration"

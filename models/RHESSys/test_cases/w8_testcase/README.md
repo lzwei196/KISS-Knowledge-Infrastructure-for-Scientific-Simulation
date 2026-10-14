@@ -9,7 +9,7 @@ team uses this case to check that code changes do not break the model.
 
 ## Source
 - Repository: https://github.com/RHESSys/RHESSys, commit `f9d1bbf8d161aa55b6a51061dc320188ead44962`
-  (2024-03-05). Server copy: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo`.
+  (2024-03-05). Server copy: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/RHESSys/source/repo`.
 - `inputs/` = the unmodified files from `Testing/` at that commit, taken with `git show HEAD:<path>`
   (the server folder has leftover run outputs, so files were taken from git, not the folder):
   worldfile + header, flow table, 6 parameter (def) files, climate base station + daily rain/tmax/tmin,
@@ -30,7 +30,7 @@ It may change results slightly against an engine built from clean upstream code.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--rhessys-bin PATH] [--keep]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--rhessys-bin PATH] [--keep]
 ```
 Binary lookup: `--rhessys-bin` -> `$RHESSYS_BIN` -> `which rhessys7.4` -> server default path.
 The script copies `inputs/` to a fresh temp dir, runs the official `TestCase.Rmd` command line

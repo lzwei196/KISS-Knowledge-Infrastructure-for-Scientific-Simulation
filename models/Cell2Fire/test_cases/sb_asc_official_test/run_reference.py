@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 REF_ZIP = HERE / "reference" / "target_results.zip"
 REF_PREFIX = "target_results/sb-asc/"
-_DEF = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Cell2Fire/"
+_DEF = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Cell2Fire/"
         "source/repo/Cell2Fire/Cell2Fire")
 INPUTS = ("fuels.asc", "Weather.csv", "spain_lookup_table.csv")
 NSIMS = 113

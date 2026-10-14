@@ -19,7 +19,7 @@
     {"name": "nitrogen_balance_end_kgha", "expected": 0.0, "tol": 0.01, "why": "model's own MASSBAL.OUT N balance error at end (run gave 7.1e-4 kg N/ha)"}
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched (sha256 fcb5c9491da1c7ab0732a491b890b0194ca968546487424a0f560095e3f82851) via KI tools/s8_execution/run_rzwqm2.py; values read with KI tools/s9_result_parsing/parse_ana_output.py",
+  "recorded_with": "KISSPATH_BINARIES/rzwqm2/main_ryzen_patched (sha256 fcb5c9491da1c7ab0732a491b890b0194ca968546487424a0f560095e3f82851) via KI tools/s8_execution/run_rzwqm2.py; values read with KI tools/s9_result_parsing/parse_ana_output.py",
   "reference": "No official reference output ships with this scenario. expdata.dat holds the measured field data (observations), not model output, so it is not used as expected values.",
   "notes": "During the run the engine prints 'sh: copy: not found' twice (a Windows 'copy' shell call; harmless on Linux) and 'check your expdata.dat file (daily data)' (a note about the observation file used for the model-vs-measured tables). Neither affects the results checked here."
 }

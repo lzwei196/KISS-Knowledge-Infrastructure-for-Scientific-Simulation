@@ -23,12 +23,12 @@ It is a small 3D variably saturated (Richards) flow problem:
 - Licence: PFLOTRAN is released under the GNU LGPL (see `LICENSE` in the repo).
 
 ## Engine
-`/mnt/disk1/Hydrocraft_server/models/PFLOTRAN/source/repo/src/pflotran/pflotran`
+`KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran`
 (PFLOTRAN v6.0, built with PETSc 3.21, HDF5 1.14, OpenMPI from miniconda3).
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--pflotran-bin PATH]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--pflotran-bin PATH]
 ```
 Binary lookup: `--pflotran-bin` -> `$PFLOTRAN_BIN` -> `which pflotran` -> server default path.
 The script:

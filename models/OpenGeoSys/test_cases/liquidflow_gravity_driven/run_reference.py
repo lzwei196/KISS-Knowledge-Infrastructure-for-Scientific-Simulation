@@ -19,7 +19,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_ogs.py"
 PARSE_TOOL = TOOLS / "parse_ogs_output.py"
-_VENV = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/venv/bin"
+_VENV = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenGeoSys/venv/bin"
 INPUTS = ("gravity_driven.prj", "gravity_driven.gml", "mesh2D.vtu")
 OUT_VTU = "gravity_driven_ts_1_t_1.000000.vtu"
 # official DIFF_DATA lines: reference file, output file, field a, field b, abs tol, rel tol

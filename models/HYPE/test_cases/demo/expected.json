@@ -28,6 +28,6 @@
     }
   ],
   "recorded_on": "2026-10-04",
-  "recorded_with": "hype 5.35.0 from /mnt/disk1/Hydrocraft_server/model/hype/hype",
+  "recorded_with": "hype 5.35.0 from KISSPATH_BINARIES/hype/hype",
   "stdout_note": "HYPE writes 'halt: successfully' to its log file, not captured stdout; pass is judged by result files + numeric anchors."
 }

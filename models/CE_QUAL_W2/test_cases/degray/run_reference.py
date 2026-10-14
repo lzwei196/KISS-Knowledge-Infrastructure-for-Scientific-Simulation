@@ -8,7 +8,7 @@ import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 HERE=Path(__file__).resolve().parent; EXP=json.loads((HERE/"expected.json").read_text())
 PREP=HERE/"prepare_example_linux.py"
-_DEF="/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5"
+_DEF="KISSPATH_BINARIES/ce_qual_w2/bin/w2_v5"
 def find_bin(a):
     for c in (a, os.environ.get("W2_BIN"), shutil.which("w2_v5"), _DEF):
         if c and Path(c).exists(): return c

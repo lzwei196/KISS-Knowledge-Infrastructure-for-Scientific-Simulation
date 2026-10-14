@@ -53,7 +53,7 @@
   ],
   "extra_check": "posterior RMSE < prior RMSE < obs RMSE (the filter must reduce error)",
   "recorded_on": "2026-10-05",
-  "recorded_with": "perfect_model_obs + filter from /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work, run through the KI tools/run_dart.py",
+  "recorded_with": "perfect_model_obs + filter from KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DART/source/repo/models/lorenz_63/work, run through the KI tools/run_dart.py",
   "sha256_informational": {
     "obs_seq.out": "f2ba08181f09a3045806b79f19ba93c7724cb0ff4340dd6e699e5c9245852cb4",
     "obs_seq.final": "0a0fde193a3ef2696f5c70f4e727d7ce9e0cacb1e6fc781b4d011f3c11c46b1b"

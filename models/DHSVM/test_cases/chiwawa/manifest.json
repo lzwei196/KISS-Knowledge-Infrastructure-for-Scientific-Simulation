@@ -3,7 +3,7 @@
   "engine": {
     "name": "DHSVM",
     "version": "3.2 (DHSVM-PNNL git e6f333d0e70ed72345d52f1ab83e35317fa92458)",
-    "binary": "DHSVM (server default /mnt/disk1/Hydrocraft_server/models/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM)",
+    "binary": "DHSVM (server default KISSPATH_KI_ROOT/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM)",
     "source": "https://github.com/pnnl/DHSVM-PNNL",
     "license": "No LICENSE file in the DHSVM-PNNL repo; DHSVM is distributed openly by PNNL / University of Washington (https://dhsvm.pnnl.gov)"
   },
@@ -29,7 +29,7 @@
     "share_url": "https://pan.baidu.com/s/1ksx24w8Uz4XfO2Fy1KjDwQ",
     "share_pwd": "upbs",
     "share_valid": "permanent (no expiry)",
-    "server_default": "/home/server/ki_test_case_packs/DHSVM/chiwawa_v1",
+    "server_default": "KISSPATH_HOME/ki_test_case_packs/DHSVM/chiwawa_v1",
     "file_count": 370,
     "total_bytes": 3663030492,
     "source": {

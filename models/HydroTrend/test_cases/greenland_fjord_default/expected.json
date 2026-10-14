@@ -19,7 +19,7 @@
   ],
   "finished_check": "KI tool rc 0, model rc 0, and stdout contains 'HydroTrend 3.0 finished.'",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/HydroTrend/bin/hydrotrend (preflight-resolved engine) run through KI tools/run_hydrotrend.py",
+  "recorded_with": "KISSPATH_KI_ROOT/HydroTrend/bin/hydrotrend (preflight-resolved engine) run through KI tools/run_hydrotrend.py",
   "reference": "csdms-contrib/hydrotrend data/output/HYDROASCII.Q at commit 813a9f1 (copied unmodified to reference/HYDROASCII.Q); repo test data/hydrotrend_test_with_args.sh.in diffs it exactly",
   "notes": "No input tweak. The run is done from inside the temp dir with relative paths 'input' and 'output' because HydroTrend crashes on long absolute output paths (fixed 98/80-char C buffers); this does not change results (output is byte-identical to the official file)."
 }

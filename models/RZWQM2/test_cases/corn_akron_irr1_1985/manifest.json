@@ -3,8 +3,8 @@
   "engine": {
     "name": "RZWQM2",
     "version": "4.6 Intel Fortran (September 2, 2025), Linux build",
-    "binary": "main_ryzen_patched (server default /mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched, sha256 fcb5c9491da1c7ab0732a491b890b0194ca968546487424a0f560095e3f82851)",
-    "source": "USDA-ARS RZWQM2 Windows release (https://www.ars.usda.gov/research/software/download/?softwareid=412); scenario C:\\RZWQM2\\data\\Corn-Akron\\Irr-1-85DS, DSSAT files from C:\\RZWQM2\\DATABASES\\DSSAT; input headers V4.20; server copy /home/server/RZWQM2/RZWQM2/data/{data/Corn-Akron,databases/DSSAT}",
+    "binary": "main_ryzen_patched (server default KISSPATH_BINARIES/rzwqm2/main_ryzen_patched, sha256 fcb5c9491da1c7ab0732a491b890b0194ca968546487424a0f560095e3f82851)",
+    "source": "USDA-ARS RZWQM2 Windows release (https://www.ars.usda.gov/research/software/download/?softwareid=412); scenario C:\\RZWQM2\\data\\Corn-Akron\\Irr-1-85DS, DSSAT files from C:\\RZWQM2\\DATABASES\\DSSAT; input headers V4.20; server copy KISSPATH_HOME/RZWQM2/RZWQM2/data/{data/Corn-Akron,databases/DSSAT}",
     "license": "USDA-ARS public software (US Government work), distributed free by USDA-ARS after registration"
   },
   "ki": {

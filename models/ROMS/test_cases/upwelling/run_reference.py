@@ -18,7 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_roms.py"
-_DEF = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/"
+_DEF = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ROMS/source/repo/"
         "build_upwelling/romsS")
 
 ROW = re.compile(r"^\s+(\d+)\s+\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d\d\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$")

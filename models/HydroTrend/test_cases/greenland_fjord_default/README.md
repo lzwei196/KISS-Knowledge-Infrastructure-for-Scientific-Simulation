@@ -39,7 +39,7 @@ then checks `expected.json` and deletes the temp dir.
   basin area 9440.46 km2.
 - Finished normally: return code 0 and the line `HydroTrend 3.0 finished.`
 
-Both server engines pass: `/mnt/disk1/Hydrocraft_server/models/HydroTrend/bin/hydrotrend`
+Both server engines pass: `KISSPATH_KI_ROOT/HydroTrend/bin/hydrotrend`
 (the preflight one, used to record) and the dissection-toolkit build `_build/hydrotrend`.
 
 ## KI gaps (status 2026-10-06)

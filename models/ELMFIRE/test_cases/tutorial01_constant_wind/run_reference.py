@@ -13,7 +13,7 @@ model setting.
 
 Exit 0 PASS, 2 checks failed, 3 engine/dependency missing.
 Engine lookup: --elmfire-bin -> $ELMFIRE_BIN -> which elmfire_2025.1002 -> server default.
-Run with a Python that has osgeo.gdal + numpy (server: /mnt/disk1/Hydrocraft_server/python_env/bin/python).
+Run with a Python that has osgeo.gdal + numpy (server: KISSPATH_PYTHON_ENV/bin/python).
 """
 import argparse, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -21,7 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 ELMFIRE_VER = "2025.1002"
-_DEF = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELMFIRE/source/repo/"
+_DEF = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ELMFIRE/source/repo/"
         f"build/linux/bin/elmfire_{ELMFIRE_VER}")
 GDAL_TOOLS = ("gdalwarp", "gdal_calc.py", "gdal_translate", "gdal_contour")
 SUCCESS_LINE = "End of simulation reached successfully"
@@ -108,7 +108,7 @@ def main():
         from osgeo import gdal, ogr  # noqa: F401
     except ImportError as e:
         print(f"MISSING DEPENDENCY: Python osgeo.gdal/numpy ({e}). Run with "
-              "/mnt/disk1/Hydrocraft_server/python_env/bin/python. NOT run.", file=sys.stderr)
+              "KISSPATH_PYTHON_ENV/bin/python. NOT run.", file=sys.stderr)
         return 3
 
     tmp = Path(tempfile.mkdtemp(prefix="elmfire_tut01_"))

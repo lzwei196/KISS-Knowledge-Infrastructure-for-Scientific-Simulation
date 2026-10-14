@@ -3,7 +3,7 @@
   "engine": {
     "name": "MOM6",
     "version": "git f52a2b3 (NOAA-GFDL/MOM6 dev/gfdl, 2026-03-24); FMS 2025.02.01",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6",
     "build": "MOM6 .testing symmetric build (gfortran 13.3, Open MPI 4.1.6)",
     "source": "https://github.com/NOAA-GFDL/MOM6 , .testing/tc1 (git-tracked), commit f52a2b361de7c577a6ded6229de37633ec753ab8",
     "license": "Apache-2.0 (MOM6 LICENSE)"

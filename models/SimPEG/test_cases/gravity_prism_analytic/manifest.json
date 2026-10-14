@@ -3,7 +3,7 @@
   "engine": {
     "name": "SimPEG",
     "version": "0.25.2",
-    "binary": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (import simpeg from python_env site-packages)",
+    "binary": "KISSPATH_PYTHON_ENV/bin/python (import simpeg from python_env site-packages)",
     "source": "https://github.com/simpeg/simpeg, tests/pf/test_forward_Grav_Linear.py + tests/conftest.py (commit ba60041a81907bb7b50f5e59c6be21441959ed8f, v0.25.2)",
     "license": "MIT (SimPEG)"
   },

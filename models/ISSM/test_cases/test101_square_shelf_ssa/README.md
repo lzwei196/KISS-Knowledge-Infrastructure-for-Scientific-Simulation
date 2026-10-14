@@ -20,7 +20,7 @@ and a tolerance for every field (in `test101.py`).
 python run_reference.py              # 0=PASS 2=checks failed 3=engine/dependency missing
 python run_reference.py --issm-bin /path/to/ISSM/bin/issm.exe   # or $ISSM_BIN
 ```
-Use a python with numpy + scipy (the server's `/mnt/disk1/Hydrocraft_server/python_env` is used
+Use a python with numpy + scipy (the server's `KISSPATH_PYTHON_ENV` is used
 by default). `ISSM_DIR` is taken from the folder that holds `bin/issm.exe`. `mpiexec` is taken
 from `$ISSM_DIR/externalpackages/petsc/install/bin` (the MPICH that `issm.exe` is linked
 with). `OMP_NUM_THREADS=4`, 2 MPI ranks. It takes about 2 seconds.

@@ -21,8 +21,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_issm.py"
-_DEF_BIN = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/bin/issm.exe"
-_DEF_PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+_DEF_BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ISSM/source/repo/bin/issm.exe"
+_DEF_PY = "KISSPATH_PYTHON_ENV/bin/python"
 
 # Runs test101.py the way runme.py does, then applies runme.py's archive check.
 DRIVER = r'''

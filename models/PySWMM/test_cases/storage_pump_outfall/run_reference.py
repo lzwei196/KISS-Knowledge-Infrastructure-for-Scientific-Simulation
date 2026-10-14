@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_pyswmm.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+_DEF = "KISSPATH_PYTHON_ENV/bin/python"
 INP = "model_storage_pump.inp"
 
 STATS_SCRIPT = r'''

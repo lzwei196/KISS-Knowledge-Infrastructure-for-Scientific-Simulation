@@ -22,14 +22,14 @@ here are the script, the namelist template and the helper functions, nothing els
 
 ## Engine
 ELMFIRE 2025.1002, binary `elmfire_2025.1002`
-(server: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin/`).
+(server: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin/`).
 Also needs GDAL command line tools (`gdalwarp`, `gdal_calc.py`, `gdal_translate`,
 `gdal_contour`), `bc`, `bash`, and a Python with `osgeo.gdal` + `numpy` to read results.
 Runs in one process, about 7 s, about 105 MB RAM.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--elmfire-bin PATH]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--elmfire-bin PATH]
 ```
 Engine lookup: `--elmfire-bin` -> `$ELMFIRE_BIN` -> `which elmfire_2025.1002` -> server path.
 The script copies `inputs/` to a fresh temp dir, puts the engine on PATH as

@@ -28,13 +28,13 @@ FS < 1 (lowest FS 0.9817), and the water table reaches the surface everywhere.
 ## Engine
 - TRIGRS 2.1.00c serial (`trg`, build date 02 Feb 2022) and TopoIndex 1.0.14 (`tpx`), built
   from the commit above with gfortran.
-- Server paths: `/mnt/disk1/Hydrocraft_server/models/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg`
-  (same file, same sha256, as `/mnt/disk1/Hydrocraft_server/models/TRIGRS/bin/trg`) and
+- Server paths: `KISSPATH_KI_ROOT/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg`
+  (same file, same sha256, as `KISSPATH_KI_ROOT/TRIGRS/bin/trg`) and
   `.../src/TopoIndex/tpx`.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py
+KISSPATH_PYTHON_ENV/bin/python run_reference.py
 #   [--trg-bin PATH] [--tpx-bin PATH] [--keep]
 ```
 Lookup: `--trg-bin` -> `$TRIGRS_BIN` -> `which trg` -> server default; same for

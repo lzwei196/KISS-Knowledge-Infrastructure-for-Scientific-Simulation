@@ -11,7 +11,7 @@ Foundation case for the icepack KI. Steps:
 Exit 0 PASS, 2 checks failed, 3 engine/dependency missing.
 
 Python lookup (same order as the KI preflight_check.py): --python -> $ICEPACK_PYTHON ->
-server default /home/server/engine_builds_20261006/firedrake/venv/bin/python.
+server default KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python.
 An explicit choice is used as-is (no fallback to another interpreter).
 The KI run tool is not used: it cannot drive this test (see README "Known KI gaps").
 """
@@ -28,7 +28,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
-_DEF = "/home/server/engine_builds_20261006/firedrake/venv/bin/python"
+_DEF = "KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python"
 DEPS = ("import firedrake, icepack, pytest, importlib.metadata as m; "
         "print(m.version('icepack'), m.version('firedrake'))")
 THREADS = {k: "1" for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")}

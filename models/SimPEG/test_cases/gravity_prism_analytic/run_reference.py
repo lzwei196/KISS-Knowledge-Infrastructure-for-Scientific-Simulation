@@ -25,7 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_simpeg.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+_DEF = "KISSPATH_PYTHON_ENV/bin/python"
 NEEDED = "import simpeg, discretize, geoana, pytest, numpy"
 PYTEST_K = "analytic and geoana"  # choclo engine is optional and not installed on the server
 

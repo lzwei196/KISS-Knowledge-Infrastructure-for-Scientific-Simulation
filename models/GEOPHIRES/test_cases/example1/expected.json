@@ -24,6 +24,6 @@
   "finished_normally": "run_geophires.py exits 0 with status 'success', and the .out starts with the '***CASE REPORT***' banner",
   "ki_parser_cross_check": "the KI tools/parse_geophires_output.py must give the same Average Net Electricity Production, Electricity breakeven price, Project NPV and Project IRR as the official parser",
   "recorded_on": "2026-10-05",
-  "recorded_with": "values read from the official GEOPHIRES-X tests/examples/example1.out (git 870971c8); confirmed by real runs of GEOPHIRES-X 3.11.25 (venv /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv) through the KI tools/run_geophires.py. Two clean runs gave result dicts exactly equal to the official file (only version/date/run time lines differ).",
+  "recorded_with": "values read from the official GEOPHIRES-X tests/examples/example1.out (git 870971c8); confirmed by real runs of GEOPHIRES-X 3.11.25 (venv KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GEOPHIRES/venv) through the KI tools/run_geophires.py. Two clean runs gave result dicts exactly equal to the official file (only version/date/run time lines differ).",
   "reference": "reference/example1.out (official GEOPHIRES-X expected output, written by GEOPHIRES 3.9.28; the suite still uses it unchanged as the expected result for 3.11.25)"
 }

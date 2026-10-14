@@ -20,7 +20,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_dualsphysics.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DualSPHysics/source/repo/bin/linux"
 NAME = "CaseDambreakVal2D"
 EXPFILE = "EXP_X-DamTipPosition_Koshizula&Oka1996.txt"
 BINS = ("GenCase_linux64", "DualSPHysics5.4CPU_linux64", "MeasureTool_linux64")

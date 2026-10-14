@@ -3,7 +3,7 @@
   "engine": {
     "name": "Elmer/Ice (ElmerSolver + ElmerGrid)",
     "version": "Elmer 26.1-devel (Rev 0a0fcfe, compiled 2026-06-23)",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver",
     "programs": [
       "ElmerGrid",
       "ElmerSolver"

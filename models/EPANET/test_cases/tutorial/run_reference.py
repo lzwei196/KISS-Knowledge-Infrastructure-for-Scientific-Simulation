@@ -22,7 +22,7 @@ TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_epanet.py"
 PARSE_TOOL = TOOLS / "parse_epanet_output.py"
 OFFICIAL = HERE / "reference" / "tutorial.out"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/EPANET/source/repo/SRC_engines/build/src/run/runepanet"
+_DEF = "KISSPATH_KI_ROOT/EPANET/source/repo/SRC_engines/build/src/run/runepanet"
 
 
 def find_bin(arg):

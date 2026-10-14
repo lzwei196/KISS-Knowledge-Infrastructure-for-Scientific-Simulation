@@ -114,5 +114,5 @@
   ],
   "run_note": "run_reference.py appends 'FlNcdf = #maphis#' to the run copy of f34.mdf so output is NetCDF; this only switches the output format (tri-diag compared with a NEFIS-only run: same).",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Delft3D/build_flow2d3d/d_hydro/d_hydro (KI preflight engine, 25/25 passed)"
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Delft3D/build_flow2d3d/d_hydro/d_hydro (KI preflight engine, 25/25 passed)"
 }

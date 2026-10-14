@@ -22,7 +22,7 @@ only routes it).
 - Inputs total about 25 MB. sha256 of every file is in `manifest.json`.
 
 ## Engine
-mosartwmpy 0.6.2 (PyPI) in `/mnt/disk1/Hydrocraft_server/models/MOSART/venv/bin/python`
+mosartwmpy 0.6.2 (PyPI) in `KISSPATH_KI_ROOT/MOSART/venv/bin/python`
 (Python 3.12, pandas 3.0.3, numpy 2.4.6).
 
 ## How to run
@@ -76,9 +76,9 @@ and restart files (one thread).
   limit on a cold disk cache (17 s warm), though the import works.
 
 ## Update 2026-10-05: server venv fixed
-The server's MOSART venv (`/mnt/disk1/Hydrocraft_server/models/MOSART/venv`) was moved from
+The server's MOSART venv (`KISSPATH_KI_ROOT/MOSART/venv`) was moved from
 pandas 3.0.3 to pandas 2.3.3 (owner-approved). With it, this official tutorial runs with
 reservoirs (ISTARF) on and **without** the pandas setting, and gives the same expected values.
 The launcher still sets `future.infer_string=False` only when it finds pandas 3 or newer, so the
 case also runs on hosts that have pandas 3. Package list before the change:
-`/home/server/mosart_venv_backup_20261005/pip_freeze_before.txt`.
+`KISSPATH_HOME/mosart_venv_backup_20261005/pip_freeze_before.txt`.

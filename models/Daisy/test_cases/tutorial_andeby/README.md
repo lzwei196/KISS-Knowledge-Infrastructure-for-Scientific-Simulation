@@ -29,7 +29,7 @@ The library is part of the Daisy install, so it is not copied into `inputs/`.
 The script copies `inputs/` to a fresh temp dir, runs the case through the KI's own
 `tools/run_daisy.py` (with `DAISYHOME` set), reads the `.dlf` logs with the KI's own
 `tools/parse_daisy_output.py`, checks `expected.json`, then deletes the temp dir.
-Use the python that has numpy + pandas (server: `/mnt/disk1/Hydrocraft_server/python_env/bin/python`).
+Use the python that has numpy + pandas (server: `KISSPATH_PYTHON_ENV/bin/python`).
 
 ## Expected
 The Daisy repo ships **no reference output** for this tutorial setup, so the expected

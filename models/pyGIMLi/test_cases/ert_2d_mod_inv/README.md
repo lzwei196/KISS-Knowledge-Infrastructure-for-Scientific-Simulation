@@ -24,7 +24,7 @@ seed, so this is the model's own official test, not local data.
 
 ## Engine
 - pygimli 1.5.5.post1 + pgcore 1.5.5 (pip wheels) in
-  `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python`.
+  `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python`.
 - Not importable from the server `python_env`.
 
 ## How to run

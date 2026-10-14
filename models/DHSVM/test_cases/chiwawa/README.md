@@ -33,7 +33,7 @@ dates and old output/ are left out). Contents:
 |---|---|
 | Netdisk folder | `/KISS_test_case_packs/DHSVM/chiwawa_v1` |
 | Share link | https://pan.baidu.com/s/1ksx24w8Uz4XfO2Fy1KjDwQ  code `upbs` (no expiry) |
-| Server copy | `/home/server/ki_test_case_packs/DHSVM/chiwawa_v1` |
+| Server copy | `KISSPATH_HOME/ki_test_case_packs/DHSVM/chiwawa_v1` |
 | Size | 3 663 030 492 bytes, 370 files |
 
 ## Run

@@ -9,6 +9,6 @@
     "flx.opt"
   ],
   "recorded_on": "2026-10-04",
-  "recorded_with": "w2_v5 from /mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5",
+  "recorded_with": "w2_v5 from KISSPATH_BINARIES/ce_qual_w2/bin/w2_v5",
   "note": "Primary pass = 'Normal termination'. cpl/snp/flx .opt are always produced; other .opt (e.g. qwb.opt) are control-flag dependent."
 }

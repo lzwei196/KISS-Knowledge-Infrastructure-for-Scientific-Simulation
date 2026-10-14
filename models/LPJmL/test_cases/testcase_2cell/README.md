@@ -88,8 +88,8 @@ transient means within ~1.6e-3 of the official values. Repeat: 5 clean runs of t
 The KI's preflight engine is LPJmL **v6.0.0** (`cdfae44`). The test case was added in 6.0.7,
 v6.0.0 has no `TESTCASE_2CELL` config, and the reference files were made by 6.1.9, so this
 case uses a separate v6.1.9 build:
-`/home/server/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml`
-(build notes and logs: `/home/server/engine_builds_20261006/lpjml_v6.1.9/BUILD_NOTES.txt`).
+`KISSPATH_HOME/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml`
+(build notes and logs: `KISSPATH_HOME/engine_builds_20261006/lpjml_v6.1.9/BUILD_NOTES.txt`).
 - Clean clone of tag v6.1.9, no source edits. Official `./configure.sh -nompi -noerror`
   (`-noerror` because gcc 13 stops on a `warn_unused_result` warning under `-Werror`).
 - All official compile flags kept (`-DSAFE -DUSE_RAND48 -DWITH_FPE -DUSE_NETCDF

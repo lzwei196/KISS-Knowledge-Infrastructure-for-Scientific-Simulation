@@ -17,7 +17,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_pflotran.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/PFLOTRAN/source/repo/src/pflotran/pflotran"
+_DEF = "KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran"
 CASE_FILES = ("543_flow.in", "543.h5", "543_initial_pressure.h5",
               "543_flow.regression.gold", "543.cfg")
 

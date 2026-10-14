@@ -7,7 +7,7 @@
       "blockMesh",
       "foamRun"
     ],
-    "binary_default": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun",
+    "binary_default": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun",
     "environment": "source <OpenFOAM>/etc/bashrc",
     "source": "https://github.com/OpenFOAM/OpenFOAM-dev, tutorials/incompressibleFluid/cavity (commit d41922f7f4a1c4f1a1b6832bf7f94f2000c2df41)",
     "license": "GPL-3.0-or-later (OpenFOAM Foundation)"

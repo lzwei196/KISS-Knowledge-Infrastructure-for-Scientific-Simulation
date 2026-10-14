@@ -2,7 +2,7 @@
   "description": "TopoFlow official example Treynor_Iowa_30m / __No_Infil_June_20_67_Rain (kinematic-wave channels, rain only, no infiltration; storm of 20 June 1967 on the 0.396 km2 Treynor watershed, Iowa, 30 m grid). Run stops by the official rule: outlet Q falls to 5% of its peak.",
   "engine_version": "TopoFlow 3.71 (2023-09-25) as printed by the model; source peckhams/topoflow36 commit a1c07d0a72185cbd0baeff1ef77feadad09c3f88 (installed copy has local patches, see README)",
   "recorded_on": "2026-10-05",
-  "recorded_with": "run_reference.py through KI tool tools/run_topoflow.py, engine python /home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python (Python 3.12.3, numpy/scipy/netCDF4 1.7.4)",
+  "recorded_with": "run_reference.py through KI tool tools/run_topoflow.py, engine python KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TopoFlow/venv/bin/python (Python 3.12.3, numpy/scipy/netCDF4 1.7.4)",
   "reference": "Upstream ships no model reference output for this case (only observed discharge in __observations/, not used as a check). Values below come from our own real run, run twice: every value matched exactly, and the 0D-Q.txt and raw .rts grid files were byte-identical between the two runs.",
   "run_setup_changes_in_temp_copy": [
     "June_20_67_path_info.cfg: out_directory ~/TF_Output/Treynor -> temp dir (path setting only)",

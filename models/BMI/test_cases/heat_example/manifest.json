@@ -3,7 +3,7 @@
   "engine": {
     "name": "bmi-heat (CSDMS BmiHeat reference BMI model, Python package 'heat')",
     "version": "2.1.3.dev0 (git 07016091d721410894ef8b16127fbe2ed063f0dd, 2024-10-21)",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python (imports heat.bmi_heat; bmipy 2.0.1)",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python (imports heat.bmi_heat; bmipy 2.0.1)",
     "source": "https://github.com/csdms/bmi-example-python (examples/ and tests/ at commit 0701609)",
     "license": "MIT (CSDMS, see inputs/LICENSE)"
   },

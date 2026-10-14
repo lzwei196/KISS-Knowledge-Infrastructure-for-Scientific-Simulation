@@ -3,7 +3,7 @@
   "engine": {
     "name": "GemPy",
     "version": "2026.0.1a2.dev0+ge46fee77b (gempy_engine 2026.0.1a0)",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python (python with gempy installed)",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python (python with gempy installed)",
     "source": "https://github.com/cgre-aachen/gempy git e46fee7 (gempy/API/examples_generator.py::_generate_anticline_model; test/test_model_types/test_example_models_I.py::test_generate_fold_model); data from https://github.com/cgre-aachen/gempy_data commit cf00bc907d3e6962967da38ae2ad19d770df956e data/input_data/jan_models/",
     "license": "GemPy: EUPL-1.2; gempy_data: LGPL-3.0"
   },

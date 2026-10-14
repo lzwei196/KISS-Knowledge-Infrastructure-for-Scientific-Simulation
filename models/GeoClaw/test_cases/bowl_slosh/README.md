@@ -31,7 +31,7 @@ python run_reference.py    # 0=PASS 2=FAIL 3=missing dependency
 #   --claw-python (or $CLAW_PYTHON) Python with clawpack installed
 #   --fc          (or $FC)          Fortran compiler, default gfortran
 ```
-Server defaults: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw/clawpack`
+Server defaults: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw/clawpack`
 and `.../_work/GeoClaw/venv/bin/python`. `run_reference.py` itself only needs the standard
 library; it runs everything else with the Clawpack Python. It uses OMP_NUM_THREADS=4.
 

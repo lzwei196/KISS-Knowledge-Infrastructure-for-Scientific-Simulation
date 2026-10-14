@@ -27,7 +27,7 @@
   },
   "finished_check": "tools/run_epanet.py exit 0 with '[SUCCESS] EPANET completed', and the engine wrote 'Analysis ended' with no 'Error' in the report (runepanet itself prints '... EPANET ran successfully.')",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/EPANET/source/repo/SRC_engines/build/src/run/runepanet (EPANET 2.2.0) through the KI tools/run_epanet.py; output read with the KI tools/parse_epanet_output.py --rpt",
+  "recorded_with": "KISSPATH_KI_ROOT/EPANET/source/repo/SRC_engines/build/src/run/runepanet (EPANET 2.2.0) through the KI tools/run_epanet.py; output read with the KI tools/parse_epanet_output.py --rpt",
   "reference": "reference/tutorial.out = git show 598ee6c:User_Manual/docs/tutorial.out (USEPA/EPANET2.2), unmodified; it is the 'Excerpt from a EPANET report file' in User Manual Appendix C",
   "note": "Our run matched all 83 official numbers exactly (diff 0.00), not just within tol."
 }

@@ -117,7 +117,7 @@
     "'Runoff-routing computations' in TrigrsLog.txt (routing was not skipped)"
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg (sha256 73b41ac4..., same file as models/TRIGRS/bin/trg) and src/TopoIndex/tpx, Linux x86_64, gfortran build",
+  "recorded_with": "KISSPATH_KI_ROOT/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg (sha256 73b41ac4..., same file as models/TRIGRS/bin/trg) and src/TopoIndex/tpx, Linux x86_64, gfortran build",
   "reference": "no official reference outputs exist in the USGS repo for the tutorial (git ls-files shows inputs only); values are from own runs",
   "notes": "Path settings changed only in the temp copies: tpx_in.txt dem/direction paths (data/... -> Data/tutorial/...) and tr_in.txt nxtfil Data/tutorial/TIdscelGrid_tutorial.asc -> .txt. The .asc name in the shipped tr_in.txt does not match the name TopoIndex writes (.txt); with it TRIGRS logs 'Skipped runoff-routing computations' and writes no runoff grids, and FS at t1 differs. With the .txt name, runoff routing runs as the tutorial intends. No physical setting was changed."
 }

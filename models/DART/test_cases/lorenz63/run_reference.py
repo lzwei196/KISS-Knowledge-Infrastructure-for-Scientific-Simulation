@@ -16,7 +16,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_dart.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DART/source/repo/models/lorenz_63/work"
 PROGS = ("perfect_model_obs", "filter")
 INPUTS = ("input.nml", "obs_seq.in", "filter_input.cdl", "perfect_input.cdl",
           "filter_input_list.txt", "filter_output_list.txt")

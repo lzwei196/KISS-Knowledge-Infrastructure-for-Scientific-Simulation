@@ -33,11 +33,11 @@ The full patch is in `gifmod_patches.diff` (16 files, +90 lines):
 ## Run
 ```
 python run_reference.py              # uses <KI>/tools/run_gifmod_engine.py; 0=PASS 2=FAIL 3=missing
-python run_reference.py --run-tool /mnt/disk1/Hydrocraft_server/models/GIFMod/knowledge_infrastructure/tools/run_gifmod_engine.py
+python run_reference.py --run-tool KISSPATH_KI_ROOT/GIFMod/knowledge_infrastructure/tools/run_gifmod_engine.py
 ```
 It copies the template to a fresh temp dir and runs it through the KI tool with the 4 answers.
 The engine is found by `--binary`/`--wrapper` → `$GIFMOD_BINARY`/`$GIFMOD_HEADLESS` →
-`/home/server/engine_builds_20261006/gifmod/install/gifmod_headless.sh`; a binary without the
+`KISSPATH_HOME/engine_builds_20261006/gifmod/install/gifmod_headless.sh`; a binary without the
 headless driver is refused. Missing engine → `MISSING DEPENDENCY`, exit 3.
 
 ## Expected (recorded 2026-10-06; repeat runs identical, see below)

@@ -15,7 +15,7 @@ the water does not move (velocity 0).
 
 ## Engine
 OpenGeoSys 6.5.7 (`ogs`, serial, pip wheel build) and `vtkdiff` from the same install.
-Server path: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/venv/bin/`.
+Server path: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenGeoSys/venv/bin/`.
 Note: the benchmark files come from master (newer than 6.5.7); this case runs and passes on 6.5.7.
 
 ## How to run
@@ -23,7 +23,7 @@ Note: the benchmark files come from master (newer than 6.5.7); this case runs an
 python run_reference.py [--ogs-bin PATH] [--vtkdiff-bin PATH]
 ```
 Binary lookup: argument -> `$OGS_BIN` / `$VTKDIFF_BIN` -> `which` -> next to ogs -> server default.
-Needs python with numpy and meshio (e.g. `/mnt/disk1/Hydrocraft_server/python_env/bin/python`).
+Needs python with numpy and meshio (e.g. `KISSPATH_PYTHON_ENV/bin/python`).
 The script copies the inputs to a fresh temp dir, runs ogs through the KI tool
 `tools/run_ogs.py`, reads pressure stats with the KI tool `tools/parse_ogs_output.py`,
 runs the official vtkdiff checks, compares with `expected.json`, and deletes the temp dir.

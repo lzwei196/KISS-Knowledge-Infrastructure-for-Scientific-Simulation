@@ -30,22 +30,22 @@ It runs on 2 MPI ranks (1 ocean, 1 wave, as set in `coupling_inlet_test.in`) and
 
 ## Engine
 `coawstM` built for INLET_TEST on this server on 2026-10-06:
-`/home/server/engine_builds_20261006/coawst/COAWST/coawstM`
+`KISSPATH_HOME/engine_builds_20261006/coawst/COAWST/coawstM`
 (sha256 `c9cfaf10ea99796573d75b1d378cadf73ca15b739ebcc5274922f290e3614e97`).
 Built from a `git archive` copy of the commit above with the official `build_coawst.sh`, changed only
 in a copy outside the source (`MY_ROOT_DIR`, and `MCT_INCDIR`/`MCT_LIBDIR` for MCT built in the same new
 tree with `FCFLAGS=-fallow-argument-mismatch`). gfortran 13.3.0, Open MPI 4.1.6 (`mpif90`),
 netCDF-Fortran 4.5.4. One build-environment setting: `FC=mpif90`, because SWAN's CMake step otherwise
 picks `/usr/bin/f95` and fails on `mpif.h`. No source or input file was changed.
-Build log: `/home/server/engine_builds_20261006/coawst/BUILD_LOG.md`.
+Build log: `KISSPATH_HOME/engine_builds_20261006/coawst/BUILD_LOG.md`.
 
 COAWST builds one program per application. The other server program,
-`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/COAWST/source/repo/coawstM`, is built for
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/COAWST/source/repo/coawstM`, is built for
 SANDY (the KI default) and cannot run this case.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--coawst-bin PATH] [--keep]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--coawst-bin PATH] [--keep]
 ```
 Program lookup: `--coawst-bin` -> `$COAWST_INLET_TEST_BIN` -> server default (above). A `coawstM` on
 PATH is not used, because it may be built for another application. A chosen program that is not an

@@ -16,8 +16,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_monica.py"
-_DEF_BIN = "/mnt/disk1/Hydrocraft_server/models/MONICA/bin/monica-run"
-_DEF_PAR = "/mnt/disk1/Hydrocraft_server/models/MONICA/source/monica-parameters"
+_DEF_BIN = "KISSPATH_KI_ROOT/MONICA/bin/monica-run"
+_DEF_PAR = "KISSPATH_KI_ROOT/MONICA/source/monica-parameters"
 INPUTS = ("sim.json", "crop.json", "site.json", "climate.csv")
 
 

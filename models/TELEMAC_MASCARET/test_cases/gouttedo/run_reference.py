@@ -23,7 +23,7 @@ sys.path.insert(0, str(TOOLS))
 from parse_selafin import SelafinReader  # noqa: E402  (KI parse tool)
 
 EXP = json.loads((HERE / "expected.json").read_text())
-_DEF_HOME = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TELEMAC_MASCARET/source/repo"
+_DEF_HOME = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TELEMAC_MASCARET/source/repo"
 INPUTS = ["t2d_gouttedo.cas", "geo_gouttedo.slf", "geo_gouttedo.cli", "user_fortran"]
 RESULT = "r2d_gouttedo_v1p0.slf"
 VARS = {"VELOCITY_U": "VELOCITY U      M/S", "VELOCITY_V": "VELOCITY V      M/S",

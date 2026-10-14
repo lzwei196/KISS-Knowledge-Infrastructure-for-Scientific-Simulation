@@ -20,9 +20,9 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_mom6.py"
-_DEF = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOM6/source/repo/"
+_DEF = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOM6/source/repo/"
         ".testing/build/symmetric/MOM6")
-_MPI_DEF = "/home/server/.local/bin"
+_MPI_DEF = "KISSPATH_HOME/.local/bin"
 INPUTS = ("MOM_input", "MOM_override", "input.nml", "diag_table")
 
 

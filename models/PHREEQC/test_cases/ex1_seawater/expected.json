@@ -117,7 +117,7 @@
     "whole output equals official reference/ex1.out (except 3 path header lines + run-time line), numbers within 1 unit of last printed digit"
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc, run directly (KI tools/run_phreeqc.py crashes on phreeqc.dat, see README)",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc, run directly (KI tools/run_phreeqc.py crashes on phreeqc.dat, see README)",
   "reference": "reference/ex1.out = git show 311a485:examples/ex1.out (official USGS expected output)",
   "notes": "Two clean runs on 2026-10-05 gave outputs that differ only in the run-time line; apart from the file-path header lines and the run-time line, the run is identical byte for byte to the official ex1.out. Inputs are not changed in any way."
 }

@@ -115,7 +115,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/python_env/bin/python (pysteps 1.20.0, opencv 4.11.0, Pillow 10.4.0), 4 threads",
+  "recorded_with": "KISSPATH_PYTHON_ENV/bin/python (pysteps 1.20.0, opencv 4.11.0, Pillow 10.4.0), 4 threads",
   "reference": "Official: assert values inside pysteps/tests/*.py of pysteps 1.20.0 (incl. max_crps limits in test_nowcasts_steps.steps_arg_values). Own run: exact CRPS numbers (two runs identical).",
   "notes": "Only change made: a temp copy of the default pystepsrc with the mch root_path set to the temp data dir (shipped value is the relative './radar/mch'). This is a path only; it does not change any data or result. test_cascade::test_decompose_recompose is left out because it reads the bom (Australia) sample, which is not packaged."
 }

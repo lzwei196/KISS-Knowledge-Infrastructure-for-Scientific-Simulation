@@ -3,8 +3,8 @@
   "engine": {
     "name": "LPJmL",
     "version": "6.1.9",
-    "binary": "/home/server/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml",
-    "build": "clean clone of tag v6.1.9, ./configure.sh -nompi -noerror, gcc 13.3 -O2, official LPJFLAGS; json-c 0.16 + netcdf 4.8.1 (miniconda3/envs/lisflood_official), udunits2 (miniconda3); notes: /home/server/engine_builds_20261006/lpjml_v6.1.9/BUILD_NOTES.txt",
+    "binary": "KISSPATH_HOME/engine_builds_20261006/lpjml_v6.1.9/LPJmL/bin/lpjml",
+    "build": "clean clone of tag v6.1.9, ./configure.sh -nompi -noerror, gcc 13.3 -O2, official LPJFLAGS; json-c 0.16 + netcdf 4.8.1 (miniconda3/envs/lisflood_official), udunits2 (miniconda3); notes: KISSPATH_HOME/engine_builds_20261006/lpjml_v6.1.9/BUILD_NOTES.txt",
     "source": "https://github.com/PIK-LPJmL/LPJmL tag v6.1.9, commit 4595764150e981da2dd5672621544c41e77b1c6a (2026-09-01)",
     "license": "AGPL-3.0-or-later (LPJmL); input data licences are in each .clm.json metafile"
   },

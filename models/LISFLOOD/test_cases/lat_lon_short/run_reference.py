@@ -18,7 +18,7 @@ The model is started through the KI tool tools/run_lisflood.py (its run_model fu
 Its command-line preflight cannot read this official settings file, see README.
 
 Engine lookup: --lisflood-bin -> $LISFLOOD_BIN -> `which lisflood` -> server default
-(/home/server/miniconda3/envs/lisflood_official/bin/lisflood). The env must be LISFLOOD's
+(KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood). The env must be LISFLOOD's
 official environment (python 3.7, xarray 0.20.2, dask 2022.2.0, lisflood-utilities); see README.
 Exit 0 PASS, 2 checks failed, 3 engine/dependency missing.
 """
@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_lisflood.py"
-_DEF = "/home/server/miniconda3/envs/lisflood_official/bin/lisflood"
+_DEF = "KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood"
 SETTINGS = "run_lat_lon.xml"
 TEXTVARS = {  # first <textvar> of each name, as the upstream setoptions() does
     "StepStart": "01/01/2016 00:00",

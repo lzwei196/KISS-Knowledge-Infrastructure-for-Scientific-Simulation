@@ -27,7 +27,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RUN_TOOL = HERE.parents[1] / "tools" / "run_topoflow.py"
-DEFAULT_PY = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python"
+DEFAULT_PY = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TopoFlow/venv/bin/python"
 CASE_DIR = "Treynor_Iowa_30m/__No_Infil_June_20_67_Rain"
 PREFIX = "June_20_67"
 

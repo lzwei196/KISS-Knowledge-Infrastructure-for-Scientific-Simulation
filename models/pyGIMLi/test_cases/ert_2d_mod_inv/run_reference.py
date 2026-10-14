@@ -25,7 +25,7 @@ TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_pygimli.py"
 PARSE_TOOL = TOOLS / "parse_gimli_output.py"
 SCRIPT = "plot_01_ert_2d_mod_inv.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python"
 
 DRIVER = r'''
 import json, runpy, sys

@@ -6,7 +6,7 @@ import argparse, json, os, shutil, subprocess, sys, tempfile, hashlib
 from pathlib import Path
 import numpy as np
 HERE=Path(__file__).resolve().parent; EXP=json.loads((HERE/"expected.json").read_text())
-_DEF="/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+_DEF="KISSPATH_BINARIES/biome-bgc/bgc-src/bgc"
 def find_bin(a):
     for c in (a, os.environ.get("BGC_BIN"), shutil.which("bgc"), _DEF):
         if c and Path(c).exists(): return c

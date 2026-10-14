@@ -94,7 +94,7 @@
     }
   ],
   "recorded_on": "2026-10-06",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv/bin/python via run_reference.py --print; tool launcher /mnt/disk1/Hydrocraft_server/python_env/bin/python",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python via run_reference.py --print; tool launcher KISSPATH_PYTHON_ENV/bin/python",
   "reference": "The workshop ships no reference output files, so the expected values are from our own runs. Three full runs in fresh temp dirs gave bit-identical values. Tolerance: exact (0) for counts and times; for real numbers max(1e-6 * |expected|, 1e-6), i.e. relative 1e-6, with an absolute floor 1e-6 that matters only for final_cumdiff_max_m (expected 0). Non-finite values fail.",
   "notes": "Inputs are unmodified official files. No tweak to the XML."
 }

@@ -15,7 +15,7 @@ Foundation case for the Amanzi_ATS KI. Steps:
 Exit 0 PASS, 2 checks failed, 3 engine/dependency missing.
 
 ATS lookup: --ats-bin -> $ATS_BIN -> server default
-/home/server/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats.
+KISSPATH_HOME/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats.
 PATH is not searched (same rule as the KI tool and preflight: never pick another engine
 silently). The engine found here is always passed to the KI tool with --binary, because
 the tool's built-in default is a server path (a KISSPATH placeholder in the public repo).
@@ -35,7 +35,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 TOOL = HERE.parents[1] / "tools" / "run_amanzi.py"
-_DEF = "/home/server/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats"
+_DEF = "KISSPATH_HOME/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats"
 CRIT = re.compile(r"^\s+(PASS|FAIL): fv : (\S+) : (\S+) (?:<=|>) (\S+) \[([^\]]*)\]")
 
 

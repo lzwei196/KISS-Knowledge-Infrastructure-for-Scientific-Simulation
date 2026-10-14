@@ -22,12 +22,12 @@ against this number and writes `TEST.PASSED` = 1 when it matches (the official c
 
 ## Engine
 Elmer 26.1-devel (Rev 0a0fcfe, compiled 2026-06-23), built with Elmer/Ice.
-Server default: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver`
+Server default: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Elmer_Ice/install_ice/bin/ElmerSolver`
 and `ElmerGrid` in the same folder. Serial run (1 rank), OMP_NUM_THREADS=4. Takes about 1 s.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py
+KISSPATH_PYTHON_ENV/bin/python run_reference.py
 #   options: --elmersolver-bin PATH  --elmergrid-bin PATH  --keep
 ```
 Binary lookup: `--elmersolver-bin` / `--elmergrid-bin` -> `$ELMERSOLVER_BIN` / `$ELMERGRID_BIN`

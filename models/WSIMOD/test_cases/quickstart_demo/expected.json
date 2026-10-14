@@ -18,7 +18,7 @@
     {"name": "water_balance_residual", "expected": 0.0, "tol": 1e-08, "why": "rain - evaporation - outlet flow - end storage (all tanks + surfaces, start storage 0) must close"}
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "KI tools/run_wsimod.py --mode api with PYTHONPATH=<wsi repo source>, /mnt/disk1/Hydrocraft_server/python_env/bin/python",
+  "recorded_with": "KI tools/run_wsimod.py --mode api with PYTHONPATH=<wsi repo source>, KISSPATH_PYTHON_ENV/bin/python",
   "reference": "No official reference outputs ship with this demo. Upstream tests/test_model.py::TestModel::test_run builds the same network for one day with hand-set inputs and asserts outlet flow 0.05 and urban storage 0.03; that test was also run on this server and passed (not part of this package).",
   "notes": "Run finishes in about 1 s. No changes were made to the inputs; the output folder from the yaml (results/quickstart_results) is replaced by the --outputs argument, which is the official CLI option for this."
 }

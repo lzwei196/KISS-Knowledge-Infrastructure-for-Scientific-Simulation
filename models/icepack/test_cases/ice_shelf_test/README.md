@@ -21,9 +21,9 @@ It has 4 tests, each with its own official limit:
   git blob `f9f72a43`). The test makes its own mesh and fields; there are no data files.
 
 ## Engine
-`/home/server/engine_builds_20261006/firedrake/venv/bin/python` (Python 3.12.3):
+`KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python` (Python 3.12.3):
 firedrake 2026.10.0, PETSc / petsc4py 3.26.0, icepack upstream master c9a29780 (version
-string 1.1.0), pytest. Built on 2026-10-06 (`/home/server/engine_builds_20261006/firedrake/BUILD_LOG.md`).
+string 1.1.0), pytest. Built on 2026-10-06 (`KISSPATH_HOME/engine_builds_20261006/firedrake/BUILD_LOG.md`).
 The venv works without sourcing `fd_env.sh`.
 Note: the icepack source copy kept with the KI (b3528bed) does not work with this
 Firedrake (geometric_dimension TypeError); upstream fixed it, so upstream master is used.
@@ -33,7 +33,7 @@ Firedrake (geometric_dimension TypeError); upstream fixed it, so upstream master
 python run_reference.py [--python /path/to/python]
 ```
 Python lookup (same as the KI preflight): `--python` -> `$ICEPACK_PYTHON` -> server default
-`/home/server/engine_builds_20261006/firedrake/venv/bin/python`. An explicit choice is used
+`KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python`. An explicit choice is used
 as-is (no fallback). The script itself can be started with any python 3 (e.g. python_env).
 Exit codes: 0 PASS, 2 checks failed, 3 dependency missing (nothing run).
 Takes about 40 s and 0.65 GB RAM, serial, 1 thread.

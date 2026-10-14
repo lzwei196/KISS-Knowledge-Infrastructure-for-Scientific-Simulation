@@ -25,7 +25,7 @@ by analytic code (no NetCDF input files). 1440 steps of 300 s = 5 days.
 python run_reference.py    # finds romsS ($ROMS_BIN, --roms-bin); 0=PASS 2=FAIL 3=missing
 ```
 Server default binary:
-`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS`.
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS`.
 The binary must be an UPWELLING build; the script checks that the log says
 `Header file : upwelling.h`. To build one from the ROMS source:
 `cmake <roms> -DROMS_APP=UPWELLING -DMY_HEADER_DIR=<roms>/ROMS/Include && make`.

@@ -24,15 +24,15 @@ checkpoint by the official checker with the official tolerances.
 
 ## Engine
 ATS 1.6.0_86114e29 (Amanzi core 42cadd93; Release; OpenMPI 4.1.6; geochemistry off as in
-the official `build_ATS_generic.sh`), `/home/server/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats`,
-built 2026-10-06 (`/home/server/engine_builds_20261006/ats/BUILD_LOG.md`). It runs
+the official `build_ATS_generic.sh`), `KISSPATH_HOME/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats`,
+built 2026-10-06 (`KISSPATH_HOME/engine_builds_20261006/ats/BUILD_LOG.md`). It runs
 without any environment set. Serial run (1 rank).
 
 ## How to run
 ```
 python run_reference.py [--ats-bin /path/to/ats]
 ```
-Use a python with numpy + h5py (e.g. `/mnt/disk1/Hydrocraft_server/python_env/bin/python`).
+Use a python with numpy + h5py (e.g. `KISSPATH_PYTHON_ENV/bin/python`).
 ATS lookup: `--ats-bin` -> `$ATS_BIN` -> server default path above. PATH is not searched
 (same rule as the KI tool). Without `--ats-bin`/`$ATS_BIN` the KI tool is called without
 `--binary`, so the tool's own default lookup is tested.

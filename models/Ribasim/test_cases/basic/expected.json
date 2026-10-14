@@ -19,7 +19,7 @@
     {"name": "max_level_m", "expected": 1.63, "tol": 1e-06, "why": "own run: basin 9 level reaches the downstream level of 1.63 m"}
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/Ribasim/bin/ribasim via the KI tool tools/run_ribasim.py",
+  "recorded_with": "KISSPATH_KI_ROOT/Ribasim/bin/ribasim via the KI tool tools/run_ribasim.py",
   "reference": "github.com/Deltares/Ribasim @ fcfb329a: python/ribasim_testmodels/ribasim_testmodels/basic.py (basic_model), utils/generate-testmodels.py, core/test/run_models_test.jl (testitem 'basic model')",
   "notes": "basin.nc keeps storage at the start of each day, so end-of-run storage is computed as last storage + last storage_rate x 86400 s. Cross-check: this equals the storage from the final levels in basin_state.nc through the basin profile (e.g. basin 1: level 1.27523033 m -> 775.2353 m3). No input was changed for the run."
 }

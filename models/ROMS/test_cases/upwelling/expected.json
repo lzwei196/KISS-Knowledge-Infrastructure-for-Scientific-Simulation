@@ -95,7 +95,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS, run in a fresh temp dir with the unmodified official roms_upwelling.in and varinfo.yaml",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ROMS/source/repo/build_upwelling/romsS, run in a fresh temp dir with the unmodified official roms_upwelling.in and varinfo.yaml",
   "reference": "own runs (no official reference output available on the server)",
   "notes": "Tolerances are set near the print precision of the stdout table and well above float32 rounding of the history file, so a rebuild with another compiler should still pass; they are not official ROMS tolerances. The ROMS source checkout has 3 local edits (link flags, a LEKIMA-only block in ana_vmix.h, a guard in inp_par.F); none is active in the UPWELLING path."
 }

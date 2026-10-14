@@ -3,7 +3,7 @@
   "engine": {
     "name": "pyGIMLi",
     "version": "pygimli 1.5.5.post1 + pgcore 1.5.5",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python",
     "source": "https://github.com/gimli-org/gimli, doc/examples/3_ert/plot_01_ert_2d_mod_inv.py at tag v1.5.5.post1 (commit d0ed6ed4)",
     "license": "Apache-2.0 (pyGIMLi)"
   },

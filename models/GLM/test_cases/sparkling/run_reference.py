@@ -4,7 +4,7 @@ Foundation case for the GLM KI. Exit 0 PASS, 2 checks failed, 3 glm binary missi
 import argparse, csv, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 HERE=Path(__file__).resolve().parent; EXP=json.loads((HERE/"expected.json").read_text())
-_DEF="/mnt/disk1/Hydrocraft_server/model/glm/bin/glm"
+_DEF="KISSPATH_BINARIES/glm/bin/glm"
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--glm-bin"); a=ap.parse_args()
     b=next((c for c in (a.glm_bin, os.environ.get("GLM_BIN"), shutil.which("glm"), _DEF) if c and Path(c).exists()), None)

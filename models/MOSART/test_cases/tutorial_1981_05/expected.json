@@ -1,6 +1,6 @@
 {
   "description": "Expected results for the official mosartwmpy tutorial case: CONUS 1/8-degree NLDAS grid (224 x 464 cells), 1981-05-01 to 1981-05-30, 3-hour step, water management with ISTARF reservoir release. Inputs are the unmodified official tutorial data (Zenodo 10.5281/zenodo.6959736) and the official notebooks/config.yaml. The case ships no official reference output, so the expected values were recorded from real runs on this server. Two full runs gave exactly the same values for every check.",
-  "engine_version": "mosartwmpy 0.6.2 (PyPI wheel) in /mnt/disk1/Hydrocraft_server/models/MOSART/venv (Python 3.12, pandas 3.0.3, numpy 2.4.6, numba)",
+  "engine_version": "mosartwmpy 0.6.2 (PyPI wheel) in KISSPATH_KI_ROOT/MOSART/venv (Python 3.12, pandas 3.0.3, numpy 2.4.6, numba)",
   "numeric_checks": [
     {
       "name": "n_days",

@@ -20,7 +20,7 @@ six sections: daily, monthly, yearly, run, crop and a yearly 31 March snapshot.
 
 ## Engine
 `monica-run` version 3.6.53.0, server build at
-`/mnt/disk1/Hydrocraft_server/models/MONICA/bin/monica-run`. One run takes about 0.2 s.
+`KISSPATH_KI_ROOT/MONICA/bin/monica-run`. One run takes about 0.2 s.
 
 ## How to run
 ```

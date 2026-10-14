@@ -10,7 +10,7 @@ with the CERES-Maize crop model (DSSAT 4.0 inside RZWQM2).
 | | |
 |---|---|
 | Engine | RZWQM2 Version 4.6 Intel Fortran (September 2, 2025), Linux build `main_ryzen_patched` |
-| Source | USDA-ARS RZWQM2 Windows release: `C:\RZWQM2\data\Corn-Akron\` (scenario `Irr-1-85DS`, `Meteorology\akron.*`, `Project.rzp`) and `C:\RZWQM2\DATABASES\DSSAT\` (4 files). Input headers say V4.20. Server copy of the install folders: `/home/server/RZWQM2/RZWQM2/data/data/Corn-Akron` and `.../data/databases/DSSAT` |
+| Source | USDA-ARS RZWQM2 Windows release: `C:\RZWQM2\data\Corn-Akron\` (scenario `Irr-1-85DS`, `Meteorology\akron.*`, `Project.rzp`) and `C:\RZWQM2\DATABASES\DSSAT\` (4 files). Input headers say V4.20. Server copy of the install folders: `KISSPATH_HOME/RZWQM2/RZWQM2/data/data/Corn-Akron` and `.../data/databases/DSSAT` |
 | Licence | USDA-ARS public software (US Government work), free download after registration at ars.usda.gov (softwareid=412) |
 | KI | `RZWQM2` |
 
@@ -75,6 +75,6 @@ No KI tool fix for RZWQM2 has landed in this checkout since the case was made (l
   scenario folder with Windows paths and lower-case names therefore does not run as-is; the
   tool does not do the path / upper-case step that the RZWQM2 interface does. This case does
   that step itself in the temp copy.
-- **Still open:** `run_rzwqm2.py` default `BINARY_PATH` points to `/home/server/RZWQM2/RZWQM2/linux/main_ryzen_patched`,
-  not the preflight engine `/mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched`;
+- **Still open:** `run_rzwqm2.py` default `BINARY_PATH` points to `KISSPATH_HOME/RZWQM2/RZWQM2/linux/main_ryzen_patched`,
+  not the preflight engine `KISSPATH_BINARIES/rzwqm2/main_ryzen_patched`;
   this case always passes the binary path explicitly.

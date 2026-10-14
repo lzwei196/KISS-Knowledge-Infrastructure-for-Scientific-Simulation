@@ -31,7 +31,7 @@ The case has two parts:
 - All model data is defined inside the official test file. No download, no server data.
 
 ## Engine
-- Python: `/mnt/disk1/Hydrocraft_server/python_env/bin/python` (3.12), the one the KI
+- Python: `KISSPATH_PYTHON_ENV/bin/python` (3.12), the one the KI
   preflight checks.
 - SimPEG 0.25.2 installed in python_env site-packages (the `potential_fields` code is the
   same as the git commit above), discretize 0.12.0, geoana 0.8.1, numpy 2.4.4, pytest 9.0.3.

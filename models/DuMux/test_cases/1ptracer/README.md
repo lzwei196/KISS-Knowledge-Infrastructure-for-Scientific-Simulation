@@ -30,20 +30,20 @@ example program `example_1ptracer`.
 
 ## Engine
 `example_1ptracer`. Server default (since 2026-10-06): a clean build of the official commit, at
-`/home/server/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer`
+`KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer`
 (sha256 `c1a81191f542afc19a5d46faaaf7df6777e6c31ed5997fe7afa341a473ad741c`). It was built from
 `git archive` copies of DuMux 3e151aebf005 and the DUNE 2.10 modules dune-common 2988ac1d,
 dune-geometry 5673e95a, dune-grid 954436b8, dune-istl 21c67275, dune-localfunctions ddbf693b
 (Release, `-O3 -march=native`, OpenMP, no MPI, gcc 13.3.0, cmake 4.2.3); build log:
-`/home/server/engine_builds_20261006/dumux/BUILD_LOG.md`. In that build the official DuMux test
+`KISSPATH_HOME/engine_builds_20261006/dumux/BUILD_LOG.md`. In that build the official DuMux test
 `ctest -R example_1ptracer` passes (both fuzzy compares "equal").
 
-Older server build: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer`
+Older server build: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer`
 (sha256 `b2086b2f...d531`), made from a KI-edited `problem_1p.hh`; see below.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--dumux-bin PATH] [--flow-direction-flag off|on] [--keep]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--dumux-bin PATH] [--flow-direction-flag off|on] [--keep]
 ```
 Binary lookup: `--dumux-bin` -> `$DUMUX_BIN` -> `which example_1ptracer` -> server default path
 (the clean build). The chosen program must be an executable file, else exit 3; it is never

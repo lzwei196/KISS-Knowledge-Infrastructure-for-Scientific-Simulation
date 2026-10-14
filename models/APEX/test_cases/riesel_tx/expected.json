@@ -20,7 +20,7 @@
   ],
   "finished_check": "s6_run_apex returns rc=0 with no accepted terminal fault, EPICERR.DAT has no ERROR, and OUTPUT.OUT holds TOTAL WATER BALANCE, TOTAL SEDIMENT BALANCE and TOTAL RUN TIME",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/APEX/knowledge_infrastructure/reference/APEX0806.exe (same bytes as the exe in the official download) run through the KI tools/s6_run_apex.py; crop table read with tools/s7_parse_output.py",
+  "recorded_with": "KISSPATH_KI_ROOT/APEX/knowledge_infrastructure/reference/APEX0806.exe (same bytes as the exe in the official download) run through the KI tools/s6_run_apex.py; crop table read with tools/s7_parse_output.py",
   "reference": "reference/fort.102, fort.108, fort.112, fort.128 = official side outputs from the APEX v.0806 Editor download (ApexEditor(09232015)/ex1_RiselTX, dated 2015-09-04). The download ships no OUTPUT.* files, so the crop/AWS/water-balance values come from our own run.",
   "notes": "Our run reproduces all four official fort.* files byte for byte. The tolerance on fort.* is 0 on the printed numbers."
 }

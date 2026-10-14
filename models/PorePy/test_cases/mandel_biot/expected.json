@@ -113,7 +113,7 @@
   ],
   "tolerance_rule": "pass if |got - expected| <= atol + rtol*|expected| (same as numpy.testing.assert_allclose used by the official test)",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PorePy/venv/bin/python (porepy 1.12.0 editable install of the repo), OMP_NUM_THREADS=4",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PorePy/venv/bin/python (porepy 1.12.0 editable install of the repo), OMP_NUM_THREADS=4",
   "reference": "OFFICIAL: the expected error values and tolerances (atol 1e-5, rtol 1e-3; decimal=4 for scaled vs unscaled) are copied from tests/functional/test_mandel.py of pmgbergen/porepy at the commit above. run_reference.py also re-reads them from inputs/test_mandel.py and fails if they differ.",
   "notes": "pytest is not installed in the engine venv, so run_reference.py drives the same model setup as the test fixture with a small script. No input file is changed."
 }

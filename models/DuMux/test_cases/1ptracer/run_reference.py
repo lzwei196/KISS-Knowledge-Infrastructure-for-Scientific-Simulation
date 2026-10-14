@@ -25,8 +25,8 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 # Server default: clean build of the official DuMux commit 3e151aeb (no local edits),
-# made 2026-10-06 in /home/server/engine_builds_20261006/dumux (see BUILD_LOG.md there).
-_DEF = ("/home/server/engine_builds_20261006/dumux/src/build-cmake/dumux/"
+# made 2026-10-06 in KISSPATH_HOME/engine_builds_20261006/dumux (see BUILD_LOG.md there).
+_DEF = ("KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/"
         "examples/1ptracer/example_1ptracer")
 NAME = "example_1ptracer"
 # Official ctest command: example_1ptracer params.input -Problem.Name example_1ptracer.

@@ -100,7 +100,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "GenCase_linux64 + DualSPHysics5.4CPU_linux64 (-cpu -ompthreads:8) via KI tools/run_dualsphysics.py, then MeasureTool_linux64, binaries in /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux",
+  "recorded_with": "GenCase_linux64 + DualSPHysics5.4CPU_linux64 (-cpu -ompthreads:8) via KI tools/run_dualsphysics.py, then MeasureTool_linux64, binaries in KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DualSPHysics/source/repo/bin/linux",
   "reference": "Official experimental reference shipped with the case: 'EXP_X-DamTipPosition_Koshizula&Oka1996.txt' (front position vs time; Koshizuka & Oka 1996, Nucl. Sci. Eng. 123:421-434). The simulated front runs ahead of the experiment by about 0.26 m on average (bias), as is common for SPH dam-break fronts vs this experiment. The last 2 experiment points (x>=3.9 m, one beyond the 4 m tank) are left out of the error checks because the simulated front stops at the wall.",
   "sha256_informational": {
     "GaugesSWL_Swl_z003.csv": "f8e3b0f6d63c2899d47ce8f166185818684134e1d3fc0ccdd038d806871b40f0",

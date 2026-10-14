@@ -35,7 +35,7 @@ dynamic veg maps, node lists), `results/reference.zip` (official reference outpu
 |---|---|
 | Netdisk folder | `/KISS_test_case_packs/tRIBS/happy_jack_v1` |
 | Share link | https://pan.baidu.com/s/1-7fewTfk2tuJxLJfKzR3wA  code `8ncs` (no expiry) |
-| Server copy | `/home/server/ki_test_case_packs/tRIBS/happy_jack_v1` |
+| Server copy | `KISSPATH_HOME/ki_test_case_packs/tRIBS/happy_jack_v1` |
 | Size | 236 838 317 bytes, 102 files |
 
 `inputs/happy_jack_pytest/` (in git, small) holds the official black-box test files from the
@@ -47,7 +47,7 @@ tRIBS repo, unchanged: `test_happy_jack.py`, `conftest.py`, the black-box `READM
 python run_reference.py                  # 0=PASS 2=checks failed 3=engine/dependency or data missing/bad
 python run_reference.py --pack-dir /path/to/happy_jack_v1
 ```
-Use a Python that has pytRIBS, numpy and pandas (server: `/mnt/disk1/Hydrocraft_server/python_env/bin/python`).
+Use a Python that has pytRIBS, numpy and pandas (server: `KISSPATH_PYTHON_ENV/bin/python`).
 Where the data is looked for, in order: `--pack-dir` → `$TRIBS_PACK_DIR` → the server copy →
 the cache `~/.cache/kiss_packs/tRIBS/happy_jack_v1` (or `--cache-dir` / `$KISS_PACK_CACHE`) →
 download from the share link into that cache. `--no-server-pack` (or `KISS_NO_SERVER_PACK=1`)

@@ -3,7 +3,7 @@
   "engine": {
     "name": "HEC-RAS",
     "version": "6.7 Beta 5 (RasSteady.exe x64, under WINE 9.0)",
-    "binary": "/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe",
+    "binary": "KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe",
     "binary_sha256": "deaef5889cba19343ec3a116db10d4859fc6f06c3432b4041595390be09226f0",
     "source": "US Army Corps of Engineers, Hydrologic Engineering Center (HEC). Inputs from Example_Projects_6_6.zip (https://github.com/HydrologicEngineeringCenter/hec-downloads/releases/download/1.0.33/Example_Projects_6_6.zip, zip sha256 ea239b506155a2dfeda2af80b3c2af948eef42c40218bcd65de472cfed386887), folder '1D Steady Flow Hydraulics/Mixed Flow Regime Channel'",
     "license": "HEC-RAS is US Government (USACE) software, free to use, closed source; HEC example projects are distributed freely by HEC"

@@ -29,7 +29,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / "inputs"
 EXPECTED = json.loads((HERE / "expected.json").read_text())
-_DEFAULT_BIN = "/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm"
+_DEFAULT_BIN = "KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm"
 _TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 
 

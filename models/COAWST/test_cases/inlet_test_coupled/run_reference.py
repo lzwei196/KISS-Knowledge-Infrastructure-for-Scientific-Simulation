@@ -19,7 +19,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_coawst.py"
-_DEF = "/home/server/engine_builds_20261006/coawst/COAWST/coawstM"
+_DEF = "KISSPATH_HOME/engine_builds_20261006/coawst/COAWST/coawstM"
 CPL = "Projects/Inlet_test/Coupled/coupling_inlet_test.in"
 
 

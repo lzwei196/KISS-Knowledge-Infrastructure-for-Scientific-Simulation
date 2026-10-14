@@ -26,7 +26,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_geoclaw.py"
 PARSE_TOOL = TOOLS / "parse_geoclaw_output.py"
-_WORK = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw"
+_WORK = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw"
 _DEF_CLAW = _WORK + "/clawpack"
 _DEF_PY = _WORK + "/venv/bin/python"
 # python that starts the KI tools (env KI_TOOL_PY, default: the Clawpack python)

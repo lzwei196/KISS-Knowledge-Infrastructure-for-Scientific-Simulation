@@ -3,7 +3,7 @@
   "engine": {
     "name": "Cell2Fire W (C2F-W)",
     "version": "git 38ff0a0 (2026-03-02), local build, prints v0.0.0",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire",
     "source": "https://github.com/fire2a/C2F-W test/model/sb-asc + test/target_results.zip (commit 38ff0a0cee074e322d330524c1fa3ae7dce28289)",
     "license": "GPL-3.0 (C2F-W)"
   },

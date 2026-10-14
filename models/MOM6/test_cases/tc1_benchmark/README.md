@@ -23,7 +23,7 @@ checksums (`chksum_diag`). This package checks the same thing.
 
 ## Engine
 - `MOM6` from the MOM6 `.testing` symmetric build:
-  `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6`
+  `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6`
   (FMS 2025.02.01, gfortran 13.3, Open MPI 4.1.6).
 - Note: the source tree used for this build has one local change, in the solo driver
   `config_src/drivers/solo_driver/MOM_surface_forcing.F90` (it reads surface air pressure
@@ -33,10 +33,10 @@ checksums (`chksum_diag`). This package checks the same thing.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--mom6-bin PATH] [--keep]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--mom6-bin PATH] [--keep]
 ```
 Binary lookup: `--mom6-bin` -> `$MOM6_BIN` -> `which MOM6` -> server default path above.
-`mpirun` must be on PATH (or in `/home/server/.local/bin`) for the 2-rank run.
+`mpirun` must be on PATH (or in `KISSPATH_HOME/.local/bin`) for the 2-rank run.
 The script copies `inputs/` into a fresh temp dir per run, makes empty `INPUT/` and
 `RESTART/` dirs, runs MOM6 through the KI tool `tools/run_mom6.py`, reads `ocean.stats`
 with the KI tool `tools/output_parser.py`, checks `expected.json`, and deletes the temp dirs.

@@ -20,7 +20,7 @@ EXP = json.loads((HERE / "expected.json").read_text())
 TOOLS = HERE.parents[1] / "tools"
 RUN_TOOL = TOOLS / "run_openfoam.py"
 PARSE_TOOL = TOOLS / "parse_openfoam_output.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/etc/bashrc"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenFOAM/source/repo/etc/bashrc"
 
 
 def find_bashrc(arg):

@@ -106,7 +106,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/mnt/disk1/Hydrocraft_server/models/Daisy/bin/daisy (7.1.4) with DAISYHOME=/mnt/disk1/Hydrocraft_server/models/Daisy/source/repo, run via KI tools/run_daisy.py, read via KI tools/parse_daisy_output.py",
+  "recorded_with": "KISSPATH_KI_ROOT/Daisy/bin/daisy (7.1.4) with DAISYHOME=KISSPATH_KI_ROOT/Daisy/source/repo, run via KI tools/run_daisy.py, read via KI tools/parse_daisy_output.py",
   "reference": "own run (no official reference output ships with sample/test.dai); run twice, identical results",
   "notes": "Tolerances are small and only allow for print rounding on other builds; this build repeats exactly. Sums are over the monthly rows of field_water.dlf / field_nitrogen.dlf (first row is the 1986-12-01 initial state, all zeros)."
 }

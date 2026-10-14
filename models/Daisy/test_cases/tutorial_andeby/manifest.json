@@ -3,7 +3,7 @@
   "engine": {
     "name": "Daisy",
     "version": "7.1.4",
-    "binary": "daisy (server: /mnt/disk1/Hydrocraft_server/models/Daisy/bin/daisy)",
+    "binary": "daisy (server: KISSPATH_KI_ROOT/Daisy/bin/daisy)",
     "library": "DAISYHOME lib/ (tillage.dai, crop.dai, log.dai and the files they load) from the same git commit",
     "source": "github.com/daisy-model/daisy, sample/test.dai + sample/dk-taastrup.dwf (commit a621e3b519e85117b1a35df5f8ad428408f8cb88)",
     "license": "GNU GPL v2 (repo COPYING.txt); repo also ships COPYING.LIB (GNU LGPL v2.1)"

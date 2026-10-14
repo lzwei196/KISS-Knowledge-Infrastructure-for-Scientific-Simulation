@@ -18,8 +18,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_pyaez.py"
-_DEF_PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python_with_gdal"
-_DEF_SRC = "/mnt/disk1/Hydrocraft_server/models/PyAEZ/source/repo"
+_DEF_PY = "KISSPATH_PYTHON_ENV/bin/python_with_gdal"
+_DEF_SRC = "KISSPATH_KI_ROOT/PyAEZ/source/repo"
 
 # our output name -> official NB1 reference file
 REF = {

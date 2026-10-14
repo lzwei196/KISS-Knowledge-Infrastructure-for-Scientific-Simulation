@@ -94,7 +94,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "run_reference.py -> KI tools/run_pyaez.py --modules 1, /mnt/disk1/Hydrocraft_server/python_env/bin/python_with_gdal, PYTHONPATH=/mnt/disk1/Hydrocraft_server/models/PyAEZ/source/repo",
+  "recorded_with": "run_reference.py -> KI tools/run_pyaez.py --modules 1, KISSPATH_PYTHON_ENV/bin/python_with_gdal, PYTHONPATH=KISSPATH_KI_ROOT/PyAEZ/source/repo",
   "reference": "Official NB1 output rasters committed to gicait/PyAEZ in a3b1f5b (2023-07-03, 'Added data_output folders'), still tracked at 792e1d4; copied unchanged into reference/NB1/.",
   "notes": "The official rasters store real numbers outside the admin mask (older saveRaster); our run writes -999 there, so all checks use the 9762 mask cells. Official LAO_LGP.tif differs on 2295 of 9762 cells (max 55 days, mean 262.44 vs 259.83) and LAO_LGPEquivalent.tif by at most 0.0124 day: these files were made in 2023-07, before upstream fixes to the LGP water balance (0a02583 'fix sb_old,wb_old initialization' in ClimateRegime.py and 4348400 'fix Sb365 bug in else section of EtaCalc' in LGPCalc.py, 2024-01). The climate inputs, admin mask and elevation are byte-identical between a3b1f5b and 792e1d4. So LGP checks are own-run values."
 }

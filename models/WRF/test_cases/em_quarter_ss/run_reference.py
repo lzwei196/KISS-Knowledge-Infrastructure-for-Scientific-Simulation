@@ -16,7 +16,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
-_DEF = "/home/server/engine_builds_20261006/wrf/install_quarter_ss"
+_DEF = "KISSPATH_HOME/engine_builds_20261006/wrf/install_quarter_ss"
 WRFOUT = "wrfout_d01_0001-01-01_00:00:00"
 
 

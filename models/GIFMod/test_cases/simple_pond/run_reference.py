@@ -100,7 +100,7 @@ def check_summary(summary_path):
     return fails
 
 
-SERVER_WRAPPER = "/home/server/engine_builds_20261006/gifmod/install/gifmod_headless.sh"
+SERVER_WRAPPER = "KISSPATH_HOME/engine_builds_20261006/gifmod/install/gifmod_headless.sh"
 
 
 def main():

@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_hydrotrend.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/HydroTrend/bin/hydrotrend"
+_DEF = "KISSPATH_KI_ROOT/HydroTrend/bin/hydrotrend"
 INPUTS = ("HYDRO.IN", "HYDRO0.HYPS")
 
 

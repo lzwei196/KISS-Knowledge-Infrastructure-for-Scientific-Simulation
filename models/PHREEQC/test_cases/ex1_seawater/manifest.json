@@ -3,7 +3,7 @@
   "engine": {
     "name": "PHREEQC",
     "version": "3.8.9",
-    "binary": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc",
+    "binary": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc",
     "source": "https://github.com/usgs-coupled/phreeqc3 (commit 311a485, 2026-03-03): examples/ex1, examples/ex1.out, database/phreeqc.dat, doc/NOTICE.TXT",
     "license": "USGS public-domain software, User Rights Notice (NOTICE.TXT included)"
   },

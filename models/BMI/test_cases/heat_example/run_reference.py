@@ -20,7 +20,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # keep the KI tools/ and case dirs clean
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE.parents[1] / "tools"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python"
 VAR = "plate_surface__temperature"
 
 

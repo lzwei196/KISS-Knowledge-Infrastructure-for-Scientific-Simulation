@@ -26,9 +26,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 PARSE_TOOL = HERE.parents[1] / "tools" / "parse_dfnworks_output.py"
-_DEF_BIN = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/"
+_DEF_BIN = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/dfnWorks/"
             "source/repo/DFNGen/DFNGen")
-_DEF_PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+_DEF_PY = "KISSPATH_PYTHON_ENV/bin/python"
 OK_LINES = ("Graph Particle Tracking Completed Successfully.", "All particles exited the network")
 
 READ_PARTIME = r"""

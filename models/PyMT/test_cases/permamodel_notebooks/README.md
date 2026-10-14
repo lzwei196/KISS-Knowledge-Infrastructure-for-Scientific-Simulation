@@ -27,7 +27,7 @@ download is not repeatable, so those cells are NOT part of this case.
 - Licence: MIT (pymt, CSDMS), MIT (pymt_permamodel, CSDMS), MIT (permamodel).
 
 ## Engine
-`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python`
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyMT/venv/bin/python`
 with pymt 1.3.3.dev0 (git c0544b6), pymt_permamodel 0.2.3, permamodel 0.2.3, Python 3.12.3.
 
 ## How to run

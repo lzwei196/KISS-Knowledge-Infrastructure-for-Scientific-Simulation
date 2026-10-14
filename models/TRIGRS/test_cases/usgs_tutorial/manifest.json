@@ -7,7 +7,7 @@
       "tpx",
       "trg"
     ],
-    "binary": "/mnt/disk1/Hydrocraft_server/models/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg (same file as models/TRIGRS/bin/trg); src/TopoIndex/tpx",
+    "binary": "KISSPATH_KI_ROOT/TRIGRS/source/repo/source/trigrs_full/src/TRIGRS/trg (same file as models/TRIGRS/bin/trg); src/TopoIndex/tpx",
     "source": "USGS landslides-trigrs git (https://code.usgs.gov/usgs/landslides-trigrs), commit 9bb5ec2a697e161d1b602eb68ffa7acc722d5ee6 (2022-02-03); files data/tutorial/*, tpx_in.txt, tr_in.txt",
     "license": "Public domain (USGS); calerf.f and derfc.f from Netlib (see LICENSE.md in the repo)"
   },

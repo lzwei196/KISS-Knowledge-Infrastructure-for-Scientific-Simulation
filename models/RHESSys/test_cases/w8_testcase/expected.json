@@ -94,7 +94,7 @@
     }
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4 via models/RHESSys/tools/run_rhessys.py, python_env",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4 via models/RHESSys/tools/run_rhessys.py, python_env",
   "reference": "Official base output reference/base_basin_daily.csv (and Testing/W8TestCase.RData, same content) was made with the output filter reference/testing_filter.yml. It is NOT used as the pass gate: (1) this engine segfaults when given that filter (-of), so the same file cannot be made; (2) comparing our legacy output with it in the same units, means differ: streamflow +0.40%, sat_deficit -0.82%, rz_storage -5.87%, LAI -4.32%, snowpack +0.20% (litter C about -22%). TestCase.Rmd gives no pass limit for these, only says differences above +-4e-6 per day should be understood. Likely cause: the base was made with another code version and/or this engine has a local edit; not checked further (no engine rebuild allowed).",
   "notes": "The official water balance test from rhessys/test/rhessystest.py (ZERO = 1e-5 on the max 3-day moving mean of |error|) is applied to this run and passes (2.33e-6)."
 }

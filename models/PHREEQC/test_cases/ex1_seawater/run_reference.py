@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_phreeqc.py"
 PARSE_TOOL = HERE.parents[1] / "tools" / "parse_output.py"
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PHREEQC/source/repo/build/phreeqc"
 NUM = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
 
 

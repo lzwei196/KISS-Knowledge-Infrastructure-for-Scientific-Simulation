@@ -20,7 +20,7 @@
   ],
   "extra_check": "KI runner final sum must match the notebook final sum to 1e-9; engine worker must exit 0",
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python (bmi-heat installed from git), notebook cells run as-is (the one '!cat heat.yaml' shell line skipped), KI tools from models/BMI/tools",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python (bmi-heat installed from git), notebook cells run as-is (the one '!cat heat.yaml' shell line skipped), KI tools from models/BMI/tools",
   "reference": "Own run, repeated twice with identical results. No official reference outputs exist (notebook saved without outputs; repo has no reference files).",
   "notes": "Run-time only tweak (no file changed): the server venv's heat package lost heat/__init__.py, so run_reference sets heat.BmiHeat = heat.bmi_heat.BmiHeat before the notebook and tests run. This only restores the name the package's own __init__.py would export; the model code is the same."
 }

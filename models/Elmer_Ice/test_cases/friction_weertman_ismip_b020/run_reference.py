@@ -22,7 +22,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_elmerice.py"
-_DEF_DIR = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Elmer_Ice/install_ice/bin"
+_DEF_DIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Elmer_Ice/install_ice/bin"
 INPUTS = ("ismip_weertman.sif", "rectangle.grd", "ELMERSOLVER_STARTINFO")
 SIF = "ismip_weertman.sif"
 

@@ -26,7 +26,7 @@ python run_reference.py    # 0=PASS 2=FAIL 3=missing engine
 ```
 It looks for a Python that can import `heat.bmi_heat`: `--heat-python` -> `$BMI_HEAT_PYTHON`
 -> `python3` on PATH -> server default
-`/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python`.
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python`.
 It copies `inputs/` to a fresh temp dir and, in that Python:
 1. runs the notebook's code cells in order (only the `!cat heat.yaml` shell line is skipped);
 2. runs the same case through the KI's own `tools/bmi_runner.py`

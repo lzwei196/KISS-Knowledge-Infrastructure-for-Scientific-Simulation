@@ -16,7 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_ribasim.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/Ribasim/bin/ribasim"
+_DEF = "KISSPATH_KI_ROOT/Ribasim/bin/ribasim"
 SOURCES = ["Initial", "LevelBoundary", "FlowBoundary", "UserDemand",
            "Drainage", "Precipitation", "SurfaceRunoff"]
 

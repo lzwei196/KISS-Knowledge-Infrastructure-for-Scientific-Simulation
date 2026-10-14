@@ -22,7 +22,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EXP = json.loads((HERE / "expected.json").read_text())
-_DEF = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PorePy/venv/bin/python"
+_DEF = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PorePy/venv/bin/python"
 
 DRIVER = r'''
 import importlib.util, json, sys, time

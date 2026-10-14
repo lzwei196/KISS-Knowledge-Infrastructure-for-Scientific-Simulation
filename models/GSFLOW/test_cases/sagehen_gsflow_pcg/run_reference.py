@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-_DEF = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GSFLOW/source/repo/"
+_DEF = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GSFLOW/source/repo/"
         "autotest/gsflow")
 TIMEOUT_S = 3000
 

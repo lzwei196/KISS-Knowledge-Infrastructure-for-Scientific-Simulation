@@ -18,21 +18,21 @@ KI's em_real build (`real`/`wrf`) cannot run it.
 - WRF ships **no reference output** for this case.
 
 ## Engine
-Built on this server on 2026-10-06 in `/home/server/engine_builds_20261006/wrf/`:
+Built on this server on 2026-10-06 in `KISSPATH_HOME/engine_builds_20261006/wrf/`:
 `install_quarter_ss/bin/ideal` (sha256 `8fa575b2...652e`) and `install_quarter_ss/bin/wrf`
 (sha256 `3d63fcca...e314`). Source: `git archive` of the commit above plus its submodules phys/noahmp
 `e5c08598` and phys/MYNN-EDMF `90f36c25`; MMM-physics `0ea59b1c` (tag 20240626-MPASv8.2) cloned by WRF's own
 manage_externals step. Configured the official CMake way (`configure_new`): toolchain from the
 `arch/configure.defaults` stanza "GNU (gfortran/gcc)", serial (no MPI, no OpenMP), Release, WRF_CORE=ARW,
 WRF_NESTING=NONE, WRF_CASE=EM_QUARTER_SS; gfortran/gcc 13.3.0, netCDF from /usr. Build log:
-`/home/server/engine_builds_20261006/wrf/BUILD_LOG.md`.
+`KISSPATH_HOME/engine_builds_20261006/wrf/BUILD_LOG.md`.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--wrf-install DIR] [--keep]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--wrf-install DIR] [--keep]
 ```
 Install folder lookup: `--wrf-install` -> `$WRF_QUARTER_SS_INSTALL` -> server default
-`/home/server/engine_builds_20261006/wrf/install_quarter_ss`. Both `bin/ideal` and `bin/wrf` come from that one
+`KISSPATH_HOME/engine_builds_20261006/wrf/install_quarter_ss`. Both `bin/ideal` and `bin/wrf` come from that one
 folder, so a wrf from another build is never mixed in (the em_real install has no `ideal`, so it gives exit 3).
 The script copies the two inputs to a fresh temp dir, runs `ideal` then `wrf` (serial, `OMP_NUM_THREADS=1`),
 checks `expected.json`, and deletes the temp dir. Exit 0 = PASS, 2 = checks failed, 3 = engine or dependency

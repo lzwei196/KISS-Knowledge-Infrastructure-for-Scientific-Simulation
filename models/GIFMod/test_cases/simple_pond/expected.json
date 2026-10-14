@@ -18,7 +18,7 @@
     {"name": "mb_max_abs", "expected": 0.0, "tol": 1e-12, "why": "water mass-balance error of the pond is 0 at every record"}
   ],
   "recorded_on": "2026-10-06",
-  "recorded_with": "tools/run_gifmod_engine.py (live KI /mnt/disk1/Hydrocraft_server/models/GIFMod/knowledge_infrastructure) -> /home/server/engine_builds_20261006/gifmod/install/gifmod_headless.sh -> install/GIFMod --wizard Simple_pond.wiz --param ... --save <run>/Simple_pond.GIFMod",
+  "recorded_with": "tools/run_gifmod_engine.py (live KI KISSPATH_KI_ROOT/GIFMod/knowledge_infrastructure) -> KISSPATH_HOME/engine_builds_20261006/gifmod/install/gifmod_headless.sh -> install/GIFMod --wizard Simple_pond.wiz --param ... --save <run>/Simple_pond.GIFMod",
   "reference": "Own repeat runs; upstream GIFMod ships no reference output for its wizard templates.",
   "notes": "LAI_Pond in hydro_output is uninitialised memory (values like 6.95e-310 that change run to run) and is excluded. The engine is a locally patched fork; equivalence with upstream GIFMod is not proven beyond this case."
 }

@@ -28,7 +28,7 @@
      "why": "every run_model.py call: return code 0, status=success, finalized=true, 1 step; literal run return code 0"}
   ],
   "recorded_on": "2026-10-05",
-  "recorded_with": "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python (pymt 1.3.3.dev0) via KI tools/run_model.py",
+  "recorded_with": "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyMT/venv/bin/python (pymt 1.3.3.dev0) via KI tools/run_model.py",
   "reference": "Official saved outputs in inputs/frost_number.ipynb and inputs/ku.ipynb (https://github.com/csdms/pymt, notebooks/)",
   "notes": "Not included: the later notebook cells that download t_air_min_max.csv and Barrow_1961-2015.csv from raw.githubusercontent.com (live download, not on the server, not repeatable offline)."
 }

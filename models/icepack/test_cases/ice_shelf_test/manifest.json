@@ -3,7 +3,7 @@
   "engine": {
     "name": "icepack",
     "version": "1.1.0 (upstream master c9a29780cd0f7d068d206cb5a170fa367a7655b0)",
-    "binary": "/home/server/engine_builds_20261006/firedrake/venv/bin/python (import icepack, firedrake)",
+    "binary": "KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python (import icepack, firedrake)",
     "source": "github.com/icepack/icepack master c9a29780 (2026-10-05); firedrake 2026.10.0, PETSc 3.26.0",
     "license": "GPL-3.0-or-later (icepack); LGPL-3.0-or-later (firedrake)"
   },

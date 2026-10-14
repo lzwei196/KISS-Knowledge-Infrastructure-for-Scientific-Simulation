@@ -21,15 +21,15 @@ end to end with what is installed (the input is one 2.5 KB driver file; a run ta
 - Licence: LANL LA-CC-17-027, GNU LGPL v3 or later (see `LICENSE.md` in the dfnWorks repo).
 
 ## Engine
-- DFNGen 2.3: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen`
+- DFNGen 2.3: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen`
 - pydfnworks 2.10.0 from the same repo, imported by
-  `/mnt/disk1/Hydrocraft_server/python_env/bin/python` (Python 3.12).
+  `KISSPATH_PYTHON_ENV/bin/python` (Python 3.12).
 - The helper programs DFNTrans, correct_volume and ConnectivityTest must also be built in the
   repo (pydfnworks checks them at start-up and would try to compile them otherwise).
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py
+KISSPATH_PYTHON_ENV/bin/python run_reference.py
 ```
 Options: `--dfngen-bin PATH` (or `$DFNGEN_BIN`), `--python PATH` (or `$DFNWORKS_PYTHON`),
 `--record` (print values, no checks), `--keep` (keep the temp run dir).

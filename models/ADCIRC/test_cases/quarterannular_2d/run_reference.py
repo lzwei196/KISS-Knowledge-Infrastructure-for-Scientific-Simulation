@@ -17,7 +17,7 @@ from adcirc_ascii import read_ts  # noqa: E402
 
 EXP = json.loads((HERE / "expected.json").read_text())
 RUN_TOOL = HERE.parents[1] / "tools" / "run_adcirc.py"
-_DEF = "/mnt/disk1/Hydrocraft_server/models/ADCIRC/bin/adcirc"
+_DEF = "KISSPATH_KI_ROOT/ADCIRC/bin/adcirc"
 
 
 def summarise(d):

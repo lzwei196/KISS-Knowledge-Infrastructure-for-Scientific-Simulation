@@ -23,13 +23,13 @@ boundaries, 2 linear resistances, 1 Manning resistance, 1 pump, 3 rating curves,
 - Licence: MIT (Ribasim developers / Deltares).
 
 ## Engine
-`/mnt/disk1/Hydrocraft_server/models/Ribasim/bin/ribasim`: a small wrapper that runs the
+`KISSPATH_KI_ROOT/Ribasim/bin/ribasim`: a small wrapper that runs the
 Ribasim Julia core (`Ribasim.main(toml)`) from the commit above, Julia 1.12.5. A run takes
 about 2-3 minutes, mostly Julia start-up and compiling; it uses about 2.5 GB RAM.
 
 ## How to run
 ```
-/mnt/disk1/Hydrocraft_server/python_env/bin/python run_reference.py [--ribasim-bin PATH]
+KISSPATH_PYTHON_ENV/bin/python run_reference.py [--ribasim-bin PATH]
 ```
 Engine lookup: `--ribasim-bin` -> `$RIBASIM_BIN` -> `which ribasim` -> server default path.
 The script copies `inputs/` to a fresh temp folder, runs the model through the KI tool
@@ -61,10 +61,10 @@ No KI tool fix for Ribasim has landed in this checkout since the case was made (
 - **Still open:** The KI's own model builder (`tools/build_network.py`) only turns hand-written CSV tables
   into a model; it cannot build this official test model. The inputs come from Ribasim's
   own generator instead.
-- **Still open:** `/mnt/disk1/Hydrocraft_server/python_env` has no `ribasim` Python package (and no
+- **Still open:** `KISSPATH_PYTHON_ENV` has no `ribasim` Python package (and no
   `pandera`/`datacompy`, and its pandas 3 is newer than ribasim allows), so the generator
   was run with the dissection venv
-  `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Ribasim/venv`. Running the
+  `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Ribasim/venv`. Running the
   test case itself does not need the `ribasim` package.
 - **Still open:** The copy of `tools/run_ribasim.py` in this KISS checkout is older than the live KI copy
   on disk1 (the live one adds output-freshness checks and stricter binary checks). Both

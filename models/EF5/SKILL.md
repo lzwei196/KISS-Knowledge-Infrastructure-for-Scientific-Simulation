@@ -68,6 +68,25 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ---
 
+## Parameter input integrity
+
+Parameter conversion now stops on missing/invalid active-cell soil textures,
+missing georeferences, mismatched component grids or output validation failure.
+The supported geographic route requires explicit EPSG:4326 metadata and
+north-up square cells. No 40/40/20 fallback or default geotransform is used.
+`dem.asc` from `prepare_basic_grids.py` and the shared `hwsd.bil` carry no CRS;
+both are WGS84 lon/lat, so the HWSD route is:
+`convert_params_to_ef5.py --soil-dir <ws>/params/soil --output-dir <ws>/params --model crest
+--dem <ws>/basic/dem.asc --hwsd --dem-crs EPSG:4326 --hwsd-crs EPSG:4326 --impervious zero`.
+`--impervious` (CREST IM): `grid` (default) needs urban.tif/impervious.tif in the soil folder and stops
+without it; `zero` writes IM = 0 everywhere and ignores any urban grid present; EF5 turns grid zeros into
+0.01, so also set the scalar `IM=0` in the CrestParamSet (IM=0.01 would run IM=0.0001). Active cells are the
+cells EF5 reads at DEM node upper-left corners (EF5 Grid.h GetRefLoc/GetGridLoc), not cell centres; a
+PixelIsPoint .tif, a tiepoint not at raster (0,0), or an xllcenter .asc DEM stops the tool (EF5 reads the raw origin). The choice is written to `params_provenance.json`.
+Only EPSG:4326 can be declared, and a declaration never overrides a CRS the file has.
+See `docs/s3_parameter_preparation.md` for domain/NoData rules and supported
+formats; run `python -B tests/test_convert_params.py` after converter changes.
+
 ## Data Preparation
 
 ### Forcing data
@@ -235,7 +254,7 @@ im_grid=/data/params/im.tif
 GAUGE=outlet
 WM=1.0
 B=1.0
-IM=0.01
+IM=0.01         # grid in %; use IM=0 when im.tif came from --impervious zero
 KE=1.0
 FC=1.0
 IWU=50.0

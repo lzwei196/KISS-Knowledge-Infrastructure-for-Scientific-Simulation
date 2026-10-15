@@ -458,6 +458,18 @@ def main():
             json.dump(metrics, f, indent=2)
         print(f"\n[OK] Metrics saved to {metrics_path}")
 
+    # No metrics (missing input, no simulated data in the window) or a metrics
+    # error (too few valid pairs) is a failure, not a success.
+    def _bad(v):
+        try:
+            return v is None or not math.isfinite(float(v))
+        except (TypeError, ValueError):
+            return True
+    # NaN NSE/KGE/r (e.g. observations with no variation) is no usable score.
+    if not metrics or (isinstance(metrics, dict) and ("error" in metrics or (
+            "nse" in metrics and any(_bad(metrics.get(k)) for k in ("nse", "kge", "pbias", "r"))))):
+        print("[FAIL] no usable metrics", file=sys.stderr)
+        sys.exit(1)
     sys.exit(0)
 
 

@@ -415,6 +415,50 @@ def _check_written_n(fert_lines: list, requested: float, expected_rows=None) -> 
     return written
 
 
+# Sowing (PLANT) options. 'reported' (PLANT=R) sows on the PDATE row, shifted one year per
+# season by DSSAT; 'auto' (PLANT=A) lets DSSAT sow on the first day inside the window
+# [PDATE - before, PDATE + after] with 10-cm soil temperature in [tmin, tmax] and top-soil
+# water (% of available, over depth_cm) in [h2o_low, h2o_high]. If the window ends unsown,
+# DSSAT counts that season as a crop failure (CERES-Wheat CER_Growth.for:83-145).
+# 'forced' (PLANT=F) is 'auto' except that an unsown window is sown on its LAST day
+# (Management/AUTPLT.for "Forced planting mode"), so no season is lost to the window.
+# Defaults = the values this writer always wrote on the PLANTING line.
+PLANT_MODES = {"reported": "R", "auto": "A", "forced": "F"}
+PLANT_AUTO_DEFAULTS = {
+    "plant_window_before": 10,   # days before PDATE (clamped to the simulation start)
+    "plant_window_after": 30,    # days after PDATE
+    "plant_h2o_low": 10,         # PH2OL, % of available water
+    "plant_h2o_high": 100,       # PH2OU
+    "plant_h2o_depth": 30,       # PH2OD, cm
+    "plant_tmax": 40,            # PSTMX, C at 10 cm
+    "plant_tmin": 10,            # PSTMN, C at 10 cm
+}
+
+
+def _planting_options(management: dict) -> dict:
+    """Read and check the sowing options; refuse anything DSSAT would misread."""
+    mode = management.get("plant_mode", "reported")
+    if mode not in PLANT_MODES:
+        raise ValueError(f"plant_mode must be one of {sorted(PLANT_MODES)}, got {mode!r}")
+    opt = {"plant_mode": mode}
+    for key, default in PLANT_AUTO_DEFAULTS.items():
+        val = management.get(key, default)
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or val != int(val):
+            raise ValueError(f"{key} must be a whole number, got {val!r}")
+        opt[key] = int(val)
+    if opt["plant_window_before"] < 0 or opt["plant_window_after"] < 0:
+        raise ValueError("plant_window_before/after must be >= 0")
+    # DSSAT's top-soil water is % of AVAILABLE water and is not capped at 100 (wetter than
+    # field capacity gives > 100, AUTPLT.for), so the upper limit may go to 999.
+    if not (0 <= opt["plant_h2o_low"] <= opt["plant_h2o_high"] <= 999):
+        raise ValueError("need 0 <= plant_h2o_low <= plant_h2o_high <= 999")
+    if not (1 <= opt["plant_h2o_depth"] <= 999):
+        raise ValueError("plant_h2o_depth must be 1-999 cm")
+    if not (-99 < opt["plant_tmin"] < opt["plant_tmax"] <= 99):
+        raise ValueError("need -99 < plant_tmin < plant_tmax <= 99")
+    return opt
+
+
 def _generate_filex(
     crop: str,
     cultivar: str,
@@ -611,9 +655,24 @@ def _generate_filex(
     # Harvest last day (auto-management)
     hlast_yyddd = _to_yyddd(start_year, 365)
 
-    # Planting window for automatic management
-    pfirst_yyddd = planting_yyddd - 10 if planting_yyddd % 1000 > 10 else planting_yyddd
-    plast_yyddd = planting_yyddd + 30
+    # Planting window for automatic management, from real dates so it may cross 31 Dec
+    # (the old raw "YYDDD + 30" could write an impossible day such as 380). The start is
+    # never before the simulation start (SDATE). For PDATE day 11-335 the numbers are the
+    # same as before.
+    plant_opt = _planting_options(management)
+    _pdate = _yyddd_to_date(planting_yyddd)
+    _sdate = _yyddd_to_date(sdate_yyddd)
+    if _pdate is None or _sdate is None:
+        raise ValueError(f"invalid planting/start date {planting_yyddd}/{sdate_yyddd}")
+    _pfirst = max(_pdate - timedelta(days=plant_opt["plant_window_before"]), _sdate)
+    if planting_yyddd % 1000 <= 10 and plant_opt["plant_mode"] == "reported":
+        # Reported mode (PLANT=R) sows on PDATE and DSSAT does not read PFRST, so the old
+        # rule is kept there for byte-identical files. In auto/forced mode (AUTPLT.for reads
+        # PFRST as the first day it may sow) the requested look-back is kept; the clamp to
+        # SDATE above already stops it going before the simulation start.
+        _pfirst = _pdate
+    pfirst_yyddd = _date_to_yyddd(_pfirst)
+    plast_yyddd = _date_to_yyddd(_pdate + timedelta(days=plant_opt["plant_window_after"]))
 
     lines = []
 
@@ -729,7 +788,8 @@ def _generate_filex(
     # 'none'->N (rainfed), 'auto'->A (automatic, the rice/paddy default),
     # 'events'->R (the explicit @I IDATE rows above).
     lines.append("@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS")
-    lines.append(f" 1 MA              R     {irrig_flag}     R     N     M")
+    plant_flag = PLANT_MODES[plant_opt["plant_mode"]]
+    lines.append(f" 1 MA              {plant_flag}     {irrig_flag}     R     N     M")
     lines.append("@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT")
     lines.append(" 1 OU              N     Y     Y     1     Y     N     Y     Y     N     N     Y     N     Y     A")
     lines.append("")
@@ -737,7 +797,9 @@ def _generate_filex(
     # Automatic management
     lines.append("@  AUTOMATIC MANAGEMENT")
     lines.append("@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN")
-    lines.append(f" 1 PL          {pfirst_yyddd:>5d} {plast_yyddd:>5d}    10   100    30    40    10")
+    lines.append(f" 1 PL          {pfirst_yyddd:>5d} {plast_yyddd:>5d} {plant_opt['plant_h2o_low']:>5d} "
+                 f"{plant_opt['plant_h2o_high']:>5d} {plant_opt['plant_h2o_depth']:>5d} "
+                 f"{plant_opt['plant_tmax']:>5d} {plant_opt['plant_tmin']:>5d}")
     lines.append("@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF")
     # Rice: high threshold (80%) simulates flooded paddy — irrigate whenever soil
     # drops below 80% with 50mm top-up. Non-rice: standard 50% threshold.
@@ -1011,6 +1073,24 @@ def create_workdir(
         (the user's own dated N rows: [{'yyddd'|'date'|'dap'|'days_after_planting', 'n_kgha',
         'fmcd'?, 'facd'?, 'depth_cm'?, 'name'?}] or (when, n_kgha[, fmcd]) tuples; overrides
         fert_n/fert_date_offset; [] = no application), irrigation_events (list of (yyddd, mm) tuples).
+
+        plant_mode : {'reported', 'auto', 'forced'}, optional
+            'reported' (default) -> PLANT=R, sow on planting_date every season.
+            'auto' -> PLANT=A, DSSAT sows on the first day in
+            [planting_date - plant_window_before, planting_date + plant_window_after]
+            whose 10-cm soil temperature is in [plant_tmin, plant_tmax] C and whose
+            top-soil water (% of available, over plant_h2o_depth cm) is in
+            [plant_h2o_low, plant_h2o_high]; an unsown window = failed season.
+            'forced' -> PLANT=F, as 'auto' but an unsown window is sown on its
+            last day (DSSAT AUTPLT forced planting), so no season is lost.
+            Note: fertilizer rows stay CALENDAR dates (FERTI=R) computed from
+            planting_date, not from the day DSSAT actually sows in auto/forced mode.
+            Defaults (also written to the PLANTING line in 'reported' mode):
+            10 / 30 days, 10-100 %, 30 cm, 10-40 C. Soil water here is % of
+            available water and can exceed 100 when wetter than field capacity,
+            so for temperature-only sowing (irrigated fields) use
+            plant_h2o_low=0 AND plant_h2o_high=999. For spring wheat a lower
+            plant_tmin (~5 C) fits better than the maize-like 10 C.
 
         irrigation : {'none', 'auto', 'events'}, optional
             Explicit irrigation regime, so an ensemble can express a RAINFED

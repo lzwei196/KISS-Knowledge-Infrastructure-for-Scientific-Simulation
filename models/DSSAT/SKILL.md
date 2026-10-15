@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (19 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (56 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -37,7 +37,7 @@
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 | what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -51,6 +51,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
 | `tools/dssat_workdir_setup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/dssat_workdir_setup.py --help` |
 | `tools/parse_plantgro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_plantgro.py --help` |
+| `tools/run_reference_case.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_reference_case.py --help` |
 | `tools/s10_calibrate_rice_nsga2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibrate_rice_nsga2.py --help` |
 | `tools/s1_experiment_design/validate_filex_structure.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_experiment_design/validate_filex_structure.py --help` |
 | `tools/s2_weather_prep/calculate_tav_amp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_weather_prep/calculate_tav_amp.py --help` |
@@ -68,7 +69,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/setup_rice_experiment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/setup_rice_experiment.py --help` |
 | `tools/setup_soybean_experiment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/setup_soybean_experiment.py --help` |
 
-*19 public tools; `_`-prefixed helpers and packaging files excluded.*
+*20 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -102,6 +103,7 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 **Domain**: Crop simulation — multi-crop growth, development, and yield
 **Language**: Fortran 90
 **Binary**: `KISSPATH_HOME/DSSAT/build/bin/dscsm048`
+**Local fix**: the binary carries the DSSAT team's fix `605b4a03` (Century surface layer, `IMMOBLIMIT_C.for`; installed 2026-10-04); see [s8_batch_execution_skill.md](docs/s8_batch_execution_skill.md) Step 1.6
 **License**: Research/non-commercial
 **Repository**: https://github.com/DSSAT/dssat-csm-os
 
@@ -266,6 +268,18 @@ KISSPATH_HOME/DSSAT/build/bin/dscsm048 B DSSBatch.v48
 
 `convert_soilgrids_to_sol.py` advantages: 6 depth layers (vs 2), Saxton-Rawls 2006 PTF (vs 1986), direct bdod from SoilGrids, depth-varying SOC/pH, Mollisol BD correction for NE China black soils. Uses `KISSPATH_DATA/soilgrids_global/` (global) with China-optimised fallback to `KISSPATH_DATA/soilgrids/`.
 
+**Minimum gap between saturation and field capacity (both converters, since 2026-10).** Where the Saxton & Rawls
+density step leaves too little room above field capacity, the converters do the paper's own repair (Saxton & Rawls
+2006, p. 1574): they lower the density used until SSAT - SDUL and (1 - SBDM/2.65) - SDUL are both at least `min_gap`,
+print that density as SBDM, and print SSKS with 3 decimals below 10 cm/h. Layers that already have the room are not
+changed. Default `min_gap` **0.05** (`--min_gap`, or `min_gap=` in Python): in DSSAT maize runs 0.05 removed the soil
+crashes with no new crop failures, while 0.02 did new damage. **Tested on maize only**; for other crops see "min_gap
+for other crops" in the soil doc. It changes the soil in thin-gap layers, so anything fitted on the old soils needs a
+look. `--legacy_gap_rule` (`rule="legacy"`) writes the old files byte for byte, only to reproduce old work. A writer
+that prints the layer table itself (Route B `soil01.py`) must print the returned SBDM and use `format_ssks()` in the
+same step, never the 3-decimal print alone. Details, counts and the other choices with their evidence:
+[s3_soil_setup_skill.md](docs/s3_soil_setup_skill.md), Step 10b.
+
 **Stages 1-7 can run in parallel** — they each write a section of the FileX or prepare external files.
 Stage 8 depends on all of 1-7. Stage 9 depends on 8.
 
@@ -289,12 +303,13 @@ python tools/s3_soil_setup/validate_soil_profile.py            /path/SOIL.SOL
 | `planting_date` (YYDDD) | sowing | `ki_tools_common.crop_calendar.get_planting_harvest` — but in the Huang-Huai belt (32–35N) the GGCMI *global* maize calendar returns late May; maize there is the SUMMER crop after winter wheat, so clamp to DOY ≈ 165 (see China crop calendar below) |
 | `ppop`, `plrs` | plants/m², row spacing cm | China maize: ~6.0 plants/m² at **60 cm** rows, not the 76 cm US default |
 | `irrigation` | `"rainfed"` (default, non-rice) / `"auto"` / `"reported"` | set `"auto"` for any IRRIGATED site |
+| `plant_mode` (+ `plant_window_before/after`, `plant_h2o_low/high/depth`, `plant_tmin/tmax`) | `"reported"` (default, PLANT=R, sow on planting_date) / `"forced"` (PLANT=F: as auto, but an unsown window is sown on its last day, so no season is lost; added 2026-10-14, codex APPROVE) / `"auto"` (PLANT=A: DSSAT sows on the first day in [PDATE-before, PDATE+after] with 10-cm soil temp in [tmin,tmax] C and top-soil water, % of AVAILABLE water over depth cm, in [low,high]; unsown window = failed season). Defaults 10/30 d, 10-100 %, 30 cm, 10-40 C | irrigated, temperature-only: `plant_h2o_low=0, plant_h2o_high=999` (water % can exceed 100 above field capacity); winter wheat: use `plant_tmax` (sow when soil has cooled), spring wheat: lower `plant_tmin` (~5 C). Fertilizer rows stay calendar dates (FERTI=R) from planting_date, not from the actual sowing day. Added 2026-10-13 (codex APPROVE r2; tests + real run in KISSPATH_DATA/xinjiang_dssat_v3/reviews/20261013_ki_autosow) |
 | `irr_ithrl`, `irr_amt`, `irr_imdep`, `irr_eff` | automatic-irrigation trigger %, mm applied, depth cm, efficiency | NCP supplemental: `irr_ithrl=40, irr_amt=40` (rice paddy default is 80/50) |
 | `irrigation_events` | `[(yyddd, mm), ...]` explicit dated events → `IRRIG=R`, `MI=1` | single-season runs only — a multi-season (`NYERS>1`) run needs `irrigation="auto"`, since fixed calendar dates exist for the first season only |
 
 > **Trap (fixed 2026-09-24):** the writer wrote the sidedress row only when `fert_date_offset > 0`. Wheat's
 > default offset is 0, so every wheat run that relied on the defaults (or passed `fert_n` without an offset)
-> silently received **40 % of the requested N**.
+> silently received **40 % of the requested N** (Xinjiang wheat 2026-09, SHAW-coupled winter wheat 2026-09-10).
 > Now offset 0 writes one row with the whole amount, `fertilizer_events` is the door for real schedules, the
 > constants are declared at the top of the writer (`FERT_SPLIT_AT_PLANTING`, `FERT_CODE`, `FERT_APPL`,
 > `FERT_DEPTH_CM`, `FERT_MAX_EVENTS`), and the writer refuses to continue if the rows it wrote do not sum to the

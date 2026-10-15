@@ -130,7 +130,7 @@ validation:
   tier: validated
   tier_justification: 'measured: 5 scorecard(s)'
 summary:
-  total_tools: 36
+  total_tools: 34
   total_stage_docs: 10
   total_diagnostic_triplets: 29
   generated: '2026-08-15'

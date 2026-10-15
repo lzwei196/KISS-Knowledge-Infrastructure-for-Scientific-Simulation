@@ -141,8 +141,8 @@ validation:
     best_kge: 0.8308
     best_r: 0.997
 summary:
-  total_tools: 19
+  total_tools: 18
   total_stage_docs: 8
-  total_diagnostic_triplets: 34
+  total_diagnostic_triplets: 33
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

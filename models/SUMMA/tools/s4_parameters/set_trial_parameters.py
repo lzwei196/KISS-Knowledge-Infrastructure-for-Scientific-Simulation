@@ -216,13 +216,15 @@ def generate_from_hwsd(attributes_nc, output_nc, veg_scheme=None, mptable_path=D
 
     textures = []
     for i in range(n_hru):
+        # A failed HWSD lookup stops the tool (first failing HRU named);
+        # loam is NOT used in its place. Nothing is written before this loop ends.
         try:
             hwsd = lookup_hwsd(float(lats[i]), float(lons[i]))
-            tex = hwsd['texture']
-            sp = rosetta_to_summa(tex)
-        except Exception:
-            tex = 'loam'
-            sp = rosetta_to_summa('loam')
+        except (RuntimeError, ValueError, FileNotFoundError) as e:
+            raise RuntimeError(f"HWSD soil lookup failed for HRU {hru_ids[i]} (index {i}) "
+                               f"at lat={float(lats[i])}, lon={float(lons[i])}: {e}") from e
+        tex = hwsd['texture']
+        sp = rosetta_to_summa(tex)
         textures.append(tex)
         for k in soil_keys:
             soil_params[k][i] = sp[k]

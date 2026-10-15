@@ -128,8 +128,8 @@ validation:
   tier: validated
   tier_justification: 'measured: 8 scorecard(s)'
 summary:
-  total_tools: 20
+  total_tools: 18
   total_stage_docs: 12
-  total_diagnostic_triplets: 27
+  total_diagnostic_triplets: 25
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

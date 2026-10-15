@@ -349,7 +349,7 @@ safety:
       severity: "silent"
     - id: "temperature_kelvin_read_as_celsius"
       kind: "weather_file_semantic"
-      description: "climate.txt temperature in Kelvin is read as Celsius: no snow, extreme ET, all temperature-dependent biogeochemistry wrong. Detect via tavg>100."
+      description: "climate.txt temperature in Kelvin is read as Celsius: no snow, extreme ET, all temperature-dependent biogeochemistry wrong. convert_forcing_to_ldndc_climate.py takes units from source metadata (never from magnitude) and stops if any daily tavg/tmax/tmin is outside -100..70 C; validate_climate_file.py also fails a file whose first 10 tavg (or tmin) values include one > 100."
       severity: "silent"
     - id: "ndep_g_m2_vs_kgN_ha"
       kind: "weather_file_semantic"

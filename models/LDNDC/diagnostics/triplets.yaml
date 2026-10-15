@@ -169,13 +169,17 @@
     - climate.txt temperature columns
     - All temperature-dependent processes
   remedy:
-    action: Check if tavg values in climate.txt are > 100. If so, subtract 273.15 to convert K to C.
+    action: Run validate_climate_file; it reports an error (dt_005) when tavg (or tmin) in any of the first
+      10 data rows is > 100. Do not edit climate.txt by hand; rebuild it with convert_forcing_to_ldndc_climate.
     tool_to_run: validate_climate_file
     manual_steps:
     - Read first 5 data lines of climate.txt
-    - If tavg > 100, temperatures are in Kelvin
-    - Rerun convert_forcing_to_ldndc_climate with correct unit handling
-    prevention: Always use convert_forcing_to_ldndc_climate which auto-detects and converts K to C
+    - If tavg > 100, the file is not valid Celsius (often Kelvin); do not convert it by magnitude
+    - Rerun convert_forcing_to_ldndc_climate from the data source
+    prevention: 'Always use convert_forcing_to_ldndc_climate. It does NOT guess units from magnitude: for
+      cmfd/mswx/nasa_power the shared loader (ki_tools_common.load_forcing) converts from the known source
+      unit (CMFD K - 273.15); FLUXNET columns are read as degC. Any daily tavg/tmax/tmin outside -100..70
+      stops the tool with "Daily temperatures must be Celsius"; nothing is converted or written.'
   severity: silent
   cross_references:
   - dt_014

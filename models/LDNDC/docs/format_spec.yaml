@@ -421,9 +421,11 @@ known_issues:
     these as 273-310 degrees Celsius.; CMFD and some ERA5 products provide temperature in Kelvin. LDNDC
     expects Celsius. When Kelvin values are fed directly, LDNDC treats them as extreme heat. Snow never
     forms
-  remedy: Check if tavg values in climate.txt are > 100. If so, subtract 273.15 to convert K to C.; validate_climate_file;
-    ['Read first 5 data lines of climate.txt', 'If tavg > 100, temperatures are in Kelvin', 'Rerun convert_forcing_to_ldndc_climate
-    with correct unit handling']; Always use convert_forcing_to
+  remedy: 'Run validate_climate_file (error when tavg in the first 10 data rows is > 100); do not edit
+    climate.txt by hand; rebuild it from the data source with convert_forcing_to_ldndc_climate. That tool
+    does NOT guess units from magnitude: the shared loader converts from the known source unit (CMFD
+    K - 273.15), FLUXNET is read as degC, and any daily temperature outside -100..70 stops the tool (nothing
+    is converted or written).'
   severity: silent
 - id: dt_006
   symptom: LDNDC reports 'Error reading climate data' or 'Unexpected column count' during initialization

@@ -112,14 +112,32 @@ def main(argv=None) -> int:
             s = _hwsd(a.lat, a.lon)
             if not s or not s.get("texture"):
                 raise ValueError(f"no HWSD soil at {a.lat},{a.lon}")
-            rock = a.rock if a.rock is not None else float(s.get("gravel") or 0.0) / 100.0
+            # 2026-10-15 (codex kiss_sync review): lookup_hwsd marks fields the map unit lacks in
+            # .missing_fields and REFUSES reads of them (no stand-in). Never read a missing field:
+            # with --rock the supplied value is used and the HWSD gap is recorded; without --rock
+            # a missing gravel stops the tool (exit 2) - it is never turned into 0.
+            missing = set(getattr(s, "missing_fields", ()) or ())
+            gravel_missing = "gravel" in missing or "gravel" not in s
+            if a.rock is not None:
+                rock, rock_src = a.rock, "--rock (user supplied)"
+            elif gravel_missing:
+                raise ValueError(f"HWSD gives no topsoil gravel at {a.lat},{a.lon} (needed for ROCK); "
+                                 f"pass --rock with a sourced value - no default is used")
+            else:
+                rock, rock_src = float(s["gravel"]) / 100.0, "HWSD T_GRAVEL (% volume) / 100"
             ks = (s.get("hydraulics") or {}).get("ksat_cm_hr")
             res = derive(s["texture"], ks, rock, a.units)
-            meta = {"hwsd_mu_id": s.get("mu_id"), "sand": s.get("sand"), "silt": s.get("silt"),
-                    "clay": s.get("clay"), "gravel_pct": s.get("gravel"),
-                    "hwsd_component": s.get("hwsd_component")}
+            res["provenance"]["ROCK"] = rock_src
+            meta = {"hwsd_mu_id": s.get("mu_id"), "sand": s["sand"], "silt": s["silt"],
+                    "clay": s["clay"], "gravel_pct": None if gravel_missing else s["gravel"],
+                    "hwsd_component": s.get("hwsd_component"),
+                    "hwsd_missing_fields": sorted(missing)}
+            if gravel_missing:
+                meta["gravel_pct_status"] = "missing in HWSD (not used; ROCK from --rock)"
         else:
-            res = derive(a.texture, None, a.rock or 0.0, a.units)
+            res = derive(a.texture, None, a.rock if a.rock is not None else 0.0, a.units)
+            res["provenance"]["ROCK"] = ("--rock (user supplied)" if a.rock is not None else
+                                         "0 by documented --texture convention (no rock data given; pass --rock)")
         res["site"] = {"lat": a.lat, "lon": a.lon, **meta}
         res["note"] = ("SAT (initial relative saturation) is event-specific and is NOT derived here; "
                        "set it per element or per rain gage (gage SAT overrides element SA).")

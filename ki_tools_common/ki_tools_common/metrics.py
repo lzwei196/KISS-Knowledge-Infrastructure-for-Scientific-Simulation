@@ -227,6 +227,73 @@ def rmse(obs: Numeric1D, sim: Numeric1D) -> float:
     return float(np.sqrt(np.mean((o - s) ** 2)))
 
 
+def alpha(obs: Numeric1D, sim: Numeric1D) -> float:
+    """Variability ratio alpha = std(sim) / std(obs) (population std; the KGE-2009 alpha).
+
+    Returns ``nan`` with fewer than 1 valid pair or std(obs) = 0. Added 2026-09-30 for the calibration kit's
+    convergence check (it watches alpha beside r and beta); the same value KGE uses internally.
+    """
+    o, s = _prepare_paired(obs, sim)
+    if o.size < 1:
+        return float("nan")
+    o_std = float(np.std(o, ddof=0))
+    if o_std == 0.0:
+        return float("nan")
+    return float(float(np.std(s, ddof=0)) / o_std)
+
+
+def beta(obs: Numeric1D, sim: Numeric1D) -> float:
+    """Volume ratio beta = mean(sim) / mean(obs) (the KGE-2009 beta; PBIAS = 100 * (beta - 1)).
+
+    Returns ``nan`` with no valid pair or mean(obs) = 0. Added 2026-09-30 (calibration kit).
+    """
+    o, s = _prepare_paired(obs, sim)
+    if o.size < 1:
+        return float("nan")
+    o_mean = float(np.mean(o))
+    if o_mean == 0.0:
+        return float("nan")
+    return float(float(np.mean(s)) / o_mean)
+
+
+def lnnse(obs: Numeric1D, sim: Numeric1D) -> float:
+    """NSE of log flows, log(x + eps) with eps = 0.01 * mean(obs) — how well the LOW flows fit.
+
+    Returns ``nan`` when mean(obs) <= 0, when any sim or obs value is <= -eps (the log is undefined), or when
+    the logged obs has no variance. Added 2026-09-30 (calibration kit: its convergence check for flow watches
+    low flows); the formula is the kit's (calibration_kit/panel.py).
+    """
+    o, s = _prepare_paired(obs, sim)
+    if o.size < 1:
+        return float("nan")
+    om = float(np.mean(o))
+    if om <= 0.0:
+        return float("nan")
+    eps = 0.01 * om
+    if float(np.min(s)) + eps <= 0.0 or float(np.min(o)) + eps <= 0.0:
+        return float("nan")
+    ls, lo = np.log(s + eps), np.log(o + eps)
+    den = float(np.sum((lo - np.mean(lo)) ** 2))
+    if den <= 0.0:
+        return float("nan")
+    return float(1.0 - float(np.sum((ls - lo) ** 2)) / den)
+
+
+def nrmse(obs: Numeric1D, sim: Numeric1D) -> float:
+    """RMSE as a percent of |mean(obs)|: 100 * RMSE / |mean(obs)|. ``nan`` when mean(obs) = 0.
+
+    Added 2026-09-30 (calibration kit: the error measure for single-value "snapshot" targets, e.g. a
+    regional yield). Other KIs may define an NRMSE differently (by sd(obs), by range) — this is the kit's.
+    """
+    o, s = _prepare_paired(obs, sim)
+    if o.size < 1:
+        return float("nan")
+    om = float(np.mean(o))
+    if om == 0.0:
+        return float("nan")
+    return float(100.0 * float(np.sqrt(np.mean((s - o) ** 2))) / abs(om))
+
+
 def pearson_r(obs: Numeric1D, sim: Numeric1D) -> float:
     """Pearson correlation coefficient.
 
@@ -256,7 +323,7 @@ def pearson_r(obs: Numeric1D, sim: Numeric1D) -> float:
 # ======================================================================
 
 def all_metrics(obs: Numeric1D, sim: Numeric1D, *,
-                dates=None, label: str = "headline", meta=None) -> Dict[str, float]:
+                dates=None, label: str = "headline", meta=None, extended: bool = False) -> Dict[str, float]:
     """Compute all five standard metrics at once, and (when a dump dir is set) capture the exact
     scored series as evidence.
 
@@ -266,6 +333,8 @@ def all_metrics(obs: Numeric1D, sim: Numeric1D, *,
         dates — parallel date vector (else taken from a pandas Series index); dumped WITH the series.
         label — series label recorded in the manifest ('headline'/'cal'/'val'/'basin'/...).
         meta  — extra manifest fields (unit, obs_source, sim_source, period_role, dates_applicable).
+        extended — also return ``'alpha'``, ``'beta'``, ``'lnNSE'`` and ``'NRMSE'`` (2026-09-30, for the
+                calibration kit's convergence check). Default False: the five keys, unchanged.
 
     Args:
         obs: Observed values (1-D).
@@ -294,6 +363,8 @@ def all_metrics(obs: Numeric1D, sim: Numeric1D, *,
         "RMSE": rmse(o, s),
         "r": pearson_r(o, s),
     }
+    if extended:
+        result.update({"alpha": alpha(o, s), "beta": beta(o, s), "lnNSE": lnnse(o, s), "NRMSE": nrmse(o, s)})
     try:
         dump_scored_series(d, o, s, label=label, meta=meta, metric_values=result)
     except Exception:

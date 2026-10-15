@@ -186,7 +186,8 @@ def rosetta_vgn(sand: float, clay: float) -> Dict[str, float]:
 
     tex = _classify_usda_texture(sand, clay)
     if tex not in _rosetta:
-        tex = "loam"  # safe fallback
+        raise ValueError(f"rosetta_vgn: sand={sand}, clay={clay} gives texture {tex!r}, "
+                         f"which has no ROSETTA class; no loam stand-in is used")
 
     theta_r, theta_s, alpha_cm, n, ksat_cmd = _rosetta[tex]
     alpha_m = alpha_cm * 100.0  # 1/cm → 1/m
@@ -210,6 +211,31 @@ def rosetta_vgn(sand: float, clay: float) -> Dict[str, float]:
     }
 
 
+class HWSDSoil(dict):
+    """lookup_hwsd result. Fields the map unit does not give (listed in
+    .missing_fields) are absent, and reading one - r[k], r.get(k) or
+    r.get(k, default) - raises ValueError instead of returning a stand-in."""
+
+    def __init__(self, data, missing=(), where="HWSD"):
+        super().__init__(data)
+        self.missing_fields = tuple(missing)
+        self._where = where
+
+    def _refuse(self, key):
+        raise ValueError(f"{self._where} has no value for '{key}' (HWSD gives none); "
+                         f"no default is used")
+
+    def __getitem__(self, key):
+        if key in self.missing_fields:
+            self._refuse(key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if key in self.missing_fields:
+            self._refuse(key)
+        return super().get(key, default)
+
+
 def lookup_hwsd(lat: float, lon: float,
                 hwsd_raster: Optional[str] = None,
                 hwsd_csv: Optional[str] = None) -> Dict[str, float]:
@@ -223,8 +249,14 @@ def lookup_hwsd(lat: float, lon: float,
 
     Returns:
         Dict with: mu_id, sand, silt, clay, oc, ph, bulk_density (top soil)
-        Plus sub_sand, sub_silt, sub_clay (subsoil if available)
+        Plus sub_sand, sub_silt, sub_clay, sub_oc (% OC), sub_bulk_density
+        (S_REF_BULK_DENSITY, g/cm3) and sub_ph (S_PH_H2O) for the 30-100 cm
+        subsoil, from the same HWSD row as the topsoil (if available);
+        cec / sub_cec = T_CEC_SOIL / S_CEC_SOIL (cmol/kg); gravel / sub_gravel =
+        T_GRAVEL / S_GRAVEL (% volume)
         Plus texture (USDA class) and hydraulics (from Saxton-Rawls)
+        Fields the map unit lacks are absent and raise ValueError when read
+        (HWSDSoil.missing_fields); missing texture or OC raises at once.
     """
     raster = hwsd_raster or HWSD_RASTER
     csv_path = hwsd_csv or HWSD_CSV
@@ -238,9 +270,17 @@ def lookup_hwsd(lat: float, lon: float,
             row, col = src.index(lon, lat)
             mu_id = int(src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
     except Exception as e:
-        warnings.warn(f"HWSD raster lookup failed at ({lat}, {lon}): {e}")
+        raise RuntimeError(f"HWSD raster lookup failed at ({lat}, {lon}) in {raster}: {e}") from e
+    if not mu_id:
+        raise ValueError(f"HWSD has no soil map unit at ({lat}, {lon}) (MU_GLOBAL={mu_id}: "
+                         f"sea, water or outside the map)")
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"HWSD table not found: {csv_path}")
 
-    # Step 2: Look up properties from CSV
+    # Step 2: Look up properties from CSV. The generic values below are only
+    # placeholders: every one that the map unit does not replace is listed in
+    # result['defaulted_fields']; texture and organic carbon may not stay
+    # defaulted (checked at the end).
     result = {
         'mu_id': mu_id or 0,
         'sand': 40.0, 'silt': 40.0, 'clay': 20.0,  # defaults
@@ -248,11 +288,14 @@ def lookup_hwsd(lat: float, lon: float,
         'sub_sand': 40.0, 'sub_silt': 40.0, 'sub_clay': 20.0,
     }
 
+    read_keys = set()
     if mu_id and os.path.exists(csv_path):
         try:
             import pandas as pd
             df = pd.read_csv(csv_path, low_memory=False)
             row = df[df['MU_GLOBAL'] == mu_id]
+            if len(row) == 0:
+                raise ValueError(f"HWSD map unit {mu_id} at ({lat}, {lon}) has no row in {csv_path}")
             if len(row) > 0:
                 # An HWSD map unit is a MIXTURE of soil components, each with a SHARE (%).
                 # 84.2% of map units list more than one. Selecting by CSV row order (`.iloc[0]`)
@@ -363,18 +406,46 @@ def lookup_hwsd(lat: float, lon: float,
                 # default), clay 7 — a texture summing to 140%. Zero is meaningful for a texture
                 # fraction and for organic carbon; it is not meaningful for pH or bulk density,
                 # where 0 marks a missing value. So the rule is per field.
-                _ZERO_OK = {'T_SAND', 'T_SILT', 'T_CLAY', 'T_OC', 'S_SAND', 'S_SILT', 'S_CLAY'}
+                _ZERO_OK = {'T_SAND', 'T_SILT', 'T_CLAY', 'T_OC', 'S_SAND', 'S_SILT', 'S_CLAY', 'S_OC',
+                            'T_GRAVEL', 'S_GRAVEL'}
                 for col, key in [('T_SAND', 'sand'), ('T_SILT', 'silt'), ('T_CLAY', 'clay'),
                                  ('T_OC', 'oc'), ('T_PH_H2O', 'ph'), ('T_REF_BULK_DENSITY', 'bulk_density'),
-                                 ('S_SAND', 'sub_sand'), ('S_SILT', 'sub_silt'), ('S_CLAY', 'sub_clay')]:
+                                 ('S_SAND', 'sub_sand'), ('S_SILT', 'sub_silt'), ('S_CLAY', 'sub_clay'),
+                                 ('S_OC', 'sub_oc'), ('S_REF_BULK_DENSITY', 'sub_bulk_density'),
+                                 ('S_PH_H2O', 'sub_ph'),
+                                 ('T_CEC_SOIL', 'cec'), ('S_CEC_SOIL', 'sub_cec'),
+                                 ('T_GRAVEL', 'gravel'), ('S_GRAVEL', 'sub_gravel')]:
                     val = r.get(col)
                     if val is None or (isinstance(val, float) and math.isnan(val)):
                         continue
                     val = float(val)
                     if val > 0 or (val == 0 and col in _ZERO_OK):
                         result[key] = val
+                        read_keys.add(key)
+        except ValueError:
+            raise
         except Exception as e:
-            warnings.warn(f"HWSD CSV lookup failed for MU={mu_id}: {e}")
+            raise RuntimeError(f"HWSD table lookup failed for MU={mu_id} at ({lat}, {lon}): {e}") from e
+    missing = sorted(k for k in ('sand', 'silt', 'clay', 'oc', 'ph', 'bulk_density',
+                                 'sub_sand', 'sub_silt', 'sub_clay',
+                                 'sub_oc', 'sub_bulk_density', 'sub_ph',
+                                 'cec', 'sub_cec', 'gravel', 'sub_gravel') if k not in read_keys)
+    comp = result.get('hwsd_component') or {}
+    if comp.get('quality') == 'no_texture_in_map_unit':
+        # No component of this map unit has a usable texture (e.g. all-zero
+        # T_SAND/T_SILT/T_CLAY rows): the zeros are not a soil.
+        raise ValueError(f"HWSD map unit {mu_id} at ({lat}, {lon}) has no usable texture "
+                         f"(no component sums to ~100 %); no soil is made up")
+    core = [k for k in ('sand', 'silt', 'clay', 'oc') if k in missing]
+    if core:
+        raise ValueError(f"HWSD map unit {mu_id} at ({lat}, {lon}) has no value for {core}; "
+                         f"generic defaults are not used in their place")
+    # The placeholders for fields this map unit lacks (ph, bulk_density, sub_*)
+    # are removed: reading one raises (also through .get(key, default)), so a
+    # caller that needs it stops, and a caller that does not is unaffected.
+    for k in missing:
+        result.pop(k, None)
+    result = HWSDSoil(result, missing=missing, where=f"HWSD map unit {mu_id} at ({lat}, {lon})")
 
     # Add derived properties
     result['texture'] = classify_texture(result['sand'], result['silt'], result['clay'])

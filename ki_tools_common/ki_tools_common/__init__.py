@@ -24,9 +24,9 @@ Usage::
     from ki_tools_common.terrain import get_terrain
     from ki_tools_common.climate_scenarios import harmonize, delta_perturbation, warming_levels
 
-NOTE on climate_scenarios: importing ki_tools_common (this package, any
-submodule) eagerly imports netCDF4 via netcdf_utils below. If a script
-also needs to open raw ISIMIP3b/HiCPC files via
+NOTE on climate_scenarios: importing ``ki_tools_common.climate_scenarios``
+imports netCDF4 via netcdf_utils. If a script also needs to open raw
+ISIMIP3b/HiCPC files via
 climate_scenarios/knowledge_infrastructure/lib/climate_sources_io.py
 (standalone, h5netcdf-based), that file-opening MUST happen BEFORE this
 package is imported in the same process -- see
@@ -34,10 +34,6 @@ ki_tools_common.climate_scenarios's docstring and
 climate_sources_io.py's docstring for why (a verified HDF5 library ABI
 clash between netCDF4 and h5py, not a flaky-filesystem issue).
 """
-
-from __future__ import annotations
-
-import importlib
 
 __version__ = "5.2.0"
 
@@ -62,20 +58,11 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    """Load numerical helpers only when a caller actually requests one.
-
-    The KI harness itself is text/path logic and must remain importable in a
-    minimal frozen runtime.  Eagerly importing every scientific helper here
-    made ``from ki_tools_common.harness import contract`` depend on NumPy,
-    netCDF and their compiled libraries before the harness could even start.
-    """
+def __getattr__(name):
+    """Load scientific modules on demand so flow/harness control code stays stdlib-only."""
     if name not in __all__:
-        raise AttributeError(name)
-    module = importlib.import_module(f"{__name__}.{name}")
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+    module = importlib.import_module(f".{name}", __name__)
     globals()[name] = module
     return module
-
-
-def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))

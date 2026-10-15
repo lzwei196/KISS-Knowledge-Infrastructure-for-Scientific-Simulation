@@ -351,13 +351,24 @@ def load_hourly_forcing(source, lat, lon, start_year, end_year, forcing_dir=None
     if source == "nasa_power":
         out = _load_nasa_power_hourly(lat, lon, start_year, end_year)
     elif source in ("cmfd", "mswx"):
-        out = _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir)
+        out = _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir,
+                                    months=_period_months(period, start_year, end_year))
     else:
         raise ValueError(f"Unknown source '{source}'. Choose from: cmfd, mswx, nasa_power")
     if on_missing == "raise":
         _require_complete_hourly(out, source, f"({lat}, {lon})", start_year, end_year,
                                  skip, period)
     return out
+
+
+def _nearest_idx(coords, targets):
+    """Index of the nearest grid coordinate for each target, measured in
+    float64 on the coordinates as stored (CMFD stores float32, e.g. 115.649994).
+    Every CMFD reader uses this, so a point on a cell border gets the same cell
+    from all of them; an exact tie goes to the lower index (np.argmin)."""
+    c = np.asarray(coords, dtype=np.float64)
+    t = np.atleast_1d(np.asarray(targets, dtype=np.float64))
+    return np.abs(c[None, :] - t[:, None]).argmin(axis=1)
 
 
 def _open_nc(path):
@@ -385,8 +396,28 @@ def _open_nc(path):
     raise OSError("Cannot open NetCDF file %s (%s)" % (path, "; ".join(errors)))
 
 
-def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
-    """Load CMFD or MSWX 3-hourly data without daily aggregation."""
+def _period_months(period, start_year, end_year):
+    """(year, month) pairs that period=(start, end) touches, or None (all
+    months of the years) when no period is given."""
+    if period is None:
+        return None
+    a, b = _period_bounds(period, start_year, end_year)          # [a, b) days
+    last = b - np.timedelta64(1, "D")
+    y, m = int(str(a)[:4]), int(str(a)[5:7])
+    y1, m1 = int(str(last)[:4]), int(str(last)[5:7])
+    out = set()
+    while (y, m) <= (y1, m1):
+        out.add((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir, months=None):
+    """Load CMFD or MSWX 3-hourly data without daily aggregation.
+
+    months: optional set of (year, month) to read (CMFD only; from period=).
+    Only those monthly files must exist; every one of them is still read and
+    checked in full. MSWX annual files are always read whole."""
     try:
         import xarray  # noqa: F401  (availability check; _open_nc does the opening)
     except ImportError:
@@ -492,9 +523,10 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
             "CMFD sub-daily: %s has no %s folder(s). forcing_dir must be the "
             "folder that directly holds Temp/, Prec/, SRad/, LRad/, Wind/, "
             "SHum/ and Pres/." % (fdir, ", ".join(missing_dirs)))
+    wanted = [(y, m) for y in range(start_year, end_year + 1) for m in range(1, 13)
+              if months is None or (y, m) in months]
     month_files, missing = {}, []
-    for year in range(start_year, end_year + 1):
-        for month in range(1, 13):
+    for year, month in wanted:
             for var_key, (subdir, prefix) in var_map.items():
                 files = sorted(globmod.glob(
                     os.path.join(fdir, subdir, "*_%d%02d.nc" % (year, month))))
@@ -509,8 +541,7 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
             % (len(missing), len(missing) + len(month_files), fdir,
                start_year, end_year, ", ".join(missing[:4])))
 
-    for year in range(start_year, end_year + 1):
-        for month in range(1, 13):
+    for year, month in wanted:
             month_data, month_times = {}, {}
             for var_key, (subdir, prefix) in var_map.items():
                 fpath = month_files[(year, month, var_key)]
@@ -518,8 +549,8 @@ def _load_subdaily_netcdf(source, lat, lon, start_year, end_year, forcing_dir):
                 dvar = prefix if prefix in ds.data_vars else list(ds.data_vars)[0]
                 lats = ds['lat'].values if 'lat' in ds else ds['latitude'].values
                 lons = ds['lon'].values if 'lon' in ds else ds['longitude'].values
-                li = int(np.argmin(np.abs(lats - lat)))
-                lo = int(np.argmin(np.abs(lons - lon)))
+                li = int(_nearest_idx(lats, lat)[0])
+                lo = int(_nearest_idx(lons, lon)[0])
                 month_data[var_key] = ds[dvar][:, li, lo].values
                 month_times[var_key] = (np.asarray(ds["time"].values)
                                         if "time" in ds.variables else None)
@@ -769,8 +800,8 @@ def _load_cmfd(lat, lon, start_year, end_year, forcing_dir):
         grid) is left out and counted in ``cmfd_cells_without_data``. A cell
         missing at only SOME steps makes those steps NaN: the other cells are
         not allowed to stand in for it."""
-        lis = np.abs(lats[None, :] - lat_arr[:, None]).argmin(axis=1)
-        los = np.abs(lons[None, :] - lon_arr[:, None]).argmin(axis=1)
+        lis = _nearest_idx(lats, lat_arr)
+        los = _nearest_idx(lons, lon_arr)
         full = np.asarray(da.values)                       # (time, lat, lon)
         pts = full[:, lis, los].astype(float)              # (time, npoints)
         w = np.cos(np.radians(np.asarray(lats, dtype=float)[lis]))
@@ -859,8 +890,8 @@ def _load_cmfd(lat, lon, start_year, end_year, forcing_dir):
                 if areal:
                     arrs.append(_areal_mean(ds[actual_var], lats, lons))
                 else:
-                    li = int(np.argmin(np.abs(lats - lat)))
-                    lo = int(np.argmin(np.abs(lons - lon)))
+                    li = int(_nearest_idx(lats, lat)[0])
+                    lo = int(_nearest_idx(lons, lon)[0])
                     arrs.append(ds[actual_var][:, li, lo].values.astype(float))
                 if "time" in ds.variables:
                     tlist.append(np.asarray(ds["time"].values))
@@ -1002,8 +1033,8 @@ def _load_cmfd_points(latlons, start_year, end_year, forcing_dir):
                     ds.close()
                     continue
                 lats, lons = ds[lat_name].values, ds[lon_name].values
-                lis = np.abs(lats[None, :] - lat_arr[:, None]).argmin(axis=1)
-                los = np.abs(lons[None, :] - lon_arr[:, None]).argmin(axis=1)
+                lis = _nearest_idx(lats, lat_arr)
+                los = _nearest_idx(lons, lon_arr)
                 full = np.asarray(ds[actual_var].values)      # one decompression
                 arrs.append(full[:, lis, los].astype(float))  # (time, npts)
                 if "time" in ds.variables:
@@ -1223,8 +1254,14 @@ def load_mswx_year_box(forcing_dir, year, var_subdir, lats, lons):
         units = f[vname].attrs.get("units", b"")
         units = units.decode() if isinstance(units, bytes) else str(units)
     glat, glon = _mswx_grid(forcing_dir, year)
-    r_idx = np.abs(glat[None, :] - lats.ravel()[:, None]).argmin(axis=1)
-    c_idx = np.abs(glon[None, :] - lons.ravel()[:, None]).argmin(axis=1)
+    # Same nearest-cell selection as _load_mswx and _load_mswx_points
+    # (xarray .sel(method="nearest")), so a cell-border point gets the same
+    # cell from every MSWX reader; a plain argmin on the float32 grid can differ.
+    import xarray as xr
+    r_idx = xr.DataArray(np.arange(glat.size), coords={"lat": glat}, dims="lat") \
+              .sel(lat=lats.ravel(), method="nearest").values
+    c_idx = xr.DataArray(np.arange(glon.size), coords={"lon": glon}, dims="lon") \
+              .sel(lon=lons.ravel(), method="nearest").values
     r0, r1 = int(r_idx.min()), int(r_idx.max()) + 1
     c0, c1 = int(c_idx.min()), int(c_idx.max()) + 1
     box = _mswx_read_box((fpath, vname, r0, r1, c0, c1))
@@ -1710,8 +1747,8 @@ def _load_cmfd_points_subdaily(latlons, start_year, end_year, forcing_dir):
                     ds.close()
                     continue
                 lats, lons = ds[lat_name].values, ds[lon_name].values
-                lis = np.abs(lats[None, :] - lat_arr[:, None]).argmin(axis=1)
-                los = np.abs(lons[None, :] - lon_arr[:, None]).argmin(axis=1)
+                lis = _nearest_idx(lats, lat_arr)
+                los = _nearest_idx(lons, lon_arr)
                 full = np.asarray(ds[actual_var].values)      # one decompression
                 arrs.append(full[:, lis, los].astype(float))  # (time, npts)
                 if "time" in ds.variables:

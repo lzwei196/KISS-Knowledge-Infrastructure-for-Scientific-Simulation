@@ -6,7 +6,8 @@ Tool ID:      convert_hwsd_to_pcse_soil
 Stage:        s2_soil_params
 Description:  Convert HWSD soil properties (sand/silt/clay/OC/bulk density)
               to WOFOST water balance parameters (SMW/SMFCF/SM0/K0) via
-              pedotransfer functions (Wosten et al. 1999).
+              the SHARED ki_tools_common.soil_utils hydraulics (dt_v007, 2026-09-12:
+              a private formula mislabelled as Wosten 1999 was removed).
 
 Inputs:
   - LAT, LON: target location coordinates
@@ -113,27 +114,53 @@ def get_texture_from_hwsd(lat, lon):
     HWSD_DATA.csv topsoil texture); use it instead. HWSD_MDB is no longer
     needed (the CSV export replaces the Access DB).
     """
+    from ki_tools_common.soil_utils import lookup_hwsd
+    raster = HWSD_RASTER if Path(HWSD_RASTER).exists() else None
     try:
-        from ki_tools_common.soil_utils import lookup_hwsd
-        raster = HWSD_RASTER if Path(HWSD_RASTER).exists() else None
         props = lookup_hwsd(lat, lon, hwsd_raster=raster)
-        # lookup_hwsd returns sand/silt/clay (%), oc (%), bulk_density (g/cm3)
-        # and falls back to its own defaults (40/40/20) only if BOTH the raster
-        # and CSV are unreadable.
-        return {
-            'sand': props.get('sand', 40),
-            'clay': props.get('clay', 25),
-            'silt': props.get('silt', 35),
-            'oc': props.get('oc', 1.0),
-            'bd': props.get('bulk_density', 1.4),
-        }
-    except Exception as e:
-        logger.warning(f"HWSD lookup failed: {e}. Using default texture.")
-        return {'sand': 40, 'clay': 25, 'silt': 35, 'oc': 1.0, 'bd': 1.4}
+    except (RuntimeError, ValueError, FileNotFoundError) as e:
+        # A failed lookup stops the tool; no default texture is used in its place.
+        raise RuntimeError(f"HWSD soil lookup failed at lat={lat}, lon={lon}: {e}") from e
+    # lookup_hwsd returns sand/silt/clay (%), oc (%), bulk_density (g/cm3)
+    # and RAISES when the raster/table cannot be read or the point has no
+    # soil; it no longer falls back to generic defaults.
+    #
+    # dt_v007 (2026-09-12): it ALSO returns props['hydraulics'] — wilting point, field
+    # capacity, saturation, ksat — from the shared ki_tools_common lookup. This function
+    # used to throw those away and recompute them with a formula that was wrong by ~40%.
+    # Carry them through; process() now uses them.
+    #
+    # 2026-10-15 (codex kiss_sync review): every field this tool USES is read directly, so a
+    # missing one stops the tool (lookup_hwsd raises ValueError; process() fails, exit 2) -
+    # nothing is caught and no generic soil is put in its place. Bulk density is NOT used on
+    # this path (the hydraulics come from texture + OC via the shared saxton_rawls); it is only
+    # recorded in the provenance sidecar. When HWSD lacks it, it is recorded as missing (None
+    # plus 'bd_status') instead of being read, so a valid texture/OC soil is not refused for
+    # an unused field and no stand-in value is written.
+    bd_missing = 'bulk_density' in (getattr(props, 'missing_fields', ()) or ()) or 'bulk_density' not in props
+    return {
+        'sand': props['sand'],
+        'clay': props['clay'],
+        'silt': props['silt'],
+        'oc': props['oc'],
+        'bd': None if bd_missing else props['bulk_density'],
+        'bd_status': 'missing in HWSD (not used: hydraulics from texture + OC)' if bd_missing else 'HWSD T_REF_BULK_DENSITY',
+        'hydraulics': props['hydraulics'],
+        'hwsd_component': props['hwsd_component'],
+    }
 
 
-def pedotransfer_wosten(sand, clay, silt, oc, bd):
+def _legacy_linear_ptf(sand, clay, silt, oc, bd):
     """
+    SUPERSEDED 2026-09-12 (dt_v007) — kept only so the history is auditable. NOT CALLED.
+
+    This was documented as "Wosten et al. (1999)". It is not: Wosten's HYPRES functions are
+    van Genuchten regressions; this is three ad-hoc linear forms. Measured against an independent
+    continuous Saxton & Rawls (2006) across 11 USDA classes, its plant-available water was a
+    median 0.58x the reference (range 0.52-0.93x); at the C01 Huai cell 0.56x. The shared
+    ki_tools_common lookup, which lookup_hwsd() already returns, measures 0.86x (0.77-1.03x).
+
+    Original (wrong) docstring follows.
     Wosten et al. (1999) pedotransfer functions.
     Convert soil texture to WOFOST hydraulic parameters.
 
@@ -173,8 +200,14 @@ def process():
         sand = SAND_PCT
         clay = CLAY_PCT
         silt = SILT_PCT if SILT_PCT is not None else (100 - sand - clay)
-        oc = OC_PCT if OC_PCT is not None else 1.0
-        bd = BULK_DENSITY if BULK_DENSITY is not None else 1.4
+        # 2026-10-15: OC feeds the shared PTF (om = oc x 1.724), so a manual texture without OC
+        # stops instead of using a made-up 1.0 %. Bulk density is not used by the PTF: it is
+        # recorded as given, or None (no 1.4 placeholder).
+        if OC_PCT is None:
+            raise ValueError("manual texture (SAND_PCT/CLAY_PCT) needs OC_PCT too: organic carbon feeds "
+                             "the pedotransfer function and no default is used")
+        oc = OC_PCT
+        bd = BULK_DENSITY
         logger.info(f"Using manual texture: sand={sand}%, clay={clay}%, silt={silt}%")
     else:
         texture = get_texture_from_hwsd(LAT, LON)
@@ -182,8 +215,20 @@ def process():
         oc, bd = texture['oc'], texture['bd']
         logger.info(f"HWSD texture at ({LAT}, {LON}): sand={sand}%, clay={clay}%, silt={silt}%, OC={oc}%, BD={bd}")
 
-    # Pedotransfer
-    SMW, SMFCF, SM0, K0 = pedotransfer_wosten(sand, clay, silt, oc, bd)
+    # Pedotransfer — dt_v007 (2026-09-12): use the SHARED ki_tools_common hydraulics, the same
+    # values every other crop KI is meant to use, instead of a private formula that was
+    # documented as Wosten (1999) and was not. lookup_hwsd() already computes these; for the
+    # manual-texture path we call the same function directly so both paths agree.
+    from ki_tools_common.soil_utils import saxton_rawls as _shared_ptf
+    hyd = (texture.get('hydraulics') if (SAND_PCT is None or CLAY_PCT is None) else None) \
+          or _shared_ptf(sand, clay, om=oc * 1.724)
+    SMW   = float(hyd['wilting_point'])
+    SMFCF = float(hyd['field_capacity'])
+    SM0   = float(hyd['saturation'])
+    # UNITS: the shared lookup gives ksat in cm/hr; WOFOST's K0 is cm/DAY. x24, stated here so a
+    # silent factor-of-24 cannot hide (the class of mistake this whole investigation is about).
+    K0 = float(hyd['ksat_cm_hr']) * 24.0
+    _ptf_source = f"ki_tools_common.soil_utils.saxton_rawls (Rawls-1982 class table; class={hyd.get('texture')})"
 
     # Rootable depth based on texture
     if clay > 60:
@@ -210,6 +255,25 @@ def process():
         'KSUB': 1.0,
         'RDMSOL': RDMSOL,
     }
+    # Provenance goes to a SIDECAR, never into soil_params: this dict is loaded verbatim into
+    # PCSE's ParameterProvider(soildata=...), which must hold soil-hydraulic keys only (dt_v003).
+    soil_params_provenance = {
+        'ptf': _ptf_source,
+        'K0_units': 'cm/day (converted from cm/hr x24)',
+        'hwsd_component': (texture.get('hwsd_component')
+                           if (SAND_PCT is None or CLAY_PCT is None) else 'manual texture'),
+        'texture_input': {'sand': sand, 'clay': clay, 'silt': silt, 'oc': oc, 'bd': bd},
+        'bd_status': (texture.get('bd_status') if (SAND_PCT is None or CLAY_PCT is None)
+                      else ('BULK_DENSITY given' if BULK_DENSITY is not None else 'not given (not used)')),
+        'dt': 'dt_v007',
+    }
+    try:
+        _out = os.environ.get('SOIL_PARAMS_JSON') or os.environ.get('OUTPUT_JSON')
+        if _out:
+            with open(str(_out) + '.provenance.json', 'w') as _f:
+                json.dump(soil_params_provenance, _f, indent=2, default=str)
+    except Exception as _e:                       # provenance must never break the soil step
+        logger.warning(f"could not write provenance sidecar: {_e}")
 
     logger.info(f"Computed: SMW={SMW:.4f}, SMFCF={SMFCF:.4f}, SM0={SM0:.4f}, K0={K0:.2f}")
     return soil_params

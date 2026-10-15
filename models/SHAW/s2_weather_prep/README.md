@@ -37,3 +37,19 @@ Checks after this step:
 
 Old faults fixed on 2026-10-02: another model's forcing files read first (shaw_034; that reader is now removed), own CMFD reader with rain 10800 times
 too small (shaw_035), hourly mode broken for gridded sources (shaw_036).
+
+
+### Daily CSV integrity (2026-10-03)
+
+CSV conversion rejects missing/nonfinite required values, malformed dates,
+negative rainfall/wind/radiation, invalid RH, duplicates and calendar gaps.
+It neither drops incomplete rows nor reconstructs missing days. If year bounds
+are supplied, the file must cover those Jan-1/Dec-31 boundaries. A valid zero
+rainfall value is retained. RH must be positive for a finite dew point.
+
+Radiation units follow headers: `srad_mj_m2`, `solar_mj`, `totrs_mj` mean
+MJ/m²/day; `srad_wm2`, `solar_wm2`, `swdown_wm2` mean daily-average W/m².
+Generic `solar`/`srad` columns require `--csv-solar-units mj_m2_day|wm2`.
+There is no per-value unit guessing. Conversion from MJ/m²/day is ×1e6/86400.
+Errors identify the field/date and occur before an existing `.wea` is replaced.
+Regression check: `python -B tests/test_csv_weather.py`.

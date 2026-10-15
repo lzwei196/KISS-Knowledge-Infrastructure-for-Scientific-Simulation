@@ -94,7 +94,9 @@ def temp_to_dewpoint(T, RH):
     Returns:
         Td: Dew-point temperature (C)
     """
-    rh_frac = max(RH / 100.0, 0.01)
+    if not math.isfinite(RH) or not 0 < RH <= 100:
+        raise ForcingError("RH must be in (0,100] for a finite dew point")
+    rh_frac = RH / 100.0
     a = 17.27
     b = 237.7
     gamma = a * T / (b + T) + math.log(rh_frac)
@@ -102,145 +104,81 @@ def temp_to_dewpoint(T, RH):
     return td
 
 
-def read_daily_csv(filepath, start_year=None, end_year=None):
+def read_daily_csv(filepath, start_year=None, end_year=None, *, solar_units=None):
+    """Read complete daily station data without dropping, filling or clipping.
+
+    Dates must be consecutive and ordered. Supplied year bounds require the
+    corresponding Jan-1/Dec-31 coverage. Solar units follow the column name:
+    srad_mj_m2/solar_mj/totrs_mj -> MJ/m2/day, srad_wm2/solar_wm2/swdown_wm2
+    -> daily mean W/m2. Generic srad/solar requires explicit solar_units.
     """
-    Read a pre-aggregated DAILY weather CSV into SHAW's record list.
-
-    Designed for already-SHAW-ready daily sources such as the RISMA station
-    bundle (weather_complete.csv: date,tmax_C,tmin_C,precip_mm,srad_MJ_m2,
-    wind_m_s,rh_pct) and Environment-Canada / AAFC daily exports.
-
-    Required columns (case-insensitive, flexible names):
-        date (YYYY-MM-DD)         -> jday/year
-        tmax_C / tmax             -> tmax (C)
-        tmin_C / tmin             -> tmin (C)
-        precip_mm / precip        -> precip (mm/day)
-        srad_MJ_m2 / srad / solar -> shortwave; MJ/m2/day is auto-converted to W/m2
-        wind_m_s / wind           -> wind (m/s)
-        rh_pct / rh               -> relative humidity (%)
-
-    Returns a list of per-day dicts with the same keys write_daily_weather()
-    consumes (jday, year, tmax, tmin, tavg, wind, precip, swdown, rh).
-    Solar is emitted in W/m2 so write_daily_weather can pass it through.
-
-    Unit trap (triplet shaw_029): SHAW daily mode wants AVERAGE daily solar in
-    W/m2.  Daily totals reported in MJ/m2/day are multiplied by 11.574
-    (= 1e6 J / 86400 s).  Values that already look like W/m2 (mean > 60) are
-    left untouched.
-    """
-    import csv as _csv
-
-    def _pick(row, *names):
-        for n in names:
-            for k in row:
-                if k and k.strip().lower() == n:
-                    v = row[k]
-                    if v is None or str(v).strip() == "":
-                        return None
-                    try:
-                        return float(v)
-                    except ValueError:
-                        return None
-        return None
-
+    import csv
+    if solar_units not in (None, "mj_m2_day", "wm2"):
+        raise ForcingError("solar_units must be mj_m2_day or wm2")
+    if start_year is not None and end_year is not None and start_year > end_year:
+        raise ForcingError("start_year must not exceed end_year")
     rows = []
-    n_incomplete = 0
+    dates = []
     with open(filepath, newline="") as fh:
-        rdr = _csv.DictReader(fh)
-        for row in rdr:
-            datestr = None
-            for k in row:
-                if k and k.strip().lower() in ("date", "datetime", "day"):
-                    datestr = str(row[k]).strip()
-                    break
-            if not datestr:
-                continue
+        reader = csv.DictReader(fh)
+        for lineno, raw in enumerate(reader, 2):
+            row = {k.strip().lower(): v for k, v in raw.items() if k is not None}
+            text = next((row[k] for k in ("date", "datetime", "day") if k in row), None)
             try:
-                dt = datetime.strptime(datestr[:10], "%Y-%m-%d")
-            except ValueError:
+                dt = datetime.fromisoformat(str(text).strip())
+                if dt.hour or dt.minute or dt.second or dt.microsecond or dt.tzinfo:
+                    raise ValueError("not a local daily date")
+            except (ValueError, TypeError):
+                raise ForcingError(f"{filepath} line {lineno}: missing/invalid daily date {text!r}") from None
+            if start_year is not None and dt.year < start_year:
                 continue
-            if start_year and dt.year < start_year:
+            if end_year is not None and dt.year > end_year:
                 continue
-            if end_year and dt.year > end_year:
-                continue
-            tmax = _pick(row, "tmax_c", "tmax", "tmax_air", "maxair_t")
-            tmin = _pick(row, "tmin_c", "tmin", "tmin_air", "minair_t")
-            if tmax is None or tmin is None:
-                continue
-            precip = _pick(row, "precip_mm", "precip", "prcp", "rain_mm")
-            srad = _pick(row, "srad_mj_m2", "srad", "solar", "solar_mj", "totrs_mj")
-            wind = _pick(row, "wind_m_s", "wind", "avgws", "windspeed")
-            rh = _pick(row, "rh_pct", "rh", "avgrh", "humidity")
-            # No made-up fill values: a day with any needed value missing is
-            # dropped here and then handled as a missing calendar day below
-            # (interpolated between real neighbours and counted in the log).
-            if precip is None or srad is None or wind is None or rh is None:
-                n_incomplete += 1
-                continue
-            # Solar -> W/m2 (auto-detect MJ/m2/day vs already-W/m2)
-            if srad <= 60.0:             # MJ/m2/day regime
-                swdown = srad * 11.574
-            else:                        # already W/m2
-                swdown = srad
-            rows.append({
-                "jday": dt.timetuple().tm_yday,
-                "year": dt.year,
-                "tmax": tmax,
-                "tmin": tmin,
-                "tavg": 0.5 * (tmax + tmin),
-                "wind": wind,
-                "precip": max(0.0, precip),
-                "swdown": max(0.0, swdown),
-                "rh": rh,
-            })
-    if n_incomplete:
-        print(f"  {n_incomplete} CSV day(s) lacked precip/solar/wind/humidity and were dropped")
-    if n_incomplete and not rows:
-        raise ForcingError(
-            f"{filepath}: no day has all of tmax, tmin, precip, solar, wind and humidity. "
-            "This tool does not invent missing weather; add the missing column.")
 
-    # Sort by true calendar date and FILL GAPS. SHAW's DAY2HR aborts
-    # ("ENCOUNTERED PROBLEMS READING DAILY WEATHER DATA") on any missing
-    # calendar day, so the daily series must be strictly consecutive. Missing
-    # days are linearly interpolated between the nearest present neighbours
-    # (e.g. RISMA Ontario is missing 2017-10-14).
-    by_date = {}
-    for r in rows:
-        d = datetime(r["year"], 1, 1) + timedelta(days=r["jday"] - 1)
-        by_date[d.date()] = r
-    if not by_date:
-        return []
-    keys = sorted(by_date)
-    filled = []
-    cur = keys[0]
-    last = keys[-1]
-    fields = ("tmax", "tmin", "tavg", "wind", "precip", "swdown", "rh")
-    n_filled = 0
-    while cur <= last:
-        if cur in by_date:
-            filled.append(by_date[cur])
-        else:
-            # find previous and next present days
-            prev = cur - timedelta(days=1)
-            while prev not in by_date:
-                prev -= timedelta(days=1)
-            nxt = cur + timedelta(days=1)
-            while nxt not in by_date:
-                nxt += timedelta(days=1)
-            span = (nxt - prev).days
-            w = (cur - prev).days / span
-            rp, rn = by_date[prev], by_date[nxt]
-            rec = {f: rp[f] * (1 - w) + rn[f] * w for f in fields}
-            rec["precip"] = 0.0   # don't smear precip across a gap
-            rec["jday"] = cur.timetuple().tm_yday
-            rec["year"] = cur.year
-            filled.append(rec)
-            n_filled += 1
-        cur += timedelta(days=1)
-    if n_filled:
-        print(f"  Filled {n_filled} missing calendar day(s) by interpolation")
-    return filled
+            def value(*names):
+                key = next((k for k in names if k in row), names[0])
+                try:
+                    v = float(row.get(key))
+                except (ValueError, TypeError):
+                    raise ForcingError(f"{filepath} {dt.date()}: {key} missing or nonnumeric") from None
+                if not math.isfinite(v):
+                    raise ForcingError(f"{filepath} {dt.date()}: {key} nonfinite; no filling")
+                return v
+
+            tmax = value("tmax_c", "tmax", "tmax_air", "maxair_t")
+            tmin = value("tmin_c", "tmin", "tmin_air", "minair_t")
+            precip = value("precip_mm", "precip", "prcp", "rain_mm")
+            wind = value("wind_m_s", "wind", "avgws", "windspeed")
+            rh = value("rh_pct", "rh", "avgrh", "humidity")
+            mj_keys = ("srad_mj_m2", "solar_mj", "totrs_mj")
+            watt_keys = ("srad_wm2", "solar_wm2", "swdown_wm2")
+            solar_key = next((k for k in mj_keys + watt_keys + ("srad", "solar") if k in row), "srad_mj_m2")
+            srad = value(solar_key)
+            units = "mj_m2_day" if solar_key in mj_keys else "wm2" if solar_key in watt_keys else solar_units
+            if units is None:
+                raise ForcingError(f"{filepath}: ambiguous {solar_key} units; provide --csv-solar-units")
+            if solar_units is not None and solar_units != units:
+                raise ForcingError(f"{filepath}: solar units conflict with column {solar_key}")
+            if tmin > tmax or tmin <= -273.15:
+                raise ForcingError(f"{filepath} {dt.date()}: invalid tmin_c/tmax_c")
+            for key, v in (("precip_mm", precip), ("wind_m_s", wind), (solar_key, srad)):
+                if v < 0:
+                    raise ForcingError(f"{filepath} {dt.date()}: {key} must be nonnegative; no clipping")
+            if not 0 < rh <= 100:
+                raise ForcingError(f"{filepath} {dt.date()}: rh_pct must be in (0,100] for finite dew point")
+            if dates and dt - dates[-1] != timedelta(days=1):
+                raise ForcingError(f"{filepath}: calendar gap, duplicate or unordered date between {dates[-1].date()} and {dt.date()}")
+            dates.append(dt)
+            rows.append(dict(jday=dt.timetuple().tm_yday, year=dt.year,
+                             tmax=tmax, tmin=tmin, tavg=.5*(tmax+tmin), wind=wind,
+                             precip=precip, swdown=srad*1e6/86400. if units=="mj_m2_day" else srad, rh=rh))
+    if not rows:
+        raise ForcingError(f"{filepath}: no daily weather records for requested period")
+    if start_year is not None and dates[0] != datetime(start_year, 1, 1):
+        raise ForcingError(f"{filepath}: calendar coverage does not start on {start_year}-01-01")
+    if end_year is not None and dates[-1] != datetime(end_year, 12, 31):
+        raise ForcingError(f"{filepath}: calendar coverage does not end on {end_year}-12-31")
+    return rows
 
 
 def _import_loader():
@@ -488,6 +426,8 @@ def main():
                              "(--source cmfd|mswx). Left out = the loader's own default.")
     parser.add_argument("--csv", type=str, default=None,
                         help="Daily weather CSV (RISMA/EC/AAFC). Implies --source csv.")
+    parser.add_argument("--csv-solar-units", choices=("mj_m2_day", "wm2"), default=None,
+                        help="Required for generic CSV solar/srad columns; explicit unit headers take precedence")
     parser.add_argument("--lat", type=float, default=None, help="Target latitude (deg N)")
     parser.add_argument("--lon", type=float, default=None, help="Target longitude (deg E)")
     parser.add_argument("--start_year", type=int, default=None, help="Start year")
@@ -518,7 +458,7 @@ def main():
             if args.mode == "hourly":
                 parser.error("--csv is daily data; use --mode daily (MTSTEP=1)")
             print(f"Reading daily CSV forcing: {args.csv}")
-            data = read_daily_csv(args.csv, args.start_year, args.end_year)
+            data = read_daily_csv(args.csv, args.start_year, args.end_year, solar_units=args.csv_solar_units)
             if not data:
                 raise ForcingError("no usable rows in --csv")
             steps = 1

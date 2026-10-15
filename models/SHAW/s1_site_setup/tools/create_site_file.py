@@ -36,16 +36,24 @@ def get_hwsd_soil(lat, lon):
     """
     HWSD soil at (lat, lon) through the shared lookup.
     Returns dict with t_sand, t_silt, t_clay, s_sand, s_silt, s_clay (percent),
-    t_bulk_density (kg/m3), t_oc (percent), t_gravel (percent; not given by
-    the shared lookup, written as 0) and the map-unit record.
+    t_/s_bulk_density (kg/m3), t_/s_oc (percent), t_/s_gravel (% volume, as HWSD gives it; converted to
+    SHAW's % weight in write_site_file),
+    all from the same HWSD row via the shared lookup, and the map-unit record.
     Raises SoilLookupError when the point has no map unit or the map unit has
-    no texture: the shared lookup returns generic 40/40/20 values in that case
-    and this tool must not write them as if they were the site's soil.
+    no texture, or when the shared lookup itself fails (it raises
+    RuntimeError/ValueError/FileNotFoundError; it no longer returns generic
+    40/40/20 values). This tool must not write a soil that is not the site's.
     """
     if KI_TOOLS_COMMON not in sys.path:
         sys.path.insert(0, KI_TOOLS_COMMON)
     from ki_tools_common.soil_utils import lookup_hwsd
-    h = lookup_hwsd(lat, lon)
+    try:
+        h = lookup_hwsd(lat, lon)
+    except (RuntimeError, ValueError, FileNotFoundError) as e:
+        raise SoilLookupError(
+            f"HWSD soil lookup failed at ({lat}, {lon}): {e}. Nothing written. Give another "
+            f"point, or run with --soil_source default to use the generic silt loam ON PURPOSE."
+        ) from e
     comp = h.get("hwsd_component")
     if not h.get("mu_id") or comp is None or comp.get("quality") == "no_texture_in_map_unit":
         raise SoilLookupError(
@@ -56,9 +64,51 @@ def get_hwsd_soil(lat, lon):
         "t_sand": h["sand"], "t_silt": h["silt"], "t_clay": h["clay"],
         "s_sand": h["sub_sand"], "s_silt": h["sub_silt"], "s_clay": h["sub_clay"],
         "t_bulk_density": h["bulk_density"] * 1000.0,   # g/cm3 -> kg/m3
-        "t_oc": h["oc"], "t_gravel": 0.0,
+        "s_bulk_density": h["sub_bulk_density"] * 1000.0,
+        "t_oc": h["oc"], "s_oc": h["sub_oc"],
+        "t_gravel": h["gravel"], "s_gravel": h["sub_gravel"],
         "mu_id": h["mu_id"], "hwsd_component": comp,
     }
+
+
+# Rock particle density used to turn HWSD gravel (% of soil VOLUME) into SHAW
+# ROCK (% of soil WEIGHT). 2650 kg/m3 is RHOM in Shaw303.for
+# (DATA RHOM/2650./); SHAW turns ROCK back into a volume with the same value
+# in SOILTK (VROCK = ROCK*RHOB/RHOM), so using it here gives back the HWSD
+# gravel volume inside the model.
+ROCK_PARTICLE_DENSITY = 2650.0  # kg/m3
+
+
+def gravel_volume_to_rock_weight(gravel_vol_pct, rhob, om_wt_pct=0.0):
+    """HWSD gravel (% volume) -> SHAW ROCK (% weight of the soil in the layer).
+
+    HWSD v1.2 documentation: T_GRAVEL / S_GRAVEL = gravel content, % volume.
+    SHAW 3.0 user manual (docs/reference/ShawUsers.30x.pdf, soil lines J3):
+    ROCK(I) = percent by WEIGHT of soil material in layer i that is rock or
+    gravel. SHAW (Shaw303.for SOILTK) converts it back with
+    VROCK = ROCK * RHOB / RHOM, RHOM = 2650 kg/m3. So:
+
+        ROCK_wt% = gravel_vol% * 2650 / RHOB
+
+    with RHOB the bulk density written on the same .sit line (kg/m3).
+    Assumption: rock fragments have the mineral particle density 2650 kg/m3,
+    the same value SHAW uses. Raises ValueError when the result leaves no
+    room for the fine earth (ROCK + OM >= 100 % by weight), since SHAW would
+    then get a zero or negative sand/silt/clay share.
+    """
+    gravel_vol_pct = float(gravel_vol_pct)
+    rhob = float(rhob)
+    if not (0.0 <= gravel_vol_pct <= 100.0):
+        raise ValueError(f"gravel {gravel_vol_pct} % volume is outside 0-100")
+    if rhob <= 0.0:
+        raise ValueError(f"bulk density {rhob} kg/m3 must be > 0")
+    rock = gravel_vol_pct * ROCK_PARTICLE_DENSITY / rhob
+    if rock + float(om_wt_pct) >= 100.0:
+        raise ValueError(
+            f"gravel {gravel_vol_pct:.1f} % volume at bulk density {rhob:.0f} kg/m3 is "
+            f"{rock:.1f} % by weight; with OM {om_wt_pct:.1f} % that leaves no fine earth. "
+            f"The HWSD gravel and bulk density do not fit together for this layer.")
+    return rock
 
 
 def pedotransfer_campbell(sand, clay, bulk_density):
@@ -103,7 +153,7 @@ def generate_soil_layers(ns, max_depth):
     ZS(1) must be 0.0.
     """
     depths = [0.0]
-    if ns <= 2:
+    if ns <= 1:
         depths.append(max_depth)
         return depths
 
@@ -146,21 +196,27 @@ def write_site_file(args):
         # generic silt loam (only with --soil_source default)
         top_sand, top_silt, top_clay = 30.0, 50.0, 20.0
         sub_sand, sub_silt, sub_clay = 30.0, 50.0, 20.0
-        bulk_density = 1400.0  # kg/m3
-        organic_matter = 2.0  # percent
-        gravel = 0.0
+        bulk_density = sub_bulk_density = 1400.0  # kg/m3
+        organic_matter = sub_organic_matter = 2.0  # percent
+        gravel = sub_gravel = 0.0
     else:
-        top_sand = hwsd.get('t_sand', 30.0)
-        top_silt = hwsd.get('t_silt', 50.0)
-        top_clay = hwsd.get('t_clay', 20.0)
-        sub_sand = hwsd.get('s_sand', 30.0)
-        sub_silt = hwsd.get('s_silt', 50.0)
-        sub_clay = hwsd.get('s_clay', 20.0)
-        bulk_density = hwsd.get('t_bulk_density', 1400.0)
-        if bulk_density is None or bulk_density < 500:
-            bulk_density = 1400.0
-        organic_matter = hwsd.get('t_oc', 1.0) * 1.724  # OC to OM
-        gravel = hwsd.get('t_gravel', 0.0) or 0.0
+        # All from HWSD (one row): topsoil 0-30 cm and subsoil 30-100 cm.
+        # No subsoil value is derived from the topsoil.
+        top_sand, top_silt, top_clay = hwsd['t_sand'], hwsd['t_silt'], hwsd['t_clay']
+        sub_sand, sub_silt, sub_clay = hwsd['s_sand'], hwsd['s_silt'], hwsd['s_clay']
+        bulk_density = hwsd['t_bulk_density']           # kg/m3
+        sub_bulk_density = hwsd['s_bulk_density']
+        organic_matter = hwsd['t_oc'] * 1.724          # OC% -> OM%
+        sub_organic_matter = hwsd['s_oc'] * 1.724
+        # HWSD gravel is % VOLUME; SHAW ROCK is % WEIGHT (see
+        # gravel_volume_to_rock_weight). Convert with the bulk density that is
+        # written on the same soil line.
+        gravel = gravel_volume_to_rock_weight(hwsd['t_gravel'], bulk_density, organic_matter)
+        sub_gravel = gravel_volume_to_rock_weight(hwsd['s_gravel'], sub_bulk_density,
+                                                  sub_organic_matter)
+        print(f"  Gravel (HWSD % volume -> SHAW ROCK % weight, rock density "
+              f"{ROCK_PARTICLE_DENSITY:.0f} kg/m3): top {hwsd['t_gravel']:.1f} -> {gravel:.1f}, "
+              f"sub {hwsd['s_gravel']:.1f} -> {sub_gravel:.1f}")
 
     # Generate soil layer depths
     depths = generate_soil_layers(args.ns, args.max_depth)
@@ -177,17 +233,31 @@ def write_site_file(args):
     depths = depths[:args.ns]
     depths[0] = 0.0
     depths[-1] = args.max_depth
+    # SHAW needs NS distinct node depths going down (zero spacing between two
+    # nodes breaks the finite-difference mesh). Stop rather than write one.
+    if len(depths) != args.ns or any(b <= a for a, b in zip(depths, depths[1:])):
+        raise ValueError(
+            f"cannot build {args.ns} increasing soil node depths down to {args.max_depth} m "
+            f"(got {depths}); the fixed near-surface nodes go to 1.0 m, so with NS >= 10 use "
+            f"--max_depth > 1.0, or a smaller --ns")
 
     # Compute latitude degrees and minutes
+    # South negative. Shaw303.for makes ALTMIN negative when ALTDEG < 0, so the
+    # sign goes on the degrees; between 0 and -1 degree it must go on the minutes.
+    if not -90.0 <= args.lat <= 90.0:
+        raise ValueError(f"latitude {args.lat} is outside -90..90")
     lat_deg = int(abs(args.lat))
     lat_min = (abs(args.lat) - lat_deg) * 60.0
     if args.lat < 0:
-        lat_deg = -lat_deg
+        if lat_deg > 0:
+            lat_deg = -lat_deg
+        else:
+            lat_min = -lat_min
 
     # Compute soil hydraulic properties
     psi_e_top, theta_s_top, b_top = pedotransfer_campbell(top_sand, top_clay, bulk_density)
     ksat_top = pedotransfer_ksat(top_sand, top_clay)
-    psi_e_sub, theta_s_sub, b_sub = pedotransfer_campbell(sub_sand, sub_clay, bulk_density)
+    psi_e_sub, theta_s_sub, b_sub = pedotransfer_campbell(sub_sand, sub_clay, sub_bulk_density)
     ksat_sub = pedotransfer_ksat(sub_sand, sub_clay)
 
     title = args.title or f"SHAW site at ({args.lat:.2f}, {args.lon:.2f})"
@@ -255,22 +325,23 @@ def write_site_file(args):
             sand, silt, clay = top_sand, top_silt, top_clay
             rhob = bulk_density
             om = organic_matter
+            rock = gravel
             ksat = ksat_top
             psi_e, theta_s, b = psi_e_top, theta_s_top, b_top
         else:
             sand, silt, clay = sub_sand, sub_silt, sub_clay
-            rhob = bulk_density * 1.05  # sub typically denser
-            om = max(organic_matter * 0.3, 0.1)  # less OM at depth
+            rhob = sub_bulk_density
+            om = sub_organic_matter
+            rock = sub_gravel
             ksat = ksat_sub
             psi_e, theta_s, b = psi_e_sub, theta_s_sub, b_sub
 
-        rock = gravel
         satkl = 0.0  # No lateral flow by default
 
         if args.iwrc == 1:
             # Campbell: ZS SAND SILT CLAY ROCK OM RHOB SATCON SATKL psi_e theta_s b
             lines.append(
-                f" {zs:.3f}  {sand:.0f}. {silt:.0f}. {clay:.0f}. {rock:.0f}. {om:.1f}  "
+                f" {zs:.3f}  {sand:.0f}. {silt:.0f}. {clay:.0f}. {rock:.1f} {om:.1f}  "
                 f"{rhob:.0f}.  {ksat:.2f}  {satkl:.1f}  {psi_e:.2f}  {theta_s:.2f}  {b:.2f}"
             )
         elif args.iwrc == 2:
@@ -279,7 +350,7 @@ def write_site_file(args):
             theta_r = 0.01 + 0.001 * clay
             l_param = 2.0
             lines.append(
-                f" {zs:.3f}  {sand:.0f}. {silt:.0f}. {clay:.0f}. {rock:.0f}. {om:.1f}  "
+                f" {zs:.3f}  {sand:.0f}. {silt:.0f}. {clay:.0f}. {rock:.1f} {om:.1f}  "
                 f"{rhob:.0f}.  {ksat:.2f}  {satkl:.1f}  {psi_e:.2f}  {theta_s:.2f}  "
                 f"{lam:.2f}  {theta_r:.3f}  {l_param:.1f}"
             )
@@ -292,7 +363,7 @@ def write_site_file(args):
             l_vg = 0.5
             alpha = 1.0 / abs(psi_e) if abs(psi_e) > 0.01 else 5.0
             lines.append(
-                f" {zs:.3f}  {sand:.0f}. {silt:.0f}. {clay:.0f}. {rock:.0f}. {om:.1f}  "
+                f" {zs:.3f}  {sand:.0f}. {silt:.0f}. {clay:.0f}. {rock:.1f} {om:.1f}  "
                 f"{rhob:.0f}.  {ksat:.2f}  {satkl:.1f}  0.0  {theta_s:.2f}  "
                 f"{n_vg:.2f}  {theta_r:.3f}  {l_vg:.1f}  {alpha:.2f}"
             )
@@ -329,7 +400,7 @@ def main():
     parser.add_argument("--title", type=str, default=None, help="Simulation title")
     parser.add_argument("--ns", type=int, default=11, help="Number of soil nodes (2-50)")
     parser.add_argument("--max_depth", type=float, default=4.0, help="Maximum soil depth (m)")
-    parser.add_argument("--nplant", type=int, default=0, help="Number of plant species")
+    parser.add_argument("--nplant", type=int, default=0, help="Number of plant species; only 0 is supported (add a plant with setup_shaw_from_template.py add_plant)")
     parser.add_argument("--plant_height", type=float, default=0.5, help="Plant height (m)")
     parser.add_argument("--plant_lai", type=float, default=2.0, help="Plant LAI")
     parser.add_argument("--plant_biomass", type=float, default=0.5, help="Plant biomass (kg/m2)")
@@ -337,7 +408,7 @@ def main():
     parser.add_argument("--root_depth", type=float, default=0.5, help="Root depth (m)")
     parser.add_argument("--nsp", type=int, default=0, help="Initial snow layers")
     parser.add_argument("--nr", type=int, default=0, help="Residue nodes (0=none)")
-    parser.add_argument("--nsalt", type=int, default=0, help="Number of solute types")
+    parser.add_argument("--nsalt", type=int, default=0, help="Number of solute types; only 0 is supported")
     parser.add_argument("--toler", type=float, default=0.01, help="Convergence tolerance")
     parser.add_argument("--nhrpdt", type=int, default=1, help="Hours per time step")
     parser.add_argument("--meas_height", type=float, default=3.0, help="Measurement height (m)")
@@ -361,12 +432,37 @@ def main():
 
     args = parser.parse_args()
 
+    if args.nplant != 0:
+        # The canopy block this tool used to write did not match Shaw303.for
+        # (plant line with 8 values where SHAW reads 10: ITYPE PINTRCP XANGLE
+        # CANALB TCCRIT RSTOM0 RSTEXP PLEAF0 RLEAF0 RROOT0, and the lines in the
+        # wrong order), so SHAW read the following lines as plant values.
+        print("ERROR: --nplant > 0 is not supported by this tool (its canopy block did not "
+              "match what SHAW reads). Write a bare-soil .sit (--nplant 0) and add the plant with "
+              "tools/s1_site_setup/setup_shaw_from_template.py add_plant() "
+              "(--crop_type + --gro_file), which writes the full canopy block.")
+        sys.exit(1)
+
+    if args.nsalt != 0:
+        # Solute lines (LINES I) are not written by this tool; with NSALT>0
+        # SHAW would read the soil header and soil lines as solute input.
+        print("ERROR: --nsalt > 0 is not supported by this tool (it writes no solute lines). "
+              "Use --nsalt 0, or start from a SHAW case with solutes (e.g. the Trial example).")
+        sys.exit(1)
+
     if args.ns < 2 or args.ns > 50:
         print("ERROR: NS must be between 2 and 50")
         sys.exit(1)
 
+    if args.max_depth <= 0:
+        print("ERROR: --max_depth must be > 0")
+        sys.exit(1)
+
     try:
         write_site_file(args)
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
     except SoilLookupError as e:
         print(f"ERROR: {e}")
         sys.exit(2)

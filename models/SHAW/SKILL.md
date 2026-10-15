@@ -30,7 +30,7 @@
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (1 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (37 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (35 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
@@ -38,7 +38,7 @@
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 | what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-10-02 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -509,8 +509,8 @@ ZS  SAND  SILT  CLAY  ROCK  OM  RHOB  SATK  SATKLAT  AIRENTRY  SAT  B
 | 1 | SAND | % | Sand (0–100) |
 | 2 | SILT | % | Silt |
 | 3 | CLAY | % | Clay |
-| 4 | ROCK | % | Rock fragments |
-| 5 | OM | % | Organic matter (OC × 1.724) |
+| 4 | ROCK | % by **weight** | Rock/gravel share of the soil mass (SHAW 3.0 user manual). HWSD gravel is % by **volume**: `create_site_file.py` converts it as ROCK = gravel_vol × 2650 / RHOB (2650 kg/m³ = SHAW's RHOM; SHAW turns it back into a volume the same way) |
+| 5 | OM | % by weight | Organic **matter** = organic carbon × 1.724 (van Bemmelen factor). In `update_sit_file(soil_properties=...)` pass `om` (organic matter, written as is) or `oc` (organic carbon, converted); both must agree. Before 2026-10-15 `oc` was written into OM unconverted, so RISMA check results from `run_and_score.py` / `run_and_score_verify2.py` made before then used OM about 1.7× too low |
 | 6 | RHOB | kg/m³ | Bulk density (written as `1360.`) |
 | 7 | SATK | cm/hr | Saturated hydraulic conductivity |
 | 8 | SATKLAT | cm/hr | Lateral saturated conductivity (0 = none) |
@@ -518,7 +518,7 @@ ZS  SAND  SILT  CLAY  ROCK  OM  RHOB  SATK  SATKLAT  AIRENTRY  SAT  B
 | 10 | SAT | m³/m³ | **Saturated water content.** Not quartz: SHAW has no quartz input |
 | 11 | B (BPAR) | — | **Campbell's b** — pore-size distribution index (Rawls et al. 1982) |
 
-Initial water content and temperature are NOT on this line; they come from `.moi` and `.tem`.
+Initial water content and temperature are NOT on this line; they come from `.moi` and `.tem`. `setup_shaw_from_template.py` keeps the template's own `.tem`/`.moi` unless real profiles are given (it no longer writes latitude-formula profiles), and stops if they do not fit the run (`check_profile_file`, following Shaw303.for): a record at the start (hour 0 of day D counts as hour 24 of day D-1, both forms are accepted); when the file is a lower boundary (`.moi` with IVLCBC=0, `.tem` with ITMPBC=0) a record at or after hour 24 of the last day JEND (a file that ends at JEND hour 0 runs out of records on the last day); and exactly NS values per record (NS from Line D of the copied `.sit`). Trailing notes after the NS values and a text footer are allowed, as SHAW ignores them. The Compton template's own files end at day 364 hour 0 with JEND=364 and IVLCBC=ITMPBC=0, so they fail this check as shipped: give real profiles that reach past the end.
 
 > **WARNING — template trap**: Older copies of the Compton Quebec template carry `8.5` in column 10 and `30.0` in column 11. `SAT` must be a porosity (about 0.35–0.60) and `B=30` means soil stays liquid to −150°C, disabling freeze-thaw simulation. ALWAYS apply the corrections below.
 
@@ -796,3 +796,23 @@ Winter liquid water (frozen Mollisol, 5–20cm): **0–10% VWC** in frozen layer
 **Run scripts:**
 - 6-cell validation: `outputs/ne_china_shaw_vic_dssat/run_shaw_hwsd_validation.py`
 - Full 2223-cell domain: `outputs/ne_china_shaw_vic_dssat/run_shaw_parallel.py` (includes `fix_bpar_quartz_in_sit()` as of 2026-05-13)
+
+
+### Daily CSV integrity (2026-10-03)
+
+CSV conversion rejects missing/nonfinite required values, malformed dates,
+negative rainfall/wind/radiation, invalid RH, duplicates and calendar gaps.
+It neither drops incomplete rows nor reconstructs missing days. If year bounds
+are supplied, the file must cover those Jan-1/Dec-31 boundaries. A valid zero
+rainfall value is retained. RH must be positive for a finite dew point.
+
+Radiation units follow headers: `srad_mj_m2`, `solar_mj`, `totrs_mj` mean
+MJ/m²/day; `srad_wm2`, `solar_wm2`, `swdown_wm2` mean daily-average W/m².
+Generic `solar`/`srad` columns require `--csv-solar-units mj_m2_day|wm2`.
+There is no per-value unit guessing. Conversion from MJ/m²/day is ×1e6/86400.
+Errors identify the field/date and occur before an existing `.wea` is replaced.
+Regression check: `python -B tests/test_csv_weather.py`.
+
+The setup date patch follows SHAW's Line B order: `JSTART HRSTAR YRSTAR JEND YREND`.
+`start_doy` updates JSTART; `year` updates both start/end years. The prior
+implementation incorrectly put start_doy into YRSTAR.

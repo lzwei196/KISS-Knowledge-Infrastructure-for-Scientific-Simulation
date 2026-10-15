@@ -32,7 +32,7 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (40 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (61 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (62 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
@@ -40,7 +40,7 @@
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 | what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-24 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -52,6 +52,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | tool (exact path) | invocation |
 |---|---|
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/calib_run_huaibin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_huaibin.py --help` |
 | `tools/s1/build_channel_topology.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/build_channel_topology.py --help` |
 | `tools/s1/define_subbasins.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/define_subbasins.py --help` |
 | `tools/s1/delineate_watershed.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/delineate_watershed.py --help` |
@@ -91,7 +92,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s9/parse_basin_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/parse_basin_output.py --help` |
 | `tools/s9/parse_channel_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/parse_channel_output.py --help` |
 
-*39 public tools; `_`-prefixed helpers and packaging files excluded.*
+*40 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -806,3 +807,20 @@ See `docs/model_couplings.yaml` for detailed coupling specifications.
 ---
 
 *This knowledge infrastructure was built using the Knowledge Dissection Toolkit v1.0 (Jianyun Zhang Research Group, Hohai University).*
+
+### Strict weather contract (2026-10-03)
+
+`prepare_weather_files.py` validates every station before creating or replacing
+weather files. Each requested date and each precipitation, Tmin/Tmax, solar,
+wind, specific-humidity and pressure value must be present and finite. Dates
+outside the requested interval are excluded; duplicate/unordered source dates
+are rejected. No missing value becomes dry weather, a typical temperature,
+solar, humidity or wind. Negative fluxes and Tmax below Tmin are errors.
+
+Elevation lookup failure/nonfinite elevation also stops preparation. A genuine
+zero elevation is valid. Station names must be unique and match the coordinates.
+Relative humidity retains the specific-humidity derivation and physical [0,1]
+limit, without the previous arbitrary 5% minimum. The existing station-file
+precision and unit conversions are retained. An input failure at a later station
+leaves all existing weather files untouched. Disk-write failures still require
+rerunning preparation and checking the resulting files before model execution.

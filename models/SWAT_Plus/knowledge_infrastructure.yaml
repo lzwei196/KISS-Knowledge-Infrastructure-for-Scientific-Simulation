@@ -26,9 +26,10 @@ pipeline:
   - s8_model_execution_skill
   - s9_output_parsing_skill
 tools:
-  count: 39
+  count: 40
   files:
   - tools/calib_run.py
+  - tools/calib_run_huaibin.py
   - tools/s1/build_channel_topology.py
   - tools/s1/define_subbasins.py
   - tools/s1/delineate_watershed.py
@@ -177,6 +178,6 @@ validation:
 summary:
   total_tools: 40
   total_stage_docs: 9
-  total_diagnostic_triplets: 61
+  total_diagnostic_triplets: 62
   generated: '2026-09-01'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

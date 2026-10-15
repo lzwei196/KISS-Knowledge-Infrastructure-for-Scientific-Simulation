@@ -273,7 +273,12 @@ def build_global_schedule(crop, lat, lon):
 
     n_total = float(fert["n_kgha"])
     p_total = float(fert["p_kgha"])
-    splits = get_split_schedule(n_total, crop=crop, plant_doy=plant_doy)
+    # ONE wheat type for the plant code and the fertiliser schedule (2026-09-24, codex): the tool's own rule above
+    # (season wraps the year -> winter wheat) is passed to the library as the explicit crop name, so the operations
+    # written and the split schedule can never disagree; before this the library was called with generic 'wheat'
+    # and no maturity, and assumed winter wheat.
+    sched_crop = {"wwht": "winter_wheat", "swht": "spring_wheat"}.get(plt_code, crop) if crop == "wheat" else crop
+    splits = get_split_schedule(n_total, crop=sched_crop, plant_doy=plant_doy, maturity_doy=harvest_doy)
 
     # Tillage 15 d before planting; P applied entirely at planting (SWAT+ P is
     # not mobile enough for a split to matter).

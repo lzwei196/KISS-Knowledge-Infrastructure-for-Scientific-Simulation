@@ -1,257 +1,347 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["climate"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "Climate Projection (CMIP6 Delta-Change)"
-  domain: "climate"
-  secondary_domains: ["hydrology_projection"]
-  binary: "Python scripts (no external binary)"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  language: "Python"
-  framework: "CMIP6"
-  working_directory: "outputs/{basin}/climate_projection/"
-  notes: "Delta-change method. Two extraction paths: China (26 models, local) or Global (34 models, NASA NEX-GDDP-CMIP6 API)."
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: Climate_Projection
+  language: python
+  implementation:
+    id: climate-projection-deltachange
+    version: HydroCraft KI (Jianyun Zhang Research Group); unversioned
+    provenance: Python; 3-stage delta-change forcing-generation + VIC ensemble-orchestration pipeline;
+      consumes already-bias-corrected CMIP6 (China Cmip6BaisCorrect product or global NASA NEX-GDDP-CMIP6).
+  scientific_reference_version: Delta-change (change-factor) downscaling of CMIP6 bias-corrected projections
+    for VIC; HydroCraft Climate_Projection pipeline (S1 extract -> S2 deltas -> S3 apply -> S4 ensemble)
 inputs:
-
   forcing:
-    - name: "cmip6_precipitation"
-      file: "pr/*.txt (China) or NEX-GDDP NetCDF (global)"
-      unit: "mm/day"
-      valid_range: [0.0, 500.0]
-      format: "Tab-separated text (China) or NetCDF (global)"
-      notes: "Bias-corrected for China local files. Raw from NEX-GDDP for global."
-
-    - name: "cmip6_tasmax"
-      file: "tasmax/*.txt (China) or NEX-GDDP NetCDF (global)"
-      unit: "degC"
-      valid_range: [-60.0, 60.0]
-      format: "Tab-separated text (China) or NetCDF (global)"
-      notes: "Daily maximum temperature."
-
-    - name: "cmip6_tasmin"
-      file: "tasmin/*.txt (China) or NEX-GDDP NetCDF (global)"
-      unit: "degC"
-      valid_range: [-80.0, 50.0]
-      format: "Tab-separated text (China) or NetCDF (global)"
-      notes: "Daily minimum temperature."
-
-    - name: "baseline_forcing"
-      file: "VIC forcing files (forcing_1d/ directory)"
-      unit: "various (7 variables)"
-      format: "NetCDF per variable per year"
-      notes: "CMFD or MSWX baseline. All 7 VIC variables preserved in delta-change output."
-
+  - name: pr
+    unit: mm/day
+    category: climate_change_signal
+    source_kind: forcing
+    model_input_format: CMIP6 bias-corrected daily series; China tab-separated text (Cor_{Model}_PreDaily.txt,
+      3 metadata cols + 2 header rows) or global NEX-GDDP-CMIP6 NetCDF
+    notes: 'Multiplicative variable; only the monthly climatology is used to form a change factor. NEX-GDDP
+      pr arrives as kg/m2/s and is unit-converted, China product is already mm/day. Valid range (after
+      conversion to mm/day): hard physical limit pr >= 0; plausibility range [0, 500] mm/day (a daily
+      total above 500 is suspect, e.g. a unit mix-up; very rare real extremes can exceed it, so check
+      before discarding).'
+  - name: tasmax
+    unit: degC
+    category: climate_change_signal
+    source_kind: forcing
+    model_input_format: CMIP6 bias-corrected daily series (Cor_{Model}_tasmaxDaily.txt or NEX-GDDP NetCDF)
+    notes: Additive variable; 5 China models carry precip only and lack temperature. Plausibility range
+      [-60, 60] degC (no hard physical bound; values near 230-330 mean the data are in Kelvin and must
+      be converted first). tasmax should be >= tasmin on the same day.
+  - name: tasmin
+    unit: degC
+    category: climate_change_signal
+    source_kind: forcing
+    model_input_format: CMIP6 bias-corrected daily series (Cor_{Model}_tasminDaily.txt or NEX-GDDP NetCDF)
+    notes: Additive variable. Plausibility range [-80, 50] degC (no hard physical bound; values near 190-320
+      mean the data are in Kelvin and must be converted first). tasmin should be <= tasmax on the same
+      day.
+  - name: baseline_forcing_1d (temp, prec, pres, srad, lrad, shum, wind)
+    unit: 'NetCDF native units: temp K, prec kg m-2 s-1, pres Pa, srad W m-2, lrad W m-2, shum kg kg-1
+      (specific humidity), wind m s-1'
+    category: baseline_meteorology
+    source_kind: forcing
+    model_input_format: 'VIC forcing_1d NetCDF (CMFD or MSWX baseline): one file per variable per month,
+      named {var}_..._{YYYYMM}_..._{basin}.nc, 3-hourly time steps'
+    notes: Supplies sub-daily variability and all 7 VIC variables. These are the NetCDF INPUT units (checked
+      on a real CMFD forcing_1d file and required by tools/s3_apply_deltas/convert_projected_forcing.py);
+      do NOT pre-convert to degC/mm/kPa/vapour pressure - those are the VIC ASCII OUTPUT units written
+      by convert_projected_forcing.py (air_temp degC, prec mm per 3-h step, pressure kPa, swdown W/m2,
+      lwdown W/m2, vp kPa from shum and pres, wind m/s). Temperature is shifted additively (a degC delta
+      added to K is the same shift), precipitation scaled multiplicatively; the other 5 variables pass
+      through unchanged. Baseline years are recycled onto target years, choosing a baseline year with
+      the same leap status as each target year.
   parameters:
-    critical:
-      - name: "baseline_period"
-        description: "Historical reference period for computing deltas"
-        valid_range: ["1981-2010", "1961-1990"]
-        default: "1981-2010"
-        unit: "year range"
-        notes: "Must overlap with both CMIP6 historical run and baseline forcing."
-
-      - name: "future_period"
-        description: "Future projection period"
-        valid_range: ["2021-2050", "2041-2070", "2071-2100"]
-        default: "2041-2070"
-        unit: "year range"
-
-      - name: "ssp_scenario"
-        description: "CMIP6 Shared Socioeconomic Pathway"
-        valid_range: ["ssp126", "ssp245", "ssp370", "ssp585"]
-        default: "ssp245"
-        notes: "ssp126=sustainability, ssp245=middle, ssp585=fossil-fuel intensive"
-
-      - name: "gcm_model"
-        description: "CMIP6 Global Climate Model"
-        valid_range: "26 models (China) or 34 models (global)"
-        default: "ACCESS-CM2"
-        notes: >
-          Recommended 5-model ensemble: ACCESS-CM2, BCC-CSM2-MR, EC-Earth3,
-          MIROC6, MRI-ESM2-0.
-
-      - name: "delta_method"
-        description: "How deltas are applied"
-        notes: >
-          Temperature: additive (T_future = T_baseline + delta_T).
-          Precipitation: multiplicative (P_future = P_baseline * ratio_P).
-          Other variables (wind, pressure, radiation, humidity): unchanged.
-
-  files:
-    required:
-      - name: "basin_grid.nc"
-        description: "VIC basin grid definition (lat/lon of grid cells)"
-        format: "NetCDF"
-
-      - name: "CMIP6 data (historical)"
-        description: "Historical period data for baseline comparison"
-        path_china: "KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/"
-        path_global: "NASA NEX-GDDP-CMIP6 THREDDS"
-
-      - name: "CMIP6 data (future)"
-        description: "Future scenario data"
-
-      - name: "VIC baseline forcing"
-        description: "CMFD or MSWX forcing for the baseline period"
-        path: "outputs/{basin}/vic_temp/forcing/forcing_1d/"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: PR_FLOOR
+    unit: mm/day
+    category: numerical_clamp
+    source_kind: default
+    model_input_format: hardcoded constant (0.1)
+    notes: Floor on historical precip in the ratio denominator to avoid divide-by-near-zero in arid months.
+  - name: precip_ratio_clip
+    unit: dimensionless
+    category: numerical_clamp
+    source_kind: default
+    model_input_format: hardcoded bounds [0.1, 5.0]
+    notes: Hard cap on delta_pr; silently truncates extreme wet/dry change signals.
+  - name: cell_match_tolerance
+    unit: deg
+    category: grid_matching
+    source_kind: default
+    model_input_format: hardcoded nearest-neighbour acceptance radius (~0.26 deg / 0.13 deg half-cell)
+    notes: Cells beyond tolerance are dropped as unmatched; many VIC cells may map to one CMIP6 column.
+  initial_conditions: []
+  boundary_conditions:
+  - name: MODEL_NAME
+    unit: n/a
+    category: model_selection
+    source_kind: user_provided
+    model_input_format: case-sensitive hyphenated GCM name (e.g. ACCESS-CM2)
+    notes: Selects one GCM realisation; ensemble of >=5 recommended for uncertainty.
+  - name: SCENARIO
+    unit: n/a
+    category: scenario_selection
+    source_kind: user_provided
+    model_input_format: short code r1 | 126 | 245 | 585 (NOT ssp-prefixed folder names)
+    notes: r1 = historical baseline; 245 (SSP2-4.5) is the default future scenario.
+  - name: REF_PERIOD
+    unit: year-year
+    category: reference_window
+    source_kind: user_provided
+    model_input_format: (start, end), default (1981, 2010), must lie within 1961-2014
+    notes: Historical climatology window; must not overlap FUTURE_PERIOD or deltas collapse to ~1.0/0.0.
+  - name: FUTURE_PERIOD
+    unit: year-year
+    category: projection_window
+    source_kind: user_provided
+    model_input_format: (start, end), default (2041, 2070), must lie within 2015-2099
+    notes: Future target window for the projected forcing.
+  - name: ENSEMBLE (r1i1p1f1)
+    unit: n/a
+    category: ensemble_member
+    source_kind: default
+    model_input_format: hardcoded NEX-GDDP global-path member
+    notes: Only r1i1p1f1 is fetched on the global path regardless of model.
+  - name: basin_grid
+    unit: n/a
+    category: domain_geometry
+    source_kind: user_provided
+    model_input_format: VIC basin grid NetCDF (lat/lon + land mask)
+    notes: Defines the cells for which CMIP6 data are extracted and matched.
 outputs:
-
   primary:
-    - name: "precipitation_projection"
-      canonical_id: "precipitation_rate"
-      file: "forcing_{MODEL}_{SSP}/pr_*.nc"
-      unit: "mm/day"
-      valid_range: [0.0, 500.0]
-      format: "NetCDF; downscaled CMIP6 precipitation, bias-corrected via delta method"
-      notes: "Future projected daily precipitation per cell."
-
-    - name: "temperature_max_projection"
-      canonical_id: "air_temperature_max"
-      file: "forcing_{MODEL}_{SSP}/tasmax_*.nc"
-      unit: "degC"
-      valid_range: [-50.0, 60.0]
-      format: "NetCDF"
-      notes: "Future projected daily Tmax per cell."
-
-    - name: "temperature_min_projection"
-      canonical_id: "air_temperature_min"
-      file: "forcing_{MODEL}_{SSP}/tasmin_*.nc"
-      unit: "degC"
-      valid_range: [-70.0, 50.0]
-      format: "NetCDF"
-      notes: "Future projected daily Tmin per cell."
-
-    - name: "climate_deltas"
-      file: "{MODEL}_{SSP}_deltas_{basin}_{period}.nc"
-      unit: "degC (temp delta), ratio (precip ratio)"
-      format: "NetCDF with monthly deltas per grid cell"
-      notes: "12 monthly values per variable per cell. Intermediate output; consumed by delta-change application step."
-
-    - name: "projected_forcing"
-      file: "forcing_{MODEL}_{SSP}/ directory"
-      unit: "various (same as VIC forcing)"
-      format: "VIC-compatible forcing files (same format as baseline)"
-      notes: "Bundles all 7 VIC variables. Only temp and precip modified; others pass-through. Use precipitation_projection / temperature_max_projection / temperature_min_projection canonical outputs to feed downstream models."
-
-    - name: "discharge_projection"
-      canonical_id: "discharge"
-      file: "routing_{MODEL}_{SSP}/<station>.day"
-      unit: "m3/s"
-      valid_range: [0.0, 50000.0]
-      format: "ASCII; columns = year month day discharge_m3s"
-      notes: "Future-period discharge from coupled VIC+routing under projected forcing. Compare to historical baseline ratio for climate-impact signal."
-
-  diagnostics:
-    - name: "delta_sanity_check"
-      check: "Temperature deltas typically +0.5 to +6 degC for mid-century"
-      notes: "Zero deltas indicate historical/future files confused. Very large deltas (>10 degC) indicate wrong files."
-
-    - name: "precip_ratio_check"
-      check: "Precipitation ratio typically 0.7 to 1.5 for mid-century"
-      notes: "Extreme ratios (>3 or <0.3) in dry months are possible but should be flagged."
-
-    - name: "pass_through_variables"
-      check: "Wind, pressure, radiation, humidity unchanged in projected forcing"
-      notes: "Missing pass-through variables cause VIC to fail."
-
-    - name: "bias_correction"
-      check: "China local data is pre-bias-corrected. Global NEX-GDDP may need additional correction."
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: delta_pr
+    unit: dimensionless (ratio)
+    description: Monthly multiplicative change factor for basin precipitation (atmospheric water input;
+      future vs historical climatology), floored at 0.1 mm/day and clipped to [0.1, 5.0].
+    validation_rank: 2
+    emitted_in: deltas/{MODEL}_{ssp}_deltas_{basin}_{start}-{end}.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - A derived change factor, not a directly observable quantity; assess plausibility against multi-model
+          ensemble agreement, not against an observation dataset.
+        - Multiplicative ratios are inflated in arid months where historical precip approaches the 0.1
+          mm/day floor.
+      detrending_options:
+      - none
+  - name: delta_tas
+    unit: degC
+    description: Monthly additive change factor for near-surface air temperature (tasmax/tasmin future
+      minus historical climatology).
+    validation_rank: 3
+    emitted_in: deltas/{MODEL}_{ssp}_deltas_{basin}_{start}-{end}.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Change factor, not a directly observable quantity; evaluate via inter-model spread and physical
+          plausibility.
+      detrending_options:
+      - none
+  - name: projected_precipitation
+    unit: kg m-2 s-1
+    description: Future VIC basin precipitation forcing (atmospheric water input) = baseline precipitation
+      scaled by the monthly delta_pr factor. prec_*.nc keeps the baseline NetCDF unit kg m-2 s-1 (3-hourly);
+      the VIC ASCII copy in forcing_final_* holds mm per 3-h step (column 2).
+    validation_rank: 4
+    emitted_in: forcing_{MODEL}_{ssp}/prec_*.nc (and forcing_final_{MODEL}_{ssp}/ ASCII)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Only a historical-window reconstruction is observable; the future window is not directly verifiable.
+        - Sub-daily variability and the inter-annual sequence are inherited from the recycled baseline,
+          not GCM-realised future weather, so future extremes/variability are not represented.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Distinct VIC cells may share an identical CMIP6 column via many-to-one matching.
+      detrending_options:
+      - none
+  - name: projected_air_temperature
+    unit: K
+    description: Future VIC mean near-surface air temperature forcing = baseline temperature shifted by
+      the mean of the monthly tasmax and tasmin deltas. temp_*.nc keeps the baseline NetCDF unit K; the
+      VIC ASCII copy in forcing_final_* holds degC (column 1).
+    validation_rank: 1
+    emitted_in: forcing_{MODEL}_{ssp}/temp_*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Mean-temperature forcing is shifted by the average of the tasmax and tasmin deltas (additive_mean),
+          despite the internal delta_key naming suggesting tasmax only.
+        - Future window not directly observable; diurnal range change is not represented (only the mean
+          shift is applied).
+      detrending_options:
+      - none
+  - name: projected_discharge
+    unit: m3/s
+    description: Daily routed discharge at the basin outlet under projected forcing (downstream VIC +
+      routing within the ensemble stage).
+    validation_rank: 5
+    emitted_in: routing_{MODEL}_{ssp}/
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Valid only for the historical reconstruction period and only with a calibrated VIC; uncalibrated
+          soil parameters amplify the climate signal and distort absolute discharge.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        determining_metric: decadal_pbias
+        caveats:
+        - Future projections should be assessed as relative (% change) signals, which are more robust
+          than absolute discharge.
+      detrending_options:
+      - linear_residual
+      - decadal_mean
+  - name: change_summary_pct_Q
+    unit: '%'
+    description: Percent change in mean / maximum / minimum river discharge at the basin outlet (future
+      vs historical) summarised across the ensemble.
+    validation_rank: 6
+    emitted_in: change_summary.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        determining_metric: decadal_pbias
+        caveats:
+        - Relative change is the intended robust metric; absolute magnitudes depend on VIC calibration.
+        - Interpret only as an ensemble of >=5 models; a single model is one realisation, not a definitive
+          projection.
+      detrending_options:
+      - decadal_mean
+  secondary: []
 known_issues:
-  - id: "basin_outside_china"
-    triplet: "dt_cc_001"
-    description: "Basin outside China coverage for local CMIP6 files"
-    affected_output: "No data extracted"
-    detection: "Zero matching grid cells"
-    fix: "Use global extraction path (fetch_nex_gddp_global.py)"
-
-  - id: "model_name_mismatch"
-    triplet: "dt_cc_002"
-    description: "CMIP6 model name case/spelling mismatch — file not found"
-    affected_output: "No data extracted"
-    detection: "FileNotFoundError"
-    fix: "Use exact model names from available list (case-sensitive)"
-
-  - id: "coordinate_precision"
-    triplet: "dt_cc_003"
-    description: "Grid cell coordinate matching fails due to floating-point precision"
-    affected_output: "Wrong or no grid cells matched"
-    detection: "Extracted data has unexpected number of cells"
-    fix: "Use tolerance-based matching (nearest neighbor)"
-
-  - id: "deltas_all_zero"
-    triplet: "dt_cc_004"
-    description: "Deltas are all zero — historical and future files confused"
-    affected_output: "Projected forcing identical to baseline"
-    detection: "All delta values = 0"
-    fix: "Verify historical file uses 'r1' scenario, future uses SSP code"
-
-  - id: "extreme_precip_ratio"
-    triplet: "dt_cc_005"
-    description: "Extreme precipitation ratio in dry months (division by near-zero)"
-    affected_output: "Wildly amplified precipitation in historically dry months"
-    detection: "Ratio > 5 in specific months"
-    fix: "Cap ratio at reasonable maximum (e.g., 3.0) or use additive for very dry months"
-
-  - id: "vic_time_range_mismatch"
-    triplet: "dt_cc_006"
-    description: "VIC forcing time range does not match projected period"
-    affected_output: "VIC fails or runs for wrong period"
-    detection: "VIC error about missing forcing data"
-    fix: "Baseline forcing must be long enough to be recycled for future period"
-
-  - id: "passthrough_missing"
-    triplet: "dt_cc_007"
-    description: "Pass-through variables (wind, pressure) missing from projected forcing"
-    affected_output: "VIC cannot run with incomplete forcing"
-    detection: "VIC error about missing variables"
-    fix: "Ensure apply_deltas_forcing copies all 7 variables"
-
-  - id: "uncalibrated_amplification"
-    triplet: "dt_cc_008"
-    description: "Uncalibrated VIC parameters amplify projection errors"
-    affected_output: "Absolute discharge values unreliable"
-    detection: "Large bias in historical validation"
-    fix: "Calibrate VIC first. Use relative changes (%) for reporting."
-
-  - id: "memory_error"
-    triplet: "dt_cc_009"
-    description: "Memory error reading large CMIP6 files (650 MB per file)"
-    affected_output: "Extraction crashes"
-    detection: "MemoryError or killed process"
-    fix: "Process in chunks or use global API path (downloads only needed cells)"
-
-# =========================================================================
-# EXPECTED RANGES (typical projections)
-# =========================================================================
-expected_ranges:
-  mid_century_2041_2070:
-    temp_delta_ssp245_degC: [1.0, 3.0]
-    temp_delta_ssp585_degC: [2.0, 5.0]
-    precip_ratio_ssp245: [0.9, 1.2]
-    precip_ratio_ssp585: [0.8, 1.3]
-    notes: "Ranges vary by region and season."
-
-  cmip6_data:
-    china_models: 26
-    global_models: 34
-    scenarios: ["historical", "ssp126", "ssp245", "ssp585"]
-    china_grid: "0.25 deg, 73.75-135.25E, 15.25-53.75N"
-    recommended_ensemble: ["ACCESS-CM2", "BCC-CSM2-MR", "EC-Earth3", "MIROC6", "MRI-ESM2-0"]
+- id: dt_cc_001
+  symptom: No CMIP6 cells match the basin grid — 0 matched cells
+  diagnosis: Basin is outside the China domain of Cmip6BaisCorrect_for_China (73.75-135.25E, 15.25-53.75N);
+    The China bias-corrected product covers only mainland-China land (4,163 cells); basins abroad or in
+    border areas outside the mask get no matching cells.; ['extract_cmip6_basin.py', 'basin_grid.nc']
+  remedy: 'Use the global path: fetch_nex_gddp_global.py (NEX-GDDP-CMIP6, 0.25 deg, already BCSD bias-corrected);
+    rename its historical output to r1; fetch_nex_gddp_global; [''Check basin_grid.nc lat/lon vs the China
+    box'', ''Else: raw ESGF CMIP6, quantile-mapped to MSWX'']; Check basin location first'
+  severity: fatal
+- id: dt_cc_002
+  symptom: CMIP6 pr file not found for the specified model
+  diagnosis: 'Model name does not match file naming, or model has pr only; Files: Cor_{Model}_PreDaily.txt,
+    Cor_{Model}_tasmaxDaily.txt; case-sensitive, hyphens (ACCESS-CM2). No tasmax/tasmin: CESM2-WACCM,
+    IITM-ESM, CNRM-CM6-1, KACE-1-0-G, MIROC-ES2L.; [''extract_cmip6_basin.py'', ''CMIP6 file system'']'
+  remedy: Check exact model spelling and that its files exist for the scenario; ; ['ls KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/pr/r1/',
+    'ls .../tasmax/r1/ | grep {MODEL}']; Use the 26-model list in the skill doc (all have pr+tasmax+tasmin)
+  severity: fatal
+- id: dt_cc_003
+  symptom: Extracted CMIP6 data has all zeros or unreasonable values for some cells
+  diagnosis: 'Cell matching picked the wrong CMIP6 column (coordinate precision mismatch); Grids are 0.25
+    deg but centres can differ (31.125 vs 31.1250001). Nearest match uses 0.13 deg tolerance: too tight
+    misses cells, too loose matches wrong ones.; [''extract_cmip6_basin.py'', ''Grid coordinate precision'']'
+  remedy: Check matched cell coordinates against the basin grid; ; ['Compare output cell_lat/cell_lon
+    with VIC basin_grid.nc', 'If mismatched, adjust the tolerance in extract_cmip6_basin.py (default 0.13
+    deg)']; Spot-check a few cells against the raw CMIP6 text file
+  severity: silent
+- id: dt_cc_004
+  symptom: All delta values are exactly 1.0 (precipitation) or 0.0 (temperature) — no change signal
+  diagnosis: 'Historical and future inputs are the same, or the periods overlap; Same scenario in HIST_DIR
+    and FUTURE_DIR (both r1), or overlap like 1981-2010 vs 2000-2029, makes both climatologies nearly
+    equal: deltas ~1.0 / ~0.0.; [''compute_climate_deltas.py'', ''Directory paths and period configuration'']'
+  remedy: Check HIST_DIR has r1 files, FUTURE_DIR has SSP files, and the periods do not overlap; ; ['ls
+    {HIST_DIR}/*_r1_*.nc', 'ls {FUTURE_DIR}/*_{ssp}_*.nc', 'REF_PERIOD within 1961-2014, FUTURE_PERIOD
+    within 2015-2099']; Extract r1 and SSP to one dir; the tool splits by filename
+  severity: silent
+- id: dt_cc_005
+  symptom: Precipitation ratio extremely high (>5x) in dry months, causing unrealistic projected precipitation
+  diagnosis: Near-zero historical precipitation in arid months gives extreme ratios; Dry-month means can
+    be <0.1 mm/day (north China winter). History is floored at 0.1 mm/day, ratios clipped to [0.1, 5.0];
+    the cap can still amplify dry months.; ['compute_climate_deltas.py', 'Projected forcing in dry months']
+  remedy: 'Inspect delta_pr in dry months; confirm the cap is acceptable for the study; ; [''Plot delta_pr
+    by month: ~1.0 in wet months, possibly capped in dry months'']; For very arid basins use additive
+    (mm/day) instead of multiplicative precipitation deltas'
+  severity: degraded
+- id: dt_cc_006
+  symptom: 'VIC error: Not enough records in forcing file — projected forcing has wrong time range'
+  diagnosis: VIC global STARTYEAR/ENDYEAR do not match the projected forcing years; Projected forcing
+    has future dates (e.g. 2041-2070); with STARTYEAR=1990 still set, VIC seeks 1990 records in files
+    dated 2041 and fails on record count.; ['global_param_{basin}_{MODEL}_{ssp}.txt', 'Projected forcing
+    files']
+  remedy: Set STARTYEAR/ENDYEAR and FORCEYEAR to the future period in a projection global file; ; ['STARTYEAR={future_start},
+    ENDYEAR={future_end}', 'FORCEYEARFIRST/LAST = same years', 'FORCING1 prefix = projected forcing dir'];
+    One separate global_param file per projection run; never edit the baseline
+  severity: fatal
+- id: dt_cc_007
+  symptom: A pass-through variable (wind, pres, srad, lrad, shum) is missing from projected forcing; convert_projected_forcing.py
+    stops with 'no NetCDF files for variable(s)'
+  diagnosis: Pass-through baseline files (pres, srad, lrad, wind, shum) not found; Only prec and temp
+    change; the rest are copied. A variable with another prefix or in a subfolder is skipped (no output);
+    convert_projected_forcing.py then stops.; ['apply_deltas_forcing.py', 'Baseline forcing file naming']
+  remedy: 'Make sure all 7 variables (temp, prec, pres, srad, lrad, wind, shum) are in BASELINE_FORCING_DIR;
+    ; [''ls the forcing_1d dir: 7 prefixes'', ''If a prefix differs (e.g. MSWX), rename the files or edit
+    FORCING_VAR_PREFIXES in apply_deltas_forcing.py to match'']; Check 7 prefixes first'
+  severity: silent
+- id: dt_cc_008
+  symptom: Projected discharge is unreasonably high/low but VIC runs without error — uncalibrated parameters
+    amplify climate signal
+  diagnosis: Default (uncalibrated) VIC soil parameters exaggerate runoff sensitivity; Defaults (binfilt,
+    Ds, Ws) can give NSE<0 in history; +10% precipitation may give +50% runoff. Relative (future/historical)
+    changes are fairly robust; absolute values are wrong.; ['VIC soil parameters', 'All projection runs']
+  remedy: Calibrate VIC on observed discharge before projecting; if uncalibrated, report relative changes
+    only; ; ['Calibrate with skills/vic_cali_ai/', 'Use the calibrated SOIL_PARAM_COMPLETE.txt in every
+    run']; Find gauges with find_observed_station.py
+  severity: degraded
+- id: dt_cc_009
+  symptom: Memory error or very slow processing when reading CMIP6 text files (650+ MB each)
+  diagnosis: Reading a whole 4163-column CMIP6 text file into memory exceeds RAM, worse with several variables;
+    Each file is ~650 MB; pandas needs ~2-3 GB per file, ~6-9 GB for 3 variables of one model, more with
+    models in parallel.; ['extract_cmip6_basin.py', 'System RAM']
+  remedy: Process one model at a time; read only basin columns (usecols); extract_cmip6_basin; ['free
+    -h', 'Run models one after another, not in parallel', 'Confirm usecols reads only basin columns'];
+    Sequential runs stay under ~2 GB
+  severity: fatal
+- id: dt_cc_010
+  symptom: No dedicated tool for converting projected forcing NC to VIC ASCII format; agent tried process_forcing.py
+    which requires manual config editing and hit xr.open_mfdataset time coordinate errors
+  diagnosis: Monthly NC from apply_deltas had no documented NC-to-ASCII tool; S3a (apply deltas) was documented
+    but S3b (NC to ASCII) was not; the Bengbu workaround used ad-hoc scripts with hardcoded paths that
+    could not be reused for Nuxia.; ['apply_deltas_forcing.py', 'process_forcing.py']
+  remedy: Use convert_projected_forcing.py (CLI, all settings as arguments) for NC to VIC ASCII; convert_projected_forcing;
+    []; Registered in the KI manifest; see s3 skill doc Step 3
+  severity: fatal

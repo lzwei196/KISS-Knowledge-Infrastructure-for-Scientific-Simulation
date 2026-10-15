@@ -35,6 +35,7 @@ import os
 import json
 import logging
 import re
+import calendar
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -149,6 +150,38 @@ def extract_yyyymm(filename):
     return None, None
 
 
+REQUIRED_DELTAS = ("delta_pr", "delta_tasmax", "delta_tasmin")
+
+
+def plan_base_years(target_years, baseline_years):
+    """Pick the baseline year to recycle onto each target year.
+
+    Leap and non-leap baseline years are cycled SEPARATELY, each list in order, so a leap
+    target gets a leap baseline (real Feb 29), a non-leap target gets a non-leap baseline
+    (no Feb 29 to drop or duplicate), and every baseline year of a kind is used before any
+    is reused. Returns a list of (base_year, drop_feb29), one per target year.
+    A leap target with no leap year in the baseline cannot be filled without inventing
+    Feb 29 data, so it raises. Non-leap targets with only leap baselines drop Feb 29.
+    """
+    leap = [y for y in baseline_years if calendar.isleap(y)]
+    normal = [y for y in baseline_years if not calendar.isleap(y)]
+    i_leap = i_norm = 0
+    plan = []
+    for ty in target_years:
+        if calendar.isleap(ty):
+            if not leap:
+                raise RuntimeError(
+                    f"target year {ty} is a leap year but the baseline ({baseline_years[0]}-"
+                    f"{baseline_years[-1]}) has no leap year; Feb 29 cannot be filled without "
+                    f"inventing data. Use a baseline that contains at least one leap year.")
+            plan.append((leap[i_leap % len(leap)], False)); i_leap += 1
+        elif normal:
+            plan.append((normal[i_norm % len(normal)], False)); i_norm += 1
+        else:
+            plan.append((leap[i_leap % len(leap)], True)); i_leap += 1
+    return plan
+
+
 def match_delta_cells(delta_ds, forcing_ds):
     """Match delta file cells to forcing grid cells.
 
@@ -202,8 +235,7 @@ def apply_delta_to_variable(ds, var_name, delta_ds, delta_key, method, cell_indi
     Returns: modified xr.Dataset
     """
     if delta_key not in delta_ds:
-        logger.warning(f"Delta variable {delta_key} not found in delta file, skipping")
-        return ds
+        raise RuntimeError(f"Delta variable {delta_key} not found in delta file")
 
     da = ds[var_name].copy()
     delta_vals = delta_ds[delta_key].values  # shape: (12, n_cells)
@@ -230,11 +262,12 @@ def apply_delta_to_variable(ds, var_name, delta_ds, delta_key, method, cell_indi
             data[t_idx] = data[t_idx] + delta_grid
         elif method == "additive_mean":
             # Average of tasmax and tasmin deltas
-            if "delta_tasmax" in delta_ds and "delta_tasmin" in delta_ds:
-                d_max = delta_ds["delta_tasmax"].values[m - 1, :]
-                d_min = delta_ds["delta_tasmin"].values[m - 1, :]
-                delta_mean = (d_max + d_min) / 2.0
-                delta_grid = delta_mean[cell_indices]
+            if not ("delta_tasmax" in delta_ds and "delta_tasmin" in delta_ds):
+                raise RuntimeError("additive_mean needs both delta_tasmax and delta_tasmin")
+            d_max = delta_ds["delta_tasmax"].values[m - 1, :]
+            d_min = delta_ds["delta_tasmin"].values[m - 1, :]
+            delta_mean = (d_max + d_min) / 2.0
+            delta_grid = delta_mean[cell_indices]
             data[t_idx] = data[t_idx] + delta_grid
 
     da.values = data
@@ -250,6 +283,13 @@ def process():
     # Load delta file
     delta_ds = xr.open_dataset(DELTA_FILE)
     logger.info(f"Loaded deltas: {list(delta_ds.data_vars)}")
+    missing_deltas = [k for k in REQUIRED_DELTAS if k not in delta_ds]
+    if missing_deltas:
+        # e.g. the 5 China models that carry precipitation only: without them temp (or prec)
+        # would pass through unchanged while being labelled as projected.
+        raise RuntimeError(
+            f"delta file {DELTA_FILE} lacks {missing_deltas}; all of {list(REQUIRED_DELTAS)} are "
+            f"needed (precipitation-only GCMs cannot drive this tool)")
 
     # Discover baseline files
     baseline_files = get_baseline_files(BASELINE_FORCING_DIR)
@@ -258,6 +298,11 @@ def process():
         sys.exit(2)
 
     logger.info(f"Baseline variables: {list(baseline_files.keys())}")
+    missing_vars = [v for v in FORCING_VAR_PREFIXES if v not in baseline_files]
+    if missing_vars:
+        raise RuntimeError(
+            f"no baseline files for variable(s) {missing_vars} in {BASELINE_FORCING_DIR}; all 7 VIC "
+            f"variables {list(FORCING_VAR_PREFIXES)} are required (check file prefixes)")
 
     # Group baseline files by variable and year-month
     # Structure: {var_prefix: {(year, month): filepath}}
@@ -267,6 +312,12 @@ def process():
         baseline_by_ym[var] = {}
         for f in flist:
             y, m = extract_yyyymm(f.name)
+            if y is not None and m is None:
+                # The output name is made by replacing YYYYMM; annual files have none, so every
+                # target year would overwrite the same file. Only monthly files are supported.
+                raise RuntimeError(
+                    f"{f.name}: annual (no YYYYMM) baseline files are not supported; this tool "
+                    f"needs one forcing_1d file per variable per month")
             if y is not None:
                 baseline_years.add(y)
                 baseline_by_ym[var][(y, m)] = f
@@ -287,9 +338,10 @@ def process():
 
     output_files = []
 
-    for target_year in TARGET_YEARS:
-        # Cycle through baseline years
-        base_year = baseline_years[(target_year - TARGET_YEARS[0]) % n_baseline]
+    missing_months = []
+    plan = plan_base_years(TARGET_YEARS, baseline_years)
+    for target_year, (base_year, drop_feb29) in zip(TARGET_YEARS, plan):
+        # Leap and non-leap baseline years cycle separately (see plan_base_years)
 
         for var_prefix in baseline_files.keys():
             ym_dict = baseline_by_ym.get(var_prefix, {})
@@ -297,10 +349,8 @@ def process():
             for month in range(1, 13):
                 base_file = ym_dict.get((base_year, month))
                 if base_file is None:
-                    # Try without month (yearly files)
-                    base_file = ym_dict.get((base_year, None))
-                if base_file is None:
-                    logger.warning(f"No baseline file for {var_prefix} {base_year}-{month:02d}, skipping")
+                    logger.error(f"No baseline file for {var_prefix} {base_year}-{month:02d}")
+                    missing_months.append(f"{var_prefix} {base_year}-{month:02d}")
                     continue
 
                 # Read baseline
@@ -313,7 +363,7 @@ def process():
                 data_var = data_vars[0]
 
                 # Apply delta if applicable
-                if var_prefix == "prec" and "delta_pr" in delta_ds:
+                if var_prefix == "prec":
                     ds = apply_delta_to_variable(
                         ds, data_var, delta_ds, "delta_pr", "multiplicative",
                         cell_indices, grid_shape
@@ -325,17 +375,17 @@ def process():
                     )
                 # Other variables: pass through unchanged
 
-                # Update time coordinates to target year (handle leap year mismatch)
+                # Update time coordinates to target year. plan_base_years() matched leap
+                # status, so only a leap baseline recycled onto a non-leap target needs Feb 29
+                # dropped (never remapped onto Feb 28, which would duplicate time stamps).
                 old_times = pd.DatetimeIndex(ds.coords["time"].values)
-                import calendar
-                target_is_leap = calendar.isleap(target_year)
-
-                def replace_year(t):
-                    if t.month == 2 and t.day == 29 and not target_is_leap:
-                        return t.replace(year=target_year, day=28)
-                    return t.replace(year=target_year)
-
-                new_times = old_times.map(replace_year)
+                if drop_feb29:
+                    keep = ~((old_times.month == 2) & (old_times.day == 29))
+                    ds = ds.isel(time=np.where(keep)[0])
+                    old_times = old_times[keep]
+                new_times = old_times.map(lambda t: t.replace(year=target_year))
+                if new_times.has_duplicates:
+                    raise RuntimeError(f"duplicate time stamps after recycling {base_file.name} onto {target_year}")
                 ds.coords["time"] = new_times
 
                 # Update attributes
@@ -356,6 +406,10 @@ def process():
         logger.info(f"  Year {target_year} done (baseline: {base_year})")
 
     delta_ds.close()
+    if missing_months:
+        raise RuntimeError(
+            f"{len(missing_months)} baseline variable-month file(s) missing, projected forcing "
+            f"would have gaps: {missing_months[:6]}")
     logger.info(f"Generated {len(output_files)} projected forcing files")
 
     return output_files

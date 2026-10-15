@@ -36,7 +36,9 @@ The target period should match the FUTURE_PERIOD used in delta computation. For 
 FUTURE_PERIOD = 2041-2070
 ```
 
-The tool cycles through baseline years to fill the target period. For example, if baseline is 1990-2000 (11 years), years 2041-2051 use baseline 1990-2000, years 2052-2062 reuse 1990-2000, etc.
+The tool recycles baseline years to fill the target period. Leap and non-leap baseline years are cycled separately, in order: a leap target year takes the next leap baseline year (real Feb 29), a normal target year the next normal baseline year; within each leap-status group every baseline year is used before any is reused. Example: baseline 1990-2000 (leap: 1992, 1996, 2000; normal: the other 8) onto 2041-2044 gives 1990, 1991, 1993, 1992 (2044 is leap). So the baseline year order is not kept exactly. Only monthly forcing_1d files are accepted (annual files stop the tool). If the target period has a leap year but the baseline has none, the tool stops with an error (it does not invent Feb 29).
+
+Baseline forcing_1d NetCDF units (CMFD / MSWX convention, required by both S3 tools): temp K, prec kg m-2 s-1, pres Pa, srad W m-2, lrad W m-2, shum kg kg-1 (specific humidity), wind m s-1, 3-hourly. Do not pre-convert to degC / mm / kPa; that happens in Step 3 (VIC ASCII output). All 7 variables and all three deltas (delta_pr, delta_tasmax, delta_tasmin) are required: a precipitation-only GCM or a missing baseline variable/month stops the tool with exit code 2.
 
 ### Step 2: Run delta application
 
@@ -110,8 +112,11 @@ head -3 outputs/{basin}/climate_projection/forcing_final_{MODEL}_{ssp}/*_30.0000
 > See diagnostic triplet dt_cc_006.
 
 > **PITFALL**: Time coordinate mismatch
-> When cycling baseline years into future years, leap year handling may differ. The tool adjusts the time coordinate, but Feb 29 may be dropped or added.
-> **Do this instead**: Use process_forcing.py with `CALENDAR_AWARE=True` if available.
+> When cycling baseline years into future years, leap years must line up. apply_deltas_forcing.py now cycles leap and non-leap baseline years separately, so each target year gets a baseline year with the same leap status (Feb 29 is only dropped if the baseline has no non-leap year at all), and convert_projected_forcing.py stops if time steps are duplicated, missing or irregular.
+> **Do this instead**: Use a baseline of at least 4 consecutive years (it then always contains both leap and non-leap years).
+
+> **PITFALL**: Missing variables or NaN in projected forcing
+> convert_projected_forcing.py needs all 7 variables with the NetCDF units above. It no longer fills missing variables or NaN with defaults: it stops with exit 1 (missing variable / wrong unit) or exit 2 (NaN cells, time gaps), and lists the failed cells.
 
 ---
 

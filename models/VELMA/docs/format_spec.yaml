@@ -121,9 +121,9 @@ outputs:
   primary:
   - name: Q_sim_m3s
     unit: m3/s
-    description: Daily outlet discharge = Runoff_All(mm/day)_Delineated_Average x area / 86400 s, written
-      by run_velma_engine.py; area = --area-km2 (pass the gauged drainage area when comparing with a gauge)
-      or else the engine's delineated area.
+    description: Daily stream water discharge at the outlet = Runoff_All(mm/day)_Delineated_Average x
+      area / 86400 s, written by run_velma_engine.py; area = --area-km2 (pass the gauged drainage area
+      when comparing with a gauge) or else the engine's delineated area.
     validation_rank: 1
     emitted_in: <output-root>/<run_index>/velma_daily_runoff.csv (column Q_sim_m3s), from the engine's
       DailyResults.csv

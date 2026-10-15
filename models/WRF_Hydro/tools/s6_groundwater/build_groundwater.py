@@ -31,6 +31,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # tools/
+import domain_edit_record as der   # opt-in, recorded stand-in edits (2026-10-05)
+
 import geopandas as gpd
 import netCDF4 as nc
 import numpy as np
@@ -181,7 +184,7 @@ def write_spatial_global_attrs(ds, dom, proj4, esri_pe):
 
 
 def build_groundwater(geo_em_path, domain_json_path, basin_shp_path, output_dir,
-                      hydro_tbl_path=None, gw_coeff=None, gw_expon=None,
+                      hydro_tbl_path=None, fix_domain_gaps=False, edits_record=None, gw_coeff=None, gw_expon=None,
                       gw_zmax=None, gw_zinit=None, coeff_per_100km2=None):
     """Build GWBASINS.nc, GWBUCKPARM.nc, hydro2dtbl.nc, GEOGRID_LDASOUT_Spatial_Metadata.nc."""
 
@@ -225,6 +228,46 @@ def build_groundwater(geo_em_path, domain_json_path, basin_shp_path, output_dir,
     ivgtyp = geo["LU_INDEX"][0, :, :].astype(np.int32)
     landmask = geo["LANDMASK"][0, :, :].astype(np.int32)
     geo.close()
+    # Table check first, so nothing is written when stand-ins are needed
+    ov_rough_tbl, soil_hydro_tbl = parse_hydro_tbl(hydro_tbl_path)
+    # 2026-10-05: a veg / soil type missing from HYDRO.TBL used hard-coded
+    # stand-ins (roughness 0.055, loam-like soil numbers) silently. Now the
+    # stand-in is the table's own GRASSLAND (7) / LOAM (6) row, only with
+    # --fix-domain-gaps, recorded cell by cell; no hard-coded numbers.
+    _g = nc.Dataset(geo_em_path, "r")
+    _ll = ((np.asarray(_g["XLAT_M"][0, :, :]), np.asarray(_g["XLONG_M"][0, :, :]))
+           if "XLAT_M" in _g.variables else None)
+    _g.close()
+    ED = der.ToolEdits("build_groundwater", fix_domain_gaps,
+                       edits_record or (Path(output_dir).resolve() / "domain_edits.build_groundwater.json"),
+                       latlon=_ll)
+    _iv = np.asarray(ivgtyp).astype(int)
+    _is = np.asarray(isltyp).astype(int)
+    _veg_missing = ~np.isin(_iv, list(ov_rough_tbl.keys()))
+    _land = np.asarray(landmask) > 0
+    # Soil gaps on land (type not in HYDRO.TBL, or water soil 14 on land): the
+    # most common class of the nearest valid land neighbours (owner decision
+    # 2026-10-05; neighbour_class_fill), then that class's own HYDRO.TBL row.
+    _soil_gap = _land & (~np.isin(_is, list(soil_hydro_tbl.keys())) | (_is == 14))
+    if (~_land & ~np.isin(_is, list(soil_hydro_tbl.keys()))).any():
+        sys.exit("ERROR: water cells with a soil type missing from HYDRO.TBL")
+    if _veg_missing.any() and 7 not in ov_rough_tbl:
+        sys.exit("ERROR: veg types missing from HYDRO.TBL roughness and no GRASSLAND (7) row")
+    default_rough = ov_rough_tbl.get(7)
+    ED.allow("hydro2dtbl.nc", "OV_ROUGH2D", "veg type not in HYDRO.TBL -> GRASSLAND (7) roughness",
+             "fill_missing_data", _veg_missing, _iv, default_rough if default_rough is not None else "none")
+    if _soil_gap.any():
+        try:
+            _filled, _info = der.neighbour_class_fill(_is, _soil_gap, _land & ~_soil_gap, latlon=_ll)
+        except ValueError as exc:
+            sys.exit(f"ERROR: soil gaps cannot be filled from neighbours: {exc}")
+        if ED.allow("hydro2dtbl.nc", "LKSAT/SMCMAX1/SMCREF1/SMCWLT1",
+                    "land cell with a soil type not in HYDRO.TBL or water soil (14) -> most common class "
+                    "of the nearest valid land neighbours, then that class's HYDRO.TBL row",
+                    "fill_missing_data", _soil_gap, _is, "neighbour class (see cells[].class_taken)",
+                    tag=der.SOIL_FILL_TAG, cell_info=_info):
+            isltyp = np.asarray(_filled).astype(np.int32)
+    ED.finish()   # stops here (nothing written) if stand-ins were needed without the flag
 
     sn, we = e_sn, e_we
     print(f"  Grid: {sn} x {we}")
@@ -366,10 +409,6 @@ def build_groundwater(geo_em_path, domain_json_path, basin_shp_path, output_dir,
     print("  Building hydro2dtbl.nc...")
 
     ov_rough_tbl, soil_hydro_tbl = parse_hydro_tbl(hydro_tbl_path)
-    # Fallbacks
-    default_rough = 0.055  # Grassland
-    default_soil = soil_hydro_tbl.get(6, {"SATDK": 3.38e-6, "MAXSMC": 0.439,
-                                           "REFSMC": 0.329, "WLTSMC": 0.066})
 
     ov_rough2d = np.zeros((sn, we), dtype=np.float32)
     lksat2d    = np.zeros((sn, we), dtype=np.float32)
@@ -384,7 +423,7 @@ def build_groundwater(geo_em_path, domain_json_path, basin_shp_path, output_dir,
 
             ov_rough2d[j, i] = ov_rough_tbl.get(vt, default_rough)
 
-            sp = soil_hydro_tbl.get(st, default_soil)
+            sp = soil_hydro_tbl[st]
             lksat2d[j, i]  = sp["SATDK"]
             smcmax1[j, i]  = sp["MAXSMC"]
             smcref1[j, i]  = sp["REFSMC"]
@@ -459,6 +498,7 @@ def main():
     parser.add_argument("--output_dir", required=True, help="Output directory")
     parser.add_argument("--hydro_tbl", default=str(DEFAULT_HYDRO_TBL),
                         help="Path to HYDRO.TBL")
+    der.add_cli(parser)
     parser.add_argument("--coeff", type=float, default=None,
                         help="Absolute GW bucket Coeff override (gridded mode)")
     parser.add_argument("--expon", type=float, default=None,
@@ -477,6 +517,8 @@ def main():
         basin_shp_path=args.basin_shp,
         output_dir=args.output_dir,
         hydro_tbl_path=args.hydro_tbl,
+        fix_domain_gaps=args.fix_domain_gaps,
+        edits_record=args.edits_record,
         gw_coeff=args.coeff,
         gw_expon=args.expon,
         gw_zmax=args.zmax,

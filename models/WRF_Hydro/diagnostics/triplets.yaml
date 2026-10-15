@@ -523,8 +523,9 @@
     - s3_wrfinput
     - s10_execution
   remedy:
-    action: Set minimum SHDFAC=0.01 and VAI=0.01 for all cells. Or set XLAND=2 (water) for water cells
-      with proper water surface treatment.
+    action: 'Model-stability guard, not data: GREENFRAC < 0.01 -> 0.01 (geo_em) and SHDMAX/SHDMIN
+      < 1 % -> 1 % (wrfinput). STAND-IN, opt-in and recorded (2026-10-05): runners apply it only with --fix-domain-gaps; every edited cell is written to domain_edits.json (summary in result.json domain_edits); without the flag any cell that would need it stops the run (wrfhydro_domain_edits.py). Or set XLAND=2 (water) for water cells with proper water
+      surface treatment.'
     tool_to_run: build_wrfinput
     manual_steps:
     - 'In wrfinput_d01.nc: ensure no cell has BOTH SHDFAC=0 AND VAI=0'
@@ -733,12 +734,17 @@
     - geo_em.d01.nc ISLTYP
     - HWSD raster
   remedy:
-    action: Replace ISLTYP=14 on land cells with default ISLTYP=4 (silt loam)
+    action: 'Fills missing soil data: water soil (14, HWSD map unit 0), a map unit missing from the MDB
+      or no soil fraction on land cells, in SCT_DOM/SCB_DOM/SOILCTOP/SOILCBOT, and smcmax/smcwlt/smcref
+      <= 0 -> STAND-IN, opt-in and recorded (2026-10-05): filled from NEIGHBOURS, not with a fixed loam (owner decision 2026-10-05): each gap cell takes the most common soil class of its nearest valid land cells (8-neighbours first, then wider rings; tie -> closest cell, then lowest class id), top and bottom layer separately; the soil water values then come from that class''s own SOILPARM.TBL / HYDRO.TBL row. Only with --fix-domain-gaps; every filled cell is recorded with its source cells and the class taken. No 1 % limit. Earlier wording, superseded: STAND-IN, opt-in and recorded (2026-10-05): runners apply it only with --fix-domain-gaps; every edited cell is written to domain_edits.json (summary in result.json domain_edits); without the flag any cell that would need it stops the run (wrfhydro_domain_edits.py). Stops even with the flag if more than 1 % of land cells (geo_em
+      LANDMASK) need it. (This entry used to say silt loam 4; tool and runners use loam 6.)'
     tool_to_run: build_geo_em
     manual_steps:
     - 'Check: any(ISLTYP==14 & LANDMASK==1)'
-    - 'If found: set to ISLTYP=4 and update SOILCTOP fractions'
-    prevention: build_geo_em.py fills water soil type on land cells
+    - 'If found: rerun with --fix-domain-gaps (gap cells take their neighbours'' class) and keep domain_edits.json'
+    prevention: 'build_geo_em.py gates the neighbour fill behind --fix-domain-gaps and writes
+      domain_edits.build_geo_em.json with every cell, its source cells and the class taken; runners merge it'
+
   severity: degraded
   cross_references:
   - dt_008
@@ -1213,8 +1219,10 @@
     - wrfinput_d01.nc SMOIS
     - geo_em.d01.nc HGT_M
   remedy:
-    action: '1. Set minimum TOPOGRAPHY > 1m for all land cells in Fulldom_hires.nc 2. Set minimum SMOIS
-      > 0.15 for all cells in wrfinput_d01.nc 3. Mask out ocean cells using LU_INDEX=16 (water) 4. For
+    action: '1. Set minimum TOPOGRAPHY > 1m for all land cells in Fulldom_hires.nc 2. SMOIS start-value
+      floor is a stand-in with NO sourced value (0.25 / 0.15 / 0.10 were all used): only as
+      SMOIS = max(SMOIS, F) with an explicit --smois-floor F under --fix-domain-gaps, every cell
+      recorded in domain_edits.json 3. Mask out ocean cells using LU_INDEX=16 (water) 4. For
       coastal basins, ensure DEM covers the full grid extent
 
       '

@@ -47,8 +47,11 @@ import json
 import subprocess
 import sys
 import time as _time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tools/
+import domain_edit_record as der   # opt-in, recorded stand-in edits (2026-10-05)
 
 
 # ===================================================================
@@ -262,7 +265,14 @@ def main():
     parser.add_argument("--aggfactrt", type=int, default=4,
                         help="Routing grid aggregation factor (default 4)")
     parser.add_argument("--stream_threshold", type=int, default=100,
-                        help="Stream threshold for channel definition (default 100)")
+                        help="Stream threshold for channel definition (default 100); "
+                             "<= 0 = automatic (needs --precip_mm_yr and --temp_mean_c)")
+    parser.add_argument("--precip_mm_yr", type=float, default=None,
+                        help="basin mean annual precipitation (mm/yr), passed to step 4; "
+                             "required when --stream_threshold <= 0 (no default climate)")
+    parser.add_argument("--temp_mean_c", type=float, default=None,
+                        help="basin mean air temperature (C), passed to step 4; "
+                             "required when --stream_threshold <= 0 (no default climate)")
 
     # Execution
     parser.add_argument("--nproc", type=int, default=4,
@@ -278,7 +288,45 @@ def main():
     parser.add_argument("--stop_after", type=int, default=9,
                         help="Stop after step N")
 
+    der.add_cli(parser, floors=True)
+    parser.add_argument("--refkdt", type=float, default=None,
+                        help="REFKDT passed to s5 build_soil_properties.py; REQUIRED when step 5 "
+                             "runs (no default)")
     args = parser.parse_args()
+    # No SMOIS floor unless --smois-floor is given explicitly (no default
+    # number); non-finite or <= 0 SMOIS then stops in step 3b.
+    if args.refkdt is None and args.start_from <= 5 <= args.stop_after:
+        parser.error("--refkdt is required for step 5 (no tool default; a calibration choice)")
+    if args.start_from <= 5 <= args.stop_after:
+        # 2026-10-15: soil_properties.nc is read only by a build with SPATIAL_SOIL
+        # (READ_3D_SOIL sits inside #ifdef SPATIAL_SOIL); otherwise REFKDT comes
+        # from GENPARM.TBL REFKDT_DATA, the table s10 run_wrfhydro.py copies into
+        # the run. A --refkdt that differs from it would be recorded but not used.
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_calib_wrfhydro", resolve_tool("s10_execution", "calibrate_wrfhydro.py"))
+        _cw = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_cw)
+        _sp = _cw.spatial_soil_compiled()
+        if _sp is None:
+            parser.error("the WRF-Hydro executable has no entry in the build record, so it is "
+                         "unknown whether --refkdt (soil_properties.nc) or GENPARM.TBL is live. "
+                         + _cw.build_record_help())
+        if _sp is False:
+            _gp = Path(DEFAULT_SOILPARM).with_name("GENPARM.TBL")
+            _lines = [l.strip() for l in _gp.read_text().splitlines()] if _gp.is_file() else []
+            if "REFKDT_DATA" not in _lines:
+                parser.error(f"cannot read REFKDT_DATA from {_gp}; REFKDT on this build comes from it")
+            _live = float(_lines[_lines.index("REFKDT_DATA") + 1].split()[0])
+            if abs(args.refkdt - _live) > 1e-9:
+                parser.error(f"--refkdt {args.refkdt}: this WRF-Hydro build has no SPATIAL_SOIL "
+                             f"(build record), so it reads REFKDT from {_gp} (REFKDT_DATA = {_live}), "
+                             f"not from soil_properties.nc; the value would be written but not used. "
+                             f"Pass --refkdt {_live}, or change REFKDT_DATA in that table.")
+    if (args.stream_threshold <= 0 and args.start_from <= 4 <= args.stop_after
+            and (args.precip_mm_yr is None or args.temp_mean_c is None)):
+        parser.error("--stream_threshold <= 0 (automatic) needs --precip_mm_yr and "
+                     "--temp_mean_c for this basin (no default climate)")
+    _fix_flag = ["--fix-domain-gaps"] if args.fix_domain_gaps else []
 
     # Compute DX in metres
     if args.dx_m is not None:
@@ -386,7 +434,7 @@ def main():
             "--hwsd_mdb", args.hwsd_mdb,
             "--output", str(geo_em_path),
             "--basin_shp", args.basin_shp,
-        ]
+        ] + _fix_flag
         run_step(2, "Build geo_em.d01.nc", cmd, timeout=300)
 
     # ======================================================================
@@ -400,22 +448,65 @@ def main():
             "--geo_em", str(geo_em_path),
             "--output_path", str(wrfinput_path),
             "--start_month", str(start_month),
-        ]
+        ] + _fix_flag
         run_step(3, "Build wrfinput_d01.nc", cmd)
 
-        # Post-step 3: Patch minimum soil moisture (prevents dt_v036 crash in arid basins)
-        print("  [3b] Patching wrfinput: minimum SMOIS=0.25, TSLB>=270K...")
+        # Post-step 3: SMOIS / TSLB start-value floors. 2026-10-05: no default
+        # numbers (was SMOIS<0.25 -> 0.25, TSLB<270 -> 285 K, silent). Only with
+        # --fix-domain-gaps and explicit --smois-floor / --tslb-floor
+        # (rule: X = max(X, floor)); every changed cell recorded.
         import netCDF4 as nc4
-        dsi = nc4.Dataset(str(wrfinput_path), "r+")
-        if "SMOIS" in dsi.variables:
-            sm = dsi["SMOIS"][:]
-            sm[sm < 0.25] = 0.25
-            dsi["SMOIS"][:] = sm
-        if "TSLB" in dsi.variables:
-            ts = dsi["TSLB"][:]
-            ts[ts < 270] = 285.0
-            dsi["TSLB"][:] = ts
+        import numpy as _np
+        ED = der.ToolEdits("pipeline_step3b", args.fix_domain_gaps,
+                           domain_dir / "domain_edits.pipeline_step3b.json",
+                           settings_extra={"smois_floor": args.smois_floor,
+                                           "tslb_floor": args.tslb_floor})
+        dsi = nc4.Dataset(str(wrfinput_path), "r+" if args.fix_domain_gaps else "r")
+        if "XLAT" in dsi.variables and "XLONG" in dsi.variables:
+            ED.latlon = (_np.squeeze(_np.asarray(dsi["XLAT"][:])),
+                         _np.squeeze(_np.asarray(dsi["XLONG"][:])))
+        # 2026-10-15: check BOTH variables before changing anything, write the
+        # edit record (ED.finish) next, and only then change the file. A stop on
+        # TSLB can no longer leave SMOIS already floored without a record.
+        _plan = []
+        for _v, _floor in (("SMOIS", args.smois_floor), ("TSLB", args.tslb_floor)):
+            if _v not in dsi.variables:
+                continue
+            _a = _np.ma.filled(dsi[_v][:].astype("f8"), _np.nan)
+            # land cells only (XLAND == 1); water cells hold no soil state
+            _xl = _np.squeeze(_np.asarray(dsi["XLAND"][:])) if "XLAND" in dsi.variables else None
+            _landm = (_np.broadcast_to(_xl < 1.5, _a.shape) if _xl is not None
+                      else _np.ones(_a.shape, dtype=bool))
+            _bad = (~_np.isfinite(_a) | (_a <= 0)) & _landm
+            if _floor is None:
+                if _bad.any():
+                    ED.allow("wrfinput_d01.nc", _v, f"{_v} non-finite or <= 0 (no --{_v.lower()}-floor given)",
+                             "start_value_adjustment", _bad, _a, "none")
+                    if args.fix_domain_gaps:
+                        dsi.close()
+                        ED.stop(f"{_v} has {int(_bad.sum())} non-finite or <= 0 cells and no "
+                                f"--{_v.lower()}-floor was given; nothing was changed")
+                continue
+            _plan.append((_v, _floor, _a, _bad | ((_a < _floor) & _landm)))
+        _apply = []
+        for _v, _floor, _a, _m in _plan:
+            if ED.allow("wrfinput_d01.nc", _v, f"{_v} = max({_v}, {_floor})",
+                        "start_value_adjustment", _m, _a, float(_floor)):
+                _apply.append((_v, _floor, _a, _m))
+        try:
+            ED.finish()                  # stops (fix off + edits needed) or writes the record
+        except SystemExit:
+            dsi.close()
+            raise
+        for _v, _floor, _a, _m in _apply:
+            _a[_m] = _floor
+            dsi[_v][:] = _a
         dsi.close()
+        _recs = [p_ for p_ in (domain_dir / "domain_edits.build_geo_em.json",
+                               domain_dir / "domain_edits.build_wrfinput.json",
+                               domain_dir / "domain_edits.pipeline_step3b.json") if p_.exists()]
+        der.merge_records(_recs, domain_dir / "domain_edits.json")
+        print(f"  [3b] domain edit record merged: {domain_dir / 'domain_edits.json'}")
 
     # ======================================================================
     # Step 4: Build Fulldom_hires.nc
@@ -431,7 +522,9 @@ def main():
             "--output_path", str(fulldom_path),
             "--aggfactrt", str(args.aggfactrt),
             "--stream_threshold", str(args.stream_threshold),
-        ]
+        ] + (["--precip_mm_yr", str(args.precip_mm_yr)] if args.precip_mm_yr is not None else []) \
+          + (["--temp_mean_c", str(args.temp_mean_c)] if args.temp_mean_c is not None else []) \
+          + _fix_flag
         run_step(4, "Build Fulldom_hires.nc", cmd, timeout=600)
 
     # ======================================================================
@@ -445,7 +538,8 @@ def main():
             "--output_path", str(soil_props_path),
             "--soilparm_tbl", DEFAULT_SOILPARM,
             "--mptable_tbl", DEFAULT_MPTABLE,
-        ]
+            "--refkdt", str(args.refkdt),
+        ] + _fix_flag
         run_step(5, "Build soil_properties.nc", cmd)
 
     # ======================================================================
@@ -459,8 +553,13 @@ def main():
             "--domain_json", str(domain_json),
             "--basin_shp", args.basin_shp,
             "--output_dir", str(domain_dir),
-        ]
+        ] + _fix_flag
         run_step(6, "Build groundwater + ancillary files", cmd)
+        # merge every tool edit record written so far into DOMAIN/domain_edits.json
+        _recs = sorted(p_ for p_ in domain_dir.glob("domain_edits.*.json"))
+        if _recs:
+            der.merge_records(_recs, domain_dir / "domain_edits.json")
+            print(f"  [6b] domain edit record merged: {domain_dir / 'domain_edits.json'} ({len(_recs)} tool records)")
 
     # ======================================================================
     # Step 7: CMFD -> LDASIN forcing (Option A: direct, no VIC intermediary)
@@ -474,7 +573,10 @@ def main():
             "--domain_json", str(domain_json),
             "--output_dir", str(forcing_dir),
             "--start_date", args.start_date,
-            "--end_date", args.end_date,
+            # dt_v044: KHOUR covers end_date inclusive, so the model reads the
+            # forcing at end_date+1 00:00 -- convert one day past end_date
+            # (before 2026-10-05 the run stopped at its last hour: no banner).
+            "--end_date", (end_date + timedelta(days=1)).strftime("%Y-%m-%d"),
             "--resolution", str(args.dx_deg if args.dx_m is None else args.dx_m / 111000.0),
         ]
         # Timeout: ~1 min per month at 0.1deg, more for finer grids

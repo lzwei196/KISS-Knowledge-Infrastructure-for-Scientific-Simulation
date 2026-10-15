@@ -175,6 +175,49 @@ def find_gauge_feature(run_dir, gauge_lat, gauge_lon, min_order=1,
     return k
 
 
+def _run_span(run_dir):
+    """(first, last, step, t0_output) of the run's CHRTOUT output times: start
+    time and KHOUR (or KDAY) from namelist.hrldas, output interval out_dt
+    (minutes) and t0OutputFlag from hydro.namelist. The model writes one CHRTOUT
+    every out_dt from the start time to start + KHOUR; the file AT the start time
+    is written only when t0OutputFlag = 1 (the model default, module_namelist.F:
+    t0OutputFlag = 1; module_HYDRO_drv.F: "if(nlst(did)%t0OutputFlag .eq. 0)
+    return" at the initial / restart time)."""
+    import re
+    from datetime import timedelta
+    def read(name):
+        f = Path(run_dir) / name
+        if not f.is_file():
+            raise ValueError(f"{f} not found: cannot tell which CHRTOUT times the run "
+                             f"must have, so a missing output step would go unseen")
+        return f, re.sub(r"!.*", "", f.read_text(errors="replace"))
+    def val(txt, key):
+        m = re.search(rf"^\s*{key}\s*=\s*(-?\d+)", txt, re.M | re.I)
+        return int(m.group(1)) if m else None
+    nl, txt = read("namelist.hrldas")
+    y, mo, d, h = (val(txt, k) for k in ("START_YEAR", "START_MONTH", "START_DAY", "START_HOUR"))
+    if None in (y, mo, d):
+        raise ValueError(f"{nl}: START_YEAR/MONTH/DAY not found")
+    t0 = datetime(y, mo, d, h or 0, val(txt, "START_MIN") or 0)
+    khour, kday = val(txt, "KHOUR"), val(txt, "KDAY")
+    if khour is not None and khour > 0:
+        t1 = t0 + timedelta(hours=khour)
+    elif kday is not None and kday > 0:
+        t1 = t0 + timedelta(days=kday)
+    else:
+        raise ValueError(f"{nl}: neither KHOUR nor KDAY > 0 found")
+    hn, htxt = read("hydro.namelist")
+    out_dt = val(htxt, "out_dt")
+    if not out_dt or out_dt <= 0:
+        raise ValueError(f"{hn}: out_dt (minutes) not found")
+    flag = val(htxt, "t0OutputFlag")
+    if flag is None:
+        flag = 1            # WRF-Hydro default when the key is absent
+    if flag not in (0, 1):
+        raise ValueError(f"{hn}: t0OutputFlag = {flag}; WRF-Hydro accepts only 0 or 1")
+    return t0, t1, timedelta(minutes=out_dt), flag == 1
+
+
 def extract_daily_discharge(run_dir, feature_idx, pattern="*.CHRTOUT_DOMAIN1",
                             start_year=None, end_year=None):
     """
@@ -193,14 +236,14 @@ def extract_daily_discharge(run_dir, feature_idx, pattern="*.CHRTOUT_DOMAIN1",
     logger.info(f"Reading {len(chrt_files)} CHRTOUT files...")
 
     records = []
-    n_errors = 0
+    bad = []           # (file, reason): any unreadable output stops the run
     for i, fpath in enumerate(chrt_files):
         fname = fpath.name
         datestr = fname.split('.')[0]  # e.g., 198007010000
         try:
             dt = datetime.strptime(datestr, '%Y%m%d%H%M')
         except ValueError:
-            n_errors += 1
+            bad.append((fname, "file name is not YYYYMMDDHHMM.*"))
             continue
 
         if start_year and dt.year < start_year:
@@ -218,20 +261,57 @@ def extract_daily_discharge(run_dir, feature_idx, pattern="*.CHRTOUT_DOMAIN1",
                 q = float(ds['streamflow'].values.ravel()[feature_idx])
                 ds.close()
             records.append({'datetime': dt, 'Q_sim': q})
-        except Exception:
-            n_errors += 1
+        except Exception as exc:
+            bad.append((fname, f"{type(exc).__name__}: {exc}"))
 
         if (i + 1) % 1000 == 0:
             logger.info(f"  processed {i+1}/{len(chrt_files)} files...")
 
-    if n_errors > 0:
-        logger.warning(f"  {n_errors} files skipped due to errors")
+    if bad:
+        raise ValueError(
+            f"{len(bad)} CHRTOUT file(s) in {run_dir} could not be read; a series "
+            f"with those steps left out would be scored as if complete. First: "
+            + "; ".join(f"{f} ({why})" for f, why in bad[:5]))
 
     if not records:
         raise ValueError("No valid records extracted")
 
     df = pd.DataFrame(records).set_index('datetime')
-    daily = df.resample('D').mean().dropna()
+    # Every output time of the run (inside start_year..end_year) must be there,
+    # no more and no fewer: a missing step, also at either end, would otherwise
+    # vanish into a daily mean or a shorter series.
+    t0, t1, step, t0_output = _run_span(run_dir)
+    want = pd.date_range(t0, t1, freq=step)
+    if not t0_output:       # t0OutputFlag = 0: no output file at the start time
+        want = want[want != pd.Timestamp(t0)]
+    if start_year:
+        want = want[want.year >= start_year]
+    if end_year:
+        want = want[want.year <= end_year]
+    have = pd.DatetimeIndex(df.index)
+    missing, extra = want.difference(have), have.difference(want)
+    if len(missing) or len(extra) or have.has_duplicates:
+        raise ValueError(
+            f"CHRTOUT times in {run_dir} do not match the run (namelist.hrldas + "
+            f"hydro.namelist: {t0}..{t1} every {step}): {len(missing)} missing "
+            f"{[str(t) for t in missing[:5]]}, {len(extra)} extra {[str(t) for t in extra[:5]]}"
+            + (", duplicate times" if have.has_duplicates else ""))
+    # A single NaN / masked / inf step would vanish into the daily mean (pandas
+    # skips NaN), so every output step must hold a finite value.
+    bad_q = df.index[~np.isfinite(df['Q_sim'].to_numpy(dtype=float))]
+    if len(bad_q):
+        raise ValueError(
+            f"{len(bad_q)} CHRTOUT step(s) in {run_dir} have a non-finite streamflow at "
+            f"feature {feature_idx}; a daily mean would hide them. First: "
+            f"{[str(x) for x in bad_q[:5]]}")
+    daily = df.resample('D').mean()
+    gaps = daily.index[daily['Q_sim'].isna()]
+    if len(gaps):
+        raise ValueError(
+            f"{len(gaps)} day(s) between {daily.index[0].date()} and "
+            f"{daily.index[-1].date()} have no readable CHRTOUT value "
+            f"(missing file or NaN streamflow), first: "
+            f"{[str(d.date()) for d in gaps[:5]]}")
     daily.index.name = 'date'
 
     logger.info(f"Extracted {len(daily)} daily values "

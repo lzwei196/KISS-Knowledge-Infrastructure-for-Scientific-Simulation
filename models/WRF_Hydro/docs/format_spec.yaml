@@ -506,8 +506,8 @@ known_issues:
     In cold-start mode (no restart file), cells with zero vegetation (water bodies, barren land) have
     SHDFAC=0 and VAI=0 (no shading). Noah-MP's energy balance computes unrestricted solar absorption →
     ground temper
-  remedy: 'Set minimum SHDFAC=0.01 and VAI=0.01 for all cells. Or set XLAND=2 (water) for water cells
-    with proper water surface treatment.; build_wrfinput; [''In wrfinput_d01.nc: ensure no cell has BOTH
+  remedy: 'Model-stability guard, not data: GREENFRAC < 0.01 -> 0.01, SHDMAX/SHDMIN < 1 % -> 1 %. STAND-IN, opt-in and recorded (2026-10-05): runners apply it only with --fix-domain-gaps; every edited cell is written to domain_edits.json (summary in result.json domain_edits); without the flag any cell that would need it stops the run (wrfhydro_domain_edits.py).
+    Or set XLAND=2 (water) for water cells with proper water surface treatment.; build_wrfinput; [''In wrfinput_d01.nc: ensure no cell has BOTH
     SHDFAC=0 AND VAI=0'', ''For water cells (LU_INDEX=16): set XLAND=2 (water treatment uses SST, not
     energy balanc'
   severity: fatal
@@ -579,7 +579,8 @@ known_issues:
     Soil/landuse inconsistency disables the cell in Noah-MP.; When ISLTYP=14 (water) but XLAND=1 (land),
     SOILPARM.TBL returns zeros for all soil hydraulic parameters. Noah-MP cannot compute soil physics
     with zero '
-  remedy: 'Replace ISLTYP=14 on land cells with default ISLTYP=4 (silt loam); build_geo_em; [''Check:
+  remedy: 'Fills missing soil data (water soil 14 / MDB gap / no fraction on land; smc* <= 0): STAND-IN, opt-in and recorded (2026-10-05): filled from NEIGHBOURS, not with a fixed loam (owner decision 2026-10-05): each gap cell takes the most common soil class of its nearest valid land cells (8-neighbours first, then wider rings; tie -> closest cell, then lowest class id), top and bottom layer separately; the soil water values then come from that class''s own SOILPARM.TBL / HYDRO.TBL row. Only with --fix-domain-gaps; every filled cell is recorded with its source cells and the class taken. No 1 % limit. Superseded wording:
+    STAND-IN, opt-in and recorded (2026-10-05): runners apply it only with --fix-domain-gaps; every edited cell is written to domain_edits.json (summary in result.json domain_edits); without the flag any cell that would need it stops the run (wrfhydro_domain_edits.py). Stops if more than 1 % of land cells need it. (Was: silt loam 4.); build_geo_em; [''Check:
     any(ISLTYP==14 & LANDMASK==1)'', ''If found: set to ISLTYP=4 and update SOILCTOP fractions'']; build_geo_em.py
     fills water soil type on land cells'
   severity: degraded
@@ -755,8 +756,9 @@ known_issues:
   diagnosis: TOPOGRAPHY=0 cells in Fulldom_hires.nc and/or HGT_M=0 in geo_em/wrfinput. Occurs when basin
     grid extends beyond DEM coverage (coastal cells, ocean). Zero elevation causes division-by-zero in
     routing slope calculations, leading to segfault.; The DEM does not cover ocean/coastal cells. build_fulldom_h
-  remedy: '1. Set minimum TOPOGRAPHY > 1m for all land cells in Fulldom_hires.nc 2. Set minimum SMOIS
-    > 0.15 for all cells in wrfinput_d01.nc 3. Mask out ocean cells using LU_INDEX=16 (water) 4. For coastal
+  remedy: '1. Set minimum TOPOGRAPHY > 1m for all land cells in Fulldom_hires.nc 2. SMOIS floor only as
+    an opt-in stand-in with an explicit value (--fix-domain-gaps --smois-floor F, SMOIS = max(SMOIS, F)),
+    recorded in domain_edits.json; no sourced default exists 3. Mask out ocean cells using LU_INDEX=16 (water) 4. For coastal
     basins, ensure DEM covers the full grid extent
 
     ; build_fulldom_hires.py + manual post-processing'

@@ -97,7 +97,7 @@ Channel exists where mean accumulated runoff >= 1 cubic foot per second (0.028 m
 The `build_fulldom_hires.py` tool includes `smart_stream_threshold()` which automatically selects the appropriate method:
 
 ```python
-def smart_stream_threshold(cell_area_m2, basin_cells, precip_mm_yr=800, temp_mean_c=15):
+def smart_stream_threshold(cell_area_m2, basin_cells, precip_mm_yr, temp_mean_c):   # no defaults (2026-10-05)
     cell_size = sqrt(cell_area_m2)
     # Budyko runoff ratio
     runoff_ratio = max(0.05, 1 - (1 + aridity - (1 + aridity**2)**0.5))
@@ -116,10 +116,13 @@ def smart_stream_threshold(cell_area_m2, basin_cells, precip_mm_yr=800, temp_mea
 ```bash
 python tools/s4_fulldom/build_fulldom_hires.py \
   --stream_threshold 0 \   # 0 = auto (smart_stream_threshold)
+  --precip_mm_yr P --temp_mean_c T \   # REQUIRED with auto: this basin's climate
   ...
 ```
 
-Pass `--stream_threshold 0` (auto) or omit to use the auto method. Pass a positive integer to override.
+Pass `--stream_threshold 0` (auto) together with the basin's own `--precip_mm_yr` and `--temp_mean_c` (required; the old 800 mm / 15 C "defaults for Chinese basins" were removed). Omitting `--stream_threshold` uses the CLI default 100 (not the auto method). Pass a positive integer to override.
+
+Stand-in edits (2026-10-05): routing-DEM nodata (nearest valid cell) and elevations <= 0 m (basin mean of positive cells) are OFF by default -- the tool stops before writing and lists the cells; with `--fix-domain-gaps` they are applied and recorded cell by cell in `DOMAIN/domain_edits.build_fulldom_hires.json`. A DEM with no valid value on the grid stops (no default 500 m). The source DEM nodata value is now passed to the reprojection (before, china_dem_90m's 32767 became a 32767 m elevation). `--stream_threshold <= 0` (auto) needs explicit `--precip_mm_yr` and `--temp_mean_c` (no 800 mm / 15 C default). Channel cells whose Strahler order has no entry in the depth table need an explicit `--chan_depth_default` with the flag (no silent 1 m). The order->depth table (0.5..6 m for orders 1..8), RETDEPRTFAC/OVROUGHRTFAC = 1, LKSATFAC = 1000 are unchanged model settings without a cited source.
 
 **Expected result**: `build_fulldom_hires.py` prints the computed threshold and number of channel cells.
 

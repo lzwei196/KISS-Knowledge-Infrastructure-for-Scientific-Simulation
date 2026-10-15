@@ -21,9 +21,10 @@ pipeline:
   - s6_groundwater_skill
   - s9_runoff_options_skill
 tools:
-  count: 16
+  count: 17
   files:
   - tools/calib_run.py
+  - tools/domain_edit_record.py
   - tools/run_wrfhydro_full_pipeline.py
   - tools/s10_execution/calibrate_wrfhydro.py
   - tools/s10_execution/run_wrfhydro.py
@@ -123,6 +124,6 @@ validation:
 summary:
   total_tools: 17
   total_stage_docs: 4
-  total_diagnostic_triplets: 48
+  total_diagnostic_triplets: 49
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

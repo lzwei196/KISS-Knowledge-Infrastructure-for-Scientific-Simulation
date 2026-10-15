@@ -36,8 +36,9 @@
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -49,6 +50,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | tool (exact path) | invocation |
 |---|---|
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/domain_edit_record.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/domain_edit_record.py --help` |
 | `tools/run_wrfhydro_full_pipeline.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wrfhydro_full_pipeline.py --help` |
 | `tools/s10_execution/calibrate_wrfhydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/calibrate_wrfhydro.py --help` |
 | `tools/s10_execution/run_wrfhydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/run_wrfhydro.py --help` |
@@ -69,6 +71,46 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 <!-- KI-TOOL-INDEX:END -->
 
 ---
+
+## Strict NASA POWER forcing contract (2026-10-03 repair)
+
+`tools/s8_forcing/nasa_power_to_ldasin.py` now requires a complete, ordered UTC
+hourly calendar and all eight requested source parameters at every sampled point.
+Missing fields, dates, NaN/Inf, source fill values, invalid physical values and
+out-of-domain interpolation stop conversion. Nothing is filled, clipped or
+extrapolated. Real zero rain, wind and radiation are retained.
+
+Conversion follows each original response's unit metadata. In particular, older
+POWER responses label precipitation `mm/day`, while API v2.10.2 responses observed
+in this repair label it `mm/hour`; these require divisors 86400 and 3600 respectively.
+Hourly `Wh/m^2` radiation is one-hour energy converted to hourly mean `W/m^2` with
+the same numerical value. Radiation units are never inferred from magnitude.
+Original UTC JSON is cached separately under `strict_utc_10m`; timestamp-free
+legacy NPZ caches remain untouched and are not consumed. Missing or malformed
+metadata is an error.
+
+Wind now comes from POWER `WS10M` and `WD10M`, using the meteorological direction
+from north clockwise. Earth east/north components are interpolated and rotated
+using `geo_em` COSALPHA/SINALPHA. The previous 45-degree split of 2-m wind is removed.
+See [NASA wind conventions](https://power.larc.nasa.gov/docs/methodology/meteorology/wind/).
+The half-degree query spacing samples POWER products; it does not increase their
+native spatial resolution or establish catchment-scale observational accuracy.
+
+Elevation correction now defaults to `none`. The former pressure-based elevation
+estimate is an explicit approximation via `--elev-correction barometric-estimate`
+(101325 Pa assumed sea-level pressure, 0.0065 K/m lapse rate). It is not an elevation
+measurement or a way to repair unavailable weather. `--no_elev_correct` remains a
+compatibility alias. Correction outputs must pass the same finite/physical checks.
+
+Use a **new** output directory. Files are staged until all requested hours pass,
+then published as a directory with `forcing_provenance.json` containing source
+JSON hashes, units, time keys and transformation choices. A failed conversion
+never publishes a partial forcing directory or overwrites an existing one.
+This repair covers this NASA POWER route; the independent CMFD converter is not
+certified by these tests. It was made strict on 2026-10-05: no extrapolation
+outside the CMFD grid, no persistence at month ends (the next month's first
+record is read), no clipping (out-of-range values stop with variable, time and
+cell count), and a short file count exits 1.
 
 ## Data Preparation
 
@@ -93,7 +135,8 @@ python tools/s8_forcing/nasa_power_to_ldasin.py \
     --start_date YYYY-MM-DD --end_date YYYY-MM-DD
 ```
 This tool fetches NASA POWER data for ALL grid points covering the domain (not just one point),
-spatially interpolates to the LCC grid, and applies elevation corrections.
+spatially interpolates to the LCC grid. Elevation correction requires the explicit
+`--elev-correction barometric-estimate` option; the default is none.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -692,7 +735,7 @@ hydro.namelist:
   UDMP_OPT          = 0
 ```
 
-**CRITICAL**: Apply ALL three arid basin fixes simultaneously (dt_v036 + dt_v037 + dt_v038). Also patch wrfinput_d01.nc: `SMOIS = max(SMOIS, 0.25)`. Start from wet season (October for Mediterranean, NOT July). See Section 21 in Critical Domain Knowledge.
+**CRITICAL**: Apply ALL three arid basin fixes simultaneously (dt_v036 + dt_v037 + dt_v038). A SMOIS start-value floor in wrfinput_d01.nc is a STAND-IN, not a fix: no source supports a single number (this file used to say 0.25, the dt_v036 triplet said > 0.15, one runner used 0.10 for SMOIS <= 0.02), so it is applied only as `SMOIS = max(SMOIS, F)` with an explicit `--smois-floor F` under `--fix-domain-gaps`, and every changed cell is recorded in `domain_edits.json`. Start from wet season (October for Mediterranean, NOT July). See Section 21 in Critical Domain Knowledge.
 
 #### Reach-based routing (NWM compatibility, gage nudging)
 
@@ -845,6 +888,8 @@ When interpolating coarse forcing (0.25deg) to fine grid (1km), apply:
 - `PSFC *= exp(-g * dz / (R * Tv))` (barometric formula)
 
 Without correction, mountain cells at 1955m get 20% pressure error and 10.7C temperature error.
+`nasa_power_to_ldasin.py` applies it only when asked: pass `--elev-correction barometric-estimate`
+(its default is none). `run_and_score.py` passes it and records the choice in `forcing_provenance.json`.
 
 ### 10. SWDOWN cap at solar constant (dt_v022)
 
@@ -876,7 +921,7 @@ First days produce 237 mm/d runoff. Discard first 6-12 months as spinup.
 
 ### 17. Noah-MP zero-veg crash (dt_v005)
 
-Cells with SHDFAC=0 and VAI=0 in summer get TG=630K — set minimum SHDFAC=0.01.
+Cells with SHDFAC=0 and VAI=0 in summer get TG=630K. The guard (GREENFRAC < 0.01 -> 0.01 in geo_em, SHDMAX/SHDMIN < 1 % -> 1 % in wrfinput) is a model-stability STAND-IN, not observed data. Stand-in domain edits are OPT-IN and RECORDED (2026-10-05): the runners apply them only with `--fix-domain-gaps` (and `--smois-floor` only if a SMOIS floor is wanted), every edited cell goes to `domain_edits.json` next to result.json (summary under `result.json["domain_edits"]`), and without the flag any cell that would need an edit stops the run (`wrfhydro_domain_edits.py` at the model root). The KI tool `tools/s3_wrfinput/build_wrfinput.py` follows the same rule itself: its SHDMAX-on-land floor runs only with its own `--fix-domain-gaps` and is recorded cell by cell in `DOMAIN/domain_edits.build_wrfinput.json`; without the flag it stops and lists the cells (no output written).
 
 ### 18. OOM on large domains (dt_v006)
 
@@ -884,7 +929,7 @@ Cells with SHDFAC=0 and VAI=0 in summer get TG=630K — set minimum SHDFAC=0.01.
 
 ### 19. ISLTYP=14 on land cells (dt_v012)
 
-HWSD/AVHRR mismatch gives water soil type on land cells. Noah-MP writes -9999. Fix: replace with default soil type.
+HWSD/AVHRR mismatch gives water soil type on land cells (HWSD map unit 0 = no soil data). Noah-MP writes -9999. Replacing it FILLS MISSING DATA: filled from NEIGHBOURS, not with a fixed loam (owner decision 2026-10-05): each gap cell takes the most common soil class of its nearest valid land cells (8-neighbours first, then wider rings; tie -> closest cell, then lowest class id), top and bottom layer separately; the soil water values then come from that class's own SOILPARM.TBL / HYDRO.TBL row. Only with --fix-domain-gaps; every filled cell is recorded with its source cells and the class taken. No 1 % limit. Stand-in domain edits are OPT-IN and RECORDED (2026-10-05): the runners apply them only with `--fix-domain-gaps` (and `--smois-floor` only if a SMOIS floor is wanted), every edited cell goes to `domain_edits.json` next to result.json (summary under `result.json["domain_edits"]`), and without the flag any cell that would need an edit stops the run (`wrfhydro_domain_edits.py` at the model root). The KI tool `tools/s2_geo_em/build_geo_em.py` follows the same rule itself (2026-10-05): every fill it makes -- water soil on land (top and bottom layer separately), HWSD map units missing from the MDB, partly empty texture, cells with no soil fraction, land-cover codes not in the UMD table, DEM nodata (nearest valid cell), negative elevations -> 0 -- runs only with `--fix-domain-gaps`, is recorded cell by cell in `DOMAIN/domain_edits.build_geo_em.json`, soil gaps filled from neighbours as above. An HWSD MDB that cannot be read now stops (it used to make every cell loam). Runners merge the tool records into `domain_edits.json`.
 
 ### 20. GW bucket Zmax too shallow (dt_v013)
 
@@ -919,15 +964,16 @@ These three crashes occur IN SEQUENCE. Each masks the next — you cannot see Cr
 **Crash 3: "SMCRT fully depleted upon disaggregation" or SILENT SEGFAULT (dt_v036)**
 - **Cause**: In arid/semi-arid basins, Noah-MP computes zero liquid soil moisture (`SH2O=0`) during dry months. The disaggregation routine maps this to the routing grid, producing `SMCRT<=0` at some cells. The Fortran code at `Noah_distr_routing.F:1143` crashes when `SMCRT<=0` AND soil is NOT frozen.
 - **Symptom**: MPI process exits with code 1, NO error message in `diag_hydro` (segfault). Occurs 3-20 days into simulation.
-- **Fix**: Apply ALL of these:
+- **Fix**: Apply ALL of these. Items 1 and 2 are STAND-IN edits: Stand-in domain edits are OPT-IN and RECORDED (2026-10-05): the runners apply them only with `--fix-domain-gaps` (and `--smois-floor` only if a SMOIS floor is wanted), every edited cell goes to `domain_edits.json` next to result.json (summary under `result.json["domain_edits"]`), and without the flag any cell that would need an edit stops the run (`wrfhydro_domain_edits.py` at the model root).
   ```python
-  # 1. Set minimum SMOIS in wrfinput_d01.nc
-  smois[smois < 0.25] = 0.25
+  # 1. SMOIS start-value floor (start-value adjustment) -- explicit value only:
+  #    --fix-domain-gaps --smois-floor F  ->  SMOIS = max(SMOIS, F)
+  #    (no source supports 0.25 / 0.15 / 0.10; the run states the value it used)
 
-  # 2. Fix zero soil properties (ISLTYP=14 water cells on land)
-  smcmax[smcmax <= 0] = 0.434
-  smcwlt[smcwlt <= 0] = 0.066
-  smcref[smcref <= 0] = 0.329
+  # 2. Zero soil properties on water-soil land cells (fills missing data):
+  #    smcmax/smcwlt/smcref <= 0 -> the cell's class is taken from its nearest
+  #    valid land neighbours (majority; tie -> closest, then lowest id) and the
+  #    values come from THAT class's SOILPARM.TBL row (no fixed loam numbers)
 
   # 3. Start from wet season (NOT July in Mediterranean!)
   # Mediterranean: start October  
@@ -948,7 +994,7 @@ rst_dt = -99999                     ! No hydro restart
 rst_typ = 0                         ! Don't overwrite LSM soil from routing
 t0OutputFlag = 0                    ! No output at time 0
 ```
-And patch wrfinput_d01.nc: `SMOIS = max(SMOIS, 0.25)` for all cells.
+A SMOIS floor in wrfinput_d01.nc is only applied as an opt-in stand-in with an explicit value (`--fix-domain-gaps --smois-floor F`, rule `SMOIS = max(SMOIS, F)`), recorded cell by cell in `domain_edits.json`.
 
 **Validated**: Spain GRDC_6217140 (Mediterranean, 15,660 km²). With all fixes: 115 days of CHRTOUT output, r=0.456 vs observed. Without fixes: crashes within 1-5 days through 3 different error paths.
 
@@ -1297,6 +1343,9 @@ python tools/s1_domain/define_lambert_domain.py \
   --basin_shp data/shp/chaohe_boundary.shp --dx 1000 --output domain_def.json
 
 # 2. Build geo_em
+#    Any fill / replace / clip of source data (DEM nodata, soil gaps, unknown land
+#    cover) stops the tool and lists the cells unless --fix-domain-gaps is given;
+#    with it every changed cell is recorded in DOMAIN/domain_edits.build_geo_em.json.
 python tools/s2_geo_em/build_geo_em.py \
   --domain_json domain_def.json \
   --dem_path data/dem/china_dem_90m/china_dem_90m.tif \
@@ -1307,6 +1356,9 @@ python tools/s2_geo_em/build_geo_em.py \
 
 # 3-6. Build remaining domain files (can run in parallel)
 python tools/s3_wrfinput/build_wrfinput.py --geo_em DOMAIN/geo_em.d01.nc --output_path DOMAIN/wrfinput_d01.nc
+#   (SHDMAX floor / soil-gap neighbour class fill for ISLTYP+SMOIS / TMN on land: same opt-in --fix-domain-gaps, recorded)
+#   s4/s5/s6: DEM gaps, elevations <= 0, table fallbacks: same opt-in --fix-domain-gaps, recorded;
+#   s4 auto threshold (--stream_threshold 0) needs --precip_mm_yr/--temp_mean_c
 python tools/s4_fulldom/build_fulldom_hires.py --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json --dem_path ... --basin_shp ... --output_path DOMAIN/Fulldom_hires.nc
 python tools/s5_soil_properties/build_soil_properties.py --geo_em DOMAIN/geo_em.d01.nc --output_path DOMAIN/soil_properties.nc
 python tools/s6_groundwater/build_groundwater.py --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json --basin_shp ... --output_dir DOMAIN/
@@ -1328,6 +1380,9 @@ python tools/s9_namelists/generate_namelists.py \
 python tools/s10_execution/run_wrfhydro.py --run_dir . --nproc 4
 
 # OR: Run entire pipeline in one command
+#   step 3b SMOIS/TSLB floors are no longer applied by default (were 0.25 / 285 K):
+#   add --fix-domain-gaps --smois-floor F [--tslb-floor T] to opt in; the pipeline
+#   passes --fix-domain-gaps to s2/s3 and merges all records into DOMAIN/domain_edits.json
 python tools/run_wrfhydro_full_pipeline.py \
   --basin_shp data/shp/basin.shp --start_date 2000-01-01 --end_date 2005-12-31 \
   --forcing_source cmfd --output_dir outputs/my_run/
@@ -1405,7 +1460,7 @@ Zijingguan 2026-07-10). Set them with `build_fulldom_hires.py --ovroughrtfac/--r
 
 | Parameter | Tool flag |
 |---|---|
-| REFKDT | `build_soil_properties.py --refkdt` (default 0.8, mountain-tuned) |
+| REFKDT | `build_soil_properties.py --refkdt` (REQUIRED, no default since 2026-10-05; the caller states its value, recorded as `refkdt_value` in soil_properties.nc; the pipeline takes `--refkdt`) |
 | GW Coeff/Expon/Zmax/Zinit | `build_groundwater.py --gw_coeff --gw_expon --gw_zmax --gw_zinit` |
 | OVROUGHRTFAC / RETDEPRTFAC / LKSATFAC | `build_fulldom_hires.py --ovroughrtfac ...` |
 | RUNOFF_OPTION / channel_option / GWBASESWCRT / DTRT / CHRTOUT_GRID / RTOUT_DOMAIN | `generate_namelists.py --runoff_option --channel_option --gwbaseswcrt --dtrt_ch --dtrt_ter --chrtout_grid --rtout_domain --t0_output` |

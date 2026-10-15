@@ -42,6 +42,8 @@ from rasterio.transform import from_bounds
 from pyproj import Transformer
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.units import celsius_to_kelvin, kelvin_to_celsius
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # tools/
+import domain_edit_record as der   # opt-in, recorded stand-in edits (2026-10-05)
 
 # ===================================================================
 # Constants
@@ -393,7 +395,12 @@ def main():
                         help="Output NetCDF path")
     parser.add_argument("--basin_shp", default=None,
                         help="Basin shapefile (optional, for checking)")
+    der.add_cli(parser)
     args = parser.parse_args()
+    # Every replacement / fill / clip of source data below is OFF unless
+    # --fix-domain-gaps; with it each changed cell is recorded (domain_edit_record).
+    ED = der.ToolEdits("build_geo_em", args.fix_domain_gaps,
+                       args.edits_record or der.default_record_path(args.output, "build_geo_em"))
 
     # ------------------------------------------------------------------
     # 0. Load domain definition
@@ -456,6 +463,7 @@ def main():
     lon_mass, lat_mass = from_lcc.transform(xx_mass.ravel(), yy_mass.ravel())
     lon_mass = np.float32(np.array(lon_mass).reshape(e_sn, e_we))
     lat_mass = np.float32(np.array(lat_mass).reshape(e_sn, e_we))
+    ED.latlon = (lat_mass, lon_mass)
 
     lon_u, lat_u = from_lcc.transform(xx_u.ravel(), yy_u.ravel())
     lon_u = np.float32(np.array(lon_u).reshape(e_sn, e_we + 1))
@@ -508,14 +516,26 @@ def main():
         resampling=Resampling.bilinear, dst_dtype=np.float32)
     # Flip: rasterio puts row 0 at top, but WRF puts j=0 at south
     hgt_m = np.flipud(hgt_m)
-    # Fill DEM nodata cells (-9999 sentinel) with nearest valid neighbor
-    n_nodata = (hgt_m <= -9990).sum()
+    # DEM nodata cells (-9999 sentinel): nearest-valid fill ONLY with
+    # --fix-domain-gaps, every filled cell recorded; otherwise stop (listed).
+    dem_nodata = hgt_m <= -9990
+    n_nodata = int(dem_nodata.sum())
     if n_nodata > 0:
         print(f"  [WARN] DEM has {n_nodata} uncovered cells "
-              f"({100*n_nodata/hgt_m.size:.1f}%), filling with nearest neighbor")
-        hgt_m = fill_nodata_cells(hgt_m, nodata_val=-9999.0)
-    # Clip negative elevations to 0
-    hgt_m = np.maximum(hgt_m, 0.0).astype(np.float32)
+              f"({100*n_nodata/hgt_m.size:.1f}%)")
+        if n_nodata == hgt_m.size:
+            sys.exit("ERROR: DEM covers no cell of the domain")
+        if ED.allow("geo_em.d01.nc", "HGT_M", "DEM nodata -> nearest valid DEM cell",
+                    "fill_missing_data", dem_nodata, np.where(dem_nodata, np.nan, hgt_m),
+                    "nearest valid DEM cell"):
+            hgt_m = fill_nodata_cells(hgt_m, nodata_val=-9999.0)
+            dem_nodata = np.zeros_like(dem_nodata)
+    # Negative elevations -> 0 (a clip of source data): only with the flag, recorded
+    neg = (hgt_m < 0.0) & ~dem_nodata
+    if ED.allow("geo_em.d01.nc", "HGT_M", "negative elevation -> 0 m", "value_clip",
+                neg, hgt_m, 0.0):
+        hgt_m = np.where(neg, 0.0, hgt_m)
+    hgt_m = hgt_m.astype(np.float32)
     print(f"  HGT_M range: {hgt_m.min():.1f} - {hgt_m.max():.1f} m")
     validate_dem_coverage(hgt_m, lat_mass=lat_mass, lon_mass=lon_mass)
 
@@ -533,7 +553,11 @@ def main():
         resampling=Resampling.nearest, dst_dtype=np.uint8)
     umd_raw = np.flipud(umd_raw)
 
-    # Convert UMD -> USGS
+    # Convert UMD -> USGS. A code not in the table (e.g. raster nodata) was
+    # silently made water; now that needs --fix-domain-gaps and is recorded.
+    lc_unknown = ~np.isin(umd_raw, list(UMD_TO_USGS.keys()))
+    ED.allow("geo_em.d01.nc", "LU_INDEX", "land-cover code not in the UMD table (no data) -> water (16)",
+             "fill_missing_data", lc_unknown, umd_raw, float(ISWATER))
     lu_index = np.zeros((e_sn, e_we), dtype=np.float32)
     for j in range(e_sn):
         for i in range(e_we):
@@ -556,11 +580,13 @@ def main():
     frac_sum = landusef.sum(axis=0)
     bad = np.abs(frac_sum - 1.0) > 0.01
     if bad.any():
-        print(f"  WARNING: {bad.sum()} cells have LANDUSEF sum != 1.0, fixing...")
-        # Assign to water where sum is 0
+        print(f"  WARNING: {bad.sum()} cells have LANDUSEF sum != 1.0")
+        # Assign to water where sum is 0 -- only with the flag, recorded
         zero_mask = frac_sum < 0.01
-        landusef[ISWATER - 1][zero_mask] = 1.0
-        lu_index[zero_mask] = ISWATER
+        if ED.allow("geo_em.d01.nc", "LANDUSEF/LU_INDEX", "no land-cover fraction -> water (16)",
+                    "fill_missing_data", zero_mask, frac_sum, float(ISWATER)):
+            landusef[ISWATER - 1][zero_mask] = 1.0
+            lu_index[zero_mask] = ISWATER
 
     unique_lu, counts = np.unique(lu_index, return_counts=True)
     print(f"  LU_INDEX classes: {dict(zip(unique_lu.astype(int), counts))}")
@@ -588,8 +614,8 @@ def main():
     print("  Loading HWSD MDB database...")
     hwsd_db = load_hwsd_mdb(str(hwsd_mdb_path))
     if hwsd_db is None:
-        print("  WARNING: Could not load HWSD MDB. Using default soil class 6 (Loam).")
-        hwsd_db = {}
+        # Was: every cell silently set to Loam. Missing soil data stops.
+        sys.exit("ERROR: could not load the HWSD MDB; no soil data (no loam stand-in)")
     else:
         print(f"  HWSD MDB loaded: {len(hwsd_db)} mapping units")
 
@@ -606,6 +632,10 @@ def main():
     soilcbot = np.zeros((NUM_SOIL_CAT, e_sn, e_we), dtype=np.float32)
 
     mdb_hits = 0
+    # Why a land cell has no (full) soil data -- recorded, never silent:
+    mdb_missing = np.zeros((e_sn, e_we), dtype=bool)    # MU not in the MDB -> loam
+    tex_part_top = np.zeros((e_sn, e_we), dtype=bool)   # some T_ texture empty (read as 0)
+    tex_part_bot = np.zeros((e_sn, e_we), dtype=bool)   # some S_ texture empty (read as 0)
     for j in range(e_sn):
         for i in range(e_we):
             mu = int(mu_grid[j, i])
@@ -619,6 +649,10 @@ def main():
 
             row = hwsd_db.get(mu)
             if row:
+                _t = [row.get(k) for k in ('T_SAND', 'T_SILT', 'T_CLAY')]
+                _b = [row.get(k) for k in ('S_SAND', 'S_SILT', 'S_CLAY')]
+                tex_part_top[j, i] = any(not v for v in _t) and not all(not v for v in _t)
+                tex_part_bot[j, i] = any(not v for v in _b) and not all(not v for v in _b)
                 t_sand = _safe_float(row.get('T_SAND'))
                 t_silt = _safe_float(row.get('T_SILT'))
                 t_clay = _safe_float(row.get('T_CLAY'))
@@ -639,39 +673,63 @@ def main():
                 soilcbot[bot_class - 1, j, i] = 1.0
                 mdb_hits += 1
             else:
-                # Default: Loam (class 6)
-                sct_dom[j, i] = 6
-                scb_dom[j, i] = 6
-                soilctop[5, j, i] = 1.0
-                soilcbot[5, j, i] = 1.0
+                # MU not in the MDB: a soil gap (filled from neighbours below,
+                # only with --fix-domain-gaps); marked as water soil until then
+                mdb_missing[j, i] = True
+                sct_dom[j, i] = ISOILWATER
+                scb_dom[j, i] = ISOILWATER
+                soilctop[ISOILWATER - 1, j, i] = 1.0
+                soilcbot[ISOILWATER - 1, j, i] = 1.0
 
-    # Validate: ensure fractional sum = 1
-    for arr in [soilctop, soilcbot]:
-        frac_sum = arr.sum(axis=0)
-        zero_mask = frac_sum < 0.01
-        if zero_mask.any():
-            # Set to Loam where no data
-            arr[5][zero_mask] = 1.0
-
+    land_mask2d = lu_index != ISWATER
+    n_land = int(land_mask2d.sum())
     print(f"  HWSD MDB lookup: {mdb_hits}/{e_sn * e_we} cells have real soil properties")
 
-    # dt_v036 fix: HWSD nodata (mu==0) on LAND cells were assigned the water soil
-    # type (ISOILWATER=14) above. On land that produces SMCRT<=0 during dry/frozen
-    # months and a SILENT segfault in Noah_distr_routing.F:1143 (no diag message).
-    # High-altitude / arid basins (Yellow R. source, Tibetan tributaries) hit this
-    # because HWSD has gaps at >3500 m. Force any LAND cell that still carries the
-    # water soil type back to the default Loam (6).
-    land_mask2d = lu_index != ISWATER
-    bad_soil = land_mask2d & (sct_dom == ISOILWATER)
-    n_bad_soil = int(bad_soil.sum())
-    if n_bad_soil:
-        sct_dom[bad_soil] = 6.0
-        scb_dom[bad_soil] = 6.0
-        soilctop[:, bad_soil] = 0.0
-        soilctop[5, bad_soil] = 1.0
-        soilcbot[:, bad_soil] = 0.0
-        soilcbot[5, bad_soil] = 1.0
-        print(f"  dt_v036: reassigned {n_bad_soil} land cells water-soil-type(14) -> Loam(6)")
+    # Soil gaps on LAND cells (owner decision 2026-10-05): filled ONLY with
+    # --fix-domain-gaps, and NOT with a fixed loam: each gap cell takes the most
+    # common class of its nearest valid land neighbours (8-neighbours first, then
+    # wider rings; tie -> closest, then lowest class id), top and bottom layer
+    # separately (domain_edit_record.neighbour_class_fill). Every filled cell is
+    # recorded with its source cells and the class taken. No 1 % limit.
+    # Gaps: water soil (14) on land = HWSD map unit 0 or empty texture (dt_v036 --
+    # SMCRT<=0 silent segfault), map unit missing from the MDB, no soil fraction.
+    for layer, dom_arr, frac in (("top", sct_dom, soilctop), ("bottom", scb_dom, soilcbot)):
+        var = "SCT_DOM/SOILCTOP" if layer == "top" else "SCB_DOM/SOILCBOT"
+        nofrac = frac.sum(axis=0) < 0.01
+        mdb_gap = mdb_missing & land_mask2d
+        water_gap = land_mask2d & (dom_arr == ISOILWATER) & ~mdb_gap
+        nofrac_gap = land_mask2d & nofrac & ~water_gap & ~mdb_gap
+        gap = water_gap | mdb_gap | nofrac_gap
+        if not gap.any():
+            continue
+        try:
+            filled, info = der.neighbour_class_fill(dom_arr, gap, land_mask2d & ~gap,
+                                                    latlon=(lat_mass, lon_mass))
+        except ValueError as exc:
+            sys.exit(f"ERROR: {layer} soil gaps cannot be filled from neighbours: {exc}")
+        for reason, m in ((f"{layer}: water soil (14) on land (HWSD map unit 0 or empty texture)", water_gap),
+                          (f"{layer}: HWSD map unit not in the MDB", mdb_gap),
+                          (f"{layer}: no soil-category fraction", nofrac_gap)):
+            ED.allow("geo_em.d01.nc", var,
+                     reason + " -> most common class of the nearest valid land neighbours",
+                     "fill_missing_data", m, dom_arr, "neighbour class (see cells[].class_taken)",
+                     tag=der.SOIL_FILL_TAG, cell_info=info)
+        if ED.fix:
+            for (jj, ii), d in info.items():
+                c = d["class_taken"]
+                dom_arr[jj, ii] = float(c)
+                frac[:, jj, ii] = 0.0
+                frac[c - 1, jj, ii] = 1.0
+        print(f"  soil gaps ({layer}): {int(gap.sum())} land cells "
+              f"({'filled from neighbours, recorded' if ED.fix else 'need --fix-domain-gaps'})")
+    ED.allow("geo_em.d01.nc", "SCT_DOM/SOILCTOP",
+             "top-soil texture partly empty in the MDB (empty parts read as 0)",
+             "fill_missing_data", tex_part_top & land_mask2d, sct_dom, "class from incomplete texture",
+             tag=der.SOIL_FILL_TAG)
+    ED.allow("geo_em.d01.nc", "SCB_DOM/SOILCBOT",
+             "sub-soil texture partly empty in the MDB (empty parts read as 0)",
+             "fill_missing_data", tex_part_bot & land_mask2d, scb_dom, "class from incomplete texture",
+             tag=der.SOIL_FILL_TAG)
 
     unique_sct, sct_counts = np.unique(sct_dom, return_counts=True)
     print(f"  SCT_DOM classes: {dict(zip(unique_sct.astype(int), sct_counts))}")
@@ -730,6 +788,10 @@ def main():
 
     corner_lats = np.float32(cl_mass + cl_u + cl_v + cl_c)
     corner_lons = np.float32(cn_mass + cn_u + cn_v + cn_c)
+
+    # Stop here (nothing written) if stand-in edits were needed without the
+    # flag, or soil fills exceed 1 % of land; else write the edit record.
+    ED.finish(n_land=n_land)
 
     # ------------------------------------------------------------------
     # 12. Write NetCDF

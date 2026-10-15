@@ -27,6 +27,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # tools/
+import domain_edit_record as der   # opt-in, recorded stand-in edits (2026-10-05)
+
 import netCDF4 as nc
 import numpy as np
 
@@ -140,7 +143,7 @@ def parse_mptable_usgs(tbl_path):
             if key in params_raw and i < len(params_raw[key]):
                 d[key] = params_raw[key][i]
             else:
-                d[key] = 0.0
+                d[key] = None   # missing in MPTABLE (was 0.0 silently); used -> stop
         veg_params[veg_id] = d
 
     print(f"  Parsed {len(veg_params)} veg types from MPTABLE.TBL (USGS)")
@@ -148,16 +151,21 @@ def parse_mptable_usgs(tbl_path):
 
 
 def build_soil_properties(geo_em_path, output_path,
-                          soilparm_tbl=None, mptable_tbl=None, refkdt=0.8):
+                          soilparm_tbl=None, mptable_tbl=None, refkdt=None,
+                          fix_domain_gaps=False, edits_record=None):
     """Build soil_properties.nc.
 
     refkdt : uniform REFKDT (infiltration vs surface-runoff split), the #1
-             calibration knob. Default 0.8 is mountain/semi-arid tuned. For
+             calibration knob. REQUIRED, no default (2026-10-05). Notes: 0.8 was
+             the old mountain/semi-arid default; for
              HUMID / FLAT basins (e.g. tropical plateau, plain) use 3.0 per
              SKILL.md's humid-basin recipe — 0.8 over-produces flashy surface
              runoff peaks there (Balsas 2026-07: REFKDT=0.8 gave sim std 5x obs,
              NSE=-18 despite r=0.68).
     """
+    if refkdt is None:
+        # REFKDT is a choice of the caller (calibration knob); no default value
+        sys.exit("ERROR: REFKDT must be given explicitly (--refkdt); the tool has no default")
     if soilparm_tbl is None:
         soilparm_tbl = DEFAULT_SOILPARM
     if mptable_tbl is None:
@@ -171,7 +179,15 @@ def build_soil_properties(geo_em_path, output_path,
 
     isltyp = geo["SCT_DOM"][0, :, :].astype(np.int32)
     ivgtyp = geo["LU_INDEX"][0, :, :].astype(np.int32)
+    _land = (np.asarray(geo["LANDMASK"][0, :, :]) > 0.5) if "LANDMASK" in geo.variables else (ivgtyp != 16)
+    _lat = np.asarray(geo["XLAT_M"][0, :, :]) if "XLAT_M" in geo.variables else None
+    _lon = np.asarray(geo["XLONG_M"][0, :, :]) if "XLONG_M" in geo.variables else None
     geo.close()
+    # 2026-10-05: table fallbacks (soil type -> loam, veg type -> grassland) are
+    # stand-ins: only with --fix-domain-gaps, recorded cell by cell.
+    ED = der.ToolEdits("build_soil_properties", fix_domain_gaps,
+                       edits_record or der.default_record_path(output_path, "build_soil_properties"),
+                       latlon=(_lat, _lon) if _lat is not None else None)
 
     print(f"  Grid: {sn} x {we}")
     print(f"  Soil types present: {np.unique(isltyp)}")
@@ -195,7 +211,8 @@ def build_soil_properties(geo_em_path, output_path,
     # 2D arrays
     slope    = np.full((sn, we), 0.1,  dtype=np.float32)
     refdk    = np.zeros((sn, we), dtype=np.float32)
-    refkdt   = np.full((sn, we), float(refkdt),  dtype=np.float32)  # default 0.8 mountain; 3.0 for humid/flat (SKILL humid recipe)
+    refkdt_v = float(refkdt)   # given by the caller, recorded in the output
+    refkdt   = np.full((sn, we), refkdt_v, dtype=np.float32)
     rsurfexp = np.full((sn, we), 5.0,  dtype=np.float32)
 
     # Vegetation arrays
@@ -205,36 +222,70 @@ def build_soil_properties(geo_em_path, output_path,
     mp     = np.zeros((sn, we), dtype=np.float32)
     vcmx25 = np.zeros((sn, we), dtype=np.float32)
 
-    # Default soil fallback (type 6 = Loam)
-    default_soil = sparams.get(6, sparams.get(1, {}))
-    # Default veg fallback (type 7 = Grassland)
-    default_veg = vparams.get(7, vparams.get(1, {}))
+    # Soil gaps on land (owner decision 2026-10-05): a soil type not in
+    # SOILPARM.TBL, or water soil (14) on a land cell, takes the most common
+    # class of its nearest valid land neighbours (8-neighbours, then wider rings;
+    # tie -> closest, then lowest class id) -- only with --fix-domain-gaps,
+    # recorded with source cells -- and its parameters then come from that
+    # class's own SOILPARM row (no fixed loam numbers). Veg: a type missing from
+    # MPTABLE.TBL -> GRASSLAND (7), gated and recorded (unchanged).
+    default_veg = vparams.get(7)
+    _soil_gap = _land & (~np.isin(isltyp, list(sparams.keys())) | (isltyp == 14))
+    _soil_missing_water = ~_land & ~np.isin(isltyp, list(sparams.keys()))
+    if _soil_missing_water.any():
+        sys.exit(f"ERROR: {int(_soil_missing_water.sum())} water cells have a soil type missing from SOILPARM.TBL")
+    _veg_missing = ~np.isin(ivgtyp, list(vparams.keys()))
+    if _soil_gap.any():
+        try:
+            _filled, _info = der.neighbour_class_fill(isltyp, _soil_gap, _land & ~_soil_gap,
+                                                      latlon=(_lat, _lon) if _lat is not None else None)
+        except ValueError as exc:
+            sys.exit(f"ERROR: soil gaps cannot be filled from neighbours: {exc}")
+        if ED.allow("soil_properties.nc", "soil parameters (all, via SCT_DOM class)",
+                    "land cell with a soil type not in SOILPARM.TBL or water soil (14) -> most common "
+                    "class of the nearest valid land neighbours, then that class's SOILPARM row",
+                    "fill_missing_data", _soil_gap, isltyp, "neighbour class (see cells[].class_taken)",
+                    tag=der.SOIL_FILL_TAG, cell_info=_info):
+            isltyp = np.asarray(_filled).astype(np.int32)
+    if _veg_missing.any():
+        if default_veg is None:
+            sys.exit("ERROR: veg types missing from MPTABLE.TBL and no GRASSLAND row")
+        ED.allow("soil_properties.nc", "cwpvt/hvt/mfsno/mp/vcmx25", "veg type not in MPTABLE.TBL -> GRASSLAND (7)",
+                 "fill_missing_data", _veg_missing, ivgtyp, 7.0)
+    # A parameter missing from MPTABLE for a veg type that is used: missing data -> stop
+    for _vt in np.unique(ivgtyp):
+        _vp = vparams.get(int(_vt), default_veg)
+        _miss = [k for k, v in (_vp or {}).items() if v is None]
+        if _miss:
+            sys.exit(f"ERROR: MPTABLE.TBL has no {_miss} for veg type {int(_vt)} (was read as 0)")
+    # Stop (nothing written) if stand-ins were needed without the flag
+    ED.finish()
 
     for j in range(sn):
         for i in range(we):
             # Soil lookup
             st = int(isltyp[j, i])
-            sp = sparams.get(st, default_soil)
+            sp = sparams[st]
             for k in range(NSOIL):
-                bexp[k, j, i]   = sp.get("BB", 0.0)
-                smcmax[k, j, i] = sp.get("MAXSMC", 0.0)
-                smcref[k, j, i] = sp.get("REFSMC", 0.0)
-                smcwlt[k, j, i] = sp.get("WLTSMC", 0.0)
-                smcdry[k, j, i] = sp.get("DRYSMC", 0.0)
-                dksat[k, j, i]  = sp.get("SATDK", 0.0)
-                dwsat[k, j, i]  = sp.get("SATDW", 0.0)
-                psisat[k, j, i] = sp.get("SATPSI", 0.0)
-                quartz[k, j, i] = sp.get("QTZ", 0.0)
-            refdk[j, i] = sp.get("SATDK", 0.0)
+                bexp[k, j, i]   = sp["BB"]
+                smcmax[k, j, i] = sp["MAXSMC"]
+                smcref[k, j, i] = sp["REFSMC"]
+                smcwlt[k, j, i] = sp["WLTSMC"]
+                smcdry[k, j, i] = sp["DRYSMC"]
+                dksat[k, j, i]  = sp["SATDK"]
+                dwsat[k, j, i]  = sp["SATDW"]
+                psisat[k, j, i] = sp["SATPSI"]
+                quartz[k, j, i] = sp["QTZ"]
+            refdk[j, i] = sp["SATDK"]
 
             # Vegetation lookup
             vt = int(ivgtyp[j, i])
             vp = vparams.get(vt, default_veg)
-            cwpvt[j, i]  = vp.get("CWPVT", 0.18)
-            hvt[j, i]    = vp.get("HVT", 0.0)
-            mfsno[j, i]  = vp.get("MFSNO", 2.5)
-            mp[j, i]     = vp.get("MP", 9.0)
-            vcmx25[j, i] = vp.get("VCMX25", 0.0)
+            cwpvt[j, i]  = vp["CWPVT"]
+            hvt[j, i]    = vp["HVT"]
+            mfsno[j, i]  = vp["MFSNO"]
+            mp[j, i]     = vp["MP"]
+            vcmx25[j, i] = vp["VCMX25"]
 
     # --- Write output ---
     print(f"  Writing: {output_path}")
@@ -282,6 +333,8 @@ def build_soil_properties(geo_em_path, output_path,
     write_soil("smcwlt", smcwlt)
     write_2d("vcmx25", vcmx25)
 
+    out.refkdt_value = refkdt_v
+    out.refkdt_source = "given explicitly by the caller (--refkdt); no tool default"
     out.close()
     print(f"  [OK] soil_properties.nc created: Time=1, soil_layers={NSOIL}, "
           f"south_north={sn}, west_east={we}")
@@ -297,9 +350,10 @@ def main():
                         help="Path to SOILPARM.TBL")
     parser.add_argument("--mptable_tbl", default=str(DEFAULT_MPTABLE),
                         help="Path to MPTABLE.TBL")
-    parser.add_argument("--refkdt", type=float, default=0.8,
-                        help="Uniform REFKDT (infiltration/surface-runoff split). "
-                             "Default 0.8 (mountain/semi-arid). Use 3.0 for humid/flat basins.")
+    der.add_cli(parser)
+    parser.add_argument("--refkdt", type=float, required=True,
+                        help="REFKDT (uniform infiltration / surface-runoff split); REQUIRED, "
+                             "no default (a calibration choice of the caller)")
     args = parser.parse_args()
 
     build_soil_properties(
@@ -307,6 +361,8 @@ def main():
         output_path=args.output_path,
         soilparm_tbl=args.soilparm_tbl,
         mptable_tbl=args.mptable_tbl,
+        fix_domain_gaps=args.fix_domain_gaps,
+        edits_record=args.edits_record,
         refkdt=args.refkdt,
     )
 

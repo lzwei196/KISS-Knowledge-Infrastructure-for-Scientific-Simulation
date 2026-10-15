@@ -176,8 +176,7 @@
   name: 'VIC has NO routing: gauge discharge needs Lohmann route_1.0'
   symptom: You need daily discharge (m3/s) at a gauge, but the flux files only contain `OUT_RUNOFF` /
     `OUT_BASEFLOW` in mm. `OUT_DISCHARGE` is all zeros (or absent).
-  diagnosis: '`dag.yaml` states it plainly: "Inside VIC, OUT_DISCHARGE is generated only by the optional
-    lake module; basin-scale discharge against a gauge requires an external routing model." Summing runoff+baseflow
+  diagnosis: '`dag.yaml` states it plainly: "The classic driver used here does not produce OUT_DISCHARGE; basin-scale discharge against a gauge requires an external routing model (e.g. CaMa-Flood)." Summing runoff+baseflow
     over the basin and calling it discharge is wrong — it has no travel time, so the hydrograph has no
     lag and no attenuation. Comparing that to a gauge produces a plausible-looking but meaningless NSE.'
   remedy: Run the Lohmann routing binary `model/route_1.0/src/rout` after VIC. Its 5 parameter files are

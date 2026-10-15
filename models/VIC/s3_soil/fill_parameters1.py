@@ -22,7 +22,13 @@ warnings.filterwarnings("ignore", message="The 'band' dimension is ignored by ra
 _BASIN = os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
 _OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 
-MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
+if abs(float(os.environ.get("VIC_RES", "0.25")) * 100 - round(float(os.environ.get("VIC_RES", "0.25")) * 100)) > 1e-6:
+    # codex structure_sync r2 #4: the NNNdeg token holds hundredths of a degree only; 0.125 and
+    # 0.12 would both be "012deg" and silently share grid/forcing files. Refuse, never round.
+    raise SystemExit(f"VIC_RES={os.environ.get('VIC_RES')} is not a whole number of 0.01 deg; "
+                     f"the resolution token (e.g. 025deg) cannot represent it")
+_RTOK = f"{int(round(float(os.environ.get('VIC_RES', '0.25')) * 100)):03d}deg"   # System 1 W5
+MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_{_RTOK}.nc"
 # KDT 2026-07-09 — these three were hard-coded to CHINA-ONLY rasters. Outside the
 # CMFD domain the elevation lookup silently returned the nearest *Chinese* cell's
 # elevation (sel(method="nearest") never fails), which is a wrong number rather

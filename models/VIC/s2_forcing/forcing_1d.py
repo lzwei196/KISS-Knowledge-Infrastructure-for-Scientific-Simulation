@@ -44,9 +44,28 @@ YEAR_END = int(os.environ.get("VIC_YEAR_END", 1980))
 
 INPUT_DATA_DIR = Path(os.environ.get(
     "VIC_CMFD_DIR", r"/Volumes/Expansion4t/hydro-space2/data/forcing"))
-GRID_NC_PATH = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
+_RES = float(os.environ.get("VIC_RES", "0.25"))           # System 1 W5: resolution from env
+if abs(float(os.environ.get("VIC_RES", "0.25")) * 100 - round(float(os.environ.get("VIC_RES", "0.25")) * 100)) > 1e-6:
+    # codex structure_sync r2 #4: the NNNdeg token holds hundredths of a degree only; 0.125 and
+    # 0.12 would both be "012deg" and silently share grid/forcing files. Refuse, never round.
+    raise SystemExit(f"VIC_RES={os.environ.get('VIC_RES')} is not a whole number of 0.01 deg; "
+                     f"the resolution token (e.g. 025deg) cannot represent it")
+_RTOK = f"{int(round(_RES * 100)):03d}deg"                # 025deg / 010deg, matches s1_grid
+GRID_NC_PATH = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_{_RTOK}.nc"
 OUTPUT_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "forcing" / "forcing_1d"
 MASK_VAR_NAME = "mask"
+
+
+def out_name(stem: str) -> str:
+    """forcing_1d file name for one source file. codex structure_sync r1 #4: 0.25 and 0.1 builds
+    of one basin share this directory, so the name ALWAYS carries the target resolution token
+    (_RTOK): a source token (e.g. _010deg_) is replaced, and a source name without one gets it
+    appended. process_forcing.py selects only files with its own VIC_RES token."""
+    if re.search(r'_\d{3}deg_', stem):
+        base = re.sub(r'_\d{3}deg_', f'_{_RTOK}_', stem)
+    else:
+        base = f"{stem}_{_RTOK}"
+    return f"{base}_{_BASIN}.nc"
 
 # ====================================================================
 # --- 1. 初始化 ---
@@ -172,8 +191,7 @@ for var_prefix, var_dir_name in VARIABLES_TO_PROCESS:
         # KDT 2026-07-09: resumability. A basin-wide reprojection of ~1000 CMFD
         # monthly files takes hours; without this, any interruption restarts
         # from zero.
-        _base = re.sub(r'_\d{3}deg_', '_025deg_', nc_file.stem)
-        _out = OUTPUT_DIR / f"{_base}_{_BASIN}.nc"
+        _out = OUTPUT_DIR / out_name(nc_file.stem)
         if _out.exists() and _out.stat().st_size > 0:
             print(" ✓ (已存在，跳过)")
             success_files += 1
@@ -191,6 +209,14 @@ for var_prefix, var_dir_name in VARIABLES_TO_PROCESS:
             else:
                 raise KeyError("输入 NC 未找到坐标")
 
+            # System 1 W5 (codex MED): never let a coarse source be silently upsampled
+            # into fine-named files. If the source grid is coarser than the target,
+            # the wrong VIC_CMFD_DIR was given (e.g. the 0.25 Huai subset for a 0.1 build).
+            _src_res = float(abs(xds[src_lat].values[1] - xds[src_lat].values[0]))
+            if _src_res > resolution * 1.01:
+                raise RuntimeError(
+                    f"forcing source {nc_file.name} is {_src_res:.3f} deg but the target grid is "
+                    f"{resolution:.3f} deg — set VIC_CMFD_DIR to a source at least as fine as VIC_RES")
             xds = xds.rio.set_spatial_dims(x_dim=src_lon, y_dim=src_lat, inplace=False)
             xds = xds.rio.write_crs("EPSG:4326", inplace=False)
 
@@ -261,9 +287,7 @@ for var_prefix, var_dir_name in VARIABLES_TO_PROCESS:
                 print(f" ✓")
 
             # 输出文件名
-            base_name = re.sub(r'_\d{3}deg_', '_025deg_', nc_file.stem)
-            output_filename = f"{base_name}_{_BASIN}.nc"
-            output_path = OUTPUT_DIR / output_filename
+            output_path = OUTPUT_DIR / out_name(nc_file.stem)
 
             # 编码
             encoding = {}
@@ -308,3 +332,11 @@ print(f"  - 外插来源: 最近的有效陆地格网")
 print(f"  - 适用场景: 近海/岛屿格网")
 
 print(f"\n{'='*80}")
+
+# codex structure_sync r1 (pre-existing P2): honest exit code. A failed file, or no file at
+# all, must not end with exit 0 — process_forcing would then build forcing with holes.
+if failed_files or total_files == 0:
+    import sys
+    print(f"✗ forcing_1d FAILED: {failed_files} failed of {total_files} files "
+          f"(0 files means no source matched VIC_CMFD_DIR and the years)", file=sys.stderr)
+    sys.exit(1)

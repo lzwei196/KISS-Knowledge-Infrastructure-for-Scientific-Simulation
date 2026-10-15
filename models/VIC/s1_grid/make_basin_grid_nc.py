@@ -21,9 +21,17 @@ _OUT_ROOT = Path(_os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 BASIN_SHP = Path(_os.environ.get(
     "VIC_BASIN_SHP",
     r"KISSPATH_DATA/shp/xixian_025deg_shp/xixian_boundary_shp/xixian_boundary.shp"))
-OUT_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
-
-RES = 0.25  # 目标分辨率（度）
+# System 1 W5 (2026-08-28): target resolution from the environment. Default 0.25 keeps
+# every existing build byte-identical; VIC_RES=0.1 builds a 0.1-degree grid and names it
+# grid_<basin>_010deg.nc. The same VIC_RES must be set for s2/s3/s4 so they find it.
+RES = float(_os.environ.get("VIC_RES", "0.25"))  # 目标分辨率（度）
+if abs(float(_os.environ.get("VIC_RES", "0.25")) * 100 - round(float(_os.environ.get("VIC_RES", "0.25")) * 100)) > 1e-6:
+    # codex structure_sync r2 #4: the NNNdeg token holds hundredths of a degree only; 0.125 and
+    # 0.12 would both be "012deg" and silently share grid/forcing files. Refuse, never round.
+    raise SystemExit(f"VIC_RES={_os.environ.get('VIC_RES')} is not a whole number of 0.01 deg; "
+                     f"the resolution token (e.g. 025deg) cannot represent it")
+RES_TOKEN = f"{int(round(RES * 100)):03d}deg"   # 0.25 -> 025deg, 0.1 -> 010deg
+OUT_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_{RES_TOKEN}.nc"
 # 全局锚点：让 0.25°格网中心点对齐到 (-180+RES/2, 90-RES/2) 的标准全球网格
 ANCHOR_LON = -180.0 + RES / 2.0
 ANCHOR_LAT =  90.0 - RES / 2.0

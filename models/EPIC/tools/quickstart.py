@@ -46,19 +46,69 @@ for _cand in [
         break
 
 CHINA_DEM_PATH = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"
-CMFD_ELEV_PATH = "KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"
+
+
+MERIT_DEM_DIR = "KISSPATH_DATA/MERIT_DEM"
+# ~1 km plane-fit window on the 3-arcsec (~90 m) MERIT grid: 11 x 11 cells
+# (triplet EPIC_031: the scale of the <=100 ha HLU EPIC simulates).
+_MERIT_HALF = 5
+
+
+def _merit_tile(lat, lon):
+    """MERIT DEM v1.0.2 5x5 degree tile path, named by its lower-left corner
+    (n45e005_dem.tif style, triplet EPIC_031)."""
+    import math
+    la = int(math.floor(lat / 5.0) * 5)
+    lo = int(math.floor(lon / 5.0) * 5)
+    name = (f"{'n' if la >= 0 else 's'}{abs(la):02d}"
+            f"{'e' if lo >= 0 else 'w'}{abs(lo):03d}_dem.tif")
+    return os.path.join(MERIT_DEM_DIR, name)
+
+
+def _elev_slope_from_raster(path, lat, lon, half):
+    """Centre-cell elevation (m) and slope (m/m) = gradient of a least-squares
+    plane over a (2*half+1)^2 window. Raises if the centre cell has no data."""
+    import numpy as np
+    import rasterio
+    from rasterio.windows import Window
+    with rasterio.open(path) as src:
+        row, col = src.index(lon, lat)
+        n = 2 * half + 1
+        data = src.read(1, window=Window(col - half, row - half, n, n),
+                        boundless=True, fill_value=src.nodata if src.nodata is not None else np.nan
+                        ).astype(float)
+        if src.nodata is not None:
+            data[data == src.nodata] = np.nan
+        center = float(data[half, half])
+        if not np.isfinite(center) or not (-500 < center < 9000):
+            raise RuntimeError(f"no valid elevation at ({lat}, {lon}) in {path}")
+        cellx = abs(src.res[0]) * 111320.0 * np.cos(np.radians(lat))
+        celly = abs(src.res[1]) * 111320.0
+    jj, ii = np.meshgrid(np.arange(n) - half, np.arange(n) - half)
+    x = jj * cellx                       # east, m
+    y = -ii * celly                      # north, m (row index grows south)
+    ok = np.isfinite(data)
+    if ok.sum() < 3 * n:
+        raise RuntimeError(f"too few valid DEM cells ({int(ok.sum())}) around "
+                           f"({lat}, {lon}) in {path} for a slope plane")
+    A = np.column_stack([x[ok], y[ok], np.ones(int(ok.sum()))])
+    coef, *_ = np.linalg.lstsq(A, data[ok], rcond=None)
+    slope = float(np.hypot(coef[0], coef[1]))
+    return center, max(0.001, slope)
 
 
 def _lookup_terrain(lat, lon):
-    """Get elevation (m) and slope (m/m) from China DEM 90m or CMFD grid.
+    """Elevation (m), slope (m/m) and source label for the .SIT.
 
-    Returns (elevation, slope). Slope has a minimum of 0.001 for EPIC stability.
+    Order: China DEM 90m (central difference, kept so the Changchun reference
+    run stays reproducible) -> global MERIT DEM tile (plane fit, triplet
+    EPIC_031). If neither gives a value the run STOPS: there is no 100 m / 1%
+    placeholder any more (that fabricated site geometry changes PET and
+    curve-number runoff / erosion).
     """
     import numpy as np
 
-    elev, slope = 100.0, 0.01  # defaults
-
-    # Try China DEM 90m first (best resolution for slope)
+    errors = []
     if os.path.isfile(CHINA_DEM_PATH):
         try:
             import rasterio
@@ -71,32 +121,36 @@ def _lookup_terrain(lat, lon):
                         data[data == src.nodata] = np.nan
                     center = float(data[2, 2])
                     if not np.isnan(center) and 0 <= center < 9000:
-                        elev = center
                         cellx = abs(src.res[0]) * 111320 * np.cos(np.radians(lat))
                         celly = abs(src.res[1]) * 111320
                         dzdx = (data[2, 3] - data[2, 1]) / (2 * cellx)
                         dzdy = (data[1, 2] - data[3, 2]) / (2 * celly)
-                        slope = max(0.001, float(np.sqrt(dzdx**2 + dzdy**2)))
-                        return elev, slope
-        except Exception:
-            pass
+                        slope = float(np.sqrt(dzdx**2 + dzdy**2))
+                        if np.isfinite(slope):
+                            return center, max(0.001, slope), "China DEM 90m"
+                        errors.append("China DEM: neighbour cell has no data")
+                    else:
+                        errors.append("China DEM: no valid centre value")
+                else:
+                    errors.append("China DEM: point outside the raster")
+        except Exception as e:  # fall through to MERIT, keep the reason
+            errors.append(f"China DEM read failed: {e}")
+    else:
+        errors.append(f"China DEM missing: {CHINA_DEM_PATH}")
 
-    # Fallback: CMFD elevation grid (0.1° resolution, China only)
-    if 15 < lat < 55 and 70 < lon < 140 and os.path.isfile(CMFD_ELEV_PATH):
+    tile = _merit_tile(lat, lon)
+    if os.path.isfile(tile):
         try:
-            import xarray as xr
-            ds = xr.open_dataset(CMFD_ELEV_PATH)
-            data = ds['elev'].sel(lat=lat, lon=lon, method='nearest')
-            if 'time' in data.dims:
-                data = data.isel(time=0)
-            val = float(data.values)
-            ds.close()
-            if 0 < val < 9000:
-                elev = val
-        except Exception:
-            pass
+            elev, slope = _elev_slope_from_raster(tile, lat, lon, _MERIT_HALF)
+            return elev, slope, f"MERIT DEM {os.path.basename(tile)}"
+        except Exception as e:
+            errors.append(f"MERIT: {e}")
+    else:
+        errors.append(f"MERIT tile missing: {tile}")
 
-    return elev, slope
+    raise RuntimeError(
+        f"no elevation/slope for ({lat}, {lon}); .SIT not built. Tried: "
+        + "; ".join(errors))
 
 
 def _obs_moisture_basis(obs_source, crop):
@@ -119,6 +173,54 @@ def _obs_moisture_basis(obs_source, crop):
         return lookup_obs_moisture_basis(obs_source, crop=crop)
     except Exception:
         return None
+
+
+
+_OUT_EXTS = (".ANN", ".ACY")
+
+
+def _output_snapshot(workspace):
+    """{file name: mtime_ns} of every .ANN/.ACY in the workspace before a run.
+
+    EPIC writes its outputs in the workspace; output/ only holds copies that
+    run_epic makes with copy2 (which keeps the source's time stamp), so
+    freshness is judged on the workspace file alone.
+    """
+    snap = {}
+    if os.path.isdir(workspace):
+        for fn in os.listdir(workspace):
+            if fn.upper().endswith(_OUT_EXTS):
+                try:
+                    snap[fn] = os.stat(os.path.join(workspace, fn)).st_mtime_ns
+                except OSError:
+                    pass
+    return snap
+
+
+def _fresh_output(ext, run_name, workspace, pre_run):
+    """Workspace path of a <ext> file EPIC wrote in THIS run, or None.
+
+    A file counts only if it did not exist before the run or its mtime_ns
+    changed. A copy in output/ never counts on its own (a stale workspace
+    file copied there by run_epic would look new). Files named after
+    run_name win over others.
+    """
+    best = None
+    for fn in sorted(os.listdir(workspace)):
+        if not fn.upper().endswith(ext):
+            continue
+        p = os.path.join(workspace, fn)
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if pre_run.get(fn) == st.st_mtime_ns:
+            continue
+        if fn.upper().startswith(run_name.upper()):
+            return p
+        if best is None:
+            best = p
+    return best
 
 
 def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
@@ -240,12 +342,14 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
         print("\n[2/9] Looking up fertilizer rates...")
     fert = get_fertilizer_rates(lat, lon, crop=crop)
     n_total = fert['n_kgha']
-    schedule = get_split_schedule(n_total, crop=crop, plant_doy=cal['plant_doy'])
+    schedule = get_split_schedule(n_total, crop=crop, plant_doy=cal['plant_doy'],
+                                  maturity_doy=cal.get('harvest_doy'))   # winter vs spring wheat by season length (2026-09-24)
     if verbose:
         print(f"  N={fert['n_kgha']:.1f}, P={fert['p_kgha']:.1f}, "
               f"K={fert['k_kgha']:.1f} kg/ha, Source: {fert['source']}")
         for s in schedule:
             print(f"    {s['type']}: DOY {s['doy']}, N={s['n_kgha']:.1f} kg/ha")
+        print("    (display only: build_opc writes the FULL N rate at planting; the split above is not executed)")
 
     # ── Step 3: Observed yield ───────────────────────────────────────
     if verbose:
@@ -258,9 +362,10 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
     # ── Step 4: Build site + soil ────────────────────────────────────
     if verbose:
         print("\n[4/9] Building site and soil files...")
-    elev, slope = _lookup_terrain(lat, lon)
+    elev, slope, terrain_source = _lookup_terrain(lat, lon)
     if verbose:
-        print(f"  elevation: {elev:.0f} m, slope: {slope:.4f} m/m ({slope*100:.2f}%)")
+        print(f"  elevation: {elev:.0f} m, slope: {slope:.4f} m/m ({slope*100:.2f}%) "
+              f"[{terrain_source}]")
     build_site(run_name, lat, lon, elev=elev, slope=slope, co2=410.0,
                workspace=workspace)
     build_soil(run_name, lat, lon, workspace=workspace)
@@ -348,16 +453,11 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
     # ── Step 8: Run EPIC ─────────────────────────────────────────────
     if verbose:
         print("\n[8/9] Running EPIC 1102 via Wine...")
-    try:
-        run_epic(workspace, run_name, output_dir, timeout=120)
-    except Exception as e:
-        # EPIC may finish but Wine hangs — check if output files exist
-        has_outputs = any(f.endswith(".ANN") for f in os.listdir(workspace))
-        if has_outputs:
-            if verbose:
-                print(f"  Wine process timed out but EPIC produced output files.")
-        else:
-            raise
+    # Any run_epic failure (missing binary, non-zero exit, Wine timeout)
+    # stops quickstart. It used to be swallowed whenever ANY .ANN sat in the
+    # workspace, so a re-used workspace could report an old run's numbers.
+    pre_run = _output_snapshot(workspace)
+    run_epic(workspace, run_name, output_dir, timeout=120)
 
     # ── Step 9: Parse outputs ────────────────────────────────────────
     if verbose:
@@ -365,6 +465,8 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
     result = {
         "workspace": workspace,
         "output_dir": output_dir,
+        "terrain": {"elevation_m": elev, "slope_m_m": slope,
+                    "source": terrain_source},
         "crop_calendar": cal,
         "fertilizer": fert,
         "observed": obs,
@@ -377,19 +479,17 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
         "non_verdict_reason": ppop_record["reason"] if ppop_record else None,
     }
 
-    ann_path = None
-    acy_path = None
-    for fn in os.listdir(output_dir):
-        if fn.upper().endswith(".ANN"):
-            ann_path = os.path.join(output_dir, fn)
-        elif fn.upper().endswith(".ACY"):
-            acy_path = os.path.join(output_dir, fn)
-    if not ann_path:
-        for fn in os.listdir(workspace):
-            if fn.upper().endswith(".ANN"):
-                ann_path = os.path.join(workspace, fn)
-            elif fn.upper().endswith(".ACY"):
-                acy_path = os.path.join(workspace, fn)
+    # Only output written by THIS run is read; stale .ANN/.ACY from an
+    # earlier run in the same workspace are ignored, never reported.
+    ann_path = _fresh_output(".ANN", run_name, workspace, pre_run)
+    acy_path = _fresh_output(".ACY", run_name, workspace, pre_run)
+    if not acy_path:
+        raise RuntimeError(
+            f"EPIC run finished but wrote no new .ACY (annual crop yield) file "
+            f"in {workspace}; no result is reported "
+            f"(old files from an earlier run are not used)")
+    if not ann_path and verbose:
+        print("  WARNING: no new .ANN file from this run; water balance skipped")
 
     if ann_path:
         header, rows, data = parse_ann(ann_path)
@@ -402,36 +502,47 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
                       f"Q={wb['Q_surface_mean']:.0f} mm/yr")
                 print(f"    Status: {'OK' if wb['ok'] else 'WARNING'}")
 
-    if acy_path:
-        header, rows = parse_acy(acy_path)
-        if header and rows:
-            # Find yield column (YLD or YLDG or similar)
-            idx = {c: i for i, c in enumerate(header)}
-            yld_col = None
-            for c in ["YLD", "YLDG", "YLDF"]:
-                if c in idx:
-                    yld_col = c
-                    break
-            if yld_col:
-                yields = []
-                for r in rows:
-                    try:
-                        y = float(r[idx[yld_col]])
-                        if y > 0:
-                            yields.append(y)
-                    except (ValueError, IndexError):
-                        pass
-                if yields:
-                    mean_yield = sum(yields) / len(yields)
-                    result["simulated_yield_tha"] = round(mean_yield, 2)
-                    result["simulated_yield_kgha"] = round(mean_yield * 1000, 0)
+    # acy_path is always set here (no fresh .ACY raised above). The yield
+    # table must be usable or the run stops: no header-only table, no missing
+    # yield column, no NaN / negative / unreadable value is turned into a
+    # result (it used to fall back to a printed 0.00 t/ha with exit 0).
+    import math
+    header, rows = parse_acy(acy_path)
+    if not header or not rows:
+        raise RuntimeError(f"{acy_path}: no harvest rows in the .ACY yield table; "
+                           f"no result is reported")
+    idx = {c: i for i, c in enumerate(header)}
+    yld_col = next((c for c in ("YLD", "YLDG", "YLDF") if c in idx), None)
+    if yld_col is None:
+        raise RuntimeError(f"{acy_path}: no YLD/YLDG/YLDF column in header {header}")
+    # Every harvest row counts, zero-yield years too: a 0 is a crop failure
+    # EPIC simulated, and dropping it would raise the mean (e.g. [0, 10] -> 10
+    # instead of 5).
+    yields = []
+    for n, r in enumerate(rows):
+        try:
+            y = float(r[idx[yld_col]])
+        except (ValueError, IndexError) as e:
+            raise RuntimeError(
+                f"{acy_path}: harvest row {n + 1} has no readable "
+                f"{yld_col} value ({e})") from e
+        if not math.isfinite(y) or y < 0:
+            raise RuntimeError(
+                f"{acy_path}: harvest row {n + 1} has invalid {yld_col}={y!r} "
+                f"(must be finite and >= 0)")
+        yields.append(y)
+    mean_yield = sum(yields) / len(yields)
+    result["simulated_yield_tha"] = round(mean_yield, 2)
+    result["simulated_yield_kgha"] = round(mean_yield * 1000, 0)
+    result["simulated_yield_years"] = len(yields)
+    result["simulated_zero_yield_years"] = sum(1 for y in yields if y == 0)
 
     # ── Moisture basis of the sim/obs pair (triplet EPIC_025) ────────
     # The sim side is DRY MATTER, the obs side is published as-is. Declare both
     # sides before reporting a bias, and apply the market-moisture conversion
     # ONLY when the registry carries a CITED w for THIS crop -- a product whose
     # basis is market does not license a constant for an arbitrary crop.
-    sim_tha = result.get("simulated_yield_tha", 0)
+    sim_tha = result["simulated_yield_tha"]
     obs_kgha = obs['yield_kgha']
     obs_tha = obs_kgha / 1000
     basis = _obs_moisture_basis(obs.get('source'), crop)

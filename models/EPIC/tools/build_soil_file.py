@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an EPIC .SOL soil profile by copying umstead.SOL and overlaying
+"""Build an EPIC .SOL soil profile from the umstead.SOL template, overlaying
 HWSD-derived layer properties.
 
 EPIC SOL format (lines 0-indexed):
@@ -23,17 +23,61 @@ EPIC SOL format (lines 0-indexed):
   [17+] (leave from template)
 
 Data sources:
-  - HWSD topsoil (0-30 cm): sand, silt, clay, OC, pH, bulk_density
-  - HWSD subsoil (30-100 cm): sub_sand, sub_silt, sub_clay
-  - Saxton-Rawls pedotransfer: WP, FC, Ksat from texture + OM
+  - HWSD topsoil (0-30 cm): sand, silt, clay, oc (%), ph, bulk_density, cec
+  - HWSD subsoil (30-100 cm): sub_sand, sub_silt, sub_clay, sub_oc, sub_ph,
+    sub_bulk_density, sub_cec (all from lookup_hwsd; a missing field stops)
+  - Saxton-Rawls pedotransfer (ki_tools_common.saxton_rawls): WP, FC, Ksat
+    from texture + OM, OM = OC x 1.724, for both top and subsoil. A failure
+    stops the tool (no stand-in formulas).
 """
 import argparse
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import math
+import tempfile
 from _common import (
-    copy_template, read_text_crlf, write_text_crlf, add_kdt_common_to_path,
+    template_path, read_text_crlf, write_text_crlf, add_kdt_common_to_path,
 )
+
+# Every HWSD field this tool writes into the .SOL. All must come from
+# lookup_hwsd; a missing or non-numeric one stops the tool BEFORE any file
+# is written (no template value is left standing in for it).
+REQUIRED_SOIL_FIELDS = (
+    "sand", "silt", "clay", "bulk_density", "oc", "ph", "cec",
+    "sub_sand", "sub_silt", "sub_clay", "sub_bulk_density", "sub_oc", "sub_ph",
+    "sub_cec",
+)
+# Template rows overwritten below are [0]..[16]; the template must have them.
+MIN_TEMPLATE_LINES = 17
+
+
+def _validated_soil_values(soil, lat, lon):
+    """Return {field: float} for REQUIRED_SOIL_FIELDS, or raise with every
+    missing / bad field named. Nothing is written before this passes."""
+    if not isinstance(soil, dict):
+        raise RuntimeError(f"HWSD soil lookup at lat={lat}, lon={lon} returned "
+                           f"{type(soil).__name__}, not a dict")
+    missing = [k for k in REQUIRED_SOIL_FIELDS if soil.get(k) is None]
+    bad = []
+    vals = {}
+    for k in REQUIRED_SOIL_FIELDS:
+        if k in missing:
+            continue
+        try:
+            v = float(soil[k])
+        except (TypeError, ValueError):
+            bad.append(f"{k}={soil[k]!r}")
+            continue
+        if not math.isfinite(v):
+            bad.append(f"{k}={soil[k]!r}")
+            continue
+        vals[k] = v
+    if missing or bad:
+        raise RuntimeError(
+            f"HWSD soil lookup at lat={lat}, lon={lon} is incomplete; no .SOL "
+            f"written. missing={missing} bad={bad}")
+    return vals
 
 N_LAYERS = 6
 F8 = "{:>8.2f}"
@@ -81,56 +125,48 @@ def _estimate_usle_k(sand, silt, clay, oc_pct):
 
 def safe_lookup_hwsd(lat, lon):
     add_kdt_common_to_path()
+    from ki_tools_common.soil_utils import lookup_hwsd
     try:
-        from ki_tools_common.soil_utils import lookup_hwsd
         return lookup_hwsd(lat, lon)
-    except Exception as e:
-        print(f"  WARN  HWSD lookup unavailable ({e}); keeping template soil.",
-              file=sys.stderr)
-        return None
+    except (RuntimeError, ValueError, FileNotFoundError) as e:
+        # A failed lookup stops the tool; the template soil is NOT kept in its place.
+        raise RuntimeError(f"HWSD soil lookup failed at lat={lat}, lon={lon}: {e}") from e
 
 
 def safe_saxton_rawls(sand, clay, om_pct):
+    """Shared Saxton-Rawls; any failure propagates (no crude stand-in)."""
     add_kdt_common_to_path()
-    try:
-        from ki_tools_common.soil_utils import saxton_rawls
-        return saxton_rawls(sand, clay, om_pct)
-    except Exception:
-        # Fallback crude estimates
-        return {
-            'wilting_point': 0.05 + 0.004 * clay,
-            'field_capacity': 0.10 + 0.006 * clay + 0.002 * (100 - sand - clay),
-            'ksat_cm_hr': max(0.01, 5.0 - 0.1 * clay),
-        }
+    from ki_tools_common.soil_utils import saxton_rawls
+    return saxton_rawls(sand, clay, om_pct)
 
 
 def build(name, lat, lon, workspace):
     os.makedirs(workspace, exist_ok=True)
-    dst = copy_template("umstead.SOL", workspace, new_name=f"{name}.SOL")
-
+    dst = os.path.join(workspace, f"{name}.SOL")
+    # Look up AND validate everything first. The destination is only written
+    # at the very end, by an atomic replace of a finished temp file, so any
+    # failure leaves no template soil behind and an existing <name>.SOL is
+    # left exactly as it was.
     soil = safe_lookup_hwsd(lat, lon)
-    text = read_text_crlf(dst)
-    lines = text.splitlines()
+    v = _validated_soil_values(soil, lat, lon)
 
-    if soil is None:
-        lines[0] = f"{name:<25}TEMPLATE_SOIL"
-        write_text_crlf(dst, "\r\n".join(lines))
-        return dst
+    text = read_text_crlf(template_path("umstead.SOL"))
+    lines = text.splitlines()
+    if len(lines) < MIN_TEMPLATE_LINES:
+        raise RuntimeError(f"template umstead.SOL has {len(lines)} lines, "
+                           f"need >= {MIN_TEMPLATE_LINES}; no .SOL written")
 
     # ── Extract HWSD data ────────────────────────────────────────
-    top_sand = soil.get("sand", 40.0)
-    top_clay = soil.get("clay", 20.0) if "clay" in soil else 100.0 - top_sand - soil.get("silt", 40.0)
-    top_silt = 100.0 - top_sand - top_clay
-    top_bd = soil.get("bulk_density", 1.40)
-    top_oc = soil.get("oc", soil.get("org_c", 1.0))  # %
-    top_ph = soil.get("ph", 6.5)
-
-    sub_sand = soil.get("sub_sand", top_sand)
-    sub_clay = soil.get("sub_clay", top_clay + 5)  # subsoil typically more clay
-    sub_silt = 100.0 - sub_sand - sub_clay
-    sub_bd = top_bd + 0.05  # subsoil slightly denser
-    sub_oc = max(0.1, top_oc * 0.3)  # subsoil ~30% of topsoil OC
-    sub_ph = top_ph + 0.2  # subsoil slightly less acidic
+    # Every value straight from lookup_hwsd (HWSD T_* / S_* of one row); a
+    # missing field stopped above. No subsoil value is derived from the topsoil.
+    top_sand, top_silt, top_clay = v["sand"], v["silt"], v["clay"]
+    top_bd = v["bulk_density"]                    # g/cm3
+    top_oc = v["oc"]                              # % organic carbon
+    top_ph = v["ph"]
+    sub_sand, sub_silt, sub_clay = v["sub_sand"], v["sub_silt"], v["sub_clay"]
+    sub_bd = v["sub_bulk_density"]                # g/cm3
+    sub_oc = v["sub_oc"]                          # % organic carbon
+    sub_ph = v["sub_ph"]
 
     # ── Saxton-Rawls hydraulics ──────────────────────────────────
     top_om = top_oc * 1.724
@@ -138,14 +174,9 @@ def build(name, lat, lon, workspace):
     top_hyd = safe_saxton_rawls(top_sand, top_clay, top_om)
     sub_hyd = safe_saxton_rawls(sub_sand, sub_clay, sub_om)
 
-    # Use HWSD's own hydraulics if available (often more accurate)
-    hwsd_hyd = soil.get("hydraulics", {})
-    if hwsd_hyd.get("wilting_point"):
-        top_hyd["wilting_point"] = hwsd_hyd["wilting_point"]
-    if hwsd_hyd.get("field_capacity"):
-        top_hyd["field_capacity"] = hwsd_hyd["field_capacity"]
-    if hwsd_hyd.get("ksat_cm_hr"):
-        top_hyd["ksat_cm_hr"] = hwsd_hyd["ksat_cm_hr"]
+    # (lookup_hwsd's own 'hydraulics' is no longer copied over the topsoil: top
+    # and subsoil now come from the same call, OM = OC x 1.724. The shared
+    # saxton_rawls is a texture-class table, so OM does not change the result.)
 
     # ── Build 6-layer arrays (3 topsoil + 3 subsoil) ────────────
     sand = [top_sand] * 3 + [sub_sand] * 3
@@ -156,9 +187,7 @@ def build(name, lat, lon, workspace):
     ksat = [top_hyd["ksat_cm_hr"] * 10] * 3 + [sub_hyd["ksat_cm_hr"] * 10] * 3  # cm/hr → mm/hr
     oc_gkg = [top_oc * 10] * 3 + [sub_oc * 10] * 3  # % → g/kg
     ph = [top_ph] * 3 + [sub_ph] * 3
-    cec_top = soil.get("cec", max(5.0, top_clay * 0.5 + top_oc * 3))
-    cec_sub = max(3.0, cec_top * 0.7)
-    cec = [cec_top] * 3 + [cec_sub] * 3
+    cec = [v["cec"]] * 3 + [v["sub_cec"]] * 3  # HWSD T/S_CEC_SOIL, cmol/kg
 
     # ── Update soil-level header (line 1) ────────────────────────
     salb = _estimate_albedo(top_sand, top_oc)
@@ -198,10 +227,18 @@ def build(name, lat, lon, workspace):
         16: ksat,
     }
     for idx, vals in layer_rows.items():
-        if idx < len(lines):
-            lines[idx] = fmt_row(vals)
+        lines[idx] = fmt_row(vals)
 
-    write_text_crlf(dst, "\r\n".join(lines))
+    # Write a temp file in the same folder, then atomically replace dst.
+    fd, tmp = tempfile.mkstemp(prefix=f".{name}.", suffix=".SOL.tmp", dir=workspace)
+    os.close(fd)
+    try:
+        write_text_crlf(tmp, "\r\n".join(lines))
+        os.replace(tmp, dst)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
     print(f"  soil: {soil.get('texture', '?')} (sand={top_sand:.0f}% clay={top_clay:.0f}%)"
           f" → WP={wp[0]:.3f} FC={fc[0]:.3f} Ksat={ksat[0]:.1f}mm/hr")
     return dst

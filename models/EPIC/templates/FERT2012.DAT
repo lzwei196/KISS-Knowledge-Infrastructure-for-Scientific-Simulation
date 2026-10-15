@@ -1,0 +1,155 @@
+#     #/name    Min N            Min K           Org P        Org frac            Cost
+#     #/name             Min P           Org N        NH3 frac       Salt frac                    Description                                                            RANGE                 FORM          NO3 %   NH3 %   Urea %   Total N      
+    1 B-FRESH   0.0140  0.0080  0.0000  0.0260  0.0040  0.9900  0.3500  0.0000  0.0000        Beef Fresh Manure
+    2 B-FDLT-S  0.0010  0.0030  0.0000  0.0090  0.0020  0.9900  0.3500  0.0000  0.0000        Beef Feedlot Scrapping Manure
+    3 B-FDLT-P  0.0300  0.0040  0.0000  0.0200  0.0020  0.9900  0.3500  0.0000  0.0000        Beef Feedlot Pit Manure
+    4 B-FDLT-C  0.0020  0.0040  0.0000  0.0130  0.0020  0.9900  0.3500  0.0000  0.0000        Beef Composted Manure
+    5 D-FRESH   0.0120  0.0040  0.0000  0.0210  0.0020  0.9900  0.3500  0.0000  0.0000        Dairy Fresh Manure
+    6 D-SO-MNU  0.0017  0.0066  0.0000  0.0218  0.0038  0.9716  0.3500  0.0000  0.0000        Dairy Solid Manure Bosque
+    7 D-LIQ     0.0028  0.0011  0.0000  0.0005  0.0006  0.9871  0.3500  0.0000  0.0000        Dairy Liquid Manure Bosque
+    8 D-LAG-LQ  0.5660  0.0900  0.0000  0.1020  0.2420  0.9870  0.3500  0.0000  0.0000        Dairy Lagoon Liquid Manure
+    9 D-LAG-SO  0.0490  0.0820  0.0000  0.6480  0.2210  0.9720  0.3500  0.0000  0.0000        Dairy Lagoon Solids Manure
+   10 BR-FRESH  0.0060  0.0100  0.0000  0.0540  0.0070  0.9900  0.3500  0.0000  0.0000        Broilers Fresh Manure
+   11 T-FRESH   0.0060  0.0100  0.0000  0.0540  0.0070  0.9900  0.3500  0.0000  0.0000        Turkeys Fresh Manure
+   12 L-FRESH   0.0050  0.0100  0.0000  0.0450  0.0070  0.9900  0.3500  0.0000  0.0000        Layers Fresh Manure
+   13 L-MPIT    0.0200  0.0100  0.0000  0.0200  0.0070  0.9900  0.3500  0.0000  0.0000        Layers Medium Pit Manure
+   14 L-DPIT    0.0100  0.0100  0.0000  0.0100  0.0070  0.9900  0.3500  0.0000  0.0000        Layers Deep Pit Manure
+   15 L-LIQUID  0.0040  0.0100  0.0000  0.0400  0.0070  0.9900  0.3500  0.0000  0.0000        Layers Liquid Manure
+   16 DU-FRESH  0.0030  0.0050  0.0000  0.0270  0.0020  0.9900  0.3500  0.0000  0.0000        Ducks Fresh Manure
+   17 G-FRESH   0.0030  0.0100  0.0000  0.0270  0.0060  0.9900  0.3500  0.0000  0.0000        Geese Fresh Manure
+   18 P-FRESH   0.0030  0.0100  0.0000  0.0270  0.0050  0.9900  0.3500  0.0000  0.0000        Pigeons Fresh Manure
+   19
+   20
+   21 Elem-N    1.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        Elemental N
+   22 Elem-P    0.0000  1.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        Elemental P
+   23 Elem-K    0.0000  0.0000  1.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        Elemental K
+   24
+   25 AnhydAm   0.8200  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        ANHYDROUS AMMONIA                                                          80-83% N              Liquid
+   26 Aqua_Am   0.2050  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AQUA AMMONIA                                                               10-30% N              Liquid
+   27 Am_Nit    0.3400  0.0000  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        AMMONIUM NITRATE                                                           33-34% N              Dry
+   28 AmNitSol  0.2000  0.0000  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        AMMONIUM NITRATE SOLUTION                                                  18-20% N              Liquid
+   29 AmNitLim  0.2050  0.0000  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        AMMONIUM NITRATE-LIMESTONE MIXTURES                                        17-26% N              Dry
+   30 AmNitSul  0.3000  0.0000  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        AMMONIUM NITRATE-SULFATE                                                   26-30% N              Dry
+   31 AmPolysu  0.2000  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM POLYSULFIDE                                                       18-23% N              Liquid
+   32 AmSulf    0.2100  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM SULFATE                                                           20-21% N              Dry
+   33 AmSulfSo  0.0600  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM SULFATE SOLUTION                                                  Liquid
+   34 AmSulfNi  0.2600  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM SULFATE-NITRATE                                                   Dry, Liquid
+   35 AmSulfUr  0.3350  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM SULFATE-UREA                                                      33-34% N              Dry
+   36 AmThioSu  0.1200  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM THIOSULFATE                                                       Liquid
+   37 CaAmNit   0.1700  0.0000  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        CALCIUM AMMONIUM NITRATE                                                   17-20.5% N            Dry, Liquid
+   38 CaCyanam  0.2050  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        CALCIUM CYANAMIDE                                                          Dry, Liquid
+   39 Ca_Nit    0.1550  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        CALCIUM NITRATE                                                            15-15.5% N            Dry, Liquid
+   40 CaNitUr   0.3380  0.0000  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        CALCIUM NITRATE-UREA                                                       30-35% N              Dry
+   41 FeAmSul   0.0700  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        FERROUS AMMONIUM SULFATE                                                   14% FE, 16% S         Dry
+   42 Mg_Nit    0.0710  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        MAGNESIUM NITRATE                                                          6.6%MG                Liquid
+   43 Nit_acid  0.1500  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        NITRIC ACID                                                                                      Liquid
+   44 Nit_sol   0.2500  0.0000  0.0000  0.0000  0.0000  0.7537  0.0000  0.0000  0.0000        NITROGEN SOLUTION <28%                                                     <28% N                Liquid
+   45 Nit_sol   0.2800  0.0000  0.0000  0.0000  0.0000  0.7537  0.0000  0.0000  0.0000        NITROGEN SOLUTION 28%(6.91%NO3, 6.91%NH3, and 14.23% Urea)                 28-29.9% N            Liquid        6.91    6.91    14.23    28.05
+   46 Nit_sol   0.3000  0.0000  0.0000  0.0000  0.0000  0.7538  0.0000  0.0000  0.0000        NITROGEN SOLUTION 30%                                                      30-31.9% N            Liquid        7.39    7.38    15.25    30.02
+   47 Nit_sol   0.3200  0.0000  0.0000  0.0000  0.0000  0.7534  0.0000  0.0000  0.0000        NITROGEN SOLUTION 32%                                                      32-32.9% N            Liquid        7.89    7.89    16.22       32
+   48 Nit_sol   0.3400  0.0000  0.0000  0.0000  0.0000  0.7534  0.0000  0.0000  0.0000        NITROGEN SOLUTION >32%                                                     >32% N                Liquid
+   49 Na_Nit    0.1600  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        SODIUM NITRATE                                                             Dry
+   50 CoatedUr  0.3600  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        SULFUR COATED UREA                                                         36-38%N               Dry
+   51 Urea      0.4600  0.0000  0.0000  0.0000  0.0000  1.0000  0.2000  0.0000  0.0000        UREA                                                                       45-46% N              Dry
+   52 Urea_sol  0.2000  0.0000  0.0000  0.0000  0.0000  1.0000  0.2000  0.0000  0.0000        UREA SOLUTION                                                              Liquid
+   53 UrFormal  0.3800  0.0000  0.0000  0.0000  0.0000  1.0000  0.2000  0.0000  0.0000        UREA-FORMALDEHYDE                                                          35-40% N              Dry
+   54 ZnAmSulf  0.1000  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        ZINC AMMONIUM SULFATE SOLUTION                                             10-15% N, 10%Z,5%S    Liquid
+   55 ZnMnAmSu  0.0900  0.0000  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        ZINC MANGANESE AMMONIUM SULFATE                                            Liquid, Dry
+   56 AmMetaph  0.1200  0.2226  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM METAPHOSPHATE                                                                           Dry
+   57 Am_phosp  0.1100  0.2095  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM PHOSPHATE                                                                               Dry
+   58 DiAmPho   0.1800  0.2008  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        DIAMMONIUM PHOSPHATE                                                       18-21% N,,46-54%P2O5  Dry
+   59 AmPolPho  0.1500  0.2619  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM POLYPHOSPHATE                                                                           Dry, Liquid
+   60 LimePho   0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        BASIC LIME PHOSPHATE                                                       5-37% P2O5            Dry
+   61 AmPhoNit  0.2700  0.0611  0.0000  0.0000  0.0000  0.5000  0.0000  0.0000  0.0000        AMMONIUM PHOSPHATE NITRATE                                                                       Dry
+   62 AmPhoSul  0.1600  0.0873  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        AMMONIUM PHOSPHATE SULFATE                                                                       Dry, Liquid
+   63 BaseSlag  0.0000  0.0393  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        BASIC SLAG                                                                 8-10% P2O5            Dry
+   64 MonoAmPh  0.1100  0.2269  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        MONOAMMONIUM PHOSPHATE                                                                           Dry
+   65 Bone_1    0.0100  0.1440  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        BONE BLACK, SPENT                                                                                Dry
+   66 Bone_2    0.0390  0.0960  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        BONE MEAL, RAW                                                                                   Dry
+   67 Bone_3    0.0220  0.1178  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        BONE MEAL, STEAMED                                                                               Dry
+   68 Bone_4    0.0000  0.1527  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        BONE, PRECIPITATED                                                         28-45% P2O5           Dry
+   69 CaMetaPh  0.0000  0.2619  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        CALCIUM METAPHOSPHATE                                                      60-62% P2O5           Dry
+   70 Soft_Pho  0.0000  0.0087  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        COLLOIDAL PHOSPHATE (SOFT PHOSPHATE)                                       2-8% P2O5             Dry
+   71 PhoLimes  0.0000  0.0567  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        LIMESTONE, PHOSPHATIC                                                      13-14% P2O5           Dry
+   72 Mg_Phos   0.0000  0.0786  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        MAGNESIUM PHOSPHATE                                                        17-18% P2O5           Dry
+   73 Nit_Phos  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        NITRIC PHOSPHATE                                                           14-22% N, 10-22%P2O5  Dry
+   74 PhosRock  0.0000  0.0131  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        PHOSPHATE ROCK                                                             2-4% P2O5             Dry
+   75 H3PO4     0.0000  0.2357  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        PHOSPHORIC ACID                                                            2-75% P2O5            Liquid
+   76 Am_Phosp  0.1000  0.1484  0.0000  0.0000  0.0000  1.0000  0.0000  0.0000  0.0000        LIQUID AMMONIUM POLYPHOSPHATE                                              5-12% N, 17-37%P2O5   Liquid
+   77 PrecipPh  0.0000  0.1527  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        PRECIPITATED PHOSPHATE                                                     24-45% P2O5           Dry
+   78 SuperPhN  0.0000  0.0960  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        SUPERPHOSPHATE, NORMAL                                                     18-22% P2O5           Dry
+   79 SuperPhE  0.0000  0.1004  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        SUPERPHOSPHATE, ENRICHED                                                   23-39% P2O5           Dry
+   80 SuperPhT  0.0000  0.2008  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        SUPERPHOSPHATE, TRIPLE                                                     40-54% P2O5           Dry
+   81 SPA       0.0000  0.2968  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000        SUPERPHOSPHORIC ACID                                                       68-75% P2O5           Liquid
+   82
+   83
+   84
+   85
+   86
+   87
+   88
+   89
+   90
+   91
+   92
+   93
+   94
+   95
+   96
+   97
+   98
+   99
+  100
+  101 CEAP-101  0.0196  0.0109  0.0000  0.0295  0.0072  0.7000  0.7929  0.0000  0.0000        1 Beef Solids 1 Stacking Slab 50% TS
+  102 CEAP-102  0.0197  0.0098  0.0000  0.0295  0.0066  0.7000  0.7943  0.0000  0.0000        2 Beef Solids 2 Covered slab 55% TS
+  103 CEAP-103  0.0098  0.0106  0.0000  0.0393  0.0071  0.7000  0.7932  0.0000  0.0000        3 Beef Solids 3 Manure pack 59 - 67% TS
+  104 CEAP-104  0.0196  0.0133  0.0000  0.0293  0.0089  0.7000  0.7896  0.0000  0.0000        4 Beef Solids 4 Barn, shed, or house 30% TS
+  105 CEAP-105  0.0197  0.0104  0.0000  0.0295  0.0069  0.7000  0.7935  0.0000  0.0000        5 Beef Solids 5 Other 45% TS
+  106 CEAP-106  0.0274  0.0073  0.0000  0.0274  0.0049  0.9900  0.7930  0.0000  0.0000        6 Beef Slurry 7 Concrete or steel tank, basin, or pit
+  107 CEAP-107  0.0274  0.0073  0.0000  0.0274  0.0049  0.9900  0.7930  0.0000  0.0000        7 Beef Slurry 8 Earthen storage facility
+  108 CEAP-108  0.0274  0.0073  0.0000  0.0274  0.0049  0.9900  0.7930  0.0000  0.0000        8 Beef Slurry 9 Other
+  109 CEAP-109  0.1067  0.0880  0.0000  0.1067  0.0587  0.9900  0.5440  0.0000  0.0000        9 Beef Liquid 10 Single stage lagoon or holding pond
+  110 CEAP-110  0.1067  0.0880  0.0000  0.1067  0.0587  0.9900  0.5440  0.0000  0.0000        10 Beef Liquid 11 Two stage lagoon system with second stage either lagoon or holding pond
+  111 CEAP-111  0.1111  0.0667  0.0000  0.1111  0.0444  0.9900  0.5667  0.0000  0.0000        11 Beef Liquid Runoff storage pond used only for collection of open lot runoff
+  112 CEAP-112  0.1067  0.0880  0.0000  0.1067  0.0587  0.9900  0.5440  0.0000  0.0000        12 Beef Liquid 12 Other
+  113 CEAP-113  0.0272  0.0130  0.0000  0.0272  0.0087  0.6000  0.7853  0.0000  0.0000        13 Beef no storage 6 No storage
+  114 CEAP-114  0.0197  0.0104  0.0000  0.0295  0.0069  0.7000  0.7935  0.0000  0.0000        14 Beef no information (default)
+  115 CEAP-115  0.0248  0.0250  0.0000  0.0371  0.0083  0.5000  0.7690  0.0000  0.0000        15 Dairy Solids 1 Stacking Slab 35%TS
+  116 CEAP-116  0.0211  0.0197  0.0000  0.0316  0.0066  0.5000  0.7829  0.0000  0.0000        16 Dairy Solids 2 Covered slab 30% TS
+  117 CEAP-117  0.0204  0.0274  0.0000  0.0307  0.0091  0.5000  0.7755  0.0000  0.0000        17 Dairy Solids 3 Manure pack 67% TS
+  118 CEAP-118  0.0354  0.0199  0.0000  0.0531  0.0066  0.5000  0.7522  0.0000  0.0000        18 Dairy Solids 4 Barn, shed, or house 18% - 25% TS
+  119 CEAP-119  0.0255  0.0319  0.0000  0.0383  0.0106  0.5000  0.7596  0.0000  0.0000        19 Dairy Solids 5 Other 45% TS
+  120 CEAP-120  0.0230  0.0157  0.0000  0.0346  0.0052  0.9900  0.7832  0.0000  0.0000        20 Dairy Slurry 7 Concrete or steel tank, basin, or pit
+  121 CEAP-121  0.0230  0.0157  0.0000  0.0346  0.0052  0.9900  0.7832  0.0000  0.0000        21 Dairy Slurry 8 Earthen storage facility
+  122 CEAP-122  0.0230  0.0157  0.0000  0.0346  0.0052  0.9900  0.7832  0.0000  0.0000        22 Dairy Slurry 9 Other
+  123 CEAP-123  0.0471  0.0441  0.0000  0.1882  0.0147  0.9900  0.6000  0.0000  0.0000        23 Dairy Liquid 10 Single stage lagoon or holding pond
+  124 CEAP-124  0.0471  0.0441  0.0000  0.1882  0.0147  0.9900  0.6000  0.0000  0.0000        24 Dairy Liquid 11 Two stage lagoon system with second stage either lagoon or holding pond
+  125 CEAP-125  0.0453  0.0708  0.0000  0.1811  0.0236  0.9900  0.5774  0.0000  0.0000        25 Dairy Liquid Runoff storage pond used only for collection of open lot runoff
+  126 CEAP-126  0.0471  0.0412  0.0000  0.1882  0.0176  0.9900  0.6000  0.0000  0.0000        26 Dairy Liquid 12 Other
+  127 CEAP-127  0.0232  0.0121  0.0000  0.0347  0.0040  0.9900  0.7871  0.0000  0.0000        27 Dairy no storage 6 No storage
+  128 CEAP-128  0.0343  0.0429  0.0000  0.0514  0.0143  0.5000  0.7286  0.0000  0.0000        28 Dairy no information (default)
+  129 CEAP-129  0.0680  0.0289  0.0000  0.0680  0.0192  0.9900  0.6935  0.0000  0.0000        29 swine solids all
+  130 CEAP-130  0.0417  0.0169  0.0000  0.0278  0.0091  0.9500  0.7688  0.0000  0.0000        30 swine slurry all
+  131 CEAP-131  0.2444  0.0542  0.0000  0.0611  0.0292  0.9900  0.5194  0.0000  0.0000        31 swine liquid all
+  132 CEAP-132  0.0682  0.0295  0.0000  0.0682  0.0159  0.9900  0.6955  0.0000  0.0000        32 swine solids no storage
+  133 CEAP-133  0.0233  0.0300  0.0000  0.0933  0.0200  0.6000  0.7083  0.0000  0.0000        33 sheep solids manure pack
+  134 CEAP-134  0.0174  0.0261  0.0000  0.0696  0.0174  0.6000  0.7391  0.0000  0.0000        34 sheep solids barn, shed, or house
+  135 CEAP-135  0.0094  0.0355  0.0000  0.0533  0.0237  0.9800  0.7463  0.0000  0.0000        35 poultry solids stockplied litter (#1, 2, or 3 solid storage types)
+  136 CEAP-136  0.0065  0.0117  0.0000  0.0588  0.0078  0.9800  0.7779  0.0000  0.0000        36 poultry solids liter in house (# 4, 5, or 6 solid storage types, and default)
+  137 CEAP-137  0.1104  0.0323  0.0000  0.0473  0.0215  0.9900  0.6702  0.0000  0.0000        37 poultry slurry all (applicable for some layer operations)
+  138 CEAP-138  0.2656  0.0375  0.0000  0.0469  0.0250  0.9900  0.5313  0.0000  0.0000        38 poultry liquid all (applicable for some layer operations)
+  139 CEAP-139  0.0038  0.0081  0.0000  0.0341  0.0054  0.6000  0.8062  0.0000  0.0000        39 equine solids any storage
+  140 CEAP-140  0.0038  0.0081  0.0000  0.0341  0.0054  0.6000  0.8062  0.0000  0.0000        40 equine solids no storage
+  141 CEAP-141  0.0205  0.0273  0.0000  0.0477  0.0182  0.6000  0.7534  0.0000  0.0000        41 biosolids solid all
+  142 CEAP-142  0.0261  0.0261  0.0000  0.0609  0.0174  0.6000  0.7391  0.0000  0.0000        42 biosolids slurry all
+  143                                                                                         43 biosolids liquid all
+  144
+  145
+  146
+  147
+  148
+  149
+  150
+  151
+  152
+  153

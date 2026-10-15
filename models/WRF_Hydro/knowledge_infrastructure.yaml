@@ -21,7 +21,7 @@ pipeline:
   - s6_groundwater_skill
   - s9_runoff_options_skill
 tools:
-  count: 17
+  count: 19
   files:
   - tools/calib_run.py
   - tools/domain_edit_record.py
@@ -40,6 +40,8 @@ tools:
   - tools/s8_forcing/cmfd_to_ldasin.py
   - tools/s8_forcing/nasa_power_to_ldasin.py
   - tools/s9_namelists/generate_namelists.py
+  - tools/wrfhydro_domain_edits.py
+  - tools/wrfhydro_run_gate.py
 inputs:
   forcing:
   - name: RAINRATE (liquid precipitation rate)
@@ -122,7 +124,7 @@ validation:
     best_kge: 0.8147
     best_r: 0.9222
 summary:
-  total_tools: 17
+  total_tools: 19
   total_stage_docs: 4
   total_diagnostic_triplets: 49
   generated: '2026-08-15'

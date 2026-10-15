@@ -28,7 +28,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (17 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (19 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (4 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (49 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -66,8 +66,10 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s8_forcing/cmfd_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/cmfd_to_ldasin.py --help` |
 | `tools/s8_forcing/nasa_power_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/nasa_power_to_ldasin.py --help` |
 | `tools/s9_namelists/generate_namelists.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_namelists/generate_namelists.py --help` |
+| `tools/wrfhydro_domain_edits.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/wrfhydro_domain_edits.py --help` |
+| `tools/wrfhydro_run_gate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/wrfhydro_run_gate.py --help` |
 
-*17 public tools; `_`-prefixed helpers and packaging files excluded.*
+*19 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---

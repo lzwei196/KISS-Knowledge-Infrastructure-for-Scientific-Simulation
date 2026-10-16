@@ -91,7 +91,7 @@ Regression tests: `python -B tests/test_convert_params.py`.
 
 | Parameter | Unit | Description | Typical range |
 |-----------|------|-------------|---------------|
-| ALPHA | — | Channel routing: Q = alpha × A^beta | 1–10 |
+| ALPHA | — | Channel routing: storage A = alpha × Q^beta (code form; the manual writes Q = alpha × A^beta) | 1–10 |
 | BETA | — | Channel routing exponent | 0.5–1.0 |
 | ALPHA0 | — | Overland routing multiplier | 1–10 |
 | TH | cells | Channel threshold (cells for channel designation) | 5–100 |

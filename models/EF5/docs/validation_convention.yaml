@@ -4,6 +4,11 @@ domain: hydrology
 generated_by: "step-B validation convention agent"
 generated_at: 2026-08-14
 
+# 2026-10-16: re-keyed to the real EF5 dag. Until then dag.yaml was HYPE's by mistake and these
+# blocks were keyed to HYPE variables. cout -> discharge, snow -> swe, soim -> soil_moisture.
+# Blocks for evap, gwat, wcom, c1TN, c1TP were removed: EF5 has no such outputs. References used
+# only by those blocks were removed too: siqueira2018, odusanya2019.
+# The full old file is kept in the 2026-10-16 fix-campaign backups (validation_convention.yaml.pre_r1).
 references:
   flamig2020:
     doi: 10.5194/gmd-13-4943-2020
@@ -54,23 +59,9 @@ references:
     year: 2023
     oa: green
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.rse.2023.113721.txt
-  siqueira2018:
-    doi: 10.5194/hess-22-4815-2018
-    title: "Toward continental hydrologic-hydrodynamic modeling in South America"
-    venue: "Hydrol. Earth Syst. Sci."
-    year: 2018
-    oa: gold
-    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-22-4815-2018.txt
-  odusanya2019:
-    doi: 10.5194/hess-23-1113-2019
-    title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a data-sparse catchment in southwestern Nigeria"
-    venue: "Hydrol. Earth Syst. Sci."
-    year: 2019
-    oa: gold
-    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-1113-2019.txt
 
 validation:
-  - dag_variable: cout
+  - dag_variable: discharge
     obs_shape: point_time_series
     headline_metrics:
       - metric: nse
@@ -108,15 +99,15 @@ validation:
       Flamig 2020 evaluates EF5 against about 10,000 USGS stations using NSE, correlation coefficient,
       and normalized bias; EF5/CREST and EF5/SAC-SMA median biases were 9% and -8%, with NSE up to 0.76.
 
-  - dag_variable: cout
-    obs_shape: spatial_time_series
+  - dag_variable: discharge
+    obs_shape: categorical_event
     headline_metrics:
       - metric: csi
         direction: maximize
         unit: dimensionless
         bands: {satisfactory: null}
         pass_band: satisfactory
-        band_note: "No fetched paper gives a numeric CSI pass band for spatially indexed discharge fields at gauges."
+        band_note: "No fetched paper gives a numeric CSI pass band for EF5 flood-event detection at gauges."
         cites: []
     secondary_metrics:
       - metric: pod
@@ -129,16 +120,17 @@ validation:
         status: supportive
         ceiling_reason: null
         cites: [wu2014]
-    validated_when: "UNRESOLVED - spatial discharge-field CSI is not auto-validated without a field-specific threshold."
+    validated_when: "UNRESOLVED - flood-event CSI at a gauge is not auto-validated without a cited event threshold and pass band."
     evidence_strength: weak
     confidence: 0.30
     notes: >-
-      The DAG asks for CSI for spatial discharge comparisons, but the fetched hydrology convention papers
-      set continuous-flow NSE/PBIAS rules, not CSI rules for gauge-indexed discharge fields. Wu 2014 defines
-      flood-event CSI from a 2 x 2 contingency table and reports benchmark CSI values of 0.25-0.34 for floods
-      longer than three days, but that is event flood detection, not a discharge-field validation band.
+      The EF5 dag scores gauge discharge flood events (categorical_event) by CSI. Wu 2014 defines
+      flood-event CSI from a 2 x 2 contingency table and reports benchmark CSI values of 0.25-0.34 for
+      floods longer than three days, but gives no pass band, so the headline band stays null. (Until
+      2026-10-16 this block was keyed to the wrong-model HYPE variable cout with obs_shape
+      spatial_time_series.)
 
-  - dag_variable: snow
+  - dag_variable: swe
     obs_shape: point_time_series
     headline_metrics:
       - metric: nse
@@ -163,15 +155,15 @@ validation:
       is for streamflow model performance across CAMELS basins, not a direct SWE-observation convention, so
       the headline SWE band remains null.
 
-  - dag_variable: snow
+  - dag_variable: swe
     obs_shape: spatial_snapshot
     headline_metrics:
-      - metric: csi
+      - metric: r
         direction: maximize
         unit: dimensionless
         bands: {satisfactory: null}
         pass_band: satisfactory
-        band_note: "No fetched paper gives a numeric CSI pass band for EF5 SWE or snow-cover snapshots."
+        band_note: "No fetched paper gives a numeric R pass band for EF5 SWE or snow-cover snapshots (the dag's determining metric for this comparison is R)."
         cites: []
     secondary_metrics:
       - metric: sca_agreement
@@ -179,265 +171,67 @@ validation:
         status: supportive
         ceiling_reason: null
         cites: [li2019]
-    validated_when: "UNRESOLVED - snow snapshot CSI must be treated as descriptive until a snow-map threshold paper is fetched."
+    validated_when: "UNRESOLVED - snow snapshot R must be treated as descriptive until a snow-map threshold paper is fetched."
     evidence_strength: weak
     confidence: 0.30
     notes: >-
       Li 2019 reviews using SWE and snow-covered-area observations in hydrologic prediction and notes that
       SCA constraints can improve snow depth and streamflow estimates, but it does not provide a numeric
-      CSI pass band for validating EF5 snow snapshots.
+      pass band for validating EF5 snow snapshots. (Until 2026-10-16 this block's headline was CSI.)
 
-  - dag_variable: evap
+  - dag_variable: soil_moisture
     obs_shape: point_time_series
     headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: null, good: null, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Odusanya 2019 monthly AET validation requires NSE > 0.50."
-        cites: [odusanya2019]
-      - metric: kge
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: null, good: null, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Odusanya 2019 monthly AET validation requires KGE >= 0.50."
-        cites: [odusanya2019]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: null, good: null, satisfactory: 25.0}
-        pass_band: satisfactory
-        band_note: "Odusanya 2019 monthly AET validation requires PBIAS <= +/-25%."
-        cites: [odusanya2019]
-    secondary_metrics:
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [odusanya2019]
-    validated_when: "Monthly AET NSE >= 0.50, KGE >= 0.50, and |PBIAS| <= 25% against flux-tower or satellite ET with support-scale caveats."
-    evidence_strength: moderate
-    confidence: 0.70
-    notes: >-
-      Odusanya 2019 states that "NSE > 0.50, R2 > 0.60, KGE >= 0.50 and PBIAS <= +/-25%" were the required
-      satisfactory thresholds for SWAT AET calibrated and validated against GLEAM/MOD16. This directly
-      grounds ET validation better than transferring the streamflow-only Moriasi flow band.
-
-  - dag_variable: evap
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No fetched paper gives a CSI threshold for gridded/spatial ET time series."
-        cites: []
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [odusanya2019]
-      - metric: pbias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: null
-        cites: [odusanya2019]
-    validated_when: "UNRESOLVED - spatial ET CSI is not auto-validated; use NSE/KGE/PBIAS as contextual ET metrics where available."
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      The fetched ET validation paper evaluates gridded satellite-derived AET by subbasin monthly time
-      series using NSE, KGE, PBIAS, and R2. It does not define CSI for ET spatial fields, so the DAG csi
-      headline remains null.
-
-  - dag_variable: soim
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No fetched paper gives a soil-moisture storage NSE pass band for EF5-style root-zone/profile water storage in mm."
-        cites: []
-    secondary_metrics:
       - metric: r
         direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [xing2023]
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The dag's determining metric is R (pattern only, the output is a store percent). No fetched paper gives a soil-moisture R pass band for EF5 soil moisture (percent of the conceptual CREST WM store or of SAC-SMA upper-zone capacity)."
+        cites: []
+    secondary_metrics:
       - metric: ubrmse
         direction: minimize
         status: supportive
         ceiling_reason: null
         cites: [xing2023]
-    validated_when: "UNRESOLVED - compare anomalies/rescaled storage to in situ or satellite soil moisture, but do not auto-validate on NSE without a cited band."
+    validated_when: "UNRESOLVED - compare anomalies/rescaled storage to in situ or satellite soil moisture, but do not auto-validate on R without a cited band."
     evidence_strength: weak
     confidence: 0.35
     notes: >-
       Xing 2023 says soil-moisture assessment uses Pearson R, ubRMSE, and bias as common estimators, and
       keeps sites only when all products have R > 0.4; median ubRMSE values around 0.07-0.08 m3/m3 are
-      reported against ISMN. Those are remote-sensing/reanalysis benchmarks, not EF5 root-zone storage NSE
+      reported against ISMN. Those are remote-sensing/reanalysis benchmarks, not EF5 store-percent R
       thresholds, so the headline band is null.
 
-  - dag_variable: soim
+  - dag_variable: soil_moisture
     obs_shape: spatial_time_series
     headline_metrics:
-      - metric: csi
+      - metric: r
         direction: maximize
         unit: dimensionless
         bands: {satisfactory: null}
         pass_band: satisfactory
-        band_note: "No fetched paper gives a CSI pass band for spatial soil-moisture storage/ranking validation."
+        band_note: "No fetched paper gives an R pass band for spatial EF5 soil-moisture (store-percent) fields; Xing 2023 uses R as an estimator but not as an EF5 pass band."
         cites: []
     secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [xing2023]
       - metric: ubrmse
         direction: minimize
         status: supportive
         ceiling_reason: null
         cites: [xing2023]
-    validated_when: "UNRESOLVED - spatial soil-moisture CSI is descriptive only unless a specific categorical threshold paper is fetched."
+    validated_when: "UNRESOLVED - spatial soil-moisture R is descriptive only until a cited pass band is fetched."
     evidence_strength: weak
     confidence: 0.30
     notes: >-
-      Soil-moisture literature in the fetched set favors R, ubRMSE, and bias against in situ networks. The
-      DAG's CSI/ranking comparison has no fetched numeric pass convention.
-
-  - dag_variable: gwat
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No fetched groundwater-head paper supplied a usable numeric NSE/RMSE validation threshold."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED - compare groundwater-level anomalies only as contextual evidence until a groundwater-head RMSE/nRMSE convention is fetched."
-    evidence_strength: weak
-    confidence: 0.25
-    notes: >-
-      EF5 gwat is a conceptual groundwater level below surface, so absolute-datum head thresholds should not
-      be transferred without a fetched groundwater model-validation convention. The two OA groundwater
-      candidates attempted during this pass failed to fetch.
-
-  - dag_variable: wcom
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: null, good: null, satisfactory: 0.60}
-        pass_band: satisfactory
-        band_note: "Siqueira 2018 considered water-level performance satisfactory where NSE >= 0.6 in 60% of cases."
-        cites: [siqueira2018]
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: null, good: null, satisfactory: 0.80}
-        pass_band: satisfactory
-        band_note: "Siqueira 2018 considered water-level performance satisfactory where r >= 0.8 in 80% of cases."
-        cites: [siqueira2018]
-    secondary_metrics:
-      - metric: sigma_bias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: null
-        cites: [siqueira2018]
-    validated_when: "Water-level anomaly NSE >= 0.60 and r >= 0.80, with amplitude bias inspected separately."
-    evidence_strength: moderate
-    confidence: 0.55
-    notes: >-
-      Siqueira 2018 reports continental hydrologic-hydrodynamic water-level validation against gauges and
-      satellite altimetry and says results were considered satisfactory in terms of correlation r >= 0.8 and
-      NSE >= 0.6. This is transferred to EF5 outlet-lake water-level anomalies; absolute datum comparisons
-      remain subject to the w0ref/reference-system caveat.
-
-  - dag_variable: c1TN
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.65, good: 0.50, satisfactory: 0.35}
-        pass_band: satisfactory
-        band_note: "Moriasi 2015 watershed-scale N/P PEC: satisfactory when NSE > 0.35."
-        cites: [moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 15.0, good: 20.0, satisfactory: 30.0}
-        pass_band: satisfactory
-        band_note: "Moriasi 2015 watershed-scale N/P PEC: satisfactory when PBIAS < +/-30%."
-        cites: [moriasi2015]
-    secondary_metrics:
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [moriasi2015]
-    validated_when: "For total nitrogen concentration time series, NSE >= 0.35 and |PBIAS| <= 30%, with warmup and concentration-vs-load support checked."
-    evidence_strength: moderate
-    confidence: 0.75
-    notes: >-
-      Moriasi 2015 recommends watershed-scale nitrogen performance as satisfactory for monthly R2 > 0.30,
-      NSE > 0.35, and daily/monthly/annual PBIAS <= +/-30%. EF5 outputs concentration rather than load, so
-      the rule is transferred to concentration comparisons only after unit/support conversion is checked.
-
-  - dag_variable: c1TP
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.65, good: 0.50, satisfactory: 0.35}
-        pass_band: satisfactory
-        band_note: "Moriasi 2015 combined N/P PEC: satisfactory when NSE > 0.35."
-        cites: [moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 15.0, good: 20.0, satisfactory: 30.0}
-        pass_band: satisfactory
-        band_note: "Moriasi 2015 watershed-scale N/P PEC: satisfactory when PBIAS < +/-30%."
-        cites: [moriasi2015]
-    secondary_metrics:
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [moriasi2015]
-    validated_when: "For total phosphorus concentration time series, NSE >= 0.35 and |PBIAS| <= 30%, with warmup and concentration-vs-load support checked."
-    evidence_strength: moderate
-    confidence: 0.75
-    notes: >-
-      Moriasi 2015 gives phosphorus-specific satisfactory watershed criteria of monthly R2 > 0.40,
-      NSE > 0.35, and daily/monthly/annual PBIAS <= +/-30%. EF5 c1TP is a concentration output, so
-      concentration-vs-load mismatch remains a required pre-check.
+      Soil-moisture literature in the fetched set favors R, ubRMSE, and bias against in situ networks. The EF5
+      dag uses R for this comparison; no fetched paper gives a numeric pass band for it. (Until 2026-10-16
+      this block was keyed to the HYPE variable soim with a CSI headline.)
 
 deferred_paywalled:
-  - ref: "Groundwater Level Modeling with Machine Learning: A Systematic Review and Meta-Analysis"
-    doi: 10.3390/w14060949
-    needed_for: [gwat]
-  - ref: "Modeling and Uncertainty Analysis of Groundwater Level Using Six Evolutionary Optimization Algorithms Hybridized with ANFIS, SVM, and ANN"
-    doi: 10.3390/su12104023
-    needed_for: [gwat]
   - ref: "Glacio-hydrological model calibration and evaluation"
     doi: 10.1002/wat2.1483
-    needed_for: [snow]
-  - ref: "Development and testing of the HYPE hydrological water quality model for different spatial scales"
-    doi: 10.2166/nh.2010.007
-    needed_for: [c1TN, c1TP]
+    needed_for: [swe]
   - ref: "Time Variant Sensitivity Analysis of Hydrological Model Parameters in a Cold Region Using Flow Signatures"
     doi: 10.3390/w12040961
-    needed_for: [snow, cout]
+    needed_for: [swe, discharge]

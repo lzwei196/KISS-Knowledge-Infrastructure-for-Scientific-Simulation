@@ -28,7 +28,7 @@
     manual_steps:
       - "Check a sample forcing file: max precip rate should be < 100 mm/hr"
       - "Verify UNIT= in control.txt matches source data documentation"
-      - "For CMFD: UNIT=mm/h (native mm/hr). For TRMM V7: UNIT=mm/3h"
+      - "For CMFD: UNIT=mm/h (native mm/hr). For TRMM 3B42 V7 (3-hourly): UNIT=mm/h — the 3-hourly value is a mm/hr rate, not a 3-h total; and convert it to TIF first (EF5 has no TRMMV7 reader)"
     prevention: "validate_outputs() in convert_forcing_to_ef5.py checks for unrealistic max values"
   severity: silent
   cross_references: [dt_002]
@@ -116,21 +116,23 @@
     error_pattern: ""
     detection_method: value_comparison
   diagnosis:
-    root_cause: "IM grid in 0-1 range multiplied by scalar that's also small, or IM > 100"
+    root_cause: "IM scalar not matched to the IM grid's range (with a grid, scalar x grid is used as a 0-1 fraction)"
     explanation: >
-      CREST IM (impervious area) is specified as 0-100 (percentage) in the config.
-      If no grid is provided, the scalar is divided by 100 internally.
-      If a grid IS provided, the scalar acts as a multiplier on grid values.
-      Grid in 0-1 range * scalar=5 = effective IM 0-5% (too low).
-      Grid in 0-100 range * scalar=5 = effective IM up to 500% (clamped to 100%).
+      CREST IM (impervious area) as a scalar alone is a percentage (0-100) and is divided by 100
+      internally (CRESTModel.cpp:299-301). If an IM grid IS provided, there is NO /100: the
+      effective IM is scalar x grid used directly as a fraction and clamped to 0-1
+      (CRESTModel.cpp:305-320, 341-349). So a percent grid (0-100) with scalar 1.0 makes every
+      cell with >= 1% impervious fully impervious; a percent grid needs scalar 0.01. A fraction
+      grid (0-1) needs scalar 1.0. Grid zeros become 0.01 before the multiply.
     affected_components: [CRESTModel, InitializeParameters]
   remedy:
-    action: "Ensure IM grid is in 0-100 range with scalar=1.0, or 0-1 range with scalar=100"
+    action: "Percent IM grid (0-100): set IM=0.01. Fraction IM grid (0-1): set IM=1.0. No grid: IM is the percentage itself."
     manual_steps:
       - "Check IM grid values: gdalinfo -stats im.tif"
-      - "If max ~1.0: grid is fractional, set IM scalar to convert to %"
-      - "If max ~100: grid is percentage, keep IM=1.0 or small"
-    prevention: "convert_params_to_ef5 outputs IM in 0-100 range"
+      - "If max ~100: grid is percent, set IM=0.01"
+      - "If max ~1.0: grid is a fraction, set IM=1.0"
+      - "For IM = 0 everywhere set the scalar IM=0 (grid zeros alone become 0.01)"
+    prevention: "convert_params_to_ef5 writes im.tif in percent (0-100); pair it with IM=0.01 (see docs/s3_parameter_preparation.md)"
   severity: silent
   cross_references: []
 
@@ -340,11 +342,13 @@
     error_pattern: "nan"
     detection_method: value_comparison
   diagnosis:
-    root_cause: "ALPHA or BETA routing parameter is zero or negative"
+    root_cause: "Routing parameter grid with NaN/NoData values (not checked), or implausible ALPHA/BETA"
     explanation: >
-      KW routing uses Q = alpha * A^beta. If alpha=0, all discharge is zero.
-      If beta is negative, the power function can produce NaN for certain
-      cross-sectional areas. Both ALPHA and BETA must be positive.
+      The code's channel step uses the storage form A = alpha * Q^beta (KinematicRoute.cpp:337-380;
+      the manual writes Q = alpha * A^beta). ALPHA = 0 does NOT give zero flow: it removes the
+      storage term, so inflow passes straight through with no attenuation. Negative scalars are
+      silently reset (ALPHA, ALPHA0 -> 1.0; BETA -> 0.6, KinematicRoute.cpp:454-470). NaN or NoData
+      cells in an ALPHA/BETA parameter grid are multiplied in unchecked and can give NaN flow.
     affected_components: [KinematicRoute, RouteInt]
   remedy:
     action: "Set ALPHA > 0 (typical 1-10) and BETA > 0 (typical 0.5-1.0)"
@@ -528,7 +532,8 @@
       only. General rule: the NAME pattern must contain date tokens ONLY down to the FREQ resolution;
       finer-than-resolution positions must be hard-coded literals matching the files that convert_forcing_to_ef5.py
       actually wrote (verify with `ls .../precip | head`). The "Missing precip ... Assuming zeros" message
-      is a non-fatal WARNING — EF5 will NOT abort, so always grep the run log for it before trusting metrics.'
+      is a non-fatal WARNING — EF5 will NOT abort, so always grep the run log for it before trusting metrics.
+      tools/run_ef5.py treats it as an error and exits 1 (since 2026-10-16).'
   format_spec_violated: EF5 control NAME date-token convention — substituted tokens must not exceed the
     forcing FREQ resolution (DatedName::ProcessName loop bound).
   canonical_intent: ki_local_if_pass
@@ -540,13 +545,15 @@
       with _dag_lookup_failed=true.
   diagnosis:
     root_cause: 'EF5 KI ships only a temporal point-streamflow scorer (parse_ef5_output.py: NSE/KGE/PBIAS/r/RMSE)
-      and NO spatial CSI/POD/FAR scorer, GFD reader, or SimpleInundation/VCInundation wrapper. Compounded
-      by the dag.yaml being HYPE''s, so the obs-shape gate cannot resolve an EF5 output contract.'
+      and NO spatial CSI/POD/FAR scorer, GFD reader, or SimpleInundation/VCInundation wrapper. Until 2026-10-16
+      this was compounded by the dag.yaml being HYPE''s, so the obs-shape gate could not resolve an EF5 output
+      contract (the _dag_lookup_failed symptom). Since 2026-10-16 the dag is EF5''s own and declares
+      inundation_depth (spatial_snapshot, CSI), so the remaining blocker is the missing tooling only.'
   remedy:
     action: SKIP spatial flood-extent obs (out of contract, no retry). Valid metric families for spatial_snapshot
       extent are spatial_pattern_match / event_detection (CSI/POD/FAR), which this KI cannot deliver.
-      Building the inundation+CSI pipeline is requires_human_engineering; fixing the HYPE-dag is requires_data
-      (upstream source corruption). Documented in SKILL.md 'Scoring Contract & Out-of-Domain Observations'.
+      Building the inundation+CSI pipeline is requires_human_engineering. The wrong-model (HYPE) dag was
+      replaced by an EF5 dag on 2026-10-16. Documented in SKILL.md 'Scoring Contract & Out-of-Domain Observations'.
   format_spec_violated: EF5 output contract — dag identity.model_id must equal 'EF5'; scorer metric_family
     must match obs_shape (temporal metrics only valid for point_time_series, not spatial_snapshot)
   canonical_intent: ki_local_if_pass

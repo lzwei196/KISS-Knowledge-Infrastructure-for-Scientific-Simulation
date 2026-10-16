@@ -103,7 +103,7 @@ See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 This knowledge infrastructure enables autonomous distributed hydrologic simulation using EF5 (Ensemble Framework For Flash Flood Forecasting). EF5 is a C++ framework for distributed hydrologic modeling designed for flash flood forecasting at continental scales with rapid update cycles.
 
 **What EF5 does**: Distributed gridded hydrologic modeling framework. Supports:
-- **Water balance models**: CREST, SAC-SMA, HyMOD, HP (Hydrophobic)
+- **Water balance models**: CREST, SAC-SMA, HP (Hydrophobic) run distributed per grid cell; HyMOD runs LUMPED per gauge (no routing model, no Snow-17, no inundation, no grids, gauge rows hold only Time/Discharge/Observed/Precip/PET; its discharge formula is unverified, see dag hazard `hymod_lumped_mode`)
 - **Routing models**: Linear Reservoir (LR), Kinematic Wave (KW)
 - **Snow melt**: Snow-17 (temperature-index)
 - **Inundation**: Simple Inundation, VC Inundation
@@ -287,6 +287,17 @@ TIME_END=200912312300
 TASK=run1
 ```
 
+> **ONE OUTPUT PER TASK.** If `[Execute]` runs two or more tasks, give each task its own
+> `OUTPUT=` directory and its own `CO_FILE=` (and do not put one task's `CO_FILE` inside another
+> task's `OUTPUT`). Paths are resolved from the control file's folder, as EF5 sees them.
+> `tools/run_ef5.py` refuses to run (exit 1) when executed tasks share one, because it then
+> cannot tell which task wrote which output.
+> It also exits 1 when a SIMU/SIMU_RP/BASIN_AVG task's own stdout section shows no time-step line after
+> warm-up (a zero-step run), and refuses before the run a CALI_* task whose time window has no step.
+> It also refuses any executed task that sets `TIME_BEGIN_LR` or `TIMESTEP_LR` (two step sizes in one
+> run are not supported by its output check; run without them or check the output by hand).
+> `[Execute] ENSEMBLETASK=` (ensemble calibration) is also refused: its output is not covered by the check.
+
 > **DAILY-FORCING NAME TRAP (see triplet dt_030).** The `NAME=` example above
 > (`precip_YYYYMMDDHH.tif`) is for `FREQ=1h`. EF5 only substitutes date tokens
 > **down to the FREQ resolution** (`DatedName::ProcessName` loops `i<=resolution`).
@@ -313,7 +324,7 @@ TASK=run1
 | CREST IM | % (0-100) | 0-100 | Divided by 100 internally | If grid is 0-1, no extra /100 needed (check source) |
 | CREST FC (Ksat) | mm/hr | mm/hr | Grid * scalar | — |
 | CREST IWU | % of WM (0-100) | 0-100 | SM = IWU*WM/100 | IWU=100 means fully saturated start |
-| KW ALPHA | Q=alpha*A^beta | — | Manning's derived | Wrong alpha → orders-of-magnitude Q error |
+| KW ALPHA | A=alpha*Q^beta (code; manual writes Q=alpha*A^beta) | — | Manning's derived | Wrong alpha → orders-of-magnitude Q error |
 | KW TH | grid cells | — | Channel threshold | Too low → every cell is channel; too high → no channels |
 | Basin area | km^2 | km^2 | — | Wrong area → gauge snaps to wrong cell |
 | Gauge coords | decimal degrees | decimal degrees | Reprojected internally | Swapped lat/lon → gauge outside domain |
@@ -333,11 +344,12 @@ source dataset is involved, verify the source unit from its own data KI before r
 
 | Variable | Source unit (verified) | Model / output unit | Factor or conversion | Type | Source |
 |----------|------------------------|---------------------|----------------------|------|--------|
-| Precipitation forcing | Config-dependent (`UNIT=`) | mm/hr internal rate | EF5 uses `UNIT=` and converts to timestep depth internally | model-unit declaration | EF5 control file + Unit Trap Table |
+| Precipitation forcing | Config-dependent (`UNIT=`) | mm/hr internal rate | EF5 uses only the TIME part of `UNIT=` (the length part m/cm is ignored, so values must already be mm) and converts to timestep depth internally | model-unit declaration | EF5 control file + Unit Trap Table (Simulator.cpp:93-102) |
 | PET forcing | Config-dependent (`UNIT=`) | mm/hr internal rate | EF5 uses `UNIT=`; monthly PET must not be declared as `mm/h` | model-unit declaration | EF5 control file + Unit Trap Table |
 | Temperature forcing | degC | degC | none when already Celsius; convert K to degC before EF5 | additive if source is K | Unit Trap Table |
-| `cout` | EF5 native output | m^3/s | none | output unit | `dag.yaml` |
-| `snow` | EF5 optional gridded output / dag output | mm | none | output unit | `dag.yaml` + Gridded Output Options |
+| `discharge` (gauge `Discharge` column) | EF5 native output | m^3/s | none | output unit | `dag.yaml` |
+| `swe` | EF5 Snow-17 output (gauge `SWE` column, swe grids) | mm | none | output unit | `dag.yaml` + Gridded Output Options |
+| `fast_flow` / `slow_flow` (gauge `Fast Flow` / `Slow Flow` columns) | EF5 native output | header says `mm*1000`; value is a basin-average rate in mm/s x 1000 (not written with HyMOD) | divide by 1000 to get mm/s | output convention | `dag.yaml` (Simulator.cpp SaveTSOutput) |
 | Streamflow gridded output | EF5 native output | m^3/s | none | output unit | Gridded Output Options |
 | Soil moisture gridded output | EF5 native output | % | EF5 reports soil moisture as percent of WM | output convention | Unit Trap Table + Gridded Output Options |
 | Snow water equivalent gridded output | EF5 native output | mm | none | output unit | Gridded Output Options |
@@ -352,7 +364,7 @@ source dataset is involved, verify the source unit from its own data KI before r
 - **BIF**: Binary version of ESRI ASCII grid (custom EF5 format, 50-byte header)
 - **TIF**: Float32 GeoTIFF
 - **TRMMRT**: TRMM real-time binary (can be gzipped)
-- **TRMMV7**: TRMM 3B42V7 HDF5
+- **TRMMV7**: accepted by the parser but NOT read in this source (the reader case is commented out in PrecipReader.cpp), so it gives 'Unsupported precip format' and zero rain — convert TRMM 3B42V7 to TIF first
 - **MRMS**: Multi-Radar Multi-Sensor binary
 
 ### BIF header structure (50 bytes, packed)
@@ -400,7 +412,7 @@ Date format follows Excel-style parsing. Comma-separated.
 |-------|-----|------------|-------------|
 | CREST | `CREST` | WM, B, IM, KE, FC, IWU | Variable infiltration curve, dual-layer excess storage |
 | SAC-SMA | `SAC` | UZTWM, UZFWM, UZK, PCTIM, ADIMP, RIVA, ZPERC, REXP, LZTWM, LZFSM, LZFPM, LZSK, LZPK, PFREE, SIDE, RSERV + 6 state inits | NWS Sacramento model, 5 soil zones |
-| HyMOD | `HYMOD` | HUZ, B, ALP, NQ, KQ, KS, XCUZ, XQ, XS, PRECIP | Parsimonious conceptual model |
+| HyMOD | `HYMOD` | HUZ, B, ALP, NQ, KQ, KS, XCUZ, XQ, XS, PRECIP | Parsimonious conceptual model, run lumped per gauge |
 | HP | `HP` | PRECIP, SPLIT | Fully impervious (100% runoff) |
 
 ### Routing Models
@@ -408,7 +420,7 @@ Date format follows Excel-style parsing. Comma-separated.
 | Model | Key | Parameters | Description |
 |-------|-----|------------|-------------|
 | Linear Reservoir | `LR` | COEM, RIVER, UNDER, LEAKO, LEAKI, TH, ISO, ISU | Dual reservoir (overland + interflow) |
-| Kinematic Wave | `KW` | UNDER, LEAKI, TH, ISU, ALPHA, BETA, ALPHA0 | Q=alpha*A^beta routing |
+| Kinematic Wave | `KW` | UNDER, LEAKI, TH, ISU, ALPHA, BETA, ALPHA0 | kinematic wave; the code uses storage A=alpha*Q^beta (the manual's Q=alpha*A^beta is the inverse form) |
 
 ### Snow Model
 
@@ -462,27 +474,27 @@ Combine with `|` in OUTPUT_GRIDS:
 
 ## Output Description
 
-EF5 produces two main output types: (1) time series CSV files at gauge points with columns `datetime, simulated_Q (m^3/s)`, written to the OUTPUT directory specified in the Task block, and (2) optional gridded output fields (GeoTIFF or ASC) for streamflow, soil moisture, SWE, return period, and inundation depth, controlled by the `OUTPUT_GRIDS` task parameter. Calibration tasks output a CSV of calibrated parameter sets with objective function values. Use `parse_ef5_output.py` to extract gauge time series, compute performance metrics (NSE, KGE, PBIAS), and generate comparison plots against observed data.
+EF5 produces two main output types: (1) one time series CSV per gauge, `ts.<gauge>.<model>.csv`, written to the OUTPUT directory specified in the Task block, with columns `Time, Discharge(m^3 s^-1), Observed(m^3 s^-1), Precip(mm h^-1), PET(mm h^-1), SM(%), Fast Flow(mm*1000), Slow Flow(mm*1000)`, plus `Temperature (C), SWE(mm)` when Snow-17 is on and `Return Period(y)` when LP3 grids are loaded (Simulator.cpp:379-388). `Discharge` is the value at the gauge cell; the other columns are area-weighted averages over all cells draining to the gauge. (2) optional gridded GeoTIFF output fields for streamflow, soil moisture, SWE, return period, and inundation depth, controlled by the `OUTPUT_GRIDS` task parameter. Calibration tasks output a CSV of calibrated parameter sets with objective function values. Use `parse_ef5_output.py` to extract gauge time series, compute performance metrics (NSE, KGE, PBIAS), and generate comparison plots against observed data.
 
 ### DAG-sourced output contract
 
 This subsection restates the KI's `dag.yaml` output facts. If this body and
 `dag.yaml` ever disagree, `dag.yaml` wins.
 
-**Headline output** (`validation_rank: 1`):
+**Headline output** (the first dag output; the dag carries no `validation_rank` field):
 
-> `cout` — Simulated outflow (discharge) from the outlet lake / subbasin (`m^3/s`)
+> `discharge` — routed river discharge at the gauge cell each step (`m^3/s`), from `ts.<gauge>.<model>.csv` column `Discharge`
 
-| Output variable (dag `var`) | Rank | Unit | Description / status |
-|-----------------------------|------|------|----------------------|
-| `cout` | 1 | m^3/s | Simulated outflow (discharge) from the outlet lake / subbasin |
-| `snow` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
-| `evap` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
-| `soim` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
-| `gwat` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
-| `wcom` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
-| `c1TN` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
-| `c1TP` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| Output variable (dag `var`) | Unit | Where written | Notes |
+|-----------------------------|------|---------------|-------|
+| `discharge` | m^3/s | `ts.<gauge>.<model>.csv` (`Discharge`) | headline; score only after warm-up; stays 0 with linear-reservoir routing in this source |
+| `discharge_grid` | m^3/s | `q.*.tif`, `maxq.*.tif` | gridded Q rounded to 0.1 m^3/s; `maxq` is the run maximum |
+| `unit_discharge_grid` | m^3/s per km^2 | `unitq.*.tif`, `maxunitq.*.tif` | Q / upstream contributing area (km^2), rounded to 0.1 |
+| `soil_moisture` | % of WM (CREST) / of upper-zone capacity (SAC-SMA) | `SM` column, `sm.*.tif` | not volumetric; HP writes 100; HyMOD writes no SM value |
+| `swe` | mm | `SWE` column, `swe.*.tif` | only with Snow-17 |
+| `inundation_depth` | m | `depth.*.simpleinundation.tif` / `depth.*.vcinundation.tif` | only with an inundation module and depth grids requested |
+| `return_period` | years | `Return Period` column, `rp.*.tif`, `maxrp.*.tif` | only when `RP_AVGGRID`/`RP_STDGRID`/`RP_CSGRID` load |
+| `fast_flow` / `slow_flow` | mm/s x 1000 | `Fast Flow` / `Slow Flow` columns | basin-average water-balance runoff before routing; with LR routing it also holds water routed in from upstream in the previous step; not written with HyMOD |
 
 ---
 
@@ -520,25 +532,26 @@ bars with remembered thresholds.
 
 ### Headline output and convention bars
 
-The rank-1 dag output is:
+The headline dag output is:
 
-> `cout` — Simulated outflow (discharge) from the outlet lake / subbasin (`m^3/s`)
+> `discharge` — routed river discharge at the gauge cell (`m^3/s`)
 
 | Variable | Metric | Direction | Convention bar, cited |
 |----------|--------|-----------|-----------------------|
-| `cout` | NSE | maximize | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
-| `cout` | PBIAS | zero_centered | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
-| `cout` | CSI | maximize | satisfactory: no cited threshold |
-| `snow` | NSE | maximize | satisfactory: no cited threshold |
+| `discharge` | NSE | maximize | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
+| `discharge` | PBIAS | zero_centered | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
+| `discharge` (flood events) | CSI | maximize | satisfactory: no cited threshold |
+| `swe` | NSE | maximize | satisfactory: no cited threshold |
+| `soil_moisture` | NSE / R | maximize | satisfactory: no cited threshold |
 
 ### Performance metrics
 
 | Metric | Calibration | Validation | Full period | Bar (convention, cited) |
 |--------|-------------|------------|-------------|-------------------------|
-| NSE for `cout` | pending | pending | pending | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
-| PBIAS for `cout` | pending | pending | pending | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
-| CSI for `cout` | pending | pending | pending | no cited threshold |
-| NSE for `snow` | pending | pending | pending | no cited threshold |
+| NSE for `discharge` | pending | pending | pending | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
+| PBIAS for `discharge` | pending | pending | pending | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
+| CSI for `discharge` flood events | pending | pending | pending | no cited threshold |
+| NSE for `swe` | pending | pending | pending | no cited threshold |
 
 ### Data replacement tracking
 
@@ -601,7 +614,7 @@ The rank-1 dag output is:
 1. **Precipitation internally as mm/hr rate**: `precipIn * stepHours` converts to depth (mm) in water balance
 2. **CREST IM divided by 100 internally**: If no IM grid provided, the scalar IM (0-100) is divided by 100 in `InitializeParameters`
 3. **CREST IWU as % of WM**: Initial soil moisture = `IWU * WM / 100`
-4. **Excess to flow conversion**: `excess / (stepHours * 3600)` converts mm excess to m/s flow rate
+4. **Excess to flow conversion**: `excess / (stepHours * 3600)` converts mm excess to a mm/s flow rate (CRESTModel.cpp:266-269); kinematic-wave routing then divides by 1000 to get m/s
 5. **Grid parameters are multiplicative**: When both grid and scalar are specified, `param = scalar * grid_value`
 6. **NaN check via self-comparison**: `x == x` is false for NaN (used throughout for missing data)
 7. **Default control file**: `control.txt` in current directory if no argument given
@@ -627,12 +640,14 @@ Flood Database, MODIS-derived per-event flood maps) are OUT OF CONTRACT. Their v
 metric families are `spatial_pattern_match` / `event_detection` (CSI/POD/FAR), which this
 KI cannot deliver. Skip such obs; do not score them with temporal NSE/KGE/PBIAS.
 
-**KI-INTEGRITY CAVEAT — dag.yaml is HYPE's, not EF5's.** The installed `dag.yaml`
-(and its source `KISSPATH_DATA/EF5_dag_v3_5_auto.yaml`) both carry
-`identity.model_id: "HYPE"` with HYPE outputs (`cout`/`snow`/`evap`/`soim`/`gwat`).
-The dag-driven obs-shape gate therefore reads HYPE metadata for EF5 runs and CANNOT be
-trusted as an EF5 output contract. Prior EF5 streamflow PASSes matched on `var=cout`,
-which happens to exist in HYPE's dag as channel discharge, so they passed by luck.
-A genuine EF5 dag (declaring streamflow `point_time_series`, and optionally an
-inundation-depth `spatial_snapshot` output) must be regenerated upstream by a human /
-the auto-dag pipeline before any non-discharge comparison can be considered valid.
+**dag.yaml history (fixed 2026-10-16).** Until 2026-10-16 the installed `dag.yaml` was
+HYPE's by mistake (`identity.model_id: "HYPE"`, outputs `cout`/`snow`/`evap`/`soim`/`gwat`),
+so the dag-driven obs-shape gate read HYPE metadata for EF5 runs. Earlier EF5 streamflow
+PASSes matched on `var=cout`, which happened to exist in HYPE's dag as discharge, so they
+passed by luck, not because the contract was right. On 2026-10-16 the dag was regenerated
+from EF5's own C++ source, manual and the GMD 2020 paper (`identity.model_id: "EF5"`) and
+spot-checked against the source. The current EF5 output contract is in `dag.yaml`:
+`discharge` (`point_time_series`, `categorical_event`), `discharge_grid`, `unit_discharge_grid`, `soil_moisture`,
+`swe`, `inundation_depth` (`spatial_snapshot`), `return_period`, `fast_flow`, `slow_flow`.
+The out-of-contract rule above still holds: the dag allows inundation-extent comparisons in
+principle, but this KI has no tool to produce or score them yet.

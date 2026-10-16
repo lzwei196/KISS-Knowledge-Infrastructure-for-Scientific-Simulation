@@ -10,6 +10,7 @@ import glob
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -18,7 +19,13 @@ MODEL_ID = "EF5"
 KI_DIR = Path(__file__).resolve().parent
 MODEL_DIR = KI_DIR.parent
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
-PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
+# Interpreter whose imports are checked: KI_PYTHON if set, else the interpreter running this
+# preflight (no host path pinned here; a missing interpreter is still a critical FAIL below).
+# Relative paths are made absolute here (os.path.abspath keeps venv symlinks) because the import
+# check below runs the interpreter with cwd=KI_DIR.
+_KI_PYTHON = os.environ.get("KI_PYTHON")
+_PY_PICK = (shutil.which(_KI_PYTHON) if _KI_PYTHON else None) or _KI_PYTHON or sys.executable or "python3"
+PYTHON_ENV = Path(os.path.abspath(_PY_PICK) if (os.sep in _PY_PICK or os.path.exists(_PY_PICK)) else _PY_PICK)
 EF5_BINARY = MODEL_DIR / "bin" / "ef5"
 
 REQUIRED_KI_FILES = [
@@ -164,7 +171,7 @@ def check_import(checks, module):
         f"{PYTHON_ENV} import {module}",
         True,
         "fail",
-        diagnostic_fix(f"install or repair Python dependency '{module}' in KISSPATH_PYTHON_ENV ({reason})"),
+        diagnostic_fix(f"install or repair Python dependency '{module}' in {PYTHON_ENV} ({reason})"),
     )
 
 

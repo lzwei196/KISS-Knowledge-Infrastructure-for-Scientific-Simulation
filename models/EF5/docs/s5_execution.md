@@ -118,6 +118,24 @@ OUTPUT_GRIDS=STREAMFLOW|SOILMOISTURE|MAXSTREAMFLOW
 ./bin/ef5 -z DEM.tif -d DDM.tif -a FAM.tif -s     # slope computation
 ```
 
+### 6. Several tasks in one control file
+
+If `[Execute]` runs two or more tasks, give each task its own
+`OUTPUT=` directory and its own `CO_FILE=` (and do not put one task's `CO_FILE` inside another
+task's `OUTPUT`). Paths are resolved from the control file's folder, as EF5 sees them.
+`tools/run_ef5.py` refuses to run (exit 1) when executed tasks share one, because it then
+cannot tell which task wrote which output.
+
+`tools/run_ef5.py` also exits 1 when an executed SIMU, SIMU_RP or BASIN_AVG task shows no time-step line
+(`YYYY-MM-DD HH:UU`) after warm-up in its own part of EF5's stdout (after `Executing task <name>`), and,
+before the run, when a CALI_* task's TIME_BEGIN/TIME_WARMEND/TIME_END/TIMESTEP leave no post-warm-up step
+(calibration prints no step lines).
+
+`tools/run_ef5.py` refuses (exit 1, before running) any executed task that sets `TIME_BEGIN_LR` or
+`TIMESTEP_LR`: EF5 then switches to a second step size mid-run (Simulator.cpp:1574), and the wrapper's
+output check assumes one TIMESTEP. Run without them, or check the output by hand.
+`[Execute] ENSEMBLETASK=` (ensemble calibration) is also refused: its output is not covered by the check.
+
 ## Verification
 
 ### Check output was produced

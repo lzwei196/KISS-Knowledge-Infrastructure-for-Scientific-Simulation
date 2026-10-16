@@ -3,14 +3,15 @@
 
 package:
   name: EF5
-  language: fortran
+  language: c++
   implementation:
-    id: hype-5-35-0
-    version: 5.35.0
-    provenance: Fortran 90; SMHI HYPE 5.35.0 source (HYSS infrastructure + MODELMODULE.model core), text-file
-      I/O, optional NetCDF.
-  scientific_reference_version: HYPE 5.35.0 (SMHI HYdrological Predictions for the Environment; Lindstrom
-    et al. 2010 process basis)
+    id: ef5-hydroslab
+    version: 1.2.3
+    provenance: C++; HyDROSLab (University of Oklahoma) / NOAA NSSL EF5 source from github.com/HyDROSLab/EF5,
+      one binary that couples a chosen water-balance model, routing model, and optional snow and inundation
+      modules.
+  scientific_reference_version: EF5 v1.2 (Ensemble Framework For Flash Flood Forecasting; Flamig, Vergara
+    & Gourley 2020, GMD 13:4943-4958)
   binary:
     path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CREST/source/repo/build/ef5
     type: work_dir
@@ -31,84 +32,108 @@ tools:
   - tools/run_ef5.py
 inputs:
   forcing:
-  - name: precipitation (prec)
-    unit: mm/day
-  - name: air temperature (temp)
+  - name: precipitation
+    unit: mm/h (internal rate; depth per step = rate x step hours)
+  - name: potential evapotranspiration
+    unit: mm/h (internal rate)
+  - name: air temperature
     unit: degC
-  - name: daily min / max air temperature (tmin/tmax)
-    unit: degC
-  - name: shortwave radiation
-    unit: MJ/m^2/day
-  - name: relative humidity
-    unit: fraction
-  - name: wind speed
-    unit: m/s
   parameters:
-  - name: lp (PET reduction limit)
-    unit: '-'
-  - name: cevp (PET coefficient)
-    unit: '-'
-  - name: cevpam / cevpph (PET seasonal amplitude / phase)
-    unit: '- / days'
-  - name: ttmp (snow threshold temperature)
-    unit: degC
-  - name: cmlt (degree-day snowmelt factor)
-    unit: mm/degC/day
-  - name: wcwp / wcfc / wcep (wilting point / field capacity / effective porosity)
-    unit: fraction
-  - name: rrcs1 / rrcs2 / rrcs3 (upper / lower / deep recession coefficients)
-    unit: '-'
-  - name: srrcs (surface runoff recession coefficient)
-    unit: '-'
-  - name: rivvel / damp (river velocity / attenuation)
-    unit: m/s / -
-  - name: lake rating-curve and depth parameters (gratk, gratefk, gldepi, gldepol)
-    unit: '- / m'
-  - name: nutrient process parameters (denitrlu, denitwr, denitwl, minerfn, sedon, sedpp, soilcoh, soilerod)
-    unit: various (1/day, kg/m2/day, kPa)
-  - name: SLC class definitions (landuse, soil, crop, vegtype, special, tiledepth, streamdepth, numlayers,
-      soildepth)
-    unit: '-'
-  - name: subbasin physiography (AREA, RIVLEN, latitude, elevation, slope, lake_depth, SLC_n fractions,
-      parreg/wqparreg/lakeregion)
-    unit: m^2, m, deg, m, %, fraction
-  initial_conditions:
-  - name: initial soil water
-    unit: mm
-  - name: initial lake stage
+  - name: DEM (elevation)
     unit: m
-  - name: 'initial nutrient pools (humus/fast N and P: humusn0, fastn0, humusp0, fastp0)'
-    unit: kg/km2
+  - name: DDM (D8 drainage direction)
+    unit: direction code
+  - name: FAM (flow accumulation)
+    unit: cell count
+  - name: CREST WM (maximum soil water capacity)
+    unit: mm
+  - name: CREST B (variable infiltration curve exponent)
+    unit: '-'
+  - name: CREST IM (impervious area fraction)
+    unit: '% (0-100)'
+  - name: CREST KE (PET to actual ET factor)
+    unit: '-'
+  - name: CREST FC (saturated hydraulic conductivity)
+    unit: mm/h
+  - name: SAC-SMA parameters (UZTWM, UZFWM, UZK, PCTIM, ADIMP, RIVA, ZPERC, REXP, LZTWM, LZFSM, LZFPM,
+      LZSK, LZPK, PFREE, SIDE, RSERV)
+    unit: mm (UZTWM, UZFWM, LZTWM, LZFSM, LZFPM); 1/day (UZK, LZSK, LZPK); - fractions (PCTIM, ADIMP,
+      RIVA, PFREE, SIDE, RSERV); - (ZPERC, REXP)
+  - name: HyMOD parameters (HUZ, B, ALP, NQ, KQ, KS, XCUZ, XQ, XS, PRECIP)
+    unit: HUZ mm; B -; ALP - (0-1 share to quick flow); NQ count of quick reservoirs; KQ, KS 1/day; XCUZ
+      - (fraction of store capacity); XQ, XS mm; PRECIP - (precipitation multiplier)
+  - name: HP SPLIT (fast/slow split fraction) and HP PRECIP (precipitation multiplier)
+    unit: '- (both clamped to 0-1)'
+  - name: KW ALPHA (channel storage relation A = ALPHA x Q^BETA multiplier)
+    unit: m^(2-3 BETA) s^BETA (so that A in m2 for Q in m3/s)
+  - name: KW BETA (channel exponent in A = ALPHA x Q^BETA)
+    unit: '-'
+  - name: KW ALPHA0 (overland / hillslope alpha in h = ALPHA0 x q^0.6)
+    unit: m^-0.2 s^0.6 (so that storage depth in m for unit flow q in m2/s)
+  - name: TH (channel threshold)
+    unit: upstream cells
+  - name: UNDER (interflow speed multiplier)
+    unit: '-'
+  - name: LEAKI (interflow reservoir leak fraction per step)
+    unit: '- (0-1)'
+  - name: Linear-reservoir routing parameters (COEM, RIVER, LEAKO)
+    unit: COEM, RIVER - (speed multipliers; no unit given in manual or code); LEAKO - (0-1 fraction per
+      step)
+  - name: Snow-17 parameters (UADJ, MBASE, MFMAX, MFMIN, TIPM, NMF, PLWHC, SCF)
+    unit: UADJ mm/mb per 6 h; MBASE degC; MFMAX, MFMIN mm/degC per 6 h; TIPM - (0-1); NMF mm/degC per
+      6 h; PLWHC - (fraction of ice); SCF - (snowfall multiplier)
+  - name: Inundation ALPHA, BETA (rating relation)
+    unit: '-'
+  - name: LP3 statistic grids (mean, std, skew of annual peak log10-Q)
+    unit: log10(m3/s) for mean; log10 units for std; - for skew
+  initial_conditions:
+  - name: CREST IWU (initial soil water)
+    unit: '% of WM'
+  - name: SAC-SMA initial stores (UZTWC, UZFWC, LZTWC, LZFSC, LZFPC, ADIMC)
+    unit: 'fraction of capacity (ADIMC: mm)'
+  - name: ISU (initial interflow reservoir)
+    unit: mm/s-scaled store (same units as KW_IR; not a mm depth)
+  - name: ISO (initial overland reservoir, linear-reservoir routing)
+    unit: mm/s-scaled store (same convention as ISU; not a mm depth)
+  - name: saved model state grids (soil stores, KW channel/overland/interflow states, Snow-17 states)
+    unit: same as the matching states.variables entry (mm for soil and snow stores; mm/s-scaled for the
+      KW interflow store IR; m3/s or m2/s for KW flow states; degC for Snow-17 ATI)
   boundary_conditions:
-  - name: simulation period (bdate / cdate / edate) and output/model options
+  - name: water-balance model choice (CREST | SAC-SMA | HyMOD | HP)
     unit: '-'
-  - name: PET method selector (petmodel 0-5)
+  - name: routing model choice (kinematic wave | linear reservoir)
     unit: '-'
-  - name: snowmelt method selector (snowmeltmodel)
+  - name: snow module on/off (Snow-17)
     unit: '-'
-  - name: MAINDOWN routing topology
+  - name: inundation module choice (none | simple | VC)
     unit: '-'
-  - name: forcing-station mapping
+  - name: 'return-period mode (STYLE=SIMU_RP: track annual peaks and write LP3 statistic grids)'
     unit: '-'
-  - name: lake / dam regulation configuration
+  - name: data assimilation of observed gauge discharge on/off
     unit: '-'
-  - name: upstream inflow, atmospheric deposition, point/non-point sources, aquifer exchange
-    unit: various
-  - name: crop fertilizer / management data
+  - name: TIMESTEP
+    unit: time (y, m = month, d, h, u = minute, s)
+  - name: simulation window (begin, warm-up end, end, state save time)
+    unit: YYYYMMDDHHUU
+  - name: projection (geographic WGS84 | LAEA std parallel 45N, central meridian 100W)
     unit: '-'
-  - name: observed discharge (for calibration)
-    unit: m^3/s
+  - name: DDM coding switch (ESRI vs TauDEM) and FAM self-count switch
+    unit: '-'
+  - name: gauge network (gauge lon/lat or cell, optional basin area for snapping) and basin as a set of
+      gauges
+    unit: deg, km^2
 io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
   observable:
-  - cout
-  - snow
-  - evap
-  - soim
-  - gwat
-  - wcom
-  - c1TN
-  - c1TP
+  - discharge
+  - discharge_grid
+  - unit_discharge_grid
+  - soil_moisture
+  - swe
+  - inundation_depth
+  - return_period
+  - fast_flow
+  - slow_flow
   other: []
 validation:
   tier: validated
@@ -121,5 +146,5 @@ summary:
   total_tools: 5
   total_stage_docs: 5
   total_diagnostic_triplets: 22
-  generated: '2026-08-23'
+  generated: '2026-10-16'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

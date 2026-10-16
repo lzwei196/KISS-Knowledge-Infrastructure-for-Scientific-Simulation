@@ -143,7 +143,7 @@
       - "Check max wind in fort.222 — Category 5 hurricane should show ~70-80 m/s"
       - "If max shows ~140-160, data is likely in knots"
       - "If max shows ~250-290, data is likely in km/h"
-    prevention: "convert_forcing_to_adcirc auto-detects and converts knots"
+    prevention: "convert_forcing_to_adcirc requires declared CSV units or ERA5 variable metadata; never infer units from magnitudes"
   severity: silent
   cross_references: [dt_003]
 
@@ -308,7 +308,7 @@
     tool_to_run: convert_forcing_to_adcirc
     manual_steps:
       - "Count data values between consecutive iLat headers"
-      - "Should equal iLat × iLong"
+      - "Pressure: iLat × iLong; wind: two blocks of iLat × iLong under one header"
       - "Verify SWLat/SWLon matches the SW corner of your data grid"
     prevention: "convert_forcing_to_adcirc auto-computes grid dimensions from data"
   severity: silent

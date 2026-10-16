@@ -70,7 +70,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Forcing contract**: Use complete UTC gridded 10 m vector winds and atmospheric pressure through `tools/convert_forcing_to_adcirc.py` (CSV or ERA5 NetCDF). A daily hydrological loader does not supply this contract. Missing fields, time steps, grid cells, duplicate records and unknown units stop conversion; no calm-wind or standard-pressure replacement. See `docs/s4_meteorological_forcing.md`.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
 See `data_ki/NOAA_Tides/SKILL.md` for tidal observation data.
@@ -383,9 +383,12 @@ No achieved calibration, validation, or full-period metric values are stated her
 
 ```bash
 # 1. Convert meteorological forcing to OWI format
+# --format: csv (time,lat,lon,u10,v10,pressure; units via --wind_unit/--pressure_unit)
+#        or era5_nc (u10, v10, msl with units attributes; surface pressure sp is refused).
+# GRIB2/GFS is not read by this tool; convert it to one of these first.
 python ki/tools/convert_forcing_to_adcirc.py \
-  --input_dir /path/to/gfs_grib2/ \
-  --format gfs_grib2 \
+  --input_dir /path/to/era5_nc/ \
+  --format era5_nc \
   --domain_sw 24.0,-98.0 --domain_ne 31.0,-88.0 \
   --resolution 0.25 \
   --start_date 2005-08-25 --end_date 2005-09-01 \

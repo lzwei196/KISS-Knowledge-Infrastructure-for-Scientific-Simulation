@@ -154,6 +154,8 @@ Other dag outputs currently declared by this KI:
 | `stream_stage` |
 | `stream_aquifer_exchange` |
 | `volumetric_budget_discrepancy` |
+| `streamflow` (explicit SFR outlets, m3/s) |
+| `baseflow` (filtered outlet-flow component, m3/s) |
 
 ## 8. Unit Conversion Table
 
@@ -780,7 +782,8 @@ sp = SFROutputParser(
     listing_file=result["listing_file"],
 )
 summary = sp.summary()
-exchange = sp.get_stream_aquifer_exchange()
+# Native model L^3/T unless both unit factors are given (then m3/day):
+exchange = sp.get_stream_aquifer_exchange(length_unit_m=1.0, time_unit_seconds=86400.0)
 ts = sp.stage_time_series(reach_number=1)
 ```
 
@@ -801,7 +804,7 @@ python configure_sfr.py --gwf-dir /path/to/gwf --reach-json reaches.json \
 python parse_sfr_output.py --stage gwf.sfr.stg --budget gwf.sfr.cbc \
     --listing gwf.lst --summary
 python parse_sfr_output.py --stage gwf.sfr.stg --reach-ts 5
-python parse_sfr_output.py --budget gwf.sfr.cbc --exchange
+python parse_sfr_output.py --budget gwf.sfr.cbc --exchange --length-unit-m 1 --time-unit-seconds 86400
 python parse_sfr_output.py --stage gwf.sfr.stg --export-csv stages.csv
 python parse_sfr_output.py --stage gwf.sfr.stg --summary --json
 ```
@@ -854,3 +857,13 @@ python parse_sfr_output.py --stage gwf.sfr.stg --summary --json
 ---
 
 *This knowledge infrastructure was built using the Knowledge Dissection Toolkit v1.0 (Jianyun Zhang Research Group, Hohai University).*
+
+### Derived SFR validation quantities (2026-10-03)
+
+The DAG now explicitly defines `streamflow` (SFR external-outlet discharge in
+m³/s) and `baseflow` (the Lyne-Hollick filtered component of that flow). Their
+existing flow-duration-curve validation rules retain all metric bands.
+`hydraulic_head` remains the rank-1 output. These are conditional SFR/postprocessing
+outputs, with explicit outlet IDs, unit conversion and filter settings required;
+see `docs/s8_output_extraction_skill.md`. Filtered baseflow is not direct
+stream-aquifer exchange. No rule is remapped to stage or head.

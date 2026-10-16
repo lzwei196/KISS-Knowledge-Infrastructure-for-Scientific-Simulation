@@ -195,3 +195,50 @@ print(f"Budget discrepancy: {pct_disc:.4f}%")
 
 *This skill document is part of the modflow6-knowledge-infrastructure package.*
 *Stage 8 of 9 | Tools used: extract_heads, extract_budget | Related triplets: dt_mf6_002, dt_mf6_003, dt_mf6_006, dt_mf6_015*
+
+## SFR outlet streamflow and derived baseflow
+
+`streamflow` is the downstream discharge from explicitly selected external outlet
+reaches. Read `EXT-OUTFLOW` by its 1-based `node` IDs, negate native outward
+(negative) flow, and convert the model's length-cubed/time units to m³/s. Specify
+both unit factors explicitly; MODFLOW performs no unit conversion. This follows
+the installed USGS `gwf-sfr.f90`, `sfr_cq` external-downstream-flow block.
+
+```bash
+python tools/s11_sfr/parse_sfr_output.py --budget model.sfr.bud \
+  --outlet-reaches 213 --length-unit-m 1 --time-unit-seconds 86400 \
+  --baseflow-alpha 0.925 --baseflow-passes 3
+```
+
+These example values describe the existing Sagehen study only. The tool has no
+default outlet, units, alpha or pass count. `baseflow` here is the Lyne-Hollick
+filtered component of outlet flow, matching that study's definition; it is not
+summed DRN flow or net SFR groundwater exchange. It requires finite nonnegative
+flow and regular cadence, and records the filter parameters. Apply the same
+filter and endpoint treatment to observed flow. Existing metric bands are
+unchanged; no new accuracy or threshold-transfer claim is made.
+
+For a flow-duration curve, compare both series at the same explicitly declared
+exceedance probabilities after documented spinup removal. This comparison
+measures distributions rather than event timing; it cannot replace a dated
+hydrograph comparison. `dag.yaml` declares the two derived variables and the
+supported `flow_duration_curve` observation shape. Regression tests resolve
+every validation-convention variable/shape through the DAG and exercise the
+existing KDT lookup, evaluation and calibration-floor consumers.
+
+Extraction details (2026-10-16): budget records are read by their record index
+in the file, not by `get_data(totim=...)`, because FloPy matches `totim` with
+`np.isclose` and can merge close, distinct time steps; a repeated
+(kstp, kper) or non-increasing time stops extraction. The filter is the
+constrained Lyne-Hollick form (Ladson et al. 2013): after the baseflow is
+clipped to [0, flow], the quickflow carried forward is flow minus the clipped
+baseflow. SFR `GWF` exchange is selected by reach `node` ID and is reported in
+native model length^3/time unless both `--length-unit-m` and
+`--time-unit-seconds` are given (then m3/day). Each term must be present at
+every time step saved in the budget file. A GWF record with zero entries is
+valid (no reach connected to a GWF cell) and gives an empty exchange list. A
+missing GWF record, a missing
+input file or an unreadable listing/observation file is an error, never a
+zero or empty result. Regression tests write small MODFLOW 6 compact budget
+files and read them with FloPy; the KDT checks are skipped when that private
+package is not installed.

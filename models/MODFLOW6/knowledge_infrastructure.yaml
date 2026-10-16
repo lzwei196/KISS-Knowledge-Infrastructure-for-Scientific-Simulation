@@ -1,6 +1,4 @@
-# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
-# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
-
+# knowledge_infrastructure.yaml — PROJECTED with project.py using the standard generator.
 package:
   name: MODFLOW6
   language: fortran
@@ -118,6 +116,8 @@ outputs:
   - stream_stage
   - stream_aquifer_exchange
   - volumetric_budget_discrepancy
+  - streamflow
+  - baseflow
   other: []
 validation:
   tier: validated
@@ -130,5 +130,5 @@ summary:
   total_tools: 28
   total_stage_docs: 9
   total_diagnostic_triplets: 24
-  generated: '2026-08-15'
+  generated: '2026-10-03'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

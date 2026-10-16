@@ -1,6 +1,4 @@
-# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
-# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
-
+# format_spec.yaml — PROJECTED from dag.yaml with generate_format_spec.py.
 model:
   name: MODFLOW6
   language: fortran
@@ -213,6 +211,14 @@ outputs:
         - spatial_pattern_match
         determining_metric: csi
         caveats: []
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Use the same vertical datum; sample the topmost active non-dry cell. A well screened at depth
+          belongs to hydraulic_head instead.
       detrending_options:
       - none
       - linear_residual
@@ -316,6 +322,53 @@ outputs:
         caveats:
         - Internal self-consistency diagnostic, not an observation; |discrepancy| > 1% indicates unreliable
           results.
+      detrending_options:
+      - none
+  - name: streamflow
+    unit: m3/s
+    description: Total stream discharge leaving explicitly selected SFR external outlet reaches, positive
+      downstream; distinct from stream stage and groundwater head. Available only when SFR EXT-OUTFLOW
+      budgets are saved.
+    validation_rank: 8
+    emitted_in: derived from .sfr.cbc/.sfr.bud EXT-OUTFLOW by tools/s11_sfr/parse_sfr_output.py --outlet-reaches
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: flow_duration_curve
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare model and gauge at identical declared exceedance probabilities. FDC scores distribution
+          shape, not hydrograph timing.
+        - The existing Sagehen validation bands are retained as that study's adopted criteria; their transfer
+          to FDC skill is not a new literature-validation claim.
+        - Require gauge/outlet correspondence and compatible sampling periods; do not add internal reach
+          flows or double-count routed exchange.
+      detrending_options:
+      - none
+  - name: baseflow
+    unit: m3/s
+    description: Lyne-Hollick filtered component of SFR outlet streamflow, used as a low-frequency flow
+      proxy. This derived signal is not a direct measurement of groundwater discharge or the SFR GWF exchange
+      term.
+    validation_rank: 9
+    emitted_in: derived by tools/s11_sfr/parse_sfr_output.py --baseflow-alpha --baseflow-passes, after
+      outlet streamflow extraction
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: flow_duration_curve
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Use identical separation method, alpha, pass count, cadence and endpoint handling for model
+          and observed total flow before comparing their FDCs.
+        - The Sagehen study uses alpha 0.925 and three passes; these are study choices, not universal
+          KI defaults.
+        - Do not substitute summed DRN/RIV budgets or net SFR exchange for this filtered outlet quantity.
+          Missing samples stop extraction; they are not interpolated.
       detrending_options:
       - none
   secondary: []

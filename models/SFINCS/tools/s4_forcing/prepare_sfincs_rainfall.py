@@ -115,8 +115,13 @@ def process(args):
             logger.info("NOTE: MSWX annual files are one gzip slab per global timestep — "
                         "a single-point read still decompresses the whole year (~5 min/variable).")
 
+        # period=: only the requested days must be complete; variables=("P",):
+        # rain is the only variable this tool uses, so only rain is checked for
+        # gaps. The sub-daily loader still opens every variable's monthly files,
+        # so a missing non-rain file also stops this tool (stricter, never filled).
         fc = load_hourly_forcing(args.source, c_lat, c_lon, start.year, end.year,
-                                 forcing_dir=str(forcing_dir))
+                                 forcing_dir=str(forcing_dir), variables=("P",),
+                                 period=(start.date(), end.date()))
         fdates = np.asarray(fc["dates"]).astype("datetime64[s]").astype(object)
         praw = np.asarray(fc["precip_mm"], dtype=np.float64)   # mm in the step
         step_hours = float(fc["timestep_seconds"]) / 3600.0

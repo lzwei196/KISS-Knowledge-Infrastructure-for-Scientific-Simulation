@@ -110,7 +110,7 @@ ds.close()
 
 5. **Cloud cover N is fraction (0-1) but RH2 is percentage (0-100)**: This inconsistency is a common source of confusion. N>1 causes extreme longwave radiation.
 
-6. **NaN in glacier cells crashes the model**: COSIPY checks for NaN in every masked grid cell before processing. Fill NaN values before running.
+6. **NaN in glacier cells crashes the model**: COSIPY checks for NaN in every masked grid cell before processing. The KI tool `convert_forcing.py` does not fill anything: a missing value, a missing time stamp, a duplicate or out-of-order stamp stops it with an error and no file is written. Fix the source data instead. A forcing column that is empty for the whole period (e.g. LWin in the Zhadang sample CSV) is treated as not supplied, as aws2cosipy does; COSIPY then needs N (for LWin) or SNOWFALL (for RRR). Timestamps with a UTC offset keep their clock time (aws2cosipy uses `ignoretz=True`); a file with more than one offset is refused.
 
 ## Example
 

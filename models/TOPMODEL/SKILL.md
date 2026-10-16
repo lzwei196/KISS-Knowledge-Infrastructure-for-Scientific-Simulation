@@ -71,24 +71,19 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Data Sources**: The repaired forcing CLI reads original subdaily CMFD samples directly and validates every required sample before daily aggregation. Daily-mean-only files and legacy MSWX/NASA POWER adapters are rejected because their returned daily arrays do not establish source extrema/completeness. See [forcing preparation](docs/s1_forcing_preparation.md) for the supported route and units.
 
 **Data sources & I/O (KDT 5.0 — `data_ki/<X>/tools/...` paths are STALE)**:
-- **Forcing**: `ki_tools_common.load_forcing` (CMFD/MSWX/NASA POWER, daily & hourly).
-  For Bengbu/Huai use CMFD (`cmfd_china_daily_010` or `cmfd_huai_daily_025`);
-  **NASA POWER hourly is 2001+ only** and does not overlap the 1950-1997 Huai
-  gauge record — do NOT use it here.
+- **Forcing**: use native subdaily CMFD for the strict converter. Actual within-day samples provide the Hargreaves extrema; daily mean temperature is insufficient. Representative-point extraction is explicitly recorded, not called basin averaging.
 - **Soil**: `ki_tools_common.soil_utils` (HWSD lookup, Rosetta van Genuchten).
 - **Observed discharge**: read the gauge text file directly
   (`$ROOT/data/obs/BB/51080_bengbu.txt` for Bengbu 51080). The
   `data_ki/ObservedQ/tools/` reader does NOT exist in KDT 5.0. **Obs trap**: the
-  Bengbu record uses a `-99.9` missing-data sentinel (~215 days); these become 0
-  after sentinel filtering, so **mask obs > 0 before scoring** or NSE is corrupted.
+  Bengbu record uses a `-99.9` missing-data sentinel. The repaired converter rejects incomplete supplied observation periods. For independent scoring, mask missing sentinels explicitly and retain true Q=0; never score an absent-observation placeholder.
   - **Alternate Huai obs source — "China Gauge Flux — 淮河"**
     (`KISSPATH_DATA/china_water_level/淮河txt/`): a TAB-separated multi-gauge set,
     header `stcd  dates  z  Q  name`, `dates` = `%Y-%-m-%-d` (no zero-pad, e.g.
-    `1980-6-1`), `Q` = discharge in **m³/s**, missing sentinel is **`-99`** (mask
-    `Q > 0`). 8 gauges: `蚌埠`=Bengbu, `王家坝`=Wangjiaba, `息县`=Xixian,
+    `1980-6-1`), `Q` = discharge in **m³/s**, missing sentinel is **`-99`** (exclude the sentinel; preserve valid `Q=0`). 8 gauges: `蚌埠`=Bengbu, `王家坝`=Wangjiaba, `息县`=Xixian,
     `淮滨`=Huaibin, `阜阳`=Fuyang, `鲁台子`=Lutaizi, `蒋家集`=Jiangjiaji,
     `周口`=Zhoukou; records span ~1950-2024. `蚌埠.txt` (stcd 50104200) is the
     SAME physical Bengbu station as `BB/51080_bengbu.txt` — the validated
@@ -175,9 +170,9 @@ cd source/repo/
 
 | Variable | Internal Unit | CMFD Unit | Conversion |
 |----------|--------------|-----------|------------|
-| rain | **m/hr** | mm/day | ÷ 24,000 (mm→m then day→hr) |
-| pe (PET) | **m/hr** | — (compute) | Must derive PET from temp/rad |
-| Qobs | **m/hr** | m³/s | Q/(area_m² × 3600) then ×1 |
+| rain | **m/step** | mm/day | ÷ 1000 ÷ steps_per_day (÷24000 only for hourly steps) |
+| pe (PET) | **m/step** | computed mm/day | Hargreaves from actual Tmin/Tmax/Tmean and Ra; ÷1000 ÷ steps_per_day |
+| Qobs | **m/step** | m³/s | Q × physical_seconds_per_step / basin_area_m² |
 | dt | **hours** | — | Typically 1 hr |
 | szm | **m** | — | Calibration parameter |
 | t0 | **m/hr** | — | Ln(T0) often calibrated |
@@ -235,7 +230,7 @@ seconds per step during post-processing.
 | # | Stage | Tool(s) | Description |
 |---|-------|---------|-------------|
 | 0 | Configuration | (manual) | Select basin, period, forcing source |
-| 1 | Forcing prep | `convert_forcing_to_topmodel` | CMFD/MSWX → inputs.dat (rain, PE in m/hr) |
+| 1 | Forcing prep | `convert_forcing_to_topmodel` | Native subdaily CMFD → inputs.dat (rain, PE in m/step) |
 | 2 | TWI generation | `generate_twi_subcat` | DEM + basin → subcat.dat (TWI histogram) |
 | 3 | Parameter setup | `generate_params` | Soil/landcover → params.dat |
 | 4 | Config assembly | (manual) | Write topmod.run |
@@ -378,7 +373,7 @@ Qout = qb + qof    (then routed through time-delay histogram)
 
 | Tool | Stage | Script Path | Purpose |
 |------|-------|-------------|---------|
-| `convert_forcing_to_topmodel` | s1 | `tools/convert_forcing_to_topmodel.py` | CMFD/MSWX NetCDF → inputs.dat |
+| `convert_forcing_to_topmodel` | s1 | `tools/convert_forcing_to_topmodel.py` | Native subdaily CMFD → inputs.dat |
 | `generate_twi_subcat` | s2 | `tools/generate_twi_subcat.py` | DEM + basin shapefile → subcat.dat |
 | `run_topmodel` | s5 | `tools/run_topmodel.py` | Build, configure, and execute TOPMODEL |
 | `parse_topmodel_output` | s6 | `tools/parse_topmodel_output.py` | Parse hyd.out, compute NSE/KGE/PBIAS |
@@ -394,7 +389,22 @@ python3 tools/calibrate_topmodel.py --run-dir <run_dir> --seed-only
 ```
 
 `<run_dir>` must already contain `run_bmi` and `data/{inputs.dat,subcat.dat}`.
-Writes `calib_result.json` (best_params + cal/val/full metrics).
+Writes `calib_result.json` (best_params + cal/val/full metrics + which rows were scored).
+
+**Which Qobs rows are scored.** Old converters wrote `0` for missing observed
+days, so a zero in `inputs.dat` is not trusted by itself. The driver scores rows only when
+(a) `data/inputs.dat.provenance.json` from the strict converter matches the file hash, says
+`observation_mode: provided_complete`, one row per day, and the same `--start`
+(then every row is real and true zero flow is kept), or (b) you pass
+`--obs-mask FILE` with one `0/1` per `inputs.dat` row (1 = real observation).
+If a sidecar exists it is always checked, even with a mask (hash, one row per
+day, steps, `--start`, real Qobs column); a placeholder Qobs column is refused
+even with a mask. With no sidecar a mask is required and the file is taken as one
+row per day (legacy convention; such files carry no timestep metadata).
+Otherwise it stops with an error. A trial with any nonfinite simulated flow, or
+whose `hyd.out` does not hold exactly rows 1..nstep, is rejected, never scored on
+the part that is left. Metrics (NSE, KGE-2009, PBIAS, r) are
+computed inside the tool; no server-only module is needed.
 
 **DO NOT blindly maximize cal-NSE.** At Bengbu the calibration window (1981-85)
 is volume-biased (wetter, higher peaks, PBIAS −34%) relative to validation

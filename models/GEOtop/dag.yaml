@@ -48,8 +48,8 @@ inputs:
     - {category: forcing, name: "AirPress", unit: "mbar", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Optional air pressure."}
   parameters:
     - {category: soil, name: "Dz", unit: "mm", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV, one row per layer top-to-bottom", notes: "Soil layer thickness (range ~10-500 mm); m or cm input collapses sub-mm layers and diverges the Richards solver."}
-    - {category: soil, name: "Kh", unit: "m/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Lateral saturated hydraulic conductivity (1E-7 to 1E-3 m/s)."}
-    - {category: soil, name: "Kv", unit: "m/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Vertical (normal) saturated hydraulic conductivity (1E-7 to 1E-3 m/s)."}
+    - {category: soil, name: "Kh", unit: "mm/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Lateral saturated hydraulic conductivity in mm/s (about 1E-5 to 1 mm/s; source constants.h jKn/jKl [mm/s])."}
+    - {category: soil, name: "Kv", unit: "mm/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Vertical (normal) saturated hydraulic conductivity in mm/s (about 1E-5 to 1 mm/s; source constants.h jKn/jKl [mm/s])."}
     - {category: soil, name: "vwc_r", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Residual water content; must satisfy vwc_r < vwc_w < vwc_fc < vwc_s."}
     - {category: soil, name: "vwc_w", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Wilting point."}
     - {category: soil, name: "vwc_fc", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Field capacity."}
@@ -410,7 +410,7 @@ safety:
       severity: "fatal"
     - id: "ksat_units_silent_infiltration"
       kind: "soil_semantic"
-      description: "Hydraulic conductivity in cm/day instead of m/s (8.64e6x) silently produces instant drainage or permanent saturation."
+      description: "Hydraulic conductivity in cm/day (8640x too big) or m/s (1000x too small) instead of mm/s silently produces instant drainage or permanent saturation."
       severity: "silent"
     - id: "vg_alpha_units_retention"
       kind: "soil_semantic"

@@ -222,10 +222,12 @@ GEOtop expects soil layer thickness `Dz` in **millimeters**, not meters.
 A 10 cm layer = 100 mm. If you write 0.1 (meters), the model creates a 0.1 mm layer
 and the Richards solver diverges within seconds.
 
-### 5.2 Unit Trap: Hydraulic Conductivity in m/s (dt_002)
-Van Genuchten `Kh` and `Kv` are in **m/s** (not mm/hr or cm/day).
-HWSD often reports Ksat in cm/day: divide by 86400 and then by 100.
-Typical range: 1E-7 to 1E-3 m/s.
+### 5.2 Unit Trap: Hydraulic Conductivity in mm/s (dt_002)
+Van Genuchten `Kh` and `Kv` are in **mm/s** (not m/s, mm/hr or cm/day).
+Source: GEOtop `constants.h` (jKn/jKl "hydr. conductivity [mm/s]"); the value is
+read with no conversion; the shipped test `tests/1D/B2_BeG_017` uses Kh = 0.021.
+HWSD often reports Ksat in cm/day: multiply by 10 and divide by 86400
+(25 cm/day = 2.89E-03 mm/s). Typical range: about 1E-5 to 1 mm/s.
 
 ### 5.3 Unit Trap: Alpha in 1/mm (dt_003)
 Van Genuchten `alpha` in the soil file is in **1/mm** (not 1/cm or 1/m).
@@ -236,6 +238,13 @@ The test case uses alpha=0.00131 (1/mm) which is 0.0131 (1/cm).
 Meteorological forcing `Iprec` is **precipitation intensity in mm** over the time step.
 If your forcing is in mm/hr and time step is 900 s, multiply by 0.25.
 If forcing is in m/s (like some reanalyses), multiply by 1000*dt.
+Here dt is the INPUT record spacing: `convert_forcing.py --source csv` turns a
+rate into a depth per input record first and only then moves depth to `--dt`.
+CSV records around --start..--end must be evenly spaced (no gaps there), ISO 8601 times unless `--date-format`,
+and `--rh-unit specific` needs `temp` + `pres` columns. The output must cover
+`--start`..`--end` at `--dt` exactly, or the tool stops (non-zero exit). When
+coarsening and no full interval exists before `--start`, the first row has Iprec
+= -9999 (GEOtop never uses the first record's Iprec).
 
 ### 5.5 Unit Trap: Relative Humidity in PERCENT (dt_005)
 `RelHum` in meteo files must be **0-100 (percent)**, not 0-1 fraction.
@@ -318,7 +327,7 @@ Other dag outputs named by this KI are: `SWE`, `snowDepth`, `soilTz`,
 
 ### 6.3 soilXXXX.txt (Soil Properties)
 - **Format**: CSV with header row
-- **Columns**: Dz(mm), Kh(m/s), Kv(m/s), vwc_r(-), vwc_w(-), vwc_fc(-), vwc_s(-), alpha(1/mm), n(-), stor(1/m)
+- **Columns**: Dz(mm), Kh(mm/s), Kv(mm/s), vwc_r(-), vwc_w(-), vwc_fc(-), vwc_s(-), alpha(1/mm), n(-), stor(1/m)
 - **One row per layer**, top to bottom
 - **One file per point**: soil0001.txt, soil0002.txt, ...
 
@@ -373,7 +382,7 @@ in this body and the output unit from `dag.yaml`.
 | MSWX precipitation | `mm/3hr` | `mm` per 3-hour step | no multiplication; sum 8 steps for daily totals | accumulated depth |
 | MSWX temperature | `C` | `C` | none | identity |
 | Soil layer thickness `Dz` | meters or centimeters in outside sources | `mm` | convert to millimeters before writing `soilXXXX.txt` | length |
-| Hydraulic conductivity `Kh`, `Kv` | `cm/day` in HWSD-style sources | `m/s` | divide by `86400` and then by `100` | rate |
+| Hydraulic conductivity `Kh`, `Kv` | `cm/day` in HWSD-style sources | `mm/s` | multiply by `10`, divide by `86400` | rate |
 | Van Genuchten `alpha` | `1/cm` in many literature tables | `1/mm` | divide by `10` | inverse length |
 | Vegetation height `VegHeight` | meters in land-cover sources | `mm` | multiply by `1000` | length |
 | Rank-1 output `discharge` | `output-tabs/discharge.txt` | `m3/s` | read as written | dag output unit |
@@ -384,7 +393,7 @@ in this body and the output unit from `dag.yaml`.
 
 | Priority | Parameter                    | Typical Range    | Units    | Sensitivity          |
 |----------|------------------------------|------------------|----------|----------------------|
-| 1        | NormalHydrConductivity (Kv)  | 1E-7 to 1E-3    | m/s      | Controls infiltration|
+| 1        | NormalHydrConductivity (Kv)  | 1E-5 to 1       | mm/s     | Controls infiltration|
 | 2        | AlphaVanGenuchten            | 0.0001-0.01      | 1/mm     | Retention curve shape|
 | 3        | NVanGenuchten                | 1.1-3.0          | -        | Retention curve shape|
 | 4        | SnowCorrFactor               | 0.5-2.0          | -        | Precipitation bias   |

@@ -81,17 +81,17 @@ inputs:
     notes: Soil layer thickness (range ~10-500 mm); m or cm input collapses sub-mm layers and diverges
       the Richards solver.
   - name: Kh
-    unit: m/s
+    unit: mm/s
     category: soil
     source_kind: dataset_lookup
     model_input_format: soilXXXX.txt CSV column
-    notes: Lateral saturated hydraulic conductivity (1E-7 to 1E-3 m/s).
+    notes: Lateral saturated hydraulic conductivity in mm/s (about 1E-5 to 1 mm/s; GEOtop source constants.h jKn/jKl [mm/s]).
   - name: Kv
-    unit: m/s
+    unit: mm/s
     category: soil
     source_kind: dataset_lookup
     model_input_format: soilXXXX.txt CSV column
-    notes: Vertical (normal) saturated hydraulic conductivity (1E-7 to 1E-3 m/s).
+    notes: Vertical (normal) saturated hydraulic conductivity in mm/s (about 1E-5 to 1 mm/s; GEOtop source constants.h jKn/jKl [mm/s]).
   - name: vwc_r
     unit: m3/m3
     category: soil
@@ -461,12 +461,13 @@ known_issues:
   severity: fatal
 - id: dt_002
   symptom: Unrealistically fast or slow infiltration. Soil drains instantly or stays permanently saturated.
-  diagnosis: Hydraulic conductivity Kh/Kv in cm/day instead of m/s; HWSD reports Ksat in cm/day. GEOtop
-    expects m/s. Factor is 8,640,000x. A typical sandy loam Ksat of 25 cm/day = 2.89E-06 m/s.; ['water.balance',
+  diagnosis: Hydraulic conductivity Kh/Kv in cm/day or m/s instead of mm/s; HWSD reports Ksat in cm/day. GEOtop
+    expects mm/s (source constants.h jKn/jKl [mm/s]; shipped test B2_BeG_017 uses Kh=0.021). cm/day is 8640x too
+    big, m/s is 1000x too small. A typical loam Ksat of 25 cm/day = 2.89E-03 mm/s.; ['water.balance',
     'Richards3D', 'Richards1D']
-  remedy: 'Convert Ksat from cm/day to m/s: divide by 86400 then by 100; convert_soil.py; [''Check Kh/Kv
-    values in soilXXXX.txt'', ''Should be in range 1E-7 to 1E-3'', ''If values are 1-1000, they are likely
-    in cm/day'', ''Divide by 8640000 (= 86400 * 100)'']; convert_soil.py flags Kh > 0.01 m/s as unrealistic'
+  remedy: 'Convert Ksat from cm/day to mm/s: multiply by 10 then divide by 86400 (= divide by 8640); convert_soil.py; [''Check Kh/Kv
+    values in soilXXXX.txt'', ''Should be in range about 1E-5 to 1 mm/s'', ''If values are 1-1000, they are likely
+    in cm/day'', ''If values are below 1E-6, they are likely in m/s (multiply by 1000)'']; convert_soil.py flags Kh > 10 mm/s or < 1E-7 mm/s'
   severity: silent
 - id: dt_003
   symptom: Soil moisture dynamics look wrong. Retention curve too flat or too steep.

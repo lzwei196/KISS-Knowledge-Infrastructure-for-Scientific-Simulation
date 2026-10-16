@@ -129,7 +129,11 @@ def specific_to_relative_humidity(q, t_celsius, p_mbar=1013.25):
     # Vapor pressure from specific humidity
     e = q * p_mbar / (0.622 + 0.378 * q)
     rh = 100.0 * e / es
-    return np.clip(rh, 0, 100)
+    if np.nanmax(rh, initial=0.0) > 110.0 or np.nanmin(rh, initial=0.0) < 0.0:
+        raise ValueError(
+            f"specific humidity gives RH from {np.nanmin(rh):.1f}% to {np.nanmax(rh):.1f}%: "
+            f"q must be kg/kg (not g/kg) and pressure mbar/Pa as declared")
+    return np.clip(rh, 0, 100)   # only small supersaturation is clipped
 
 
 def convert_precip(precip, from_unit, dt_seconds):
@@ -140,7 +144,10 @@ def convert_precip(precip, from_unit, dt_seconds):
     Args:
         precip: Precipitation values
         from_unit: One of 'mm_hr', 'mm_day', 'mm_step', 'm_s', 'kg_m2_s'
-        dt_seconds: Model time step in seconds
+            ('mm_step' = mm accumulated over each INPUT record)
+        dt_seconds: the interval each value covers -- the INPUT record
+            spacing (rates are turned into depths per input record BEFORE
+            any resampling; resample_meteo then moves depth between steps)
     """
     if from_unit == "mm_step":
         return precip
@@ -148,9 +155,12 @@ def convert_precip(precip, from_unit, dt_seconds):
         return precip * (dt_seconds / 3600.0)
     elif from_unit == "mm_day":
         return precip * (dt_seconds / 86400.0)
-    elif from_unit in ("m_s", "kg_m2_s"):
+    elif from_unit == "m_s":
         # m/s -> mm/step: multiply by 1000 (m->mm) * dt (s)
         return precip * 1000.0 * dt_seconds
+    elif from_unit == "kg_m2_s":
+        # kg m-2 s-1 = mm/s of water -> mm/step: multiply by dt (s) only
+        return precip * dt_seconds
     else:
         raise ValueError(f"Unknown precipitation unit: {from_unit}")
 
@@ -176,58 +186,131 @@ exactly like nasa_power / mswx.
 """
 
 
-def read_generic_csv(input_path, col_map, temp_unit, rh_unit, precip_unit, dt_seconds):
-    """Read a generic CSV file with user-specified column mapping and units."""
-    mapping = json.loads(col_map) if isinstance(col_map, str) else col_map
+def read_generic_csv(input_path, col_map, temp_unit, rh_unit, precip_unit,
+                     date_format=None, pres_unit="Pa", start=None, end=None):
+    """Read a generic CSV file with user-specified column mapping and units.
 
-    df = pd.read_csv(input_path, parse_dates=[mapping.get("datetime", "datetime")])
-    df = df.set_index(mapping.get("datetime", "datetime"))
+    Input contract (all checked, nothing guessed):
+      * time column ``datetime`` (or the col-map name): ISO 8601
+        (YYYY-MM-DD hh:mm) unless --date-format is given (e.g. GEOtop's own
+        "%d/%m/%Y %H:%M"). A day-first date is never read month-first.
+      * the records that bracket --start..--end: no duplicates, evenly spaced
+        (see _window_slice); the file is sorted by time first.
+      * every column the col-map names must exist in the file.
+      * -9999 / -9998 in a data column = missing (NaN), never converted.
+      * precipitation rates (mm_hr, mm_day, m_s, kg_m2_s) become depths over
+        the INPUT record spacing here; 'mm_step' means mm per input record.
+      * rh_unit 'specific' (kg/kg) is turned into RH % from the same row's air
+        temperature and pressure; both columns must be mapped (no standard
+        pressure is put in their place). Pressure is also written as AirPress.
+    """
+    mapping = json.loads(col_map) if isinstance(col_map, str) else dict(col_map)
+    tcol = mapping.get("datetime", "datetime")
+
+    df = pd.read_csv(input_path)
+    named = {k: v for k, v in mapping.items()}
+    missing = [f"{k}->{v}" for k, v in named.items() if v not in df.columns]
+    if tcol not in df.columns and f"datetime->{tcol}" not in missing:
+        missing.append(f"datetime->{tcol}")
+    if missing:
+        raise ValueError(f"{input_path}: col-map names columns that are not in the file: "
+                         f"{missing} (file has {list(df.columns)})")
+    try:
+        if date_format:
+            stamps = pd.to_datetime(df[tcol], format=date_format)
+        else:
+            stamps = pd.to_datetime(df[tcol], format="ISO8601")
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"{input_path}: cannot read time column '{tcol}' "
+                         f"{'with --date-format ' + date_format if date_format else 'as ISO 8601'}"
+                         f" ({e}). Pass --date-format, e.g. '%d/%m/%Y %H:%M'.") from e
+    df = df.set_index(pd.DatetimeIndex(stamps)).sort_index()
+    # GEOtop's missing-value code -9999 (and -9998 "absent") in any data column
+    # means missing: make it NaN BEFORE any unit conversion or check, so it is
+    # never turned into a number (e.g. -99.99 mbar) and is written back as -9999.
+    # only the columns this reader can use (default or col-map names); other
+    # columns (e.g. a station name) are left alone
+    known = {"temp": "AirT", "pres": "AirPress", "rh": "RelHum", "precip": "Iprec",
+             "wind": "WindSp", "srad": "Swglobal", "wdir": "WindDir", "lwin": "LWin"}
+    data_cols = sorted({mapping.get(k, v) for k, v in known.items()} & set(df.columns) - {tcol})
+    df[data_cols] = df[data_cols].apply(pd.to_numeric, errors="raise").astype(float)
+    df[data_cols] = df[data_cols].mask(df[data_cols].isin([NODATA, -9998]))
+    # input record spacing, checked only over the records that bracket the
+    # requested window (a gap elsewhere in the file does not matter)
+    t = df.index.as_unit("s").asi8
+    g0 = int(t[0]) if start is None else _secs(start)
+    g1 = int(t[-1]) if end is None else _secs(end)
+    ia, ib, native = _window_slice(df.index, g0, g1, input_path)
 
     result = pd.DataFrame(index=df.index)
 
     # Temperature
     temp_col = mapping.get("temp", "AirT")
     if temp_col in df.columns:
-        result["AirT"] = df[temp_col]
+        result["AirT"] = df[temp_col].astype(float)
         if temp_unit == "K":
             result["AirT"] = kelvin_to_celsius(result["AirT"])
+
+    # Air pressure (optional; needed for specific humidity)
+    pres_col = mapping.get("pres", "AirPress")
+    if pres_col in df.columns:
+        pr = df[pres_col].astype(float)
+        result["AirPress"] = pr / 100.0 if pres_unit == "Pa" else pr   # -> mbar
+        bad = result["AirPress"].dropna()
+        bad = bad[(bad < 300) | (bad > 1100)]
+        if len(bad):
+            raise ValueError(f"air pressure {bad.iloc[0]:.1f} mbar at {bad.index[0]} is not "
+                             f"physical: check --pres-unit ({pres_unit})")
 
     # Relative humidity
     rh_col = mapping.get("rh", "RelHum")
     if rh_col in df.columns:
-        result["RelHum"] = df[rh_col]
+        rh = df[rh_col].astype(float)
         if rh_unit == "fraction":
-            result["RelHum"] = fraction_to_percent(result["RelHum"])
+            rh = fraction_to_percent(rh)
+        elif rh_unit == "specific":
+            if "AirT" not in result or "AirPress" not in result:
+                raise ValueError(
+                    "--rh-unit specific needs air temperature and pressure columns in the "
+                    "col-map ('temp' and 'pres'); a standard pressure is not assumed")
+            rh = pd.Series(specific_to_relative_humidity(
+                rh.to_numpy(), result["AirT"].to_numpy(), result["AirPress"].to_numpy()),
+                index=df.index)
+        result["RelHum"] = rh
+    elif rh_unit == "specific":
+        raise ValueError("--rh-unit specific given but no humidity column "
+                         f"('{rh_col}') in the file")
 
-    # Precipitation
+    # Precipitation: rate -> depth over the INPUT record spacing (not --dt)
     precip_col = mapping.get("precip", "Iprec")
     if precip_col in df.columns:
-        result["Iprec"] = convert_precip(df[precip_col], precip_unit, dt_seconds)
+        result["Iprec"] = convert_precip(df[precip_col].astype(float), precip_unit, native)
 
     # Wind speed
     wind_col = mapping.get("wind", "WindSp")
     if wind_col in df.columns:
-        result["WindSp"] = df[wind_col]
+        result["WindSp"] = df[wind_col].astype(float)
 
     # Shortwave radiation
     srad_col = mapping.get("srad", "Swglobal")
     if srad_col in df.columns:
-        result["Swglobal"] = df[srad_col]
+        result["Swglobal"] = df[srad_col].astype(float)
 
     # Wind direction (optional)
     wdir_col = mapping.get("wdir", "WindDir")
     if wdir_col in df.columns:
-        result["WindDir"] = df[wdir_col]
+        result["WindDir"] = df[wdir_col].astype(float)
 
     # Longwave radiation (optional)
     lw_col = mapping.get("lwin", "LWin")
     if lw_col in df.columns:
-        result["LWin"] = df[lw_col]
+        result["LWin"] = df[lw_col].astype(float)
 
     return result
 
 
-def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=3600):
+def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=3600,
+                          pad_days=(0, 0)):
     """Read forcing through ki_tools_common.load_forcing (nasa_power / mswx / cmfd).
 
     This is the canonical HydroCraft forcing loader. It returns point series
@@ -242,7 +325,9 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
         pres_pa    (Pa)              -> AirPress    (mbar, optional)
 
     WindDir is not provided by the point loader -> NODATA.
-    Returns a DatetimeIndex-ed DataFrame; the caller resamples to --dt.
+    Returns a DatetimeIndex-ed DataFrame of the loaded days (start..end days
+    plus `pad_days` either side), NOT clipped: the caller first puts it on the
+    --dt grid (needs native records that bracket start/end) and clips after.
 
     PERF FIX (2026-06-21, GEOtop real-case 05FA012): when the requested model
     step is daily (dt >= 86400) we call load_DAILY_forcing instead of
@@ -256,12 +341,22 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
     from ki_tools_common.humidity import specific_humidity_to_rh
 
     daily = dt >= 86400
+    first_day = (start - timedelta(days=pad_days[0])).date()
+    last_day = (end + timedelta(days=pad_days[1])).date()
     if daily:
         from ki_tools_common.load_forcing import load_daily_forcing
-        out = load_daily_forcing(source, lat, lon, start.year, end.year, forcing_dir=forcing_dir)
+        # period=: only the requested days must be complete (a part year runs;
+        # a real gap inside the window still stops)
+        out = load_daily_forcing(source, lat, lon, first_day.year, last_day.year,
+                                 forcing_dir=forcing_dir, period=(first_day, last_day))
     else:
         from ki_tools_common.load_forcing import load_hourly_forcing
-        out = load_hourly_forcing(source, lat, lon, start.year, end.year, forcing_dir=forcing_dir)
+        # period= is whole days in the loader: every step of the start and end
+        # DAYS must be complete, even when the run ends at 00:00 of the end day.
+        # This is stricter than the steps written below (never looser, nothing
+        # filled); a source missing the rest of the end day stops the run.
+        out = load_hourly_forcing(source, lat, lon, first_day.year, last_day.year,
+                                  forcing_dir=forcing_dir, period=(first_day, last_day))
 
     dates = pd.to_datetime(out["dates"])
     # Mean air temperature: hourly schema uses `temp_c`, daily uses `temp_mean_c`.
@@ -297,7 +392,6 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
         "LWin": np.asarray(out.get("lrad_wm2", np.full(len(dates), np.nan)), dtype=float),
         "AirPress": pres_pa / 100.0,                            # Pa -> mbar
     }, index=dates)
-    df = df[(df.index >= start) & (df.index <= end)]
     # Drop optional columns that are entirely missing
     for c in ("LWin", "AirPress"):
         if df[c].isna().all():
@@ -349,32 +443,197 @@ def resample_meteo(df, dt_seconds):
     depth. Checked at 3h->1h, 3h->6h, 3h->3h and 1d->1h: the depth GEOtop
     actually applies is preserved exactly. A naive total-column-sum check will
     look "lossy" by exactly the first record and must not be re-"fixed".
+
+    2026-10-16: now a thin wrapper over to_grid() over the whole input (gaps,
+    uneven spacing and partial intervals stop instead of being filled).
+    process() calls to_grid() on the requested --start/--end window directly,
+    AFTER loading native records that bracket it, so no edge is lost.
     """
-    if len(df) < 2:
-        return df
+    return to_grid(df, None, None, dt_seconds)
 
-    native = int(round(pd.Series(df.index).diff().dropna().dt.total_seconds().median()))
-    if native == dt_seconds:
-        return df
 
-    target = f"{dt_seconds}s"
-    others = [c for c in df.columns if c != "Iprec"]
+class CoverageError(ValueError):
+    """The input does not cover the requested window at --dt.
 
-    if dt_seconds < native:  # upsample
-        out = df[others].resample(target).interpolate(method="linear") if others else None
-        if "Iprec" in df.columns:
-            ratio = native / float(dt_seconds)
-            # record at t owns (t-dt, t] -> the covering native record is the
-            # first native stamp at or after t: backward fill.
-            pr = df["Iprec"].resample(target).bfill() / ratio
-            out = pr.to_frame() if out is None else out.join(pr.rename("Iprec"))
-    else:  # downsample
-        out = df[others].resample(target, label="right", closed="right").mean() if others else None
-        if "Iprec" in df.columns:
-            pr = df["Iprec"].resample(target, label="right", closed="right").sum()
-            out = pr.to_frame() if out is None else out.join(pr.rename("Iprec"))
+    need_before / need_after say which edge lacks native records, so a caller
+    that can read more (load_forcing) may load one more day there and retry.
+    """
+    def __init__(self, msg, need_before=False, need_after=False):
+        super().__init__(msg)
+        self.need_before = need_before
+        self.need_after = need_after
 
-    return out[[c for c in df.columns if c in out.columns]].dropna(how="all")
+
+def _secs(ts):
+    return int(pd.Timestamp(ts).value // 10**9)
+
+
+def _window_slice(index, g0, g1, what, dt=None):
+    """Rows [ia, ib] of a SORTED time index that bracket the window g0..g1
+    (epoch seconds): the last record at or before g0 and the first at or after
+    g1. Returns (ia, ib, native_step_seconds).
+
+    The native step is the most common spacing over the WHOLE input (so a
+    short window cannot hide a missing record: 00,01,03,04 h is hourly with a
+    gap, not 2-hourly). Every record whose stamp lies in the checked stretch
+    must be unique and exactly one native step after the one before. The
+    checked stretch is [stamp of row ia, stamp of row ib], widened back to the
+    last record at or before g0 - (dt - native) when dt (the output step) is
+    coarser, so the first output interval is checked too. Every copy of a duplicated stamp at either
+    boundary is inside the stretch, so a duplicate stops the run. A gap or a
+    duplicate outside the stretch does not matter. Raises CoverageError when
+    the input does not reach g0 or g1.
+    """
+    t = pd.DatetimeIndex(index).as_unit("s").asi8
+    if len(t) < 2:
+        raise ValueError(f"{what}: needs at least 2 records, got {len(t)}")
+    if pd.DatetimeIndex(index).hasnans:
+        raise ValueError(f"{what}: time column has unreadable stamps")
+    lo_short, hi_short = g0 < t[0], g1 > t[-1]
+    if lo_short or hi_short:
+        raise CoverageError(
+            f"{what}: input {pd.Timestamp(int(t[0]), unit='s')} .. "
+            f"{pd.Timestamp(int(t[-1]), unit='s')} does not reach the requested "
+            f"{pd.Timestamp(g0, unit='s')} .. {pd.Timestamp(g1, unit='s')}",
+            need_before=lo_short, need_after=hi_short)
+    d_all = np.diff(t)
+    pos = d_all[d_all > 0]
+    if pos.size == 0:
+        raise ValueError(f"{what}: all records have the same time stamp")
+    vals, cnt = np.unique(pos, return_counts=True)
+    native = int(vals[np.argmax(cnt)])
+    ia = int(np.searchsorted(t, g0, side="right")) - 1
+    ib = int(np.searchsorted(t, g1, side="left"))
+    lo_c = int(t[ia])
+    if dt is not None and dt > native:
+        # the first output interval (g0-dt, g0] is checked too, starting at the
+        # last record at or before its first native stamp (so a record missing
+        # inside it is a gap, not the input start)
+        j = int(np.searchsorted(t, g0 - (int(dt) - native), side="right")) - 1
+        lo_c = min(lo_c, int(t[max(j, 0)]))
+    hi_c = int(t[ib])
+    sel = t[(t >= lo_c) & (t <= hi_c)]
+    if sel.size < 2:
+        raise ValueError(f"{what}: the window {pd.Timestamp(g0, unit='s')} .. "
+                         f"{pd.Timestamp(g1, unit='s')} needs at least 2 input records")
+    d = np.diff(sel)
+    if np.any(d == 0):
+        dup = sel[1:][d == 0][:3]
+        raise ValueError(f"{what}: duplicate time stamps "
+                         f"{[str(pd.Timestamp(int(x), unit='s')) for x in dup]}; "
+                         f"which record is right is not guessed")
+    if np.any(d != native):
+        bad = np.flatnonzero(d != native)[:3]
+        raise ValueError(
+            f"{what}: records are not evenly spaced around the window (input step "
+            f"{native} s, but {[int(d[i]) for i in bad]} s after "
+            f"{[str(pd.Timestamp(int(sel[i]), unit='s')) for i in bad]}). "
+            f"Missing records are not filled in.")
+    return ia, ib, native
+
+
+def to_grid(df, start, end, dt_seconds):
+    """Put a meteo DataFrame on the grid start, start+dt, ..., end.
+
+    start/end None = from the first to the last native record. Only the
+    records that bracket the window must be unique and evenly spaced (no gap
+    there, see _window_slice); every output stamp must be covered, else
+    CoverageError (nothing is extrapolated or filled). Rules (record at t
+    owns (t-step, t], GEOtop meteodata.cc::fill_Pint):
+      * dt < native (upsample; native must be a multiple of dt and the grid
+        must land on native stamps): state columns are linear between the two
+        native records around each stamp; Iprec = depth of the native record
+        that owns the stamp (first native stamp >= t) * dt/native.
+      * dt >= native (same step or downsample; dt a multiple of native, grid
+        stamps on native stamps): each stamp t takes the dt/native native
+        records in (t-dt, t]: mean for state columns, sum for Iprec. All of
+        them must exist and be evenly spaced.
+        FIRST stamp only: if the input has no full interval before it (the
+        input starts at the window start), the first row keeps the native
+        record AT that stamp for state columns and Iprec = NaN (-9999).
+        GEOtop never uses the first record's Iprec (fill_Pint sets
+        PrecInt[0] = novalue; -9999 is number_novalue, not number_absent),
+        so no applied rain is lost and none is made up: sum(Iprec[1:]) is kept.
+    A NaN in an input record stays NaN in every output value it feeds
+    (written as -9999), never averaged around.
+    """
+    df = df.sort_index()
+    t_all = pd.DatetimeIndex(df.index).as_unit("s").asi8
+    if len(t_all) < 2:
+        raise ValueError(f"forcing has {len(t_all)} record(s); at least 2 are needed")
+    dt = int(dt_seconds)
+    g0 = int(t_all[0]) if start is None else _secs(start)
+    g1 = int(t_all[-1]) if end is None else _secs(end)
+    if g1 < g0:
+        raise ValueError(f"end {end} is before start {start}")
+    ia, ib, native = _window_slice(df.index, g0, g1, "forcing", dt=dt)
+    if (g1 - g0) % dt:
+        # with end=None (resample_meteo) a trailing part interval is NOT
+        # dropped silently: the input must end on the output grid
+        raise ValueError(f"end must be start plus a whole number of dt steps "
+                         f"({pd.Timestamp(g0, unit='s')} .. {pd.Timestamp(g1, unit='s')}, "
+                         f"dt={dt} s): an incomplete last interval is not dropped")
+    grid = np.arange(g0, g1 + 1, dt, dtype=np.int64)
+    if dt < native:
+        if native % dt:
+            raise ValueError(f"--dt {dt} s does not divide the input step {native} s")
+        align = dt
+    else:
+        if dt % native:
+            raise ValueError(f"--dt {dt} s is not a multiple of the input step {native} s")
+        align = native
+    if (g0 - int(t_all[ia])) % align:
+        raise ValueError(f"start {pd.Timestamp(g0, unit='s')} does not fall on the input "
+                         f"records' {align} s grid (record {df.index[ia]})")
+
+    cols = list(df.columns)
+    first_partial = False
+    if dt > native:
+        n = dt // native
+        # use a full first interval if the input has it, evenly spaced, before g0
+        ia2 = ia - (n - 1)
+        if ia2 >= 0:
+            pre = t_all[ia2:ia + 1]
+            if np.all(np.diff(pre) == native) and pre[0] == g0 - (n - 1) * native:
+                ia = ia2
+            else:
+                first_partial = True
+        else:
+            first_partial = True
+    sub = df.iloc[ia:ib + 1]
+    t = t_all[ia:ib + 1]
+    vals = {c: sub[c].to_numpy(dtype=float) for c in cols}
+    out = {c: np.full(grid.size, np.nan) for c in cols}
+    if dt < native:
+        k = np.searchsorted(t, grid, side="left")          # first native >= stamp
+        exact = t[k] == grid
+        km = np.where(exact, k, k - 1)
+        w = np.where(exact, 0.0, (grid - t[km]) / float(native))
+        for c in cols:
+            v = vals[c]
+            if c == "Iprec":
+                out[c] = v[k] * (dt / float(native))
+            else:
+                out[c] = np.where(exact, v[k], v[km] * (1.0 - w) + v[k] * w)
+    else:
+        n = dt // native
+        k1 = np.searchsorted(t, grid, side="left")          # index of stamp t (exists)
+        full = k1 - (n - 1) >= 0
+        if not first_partial and not full.all():
+            raise ValueError("internal: interval before a stamp is missing")
+        if first_partial and not full[1:].all():
+            raise ValueError("internal: interval before a later stamp is missing")
+        for c in cols:
+            v = vals[c]
+            res = np.full(grid.size, np.nan)
+            kk = k1[full]
+            win = np.stack([v[kk - j] for j in range(n)], axis=0)   # NaN propagates
+            res[full] = win.sum(axis=0) if c == "Iprec" else win.mean(axis=0)
+            if not full[0]:                                 # first stamp, no full interval
+                res[0] = np.nan if c == "Iprec" else v[k1[0]]
+            out[c] = res
+    res = pd.DataFrame(out, index=pd.to_datetime(grid, unit="s"))
+    return res[cols]
 
 
 def process(args):
@@ -384,22 +643,39 @@ def process(args):
 
     if args.source in ("nasa_power", "mswx", "cmfd"):
         # Online/point loader via ki_tools_common (canonical HydroCraft path).
+        # The requested days are loaded first; only if the native records do
+        # not bracket start/end at --dt (e.g. 3-hourly data, window 01:00-23:00)
+        # is one more day read on that side, and then the window must be fully
+        # covered or the run stops.
         fdir = args.input if (args.input and os.path.exists(args.input)) else None
-        df = read_via_load_forcing(args.source, args.lat, args.lon, start, end, fdir, dt=args.dt)
-        precip_unit = "mm_step"
+        pad = (0, 0)
+        for attempt in (0, 1):
+            raw = read_via_load_forcing(args.source, args.lat, args.lon, start, end, fdir,
+                                        dt=args.dt, pad_days=pad)
+            try:
+                df = to_grid(raw, start, end, args.dt)
+                break
+            except CoverageError as e:
+                if attempt:
+                    raise
+                pad = (1 if e.need_before else 0, 1 if e.need_after else 0)
+                print(json.dumps({"status": "info", "message":
+                                  f"{e}; loading one more day {pad} (before, after)"}),
+                      file=sys.stderr)
     elif args.source == "csv":
-        df = read_generic_csv(
+        raw = read_generic_csv(
             args.input, args.col_map,
-            args.temp_unit, args.rh_unit, args.precip_unit, args.dt
+            args.temp_unit, args.rh_unit, args.precip_unit,
+            date_format=args.date_format, pres_unit=args.pres_unit,
+            start=start, end=end,
         )
-        precip_unit = args.precip_unit
+        df = to_grid(raw, start, end, args.dt)
     else:
         print(json.dumps({"status": "error", "errors": [f"Source '{args.source}' reader not yet implemented"]}),
               file=sys.stderr)
         sys.exit(1)
 
-    # Resample to target time step if needed (depth-conserving for Iprec)
-    df = resample_meteo(df, args.dt)
+    # Every stamp start..end at --dt is present (to_grid checks it)
 
     # Build output DataFrame
     out_cols = ["Date", "JDfrom0"]
@@ -448,8 +724,14 @@ def process(args):
 
 
 def validate_outputs(output_path):
-    """Validate the generated meteo file for common errors."""
+    """Validate the generated meteo file for common errors.
+
+    A unit that is plainly wrong (RH in fraction, AirT in Kelvin, negative
+    rain) is an ERROR: status "error" and main() exits non-zero. Softer
+    checks stay warnings.
+    """
     warnings = []
+    errors = []
 
     df = pd.read_csv(output_path)
 
@@ -458,7 +740,7 @@ def validate_outputs(output_path):
         rh_valid = df["RelHum"][df["RelHum"] != NODATA]
         if len(rh_valid) > 0:
             if rh_valid.max() <= 1.0:
-                warnings.append(
+                errors.append(
                     "CRITICAL: RelHum max <= 1.0 -- likely in fraction (0-1) instead of percent (0-100). "
                     "GEOtop expects PERCENT. Multiply by 100."
                 )
@@ -470,7 +752,7 @@ def validate_outputs(output_path):
         at_valid = df["AirT"][df["AirT"] != NODATA]
         if len(at_valid) > 0:
             if at_valid.mean() > 100:
-                warnings.append(
+                errors.append(
                     "CRITICAL: AirT mean > 100 -- likely in Kelvin instead of Celsius. "
                     "Subtract 273.15."
                 )
@@ -479,6 +761,8 @@ def validate_outputs(output_path):
     if "Iprec" in df.columns:
         prec_valid = df["Iprec"][df["Iprec"] != NODATA]
         if len(prec_valid) > 0:
+            if prec_valid.min() < 0:
+                errors.append(f"CRITICAL: Iprec min = {prec_valid.min():.4f} < 0 mm/step.")
             if prec_valid.max() > 200:
                 warnings.append(
                     f"Iprec max = {prec_valid.max():.1f} mm/step. Very high. "
@@ -507,9 +791,10 @@ def validate_outputs(output_path):
         warnings.append(f"{nodata_pct:.0f}% of values are nodata (-9999). Check input completeness.")
 
     result = {
-        "status": "ok" if not warnings else "warning",
+        "status": "error" if errors else ("ok" if not warnings else "warning"),
         "n_rows": len(df),
         "columns": list(df.columns),
+        "errors": errors,
         "warnings": warnings,
     }
     print(json.dumps(result, indent=2), file=sys.stderr)
@@ -538,12 +823,24 @@ def main():
                         help="Input humidity unit")
     parser.add_argument("--precip-unit", default="mm_hr",
                         choices=["mm_hr", "mm_day", "mm_step", "m_s", "kg_m2_s"],
-                        help="Input precipitation unit")
+                        help="Input precipitation unit (mm_step = mm per INPUT record)")
+    parser.add_argument("--date-format", default=None,
+                        help="strptime format of the CSV time column (default: ISO 8601; "
+                             "e.g. '%%d/%%m/%%Y %%H:%%M' for day-first dates)")
+    parser.add_argument("--pres-unit", default="Pa", choices=["Pa", "hPa"],
+                        help="Unit of the CSV pressure column ('pres' in --col-map)")
 
     args = parser.parse_args()
     validate_inputs(args)
-    n_rows = process(args)
-    validate_outputs(args.output)
+    try:
+        n_rows = process(args)
+    except (ValueError, FileNotFoundError, KeyError) as e:
+        print(json.dumps({"status": "error", "errors": [f"{type(e).__name__}: {e}"]}),
+              file=sys.stderr)
+        sys.exit(1)
+    result = validate_outputs(args.output)
+    if result["status"] == "error":
+        sys.exit(1)
     print(f"Wrote {n_rows} rows to {args.output}")
 
 

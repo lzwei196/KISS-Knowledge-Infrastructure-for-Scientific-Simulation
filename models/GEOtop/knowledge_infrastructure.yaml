@@ -55,9 +55,9 @@ inputs:
   - name: Dz
     unit: mm
   - name: Kh
-    unit: m/s
+    unit: mm/s
   - name: Kv
-    unit: m/s
+    unit: mm/s
   - name: vwc_r
     unit: m3/m3
   - name: vwc_w

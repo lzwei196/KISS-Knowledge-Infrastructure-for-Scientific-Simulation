@@ -56,6 +56,9 @@ model failures originate here.
    Precipitation:  mm/hr -> mm/step  multiply by dt/3600
    Precipitation:  m/s -> mm/step  multiply by 1000*dt
    Precipitation:  kg/m2/s -> mm/step  multiply by dt (density=1000)
+   (dt here = the INPUT record spacing. convert_forcing.py turns a rate into a
+   depth per input record first, then moves depth to the --dt grid: hourly
+   1 mm/h at --dt 10800 gives 3 mm per 3 h, not 9.)
    Radiation:      J/m2 -> W/m2  divide by dt (accumulated -> instantaneous)
    Pressure:       Pa -> mbar  divide by 100
    ```
@@ -125,6 +128,13 @@ python convert_forcing.py \
     --temp-unit K --rh-unit fraction --precip-unit mm_hr \
     --output sim/meteo/meteo0001.txt
 ```
+
+CSV input rules (`--source csv`): the time column is read as ISO 8601
+(`2009-10-02 00:00`) unless `--date-format` is given (e.g. `'%d/%m/%Y %H:%M'`);
+the records around --start..--end must be evenly spaced with no gaps there; every column named in
+`--col-map` must exist; `--rh-unit specific` (kg/kg) needs `temp` and `pres`
+columns in the col-map (`--pres-unit Pa|hPa`), no standard pressure is assumed.
+Output covers exactly `--start` .. `--end` at `--dt`, or the tool stops.
 
 Expected first lines of output:
 ```

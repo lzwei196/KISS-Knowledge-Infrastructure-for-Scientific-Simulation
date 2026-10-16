@@ -12,7 +12,7 @@ WoosterExampleLinux file shipped with the binary distribution):
     4: field capacity    (vol/vol, 0..1)
     5: wilting point     (vol/vol, 0..1)
     6: evap coefficient  (0..1, decreases with depth)
-    7: root fraction     (0..1, sums to 1.0 across layers)
+    7: root fraction     (0..1; Wooster example values, sum 0.84 over the 9 layers; checked 0 < sum <= 1)
     8: sand fraction     (0..1)
     9: clay fraction     (0..1)
    10: organic matter    (fraction of mass, 0..1)  ← MUST be fraction, NOT percent
@@ -23,14 +23,22 @@ WoosterExampleLinux file shipped with the binary distribution):
 BUG FIX (2026-04-22, from AT-Neu + US-Var FLUXNET runs):
   - Added column 11 (delta_min). Without it DayCent reads Ksat into the
     delta_min slot, producing "swclimit[1] is negative" errors.
-  - Fixed OM threshold: values 0.5-1.5 (typical HWSD OC%) were not converted
-    to fraction. Now any OM > 0.2 is treated as percent and divided by 100.
+  - (2026-10-05) Units are no longer guessed from the size of a value. HWSD
+    T_OC/S_OC is % organic carbon -> OM fraction = OC/100 x 1.724; HWSD
+    T/S_REF_BULK_DENSITY is kg/dm3 = g/cm3 and is written as is. Subsoil
+    (layers below 30 cm) uses HWSD S_OC, S_REF_BULK_DENSITY and S_PH_H2O from
+    the same HWSD row; if HWSD has none the tool stops.
 
 HWSD provides texture and bulk density at two depths (topsoil 0-30, subsoil
-30-100). We expand into 13 layers using the same layering as the Wooster
-example (0-2, 2-5, 5-10, 10-20, 20-30, 30-45, 45-60, 60-75, 75-90, 90-105,
-105-120, 120-150, 150-180 cm) and run ROSETTA on each layer texture to fill
-field capacity, wilting point, and Ksat.
+30-100 cm). The profile uses the first 9 layers of the Wooster example
+(0-2, 2-5, 5-10, 10-20, 20-30, 30-45, 45-60, 60-75, 75-90 cm) and ENDS AT
+90 cm: HWSD has no data below 100 cm, and DayCent rev 491 rejects a soils.in
+layer boundary at 100 cm with the standard fix.100 ADEP layering (10, 20, 15,
+15, 30, ... cm -> boundaries 10, 30, 45, 60, 90, 120 ...): "Incompatible soil
+structures in fix.100 and soils.in" (tested 2026-10-05). 90 cm is the deepest
+ADEP boundary inside the HWSD depth. Layers above 30 cm use HWSD topsoil, the
+rest HWSD subsoil. ROSETTA runs on each layer texture to give field capacity,
+wilting point and Ksat.
 
 Usage:
     python convert_soil_to_daycent.py --lat 40.78 --lon -81.93 --out soils.in
@@ -47,17 +55,20 @@ except ImportError as e:
     sys.exit(2)
 
 
-# Layering used by the Wooster reference run (cm)
-LAYER_EDGES_CM = [0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0,
-                  75.0, 90.0, 105.0, 120.0, 150.0, 180.0]
+# Deepest depth HWSD describes (subsoil 30-100 cm).
+HWSD_MAX_DEPTH_CM = 100.0
 
-# Root-fraction template (decreases exponentially) — sums to 1.0
-ROOT_FRACTION_TEMPLATE = [0.01, 0.04, 0.25, 0.30, 0.10, 0.05, 0.04, 0.03,
-                          0.02, 0.01, 0.0, 0.0, 0.0]
+# Layering of the Wooster reference soils.in (DayCent distribution), cut at
+# 90 cm (see module docstring): no layer goes below the HWSD depth.
+LAYER_EDGES_CM = [0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 75.0, 90.0]
 
-# Evap coefficient template — strongest near surface
-EVAP_COEFF_TEMPLATE = [0.80, 0.20, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
-                       0.00, 0.00, 0.00, 0.00, 0.00]
+# Column 7 (binary header 'tcoeff', the root/transpiration fraction) and
+# column 6 ('ecoeff') copied from the same 9 layers of the Wooster reference
+# soils.in (copy in workdir/de_gri/soils.in). The full Wooster column sums to
+# 0.85, not 1.0 (its 90-105 cm layer had 0.01); these 9 layers sum to 0.84.
+# The values are not changed here because the source gives them this way.
+ROOT_FRACTION_TEMPLATE = [0.01, 0.04, 0.25, 0.30, 0.10, 0.05, 0.04, 0.03, 0.02]
+EVAP_COEFF_TEMPLATE = [0.80, 0.20, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]
 
 
 def validate_inputs(lat, lon):
@@ -67,26 +78,60 @@ def validate_inputs(lat, lon):
         raise ValueError(f"lon out of range: {lon}")
 
 
-def build_layer_record(top, bot, soil, vgn, idx):
-    """Assemble one row for soils.in."""
-    bulkd = soil.get("bulk_density", soil.get("bulkd", 1.30))
-    if bulkd > 100.0:  # almost certainly kg/m³ (HWSD raw)
-        bulkd = bulkd / 1000.0
-    sand = soil.get("sand", 0.40)
-    clay = soil.get("clay", 0.20)
-    if sand > 1.5:  # percent → fraction
-        sand /= 100.0
-    if clay > 1.5:
-        clay /= 100.0
-    om = soil.get("om", soil.get("oc", 0.02))
-    if om > 0.2:  # HWSD OC is typically 0.5-5.0 percent; fraction would be 0.005-0.05
-        om /= 100.0
-    ph = soil.get("ph", 6.5)
+# Van Bemmelen factor: organic matter = 1.724 x organic carbon (by mass).
+OM_PER_OC = 1.724
 
-    fc = vgn.get("field_capacity", vgn.get("fc", 0.30))
-    wp = vgn.get("wilting_point", vgn.get("wp", 0.13))
-    ksat_cm_sec = vgn.get("Ksat_cm_per_sec",
-                          vgn.get("ksat", 0.0005))
+
+def _hwsd_subsoil(hwsd):
+    """Subsoil (30-100 cm) OC, bulk density and pH. lookup_hwsd returns them
+    (sub_oc, sub_bulk_density, sub_ph; a missing one raises). As a cross-check
+    the same HWSD_DATA row (MU_GLOBAL + SEQ, matched on the topsoil values) is
+    read again and must give the same S_OC / S_REF_BULK_DENSITY / S_PH_H2O."""
+    import math
+    import pandas as pd
+    from ki_tools_common import soil_utils
+    comp = hwsd["hwsd_component"]
+    mu, seq = int(hwsd["mu_id"]), comp.get("seq")
+    if seq is None:
+        raise ValueError(f"HWSD map unit {mu}: lookup_hwsd gave no SEQ, cannot find the "
+                         f"subsoil row; no subsoil values are made up")
+    df = pd.read_csv(soil_utils.HWSD_CSV, low_memory=False)
+    rows = df[(df["MU_GLOBAL"] == mu) & (df["SEQ"] == seq)
+              & (df["T_SAND"] == float(hwsd["sand"])) & (df["T_CLAY"] == float(hwsd["clay"]))
+              & (df["T_OC"] == float(hwsd["oc"]))]
+    if len(rows) != 1:
+        raise ValueError(f"HWSD map unit {mu} SEQ {seq}: found {len(rows)} rows matching the "
+                         f"lookup_hwsd topsoil; cannot read the subsoil row")
+    r = rows.iloc[0]
+    out = {"oc": float(hwsd["sub_oc"]), "bulk_density": float(hwsd["sub_bulk_density"]),
+           "ph": float(hwsd["sub_ph"])}
+    for col, key in (("S_OC", "oc"), ("S_REF_BULK_DENSITY", "bulk_density"), ("S_PH_H2O", "ph")):
+        v = r.get(col)
+        if v is None or not math.isfinite(float(v)) or float(v) != out[key]:
+            raise ValueError(f"HWSD map unit {mu} SEQ {seq}: {col} in the table ({v}) does not "
+                             f"match lookup_hwsd ({out[key]}); stopping")
+    return out
+
+
+def build_layer_record(top, bot, soil, vgn, idx):
+    """Assemble one row for soils.in.
+
+    Units are fixed by the source, never guessed from the size of a value:
+    soil['bulk_density'] is HWSD T/S_REF_BULK_DENSITY in kg/dm3 = g/cm3 (the
+    soils.in unit); soil['oc'] is HWSD T/S_OC in % organic carbon by weight;
+    sand/clay are HWSD percent. soils.in column 10 is the organic MATTER
+    fraction (binary header 'org'; DayCent docs: organic matter fraction),
+    so OM = OC% / 100 x 1.724."""
+    bulkd = float(soil["bulk_density"])          # g/cm3
+    sand = float(soil["sand"]) / 100.0
+    clay = float(soil["clay"]) / 100.0
+    om = float(soil["oc"]) / 100.0 * OM_PER_OC  # % OC -> OM mass fraction
+    ph = float(soil["ph"])
+
+    # rosetta_vgn keys, read directly: a missing key raises (no defaults).
+    fc = float(vgn["field_capacity"])
+    wp = float(vgn["wilting_point"])
+    ksat_cm_sec = float(vgn["ksat_cm_day"]) / 86400.0   # cm/day -> cm/s (soils.in col 12)
 
     delta_min = wp * 0.9  # minimum volumetric water content ≈ 90% of WP
 
@@ -110,13 +155,23 @@ def write_soils_in(rows, out_path):
 
 
 def validate_outputs(rows):
-    if len(rows) < 5:
-        raise RuntimeError(f"only {len(rows)} layers produced — expected 13")
-    if len(rows[0]) != 13:
-        raise RuntimeError(f"each row must have 13 columns, got {len(rows[0])}")
+    n_expected = len(LAYER_EDGES_CM) - 1
+    if len(rows) != n_expected:
+        raise RuntimeError(f"{len(rows)} layers produced, expected {n_expected}")
+    if any(len(r) != 13 for r in rows):
+        raise RuntimeError("each row must have 13 columns")
+    if rows[-1][1] > HWSD_MAX_DEPTH_CM:
+        raise ValueError(f"profile goes to {rows[-1][1]} cm, below the HWSD depth "
+                         f"({HWSD_MAX_DEPTH_CM} cm); no values exist there")
+    # Root (tcoeff) and evap (ecoeff) columns must be exactly the Wooster
+    # source values; any other values have no source and fail.
+    if [r[6] for r in rows] != ROOT_FRACTION_TEMPLATE[:len(rows)]:
+        raise ValueError("root-fraction column differs from the Wooster source values")
+    if [r[5] for r in rows] != EVAP_COEFF_TEMPLATE[:len(rows)]:
+        raise ValueError("evap-coefficient column differs from the Wooster source values")
     root_sum = sum(r[6] for r in rows)
-    if not (0.95 <= root_sum <= 1.05):
-        print(f"WARN: root fraction sum = {root_sum:.3f} (expected ~1.0)")
+    if not (0.0 < root_sum <= 1.0):
+        raise ValueError(f"root fraction sum = {root_sum:.3f}; must be > 0 and <= 1")
     for r in rows:
         if r[3] <= r[4]:
             raise ValueError(f"layer {r[0]}-{r[1]}: FC ({r[3]}) <= WP ({r[4]})")
@@ -148,48 +203,40 @@ def main(argv=None):
     print(f"Looking up HWSD soil at ({args.lat}, {args.lon})")
     hwsd = lookup_hwsd(args.lat, args.lon)
 
-    # Build topsoil and subsoil dicts from the single HWSD return
+    # Topsoil (0-30 cm) from lookup_hwsd; subsoil (30-100 cm, used below 30 cm)
+    # from the same HWSD row's S_* columns. A missing field raises (lookup_hwsd
+    # refuses missing fields; _hwsd_subsoil refuses missing S_* values).
     soil_top = {
-        "sand": hwsd.get("sand", 40.0),
-        "silt": hwsd.get("silt", 40.0),
-        "clay": hwsd.get("clay", 20.0),
-        "bulk_density": hwsd.get("bulk_density", 1.30),
-        "oc": hwsd.get("oc", 1.0),
-        "om": hwsd.get("oc", 1.0),
-        "ph": hwsd.get("ph", 6.5),
+        "sand": hwsd["sand"], "clay": hwsd["clay"],
+        "bulk_density": hwsd["bulk_density"],   # T_REF_BULK_DENSITY, g/cm3
+        "oc": hwsd["oc"],                       # T_OC, % organic carbon
+        "ph": hwsd["ph"],
     }
+    sub = _hwsd_subsoil(hwsd)
     soil_sub = {
-        "sand": hwsd.get("sub_sand", soil_top["sand"]),
-        "silt": hwsd.get("sub_silt", soil_top["silt"]),
-        "clay": hwsd.get("sub_clay", soil_top["clay"]),
-        "bulk_density": hwsd.get("bulk_density", 1.30),
-        "oc": hwsd.get("oc", 1.0) * 0.5,  # subsoil OC typically lower
-        "om": hwsd.get("oc", 1.0) * 0.5,
-        "ph": hwsd.get("ph", 6.5),
+        "sand": hwsd["sub_sand"], "clay": hwsd["sub_clay"],
+        "bulk_density": sub["bulk_density"],    # S_REF_BULK_DENSITY, g/cm3
+        "oc": sub["oc"],                        # S_OC, % organic carbon
+        "ph": sub["ph"],                        # S_PH_H2O
     }
-    print(f"  topsoil: sand={soil_top['sand']}, clay={soil_top['clay']}, bulkd={soil_top['bulk_density']}, ph={soil_top['ph']}")
-    print(f"  subsoil: sand={soil_sub['sand']}, clay={soil_sub['clay']}")
+    print(f"  topsoil: sand={soil_top['sand']}, clay={soil_top['clay']}, bulkd={soil_top['bulk_density']}, oc%={soil_top['oc']}, ph={soil_top['ph']}")
+    print(f"  subsoil: sand={soil_sub['sand']}, clay={soil_sub['clay']}, bulkd={soil_sub['bulk_density']}, oc%={soil_sub['oc']}, ph={soil_sub['ph']}")
 
     rows = []
     for i in range(len(LAYER_EDGES_CM) - 1):
         top = LAYER_EDGES_CM[i]
         bot = LAYER_EDGES_CM[i + 1]
         soil = soil_top if (top + bot) / 2 < 30.0 else soil_sub
-        # ROSETTA prefers fractions; soil dict may carry percentages
-        sand = soil.get("sand", 0.40)
-        clay = soil.get("clay", 0.20)
-        if sand > 1.5:
-            sand /= 100.0
-        if clay > 1.5:
-            clay /= 100.0
-        vgn = rosetta_vgn(sand=sand, clay=clay)
+        # rosetta_vgn takes sand/clay in PERCENT (lookup_hwsd units).
+        vgn = rosetta_vgn(sand=float(soil["sand"]), clay=float(soil["clay"]))
         rows.append(build_layer_record(top, bot, soil, vgn, i))
 
+    # Check before writing: a failed check leaves no new soils.in behind.
+    validate_outputs(rows)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     write_soils_in(rows, out)
-    print(f"Wrote {out} ({len(rows)} layers)")
-    validate_outputs(rows)
+    print(f"Wrote {out} ({len(rows)} layers, 0-{LAYER_EDGES_CM[-1]:g} cm)")
     return 0
 
 

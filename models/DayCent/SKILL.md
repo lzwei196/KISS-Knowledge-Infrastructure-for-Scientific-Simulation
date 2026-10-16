@@ -283,19 +283,25 @@ solar-radiation surface transmission per month, hydraulic damping, etc. The
 critical for infiltration vs runoff partitioning.
 
 ### `soils.in` — multi-layer soil hydraulic profile
-One row per layer. Columns (no header):
+One row per layer, 13 columns for rev 491 (no header). The rev 491 binary's
+own layer echo header is `dpthmn dpthmx bulkd fieldc wiltpt ecoeff tcoeff sand
+clay org swclim satcond pH`:
 1. Top depth (cm)
 2. Bottom depth (cm)
 3. Bulk density (g/cm³)
 4. Field capacity (vol/vol)
 5. Wilting point (vol/vol)
-6. Evaporation coefficient
-7. Root fraction in layer
+6. Evaporation coefficient (ecoeff)
+7. Root / transpiration fraction in layer (tcoeff)
 8. Sand fraction (0–1)
 9. Clay fraction (0–1)
-10. OM fraction (0–1, sometimes column 9 is OM and 10 is something else)
-11. Saturated hydraulic conductivity (cm/sec)
-12. pH
+10. Organic matter fraction (0–1; `convert_soil_to_daycent.py` writes HWSD OC% / 100 × 1.724)
+11. Minimum volumetric water content, delta_min / swclimit (tool: WP × 0.9)
+12. Saturated hydraulic conductivity (cm/sec)
+13. pH
+
+`convert_soil_to_daycent.py` writes 9 layers, 0-90 cm (HWSD covers 0-100 cm;
+DayCent rejects a 100 cm boundary with the standard fix.100 ADEP layering).
 
 The `DayCent_Manual_full_02.06.2024.pdf` documents the exact column meaning by
 revision — read it before changing soil columns. Some columns are interpreted
@@ -433,7 +439,8 @@ files/manual as the authority for file-level units.
 | Tmin, Tmax | K (CMFD raw) | °C | `°C = K - 273.15` | additive |
 | Tmin, Tmax | °C (NASA-POWER, FLUXNET CSV after loading) | °C | none | identity |
 | Solar radiation | W/m² | langleys/day | `ly/day ~= W/m² * 2.064` | multiplicative |
-| Bulk density | kg/m³ (HWSD raw `BULK_DENS`) | g/cm³ | `g/cm³ = kg/m³ / 1000` | multiplicative |
+| Bulk density | kg/dm³ = g/cm³ (HWSD `T_REF_BULK_DENSITY`, `S_REF_BULK_DENSITY`) | g/cm³ | none | identity |
+| Organic carbon → matter | % OC (HWSD `T_OC`, `S_OC`) | OM mass fraction (soils.in col 10) | `OM = OC / 100 × 1.724` | multiplicative |
 | Sand/silt/clay | percent (HWSD `T_SAND` etc.) | fraction (0-1) | `frac = pct / 100` | multiplicative |
 | Field capacity / wilting point | vol/vol (0-1) | vol/vol (0-1) | none | identity |
 | Saturated hydraulic conductivity | mm/hour or m/day | cm/sec | use `ki_tools_common.units.convert` | unit conversion |

@@ -197,8 +197,9 @@ def load_and_mask_cmfd(forcing_dir, shapefile, years, prec_var, temp_var,
             fn = file_pattern.format(var=var_name, year=yr)
             full_path = os.path.join(forcing_dir, fn)
             if not os.path.isfile(full_path):
-                log.append(f"[WARN] File not found: {full_path}")
-                continue
+                # A missing year is missing data: stop, never return a series with a hole.
+                raise FileNotFoundError(
+                    f"Forcing file for '{var_name}' year {yr} not found: {full_path}")
             ds = xr.open_dataset(full_path)
             datasets.append(ds)
 
@@ -237,8 +238,12 @@ def load_and_mask_cmfd(forcing_dir, shapefile, years, prec_var, temp_var,
         mask_arr = mask_2d_cache[cache_key]
 
         # Compute basin-average
-        data_var = list(cropped.data_vars)[0]
-        vals = cropped[data_var].values  # shape: (time, lat, lon)
+        # Read the variable that was asked for -- never "the first variable in
+        # the file" (a quality/flag field first would be read as forcing).
+        if var_name not in cropped.data_vars:
+            raise KeyError(f"Variable '{var_name}' not found in the forcing files; "
+                           f"data variables present: {list(cropped.data_vars)}")
+        vals = cropped[var_name].values  # shape: (time, lat, lon)
         basin_avg = np.nanmean(vals[:, mask_arr], axis=1)
 
         times = pd.DatetimeIndex(cropped.time.values).normalize()
@@ -333,10 +338,37 @@ def process(args):
         prec_raw, temp_raw = load_and_mask_cmfd(
             args.forcing_dir, args.shapefile, years,
             args.prec_var, args.temp_var, file_pattern, log)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, KeyError) as e:
         return {"status": "error", "errors": [str(e)], "log": log}
     except Exception as e:
         return {"status": "error", "errors": [f"Failed to load forcing: {e}"], "log": log}
+
+    # This converter is DAILY only: it does not aggregate sub-daily steps.
+    # Normalised timestamps that repeat mean sub-daily input (e.g. 3-hourly CMFD).
+    for name, series in (("precipitation", prec_raw), ("temperature", temp_raw)):
+        if series.index.has_duplicates:
+            return {"status": "error",
+                    "errors": [f"{name} has more than one time step per date (sub-daily input). "
+                               "Aggregate to daily first (sum precipitation depths, average "
+                               "temperature), then convert. The mm/3h option does not sum (dt_kineros2_002)."],
+                    "log": log}
+    if not prec_raw.index.equals(temp_raw.index):
+        return {"status": "error",
+                "errors": ["precipitation and temperature time axes differ"], "log": log}
+
+    if len(prec_raw) == 0 or len(temp_raw) == 0:
+        return {"status": "error",
+                "errors": ["Loaded forcing has no time steps"], "log": log}
+    expected = pd.date_range(f"{y_start}-01-01", f"{y_end}-12-31", freq="D")
+    if not prec_raw.index.equals(expected):
+        missing = expected.difference(prec_raw.index)
+        extra = prec_raw.index.difference(expected)
+        return {"status": "error",
+                "errors": [f"Forcing does not cover every day of {y_start}-{y_end}: "
+                           f"{len(missing)} day(s) missing (first: "
+                           f"{[d.strftime('%Y-%m-%d') for d in missing[:5]]}), "
+                           f"{len(extra)} day(s) outside the requested years"],
+                "log": log}
 
     # Convert units
     prec_mmd = convert_precipitation(prec_raw.values, args.prec_unit)
@@ -349,8 +381,30 @@ def process(args):
     log.append(f"  Mean daily temp:   {np.nanmean(temp_c):.1f} deg C")
     log.append(f"  Total timesteps:   {len(prec_mmd)}")
 
-    # Validate outputs
+    # Missing values must stop the conversion (never turned into a default)
+    n_bad_p = int(np.sum(~np.isfinite(prec_mmd)))
+    n_bad_t = int(np.sum(~np.isfinite(temp_c)))
+    if n_bad_p or n_bad_t:
+        return {"status": "error",
+                "errors": [f"Basin-average forcing has {n_bad_p} non-finite precipitation and "
+                           f"{n_bad_t} non-finite temperature value(s) out of {len(prec_mmd)} "
+                           "(no grid cells inside the basin, or missing data). Nothing is filled in."],
+                "log": log}
+
+    # Validate outputs. The CRITICAL checks are rules of thumb (e.g. mean < 0.1 mm/d
+    # usually means kg/m2/s left unconverted, but a real desert can be that dry).
+    # Default: stop. With --allow-implausible the data are kept, the run is marked
+    # status "warning" and the overridden checks are recorded in the output.
     outputs_ok = validate_outputs(prec_mmd, temp_c, log)
+    critical_msgs = [l for l in log if l.startswith("[CRITICAL]")]
+    if not outputs_ok and not args.allow_implausible:
+        return {"status": "error",
+                "errors": critical_msgs + [
+                    "If the units are right and the data really are this extreme (e.g. a very dry "
+                    "basin), re-run with --allow-implausible."],
+                "log": log}
+    if not outputs_ok:
+        log.append("[WARN] --allow-implausible: CRITICAL plausibility checks overridden by the user")
 
     # Build output
     dates = [d.strftime("%Y-%m-%d") for d in prec_raw.index]
@@ -367,6 +421,7 @@ def process(args):
             "temp_unit": "deg_C",
             "source_prec_unit": args.prec_unit,
             "source_temp_unit": args.temp_unit,
+            "plausibility_overridden": critical_msgs if not outputs_ok else [],
             "stats": {
                 "prec_mean_mm_d": round(float(np.nanmean(prec_mmd)), 4),
                 "prec_max_mm_d": round(float(np.nanmax(prec_mmd)), 4),
@@ -406,6 +461,10 @@ def main():
                         help="NetCDF filename pattern with {var} and {year} placeholders")
     parser.add_argument("--output", required=True,
                         help="Output JSON file path")
+    parser.add_argument("--allow-implausible", action="store_true",
+                        help="Keep data that fail the CRITICAL plausibility rules of thumb (e.g. a very dry "
+                             "basin with mean < 0.1 mm/d). Output status becomes 'warning' and the overridden "
+                             "checks are listed in output.plausibility_overridden. Default: stop with an error.")
 
     args = parser.parse_args()
 

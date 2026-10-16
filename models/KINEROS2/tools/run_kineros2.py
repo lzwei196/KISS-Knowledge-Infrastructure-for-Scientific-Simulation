@@ -111,8 +111,8 @@ def validate_inputs(args):
         if differential_evolution is None:
             errors.append("scipy required for calibration. Run: pip install scipy")
 
-    if args.basin_area_km2 <= 0:
-        errors.append(f"Basin area must be positive, got {args.basin_area_km2}")
+    if not (np.isfinite(args.basin_area_km2) and args.basin_area_km2 > 0):
+        errors.append(f"Basin area must be a finite positive number, got {args.basin_area_km2}")
 
     if args.mode not in ["simulate", "calibrate"]:
         errors.append(f"Mode must be 'simulate' or 'calibrate', got: {args.mode}")
@@ -153,14 +153,17 @@ def hamon_pet(temp_c, doy, latitude_deg=33.0):
     ws = np.arccos(arg)
     dayl = 24.0 * ws / np.pi  # daylight hours
 
-    # Saturated vapor pressure (kPa) - Tetens formula
-    es = 0.611 * np.exp(17.27 * temp_c / (temp_c + 237.3))
+    # Saturated vapor pressure (mb = hPa) - Tetens formula
+    es_mb = 6.108 * np.exp(17.27 * temp_c / (temp_c + 237.3))
 
-    # Saturated vapor density (g/m3)
-    svd = 216.7 * es / (temp_c + 273.3)
+    # Saturated vapor density (g/m3); the 216.7 constant expects es in mb
+    svd = 216.7 * es_mb / (temp_c + 273.3)
 
-    # Hamon PET (mm/d) - Hamon 1961
-    pet = 0.1651 * dayl * svd / 100.0
+    # Hamon PET (mm/d), Hamon 1961 as written in Lu et al. 2005 (JAWRA 41:621)
+    # and the HEC-HMS technical reference: PET = 0.1651 * (N/12) * svd * k,
+    # N = daylight hours (normalised to 12 h), coefficient k = 1.0.
+    # (Before 2026-10-16 this used es in kPa and N/100: about 83x too low.)
+    pet = 0.1651 * (dayl / 12.0) * svd
     pet = np.maximum(pet, 0.0)
 
     return pet
@@ -282,6 +285,23 @@ def load_forcing(forcing_path):
     prec = np.array(output["prec_mm_d"], dtype=float)
     temp = np.array(output["temp_deg_c"], dtype=float)
 
+    if not (len(dates) == len(prec) == len(temp)) or len(dates) == 0:
+        raise ValueError(f"Forcing arrays are empty or differ in length: dates={len(dates)}, "
+                         f"prec={len(prec)}, temp={len(temp)}")
+    if dates.has_duplicates:
+        raise ValueError("Forcing has more than one time step on the same date (sub-daily data?). "
+                         "This runner is daily: aggregate to daily totals first (dt_kineros2_002).")
+    if not dates.is_monotonic_increasing:
+        raise ValueError("Forcing dates are not in increasing order")
+    # Compare the exact elapsed intervals (no truncation to whole days first:
+    # a 36-hour step must not pass as a 1-day step).
+    steps = np.diff(dates.values)
+    bad = steps != np.timedelta64(1, "D")
+    if len(dates) > 1 and bad.any():
+        bad_steps = sorted({str(pd.Timedelta(s)) for s in steps[bad]})[:10]
+        raise ValueError(f"Forcing must be a gap-free daily series (every step exactly 1 day); "
+                         f"found steps {bad_steps}")
+
     return dates, prec, temp
 
 
@@ -291,11 +311,15 @@ def load_observed(obs_path, date_col="dates", q_col="Q"):
     Handles Bengbu format (tab-separated, dates column, Q column).
     Flags negative values (e.g., -99.9) as NaN.
     """
-    # Try tab-separated first (Bengbu format), then comma
+    # Try tab-separated first (Bengbu format); if that gives a single column
+    # (an ordinary comma CSV parses "without error" as one column), let pandas
+    # detect the separator instead.
     try:
         obs = pd.read_csv(obs_path, sep="\t", encoding="latin1")
     except Exception:
-        obs = pd.read_csv(obs_path)
+        obs = None
+    if obs is None or obs.shape[1] < 2:
+        obs = pd.read_csv(obs_path, sep=None, engine="python", encoding="latin1")
 
     # Find date column
     for col in [date_col, "date", "Date", "time", "Time"]:
@@ -323,6 +347,15 @@ def load_observed(obs_path, date_col="dates", q_col="Q"):
 
 def validate_forcing(prec, temp, log):
     """Pre-run sanity check on forcing data."""
+    n_bad_p = int(np.sum(~np.isfinite(prec)))
+    n_bad_t = int(np.sum(~np.isfinite(temp)))
+    if n_bad_p or n_bad_t:
+        # Missing forcing must stop the run: inside kineros2_lumped a NaN rain
+        # day silently turns the soil store into NaN for the rest of the run.
+        log.append(f"[CRITICAL] Forcing has missing/non-finite values: "
+                   f"{n_bad_p} precipitation day(s), {n_bad_t} temperature day(s). "
+                   "Fill or shorten the forcing period; no default is substituted.")
+        return False
     mean_p = float(np.nanmean(prec))
     mean_t = float(np.nanmean(temp))
 
@@ -464,8 +497,11 @@ def run_simulation(args):
     elapsed = time.time() - t0
     log.append(f"Simulation completed in {elapsed:.2f}s")
 
-    # Validate outputs
-    validate_outputs(Q_sim, None, log)
+    # Validate outputs -- a failed check is a failed run, not a success
+    if not validate_outputs(Q_sim, None, log):
+        return {"status": "error",
+                "errors": ["Simulated discharge failed the output check (non-finite values)"],
+                "log": log}
 
     # Build result
     result = {
@@ -513,36 +549,58 @@ def run_calibration(args):
     log.append(f"Loaded observed discharge: "
                f"{q_obs_full.notna().sum()} valid days")
 
-    # Align forcing and obs on common dates
+    # Simulate the FULL forcing timeline (spinup and observation gaps keep their
+    # rainfall and state evolution); observations only mask the scoring.
+    if q_obs_full.index.has_duplicates:
+        return {"status": "error",
+                "errors": ["Observed discharge has duplicate dates"], "log": log}
     common_idx = dates.intersection(q_obs_full.dropna().index)
     if len(common_idx) == 0:
         return {"status": "error",
                 "errors": ["No overlapping dates between forcing and observations"],
                 "log": log}
 
-    P_all = pd.Series(prec, index=dates).reindex(common_idx).values
-    PET_all = pd.Series(pet, index=dates).reindex(common_idx).values
-    Q_obs_all = q_obs_full.reindex(common_idx).values
+    P_all = prec
+    PET_all = pet
+    Q_obs_all = q_obs_full.reindex(dates).values.astype(float)
+    obs_ok = ~np.isnan(Q_obs_all)
 
-    log.append(f"Common period: {common_idx[0].date()} to {common_idx[-1].date()} "
-               f"({len(common_idx)} days)")
+    log.append(f"Simulated period: {dates[0].date()} to {dates[-1].date()} ({len(dates)} days); "
+               f"observed days inside it: {int(obs_ok.sum())} "
+               f"({common_idx[0].date()} to {common_idx[-1].date()})")
 
-    # Define calibration mask
+    # Define calibration mask (scoring only; days without observations are skipped)
     cal_start = pd.Timestamp(args.cal_start)
     cal_end = pd.Timestamp(args.cal_end)
-    cal_mask = (common_idx >= cal_start) & (common_idx <= cal_end)
-    n_cal = cal_mask.sum()
+    cal_mask = (dates >= cal_start) & (dates <= cal_end) & obs_ok
+    n_cal = int(cal_mask.sum())
     log.append(f"Calibration period: {args.cal_start} to {args.cal_end} "
-               f"({n_cal} days)")
+               f"({n_cal} observed days)")
 
     if n_cal < 100:
         return {"status": "error",
                 "errors": [f"Too few calibration days ({n_cal}). Need >= 100."],
                 "log": log}
 
-    # Objective function
+    # Validity is tracked apart from the score: NSE/KGE have no finite lower
+    # bound, so a very poor fit can have any large finite objective. Undefined
+    # evaluations return a large penalty, and the best FINITE evaluation seen is
+    # recorded, so a penalty value can never be reported as a result.
+    UNDEFINED = 1.0e15
+    best_seen = {"fun": np.inf, "x": None, "n_finite": 0}
+
     def objective(params_vec):
-        """Minimize negative (0.5*KGE + 0.5*NSE) on calibration period."""
+        val = _objective(params_vec)
+        if val is None:
+            return UNDEFINED
+        best_seen["n_finite"] += 1
+        if val < best_seen["fun"]:
+            best_seen["fun"] = val
+            best_seen["x"] = np.array(params_vec, dtype=float)
+        return val
+
+    def _objective(params_vec):
+        """Negative (0.5*KGE + 0.5*NSE) on calibration period; None if undefined."""
         params = tuple(params_vec)
         Q_sim = kineros2_lumped(P_all, PET_all, params, args.basin_area_km2)
 
@@ -551,13 +609,13 @@ def run_calibration(args):
 
         valid = ~np.isnan(obs_cal) & ~np.isnan(sim_cal) & np.isfinite(sim_cal)
         if valid.sum() < 100:
-            return 999.0
+            return None
 
         kge = calc_kge(obs_cal[valid], sim_cal[valid])
         nse = calc_nse(obs_cal[valid], sim_cal[valid])
 
-        if np.isnan(kge) or np.isnan(nse):
-            return 999.0
+        if not (np.isfinite(kge) and np.isfinite(nse)):
+            return None
 
         return -(0.5 * kge + 0.5 * nse)
 
@@ -573,9 +631,19 @@ def run_calibration(args):
         polish=True,
     )
 
-    best_params = tuple(de_result.x)
-    log.append(f"Optimization converged: {de_result.success}")
-    log.append(f"Best objective: {de_result.fun:.4f}")
+    if best_seen["n_finite"] == 0:
+        # No parameter set gave a computable NSE/KGE (e.g. constant observations
+        # or too few valid days): there is no calibration result.
+        return {"status": "error",
+                "errors": ["Calibration objective was undefined for every parameter set "
+                           "(NSE/KGE not computable on the calibration days); no parameters are reported."],
+                "log": log}
+    # Report the best finite evaluation (DE's own result if it is that one).
+    best_params = tuple(best_seen["x"])
+    best_fun = float(best_seen["fun"])
+    log.append(f"Optimization converged: {de_result.success}; "
+               f"{best_seen['n_finite']} of {de_result.nfev} evaluations had a defined objective")
+    log.append(f"Best objective: {best_fun:.4f}")
     log.append(f"Optimized parameters:")
     for name, val in zip(PARAM_NAMES, best_params):
         log.append(f"  {name:8s} = {val:.4f}")
@@ -595,12 +663,15 @@ def run_calibration(args):
         "PBIAS": round(float(calc_pbias(obs_cal[v], sim_cal[v])), 2),
         "RMSE": round(float(calc_rmse(obs_cal[v], sim_cal[v])), 1),
     }
+    if not all(np.isfinite(x) for x in cal_metrics.values()):
+        return {"status": "error",
+                "errors": [f"Calibration metrics are not finite: {cal_metrics}"], "log": log}
     log.append(f"\nCalibration metrics:")
     for k, v_val in cal_metrics.items():
         log.append(f"  {k} = {v_val}")
 
-    # Compute metrics on validation period (everything outside calibration)
-    val_mask = ~cal_mask
+    # Compute metrics on validation period (observed days outside the calibration window)
+    val_mask = obs_ok & ~((dates >= cal_start) & (dates <= cal_end))
     val_metrics = {}
     if val_mask.sum() > 100:
         obs_val = Q_obs_all[val_mask]
@@ -614,12 +685,21 @@ def run_calibration(args):
                 "PBIAS": round(float(calc_pbias(obs_val[v2], sim_val[v2])), 2),
                 "RMSE": round(float(calc_rmse(obs_val[v2], sim_val[v2])), 1),
             }
+            bad = [k for k, x in val_metrics.items() if not np.isfinite(x)]
+            if bad:
+                # Keep the JSON standard: undefined metrics are null, with a note
+                log.append(f"[WARN] Validation metrics {bad} are undefined "
+                           "(e.g. constant observations in the validation period); stored as null")
+                val_metrics = {k: (None if k in bad else x) for k, x in val_metrics.items()}
             log.append(f"\nValidation metrics:")
             for k, v_val in val_metrics.items():
                 log.append(f"  {k} = {v_val}")
 
-    # Validate outputs
-    validate_outputs(Q_sim_all, Q_obs_all, log)
+    # Validate outputs -- a failed check is a failed run, not a success
+    if not validate_outputs(Q_sim_all, Q_obs_all, log):
+        return {"status": "error",
+                "errors": ["Simulated discharge failed the output check (non-finite values)"],
+                "log": log}
 
     elapsed = time.time() - t0
     log.append(f"\nTotal calibration time: {elapsed:.1f}s")
@@ -628,11 +708,11 @@ def run_calibration(args):
     result = {
         "status": "success",
         "output": {
-            "dates": [d.strftime("%Y-%m-%d") for d in common_idx],
+            "dates": [d.strftime("%Y-%m-%d") for d in dates],
             "Q_sim_m3s": [round(float(v), 4) for v in Q_sim_all],
             "Q_obs_m3s": [round(float(v), 4) if not np.isnan(v) else None
                           for v in Q_obs_all],
-            "n_timesteps": len(common_idx),
+            "n_timesteps": len(dates),
             "basin_area_km2": args.basin_area_km2,
             "parameters": dict(zip(PARAM_NAMES,
                                    [round(float(v), 4) for v in best_params])),
@@ -643,7 +723,7 @@ def run_calibration(args):
             "validation_metrics": val_metrics,
             "optimization": {
                 "converged": bool(de_result.success),
-                "objective": round(float(de_result.fun), 4),
+                "objective": round(best_fun, 4),
                 "maxiter": args.maxiter,
                 "popsize": args.popsize,
                 "seed": args.seed,
@@ -700,10 +780,13 @@ def main():
         sys.exit(1)
 
     # Step 2: run
-    if args.mode == "simulate":
-        result = run_simulation(args)
-    else:
-        result = run_calibration(args)
+    try:
+        if args.mode == "simulate":
+            result = run_simulation(args)
+        else:
+            result = run_calibration(args)
+    except (ValueError, KeyError) as e:
+        result = {"status": "error", "errors": [f"{type(e).__name__}: {e}"]}
 
     # Step 3: write output
     out_dir = os.path.dirname(args.output)

@@ -18,10 +18,11 @@ Run the lumped daily KINEROS2 analytic implementation. This stage performs Green
 
 ## Procedure
 
-1. Confirm dependencies and the runner smoke test:
+1. Confirm dependencies (preflight does NOT check this surrogate; it checks only the real engine):
 
    ```bash
-   python preflight_check.py
+   python -c "import numpy, pandas"
+   python tools/run_kineros2.py --help
    ```
 
 2. Run the model in simulation mode:

@@ -41,6 +41,15 @@ Compute potential evapotranspiration internally with the Hamon method from daily
 
 Check the runner log in stdout or in `work/simulation.json`. It should include a PET mean in `mm/d` and should not report the forcing validation errors from `validate_forcing`. If the mean temperature is above 100, the runner returns an error before PET is used.
 
+Formula used (Hamon 1961, as written in Lu et al. 2005 and the HEC-HMS technical reference):
+`PET [mm/d] = 0.1651 * (N / 12) * rho_sat`, with `N` the daylight hours, `rho_sat = 216.7 * es / (T + 273.3)` in g/m3
+and `es = 6.108 * exp(17.27 T / (T + 237.3))` in mb, coefficient 1.0. As a size check, 15 deg C with 12 h of daylight
+gives about 2.1 mm/d.
+
+Note: before 2026-10-16 `hamon_pet` used `es` in kPa and `N / 100`, which made PET about 83x too low
+(about 0.03 mm/d instead of 2 mm/d). Surrogate runs made before that date (including the old Bengbu runs) used the
+too-low PET and cannot be repeated with the current code.
+
 ## Traps
 
 - `dt_kineros2_003`: Temperature left in Kelvin can make Hamon PET absurdly high and drain the soil immediately.

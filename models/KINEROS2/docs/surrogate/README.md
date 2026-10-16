@@ -11,4 +11,6 @@ real USDA-ARS engine was installed (2026-10-06).
 - Never quote surrogate numbers as KINEROS2 skill. The real engine pipeline is documented in the
   stage docs one folder up (`docs/s1_*.md` ... `docs/s9_*.md`) and run by `tools/run_kineros2_engine.py`.
 
-Kept for history and for comparing old runs only.
+Kept for history and for comparing old runs only. Note: runs made before 2026-10-16 used a Hamon PET that was
+about 83x too low (unit error, since fixed in `tools/run_kineros2.py::hamon_pet`; see `s4_pet_computation.md`),
+so the current code does not reproduce those old numbers.

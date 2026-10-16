@@ -170,16 +170,23 @@ def load_observed(obs_path, date_col="dates", q_col="Q"):
     Handles Bengbu format and standard CSV.
     Returns Series indexed by date with values in m3/s.
     """
+    # Tab first (Bengbu format); a comma CSV parses as ONE column under sep="\t",
+    # so fall back to separator detection when fewer than two columns come back.
     try:
         obs = pd.read_csv(obs_path, sep="\t", encoding="latin1")
     except Exception:
-        obs = pd.read_csv(obs_path)
+        obs = None
+    if obs is None or obs.shape[1] < 2:
+        obs = pd.read_csv(obs_path, sep=None, engine="python", encoding="latin1")
 
     # Find date column
     for col in [date_col, "date", "Date", "time", "Time"]:
         if col in obs.columns:
             obs[date_col] = pd.to_datetime(obs[col])
             break
+    else:
+        raise KeyError(f"No date column found in {obs_path}. "
+                       f"Available columns: {list(obs.columns)}")
 
     obs = obs.set_index(date_col).sort_index()
 
@@ -207,6 +214,7 @@ def validate_output(sim_values, obs_values, log):
 
     if np.any(~np.isfinite(sim)):
         log.append("[CRITICAL] Non-finite values in simulated discharge")
+        return False
 
     if np.max(sim) > 100000:
         log.append(f"[WARN] Max simulated Q = {np.max(sim):.1f} m3/s "
@@ -257,7 +265,7 @@ def generate_figure(sim_df, obs_series, metrics, output_path, metadata, log):
 
     # Panel 1: Hydrograph
     ax = axes[0, 0]
-    ax.plot(dates, q_sim, "b-", lw=0.8, alpha=0.8, label="Simulated (KINEROS2)")
+    ax.plot(dates, q_sim, "b-", lw=0.8, alpha=0.8, label="Simulated (SURROGATE, not KINEROS2)")
     if has_obs:
         ax.plot(dates, q_obs, "k-", lw=0.8, alpha=0.7, label="Observed")
         ax.fill_between(dates, 0, q_obs, alpha=0.1, color="blue")
@@ -276,7 +284,7 @@ def generate_figure(sim_df, obs_series, metrics, output_path, metadata, log):
                 bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
 
     basin_area = metadata.get("output", {}).get("basin_area_km2", "")
-    ax.set_title(f"KINEROS2 (Analytic) -- Daily Discharge Validation"
+    ax.set_title(f"Python SURROGATE (not the KINEROS2 model) -- Daily Discharge"
                  f"{f' ({basin_area} km2)' if basin_area else ''}",
                  fontsize=11, fontweight="bold")
 
@@ -331,11 +339,21 @@ def process(args):
                f"({sim_df.index[0].date()} to {sim_df.index[-1].date()})")
 
     # Apply warmup
-    if args.warmup_days > 0 and args.warmup_days < len(sim_df):
+    if args.warmup_days < 0:
+        raise ValueError(f"--warmup-days must be >= 0, got {args.warmup_days}")
+    if args.warmup_days >= len(sim_df):
+        raise ValueError(f"--warmup-days {args.warmup_days} is not shorter than the simulation "
+                         f"({len(sim_df)} days): nothing would be left to evaluate")
+    if args.warmup_days > 0:
         sim_eval = sim_df.iloc[args.warmup_days:]
         log.append(f"Warmup: skipping first {args.warmup_days} days")
     else:
         sim_eval = sim_df
+    n_bad = int((~np.isfinite(sim_eval["Q_sim_m3s"].to_numpy(dtype=float))).sum())
+    if n_bad:
+        return {"status": "error",
+                "errors": [f"Simulated discharge has {n_bad} non-finite value(s) in the evaluated period"],
+                "log": log}
 
     # Load external observed data (if not embedded in simulation output)
     obs_series = None
@@ -366,8 +384,11 @@ def process(args):
             q_s = sim_eval.loc[common, "Q_sim_m3s"].values
             q_o = obs_series.reindex(common).values
 
-            # Validate
-            validate_output(q_s, q_o, log)
+            # Validate -- non-finite simulated discharge is an error, not a metric
+            if not validate_output(q_s, q_o, log):
+                return {"status": "error",
+                        "errors": ["Simulated discharge has non-finite values in the evaluated period"],
+                        "log": log}
 
             metrics = {
                 "NSE": round(float(compute_nse(q_o, q_s)), 4),
@@ -377,6 +398,13 @@ def process(args):
                 "RMSE": round(float(compute_rmse(q_o, q_s)), 1),
                 "n_points": len(common),
             }
+
+            bad = [k for k, x in metrics.items() if not np.isfinite(x)]
+            if bad:
+                return {"status": "error",
+                        "errors": [f"Metrics {bad} are undefined on the {len(common)} evaluated days "
+                                   "(e.g. constant observed or simulated discharge); no metrics are reported."],
+                        "log": log}
 
             log.append(f"\nValidation metrics ({len(common)} overlapping days):")
             for k, v in metrics.items():
@@ -475,7 +503,11 @@ def main():
         sys.exit(1)
 
     # Step 2: process
-    result = process(args)
+    try:
+        result = process(args)
+    except (ValueError, KeyError) as e:
+        print(json.dumps({"status": "error", "errors": [f"{type(e).__name__}: {e}"]}, indent=2))
+        sys.exit(1)
 
     # Step 3: validate result
     result = validate_result(result)

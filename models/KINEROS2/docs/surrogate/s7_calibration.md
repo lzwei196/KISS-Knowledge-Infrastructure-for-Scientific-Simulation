@@ -14,15 +14,17 @@ Optimize the eight KINEROS2 lumped parameters against observed discharge with Sc
 
 ## Outputs
 
-- A calibrated JSON containing aligned dates, `Q_sim_m3s`, embedded `Q_obs_m3s`, optimized parameters, bounds, calibration metrics, optional validation metrics, and optimization metadata.
+- A calibrated JSON containing the full forcing dates (the whole forcing period is simulated, including spinup and
+  observation gaps; observations only choose which days are scored), `Q_sim_m3s`, embedded `Q_obs_m3s` (null on days
+  without an observation), optimized parameters, bounds, calibration metrics, optional validation metrics, and optimization metadata.
 - This output can go directly to stage 6 for CSV export and plotting.
 
 ## Procedure
 
-1. Confirm SciPy is available through preflight:
+1. Confirm pandas and SciPy are installed (preflight does NOT check this surrogate and treats SciPy as optional):
 
    ```bash
-   python preflight_check.py
+   python -c "import pandas, scipy.optimize"
    ```
 
 2. Run calibration:

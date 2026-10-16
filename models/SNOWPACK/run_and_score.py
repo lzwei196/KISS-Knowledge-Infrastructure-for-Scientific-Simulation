@@ -121,7 +121,8 @@ def read_obs():
 # ---------- forcing (NASA POWER daily -> parameterized/real hybrid SMET rows) ----------
 def build_forcing(out_csv):
     from ki_tools_common.load_forcing import load_daily_forcing
-    d = load_daily_forcing("nasa_power", LAT, LON, START_YEAR, END_YEAR)
+    d = load_daily_forcing("nasa_power", LAT, LON, START_YEAR, END_YEAR,
+                           period=(RUN_START, RUN_END))   # only these days are kept
     dates = pd.to_datetime(d["dates"])
     fr = pd.DataFrame({
         "date": dates,
@@ -298,16 +299,20 @@ def main():
     full, cal, val, obs_peak, sim_peak = score(res_csv)
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-    if full is None:
+    if full is None or cal is None or val is None:
+        why = ("insufficient obs-sim overlap (<30 paired days)" if full is None else
+               "calibration or validation split has <30 paired days "
+               f"(cal={'ok' if cal else 'short'}, val={'ok' if val else 'short'})")
         result = {"model_id": "SNOWPACK",
                   "this_location": "Canadian Historical Snow Survey Data (1951-2016)",
                   "obs_source": "Canadian Historical Snow Survey Data (1951-2016)",
                   "status": "failed", "tools_used": [], "tools_failed": [],
                   "metrics": {"nse": None, "kge": None, "pbias": None, "r": None, "period": None},
                   "water_balance": {"status": "N/A", "residual_pct": None},
-                  "notes": "insufficient obs-sim overlap (<30 paired days)"}
+                  "notes": why}
         (RESULT_DIR / "result.json").write_text(json.dumps(result, indent=2))
-        print(json.dumps(result)); return
+        print(json.dumps(result))
+        sys.exit(1)                                 # a failed score must not exit 0
 
     notes = (
         f"SNOWPACK verifier at BCE-1C41P {NAME}, Cariboo Mts BC ({ELEV:.0f} m, continental "

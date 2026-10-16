@@ -91,15 +91,52 @@ def esa_to_igbp(v):
     if v in (200,201,202):    return 16
     if v == 210:              return 17
     if v == 220:              return 15
-    return 10
+    raise ValueError(f"ESA-CCI class {v} has no IGBP mapping here")
 
 def log(*a): print(*a, flush=True)
 
 # ----------------------------------------------------------------------------- basin
+BASIN_SELECTION = "pour_point_inside_polygon"
+
+
 def delineate():
+    """Basin cells, cached in basin_cells.json. A cache without the
+    `selection` mark was written by the old code, which could fall back to the
+    NEAREST basin; it is rebuilt, and if the rebuilt basin differs, the box
+    forcing and the cell runs made for the old basin are moved aside too."""
     cache = f"{WORK}/basin_cells.json"
+    legacy = None
     if os.path.exists(cache):
-        return json.load(open(cache))
+        old = json.load(open(cache))
+        if old.get("selection") == BASIN_SELECTION:
+            return old
+        legacy = old
+    out = _delineate_fresh()
+    if legacy is not None:
+        stamp = f"{datetime.now():%Y%m%dT%H%M%S}"
+        norm = lambda x: json.loads(json.dumps(x))     # tuples vs lists from json
+        same = all(norm(legacy.get(k)) == norm(out.get(k)) for k in ("outlet", "box_idx", "cells"))
+        # order matters for a stop half-way: the dependent folders are archived
+        # FIRST; the legacy cache is only retired after that, so a rerun after
+        # an interruption still sees it and finishes the archiving
+        if not same:
+            for d in (CELLS, BOX):
+                if os.path.exists(d):
+                    os.rename(d, f"{d}.old_basin_{stamp}")
+            log(f"basin cache from the old code differs from the rebuilt basin "
+                f"(outlet {legacy.get('outlet')} -> {out['outlet']}); old cells/box moved aside")
+        else:
+            log("basin cache from the old code matches the rebuilt basin; caches kept")
+    out["selection"] = BASIN_SELECTION
+    tmp = cache + ".tmp"
+    json.dump(out, open(tmp, "w"))
+    if legacy is not None:
+        os.rename(cache, f"{cache}.legacy_{stamp}")
+    os.replace(tmp, cache)
+    return out
+
+
+def _delineate_fresh():
     import geopandas as gpd
     from shapely.geometry import Point
     from collections import defaultdict, deque
@@ -108,9 +145,10 @@ def delineate():
     pt = Point(POUR_LON, POUR_LAT)
     hit = g[g.contains(pt)]
     if len(hit) == 0:
-        # nearest basin centroid fallback
-        g["d"] = g.geometry.centroid.distance(pt)
-        hit = g.nsmallest(1, "d")
+        # no "nearest basin" guess: a pour point outside every HydroBASINS polygon
+        # would give some other basin, so stop
+        raise ValueError(f"pour point ({POUR_LAT}, {POUR_LON}) is inside no HydroBASINS "
+                         f"lev12 polygon; check the gauge coordinates")
     else:
         hit = hit.iloc[(hit.UP_AREA - AREA_KNOWN).abs().argsort()]
     outlet = int(hit.iloc[0].HYBAS_ID)
@@ -147,7 +185,6 @@ def delineate():
            "n_full_cells": len(inside), "cells": sampled}
     log(f"basin: outlet={outlet} n_sub={len(sub)} area={area:.0f} km2 "
         f"box={i1-i0}x{j1-j0} full_cells={len(inside)} sampled={len(sampled)}")
-    json.dump(out, open(cache, "w"))
     return out
 
 # ------------------------------------------------------- MSWX read-once -> CMFD-style box
@@ -219,20 +256,31 @@ def merit_elev(lat, lon):
     ns = f"n{la:02d}" if la >= 0 else f"s{-la:02d}"
     ew = f"e{lo:03d}" if lo >= 0 else f"w{-lo:03d}"
     t = f"{MERIT}/{ns}{ew}_dem.tif"
-    if not os.path.exists(t): return 250.0
+    # no made-up elevation: a missing tile, a point outside it, or a no-data /
+    # non-finite value fails the cell (run_cell -> recorded in the result JSON)
+    if not os.path.exists(t):
+        raise FileNotFoundError(f"MERIT DEM tile missing for ({lat}, {lon}): {t}")
     import rasterio
     with rasterio.open(t) as s:
         r, c = s.index(lon, lat)
-        try: e = float(s.read(1)[r, c])
-        except Exception: e = 250.0
-    return e if e > -100 else 250.0
+        if not (0 <= r < s.height and 0 <= c < s.width):
+            raise ValueError(f"MERIT DEM: ({lat}, {lon}) is outside tile {t}")
+        e = float(s.read(1, window=((r, r + 1), (c, c + 1)))[0, 0])
+        nod = s.nodata
+    if not np.isfinite(e) or (nod is not None and e == nod) or e <= -100:
+        raise ValueError(f"MERIT DEM: no valid elevation at ({lat}, {lon}) (value {e})")
+    return e
 
 def esa_igbp(lat, lon):
     import rasterio
     with rasterio.open(ESA) as s:
         r, c = s.index(lon, lat)
-        v = int(s.read(1)[r, c])
-    return esa_to_igbp(v) if v > 0 else 10
+        if not (0 <= r < s.height and 0 <= c < s.width):
+            raise ValueError(f"ESA-CCI land cover: ({lat}, {lon}) is outside the map")
+        v = int(s.read(1, window=((r, r + 1), (c, c + 1)))[0, 0])
+    if v <= 0:   # 0 = ESA-CCI no data
+        raise ValueError(f"ESA-CCI land cover: no data at ({lat}, {lon}) (class {v})")
+    return esa_to_igbp(v)
 
 # ------------------------------------------------------------------- setup file build
 def build_setup(path, lat, lon, hgt, ivgtyp, isltyp, tmn, smc0):
@@ -316,6 +364,16 @@ NML = """&NOAHLSM_OFFLINE
 /
 """
 
+# reason each failed cell gave (cell index -> text); written to the result JSON
+CELL_FAIL = {}
+
+
+def cell_fail(i, why):
+    log(f"cell {i}: FAILED: {why}")
+    CELL_FAIL[i] = why
+    return None
+
+
 def run_cell(i, lat, lon):
     cdir = f"{CELLS}/cell_{i:03d}"
     done = f"{cdir}/runoff.npz"
@@ -324,7 +382,9 @@ def run_cell(i, lat, lon):
         # come from a run that stopped early: use it only if it covers the period
         d = np.load(done, allow_pickle=True)
         if "cache_version" not in d.files or int(d["cache_version"]) != CACHE_VERSION:
-            why = "cache written by the old code (no cache_version; may hold filled-in zeros)"
+            why = (f"cache from older code (cache_version "
+                   f"{int(d['cache_version']) if 'cache_version' in d.files else 'none'}, need "
+                   f"{CACHE_VERSION}; may hold filled-in values)")
         else:
             why = cell_series_problem(d["dates"], d["runoff_mm"], d["et_mm"])
         if why is None:
@@ -334,7 +394,9 @@ def run_cell(i, lat, lon):
         keep = f"{cdir}.rejected_partial_{datetime.now():%Y%m%dT%H%M%S}"
         os.rename(cdir, keep)
         log(f"cell {i}: cached run rejected ({why}); moved to {keep}; rerunning")
-    if os.path.exists(cdir): shutil.rmtree(cdir)
+    if os.path.exists(cdir):
+        # an earlier unsuccessful attempt: keep its outputs/diagnostics, never delete
+        os.rename(cdir, f"{cdir}.failed_attempt_{datetime.now():%Y%m%dT%H%M%S%f}")
     os.makedirs(cdir); fdir = f"{cdir}/forcing"; os.makedirs(fdir)
     # 1. forcing via KI tool (reads CMFD-style box, argmin-selects this cell)
     r = subprocess.run([sys.executable, f"{TOOLS}/convert_forcing_to_noahmp.py",
@@ -344,15 +406,18 @@ def run_cell(i, lat, lon):
         "--timestep", "86400", "--source", "cmfd"], capture_output=True, text=True)
     nfor = len(glob.glob(f"{fdir}/*.LDASIN_DOMAIN1"))
     if r.returncode != 0 or nfor < 100:
-        log(f"cell {i}: forcing FAILED (exit {r.returncode}, ({nfor} files)"); log(r.stdout[-400:]); log(r.stderr[-500:]); return None
+        log(f"cell {i}: forcing FAILED (exit {r.returncode}, ({nfor} files)"); log(r.stdout[-400:]); log(r.stderr[-500:]); return cell_fail(i, f"forcing conversion failed (exit {r.returncode}, {nfor} files)")
     # annual-mean T for TMN, from generated forcing (first spinup year)
     tsum = 0.0; nt = 0
     for f in sorted(glob.glob(f"{fdir}/{RUN_START.year}*.LDASIN_DOMAIN1"))[:365]:
-        with nc.Dataset(f) as d: tsum += float(d["T2D"][0,0,0]); nt += 1
-    tmn = tsum / max(nt, 1)
-    hgt = merit_elev(lat, lon)
-    try: ivg = esa_igbp(lat, lon)
-    except Exception: ivg = 10
+        with nc.Dataset(f) as d:
+            tsum += float(np.ma.filled(np.ma.asarray(d["T2D"][0,0,0], dtype=float), np.nan)); nt += 1
+    # TMN = mean T2D of the first full forcing year; fewer days or a bad value fail the cell
+    if nt < 365 or not np.isfinite(tsum):
+        return cell_fail(i, f"TMN needs 365 forcing days of {RUN_START.year}, got {nt}")
+    tmn = tsum / nt
+    hgt = merit_elev(lat, lon)      # raises -> cell failed with the reason (main loop)
+    ivg = esa_igbp(lat, lon)        # raises -> cell failed with the reason (main loop)
     # 2. setup + namelist
     setup = f"{cdir}/hrldas_setup.nc"
     build_setup(setup, lat, lon, hgt, ivg, 6, tmn, 0.30)
@@ -367,13 +432,13 @@ def run_cell(i, lat, lon):
         "--skip_compile", "--timeout", "3600"], capture_output=True, text=True)
     outs = glob.glob(f"{cdir}/*.LDASOUT_DOMAIN1")
     if rr.returncode != 0 or len(outs) < 100:
-        log(f"cell {i}: run FAILED (exit {rr.returncode}, {len(outs)} outputs)"); log(rr.stdout[-400:]); log(rr.stderr[-400:]); return None
+        log(f"cell {i}: run FAILED (exit {rr.returncode}, {len(outs)} outputs)"); log(rr.stdout[-400:]); log(rr.stderr[-400:]); return cell_fail(i, f"model run failed (exit {rr.returncode}, {len(outs)} outputs)")
     # 4. parse via KI parser
     pr = subprocess.run([sys.executable, f"{TOOLS}/parse_noahmp_output.py",
         "--output_dir", cdir, "--variables", "SFCRNOFF,UGDRNOFF,LH,SNEQV",
         "--output", f"{cdir}/parsed.csv"], capture_output=True, text=True)
     if pr.returncode != 0 or not os.path.exists(f"{cdir}/parsed.csv"):
-        log(f"cell {i}: parse FAILED (exit {pr.returncode})"); log(pr.stderr[-400:]); return None
+        log(f"cell {i}: parse FAILED (exit {pr.returncode})"); log(pr.stderr[-400:]); return cell_fail(i, f"output parse failed (exit {pr.returncode})")
     import pandas as pd
     df = pd.read_csv(f"{cdir}/parsed.csv")
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -383,13 +448,13 @@ def run_cell(i, lat, lon):
             or df["datetime"].min() > pd.Timestamp(SCORE_START):
         log(f"cell {i}: run INCOMPLETE ({len(df)} outputs, "
             f"{df['datetime'].min() if len(df) else None} .. {df['datetime'].max() if len(df) else None}; "
-            f"need {SCORE_START:%Y-%m-%d} .. {RUN_END:%Y-%m-%d})"); return None
+            f"need {SCORE_START:%Y-%m-%d} .. {RUN_END:%Y-%m-%d})"); return cell_fail(i, "run incomplete (outputs do not cover the scored period)")
     # no value is filled in: a missing runoff/LH stays NaN and the basin merge then
     # fails the cell. The FIRST row has no runoff increment by construction (the
     # parser needs a previous accumulated value), so that one row is dropped.
     need = [c for c in ("SFCRUNOFF_INC_mm", "UDRUNOFF_INC_mm", "LH") if c not in df.columns]
     if need:
-        log(f"cell {i}: parse gave no {need}"); return None
+        log(f"cell {i}: parse gave no {need}"); return cell_fail(i, f"parse gave no {need}")
     df = df.sort_values("datetime").reset_index(drop=True)
     if len(df) and df.loc[0, ["SFCRUNOFF_INC_mm", "UDRUNOFF_INC_mm"]].isna().any():
         df = df.iloc[1:].reset_index(drop=True)
@@ -402,7 +467,7 @@ def run_cell(i, lat, lon):
     why = cell_series_problem(dates, ro, et)
     if why:
         log(f"cell {i}: run output not usable ({why}); not cached, LDASOUT kept in {cdir}")
-        return None
+        return cell_fail(i, f"run output not usable: {why}")
     np.savez(done, dates=dates, runoff_mm=ro, et_mm=et, lat=lat, lon=lon,
              tmn=tmn, hgt=hgt, ivg=ivg, cache_version=CACHE_VERSION)
     shutil.rmtree(fdir, ignore_errors=True)
@@ -454,7 +519,7 @@ def basin_precip_mm(cells, weights, dstart, dend):
 
 # runoff.npz layout version. Caches without it (written before 2026-10-16 by the
 # old fillna(0) code, which turned missing runoff/LH into 0) are never trusted.
-CACHE_VERSION = 2
+CACHE_VERSION = 3   # 3: after the 2026-10-16 no-default elevation / land-cover / TMN fix
 
 
 def cell_series_problem(dates, ro, et):
@@ -529,8 +594,11 @@ def main():
         try:
             d = run_cell(i, la, lo)
         except Exception as e:
-            log(f"cell {i} EXC {e}"); log(traceback.format_exc()[-800:]); d = None
+            log(f"cell {i} EXC {e}"); log(traceback.format_exc()[-800:])
+            d = cell_fail(i, f"{type(e).__name__}: {e}")
         per.append(d)
+    failed = [{"cell": i, "lat": float(la), "lon": float(lo), "why": CELL_FAIL[i]}
+              for i, ((la, lo), d) in enumerate(zip(cells, per)) if d is None and i in CELL_FAIL]
     ok = [(w, d) for w, d in zip(weights, per) if d is not None]
     ref, basin_ro, basin_et, used, rejected = (merge_cells_by_date(ok) if ok
                                                else (None, None, None, [], []))
@@ -540,7 +608,8 @@ def main():
     if not n_used:
         json.dump({"model_id":"Noah_MP","this_location":LOCATION,"obs_source":"HYDAT",
                    "status":"failed","metrics":{},"water_balance":{"status":"N/A"},
-                   "notes":"all cells failed"}, open(RESULT,"w"), indent=2)
+                   "notes":"all cells failed",
+                   "cells_failed_run": failed}, open(RESULT,"w"), indent=2)
         log("all cells failed"); sys.exit(1)
     # discharge: runoff mm/day -> m3/s over basin area
     q_sim_raw = basin_ro * area / 86.4
@@ -622,6 +691,11 @@ def main():
                   "n_cells_run": len(ok), "n_cells_sampled": len(cells),
                   "n_cells_used": n_used, "n_cells_failed_run": len(per) - len(ok),
                   "cells_rejected_in_merge": rejected,
+                  "cells_failed_run": failed,
+                  "fixed_settings_not_from_data": {
+                      "ISLTYP": "6 (loam) for every cell; no soil map is read",
+                      "initial_soil_moisture": "0.30 m3/m3 in all 4 layers, then spin-up",
+                      "initial_soil_temperature": "TMN (first-year mean T2D) in all layers"},
                   "precip_and_scores_from": "the n_cells_used cells only, weights renormalised"},
         "discharge_stats_m3s": {
             "obs_mean": float(m.Qobs.mean()),

@@ -731,3 +731,45 @@ ki/
 └── diagnostics/
     └── triplets.yaml               # 21 diagnostic triplets
 ```
+
+
+### Missing forcing and recorded opt-in repair (2026-10-03)
+
+Missing/nonfinite P or PET is fatal by default, for Caravan and text input.
+A missing PET column never becomes zero. `--fill-forcing-gaps` permits linear
+interpolation only for interior gaps bracketed by finite samples; missing
+endpoints or entirely missing series are rejected. Date axes must be ordered,
+consecutive and cover the requested interval. Caravan remains daily.
+Sub-daily text input (`--timestep` < 1, e.g. `1/24`): the date columns hold
+days only, so each day must appear in order, with no day missing, and with
+exactly 1/timestep rows (24 for hourly); the order of rows inside a day cannot
+be checked from the file, so it must be sorted by time.
+
+The output `gap_filling` object records each field/index/date, the original
+nonfinite value, replacement, method and both source neighbours, plus per-field
+masks/counts. `statistics.gap_filled_counts` repeats counts in the summary.
+Valid source values are preserved except separately requested PET sign/floor
+transformations. Actual zero P/PET is valid. Failure exits nonzero and leaves
+an existing forcing output untouched. Run `python -B tests/test_gap_provenance.py`.
+
+### PET sign/floor, observed Q units and totals (2026-10-16)
+
+- `--pet-sign` and `--pet-min` act the same way for text and Caravan input.
+  PET that has negative values and no positive value stops unless
+  `--pet-sign flip` is given; `flip` is accepted only for such negative-only
+  PET (on PET with positive values, or all-zero PET, it stops; it is never
+  silently ignored). All-zero PET is accepted as real zero demand for text
+  input (`PET_all_zero: true` in the record); for Caravan it stops as an empty
+  field. A one-row text file is read as one time step.
+  `conversions_applied.PET_sign` / `PET_floor` say what was done.
+- Each `gap_filling` record keeps `original` = the value as read from the file
+  (before unit factor, sign flip and floor), `after_transforms` = the value the
+  interpolation saw, and each neighbour's `value` (converted) and
+  `source_value` (as read). `transforms_before_interpolation` lists the steps.
+- Text `--q-unit m3/s`, `cms` or `l/s` needs `--area` (km2, > 0); without it,
+  or with an unknown unit, the converter stops instead of labelling flow
+  numbers as mm/d. `conversions_applied.Q_obs` records the conversion.
+- P/PET are rates in mm/d. `statistics.P_total` is the depth in mm
+  (sum of rates x `timestep_d`), so 24 hourly rows of 1 mm/h give 24 mm.
+- Tests write their netCDF fixtures with the first working writer among
+  netCDF4, h5netcdf and scipy (set `SFP_TEST_NC_ENGINES` to force one).

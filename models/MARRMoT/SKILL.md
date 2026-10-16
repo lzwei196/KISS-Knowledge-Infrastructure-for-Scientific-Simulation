@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -48,6 +48,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | tool (exact path) | invocation |
 |---|---|
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/calib_run_huaibin.py` | multi-structure fail-closed driver for 淮滨 Huaibin (SITE:huaibin, stcd 50229350, sha1-pinned obs): structure from `SYS1_MARRMOT_MODEL`, θ as `{"x1"..}` in `KDT_CALIB_PARAMS` checked against the model's own parRanges (`System1/offline/huai_scaleup/w4_lumped/marrmot_parranges.txt`), per-year splits, real model via `run_marrmot.py`; forcing `models/MARRMoT/huaibin/forcing/`. Optional fail-closed knobs: `KDT_MARRMOT_FORCING_FILE` (another forcing CSV of the same layout, e.g. a 1-year slice), `KDT_MARRMOT_INITIAL_STORES` (S0 in mm, one value per store, count checked against the structure name) — used by System 1's state-update experiment. System 1 W4, 2026-08-29 |
 | `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
 | `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
 | `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |

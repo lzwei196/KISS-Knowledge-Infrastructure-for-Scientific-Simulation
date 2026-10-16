@@ -628,6 +628,12 @@ def process_calibrate(args):
     os.makedirs(output_dir, exist_ok=True)
     materialize_runtime_shims(output_dir)
     best_json = os.path.join(output_dir, "best_theta.json")
+    # A best_theta.json left by an EARLIER call (maybe another model) must never be reported as this
+    # call's result if Octave dies before saving its own candidate: start every calibration clean.
+    try:
+        os.unlink(best_json)
+    except FileNotFoundError:
+        pass
 
     if args.optimizer == "cmaes":
         script = build_cmaes_calibration_script(
@@ -855,6 +861,9 @@ def process(args):
         run_result.update(summary)
 
         if result.returncode != 0:
+            # the parsed summary may say "success" (printed before a later crash): the exit code wins
+            run_result["status"] = "error"
+            run_result["return_code"] = result.returncode
             run_result["errors"] = [
                 f"Octave exited with code {result.returncode}",
                 stderr[:500],
@@ -882,9 +891,12 @@ def validate_outputs(result):
 
     warnings = result.get("warnings", [])
 
-    # Check output CSV exists
+    # Check output CSV exists -- no timeseries means the run FAILED, not a warning
     if "output_csv" in result and not os.path.isfile(result["output_csv"]):
-        warnings.append("Output CSV not created -- model may have failed")
+        result["status"] = "error"
+        result.setdefault("errors", []).append(
+            "Output CSV not created although Octave exited 0 -- model failed")
+        return result
 
     # Check water balance
     wb = result.get("water_balance", None)
@@ -968,6 +980,10 @@ def main():
         with open(args.output, "w") as f:
             json.dump(result, f, indent=2)
         print(json.dumps(result, indent=2))
+        # honest exit code: a hard error is non-zero; "partial" (budget/kill-limited search with a
+        # persisted best theta) stays 0 but is labelled status=partial with a warning in the JSON
+        if result.get("status") == "error":
+            sys.exit(1)
         return
     result = process(args)
     result = validate_outputs(result)
@@ -977,6 +993,10 @@ def main():
         json.dump(result, f, indent=2)
 
     print(json.dumps(result, indent=2))
+    # honest exit code (2026-10-16): an Octave failure, timeout or missing timeseries used to write
+    # status=error and still exit 0, so callers that check only the return code scored a failed run
+    if result.get("status") != "success":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

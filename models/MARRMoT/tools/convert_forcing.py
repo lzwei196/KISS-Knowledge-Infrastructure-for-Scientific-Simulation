@@ -180,9 +180,9 @@ def priestley_taylor_pet(srad, lrad, tmean, pres, albedo=0.23, alpha=1.26):
     hard against its bound -- yielding a respectable NSE from a non-physical,
     non-identifiable fit that only a P-Ea-Q check catches.
 
-    Passing --pres-col matters at altitude: the sea-level fallback
-    (101325 Pa) inflates the psychrometric constant gamma and therefore
-    under-estimates Ep exactly where the trap bites.
+    --pres-col is required: a sea-level value (101325 Pa) would inflate the
+    psychrometric constant gamma and under-estimate Ep exactly where the
+    trap bites, so none is assumed.
     """
     srad = np.asarray(srad, dtype=float)
     lrad = np.asarray(lrad, dtype=float)
@@ -229,45 +229,66 @@ def convert_era5(input_path, lat, lon, start, end):
 
     times = pd.DatetimeIndex(ds.time.values)
 
-    # Precipitation: ERA5 tp is m/d or kg/m2/s depending on product
-    if "tp" in ds:
-        p_raw = ds["tp"].values
-        # Detect units: if max < 1, likely m/d
-        if np.nanmax(p_raw) < 1.0:
-            precip = p_raw * M_D_TO_MM_D
-            print("Converted precip from m/d to mm/d", file=sys.stderr)
-        else:
-            precip = p_raw * KG_M2_S_TO_MM_D
-            print("Converted precip from kg/m2/s to mm/d", file=sys.stderr)
-    else:
-        raise KeyError("No precipitation variable found (expected 'tp')")
+    def _fail(msg):
+        ds.close()
+        print(json.dumps({"status": "error", "errors": [msg]}))
+        sys.exit(1)
 
-    # Temperature: ERA5 t2m is in K
-    if "t2m" in ds:
-        temp = ds["t2m"].values + K_TO_C
-        print("Converted temperature from K to deg C", file=sys.stderr)
-    elif "T2M" in ds:
-        temp = ds["T2M"].values + K_TO_C
-    else:
-        raise KeyError("No temperature variable found (expected 't2m')")
+    # Units come from each variable's own `units` attribute; a missing or
+    # unknown one stops (no guessing from the size of the values).
+    if len(times) > 1:
+        steps = np.unique(np.diff(times.values).astype("timedelta64[s]").astype(int))
+        if steps.size != 1 or int(steps[0]) != 86400:
+            _fail(f"{input_path}: time step is not one day ({steps[:5]} s); this "
+                  f"reader converts DAILY ERA5 only")
 
-    # PET: compute via Hargreaves if Tmin/Tmax available, else use provided
+    def _units(name):
+        u = ds[name].attrs.get("units")
+        if u is None:
+            _fail(f"{input_path}: variable '{name}' has no units attribute; "
+                  f"units are not guessed")
+        return str(u).strip()
+
+    # depth per day: daily ERA5 sums are 'm' (per 1-day step) or 'm day-1'
+    P_FACTORS = {"m": M_D_TO_MM_D, "m day-1": M_D_TO_MM_D, "m d-1": M_D_TO_MM_D,
+                 "mm": 1.0, "mm day-1": 1.0, "mm d-1": 1.0,
+                 "kg m-2 s-1": KG_M2_S_TO_MM_D, "kg m**-2 s**-1": KG_M2_S_TO_MM_D}
+    T_OFFSETS = {"K": K_TO_C, "degC": 0.0, "degree_Celsius": 0.0, "C": 0.0}
+
+    # Precipitation
+    if "tp" not in ds:
+        _fail("No precipitation variable found (expected 'tp')")
+    pu = _units("tp")
+    if pu not in P_FACTORS:
+        _fail(f"tp units {pu!r} unknown (known: {sorted(P_FACTORS)}); nothing converted")
+    precip = ds["tp"].values * P_FACTORS[pu]
+    print(f"Converted precip from {pu} to mm/d (x{P_FACTORS[pu]:g})", file=sys.stderr)
+
+    # Temperature
+    tname = "t2m" if "t2m" in ds else ("T2M" if "T2M" in ds else None)
+    if tname is None:
+        _fail("No temperature variable found (expected 't2m')")
+    tu = _units(tname)
+    if tu not in T_OFFSETS:
+        _fail(f"{tname} units {tu!r} unknown (known: {sorted(T_OFFSETS)}); nothing converted")
+    temp = ds[tname].values + T_OFFSETS[tu]
+    print(f"Converted temperature from {tu} to deg C", file=sys.stderr)
+
+    # PET must be in the source: there is no daily Tmin/Tmax here, and making
+    # them up (T +/- 5 C) for Hargreaves would invent the input.
     if "pet" in ds or "pev" in ds:
         varname = "pet" if "pet" in ds else "pev"
-        pet_raw = ds[varname].values
-        # ERA5 PET is negative (energy leaving surface) and in m/d
-        pet = np.abs(pet_raw) * M_D_TO_MM_D
-        print(f"Converted PET from {varname} (m/d) to mm/d", file=sys.stderr)
+        eu = _units(varname)
+        if eu not in P_FACTORS:
+            _fail(f"{varname} units {eu!r} unknown (known: {sorted(P_FACTORS)}); "
+                  f"nothing converted")
+        # ERA5 PET is negative (energy leaving surface)
+        pet = np.abs(ds[varname].values) * P_FACTORS[eu]
+        print(f"Converted PET from {varname} ({eu}) to mm/d", file=sys.stderr)
     else:
-        # Estimate PET from temperature using Hargreaves
-        lat_rad = np.radians(lat)
-        doy = times.dayofyear.values
-        # Approximate Tmin/Tmax as T +/- 5 C (rough estimate)
-        tmin = temp - 5.0
-        tmax = temp + 5.0
-        pet = hargreaves_pet(tmin, tmax, temp, doy, lat_rad)
-        print("Estimated PET using Hargreaves (no PET in source)",
-              file=sys.stderr)
+        _fail(f"{input_path} has no PET ('pet'/'pev'). The old T +/- 5 C "
+              f"Hargreaves estimate invented Tmin/Tmax and is removed; export the "
+              f"series to CSV and use --pet-method oudin/hargreaves/priestley_taylor")
 
     ds.close()
     return times, precip, pet, temp
@@ -374,7 +395,8 @@ def convert_nasa_power(lat, lon, start, end):
             "nasa_power format requires --start and --end (YYYY-MM-DD)"]}))
         sys.exit(1)
 
-    d = _lf.load_daily_forcing("nasa_power", lat, lon, sy, ey)
+    d = _lf.load_daily_forcing("nasa_power", lat, lon, sy, ey,
+                               period=(start, end))
     times = pd.DatetimeIndex(pd.to_datetime(d["dates"]))
     precip = np.asarray(d["precip_mm"], dtype=float)
     temp = np.asarray(d["temp_mean_c"], dtype=float)
@@ -419,8 +441,8 @@ def convert_csv(input_path, p_col, ep_col, t_col, date_col, start, end,
         (CMFD, MSWX, ERA5 all do) and ESPECIALLY on cold/high-altitude
         basins where the temperature-index methods under-estimate demand
         and break the Ep >= P - Q mass-feasibility requirement (dt_019).
-        Requires --lat, --srad-col, --lrad-col; --pres-col strongly
-        recommended at altitude (sea-level fallback inflates gamma).
+        Requires --lat, --srad-col, --lrad-col and --pres-col (no
+        sea-level pressure is assumed).
     """
     if pd is None:
         print(json.dumps({"status": "error",
@@ -460,8 +482,11 @@ def convert_csv(input_path, p_col, ep_col, t_col, date_col, start, end,
         print(f"Computed Oudin PET from mean T at lat={lat} "
               f"(mean {np.nanmean(pet):.2f} mm/d)", file=sys.stderr)
     elif pet_method == "priestley_taylor":
+        # Surface pressure is required: no sea-level value is assumed (the
+        # tool has no elevation input to derive one from).
         missing = [n for n, v in (("--srad-col", srad_col),
-                                  ("--lrad-col", lrad_col)) if v is None]
+                                  ("--lrad-col", lrad_col),
+                                  ("--pres-col", pres_col)) if v is None]
         if missing or lat is None:
             if lat is None:
                 missing.append("--lat")
@@ -471,13 +496,7 @@ def convert_csv(input_path, p_col, ep_col, t_col, date_col, start, end,
             sys.exit(1)
         srad = df[srad_col].values.astype(float)
         lrad = df[lrad_col].values.astype(float)
-        if pres_col is not None:
-            pres = df[pres_col].values.astype(float)
-        else:
-            pres = np.full(len(df), 101325.0)
-            print("WARNING: --pres-col not given; assuming sea-level "
-                  "101325 Pa. At altitude this inflates gamma and "
-                  "UNDER-estimates Ep (dt_019).", file=sys.stderr)
+        pres = df[pres_col].values.astype(float)
         pet = priestley_taylor_pet(srad, lrad, temp, pres)
         print(f"Computed Priestley-Taylor PET from srad/lrad at lat={lat} "
               f"(mean {np.nanmean(pet):.2f} mm/d, "
@@ -512,6 +531,44 @@ def process(args):
         # For now, treat as ERA5 with auto-detection
         times, precip, pet, temp = convert_era5(
             args.input, args.lat, args.lon, args.start, args.end)
+
+    # Missing forcing stops the tool: every P, Ep and T in the window must be a
+    # real number (nothing is filled; nanmean/nansum below never hide a gap).
+    if len(times) == 0:
+        print(json.dumps({"status": "error", "errors": [
+            f"no forcing rows in {args.start}..{args.end}"]}))
+        sys.exit(1)
+    # The days themselves must be complete: MARRMoT forcing is one row per
+    # day, so every day from --start (or the first row) to --end (or the last
+    # row) must be present once, in order. A missing day is not a NaN, so the
+    # value check below cannot see it.
+    days = pd.DatetimeIndex(times).normalize()
+    d0 = pd.Timestamp(args.start).normalize() if args.start else days[0]
+    d1 = pd.Timestamp(args.end).normalize() if args.end else days[-1]
+    want_days = pd.date_range(d0, d1, freq="D")
+    if len(days) != len(want_days) or not (days == want_days).all():
+        lost = want_days.difference(days)
+        dup = int(days.duplicated().sum())
+        print(json.dumps({"status": "error", "errors": [
+            f"daily time axis is not complete in {d0.date()}..{d1.date()}: "
+            f"{len(lost)} missing day(s) (first: "
+            f"{', '.join(str(x.date()) for x in lost[:5])}), {dup} duplicate(s), "
+            f"{len(days)} rows for {len(want_days)} days; nothing is filled in and "
+            f"nothing is written"]}))
+        sys.exit(1)
+    for name, arr in (("P", precip), ("Ep", pet), ("T", temp)):
+        arr = np.asarray(arr, dtype=float)
+        if arr.shape != (len(times),):
+            print(json.dumps({"status": "error", "errors": [
+                f"{name}: {arr.shape} values for {len(times)} days"]}))
+            sys.exit(1)
+        bad = ~np.isfinite(arr)
+        if bad.any():
+            first = ", ".join(str(times[i].date()) for i in np.flatnonzero(bad)[:5])
+            print(json.dumps({"status": "error", "errors": [
+                f"{name}: {int(bad.sum())} missing values in the window "
+                f"(first: {first}); nothing is filled in and nothing is written"]}))
+            sys.exit(1)
 
     # Gauge-undercatch / orographic precip correction. NASA POWER (MERRA-2)
     # systematically under-catches precip in mountainous / interior / snowy
@@ -669,9 +726,9 @@ def main():
                         help="Downwelling LONGwave radiation column, W/m2 "
                              "(for --pet-method priestley_taylor)")
     parser.add_argument("--pres-col", default=None,
-                        help="Surface pressure column, Pa (for --pet-method "
-                             "priestley_taylor). Strongly recommended at "
-                             "altitude; sea-level fallback under-estimates Ep")
+                        help="Surface pressure column, Pa (REQUIRED for "
+                             "--pet-method priestley_taylor; no sea-level "
+                             "value is assumed)")
 
     args = parser.parse_args()
 

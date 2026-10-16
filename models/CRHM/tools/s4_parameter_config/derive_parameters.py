@@ -134,7 +134,11 @@ def lookup_soil_type(lat, lon):
                 f"component with a texture; built-in loam used (soil_type 4)")
         if soil and 'texture' in soil:
             texture = soil['texture'].lower().strip()
-            crhm_type = USDA_TO_CRHM.get(texture, 4)  # default loam
+            if texture not in USDA_TO_CRHM:
+                DEFAULTS_USED.append(
+                    f"soil at ({lat}, {lon}): HWSD texture {texture!r} has no CRHM "
+                    f"soil_type mapping; built-in loam used (soil_type 4)")
+            crhm_type = USDA_TO_CRHM.get(texture, 4)
             return crhm_type, soil
         return 4, soil  # default loam
     except Exception as e:
@@ -241,6 +245,7 @@ def derive_soil_params(soil_type, land_cover, mean_elevation_m=0, slope_deg=10,
         'soil_rechr_init': round(soil_rechr_init, 1),
         'gw_max': round(gw_max, 1),
         'gw_init': 0.0,  # cold start
+        'Sdmax': round(Sdmax, 1),
     }
 
 
@@ -718,13 +723,13 @@ def main():
         soil_moist_inits.append(soil_params['soil_moist_init'])
         soil_rechr_inits.append(soil_params['soil_rechr_init'])
         gw_maxs.append(soil_params['gw_max'])
-        sdmaxs.append(soil_params.get('Sdmax', 0))
+        sdmaxs.append(soil_params['Sdmax'])
 
         texture_name = CRHM_SOIL.get(st, {}).get('name', '?')
         print(f"  HRU {hru.get('hru_id', '?')}: elev={elev:.0f}m, soil_type={st} ({texture_name}), "
               f"soil_moist_max={soil_params['soil_moist_max']:.0f}, "
               f"soil_rechr_max={soil_params['soil_rechr_max']:.0f}, "
-              f"gw_max={soil_params['gw_max']:.0f}, Sdmax={soil_params.get('Sdmax', 0):.0f}")
+              f"gw_max={soil_params['gw_max']:.0f}, Sdmax={soil_params['Sdmax']:.0f}")
 
     # Obs module parameters (Fang 2013: lapse 0.75°C/100m, precip elev adj)
     # forcing_source/forcing_elev_m were supported by derive_obs_params() but

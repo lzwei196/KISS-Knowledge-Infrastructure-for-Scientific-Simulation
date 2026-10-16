@@ -41,6 +41,43 @@ python tools/s4_parameter_config/create_prj_file.py \
 
 **Expected result**: .prj file with all sections populated.
 
+The writer revalidates imported module-chain JSON and observations before writing.
+Module variations (`#1`, etc.) cannot bypass the Snobal drift-provider checks.
+Observations need the `####` separator, valid precipitation units (`p` in mm/int
+or `ppt` in mm/day), finite values, matching columns, and a regular increasing
+time axis. Pressure is `press`, never `p`.
+
+Direct `build_obs.py` outputs now record `clock_utc_offset_hours: 0` in the
+adjacent `.obs.meta.json`. Keep that file with the observations. The project
+writer uses each HRU's longitude (or basin longitude) to set
+`global Time_Offset = clock_utc_offset_hours - longitude/15`, wrapped to
+[-12, 12] hours. This aligns CRHM's solar geometry with UTC observations without
+moving the weather rows; at 90 E the offset is -6 h. For older UTC files, pass
+`--obs_utc_offset 0` explicitly. For station clock time, pass its known UTC
+offset. Without metadata or that argument, clock time is unknown and the legacy
+default remains. An explicit `global Time_Offset` parameter override takes priority.
+
+For an existing project, preserve its calibrated parameters with:
+
+```bash
+python tools/s4_parameter_config/migrate_project_clock.py \
+  --prj_path old/basin.prj --obs_path old/basin.obs \
+  --obs_utc_offset 0 --longitudes 120.4 \
+  --output_path corrected/basin.prj
+```
+
+Use `0` only when the observations are known to use UTC. Supply the actual HRU
+longitudes, or one basin longitude when the original HRUs share it. The tool
+writes a new project and a `.migration.json` receipt; it changes only the solar
+clock parameter and resolves the observation path. It refuses to overwrite an
+existing project and checks the weather and module dependencies. Run the new
+project with `run_crhm.py` and recompute any scores; historical outputs do not
+become corrected merely because a new project exists. Macro and state-file
+projects require explicit handling and are refused by this migration tool.
+
+`run_crhm.py` validates fresh finite data rows before replacing an existing output.
+A header-only file, non-finite values, or output left by an earlier run is a failure.
+
 **If this fails**: See dt_005 (parameter format error) or dt_013 (section delimiter error).
 
 ### Step 2: Review critical parameters

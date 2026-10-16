@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (8 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (23 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -171,9 +171,9 @@ plausible but incorrect results with no error message.
 | Variable | External Source | SWAP Expects | Conversion | Trap |
 |----------|---------------|--------------|------------|------|
 | Radiation (Rad) | W/m² (CMFD), W/m² (MSWX) | kJ/m²/d | × 86.4 (daily) or × period_seconds/1000 | ×1000 internal to J/m²/d |
-| Temperature | K (CMFD/MSWX) | °C | − 273.15 | Must subtract, not divide |
+| Temperature | °C from the shared loader (`temp_min_c`, `temp_max_c`) | °C | direct | Raw CMFD files are K; the loader converts |
 | Humidity (Hum) | kg/kg specific (CMFD), kg/kg (MSWX) | kPa (vapor pressure) | Convert via Clausius-Clapeyron | NOT relative humidity 0-1 |
-| Rainfall (Rain) | mm/day (CMFD), mm/3hr (MSWX) | mm/d | CMFD: direct; MSWX: ×8 | Internal: ×0.1 to cm |
+| Rainfall (Rain) | mm/d from the shared loader (`precip_mm`, daily total) | mm/d | direct | Internal: ×0.1 to cm |
 | Wind speed | m/s | m/s at measurement height | Direct, but specify ALTW correctly | Default ALTW=10m |
 | ETref | mm/d | mm/d | Direct (only if SWETR=1) | Not needed if SWETR=0 |
 | Pressure head | Positive depth (some DBs) | Negative cm (unsaturated) | Negate and convert to cm | Sign convention critical |
@@ -205,9 +205,9 @@ that the SWAP KI tools apply or must preserve when preparing and parsing model f
 | Variable | Source unit | SWAP / KI unit | Conversion | Notes |
 |----------|-------------|----------------|------------|-------|
 | Radiation (`Rad`) | W/m² | kJ/m²/d in `.met` | `W/m² * 86.4` for daily means, or `W/m² * period_seconds / 1000` | SWAP then converts kJ/m²/d to J/m²/d internally |
-| Temperature (`Tmin`, `Tmax`) | K | °C | `K - 273.15` | CMFD/MSWX-derived Kelvin inputs must be converted before writing `.met` |
+| Temperature (`Tmin`, `Tmax`) | °C (loader `temp_min_c`/`temp_max_c`) | °C | direct | `convert_forcing_to_swap.py` reads every source through `ki_tools_common.load_forcing`, which already returns °C |
 | Humidity (`Hum`) | kg/kg specific humidity | kPa vapor pressure | Clausius-Clapeyron / Magnus conversion | This is actual vapor pressure, not relative humidity |
-| Rainfall (`Rain`) | mm/day or mm/3hr | mm/d in `.met`; cm/d internally | CMFD daily direct; MSWX 3-hour values summed to daily; SWAP internal `* 0.1` | Do not mix daily totals and sub-daily rates |
+| Rainfall (`Rain`) | mm/d (loader `precip_mm`, daily total) | mm/d in `.met`; cm/d internally | direct; SWAP internal `* 0.1` | The loader does the sub-daily to daily step |
 | Wind speed | m/s | m/s | direct | Measurement height must match `ALTW` |
 | Reference ET (`ETref`) | mm/d | mm/d | direct | Used only when `SWETR=1` |
 | Pressure head | positive depth in some databases | negative cm above water table | negate and convert to cm | Unsaturated-zone heads are negative |
@@ -243,7 +243,7 @@ Station,DD,MM,YYYY,Rad,Tmin,Tmax,Hum,Wind,Rain,ETref,Wet
 | Wind | m/s | 0-150 | Wind speed at ALTW height |
 | Rain | mm/d | 0-1000 | Daily precipitation |
 | ETref | mm/d | 0-100 | Reference ET (only if SWETR=1) |
-| Wet | fraction | 0-1 | Wet duration fraction of day |
+| Wet | fraction | 0-1 | Wet duration fraction of day; read only with SWRAIN=2; `convert_forcing_to_swap` writes 0 (no data), so use SWRAIN = 0 with its single `.met` file. SWRAIN 1 or 3 (and SWMETDETAIL = 1) make SWAP drop the `.met` extension and read yearly `<METFIL>.YYY` files instead (readswap.f90), which this converter does not write |
 
 ### .swp file (Main configuration)
 
@@ -280,9 +280,9 @@ Eight options: SWBOTB=1 (prescribed GWL), 2 (prescribed flux), 3 (aquifer head),
 | .bal | Summary yearly water balance | Same as .blc, condensed |
 | .inc | Water balance increments (daily) | Cumulative fluxes per output interval (cm) |
 | .vap | Soil profiles at output dates | z(cm), theta(-), h(cm), K(cm/d) |
-| .ate | Soil temperature profiles | z(cm), T(°C) |
+| .tem | Soil temperature profiles (written only when SWHEA = 1 and SWATE = 1) | z(cm), T(°C) |
 | .wba | Cumulative daily water balance | Running totals of all flux components (cm) |
-| .sba | Cumulative daily solute balance | Solute mass components (mg/cm²) |
+| .sba | Cumulative daily solute balance (written only when SWSOLU = 1 and SWSBA = 1) | Solute mass components (mg/cm²) |
 | .end | End conditions (restart file) | Final h, theta, T per compartment |
 | .csv | Custom CSV output | User-selected variables via INLIST_CSV |
 | .crp | Crop growth output | DVS, LAI, biomass, rooting depth |
@@ -367,9 +367,13 @@ Deviation > 0.01 cm indicates numerical issues. Check CRITDEVH1CP and MAXIT.
 
 ### 9. SWAP's NORMAL exit code is 100, not 0
 `src/swap_main.f90` ends with `Call Exit(100)` after printing `Swap normal completion!`.
-A wrapper that tests `returncode != 0` marks EVERY successful run as failed. Assert success
-from the model's own evidence: rc 0, **or** rc 100 with "normal completion" on stdout / a
-`*.ok` file in the work dir (`run_swap.swap_run_succeeded()`). See dt_018.
+A wrapper that tests `returncode != 0` marks EVERY successful run as failed. The reverse
+trap: a fatal input error (e.g. `Fatal irdat, no input date within simulation period`) exits
+with code **0** after writing only the `*_swap.log`. So assert success from the model's own
+evidence: rc 0 or 100 **and** ` Swap normal completion!` as the exact last non-blank stdout line
+(`run_swap.swap_run_succeeded()`). A `*.ok` file is NOT proof: SWAP deletes only `Swap.ok` at
+start, so an old `swap.ok` survives a failed run. `run_swap.py` also fails when `.blc`/`.inc`
+are missing, and passes `--swp-file` to SWAP as its argument. See dt_018.
 
 ### 10. SWAP output files are COMMA-separated and latin-1 encoded
 `.inc`, `.vap` and the native `.csv` are blank-padded **comma**-separated (splitting on
@@ -496,3 +500,41 @@ very good performance.
 | dt_008 | Zero crop growth | CROPSTART after actual emergence | Check dates match reality |
 | dt_009 | Oscillating water table | GWLCONV too loose | Tighten to 1-10 cm |
 | dt_010 | All water drains immediately | ORES/OSAT swapped or unrealistic | Check MvG parameter order |
+
+### Strict texture and layer inputs (2026-10-03)
+
+Missing or unknown texture classes stop the converter. Sand, silt and clay
+must all be finite percentages in [0,100], summing to 100 within 0.1 percentage
+point; no renormalization is applied. Valid zero fractions are retained.
+Class boundaries follow the [USDA Soil Survey Manual, chapter 3](https://nrcspad.sc.egov.usda.gov/distributionCenter/pdf.aspx?productID=1363).
+The prior classifier misclassified some valid sandy/silty compositions; tests
+cover all twelve classes and valid zero fractions.
+
+`--hwsd auto` now reads the raster and attribute CSV directly, avoiding shared
+reader defaults. It transforms point coordinates into the raster CRS, rejects
+NoData/outside coverage, and selects the dominant component by maximum SHARE,
+then minimum SEQ, then CSV row order for remaining ties. Missing texture or
+bulk density on that component is an error. It never substitutes a minor
+component or 40/40/20 texture. `--hwsd-csv` can specify the matching attributes.
+Topsoil and subsoil use their own source bulk densities (g/cm3 × 1000).
+
+For manual input, supply `--texture` or all three fraction arguments. With
+`--n-layers 2` (the existing default), also supply `--subsoil-texture`. Use
+`--n-layers 1` for a single layer. Giving the same explicit class for both
+horizons declares a homogeneous texture assumption. No synthetic compaction,
+porosity, alpha or bulk-density multipliers are applied to deeper layers.
+A failed HWSD request only permits the explicitly supplied manual alternative.
+
+Hydraulics remain **texture-class estimates** from the existing Carsel-Parrish
+lookup table; this tool does not run Rosetta. Manual bulk density also remains
+a labeled class estimate. `KSATEXM` is populated from that estimate for the
+format, not a measured Ksat claim; `ALFAW=2*ALFA` retains the existing hysteresis
+parameterization. The `.summary.json` records the source and estimation method.
+All output values are validated before writing. Rebuild old derived profiles
+when they used missing textures or inferred subsoil properties.
+
+The standard global HWSD BIL lacks embedded CRS metadata. Supply
+`--hwsd-crs EPSG:4326` only for a verified WGS84 latitude/longitude dataset;
+this is documented for the original HWSD raster in
+[Rossiter, Processing the HWSD in R, p. 3](https://www.css.cornell.edu/faculty/dgr2/_static/files/R_PDF/R_HWSD.pdf).
+The converter records this explicit declaration and rejects a conflicting CRS.

@@ -216,6 +216,7 @@ def check_swap_starts():
             result = subprocess.run(
                 [PINNED_SWAP_BINARY],
                 cwd=tmp_path,
+                stdin=subprocess.DEVNULL,      # a prompting fatal error ends at once
                 capture_output=True,
                 text=True,
                 timeout=15,
@@ -240,11 +241,17 @@ def check_swap_starts():
         if log_file.is_file():
             log_text = log_file.read_text(errors="replace")
         combined = "\n".join([result.stdout or "", result.stderr or "", log_text]).lower()
-        success = result.returncode in (0, 100) and (
-            "swap simulation okay" in combined
-            or "normal completion" in combined
-            or (tmp_path / "swap.ok").is_file()
-        )
+        # Same proof as tools/run_swap.py: rc 0/100 AND SWAP's own normal-
+        # completion line on stdout (a fatal input error also exits 0; an old
+        # swap.ok is no proof), plus the water-balance outputs (OUTFIL 'result').
+        sys.path.insert(0, str(KI_DIR / "tools"))
+        from run_swap import swap_run_succeeded
+        outputs_ok = all((tmp_path / f"result{ext}").is_file()
+                         and (tmp_path / f"result{ext}").stat().st_size > 0
+                         for ext in (".blc", ".inc"))
+        success = swap_run_succeeded(
+            {"returncode": result.returncode, "stdout": result.stdout}, str(tmp_path)
+        ) and outputs_ok
         if success:
             print(f"  OK    SWAP smoke run: started and completed, rc={result.returncode}")
             add_check("run", subject, True, "pass", "")

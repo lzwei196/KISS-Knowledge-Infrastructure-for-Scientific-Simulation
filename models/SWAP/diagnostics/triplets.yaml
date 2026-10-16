@@ -77,12 +77,12 @@
       rainfall for each actual day, causing 8× too much precipitation.
     affected_components: [convert_forcing_to_swap]
   remedy:
-    action: "Sum all 8 three-hourly MSWX precipitation values to get daily total"
+    action: "Sum all 8 three-hourly MSWX precipitation values to get daily total (only for a hand-made .met; convert_forcing_to_swap gets daily totals from ki_tools_common.load_forcing)"
     tool_to_run: convert_forcing_to_swap
     manual_steps:
       - "Check mean annual rainfall — should match climate normals for the site"
       - "If annual total is 8× expected, MSWX records not aggregated"
-    prevention: "convert_forcing_to_swap sums sub-daily records before writing"
+    prevention: "convert_forcing_to_swap reads daily totals (precip_mm) from the shared loader, which sums sub-daily records"
   severity: silent
   cross_references: [dt_001, dt_002]
 
@@ -102,7 +102,7 @@
       also uses temperature, producing wildly wrong ET.
     affected_components: [convert_forcing_to_swap, readmeteo.f90]
   remedy:
-    action: "Subtract 273.15 from temperature values"
+    action: "Subtract 273.15 from temperature values (only for a hand-made .met; convert_forcing_to_swap gets degC from ki_tools_common.load_forcing)"
     tool_to_run: convert_forcing_to_swap
     manual_steps:
       - "Check Tmin/Tmax in .met file — should be -50..50°C"
@@ -224,8 +224,9 @@
   diagnosis:
     root_cause: "SWAP not run from the correct working directory"
     explanation: >
-      SWAP always reads 'swap.swp' from the current working directory (CWD).
-      It does not accept command-line arguments for the config file path.
+      SWAP reads the .swp named by its first command-line argument ('.swp' is
+      added when missing; the name is lowercased on Linux), or 'swap.swp' when
+      there is no argument, from the current working directory (CWD).
       If run from the wrong directory, it cannot find the input file.
     affected_components: [run_swap]
   remedy:
@@ -234,8 +235,8 @@
     manual_steps:
       - "cd /path/to/case/directory/"
       - "ls swap.swp  # verify file exists"
-      - "/path/to/swap  # run from case directory"
-    prevention: "run_swap wrapper handles cd automatically"
+      - "/path/to/swap  # run from case directory (or: /path/to/swap name  for name.swp)"
+    prevention: "run_swap wrapper runs in --work-dir and passes --swp-file as SWAP's argument"
   severity: fatal
   cross_references: [dt_008]
 
@@ -464,10 +465,10 @@
       Verified 2026-08-11 on tests/cases/1.hupselbrook.
     affected_components: [swap_main.f90, tools/run_swap.py]
   remedy:
-    action: "Treat rc==100 + ('normal completion' on stdout OR a *.ok file) as success."
-    tool_to_run: "tools/run_swap.py (swap_run_succeeded(); fixed 2026-08-11)"
+    action: "Treat rc 0 or 100 AND ' Swap normal completion!' on stdout as success. A fatal input error also exits 0; a *.ok file is not proof (an old swap.ok survives a failed run)."
+    tool_to_run: "tools/run_swap.py (swap_run_succeeded(); fixed 2026-08-11, tightened 2026-10-04)"
     manual_steps:
-      - "Never gate SWAP success on rc==0; check swap.ok / <project>.ok instead"
+      - "Never gate SWAP success on the exit code alone, and never on a *.ok file; require the normal-completion line and the .blc/.inc outputs"
     prevention: "run_swap.swap_run_succeeded() encodes this"
   severity: fatal
   cross_references: []
@@ -526,24 +527,30 @@
   stage: s2_soil_parameters
   failure_domain: silent_error
   symptom:
-    description: "convert_soil_to_swap.py prints 'WARNING: No texture data, defaulting to loam' for EVERY site even when --hwsd points at a valid hwsd.bil."
+    description: "HISTORICAL (fixed): convert_soil_to_swap.py printed 'WARNING: No texture data, defaulting to loam' for EVERY site even when --hwsd pointed at a valid hwsd.bil. The current tool has no loam default and never prints that line; if you see it, the soil file was made by an old copy of the tool."
     error_pattern: "No texture data, defaulting to"
-    detection_method: value_comparison
+    detection_method: log_match
   diagnosis:
-    root_cause: "read_hwsd_at_point() read MU_GLOBAL and then `return None` — the HWSD attribute join was never implemented, so --hwsd had no effect on the MvG parameters."
+    root_cause: "Old read_hwsd_at_point() read MU_GLOBAL and then `return None` -- the HWSD attribute join was never implemented, so --hwsd had no effect and every site got loam."
     explanation: >
-      ki_tools_common.soil_utils.lookup_hwsd() already joins hwsd.bil to
-      HWSD_DATA and returns topsoil AND subsoil sand/silt/clay plus bulk
-      density. At US-Ne1 (41.1651, -96.4766) it resolves MU 4730 =
-      loam over clay_loam, BD 1.37 g/cm3 — the old default gave loam/loam
-      and Ksat 17.5 instead of 4.4 cm/d for the subsoil.
+      What the tool does now (checked 2026-10-05): read_hwsd_at_point() reads
+      the raster and HWSD_DATA.csv itself (it does not call
+      ki_tools_common.soil_utils.lookup_hwsd). It takes the dominant component
+      (max SHARE, then min SEQ), classifies T_ and S_ sand/silt/clay with the
+      USDA triangle and uses T_/S_REF_BULK_DENSITY x 1000 as BDENS (mg/cm3).
+      A missing map unit, texture, bulk density or CRS raises an error and the
+      tool stops; nothing is defaulted. The server hwsd.bil has no CRS, so
+      --hwsd auto needs --hwsd-crs EPSG:4326. Since 2026-10-05 --hwsd together
+      with --texture/--sand/--silt/--clay/--subsoil-texture is refused (before,
+      a failed HWSD read fell back to the manual texture with only a stderr
+      warning and the summary did not record it).
     affected_components: [tools/convert_soil_to_swap.py]
   remedy:
-    action: "Delegate to ki_tools_common.soil_utils.lookup_hwsd; pass BDENS in mg/cm3 (g/cm3 x 1000)."
-    tool_to_run: "tools/convert_soil_to_swap.py (fixed 2026-08-11)"
+    action: "Rebuild the soil table with the current tool: either --hwsd auto --hwsd-crs EPSG:4326 alone, or manual texture alone. Check <output>.summary.json: source, mu_id, texture classes and bulk_density ('HWSD horizon values' or 'texture-class estimates')."
+    tool_to_run: "tools/convert_soil_to_swap.py"
     manual_steps:
-      - "Confirm the [INFO] HWSD topsoil/subsoil lines appear in the log"
-    prevention: "A 'defaulting to loam' warning now means HWSD genuinely had no data"
+      - "Open <output>.summary.json and confirm source/mu_id match the intended soil source"
+    prevention: "The tool stops on any missing HWSD value; there is no default soil."
   severity: silent
   cross_references: [dt_011]
 

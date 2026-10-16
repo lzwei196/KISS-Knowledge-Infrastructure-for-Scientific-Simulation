@@ -15,14 +15,26 @@ SWAP requires these parameters per soil layer (in .swp file):
   KSATEXM - Measured Ksat [1e-5..1e5 cm/d]
   BDENS  - Dry bulk density [100..10000 mg/cm³ = kg/m³]
 
-This tool uses Schaap et al. (2001) Rosetta pedotransfer functions to
-estimate MvG parameters from HWSD texture classes.
+This tool uses the existing Carsel-Parrish texture-class lookup table,
+not a fitted Rosetta model. Parameters are estimates, not measurements.
+
+Soil comes from ONE source per run:
+  * --hwsd: the dominant HWSD component at the point is read directly
+    (read_hwsd_at_point; not ki_tools_common.lookup_hwsd). Any missing map
+    unit, texture, bulk density or CRS stops the tool.
+  * or manual texture: --texture / --sand --silt --clay (+ --subsoil-texture
+    for more than one layer); bulk density is then a texture-class estimate.
+Giving --hwsd together with any manual texture option is an error (since
+2026-10-05): before, a failed HWSD read fell back to the manual texture
+without a record in the summary, and a good HWSD read silently replaced it.
 
 Usage:
     python convert_soil_to_swap.py \\
-        --hwsd /path/to/HWSD_China_Geo.img \\
+        --hwsd auto --hwsd-crs EPSG:4326 \\
         --lat 52.069 --lon 6.657 \\
         --output soil_params.txt
+    (--hwsd auto = data/soil/HWSD_RASTER/hwsd.bil, which has no CRS metadata,
+    so --hwsd-crs EPSG:4326 is required for it.)
 """
 
 import argparse
@@ -33,12 +45,12 @@ from pathlib import Path
 
 import numpy as np
 
-from ki_tools_common.soil_utils import lookup_hwsd
+from ki_tools_common.soil_utils import HWSD_RASTER, HWSD_CSV
 
 
 # ---------------------------------------------------------------------------
-# Rosetta-style pedotransfer: USDA texture class → MvG parameters
-# Based on Schaap et al. (2001) and Carsel & Parrish (1988)
+# Texture-class lookup: USDA texture class → MvG parameters
+# Carsel & Parrish (1988) class values (not a fitted Rosetta/Schaap model)
 # ---------------------------------------------------------------------------
 # Format: (ORES, OSAT, ALFA[1/cm], NPAR, KSAT[cm/d], LEXP)
 TEXTURE_CLASS_MVG = {
@@ -99,95 +111,88 @@ def classify_texture(sand_pct, silt_pct, clay_pct):
     -------
     str : USDA texture class name (lowercase with underscores)
     """
-    s, si, c = sand_pct, silt_pct, clay_pct
-
-    if c >= 40 and s <= 45 and si < 40:
-        return "clay" if s <= 45 else "sandy_clay"
-    if c >= 40 and si >= 40:
-        return "silty_clay"
-    if 27 <= c < 40 and s <= 20:
-        return "silty_clay_loam"
-    if 27 <= c < 40 and 20 < s <= 45:
-        return "clay_loam"
-    if 20 <= c < 35 and s > 45:
-        return "sandy_clay_loam"
-    if 35 <= c < 55 and s > 45:
-        return "sandy_clay"
-    if c < 7 and si >= 80:
-        return "silt"
-    if 12 <= c < 27 and si >= 50 and s < 50:
-        return "silt_loam"
-    if c < 12 and si >= 50 and si < 80:
-        return "silt_loam"
-    if c < 27 and si >= 28 and si < 50 and s <= 52:
-        return "loam"
-    if 7 <= c < 20 and s > 52:
-        return "sandy_loam"
-    if c < 7 and si < 50 and s > 43:
-        if s > 85:
-            return "sand"
-        if s > 70:
-            return "loamy_sand"
-        return "sandy_loam"
-    return "loam"  # Default fallback
+    fractions = np.asarray([sand_pct,silt_pct,clay_pct],dtype=float)
+    if not np.isfinite(fractions).all() or (fractions<0).any() or (fractions>100).any():
+        raise ValueError('Texture fractions must be finite percentages in [0,100]')
+    if abs(float(fractions.sum())-100) > .1:
+        raise ValueError('Sand+silt+clay must sum to 100 percent (tolerance 0.1); no renormalization')
+    s,si,c = fractions
+    # USDA Soil Survey Manual 2017, chapter 3, textural-class definitions:
+    # https://nrcspad.sc.egov.usda.gov/distributionCenter/pdf.aspx?productID=1363
+    if si + 1.5*c < 15: return 'sand'
+    if si + 2*c < 30: return 'loamy_sand'
+    if (7 <= c < 20 and s > 52) or (c < 7 and si < 50): return 'sandy_loam'
+    if 7 <= c < 27 and 28 <= si < 50 and s <= 52: return 'loam'
+    if (si >= 50 and 12 <= c < 27) or (50 <= si < 80 and c < 12): return 'silt_loam'
+    if si >= 80 and c < 12: return 'silt'
+    if 20 <= c < 35 and si < 28 and s > 45: return 'sandy_clay_loam'
+    if 27 <= c < 40 and 20 < s <= 45: return 'clay_loam'
+    if 27 <= c < 40 and s <= 20: return 'silty_clay_loam'
+    if c >= 35 and s > 45: return 'sandy_clay'
+    if c >= 40 and si >= 40: return 'silty_clay'
+    if c >= 40 and s <= 45 and si < 40: return 'clay'
+    raise ValueError(f'Unclassified texture {fractions.tolist()}; supply a verified class explicitly')
 
 
-def read_hwsd_at_point(hwsd_path, lat, lon):
+def read_hwsd_at_point(hwsd_path, lat, lon, *, hwsd_csv=None, require_subsoil=True, hwsd_crs=None):
+    """Read the dominant HWSD component directly, with no shared-loader defaults.
+
+    Max SHARE, then minimum SEQ, then CSV row order breaks ties. Missing
+    dominant-component properties are errors, not a reason to select minor soil.
     """
-    Resolve HWSD topsoil AND subsoil texture at a point.
-
-    Delegates to the shared KDT reader, which joins the MU_GLOBAL raster to
-    the companion attribute database. The previous body opened the raster,
-    printed MU_GLOBAL and then `return None`, so the lookup was a no-op and
-    every site silently fell back to the default loam class (dt_021).
-
-    Returns a dict with topsoil/subsoil sand-silt-clay, texture classes and
-    bulk density in mg/cm3, or None when the point cannot be resolved.
-    """
-    raster = hwsd_path if hwsd_path and os.path.isfile(hwsd_path) else None
-    try:
-        rec = lookup_hwsd(lat, lon, hwsd_raster=raster)
-    except Exception as e:
-        print(f"WARNING: HWSD lookup failed at ({lat}, {lon}): {e}")
-        return None
-
-    if not rec:
-        print(f"WARNING: HWSD returned no record at ({lat}, {lon})")
-        return None
-
-    top = classify_texture(rec["sand"], rec["silt"], rec["clay"])
-    if all(rec.get(k) is not None for k in ("sub_sand", "sub_silt", "sub_clay")):
-        sub = classify_texture(rec["sub_sand"], rec["sub_silt"], rec["sub_clay"])
-    else:
-        sub = top
-
-    # HWSD bulk density is g/cm3; SWAP BDENS is mg/cm3 (dt_007).
-    bd_g_cm3 = rec.get("bulk_density")
-    bdens = float(bd_g_cm3) * 1000.0 if bd_g_cm3 else None
-
-    print(f"[INFO] HWSD MU_GLOBAL at ({lat}, {lon}): {rec.get('mu_id')}")
-    print(f"[INFO] Topsoil {rec['sand']:.0f}/{rec['silt']:.0f}/{rec['clay']:.0f} "
-          f"sand/silt/clay -> {top}")
-    print(f"[INFO] Subsoil {rec.get('sub_sand', float('nan')):.0f}/"
-          f"{rec.get('sub_silt', float('nan')):.0f}/"
-          f"{rec.get('sub_clay', float('nan')):.0f} -> {sub}")
-    if bdens:
-        print(f"[INFO] Bulk density {bd_g_cm3} g/cm3 = {bdens:.0f} mg/cm3")
-
-    return {
-        "mu_id": rec.get("mu_id"),
-        "texture": top,
-        "subsoil_texture": sub,
-        "sand": rec["sand"], "silt": rec["silt"], "clay": rec["clay"],
-        "sub_sand": rec.get("sub_sand"), "sub_silt": rec.get("sub_silt"),
-        "sub_clay": rec.get("sub_clay"),
-        "bdens": bdens,
-    }
+    import pandas as pd
+    import rasterio
+    from rasterio.warp import transform
+    raster = hwsd_path or HWSD_RASTER
+    csv = hwsd_csv or HWSD_CSV
+    with rasterio.open(raster) as src:
+        declared_crs = rasterio.crs.CRS.from_user_input(hwsd_crs) if hwsd_crs else None
+        if src.crs is not None and declared_crs is not None and src.crs != declared_crs:
+            raise ValueError('Explicit HWSD CRS conflicts with raster metadata')
+        crs = src.crs or declared_crs
+        if crs is None:
+            raise ValueError('HWSD raster lacks CRS; supply a verified --hwsd-crs explicitly')
+        xs,ys=transform('EPSG:4326',crs,[lon],[lat])
+        row,col=src.index(xs[0],ys[0])
+        if not (0 <= row < src.height and 0 <= col < src.width):
+            raise ValueError('Point outside HWSD raster coverage')
+        cell=src.read(1,window=rasterio.windows.Window(col,row,1,1),masked=True)[0,0]
+        if np.ma.is_masked(cell) or not np.isfinite(cell) or cell<=0 or cell!=int(cell):
+            raise ValueError('No valid HWSD map unit at point')
+        mu_id=int(cell)
+    df=pd.read_csv(csv,low_memory=False)
+    rows=df[df['MU_GLOBAL']==mu_id]
+    if rows.empty:raise ValueError(f'HWSD map unit {mu_id} absent from attribute table')
+    shares=pd.to_numeric(rows['SHARE'],errors='coerce')
+    if not np.isfinite(shares).all() or (shares<=0).any():
+        raise ValueError(f'HWSD map unit {mu_id}: missing/invalid component shares')
+    rows=rows.loc[shares==shares.max()]
+    if len(rows)>1:
+        seq=pd.to_numeric(rows['SEQ'],errors='coerce')
+        if not np.isfinite(seq).all():raise ValueError('Ambiguous HWSD component order')
+        rows=rows.loc[seq==seq.min()]
+    raw=rows.iloc[0]
+    def horizon(prefix):
+        fractions=[float(raw.get(prefix+'_'+key,np.nan)) for key in ['SAND','SILT','CLAY']]
+        texture=classify_texture(*fractions)
+        density=float(raw.get(prefix+'_REF_BULK_DENSITY',np.nan))*1000
+        if not np.isfinite(density) or not 100 <= density <= 10000:
+            raise ValueError(f'HWSD {mu_id}: missing/invalid {prefix} bulk density')
+        return fractions,texture,density
+    top,top_class,bdens=horizon('T')
+    sub,sub_class,sub_bdens=horizon('S') if require_subsoil else ([None]*3,None,None)
+    return dict(mu_id=mu_id,texture=top_class,subsoil_texture=sub_class,
+                sand=top[0],silt=top[1],clay=top[2],sub_sand=sub[0],sub_silt=sub[1],sub_clay=sub[2],
+                bdens=bdens,subsoil_bdens=sub_bdens,
+                source=dict(raster=str(raster),csv=str(csv),crs=str(crs),crs_explicit=bool(hwsd_crs),share_pct=float(raw['SHARE']),
+                            seq=int(raw['SEQ']) if pd.notna(raw.get('SEQ')) else None,
+                            selection='dominant component; max SHARE, min SEQ, CSV row order'))
 
 
 def get_mvg_params(sand_pct=None, silt_pct=None, clay_pct=None,
                    texture_class=None, n_layers=2,
-                   subsoil_texture_class=None, bdens_override=None):
+                   subsoil_texture_class=None, bdens_override=None,
+                   subsoil_bdens_override=None):
     """
     Get Mualem-van Genuchten parameters for SWAP.
 
@@ -204,21 +209,24 @@ def get_mvg_params(sand_pct=None, silt_pct=None, clay_pct=None,
     -------
     list of dict : One dict per layer with all MvG parameters
     """
-    if texture_class is None:
-        if sand_pct is not None:
-            texture_class = classify_texture(sand_pct, silt_pct, clay_pct)
-        else:
-            texture_class = "loam"
-            print(f"WARNING: No texture data, defaulting to '{texture_class}'")
-
+    fractions=[sand_pct,silt_pct,clay_pct]
+    has_fractions=any(v is not None for v in fractions)
+    if has_fractions:
+        classified=classify_texture(*fractions)
+        if texture_class is not None and texture_class!=classified:
+            raise ValueError('Explicit texture disagrees with supplied fractions')
+        texture_class=classified
     if texture_class not in TEXTURE_CLASS_MVG:
-        print(f"WARNING: Unknown texture '{texture_class}', using 'loam'")
-        texture_class = "loam"
-
-    if subsoil_texture_class and subsoil_texture_class not in TEXTURE_CLASS_MVG:
-        print(f"WARNING: Unknown subsoil texture '{subsoil_texture_class}', "
-              f"using the topsoil class")
-        subsoil_texture_class = None
+        raise ValueError('Supply a valid explicit texture or complete sand/silt/clay percentages')
+    if not isinstance(n_layers,(int,np.integer)) or n_layers < 1:
+        raise ValueError('n_layers must be a positive integer')
+    if subsoil_texture_class is not None and subsoil_texture_class not in TEXTURE_CLASS_MVG:
+        raise ValueError('Unknown subsoil texture class')
+    if n_layers > 1 and subsoil_texture_class is None:
+        raise ValueError('Supply subsoil_texture_class for a multilayer profile; no invented compaction')
+    for density in [bdens_override,subsoil_bdens_override]:
+        if density is not None and (not np.isfinite(density) or not 100 <= density <= 10000):
+            raise ValueError('Bulk density must be finite and within [100,10000] mg/cm3')
 
     print(f"[INFO] Topsoil texture class: {texture_class}")
     if subsoil_texture_class:
@@ -226,39 +234,24 @@ def get_mvg_params(sand_pct=None, silt_pct=None, clay_pct=None,
 
     layers = []
     for i in range(n_layers):
-        # Layer 1 is the topsoil; deeper layers take the HWSD subsoil class
-        # when one was resolved, otherwise the topsoil class compacted.
-        if i == 0 or not subsoil_texture_class:
-            cls = texture_class
-            measured = i == 0
-        else:
-            cls = subsoil_texture_class
-            measured = True
-
+        cls = texture_class if i == 0 else subsoil_texture_class
         ores, osat, alfa, npar, ksat, lexp = TEXTURE_CLASS_MVG[cls]
-        bdens = (bdens_override if bdens_override
-                 else TEXTURE_CLASS_BDENS[cls])
-
-        # Only synthesise a subsoil contrast when the subsoil class was NOT
-        # measured — otherwise the class already carries it.
-        compact = 1.0 if (i == 0 or measured) else 0.7
-        osat_f = 1.0 if (i == 0 or measured) else 0.95
-        alfa_f = 1.0 if (i == 0 or measured) else 0.8
-        bd_f = 1.0 if i == 0 else 1.05
+        supplied_density = bdens_override if i == 0 else subsoil_bdens_override
+        bdens = supplied_density if supplied_density is not None else TEXTURE_CLASS_BDENS[cls]
 
         layer = {
             "layer": i + 1,
             "texture": cls,
             "ORES": round(ores, 3),
-            "OSAT": round(osat * osat_f, 3),
-            "ALFA": round(alfa * alfa_f, 4),
+            "OSAT": round(osat, 3),
+            "ALFA": round(alfa, 4),
             "NPAR": round(npar, 3),
-            "KSATFIT": round(ksat * compact, 2),
+            "KSATFIT": round(ksat, 2),
             "LEXP": round(lexp, 3),
-            "ALFAW": round(alfa * 2.0 * alfa_f, 4),
+            "ALFAW": round(alfa * 2.0, 4),
             "H_ENPR": 0.0,
-            "KSATEXM": round(ksat * compact, 2),
-            "BDENS": round(bdens * bd_f, 1),
+            "KSATEXM": round(ksat, 2),
+            "BDENS": round(bdens, 1),
         }
         print(f"[INFO] Layer {i + 1} ({cls}): ORES={layer['ORES']}, "
               f"OSAT={layer['OSAT']}, KSATFIT={layer['KSATFIT']} cm/d, "
@@ -274,7 +267,7 @@ def format_swap_table(layers):
     lines = [header]
     for lay in layers:
         line = (
-            f" {lay['ORES']:.2f}  {lay['OSAT']:.2f}  {lay['ALFA']:.4f}  "
+            f" {lay['ORES']:.3f}  {lay['OSAT']:.3f}  {lay['ALFA']:.4f}  "
             f"{lay['NPAR']:.3f}  {lay['KSATFIT']:8.2f}  {lay['LEXP']:6.3f}  "
             f"{lay['ALFAW']:.4f}  {lay['H_ENPR']:6.1f}  {lay['KSATEXM']:8.2f}  "
             f"{lay['BDENS']:.1f}"
@@ -287,7 +280,11 @@ def format_swap_table(layers):
 def validate_outputs(layers):
     """Post-processing validation of MvG parameters."""
     errors = []
+    if not layers:errors.append('No soil layers')
     for lay in layers:
+        for key,value in lay.items():
+            if key != 'texture' and not np.isfinite(value):
+                errors.append(f'Layer {lay.get("layer")}: nonfinite {key}')
         i = lay["layer"]
         if lay["ORES"] >= lay["OSAT"]:
             errors.append(f"Layer {i}: ORES ({lay['ORES']}) >= OSAT ({lay['OSAT']})")
@@ -315,7 +312,8 @@ def main():
         description="Convert HWSD soil data to SWAP MvG parameters"
     )
     parser.add_argument("--hwsd", type=str, default="",
-                        help="Path to HWSD raster file (.img)")
+                        help="HWSD MU_GLOBAL raster path, or 'auto' for the shared hwsd.bil. "
+                             "Cannot be combined with --texture/--sand/--silt/--clay/--subsoil-texture")
     parser.add_argument("--lat", type=float, required=True)
     parser.add_argument("--lon", type=float, required=True)
     parser.add_argument("--sand", type=float, default=None,
@@ -330,47 +328,68 @@ def main():
                         help="Number of soil layers")
     parser.add_argument("--output", type=str, required=True,
                         help="Output file path (txt or json)")
+    parser.add_argument("--hwsd-csv", default=None, help="HWSD attribute CSV (defaults to shared dataset path)")
+    parser.add_argument("--hwsd-crs", default=None, help="Verified CRS for raster missing metadata; no implicit CRS assignment")
+    parser.add_argument("--subsoil-texture", default=None, help="Explicit deeper-layer class")
     args = parser.parse_args()
+
+    manual=[name for name,value in [('--texture',args.texture),('--sand',args.sand),('--silt',args.silt),
+            ('--clay',args.clay),('--subsoil-texture',args.subsoil_texture)] if value is not None]
+    if args.hwsd and manual:
+        parser.error('--hwsd cannot be combined with manual texture ('+', '.join(manual)+'). '
+                     'Use one soil source per run: HWSD alone, or manual texture alone.')
 
     # `--hwsd auto` lets the shared reader resolve its own raster path.
     hwsd_arg = "" if args.hwsd.lower() == "auto" else args.hwsd
     validate_inputs(hwsd_arg, args.lat, args.lon)
 
     texture = args.texture
-    subsoil_texture = None
+    subsoil_texture = args.subsoil_texture
     bdens_override = None
+    subsoil_bdens_override = None
+    hwsd_result = None
     if args.hwsd:
-        hwsd_result = read_hwsd_at_point(hwsd_arg, args.lat, args.lon)
-        if hwsd_result:
-            texture = hwsd_result.get("texture", texture)
-            subsoil_texture = hwsd_result.get("subsoil_texture")
-            bdens_override = hwsd_result.get("bdens")
-        elif not (texture or args.sand is not None):
-            print("ERROR: HWSD lookup returned nothing and no --texture / "
-                  "--sand-silt-clay was supplied — refusing to silently "
-                  "default to loam", file=sys.stderr)
-            sys.exit(1)
+        # Any HWSD failure raises (ValueError/OSError) and stops the tool in
+        # the __main__ handler; there is no fallback texture.
+        hwsd_result = read_hwsd_at_point(hwsd_arg, args.lat, args.lon, hwsd_csv=args.hwsd_csv, require_subsoil=args.n_layers>1, hwsd_crs=args.hwsd_crs)
+        texture = hwsd_result["texture"]
+        subsoil_texture = hwsd_result["subsoil_texture"]
+        bdens_override = hwsd_result["bdens"]
+        subsoil_bdens_override = hwsd_result["subsoil_bdens"]
 
     layers = get_mvg_params(
         sand_pct=args.sand, silt_pct=args.silt, clay_pct=args.clay,
         texture_class=texture, n_layers=args.n_layers,
         subsoil_texture_class=subsoil_texture,
-        bdens_override=bdens_override,
+        bdens_override=bdens_override, subsoil_bdens_override=subsoil_bdens_override,
     )
 
-    # Write output
+    if not validate_outputs(layers):
+        raise ValueError("Soil parameter validation failed; no output written")
+
+    # Write output only after validation.
     if args.output.endswith(".json"):
         with open(args.output, "w") as f:
-            json.dump(layers, f, indent=2)
+            json.dump(layers, f, indent=2, allow_nan=False)
     else:
         table = format_swap_table(layers)
         with open(args.output, "w") as f:
             f.write(table + "\n")
 
     print(f"[OK] Wrote soil parameters to {args.output}")
-    if not validate_outputs(layers):
-        sys.exit(1)
+    meta = dict(source=hwsd_result.get("source") if hwsd_result else "explicit texture input",
+                mu_id=hwsd_result.get("mu_id") if hwsd_result else None,
+                texture_class=texture, subsoil_texture_class=subsoil_texture,
+                fractions=[args.sand,args.silt,args.clay],
+                method="Carsel-Parrish class MvG lookup; no artificial subsoil multipliers",
+                bulk_density="HWSD horizon values" if hwsd_result else "texture-class estimates",
+                note="KSATEXM mirrors the class estimate for SWAP format compatibility; it is not measured Ksat. ALFAW=2*ALFA is the existing hysteresis parameterization.")
+    Path(args.output+".summary.json").write_text(json.dumps(meta,indent=2,allow_nan=False)+"\n")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)

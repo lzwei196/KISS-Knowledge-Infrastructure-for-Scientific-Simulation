@@ -10,7 +10,8 @@ Run the SWAP binary with validated input files and verify successful completion 
 
 ## Outputs
 - SWAP output files (result.blc, result.inc, result.vap, etc.)
-- Exit code (0 = success)
+- Exit code: 100 on normal completion; a fatal input error can also exit 0, so the
+  exit code alone proves nothing (see step 4)
 - Runtime log
 
 ## Procedure
@@ -23,9 +24,12 @@ Run the SWAP binary with validated input files and verify successful completion 
 2. **Execute SWAP**:
    ```bash
    cd /path/to/case/
-   /path/to/swap
+   /path/to/swap            # reads swap.swp
+   /path/to/swap other      # reads other.swp (first argument; '.swp' added)
    ```
-   SWAP reads `swap.swp` from the current directory automatically.
+   SWAP reads the `.swp` named by its first argument, or `swap.swp` when there is none, from
+   the current directory. On Linux it lowercases that name, so use lowercase file names.
+   `tools/run_swap.py --swp-file NAME.swp` passes the name for you.
 
 3. **Monitor execution**:
    - Typical runtime: 1-30 seconds for single-point multi-year simulations
@@ -33,10 +37,17 @@ Run the SWAP binary with validated input files and verify successful completion 
    - Check stderr for Fortran runtime errors
 
 4. **Post-execution validation**:
-   - Check exit code (0 = success)
-   - Verify output files exist and are non-empty
+   - Success = exit code 0 or 100 AND ` Swap normal completion!` as the LAST non-blank
+     stdout line, exactly (an echoed PROJECT text with that phrase is not proof)
+     (`run_swap.swap_run_succeeded()`); a `*.ok` file is not proof
+   - Verify output files exist and are non-empty: `run_swap.py` fails when any
+     output the .swp switches on is missing or empty, looked for at
+     PATHWORK + OUTFIL + ext (.blc if SWBLC=1; .bal/.wba/.inc unless switched
+     off, they default to 1; .vap if SWVAP=1; .sba only if SWSOLU=1 and SWSBA=1;
+     .tem only if SWHEA=1 and SWATE=1)
    - Check .blc water balance closure: |Sum_In - Sum_Out| should be small
-   - Check for .dwb.csv error files (water balance deviation exceeded CRITDEVMASBAL)
+   - Check for a <OUTFIL>.dwb file (water balance deviation exceeded CRITDEVMASBAL;
+     SWAP keeps running, `run_swap.py` prints a WARNING)
 
 ## Verification
 ```bash
@@ -49,13 +60,13 @@ ls -la result.blc result.inc result.vap
 grep "Sum" result.blc  # Water balance sums
 
 # Check for errors
-ls *.dwb.csv 2>/dev/null && echo "WARNING: balance errors found"
+ls *.dwb 2>/dev/null && echo "WARNING: balance deviations found"
 ```
 
 ## Traps
 
-### TRAP 1: SWAP reads swap.swp from CWD
-SWAP does not accept command-line arguments for the config file. It always reads `swap.swp` from the current working directory. You MUST `cd` to the case directory before running.
+### TRAP 1: SWAP reads its .swp from CWD
+SWAP reads the `.swp` named by its first command-line argument (`.swp` added when missing; the name is lowercased on Linux), or `swap.swp` when there is no argument, from the current working directory. You MUST `cd` to the case directory before running. `tools/run_swap.py --work-dir DIR --swp-file NAME.swp` does both.
 
 ### TRAP 2: Case-sensitive filenames on Linux
 All file references in swap.swp must be lowercase on Linux. SWAP searches for exact filename matches. A reference to `'283.MET'` will fail if the file is `283.met`.

@@ -23,8 +23,9 @@ pipeline:
   - s5_output_parsing_skill
   - s6_visualization_skill
 tools:
-  count: 7
+  count: 8
   files:
+  - tools/_ttutil_swp_reader.py
   - tools/assemble_swap_config.py
   - tools/convert_forcing_to_swap.py
   - tools/convert_soil_to_swap.py
@@ -137,7 +138,7 @@ validation:
     best_kge: 0.3876
     best_r: 1.0
 summary:
-  total_tools: 7
+  total_tools: 8
   total_stage_docs: 6
   total_diagnostic_triplets: 23
   generated: '2026-08-15'

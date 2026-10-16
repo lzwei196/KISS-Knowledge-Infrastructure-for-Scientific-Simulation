@@ -5,14 +5,13 @@ Convert CMFD or MSWX forcing data to SWAP .met file format.
 SWAP .met format expects daily records with columns:
   Station, DD, MM, YYYY, Rad(kJ/m²/d), Tmin(°C), Tmax(°C), Hum(kPa), Wind(m/s), Rain(mm/d), ETref(mm/d), Wet
 
-Unit conversions applied:
-  - CMFD/MSWX radiation (W/m²) → kJ/m²/d  (× 86.4 for daily mean, or integrate sub-daily)
-  - CMFD/MSWX temperature (K) → °C  (- 273.15)
-  - CMFD specific humidity (kg/kg) + pressure (Pa) → vapor pressure (kPa)
-  - MSWX specific humidity (kg/kg) + pressure (Pa) → vapor pressure (kPa)
-  - CMFD precipitation (mm/day) → mm/d  (direct)
-  - MSWX precipitation (mm/3hr) → mm/d  (sum 8 timesteps)
-  - Wind speed (m/s) → m/s  (direct, but note measurement height)
+Every source (cmfd, mswx, nasa_power, gswp3) is read through the shared
+loader ki_tools_common.load_forcing.load_daily_forcing, which returns daily
+values in degC, mm/d, W/m2 (daily mean), m/s, kg/kg and Pa, and stops on any
+missing day inside --start..--end. Conversions left for this tool:
+  - radiation W/m2 daily mean → kJ/m²/d  (× 86.4)
+  - specific humidity (kg/kg) + pressure (Pa) → vapor pressure (kPa)
+  - temperature, rain, wind: direct (wind at the source height; set ALTW)
 
 Usage:
     python convert_forcing_to_swap.py \\
@@ -28,6 +27,7 @@ import argparse
 import sys
 import os
 import math
+import tempfile
 from datetime import datetime, timedelta, date as date_cls
 from pathlib import Path
 
@@ -124,10 +124,13 @@ def read_real_forcing(source, forcing_dir, lat, lon, start, end):
         kwargs["forcing_dir"] = forcing_dir
 
     print(f"[RUN] load_daily_forcing(source={source}, lat={lat}, lon={lon}, "
-          f"{start.year}-{end.year})")
+          f"{start:%Y-%m-%d}..{end:%Y-%m-%d})")
+    # Only the window is checked for gaps (period=), so a part year that is
+    # complete runs and a real gap inside it still stops.
     raw = load_daily_forcing(
         source, lat, lon, start.year, end.year,
-        variables=["tmin", "tmax", "prcp", "srad", "wind", "rh", "pres", "shum"],
+        variables=("P", "Tair", "SWd", "Wind", "spechum", "Pres"),
+        period=(start.date(), end.date()),
         **kwargs
     )
 
@@ -154,37 +157,22 @@ def read_real_forcing(source, forcing_dir, lat, lon, start, end):
     dates = [dates_all[i] for i in keep]
     n_days = len(dates)
 
-    tmin = col("tmin", "tmin_c", "tasmin")
-    tmax = col("tmax", "tmax_c", "tasmax")
-    rain = col("prcp", "precip", "precip_mm", "pr", "rain")
-    wind = col("wind", "wind_speed", "sfcwind", "ws10m")
-    srad = col("srad", "rsds", "swdown", "solar")
-
-    # Radiation -> kJ/m2/d, dispatched on magnitude:
-    #   MJ/m2/d ~ 5-30, W/m2 daily mean ~ 50-350, kJ/m2/d ~ 5e3-3e4
-    rad_mean = float(np.nanmean(srad))
-    if rad_mean < 60.0:
-        rad = srad * 1000.0                       # MJ/m2/d
-    elif rad_mean < 600.0:
-        rad = radiation_wm2_to_kjm2d(srad)        # W/m2 daily mean
-    else:
-        rad = srad                                # already kJ/m2/d
-    print(f"[INFO] Radiation input mean {rad_mean:.1f} -> "
-          f"{float(np.nanmean(rad)):.0f} kJ/m2/d")
+    # Names and units are the shared loader's documented output (same for
+    # every source): degC, mm/d, m/s, daily-mean W/m2, kg/kg, Pa.
+    tmin = col("temp_min_c")
+    tmax = col("temp_max_c")
+    rain = col("precip_mm")
+    wind = col("wind_ms")
+    srad = col("srad_wm2")
+    rad = radiation_wm2_to_kjm2d(srad)            # W/m2 daily mean -> kJ/m2/d
 
     # Humidity -> actual vapour pressure (kPa)
-    shum = col("shum", "spfh", "huss", required=False)
-    pres = col("pres", "ps", "psurf", required=False)
-    rh = col("rh", "hurs", "relhum", required=False)
-    if shum is not None and pres is not None:
-        hum = specific_humidity_to_vapor_pressure(shum, pres)
-    elif rh is not None:
-        rh_frac = rh / 100.0 if np.nanmax(rh) > 1.5 else rh
-        hum = saturation_vapor_pressure(0.5 * (tmin + tmax)) * rh_frac
-    else:
-        print("ERROR: forcing provides neither (shum, pres) nor rh — actual "
-              "vapour pressure cannot be derived", file=sys.stderr)
-        sys.exit(1)
+    hum = specific_humidity_to_vapor_pressure(col("shum_kgkg"), col("pres_pa"))
+
+    height = frame.get("wind_height_m")
+    if height is not None:
+        print(f"[INFO] Wind is at {float(np.asarray(height).ravel()[0]):g} m; "
+              f"set ALTW to this height in the .swp file")
 
     return {
         "dates": [datetime(d.year, d.month, d.day) for d in dates],
@@ -195,8 +183,11 @@ def read_real_forcing(source, forcing_dir, lat, lon, start, end):
         "wind": np.asarray(wind, dtype=float),
         "rain": np.asarray(rain, dtype=float),
         "etref": np.full(n_days, -99.9),
-        "wet": np.where(np.asarray(rain) > 0,
-                        np.minimum(np.asarray(rain) / 50.0, 1.0), 0.0),
+        # Wet = fraction of the day with rain. No source gives rain duration,
+        # so it is 0 (no data), never estimated from the rain amount. SWAP
+        # reads Wet only with SWRAIN=2, and then stops on any rain day with
+        # Wet 0 ("Rain and Wet donot correspond"), so it cannot be used.
+        "wet": np.zeros(n_days),
     }
 
 
@@ -234,7 +225,9 @@ def _as_column_dict(raw):
     for d in frame["dates"]:
         if isinstance(d, str):
             normalised.append(datetime.strptime(d[:10], "%Y-%m-%d").date())
-        elif hasattr(d, "date") and not isinstance(d, date_cls):
+        elif isinstance(d, datetime):          # before date: datetime is a date
+            normalised.append(d.date())
+        elif hasattr(d, "date") and not isinstance(d, date_cls):   # Timestamp
             normalised.append(d.date())
         elif isinstance(d, date_cls):
             normalised.append(d)
@@ -289,8 +282,8 @@ def generate_synthetic_met(lat, lon, start, end, station_name="SYN"):
     rain_amount = np.random.exponential(5.0, n_days)
     rain = rain_occur * rain_amount
 
-    # Wet fraction
-    wet = np.where(rain > 0, np.minimum(rain / 50.0, 1.0), 0.0)
+    # Wet fraction: no rain duration here either, so 0 (as for real sources)
+    wet = np.zeros(n_days)
 
     return {
         "dates": dates,
@@ -322,6 +315,8 @@ def write_met_file(output_path, station_name, lat, lon, data):
         f.write(f"* Longitude         : {lon:.3f}\n")
         f.write(f"* Generated by      : convert_forcing_to_swap.py (HydroCraft)\n")
         f.write(f"* Generated at      : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("* Wet               : 0 = no rain-duration data. Use SWRAIN = 0 with this single .met file\n"
+        "*                     (SWRAIN 1/3 make SWAP drop .met and read yearly .YYY files instead)\n")
         f.write("*" + "-" * 80 + "\n")
 
         # Column header
@@ -348,8 +343,12 @@ def write_met_file(output_path, station_name, lat, lon, data):
     print(f"[OK] Wrote {len(dates)} daily records to {output_path}")
 
 
-def validate_outputs(output_path, data):
-    """Post-processing validation of generated .met file."""
+def validate_outputs(output_path, data, check_file=True):
+    """
+    Validation of the .met content. main() calls it with check_file=False
+    BEFORE writing, so a failed check never replaces an existing .met; the
+    written file is then checked for existence separately.
+    """
     errors = []
     warnings = []
 
@@ -405,7 +404,7 @@ def validate_outputs(output_path, data):
         errors.append("Negative wind speed values found")
 
     # Check file was written
-    if not os.path.isfile(output_path):
+    if check_file and not os.path.isfile(output_path):
         errors.append(f"Output file not created: {output_path}")
 
     for w in warnings:
@@ -455,9 +454,29 @@ def main():
         data = read_real_forcing(args.source, args.forcing_dir, args.lat,
                                  args.lon, start, end)
 
-    write_met_file(args.output, args.station_name, args.lat, args.lon, data)
-    if not validate_outputs(args.output, data):
+    # Validate BEFORE writing: a failed check must not overwrite an existing
+    # .met with bad data. Write to a temp file in the same folder, then
+    # rename it into place (atomic on one filesystem).
+    if not validate_outputs(args.output, data, check_file=False):
+        print(f"[FAIL] {args.output} was not written", file=sys.stderr)
         sys.exit(1)
+    out_dir = os.path.dirname(os.path.abspath(args.output))
+    fd, tmp_path = tempfile.mkstemp(prefix=".met_tmp_", dir=out_dir)
+    os.close(fd)
+    try:
+        write_met_file(tmp_path, args.station_name, args.lat, args.lon, data)
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(tmp_path, 0o666 & ~umask)  # mkstemp makes 0600
+        os.replace(tmp_path, args.output)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+    if not os.path.isfile(args.output):
+        print(f"ERROR: Output file not created: {args.output}", file=sys.stderr)
+        sys.exit(1)
+    print(f"[OK] Moved into place: {args.output}")
 
 
 if __name__ == "__main__":

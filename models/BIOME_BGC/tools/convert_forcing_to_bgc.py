@@ -25,7 +25,8 @@ Sources (--source is required, there is no default):
                              period the source does not fully cover stops the tool
                              and nothing is written [dt_028-dt_033].
   fluxnet                    FLUXNET2015 tower file (FULLSET_DD.csv, with the
-                             sibling FULLSET_HH.csv when present).
+                             sibling FULLSET_HH.csv required by default).
+                             DD proxies require explicit --fluxnet_daily_only.
 
 Usage:
     python convert_forcing_to_bgc.py --source nasa_power \\
@@ -38,8 +39,8 @@ Usage:
         --forcing_file <site>/FULLSET_DD.csv \\
         --lat 55.4859 --start_year 2004 --end_year 2012 --output metdata/site.mtc43
 
-The direct sources also write <output>.summary.json (source, point, period, mean
-annual precipitation, mean temperature).
+All sources also write <output>.summary.json with source and conversion provenance.
+FLUXNET provider gap-filled fields are used as supplied; no additional filling.
 
 Exit codes: 0=success, 1=input error, 2=processing error, 3=output error
 """
@@ -350,81 +351,112 @@ def read_fluxnet_forcing(filepath: str, start_year: int, end_year: int,
       VPD_F     → VPD  = mean over daylight half-hours (SW_IN_POT > 0), hPa
       SW_IN_F   → 24-h mean W/m² (scaled to the daylight average later, dt_027)
       P_F       → mm per half-hour, summed to mm/day
-    When the HH file is absent (or use_hh=False) the daily file is used with
-    PROXIES and the caller is told so in the returned meta:
+    With explicit use_hh=False the daily file is used with PROXIES and the
+    caller is told so in the returned meta. Missing HH does not switch paths:
       TA_F_MDS_DAY / TA_F_MDS_NIGHT → day/night MEANS standing in for Tmax/Tmin
       VPD_F (24-h mean)             → stands in for the daylight average
-    Both paths: -9999 → NaN → ffill/bfill; Feb-29 dropped (365-day model year).
+    Both paths require full calendar coverage and finite required values.
+    Residual -9999/NaN gaps stop conversion, including missing HH samples before
+    aggregation. Feb-29 is dropped only after validation (365-day model year).
 
     Returns (records, meta).
     """
+    import numpy as np
     import pandas as pd
+    if start_year > end_year:
+        raise ValueError("start_year must not exceed end_year")
     hh_path = _fluxnet_hh_path(filepath) if use_hh else None
-    meta = {"fluxnet_source": None, "tmax_tmin_basis": None, "vpd_basis": None}
-
-    if hh_path is not None:
-        hh = pd.read_csv(hh_path, usecols=lambda c: c in FLUXNET_HH_COLS, dtype=float)
-        missing = [c for c in FLUXNET_HH_COLS if c not in hh.columns and c != "SW_IN_POT"]
-        if missing:
-            raise ValueError(f"Missing column(s) {missing} in {hh_path}")
-        hh = hh.replace(-9999.0, float("nan"))
-        t = pd.to_datetime(hh["TIMESTAMP_START"].astype("int64").astype(str), format="%Y%m%d%H%M")
-        hh["_date"] = t.dt.floor("D")
-        hh = hh[(hh["_date"].dt.year >= start_year) & (hh["_date"].dt.year <= end_year)]
-        if "SW_IN_POT" in hh.columns:
-            daylight = hh["SW_IN_POT"] > 0           # astronomical day, gap-free
-        else:
-            daylight = hh["SW_IN_F"] > 0
-        g = hh.groupby("_date")
-        df = pd.DataFrame({
-            "tmax": g["TA_F"].max(),
-            "tmin": g["TA_F"].min(),
-            "prec_mm": g["P_F"].sum(min_count=1),
-            "srad": g["SW_IN_F"].mean(),               # 24-h mean, daylight-scaled later
-            "vpd_hpa": hh[daylight].groupby("_date")["VPD_F"].mean(),
-        })
-        df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="D"))
-        df["_date"] = df.index
-        meta.update(fluxnet_source=str(hh_path),
-                    tmax_tmin_basis="daily max/min of half-hourly TA_F",
+    if use_hh and hh_path is None:
+        raise ValueError("FULLSET_HH.csv required for daily extrema/daylight VPD; "
+                         "use --fluxnet_daily_only (API use_hh=False) only to explicitly accept DD proxies")
+    source = hh_path if use_hh else Path(filepath)
+    timestamp = "TIMESTAMP_START" if use_hh else "TIMESTAMP"
+    required = (FLUXNET_HH_COLS[1:] if use_hh else
+                ["TA_F_MDS_DAY", "TA_F_MDS_NIGHT", "P_F", "VPD_F", "SW_IN_F"])
+    frame = pd.read_csv(source, dtype={timestamp: str},
+                        usecols=lambda c: c in [timestamp] + required or c.endswith("_QC"))
+    missing = [k for k in [timestamp] + required if k not in frame]
+    if missing:
+        raise ValueError(f"{source}: missing columns {missing}")
+    try:
+        stamps = pd.to_datetime(frame[timestamp], format="%Y%m%d%H%M" if use_hh else "%Y%m%d", errors="raise")
+    except (ValueError, TypeError):
+        raise ValueError(f"{source}: invalid {timestamp} timestamps") from None
+    if stamps.isna().any():
+        raise ValueError(f"{source}: missing {timestamp} timestamps")
+    selected = (stamps.dt.year >= start_year) & (stamps.dt.year <= end_year)
+    frame = frame.loc[selected].copy()
+    stamps = pd.DatetimeIndex(stamps.loc[selected])
+    freq = "30min" if use_hh else "D"
+    stop = pd.Timestamp(end_year + 1, 1, 1)
+    expected = pd.date_range(f"{start_year}-01-01", stop, freq=freq, inclusive="left")
+    if not stamps.equals(expected):
+        lost = expected.difference(stamps)
+        first = str(lost[0]) if len(lost) else "none (duplicate/unordered timestamps)"
+        raise ValueError(f"{source}: calendar coverage requires {len(expected)} ordered {freq} records; "
+                         f"got {len(stamps)}, missing {len(lost)}, first {first}")
+    frame.index = stamps
+    for key in required:
+        try:
+            frame[key] = pd.to_numeric(frame[key], errors="raise").replace(-9999., np.nan)
+        except (ValueError, TypeError):
+            raise ValueError(f"{source}: {key} must be numeric") from None
+        # Night VPD is not used by the daylight-average definition. All other
+        # weather samples are required before any skip-NaN group reduction.
+        if use_hh and key == "VPD_F":
+            continue
+        bad = ~np.isfinite(frame[key].to_numpy())
+        if bad.any():
+            raise ValueError(f"{source}: {key} missing/nonfinite at {stamps[np.flatnonzero(bad)[0]]}; no filling")
+    qc = {k: {str(v): int(n) for v, n in frame[k].value_counts(dropna=False).items()}
+          for k in frame if k.endswith("_QC")}
+    meta = dict(fluxnet_source=str(source), product_variables=required,
+                source_product="FLUXNET2015 _F fields as supplied (provider gap filling retained)",
+                additional_gap_filling="none", qc_counts=qc,
+                n_source_records=len(frame), source_frequency=freq,
+                period=f"{start_year}-01-01..{end_year}-12-31")
+    if use_hh:
+        daylight = frame["SW_IN_POT"] > 0
+        vpd = frame.loc[daylight, "VPD_F"]
+        if not np.isfinite(vpd.to_numpy()).all():
+            bad = vpd.index[~np.isfinite(vpd.to_numpy())][0]
+            raise ValueError(f"{source}: VPD_F missing/nonfinite at daylight sample {bad}; no filling")
+        for key in ("P_F", "SW_IN_POT"):
+            if (frame[key] < 0).any():
+                raise ValueError(f"{source}: {key} must be nonnegative")
+        if (vpd < 0).any():
+            raise ValueError(f"{source}: daylight VPD_F must be nonnegative")
+        g = frame.groupby(frame.index.floor("D"))
+        df = pd.DataFrame({"tmax": g["TA_F"].max(), "tmin": g["TA_F"].min(),
+                           "prec_mm": g["P_F"].sum(), "srad": g["SW_IN_F"].mean(),
+                           "vpd_hpa": vpd.groupby(vpd.index.floor("D")).mean()})
+        meta.update(tmax_tmin_basis="daily max/min of complete half-hourly TA_F",
                     vpd_basis="mean of half-hourly VPD_F over daylight (SW_IN_POT>0)")
     else:
-        df = pd.read_csv(filepath)
-        df = df.replace(-9999.0, float("nan"))
-        df["_date"] = pd.to_datetime(df["TIMESTAMP"], format="%Y%m%d")
-        df = df[(df["_date"].dt.year >= start_year) & (df["_date"].dt.year <= end_year)]
-        required = ["TA_F_MDS_DAY", "TA_F_MDS_NIGHT", "P_F", "VPD_F", "SW_IN_F"]
-        for col in required:
-            if col not in df.columns:
-                raise ValueError(f"Missing column {col} in FULLSET_DD — check file")
-        df = df.rename(columns={"TA_F_MDS_DAY": "tmax", "TA_F_MDS_NIGHT": "tmin",
-                                "P_F": "prec_mm", "VPD_F": "vpd_hpa", "SW_IN_F": "srad"})
-        meta.update(fluxnet_source=str(filepath),
-                    tmax_tmin_basis="PROXY: TA_F_MDS_DAY/NIGHT day- and night-time MEANS "
-                                    "(no FULLSET_HH.csv found; diurnal range compressed)",
-                    vpd_basis="PROXY: 24-h mean VPD_F (daylight average is higher)")
-
-    # CRITICAL leap-day fix (dt root-cause): BIOME-BGC metarr_init.c reads EXACTLY
-    # 365*nyears met lines sequentially and does NOT index by yday. Emitting 366
-    # lines for a leap year shifts ALL subsequent forcing +1 day, drifting GPP out
-    # of phase and tanking NSE on later years. Drop Feb-29 → 365 lines every year.
-    df = df[~((df["_date"].dt.month == 2) & (df["_date"].dt.day == 29))]
-
-    for col in ["tmax", "tmin", "prec_mm", "vpd_hpa", "srad"]:
-        df[col] = df[col].ffill().bfill()
-
+        df = frame.rename(columns={"TA_F_MDS_DAY": "tmax", "TA_F_MDS_NIGHT": "tmin",
+                                   "P_F": "prec_mm", "VPD_F": "vpd_hpa", "SW_IN_F": "srad"})
+        meta.update(tmax_tmin_basis="PROXY explicitly selected: TA_F_MDS_DAY/NIGHT day/night MEANS",
+                    vpd_basis="PROXY explicitly selected: 24-h mean VPD_F")
+    for key in ("tmax", "tmin", "prec_mm", "vpd_hpa", "srad"):
+        bad = ~np.isfinite(df[key].to_numpy())
+        if bad.any():
+            raise ValueError(f"{source}: {key} undefined on {df.index[np.flatnonzero(bad)[0]]}; "
+                             "complete required samples/daylight are needed")
+    if (df["tmax"] < df["tmin"]).any():
+        raise ValueError(f"{source}: Tmax below Tmin; DD proxies may not represent daily extrema")
+    for key in ("prec_mm", "vpd_hpa", "srad"):
+        if (df[key] < 0).any():
+            raise ValueError(f"{source}: {key} must be nonnegative; no clipping")
+    leap = (df.index.month == 2) & (df.index.day == 29)
+    meta.update(n_leap_days_dropped=int(leap.sum()), leap_day_precip_dropped_mm=float(df.loc[leap,"prec_mm"].sum()))
+    df = df.loc[~leap]
+    # BIOME-BGC reads exactly 365 entries per year. Use the same contiguous
+    # no-leap year-day convention as the direct-source route.
     records = []
-    for _, row in df.iterrows():
-        records.append({
-            "year": int(row["_date"].year),
-            "yday": int(row["_date"].timetuple().tm_yday),
-            "tmax": float(row["tmax"]),
-            "tmin": float(row["tmin"]),
-            "prec_mm": max(0.0, float(row["prec_mm"])),
-            # hPa; converted to Pa in convert_to_bgc_met
-            "vpd_hpa": max(0.0, float(row["vpd_hpa"])),
-            "srad": max(0.0, float(row["srad"])),
-        })
+    for day, row in df.iterrows():
+        yday = 1 if day.month == 1 and day.day == 1 else yday + 1
+        records.append({"year": int(day.year), "yday": yday,
+                        **{k: float(row[k]) for k in ("tmax", "tmin", "prec_mm", "vpd_hpa", "srad")}})
     return records, meta
 
 
@@ -433,11 +465,78 @@ def _fail(code, stage, message):
     sys.exit(code)
 
 
-def _write_atomic(path: Path, text: str):
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w") as f:
-        f.write(text)
-    os.replace(tmp, path)
+def _stage(path: Path, text: str) -> str:
+    """Write text to a unique temp file next to path; return the temp path."""
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".tmp",
+                               dir=str(path.parent))
+    try:
+        umask = os.umask(0); os.umask(umask)
+        os.chmod(tmp, 0o666 & ~umask)   # same mode a plain open() would give
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    return tmp
+
+
+class PairWriteError(OSError):
+    """The met/summary pair could not be written; message says what is on disk."""
+
+
+def _write_pair(met_path: Path, met_text: str, summary_path: Path, summary_text: str):
+    """Write the met file and its summary as one pair.
+
+    Both are fully written to temp files first. Then the met file is put in
+    place and the summary after it; if the summary step fails, the previous
+    met file (if any) is put back, so an old summary never sits beside new
+    data and a failed run never leaves a new met file without its summary.
+    """
+    import shutil
+    import tempfile
+    staged = []
+    keep = None
+    try:
+        met_tmp = _stage(met_path, met_text); staged.append(met_tmp)
+        sum_tmp = _stage(summary_path, summary_text); staged.append(sum_tmp)
+        if met_path.exists():
+            fd, keep = tempfile.mkstemp(
+                prefix="." + met_path.name + ".", suffix=".prev", dir=str(met_path.parent))
+            os.close(fd)
+            shutil.copy2(met_path, keep)
+        had_met = met_path.exists()
+        os.replace(met_tmp, met_path); staged.remove(met_tmp)
+        try:
+            os.replace(sum_tmp, summary_path); staged.remove(sum_tmp)
+        except BaseException as e:
+            try:
+                if had_met:
+                    os.replace(keep, met_path); keep = None
+                else:
+                    os.unlink(met_path)
+            except BaseException as e2:
+                # Rollback failed: keep the copy of the old met file and say so.
+                left, keep = keep, None
+                raise PairWriteError(
+                    f"summary not written ({e}) AND the met file could not be put back "
+                    f"({e2}): {met_path} now holds NEW data and {summary_path} (if present) "
+                    "is the OLD summary, so they do NOT match; "
+                    + (f"the previous met file is saved at {left}"
+                       if left else "there was no previous met file")) from e
+            raise PairWriteError(
+                f"summary not written ({e}); previous met file and summary kept"
+                if had_met else f"summary not written ({e}); no files written") from e
+    finally:
+        for t in staged + ([keep] if keep else []):
+            try:
+                os.unlink(t)
+            except OSError:
+                pass
 
 
 def main():
@@ -471,13 +570,30 @@ def main():
                              "CMFD/MSWX/NASA POWER/FLUXNET daily data carry is "
                              "converted to BIOME-BGC's daylight average (x 86400/daylen).")
     parser.add_argument("--summary_json", default=None,
-                        help="cmfd/mswx/nasa_power: where to write the small summary "
+                        help="Where to write the source/conversion summary "
                              "(default: <output>.summary.json)")
     parser.add_argument("--output", required=True,
                         help="Output met file path")
 
     args = parser.parse_args()
     direct = args.source in DIRECT_SOURCES
+
+    # Validate the point (NaN/inf pass argparse's float())
+    if not (math.isfinite(args.lat) and -90.0 <= args.lat <= 90.0):
+        _fail(1, "input_validation", f"--lat must be a finite number in [-90, 90], got {args.lat}")
+    if args.lon is not None and not (math.isfinite(args.lon) and -180.0 <= args.lon <= 360.0):
+        _fail(1, "input_validation", f"--lon must be a finite number in [-180, 360], got {args.lon}")
+
+    # The met file and its summary must be two different files
+    _out = Path(args.output)
+    _sum = Path(args.summary_json or (str(_out) + ".summary.json"))
+    if _out.resolve() == _sum.resolve() or (
+            _out.exists() and _sum.exists() and os.path.samefile(_out, _sum)):
+        _fail(1, "input_validation",
+              f"--summary_json and --output name the same file ({_out}); nothing written")
+    for _p in (_out, _sum):
+        if _p.exists() and not _p.is_file():
+            _fail(1, "input_validation", f"output path is not a regular file: {_p}")
 
     # Validate the inputs of the chosen source
     if direct:
@@ -498,6 +614,36 @@ def main():
             _fail(1, "input_validation", "--forcing_file is required for --source fluxnet")
         if not os.path.isfile(args.forcing_file):
             _fail(1, "input_validation", f"Forcing file not found: {args.forcing_file}")
+
+    # Never write over (or into) the weather we read. For FLUXNET this covers the
+    # DD file and its sibling HH name (even if that file does not exist yet: a
+    # summary written there would later be read as half-hourly data).
+    def _same(a: Path, b: Path) -> bool:
+        if a.resolve() == b.resolve():
+            return True
+        try:
+            return a.exists() and b.exists() and os.path.samefile(a, b)
+        except OSError:
+            return False
+    if direct:
+        if args.forcing_dir:
+            store = Path(args.forcing_dir).resolve()
+            for _p in (_out, _sum):
+                if _p.resolve() == store or store in _p.resolve().parents:
+                    _fail(1, "input_validation",
+                          f"output {_p} is inside the --forcing_dir store {store}; nothing written")
+    else:
+        dd = Path(args.forcing_file)
+        inputs = [dd]
+        if "_HH" in dd.name:
+            inputs.append(dd)
+        elif "_DD" in dd.name:
+            inputs.append(dd.with_name(dd.name.replace("_DD", "_HH")))
+        for _p in (_out, _sum):
+            for _i in inputs:
+                if _same(_p, _i):
+                    _fail(1, "input_validation",
+                          f"output {_p} is the FLUXNET input {_i}; nothing written")
 
     # Read
     source_meta = {}
@@ -544,37 +690,34 @@ def main():
         f"  year  yday    Tmax    Tmin    Tday    prcp      VPD     srad  daylen",
         f"             (deg C) (deg C) (deg C)    (cm)     (Pa)  (W m-2)     (s)",
     ]
-    summary_path = None
+    summary_path = Path(args.summary_json or (str(out_path) + ".summary.json"))
+    if direct:
+        summary = {
+            "source": args.source,
+            "point": {"lat": args.lat, "lon": args.lon},
+            "period": f"{args.start_year}-01-01..{args.end_year}-12-31",
+            "n_years": len(years),
+            "n_days_in_met_file": len(daily_records),
+            "mean_annual_precip_mm": round(mean_annual_prec_mm, 2),
+            "mean_temperature_c": source_meta["mean_temperature_c"],
+            "mean_temperature_basis": source_meta["mean_temperature_basis"],
+            "mean_pressure_pa": source_meta["mean_pressure_pa"],
+            "n_leap_days_dropped": source_meta["n_leap_days_dropped"],
+            "leap_day_precip_dropped_mm": source_meta["leap_day_precip_dropped_mm"],
+            "note": "means are over the 365-day years written to the met file",
+            "met_file": str(out_path),
+        }
+    else:
+        summary = {"source": "fluxnet", **source_meta, "met_file": str(out_path),
+                   "n_days_in_met_file": len(daily_records),
+                   "mean_annual_precip_mm": round(mean_annual_prec_mm, 2)}
     try:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        if direct:
-            _write_atomic(out_path, "".join(l + "\n" for l in header_lines + met_lines))
-            summary_path = Path(args.summary_json or (str(out_path) + ".summary.json"))
-            summary_path.parent.mkdir(parents=True, exist_ok=True)
-            summary = {
-                "source": args.source,
-                "point": {"lat": args.lat, "lon": args.lon},
-                "period": f"{args.start_year}-01-01..{args.end_year}-12-31",
-                "n_years": len(years),
-                "n_days_in_met_file": len(daily_records),
-                "mean_annual_precip_mm": round(mean_annual_prec_mm, 2),
-                "mean_temperature_c": source_meta["mean_temperature_c"],
-                "mean_temperature_basis": source_meta["mean_temperature_basis"],
-                "mean_pressure_pa": source_meta["mean_pressure_pa"],
-                "n_leap_days_dropped": source_meta["n_leap_days_dropped"],
-                "leap_day_precip_dropped_mm": source_meta["leap_day_precip_dropped_mm"],
-                "note": "means are over the 365-day years written to the met file",
-                "met_file": str(out_path),
-            }
-            _write_atomic(summary_path, json.dumps(summary, indent=2) + "\n")
-        else:
-            with open(out_path, 'w') as f:
-                for h in header_lines:
-                    f.write(h + "\n")
-                for line in met_lines:
-                    f.write(line + "\n")
+        _write_pair(out_path, "".join(l + "\n" for l in header_lines + met_lines),
+                    summary_path, json.dumps(summary, indent=2) + "\n")
     except Exception as e:
-        _fail(3, "output", f"Failed to write: {e}")
+        if isinstance(e, PairWriteError):
+            _fail(3, "output", f"Failed to write: {e}")
+        _fail(3, "output", f"Failed to write: {e}; nothing replaced, previous files (if any) kept")
 
     result = {
         "status": "success",
@@ -597,8 +740,7 @@ def main():
             round(max(float(l.split()[7]) for l in met_lines), 1)],
         "warnings": warnings,
     }
-    if summary_path is not None:
-        result["summary_json"] = str(summary_path)
+    result["summary_json"] = str(summary_path)
     print(json.dumps(result, indent=2))
     sys.exit(0)
 

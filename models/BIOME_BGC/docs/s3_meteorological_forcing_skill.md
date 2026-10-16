@@ -23,7 +23,7 @@ Build the BIOME-BGC daily meteorological input file straight from the data sourc
 | lat | float | Site/grid | Latitude (point to read; also day length) |
 | lon | float | Site/grid | Longitude east (cmfd / mswx / nasa_power) |
 | forcing_dir | path | Store | cmfd / mswx store root (always give it for cmfd) |
-| forcing_file | path | FLUXNET2015 | fluxnet only: `<site>/FULLSET_DD.csv` (the sibling `FULLSET_HH.csv` is used when present) |
+| forcing_file | path | FLUXNET2015 | fluxnet only: `<site>/FULLSET_DD.csv` (requires the sibling `FULLSET_HH.csv`; DD proxies require `--fluxnet_daily_only`) |
 | start_year | int | User | First year to extract |
 | end_year | int | User | Last year to extract |
 
@@ -133,3 +133,21 @@ The output file has 4 header lines (matching MTCLIM format). The .ini file's met
 - **dt_009**: Day length = 0. CHECK: column 9 should have values 28000-60000 for mid-latitudes.
 - **dt_010**: Temperature in Kelvin. CHECK: values should be -40 to +50, not 233 to 323.
 - **dt_011**: Wrong header line count in .ini. The tool produces 4 header lines.
+
+
+### FLUXNET input completeness (2026-10-03)
+
+The tower converter now rejects residual -9999/NaN/Inf weather values and
+missing, duplicate or unordered timestamps across the entire requested year
+range. HH inputs require all 48 samples per day before max/min/sum/mean
+aggregation; VPD is required on daylight samples selected by `SW_IN_POT > 0`.
+`SW_IN_POT` must be present. Missing HH does not silently select daily proxies:
+`--fluxnet_daily_only` explicitly accepts the documented DD day/night-mean
+Tmax/Tmin and daily-mean VPD proxies. Valid zero rain remains valid.
+
+FLUXNET's published `_F` product fields retain their provider gap filling;
+this tool adds none. Both CLI JSON and `<output>.summary.json` record source,
+variables, available QC counts, sample frequency/count, proxy basis and leap-day
+removal. Feb-29 is checked then dropped; model year-days are numbered 1–365.
+No source values are copied, interpolated or silently clipped into a valid day.
+Run `python -B tests/test_fluxnet_forcing.py` after editing this converter.

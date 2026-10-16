@@ -507,3 +507,21 @@ Use these as physically informed starting points when no site-specific calibrati
 
 *Built using the Knowledge Dissection Toolkit v1.0 (Zhang et al., Nature, under review).*
 *Part of the HydroCraft multi-model simulation platform by the Jianyun Zhang Research Group, Hohai University.*
+
+
+### FLUXNET input completeness (2026-10-03)
+
+The tower converter now rejects residual -9999/NaN/Inf weather values and
+missing, duplicate or unordered timestamps across the entire requested year
+range. HH inputs require all 48 samples per day before max/min/sum/mean
+aggregation; VPD is required on daylight samples selected by `SW_IN_POT > 0`.
+`SW_IN_POT` must be present. Missing HH does not silently select daily proxies:
+`--fluxnet_daily_only` explicitly accepts the documented DD day/night-mean
+Tmax/Tmin and daily-mean VPD proxies. Valid zero rain remains valid.
+
+FLUXNET's published `_F` product fields retain their provider gap filling;
+this tool adds none. Both CLI JSON and `<output>.summary.json` record source,
+variables, available QC counts, sample frequency/count, proxy basis and leap-day
+removal. Feb-29 is checked then dropped; model year-days are numbered 1–365.
+No source values are copied, interpolated or silently clipped into a valid day.
+Run `python -B tests/test_fluxnet_forcing.py` after editing this converter.

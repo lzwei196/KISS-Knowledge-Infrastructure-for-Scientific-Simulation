@@ -145,8 +145,12 @@ def kpa_to_pa(kpa: float) -> float:
 
 
 def kelvin_to_celsius(k: float) -> float:
-    """Convert Kelvin to Celsius."""
-    return kelvin_to_celsius(k)
+    """Convert Kelvin to Celsius (0 degC = 273.15 K).
+
+    Defined here on purpose (it replaces the import above); until 2026-10-16
+    this body called itself and raised RecursionError on every call.
+    """
+    return k - 273.15
 
 
 # ---------------------------------------------------------------------------

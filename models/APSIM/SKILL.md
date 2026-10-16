@@ -575,7 +575,9 @@ project/
 The most dangerous silent errors in APSIM modelling:
 
 1. **dt_001 — Radiation in W/m² instead of MJ/m²/day**: Biomass explodes to
-   unrealistic values. Tool `convert_met.py` auto-converts and validates range.
+   unrealistic values. Tool `convert_met.py` converts units only from the source's declared units
+   (NetCDF `units` attributes; for CSV the required `--csv-radn-units`, `--csv-temp-units`,
+   `--csv-rain-units`), never by guessing from value size, and stops on unknown units or missing values.
 
 2. **dt_002 — Missing tav/amp in .met header**: Soil temperature model fails
    silently, producing unrealistic soil temperatures that affect germination

@@ -1,7 +1,7 @@
 # SFINCS Diagnostic Triplets
 # ==========================
-# 28 triplets covering 9 failure domains
-# Silent error rate: 46% (13/28)
+# At first build (2026-03): 28 triplets covering 9 failure domains (current total: knowledge_infrastructure.yaml)
+# Silent error rate at first build: 46% (13/28)
 # Includes 6 triplets from Chaohe basin validation (2026-03-21)
 # Includes 2 triplets from Bengbu flood validation (2026-03-22)
 

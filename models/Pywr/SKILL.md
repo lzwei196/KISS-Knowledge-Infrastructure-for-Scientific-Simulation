@@ -98,7 +98,7 @@ The JSON config file is the only configuration needed — no `.ini`, `.cfg`, or 
 
 **Input Source**: Pywr takes inflow time series from upstream models (VIC) or observations.
 - `convert_vic_to_inflow.py` — Converts VIC/CaMa-Flood discharge to Pywr inflow DataFrame
-- `convert_obs_to_inflow.py` — Converts observed discharge to Pywr inflow format
+- `convert_obs_to_inflow.py` — Converts observed discharge to Pywr inflow format. Missing daily Q fails by default. Optional interpolation (internal gaps ≤30 days) or zero filling must be explicitly selected and is recorded per date in `<output>.provenance.json`; there is no median fallback. See [S4](docs/s4_inflow.md) for input validation and provenance.
 - `find_dams_in_basin.py` — Finds dams from GRanD database within basin
 - `build_reservoir_properties.py` — Builds reservoir properties (capacity, area, elevation) from GRanD/HydroLAKES
 

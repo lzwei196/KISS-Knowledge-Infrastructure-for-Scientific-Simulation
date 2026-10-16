@@ -13,6 +13,7 @@ Run the assembled Pywr model, export reservoir operation results, plot them, che
 
 ## Outputs
 - Results directory from `run_pywr.py`, including storage and release timeseries CSVs.
+- Flow units: Pywr adds flow x timestep-days to storage (m3), so S7 builds the model with flows in m3/day and writes `metadata.flow_units: m3/day`. `run_pywr.py` divides recorded flows by 86400 so every `*_m3s` column and statistic really is m3/s (what `inject_releases_to_cama.py` and the plots expect). A model JSON without `metadata.flow_units` stops with exit 2 unless `--flow_units m3/day|m3/s` is given.
 - Plot image such as `operations_plot.png`.
 - Overtopping report JSON.
 - Optional regulated CaMa-Flood NetCDF runoff files.

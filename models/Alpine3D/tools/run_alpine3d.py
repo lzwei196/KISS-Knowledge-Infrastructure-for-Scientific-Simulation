@@ -335,6 +335,9 @@ def find_binary(args):
     candidates = [
         "alpine3d",
         "/usr/local/bin/alpine3d",
+        # GeoForge-managed install (prefix .../model/Alpine3D, libs in lib/ via RUNPATH $ORIGIN/../lib);
+        # same path as knowledge_infrastructure.yaml model.binary.path.
+        "KISSPATH_BINARIES/Alpine3D/bin/alpine3d",
         os.path.join(os.path.dirname(args.iofile), "..", "bin", "alpine3d"),
         os.path.join(os.path.dirname(args.iofile), "..", "..", "build", "bin", "alpine3d"),
     ]

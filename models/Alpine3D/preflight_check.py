@@ -10,10 +10,7 @@ import sys
 MODEL_ID = "Alpine3D"
 KI_DIR = os.path.dirname(os.path.abspath(__file__))
 HYDROCRAFT_PYTHON = "KISSPATH_PYTHON_ENV/bin/python"
-MANIFEST_BINARY = (
-    "KISSPATH_BINARIES/Alpine3D/"
-    "source/repo/Source/alpine3d/bin/alpine3d"
-)
+MANIFEST_BINARY = "KISSPATH_BINARIES/Alpine3D/bin/alpine3d"
 
 
 def emit_report(model_id, checks):

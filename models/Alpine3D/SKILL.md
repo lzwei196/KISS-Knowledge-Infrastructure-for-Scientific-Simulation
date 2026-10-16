@@ -120,7 +120,13 @@ in that file's `# SNOTEL <id>: <Name>, <ST>` comment line.
 
 ## Validated Test Cases (Tier-3, real DEM + real obs)
 
-Located at `KISSPATH_BINARIES/Alpine3D/t3_runs/`:
+These are server-only result files: they are **not shipped** with the KI or the
+installed engine. On the GeoForge build server they stay in the Alpine3D build work
+folder (`auto_dissect/_work/Alpine3D/t3_runs/`), and the 2026-08-09 Lone Mountain run
+stays in the server model folder `models/Alpine3D/runs/lone_mountain_mt/`. The engine
+folder `KISSPATH_BINARIES/Alpine3D/` holds the engine only (on the server:
+`bin/`, `lib/`, `include/`, `share/`), never these runs. Outside the build server the
+numbers below are a record only; the run files are not there to open:
 
 ⚠️ Every row in the table below was produced with the differenced (i.e. ~44%
 too dry) precipitation described above. Treat their NSE/PBIAS as a **floor**,
@@ -363,7 +369,11 @@ make -j$(nproc) && sudo make install
 ### Binary Location
 
 After build: `alpine3d/build/bin/alpine3d`
-After install: `/usr/local/bin/alpine3d` or the GeoForge-managed location: `KISSPATH_BINARIES/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
+After install: `/usr/local/bin/alpine3d` or the GeoForge-managed install: `KISSPATH_BINARIES/Alpine3D/bin/alpine3d`
+(on the GeoForge server this is a real install with prefix `KISSPATH_BINARIES/Alpine3D/`:
+`libalpine3d.so.3`, `libsnowpack.so.3` and `libmeteoio.so.2` sit in its `lib/` and the binary finds them
+through RUNPATH `$ORIGIN/../lib`, so no `LD_LIBRARY_PATH` is needed; a desktop build of the same tree
+writes `bin/alpine3d` at the same place relative to the engine folder)
 
 ### Test
 

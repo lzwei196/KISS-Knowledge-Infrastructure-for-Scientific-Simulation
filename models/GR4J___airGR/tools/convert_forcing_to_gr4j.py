@@ -16,6 +16,8 @@ Unit conversions:
 """
 
 import argparse
+import hashlib
+import json
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -184,6 +186,57 @@ def discharge_ls_to_mmday(q_ls: np.ndarray, area_km2: float) -> np.ndarray:
 # Main conversion: CMFD -> airGR
 # ---------------------------------------------------------------------------
 
+CMFD_STEPS_PER_DAY = 8          # 3-hourly CMFD -> 8 steps per day
+CMFD_STEP = pd.Timedelta(hours=3)
+
+
+def check_cmfd_subdaily_complete(df: pd.DataFrame) -> None:
+    """Stop with a clear error unless every day has 8 valid 3-hourly steps.
+
+    Checks: no missing timestamps, no duplicate timestamps, every timestamp on
+    the 3-hourly grid, exactly 8 records per calendar day, no whole day absent
+    between the first and last day, and no NaN/inf in
+    'prec' or 'temp'. Nothing is filled or dropped.
+    """
+    problems = []
+    if df["date"].isna().any():
+        problems.append(f"{int(df['date'].isna().sum())} rows with missing/unparseable date")
+    dup = df["date"][df["date"].duplicated()]
+    if len(dup):
+        problems.append(f"{len(dup)} duplicate timestamps, e.g. {list(dup.astype(str)[:5])}")
+    off_grid = df["date"].dropna()
+    off_grid = off_grid[(off_grid - off_grid.dt.normalize()) % CMFD_STEP != pd.Timedelta(0)]
+    if len(off_grid):
+        problems.append(f"{len(off_grid)} timestamps not on the 3-hourly grid, "
+                        f"e.g. {list(off_grid.astype(str)[:5])}")
+    for col in ("prec", "temp"):
+        vals = pd.to_numeric(df[col], errors="coerce")
+        bad = ~np.isfinite(vals.to_numpy(dtype=float))
+        if bad.any():
+            ex = list(df.loc[bad, "date"].astype(str)[:5])
+            problems.append(f"{int(bad.sum())} missing/non-finite '{col}' values, e.g. at {ex}")
+    counts = df.dropna(subset=["date"]).groupby(df["date"].dt.date).size()
+    short = counts[counts != CMFD_STEPS_PER_DAY]
+    if len(short):
+        ex = {str(k): int(v) for k, v in short.iloc[:5].items()}
+        problems.append(f"{len(short)} days without exactly {CMFD_STEPS_PER_DAY} "
+                        f"3-hourly records (date: count), e.g. {ex}")
+    # Whole days with zero records are not in `counts`; check the full calendar.
+    if len(counts):
+        days = pd.to_datetime(pd.Index(counts.index))
+        full = pd.date_range(days.min(), days.max(), freq="D")
+        absent = full.difference(days)
+        if len(absent):
+            problems.append(f"{len(absent)} whole days with no records between "
+                            f"{days.min().date()} and {days.max().date()}, e.g. "
+                            f"{[str(d.date()) for d in absent[:5]]}")
+    if problems:
+        raise ValueError(
+            "CMFD sub-daily input is incomplete; daily totals would be "
+            "fabricated (missing steps counted as 0 mm / skipped in the mean). "
+            "Fix or clip the source data to whole, complete days:\n  - "
+            + "\n  - ".join(problems))
+
 def convert_cmfd_to_airgr(cmfd_csv: str, lat_deg: float,
                            output_csv: str,
                            area_km2: float = None,
@@ -215,12 +268,24 @@ def convert_cmfd_to_airgr(cmfd_csv: str, lat_deg: float,
         print("[convert_forcing] Temperature appears to be in Kelvin, converting to degC")
         temp = temp - 273.15
 
+    # --- Sub-daily completeness contract (CMFD 3-hourly) ---
+    # The KI docs (SKILL.md "Unit Conversion from CMFD to airGR";
+    # docs/s1_forcing_preparation.md Step 3) define the daily value as the
+    # sum of the 8 three-hourly steps of that day, and SKILL.md says Precip
+    # allows no NA. pandas sum()/mean() skip NaN, so an all-NaN day would
+    # become 0.0 mm and an incomplete day a partial total / partial mean.
+    # That is fabricated data: refuse it instead of filling.
+    check_cmfd_subdaily_complete(df)
+
     # --- Precipitation: aggregate sub-daily to daily ---
     df["date_day"] = df["date"].dt.date
     daily = df.groupby("date_day").agg(
-        prec_sum=("prec", "sum"),
+        prec_sum=("prec", lambda x: x.sum(min_count=CMFD_STEPS_PER_DAY)),
         temp_mean=("temp", "mean"),
     ).reset_index()
+    if daily["prec_sum"].isna().any() or daily["temp_mean"].isna().any():
+        raise ValueError("CMFD daily aggregation produced NaN after the "
+                         "completeness check; refusing to write output")
     daily["date_day"] = pd.to_datetime(daily["date_day"])
 
     # Temperature conversion for daily aggregated
@@ -247,8 +312,12 @@ def convert_cmfd_to_airgr(cmfd_csv: str, lat_deg: float,
     })
 
     # --- Optional: merge observed discharge ---
-    if qobs_csv and area_km2:
+    if qobs_csv:
         df_q = pd.read_csv(qobs_csv, parse_dates=["date"])
+        if ("Q_m3s" in df_q.columns or "Q_ls" in df_q.columns) and not area_km2:
+            raise ValueError(
+                f"{qobs_csv} has discharge in m3/s or l/s but no catchment "
+                "area was given (--area-km2); cannot convert to mm/day")
         if "Q_m3s" in df_q.columns:
             df_q["Qobs_mm"] = discharge_m3s_to_mmday(df_q["Q_m3s"].values, area_km2)
         elif "Q_ls" in df_q.columns:
@@ -256,8 +325,10 @@ def convert_cmfd_to_airgr(cmfd_csv: str, lat_deg: float,
         elif "Qmm" in df_q.columns:
             df_q["Qobs_mm"] = df_q["Qmm"]
         else:
-            print("[convert_forcing] WARNING: No recognized Q column in qobs_csv")
-            df_q["Qobs_mm"] = np.nan
+            raise ValueError(
+                f"No recognized discharge column in {qobs_csv} "
+                f"(expected Q_m3s, Q_ls or Qmm; found {list(df_q.columns)}); "
+                "refusing to write an all-missing Qobs_mm column")
 
         df_q["date_day"] = pd.to_datetime(df_q["date"]).dt.normalize()
         df_out = df_out.merge(
@@ -333,61 +404,62 @@ def convert_caravan_to_airgr(caravan_nc: str, lat_deg: float,
     except Exception:
         ds = xr.open_dataset(caravan_nc)
 
-    dates = pd.to_datetime(ds["date"].values)
-    precip = ds["total_precipitation_sum"].values.astype(float)
-    temp = ds["temperature_2m_mean"].values.astype(float)
-    qobs = ds["streamflow"].values.astype(float)  # already mm/day
-    pe_era5 = (ds["potential_evaporation_sum"].values.astype(float)
-               if "potential_evaporation_sum" in ds else None)
-    ds.close()
-
-    df = pd.DataFrame({
-        "Date": dates,
-        "Precip_mm": precip,
-        "TempMean_degC": temp,
-        "Qobs_mm": qobs,
-    })
-    if pe_era5 is not None:
-        df["_pe_era5"] = pe_era5
-
-    # --- Clip to requested window ---
-    if start_date:
-        df = df[df["Date"] >= pd.Timestamp(start_date)]
-    if end_date:
-        df = df[df["Date"] <= pd.Timestamp(end_date)]
-    df = df.sort_values("Date").reset_index(drop=True)
-
-    # --- Forcing must contain no NA in Precip/PE (airGR stops on NA) ---
-    # ERA5-Land basin means are gap-free, but guard anyway.
-    df["Precip_mm"] = df["Precip_mm"].clip(lower=0).fillna(0.0)
-    df["TempMean_degC"] = df["TempMean_degC"].interpolate().ffill().bfill()
-
-    # --- PE ---
-    if pe_method == "era5land" and "_pe_era5" in df.columns:
-        pe_mm = np.maximum(df["_pe_era5"].fillna(0.0).values, 0.0)
-    else:
-        julian_days = df["Date"].dt.dayofyear.values
-        pe_mm = pe_oudin(julian_days, df["TempMean_degC"].values, lat_deg)
-        pe_mm = np.maximum(pe_mm, 0.0)
-
-    df_out = pd.DataFrame({
-        "Date": df["Date"].dt.strftime("%Y-%m-%d"),
-        "Precip_mm": np.round(df["Precip_mm"].values, 4),
-        "PotEvap_mm": np.round(pe_mm, 4),
-        "TempMean_degC": np.round(df["TempMean_degC"].values, 2),
-        "Qobs_mm": np.round(df["Qobs_mm"].values, 6),  # NA allowed in Qobs
-    })
+    if pe_method not in {"oudin","era5land"}:
+        ds.close();raise ValueError("pe_method must be oudin or era5land; no automatic fallback")
+    if not np.isfinite(lat_deg) or not -90 < lat_deg < 90:
+        ds.close();raise ValueError("Latitude must be finite and strictly between -90 and 90")
+    dates = pd.DatetimeIndex(ds["date"].values)
+    if not len(dates) or dates.hasnans or not dates.is_unique or not dates.is_monotonic_increasing:
+        ds.close();raise ValueError("Caravan dates must be valid, unique and ordered")
+    start=pd.Timestamp(start_date) if start_date else dates[0]
+    end=pd.Timestamp(end_date) if end_date else dates[-1]
+    expected=pd.date_range(start,end)
+    selected=(dates>=start)&(dates<=end)
+    window=dates[selected]
+    if not len(expected) or not window.equals(expected) or not window.equals(window.normalize()):
+        ds.close();raise ValueError("Caravan dates do not cover every requested day exactly; no truncation or filling")
+    def read(name,low,high,allow_missing=False):
+        if name not in ds:raise ValueError(f"Required Caravan field absent: {name} (method={pe_method})")
+        values=ds[name].values.astype(float)
+        if values.shape!=(len(dates),):raise ValueError(f"{name} must have exactly one value per date")
+        values=values[selected]
+        bad=np.isinf(values)|(values<low)|(values>high)
+        if not allow_missing:bad|=np.isnan(values)
+        if bad.any():raise ValueError(f"{name}: missing/nonfinite or outside [{low},{high}] at dates {window[bad].strftime('%Y-%m-%d').tolist()[:10]}")
+        return values
+    try:
+        precip=read("total_precipitation_sum",0,1000)
+        temp=read("temperature_2m_mean",-90,70)
+        if pe_method=="era5land":
+            pe=read("potential_evaporation_sum",0,100)
+        else:
+            pe=pe_oudin(window.dayofyear.to_numpy(),temp,lat_deg)
+        if not np.isfinite(pe).all() or (pe<0).any() or (pe>100).any():
+            raise ValueError("Calculated PE is nonfinite or outside [0,100] mm/day")
+        df_out=pd.DataFrame(dict(Date=window.strftime("%Y-%m-%d"),Precip_mm=precip,PotEvap_mm=pe,TempMean_degC=temp))
+        if "streamflow" in ds:
+            df_out["Qobs_mm"]=read("streamflow",0,np.inf,allow_missing=True)
+    finally:
+        ds.close()
 
     warnings = validate_outputs(df_out)
     for w in warnings:
         print(f"[convert_forcing] WARNING: {w}")
 
-    df_out.to_csv(output_csv, index=False)
+    df_out.to_csv(output_csv, index=False, float_format="%.17g")
+    source_hash=hashlib.sha256(Path(caravan_nc).read_bytes()).hexdigest()
+    proof=dict(source=str(caravan_nc),source_sha256=source_hash,start=str(start.date()),end=str(end.date()),
+        rows=len(df_out),pe_method=pe_method,latitude_degrees=lat_deg,filled_forcing_values=0,
+        missing_observations=int(df_out.Qobs_mm.isna().sum()) if "Qobs_mm" in df_out else None,
+        observations="source values; missing Qobs allowed" if "Qobs_mm" in df_out else "not supplied",
+        units="Caravan contract: P/PE/Q mm per day, mean temperature Celsius",
+        output_sha256=hashlib.sha256(Path(output_csv).read_bytes()).hexdigest())
+    Path(str(output_csv)+".provenance.json").write_text(json.dumps(proof,indent=2)+"\n")
     print(f"[convert_forcing] Caravan -> airGR: wrote {len(df_out)} daily records "
           f"to {output_csv} (PE={pe_method}, lat={lat_deg})")
     print(f"[convert_forcing]   P mean {df_out['Precip_mm'].mean():.3f} mm/d, "
           f"PE mean {df_out['PotEvap_mm'].mean():.3f} mm/d, "
-          f"Qobs mean {df_out['Qobs_mm'].mean():.3f} mm/d")
+          f"Qobs present {'Qobs_mm' in df_out}")
     return df_out
 
 

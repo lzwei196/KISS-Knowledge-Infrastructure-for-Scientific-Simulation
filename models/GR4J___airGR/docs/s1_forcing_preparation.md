@@ -34,6 +34,9 @@ Convert global meteorological forcing data (CMFD, ERA5, or gauge observations) i
 ### Step 3: Precipitation aggregation
 - Sum sub-daily values to daily totals
 - CMFD 3-hourly: sum 8 timesteps per day
+- Incomplete days stop the conversion with an error: every day needs exactly 8
+  valid 3-hourly steps (no NaN prec/temp, no duplicate/off-grid timestamps).
+  Missing steps are never counted as 0 mm or skipped in the mean.
 - **TRAP (UT-003)**: Averaging instead of summing gives 1/8 of correct value
 - **TRAP (UT-002)**: If precip is in m/day instead of mm/day, values ~1000x too small
 
@@ -50,7 +53,7 @@ Convert global meteorological forcing data (CMFD, ERA5, or gauge observations) i
 ### Step 6: Quality checks
 - No missing values in Precip or PE (airGR requirement)
 - No negative values in Precip or PE
-- Gap-fill with interpolation or nearest-neighbor if needed
+- Stop on missing forcing and recover the source records; no hidden interpolation or zero filling.
 
 ## Verification
 
@@ -86,3 +89,22 @@ df = convert_cmfd_to_airgr(
 )
 # Expected: ~8000 daily records with columns Date, Precip_mm, PotEvap_mm, TempMean_degC, Qobs_mm
 ```
+
+
+## Strict Caravan conversion
+
+Use `--source caravan --caravan-nc FILE --start-date YYYY-MM-DD --end-date
+YYYY-MM-DD --pe-method oudin` (or explicitly `era5land`). Date gaps, duplicate or
+unordered records, incomplete requested endpoints and missing/invalid forcing
+fail before replacing output. Unused ERA5-Land PE is not required for Oudin;
+selected ERA5-Land PE must be present and nonnegative. No method fallback or
+negative-value clipping occurs. Valid zero and small source values are retained.
+
+Observed flow is optional and may contain NA; it is never filled. Negative or
+infinite observations fail. Output includes Qobs_mm only when the source supplies
+streamflow. The `.provenance.json` records source/output hashes, method, dates,
+zero local fills and missing-observation count. It is written separately from
+the CSV (not a transactional pair).
+
+The CMFD CSV procedure above remains a legacy route with heuristic units
+(sub-daily completeness is now checked, see Step 3). It needs a separate raw-source contract audit.

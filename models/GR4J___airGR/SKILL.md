@@ -155,7 +155,7 @@ The calibration uses transformed parameters to ensure unconstrained optimization
 - X1: log transform (real = exp(transformed))
 - X2: sinh transform (real = sinh(transformed))
 - X3: log transform (real = exp(transformed))
-- X4: linear rescaling to [0.5, 39.5] range
+- X4: linear rescaling to [0.5, 20] range (airGR 1.7.8 TransfoParam_GR4J: X4 = 20 + 19.5*(t-9.99)/19.98 over transformed t in [-9.99, 9.99]; corrected 2026-09-03 — earlier text said 39.5, which is wrong)
 
 ---
 
@@ -313,7 +313,7 @@ GR4J has two stores (production and routing) plus unit hydrograph states. Defaul
 
 ### 4. No missing values in precipitation or PE (dt_007)
 
-airGR does NOT allow NA values in Precip or PotEvap. Any NA causes an error. Gap-fill forcing data BEFORE creating InputsModel. Observed discharge (Qobs) CAN contain NA values.
+airGR does NOT allow NA values in Precip or PotEvap. Any NA causes an error. Stop and recover missing source records BEFORE creating InputsModel; do not silently interpolate or zero-fill. Observed discharge (Qobs) CAN contain NA values.
 
 ### 5. Calibration uses transformed parameter space (dt_008)
 
@@ -329,7 +329,7 @@ GR4J expects daily total precipitation in mm, not instantaneous rates. When aggr
 
 ### 8. X4 minimum is 0.5, not 0 (dt_011)
 
-The unit hydrograph time constant X4 has a hard floor at 0.5 days. Values below 0.5 are silently clipped with a warning. During calibration, the parameter transform ensures X4 stays in [0.5, 39.5].
+The unit hydrograph time constant X4 has a hard floor at 0.5 days. Values below 0.5 are silently clipped with a warning. During calibration, the parameter transform ensures X4 stays in [0.5, 20] days (verified against airGR 1.7.8 source; corrected 2026-09-03).
 
 ---
 
@@ -507,3 +507,23 @@ enforced by the tool.
 - Perrin, C., Michel, C. and Andreassian, V. (2003). Improvement of a parsimonious model for streamflow simulation. Journal of Hydrology, 279(1-4), 275-289.
 - Oudin, L., Hervieu, F., Michel, C., Perrin, C., Andreassian, V., Anctil, F. and Loumagne, C. (2005). Which potential evapotranspiration input for a lumped rainfall-runoff model? Part 2. Journal of Hydrology, 303(1-4), 290-306.
 - Valery, A., Andreassian, V. and Perrin, C. (2014). As simple as possible but not simpler: What is useful in a temperature-based snow-accounting routine? Journal of Hydrology, 517, 1176-1187.
+
+
+## Caravan forcing integrity repair (2026-10-03)
+
+`convert_caravan_to_airgr` now requires every requested daily date exactly once,
+in source order, with finite nonnegative precipitation and selected PE and valid
+Celsius temperature. It preserves zero and small values without rounding. The
+selected `--pe-method` is fixed; missing ERA5-Land PE cannot trigger Oudin.
+Negative ERA5-Land PE values fail rather than being clipped; choose and validate
+the Oudin method explicitly when appropriate. No local forcing values are filled.
+Missing observed streamflow remains NA; absent streamflow omits Qobs entirely.
+Negative/infinite observed flow is rejected. The provenance sidecar records source
+and output hashes, dates, method and missing-observation count.
+
+This repair covers the Caravan route. The older CMFD CSV route now refuses
+incomplete sub-daily input (each day must have exactly 8 valid 3-hourly steps,
+no NaN prec/temp, no duplicate or off-grid timestamps; nothing is filled), but it
+still infers temperature units by magnitude and expects prec already in mm per
+3-hour step; it is not certified by this change. Native airGR replay checks execution and exact P/PE
+consumption, not calibrated field accuracy.

@@ -116,12 +116,16 @@ result = run_gr4j(
     forcing_csv="forcing_gr4j.csv",
     output_csv="gr4j_output.csv",
     mode="simulation",
-    params={"X1": 257.238, "X2": 1.012, "X3": 88.235, "X4": 2.208},
+    params={"X1": 350.0, "X2": 0.0, "X3": 90.0, "X4": 1.7},   # a generic, uncalibrated GR4J set
     warmup_years=1,
     run_start="1990-01-01",
     run_end="1999-12-31",
 )
 # result["qsim_mean"] ≈ 1.5 mm/d for a typical humid catchment
+# NOTE (2026-09-03): this example previously used the Calibration_Michel optimum for the airGR
+# bundled basin L0123001. That was removed: a calibrated optimum for a specific basin must not
+# appear in the KI, because a calibration agent reading the KI could copy it as a default or
+# range anchor (leakage of the answer key). Use neutral placeholder values in worked examples.
 ```
 
 ## Runtime Performance

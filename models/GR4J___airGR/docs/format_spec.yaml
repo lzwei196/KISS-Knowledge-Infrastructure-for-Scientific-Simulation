@@ -253,9 +253,9 @@ known_issues:
     coverage or during data merging when dates don''t align perfectly.
 
     ; [''CreateInputsModel'']'
-  remedy: 'Gap-fill NA values before creating InputsModel; convert_forcing_to_gr4j; [''Find NA values:
-    which(is.na(Precip)) in R'', ''Fill with interpolation, zero (for precip), or nearest value'', ''Or
-    truncate time series to remove leading/trailing NAs'']; convert_forcing_to_gr4j fills NAs with interpolation'
+  remedy: Stop; recover missing source records; convert_forcing_to_gr4j; ['Find missing dates and values;
+    no automatic filling', 'Choose a shorter complete period only explicitly']; Caravan requires complete
+    finite forcing; missing observations remain NA
   severity: error
 - id: dt_009
   symptom: 'R error: IndPeriod_Run should be of type integer.'

@@ -879,16 +879,22 @@ known_issues:
     It classifies obs_shape=regional_aggregate_time_series and reports magnitude_accuracy (pbias, decadal_mean_pbias,
     mean_abs_pct_err) plus trend_match (detrended r, first-difference r, trend-slope ratio) as '
 - id: dt_v007
-  symptom: 'WLP/WLP_CWB runs are more water-stressed than they should be: low LAI, low transpiration,
-    depressed yield, and simulated soil moisture (0.07-0.11) that cannot be matched to any observed SM
-    product. No error is raised; validate_soil_params.py passes.'
-  diagnosis: 'convert_hwsd_to_pcse_soil.py::pedotransfer_wosten() is documented as ''Wosten et al. (1999)''
-    but implements three ad-hoc linear forms, not Wosten''s van Genuchten regressions. Output is biased
-    low across the texture triangle: WP and FC ~0.4-0.6x published values, PAW 0.53-0.97x depending on
-    texture. T'
-  remedy: 'FIRST map lookup_hwsd''s returned hydraulics onto SMW/SMFCF/SM0 (wilting_point/field_capacity/saturation)
-    and correct the citation — measured effect on C01 rainfed yield: +10.5%/+42.1%/0% across three seasons.
-    SEPARATELY and non-blocking, upgrade the canonical function itself (worth a further 3-5%): '
+  symptom: 'HISTORICAL bug (tool fixed 2026-09-12), but old-formula soil files can still exist: WLP/WLP_CWB
+    runs were more water-stressed than they should be (low LAI, low transpiration, depressed yield, soil
+    moisture 0.07-0.11) with no error raised. These signs are not specific to this bug, and the file date
+    does not decide it (some copies of the stage-2 doc taught the old formula until 2026-10-16). Decide by
+    the values (see remedy).'
+  diagnosis: 'FIXED 2026-09-12. The old private formula (labelled Wosten 1999, really three ad-hoc linear
+    forms, WP/FC ~0.4-0.6x published) is kept as _legacy_linear_ptf() and is not called. process() now
+    writes SMW/SMFCF/SM0 from ki_tools_common.soil_utils.saxton_rawls (a Rawls-1982 texture-class table)
+    and K0 = ksat_cm_hr x 24 (cm/day).'
+  remedy: 'Check each soil JSON by its values, not its date, and replace it only on positive evidence of the
+    old formula: a .provenance.json sidecar naming saxton_rawls means the fixed tool made it (keep); otherwise
+    call matches_legacy_formula(soil, sand, clay, silt, oc, bd) (convert_hwsd_to_pcse_soil.py; checks both the old
+    tool formula _legacy_linear_ptf and the old Step-2 doc formula _legacy_doc_ptf, with their rounding), and only
+    if it returns legacy_tool or legacy_doc rebuild the file and rerun affected water-limited runs. Values that match neither
+    may be measured or calibrated: keep the file and investigate. Still open: continuous Saxton-Rawls 2006
+    upgrade of the shared function; texture-class range check in validate_soil_params.py.'
   severity: critical
 - id: dt_017
   symptom: 'A PCSE weather CSV made from VIC forcing files will not load (ValueError: malformed node or

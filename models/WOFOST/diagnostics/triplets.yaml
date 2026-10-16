@@ -843,28 +843,38 @@
   stage: s2_soil_params
   failure_domain: silent_error
   symptom:
-    description: 'WLP/WLP_CWB runs are more water-stressed than they should be: low LAI, low transpiration,
-      depressed yield, and simulated soil moisture (0.07-0.11) that cannot be matched to any observed
-      SM product. No error is raised; validate_soil_params.py passes.'
+    description: 'HISTORICAL bug (tool fixed 2026-09-12), but old-formula soil files can still exist:
+      WLP/WLP_CWB runs were more water-stressed than they should be: low LAI, low transpiration, depressed
+      yield, and simulated soil moisture (0.07-0.11) that could not be matched to any observed SM product.
+      No error was raised; validate_soil_params.py passed. These signs are NOT specific to this bug (dry
+      weather, a shallow RDMSOL, a wrong WAV or cultivar give the same picture), and the file date does
+      NOT decide it: some copies of the stage-2 doc taught the old formula until 2026-10-16, so a soil
+      file written by hand from those notes can be new and still wrong. Decide by the values (see remedy).'
   diagnosis:
-    root_cause: 'convert_hwsd_to_pcse_soil.py::pedotransfer_wosten() is documented as ''Wosten et al.
-      (1999)'' but implements three ad-hoc linear forms, not Wosten''s van Genuchten regressions. Output
-      is biased low across the texture triangle: WP and FC ~0.4-0.6x published values, PAW 0.53-0.97x
-      depending on texture. The tool already imports ki_tools_common.soil_utils.lookup_hwsd, which RETURNS
-      result[''hydraulics''], and discards them, keeping only the raw texture. validate_soil_params.py
-      cannot catch it because it only checks ordering (SMW < SMFCF < SM0) and a porosity ceiling — all
-      of which hold at half scale.'
+    root_cause: 'FIXED 2026-09-12. Before the fix, convert_hwsd_to_pcse_soil.py computed SMW/SMFCF/SM0/K0
+      with a private formula (pedotransfer_wosten(), now renamed _legacy_linear_ptf() and NOT called) that
+      was labelled ''Wosten et al. (1999)'' but was three ad-hoc linear forms; WP and FC came out ~0.4-0.6x
+      published values. What the code does now: process() takes wilting_point / field_capacity / saturation
+      / ksat_cm_hr from ki_tools_common.soil_utils.saxton_rawls (the hydraulics that lookup_hwsd returns
+      for the HWSD route; a direct saxton_rawls call for the manual-texture route) and writes them as
+      SMW / SMFCF / SM0 and K0 = ksat_cm_hr x 24 (cm/day). That shared function is a Rawls, Brakensiek
+      & Saxton (1982) texture-class table, not the continuous Saxton & Rawls (2006) equations, and its
+      om argument is not used. validate_soil_params.py still checks only ordering and fixed ranges, not
+      values against texture class.'
   remedy:
-    action: 'FIRST map lookup_hwsd''s returned hydraulics onto SMW/SMFCF/SM0 (wilting_point/field_capacity/saturation)
-      and correct the citation — measured effect on C01 rainfed yield: +10.5%/+42.1%/0% across three seasons.
-      SEPARATELY and non-blocking, upgrade the canonical function itself (worth a further 3-5%): it is
-      a Rawls 1982 texture-class lookup, not Saxton-Rawls, its om argument is a no-op, and it discards
-      measured bulk density; a genuine continuous Saxton-Rawls 2006 already exists in the library (DSSAT
-      convert_hwsd_to_sol.py, SWAT+ hwsd_to_swatplus_soil.py). Do NOT fix the om no-op alone: soil_utils.py:269
-      passes oc into a parameter named om (1.724x), so making om live would silently split EPIC from lookup_hwsd.
-      Add a range check against texture class to validate_soil_params.py — ordering checks cannot detect
-      a uniform bias. PP runs are unaffected (no water balance); WLP runs and anything derived from SMW/SMFCF
-      (e.g. irrigation triggers) must be re-run.'
+    action: 'Check the soil JSON itself, whatever its date, and replace it ONLY on positive evidence of the old
+      formula. (1) A .provenance.json sidecar whose ptf names ki_tools_common.soil_utils.saxton_rawls means the
+      fixed tool made it: keep it. (2) Otherwise take the site texture (sand/clay/silt/OC %, bulk density) and
+      call matches_legacy_formula(soil, sand, clay, silt, oc, bd) in tools/s2_soil_params/convert_hwsd_to_pcse_soil.py.
+      It checks BOTH old formulas (the old tool, _legacy_linear_ptf, rounded 4/2 decimals, and the old Step-2 doc
+      formula, _legacy_doc_ptf, rounded 3/1 decimals; both kept, not called). If it returns legacy_tool or
+      legacy_doc, it is an old-formula file: rebuild it with the tool and
+      rerun water-limited (WLP/WLP_CWB) runs and anything derived from SMW/SMFCF (e.g. irrigation triggers)
+      that used it. PP runs do not use the soil water balance. (3) If it returns None and the values do not match the
+      current tool either, do NOT overwrite the file: it may hold measured or calibrated hydraulics. Keep it,
+      find out where its values came from, and look at the other causes listed in the symptom. Still open and
+      separate: a continuous Saxton-Rawls 2006 upgrade of the shared function and a texture-class range check
+      in validate_soil_params.py. Consistency check: tests/test_dt_v007_status.py.'
   severity: critical
 - id: dt_017
   stage: s3_weather_prep

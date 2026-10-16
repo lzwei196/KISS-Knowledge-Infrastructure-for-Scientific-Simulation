@@ -356,9 +356,23 @@ PCSE has no dedicated spring wheat variety. Use `Winter_wheat_107` (VERNSAT=5 da
 
 ### 7. `convert_hwsd_to_pcse_soil.py` produced soils that were far too dry (dt_v007) — FIXED 2026-09-12
 
-**Status: OPEN as of 2026-09-09. Every WOFOST site built with this tool has too little
-plant-available water.** Not a site-specific problem — the bias runs across the whole texture
-triangle. Water-limited (WLP) runs are affected; potential-production (PP) runs are not.
+**Status: FIXED on 2026-09-12.** The production `process()` now uses the shared
+`ki_tools_common.soil_utils` hydraulics instead of the former private
+`pedotransfer_wosten()` formulas. It maps wilting point, field capacity and
+saturation to `SMW`, `SMFCF` and `SM0`, and converts conductivity from cm/hour
+to WOFOST's cm/day with a factor of 24. The shared function remains the
+Rawls (1982) texture-class table; this fix does not claim a continuous
+Saxton & Rawls (2006) implementation.
+
+Previously generated soil files are not repaired automatically. Rebuild files
+made with the former implementation and rerun affected water-limited simulations.
+Potential-production simulations do not use this soil water balance.
+
+#### Historical diagnosis recorded 2026-09-09
+
+The diagnosis, numbers and repair plan below describe the former implementation
+as inspected on that date. Step 1 was completed on 2026-09-12; the separate shared
+pedotransfer upgrade in step 2 is not claimed as completed here.
 
 `tools/s2_soil_params/convert_hwsd_to_pcse_soil.py` → `pedotransfer_wosten()` is documented as
 "Wosten et al. (1999)". It is not: Wösten's HYPRES functions are van Genuchten parameter
@@ -405,7 +419,7 @@ The genuine continuous Saxton & Rawls (2006), correctly cited and actually using
 already exists in the library as a private fork:
 `DSSAT/knowledge_infrastructure/tools/s3_soil_setup/convert_hwsd_to_sol.py::saxton_rawls`.
 
-**Correct fix, in this order** (the ordering matters — an earlier version of this ticket had it
+**Historical repair plan** (the ordering matters — an earlier version of this ticket had it
 backwards and held the large fix hostage to the small one):
 
 1. **Now: point this tool at `ki_tools_common.soil_utils.saxton_rawls` as it stands.** Map

@@ -21,8 +21,8 @@ Assemble all input components (crop parameters, soil parameters, weather data, a
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
 | cropdata | YAMLCropDataProvider | Stage 1 | Crop parameter provider with active crop set |
-| soildata | dict | Stage 2 | Soil parameter dictionary (14 keys) |
-| sitedata | dict | WOFOST72SiteDataProvider | Site parameters (WAV, CO2, etc.) |
+| soildata | dict | Stage 2 | Soil parameter dictionary (8 soil-hydraulic keys: SMW SMFCF SM0 CRAIRC K0 SOPE KSUB RDMSOL) |
+| sitedata | dict | WOFOST72SiteDataProvider | Site parameters (WAV, IFUNRN, NOTINF, SSI, SSMAX, SMLIM, CO2) |
 | weather | WeatherDataProvider | Stage 3 | Daily weather data provider |
 | agro | list | Stage 4 | Agromanagement list of campaign dicts |
 | simulation_mode | string | user | 'PP', 'WLP_FD', or 'WLP_CWB' |
@@ -129,8 +129,8 @@ except Exception as e:
 > See diagnostic triplet dt_008.
 
 > **PITFALL**: Missing soil parameters in WLP mode
-> Wofost72_WLP_FD requires all 14 soil parameters. Omitting any one causes a `KeyError` during engine initialization. The error message names the missing key but does not explain what it should be.
-> **Do this instead**: Use the validated soil parameter dict from Stage 2 which guarantees all 14 keys are present.
+> Wofost72_WLP_FD needs the 8 soil-hydraulic keys in soildata plus the 6 site keys (IFUNRN, NOTINF, SSI, SSMAX, WAV, SMLIM). Omitting any one causes an error during engine initialization. The error message names the missing key but does not explain what it should be.
+> **Do this instead**: Use the 8-key soil dict from Stage 2 (checked by `validate_soil_params.py`) and give the site keys through `WOFOST72SiteDataProvider` only. Putting site keys in soildata as well raises "Duplicate parameter found" (dt_v003).
 
 > **PITFALL**: Weather data does not cover crop start date
 > If the campaign starts on 2000-10-01 but weather data starts on 2001-01-01, the engine will raise an exception. For winter crops, weather must cover autumn of the sowing year.

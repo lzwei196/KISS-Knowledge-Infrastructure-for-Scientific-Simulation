@@ -193,6 +193,47 @@ def _legacy_linear_ptf(sand, clay, silt, oc, bd):
     return SMW, SMFCF, SM0, K0
 
 
+def _legacy_doc_ptf(sand, clay, oc, bd):
+    """
+    SUPERSEDED (dt_v007) — NOT CALLED by process(). The hand formula that
+    docs/s2_soil_params_skill.md Step 2 taught before it was fixed (some copies until 2026-10-16).
+    It differs from _legacy_linear_ptf(): silt = 100 - sand - clay, no SM0 clamp, SMFCF clamped to
+    [SMW + 0.01, SM0 - 0.02], and the doc rounded to 3 decimals (K0 to 1). Kept only so old
+    hand-made soil files can be recognised (see matches_legacy_formula()).
+    """
+    om = oc * 1.724
+    SMW = 0.001 + 0.26 * clay / 100 + 0.05 * om / 100
+    SMFCF = 0.02 + 0.37 * clay / 100 + 0.15 * om / 100 + 0.10 * (1 - sand / 100 - clay / 100)
+    SM0 = 1.0 - bd / 2.65
+    SMW = max(0.01, min(SMW, 0.50))
+    SMFCF = max(SMW + 0.01, min(SMFCF, SM0 - 0.02))
+    K0 = 10.0 ** (1.26 - 0.0064 * clay)
+    K0 = max(1.0, min(K0, 100.0))
+    return SMW, SMFCF, SM0, K0
+
+
+def matches_legacy_formula(soil_params, sand, clay, silt, oc, bd):
+    """dt_v007 check: does this soil dict come from one of the two OLD formulas?
+
+    sand/clay/silt/oc in %, bd in g/cm3: the texture of the site the file was made for.
+    Returns 'legacy_tool' (old convert_hwsd_to_pcse_soil.py, rounded 4/2 decimals),
+    'legacy_doc' (old Step-2 doc formula, rounded 3/1 decimals) or None (matches neither:
+    the file may hold measured or calibrated values, so it must NOT be overwritten on this basis).
+    A value matches when it is within half of the coarser rounding unit of the raw old value
+    (0.0006 for SMW/SMFCF/SM0, 0.06 cm/day for K0). Raises KeyError/ValueError when a needed
+    key or texture value is missing: no default is used.
+    """
+    vals = [float(soil_params[k]) for k in ('SMW', 'SMFCF', 'SM0', 'K0')]
+    if None in (sand, clay, silt, oc, bd):
+        raise ValueError("matches_legacy_formula needs sand, clay, silt, oc and bd for the site")
+    tol = (0.0006, 0.0006, 0.0006, 0.06)
+    for name, old in (('legacy_tool', _legacy_linear_ptf(sand, clay, silt, oc, bd)),
+                      ('legacy_doc', _legacy_doc_ptf(sand, clay, oc, bd))):
+        if all(abs(v - o) <= e for v, o, e in zip(vals, old, tol)):
+            return name
+    return None
+
+
 def process():
     """Convert HWSD to PCSE soil parameters."""
     # Get texture

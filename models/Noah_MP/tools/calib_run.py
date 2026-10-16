@@ -101,7 +101,12 @@ PREFLIGHT = os.path.join(KDT, "validators", "preflight_forcing.py")
 sys.path.insert(0, KDT)
 sys.path.insert(0, TOOLS)
 
-DEFAULT_PREP_DIR = "/mnt/extreme_ssd1/hc_detached/Noah_MP/calib_prep_usne1"
+# The one-time preparation cache has NO built-in location (it is machine
+# specific): pass --prep-dir, or set KDT_NOAHMP_PREP_DIR. Unset -> clear stop.
+PREP_DIR_ENV = "KDT_NOAHMP_PREP_DIR"
+# Optional: an already validated LDASIN forcing folder to reuse (symlink) instead
+# of converting again. Unset -> the forcing is built from SITE_DIR.
+STAGED_FORCING_ENV = "KDT_NOAHMP_STAGED_FORCING"
 
 # --------------------------------------------------------------------------
 # TARGET CASE — pinned constants
@@ -675,8 +680,10 @@ def prepare(prep_dir):
 
     # ---- s4 forcing (reuse if the validated real case already built it) ----
     if len(_ldasin(fdir)) != N_LDASIN_EXPECTED:
-        staged = "/mnt/extreme_ssd1/hc_detached/Noah_MP/real_case_usne1/cell/forcing"
-        if (not os.path.exists(fdir)) and len(_ldasin(staged)) == N_LDASIN_EXPECTED:
+        staged = (os.environ.get(STAGED_FORCING_ENV) or "").strip()
+        # absolute, so the check and the symlink point at the same folder
+        staged = os.path.abspath(staged) if staged else ""
+        if staged and (not os.path.exists(fdir)) and len(_ldasin(staged)) == N_LDASIN_EXPECTED:
             os.symlink(staged, fdir)
         else:
             os.makedirs(fdir, exist_ok=True)
@@ -1148,8 +1155,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--out", default=None)
-    ap.add_argument("--prep-dir", default=DEFAULT_PREP_DIR,
-                    help="cache for the one-time forcing/soil preparation")
+    ap.add_argument("--prep-dir", default=(os.environ.get(PREP_DIR_ENV) or "").strip() or None,
+                    help="cache for the one-time forcing/soil preparation "
+                         f"(REQUIRED: this flag or env {PREP_DIR_ENV}; no default)")
     ap.add_argument("--timeout", type=int, default=10800)
     ap.add_argument("--keep-output", action="store_true")
     ap.add_argument("--set", action="append", default=[],
@@ -1166,6 +1174,9 @@ def main():
     # therefore covered, INCLUDING lock contention (which raises before the model
     # ever runs): the kit reads +inf, never a previous candidate's metrics.
     clear_metrics(a.out)
+    if not a.prep_dir:
+        ap.error(f"no preparation cache folder: pass --prep-dir or set {PREP_DIR_ENV} "
+                 f"(there is no default location)")
     try:
         os.makedirs(a.workdir, exist_ok=True)
         # CANDIDATE ISOLATION: this process owns <workdir> (and therefore

@@ -96,14 +96,21 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 
 ### USLE factors for sediment model (automated — replaces manual lookup)
 ```bash
-# K-factor from HWSD soil texture (Wischmeier-Smith 1978 equation):
+# K-factor from HWSD soil texture (Wischmeier-Smith 1978 equation).
+# --hwsd-crs is required: the server HWSD BIL (data/soil/HWSD_RASTER/hwsd.bil)
+# has no CRS in its metadata; its world file is 30 arc-second lon/lat (EPSG:4326).
+# Without it the tool stops with "HWSD raster lacks CRS".
+# Active cells whose dominant HWSD unit has no topsoil texture (water WR,
+# rock RK, glacier GG/GL, urban UR, dunes DS, ...) make the tool stop and list
+# every such cell; no K value is made up. Fix the wflow_subcatch mask or the
+# soil source first.
 python tools/s6_sediment/derive_usle_k.py \
-    --staticmaps [STATICMAPS_NC] --output [USLE_K_NC]
+    --staticmaps [STATICMAPS_NC] --hwsd-crs EPSG:4326 --output [USLE_K_NC]
 # Or patch directly into sediment staticmaps:
 python tools/s6_sediment/derive_usle_k.py \
-    --staticmaps [STATICMAPS_NC] --patch_nc [STATICMAPS_SEDIMENT_NC]
+    --staticmaps [STATICMAPS_NC] --hwsd-crs EPSG:4326 --patch_nc [STATICMAPS_SEDIMENT_NC]
 # Point verification:
-python tools/s6_sediment/derive_usle_k.py --lat [LAT] --lon [LON]
+python tools/s6_sediment/derive_usle_k.py --lat [LAT] --lon [LON] --hwsd-crs EPSG:4326
 
 # C-factor from AVHRR land cover classification:
 python tools/s6_sediment/derive_usle_c.py \
@@ -965,3 +972,19 @@ models/wflow/knowledge_infrastructure/
 model/wflow/                      # Model installation directory
   (Julia + Wflow.jl to be installed here)
 ```
+
+
+## Input integrity repair — 2026-10-03
+
+`convert_forcing_to_wflow.py` rejects incomplete daily calendars, active-cell
+gaps, short arrays and invalid extrema. It never fills weather; inactive padding
+is masked. Direct CMFD mode additionally checks every original 3-hourly P/T
+sample and declared units. Shared-loader mode checks its daily output only.
+See `docs/s2_forcing_skill.md` for the scope and Hargreaves assumptions.
+
+`derive_usle_k.py` uses raw HWSD dominant-component data or complete SoilGrids
+pixels. No loam/OC defaults or alternate-component substitutions. Missing CRS
+requires a verified explicit declaration (`--hwsd-crs EPSG:4326` for the server
+HWSD BIL). The K formula's empirical parameter assumptions remain documented.
+See `docs/s6_s8_sediment_skill.md`; the separate sediment builder is not certified
+by these changes. Run `python -m unittest discover -s tests -v` before updates.

@@ -34,9 +34,9 @@ Build, run, and analyze the wflow_sediment erosion and transport model. This is 
    ```bash
    # Grid mode: computes K for every cell using Wischmeier-Smith (1978)
    python tools/s6_sediment/derive_usle_k.py \
-     --staticmaps staticmaps.nc --output usle_k.nc
+     --staticmaps staticmaps.nc --hwsd-crs EPSG:4326 --output usle_k.nc
    # Point verification:
-   python tools/s6_sediment/derive_usle_k.py --lat 32.93 --lon 117.36
+   python tools/s6_sediment/derive_usle_k.py --lat 32.93 --lon 117.36 --hwsd-crs EPSG:4326
    ```
 4. **Derive USLE C-factor from AVHRR land cover** (automated):
    ```bash
@@ -57,7 +57,7 @@ Build, run, and analyze the wflow_sediment erosion and transport model. This is 
 6. Patch K and C into sediment staticmaps:
    ```bash
    python tools/s6_sediment/derive_usle_k.py \
-     --staticmaps staticmaps.nc --patch_nc wflow_sediment/staticmaps_sediment.nc
+     --staticmaps staticmaps.nc --hwsd-crs EPSG:4326 --patch_nc wflow_sediment/staticmaps_sediment.nc
    python tools/s6_sediment/derive_usle_c.py \
      --staticmaps staticmaps.nc --patch_nc wflow_sediment/staticmaps_sediment.nc
    ```
@@ -147,3 +147,30 @@ clay~18-21%), consistent with published values for Huai River basin.
 - **dt_w018**: All C factors near zero (forested basins, no erosion)
 - **dt_w019**: Grain fractions don't sum to 1.0 (mass balance error)
 - D50 must be appropriate for the river: sand-bed ~0.3-2 mm, gravel-bed ~10-50 mm
+
+
+## Strict K-factor source contract (2026-10-03 repair)
+
+HWSD is read directly from its raster and raw attribute table. The selected
+component has maximum SHARE, with minimum SEQ then CSV order resolving ties.
+Missing properties on that component fail; a minor component or generic loam
+is never substituted. MU=0, out-of-coverage points, missing map units, invalid
+percentages or missing OC stop the derivation. Sand/silt/clay must sum to 100%
+within 0.1 percentage point. Zero fractions and zero organic carbon are valid.
+
+Use `--hwsd-raster`/`--hwsd-csv` for explicit sources. If raster CRS metadata is
+absent, supply a verified `--hwsd-crs`; the server HWSD BIL's documented WGS84
+coordinate system is EPSG:4326. SoilGrids requires every raster, a declared CRS,
+full active-cell coverage and valid pixels; it never fills from defaults.
+
+The existing empirical K calculation is preserved: structure/permeability are
+estimated from texture, OM is capped at 4%, US-to-SI conversion is 0.1317, and K
+is bounded to [0.001,0.070]. These parameter assumptions are separate from source
+data. Standalone output includes source fractions/OC and per-cell HWSD component
+records; patch output records derivation metadata. Patch grids and masks must
+match exactly. Missing data outside the active basin stays masked.
+
+`build_sediment_model.py` still has separate legacy defaults and an independent
+K equation. This repair does not certify that builder: use an independently
+complete native setup and patch validated derived parameters. A native smoke
+replay demonstrates execution, not observed sediment skill.

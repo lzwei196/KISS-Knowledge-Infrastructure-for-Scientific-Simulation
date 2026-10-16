@@ -42,201 +42,133 @@ import netCDF4  # noqa: F401
 import numpy as np
 
 
-def read_cmfd_forcing_direct(forcing_dir, grid_path, start_year, end_year):
-    """Read CMFD 3-hourly NetCDF directly from Prec/, Temp/, SRad/ subdirectories.
-
-    Returns: times, lats, lons, precip(mm/day), temp(degC), pet(mm/day)
-    """
+def read_grid(path):
     import xarray as xr
-    import math
-
-    forcing_dir = Path(forcing_dir)
-
-    # Get grid coordinates from staticmaps or grid_nc
-    if grid_path:
-        ds_grid = xr.open_dataset(grid_path)
-        if 'lat' in ds_grid.dims:
-            lats = ds_grid['lat'].values
-            lons = ds_grid['lon'].values
-        elif 'y' in ds_grid.dims:
-            lats = ds_grid['y'].values
-            lons = ds_grid['x'].values
-        else:
-            lats = ds_grid[list(ds_grid.dims)[0]].values
-            lons = ds_grid[list(ds_grid.dims)[1]].values
-        ds_grid.close()
-    else:
-        raise ValueError("grid_path required for CMFD direct read")
-
-    ny, nx = len(lats), len(lons)
-    cmfd_vars = {
-        'Prec': ('prec', 'sum'),     # mm/3hr -> sum to mm/day
-        'Temp': ('temp', 'mean'),     # K -> mean then -273.15
-        'SRad': ('srad', 'mean'),     # W/m2 -> mean
-    }
-
-    from datetime import datetime, timedelta
-    all_dates = []
-    all_precip = []
-    all_temp = []
-    all_srad = []
-    all_pet = []
-
-    for year in range(start_year, end_year + 1):
-        for month in range(1, 13):
-            data_month = {}
-            for subdir, (pattern, agg) in cmfd_vars.items():
-                sd = forcing_dir / subdir
-                nc_files = sorted(sd.glob(f"*{year}{month:02d}*")) if sd.exists() else []
-                if not nc_files:
-                    nc_files = sorted(forcing_dir.glob(f"*{pattern}*{year}{month:02d}*"))
-                if nc_files:
-                    ds = xr.open_dataset(nc_files[0])
-                    dvar = [v for v in ds.data_vars if pattern in v.lower()] or list(ds.data_vars)
-                    raw = ds[dvar[0]].values  # (time, lat, lon)
-                    grid_lats = ds['lat'].values if 'lat' in ds else ds['latitude'].values
-                    grid_lons = ds['lon'].values if 'lon' in ds else ds['longitude'].values
-                    # Nearest-neighbor to target grid
-                    extracted = np.zeros((raw.shape[0], ny, nx))
-                    for j in range(ny):
-                        for i in range(nx):
-                            li = int(np.argmin(np.abs(grid_lats - lats[j])))
-                            lo = int(np.argmin(np.abs(grid_lons - lons[i])))
-                            extracted[:, j, i] = raw[:, li, lo]
-                    data_month[subdir] = (extracted, agg)
-                    ds.close()
-
-            if 'Prec' not in data_month:
-                continue
-
-            n_days = data_month['Prec'][0].shape[0] // 8
-            for d in range(n_days):
-                s, e = d * 8, (d + 1) * 8
-                all_dates.append(datetime(year, month, 1) + timedelta(days=d))
-                p = data_month['Prec'][0][s:e]
-                # CMFD prec unit is kg m-2 s-1 (= mm/s); each 3-hr step = 10800 s
-                all_precip.append(np.sum(p, axis=0) * 10800)  # kg m-2 s-1 -> mm/day
-                if 'Temp' in data_month:
-                    t = data_month['Temp'][0][s:e]
-                    all_temp.append(np.mean(t, axis=0) - 273.15)  # K -> C
-                else:
-                    all_temp.append(np.full((ny, nx), 15.0))
-                if 'Temp' in data_month:
-                    t_slice = data_month['Temp'][0][s:e]
-                    t_mean = np.mean(t_slice, axis=0) - 273.15  # K -> C
-                    t_max = np.max(t_slice, axis=0) - 273.15
-                    t_min = np.min(t_slice, axis=0) - 273.15
-                    dtr = np.maximum(t_max - t_min, 0.5)  # actual diurnal range from 3-hr data
-                    # Compute Ra (extraterrestrial radiation, MJ/m2/day) from lat/DOY
-                    # FAO-56 Hargreaves: ET0 = 0.0023 * Ra(mm/day) * (T+17.8) * sqrt(DTR)
-                    # Ra in mm/day = Ra_MJ / 2.45
-                    cur_date = datetime(year, month, 1) + timedelta(days=d)
-                    doy = cur_date.timetuple().tm_yday
-                    dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
-                    delta = 0.4093 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
-                    ra_grid = np.zeros((ny, nx))
-                    for jj in range(ny):
-                        lat_rad = np.radians(lats[jj])
-                        ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(delta), -1, 1))
-                        ra_grid[jj, :] = (24.0*60.0/np.pi * 0.0820 * dr *
-                            (ws*np.sin(lat_rad)*np.sin(delta) +
-                             np.cos(lat_rad)*np.cos(delta)*np.sin(ws)))
-                    ra_mj = np.maximum(ra_grid, 0.0)
-                    ra_mm = ra_mj / 2.45  # MJ/m2/day -> mm/day equivalent
-                    pet_day = np.maximum(0, 0.0023 * ra_mm * (t_mean + 17.8) * np.sqrt(dtr))
-                    all_pet.append(pet_day)
-
-        print(f"  Year {year} processed", file=sys.stderr)
-
-    # Handle pet list
-    try:
-        all_pet
-    except NameError:
-        all_pet = [np.full((ny, nx), 2.0) for _ in all_dates]
-
-    times = np.array(all_dates, dtype='datetime64[D]')
-    precip = np.stack(all_precip)
-    temp = np.stack(all_temp)
-    pet = np.stack(all_pet) if all_pet else np.full_like(precip, 2.0)
-
-    return times, lats, lons, precip, temp, pet
+    with xr.open_dataset(path) as ds:
+        axes=[(y,x) for y,x in [("lat","lon"),("latitude","longitude"),("y","x")] if y in ds.dims and x in ds.dims]
+        if not axes:raise ValueError("Missing geographic grid coordinates")
+        yn,xn=axes[0]
+        lats,lons=ds[yn].values,ds[xn].values
+        if lats.ndim!=1 or lons.ndim!=1 or not np.isfinite(lats).all() or not np.isfinite(lons).all():
+            raise ValueError("Grid requires finite one-dimensional geographic axes")
+        if np.any(abs(lats)>90) or np.any(abs(lons)>180) or len(np.unique(lats))!=len(lats) or len(np.unique(lons))!=len(lons):
+            raise ValueError("Grid coordinates must be unique geographic latitude/longitude")
+        for name in ["spatial_ref","crs"]:
+            if name in ds:
+                from pyproj import CRS
+                attrs=ds[name].attrs
+                crs=attrs.get("crs_wkt",attrs.get("spatial_ref"))
+                if crs and not CRS.from_user_input(crs).is_geographic:
+                    raise ValueError("Projected grids must be reprojected explicitly before point lookup")
+        if "wflow_subcatch" not in ds:
+            raise ValueError("wflow_subcatch is required to distinguish active cells from padding")
+        vals=ds.wflow_subcatch.transpose(yn,xn).values
+        if np.isinf(vals).any() or np.any(np.isfinite(vals)&(vals<=0)):
+            raise ValueError("wflow_subcatch must use positive IDs and NaN padding, never zero/negative IDs")
+        active=np.isfinite(vals)&(vals>0)
+        if not active.any():raise ValueError("No active basin cells")
+    return lats,lons,active
 
 
-def read_forcing_via_ki_tools(source, grid_path, start_year, end_year, forcing_dir=None):
-    """Load forcing through ki_tools_common.load_forcing (the canonical loader).
-
-    Preferred over the bespoke readers below: load_forcing owns the CMFD/MSWX
-    unit conventions and the shared-decompression-pass optimisation, so unit
-    traps (dt_w001 precip, dt_w002 Kelvin) are fixed in ONE place rather than
-    re-derived per model KI.
-
-    Only cells inside wflow_subcatch are requested — on a basin grid the padded
-    window is typically 4-5x the active domain, and CMFD cost scales with the
-    number of points asked for.
-
-    Returns: times, lats, lons, precip(mm/day), temp(degC), pet(mm/day)
-    """
-    import xarray as xr
+def check_daily(times,start_year,end_year):
     import pandas as pd
+    dates=pd.DatetimeIndex(times)
+    expected=pd.date_range(f"{start_year}-01-01",f"{end_year}-12-31")
+    if not dates.equals(expected):raise ValueError("Forcing calendar must match every requested day exactly in order")
+    return dates
+
+
+def valid(values,name,low,high):
+    arr=np.asarray(values,dtype=float)
+    if not arr.size or not np.isfinite(arr).all() or np.any(arr<low) or np.any(arr>high):
+        raise ValueError(f"{name}: missing/nonfinite or outside [{low},{high}]; no filling")
+    return arr
+
+
+def hargreaves(tmin,tmax,tmean,lat,doy):
+    if np.any(tmin>tmean) or np.any(tmean>tmax):raise ValueError("Require Tmin <= Tmean <= Tmax")
+    dr=1+0.033*np.cos(2*np.pi*doy/365.)
+    delta=0.4093*np.sin(2*np.pi*doy/365.-1.39)
+    phi=np.radians(lat)
+    ws=np.arccos(np.clip(-np.tan(phi)*np.tan(delta),-1,1))
+    ra=np.maximum(24*60/np.pi*.0820*dr*(ws*np.sin(phi)*np.sin(delta)+np.cos(phi)*np.cos(delta)*np.sin(ws)),0)
+    return np.maximum(0,.0023*(ra/2.45)*(tmean+17.8)*np.sqrt(tmax-tmin))
+
+
+def read_cmfd_forcing_direct(forcing_dir,grid_path,start_year,end_year):
+    """Validate every original CMFD substep before daily reduction (no SRad needed for HG)."""
+    import pandas as pd
+    import xarray as xr
+    lats,lons,active=read_grid(grid_path)
+    cells=np.argwhere(active);all_dates=[];all_p=[];all_t=[];all_pet=[]
+    for year in range(start_year,end_year+1):
+        for month in range(1,13):
+            month_start=pd.Timestamp(year,month,1);month_end=month_start+pd.offsets.MonthBegin(1)
+            raw={};stamp=None
+            for folder,var in [("Prec","prec"),("Temp","temp")]:
+                root=Path(forcing_dir)
+                files=sorted((root/folder).glob(f"*{year}{month:02d}*.nc"))
+                if not files:files=sorted(root.glob(f"*{var}*{year}{month:02d}*.nc"))
+                if len(files)!=1:raise ValueError(f"Need exactly one {var} file for {year}-{month:02d}; found {len(files)}")
+                with xr.open_dataset(files[0]) as ds:
+                    if var not in ds:raise ValueError(f"Missing {var} in {files[0]}")
+                    times=pd.DatetimeIndex(ds.time.values)
+                    offset=times[0]-month_start if len(times) else pd.Timedelta(days=99)
+                    expected=pd.date_range(month_start+offset,month_end,freq="3h",inclusive="left")
+                    if not pd.Timedelta(0)<=offset<pd.Timedelta(hours=3) or not times.equals(expected) or len(times)!=(month_end-month_start).days*8:
+                        raise ValueError(f"Incomplete, duplicate or unordered original substeps: {files[0]}")
+                    if stamp is not None and not times.equals(stamp):raise ValueError("CMFD P/T source timestamps differ")
+                    stamp=times
+                    yn="lat" if "lat" in ds.coords else "latitude";xn="lon" if "lon" in ds.coords else "longitude"
+                    y=ds[yn].values;x=ds[xn].values
+                    dy=float(np.max(abs(np.diff(y))))/2 if len(y)>1 else 0
+                    dx=float(np.max(abs(np.diff(x))))/2 if len(x)>1 else 0
+                    # Coverage is checked on active cells only; NaN padding never needs forcing.
+                    alat=lats[cells[:,0]];alon=lons[cells[:,1]]
+                    if alat.min()<y.min()-dy or alat.max()>y.max()+dy or alon.min()<x.min()-dx or alon.max()>x.max()+dx:raise ValueError("Active basin cells outside source coverage")
+                    iy=[int(np.argmin(abs(y-lats[j]))) for j,i in cells];ix=[int(np.argmin(abs(x-lons[i]))) for j,i in cells]
+                    values=ds[var].isel({yn:xr.DataArray(iy,dims="cell"),xn:xr.DataArray(ix,dims="cell")}).transpose("time","cell").values
+                    unit=ds[var].attrs.get("units","").lower().replace(" ","").replace("**","").replace("^","")
+                    if var=="prec":
+                        if unit not in {"kgm-2s-1","mm/s","mms-1"}:raise ValueError(f"Unsupported declared precipitation unit {unit}")
+                        values=valid(values,"source precip rate",0,1000/10800.)
+                    else:
+                        if unit not in {"k","kelvin"}:raise ValueError(f"Unsupported declared temperature unit {unit}")
+                        values=valid(values,"source temperature K",183.15,343.15)-273.15
+                    raw[var]=values.reshape(-1,8,len(cells))
+            dates=pd.date_range(month_start,month_end,inclusive="left")
+            p=raw["prec"].sum(axis=1)*10800.;t=raw["temp"].mean(axis=1)
+            et=hargreaves(raw["temp"].min(axis=1),raw["temp"].max(axis=1),t,lats[cells[:,0]][None,:],dates.dayofyear.to_numpy()[:,None])
+            all_dates.extend(dates);all_p.append(p);all_t.append(t);all_pet.append(et)
+    dates=check_daily(all_dates,start_year,end_year)
+    arrays=[]
+    for vals in [all_p,all_t,all_pet]:
+        result=np.full((len(dates),len(lats),len(lons)),np.nan,dtype=np.float32)
+        result[:,active]=np.concatenate(vals);arrays.append(result)
+    return dates.values,lats,lons,*arrays
+
+
+def read_forcing_via_ki_tools(source,grid_path,start_year,end_year,forcing_dir=None):
+    """Validate the shared daily-loader result; upstream raw-gap reductions remain upstream."""
     from ki_tools_common.load_forcing import load_daily_forcing_points
-
-    ds_grid = xr.open_dataset(grid_path)
-    lats = ds_grid["y"].values if "y" in ds_grid.dims else ds_grid["lat"].values
-    lons = ds_grid["x"].values if "x" in ds_grid.dims else ds_grid["lon"].values
-    if "wflow_subcatch" in ds_grid:
-        active = np.isfinite(ds_grid["wflow_subcatch"].values) & \
-                 (np.nan_to_num(ds_grid["wflow_subcatch"].values) > 0)
-    else:
-        active = np.ones((len(lats), len(lons)), dtype=bool)
-    ds_grid.close()
-
-    ny, nx = len(lats), len(lons)
-    cells = [(j, i) for j in range(ny) for i in range(nx) if active[j, i]]
-    latlons = [(float(lats[j]), float(lons[i])) for j, i in cells]
-    print(f"  Loading {source} for {len(cells)} active cells "
-          f"(grid {ny}x{nx}) via ki_tools_common.load_forcing", file=sys.stderr)
-
-    recs = load_daily_forcing_points(source, latlons, start_year, end_year,
-                                     forcing_dir=forcing_dir)
-
-    dates = pd.to_datetime(recs[0]["dates"])
-    nt = len(dates)
-    precip = np.zeros((nt, ny, nx), dtype=np.float32)
-    temp = np.zeros((nt, ny, nx), dtype=np.float32)
-    pet = np.zeros((nt, ny, nx), dtype=np.float32)
-
-    doy = np.array([d.timetuple().tm_yday for d in dates])
-    dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
-    delta = 0.4093 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
-
-    for (j, i), rec in zip(cells, recs):
-        p = np.asarray(rec["precip_mm"], dtype=float)[:nt]
-        tmean = np.asarray(rec["temp_mean_c"], dtype=float)[:nt]
-        tmax = np.asarray(rec["temp_max_c"], dtype=float)[:nt]
-        tmin = np.asarray(rec["temp_min_c"], dtype=float)[:nt]
-        precip[:len(p), j, i] = p
-        temp[:len(tmean), j, i] = tmean
-
-        # FAO-56 Hargreaves: ET0 = 0.0023 * Ra[mm/day] * (Tmean+17.8) * sqrt(DTR)
-        lat_rad = np.radians(float(lats[j]))
-        ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(delta), -1.0, 1.0))
-        ra_mj = np.maximum(
-            24.0 * 60.0 / np.pi * 0.0820 * dr *
-            (ws * np.sin(lat_rad) * np.sin(delta) +
-             np.cos(lat_rad) * np.cos(delta) * np.sin(ws)), 0.0)
-        dtr = np.maximum(tmax - tmin, 0.5)
-        pet[:, j, i] = np.maximum(
-            0.0, 0.0023 * (ra_mj / 2.45) * (tmean + 17.8) * np.sqrt(dtr))
-
-    # Inactive cells: neutral values (wflow ignores them, but NaN would poison
-    # any basin-mean diagnostic).
-    tmean_basin = float(np.nanmean(temp[:, active])) if active.any() else 15.0
-    for j in range(ny):
-        for i in range(nx):
-            if not active[j, i]:
-                temp[:, j, i] = tmean_basin
-
-    return dates.values.astype("datetime64[D]"), lats, lons, precip, temp, pet
+    lats,lons,active=read_grid(grid_path)
+    cells=np.argwhere(active);points=[(float(lats[j]),float(lons[i])) for j,i in cells]
+    recs=load_daily_forcing_points(source,points,start_year,end_year,forcing_dir=forcing_dir)
+    if len(recs)!=len(cells):raise ValueError("Loader record count must match active grid cells")
+    dates=check_daily(recs[0]["dates"],start_year,end_year);nt=len(dates)
+    arrays=[np.full((nt,len(lats),len(lons)),np.nan,dtype=np.float32) for _ in range(3)]
+    for (j,i),rec in zip(cells,recs):
+        check_daily(rec["dates"],start_year,end_year)
+        values=[]
+        for key,lo,hi in [("precip_mm",0,1000),("temp_mean_c",-90,70),("temp_min_c",-90,70),("temp_max_c",-90,70)]:
+            if key not in rec:raise ValueError(f"Missing required {key}")
+            arr=valid(rec[key],key,lo,hi)
+            if arr.shape!=(nt,):raise ValueError(f"{key} length must match the full calendar")
+            values.append(arr)
+        p,tm,tn,tx=values
+        arrays[0][:,j,i]=p;arrays[1][:,j,i]=tm
+        arrays[2][:,j,i]=hargreaves(tn,tx,tm,lats[j],dates.dayofyear.to_numpy())
+    return dates.values,lats,lons,*arrays
 
 
 def validate_inputs(args):
@@ -305,16 +237,19 @@ def process(args):
     else:
         raise ValueError("--source is required")
 
-    # Check for NaN coverage
-    valid_cells = np.isfinite(precip[0]).sum()
-    total_cells = (precip[0] != 0).sum()
-    print(f"  Valid cells: {valid_cells}", file=sys.stderr)
-
-    # Replace NaN with 0 for precip and pet, with mean for temp
-    precip = np.nan_to_num(precip, nan=0.0)
-    pet = np.nan_to_num(pet, nan=0.0)
-    temp_mean = np.nanmean(temp)
-    temp = np.nan_to_num(temp, nan=temp_mean)
+    dates=check_daily(times,args.start_year,args.end_year)
+    grid_lats,grid_lons,active=read_grid(grid_path)
+    if not np.array_equal(lats,grid_lats) or not np.array_equal(lons,grid_lons):
+        raise ValueError("Forcing grid differs from staticmaps")
+    expected=(len(dates),len(lats),len(lons))
+    checked=[]
+    for arr,name,lo,hi in [(precip,"precip",0,1000),(temp,"temp",-90,70),(pet,"pet",0,100)]:
+        arr=np.asarray(arr,dtype=float).copy()
+        if arr.shape!=expected:raise ValueError(f"{name} shape differs from calendar/grid")
+        valid(arr[:,active],name,lo,hi)
+        arr[:,~active]=np.nan  # Explicitly masked padding, never inferred weather.
+        checked.append(arr)
+    precip,temp,pet=checked
 
     # Create wflow forcing NetCDF
     ds = xr.Dataset(
@@ -361,9 +296,14 @@ def process(args):
     ds.attrs["title"] = "wflow forcing data converted from HydroCraft"
     ds.attrs["source"] = f"Converted from {args.forcing_dir or args.cmfd_dir or args.mswx_dir}"
     ds.attrs["timestep_seconds"] = 86400
+    ds.attrs["active_cell_fill_count"] = 0
+    ds.attrs["et_method"] = "Hargreaves; source extrema required; no temperature-range floor"
+    ds.attrs["inactive_cells"] = "masked NaN; exclude from basin statistics"
+    ds.attrs["validation_scope"] = "shared daily-loader output; upstream raw substeps not certified" if args.source else "all original CMFD 3-hourly P/T samples"
+
 
     # Write output
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     ds.to_netcdf(args.output, encoding={
         "precip": {"dtype": "float32", "zlib": True, "complevel": 4},
         "temp": {"dtype": "float32", "zlib": True, "complevel": 4},

@@ -64,3 +64,28 @@ Convert CMFD/MSWX meteorological forcing to wflow NetCDF format with correct uni
 - **dt_w003**: PET missing or zero (all precip becomes runoff)
 - **dt_w004**: Snow in tropical basins (temperature offset not applied)
 - **dt_w008**: Grid mismatch between forcing and staticmaps (DimensionMismatch)
+
+
+## Strict input contract (2026-10-03 repair)
+
+The converter requires the full requested daily calendar and identical records
+for every active `wflow_subcatch` cell. Missing, nonfinite, negative rain/PET,
+inverted temperature extrema, missing cell records and truncated arrays fail
+before writing. No weather is interpolated or substituted. Inactive grid padding
+is NaN and must be excluded from basin statistics.
+
+PET uses the documented Hargreaves approximation for the whole file. Tmin/Tmax
+must be supplied; equal extrema are valid and yield zero PET. The former 0.5 C
+minimum temperature range was removed. Daily precipitation and PET are mm per
+86400-second model step; temperature is Celsius.
+
+For CMFD with original-source validation, pass `--forcing_dir` and omit `--source`.
+This direct route requires exactly one original P and T file per requested month,
+declared kg m-2 s-1 and K units, all matching 3-hourly source timestamps and finite
+values in every active cell before daily reduction. SRad is unnecessary for HG.
+
+The `--source` route validates the shared loader's daily output, but cannot undo
+source gaps or replaced extrema hidden by that dependency. Its NetCDF
+`validation_scope` records this narrower guarantee. Geographic grid coordinates
+and an explicit `wflow_subcatch` mask are required. Projected grids require an
+explicit reprojection before point-source lookup.

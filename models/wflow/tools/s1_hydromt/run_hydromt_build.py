@@ -1014,22 +1014,33 @@ def build_manual(config, args):
     th_r = np.zeros((ny, nx))
     bc_c = np.zeros((ny, nx))
     n_soil_ok = 0
+    # A domain cell with no HWSD soil (lookup error: sea, lake, ice, missing
+    # table row) is NOT filled with constants; the build fails and names the cells.
+    soil_failed = []
     for j in range(ny):
         for i in range(nx):
             if mask[j, i] == 0:
                 continue
+            lat_c, lon_c = float(lat_centers[j]), float(lon_centers[i])
             try:
-                s = lookup_hwsd(float(lat_centers[j]), float(lon_centers[i]))
-                h = s["hydraulics"]
-                # ksat_cm_hr -> mm/day (wflow unit, dt_w026)
-                ksat[j, i] = max(1.0, float(h["ksat_cm_hr"]) * 10.0 * 24.0)
-                th_s[j, i] = float(h["saturation"])
-                th_r[j, i] = max(0.01, float(h["wilting_point"]) * 0.5)
-                # Brooks-Corey exponent from clay content (finer -> larger c)
-                bc_c[j, i] = float(np.clip(6.0 + 0.18 * float(s["clay"]), 6.0, 20.0))
-                n_soil_ok += 1
-            except Exception:
-                ksat[j, i], th_s[j, i], th_r[j, i], bc_c[j, i] = 100.0, 0.45, 0.05, 10.0
+                s = lookup_hwsd(lat_c, lon_c)
+            except (RuntimeError, ValueError, FileNotFoundError) as e:
+                soil_failed.append(f"(row {j}, col {i}, lat={lat_c:.4f}, lon={lon_c:.4f}): {e}")
+                continue
+            h = s["hydraulics"]
+            # ksat_cm_hr -> mm/day (wflow unit, dt_w026)
+            ksat[j, i] = max(1.0, float(h["ksat_cm_hr"]) * 10.0 * 24.0)
+            th_s[j, i] = float(h["saturation"])
+            th_r[j, i] = max(0.01, float(h["wilting_point"]) * 0.5)
+            # Brooks-Corey exponent from clay content (finer -> larger c)
+            bc_c[j, i] = float(np.clip(6.0 + 0.18 * float(s["clay"]), 6.0, 20.0))
+            n_soil_ok += 1
+    if soil_failed:
+        shown = "\n    ".join(soil_failed[:10])
+        more = f"\n    ... and {len(soil_failed) - 10} more" if len(soil_failed) > 10 else ""
+        return {"status": "failed",
+                "error": (f"HWSD soil lookup failed for {len(soil_failed)} of {n_cells} "
+                          f"domain cells (no constant soil is filled in):\n    {shown}{more}")}
     print(f"  HWSD soil sampled for {n_soil_ok}/{n_cells} cells: "
           f"KsatVer {ksat[mask==1].min():.0f}-{ksat[mask==1].max():.0f} mm/day, "
           f"theta_s {th_s[mask==1].min():.2f}-{th_s[mask==1].max():.2f}", file=sys.stderr)

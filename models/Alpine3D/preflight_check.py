@@ -75,12 +75,23 @@ def check_python_import(checks, module, critical=True):
             "Restore KISSPATH_PYTHON_ENV/bin/python; check diagnostics/triplets.yaml.",
         )
         return False
-    proc = subprocess.run(
-        [HYDROCRAFT_PYTHON, "-c", f"import {module}"],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    try:
+        proc = subprocess.run(
+            [HYDROCRAFT_PYTHON, "-c", f"import {module}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        add_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            "fail",
+            f"Could not run the HydroCraft Python interpreter ({exc}); check diagnostics/triplets.yaml.",
+        )
+        return False
     if proc.returncode == 0:
         add_check(checks, "import", subject, critical, "pass")
         return True
@@ -108,12 +119,34 @@ def check_tool_compiles(checks, relpath, critical=True):
             f"Restore KI tool {relpath}; check diagnostics/triplets.yaml.",
         )
         return False
-    proc = subprocess.run(
-        [HYDROCRAFT_PYTHON, "-m", "py_compile", path],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    if not os.path.exists(HYDROCRAFT_PYTHON):
+        add_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            "fail",
+            f"Cannot compile {relpath}: HydroCraft Python interpreter {HYDROCRAFT_PYTHON} is missing; "
+            "check diagnostics/triplets.yaml.",
+        )
+        return False
+    try:
+        proc = subprocess.run(
+            [HYDROCRAFT_PYTHON, "-m", "py_compile", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        add_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            "fail",
+            f"Could not compile {relpath} with {HYDROCRAFT_PYTHON} ({exc}); check diagnostics/triplets.yaml.",
+        )
+        return False
     if proc.returncode == 0:
         add_check(checks, "import", subject, critical, "pass")
         return True

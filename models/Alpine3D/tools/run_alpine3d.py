@@ -179,15 +179,85 @@ def validate_config(config, args):
     demfile = inp.get("DEMFILE", "")
     lusfile = inp.get("LANDUSEFILE", "")
 
-    # Resolve paths relative to iofile directory
+    # Resolve paths the way the engine does. MeteoIO ARCIO::readDEM/readLanduse
+    # open cfg.get("DEMFILE"/"LANDUSEFILE") as given, so a relative path is
+    # relative to the process working directory. The model is started below
+    # without a cwd= argument, so it inherits ours. (MeteoIO only resolves
+    # IMPORT paths against the ini file's folder, Config.cc:637-640.)
     iodir = os.path.dirname(os.path.abspath(args.iofile))
+    cwd = os.getcwd()
 
-    if demfile and not os.path.isabs(demfile):
-        demfile = os.path.join(iodir, demfile)
-    if lusfile and not os.path.isabs(lusfile):
-        lusfile = os.path.join(iodir, lusfile)
+    # Simple safe rule: the hard "grid file missing" error is only raised when
+    # the io.ini is plain, i.e. the wrapper's reading of DEMFILE/LANDUSEFILE is
+    # surely the value MeteoIO will open. MeteoIO can change a value through
+    # IMPORT_BEFORE/IMPORT_AFTER (Config.cc:725-740), ${...} variables that are
+    # expanded after parsing (Config.cc:594-620, 803-806), repeated keys and
+    # escapes/quotes. The wrapper reproduces none of that, so in any of those
+    # cases it skips the grid checks with a clear warning instead.
+    not_plain = []
+    key_count = {"DEMFILE": 0, "LANDUSEFILE": 0}
+    in_input = False
+    with open(args.iofile, "r") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line[0] in "#;":
+                continue
+            if "${" in line:
+                not_plain.append("uses ${...} variables")
+            if "\\" in line:
+                # Escapes change what MeteoIO reads (e.g. "\#" is not a comment).
+                not_plain.append("uses backslash escapes")
+            if line.startswith("["):
+                # A header may carry an inline comment: "[Input] # grids".
+                close = line.find("]")
+                if close < 0:
+                    not_plain.append("has a section header the wrapper cannot read")
+                    in_input = False
+                else:
+                    in_input = line[1:close].strip().upper() == "INPUT"
+                continue
+            k, sep, v = line.partition("=")
+            k = k.strip().upper()
+            if sep and k.startswith("IMPORT_"):
+                not_plain.append("uses IMPORT_BEFORE/IMPORT_AFTER")
+            if sep and in_input and k in key_count:
+                key_count[k] += 1
+                if any(c in v for c in "\\\"'"):
+                    not_plain.append(f"{k} has escapes or quotes")
+    for k, n in key_count.items():
+        if n > 1:
+            not_plain.append(f"{k} is set {n} times in [Input]")
+    not_plain = sorted(set(not_plain))
 
-    if demfile and os.path.exists(demfile):
+    def resolve_grid(key, value):
+        """Return (path or None, checkable). Only a plain io.ini is checked."""
+        if not value:
+            warnings.append(f"[Input] {key} not set; Alpine3D always reads this grid (AlpineMain.cc).")
+            return None, False
+        if not_plain:
+            warnings.append(
+                f"[Input] {key}: io.ini is not plain KEY = path ({'; '.join(not_plain)}); "
+                f"the wrapper cannot be sure which file MeteoIO will open, so file "
+                f"existence and grid checks were skipped."
+            )
+            return None, False
+        path = value if os.path.isabs(value) else os.path.join(cwd, value)
+        if not os.path.exists(path):
+            hint = ""
+            alt = os.path.join(iodir, value)
+            if not os.path.isabs(value) and os.path.exists(alt):
+                hint = (f" It exists relative to the io.ini folder ({alt}); Alpine3D opens "
+                        f"relative paths from the working directory, so run from {iodir} "
+                        f"or use an absolute path.")
+            errors.append(f"{key} not found: {path} (working directory {cwd}).{hint}")
+            return None, False
+        return path, True
+
+    # AlpineMain.cc:231-235 always calls io.readDEM and io.readLanduse.
+    demfile, dem_ok = resolve_grid("DEMFILE", demfile)
+    lusfile, lus_ok = resolve_grid("LANDUSEFILE", lusfile)
+
+    if dem_ok:
         dem_header = read_arc_header(demfile)
         dem_nrows = int(dem_header.get("nrows", 0))
 
@@ -198,16 +268,21 @@ def validate_config(config, args):
                 f"This will crash. Reduce to ≤ {dem_nrows} (dt_017)."
             )
 
-        if lusfile and os.path.exists(lusfile):
+        if lus_ok:
             lus_header = read_arc_header(lusfile)
+            def _num(v):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return v
+
+            # MeteoIO reads these header values as numbers, so 25 == 25.0.
             for key in ["ncols", "nrows", "cellsize"]:
-                if dem_header.get(key) != lus_header.get(key):
+                if _num(dem_header.get(key)) != _num(lus_header.get(key)):
                     errors.append(
                         f"DEM and landuse grid mismatch on '{key}': "
                         f"DEM={dem_header.get(key)}, LUS={lus_header.get(key)} (dt_017)"
                     )
-    elif demfile:
-        warnings.append(f"DEM file not found: {demfile}")
 
     # 3. Check CALCULATION_STEP_LENGTH vs PSUM accumulation
     snp = config.get("Snowpack", config.get("SNOWPACK", {}))
@@ -411,7 +486,9 @@ def main():
 
     print(json.dumps(result, indent=2))
 
-    if result.get("status") == "error":
+    # Only a validated dry run or a clean model exit counts as success.
+    # "failed" (non-zero model exit), "timeout" and "error" must not return 0.
+    if result.get("status") not in ("success", "dry_run"):
         sys.exit(1)
 
 

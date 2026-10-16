@@ -8,7 +8,21 @@ hydraulic conductivity (K) using Rosetta pedotransfer functions.
 **CRITICAL UNIT: ParFlow K is in m/hr** (NOT m/day = 24x error, NOT m/s = 3600x error)
 **CRITICAL UNIT: van Genuchten alpha is 1/m** (NOT 1/cm = 100x error)
 
-Uses the shared HydroCraft HWSD adapter for soil property extraction.
+Reads HWSD directly (not ki_tools_common lookup_hwsd): the hwsd.bil raster gives
+the mapping unit at each cell centre, and the dominant row of HWSD_DATA.csv
+(largest SHARE; ties -> lowest SEQ) gives topsoil T_SAND/T_SILT/T_CLAY -> USDA
+texture class.
+
+Every cell of the rectangular grid gets its own HWSD texture, inside AND outside
+the basin mask: the s7 run script uses Box geometry (no SolidFile mask;
+pfmask-to-pfsol is not installed), so ParFlow simulates every cell of the
+rectangle. There is no default and no fill texture: if any cell has no HWSD
+texture (raster read fails, no mapping unit such as water, unit not in the CSV,
+or no topsoil sand/silt/clay) the tool stops and lists the first 10 failing
+cells (with inside/outside mask) and the count.
+
+Saturation exports are ParFlow saturation FRACTIONS: residual_saturation =
+theta_r / theta_s and saturation_at_saturation = 1.0 (same as the s7 generator).
 
 Usage:
     python build_subsurface_properties.py \
@@ -66,8 +80,9 @@ SPECIFIC_STORAGE = {
     "silty_clay": 2.0e-4, "clay": 2.5e-4,
 }
 
-# Default fallback
-DEFAULT_TEXTURE = "loam"
+# There is NO default texture: every cell's texture must come from HWSD
+# (raster mapping unit -> dominant HWSD_DATA row -> topsoil sand/silt/clay),
+# otherwise the tool stops and lists the failing cells.
 # ===================================================================
 
 
@@ -106,6 +121,21 @@ def classify_soil_texture(sand, silt, clay):
         return "loam"
     else:
         return "sandy_loam"
+
+
+def dominant_hwsd_rows(df):
+    """One row per MU_GLOBAL: the component with the largest SHARE (percent of
+    the mapping unit). Ties (and rows with no SHARE) are broken by lowest SEQ.
+    HWSD SEQ is NOT a reliable share order (e.g. unit 2: SEQ 1 = 25 %,
+    SEQ 3 = 30 %)."""
+    share = df["SHARE"] if "SHARE" in df.columns else None
+    if share is None:
+        raise ValueError("HWSD_DATA.csv has no SHARE column; cannot pick the dominant component")
+    tmp = df.assign(_share=share.astype(float))
+    return (tmp.sort_values(["MU_GLOBAL", "_share", "SEQ"], ascending=[True, False, True],
+                            na_position="last", kind="mergesort")
+            .drop_duplicates("MU_GLOBAL", keep="first").drop(columns="_share")
+            .set_index("MU_GLOBAL"))
 
 
 def validate_inputs(domain_json, mask_npy):
@@ -155,6 +185,10 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
     origin_x = domain["origin"]["x"]
     origin_y = domain["origin"]["y"]
     utm_epsg = domain["crs"]["epsg"]
+    if mask_3d.shape != (nz, ny, nx):
+        raise ValueError(f"mask shape {mask_3d.shape} does not match grid ({nz}, {ny}, {nx})")
+    if not np.any(mask_3d[0] != 0):
+        raise ValueError("domain mask has no active surface cell; nothing to build")
 
     # Initialize property arrays (nz, ny, nx)
     perm_x = np.zeros((nz, ny, nx), dtype=np.float64)
@@ -172,17 +206,18 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
         f"EPSG:{utm_epsg}", "EPSG:4326", always_xy=True
     )
 
-    # For each active surface cell, sample HWSD
+    # For EVERY surface cell, sample HWSD. The run script's geometry is the
+    # full Box, so cells outside the basin mask are simulated too and need
+    # their own soil (no fill class, no default).
     texture_counts = {}
     texture_names = list(ROSETTA_VAN_GENUCHTEN.keys())  # stable class codes
     tex_code_2d = np.zeros((ny, nx), dtype=np.int32)
-    default_code = texture_names.index(DEFAULT_TEXTURE) + 1
+    failures = []  # (i, j, lon, lat, in_mask, reason) for cells with no HWSD texture
+    hwsd_dom = dominant_hwsd_rows(process._hwsd_df)
     with rasterio.open(HWSD_RASTER) as hwsd_src:
         for j in range(ny):
             for i in range(nx):
-                if mask_3d[0, j, i] == 0:
-                    continue
-
+                in_mask = bool(mask_3d[0, j, i] != 0)
                 # Cell center in UTM
                 cx = origin_x + (i + 0.5) * dx
                 cy = origin_y + (j + 0.5) * dy
@@ -190,34 +225,42 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
                 # Convert to WGS84
                 lon, lat = transformer.transform(cx, cy)
 
-                # Sample HWSD
+                # Sample HWSD. Any failure is recorded for this cell; the
+                # tool stops after the loop (no stand-in texture).
                 try:
                     row, col = hwsd_src.index(lon, lat)
-                    mu_id = hwsd_src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0]
-                except Exception:
-                    mu_id = 0
-
-                # Look up sand/silt/clay from HWSD CSV database
-                texture = DEFAULT_TEXTURE
-                if mu_id > 0 and hasattr(process, '_hwsd_df'):
-                    row_match = process._hwsd_df[process._hwsd_df['MU_GLOBAL'] == mu_id]
-                    if len(row_match) > 0:
-                        r = row_match.iloc[0]
-                        t_sand = r.get('T_SAND', 0)
-                        t_silt = r.get('T_SILT', 0)
-                        t_clay = r.get('T_CLAY', 0)
-                        if t_sand > 0 or t_silt > 0 or t_clay > 0:
-                            texture = classify_soil_texture(
-                                float(t_sand), float(t_silt), float(t_clay)
-                            )
+                    if not (0 <= row < hwsd_src.height and 0 <= col < hwsd_src.width):
+                        raise ValueError(f"outside the HWSD raster (row {row}, col {col})")
+                    mu_id = int(hwsd_src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
+                except Exception as exc:
+                    failures.append((i, j, lon, lat, in_mask, f"raster sampling failed: {exc}"))
+                    continue
+                if mu_id <= 0 or (hwsd_src.nodata is not None and mu_id == hwsd_src.nodata):
+                    failures.append((i, j, lon, lat, in_mask, f"no HWSD mapping unit (value {mu_id})"))
+                    continue
+                if mu_id not in hwsd_dom.index:
+                    failures.append((i, j, lon, lat, in_mask, f"MU_GLOBAL {mu_id} not in HWSD_DATA.csv"))
+                    continue
+                r = hwsd_dom.loc[mu_id]
+                fr = {k: r.get(k) for k in ("T_SAND", "T_SILT", "T_CLAY")}
+                try:
+                    vals = {k: float(v) for k, v in fr.items()}
+                except (TypeError, ValueError):
+                    vals = None
+                if (vals is None or not all(np.isfinite(v) for v in vals.values())
+                        or sum(vals.values()) <= 0):
+                    failures.append((i, j, lon, lat, in_mask,
+                                     f"MU_GLOBAL {mu_id} dominant row (SEQ {r.get('SEQ')}, "
+                                     f"ISSOIL {r.get('ISSOIL')}) has no topsoil texture {fr}"))
+                    continue
+                texture = classify_soil_texture(vals["T_SAND"], vals["T_SILT"], vals["T_CLAY"])
 
                 texture_counts[texture] = texture_counts.get(texture, 0) + 1
                 tex_code_2d[j, i] = texture_names.index(texture) + 1
 
-                # Get van Genuchten parameters
-                params = ROSETTA_VAN_GENUCHTEN.get(texture, ROSETTA_VAN_GENUCHTEN[DEFAULT_TEXTURE])
-                a, n_vg, tr, ts, ks = params
-                ss = SPECIFIC_STORAGE.get(texture, 1.0e-4)
+                # Get van Genuchten parameters (every class has an entry)
+                a, n_vg, tr, ts, ks = ROSETTA_VAN_GENUCHTEN[texture]
+                ss = SPECIFIC_STORAGE[texture]
 
                 # Assign to all layers
                 # NOTE: In a more sophisticated setup, deeper layers would use
@@ -229,14 +272,29 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
                     porosity[k, j, i] = ts
                     alpha[k, j, i] = a
                     vg_n[k, j, i] = n_vg
-                    s_res[k, j, i] = tr
-                    s_sat[k, j, i] = ts  # ParFlow Ssat = porosity
+                    # ParFlow VanGenuchten SRes/SSat are saturation
+                    # FRACTIONS (0-1), not water contents: SRes = theta_r /
+                    # theta_s, SSat = 1.0 (as the s7 generator writes them).
+                    s_res[k, j, i] = round(tr / ts, 4)
+                    s_sat[k, j, i] = 1.0
                     spec_storage[k, j, i] = ss
 
     # IndicatorField for the run script (washita LW_Test.py pattern): integer
     # texture class per cell, replicated over all layers, plus the class->
     # parameter table the s7 script generator consumes.
-    tex_code_2d[tex_code_2d == 0] = default_code  # outside-basin cells
+    if failures:
+        n_out = sum(1 for f in failures if not f[4])
+        lines = [f"  cell (i={i}, j={j}) lon={lon:.5f} lat={lat:.5f} "
+                 f"{'inside' if m else 'OUTSIDE'} basin mask: {why}"
+                 for i, j, lon, lat, m, why in failures[:10]]
+        raise ValueError(
+            f"HWSD gave no soil texture for {len(failures)} cell(s) ({n_out} outside the "
+            f"basin mask); no default or fill texture is used. The run script uses Box "
+            f"geometry, so every cell of the rectangle is simulated and needs real soil: "
+            f"shrink/move the domain rectangle or fix the soil source. "
+            f"First {len(lines)}:\n" + "\n".join(lines))
+    if np.any(tex_code_2d == 0):
+        raise RuntimeError("internal error: a cell has no texture class after sampling")
     tex_code_3d = np.repeat(tex_code_2d[np.newaxis, :, :], nz, axis=0)
     tex_params = {}
     for code in np.unique(tex_code_3d):
@@ -245,7 +303,7 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
         tex_params[int(code)] = {
             "name": name, "ks_m_hr": ks, "porosity": ts,
             "alpha_1m": a, "n": n_vg, "sres": tr,
-            "ss_1m": SPECIFIC_STORAGE.get(name, 1.0e-4),
+            "ss_1m": SPECIFIC_STORAGE[name],
         }
 
     # Save all arrays
@@ -276,8 +334,8 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
         except ImportError:
             pass
 
-    # Statistics
-    active_mask = mask_3d > 0
+    # Statistics over every simulated cell (the whole Box)
+    active_mask = np.ones((nz, ny, nx), dtype=bool)
     stats = {}
     for name, arr in [("K_m_hr", perm_x), ("porosity", porosity),
                        ("alpha_1_m", alpha), ("vg_n", vg_n)]:
@@ -298,11 +356,17 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
         "status": "success",
         "output_files": outputs,
         "texture_distribution": texture_counts,
+        "texture_source": ("HWSD dominant component (largest SHARE, ties -> lowest SEQ) "
+                           "topsoil T_SAND/T_SILT/T_CLAY; no default"),
+        "texture_cells": ("every cell of the rectangular grid (s7 uses Box geometry, so "
+                          "cells outside the basin mask are simulated with their own HWSD soil)"),
+        "cells_outside_mask": int(np.sum(mask_3d[0] == 0)),
+        "saturation_fields": "residual_saturation = theta_r/theta_s, saturation_at_saturation = 1.0 (fractions)",
         "k_anisotropy_ratio": k_anisotropy_ratio,
         "stats": stats,
         "unit_warnings": [
             "K is in m/hr (ParFlow default). NOT m/day (MODFLOW) or m/s (SI).",
-            "Alpha is in 1/m (ParFlow). NOT 1/cm (Rosetta raw output -- divide by 100).",
+            "Alpha is in 1/m (ParFlow). NOT 1/cm (Rosetta raw output -- multiply 1/cm by 100 to get 1/m, e.g. 0.036/cm = 3.6/m).",
             "Pressure head is in meters of water. NOT Pa or kPa.",
         ],
     }
@@ -350,8 +414,12 @@ def main():
         print(json.dumps({"status": "error", "errors": errs}))
         sys.exit(1)
 
-    result = process(args.domain_json, args.mask_npy, args.output_dir,
-                     args.k_anisotropy)
+    try:
+        result = process(args.domain_json, args.mask_npy, args.output_dir,
+                         args.k_anisotropy)
+    except (ValueError, FileNotFoundError) as exc:
+        print(json.dumps({"status": "error", "errors": [str(exc)]}, indent=2))
+        sys.exit(1)
 
     warnings = validate_outputs(result)
     if warnings:

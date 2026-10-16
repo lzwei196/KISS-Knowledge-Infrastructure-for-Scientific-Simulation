@@ -72,6 +72,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 ### Soil properties
 
 **Data Sources**: Use `from ki_tools_common.soil_utils import lookup_hwsd` for soil properties.
+Note: `tools/s2_subsurface/build_subsurface_properties.py` does not use `lookup_hwsd`; it reads `hwsd.bil` and `HWSD_DATA.csv` directly (dominant component = largest SHARE) and stops (no default or fill texture) when any cell of the rectangular grid, inside or outside the basin mask, has no HWSD texture. The run script uses Box geometry, so every cell of the rectangle is simulated.
 
 ### Forcing data
 
@@ -415,6 +416,13 @@ python tools/s7_solver/generate_parflow_script.py \
   --domain_json outputs/parflow_chaohe/domain/domain_definition.json \
   --run_name chaohe_test \
   --start_date 2005-01-01 --end_date 2005-12-31 \
+  --texture_params outputs/parflow_chaohe/subsurface/texture_params.json \
+  --indicator_pfb outputs/parflow_chaohe/subsurface/texture_indicator.pfb \
+  --slope_x_pfb outputs/parflow_chaohe/topography/slope_x.pfb \
+  --slope_y_pfb outputs/parflow_chaohe/topography/slope_y.pfb \
+  --ic_pfb outputs/parflow_chaohe/ic_bc/ic_pressure.pfb \
+  --clm_dir outputs/parflow_chaohe/clm/ \
+  --forcing_dir outputs/parflow_chaohe/forcing/ \
   --output_dir outputs/parflow_chaohe/run/
 
 # 8. Run ParFlow
@@ -656,3 +664,7 @@ model/parflow/
   deps/hypre-install/             # HYPRE dependency
   install/bin/parflow             # ParFlow binary
 ```
+
+### Solver input validation (2026-10-03)
+
+Script generation requires explicit initial-pressure and both slope PFB files. Missing, unreadable, nonfinite, or wrong-shaped fields stop before writing the script; zero slopes are valid and are preserved. There is no constant-slope fallback. Soil parameters and indicator must be supplied together. CLM additionally requires its three nonempty driver files and a directory containing the named forcing chunks. These checks establish input presence and PFB dimensions, not full forcing-period coverage or physical validity.

@@ -29,6 +29,10 @@ Assign spatially distributed hydraulic properties (permeability, porosity, van G
 
 1. **Run** `build_subsurface_properties.py` with domain_json and mask_npy.
    - The tool reads HWSD raster, classifies soil texture, applies Rosetta pedotransfer.
+   - Texture comes from HWSD for every cell of the rectangular grid, inside AND outside the basin mask: raster mapping unit -> dominant row of `HWSD_DATA.csv` (largest SHARE; ties -> lowest SEQ, because SEQ is not a reliable share order) -> topsoil T_SAND/T_SILT/T_CLAY -> USDA class. There is no default (e.g. loam) and no fill texture. If any cell has no HWSD texture (raster read fails, no mapping unit such as water, unit not in the CSV, or no topsoil sand/silt/clay) the tool stops with `status: error`, the count, and the first 10 failing cells (marked inside/OUTSIDE mask). Shrink or move the domain rectangle, or fix the soil source; do not fill.
+   - Why outside-mask cells need real soil: the s7 run script uses Box geometry (no SolidFile mask; `pfmask-to-pfsol` is not installed), so ParFlow simulates every cell of the rectangle. The basin mask is NOT applied to the solver.
+   - `residual_saturation` / `saturation_at_saturation` exports are ParFlow saturation FRACTIONS (theta_r/theta_s and 1.0), not water contents.
+   - This tool reads HWSD directly; it does not call `ki_tools_common.soil_utils.lookup_hwsd`.
    - Output: permeability_x/y/z.npy, porosity.npy, vangenuchten_alpha/n.npy, etc.
    - **Verify K range**: Typical 1e-6 (clay) to 0.03 (sand) m/hr.
    - **Verify alpha range**: Typical 0.5 (clay) to 15 (sand) 1/m.

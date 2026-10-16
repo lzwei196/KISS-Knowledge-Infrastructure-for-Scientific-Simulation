@@ -64,13 +64,20 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
         Maximum runtime before killing the process.
     """
     start_time = time.time()
+    # Absolute: the child runs with cwd=run_dir, so a relative script path
+    # would be resolved twice (run_dir/run_dir/...).
+    run_dir = os.path.abspath(run_dir)
 
-    # Set environment
+    # Set environment. A generated Python run script carries its own
+    # PARFLOW_DIR default (chosen and checked by s7 --parflow_dir); only
+    # override it when the caller exported PARFLOW_DIR. tcl/direct need it.
     env = os.environ.copy()
-    env["PARFLOW_DIR"] = PARFLOW_DIR
-    pf_bin_dir = os.path.join(PARFLOW_DIR, "bin")
-    if pf_bin_dir not in env.get("PATH", ""):
-        env["PATH"] = pf_bin_dir + ":" + env.get("PATH", "")
+    if method != "python" or "PARFLOW_DIR" in os.environ:
+        pf_dir = os.environ.get("PARFLOW_DIR", PARFLOW_DIR)
+        env["PARFLOW_DIR"] = pf_dir
+        pf_bin_dir = os.path.join(pf_dir, "bin")
+        if pf_bin_dir not in env.get("PATH", ""):
+            env["PATH"] = pf_bin_dir + ":" + env.get("PATH", "")
 
     # Determine command
     if method == "python":
@@ -89,6 +96,20 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
 
     # Log file
     log_file = os.path.join(run_dir, f"{run_name}.run.log")
+
+    # Snapshot existing outputs BEFORE launch. After the run, a file counts
+    # only if it is new or changed (mtime_ns / size / inode) during this
+    # invocation, so old outputs in a reused folder never make a success.
+    out_patterns = {k: f"{run_name}.out.{k}.*.pfb" for k in ("press", "satur", "clm_output")}
+
+    def _sig(f):
+        st = os.stat(f)
+        return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+    before = {}
+    for pat in out_patterns.values():
+        for f in glob.glob(os.path.join(run_dir, pat)):
+            before[f] = _sig(f)
 
     print(f"Starting ParFlow: {' '.join(cmd)}")
     print(f"Working directory: {run_dir}")
@@ -127,9 +148,14 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
     elapsed = time.time() - start_time
 
     # Check outputs
-    press_files = sorted(glob.glob(os.path.join(run_dir, f"{run_name}.out.press.*.pfb")))
-    satur_files = sorted(glob.glob(os.path.join(run_dir, f"{run_name}.out.satur.*.pfb")))
-    clm_files = sorted(glob.glob(os.path.join(run_dir, f"{run_name}.out.clm_output.*.pfb")))
+    # Only files written by THIS invocation count (see snapshot above).
+    def _fresh(pattern):
+        found = sorted(glob.glob(os.path.join(run_dir, pattern)))
+        fresh = [f for f in found if f not in before or _sig(f) != before[f]]
+        return fresh, len(found) - len(fresh)
+    press_files, stale_press = _fresh(out_patterns["press"])
+    satur_files, _ = _fresh(out_patterns["satur"])
+    clm_files, _ = _fresh(out_patterns["clm_output"])
     kinsol_log = os.path.join(run_dir, f"{run_name}.out.kinsol.log")
 
     # Parse kinsol.log for convergence stats
@@ -186,6 +212,7 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
             "pressure": len(press_files),
             "saturation": len(satur_files),
             "clm_output": len(clm_files),
+            "old_pressure_files_ignored": stale_press,
         },
         "convergence": convergence_stats,
         "log_tail": log_tail,
@@ -194,7 +221,8 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
     if not success:
         result["message"] = (
             f"ParFlow exited with code {exit_code}. "
-            f"Pressure files: {len(press_files)}. "
+            f"New pressure files from this run: {len(press_files)} "
+            f"(old ones ignored: {stale_press}). "
             f"Check {log_file} for details."
         )
 
@@ -219,6 +247,8 @@ def main():
     result = process(args.run_dir, args.run_name, args.nprocs,
                      args.method, args.timeout_hours)
     print(json.dumps(result, indent=2))
+    # Honest exit code: a failed run must not look like success to a caller.
+    sys.exit(0 if result.get("status") == "success" else 1)
 
 
 if __name__ == "__main__":

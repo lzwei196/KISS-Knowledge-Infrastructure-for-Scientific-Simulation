@@ -18,7 +18,7 @@ Configure the ParFlow solver (Richards equation, Newton-Krylov, preconditioner) 
 
 ## Procedure
 
-1. **Run** `generate_parflow_script.py` with domain JSON, run name, and dates.
+1. **Run** `generate_parflow_script.py` with domain JSON, run name, dates, `--ic_pfb`, `--slope_x_pfb`, and `--slope_y_pfb`. All three must be readable, finite PFBs matching the domain (one vertical layer for slopes). No missing-input or slope fallback is used. Supply both `--texture_params` and `--indicator_pfb` for heterogeneous soil. Every indicator value must be a whole number equal to a class id in `texture_params`; a non-integer value (e.g. 1.49) or an id with no class stops the tool (values are never rounded). With CLM enabled, also supply `--clm_dir` (three driver files) and `--forcing_dir` (named forcing PFB chunks); use `--no_clm` only for a deliberately uncoupled run. The generated script's `PARFLOW_DIR` default comes from `--parflow_dir`, else `$PARFLOW_DIR`, else the KI install path (must hold `bin/parflow`, otherwise the tool stops). All inputs, `soil_provenance.json` and the script are staged in a temporary folder first; `output_dir` changes only after every copy succeeds.
 2. **Review** generated script: check MPI topology, timestep, CLM settings.
 3. **Verify** P*Q*R matches planned number of MPI processes.
 4. **Verify** NX%P==0, NY%Q==0, NZ%R==0 (dt_pf_023).

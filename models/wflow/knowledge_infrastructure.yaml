@@ -143,6 +143,6 @@ validation:
 summary:
   total_tools: 24
   total_stage_docs: 9
-  total_diagnostic_triplets: 39
+  total_diagnostic_triplets: 38
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

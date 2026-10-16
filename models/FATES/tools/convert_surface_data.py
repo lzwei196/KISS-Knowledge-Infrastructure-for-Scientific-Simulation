@@ -9,22 +9,24 @@ PFT distributions for the target location.
 Follows validate → process → validate pattern.
 
 Usage:
-    python convert_surface_data.py --lat 9.15 --lon -79.85 \
-        --soil-source hwsd --hwsd-path /path/to/HWSD.nc \
-        --output surfdata_bci.nc
+    python convert_surface_data.py --lat -2.609 --lon -60.209 \
+        --soil-source hwsd --soil-depth 1.0 --output surfdata_k34.json
 
     python convert_surface_data.py --lat 45.0 --lon -90.0 \
         --soil-texture "clay_pct=25,sand_pct=40,silt_pct=35" \
-        --soil-depth 2.0 --output surfdata_custom.nc
+        --organic-matter-pct 2.5 --bulk-density 1.35 \
+        --soil-depth 2.0 --output surfdata_custom.json
 
-    python convert_surface_data.py --lat 9.15 --lon -79.85 \
-        --pft-distribution "1:0.8,5:0.2" --output surfdata_tropical.nc
+See docs/s2_surface_data.md for the per-layer soil rules (HWSD 0-30 / 30-100
+cm; below 1 m only with --deep-layers-from-subsoil; no default soil).
 """
 
 import argparse
 import json
+import math
 import os
 import sys
+import warnings as _warnings
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -51,25 +53,30 @@ CLM_SOIL_DEPTHS = [
 # ─── Default PFT area fractions (tropical broadleaf evergreen) ──────────────
 DEFAULT_PFT_FRACTIONS = {0: 1.0}  # 100% broadleaf evergreen tropical
 
-# ─── HWSD Soil Property Lookup by Texture Class ─────────────────────────────
-HWSD_DEFAULTS = {
-    "organic_matter": 2.0,        # % organic matter
-    "bulk_density":   1.35,       # g/cm³
-    "ph":             6.5,        # pH (water)
-    "cec":            15.0,       # cmol/kg
-    "gravel":         5.0,        # % gravel by volume
-}
-
-
 def validate_inputs(args: argparse.Namespace) -> List[str]:
     """Stage 1: Validate command-line arguments."""
     errors = []
+
+    # Every number must be finite (argparse float() accepts 'nan' and 'inf',
+    # and NaN passes every < / > range test).
+    for name in ("lat", "lon", "soil_depth", "organic_matter_pct", "bulk_density"):
+        v = getattr(args, name, None)
+        if v is not None and not math.isfinite(v):
+            errors.append(f"--{name.replace('_', '-')} must be a finite number, got {v}")
 
     # Validate coordinates
     if args.lat < -90 or args.lat > 90:
         errors.append(f"Latitude must be in [-90, 90], got {args.lat}")
     if args.lon < -360 or args.lon > 360:
         errors.append(f"Longitude must be in [-360, 360], got {args.lon}")
+
+    # Validate user organic matter and bulk density
+    om = args.organic_matter_pct
+    if om is not None and math.isfinite(om) and not (0.0 <= om <= 100.0):
+        errors.append(f"--organic-matter-pct must be in [0, 100] %, got {om}")
+    bd = args.bulk_density
+    if bd is not None and math.isfinite(bd) and not (BD_MIN <= bd <= BD_MAX):
+        errors.append(f"--bulk-density must be in [{BD_MIN}, {BD_MAX}] g/cm3, got {bd}")
 
     # Validate soil source
     if args.soil_source == "hwsd" and args.hwsd_path:
@@ -80,8 +87,11 @@ def validate_inputs(args: argparse.Namespace) -> List[str]:
     if args.soil_texture:
         try:
             parts = parse_soil_texture(args.soil_texture)
+            for k, v in parts.items():
+                if not math.isfinite(v) or v < 0.0 or v > 100.0:
+                    errors.append(f"Soil texture {k}_pct must be a finite value in [0, 100], got {v}")
             total = sum(parts.values())
-            if abs(total - 100.0) > 1.0:
+            if not math.isfinite(total) or abs(total - 100.0) > 1.0:
                 errors.append(
                     f"Soil texture fractions must sum to 100%, got {total}%")
         except ValueError as e:
@@ -91,8 +101,11 @@ def validate_inputs(args: argparse.Namespace) -> List[str]:
     if args.pft_distribution:
         try:
             pft_dist = parse_pft_distribution(args.pft_distribution)
+            for idx, frac in pft_dist.items():
+                if not math.isfinite(frac) or frac < 0.0 or frac > 1.0:
+                    errors.append(f"PFT {idx} fraction must be a finite value in [0, 1], got {frac}")
             total = sum(pft_dist.values())
-            if abs(total - 1.0) > 0.01:
+            if not math.isfinite(total) or abs(total - 1.0) > 0.01:
                 errors.append(
                     f"PFT fractions must sum to 1.0, got {total}")
             for idx in pft_dist:
@@ -114,12 +127,20 @@ def validate_inputs(args: argparse.Namespace) -> List[str]:
 
 
 def parse_soil_texture(texture_str: str) -> Dict[str, float]:
-    """Parse soil texture string like 'clay_pct=25,sand_pct=40,silt_pct=35'."""
+    """Parse soil texture string like 'clay_pct=25,sand_pct=40,silt_pct=35'.
+    Exactly clay, sand and silt, each once; anything else is an error."""
     parts = {}
     for item in texture_str.split(","):
         key, val = item.strip().split("=")
         key = key.strip().replace("_pct", "")
+        if key not in ("clay", "sand", "silt"):
+            raise ValueError(f"unknown texture key '{key}' (use clay_pct, sand_pct, silt_pct)")
+        if key in parts:
+            raise ValueError(f"texture key '{key}' given twice")
         parts[key] = float(val.strip())
+    missing = [k for k in ("clay", "sand", "silt") if k not in parts]
+    if missing:
+        raise ValueError(f"texture lacks {missing}")
     return parts
 
 
@@ -128,63 +149,120 @@ def parse_pft_distribution(dist_str: str) -> Dict[int, float]:
     result = {}
     for item in dist_str.split(","):
         idx, frac = item.strip().split(":")
-        result[int(idx.strip())] = float(frac.strip())
+        i = int(idx.strip())
+        if i in result:
+            raise ValueError(f"PFT index {i} given twice")
+        result[i] = float(frac.strip())
     return result
 
 
-def lookup_hwsd(lat: float, lon: float, hwsd_path: str) -> Dict[str, Any]:
-    """Look up soil properties from HWSD NetCDF file."""
+# HWSD depths: topsoil 0-0.30 m, subsoil 0.30-1.00 m.
+HWSD_TOP_BOTTOM_M = 0.30
+HWSD_SUB_BOTTOM_M = 1.00
+OM_PER_OC = 1.724   # organic matter = 1.724 x organic carbon (van Bemmelen)
+BD_MIN, BD_MAX = 0.5, 2.0   # accepted bulk density range, g/cm3
+# Pressure -> water head: 1 kPa = 1000 Pa / (rho_w 1000 kg/m3 x g 9.80665 m/s2)
+# = 0.10197 m = 101.97 mm of water. CLM / Clapp-Hornberger psi is in mm.
+MM_H2O_PER_KPA = 1.0e6 / (1000.0 * 9.80665)
+PSI_FC_KPA = 33.0      # field capacity
+PSI_WP_KPA = 1500.0    # wilting point
+
+
+def hwsd_lon(lon: float) -> float:
+    """Longitude for the HWSD raster, which uses -180..180."""
+    return ((float(lon) + 180.0) % 360.0) - 180.0
+
+
+def clm_lon(lon: float) -> float:
+    """Longitude in the CLM 0..360 convention."""
+    return float(lon) % 360.0
+
+
+def hwsd_subsoil_needed(soil_depth: float, n_layers: int = 15) -> bool:
+    """True when an active CLM layer (node depth <= soil_depth) lies below the
+    HWSD topsoil (0.30 m), so the HWSD subsoil values are used."""
+    return any(HWSD_TOP_BOTTOM_M < d <= soil_depth for d in CLM_SOIL_DEPTHS[:n_layers])
+
+
+def lookup_hwsd(lat: float, lon: float, hwsd_raster: Optional[str] = None,
+                need_sub: bool = True) -> Dict[str, Any]:
+    """HWSD topsoil and subsoil at (lat, lon) via the shared
+    ki_tools_common.soil_utils.lookup_hwsd (hwsd.bil raster + HWSD_DATA.csv,
+    one row for top and sub). Any failure or missing field that is used stops
+    the tool. need_sub=False (every active layer is in the 0-30 cm topsoil):
+    subsoil values are not read, and "sub" is None.
+
+    Units: texture %, OC % by weight (-> OM % = OC x 1.724), bulk density
+    g/cm3 (HWSD T_/S_REF_BULK_DENSITY)."""
+    sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+    from ki_tools_common.soil_utils import lookup_hwsd as _lookup
+    if hwsd_raster and not os.path.exists(hwsd_raster):
+        raise FileNotFoundError(f"--hwsd-path raster not found: {hwsd_raster}")
+    lon_h = hwsd_lon(lon)
     try:
-        import netCDF4 as nc
-        ds = nc.Dataset(hwsd_path, "r")
-
-        # Find nearest grid cell
-        lats = ds.variables["lat"][:]
-        lons = ds.variables["lon"][:]
-        lat_idx = int(np.argmin(np.abs(lats - lat)))
-        lon_idx = int(np.argmin(np.abs(lons - lon)))
-
-        soil = {
-            "clay_pct": float(ds.variables.get("T_CLAY", [20])[lat_idx, lon_idx]),
-            "sand_pct": float(ds.variables.get("T_SAND", [40])[lat_idx, lon_idx]),
-            "silt_pct": float(ds.variables.get("T_SILT", [40])[lat_idx, lon_idx]),
-            "organic_matter": float(ds.variables.get("T_OC", [2.0])[lat_idx, lon_idx]),
-            "bulk_density": float(ds.variables.get("T_BULK_DENSITY", [1.35])[lat_idx, lon_idx]),
-            "source": "HWSD",
-            "lat_idx": lat_idx,
-            "lon_idx": lon_idx,
-        }
-        ds.close()
-        return soil
-
-    except Exception as e:
-        print(f"Warning: HWSD lookup failed ({e}), using defaults", file=sys.stderr)
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            h = _lookup(lat, lon_h, hwsd_raster=hwsd_raster)
+        comp = dict(h.get("hwsd_component") or {})
+        notes = [str(w.message) for w in caught]
+        if comp.get("texture_from_dominant") is False:
+            notes.append(
+                f"HWSD map unit {h['mu_id']}: soil values come from a {comp.get('share_pct')}% "
+                f"component, NOT the dominant {comp.get('dominant_share_pct')}% component "
+                f"(it has no usable texture); see soil_provenance in the output.")
+        top = {"clay_pct": float(h["clay"]), "sand_pct": float(h["sand"]),
+               "silt_pct": float(h["silt"]),
+               "organic_matter_pct": float(h["oc"]) * OM_PER_OC,
+               "bulk_density_g_cm3": float(h["bulk_density"])}
+        sub = None
+        if need_sub:
+            sub = {"clay_pct": float(h["sub_clay"]), "sand_pct": float(h["sub_sand"]),
+                   "silt_pct": float(h["sub_silt"]),
+                   "organic_matter_pct": float(h["sub_oc"]) * OM_PER_OC,
+                   "bulk_density_g_cm3": float(h["sub_bulk_density"])}
         return {
-            "clay_pct": 20.0,
-            "sand_pct": 40.0,
-            "silt_pct": 40.0,
-            "organic_matter": HWSD_DEFAULTS["organic_matter"],
-            "bulk_density": HWSD_DEFAULTS["bulk_density"],
-            "source": "default",
+            "top": top,
+            "sub": sub,
+            "mu_id": h["mu_id"],
+            "source": "HWSD (ki_tools_common.lookup_hwsd)",
+            "provenance": {
+                "source": "HWSD v1.2 (ki_tools_common.lookup_hwsd: hwsd.bil + HWSD_DATA.csv)",
+                "mu_id": h["mu_id"],
+                "lat": lat,
+                "lon_sampled_-180_180": lon_h,
+                "component": comp,
+                "subsoil_used": bool(need_sub),
+                "notes": notes,
+            },
         }
+    except (RuntimeError, ValueError, FileNotFoundError, KeyError) as e:
+        # A failed lookup stops the tool; no default soil is used in its place.
+        raise RuntimeError(f"HWSD lookup failed at ({lat}, {lon}): {e}") from e
 
 
 def compute_hydraulic_properties(clay_pct: float, sand_pct: float,
-                                  organic_matter: float) -> Dict[str, float]:
-    """Compute soil hydraulic properties from texture (Clapp-Hornberger)."""
+                                  bulk_density_g_cm3: float) -> Dict[str, float]:
+    """Compute soil hydraulic properties from texture (Clapp-Hornberger) and
+    the given bulk density (porosity = 1 - BD / 2.65)."""
     # Clapp-Hornberger parameters from soil texture
     # Based on Cosby et al. (1984)
     b_ch = 2.91 + 0.159 * clay_pct
     psi_sat = -10.0 * (10.0 ** (1.88 - 0.0131 * sand_pct))  # mm
     k_sat = 0.0070556 * (10.0 ** (-0.884 + 0.0153 * sand_pct))  # mm/s
 
-    # Porosity from bulk density (assume particle density 2.65 g/cm³)
-    bd = max(0.5, min(2.0, 1.35 + 0.005 * clay_pct - 0.003 * organic_matter))
+    # Porosity from the given bulk density (particle density 2.65 g/cm³)
+    bd = float(bulk_density_g_cm3)
+    if not (BD_MIN <= bd <= BD_MAX):
+        raise ValueError(f"bulk density {bd} g/cm3 outside 0.5-2.0")
     porosity = 1.0 - bd / 2.65
 
-    # Field capacity (at -33 kPa) and wilting point (at -1500 kPa)
-    fc = porosity * (33.0 / abs(psi_sat)) ** (-1.0 / b_ch)
-    wp = porosity * (1500.0 / abs(psi_sat)) ** (-1.0 / b_ch)
+    # Field capacity (-33 kPa) and wilting point (-1500 kPa) from the
+    # Clapp-Hornberger curve theta = porosity x (psi / psi_sat)^(-1/b), with
+    # psi and psi_sat both in mm of water head (kPa -> mm first).
+    psi_fc_mm = PSI_FC_KPA * MM_H2O_PER_KPA
+    psi_wp_mm = PSI_WP_KPA * MM_H2O_PER_KPA
+    fc = porosity * min(1.0, (psi_fc_mm / abs(psi_sat)) ** (-1.0 / b_ch))
+    wp = porosity * min(1.0, (psi_wp_mm / abs(psi_sat)) ** (-1.0 / b_ch))
 
     return {
         "b_clapp_hornberger": round(b_ch, 3),
@@ -197,37 +275,67 @@ def compute_hydraulic_properties(clay_pct: float, sand_pct: float,
     }
 
 
-def generate_soil_profile(clay_pct: float, sand_pct: float,
-                           silt_pct: float, soil_depth: float,
-                           n_layers: int = 15) -> Dict[str, List[float]]:
-    """Generate a soil property profile for CLM soil layers."""
+def generate_soil_profile(top: Dict[str, float], sub: Optional[Dict[str, float]],
+                          soil_depth: float, deep_from_subsoil: bool = False,
+                          n_layers: int = 15, hwsd: Optional[bool] = None) -> Dict[str, Any]:
+    """Soil properties per CLM soil layer (by layer node depth).
+
+    HWSD source: node depth <= 0.30 m -> HWSD topsoil, 0.30-1.00 m -> HWSD
+    subsoil. A layer below 1.00 m (and within soil_depth) has no HWSD value:
+    the tool stops unless deep_from_subsoil is set, which copies the subsoil
+    values there and records that rule in the output. Manual / texture-class
+    source (sub is None): the user's single values apply to every layer down
+    to soil_depth, as stated by the user. Layers below soil_depth are bedrock
+    (0). No depth trend is invented. hwsd=True with sub None is allowed only
+    when no active layer is below 0.30 m (HWSD subsoil not needed).
+    """
+    if hwsd is None:
+        hwsd = sub is not None
     depths = CLM_SOIL_DEPTHS[:n_layers]
-
-    # Simple depth-varying texture (clay increases with depth)
-    clay_profile = [min(100, clay_pct + 2.0 * (d / soil_depth))
-                    for d in depths if d <= soil_depth]
-    sand_profile = [max(0, sand_pct - 1.5 * (d / soil_depth))
-                    for d in depths if d <= soil_depth]
-
-    # Pad with bedrock for layers below soil depth
-    n_soil = len(clay_profile)
-    while len(clay_profile) < n_layers:
-        clay_profile.append(0.0)
-        sand_profile.append(0.0)
-
-    silt_profile = [max(0, 100.0 - c - s) for c, s in
-                    zip(clay_profile, sand_profile)]
-
-    # Organic matter decreases exponentially with depth
-    om_profile = [max(0.1, 3.0 * np.exp(-d / 0.5)) for d in depths]
-
+    keys = ("clay_pct", "sand_pct", "silt_pct", "organic_matter_pct", "bulk_density_g_cm3")
+    prof = {k: [] for k in keys}
+    source_by_layer = []
+    n_soil = 0
+    deep = [d for d in depths if HWSD_SUB_BOTTOM_M < d <= soil_depth]
+    if hwsd and sub is None and any(HWSD_TOP_BOTTOM_M < d <= soil_depth for d in depths):
+        raise ValueError("HWSD subsoil values are needed for layers below 0.30 m but were not read")
+    if hwsd and deep and not deep_from_subsoil:
+        raise ValueError(
+            f"--soil-depth {soil_depth} m puts {len(deep)} CLM layer(s) (node depths "
+            f"{[round(d, 3) for d in deep]} m) below the HWSD depth (1.00 m), where HWSD "
+            f"has no values. Use --soil-depth <= 1.0, or pass --deep-layers-from-subsoil "
+            f"to copy the HWSD 30-100 cm values there on purpose.")
+    for d in depths:
+        if d > soil_depth:
+            vals, src = {k: 0.0 for k in keys}, "bedrock (below --soil-depth)"
+        else:
+            n_soil += 1
+            if not hwsd:
+                vals, src = top, "user values (manual / texture class)"
+            elif d <= HWSD_TOP_BOTTOM_M:
+                vals, src = top, "HWSD topsoil 0-30 cm"
+            elif d <= HWSD_SUB_BOTTOM_M:
+                vals, src = sub, "HWSD subsoil 30-100 cm"
+            else:
+                vals, src = sub, "HWSD subsoil 30-100 cm COPIED below 1 m (--deep-layers-from-subsoil)"
+        for k in keys:
+            prof[k].append(round(float(vals[k]), 4))
+        source_by_layer.append(src)
+    # CLM surface-data ORGANIC is organic matter density in kg/m3:
+    # OM% / 100 x bulk density (g/cm3) x 1000.
+    organic_kg_m3 = [round(om / 100.0 * bd * 1000.0, 3)
+                     for om, bd in zip(prof["organic_matter_pct"], prof["bulk_density_g_cm3"])]
     return {
         "layer_depths_m": depths,
         "n_soil_layers": n_soil,
-        "clay_pct": [round(v, 2) for v in clay_profile],
-        "sand_pct": [round(v, 2) for v in sand_profile],
-        "silt_pct": [round(v, 2) for v in silt_profile],
-        "organic_matter_pct": [round(v, 3) for v in om_profile],
+        "clay_pct": prof["clay_pct"],
+        "sand_pct": prof["sand_pct"],
+        "silt_pct": prof["silt_pct"],
+        "organic_matter_pct": prof["organic_matter_pct"],
+        "bulk_density_g_cm3": prof["bulk_density_g_cm3"],
+        "ORGANIC_kg_m3": organic_kg_m3,
+        "source_by_layer": source_by_layer,
+        "deep_layers_from_subsoil": bool(deep_from_subsoil and hwsd and deep),
     }
 
 
@@ -235,7 +343,8 @@ def generate_surface_dataset(lat: float, lon: float,
                               soil_profile: Dict[str, List[float]],
                               pft_distribution: Dict[int, float],
                               hydraulic_props: Dict[str, float],
-                              output_path: str) -> Dict[str, Any]:
+                              output_path: str,
+                              soil_provenance: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Generate a surface dataset description (JSON format for documentation)."""
     # In a full implementation, this would write a NetCDF file via the host
     # model's mksurfdata_esmf tool. Here we generate the specification.
@@ -248,7 +357,7 @@ def generate_surface_dataset(lat: float, lon: float,
         },
         "grid": {
             "latitude": lat,
-            "longitude": lon if lon >= 0 else lon + 360,  # CLM uses 0-360
+            "longitude": clm_lon(lon),  # CLM uses 0-360
             "n_soil_layers": soil_profile["n_soil_layers"],
             "layer_depths_m": soil_profile["layer_depths_m"],
         },
@@ -257,7 +366,14 @@ def generate_surface_dataset(lat: float, lon: float,
             "sand_pct_by_layer": soil_profile["sand_pct"],
             "silt_pct_by_layer": soil_profile["silt_pct"],
             "organic_matter_by_layer": soil_profile["organic_matter_pct"],
+            "organic_matter_unit": "% by mass (= HWSD OC % x 1.724)",
+            "bulk_density_g_cm3_by_layer": soil_profile["bulk_density_g_cm3"],
+            "ORGANIC_kg_m3_by_layer": soil_profile["ORGANIC_kg_m3"],
+            "ORGANIC_note": "CLM surfdata ORGANIC (organic matter density, kg/m3) = OM% / 100 x BD x 1000",
+            "source_by_layer": soil_profile["source_by_layer"],
+            "deep_layers_from_subsoil": soil_profile["deep_layers_from_subsoil"],
             "hydraulic": hydraulic_props,
+            "provenance": soil_provenance,
         },
         "vegetation": {
             "pft_distribution": {f"PFT_{k}": v for k, v in pft_distribution.items()},
@@ -305,17 +421,22 @@ def validate_outputs(dataset: Dict[str, Any]) -> List[str]:
             f"Longitude is negative ({lon}°). CLM typically uses 0-360° convention.")
 
     # Check hydraulic properties
-    hydro = soil.get("hydraulic", {})
-    porosity = hydro.get("porosity", 0)
-    if porosity < 0.2 or porosity > 0.7:
-        warnings.append(
-            f"Porosity {porosity} outside typical range [0.2, 0.7]")
-
-    fc = hydro.get("field_capacity", 0)
-    wp = hydro.get("wilting_point", 0)
-    if fc <= wp:
-        warnings.append(
-            f"Field capacity ({fc}) <= wilting point ({wp}) — physically impossible")
+    hydro_all = soil.get("hydraulic", {})
+    sets = hydro_all.items() if "topsoil" in hydro_all else [("soil", hydro_all)]
+    for name, hydro in sets:
+        if hydro["field_capacity"] > hydro["porosity"]:
+            warnings.append(
+                f"{name}: field capacity ({hydro['field_capacity']}) > porosity "
+                f"({hydro['porosity']}) — physically impossible")
+        porosity = hydro["porosity"]
+        if porosity < 0.2 or porosity > 0.7:
+            warnings.append(
+                f"{name}: porosity {porosity} outside typical range [0.2, 0.7]")
+        fc = hydro["field_capacity"]
+        wp = hydro["wilting_point"]
+        if fc <= wp:
+            warnings.append(
+                f"{name}: field capacity ({fc}) <= wilting point ({wp}) — physically impossible")
 
     return warnings
 
@@ -327,7 +448,16 @@ def main():
     parser.add_argument("--lon", type=float, required=True, help="Longitude (degrees)")
     parser.add_argument("--soil-source", choices=["hwsd", "manual", "texture_class"],
                         default="manual", help="Soil data source")
-    parser.add_argument("--hwsd-path", help="Path to HWSD NetCDF file")
+    parser.add_argument("--hwsd-path", help="Optional hwsd.bil raster path for --soil-source hwsd "
+                        "(default: the server HWSD raster used by ki_tools_common)")
+    parser.add_argument("--deep-layers-from-subsoil", action="store_true",
+                        help="HWSD source only: copy the HWSD 30-100 cm subsoil values into CLM "
+                             "layers below 1.0 m (within --soil-depth). Without it such layers stop "
+                             "the tool. Recorded in the output.")
+    parser.add_argument("--organic-matter-pct", type=float,
+                        help="Organic matter %% for --soil-texture / --texture-class (required there)")
+    parser.add_argument("--bulk-density", type=float,
+                        help="Bulk density g/cm3 for --soil-texture / --texture-class (required there)")
     parser.add_argument("--soil-texture",
                         help="Manual texture: clay_pct=25,sand_pct=40,silt_pct=35")
     parser.add_argument("--texture-class", choices=list(SOIL_TEXTURE_CLASSES.keys()),
@@ -344,35 +474,49 @@ def main():
 
     # Stage 2: Process
     # Determine soil texture
-    if args.soil_source == "hwsd" and args.hwsd_path:
-        soil = lookup_hwsd(args.lat, args.lon, args.hwsd_path)
-        clay_pct = soil["clay_pct"]
-        sand_pct = soil["sand_pct"]
-        silt_pct = soil["silt_pct"]
-        om = soil.get("organic_matter", HWSD_DEFAULTS["organic_matter"])
-    elif args.texture_class:
-        tex = SOIL_TEXTURE_CLASSES[args.texture_class]
-        clay_pct = tex["clay"]
-        sand_pct = tex["sand"]
-        silt_pct = tex["silt"]
-        om = HWSD_DEFAULTS["organic_matter"]
-    elif args.soil_texture:
-        parts = parse_soil_texture(args.soil_texture)
-        clay_pct = parts.get("clay", 20.0)
-        sand_pct = parts.get("sand", 40.0)
-        silt_pct = parts.get("silt", 40.0)
-        om = HWSD_DEFAULTS["organic_matter"]
+    # Every soil value comes from HWSD or from values the user states; there
+    # is no default soil.
+    if args.soil_source == "hwsd":
+        soil = lookup_hwsd(args.lat, args.lon, args.hwsd_path,
+                           need_sub=hwsd_subsoil_needed(args.soil_depth))
+        top, sub = soil["top"], soil["sub"]
+        provenance = soil["provenance"]
+    elif args.texture_class or args.soil_texture:
+        if args.organic_matter_pct is None or args.bulk_density is None:
+            sys.exit("ERROR: --soil-texture / --texture-class also need --organic-matter-pct and "
+                     "--bulk-density (no default organic matter or density is used)")
+        if args.texture_class:
+            tex = SOIL_TEXTURE_CLASSES[args.texture_class]
+        else:
+            parts = parse_soil_texture(args.soil_texture)
+            missing = [k for k in ("clay", "sand", "silt") if k not in parts]
+            if missing:
+                sys.exit(f"ERROR: --soil-texture lacks {missing}")
+            tex = parts
+        provenance = {"source": f"user values ({'--texture-class ' + args.texture_class if args.texture_class else '--soil-texture'}, "
+                                "--organic-matter-pct, --bulk-density)"}
+        top = {"clay_pct": float(tex["clay"]), "sand_pct": float(tex["sand"]),
+               "silt_pct": float(tex["silt"]), "organic_matter_pct": args.organic_matter_pct,
+               "bulk_density_g_cm3": args.bulk_density}
+        sub = None
     else:
-        # Default loam
-        clay_pct, sand_pct, silt_pct = 20.0, 40.0, 40.0
-        om = HWSD_DEFAULTS["organic_matter"]
+        sys.exit("ERROR: give --soil-source hwsd, --soil-texture or --texture-class "
+                 "(no default loam is used)")
+    clay_pct, sand_pct, silt_pct = top["clay_pct"], top["sand_pct"], top["silt_pct"]
 
-    # Compute hydraulic properties
-    hydraulic_props = compute_hydraulic_properties(clay_pct, sand_pct, om)
+    # Hydraulic properties: HWSD topsoil, plus subsoil only when active layers
+    # use it; user values: one set.
+    hydraulic_props = compute_hydraulic_properties(clay_pct, sand_pct, top["bulk_density_g_cm3"])
+    if args.soil_source == "hwsd":
+        hydraulic_props = {"topsoil": hydraulic_props}
+        if sub is not None:
+            hydraulic_props["subsoil"] = compute_hydraulic_properties(
+                sub["clay_pct"], sub["sand_pct"], sub["bulk_density_g_cm3"])
 
     # Generate soil profile
-    soil_profile = generate_soil_profile(clay_pct, sand_pct, silt_pct,
-                                          args.soil_depth)
+    soil_profile = generate_soil_profile(top, sub, args.soil_depth,
+                                         deep_from_subsoil=args.deep_layers_from_subsoil,
+                                         hwsd=(args.soil_source == "hwsd"))
 
     # Parse PFT distribution
     if args.pft_distribution:
@@ -383,14 +527,17 @@ def main():
     # Generate surface dataset
     dataset = generate_surface_dataset(
         args.lat, args.lon, soil_profile, pft_dist,
-        hydraulic_props, args.output)
+        hydraulic_props, args.output, soil_provenance=provenance)
 
     # Stage 3: Validate outputs
     warnings = validate_outputs(dataset)
+    warnings = list((provenance or {}).get("notes", [])) + warnings
 
     # Print summary
     summary = {
-        "status": "success",
+        # Any warning (substituted HWSD component, failed sanity check) is
+        # shown in the status, not hidden under a plain "success".
+        "status": "success_with_warnings" if warnings else "success",
         "location": {"lat": args.lat, "lon": args.lon},
         "soil": {
             "clay_pct": clay_pct,
@@ -399,6 +546,7 @@ def main():
             "depth_m": args.soil_depth,
         },
         "hydraulic": hydraulic_props,
+        "soil_provenance": provenance,
         "n_active_pfts": len(pft_dist),
         "output_file": args.output,
         "warnings": warnings,

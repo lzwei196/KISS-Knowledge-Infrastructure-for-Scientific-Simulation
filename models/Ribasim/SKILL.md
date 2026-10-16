@@ -431,8 +431,8 @@ A GeoPackage (SQLite + spatial) containing all model data:
 | `Link` | All connections | from_node_id, to_node_id, link_type ("flow"/"control"), geometry (LineString) |
 | `Basin / profile` | Area-level curves | node_id, level (m), area (m²), storage (m³) |
 | `Basin / state` | Initial conditions | node_id, level (m) |
-| `Basin / static` | Constant forcing | node_id, precipitation (m/s), evaporation (m/s), drainage (m³/s), infiltration (m³/s) |
-| `Basin / time` | Time-varying forcing | node_id, time, precipitation (m/s), evaporation (m/s), etc. |
+| `Basin / static` | Constant forcing | node_id, precipitation (m/s), potential_evaporation (m/s), drainage (m³/s), infiltration (m³/s) |
+| `Basin / time` | Time-varying forcing | node_id, time, precipitation (m/s), potential_evaporation (m/s), etc. |
 | `Pump / static` | Pump parameters | node_id, flow_rate (m³/s), min_upstream_level (m) |
 | `TabulatedRatingCurve / static` | Q(h) lookup | node_id, level (m), flow_rate (m³/s) |
 | `LinearResistance / static` | Linear flow | node_id, resistance (s/m²), max_flow_rate (m³/s) |
@@ -700,7 +700,7 @@ model.basin.add(
     [
         ribasim.Basin.Profile(area=[1000, 10000, 50000], level=[0, 5, 10]),
         ribasim.Basin.State(level=[5]),
-        ribasim.Basin.Static(precipitation=[5.787e-8], evaporation=[2.315e-8]),
+        ribasim.Basin.Static(precipitation=[5.787e-8], potential_evaporation=[2.315e-8]),
     ],
 )
 
@@ -779,3 +779,9 @@ ki/
   diagnostics/
     triplets.yaml                   # 18 diagnostic triplets
 ```
+
+### Forcing and execution checks (2026-10-03)
+
+`build_network.py` rejects unknown Basin forcing columns, empty/all-null forcing rows, invalid numeric values, duplicate or unordered times, and missing coverage of the requested period. Each Basin node must be supplied by exactly one of Static or Time, matching the native reader. Omitted optional fluxes retain native NULL semantics; gaps within a supplied series are rejected. Explicit zero fluxes are valid. Use `potential_evaporation`, not `evaporation`.
+
+`run_ribasim.py` requires a zero process exit and newly created or updated required outputs. Existing outputs are retained but cannot satisfy freshness checks unchanged. Batch exit zero requires every model to pass; timeout, process failure, stale outputs, and partial success return nonzero. Reports include session stderr and separate per-model output checks.

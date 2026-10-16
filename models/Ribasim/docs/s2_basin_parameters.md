@@ -76,7 +76,7 @@ Ribasim expects vertical fluxes in **meters per second (m/s)**.
 # Constant forcing (Basin / static)
 ribasim.Basin.Static(
     precipitation=[5.787e-8],  # 5 mm/day in m/s
-    evaporation=[2.315e-8],    # 2 mm/day in m/s
+    potential_evaporation=[2.315e-8],    # 2 mm/day in m/s
     drainage=[0.0],            # m³/s
     infiltration=[0.0],        # m³/s
 )
@@ -85,7 +85,7 @@ ribasim.Basin.Static(
 ribasim.Basin.Time(
     time=["2020-01-01", "2020-02-01", ...],
     precipitation=[5.787e-8, 3.472e-8, ...],  # m/s
-    evaporation=[1.157e-8, 2.315e-8, ...],     # m/s
+    potential_evaporation=[1.157e-8, 2.315e-8, ...],     # m/s
 )
 ```
 
@@ -123,7 +123,7 @@ After conversion, check that values are physically plausible:
 | Negative evaporation | **SILENT** | Treated as condensation — adds water to basin. |
 | Missing profile | Fatal | Ribasim refuses to start without Basin / profile table. |
 | Non-monotonic levels | Fatal | Profile levels must strictly increase. |
-| Forcing gaps | **SILENT** | Missing timesteps interpolated as zero — dry spell artifact. |
+| Forcing gaps | **SILENT** | Supplied missing values are rejected; no zero filling. |
 
 ## Example
 
@@ -139,3 +139,7 @@ era5["evaporation_ms"] = era5["evaporation_mm_day"] / 86_400_000
 assert (era5["precipitation_ms"] < 1e-5).all(), "Precip values too large — check units!"
 assert (era5["precipitation_ms"] >= 0).all(), "Negative precipitation!"
 ```
+
+### Builder validation
+
+CSV Basin fields must use the native names `precipitation`, `potential_evaporation`, `drainage`, `infiltration`, or `surface_runoff`. At least one recognized, finite, nonnegative forcing value is required on every supplied row. Omitted optional fields may remain NULL; a field supplied for a node cannot contain partial gaps. Static and Time cannot both contain the same Basin node (native `core/src/read.jl`, `parse_parameter!`). Time schedules must be ordered, unique per node and cover the requested start/end; the native time-schedule interpolation remains unchanged. No daily cadence is inferred for arbitrary schedules.

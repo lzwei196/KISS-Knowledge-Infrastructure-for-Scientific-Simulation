@@ -160,3 +160,7 @@ print('Variables:', list(ds.data_vars))
 ds.close()
 "
 ```
+
+### Exit status and freshness
+
+The runner snapshots inode, size, modification time and change time of the three required result files before execution. Each must be created or updated by that run and pass output validation; old files are never deleted by this check. A zero process exit alone is insufficient. Batch success requires all models to pass and the session to exit zero. Nonzero exit, timeout, missing/stale outputs or a partial batch returns nonzero and writes `batch_run_report.json` with session stdout/stderr and per-model checks. A failed session cannot certify individual models even when some outputs were written. Use a separate results directory for concurrent runs.

@@ -89,6 +89,42 @@ compression_level = 1
 # ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------
+_TRUE = {"true", "1", "yes"}
+_FALSE = {"false", "0", "no"}
+
+
+def parse_cyclic_time(df: pd.DataFrame) -> tuple[pd.Series, list[str]]:
+    """Read the optional nodes CSV column cyclic_time as strict booleans.
+
+    No column -> all False (Ribasim's own default, as in the shipped model).
+    A blank or unknown value is an error: it is never guessed. Note that
+    plain ``astype(bool)`` would turn the text "False" or a blank (NaN)
+    into True, so it is not used.
+    """
+    if "cyclic_time" not in df.columns:
+        return pd.Series(False, index=df.index), []
+    flags, bad = [], []
+    for nid, value in zip(df.get("node_id", df.index), df["cyclic_time"]):
+        if isinstance(value, (bool, np.bool_)):
+            flags.append(bool(value))
+            continue
+        text = "" if pd.isna(value) else str(value).strip().lower()
+        if text.endswith(".0"):
+            text = text[:-2]
+        if text in _TRUE:
+            flags.append(True)
+        elif text in _FALSE:
+            flags.append(False)
+        else:
+            flags.append(False)
+            bad.append(nid)
+    errors = []
+    if bad:
+        errors.append(f"cyclic_time must be true/false (or 1/0) for every node; "
+                      f"blank or invalid for node_ids {bad}")
+    return pd.Series(flags, index=df.index, dtype=bool), errors
+
+
 def validate_nodes_csv(df: pd.DataFrame) -> list[str]:
     """Validate node CSV input. Returns list of error messages."""
     errors = []
@@ -114,6 +150,7 @@ def validate_nodes_csv(df: pd.DataFrame) -> list[str]:
         if not pd.to_numeric(df[col], errors="coerce").notna().all():
             errors.append(f"Non-numeric values in column '{col}'")
 
+    errors.extend(parse_cyclic_time(df)[1])
     return errors
 
 
@@ -192,11 +229,7 @@ def build_node_geodataframe(df: pd.DataFrame, crs: str) -> gpd.GeoDataFrame:
                 if "route_priority" in df.columns
                 else pd.array([pd.NA] * len(df), dtype="Int32")
             ),
-            "cyclic_time": (
-                df["cyclic_time"].astype(bool)
-                if "cyclic_time" in df.columns
-                else False
-            ),
+            "cyclic_time": parse_cyclic_time(df)[0].values,
         },
         geometry=geometry,
         crs=crs,
@@ -349,6 +382,44 @@ def validate_param_table(kind: str, df: pd.DataFrame) -> list[str]:
         errors.append(f"{kind}: missing required columns {missing}")
         return errors
 
+    if df.empty:
+        return [f"{kind}: table is empty"]
+    if kind in ("basin_static", "basin_time"):
+        forcing = spec["allowed_forcing"] & set(df.columns)
+        unknown = set(df.columns) - spec["required"] - spec["allowed_forcing"]
+        if unknown:
+            errors.append(f"{kind}: unknown columns {sorted(unknown)}; use potential_evaporation for evaporation")
+        if not forcing:
+            errors.append(f"{kind}: at least one recognized forcing column is required")
+        ids = pd.to_numeric(df["node_id"], errors="coerce")
+        if not (np.isfinite(ids) & (ids > 0) & (ids % 1 == 0)).all():
+            errors.append(f"{kind}: node_id must be a positive integer")
+        for col in forcing:
+            values = pd.to_numeric(df[col], errors="coerce")
+            # NULL is allowed for an omitted optional flux. A supplied
+            # series must be complete for each node; partial gaps are not filled.
+            invalid = df[col].notna() & (~np.isfinite(values) | (values < 0))
+            if invalid.any():
+                errors.append(f"{kind}: {col} must contain finite nonnegative numbers")
+            for nid, group in df.groupby("node_id"):
+                if group[col].notna().any() and group[col].isna().any():
+                    errors.append(f"{kind}: node {nid} has missing {col} values")
+        if forcing and df[sorted(forcing)].isna().all(axis=1).any():
+            errors.append(f"{kind}: row contains no forcing values")
+        if kind == "basin_static" and df.node_id.duplicated().any():
+            errors.append(f"{kind}: duplicate node_id")
+        if kind == "basin_time":
+            times = pd.to_datetime(df.time, errors="coerce")
+            if times.isna().any():
+                errors.append(f"{kind}: invalid or missing time")
+            else:
+                for nid, group in df.groupby("node_id"):
+                    t = times.loc[group.index]
+                    if t.duplicated().any() or not t.is_monotonic_increasing:
+                        errors.append(f"{kind}: node {nid} times must be strictly increasing")
+        if errors:
+            return errors
+
     if "evaporation" in df.columns:
         errors.append(
             f"{kind}: column 'evaporation' is not in the Ribasim 2026.1.0-rc2 "
@@ -358,7 +429,7 @@ def validate_param_table(kind: str, df: pd.DataFrame) -> list[str]:
     # Unit sanity for vertical fluxes (must be m/s; dt_001/dt_002)
     for col in ("precipitation", "potential_evaporation"):
         if col in df.columns and df[col].notna().any():
-            vmax = df[col].max()
+            vmax = pd.to_numeric(df[col]).max()
             if vmax > 1e-5:
                 errors.append(
                     f"{kind}: {col} max = {vmax:.2e} — Ribasim expects m/s "
@@ -385,9 +456,71 @@ def validate_param_table(kind: str, df: pd.DataFrame) -> list[str]:
     return errors
 
 
+def validate_basin_forcing(nodes, tables, starttime, endtime):
+    """Validate node references and period coverage using the native schema.
+
+    Ribasim selects Static OR Time for each Basin node (read.jl
+    parse_parameter!), not separately for each flux. Optional flux columns
+    may remain NULL, but a supplied row must contain actual forcing values.
+    """
+    errors = []
+    basin_ids = set(nodes.loc[nodes.node_type == "Basin", "node_id"])
+    cyclic_flags, flag_errors = parse_cyclic_time(nodes)
+    if flag_errors:
+        return flag_errors
+    cyclic = set(nodes.loc[cyclic_flags.values, "node_id"])
+    source = {kind: df for kind, df in tables if kind.startswith("basin_")}
+    start, end = pd.Timestamp(starttime), pd.Timestamp(endtime)
+    if end <= start:
+        return ["endtime must be after starttime"]
+    for kind, df in source.items():
+        errors.extend(validate_param_table(kind, df))
+        unknown = set(df.node_id) - basin_ids
+        if unknown:
+            errors.append(f"{kind}: forcing references non-Basin nodes {sorted(unknown)}")
+    if errors:
+        return errors
+    for nid in sorted(basin_ids):
+        sources = []
+        for kind, df in source.items():
+            group = df[df.node_id == nid]
+            if not group.empty:
+                sources.append(kind)
+                if kind == "basin_time" and nid in cyclic:
+                    # cyclic_time = true: Ribasim repeats the series with
+                    # period (last time - first time) (read.jl
+                    # get_parameter_value / util.jl
+                    # filtered_constant_interpolation, extrapolation =
+                    # Periodic), so it need not cover the run. Native rules
+                    # (validation.jl valid_time_interpolation): >= 2 points
+                    # and, for each supplied flux, first value == last value.
+                    # order by PARSED time (text order is wrong for e.g. 1/9, 1/10)
+                    group = group.assign(_t=pd.to_datetime(group.time)).sort_values("_t", kind="stable")
+                    if len(group) < 2:
+                        errors.append(f"Basin {nid}: cyclic_time series needs at least 2 time points")
+                    for col in sorted(PARAM_TABLE_SPECS[kind]["allowed_forcing"] & set(group.columns)):
+                        values = pd.to_numeric(group[col])
+                        if values.notna().any() and values.iloc[0] != values.iloc[-1]:
+                            errors.append(
+                                f"Basin {nid}: cyclic_time series {col} first value "
+                                f"{values.iloc[0]} != last value {values.iloc[-1]} "
+                                "(Ribasim requires them equal)")
+                elif kind == "basin_time":
+                    times = pd.to_datetime(group.time)
+                    if times.min() > start or times.max() < end:
+                        errors.append(f"Basin {nid}: time series does not cover {starttime} through {endtime}")
+        if len(sources) != 1:
+            errors.append(f"Basin {nid}: forcing must be supplied in exactly one of static/time; found {sources}")
+    return errors
+
+
 def write_param_table(gpkg_path: Path, kind: str, df: pd.DataFrame) -> str:
     """Write one parameter table into the GeoPackage. Returns the table name."""
     import sqlite3
+
+    errors = validate_param_table(kind, df)
+    if errors:
+        raise ValueError("; ".join(errors))
 
     spec = PARAM_TABLE_SPECS[kind]
     table = spec["table"]
@@ -452,11 +585,14 @@ def main():
     parser.add_argument("--basin_profile_csv", help="CSV with node_id, level, area")
     parser.add_argument("--basin_state_csv", help="CSV with node_id, level")
     parser.add_argument("--basin_static_csv",
-                        help="CSV -> 'Basin / static' (node_id, precipitation, "
-                             "potential_evaporation, ... all fluxes in m/s)")
+                        help="CSV -> 'Basin / static' (node_id, precipitation [m/s], "
+                             "potential_evaporation [m/s], drainage [m3/s], "
+                             "infiltration [m3/s], surface_runoff [m3/s])")
     parser.add_argument("--basin_time_csv",
-                        help="CSV -> 'Basin / time' (node_id, time, precipitation, "
-                             "potential_evaporation, ... all fluxes in m/s)")
+                        help="CSV -> 'Basin / time' (node_id, time, precipitation [m/s], "
+                             "potential_evaporation [m/s], drainage [m3/s], "
+                             "infiltration [m3/s], surface_runoff [m3/s]; set "
+                             "cyclic_time in the nodes CSV to repeat a series)")
     parser.add_argument("--rating_curve_csv",
                         help="CSV -> 'TabulatedRatingCurve / static' "
                              "(node_id, level [m], flow_rate [m3/s])")
@@ -476,8 +612,6 @@ def main():
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "results").mkdir(exist_ok=True)
 
     # --- Step 1: Input validation ---
     print("[1/4] Validating inputs...")
@@ -531,6 +665,13 @@ def main():
                 sys.exit(1)
             param_tables.append((kind, pdf))
 
+    errors = validate_basin_forcing(nodes_df, param_tables, args.starttime, args.endtime)
+    if errors:
+        print("ERROR: Basin forcing validation failed:")
+        for error in errors:
+            print(f"  - {error}")
+        sys.exit(1)
+
     print(f"  Nodes: {len(nodes_df)}, Links: {len(links_df)}")
 
     # --- Step 2: Build GeoDataFrames ---
@@ -540,6 +681,8 @@ def main():
 
     # --- Step 3: Write outputs ---
     print("[3/4] Writing GeoPackage and TOML...")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "results").mkdir(exist_ok=True)
     gpkg_path = write_geopackage(output_dir, node_gdf, link_gdf, basin_profile_df, basin_state_df)
     for kind, pdf in param_tables:
         table = write_param_table(gpkg_path, kind, pdf)

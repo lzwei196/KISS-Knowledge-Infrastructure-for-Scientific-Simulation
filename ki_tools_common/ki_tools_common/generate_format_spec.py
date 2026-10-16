@@ -10,7 +10,7 @@ import argparse, sys, datetime as dt
 from pathlib import Path
 import yaml
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
-from ki_vocabulary import canonical_key   # symptom/diagnosis/remedy synonym resolution
+from ki_tools_common.verification.ki_vocabulary import canonical_key
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ki_projection_common import (SourceShapeError, entry_name, observability, split_reason_items,
                                   read_triplet_entries)
@@ -26,13 +26,16 @@ def _trip_field(t, concept):
     return None
 
 def _flat(x):
+    # Full text, never shortened: a fixed-length cut split paths mid-token (a split server path cannot
+    # be turned into a KISSPATH token by kiss_cli.port, and a half filename misleads), and no rule for
+    # "where does a path end" survived review. Readers that need a short view (ki_attention) cut themselves.
     _SKIP={"error_pattern","detection_method","regex","pattern"}
     if isinstance(x, dict):
         # kimi #5: non-string sub-values are stringified, not silently dropped
-        return "; ".join(str(v) for k, v in x.items() if k not in _SKIP)[:300] or None
+        return "; ".join(str(v) for k, v in x.items() if k not in _SKIP) or None
     if isinstance(x, list):
-        return "; ".join(str(v) for v in x)[:300] or None
-    return (str(x)[:300] if x is not None else None)
+        return "; ".join(str(v) for v in x) or None
+    return (str(x) if x is not None else None)
 
 def build(ki: Path) -> dict:
     dag = yaml.safe_load((ki / "dag.yaml").read_text()) or {}

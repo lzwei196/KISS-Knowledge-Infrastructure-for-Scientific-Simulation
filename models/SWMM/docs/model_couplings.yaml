@@ -146,3 +146,4 @@ couplings:
     tool: "convert_swmm_outflow_to_cama_lateral"
     silent_error_risk: "MEDIUM — CFS/CMS conversion error is detectable from flow magnitude"
     related_triplet: "dt_010"
+

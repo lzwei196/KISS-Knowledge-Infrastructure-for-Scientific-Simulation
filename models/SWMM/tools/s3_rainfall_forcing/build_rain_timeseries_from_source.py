@@ -112,14 +112,16 @@ def interval_string(timestep_seconds):
     return f"{ts // 3600}:{(ts % 3600) // 60:02d}"
 
 
-def load_points(source, points, start_year, end_year, forcing_dir=None):
-    """Half 1: one standard series per point, through the shared loader."""
+def load_points(source, points, start_year, end_year, forcing_dir=None, period=None):
+    """Half 1: one standard series per point, through the shared loader.
+    period=(start, end), end included, limits the completeness check to the
+    days the rain file keeps (see cut_period)."""
     from ki_tools_common.load_forcing import load_hourly_forcing
 
     out = []
     for lat, lon in points:
         out.append(load_hourly_forcing(source, lat, lon, start_year, end_year,
-                                       forcing_dir=forcing_dir))
+                                       forcing_dir=forcing_dir, period=period))
     return out
 
 
@@ -331,7 +333,8 @@ def main():
           f"{args.start_date} to {args.end_date}...")
     try:
         series_list = load_points(args.source, points, start_date.year, end_date.year,
-                                  forcing_dir=args.forcing_dir)
+                                  forcing_dir=args.forcing_dir,
+                                  period=(start_date, end_date))
     except Exception as e:
         print(f"ERROR: {args.source} could not give {start_date.year}-{end_date.year} "
               f"at {points}: {type(e).__name__}: {e}\nNothing written.", file=sys.stderr)

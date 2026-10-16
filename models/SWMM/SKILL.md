@@ -540,44 +540,36 @@ Where `cell_area` is the VIC grid cell area in m2. For a 0.25-degree cell at 30N
 
 ## Quick-Start Example Workflow
 
-```python
+The tools are command-line scripts; run each with `--help` to see its options.
+
+```bash
 # 1. Install dependencies
 # pip install pyswmm swmm-api
 
-# 2. Create a minimal INP file (use tools or write manually)
-from tools.s5_model_assembly.assemble_inp_file import assemble_inp
-assemble_inp(
-    subcatchment_data="outputs/run/subcatchments.csv",
-    network_data_dir="outputs/run/network/",
-    rainfall_data_dir="outputs/run/rainfall/",
-    options={"FLOW_UNITS": "CMS", "INFILTRATION": "HORTON", "ROUTING_MODEL": "DYNWAVE"},
-    output_inp="outputs/run/model.inp"
-)
+# 2. Assemble the INP file from component CSV/JSON files
+python tools/s5_model_assembly/assemble_inp_file.py \
+  --subcatchments outputs/run/subcatchments.csv \
+  --junctions outputs/run/network/junctions.csv \
+  --conduits outputs/run/network/conduits.csv \
+  --outfalls outputs/run/network/outfalls.csv \
+  --xsections outputs/run/network/xsections.csv \
+  --raingages outputs/run/rainfall/raingages.json \
+  --timeseries outputs/run/rainfall/rain.dat \
+  --options outputs/run/options.json \
+  --output outputs/run/model.inp
 
 # 3. Validate the INP file
-from tools.s5_model_assembly.validate_inp_file import validate
-report = validate("outputs/run/model.inp")
-assert report["errors"] == 0
+python tools/s5_model_assembly/validate_inp_file.py --inp outputs/run/model.inp
 
-# 4. Run simulation
-from pyswmm import Simulation
-with Simulation("outputs/run/model.inp") as sim:
-    for step in sim:
-        pass  # SWMM runs step by step
+# 4. Run the simulation (non-zero exit on engine error or bad continuity)
+python tools/s6_execution/run_swmm.py --inp outputs/run/model.inp
 
-# 5. Check continuity errors
-from tools.s6_execution.check_continuity_errors import check
-errors = check("outputs/run/model.rpt")
-print(f"Runoff error: {errors['runoff_pct']:.2f}%")
-print(f"Routing error: {errors['routing_pct']:.2f}%")
+# 5. Check continuity errors (JSON on stdout, exit 1 on FAIL)
+python tools/s6_execution/check_continuity_errors.py --rpt outputs/run/model.rpt
 
-# 6. Extract results
-from tools.s6_execution.extract_results import extract
-extract(
-    out_file="outputs/run/model.out",
-    extract_config={"nodes": ["OF1"], "system": True},
-    output_dir="outputs/run/results/"
-)
+# 6. Extract time series for chosen elements
+python tools/s6_execution/extract_results.py \
+  --out outputs/run/model.out --nodes OF1 --output_dir outputs/run/results/
 ```
 
 ---

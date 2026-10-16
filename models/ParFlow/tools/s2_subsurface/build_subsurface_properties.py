@@ -138,6 +138,53 @@ def dominant_hwsd_rows(df):
             .set_index("MU_GLOBAL"))
 
 
+class NoHwsdSoil(ValueError):
+    """A point has no usable HWSD topsoil texture (the message says why)."""
+
+
+def load_hwsd_dominant(hydrocraft_root=None):
+    """Dominant HWSD_DATA.csv row per mapping unit (see dominant_hwsd_rows).
+    Missing CSV is an error (no stand-in soil)."""
+    import pandas as pd
+    root = hydrocraft_root or HYDROCRAFT_ROOT
+    hwsd_csv = os.path.join(root, "data/soil/HWSD_DATA.csv")
+    if not os.path.exists(hwsd_csv):
+        raise FileNotFoundError(f"HWSD_DATA.csv not found at {hwsd_csv}")
+    return dominant_hwsd_rows(pd.read_csv(hwsd_csv, low_memory=False))
+
+
+def sample_hwsd_topsoil(hwsd_src, hwsd_dom, lon, lat):
+    """Topsoil (T_SAND, T_SILT, T_CLAY) in percent at one lon/lat, from the
+    HWSD raster mapping unit and its dominant HWSD_DATA row.
+    Returns (dict with T_SAND/T_SILT/T_CLAY, mu_id). Raises NoHwsdSoil when
+    the point has no texture: outside the raster, no mapping unit (e.g.
+    water), unit not in the CSV, or no topsoil sand/silt/clay. Shared by s2
+    (hydraulic classes) and s4 (CLM sand/clay in drv_vegm.dat) so both read
+    the same soil."""
+    try:
+        row, col = hwsd_src.index(lon, lat)
+        if not (0 <= row < hwsd_src.height and 0 <= col < hwsd_src.width):
+            raise ValueError(f"outside the HWSD raster (row {row}, col {col})")
+        mu_id = int(hwsd_src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
+    except Exception as exc:
+        raise NoHwsdSoil(f"raster sampling failed: {exc}") from exc
+    if mu_id <= 0 or (hwsd_src.nodata is not None and mu_id == hwsd_src.nodata):
+        raise NoHwsdSoil(f"no HWSD mapping unit (value {mu_id})")
+    if mu_id not in hwsd_dom.index:
+        raise NoHwsdSoil(f"MU_GLOBAL {mu_id} not in HWSD_DATA.csv")
+    r = hwsd_dom.loc[mu_id]
+    fr = {k: r.get(k) for k in ("T_SAND", "T_SILT", "T_CLAY")}
+    try:
+        vals = {k: float(v) for k, v in fr.items()}
+    except (TypeError, ValueError):
+        vals = None
+    if (vals is None or not all(np.isfinite(v) for v in vals.values())
+            or sum(vals.values()) <= 0):
+        raise NoHwsdSoil(f"MU_GLOBAL {mu_id} dominant row (SEQ {r.get('SEQ')}, "
+                         f"ISSOIL {r.get('ISSOIL')}) has no topsoil texture {fr}")
+    return vals, mu_id
+
+
 def validate_inputs(domain_json, mask_npy):
     errors = []
     if not os.path.exists(domain_json):
@@ -228,30 +275,9 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
                 # Sample HWSD. Any failure is recorded for this cell; the
                 # tool stops after the loop (no stand-in texture).
                 try:
-                    row, col = hwsd_src.index(lon, lat)
-                    if not (0 <= row < hwsd_src.height and 0 <= col < hwsd_src.width):
-                        raise ValueError(f"outside the HWSD raster (row {row}, col {col})")
-                    mu_id = int(hwsd_src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
-                except Exception as exc:
-                    failures.append((i, j, lon, lat, in_mask, f"raster sampling failed: {exc}"))
-                    continue
-                if mu_id <= 0 or (hwsd_src.nodata is not None and mu_id == hwsd_src.nodata):
-                    failures.append((i, j, lon, lat, in_mask, f"no HWSD mapping unit (value {mu_id})"))
-                    continue
-                if mu_id not in hwsd_dom.index:
-                    failures.append((i, j, lon, lat, in_mask, f"MU_GLOBAL {mu_id} not in HWSD_DATA.csv"))
-                    continue
-                r = hwsd_dom.loc[mu_id]
-                fr = {k: r.get(k) for k in ("T_SAND", "T_SILT", "T_CLAY")}
-                try:
-                    vals = {k: float(v) for k, v in fr.items()}
-                except (TypeError, ValueError):
-                    vals = None
-                if (vals is None or not all(np.isfinite(v) for v in vals.values())
-                        or sum(vals.values()) <= 0):
-                    failures.append((i, j, lon, lat, in_mask,
-                                     f"MU_GLOBAL {mu_id} dominant row (SEQ {r.get('SEQ')}, "
-                                     f"ISSOIL {r.get('ISSOIL')}) has no topsoil texture {fr}"))
+                    vals, _mu = sample_hwsd_topsoil(hwsd_src, hwsd_dom, lon, lat)
+                except NoHwsdSoil as exc:
+                    failures.append((i, j, lon, lat, in_mask, str(exc)))
                     continue
                 texture = classify_soil_texture(vals["T_SAND"], vals["T_SILT"], vals["T_CLAY"])
 

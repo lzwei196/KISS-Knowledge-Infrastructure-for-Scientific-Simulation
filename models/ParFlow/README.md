@@ -282,7 +282,10 @@ python tools/s4_clm/setup_clm_driver.py \
   --domain_json outputs/parflow_chaohe/domain/domain_definition.json \
   --surface_mask_npy outputs/parflow_chaohe/domain/surface_mask.npy \
   --start_date 2005-01-01 --end_date 2005-12-31 \
+  --soil_color N \
   --output_dir outputs/parflow_chaohe/clm/
+# --soil_color is required (CLM class 1-8, picks bare-soil albedo). No soil-colour map is
+# available, so the value is your stated assumption; it is recorded in clm_provenance.json.
 
 # 6. Initial conditions (hydrostatic, WTD=5m)
 python tools/s6_ic_bc/generate_initial_conditions.py \

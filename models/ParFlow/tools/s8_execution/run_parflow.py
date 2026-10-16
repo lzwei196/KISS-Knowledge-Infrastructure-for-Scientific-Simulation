@@ -101,6 +101,7 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
     # only if it is new or changed (mtime_ns / size / inode) during this
     # invocation, so old outputs in a reused folder never make a success.
     out_patterns = {k: f"{run_name}.out.{k}.*.pfb" for k in ("press", "satur", "clm_output")}
+    out_patterns["clm_var"] = f"{run_name}.out.qflx_evap_tot.*.pfb"
 
     def _sig(f):
         st = os.stat(f)
@@ -156,6 +157,11 @@ def process(run_dir, run_name, nprocs=1, method="python", timeout_hours=48):
     press_files, stale_press = _fresh(out_patterns["press"])
     satur_files, _ = _fresh(out_patterns["satur"])
     clm_files, _ = _fresh(out_patterns["clm_output"])
+    if not clm_files:
+        # ParFlow 3.13 with PrintCLM writes one file per CLM variable
+        # (<run>.out.qflx_evap_tot.NNNNN.pfb ...) instead of clm_output.*;
+        # count those dumps (one per dump time) so CLM output is reported.
+        clm_files, _ = _fresh(f"{run_name}.out.qflx_evap_tot.*.pfb")
     kinsol_log = os.path.join(run_dir, f"{run_name}.out.kinsol.log")
 
     # Parse kinsol.log for convergence stats

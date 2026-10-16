@@ -74,6 +74,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Data Sources**: Use `from ki_tools_common.soil_utils import lookup_hwsd` for soil properties.
 Note: `tools/s2_subsurface/build_subsurface_properties.py` does not use `lookup_hwsd`; it reads `hwsd.bil` and `HWSD_DATA.csv` directly (dominant component = largest SHARE) and stops (no default or fill texture) when any cell of the rectangular grid, inside or outside the basin mask, has no HWSD texture. The run script uses Box geometry, so every cell of the rectangle is simulated.
 
+**Every cell of the Box gets real data (2026-10-16).** Because the run script uses Box geometry (no SolidFile; `pfmask-to-pfsol` is not built on this server: it needs `tcl-dev` and a ParFlow rebuild with `PARFLOW_ENABLE_TOOLS=ON`), ParFlow and CLM simulate every cell of the rectangle. So every per-cell input is real data for every cell, inside and outside the basin mask: s2 soil (HWSD), s3 DEM slopes (no zero slopes outside, no DEM gap fill), s4 CLM land cover (AVHRR->IGBP, no water/grassland default) and topsoil sand/clay (HWSD, same reader as s2; the old fixed 0.40/0.20 is gone), s6 initial pressure. Any cell without data stops the tool with a clear error. The basin mask only selects what s9 reports. s4 needs `--soil_color N` (CLM class 1-8, no default): there is no soil-colour map on the server, so this one value is a stated user assumption, recorded in the tool output and `clm_provenance.json`. s3 rows are south-first (j = 0 = south) like every other tool; s3/s6 outputs made before 2026-10-16 were mirrored north-south and must be rebuilt.
+
 ### Forcing data
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
@@ -149,7 +151,7 @@ Exact I/O shapes live in `docs/format_spec.yaml`. Use this unit table as the BOD
 | Hydraulic conductivity `K` | `m/day` | `m/hr` | `K_m_hr = K_m_day / 24` | `dt_pf_001`; critical domain knowledge |
 | Hydraulic conductivity `K` | `m/s` | `m/hr` | `K_m_hr = K_m_s * 3600` | `dt_pf_001`; critical domain knowledge |
 | van Genuchten `alpha` | `1/cm` | `1/m` | multiply by `100` | `dt_pf_005`; critical domain knowledge |
-| CLM precipitation | `mm/hr` | `mm/s` | divide by `3600` | `dt_pf_002`; critical domain knowledge |
+| CLM precipitation | `mm/hr` | `mm/s` | divide by `3600` (a CMFD V2.0 rate in `kg m-2 s-1` is already mm/s: no conversion) | `dt_pf_002`; critical domain knowledge |
 | CLM temperature | `K` | `K` | no conversion; verify before processing | `dt_pf_006`; critical domain knowledge |
 | Pressure | `Pa` | `m of water` | divide by `9810` | `dt_pf_004`; critical domain knowledge |
 | Pressure | `kPa` | `m of water` | divide by `9.81` | `dt_pf_004`; critical domain knowledge |
@@ -285,7 +287,7 @@ Negative = unsaturated (suction/tension). Positive = saturated (positive pore pr
 
 ### 4. CLM precipitation is mm/s, NOT mm/hr (dt_pf_002)
 
-CLM expects rain rate in mm/s (= kg/m2/s). CMFD provides mm/hr. Must divide by 3600. Using mm/hr directly gives 3600x too much rain -- the model floods instantly with no error.
+CLM expects rain rate in mm/s (= kg/m2/s). The CMFD V2.0 store on this server gives `prec` in kg m-2 s-1 (see data_ki/CMFD/SKILL.md), which is already mm/s; a source in mm/hr must be divided by 3600. Read the file's `units` attribute: `convert_forcing_to_pfb.py` now picks the factor from it and stops on an unknown unit. (Before 2026-10-16 it always divided CMFD prec by 3600, so CMFD-forced runs got 3600x too little rain; rebuild their forcing. It also missed the SRad/LRad/SHum folders.) s5 writes `forcing_conversion.json` in its output folder and refuses to reuse chunks with no stamp or a different stamp, so old wrong chunks are never kept as "already done": rebuild into a fresh `--output_dir`. Using mm/hr directly gives 3600x too much rain -- the model floods instantly with no error.
 
 ### 5. CLM temperature is Kelvin, NOT Celsius (dt_pf_006)
 
@@ -401,6 +403,7 @@ python tools/s4_clm/setup_clm_driver.py \
   --domain_json outputs/parflow_chaohe/domain/domain_definition.json \
   --surface_mask_npy outputs/parflow_chaohe/domain/surface_mask.npy \
   --start_date 2005-01-01 --end_date 2005-12-31 \
+  --soil_color N \
   --output_dir outputs/parflow_chaohe/clm/
 
 # 6. Initial conditions (hydrostatic, WTD=5m)

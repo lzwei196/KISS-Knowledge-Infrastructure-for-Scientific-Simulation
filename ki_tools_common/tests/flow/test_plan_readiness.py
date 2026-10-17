@@ -15,6 +15,7 @@ def documents(tmp_path):
     pj = {"schema_version": "1.0", "goal": "Validate water balance", "selected_kis": ["M"],
           "created_at": "2026-10-01", "unresolved_questions": [], "scientific_choices": [],
           "steps": [{"id": "run", "ki": "M", "tool": str(tool), "kind": "run",
+                     "command": [], "cwd": ".",
                      "inputs": ["forcing"], "outputs": ["q"], "status": "planned"}]}
     inv = {"schema_version": "1.0", "items": [
         {"id": "forcing", "required_by": ["M"], "status": "resolved", "local_paths": [],

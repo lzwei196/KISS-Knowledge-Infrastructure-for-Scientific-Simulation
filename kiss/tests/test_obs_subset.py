@@ -227,6 +227,7 @@ def test_subset_binds_to_approved_inventory_without_mutating_plan(tmp_path, monk
     if download_first:
         s.download(project, ident, client=c)
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     inventory['items'][0].update(dataset_id=BODY['dataset_id'], acquisition_id=ident)
     assert fs.write_plan(plan, inventory) == []
     fs.flow.approval.approve(project, by='user')
@@ -429,6 +430,7 @@ def test_plan_approval_starts_clip_jobs_and_execution_self_heals(tmp_path, monke
     c = client(json_response(EST), json_response({'job_id': 'job-A'}))
     a = s.estimate(project, BODY, client=c)
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     inventory['items'][0].update(dataset_id=BODY['dataset_id'], acquisition_id=a['id'])
     assert fs.write_plan(plan, inventory) == []
     fs.flow.approval.approve(project, by='user')

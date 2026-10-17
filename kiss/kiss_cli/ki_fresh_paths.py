@@ -1,7 +1,7 @@
 """Strict fresh-KI path projections; never retained maintenance or readiness.
 
-The existing retained path contract is imported unchanged so new fresh-copy
-policy does not revoke already adopted maintenance evidence.
+Fresh and retained repairs share the strict source recognizer, while their
+proof scopes and policy identities remain distinct.
 """
 from __future__ import annotations
 import ast
@@ -13,7 +13,7 @@ import re
 import sys
 
 from . import ki_path_contracts as retained
-from .ki_path_contracts import (PREFLIGHT, MANIFEST, RUNNER, OLD_AST_SHA256,
+from .ki_path_contracts import (PREFLIGHT, MANIFEST, RUNNER, PREFLIGHT_AST_SHA256S,
     RUNNER_AST_SHA256, _CHANGED_NAMES, _ordinary, _inputs, _target, _recognized,
     _replace_rhs, _manifest, _helper_config, _config_values, _file_identity,
     _ast_value, _assignments, _hash, config_identity, projection_config)
@@ -60,7 +60,7 @@ def expected_fresh_changes(base, name, cfg, *, target_root):
         return {}
     target = _target(cfg, target_root)
     inputs = _fresh_inputs(base, cfg)
-    _, tree = _recognized(inputs[PREFLIGHT], cfg)
+    _, tree, _ = _recognized(inputs[PREFLIGHT], cfg)
     return {PREFLIGHT: _replace_rhs(inputs[PREFLIGHT], tree, cfg),
             MANIFEST: _manifest(inputs[MANIFEST], cfg, target)}
 
@@ -144,7 +144,7 @@ def validate_fresh_projection(base, candidate, cfg, *, target_root, ordinary_dig
         wanted[name] = {"kind": "file", "bytes": len(value), "sha256": hashlib.sha256(value).hexdigest()}
     if tree_files(candidate) != wanted:
         raise ValueError("Fresh path overlay changed files outside its exact two-file scope")
-    before = ast.parse(inputs[PREFLIGHT].decode("utf-8"))
+    _, before, recognized = _recognized(inputs[PREFLIGHT], cfg)
     after = ast.parse(changes[PREFLIGHT].decode("utf-8"))
     old_names = _assignments(before)
     for name, node in _assignments(after).items():
@@ -160,7 +160,7 @@ def validate_fresh_projection(base, candidate, cfg, *, target_root, ordinary_dig
             "ordinary_files": ordinary_files,
             "runtime": _fresh_runtime(cfg), "model_execution": False, "native_execution": False,
             "scientific_validation": False, "preflight_passed": False,
-            "recognized_ast_sha256": OLD_AST_SHA256, "runner_ast_sha256": RUNNER_AST_SHA256,
+            "recognized_ast_sha256": recognized, "runner_ast_sha256": RUNNER_AST_SHA256,
             "unchanged_decisions_sha256": _hash(_ast_value(before)),
             "source_files": {name: hashlib.sha256(_ordinary(base / name)).hexdigest()
                              for name in (PREFLIGHT, MANIFEST, RUNNER)},
@@ -173,7 +173,8 @@ def require_fresh_current(report, *, candidate_root=None):
     if (not isinstance(report, dict) or report.get("ok") is not True
             or report.get("policy") != FRESH_POLICY or report.get("policy_sha256") != source_digest()
             or report.get("scope") != "fresh_path_projection" or report.get("runtime_bound") is not False
-            or report.get("recognized_ast_sha256") != OLD_AST_SHA256
+            or not isinstance(report.get("recognized_ast_sha256"), str)
+            or report.get("recognized_ast_sha256") not in PREFLIGHT_AST_SHA256S
             or report.get("runner_ast_sha256") != RUNNER_AST_SHA256
             or any(report.get(key) is not False for key in
                    ("model_execution", "native_execution", "scientific_validation", "preflight_passed"))):

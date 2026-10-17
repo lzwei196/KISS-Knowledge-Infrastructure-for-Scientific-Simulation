@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 import textwrap
@@ -30,6 +31,19 @@ PCSE_PINS = {
     "settings/__init__.py": "e33eb2fdce4d950b954f44f14f0f3c551997b544abe8a34d23087116b7297050",
     "settings/default_settings.py": "355d4b0a133e89107744dae71453ef70bf1711272f1595dff14e0b06a17d0684",
     "util.py": "fdaf896a9a2c95782904607d83c93522dc2288028665e7acb91280df8a34b6dc",
+}
+# Source hashes independently checked against the published PyPI wheels, not
+# learned from an installed environment. Each supported release stays pinned.
+PCSE_RELEASES = {
+    "6.0.12": {
+        "wheel_sha256": "4ac170a4b7f06025590ef94677c07582c4a88b8fada4d4c189827d2b4cae34e4",
+        "pins": {**PCSE_PINS, "__init__.py":
+                 "65f57b96eb0365a12406cc1bb364928c57c11c6aa95f24780d24620eedbbd2d7"},
+    },
+    "6.0.13": {
+        "wheel_sha256": "f70c4e826d12bba4134a6f1215ecbababd22de34e42d0703cc3a1d6e787dfef0",
+        "pins": dict(PCSE_PINS),
+    },
 }
 _OLD_BLOCK = """    # PCSE 6.0+: CO2 no longer accepted by SiteDataProvider; handled internally
     # via crop CO2 tables (dt_v002). Use WAV only.
@@ -146,11 +160,30 @@ sys.pycache_prefix = str(scratch / "unused-pycache")  # do not read installed .p
 assert Path.home().resolve() == scratch
 assert sys.flags.isolated and sys.flags.no_site and sys.flags.dont_write_bytecode
 assert sys.version_info[:2] == (3, 12), "Reviewed fixtures require Python 3.12"
-site = Path(sysconfig.get_path("purelib")).resolve()
+assert Path(sys.executable).resolve() == Path(payload["python"]).resolve()
+venv = payload["venv_binding"]
+if venv is not None:
+    assert venv["version"] == ".".join(str(n) for n in sys.version_info[:3]), "Selected virtualenv Python version differs"
+    config = venv["config"]
+    assert Path(config["path"]).resolve() == Path(config["resolved_path"])
+    assert hashlib.sha256(Path(config["path"]).read_bytes()).hexdigest() == config["sha256"]
+    assert Path(sys._base_executable).resolve() == Path(venv["base_python"]["resolved_path"])
+    assert Path(sys._base_executable).resolve().parent == Path(venv["home"])
+    assert Path(sys.base_prefix).resolve() != Path(venv["root"])
+    # Python 3.12 -S leaves the base prefix active. Explicit scheme variables
+    # select this venv's packages without invoking site or processing .pth files.
+    site = Path(sysconfig.get_path("purelib", vars={
+        "base": venv["root"], "platbase": venv["root"]})).resolve()
+    assert site == Path(venv["site_packages"])
+    sys.prefix = sys.exec_prefix = venv["root"]
+else:
+    site = Path(sysconfig.get_path("purelib")).resolve()
 assert site.is_dir(), "Selected runtime has no installed site-packages"
 assert site not in (scratch, Path(payload["base"]).resolve(), Path(payload["candidate"]).resolve())
+assert not any(Path(p).name in ("site-packages", "dist-packages") for p in sys.path)
 sys.path.append(str(site))  # no .pth, user-site, sitecustomize or caller PYTHONPATH
 pcse_root = site / "pcse"
+assert pcse_root.resolve() == pcse_root, "Selected PCSE package is redirected"
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 def file_record(path):
@@ -161,9 +194,19 @@ def pcse_inventory():
     return {p.relative_to(pcse_root).as_posix(): sha(p)
             for p in sorted(pcse_root.rglob("*.py")) if "__pycache__" not in p.parts}
 inventory_before = pcse_inventory()
-for relative, expected in payload["pcse_pins"].items():
+distributions = [d for d in importlib.metadata.distributions(path=[str(site)])
+                 if d.metadata.get("Name", "").casefold() == "pcse"]
+assert len(distributions) == 1, "Selected runtime needs exactly one PCSE distribution"
+version = distributions[0].version
+assert version in payload["pcse_releases"], "Unreviewed PCSE version: " + version
+release = payload["pcse_releases"][version]
+metadata = site / ("pcse-" + version + ".dist-info") / "METADATA"
+assert metadata.is_file() and metadata.resolve() == metadata
+assert Path(distributions[0].locate_file("")).resolve() == site
+for relative, expected in release["pins"].items():
+    assert (pcse_root / relative).resolve() == pcse_root / relative
     assert inventory_before.get(relative) == expected, "Reviewed PCSE source changed: " + relative
-assert importlib.metadata.version("pcse") == "6.0.13"
+assert importlib.metadata.version("pcse") == version
 pcse_home = scratch / ".pcse"
 pcse_home.mkdir()
 settings_file = pcse_home / "user_settings.py"
@@ -173,7 +216,7 @@ settings_file.write_text("# Isolated GeoForge provider fixtures; native defaults
 import pcse
 from pcse.input import WOFOST72SiteDataProvider
 from pcse.base import ParameterProvider
-assert pcse.__version__ == "6.0.13"
+assert pcse.__version__ == version
 assert Path(sys.modules["user_settings"].__file__).resolve() == settings_file
 assert Path(pcse.util.get_user_home()).resolve() == scratch
 assert Path(pcse.settings.PCSE_USER_HOME).resolve() == pcse_home
@@ -244,7 +287,11 @@ for name, module in list(sys.modules.items()):
     path = Path(filename).absolute()
     if path.is_file() and not path.resolve().is_relative_to(scratch):
         files[str(path)] = file_record(path)
-for path in [Path(sys.executable), site / "pcse-6.0.13.dist-info/METADATA"]:
+bound_files = [Path(sys.executable), Path(sys._base_executable), metadata]
+if venv is not None:
+    bound_files.append(Path(venv["config"]["path"]))
+    bound_files.append(Path(venv["base_python"]["path"]))
+for path in bound_files:
     files[str(path.absolute())] = file_record(path)
 for pattern in ("python*.dll", "python*.zip", "python*._pth", "pyvenv.cfg"):
     for directory in {Path(sys.executable).parent, Path(sys.prefix), Path(sys.base_prefix)}:
@@ -254,6 +301,8 @@ for pattern in ("python*.dll", "python*.zip", "python*._pth", "pyvenv.cfg"):
 runtime = {"selected_python": payload["python"],
            "resolved_python": str(Path(sys.executable).resolve()),
            "python_version": list(sys.version_info[:3]), "pcse_version": pcse.__version__,
+           "pcse_wheel_sha256": release["wheel_sha256"],
+           "venv_binding": venv, "base_prefix": str(Path(sys.base_prefix).resolve()),
            "site_packages": str(site), "pcse_root": str(pcse_root),
            "pcse_inventory": inventory_before,
            "files": [files[key] for key in sorted(files)]}
@@ -266,7 +315,7 @@ print("GEOFORGE_WOFOST_ROUTING=" + json.dumps({"runtime": runtime, "fixtures": r
 
 def fixture_protocol_sha256() -> str:
     return _hash({"policy": POLICY, "program": _CHILD, "cases": _cases(),
-                  "pcse_pins": PCSE_PINS, "old": _OLD_BLOCK + _PARAMS,
+                  "pcse_releases": PCSE_RELEASES, "old": _OLD_BLOCK + _PARAMS,
                   "new": _NEW_BLOCK + _PARAMS})
 
 
@@ -277,13 +326,73 @@ def _file_current(row: dict) -> bool:
             and hashlib.sha256(path.read_bytes()).hexdigest() == row["sha256"])
 
 
-def _reject_virtualenv(executable: Path) -> None:
-    # On Python 3.12, -S bypasses venv prefix initialization. Until a reviewed
-    # isolated venv loader exists, never certify its base environment instead.
-    for path in {executable.absolute(), executable.resolve()}:
-        if any((directory / "pyvenv.cfg").exists()
-               for directory in (path.parent, path.parent.parent)):
-            raise ValueError("WOFOST isolated provider fixtures do not yet support virtualenv runtimes")
+def _runtime_file(path: Path) -> dict:
+    path = path.absolute()
+    return {"path": str(path), "resolved_path": str(path.resolve()),
+            "size": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def _venv_binding(executable: Path) -> dict | None:
+    """Bind the selected environment without importing site or executing Python.
+
+    Python 3.12 -S intentionally leaves sys.prefix pointing at the base. Infer
+    only the standard venv layout from its selected executable, then require the
+    isolated child to confirm the actual base and explicit sysconfig result.
+    """
+    executable = executable.absolute()
+    configs = [directory / "pyvenv.cfg" for directory in
+               (executable.parent, executable.parent.parent)
+               if (directory / "pyvenv.cfg").exists()
+               or (directory / "pyvenv.cfg").is_symlink()]
+    if not configs:
+        # A linked interpreter can resolve into a venv but does not establish
+        # which environment the caller selected. Never certify that ambiguity.
+        resolved = executable.resolve()
+        if any((directory / "pyvenv.cfg").exists() for directory in
+               (resolved.parent, resolved.parent.parent)):
+            raise ValueError("Ambiguous selected WOFOST virtualenv layout")
+        return None
+    if len(configs) != 1:
+        raise ValueError("Ambiguous selected WOFOST virtualenv configuration")
+    config = configs[0]
+    mode = config.lstat()
+    if (config.is_symlink() or not stat.S_ISREG(mode.st_mode)
+            or getattr(mode, "st_file_attributes", 0) & 0x400):
+        raise ValueError("WOFOST virtualenv requires an ordinary pyvenv.cfg")
+    if mode.st_size > 16384:
+        raise ValueError("WOFOST virtualenv configuration exceeds its bounded size")
+    raw = config.read_bytes()
+    if len(raw) > 16384:
+        raise ValueError("WOFOST virtualenv configuration exceeds its bounded size")
+    values = {}
+    for line in raw.decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        key, separator, value = line.partition("=")
+        key = key.strip().casefold()
+        if not separator or not key or key in values:
+            raise ValueError("Malformed WOFOST virtualenv configuration")
+        values[key] = value.strip()
+    home = Path(values.get("home", ""))
+    base = Path(values.get("executable", ""))
+    if (not home.is_absolute() or not home.is_dir()
+            or not base.is_absolute() or not base.is_file()
+            or base.resolve().parent != home.resolve()
+            or values.get("include-system-site-packages", "").casefold() not in {"true", "false"}
+            or not values.get("version", "").startswith("3.12.")):
+        raise ValueError("Unsupported WOFOST Python 3.12 virtualenv configuration")
+    root = config.parent.resolve()
+    expected_bin = root / ("Scripts" if os.name == "nt" else "bin")
+    if executable.parent.resolve() != expected_bin:
+        raise ValueError("Unsupported WOFOST selected virtualenv executable layout")
+    purelib = root / ("Lib/site-packages" if os.name == "nt" else "lib/python3.12/site-packages")
+    # Path aliases must not silently substitute base/site packages for the venv.
+    if not purelib.is_dir() or purelib.resolve() != purelib:
+        raise ValueError("Selected WOFOST virtualenv site-packages is absent or redirected")
+    return {"root": str(root), "site_packages": str(purelib),
+            "config": _runtime_file(config), "home": str(home.resolve()),
+            "base_python": _runtime_file(base), "version": values["version"]}
 
 
 def require_runtime_current(report: dict) -> dict:
@@ -302,7 +411,7 @@ def require_runtime_current(report: dict) -> dict:
                 or [r.get("id") for r in rows] != fixture_ids()
                 or any(r.get("ok") is not True or r.get("input_unchanged") is not True for r in rows)
                 or runtime.get("python_version", [])[:2] != [3, 12]
-                or runtime.get("pcse_version") != PCSE_VERSION
+                or runtime.get("pcse_version") not in PCSE_RELEASES
                 or report.get("runtime_identity") != _hash(runtime)):
             raise ValueError("Incomplete or outdated WOFOST native fixture report")
         if report.get("isolation") != {"no_site": True, "isolated": True,
@@ -312,16 +421,30 @@ def require_runtime_current(report: dict) -> dict:
         selected = Path(runtime["selected_python"])
         if not selected.is_absolute() or str(selected.resolve()) != runtime["resolved_python"]:
             raise ValueError("The selected WOFOST runtime path changed")
-        _reject_virtualenv(selected)
+        binding = _venv_binding(selected)
+        if binding != runtime.get("venv_binding"):
+            raise ValueError("Selected WOFOST virtualenv binding changed; verify routing again")
+        if binding is not None and binding["site_packages"] != runtime["site_packages"]:
+            raise ValueError("WOFOST fixtures did not use the selected virtualenv packages")
+        release = PCSE_RELEASES[runtime["pcse_version"]]
+        pins = release["pins"]
+        if runtime.get("pcse_wheel_sha256") != release["wheel_sha256"]:
+            raise ValueError("Unrecognized WOFOST native source release")
         pcse_root = Path(runtime["pcse_root"])
+        if (pcse_root != Path(runtime["site_packages"]) / "pcse"
+                or pcse_root.resolve() != pcse_root):
+            raise ValueError("Selected WOFOST PCSE package location changed")
         inventory = {p.relative_to(pcse_root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted(pcse_root.rglob("*.py")) if "__pycache__" not in p.parts}
         if (inventory != runtime["pcse_inventory"]
-                or any(inventory.get(rel) != pin for rel, pin in PCSE_PINS.items())):
+                or any(inventory.get(rel) != pin for rel, pin in pins.items())):
             raise ValueError("Native PCSE source changed; verify WOFOST routing again")
         files = runtime["files"]
         paths = [row["path"] for row in files]
-        required = {str((pcse_root / relative).absolute()) for relative in PCSE_PINS}
+        required = {str((pcse_root / relative).absolute()) for relative in pins}
+        required.add(str(pcse_root.parent / ("pcse-" + runtime["pcse_version"] + ".dist-info") / "METADATA"))
+        if binding is not None:
+            required.update(binding[key]["path"] for key in ("config", "base_python"))
         if (not files or len(set(paths)) != len(paths)
                 or not required <= set(paths)
                 or not any(row["resolved_path"] == runtime["resolved_python"] for row in files)
@@ -354,12 +477,13 @@ def validate_behavior(base: Path, candidate: Path, python: str | Path) -> dict:
         executable = executable.absolute()
         if not executable.is_file():
             raise ValueError("An existing selected Python runtime is required")
-        _reject_virtualenv(executable)
+        venv_binding = _venv_binding(executable)
         selected_before = {"path": str(executable), "resolved_path": str(executable.resolve()),
                            "size": executable.stat().st_size,
                            "sha256": hashlib.sha256(executable.read_bytes()).hexdigest()}
         payload = {"base": str(Path(base).resolve()), "candidate": str(Path(candidate).resolve()),
-                   "python": str(executable), "pcse_pins": PCSE_PINS, "cases": _cases(),
+                   "python": str(executable), "venv_binding": venv_binding,
+                   "pcse_releases": PCSE_RELEASES, "cases": _cases(),
                    "old_fragment": textwrap.dedent(_OLD_BLOCK + _PARAMS),
                    "new_fragment": textwrap.dedent(_NEW_BLOCK + _PARAMS)}
         with tempfile.TemporaryDirectory(prefix="geoforge-wofost-routing-") as folder:

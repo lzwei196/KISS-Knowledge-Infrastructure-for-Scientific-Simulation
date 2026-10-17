@@ -12,7 +12,7 @@ from .test_calibration_flow_binding import _approve, case as calibration_case
 from .test_flowgate import _cfg, _ki, _plan, _session
 
 
-def _approved_run(tmp_path, monkeypatch):
+def _approved_run(tmp_path, monkeypatch, destination="outputs/reference"):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
     monkeypatch.setenv("GEOFORGE_FLOW_REGISTRY", str(tmp_path / "registry.json"))
     ki = _ki(tmp_path, extra_files={"tools/run.py": "import argparse, pathlib\n"
@@ -26,6 +26,7 @@ def _approved_run(tmp_path, monkeypatch):
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["--output-dir", destination], cwd=".")
     fs.write_plan(plan, inventory)
     fs.flow.approval.approve(project, by="auto")
     fs.reload_artifacts()
@@ -41,7 +42,7 @@ def _approved_run(tmp_path, monkeypatch):
     ("artifacts/reference", "passed"),
 ])
 def test_output_location_feedback_matches_real_signed_receipt(tmp_path, monkeypatch, destination, expected):
-    ki, project, fs = _approved_run(tmp_path, monkeypatch)
+    ki, project, fs = _approved_run(tmp_path, monkeypatch, destination)
     approval_before = (project / "runs" / "approval.json").read_bytes()
     text = api.execute_tool(
         "run_ki_tool", {

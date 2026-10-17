@@ -156,7 +156,7 @@ def project_interface(investigation_case, investigation_maintenance, monkeypatch
     calls = []
     def check(root, *, source, name, runtime_python=None):
         calls.append(runtime_python)
-        return {"ok": True, "fixture_maintenance": True, "source": source,
+        return {"ok": True, "fixture_maintenance": True, "source": source, "gate_policy": maintenance.POLICY,
                 "candidate_digest": gate.content_digest(root), "base_digest": source["base_digest"],
                 "changes": [{"path": routing.TOOL_PATH}],
                 "interface_regression": {"runtime": {"selected_python": str(Path(runtime_python).absolute())}}}

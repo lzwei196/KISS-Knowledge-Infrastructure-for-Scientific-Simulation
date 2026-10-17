@@ -173,7 +173,7 @@ def test_agent_intake_can_resolve_chinese_crhm_task_into_semantic_plan(tmp_path)
     assert pj["intent"]["requested_outputs"] == ["SWE", "融雪量", "出口径流"]
 
 
-def _drive_planning(tmp_path, ki, project, with_choice=False):
+def _drive_planning(tmp_path, ki, project, with_choice=False, *, arguments=None, cwd="."):
     resolved = [ki]
     t = flowrun.turn(project, resolved, _cfg(project), "api", "deepseek", None,
                      "run M at 32.9, 117.4 for 2003-2004")
@@ -183,6 +183,7 @@ def _drive_planning(tmp_path, ki, project, with_choice=False):
     pj, inv = t.session.flow.plan.read_artifacts(project)
     for st in pj["steps"]:
         st["tool"] = str(ki.root / "tools" / "run.py"); st["kind"] = "run"
+        st.update(command=list(arguments) if arguments is not None else ["outputs/q.csv"], cwd=cwd)
     if with_choice:
         pj["scientific_choices"] = [{"id": "f", "kind": "forcing_source", "options": ["cmfd_v1", "mswx_v1"],
                                      "picked": "cmfd_v1", "high_impact": True}]
@@ -375,7 +376,7 @@ def test_project_view_labels_unvalidated_artifacts_under_the_flow(tmp_path):
     view = projectview._automatic(project)
     assert view["panels"][0]["evidence"] == "unvalidated" and "unvalidated" in view["panels"][0]["title"]
     # a verified run output is labelled verified
-    t = _drive_planning(tmp_path, ki, project)
+    t = _drive_planning(tmp_path, ki, project, arguments=["artifacts/q.csv"])
     _approve(project, ki, flowrun.after(project, t, "planned", setup_ok=True))
     t2 = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
     step = t2.session.plan["steps"][0]["id"]
@@ -635,7 +636,7 @@ def test_run_ki_tool_checks_step_ki_and_tool_before_running(tmp_path):
     flowrun.pre(project, "run A and B for 2003", ["A", "B"], [a, b], None, None)
     t = flowrun.turn(project, [a, b], _cfg(project), "api", "deepseek", None, "run A and B")
     pj, inv = t.session.flow.plan.read_artifacts(project)
-    pj["steps"] = [{"id": "A:run", "ki": "A", "tool": str(a.root / "tools" / "run.py"), "kind": "run",
+    pj["steps"] = [{"id": "A:run", "ki": "A", "command": ["outputs/a.csv"], "cwd": ".", "tool": str(a.root / "tools" / "run.py"), "kind": "run",
                     "inputs": [], "outputs": [], "status": "planned"}]
     for it in inv["items"]:
         it["status"] = "resolved"; it["needs_user"] = False
@@ -836,6 +837,7 @@ def test_failed_cli_with_saved_files_cannot_offer_approval(tmp_path):
     pj, inv = t.session.flow.plan.read_artifacts(project)
     for st in pj["steps"]:
         st["tool"] = str(ki.root / "tools" / "run.py"); st["kind"] = "run"
+        st.update(command=["outputs/q.csv"], cwd=".")
     t.session.flow.plan.write_artifacts(project, pj, inv)     # saved by the CLI, never submitted
     t.provider_succeeded = False
     result = flowrun.after(project, t, "CLI exited 2")
@@ -868,6 +870,7 @@ def test_concurrent_original_edit_is_not_overwritten(tmp_path):
     pj, inv = t.session.flow.plan.read_artifacts(t.planning_worktree)
     for step in pj["steps"]:
         step["tool"] = str(ki.root / "tools" / "run.py")
+        step.update(command=["outputs/q.csv"], cwd=".")
     t.session.flow.plan.write_artifacts(t.planning_worktree, pj, inv)
     pj["goal"] = "user concurrent edit"
     t.session.flow.plan.write_artifacts(project, pj, inv)
@@ -934,6 +937,7 @@ def test_rejected_worktree_is_reused_then_validated_without_resetting_agent_work
     pj, inv = t.session.flow.plan.read_artifacts(t.planning_worktree)
     for step in pj["steps"]:
         step["tool"] = str(ki.root / "tools" / "run.py")
+        step.update(command=["outputs/q.csv"], cwd=".")
     pj["goal"] = "Agent's carefully reviewed draft"
     pj["steps"][0]["inputs"] = ["missing-reference"]
     t.session.flow.plan.write_artifacts(t.planning_worktree, pj, inv)
@@ -1262,6 +1266,7 @@ def _plan_with_clip(tmp_path, ki, project, monkeypatch, *refresh_responses):
     pj, inv = t.session.flow.plan.read_artifacts(project)
     for st in pj["steps"]:
         st["tool"] = str(ki.root / "tools" / "run.py"); st["kind"] = "run"
+        st.update(command=["outputs/q.csv"], cwd=".")
     for it in inv["items"]:
         it["status"] = "resolved"; it["needs_user"] = False
     # The agent names the dataset and the study scope; it never copies the estimate id.
@@ -1464,6 +1469,7 @@ def test_card_offers_the_catalogue_candidates_and_a_different_pick_repins(tmp_pa
     pj, inv = t.session.flow.plan.read_artifacts(project)
     for st in pj["steps"]:
         st["tool"] = str(ki.root / "tools" / "run.py"); st["kind"] = "run"
+        st.update(command=["outputs/q.csv"], cwd=".")
     for it in inv["items"]:
         it["status"] = "resolved"; it["needs_user"] = False
     inv["items"].append({"id": "forcing", "required_by": ["M"], "status": "resolved", "acceptable_sources": [],
@@ -1949,8 +1955,8 @@ def test_legacy_untagged_accepted_rationale_still_reads_as_accepted():
     assert not plan_review.is_accepted_suggestion(plan_review._KI_DEFAULT_WHY)
 
 
-def _executing(tmp_path):
-    project = _project(tmp_path); ki = _ki(tmp_path, "M")
+def _executing(tmp_path, *, extra_files=None):
+    project = _project(tmp_path); ki = _ki(tmp_path, "M", extra_files=extra_files)
     flowrun.pre(project, "run M at 32.9, 117.4 for 2003-2004", ["M"], [ki], None, None)
     _approve(project, ki, flowrun.after(project, _drive_planning(tmp_path, ki, project), "planned", setup_ok=True))
     t = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "go")
@@ -1963,10 +1969,17 @@ def _executing(tmp_path):
 
 def test_a_corrected_retry_completes_and_the_superseded_failure_is_disclosed(tmp_path):
     import time
-    project, t, run = _executing(tmp_path)
-    assert "exit_code=1" in run([])                  # the agent forgot the output path
+    project, t, run = _executing(tmp_path, extra_files={"tools/run.py":
+        "import pathlib, sys\n"
+        "if pathlib.Path('fail-next').exists(): sys.exit(1)\n"
+        "out = pathlib.Path(sys.argv[1]); out.parent.mkdir(parents=True, exist_ok=True)\n"
+        "out.write_text('t,q\\n1,0.5\\n2,1.2\\n3,0.8\\n')\n"})
+    # A transient execution failure can retry the same exact approved invocation.
+    (project / "fail-next").touch()
+    assert "exit_code=1" in run(["outputs/q.csv"])
+    (project / "fail-next").unlink()
     time.sleep(1.1)
-    run(["outputs/q.csv"])                            # and retried correctly
+    run(["outputs/q.csv"])
     res = flowrun.after(project, t, "done", setup_ok=True)
     assert json.loads((project / "runs" / "flow-state.json").read_text(encoding="utf-8"))["state"] == "COMPLETED"
     assert "1 earlier failed attempt" in res.message and "run history" in res.message
@@ -1976,7 +1989,8 @@ def test_a_help_probe_after_success_does_not_fail_the_project(tmp_path):
     project, t, run = _executing(tmp_path)
     assert '"validation": "passed"' in run(["outputs/q.csv"])
 
-    with pytest.raises(api.ToolError, match="Help/version probes are not plan-step executions"):
+    # A new approval binds q.csv, so the argv guard rejects this probe before dispatch.
+    with pytest.raises(api.ToolError, match="invocation arguments differ from the approved command"):
         run(["--help"])
 
     flowrun.after(project, t, "done", setup_ok=True)

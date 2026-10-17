@@ -197,6 +197,8 @@ class FlowSession:
     inventory: dict | None = None
     approval_doc: dict | None = None
     database_access_mode: str = "direct"
+    # Only this turn's latest attempted pair, never replay errors from old logs.
+    plan_submission_errors: tuple[str, ...] = field(default_factory=tuple, init=False, repr=False)
 
     # ---------------------------------------------------------------- construction
     @classmethod
@@ -298,6 +300,18 @@ class FlowSession:
                     if not valid:
                         raise FlowDenied(f"Input {item['id']!r} has no intact, bound acquisition. "
                                          "Complete its approved data download before running this step.")
+        required = self.flow.receipts.plan_dependencies(self.plan).get(str(plan_step_id), set())
+        if required:
+            try:
+                evidence = self.evidence(enforcement=self.ctx.enforcement.value)
+                unavailable = sorted(required - set(evidence.get("steps_passed") or []))
+            except (OSError, ValueError, RuntimeError, TypeError) as error:
+                raise FlowDenied("Cannot verify upstream input evidence: " + str(error)) from error
+            if unavailable:
+                raise FlowDenied(
+                    f"Step {plan_step_id!r} cannot consume outputs from upstream steps without current "
+                    f"passed receipts: {', '.join(unavailable)}. Existing files and exit code 0 are not "
+                    "enough. Fix or retry those approved producers, or revise the plan and obtain fresh approval.")
         return step
 
     def check_calibration_step(self, plan_step_id: str | None, ki: str,
@@ -462,7 +476,8 @@ class FlowSession:
             validation = project_data_tools.validate_outputs(
                 self.project, outputs, exit_code,
                 input_files=data_input_files if "project_data_tool" in step else None,
-                step=step if "project_data_tool" in step else None)
+                step=step if "project_data_tool" in step else None,
+                inventory=self.inventory if "project_data_tool" in step else None)
         elif typed_calibration:
             validation = calibration.validate_receipt_result(calibration_result, step["calibration"])
             report_path = self.project / str(calibration_result.get("report_path") or "")
@@ -582,16 +597,21 @@ class FlowSession:
 
     def write_plan(self, plan: dict, inventory: dict) -> list[str]:
         """Validate and write the two plan files. Returns validation errors (empty = written)."""
+        self.plan_submission_errors = ()
         proposal = _plan_proposal_summary(plan, inventory)
         stage = "calibration_binding"
         try:
             if isinstance(plan, dict) and (errors := self.prepare_calibration_steps(plan)):
+                self.plan_submission_errors = tuple(_redact_plan_error(e) for e in errors[:30])
                 _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errors)
                 return errors
             stage = "schema_validation"
+            from . import project_data_tools
             errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots,
-                                          for_review=True, project=self.project)
+                                          for_review=True, project=self.project,
+                                          ki_data_authority=project_data_tools.require_ki_data_source)
             if errs:
+                self.plan_submission_errors = tuple(_redact_plan_error(e) for e in errs[:30])
                 _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errs)
                 return errs
             stage = "acquisition_binding"
@@ -603,6 +623,7 @@ class FlowSession:
                     except (OSError, ValueError, KeyError, TypeError) as error:
                         errs.append(f"item {item.get('id')!r}: {error}")
             if errs:
+                self.plan_submission_errors = tuple(_redact_plan_error(e) for e in errs[:30])
                 _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errs)
                 return errs
             stage = "write_artifacts"
@@ -610,6 +631,7 @@ class FlowSession:
             self.reload_artifacts()
             self.plan_submission = (self.flow.plan.sha256(plan), self.flow.plan.sha256(inventory))
         except Exception as error:
+            self.plan_submission_errors = (_redact_plan_error(f"{type(error).__name__}: {error}"),)
             _record_plan_validation(self.project, proposal, result="error", stage=stage,
                                     errors=[f"{type(error).__name__}: {error}"])
             raise

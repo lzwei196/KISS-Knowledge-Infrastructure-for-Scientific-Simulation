@@ -14,6 +14,7 @@ from kiss_cli import (api, catalog, cli, gui, install, install_locations, ki_gua
 
 @pytest.fixture
 def case(tmp_path, monkeypatch):
+    original_prepare = setup.prepare
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "user-home"))
     library = tmp_path / "library"
     source = library / "models/DSSAT"
@@ -66,6 +67,7 @@ def case(tmp_path, monkeypatch):
     return SimpleNamespace(handler=handler, ki=ki, live=live, cfg=cfg,
                            root=root, workroot=workroot, distribution=distribution,
                            binary=binary, output=output,
+                           original_prepare=original_prepare,
                            prefix=root / "binaries/DSSAT")
 
 
@@ -193,7 +195,7 @@ def test_stop_during_selected_placement_never_reaches_preflight(case, monkeypatc
     assert not case.prefix.exists()
 
 
-@pytest.mark.parametrize("layout", ["different_folder", "different_file", "no_product", "pip"])
+@pytest.mark.parametrize("layout", ["different_folder", "different_file", "no_product"])
 def test_unmapped_selection_is_reported_for_agent_inspection_without_guessing(case, monkeypatch, layout):
     if layout == "different_folder":
         install_locations.select_mode(case.workroot, "DSSAT", "existing", case.distribution.parent)
@@ -203,9 +205,8 @@ def test_unmapped_selection_is_reported_for_agent_inspection_without_guessing(ca
         alternate.write_bytes(case.binary.read_bytes())
         install_locations.select_mode(case.workroot, "DSSAT", "existing", alternate)
     else:
-        from kiss_cli.manifest import Acquire, Manifest
-        man = Manifest(model="DSSAT", acquire=Acquire(strategy="pip", produces="dssat")
-                       if layout == "pip" else None)
+        from kiss_cli.manifest import Manifest
+        man = Manifest(model="DSSAT", acquire=None)
         case.handler._manifest = lambda ki: man
     seen = []
     def provider(*args, **kwargs):
@@ -219,6 +220,20 @@ def test_unmapped_selection_is_reported_for_agent_inspection_without_guessing(ca
     monkeypatch.setattr(install, "run_preflight", lambda *a, **kw: install.Step("preflight", False, "Not ready"))
     assert run(case)["state"] == "failed", case.output
     assert seen == [True]
+    assert not case.prefix.exists()
+
+
+def test_existing_python_folder_is_rejected_before_agent_or_projection(case, monkeypatch):
+    from kiss_cli.manifest import Acquire, Manifest
+    man = Manifest(model="DSSAT", acquire=Acquire(strategy="pip", produces="dssat"))
+    case.handler._manifest = lambda ki: man
+    monkeypatch.setattr(setup, "prepare", case.original_prepare)
+    monkeypatch.setattr(api, "run", lambda *a, **kw: pytest.fail("provider must not guess a Python executable"))
+    monkeypatch.setattr(install, "_run", lambda *a, **kw: pytest.fail("folder must not be executed"))
+    before = (case.root / "kiss.toml").read_bytes()
+    state = run(case)
+    assert state["state"] == "failed" and "exact existing Python executable" in state["detail"]
+    assert (case.root / "kiss.toml").read_bytes() == before
     assert not case.prefix.exists()
 
 

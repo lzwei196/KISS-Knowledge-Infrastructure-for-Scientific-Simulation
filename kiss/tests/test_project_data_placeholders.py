@@ -108,6 +108,7 @@ def test_literal_arguments_prose_and_shipped_tool_environment_are_unchanged(tmp_
     environment_step = {
         "id": "M:run", "ki": ki.name, "tool": str(ki.root / "tools/run.py"), "kind": "run",
         "inputs": ["forcing"], "outputs": ["q"], "status": "planned",
+        "command": [], "cwd": ".",
         "env": {"MODEL_OUTPUT": "${PROJECT}/outputs/model.csv", "MODEL_KI_ROOT": "${KI_ROOT}", "TZ": "UTC0"},
     }
     plan["steps"].append(environment_step)

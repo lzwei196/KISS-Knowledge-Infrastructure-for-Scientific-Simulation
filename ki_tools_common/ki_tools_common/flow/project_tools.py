@@ -77,17 +77,30 @@ def output_contracts(project: Path, contracts, output_ids=None) -> list[dict]:
     if not isinstance(contracts, list) or not 1 <= len(contracts) <= 100:
         raise ValueError("output_formats must be a nonempty list of at most 100 explicit contracts")
     seen_ids, seen_paths = set(), set()
-    for contract in contracts:
-        validate_contract(contract)
-        ident = contract["output_id"]
-        if ident in seen_ids or (output_ids is not None and ident not in output_ids):
-            raise ValueError("typed output_id is duplicated or absent from this step's outputs")
-        path = output_path(project, contract["path"])
+    for index, contract in enumerate(contracts):
+        try:
+            validate_contract(contract)
+            ident = contract["output_id"]
+            if ident in seen_ids or (output_ids is not None and ident not in output_ids):
+                raise ValueError("typed output_id is duplicated or absent from this step's outputs")
+            path = output_path(project, contract["path"])
+        except ValueError as error:
+            context = contract if isinstance(contract, dict) else {}
+            raise ValueError(output_path_context(context.get("output_id"),
+                f"project_data_tool.output_formats[{index}].path", context.get("path"))
+                + ": " + str(error)) from None
         if path in seen_paths:
             raise ValueError("typed output paths must be distinct")
         seen_ids.add(ident)
         seen_paths.add(path)
     return contracts
+
+
+def output_path_context(output_id, field: str, value) -> str:
+    """Bounded diagnostic location; it grants no path or format permission."""
+    ident = repr(output_id[:128]) if isinstance(output_id, str) else "<invalid>"
+    path = repr(value[:400]) if isinstance(value, str) else "<non-string>"
+    return f"output_id={ident}, {field}={path}"
 
 
 def _digest(value) -> str:

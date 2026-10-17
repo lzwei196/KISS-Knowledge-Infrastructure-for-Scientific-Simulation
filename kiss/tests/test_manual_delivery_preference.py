@@ -187,6 +187,7 @@ def _manual_plan(tmp_path, monkeypatch, preference_at):
     project, flow = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": [ki.name]})])
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     plan["scientific_choices"] = []
     item = inventory["items"][0]
     item.update(dataset_id=MANUAL["id"], chosen_source=MANUAL["id"],

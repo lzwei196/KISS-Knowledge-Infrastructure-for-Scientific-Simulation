@@ -275,6 +275,23 @@ class KissConfig:
         return args
 
 
+def model_python_environment(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Separate model interpreters from the desktop/CLI's Python import roots.
+
+    Source launchers legitimately use PYTHONPATH to locate GeoForge. Passing
+    that path to a different interpreter can shadow its installed packages,
+    including the workspace's editable shared helpers. Keep ordinary build,
+    network and cancellation settings; callers add deliberate model imports
+    afterwards. Host commands that launch GeoForge itself do not use this.
+    """
+    out = dict(os.environ if env is None else env)
+    for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "PYTHONSTARTUP",
+                 "PYTHONEXECUTABLE", "__PYVENV_LAUNCHER__"):
+        out.pop(name, None)
+    out["PYTHONNOUSERSITE"] = "1"
+    return out
+
+
 def with_ki_tools_common(cfg: KissConfig, env: dict[str, str] | None = None) -> dict[str, str]:
     """Expose GeoForge's bundled shared KI library to child Python tools.
 
@@ -285,15 +302,15 @@ def with_ki_tools_common(cfg: KissConfig, env: dict[str, str] | None = None) -> 
     direct-API tools, preflight scripts, and their descendants all see the same
     materialised ``ki_tools_common`` copy.
     """
-    out = dict(os.environ if env is None else env)
-    common = Path(getattr(cfg, "roles", {}).get("ki_tools_common", "")).expanduser()
+    out = model_python_environment(env)
+    selected = getattr(cfg, "roles", {}).get("ki_tools_common")
+    if not selected:
+        return out
+    common = Path(selected).expanduser()
     if not common.is_dir():
         return out
-    existing = [item for item in out.get("PYTHONPATH", "").split(os.pathsep) if item]
     common_text = str(common.resolve())
-    if common_text not in existing:
-        existing.insert(0, common_text)
-    out["PYTHONPATH"] = os.pathsep.join(existing)
+    out["PYTHONPATH"] = common_text
     return out
 
 

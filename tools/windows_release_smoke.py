@@ -1,18 +1,23 @@
 """Check a Windows bundle outside the checkout, without keys or model installs.
 
 Run this against both the portable bundle and the silent install destination.
-It uses the frozen executable for HTTP, harness and calibration import checks;
-the host Python only drives the checks. It does not exercise paid AI providers.
+It uses the frozen executable for HTTP, harness and calibration import checks.
+An isolated host-source check also projects the actual bundled WOFOST package;
+that check is explicitly separate from frozen-code or native-model validation.
+It does not exercise paid AI providers.
 """
 from __future__ import annotations
 
 import argparse
+import ast
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import threading
@@ -54,6 +59,113 @@ def guide_edition(manifest: dict) -> str:
     if not isinstance(edition, str) or not edition.strip():
         raise AssertionError("The release manifest must name a nonempty guide edition")
     return edition
+
+
+def check_wofost_projection(library: Path, destination: Path, python: Path) -> dict:
+    """Exercise real setup/project seams with actual release KI/helper files.
+
+    No fixture KI, preflight, interpreter probe, model or provider is executed.
+    The caller supplies a fresh workspace and isolated host-authority homes.
+    Release CI installs this host application from the same validated tag;
+    its identity is reported rather than described as frozen-code coverage.
+    """
+    from kiss_cli import gui, ki_adaptations, ki_fresh_paths, ki_guard
+    from kiss_cli import paths, project_verification, setup
+    from kiss_cli.catalog import KI
+
+    library = library.resolve()
+    destination = destination.resolve()
+    if destination.exists():
+        raise AssertionError("Projection smoke requires a new empty workspace")
+    source = library / "models" / "WOFOST"
+    assert (source / "SKILL.md").is_file(), "Actual WOFOST package missing"
+    before = ki_fresh_paths.tree_files(source)
+    shared = paths.KissConfig.default(destination / "work" / "wofost")
+    shared.root.mkdir(parents=True)
+    shared.python = str(python.resolve())
+    shared.relocation = "none"
+    setup.prepare_common(shared, library)
+    (shared.root / paths.CONFIG_NAME).write_text(shared.dumps(), encoding="utf-8")
+
+    handler = object.__new__(gui.Handler)
+    handler.repo_root = handler.library_root = library
+    handler.workroot = destination / "work"
+    ki = KI("WOFOST", source)
+    materialized = setup.materialise_active(source, shared.root / "ki", shared,
+        manifest=handler._manifest(ki), library_root=library)
+    assert not materialized.unresolved and not materialized.corrupted
+    setup_lineage = ki_adaptations.projection(shared.root / "ki", shared)
+    ki_fresh_paths.require_fresh_current(setup_lineage["path_projection"],
+                                        candidate_root=shared.root / "ki")
+
+    # Deliberately do not pass cfg: GUI must choose the saved runtime and prepare
+    # its project-owned helpers before first KI materialisation, just as chat does.
+    project = destination / "project \u4e2d\u6587"
+    working, cfg = handler._session_workspace(project, ki)
+    assert working.root == project / "models" / "WOFOST" / "ki"
+    assert cfg.python == shared.python
+    assert cfg.roles["binaries"] == shared.roles["binaries"]
+    assert cfg.roles["ki_tools_common"].is_relative_to(project / "models" / "WOFOST")
+    lineage = ki_adaptations.projection(working.root, cfg)
+    proof = lineage["path_projection"]
+    ki_fresh_paths.require_fresh_current(proof, candidate_root=working.root)
+    saved = paths.KissConfig.load(working.root.parent)
+    assert saved.python == cfg.python and saved.roles == cfg.roles
+    assert proof["logical_target"] == str(working.root)
+    assert proof["runtime"]["selected_python"]["path"] == str(Path(cfg.python))
+    def assignments(path):
+        return {node.targets[0].id: node.value
+                for node in ast.parse(path.read_text(encoding="utf-8")).body
+                if isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)}
+    original = assignments(source / "preflight_check.py")
+    projected_preflight = assignments(working.root / "preflight_check.py")
+    assert ast.literal_eval(projected_preflight["PYTHON"]) == cfg.python.replace("\\", "/")
+    assert ast.literal_eval(projected_preflight["KI_TOOLS_COMMON"]) == str(
+        cfg.roles["ki_tools_common"]).replace("\\", "/")
+    assert ast.literal_eval(projected_preflight["TOOL_FILES"]) == ast.literal_eval(original["TOOL_FILES"])
+    assert ast.dump(projected_preflight["MODEL_ENTRYPOINT"]) == ast.dump(
+        ast.parse('os.path.join(KI_DIR, "run_and_score.py")', mode="eval").body)
+    projected_manifest = yaml.safe_load((working.root / "knowledge_infrastructure.yaml").read_text("utf-8"))
+    assert projected_manifest["package"]["binary"]["path"] == str(
+        working.root / "run_and_score.py").replace("\\", "/")
+    assert (working.root / "run_and_score.py").is_file()
+    assert all(proof[key] is False for key in
+        ("runtime_bound", "native_execution", "model_execution", "preflight_passed", "scientific_validation"))
+    assert ki_guard.is_managed(working.root)
+    assert project_verification.status(project, working)["can_run"] is False
+    assert not (project / ".geoforge" / "receipts").exists()
+
+    # Continuation must retain the pair; bootstrap is not permission to rewrite
+    # a saved project or issue execution readiness.
+    projected = ki_fresh_paths.tree_files(working.root)
+    saved_bytes = (working.root.parent / paths.CONFIG_NAME).read_bytes()
+    reopened, reopened_cfg = handler._session_workspace(project, ki)
+    assert reopened.root == working.root and reopened_cfg.roles == cfg.roles
+    assert ki_fresh_paths.tree_files(working.root) == projected
+    assert (working.root.parent / paths.CONFIG_NAME).read_bytes() == saved_bytes
+    assert ki_adaptations.projection(reopened.root, reopened_cfg) == lineage
+    assert ki_fresh_paths.tree_files(source) == before
+
+    return {
+        "passed": True, "scope": "host-source static setup and GUI projection of actual bundled KI",
+        "host_application_module": str(Path(gui.__file__).resolve()),
+        "host_python": str(Path(sys.executable).resolve()),
+        "host_path_policy_sha256": ki_fresh_paths.source_digest(),
+        "host_source_files_sha256": {
+            name: hashlib.sha256(Path(sys.modules["kiss_cli." + name].__file__).read_bytes()).hexdigest()
+            for name in ("gui", "setup", "ki_adaptations", "ki_path_contracts", "ki_fresh_paths", "port")
+        },
+        "library": str(library), "model": ki.name,
+        "library_manifest_sha256": hashlib.sha256((library / "release-manifest.json").read_bytes()).hexdigest(),
+        "source_files": before,
+        "recognized_ast_sha256": proof["recognized_ast_sha256"],
+        "shared_setup_projection": True, "fresh_gui_project_projection": True,
+        "retained_project_reopen": True, "saved_runtime_and_helpers_bound": True,
+        "source_unchanged": True, "preflight_passed": False,
+        "model_execution": False, "scientific_validation": False,
+        "frozen_code_execution": False,
+    }
 
 
 def stop(process: subprocess.Popen) -> None:
@@ -109,10 +221,24 @@ def check(bundle: Path, report: dict) -> None:
                    GEOFORGE_FLOW_KEYS=str(isolated / "flow-keys"),
                    GEOFORGE_FLOW_REGISTRY=str(isolated / "flow-registry"),
                    GEOFORGE_DATABASE_OFFLINE="1",
-                   GEOFORGE_KI_UPDATE_HOME=str(isolated / "ki-updates"))
+                   GEOFORGE_KI_UPDATE_HOME=str(isolated / "ki-updates"),
+                   GEOFORGE_KI_GUARD_HOME=str(isolated / "ki-guard"),
+                   GEOFORGE_KI_ADAPTATION_HOME=str(isolated / "ki-adaptations"),
+                   GEOFORGE_KI_VERIFICATION_HOME=str(isolated / "ki-verification"))
         for key in list(env):
             if key.startswith("GEOFORGE_AGENT_"):
                 env.pop(key, None)
+        projection_report = isolated / "wofost-projection.json"
+        projection = subprocess.run([
+            sys.executable, "-B", str(Path(__file__).resolve()), str(bundle),
+            "--projection-worker", str(isolated / "wp"),
+            "--report", str(projection_report),
+        ], cwd=isolated, env=env, capture_output=True, encoding="utf-8",
+            timeout=180, creationflags=subprocess.CREATE_NO_WINDOW)
+        assert projection.returncode == 0, (projection.stdout, projection.stderr)
+        projected = json.loads(projection_report.read_text(encoding="utf-8"))
+        assert projected["passed"], projected
+        report["bundled_wofost_host_projection"] = projected
         # No Python/py on PATH: the console helper must use the bundled DLL.
         helper_env = {**env, "PATH": str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32")}
         helper = bundle / "geoforge-agent-bridge.exe"
@@ -260,10 +386,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--projection-worker", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     report = {"bundle": str(args.bundle.resolve()), "passed": False}
     try:
-        check(args.bundle.resolve(), report)
+        if args.projection_worker is not None:
+            report.update(check_wofost_projection(args.bundle.resolve() / "_internal",
+                                                 args.projection_worker, Path(sys.executable)))
+        else:
+            check(args.bundle.resolve(), report)
         report["passed"] = True
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

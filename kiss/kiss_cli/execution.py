@@ -597,7 +597,8 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     command = ([str(cfg.python), str(tool)] if python_tool else [str(tool)]) + list(arguments)
     if project_data_tool:
         try:
-            request = project_data_tools.worker_request(project, tool, step, flow.inventory or {}, arguments)
+            request = project_data_tools.worker_request(project, tool, step, flow.inventory or {}, arguments,
+                                                       selected_ki_root=requested_root)
         except (OSError, TypeError, ValueError) as exc:
             raise flowgate.FlowDenied(str(exc)) from exc
         # No provider proxy, model environment, credential variables or Desktop

@@ -21,6 +21,7 @@ def local_plan(tmp_path):
         ("task_received", None), ("kis_resolved", {"selected_kis": [ki.name]})])
     plan, inventory = _plan(ki)
     plan["steps"][0]["outputs"] = []
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     inventory["items"][0].update(status="ready", chosen_source="existing_local",
                                  local_paths=["inputs/case.dat"])
     return ki, project, session, plan, inventory

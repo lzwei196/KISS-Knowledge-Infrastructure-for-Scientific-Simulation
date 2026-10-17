@@ -187,3 +187,20 @@ def test_long_silent_action_is_explicit_in_front_of_chat():
     assert "520s" in result["card"]
     assert "No new work evidence" in result["card"]
     assert "soil attribute table" in result["card"]
+
+
+@pytest.mark.parametrize("zh,expected", [(False, "Checking plan submission"), (True, "提交计划")])
+def test_plan_tool_activity_does_not_claim_submission_was_accepted(zh, expected):
+    # The event names the attempted tool, not its validation outcome. This same
+    # label is used while a call runs and when a rejected call remains in history.
+    runner = r"""
+const fs=require('node:fs'),vm=require('node:vm');
+const page=fs.readFileSync(process.argv[1],'utf8');
+const context=vm.createContext({chineseUI:()=>process.argv[2]==='true'});
+vm.runInContext(page.slice(page.indexOf('const TOOL_LABELS='),page.indexOf('const chineseUI=')),context);
+vm.runInContext(page.slice(page.indexOf('function workLabel('),page.indexOf('function extractWork(')),context);
+process.stdout.write(context.workLabel('write_plan'));
+"""
+    result = subprocess.run([NODE, "-e", runner, str(PAGE), json.dumps(zh)],
+                            capture_output=True, text=True, encoding="utf-8", check=True, timeout=10)
+    assert result.stdout == expected

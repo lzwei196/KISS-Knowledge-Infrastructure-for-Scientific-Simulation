@@ -36,6 +36,10 @@ def typed_case(tmp_path, *, source=COPY_SOURCE, version=2, weather=WEATHER, agro
         **({"output_formats": contracts} if version == 2 else {}))
     plan["steps"][0].update(kind="prepare", project_data_tool=authored["project_data_tool"],
                             outputs=["weather", "agro", "soil", "report"])
+    inv["items"] = [item for item in inv["items"] if item["id"] != "inspection"]
+    inv["items"].extend({"id": ident, "status": "missing", "local_paths": [path]}
+        for ident, path in {"weather": "outputs/weather.csv", "agro": "outputs/agro.yaml",
+                            "soil": "outputs/soil.soil", "report": "outputs/report.json"}.items())
     c[-1] = authored
     return tuple(c)
 
@@ -207,11 +211,12 @@ def test_later_authentic_invalid_v2_attempt_does_not_resurrect_earlier_pass(tmp_
 
 
 def test_later_real_failed_retry_supersedes_previous_pass(tmp_path):
-    c = typed_case(tmp_path)
+    c = typed_case(tmp_path, source="from pathlib import Path\n"
+        "if Path('outputs/report.json').exists(): raise RuntimeError('fixture retry failure')\n" + COPY_SOURCE)
     execute(c)
     assert evidence(c)["steps_passed"] == ["M:read"]
     result = run(c)
-    assert result.startswith("exit_code=1"), result  # Existing artifacts cannot be overwritten.
+    assert result.startswith("exit_code=1"), result
     assert evidence(c)["steps_passed"] == []
 
 

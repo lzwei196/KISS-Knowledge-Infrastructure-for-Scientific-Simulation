@@ -55,7 +55,12 @@ def case(tmp_path, monkeypatch):
             "selected_kis": ["CRHM"], "unresolved_questions": [], "scientific_choices": [],
             "steps": [{"id": "CRHM:run", "ki": "CRHM", "tool": str(tool), "kind": "run",
                        "inputs": [], "outputs": [], "status": "planned"}]}
-    assert fs.write_plan(plan, {"schema_version": "1.0", "items": []}) == []
+    # Exercise runtime-path enforcement under historical tool-only approval.
+    # These tests deliberately vary argv; new submissions bind argv separately.
+    inventory = {"schema_version": "1.0", "items": []}
+    assert fs.flow.plan.validate(plan, inventory, ["CRHM"], {"CRHM": root},
+                                 project=project, for_execution=True) == []
+    fs.flow.plan.write_artifacts(project, plan, inventory)
     fs.flow.approval.approve(project, by="user")
     fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True})

@@ -373,15 +373,34 @@ def start(workroot, model, root, provider, installation_only=False) -> Job:
         raise
 
 
-def status(workroot, model) -> dict | None:
-    """Read status, recovering an abandoned attempt only after proving ownership."""
+def _selected_status(doc: dict | None, expected_root: Path | None) -> dict | None:
+    # An active lease excludes this model even if a caller selected another
+    # folder. Terminal history, however, belongs only to its actual folder.
+    if not doc:
+        return None
+    if expected_root is not None and doc.get("state") not in ACTIVE:
+        try:
+            if not doc.get("root") or _canonical(doc["root"]) != expected_root:
+                return None
+        except (OSError, TypeError, ValueError):
+            return None
+    return _public(doc)
+
+
+def status(workroot, model, *, expected_root=None) -> dict | None:
+    """Read current-folder history while retaining model-wide active ownership.
+
+    Recovery still checks the original folder's lease before revoking an
+    abandoned attempt; a different selected folder is never marked failed.
+    """
+    expected_root = _canonical(expected_root) if expected_root is not None else None
     path, leasepath, lockpath = _paths(workroot, model)
     if not path.exists():
         return None
     with _record_lock(lockpath):
         doc = _read(path)
         if not doc or doc.get("state") not in ACTIVE:
-            return _public(doc) if doc else None
+            return _selected_status(doc, expected_root)
         model_lock = _FileLock(leasepath)
         root_lock = None
         try:
@@ -412,7 +431,7 @@ def status(workroot, model) -> dict | None:
             _write(path, doc)
             if owns_record:
                 _write(_root_record(root), doc)
-            return _public(doc)
+            return _selected_status(doc, expected_root)
         finally:
             if root_lock is not None:
                 root_lock.close()

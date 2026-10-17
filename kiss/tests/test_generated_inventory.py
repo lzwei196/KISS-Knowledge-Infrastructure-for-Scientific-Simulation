@@ -30,8 +30,10 @@ def case(tmp_path, monkeypatch):
         {"id": "download", "ki": "DSSAT", "kind": "download", "tool": None,
          "inputs": [], "outputs": ["dssat_data_bundle"], "status": "planned"},
         {"id": "inspect", "ki": "DSSAT", "kind": "check", "tool": str(tool),
+         "command": [], "cwd": ".",
          "inputs": ["dssat_data_bundle"], "outputs": ["dssat_data_bundle_report"], "status": "planned"},
         {"id": "summarize", "ki": "DSSAT", "kind": "check", "tool": str(tool),
+         "command": [], "cwd": ".",
          "inputs": ["dssat_data_bundle_report"], "outputs": ["final"], "status": "planned"}]}
     inventory = {"schema_version": "1.0", "items": [
         {"id": "dssat_data_bundle", "dataset_id": "dssat_data", "status": "missing", "required_by": ["DSSAT"],
@@ -152,9 +154,10 @@ def test_real_review_card_has_one_manual_download_and_generated_report(case):
     assert not (project / "outputs").exists()
 
 
-@pytest.mark.parametrize("bad_id", [[], {}, None])
+@pytest.mark.parametrize("bad_id", [[], {}, None, ["report"], {"id": "report"}, 12, False, ""])
 def test_malformed_inventory_ids_are_validation_errors_not_parser_crashes(case, bad_id):
     project, root, plan, inventory = case
     inventory["items"][1]["id"] = bad_id
-    assert flowgate.load().plan.validate(plan, inventory, ["DSSAT"], {"DSSAT": root},
-                                         for_review=True, project=project)
+    errors = flowgate.load().plan.validate(plan, inventory, ["DSSAT"], {"DSSAT": root},
+                                          for_review=True, project=project)
+    assert "inventory item IDs must be nonempty, unique strings" in errors

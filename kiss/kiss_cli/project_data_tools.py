@@ -64,30 +64,54 @@ def invocation(flow, ki: str, tool: Path, step_id: str, args: dict) -> tuple[dic
     return step, list(binding["arguments"]), cwd, binding["timeout_seconds"]
 
 
-def worker_request(project: Path, tool: Path, step: dict, inventory: dict, arguments: list[str]) -> dict:
+def _declared_output_paths(project: Path, step: dict, inventory: dict) -> dict[str, set[Path]]:
+    """Use the review resolver without invalidating already signed symbolic plans."""
+    from ki_tools_common.flow.plan import project_data_output_paths
+    return project_data_output_paths(step, inventory, project, allow_legacy_symbolic=True)
+
+
+def require_ki_data_source(project: Path, ki: str, root: Path) -> dict:
+    """Authenticate current immutable case bytes; never enroll or repair a KI."""
+    from . import ki_adaptations, ki_data_lineage, ki_guard, project_paths
+    expected = project_paths._model_home(Path(project).resolve(), ki) / "ki"
+    if Path(root).absolute() != expected:
+        raise ValueError("bundled data does not belong to the selected project KI")
+    try:
+        cfg = project_paths.load_model_config(project, ki)
+        ki_guard.require_intact(root, required=True)
+        proof = ki_data_lineage.require_projection(project, ki, root, cfg)
+    except (ki_guard.KIIntegrityError, ki_adaptations.AdaptationError) as error:
+        raise ValueError(str(error)) from error
+    if proof is None:
+        raise ValueError("bundled KI data requires a current signed project projection; refresh its workspace")
+    return proof
+
+
+def worker_request(project: Path, tool: Path, step: dict, inventory: dict, arguments: list[str],
+                   *, selected_ki_root: Path | None = None) -> dict:
     """Read grants come from this step's inventory, not the entire project."""
     project = Path(project).resolve()
     roots = []
     listings = []
     non_executable = []
+    from ki_tools_common.flow import project_inputs
+    project_inputs.require_input_ids(step)
+    authenticated = {}
+    def authority(project, ki, root):
+        if root not in authenticated:
+            authenticated[root] = require_ki_data_source(project, ki, root)
+        return authenticated[root]
     for item in inventory.get("items") or []:
         if item.get("id") not in step.get("inputs", []):
             continue
         for value in item.get("local_paths") or []:
-            raw = Path(value)
-            raw = raw if raw.is_absolute() else project / raw
-            p = raw.resolve()
-            if not p.is_relative_to(project) or p.parts[len(project.parts):len(project.parts)+1] not in {
-                    ("inputs",), ("outputs",), ("artifacts",), ("references",)}:
-                files, directory, case_root = _reference_case_inputs(project, step.get("ki"), raw)
-                roots.extend(str(f) for f in files)
-                if directory is not None:
-                    listings.append(str(directory))
+            files, directory, case_root = project_inputs.grant(project, step.get("ki"), value,
+                selected_ki_root=selected_ki_root, authority=authority)
+            roots.extend(str(f) for f in files)
+            if directory is not None:
+                listings.append(str(directory))
+            if case_root is not None:
                 non_executable.append(str(case_root))
-                continue
-            if not p.exists():
-                raise ValueError(f"project data input does not exist: {value}")
-            roots.append(str(p))
     if not roots:
         raise ValueError("project data tool needs at least one local input in its approved inventory")
     inputs = set()
@@ -105,28 +129,8 @@ def worker_request(project: Path, tool: Path, step: dict, inventory: dict, argum
     writes = [project / name for name in ("outputs", "artifacts")]
     if any(p.resolve() != p or p.is_symlink() for p in writes):
         raise ValueError("project data output directories cannot be links or resolve outside the project")
-    from ki_tools_common.flow import project_tools
-    declared_outputs = set()
-    inventory_outputs = {}
-    for ident in step.get("outputs") or []:
-        matches = [item for item in inventory.get("items") or [] if item.get("id") == ident]
-        if len(matches) > 1:
-            raise ValueError("project data output needs an unambiguous approved inventory item")
-        inventory_outputs[ident] = set()
-        for value in matches[0].get("local_paths") or [] if matches else []:
-            raw = Path(value)
-            relative = raw.relative_to(project).as_posix() if raw.is_absolute() else value
-            output = project_tools.output_path(project, relative)
-            inventory_outputs[ident].add(output)
-            declared_outputs.add(output)
-    # Explicit v2 format paths are part of the signed step even when an older
-    # inventory used only symbolic output IDs. They grant exact files, never roots.
-    for contract in step["project_data_tool"].get("output_formats") or []:
-        output = project_tools.output_path(project, contract["path"])
-        declared = inventory_outputs.get(contract["output_id"])
-        if declared and declared != {output}:
-            raise ValueError("project data output inventory path differs from its approved format path")
-        declared_outputs.add(output)
+    resolved_outputs = _declared_output_paths(project, step, inventory)
+    declared_outputs = {path for paths in resolved_outputs.values() for path in paths}
     for output in declared_outputs:
         if any(output == Path(raw) or Path(raw) in output.parents for raw in roots):
             raise ValueError("an approved project data output cannot replace a consumed input")
@@ -193,39 +197,14 @@ def preserve_output_preimages(project: Path, request: dict, *, approval_sha256: 
 
 
 def _reference_case_inputs(project: Path, ki: str, path: Path) -> tuple[list[Path], Path | None, Path]:
-    """Grant explicit retained case data, never the KI tree or its executable code."""
-    from .project_paths import _model_home
-    root = _model_home(project, ki) / "ki" / "test_cases"
-    if (path.resolve() != path or root.resolve() != root or not path.is_relative_to(root)
-            or len(path.relative_to(root).parts) < 2):
-        raise ValueError("project data inputs must be acquired project files or explicit files in the selected KI's test_cases")
-    relative = path.relative_to(root)
-    directory = path if path.is_dir() else None
-    if directory is not None and relative.parts[1] != "inputs":
-        raise ValueError("reference case directory grants are limited to a declared case inputs/ directory")
-    files = []
-    for candidate in (path.rglob("*") if directory is not None else [path]):
-        if candidate.resolve() != candidate or candidate.is_symlink():
-            raise ValueError("reference case inputs must not contain links or escape the selected KI")
-        if candidate.is_dir():
-            continue
-        if not candidate.is_file() or candidate.stat().st_nlink != 1:
-            raise ValueError("reference case inputs must be existing ordinary unshared files")
-        if candidate.suffix.lower() in {
-                ".py", ".pyw", ".pyc", ".pyo", ".pyd", ".exe", ".dll", ".so", ".com",
-                ".bat", ".cmd", ".ps1", ".sh", ".bash", ".r", ".rscript", ".jl", ".m",
-                ".pl", ".rb", ".js", ".ts", ".jar", ".class", ".wasm"}:
-            raise ValueError("reference case read grants cover data and metadata, not KI executable code")
-        files.append(candidate)
-        if len(files) > 256:
-            raise ValueError("project data tool input directory has over 256 files; name precise input files")
-    if not files:
-        raise ValueError("reference case input directory contains no data files")
-    return files, directory, root
+    """Legacy helper delegates to the same planning/runtime input predicate."""
+    from ki_tools_common.flow import project_inputs
+    return project_inputs.grant(project, ki, path)
 
 
 def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
-                     *, input_files: list[str] | None = None, step: dict | None = None) -> dict:
+                     *, input_files: list[str] | None = None, step: dict | None = None,
+                     inventory: dict | None = None) -> dict:
     """Validate data artifact structure, not scientific correctness or model readiness.
 
     Missing observation fields and quality flags are legitimate raw evidence.
@@ -233,6 +212,20 @@ def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
     """
     checks = [{"check": "data_tool_exit_zero", "ok": exit_code == 0, "level": "fail"},
               {"check": "data_artifacts_present", "ok": bool(outputs), "level": "fail"}]
+    if inventory is not None and isinstance(step, dict) and "project_data_tool" in step:
+        try:
+            declared = _declared_output_paths(project, step, inventory)
+            actual = {Path(path).absolute() for path in outputs}
+            for ident, paths in declared.items():
+                for path in sorted(paths):
+                    checks.append({"check": "declared_data_output_fresh:" + ident,
+                        "ok": path in actual and path.is_file() and path.stat().st_size > 0,
+                        "detail": f"{ident}: {path.relative_to(Path(project).resolve()).as_posix()} "
+                                  "must be a nonempty artifact freshly captured in this attempt",
+                        "level": "fail"})
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
+            checks.append({"check": "declared_data_output_contract", "ok": False,
+                           "detail": str(exc), "level": "fail"})
     typed, contracts_by_path = None, {}
     if (isinstance(step, dict) and isinstance(step.get("project_data_tool"), dict)
             and step["project_data_tool"].get("version") == 2):

@@ -18,6 +18,52 @@ MARKER = '.geoforge/execution-continuation.json'
 BLOCKER = '.geoforge/execution-continuation-blocked.json'
 POLICY = 'approved-execution-continuation-v1'
 
+# Inspection errors do not establish that an approved execution failed. The
+# fresh snapshot below still checks every required input, preflight and receipt.
+# Keep this finite: a new tool must not gain continuation eligibility by name.
+_INSPECTION_TOOLS = frozenset({
+    'read_ki_file', 'list_ki_files', 'search_diagnostics', 'list_skills', 'read_skill',
+    'list_project_files', 'read_project_file', 'list_work_files', 'read_work_file',
+    'search_catalogue', 'describe_dataset',
+})
+
+
+def tool_result_blocker(name, output, *, user_denied=False):
+    """Return a bounded blocking reason, never authorization to run a step.
+
+    The caller must retain an earlier blocker for the rest of its provider
+    turn. In particular, a later successful read cannot erase a failed launch.
+    All explicit denials remain blocking, including inspection denials.
+    """
+    text = str(output).lstrip()
+    if user_denied:
+        return 'user_denied'
+    if text.startswith('DENIED'):
+        return 'tool_denied'
+    if name == 'run_preflight' and text.startswith('FAIL'):
+        return 'preflight_failed'
+    if text.startswith('ERROR:'):
+        if isinstance(name, str) and name in _INSPECTION_TOOLS:
+            return None
+        return 'tool_error'
+    return None
+
+
+def _decision(turn, reason, *, blocked=True, error=None):
+    """Best-effort bounded diagnostics; failure to log never changes a gate."""
+    try:
+        from . import execution, provider_diagnostics
+        fs = turn.session
+        metadata = {'phase': 'execution', 'reason': reason, 'blocked': blocked,
+            'state': getattr(getattr(fs, 'state', None), 'value', ''),
+            'turn_id': execution.current_turn_id(fs.project),
+            'approval_id': fs.approval_id}
+        if error is not None:
+            metadata['error'] = str(error)
+        provider_diagnostics.record(fs.project, 'execution_continuation', **metadata)
+    except Exception:
+        pass
+
 
 def _hash(doc):
     return hashlib.sha256(json.dumps(doc, sort_keys=True, ensure_ascii=False,
@@ -84,31 +130,41 @@ def _snapshot(fs):
 
 
 def offer(turn):
-    """Read-only decision after a normal provider final, never a setup turn."""
-    if turn.kind != 'execution' or (turn.provider_succeeded is not True
-            and getattr(turn.session, 'provider_succeeded', None) is not True):
+    """Decide after a provider final; only bounded diagnostics may be written."""
+    if turn.kind != 'execution':
+        _decision(turn, 'not_execution_turn')
         return None
     if turn.provider_succeeded is False or getattr(turn.session, 'provider_succeeded', None) is False:
+        _decision(turn, 'provider_failed')
+        return None
+    if turn.provider_succeeded is not True and getattr(turn.session, 'provider_succeeded', None) is not True:
+        _decision(turn, 'provider_not_succeeded')
         return None
     try:
         binding, proof = _snapshot(turn.session)
         missing = proof.get('steps_missing') or []
         if not missing:
+            _decision(turn, 'no_pending_steps', blocked=False)
             return None
         from .execution import current_turn_id
         turn_id = current_turn_id(turn.session.project)
         if not turn_id:
+            _decision(turn, 'no_turn_id')
             return None
         previous = _read(turn.session.project)
         if previous and previous.get('turn_id') == turn_id:
+            _decision(turn, 'continuation_already_used')
             return None  # a scope, including a closed one, is used once per human turn
         steps = [s for s in turn.session.plan['steps'] if str(s.get('id')) in missing]
         if not steps or any(s.get('kind') == 'download' or not s.get('tool') for s in steps):
+            _decision(turn, 'pending_step_requires_handoff')
             return None
+        _decision(turn, 'offered', blocked=False)
         return {'binding': binding, 'turn_id': turn_id,
             'pending_ids': [str(s['id']) for s in steps], 'passed_ids': proof.get('steps_passed', []),
             'steps': steps, 'evidence_sha256': _hash(proof)}
-    except (ValueError, OSError, RuntimeError, TypeError, KeyError):
+    except (ValueError, OSError, RuntimeError, TypeError, KeyError) as error:
+        _decision(turn, 'snapshot_rejected', error=error)
         return None
 
 

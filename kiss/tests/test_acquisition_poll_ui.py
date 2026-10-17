@@ -320,9 +320,9 @@ def test_visible_tracked_chat_reads_status_through_its_acquire_tick_only():
 
 
 SWITCH_RUNNER = r"""
-const fs=require('node:fs'),vm=require('node:vm');
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const page=fs.readFileSync(process.argv[1],'utf8'),mode=process.argv[2];
-const elements=new Map(),releases=[];
+const elements=new Map(),releases=[],catalogueReads=[];
 function element(selector){
   if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',value:'',dataset:{},hidden:true,
     style:{},scrollTop:0,scrollHeight:0,classList:{contains:()=>false,add(){},remove(){},toggle(){}},
@@ -332,16 +332,24 @@ function element(selector){
 const acquiring={session:'A',selected_kis:[],project_preflights:[],goal:'A',status:'working',flow_state:'ACQUIRING',acquisition:{active:true,status:'waiting',
   automatic:[{id:'forcing',dataset_id:'cmfd-A',status:'pending',job_status:'running'}],
   manual:[{id:'yearbook',dataset_id:'yearbook-A',status:'waiting'}]}};
-// The full page declares this optional controller before openSession().
-const context={console,Date,SESSIONS:[],KI_UPDATE_REVISION:'fixture',CUR:{id:'A'},RUN:null,INVESTIGATION:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
+// Include the real scope helper and the independent catalogue/status surfaces
+// openSession now loads before it commits the new current project.
+const context={console,Date,URL,URLSearchParams,Headers,location:new URL('http://127.0.0.1:8799/'),
+  SESSIONS:[],KI_UPDATE_REVISION:'fixture',CUR:{id:'A'},RUN:null,INVESTIGATION:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
+  MODELS:[],STATUS:{},LAST_STATUS_CHECK:0,
   CHAT_FOLLOW:true,INFLIGHT:new Map(),DATA_ACTIONS:new Set(),$:element,sessionBusy:()=>false,
-  chineseUI:()=>false,document:{hidden:false,querySelectorAll:()=>[],querySelector:()=>null},
+  chineseUI:()=>false,document:{hidden:false,querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){}},
   runButtonLabel:()=>'Project status',runStateText:()=>'',closeActionPicker(){},drawSessions(){},
+  rememberSessionSummary(){},mergeSessionSummaries:value=>value,
   drawModelLabel(){},drawSkillButton(){},addTurn:()=>element('turn'),messageHtml:()=>'',renderLiveTurn(){},
   renderAttachments(){},drawProviders(){},async refreshViewStatus(){},async refreshProjectView(){},
   setControls(){},async maybeShowAction(){},async refreshMachineStatus(){}};
 context.fetch=async url=>{
   if(url==='/api/session/B')return {ok:true,status:200,json:async()=>({id:'B',title:'B',messages:[]})};
+  if(url==='/api/models'||url==='/api/status'){
+    catalogueReads.push(url);
+    return {ok:true,status:200,json:async()=>url==='/api/models'?[]:{}};
+  }
   if(url==='/api/session/A/run')return {ok:true,status:200,json:async()=>acquiring};
   if(url==='/api/session/B/run'){
     if(mode==='fail')return {ok:false,status:500,json:async()=>({error:'Synthetic failure'})};
@@ -351,7 +359,9 @@ context.fetch=async url=>{
   if(url.endsWith('/acquire'))return {ok:true,status:200,json:async()=>({run:acquiring})};
   throw new Error('unexpected '+url);
 };
+context.window=context;
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(path.dirname(process.argv[1]),'ki-scope.js'),'utf8'),context);
 function shipped(start,end){
   const a=page.indexOf(start),b=page.indexOf(end,a);
   if(a<0||b<0)throw new Error('Missing shipped JavaScript segment: '+start);
@@ -374,7 +384,7 @@ const banner=()=>({hidden:element('#acquisition-note').hidden,
   const later=banner();
   for(const release of releases)release();
   await opening;await flush();
-  process.stdout.write(JSON.stringify({before,loading,later,after:banner()}));
+  process.stdout.write(JSON.stringify({before,loading,later,after:banner(),opened:context.CUR.id,catalogueReads}));
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
 
@@ -384,6 +394,8 @@ def test_switching_chats_never_shows_the_previous_projects_banner(mode):
     result = subprocess.run([NODE, "-e", SWITCH_RUNNER, str(PAGE), mode], capture_output=True,
                             text=True, encoding="utf-8", check=True, timeout=10)
     observed = json.loads(result.stdout)
+    assert observed["opened"] == "B"
+    assert observed["catalogueReads"] == ["/api/models", "/api/status"]
     assert not observed["before"]["hidden"] and "cmfd-A" in observed["before"]["text"]
     for moment in ("loading", "later", "after"):
         assert observed[moment]["hidden"], (moment, observed[moment])

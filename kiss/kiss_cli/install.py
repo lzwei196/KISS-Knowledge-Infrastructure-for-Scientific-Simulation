@@ -129,6 +129,11 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
     Cancellation still raises, carrying collected output for host evidence.
     """
     check_cancelled()
+    from .paths import model_python_environment
+    # These are model/install children, not the desktop's own CLI workers.
+    # Explicit overrides include the selected KI helper path for preflight;
+    # the host launcher's ambient Python paths must never reach pip/probes.
+    child_env = {**model_python_environment(), **(env or {})}
     context = _CANCELLATION.get()
     if context is not None:
         from . import execution
@@ -139,7 +144,7 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
         argv = (f'{os.environ.get("COMSPEC", "cmd.exe")} /c "{cmd}"' if os.name == "nt"
                 else ["/bin/sh", "-c", cmd]) if isinstance(cmd, str) else cmd
         result = execution.run_process(
-            argv, cwd=cwd or Path.cwd(), env={**os.environ, **(env or {})},
+            argv, cwd=cwd or Path.cwd(), env=child_env,
             timeout=timeout, project=project, stop=stop, turn_id=turn_id)
         output = result.stdout + result.stderr + ("\n" + result.detail if result.detail else "")
         output = output if full_output else output[-8000:]
@@ -158,7 +163,7 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
         p = subprocess.run(
             cmd, cwd=cwd, shell=shell, timeout=timeout,
             capture_output=True, text=True, errors="replace",
-            env={**os.environ, **env} if env else None,
+            env=child_env,
         )
         output = p.stdout + p.stderr
         return p.returncode, output if full_output else output[-8000:]

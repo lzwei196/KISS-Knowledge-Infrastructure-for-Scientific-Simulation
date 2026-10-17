@@ -17,7 +17,6 @@ def isolated_host_state(tmp_path, monkeypatch):
 
 def recovery_case(tmp_path, source=CSV_READER):
     c = case(tmp_path, source)
-    c[4]["items"].append({"id": "inspection", "status": "missing", "local_paths": ["outputs/inspection.json"]})
     target = c[1] / "outputs/inspection.json"
     target.parent.mkdir()
     target.write_text("unreceipted original", encoding="utf-8")
@@ -140,6 +139,7 @@ def test_worker_rejects_existing_output_changed_after_host_preimage(tmp_path, mo
 def test_existing_output_alias_is_denied_before_recovery(tmp_path, linked):
     c, target = recovery_case(tmp_path)
     original = target.read_bytes()
+    approve(c)  # Introduce the alias after review to exercise the launch guard.
     other = target.with_name('other.txt')
     target.replace(other)
     try:
@@ -149,7 +149,6 @@ def test_existing_output_alias_is_denied_before_recovery(tmp_path, linked):
             target.hardlink_to(other)
     except OSError:
         pytest.skip('host cannot create this link')
-    approve(c)
     with pytest.raises(api.ToolError, match='aliases|ordinary unshared'):
         run(c)
     assert other.read_bytes() == original
@@ -159,8 +158,9 @@ def test_existing_output_alias_is_denied_before_recovery(tmp_path, linked):
 def test_v2_contract_only_existing_output_argument_is_not_mistaken_for_input(tmp_path):
     from .test_project_data_output_contracts import typed_case
     c = typed_case(tmp_path)
-    # The reviewed format contract supplies exact paths; this legacy inventory
-    # does not repeat them. Existing literal destination arguments are preimages.
+    # The reviewed format contract supplies exact typed paths; generic outputs
+    # still have explicit inventory paths. Destination arguments are preimages.
+    c[4]['items'] = [item for item in c[4]['items'] if item['id'] not in {'weather', 'agro'}]
     target = c[1] / 'outputs/weather.csv'
     target.parent.mkdir()
     target.write_text('unreceipted prior weather', encoding='utf-8')
@@ -179,13 +179,13 @@ def test_v2_contract_only_existing_output_argument_is_not_mistaken_for_input(tmp
 def test_conflicting_v2_inventory_and_format_paths_do_not_expand_replacement_grants(tmp_path):
     from .test_project_data_output_contracts import typed_case
     c = typed_case(tmp_path)
-    c[4]['items'].append({'id': 'weather', 'status': 'missing', 'local_paths': ['outputs/other.csv']})
+    next(item for item in c[4]['items'] if item['id'] == 'weather')['local_paths'] = ['outputs/other.csv']
     target = c[1] / 'outputs/other.csv'
     target.parent.mkdir()
     target.write_text('preserve this different file', encoding='utf-8')
-    approve(c)
-    with pytest.raises(api.ToolError, match='differs from.*format'):
-        run(c)
+    assert any('differs from its approved format' in error for error in c[2].write_plan(c[3], c[4]))
+    with pytest.raises(ValueError, match='differs from.*format'):
+        project_data_tools.worker_request(c[1], Path(c[5]['tool']), c[3]['steps'][0], c[4], [])
     assert target.read_text(encoding='utf-8') == 'preserve this different file'
     assert not (c[1] / '.geoforge/output-preimages').exists()
     assert not (c[1] / 'outputs/weather.csv').exists()

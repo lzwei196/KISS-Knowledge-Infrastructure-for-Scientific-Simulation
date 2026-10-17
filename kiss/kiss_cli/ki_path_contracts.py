@@ -1,6 +1,6 @@
 """Source-bound WOFOST runtime path normalization, with no check execution.
 
-This deliberately recognizes one published preflight, not arbitrary Python.
+This deliberately recognizes two reviewed published preflights, not arbitrary Python.
 The same three RHS replacements serve fresh portable projection and an
 explicitly reviewed retained-KI maintenance candidate. Callers retain KDT,
 approval, exact saved-config binding and post-adoption project verification.
@@ -26,6 +26,11 @@ PREFLIGHT = "preflight_check.py"
 MANIFEST = "knowledge_infrastructure.yaml"
 RUNNER = "run_and_score.py"
 OLD_AST_SHA256 = "07a4c645f3f3f6b5f10950191c085ce91cb879cc3437206c5f89dedf68c4f9ad"
+# The shipped catalogue checks the VIC weather converter; the retained
+# published variant checks build_pcse_weather_from_source instead. Both whole
+# ASTs are reviewed. Do not normalize away their different required tools.
+BUNDLED_AST_SHA256 = "3d7d7758e58cf35e97eb54171ab9b6b682b5a6de6a49f425c47dab432618d913"
+PREFLIGHT_AST_SHA256S = frozenset((OLD_AST_SHA256, BUNDLED_AST_SHA256))
 RUNNER_AST_SHA256 = "f64acc94038b51bc3a4b06def5307218483d4bd2bafd5dabbb1d927c25a3f928"
 MAX_BYTES = 1024 * 1024
 _DATA_TOKENS = ("KISSPATH_OBS", "KISSPATH_FORCING", "KISSPATH_DATA/elev", "KISSPATH_STATIC")
@@ -151,9 +156,10 @@ def _recognized(raw, cfg):
                 or item.elts[0].value != _expand(token, cfg)):
             raise ValueError("Preflight data path differs from its exact saved binding")
         item.elts[0].value = token
-    if _hash(_ast_value(canonical)) != OLD_AST_SHA256:
+    recognized = _hash(_ast_value(canonical))
+    if recognized not in PREFLIGHT_AST_SHA256S:
         raise ValueError("Unrecognized WOFOST preflight; path repair cannot change checks")
-    return text, tree
+    return text, tree, recognized
 
 
 def _replace_rhs(raw, tree, cfg):
@@ -269,7 +275,7 @@ def _projection(base, name, cfg, target_root):
     base = Path(base)
     inputs = _inputs(base, cfg)
     raw = inputs[PREFLIGHT]
-    _, tree = _recognized(raw, cfg)
+    _, tree, _ = _recognized(raw, cfg)
     return {PREFLIGHT: _replace_rhs(raw, tree, cfg),
             MANIFEST: _manifest(inputs[MANIFEST], cfg, target)}
 
@@ -343,7 +349,7 @@ def validate_behavior(base, candidate, cfg=None, *, target_root=None):
     runner = inputs[RUNNER]
     if _ordinary(candidate / RUNNER) != runner:
         raise ValueError("Path normalization cannot change the shipped runner")
-    before = ast.parse(inputs[PREFLIGHT].decode("utf-8"))
+    _, before, recognized = _recognized(inputs[PREFLIGHT], cfg)
     after = ast.parse(changes[PREFLIGHT].decode("utf-8"))
     old_names = _assignments(before)
     for name, node in _assignments(after).items():
@@ -356,8 +362,9 @@ def validate_behavior(base, candidate, cfg=None, *, target_root=None):
             "scope": "path_binding_regression", "runtime_bound": runtime is not None,
             "runtime": runtime, "model_execution": False, "native_execution": False,
             "scientific_validation": False, "preflight_passed": False,
-            "recognized_ast_sha256": OLD_AST_SHA256, "runner_ast_sha256": RUNNER_AST_SHA256,
+            "recognized_ast_sha256": recognized, "runner_ast_sha256": RUNNER_AST_SHA256,
             "unchanged_decisions_sha256": _hash(_ast_value(before)),
+            "source_root": str(base),
             "source_files": {name: hashlib.sha256(_ordinary(base / name)).hexdigest()
                              for name in (PREFLIGHT, MANIFEST, RUNNER)},
             "candidate_files": {name: hashlib.sha256(_ordinary(candidate / name)).hexdigest()
@@ -371,7 +378,8 @@ def require_runtime_current(report):
             or report.get("policy") != POLICY or report.get("policy_sha256") != source_digest()
             or report.get("scope") != "path_binding_regression"
             or report.get("runtime_bound") is not True
-            or report.get("recognized_ast_sha256") != OLD_AST_SHA256
+            or not isinstance(report.get("recognized_ast_sha256"), str)
+            or report.get("recognized_ast_sha256") not in PREFLIGHT_AST_SHA256S
             or report.get("runner_ast_sha256") != RUNNER_AST_SHA256
             or any(report.get(key) is not False for key in
                    ("model_execution", "native_execution", "scientific_validation", "preflight_passed"))):
@@ -389,6 +397,19 @@ def require_runtime_current(report):
                 or re.fullmatch("[0-9a-f]{64}", report["unchanged_decisions_sha256"]) is None
                 or report["candidate_files"][RUNNER] != runtime["runner"]["sha256"]):
             raise ValueError("Path report does not bind the unchanged runner and check decisions")
+        # Maintenance keeps its captured source. Re-read it so a report cannot
+        # relabel one accepted preflight as the other or lose its exact source
+        # binding merely because both identities are supported by this policy.
+        source = Path(report["source_root"])
+        if not source.is_absolute():
+            raise ValueError("Path report requires its absolute captured source")
+        inputs = _inputs(source, cfg)
+        _, before, recognized = _recognized(inputs[PREFLIGHT], cfg)
+        if (report["recognized_ast_sha256"] != recognized
+                or report["unchanged_decisions_sha256"] != _hash(_ast_value(before))
+                or report["source_files"] != {name: hashlib.sha256(_ordinary(source / name)).hexdigest()
+                                              for name in (PREFLIGHT, MANIFEST, RUNNER)}):
+            raise ValueError("Path report no longer matches its recognized source")
         _target(cfg, runtime["target_ki"])
         if (str(Path(cfg.python)) != runtime["selected_python"]["path"]
                 or str(Path(cfg.roles["ki_tools_common"])) != runtime["helper_root"]):

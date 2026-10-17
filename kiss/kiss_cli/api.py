@@ -22,6 +22,8 @@ a tool meant to install cleanly anywhere.
 from __future__ import annotations
 
 import csv
+import hashlib
+import io
 import itertools
 import http.client
 import ssl
@@ -68,6 +70,7 @@ class TurnHandle:
         self.last_chunk_at: float | None = None
         self._response = None
         self._lock = threading.Lock()
+        self.response_metadata: dict = {}
 
     def attach(self, response) -> None:
         with self._lock:
@@ -165,6 +168,24 @@ def available() -> list[ApiProvider]:
 # model needs, so the useful operations are enumerable, and enumerating them is
 # what lets the permission layer check an argument instead of guessing at a
 # command string.
+
+def _planning_document_schemas() -> dict:
+    """Advertise mandatory headers from the same contract that validates them."""
+    from . import flowgate
+    contract = flowgate.load().plan
+    result = {}
+    for name, schema, arrays in (
+        ("plan", contract.PLAN_SCHEMA, ("selected_kis", "steps", "scientific_choices", "unresolved_questions")),
+        ("data_inventory", contract.INVENTORY_SCHEMA, ("items",)),
+    ):
+        properties = {key: {} for key in schema["required"]}
+        properties["schema_version"] = {"type": "string", "enum": [contract.SCHEMA_VERSION]}
+        properties.update({key: {"type": "array", "items": {}} for key in arrays})
+        result[name] = {"type": "object", "required": list(schema["required"]),
+                        "properties": properties,
+                        "description": "One complete document, including schema_version='1.0'; never a patch or fragment."}
+    return result
+
 
 def tool_schemas(ki, *, setup_mode: bool = False,
                  project_mode: bool = False, flow=None,
@@ -330,8 +351,10 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 "description": (
                     "Planning/replan only: write a small project-local Python reader, converter or data check "
                     "when no suitable shipped data tool exists. Executes nothing. Use acquired project inputs or "
-                    "explicit inventory files from this selected KI's project-local test_cases (data/metadata only); "
-                    "directory traversal requires a declared case inputs/ directory. Never read or execute KI code. "
+                    "explicit inventory data/metadata files from the current immutable selected project KI, "
+                    "including shipped examples outside test_cases. Those individual files require a current "
+                    "signed projection and exact approval hashes; directory traversal is allowed only for a "
+                    "declared test_cases case inputs/ directory. Never read or execute KI code. "
                     "preserve raw values/flags/units and missingness; never invent model output or replace model science. "
                     "Return includes the exact tool path and project_data_tool binding: fill its arguments, cwd "
                     "and timeout_seconds, then include it in a kind=check or prepare plan step for normal review. "
@@ -340,7 +363,9 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "output_formats to receive a version 2 binding; preserve that binding in the plan. "
                     "This is trusted reviewed source, not an OS sandbox. Data outputs must be fresh outputs/ or "
                     "artifacts/ files, including staging. Unsupported formats pass structure checks only as exact "
-                    "byte/hash copies of granted inputs; this is not scientific validation. No network, native "
+                    "byte/hash copies of granted inputs. Transformed nonbasic formats require a supported "
+                    "output_formats contract; edited or subset YAML is not an unchanged copy. "
+                    "This is not scientific validation. No network, native "
                     "process, credential access or input modification."),
                 "input_schema": {"type": "object", "additionalProperties": False, "properties": {
                     "ki": {"type": "string"}, "name": {"type": "string", "description": "short Python identifier, without .py"},
@@ -425,7 +450,8 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "to choose an honest chart, then call this tool when the direct "
                     "API has no plotting runtime. GeoForge displays the SVG inline. "
                     "For a project CSV, prefer source_path plus x_column/y_column "
-                    "instead of copying every data point through the model."
+                    "instead of copying every data point through the model. Blank CSV values "
+                    "remain gaps on their original dates; the host records source provenance."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "output_path": {"type": "string",
@@ -444,12 +470,12 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                         "properties": {
                             "name": {"type": "string"},
                             "x": {"type": "array", "items": {}},
-                            "y": {"type": "array", "items": {"type": "number"}},
+                            "y": {"type": "array", "items": {"type": ["number", "null"]}},
                             "y_column": {"type": "string",
                                          "description": "CSV column used for this series"},
                             "axis": {"type": "string", "enum": ["left", "right"],
                                      "description": "use right when units or scale differ from the main series"},
-                        }, "required": ["y"]}},
+                        }, "anyOf": [{"required": ["y"]}, {"required": ["y_column"]}]}},
                 }, "required": ["output_path", "series"]},
             },
             {
@@ -557,6 +583,23 @@ def tool_schemas(ki, *, setup_mode: bool = False,
         })
     if setup_mode:
         tools += [
+            {
+                "name": "prepare_python_runtime",
+                "description": (
+                    "Ask GeoForge to prepare a supported CPython version for "
+                    "this active fresh setup, retaining its bound interpreter path. "
+                    "Use this when the KI or dependency rejects the current Python "
+                    "version. For a minor version the host resolves and records the latest "
+                    "stable official patch; an exact patch can also be supplied. "
+                    "The host verifies the official distribution. "
+                    "This does not install model packages, approve KI edits, or verify setup."
+                ),
+                "input_schema": {"type": "object", "additionalProperties": False,
+                    "properties": {"version": {"type": "string",
+                        "pattern": "^3\\.[0-9]{1,2}(?:\\.[0-9]{1,3})?$",
+                        "description": "CPython minor or exact release, e.g. 3.12 or 3.12.9"}},
+                    "required": ["version"]},
+            },
             {
                 "name": "run_builtin_setup",
                 "description": (
@@ -777,10 +820,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "Each supplied document replaces its previous version. An inventory must include "
                     "its entire items array: splitting items across calls does NOT append or merge them."
                 ),
-                "input_schema": {"type": "object", "properties": {
-                    "plan": {"type": "object"},
-                    "data_inventory": {"type": "object"},
-                }},
+                "input_schema": {"type": "object", "properties": _planning_document_schemas()},
             },
             {
                 "name": "fetch_data",
@@ -2089,54 +2129,110 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         return "[RECEIPT] " + json.dumps(info, ensure_ascii=False)
 
     if project_mode and name == "create_project_plot":
-        from .plotting import PlotError, render_svg
+        from .plotting import PlotError, _number, render_svg
         p = _inside_project(args.get("output_path") or "")
         rel = p.relative_to(project_root)
         if not rel.parts or rel.parts[0] != "artifacts" or p.suffix.lower() != ".svg":
             raise ToolError("plot output_path must be a .svg file below artifacts/")
         plot_args = dict(args)
+        source_metadata = None
         if args.get("source_path"):
             source = _inside_project(args.get("source_path") or "")
             if not source.is_file() or source.suffix.lower() != ".csv":
                 raise ToolError("plot source_path must be a project CSV file")
-            if source.stat().st_size > 20_000_000:
-                raise ToolError("plot CSV is larger than 20 MB")
             x_column = str(args.get("x_column") or "")
             requested = args.get("series") or []
-            if not x_column or not requested or not all(
+            if not isinstance(requested, list) or not 1 <= len(requested) <= 12:
+                raise ToolError("series must contain between 1 and 12 data series")
+            if not x_column or not all(
                     isinstance(item, dict) and item.get("y_column")
                     for item in requested):
                 raise ToolError("CSV plots require x_column and y_column for every series")
-            with source.open(newline="", encoding="utf-8-sig") as handle:
-                rows = list(csv.DictReader(handle))
+            try:
+                # Parse and hash the same bounded byte snapshot, including BOM/newlines.
+                with source.open("rb") as handle:
+                    source_bytes = handle.read(20_000_001)
+                if len(source_bytes) > 20_000_000:
+                    raise ToolError("plot CSV is larger than 20 MB")
+                reader = csv.DictReader(io.StringIO(source_bytes.decode("utf-8-sig"), newline=""))
+                headers = reader.fieldnames or []
+                if (any(not column.strip() for column in headers)
+                        or len(set(headers)) != len(headers)):
+                    raise ToolError("plot CSV requires unique, nonempty column headers")
+                rows = list(reader)
+            except (OSError, UnicodeError, csv.Error) as e:
+                raise ToolError(f"cannot read plot CSV: {e}") from None
             if not rows:
                 raise ToolError("plot CSV has no data rows")
-            columns = set(rows[0])
+            columns = set(headers)
             y_columns = [str(item["y_column"]) for item in requested]
             missing = [column for column in [x_column, *y_columns]
                        if column not in columns]
             if missing:
                 raise ToolError(f"plot CSV is missing columns: {', '.join(missing)}")
+            if any(None in row or any(row[column] is None for column in [x_column, *y_columns])
+                   for row in rows):
+                raise ToolError("plot CSV has a malformed data row; use explicit blank cells for missing values")
+            values = []
+            try:
+                for column in y_columns:
+                    # Validate before sampling so invalid text/nonfinite values cannot hide.
+                    values.append([None if not row[column].strip()
+                                   else _number(row[column], f"CSV column {column}") for row in rows])
+            except PlotError as e:
+                raise ToolError(str(e)) from None
             # Keep the request and SVG bounded while preserving both endpoints.
             max_rows = max(2, 5000 // len(requested))
+            source_row_count = len(rows)
+            indices = list(range(source_row_count))
             if len(rows) > max_rows:
                 indices = sorted({round(i * (len(rows) - 1) / (max_rows - 1))
                                   for i in range(max_rows)})
-                rows = [rows[i] for i in indices]
+                if str(args.get("kind") or "line").lower() == "line" and any(
+                        column[a] is not None and column[b] is not None
+                        and any(value is None for value in column[a + 1:b])
+                        for column in values for a, b in zip(indices, indices[1:])):
+                    raise ToolError("plot sampling would hide a missing-value gap; use a shorter source CSV")
             built_series = []
-            for item, y_column in zip(requested, y_columns):
+            series_metadata = []
+            for item, y_column, column_values in zip(requested, y_columns, values):
+                sampled_values = [column_values[i] for i in indices]
+                sampled_missing = sum(v is None for v in sampled_values)
+                source_missing = sum(v is None for v in column_values)
                 built_series.append({
                     "name": item.get("name") or y_column,
                     "axis": item.get("axis") or "left",
-                    "x": [row[x_column] for row in rows],
-                    "y": [row[y_column] for row in rows],
+                    "x": [rows[i][x_column] for i in indices],
+                    "y": sampled_values,
                 })
+                series_metadata.append({"y_column": y_column,
+                    "axis": str(item.get("axis") or "left").lower(),
+                    "source_valid_count": source_row_count - source_missing,
+                    "source_missing_count": source_missing,
+                    "valid_count": len(indices) - sampled_missing,
+                    "missing_count": sampled_missing})
             plot_args["series"] = built_series
+            source_metadata = {"schema_version": 1,
+                "source_path": source.relative_to(project_root).as_posix(),
+                "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+                "source_bytes": len(source_bytes), "x_column": x_column,
+                "source_row_count": source_row_count, "sampled_row_count": len(indices),
+                "sampling": "none" if len(indices) == source_row_count else "uniform_endpoints",
+                "sampled_source_row_indices": indices,
+                "source_value_count": source_row_count * len(requested),
+                "total_slots": len(indices) * len(requested),
+                "valid_count": sum(row["valid_count"] for row in series_metadata),
+                "missing_count": sum(row["missing_count"] for row in series_metadata),
+                "source_valid_count": sum(row["source_valid_count"] for row in series_metadata),
+                "source_missing_count": sum(row["source_missing_count"] for row in series_metadata),
+                "series": series_metadata}
         try:
-            summary = render_svg(plot_args, p)
+            summary = render_svg(plot_args, p, source_metadata=source_metadata)
         except (OSError, PlotError) as e:
             raise ToolError(str(e)) from None
-        return (f"{summary}\nInclude it in the reply as: "
+        provenance = ("\n[PLOT_SOURCE] " + json.dumps(source_metadata, ensure_ascii=False)
+                      if source_metadata is not None else "")
+        return (f"{summary}{provenance}\nInclude it in the reply as: "
                 f"![{args.get('title') or p.stem}]({rel.as_posix()})")
 
     if project_mode and name == "publish_project_view":
@@ -2177,6 +2273,19 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         state = _projectrun.report(progress_root, payload, source="api")
         note = "" if flow is None else "\n(the stage is tracked by GeoForge from the plan/approval/receipts; only status and summary were taken from your report)"
         return "Project status updated:\n" + json.dumps(state, indent=2) + note
+
+    if setup_mode and name == "prepare_python_runtime":
+        from . import setup_bridge
+        if not isinstance(args, dict) or set(args) != {"version"}:
+            raise ToolError("prepare_python_runtime accepts only version")
+        callback = (setup_context or {}).get("prepare_python_runtime")
+        if not callable(callback):
+            raise ToolError("Python runtime preparation requires an active fresh GUI setup")
+        try:
+            version = setup_bridge.version_argument(args["version"])
+            return json.dumps(callback(version), ensure_ascii=False)
+        except (ValueError, OSError) as exc:
+            raise ToolError(str(exc)) from None
 
     if setup_mode and name == "run_builtin_setup":
         callback = (setup_context or {}).get("run_builtin")
@@ -2350,6 +2459,8 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                     probe_env = {key: value for key, value in os.environ.items()
                                  if not any(secret in key.upper() for secret in
                                             ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))}
+                    from .paths import model_python_environment
+                    probe_env = model_python_environment(probe_env)
                     try:
                         probe = subprocess.run(
                             [str(launcher), "-c", "import sys; print(sys.prefix)"],
@@ -2782,6 +2893,7 @@ def _assemble_anthropic(events: Iterator[dict]) -> dict:
     """Rebuild ``{"content": [...]}`` from Anthropic content-block events."""
     blocks: dict[int, dict] = {}
     partial: dict[int, list[str]] = {}
+    stop_reason = None
     for obj in events:
         kind = obj.get("type")
         if kind == "content_block_start":
@@ -2799,6 +2911,8 @@ def _assemble_anthropic(events: Iterator[dict]) -> dict:
                 block["text"] = block.get("text", "") + str(delta.get("text") or "")
             elif delta.get("type") == "input_json_delta":
                 partial.setdefault(index, []).append(str(delta.get("partial_json") or ""))
+        elif kind == "message_delta":
+            stop_reason = (obj.get("delta") or {}).get("stop_reason") or stop_reason
         elif kind == "error":
             err = obj.get("error") or {}
             raise ToolError(f"provider error: {err.get('message', err)}")
@@ -2810,7 +2924,7 @@ def _assemble_anthropic(events: Iterator[dict]) -> dict:
             except json.JSONDecodeError:
                 block["input"] = {"_vendor_argument_error": "invalid JSON arguments",
                                   "_raw_arguments": raw[:2000]}
-    return {"content": [blocks[i] for i in sorted(blocks)]}
+    return {"content": [blocks[i] for i in sorted(blocks)], "stop_reason": stop_reason}
 
 
 def _cacheable_system(system: str) -> list[dict]:
@@ -2857,6 +2971,8 @@ def _anthropic_turn(prov, model, system, messages, tools, key, handle=None):
                   "messages": _cached_messages(messages), "tools": tools},
                  provider=f"api:{getattr(prov, 'name', 'anthropic')}",
                  wire="anthropic", handle=handle)
+    if handle is not None:
+        handle.response_metadata = {"finish_reason": data.get("stop_reason")}
     text = "".join(b.get("text", "") for b in data.get("content", [])
                    if b.get("type") == "text")
     calls = [(b["id"], b["name"], b.get("input") or {})
@@ -2874,6 +2990,8 @@ def _openai_turn(prov, model, system, messages, tools, key, handle=None):
                   "max_tokens": MAX_OUTPUT_TOKENS},
                  provider=f"api:{getattr(prov, 'name', 'openai')}",
                  wire="openai", handle=handle)
+    if handle is not None:
+        handle.response_metadata = {"finish_reason": (data.get("choices") or [{}])[0].get("finish_reason")}
     choice = (data.get("choices") or [{}])[0].get("message", {})
     text = choice.get("content") or ""
     calls = []
@@ -2981,13 +3099,25 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     if flow is not None:
         flow.provider_succeeded = False
         flow.continuation_blocked = False
+        flow.continuation_blocked_reason = None
+    from . import provider_diagnostics
+    handle = handle or TurnHandle()
+    diagnostic_project = getattr(flow, 'project', None) if project_mode else None
+    diagnostic_turn_id = (setup_context or {}).get('_turn_id')
+    def diagnostic(event, **metadata):
+        provider_diagnostics.record(diagnostic_project, event, provider=f'api:{prov.name}',
+            state=getattr(getattr(flow, 'state', None), 'value', None),
+            approval_id=getattr(flow, 'approval_id', None),
+            turn_id=diagnostic_turn_id, **metadata)
     key = prov.key()
     if not key:
+        diagnostic('turn_end', reason='missing_provider_key')
         yield f"[{prov.label}: set {prov.env_key} — get one at {prov.signup}]"
         return
 
     want = model or prov.default_model
     if prov.models and want not in prov.models and want not in prov.models.values():
+        diagnostic('turn_end', reason='unsupported_provider_model')
         yield (f"[{prov.label} does not offer {want!r}; choose from "
                f"{list(prov.models)}]")
         return
@@ -3002,6 +3132,8 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         project = tool_context.get("project_root") or getattr(cfg, "root", None)
         if project is not None:
             tool_context["_turn_id"] = execution.current_turn_id(Path(project))
+    diagnostic_turn_id = tool_context.get('_turn_id')
+    diagnostic('turn_start', phase='setup' if setup_mode else 'project')
     tools = tool_schemas(
         ki, setup_mode=setup_mode, project_mode=project_mode, flow=flow,
         installation_only=bool(tool_context.get("installation_only")),
@@ -3038,9 +3170,11 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 installation_only=bool(tool_context.get("installation_only")))
         step += 1
         if handle is not None and handle.stopped.is_set():
+            diagnostic('turn_end', reason='user_stopped', step=step)
             yield f"\n[{prov.label} stopped by the user]"
             return
         try:
+            handle.response_metadata = {}
             if prov.wire == "anthropic":
                 text, calls, raw = _anthropic_turn(prov, model_id, system, messages, tools, key,
                                                    handle=handle)
@@ -3048,6 +3182,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 text, calls, raw = _openai_turn(prov, model_id, system, messages, tools, key,
                                                 handle=handle)
         except ToolError as e:
+            diagnostic('provider_error', error=str(e), step=step)
             if handle is not None and handle.stopped.is_set():
                 yield f"\n[{prov.label} stopped by the user]"
                 return
@@ -3060,11 +3195,22 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             yield f"\n[{prov.label} failed: {e}]"
             return
 
+        finish_reason = handle.response_metadata.get('finish_reason')
+        diagnostic('provider_response', finish_reason=finish_reason, call_count=len(calls),
+                   text_chars=len(text), step=step)
+        if not calls and finish_reason in {'length', 'max_tokens'}:
+            diagnostic('turn_end', reason='output_limit', step=step)
+            if text:
+                yield text
+            yield f"\n[{prov.label}: response reached its output limit; completion is not confirmed.]\n"
+            return
+
         if not calls and _looks_like_text_tool_request(text):
             # Do not leak provider-specific pseudo XML into chat, and do not
             # pretend it ran. Give the model one clean chance to use the typed
             # tools that were already sent with the request.
             if text_tool_retries:
+                diagnostic('turn_end', reason='unstructured_tool_request', step=step)
                 yield (f"\n[{prov.label} returned a tool request as plain text. "
                        "Nothing in that request was run. Retry this message or "
                        "switch the AI connection.]\n")
@@ -3104,6 +3250,8 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 continue
             if flow is not None:
                 flow.provider_succeeded = True
+            diagnostic('turn_end', reason='provider_final', step=step,
+                       blocked=bool(getattr(flow, 'continuation_blocked', False)))
             return
 
         results = []
@@ -3125,9 +3273,15 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 except ToolError as e:
                     out = f"ERROR: {e}"
             handoff = handoff or _handoff_made(name, args, str(out))
-            if flow is not None and (str(out).startswith(('ERROR:', 'DENIED')) or
-                    (name == 'run_preflight' and str(out).startswith('FAIL'))):
+            from . import execution_continuation
+            blocker = execution_continuation.tool_result_blocker(name, str(out))
+            if flow is not None and blocker:
                 flow.continuation_blocked = True
+                flow.continuation_blocked_reason = blocker
+            diagnostic('tool_result', tool=name, reason=blocker or 'nonblocking',
+                       blocked=bool(blocker), malformed_arguments='_vendor_argument_error' in args,
+                       error=str(out) if str(out).startswith(('ERROR:', 'DENIED', 'FAIL', 'PLAN NOT WRITTEN')) else None,
+                       step=step)
             results.append((call_id, out))
             if (name == "request_user_action" and flow is not None
                     and getattr(getattr(flow, "state", None), "value", "") in _HANDOFF_STATES
@@ -3136,6 +3290,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 # message. Writing a plan on top of an unanswered question is not allowed.
                 yield f"\n[GeoForge: {prov.label} asked you a question; waiting for your answer]\n"
                 flow.provider_succeeded = True
+                diagnostic('turn_end', reason='waiting_for_user', step=step)
                 return
 
         if prov.wire == "anthropic":
@@ -3149,4 +3304,5 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 messages.append({"role": "tool", "tool_call_id": cid, "content": out})
 
     if max_steps is not None:
+        diagnostic('turn_end', reason='step_limit', step=step)
         yield f"\n[stopped after {max_steps} steps without finishing]"

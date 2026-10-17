@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from html import escape
 from pathlib import Path
@@ -32,7 +33,7 @@ def _tick(value: float) -> str:
     return f"{value:.4g}"
 
 
-def render_svg(spec: dict, output: Path) -> str:
+def render_svg(spec: dict, output: Path, *, source_metadata: dict | None = None) -> str:
     """Render a validated line, scatter, or bar plot to ``output``."""
     kind = str(spec.get("kind") or "line").lower()
     if kind not in {"line", "scatter", "bar"}:
@@ -58,7 +59,9 @@ def render_svg(spec: dict, output: Path) -> str:
         total += len(ys)
         if total > 5000:
             raise PlotError("a quick plot is limited to 5,000 total points")
-        ynums = [_number(v, f"series {index + 1} y") for v in ys]
+        ynums = [None if v is None else _number(v, f"series {index + 1} y") for v in ys]
+        if not any(v is not None for v in ynums):
+            raise PlotError(f"series {index + 1} has no non-missing y values")
         try:
             xnums = [_number(v, f"series {index + 1} x") for v in xs]
         except PlotError:
@@ -91,8 +94,8 @@ def render_svg(spec: dict, output: Path) -> str:
     top, bottom = 58 + min(8, len(series)) * 17, 68
     pw, ph = width - left - right, height - top - bottom
     all_x = [v for item in series for v in item["x"]]
-    left_y = [v for item in left_series for v in item["y"]]
-    right_y = [v for item in right_series for v in item["y"]]
+    left_y = [v for item in left_series for v in item["y"] if v is not None]
+    right_y = [v for item in right_series for v in item["y"] if v is not None]
     left_nonnegative = min(left_y) >= 0
     if kind == "bar":
         xmin, xmax = -0.5, max(len(item["y"]) for item in series) - 0.5
@@ -144,6 +147,10 @@ def render_svg(spec: dict, output: Path) -> str:
         '.tick{font-size:11px;fill:#61666b}.label{font-size:13px}.legend{font-size:11px}</style>',
         f'<text x="{left}" y="30" font-size="18" font-weight="600">{title}</text>',
     ]
+    # Provenance is supplied separately by the host CSV reader, never from spec.
+    if source_metadata is not None:
+        parts.insert(1, '<metadata id="geoforge-plot-source">' + escape(json.dumps(
+            source_metadata, ensure_ascii=False, sort_keys=True, allow_nan=False)) + '</metadata>')
     for i in range(6):
         value = ymin + (ymax - ymin) * i / 5
         y = sy(value)
@@ -166,8 +173,9 @@ def render_svg(spec: dict, output: Path) -> str:
         value = series[0]["x"][index]
         label = labels[index] if not all_numeric_x else _tick(value)
         x = sx(value)
+        anchor = "end" if index == tick_indices[-1] else "start" if index == tick_indices[0] else "middle"
         parts.append(f'<line x1="{x:.2f}" y1="{height-bottom}" x2="{x:.2f}" y2="{height-bottom+5}" stroke="#81858c"/>')
-        parts.append(f'<text class="tick" x="{x:.2f}" y="{height-bottom+20}" text-anchor="middle">{escape(label)}</text>')
+        parts.append(f'<text class="tick" x="{x:.2f}" y="{height-bottom+20}" text-anchor="{anchor}">{escape(label)}</text>')
 
     if kind == "bar":
         group = 0.78
@@ -175,6 +183,8 @@ def render_svg(spec: dict, output: Path) -> str:
         for si, item in enumerate(series):
             color = PALETTE[si % len(PALETTE)]
             for xvalue, yvalue in zip(item["x"], item["y"]):
+                if yvalue is None:
+                    continue
                 x0 = sx(xvalue - group / 2 + si * bar_width)
                 x1 = sx(xvalue - group / 2 + (si + 1) * bar_width)
                 scale = sy2 if item["axis"] == "right" else sy
@@ -184,12 +194,27 @@ def render_svg(spec: dict, output: Path) -> str:
         for si, item in enumerate(series):
             color = PALETTE[si % len(PALETTE)]
             scale = sy2 if item["axis"] == "right" else sy
-            points = " ".join(f'{sx(x):.2f},{scale(y):.2f}' for x, y in zip(item["x"], item["y"]))
             if kind == "line":
-                parts.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>')
+                segments, points = [], []
+                for xvalue, yvalue in zip(item["x"], item["y"]):
+                    if yvalue is None:
+                        if points:
+                            segments.append(points)
+                            points = []
+                    else:
+                        points.append(f'{sx(xvalue):.2f},{scale(yvalue):.2f}')
+                if points:
+                    segments.append(points)
+                for segment in segments:
+                    parts.append(f'<polyline points="{" ".join(segment)}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>')
+                    if len(segment) == 1 and len(item["y"]) > 80:
+                        xvalue, yvalue = segment[0].split(",")
+                        parts.append(f'<circle cx="{xvalue}" cy="{yvalue}" r="2.2" fill="{color}"/>')
             radius = 3.2 if kind == "scatter" else 2.2
             if kind == "scatter" or len(item["y"]) <= 80:
                 for xvalue, yvalue in zip(item["x"], item["y"]):
+                    if yvalue is None:
+                        continue
                     parts.append(f'<circle cx="{sx(xvalue):.2f}" cy="{scale(yvalue):.2f}" r="{radius}" fill="{color}"/>')
 
     if x_label:
@@ -215,4 +240,6 @@ def render_svg(spec: dict, output: Path) -> str:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("".join(parts), encoding="utf-8")
-    return f"created {output.name} ({kind}, {len(series)} series, {total} points)"
+    missing = sum(v is None for item in series for v in item["y"])
+    gap_note = f", {missing} missing slots" if missing else ""
+    return f"created {output.name} ({kind}, {len(series)} series, {total - missing} points{gap_note})"

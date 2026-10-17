@@ -46,7 +46,12 @@ def case(tmp_path, monkeypatch):
     plan={'schema_version':'1.0','goal':'Test exact verified runtime argv','created_at':'test','selected_kis':['DSSAT'],
         'unresolved_questions':[],'scientific_choices':[],'steps':[{'id':'DSSAT:run','ki':'DSSAT','tool':str(tool),
         'kind':'run','inputs':[],'outputs':[],'status':'planned'}]}
-    assert flow.write_plan(plan,{'schema_version':'1.0','items':[]})==[]
+    # Preserve historical tool-only approval while testing runtime-data guards
+    # against varied argv; this is not a current review submission shortcut.
+    inventory={'schema_version':'1.0','items':[]}
+    assert flow.flow.plan.validate(plan,inventory,['DSSAT'],{'DSSAT':root},
+                                   project=project,for_execution=True)==[]
+    flow.flow.plan.write_artifacts(project,plan,inventory)
     flow.flow.approval.approve(project,by='user');flow.reload_artifacts()
     flow.move('plan_written',{'plan_valid':True});flow.move('approved',{'approval':'OK'});flow.move('execution_started',{'setup_verified':True})
     result=pv.verify(project,ki,Manifest.load(root/'kiss.yaml'))

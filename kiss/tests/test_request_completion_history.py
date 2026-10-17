@@ -2,6 +2,7 @@
 import json
 import os
 import time
+from http.client import HTTPMessage
 
 import pytest
 
@@ -144,6 +145,7 @@ def test_popup_route_and_status_share_readonly_history_and_cached_evidence(c, mo
     monkeypatch.setattr(c.fs.flow.receipts, "evidence", inspect)
     sid = "b8b03523f587"
     handler = object.__new__(gui.Handler)
+    handler.headers = HTTPMessage()
     handler.workroot = c.project.parent
     handler.path = f"/api/session/{sid}/request"
     handler._json = lambda doc, *args: doc

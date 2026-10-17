@@ -234,7 +234,7 @@ def test_gui_estimate_and_list_keep_preparation_separate_from_raw_states(tmp_pat
     (SID, {"Cookie": ""}, 403),
     (SID, {"Origin": "https://other.invalid"}, 403),
     ("000000000000", {}, 404),
-    ("invalid-session", {}, 404),
+    ("invalid-session", {}, 400),
 ])
 def test_gui_rejects_unsafe_browser_and_unknown_session_before_remote_call(
         tmp_path, monkeypatch, sid, headers, expected):

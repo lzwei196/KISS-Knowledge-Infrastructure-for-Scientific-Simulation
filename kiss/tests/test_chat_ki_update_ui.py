@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -15,7 +16,7 @@ RUNNER = r"""
 const fs=require('node:fs'),vm=require('node:vm');
 const page=fs.readFileSync(process.argv[1],'utf8'),input=JSON.parse(fs.readFileSync(0,'utf8'));
 const elements=new Map(),timers=new Map(),requests=[],snapshots=[],events={},runRefreshes=[];
-let nextTimer=1,step={},releaseUpdate,releaseStatus,holdStatus=false,headerDraws=0,providerFocusRefreshes=0;
+let nextTimer=1,step={},releaseUpdate,releaseStatus,holdStatus=false,headerDraws=0,providerFocusRefreshes=0,activeScope=input.scope||'';
 const oldStatus={CRHM:{state:'verified',label:'Verified on this machine'},SHAW:{state:'verified'}};
 const newStatus={CRHM:{state:'setup_needed',label:'Recheck updated KI'},SHAW:{state:'setup_needed'}};
 const oldModels=[{name:'CRHM',reference:'old CRHM'},{name:'SHAW'}];
@@ -33,7 +34,7 @@ element('#msg').value='  Keep my unsent scientific question.\n';
 element('#mq').value='CRHM';element('#mpick').classList.add('open');
 element('#prov').value='api:deepseek';element('#llm').value='deepseek-chat';
 const session={id:'case',models:['CRHM'],provider:'api:deepseek',llm_model:null};
-const context={console,Date,$:element,CUR:session,MODELS:oldModels,STATUS:oldStatus,
+const context={console,GeoForgeKIScope:{get:()=>activeScope},Date,$:element,CUR:session,MODELS:oldModels,STATUS:oldStatus,
   PICK:new Set(['CRHM','SHAW']),DRAFTS:new Map([['case',element('#msg').value]]),
   PROV:{providers:[]},LAST_PROVIDER_CHECK:0,LAST_STATUS_CHECK:0,STATUS_REFRESHING:null,
   chineseUI:()=>!!input.zh,esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;'),
@@ -80,11 +81,13 @@ function snapshot(){return {
   picker:element('#mrows').innerHTML,pendingSelection:[...context.PICK],query:element('#mq').value,
   session:context.CUR,sameSession:context.CUR===session,composer:element('#msg').value,
   draft:context.DRAFTS.get('case'),provider:element('#prov').value,model:element('#llm').value,
-  noticeOpen:element('#ki-update-toast').classList.contains('open'),title:element('#ki-update-title').textContent
+  noticeOpen:element('#ki-update-toast').classList.contains('open'),title:element('#ki-update-title').textContent,
+  message:element('#ki-update-message').textContent
 };}
 (async()=>{
   context.drawPick();
   for(step of input.steps){
+    if(Object.prototype.hasOwnProperty.call(step,'scope'))activeScope=step.scope;
     if(step.dismiss)element('#ki-update-toast').classList.remove('open');
     let oldPending;
     if(step.staleStatus){holdStatus=true;oldPending=context.refreshMachineStatus(true,true);await flush();}
@@ -196,3 +199,54 @@ def test_returning_to_chat_checks_catalogue_without_waiting_for_timer(event):
 def test_updated_notice_remains_bilingual():
     result, = run_steps({"report": NEW}, zh=True)
     assert result["title"] == "KI 库检查完成"
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_scoped_project_failure_notice_distinguishes_full_library_from_checked_selection(zh):
+    result, = run_steps({"report": OLD}, scope="a" * 32, zh=zh)
+    assert result["title"] == ("全量 KI 库更新未完成" if zh else "Full KI library update not completed")
+    assert ("单独检查通过的所选 KI" if zh else "separately checked selected KI") in result["message"]
+    assert ("此选择未受全量更新影响" if zh else "did not change that selection") in result["message"]
+    assert ("网络或验证问题" if zh else "network or validation issue") in result["message"]
+
+
+def test_same_report_renders_current_scope_context_after_switching_projects():
+    global_view, selected, repeated, restored = run_steps(
+        {"report": OLD},
+        {"tick": True, "report": OLD, "scope": "a" * 32},
+        {"tick": True, "report": OLD, "dismiss": True},
+        {"tick": True, "report": OLD, "scope": ""})
+    assert global_view["title"] == "KI update not completed"
+    assert selected["title"] == "Full KI library update not completed"
+    assert "separately checked selected KI" in selected["message"]
+    assert not repeated["noticeOpen"], "same scoped report stays dismissed"
+    assert restored["title"] == global_view["title"]
+    assert restored["message"] == global_view["message"]
+
+
+@pytest.mark.parametrize("state", ["kept", "updated", "up_to_date"])
+def test_full_library_terminal_report_does_not_imply_project_selection_changed(state):
+    result, = run_steps({"report": {**NEW, "state": state}}, scope="a" * 32)
+    assert result["title"].startswith("Full KI library")
+    assert "did not change that selection" in result["message"]
+
+
+def test_update_notice_cannot_cover_active_project_controls_or_modals():
+    page = PAGE.read_text(encoding="utf-8")
+    css = page.split("<style>", 1)[1].split("</style>", 1)[0]
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    def layer(selector):
+        rule = next(body for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+                    if selector in selectors.strip().split(","))
+        return int(re.search(r"\bz-index\s*:\s*(\d+)", rule).group(1))
+
+    # The live failure was the toast's report button intercepting the KDT action
+    # where their bottom-right rectangles overlapped. Test relative stacking,
+    # including other inspector panels and every existing modal overlay.
+    assert 0 < layer(".ki-update-toast") < layer(".inspector")
+    for panel in ("investigationpanel", "datapanel", "viewpanel"):
+        assert re.search(r'<section class="inspector" id="' + panel + r'"', page)
+    for overlay in ("#modal", "#mpick", "#skillpick", "#connections", "#guide",
+                    "#actionpick", "#sessionpick"):
+        assert layer(".ki-update-toast") < layer(overlay)

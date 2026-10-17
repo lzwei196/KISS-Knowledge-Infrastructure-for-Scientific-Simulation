@@ -23,7 +23,8 @@ def _isolated_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
 
 
-def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=None, extra_tools=None):
+def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=None, extra_tools=None,
+             arguments=(), cwd="."):
     project = (tmp_path / "project").resolve()
     root = project / "models" / "M" / "ki"
     (root / "tools").mkdir(parents=True)
@@ -57,6 +58,7 @@ def _project(tmp_path, source, *, tool_name="run.py", approved=True, step_env=No
         "selected_kis": ["M"], "created_at": "test", "unresolved_questions": [],
         "scientific_choices": [{"id": "fixture", "kind": "other", "high_impact": False}],
         "steps": [{"id": "M:run", "ki": "M", "tool": str(tool), "kind": "run",
+                   "command": list(arguments), "cwd": cwd,
                    "inputs": ["forcing"], "outputs": ["q"], "status": "planned",
                    **({"env": step_env} if step_env else {})}],
     }
@@ -313,7 +315,7 @@ def test_cli_does_not_adopt_the_direct_callers_one_second_timeout(tmp_path, caps
 
 
 def test_direct_tool_may_use_a_project_subdirectory_as_cwd(tmp_path, capsys):
-    ctx = _project(tmp_path, "from pathlib import Path\nprint(Path.cwd())\n")
+    ctx = _project(tmp_path, "from pathlib import Path\nprint(Path.cwd())\n", cwd="inputs/case")
     cwd = ctx.project / "inputs" / "case"
     cwd.mkdir(parents=True)
     output, _ = _invoke("direct", ctx, capsys, cwd="inputs/case")
@@ -321,7 +323,8 @@ def test_direct_tool_may_use_a_project_subdirectory_as_cwd(tmp_path, capsys):
 
 
 def test_direct_tool_rejects_an_argument_outside_project_and_ki(tmp_path, capsys):
-    ctx = _project(tmp_path, "from pathlib import Path\nPath('launched').write_text('bad')\n")
+    ctx = _project(tmp_path, "from pathlib import Path\nPath('launched').write_text('bad')\n",
+                   arguments=[str(tmp_path / "unapproved-input.csv")])
     with pytest.raises(api.ToolError, match="argument path escapes"):
         _invoke("direct", ctx, capsys, arguments=[str(tmp_path / "unapproved-input.csv")])
     assert not (ctx.project / "launched").exists()

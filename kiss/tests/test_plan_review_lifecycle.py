@@ -50,6 +50,7 @@ def _draft(env, *, with_data=False, revise=None):
     for step in plan["steps"]:
         step["kind"] = "run"
         step["tool"] = str(env.ki.root / "tools" / "run.py")
+        step.update(command=[], cwd=".")
     for item in inventory["items"]:
         item.update(status="resolved", needs_user=False)
     plan["scientific_choices"] = [
@@ -681,6 +682,7 @@ def _db_off_draft(env, revise):
     for step in plan["steps"]:
         step["kind"] = "run"
         step["tool"] = str(env.ki.root / "tools" / "run.py")
+        step.update(command=[], cwd=".")
     for item in inventory["items"]:
         item.update(status="resolved", needs_user=False)
     plan["scientific_choices"] = []

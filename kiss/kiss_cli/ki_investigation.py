@@ -850,7 +850,7 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
     if repair_mode not in {"authoring", "maintenance"}:
         raise InvestigationError("Choose authoring or maintenance repair")
     if repair_mode == "maintenance" and maintenance_recipe not in {
-            "tool_inventory", "preflight_reporting", "package_contract", "wofost_parameter_routing", "wofost_runtime_paths"}:
+            "tool_inventory", "preflight_reporting", "package_contract", "wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"}:
         raise InvestigationError("Choose a supported maintenance recipe")
     if repair_mode != "maintenance" and maintenance_recipe:
         raise InvestigationError("Maintenance recipes require maintenance repair mode")
@@ -870,7 +870,7 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
         if repair_mode == "maintenance" and not local and not retained_source:
             raise InvestigationError("Prepare this KI in the project before creating a maintenance repair")
         runtime_cfg = None
-        if repair_mode == "maintenance" and maintenance_recipe in {"wofost_parameter_routing", "wofost_runtime_paths"}:
+        if repair_mode == "maintenance" and maintenance_recipe in {"wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"}:
             if not local:
                 raise InvestigationError("WOFOST runtime maintenance requires a prepared project KI and its saved runtime")
             runtime_cfg = _project_runtime_config(project, ki_name, active)
@@ -906,7 +906,7 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
                         "authoring_scope": "portable" if lineage else "local",
                         "repair_mode": repair_mode}
         if maintenance_source is not None:
-            from . import ki_maintenance_recipes
+            from . import ki_maintenance_dispatch
             runtime_args = {}
             if maintenance_recipe == "wofost_runtime_paths":
                 from . import ki_path_contracts, software_verification
@@ -914,7 +914,7 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
                 doc["draft"].update(maintenance_runtime_identity=software_verification.runtime_identity(runtime_cfg),
                     maintenance_config_identity=ki_path_contracts.config_identity(runtime_cfg),
                     maintenance_target_root=str(active))
-            projected = ki_maintenance_recipes.apply_recipe(candidate, source=source,
+            projected = ki_maintenance_dispatch.apply_recipe(candidate, source=source,
                 recipe=maintenance_recipe, name=ki_name, **runtime_args)
             doc["draft"].update(maintenance_source=maintenance_source,
                 maintenance_recipe=maintenance_recipe, maintenance_projection=projected,
@@ -978,8 +978,8 @@ def _candidate_changes(doc: dict, candidate: Path, digest: str) -> dict:
 
 def _maintenance_candidate_changes(doc: dict, candidate: Path, report: dict) -> dict:
     """Use the exact file/alias comparison authenticated by the maintenance gate."""
-    from . import ki_maintenance
-    current = ki_maintenance.require_current(candidate, report, source=doc["draft"]["maintenance_source"])
+    from . import ki_maintenance_dispatch
+    current = ki_maintenance_dispatch.require_current(candidate, report, source=doc["draft"]["maintenance_source"])
     # require_current compares the full inventories, including alias identity,
     # and rejects any added/removed file or changed alias. A generic text-only
     # evidence diff cannot provide that coverage and wrongly marks aliases as
@@ -998,12 +998,12 @@ def _require_verified_candidates(doc: dict) -> Path:
     draft, verification = doc["draft"], doc["verification"]
     candidate = Path(draft["path"])
     if draft.get("repair_mode") == "maintenance":
-        from . import ki_maintenance
+        from . import ki_maintenance_dispatch
         if draft.get("authoring_scope") != "local":
             raise InvestigationError("Maintenance repair is restricted to this project")
         if ki_verification.content_digest(candidate) != draft.get("maintenance_projection_digest"):
             raise InvestigationError("Maintenance draft differs from the selected recipe; create a fresh repair draft")
-        ki_maintenance.require_current(candidate, verification["report"], source=draft["maintenance_source"])
+        ki_maintenance_dispatch.require_current(candidate, verification["report"], source=draft["maintenance_source"])
         _require_maintenance_runtime(doc, verification["report"], verification.get("runtime_identity"))
         return candidate
     if draft.get("authoring_scope") == "portable":
@@ -1029,9 +1029,10 @@ def _require_verified_candidates(doc: dict) -> Path:
 
 def _require_maintenance_runtime(doc: dict, report: dict, expected_identity) -> None:
     """Bind runtime-sensitive maintenance to this project's exact saved config."""
-    from . import ki_maintenance_wofost, ki_path_contracts, software_verification
+    from . import ki_maintenance_crop, ki_maintenance_wofost, ki_path_contracts, software_verification
     path_repair = report.get("maintenance_recipe") == ki_path_contracts.RECIPE
-    interface = any(row.get("path") == ki_maintenance_wofost.TOOL_PATH for row in report.get("changes", []))
+    interface = any(row.get("path") in {ki_maintenance_wofost.TOOL_PATH, ki_maintenance_crop.TOOL_PATH}
+                    for row in report.get("changes", []))
     if not interface and not path_repair:
         return
     draft = doc["draft"]
@@ -1071,11 +1072,11 @@ def verify_draft(project, job_id) -> dict:
         maintenance = doc["draft"].get("repair_mode") == "maintenance"
         maintenance_runtime = None
         if maintenance:
-            from . import ki_maintenance
+            from . import ki_maintenance_dispatch
             if ki_verification.content_digest(candidate) != doc["draft"].get("maintenance_projection_digest"):
                 raise InvestigationError("Maintenance draft differs from the selected recipe; create a fresh repair draft")
             runtime_args = {}
-            if doc["draft"].get("maintenance_recipe") == "wofost_parameter_routing":
+            if doc["draft"].get("maintenance_recipe") in {"wofost_parameter_routing", "wofost_crop_provider"}:
                 from . import software_verification
                 cfg = _project_runtime_config(project, doc["draft"]["ki_name"], Path(doc["draft"]["active_root"]))
                 maintenance_runtime = software_verification.runtime_identity(cfg)
@@ -1090,7 +1091,8 @@ def verify_draft(project, job_id) -> dict:
                     raise InvestigationError("Runtime path bindings changed after draft creation; create a fresh repair draft")
                 runtime_args.update(maintenance_recipe=ki_path_contracts.RECIPE, runtime_config=cfg,
                                     target_root=Path(doc["draft"]["active_root"]))
-            report = ki_maintenance.verify_candidate(candidate,
+            verifier = ki_maintenance_dispatch.recipe_verifier(doc["draft"].get("maintenance_recipe"))
+            report = verifier.verify_candidate(candidate,
                 source=doc["draft"]["maintenance_source"], name=doc["draft"]["ki_name"], **runtime_args)
             if report.get("ok"):
                 _require_maintenance_runtime(doc, report, maintenance_runtime)

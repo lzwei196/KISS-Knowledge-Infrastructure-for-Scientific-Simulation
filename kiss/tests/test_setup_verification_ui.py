@@ -27,7 +27,8 @@ class TestDate extends Date{static now(){return input.now??Date.now()}}
 const context={console,Date:TestDate,TextDecoder,$:element,MODEL:'CRHM',STATE:input.states[0],busy:false,
   selectedInstallMode:'existing',rawLog:'',runStartedAt:0,lastSignalAt:0,installPathDirty:false,existingPathDirty:false,
   submitting:false,streaming:false,awaitingStatus:false,stopPending:false,stoppingJobId:'',jobNotice:'',
-  statusUnavailable:false,stateMutationEpoch:0,stateLoadPromise:null,
+  statusUnavailable:false,stateMutationEpoch:0,stateLoadPromise:null,selectingKI:false,
+  GeoForgeKIScope:{get:()=>'',set:()=>{},url:value=>value},
   isZh:()=>!!input.zh,esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
   presentSetupLog:s=>s,setupPhase:()=>0,
   document:{querySelectorAll:()=>[]},
@@ -58,6 +59,7 @@ function shipped(start,end){const a=page.indexOf(start),b=page.indexOf(end,a);
   if(a<0||b<0)throw new Error('Missing '+start);vm.runInContext(page.slice(a,b),context);}
 shipped('function activeSetupJob(','function fmtSize(');
 shipped('function duration(','function managedWorkspacePermission(');
+shipped('function drawKISelection(','async function useLatestKI(');
 shipped('function drawInstallLocation(','function chooseInstallMode(');
 shipped('function setupRecheckRequired(','async function chatForHelp(');
 function snapshot(){snapshots.push({...Object.fromEntries([...elements].map(([key,e])=>[key,
@@ -134,6 +136,24 @@ def test_snapshot_change_explains_recheck_and_keeps_old_pass_as_neutral_history(
     assert ("not a current verification pass" if not zh else "不代表当前验证通过") in verification
     assert ("updated KI" if not zh else "更新后的 KI") in result["#logcontext"]["text"]
     assert result[".log"]["text"] == STALE["log_tail"]
+    assert result["#chat"]["display"] == "none"
+
+
+@pytest.mark.parametrize("zh", [False, True])
+@pytest.mark.parametrize("reason", ["setup-active", "ki-source", "runtime-data"])
+def test_first_setup_does_not_invent_a_previous_install_or_library_update(zh, reason):
+    fresh = {**STALE, "attention": None, "log_tail": "", "agent_ready": False,
+             "install_location": {"installation_mode": "new"},
+             "job": job() if reason == "setup-active" else None,
+             "software": {"state": "setup", "can_run": False,
+                          "requires_reverification": True,
+                          "primary_error": {"name": reason}, "steps": []}}
+    result, = render(fresh, zh=zh)
+    message = result["#verification"]["html"]
+    assert ("verification" if not zh else "验证") in message.lower()
+    assert "shared tools changed" not in message and "共享工具已更新" not in message
+    assert "existing software" not in message and "已有软件" not in message
+    assert "previous reports" not in message and "以前的报告" not in message
     assert result["#chat"]["display"] == "none"
 
 

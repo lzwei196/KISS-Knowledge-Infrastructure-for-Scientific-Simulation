@@ -1,7 +1,7 @@
 """Exact projection and real installed-PCSE provider contract regressions.
 
 Native positive certification is never mocked or skipped. Select a real
-Python 3.12/PCSE 6.0.13 environment with GEOFORGE_WOFOST_TEST_PYTHON when the
+Python 3.12/PCSE 6.0.12 or 6.0.13 environment with GEOFORGE_WOFOST_TEST_PYTHON when the
 reviewed Windows fixture environment is elsewhere.
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ import copy
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -115,7 +116,7 @@ def test_relative_runtime_path_is_rejected(tmp_path, python):
 def test_selected_venv_cannot_be_certified_against_base_pcse(tmp_path):
     base, candidate = _trees(tmp_path / "ki")
     environment = tmp_path / "different-venv"
-    result = subprocess.run([NATIVE_PYTHON, "-I", "-B", "-m", "venv", "--without-pip", str(environment)],
+    result = subprocess.run([NATIVE_PYTHON, "-I", "-S", "-B", "-m", "venv", "--without-pip", str(environment)],
                             capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stderr
     executable = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -128,7 +129,7 @@ def test_selected_venv_cannot_be_certified_against_base_pcse(tmp_path):
     assert selected.returncode == 0 and selected.stdout.strip() == "different-selected-environment"
     report = recipe.validate_behavior(base, candidate, executable)
     assert report["ok"] is False and report["native_provider_execution"] is False
-    assert "virtualenv" in report["error"]
+    assert "Selected runtime needs exactly one PCSE distribution" in report["error"]
 
 
 def test_candidate_tampering_rejected_before_any_process(tmp_path, monkeypatch):
@@ -156,7 +157,7 @@ def native_report(tmp_path_factory):
 
 def test_real_pcse_provider_fixtures_certify_only_interface(native_report):
     report = native_report
-    assert report["runtime"]["pcse_version"] == "6.0.13"
+    assert report["runtime"]["pcse_version"] in {"6.0.12", "6.0.13"}
     assert report["runtime"]["python_version"][:2] == [3, 12]
     assert report["native_provider_execution"] is True
     assert report["model_execution"] is False
@@ -185,7 +186,7 @@ def test_incomplete_or_downgraded_reports_cannot_be_reused(native_report, mutati
     elif mutation == "fixture_input_changed": report["fixtures"][0]["input_unchanged"] = False
     elif mutation == "count": report["fixture_count"] = 0
     elif mutation == "protocol": report["fixture_protocol_sha256"] = "old"
-    elif mutation == "runtime_version": report["runtime"]["pcse_version"] = "6.0.12"
+    elif mutation == "runtime_version": report["runtime"]["pcse_version"] = "6.0.99"
     elif mutation == "native": report["native_provider_execution"] = False
     elif mutation == "model": report["model_execution"] = True
     elif mutation == "science": report["scientific_validation"] = True
@@ -211,3 +212,129 @@ def test_runtime_file_content_change_invalidates_report_without_native_execution
     monkeypatch.setattr(recipe.subprocess, "run", forbidden)
     with pytest.raises(ValueError, match="content changed"):
         recipe.require_runtime_current(report)
+
+
+@pytest.fixture(scope="module")
+def selected_venv(tmp_path_factory, native_report):
+    """An isolated disposable environment; never mutate the supplied runtime."""
+    root = tmp_path_factory.mktemp("wofost-selected-venv")
+    environment = root / "venv"
+    result = subprocess.run([NATIVE_PYTHON, "-I", "-S", "-B", "-m", "venv", "--without-pip", str(environment)],
+                            capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stderr
+    executable = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    site = environment / ("Lib/site-packages" if os.name == "nt" else "lib/python3.12/site-packages")
+    shutil.copytree(native_report["runtime"]["site_packages"], site, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    # Even a venv permitting system packages must use only its selected site.
+    cfg = environment / "pyvenv.cfg"
+    cfg.write_text(cfg.read_text().replace("include-system-site-packages = false",
+                                         "include-system-site-packages = true"))
+    return root, executable, site
+
+
+def test_selected_venv_ignores_startup_hooks_and_caller_python_paths(selected_venv, monkeypatch):
+    root, executable, site = selected_venv
+    base, candidate = _trees(root / "isolated-ki")
+    marker = root / "startup-hook-ran"
+    injected = "from pathlib import Path; Path(" + repr(str(marker)) + ").write_text('bad')\n"
+    hooks = [site / "unapproved.pth", site / "sitecustomize.py", site / "usercustomize.py"]
+    for path in hooks:
+        path.write_text("import pathlib; " + injected if path.suffix == ".pth" else injected)
+    monkeypatch.setenv("PYTHONPATH", str(site))
+    monkeypatch.setenv("PYTHONHOME", str(root / "wrong-home"))
+    try:
+        report = recipe.validate_behavior(base, candidate, executable)
+        assert report["ok"], report.get("error")
+        assert not marker.exists()
+        runtime = report["runtime"]
+        assert Path(runtime["site_packages"]) == site.resolve()
+        binding = runtime["venv_binding"]
+        assert Path(binding["config"]["path"]) == executable.parent.parent / "pyvenv.cfg"
+        recorded = {row["path"] for row in runtime["files"]}
+        assert binding["base_python"]["path"] in recorded
+        assert binding["config"]["path"] in recorded
+        assert not any(Path(row["path"]).name in {p.name for p in hooks} for row in runtime["files"])
+        assert recipe.require_runtime_current(report) is report
+    finally:
+        for path in hooks:
+            path.unlink(missing_ok=True)
+
+
+def test_venv_config_same_size_and_mtime_change_invalidates_receipt(selected_venv):
+    root, executable, _site = selected_venv
+    base, candidate = _trees(root / "config-drift-ki")
+    report = recipe.validate_behavior(base, candidate, executable)
+    assert report["ok"], report.get("error")
+    cfg = executable.parent.parent / "pyvenv.cfg"
+    old, stamp = cfg.read_bytes(), cfg.stat()
+    try:
+        # A non-semantic command-line change is nevertheless changed authority.
+        changed = old.replace(b"command =", b"COMMAND =", 1)
+        assert changed != old and len(changed) == len(old)
+        cfg.write_bytes(changed)
+        os.utime(cfg, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        with pytest.raises(ValueError, match="binding changed"):
+            recipe.require_runtime_current(report)
+    finally:
+        cfg.write_bytes(old)
+        os.utime(cfg, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+
+
+@pytest.mark.parametrize("mutation", ["provider", "version"])
+def test_selected_venv_unreviewed_source_or_version_cannot_certify(selected_venv, mutation):
+    root, executable, site = selected_venv
+    base, candidate = _trees(root / ("pin-drift-" + mutation))
+    before_report = recipe.validate_behavior(base, candidate, executable)
+    assert before_report["ok"], before_report.get("error")
+    if mutation == "provider":
+        target = site / "pcse/input/sitedataproviders.py"
+        old = target.read_bytes()
+        changed = old.replace(b"WOFOST72SiteDataProvider", b"WOFOST73SiteDataProvider", 1)
+        expected = "Reviewed PCSE source changed"
+    else:
+        target = next(site.glob("pcse-*.dist-info/METADATA"))
+        old = target.read_bytes()
+        changed = old.replace(b"Version: 6.0.12", b"Version: 6.0.99").replace(b"Version: 6.0.13", b"Version: 6.0.99")
+        expected = "Unreviewed PCSE version"
+    stamp = target.stat()
+    assert changed != old and len(changed) == len(old)
+    try:
+        target.write_bytes(changed)
+        os.utime(target, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        with pytest.raises(ValueError, match="changed"):
+            recipe.require_runtime_current(before_report)
+        report = recipe.validate_behavior(base, candidate, executable)
+        assert not report["ok"] and report["native_provider_execution"] is False
+        assert expected in report["error"]
+    finally:
+        target.write_bytes(old)
+        os.utime(target, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+
+
+@pytest.mark.parametrize("mutation", ["duplicate", "missing_home", "relative_base", "wrong_version", "oversized"])
+def test_malformed_venv_configuration_rejected_before_subprocess(tmp_path, monkeypatch, mutation):
+    base, candidate = _trees(tmp_path / "ki")
+    env = tmp_path / "venv"
+    executable = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"selected")
+    runtime_home = tmp_path / "runtime"
+    runtime_home.mkdir()
+    runtime = runtime_home / ("python.exe" if os.name == "nt" else "python3.12")
+    runtime.write_bytes(b"base")
+    cfg = env / "pyvenv.cfg"
+    text = (f"home = {runtime_home}\nexecutable = {runtime}\nversion = 3.12.10\n"
+            "include-system-site-packages = false\n")
+    if mutation == "duplicate": text += f"home = {runtime_home}\n"
+    elif mutation == "missing_home": text = text.replace(f"home = {runtime_home}\n", "")
+    elif mutation == "relative_base": text = text.replace(str(runtime), "relative-python")
+    elif mutation == "wrong_version": text = text.replace("3.12.10", "3.13.10")
+    elif mutation == "oversized": text += "x" * 16385
+    cfg.write_text(text)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Malformed venv must not start a child")
+    monkeypatch.setattr(recipe.subprocess, "run", forbidden)
+    report = recipe.validate_behavior(base, candidate, executable)
+    assert report["ok"] is False
+    assert "configuration" in report["error"]

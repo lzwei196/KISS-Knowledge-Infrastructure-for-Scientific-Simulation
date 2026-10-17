@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import flowgate, plan_review, projectrun, setup as setup_flow
+from . import flowgate, plan_review, projectrun, project_data_tools, setup as setup_flow
 from .acquire import INTENT_LOCK as _ACQ_INTENT_LOCK
 
 APPROVAL_REQUEST_ID_PREFIX = plan_review.APPROVAL_REQUEST_ID_PREFIX
@@ -871,6 +871,7 @@ class Turn:
     confirmation_required: bool = False
     started_at: float = 0.0                # wall clock when the turn was handed to the provider
     question_handoff_closed: bool = False  # an ended question turn cannot later submit its old drafts
+    execution_handoff: str = ""           # refreshed host facts, including on CLI resume
 
 
 def _command_gist(command, limit: int = 90) -> str:
@@ -1060,8 +1061,11 @@ def turn(project: Path, resolved, cfg, provider_kind: str, provider_name: str,
                       "an agent turn before approval could have altered the host-written answer store or "
                       "the host's record of the approval card (runs/plan-review.json). Inputs labelled as "
                       "the user's are as the host recorded them at the Approve click.\n")
+        from . import execution_context
+        execution_handoff = execution_context.refresh(fs)
+        extra += "\n\n" + execution_handoff
         return Turn(fs, True, extra, True, pp, f"flow:{state.value}:{fs.approval_id}", None, wrappers or {},
-                    kind="execution", started_at=time.time())
+                    kind="execution", started_at=time.time(), execution_handoff=execution_handoff)
 
     if state in (S.ACQUIRING, S.BLOCKED):
         # pre() already ran the acquisition pass and replied, or the blocked card is
@@ -1206,7 +1210,10 @@ def _plan_versions(root: Path) -> dict:
     return versions
 
 
-def _planning_failure(project: Path, t: Turn, errors: list[str], *, repair: bool = False) -> "Result":
+def _planning_failure(project: Path, t: Turn, errors: list[str], *, repair: bool = False,
+                      submission_feedback: bool = False) -> "Result":
+    if submission_feedback and (rejected := getattr(t.session, "plan_submission_errors", ())):
+        errors = [*errors, "Latest rejected submission in this turn:", *rejected]
     message = "Plan was not submitted for approval:\n- " + "\n- ".join(errors[:30])
     (project / "runs" / "plan-validation.txt").write_text(message, encoding="utf-8")
     projectrun.report(project, {"status": "needs_attention", "summary": message}, source="flow")
@@ -1291,7 +1298,8 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         if (t.provider_succeeded is False or getattr(fs, "provider_succeeded", None) is False) and not submitted:
             # A plan that was submitted before the connection died is still a plan;
             # only a turn that never submitted is a failure.
-            return _planning_failure(project, t, ["The provider failed or was interrupted. Your draft is preserved; retry planning."])
+            return _planning_failure(project, t, ["The provider failed or was interrupted. Your draft is preserved; retry planning."],
+                                     submission_feedback=True)
         draft_root = t.planning_worktree or project
         current = _plan_versions(draft_root)
         saved_both = len(current) == 2 and all(current.get(k) != v for k, v in t.draft_before.items())
@@ -1303,14 +1311,15 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             return _planning_failure(project, t, [
                 "No current-turn submission of both plan files. The generated draft is not an agent-reviewed plan.",
                 "Save these files again even if unchanged: " + ", ".join(unsaved),
-            ], repair=t.provider_succeeded is True)
+            ], repair=t.provider_succeeded is True, submission_feedback=True)
         if pj is None or inv is None:
             return _planning_failure(project, t, ["Both plan files must contain valid JSON objects."], repair=True)
         if api_submission and api_submission != (flow.plan.sha256(pj), flow.plan.sha256(inv)):
             return _planning_failure(project, t, ["The files changed after write_plan submitted them. Submit the current revision again."])
         errs = fs.prepare_calibration_steps(pj)
         errs.extend(flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots,
-                                       for_review=True, project=project))
+                                       for_review=True, project=project,
+                                       ki_data_authority=project_data_tools.require_ki_data_source))
         if errs:
             return _planning_failure(project, t, errs, repair=True)
         if fs.database_access_mode == "off":
@@ -1340,7 +1349,7 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
         # Catalogue stamping can normalize source ids. Review the final data
         # shown on the card, including its agreement with scientific choices.
         errs = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots, for_review=True,
-                                  project=project)
+                                  project=project, ki_data_authority=project_data_tools.require_ki_data_source)
         if errs:
             return _planning_failure(project, t, errs, repair=True)
         if t.planning_worktree and _plan_versions(project) != t.project_before:
@@ -1363,7 +1372,9 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
             projectrun.set_stage(project, display_stage(flow, fs.state), "The agent needs a plan change")
             return Result()
         ev = fs.evidence(enforcement=fs.ctx.enforcement.value)
-        (project / "runs" / "evidence.json").write_text(json.dumps(ev, indent=2), encoding="utf-8")
+        from . import execution_context
+        execution_context.persist(project, ev, phase="provider_exit",
+            plan_sha256=flow.plan.sha256(fs.plan), inventory_sha256=flow.plan.sha256(fs.inventory))
         if ev["validation"] == "failed":
             fs.move("run_finished"); fs.move("validation_failed")
             projectrun.set_stage(project, display_stage(flow, fs.state),
@@ -1373,6 +1384,7 @@ def after(project: Path, t: Turn | None, reply: str, provider_note: str = "",
                     "**GeoForge verification:** the approved plan contains invalid steps: "
                     + "; ".join(ev["plan_errors"][:5])
                     + ". Revise the plan and submit it for review again; completion is not verified."))
+            return Result(message=execution_context.failed_verdict(ev))
         elif ev["receipts_verified"] and ev["validation"] == "passed":
             fs.move("run_finished")
             fs.move("validated", {"receipts_verified": True, "validation": "passed"})

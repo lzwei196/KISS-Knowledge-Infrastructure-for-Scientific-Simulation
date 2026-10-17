@@ -42,6 +42,8 @@ def case(tmp_path, source=CSV_READER, arguments=None):
                             project_data_tool=authored["project_data_tool"], outputs=["inspection"])
     plan["steps"][0]["project_data_tool"]["arguments"] = arguments or ["inputs/raw.csv", "outputs/inspection.json"]
     inv["items"][0].update(status="ready", local_paths=[str(raw)])
+    inv["items"].append({"id": "inspection", "status": "missing",
+                         "local_paths": ["outputs/inspection.json"]})
     return ki, project, fs, plan, inv, authored
 
 

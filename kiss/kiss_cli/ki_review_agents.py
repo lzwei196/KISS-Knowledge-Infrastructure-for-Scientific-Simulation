@@ -270,7 +270,25 @@ Before submitting, check all citations together: read missing evidence or remove
 unsupported citations/findings and disclose the uncertainty. Only cite contents
 you actually inspected; do not imply that a partial read covered the whole file.
 No new native/scientific verification has been authorized. Include needed tests
-under tests_not_run; agreement or a plausible repair is not a passing test."""
+under tests_not_run; agreement or a plausible repair is not a passing test.
+{_host_data_capabilities()}"""
+
+
+def _host_data_capabilities():
+    """Current host facts for all reviewers; grants no tools or new permissions."""
+    from . import flowgate
+    flow = flowgate.load()
+    formats = sorted(flow.project_data_formats.FORMAT_IDS)
+    return ("[CURRENT HOST DATA-CONTRACT CAPABILITIES — context only]\n"
+        "Explicit project-data output formats supported by this host: " + ", ".join(formats) + ". "
+        "A transformed nonbasic format requires output_formats in the reviewed version-2 project_data_tool "
+        "binding. Each contract names output_id, a literal fresh outputs/ or artifacts/ path and format. "
+        "pcse_weather_csv_v1 additionally requires date_format='%Y%m%d'; "
+        "pcse_agromanagement_yaml_v1 requires campaign_start='YYYY-MM-DD'. "
+        "A missing declaration is distinct from an unsupported format: inspect the exact approved plan and "
+        "failed receipt before recommending a repair. Unchanged copies use the separate exact input-copy "
+        "contract; do not disguise transformed YAML as copying. Host format acceptance is structure only, "
+        "not scientific validity. Reviewers remain read-only and cannot execute or approve these tools.")
 
 
 def _context_brief(root):
@@ -764,9 +782,9 @@ def author_draft(job_id, *, provider, model="", task_extra="", author_notes="", 
         if repair_mode not in {"authoring", "maintenance"}:
             raise ReviewError("Unknown host repair verification profile")
         if repair_mode == "maintenance" and (authoring_scope != "local" or
-                maintenance_recipe not in {"tool_inventory", "preflight_reporting", "package_contract", "wofost_parameter_routing", "wofost_runtime_paths"}):
+                maintenance_recipe not in {"tool_inventory", "preflight_reporting", "package_contract", "wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"}):
             raise ReviewError("Maintenance authoring requires a supported project-local recipe")
-        if draft_only and maintenance_recipe in {"wofost_parameter_routing", "wofost_runtime_paths"}:
+        if draft_only and maintenance_recipe in {"wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"}:
             raise ReviewError("WOFOST runtime maintenance requires a selected project runtime; rejected-download drafts cannot use it")
         if draft_only and repair_mode != "maintenance":
             raise ReviewError("Rejected update drafts require maintenance verification")
@@ -792,6 +810,12 @@ def author_draft(job_id, *, provider, model="", task_extra="", author_notes="", 
             cancel.check()
             if repair_mode == "maintenance":
                 recipe_limits = (
+                    "Only the exact host-generated stage 1 WOFOST crop-provider enumeration calls and "
+                    "restoration of this tool's own logger after PCSE import may differ. Preserve CLI overrides, "
+                    "crop/variety names, case sensitivity, selected-crop activation, parameter values, JSON output "
+                    "and exit codes. The host requires real installed-PCSE provider fixtures on the selected "
+                    "project interpreter. This does not establish a model run or scientific validation."
+                    if maintenance_recipe == "wofost_crop_provider" else
                     "Only the exact host-generated stage 6 WOFOST soil/site parameter routing block may differ. "
                     "Preserve all supplied values and existing absent-key defaults. Do not edit stage 5, "
                     "equations, readers, forcing, parameters, acceptance criteria, or runtime paths. "

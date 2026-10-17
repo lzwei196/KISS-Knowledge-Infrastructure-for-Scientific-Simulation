@@ -70,6 +70,7 @@ def test_project_setup_recipe_precedes_host_preflight_and_only_verified_handoff(
         _software_status_prompt=lambda *_args: "", _record_agent_preflight=preflight,
         _session_workspaces=lambda *_args: [(ki, cfg)],
     )
+    handler._prepare_setup_workspace = lambda ki, root: gui.Handler._prepare_setup_workspace(handler, ki, root)
     monkeypatch.setattr(gui.setup_flow, "prepare", prepare)
     monkeypatch.setattr(gui.prompt, "compose_multi", lambda *_args, **_kwargs: "KI contract")
     monkeypatch.setattr(gui.calibration, "prompt_block", lambda *_args: "")

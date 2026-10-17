@@ -29,6 +29,7 @@ def test_png_only_run_kinds_cannot_complete_but_plot_process_can(tmp_path, monke
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     plan, inventory = _plan(ki)
     plan["steps"][0]["kind"] = kind
+    plan["steps"][0].update(command=["artifacts/figure.png"], cwd=".")
     assert flow.write_plan(plan, inventory) == []
     flow.flow.approval.approve(project, by="auto")
     flow.reload_artifacts()

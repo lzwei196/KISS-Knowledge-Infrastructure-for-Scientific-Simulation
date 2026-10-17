@@ -157,6 +157,19 @@ def cmd_init(args) -> int:
             registration = entry
             break
     existing_mode = bool(registration and registration.get("installation_mode") == "existing")
+    if registration is None:
+        try:
+            prior = json.loads((root / install_locations.RECORD_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            prior = {}
+        if isinstance(prior, dict) and prior.get("installation_mode") == "existing":
+            # A custom GUI workroot may own an index outside the two CLI lookup
+            # roots. The local record is a reason to refuse an implicit new
+            # install, never authority to adopt an external interpreter.
+            print("Existing-installation workspace has no matching user selection in the CLI registry. "
+                  "Continue from GeoForge GUI setup so its recorded selection is retained; "
+                  "no environment or KI files were changed.")
+            return 2
     if args.workdir and registration is None:
         root = install_locations.select(default_workroot, ki.name, root)
         install_locations.select_mode(default_workroot, ki.name, "new")
@@ -172,6 +185,8 @@ def cmd_init(args) -> int:
 
     man = _manifest_for(ki, repo_root)
     strategy = "existing" if existing_mode else man.acquire.strategy if man.acquire else "none"
+    readonly_python = existing_mode and setup.python_installation(man)
+    selected_python = registration.get("existing_path") if readonly_python else None
     print(_c("b", f"\ninitialising {ki.name}") +
           _c("dim", f"  (strategy: {strategy})\n"))
 
@@ -179,14 +194,19 @@ def cmd_init(args) -> int:
 
     # Finish choosing the runtime before freezing those paths into KI files.
     live = root / "ki"
-    python_step = result.add(setup.prepare_python(cfg, live, explicit_python=args.python))
+    python_step = result.add(
+        install.Step("python-env", False, "--python conflicts with the selected existing interpreter.")
+        if readonly_python and args.python and args.python != selected_python else
+        setup.prepare_existing_python(cfg, live, selected_python) if readonly_python else
+        setup.prepare_python(cfg, live, explicit_python=args.python))
     if python_step.ok:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
     print(f"  [1/8] python env ...... {_c('ok' if python_step.ok else 'BLOCK', python_step.mark)}")
 
     s = result.add(install.Step("ki-tools-common", False,
                                "not run because Python preparation failed", skipped=True)
-                   if not python_step.ok else install.install_ki_tools_common(cfg, repo_root)
+                   if not python_step.ok else setup.prepare_readonly_helpers(cfg, repo_root)
+                   if readonly_python else install.install_ki_tools_common(cfg, repo_root)
                    if install.needs_shared_tools(ki, man) else
                    install.Step("ki_tools_common", True, "Not required: source-bound stdlib data reader", skipped=True))
     print(f"  [2/8] ki_tools_common . {_c('ok' if s.ok else 'BLOCK', s.mark)}")
@@ -213,7 +233,9 @@ def cmd_init(args) -> int:
     s = result.add(install.check_system_deps(man.system_deps))
     print(f"  [4/8] system deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
-    s = result.add(install.install_python_deps(man.python_deps, cfg.python) if python_step.ok else
+    s = result.add(setup.check_existing_python_dependencies(man, cfg)
+        if readonly_python and python_step.ok else
+        install.install_python_deps(man.python_deps, cfg.python) if python_step.ok else
                    install.Step("python-deps", False, "not run because Python preparation failed", skipped=True))
     print(f"  [5/8] python deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
@@ -224,6 +246,9 @@ def cmd_init(args) -> int:
             f"acquire[{strategy}]", False,
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
+    elif readonly_python:
+        s, binary = install.Step("acquire[existing]", True,
+            "Using the selected existing Python; no installation or upgrade was run."), None
     elif existing_mode:
         # The GUI host owns adoption. CLI init may verify an already-placed
         # product, but must not turn an existing-software handoff into a build.
@@ -284,7 +309,9 @@ def cmd_init(args) -> int:
     written = handoff.write(ki, result, man, cfg, root,
         preflight_command=setup.runtime_command(cat.models_dir, ki.name, root, action="preflight"))
     install_locations.record(
-        ki.name, root, cfg, ki_root=ki.root, verified=result.ok)
+        ki.name, root, cfg, ki_root=ki.root, verified=result.ok,
+        **({"installation_mode": "existing", "existing_path": selected_python,
+            "resolved_existing_path": cfg.python} if readonly_python and python_step.ok else {}))
     print(f"    agent handoff ... {_c('ok', 'ok')} ({len(written)} files)")
 
     print()
@@ -507,6 +534,18 @@ def cmd_fetch(args) -> int:
     return 0
 
 
+def cmd_prepare_python_runtime(args) -> int:
+    """Use the current GUI setup's host capability; never mint a ticket here."""
+    from . import setup_bridge
+    try:
+        result = setup_bridge.request(args.version)
+    except (OSError, ValueError) as error:
+        print(f"prepare-python-runtime refused: {error}", file=sys.stderr)
+        return 3
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("ok") else 1
+
+
 def cmd_ask_question(args) -> int:
     """Publish one planning choice through the same host validator as the bridge."""
     from . import flowrun
@@ -726,6 +765,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--check", action="store_true", help="validate the shipped files")
     q.add_argument("--json", action="store_true")
     q.set_defaults(fn=cmd_papers)
+
+    q = sub.add_parser("prepare-python-runtime", help="prepare Python through the active fresh GUI setup")
+    q.add_argument("--version", required=True, help="CPython minor or exact release, e.g. 3.12 or 3.12.9")
+    q.set_defaults(fn=cmd_prepare_python_runtime)
 
     q = sub.add_parser("preflight", help="run the installed KI check in an isolated execution copy")
     q.add_argument("model")

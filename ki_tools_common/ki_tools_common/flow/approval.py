@@ -101,6 +101,52 @@ def _tool_hashes(plan: dict, project: Path | None = None) -> dict[str, dict[str,
     return result
 
 
+def _selected_ki_input_hashes(plan: dict, inventory: dict, project: Path) -> dict:
+    """Bind only explicit data files consumed from the selected project KI.
+
+    This supplements the host's mandatory projection/guard checks; it cannot
+    grant KI provenance. Conventional test_cases keep their existing policy.
+    Every check reads actual bytes, including when size and mtime are unchanged.
+    """
+    from . import project_inputs
+    project = Path(project).resolve()
+    items = {item.get("id"): item for item in inventory.get("items", []) if isinstance(item, dict)}
+    result = {}
+    for step in plan.get("steps", []):
+        if (not isinstance(step, dict) or "project_data_tool" not in step
+                or step.get("status") == "skipped"):
+            continue
+        ki = step.get("ki")
+        if not isinstance(ki, str) or not ki or ki in {".", ".."} or "/" in ki or "\\" in ki:
+            raise ValueError("Project data step must name one selected KI")
+        root = project / "models" / ki / "ki"
+        step_inputs = {}
+        for ident in step.get("inputs") or []:
+            files = []
+            for raw in (items.get(ident) or {}).get("local_paths") or []:
+                if not isinstance(raw, str):
+                    continue  # malformed inventory is rejected by ordinary plan validation
+                candidate = Path(raw.replace("${PROJECT}", str(project))).expanduser()
+                candidate = Path(os.path.abspath(candidate if candidate.is_absolute() else project / candidate))
+                if not candidate.is_relative_to(root) or candidate.is_relative_to(root / "test_cases"):
+                    continue
+                if ki not in plan.get("selected_kis", []):
+                    raise ValueError("Consumed KI data does not belong to the selected KIs")
+                # Structural eligibility only. The host review/runtime checks
+                # authenticate the signed immutable projection independently.
+                granted, directory, _ = project_inputs.grant(project, ki, raw,
+                    selected_ki_root=root, authority=lambda *_: None)
+                if directory is not None or len(granted) != 1:
+                    raise ValueError("Selected KI approval inputs must be exact files")
+                path = granted[0]
+                files.append({"path": str(path), "sha256": _r.sha256_file(path)})
+            if files:
+                step_inputs[str(ident)] = files
+        if step_inputs:
+            result[str(step.get("id") or "")] = step_inputs
+    return result
+
+
 def approve(project: Path, decisions: dict | None = None, by: str = "user") -> dict:
     """Write a SIGNED runs/approval.json for the CURRENT plan files. Raises if they are
     missing or invalid-shaped."""
@@ -115,6 +161,7 @@ def approve(project: Path, decisions: dict | None = None, by: str = "user") -> d
         "plan_sha256": sha256(plan),
         "data_inventory_sha256": sha256(inv),
         "tool_sha256": _tool_hashes(plan, project),
+        "selected_ki_input_sha256": _selected_ki_input_hashes(plan, inv, project),
         "approved_by": by,
         "approved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         # Distinguishes revoke/re-approve cycles even within the same second.  The
@@ -161,7 +208,8 @@ def check(project: Path) -> str:
             or doc.get("approved_by") not in ("user", "auto") \
             or not isinstance(doc.get("decisions"), dict) \
             or not isinstance(doc.get("selected_kis"), list) \
-            or ("tool_sha256" in doc and not isinstance(doc.get("tool_sha256"), dict)):
+            or ("tool_sha256" in doc and not isinstance(doc.get("tool_sha256"), dict)) \
+            or ("selected_ki_input_sha256" in doc and not isinstance(doc.get("selected_ki_input_sha256"), dict)):
         return "FORGED"
     if not _r.verify(project, doc):
         return "FORGED"
@@ -185,6 +233,16 @@ def check(project: Path) -> str:
         # revokes the approval on anything but OK. Fail the call; the caller retries.
         raise RuntimeError(f"approval check could not hash a step tool: {e}") from e
     if doc.get("tool_sha256") != hashes:
+        return "DRIFT"
+    try:
+        input_hashes = _selected_ki_input_hashes(plan, inv, project)
+    except (FileNotFoundError, ValueError):
+        return "DRIFT"
+    except OSError as error:
+        raise RuntimeError(f"approval check could not hash a selected KI data input: {error}") from error
+    # An old approval needs re-review only if it consumes a newly admitted KI
+    # data file. Plans without such inputs preserve their existing approval.
+    if doc.get("selected_ki_input_sha256", {}) != input_hashes:
         return "DRIFT"
     return "OK"
 

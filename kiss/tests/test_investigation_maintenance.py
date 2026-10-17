@@ -29,7 +29,7 @@ def maintenance(monkeypatch):
         return report
     def verify(root, *, source, name):
         calls.append(("verify", name))
-        return {"ok": True, "fixture_maintenance": True, "source": source,
+        return {"ok": True, "fixture_maintenance": True, "source": source, "gate_policy": ki_maintenance.POLICY,
                 "candidate_digest": gate.content_digest(root), "base_digest": source["base_digest"],
                 "changes": [{"path": "SKILL.md"}]}
     monkeypatch.setattr(ki_maintenance, "capture_source", capture)

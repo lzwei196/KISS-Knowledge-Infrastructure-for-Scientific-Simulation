@@ -32,6 +32,7 @@ def mixed_project(tmp_path, monkeypatch):
     plan = {"schema_version": "1.0", "goal": "Mixed acquisition fixture", "created_at": "fixture",
             "selected_kis": ["M"], "unresolved_questions": [], "scientific_choices": [],
             "steps": [{"id": "M:run", "ki": "M", "tool": str(tool), "kind": "run",
+                       "command": [], "cwd": ".",
                        "inputs": ["forcing", "yearbook"], "outputs": ["q"], "status": "planned"}]}
     inventory = {"schema_version": "1.0", "items": [
         {"id": iid, "required_by": ["M"], "status": "resolved", "acceptable_sources": [dataset],

@@ -308,7 +308,8 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .acquisitionnote[hidden]{display:none}.acquisitionnote b{display:block}.acquisitionnote p{margin:4px 0;white-space:pre-line;overflow-wrap:anywhere}.acquisitionnote small{color:var(--fg-2)}.acquisitionnote button{float:right;padding:4px 8px;font-size:11px;margin-left:8px}
 #opendata[data-state]:not([data-state=""])::after{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;background:currentColor;vertical-align:middle}
 #opendata[data-state="working"]::after{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.25}}
-.ki-update-toast{position:fixed;right:18px;bottom:18px;z-index:40;width:min(390px,calc(100vw - 36px));padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--raised);box-shadow:0 16px 45px rgba(20,28,40,.16);display:none}.ki-update-toast.open{display:block}.ki-update-toast b{display:block;margin-bottom:3px}.ki-update-toast small{display:block;color:var(--fg-2);line-height:17px}.ki-update-actions{display:flex;gap:7px;margin-top:10px}.ki-update-actions button{padding:5px 9px;font-size:12px}
+/* Informational notices stay below active inspector and modal controls. */
+.ki-update-toast{position:fixed;right:18px;bottom:18px;z-index:16;width:min(390px,calc(100vw - 36px));padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--raised);box-shadow:0 16px 45px rgba(20,28,40,.16);display:none}.ki-update-toast.open{display:block}.ki-update-toast b{display:block;margin-bottom:3px}.ki-update-toast small{display:block;color:var(--fg-2);line-height:17px}.ki-update-actions{display:flex;gap:7px;margin-top:10px}.ki-update-actions button{padding:5px 9px;font-size:12px}
 </style></head>
 <body>
 <aside>
@@ -588,6 +589,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
   </section>
 </main>
 <div class="ki-update-toast" id="ki-update-toast"><b id="ki-update-title">KI library</b><small id="ki-update-message"></small><div class="ki-update-actions"><button class="primary" id="ki-update-view">View report</button><button id="ki-update-dismiss">Dismiss</button></div></div>
+<script src="/ki-scope.js"></script>
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
 <script src="/investigation.js"></script>
@@ -619,8 +621,8 @@ function artifactImage(alt,raw,sid){
   const caption=alt||parts[parts.length-1];
   return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
 }
-const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_data_tool:"Prepared a project data tool",run_project_data_tool:"Ran a project data tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command",search_observation_data:"Searched GeoForge Database",search_catalogue:"Searched GeoForge Database",describe_dataset:"Read dataset schema",estimate_clip:"Estimated a server clip",download_observation_data:"Downloaded from GeoForge Database",fetch_data:"Downloaded a data file",write_plan:"Wrote the plan",run_calibration:"Ran a calibration",search_diagnostics:"Searched KDT diagnostics",responding:"Generating a response"};
-const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令",search_observation_data:"已检索 GeoForge 数据库",search_catalogue:"已检索 GeoForge 数据库",describe_dataset:"已读取数据集字段",estimate_clip:"已估算服务器裁剪",download_observation_data:"已从 GeoForge 数据库下载",fetch_data:"已下载数据文件",write_plan:"已写入计划",run_calibration:"已运行校准",search_diagnostics:"已检索 KDT 诊断",responding:"正在生成回复"};
+const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_data_tool:"Prepared a project data tool",run_project_data_tool:"Ran a project data tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command",search_observation_data:"Searched GeoForge Database",search_catalogue:"Searched GeoForge Database",describe_dataset:"Read dataset schema",estimate_clip:"Estimated a server clip",download_observation_data:"Downloaded from GeoForge Database",fetch_data:"Downloaded a data file",write_plan:"Checking plan submission",run_calibration:"Ran a calibration",search_diagnostics:"Searched KDT diagnostics",responding:"Generating a response"};
+const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令",search_observation_data:"已检索 GeoForge 数据库",search_catalogue:"已检索 GeoForge 数据库",describe_dataset:"已读取数据集字段",estimate_clip:"已估算服务器裁剪",download_observation_data:"已从 GeoForge 数据库下载",fetch_data:"已下载数据文件",write_plan:"提交计划",run_calibration:"已运行校准",search_diagnostics:"已检索 KDT 诊断",responding:"正在生成回复"};
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
 let INVESTIGATION=null;
 let KI_UPDATE_REVISION="",KI_UPDATE_POLL=null,KI_UPDATE_REFRESHING=null,KI_UPDATE_NOTICE="";
@@ -648,21 +650,30 @@ async function watchKiUpdates(){
       const revision=u.active_revision||"";
       if(revision&&revision!==KI_UPDATE_REVISION){
         $("#ki-update-toast").classList.remove("open");
+        const scope=GeoForgeKIScope.get();
         const [models,status]=await Promise.all([
           kiUpdateReadJSON("/api/models"),kiUpdateReadJSON("/api/status")]);
         if(!Array.isArray(models)||!status||typeof status!=="object"||Array.isArray(status))
           throw new Error("Invalid KI catalogue or verification status");
         // Publish the pair only after both succeed; a failed refresh retries.
+        if(scope!==GeoForgeKIScope.get())return;
         MODELS=models;STATUS=status;KI_UPDATE_REVISION=revision;
         LAST_STATUS_CHECK=Date.now();drawCatalogStatus();
       }
       if(!["updated","up_to_date","error","kept"].includes(u.state))return;
-      const notice=JSON.stringify([u.state,revision,u.checked_at,u.source_commit,u.error,u.summary]);
+      const selectedScope=GeoForgeKIScope.get();
+      const notice=JSON.stringify([selectedScope,u.state,revision,u.checked_at,u.source_commit,u.error,u.summary]);
       if(notice===KI_UPDATE_NOTICE)return;
       KI_UPDATE_NOTICE=notice;
       const zh=chineseUI();
       $("#ki-update-title").textContent=u.state==="error"?(zh?"KI 更新未完成":"KI update not completed"):u.state==="kept"?(zh?"已保留当前 KI 库":"Current KI library kept"):(zh?"KI 库检查完成":"KI library checked");
       $("#ki-update-message").textContent=u.state==="error"?(zh?"网络或验证出现问题，GeoForge 已继续使用上一次验证通过的 KI 库。":"A network or validation issue occurred. GeoForge kept the last validated KI library."):u.state==="kept"?(zh?"GeoForge 保留了当前 KI 库，因为仓库中的版本会移除本机平台的安装说明或安装配方；仓库补齐后会恢复更新。":(u.summary||"GeoForge kept the current KI library.")):zh?(u.state==="updated"?`KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`:"KI 库已经是最新版本。"):(u.summary||"");
+      if(selectedScope){
+        $("#ki-update-title").textContent=u.state==="error"?(zh?"全量 KI 库更新未完成":"Full KI library update not completed"):u.state==="kept"?(zh?"全量 KI 库已保留原版本":"Full KI library kept"):(zh?"全量 KI 库检查完成":"Full KI library checked");
+        const selectionNote=zh?"当前项目仍使用单独检查通过的所选 KI，此选择未受全量更新影响。":"This project continues using its separately checked selected KI; the full-library update did not change that selection.";
+        const reportNote=u.state==="error"?(zh?"全量 KI 库更新遇到网络或验证问题，已保留其上一次验证通过的版本。":"The full KI library update encountered a network or validation issue and kept its last validated version."):$("#ki-update-message").textContent;
+        $("#ki-update-message").textContent=reportNote+" "+selectionNote;
+      }
       $("#ki-update-view").textContent=zh?"查看报告":"View report";
       $("#ki-update-dismiss").textContent=zh?"关闭":"Dismiss";
       $("#ki-update-toast").classList.add("open");
@@ -799,13 +810,13 @@ async function refreshMachineStatus(redraw=true,force=false){
   // can incorrectly keep showing "Setup needed" after preflight has passed.
   if(!force&&Date.now()-LAST_STATUS_CHECK<1500)return STATUS;
   if(STATUS_REFRESHING)return STATUS_REFRESHING;
-  const revision=KI_UPDATE_REVISION;
+  const revision=KI_UPDATE_REVISION,scope=GeoForgeKIScope.get();
   STATUS_REFRESHING=(async()=>{
     try{
       const r=await fetch("/api/status",{cache:"no-store"});
       if(!r.ok)throw new Error(`status ${r.status}`);
       const fresh=await r.json();
-      if(revision!==KI_UPDATE_REVISION)return STATUS;
+      if(revision!==KI_UPDATE_REVISION||scope!==GeoForgeKIScope.get())return STATUS;
       if(fresh&&typeof fresh==="object"&&!Array.isArray(fresh))STATUS=fresh;
       LAST_STATUS_CHECK=Date.now();
       if(redraw)drawCatalogStatus();
@@ -846,7 +857,7 @@ async function loadAll(){
       if(draft&&sessionStorage.getItem(`kiss.autosend.${requested}`)){
         sessionStorage.removeItem(`kiss.autosend.${requested}`);autoSendSession=requested;
       }
-      history.replaceState({},"","/");
+      history.replaceState({},"",GeoForgeKIScope.url("/?session="+encodeURIComponent(requested)));
     }
     else if(!CUR && SESSIONS.length) await openSession(SESSIONS[0].id);
     else if(!CUR) drawEmpty();
@@ -1169,7 +1180,7 @@ function drawEmpty(){
     </div></div>`;
   document.querySelector('[data-action="focus"]').onclick=()=>$("#msg").focus();
   document.querySelector('[data-action="kis"]').onclick=()=>$("#pickmodels").click();
-  document.querySelector('[data-action="library"]').onclick=()=>location.href="/library";
+  document.querySelector('[data-action="library"]').onclick=()=>location.href=GeoForgeKIScope.url("/library");
   document.querySelector('[data-action="observatory"]').onclick=()=>location.href="/observatory";
   document.querySelector('[data-action="studio"]').onclick=()=>location.href="/studio";
 }
@@ -1177,11 +1188,18 @@ async function openSession(id){
   const seq=++OPEN_SEQ, leaving=CUR&&CUR.id;
   if(ACTION_SESSION&&ACTION_SESSION!==id)closeActionPicker();
   if(leaving&&leaving!==id)DRAFTS.set(leaving,$("#msg").value);
-  const [next]=await Promise.all([
-    fetch("/api/session/"+id).then(r=>r.json()),
-    refreshMachineStatus(false),
-  ]);
+  const response=await fetch("/api/session/"+id),next=await response.json();
+  if(!response.ok)throw new Error(next.error||"Could not open project");
   if(seq!==OPEN_SEQ)return;
+  const expectedScope=next.library_scope||"";GeoForgeKIScope.set(expectedScope);
+  // Opening another project can overlap a pending scope change. Fetch both
+  // views for this request; the selected scope alone does not mean its
+  // catalogue or installation status has finished loading.
+  const [catalogue,verification]=await Promise.all([fetch("/api/models"),fetch("/api/status")]);
+  if(!catalogue.ok||!verification.ok)throw new Error("Could not load the project's KI library and setup status");
+  const [models,status]=await Promise.all([catalogue.json(),verification.json()]);
+  if(seq!==OPEN_SEQ||GeoForgeKIScope.get()!==expectedScope)return;
+  MODELS=models;STATUS=status;LAST_STATUS_CHECK=Date.now();
   CUR=next;
   rememberSessionSummary(CUR);SESSIONS=mergeSessionSummaries(SESSIONS);
   invalidateProjectStatus(id);
@@ -1216,7 +1234,7 @@ function drawModelLabel(){
   badge.textContent=ms.length===1&&!status.pending.length?(zh?"项目预检通过":"Project preflight passed"):
     `${status.passed.length}/${ms.length} ${zh?"项目预检通过":"project preflights passed"}`;
   if(status.pending.length){
-    const pending=status.pending,href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}&session=${encodeURIComponent(CUR.id)}`:"/library";
+    const pending=status.pending,href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}&session=${encodeURIComponent(CUR.id)}`:GeoForgeKIScope.url("/library");
     $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${zh?"尚无当前项目预检通过的证据。可继续讨论；执行前必须通过项目检查。":"does not have a current passing project preflight. You can keep chatting; project checks must pass before execution."} <a href="${href}">${zh?"查看项目设置":"Review project setup"}</a></div>`);
   }
 }
@@ -2914,7 +2932,7 @@ setInterval(refreshSessionList,5000);
 setInterval(()=>refreshAcquisitionProgress().catch(()=>{}),5000);
 
 setInterval(()=>{if(!CUR)return;if($("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});else refreshViewStatus().catch(()=>{});},5000);
-$("#ki-update-view").onclick=()=>location.href="/library?updates=1";
+$("#ki-update-view").onclick=()=>location.href=GeoForgeKIScope.url("/library?updates=1");
 $("#ki-update-dismiss").onclick=()=>$("#ki-update-toast").classList.remove("open");
 async function resumeInvestigation(sid,message){
   if(!CUR||CUR.id!==sid)throw new Error(chineseUI()?"请打开原项目后继续。":"Open the original project to continue.");

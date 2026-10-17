@@ -3065,7 +3065,8 @@ class InstallLocationTests(unittest.TestCase):
             info = install_locations.info(workroot, "VIC")
 
             self.assertEqual(info["installation_mode"], "existing")
-            self.assertEqual(info["existing_path"], str(existing.resolve()))
+            self.assertEqual(info["existing_path"], str(existing.absolute()))
+            self.assertTrue(Path(info["existing_path"]).samefile(existing))
             self.assertEqual(info["existing_kind"], "file")
             self.assertEqual(
                 install_locations.resolve(workroot, "VIC"),

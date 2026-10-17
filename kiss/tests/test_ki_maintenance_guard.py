@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from kiss_cli import ki_guard, ki_verification
+from kiss_cli import ki_guard, ki_verification, ki_maintenance
 
 
 @pytest.fixture
@@ -19,7 +19,8 @@ def case(tmp_path, monkeypatch):
     draft = tmp_path / "draft"
     shutil.copytree(root, draft)
     (draft / "SKILL.md").write_text("bounded fixture repair\n", encoding="utf-8")
-    report = {"source": {"original_root": str(root), "base_digest": ki_verification.content_digest(root)},
+    report = {"gate_policy": ki_maintenance.POLICY,
+              "source": {"original_root": str(root), "base_digest": ki_verification.content_digest(root)},
               "candidate_digest": ki_verification.content_digest(draft)}
     return root, draft, report
 

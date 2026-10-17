@@ -136,9 +136,13 @@ def test_intake_estimates_are_capped(monkeypatch, tmp_path):
 
 
 def test_database_tools_follow_access_mode(tmp_path):
-    fs = flowgate.FlowSession.open(tmp_path, {}, database_access_mode="direct")
+    # The fixture's host registry lives below tmp_path; it must stay outside
+    # the scientific project just as it does in the desktop application.
+    project = tmp_path / "project"
+    project.mkdir()
+    fs = flowgate.FlowSession.open(project, {}, database_access_mode="direct")
     assert {"search_catalogue", "describe_dataset", "estimate_clip"} <= fs.api_tools()
-    fs = flowgate.FlowSession.open(tmp_path, {}, database_access_mode="off")
+    fs = flowgate.FlowSession.open(project, {}, database_access_mode="off")
     assert not ({"search_catalogue", "describe_dataset", "estimate_clip", "search_observation_data"} & fs.api_tools())
 
 

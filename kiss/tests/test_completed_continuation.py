@@ -68,7 +68,7 @@ def test_second_approved_phase_finishes_while_retaining_exact_prior_results(tmp_
     from kiss_cli import ki_guard
     ki_guard.enroll(ki.root)
     flowrun.pre(project, "run M for 2003", ["M"], [ki], None, None)
-    planning = _drive_planning(tmp_path, ki, project)
+    planning = _drive_planning(tmp_path, ki, project, arguments=["outputs/prior/result.csv"])
     if not first_failed:
         planning.session.plan["steps"][0]["kind"] = "prepare"
         assert planning.session.write_plan(planning.session.plan, planning.session.inventory) == []
@@ -94,7 +94,8 @@ def test_second_approved_phase_finishes_while_retaining_exact_prior_results(tmp_
                      _cfg(project), project_mode=True, flow=continuation.session)
     pj, inventory = continuation.session.plan, continuation.session.inventory
     pj["goal"] = "Run the next phase"
-    pj["steps"][0].update(id="M:next_phase", kind="run", tool=str(next_tool))
+    pj["steps"][0].update(id="M:next_phase", kind="run", tool=str(next_tool),
+                          command=["outputs/next/result.csv"])
     api.execute_tool("write_plan", {"plan": pj, "data_inventory": inventory}, ki,
                      _cfg(project), project_mode=True, flow=continuation.session)
     next_review = flowrun.after(project, continuation, "Next phase plan ready.", setup_ok=True)

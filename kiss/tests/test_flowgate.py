@@ -54,6 +54,13 @@ def _plan(ki):
                                                  "local_paths": [], "agent_resolvable": True, "needs_user": False}]})
 
 
+def _review_plan(ki, command, *, cwd="."):
+    """A new submission binds the actual invocation; _plan stays legacy-only."""
+    pj, inv = _plan(ki)
+    pj["steps"][0].update(command=list(command), cwd=cwd)
+    return pj, inv
+
+
 def _session(tmp_path, ki, state_events=()):
     project = tmp_path / "project"; (project / "runs").mkdir(parents=True)
     fs = flowgate.FlowSession.open(project, {ki.name: ki.root}, python=sys.executable)
@@ -115,7 +122,7 @@ def test_approved_catalogue_download_is_fetched_by_the_host_and_receipted(tmp_pa
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="obs-1", delivery="served")
     fs.write_plan(pj, inv)
     fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
@@ -154,7 +161,7 @@ def test_manual_catalogue_credentials_go_to_private_card_and_placed_files_get_a_
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="large-1", delivery="manual")
     fs.write_plan(pj, inv)
     fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
@@ -198,7 +205,7 @@ def test_manual_catalogue_credentials_go_to_private_card_and_placed_files_get_a_
 def test_write_plan_validates_then_writes(tmp_path):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     bad = json.loads(json.dumps(pj)); bad["steps"][0]["tool"] = str(ki.root / "SKILL.md")
     out = api.execute_tool("write_plan", {"plan": bad, "data_inventory": inv}, ki, _cfg(project), project_mode=True, flow=fs)
     assert out.startswith("PLAN NOT WRITTEN") and not (project / "runs" / "plan.json").exists()
@@ -209,7 +216,7 @@ def test_write_plan_validates_then_writes(tmp_path):
 def test_protected_files_are_never_agent_writable(tmp_path):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
@@ -224,7 +231,7 @@ def test_protected_files_are_never_agent_writable(tmp_path):
 def test_run_ki_tool_in_executing_writes_a_receipt_and_validates(tmp_path):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
@@ -258,7 +265,7 @@ def test_direct_api_tool_gets_approved_step_environment_only(tmp_path, monkeypat
     tool = ki.root / "tools" / "env.py"
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, [])
     pj["steps"][0].update({
         "tool": str(tool),
         "env": {"MODEL_OUTPUT": "${PROJECT}/outputs/env.json",
@@ -279,7 +286,7 @@ def test_direct_api_tool_gets_approved_step_environment_only(tmp_path, monkeypat
 def test_run_ki_tool_refused_when_approval_drifts(tmp_path):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
@@ -315,7 +322,7 @@ def test_write_plan_refuses_steps_that_cannot_produce_receipted_results(tmp_path
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     pj["steps"][0].update(tool=None, kind=kind, outputs=outputs)
     errors = fs.write_plan(pj, inv)
     assert any("no tool" in error for error in errors)
@@ -327,7 +334,7 @@ def test_write_plan_allows_review_to_resolve_input_choices(tmp_path):
     ki = _ki(tmp_path)
     _project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(status="missing", chosen_source=None, needs_user=True)
     assert fs.write_plan(pj, inv) == []
     assert fs.plan_submission
@@ -337,7 +344,7 @@ def test_run_ki_tool_refused_when_approved_tool_bytes_drift(tmp_path):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
     fs.move("execution_started", {"setup_verified": True})
@@ -379,8 +386,8 @@ def test_multi_ki_run_ki_tool_selects_by_name(tmp_path):
     fs = flowgate.FlowSession.open(project, {"A": a.root, "B": b.root}, python=sys.executable)
     fs.move("task_received"); fs.move("kis_resolved", {"selected_kis": ["A", "B"]})
     pj, inv = _plan(a); pj["selected_kis"] = ["A", "B"]
-    pj["steps"] = [{"id": "A:run", "ki": "A", "tool": str(a.root / "tools" / "run.py"), "kind": "run", "inputs": ["forcing"], "outputs": [], "status": "planned"},
-                   {"id": "B:run", "ki": "B", "tool": str(b.root / "tools" / "run.py"), "kind": "run", "inputs": ["forcing"], "outputs": [], "status": "planned"}]
+    pj["steps"] = [{"id": "A:run", "ki": "A", "command": ["outputs/a.csv"], "cwd": ".", "tool": str(a.root / "tools" / "run.py"), "kind": "run", "inputs": ["forcing"], "outputs": [], "status": "planned"},
+                   {"id": "B:run", "ki": "B", "command": ["outputs/b.csv"], "cwd": ".", "tool": str(b.root / "tools" / "run.py"), "kind": "run", "inputs": ["forcing"], "outputs": [], "status": "planned"}]
     inv["items"][0]["required_by"] = ["A", "B"]
     assert fs.write_plan(pj, inv) == []
     fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
@@ -419,7 +426,7 @@ def test_write_plan_accepts_two_calls_and_json_strings(tmp_path, monkeypatch):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     first = api.execute_tool("write_plan", {"plan": json.dumps(pj)}, ki, _cfg(project),
                              project_mode=True, flow=fs)
     assert "now call write_plan again with only data_inventory" in first
@@ -446,7 +453,8 @@ def test_api_runs_the_declared_model_binary_with_a_receipt(tmp_path, monkeypatch
     exe.chmod(0o755)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    arguments = ["where.exe"] if os.name == "nt" else ["-g", "runs/global.txt"]
+    pj, inv = _review_plan(ki, arguments)
     pj["steps"][0]["tool"] = str(exe)
     assert fs.write_plan(pj, inv) == []
     fs.flow.approval.approve(project, by="user"); fs.reload_artifacts()
@@ -454,7 +462,7 @@ def test_api_runs_the_declared_model_binary_with_a_receipt(tmp_path, monkeypatch
     fs.move("execution_started", {"setup_verified": True})
     out = api.execute_tool(
         "run_ki_tool", {"tool_path": str(exe), "plan_step_id": pj["steps"][0]["id"],
-                        "arguments": ["where.exe"] if os.name == "nt" else ["-g", "runs/global.txt"]},
+                        "arguments": arguments},
         ki, _cfg(project), project_mode=True, flow=fs)
     assert '"execution_status": "succeeded"' in out
     if os.name != "nt":
@@ -466,7 +474,7 @@ def test_request_replan_unlocks_write_plan_in_the_same_turn(tmp_path, completed)
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     assert fs.write_plan(pj, inv) == []
     fs.flow.approval.approve(project, by="user"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -505,7 +513,7 @@ def test_renamed_item_after_replan_reuses_verified_files_without_redownload(tmp_
     from kiss_cli import acquire
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="obs-1", delivery="served")
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -543,7 +551,7 @@ def test_rebind_survives_a_lost_transport_archive(tmp_path, monkeypatch):
     from kiss_cli import acquire
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="obs-1", delivery="served")
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -589,7 +597,7 @@ def _acquired_served_request(tmp_path):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="obs-1", delivery="served", requirements={
         "bbox": [110, 30, 112, 32], "start": "2001-01-01", "end": "2001-12-31",
         "variables": ["prec", "temp"],
@@ -720,7 +728,7 @@ def test_manual_path_with_the_real_client_signs_placed_files(tmp_path, monkeypat
     from .test_obs_access import Opener, json_response
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="large-1", delivery="manual")
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -747,7 +755,7 @@ def test_served_folder_without_receipt_is_an_actionable_failure(tmp_path, monkey
     from .test_obs_access import Opener
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="obs-9", delivery="served")
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -765,7 +773,7 @@ def test_stale_acquisition_entries_do_not_survive_a_replan(tmp_path, monkeypatch
     from kiss_cli import acquire
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="gone-1", delivery="served")
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -796,7 +804,7 @@ def test_manual_card_is_the_run_blocker_even_when_unchanged(tmp_path, monkeypatc
     from kiss_cli import acquire, projectrun, setup as setup_flow
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="large-1", delivery="manual")
     fs.write_plan(pj, inv); fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True}); fs.move("approved", {"approval": "OK"})
@@ -836,7 +844,7 @@ def test_two_items_on_one_manual_dataset_make_one_download_row(tmp_path, monkeyp
     from kiss_cli import acquire, setup as setup_flow
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(dataset_id="large-1", delivery="manual")
     inv["items"].append({**inv["items"][0], "id": "forcing_b"})
     pj["steps"][0]["inputs"].append("forcing_b")
@@ -865,7 +873,7 @@ def _approved_fetch_session(tmp_path, monkeypatch, **item):
     ki = _ki(tmp_path)
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
-    pj, inv = _plan(ki)
+    pj, inv = _review_plan(ki, ["outputs/q.csv"])
     inv["items"][0].update(item)
     fs.write_plan(pj, inv)
     fs.flow.approval.approve(project, by="auto"); fs.reload_artifacts()

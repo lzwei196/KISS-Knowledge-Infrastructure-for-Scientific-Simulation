@@ -40,6 +40,7 @@ def case(tmp_path, monkeypatch):
     plan = {"schema_version": "1.0", "goal": "Run the local fixture", "selected_kis": ["M"],
             "created_at": "test", "unresolved_questions": [], "scientific_choices": [],
             "steps": [{"id": "M:run", "ki": "M", "tool": str(tool), "kind": "run",
+                       "command": [], "cwd": ".",
                        "inputs": [], "outputs": [], "status": "planned"}]}
     inventory = {"schema_version": "1.0", "items": []}
     assert fs.write_plan(plan, inventory) == []

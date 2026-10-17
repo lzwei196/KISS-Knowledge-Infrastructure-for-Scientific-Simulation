@@ -147,6 +147,44 @@ def test_no_job_and_terminal_poll_do_not_rewrite_files(tmp_path):
     assert path.stat().st_mtime_ns == before
 
 
+@pytest.mark.parametrize("state", sorted(setup_jobs.TERMINAL))
+def test_terminal_history_is_bound_to_selected_installation_folder(tmp_path, state):
+    workroot, old, selected = tmp_path / "work", tmp_path / "old", tmp_path / "new"
+    job = setup_jobs.start(workroot, "Demo", old, "fixture")
+    job.finish(state)
+    path, _, _ = setup_jobs._paths(workroot, "Demo")
+    before = path.read_bytes()
+    assert setup_jobs.status(workroot, "Demo", expected_root=selected) is None
+    assert not selected.exists(), "displaying new-folder status must not create it"
+    assert setup_jobs.status(workroot, "Demo", expected_root=old / "sub" / "..")["id"] == job.id
+    assert setup_jobs.status(workroot, "Demo")["state"] == state
+    assert path.read_bytes() == before, "old attempt remains available as history"
+
+
+def test_other_selected_folder_does_not_hide_or_release_active_model_job(tmp_path):
+    workroot, old, selected = tmp_path / "work", tmp_path / "old", tmp_path / "new"
+    job = setup_jobs.start(workroot, "Demo", old, "fixture")
+    visible = setup_jobs.status(workroot, "Demo", expected_root=selected)
+    assert visible["id"] == job.id and visible["active"] and visible["can_stop"]
+    with pytest.raises(setup_jobs.BusyError):
+        setup_jobs.start(workroot, "Demo", selected, "fixture")
+    setup_jobs.stop(workroot, "Demo", job.id)
+    assert setup_jobs.status(workroot, "Demo", expected_root=selected)["state"] == "stopping"
+
+
+def test_orphan_is_recovered_in_old_folder_but_not_displayed_for_new_folder(tmp_path, spawn_job):
+    workroot, old, selected = tmp_path / "work", tmp_path / "old", tmp_path / "new"
+    process, pipe, original = spawn_job(workroot, old)
+    pipe.send("crash")
+    process.join(10)
+    assert process.exitcode == 23
+    assert setup_jobs.status(workroot, "Demo", expected_root=selected) is None
+    assert not selected.exists()
+    recovered = setup_jobs.status(workroot, "Demo", expected_root=old)
+    assert recovered["id"] == original["id"] and recovered["state"] == "interrupted"
+    _assert_revoked(old)
+
+
 @pytest.mark.parametrize("same_model,same_root,same_workroot", [
     (True, False, True), (False, True, True), (False, True, False),
 ])

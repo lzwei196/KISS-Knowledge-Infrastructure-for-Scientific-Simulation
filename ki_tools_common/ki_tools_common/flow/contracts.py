@@ -52,7 +52,11 @@ def discipline(ki_count: int = 1) -> str:
         "1. VERIFY EACH STEP: after every step check the output file exists and its values are "
         "plausible, and say so, BEFORE the next step. Never chain steps blind.\n"
         "2. NO DUPLICATES: before running anything, check whether the output already exists and "
-        "whether the same job is already running. Never launch the same generation twice.\n"
+        "whether the same job is already running. Never launch the same generation twice. "
+        "An explicitly requested repeat run is a new attempt: preserve prior evidence, plan fresh "
+        "output destinations and update every affected command, stdout capture and inventory path "
+        "together before review. Check all new destinations at once. Existing files alone do not "
+        "prove that a native model launch was rejected; quote an actual tool error before claiming that.\n"
         "3. STATE YOUR DATA: name the forcing source and the terrain/static data the approved plan "
         "picked, and why they fit this location and period. Do not switch sources on your own — "
         "that is a re-plan.\n"
@@ -212,7 +216,10 @@ _PLAN_SCHEMA_NOTE = (
     "steps:[{id, ki, tool:'<absolute path to a shipped tool under <KI>/tools/, a protocol-declared sN_stage/ script, or the model binary the KI declares under binary.path in knowledge_infrastructure.yaml; or null>', kind, inputs:[inventory "
     "ids], outputs:[…], status:'planned', env?:{NAME:'value'}, command?:[literal tool arguments], cwd?:'.', "
     "stdout_artifact?:{version,output_id,path,format,max_bytes}}], scientific_choices:[{id, kind, options, picked, "
-    "high_impact:true|false, decision?}], unresolved_questions:[…], created_at}\n"
+    "high_impact:true|false, decision?:nonempty string naming the chosen option}], unresolved_questions:[…], created_at}\n"
+    "  Every ordinary KI-tool step requires explicit command and cwd before review: command is a literal "
+    "argument array ([] for no arguments), cwd is a project directory ('.' for project root). Typed "
+    "project-data/calibration steps use their own bindings; downloads and tool:null host preflight are exempt.\n"
     "  runs/data-inventory.json : {schema_version:'1.0', delivery_preference?:'auto'|'manual', items:[{id, required_by:[KI…], "
     "status:'missing'|'resolved'|'ready', acceptable_sources:[…], chosen_source, dataset_id?, "
     "local_paths:[…], agent_resolvable:bool, needs_user:bool, rationale?, decision?, acquisition_id?, "
@@ -351,6 +358,14 @@ _PLAN_SCHEMA_NOTE = (
 )
 
 
+_PROJECT_PLOT_NOTE = (
+    "[PROJECT FIGURES] Project-data tools run with the Python standard library only; do not use "
+    "third-party plotting libraries or install them to make these tools work. For API figures use "
+    "create_project_plot(source_path=...) on the verified CSV, then publish_project_view. CLI "
+    "providers must use a supported host or KI plotting route."
+)
+
+
 def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: Path,
                    ambiguous: dict | None = None, partners_to_ask: list[str] | None = None,
                    replan_reason: str = "", wrappers: dict | None = None,
@@ -365,6 +380,7 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         _RESULT_LOCATIONS,
         _DECLARED_OUTPUTS_NOTE,
         _STDOUT_ARTIFACT_NOTE,
+        _PROJECT_PLOT_NOTE,
         "[LOCAL DATA FALLBACK] If a suitable data reader accompanies the data or is shipped by a selected KI, "
         "review and use it. A data KI is optional. When the available tool surface includes write_project_data_tool, "
         "a missing reader/converter is an implementation task: write a small local Python adapter during planning, "
@@ -374,11 +390,15 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "scripts simply because they came with a download. Keep raw inputs unchanged; preserve units, clocks, "
         "flags and missingness. This trusted reviewed-source path is not an OS sandbox and cannot run models.",
         "[DATA ADAPTER INPUTS/OUTPUTS] Declare exact local inventory inputs. Besides acquired project files, "
-        "an adapter may read data/metadata files under the selected KI's project-local test_cases; traversing "
-        "a case inputs/ directory requires declaring that directory. No KI code imports or execution are "
+        "an adapter may read explicitly inventoried individual data/metadata files in the current immutable "
+        "selected project KI, including shipped examples outside test_cases. The host checks its current "
+        "signed projection and binds those exact file hashes to approval. Source files remain read-only; "
+        "reference outputs remain references, not fresh model results or observations. Only test_cases permits "
+        "directory traversal, and only for an explicitly declared case inputs/ directory. No KI code imports or execution are "
         "granted. Stage only into fresh outputs/ or artifacts/, preserving raw sources. Unsupported output "
         "formats are accepted only as exact byte/hash copies of explicitly granted inputs, labelled "
-        "unchanged_input_copy; this proves copying, not scientific validity. Use KI plotting tools for figures.",
+        "unchanged_input_copy; this proves copying, not scientific validity. Transformed nonbasic formats "
+        "require a supported output_formats contract; edited or subset YAML is not an unchanged copy.",
         "[TYPED DATA OUTPUTS] For PCSE weather CSV (including its site metadata preamble) or a single-campaign "
         "PCSE agromanagement YAML, pass output_formats to write_project_data_tool. The returned version 2 "
         "project_data_tool binding must remain in the approved step. Each contract names output_id (one of "
@@ -612,6 +632,7 @@ def execution_block(kis: dict[str, Path], plan: dict, approval: dict, project: P
     lines.append(_RESULT_LOCATIONS)
     lines.append(_DECLARED_OUTPUTS_NOTE)
     lines.append(_STDOUT_ARTIFACT_NOTE)
+    lines.append(_PROJECT_PLOT_NOTE)
     if provider == "api":
         lines.append(
             "[MISSING DATA READER] If no suitable shipped reader/converter exists and write_project_data_tool "

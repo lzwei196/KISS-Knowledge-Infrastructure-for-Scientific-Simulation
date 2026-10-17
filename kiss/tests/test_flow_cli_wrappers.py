@@ -60,6 +60,7 @@ def _approve(project, ki):
     pj, inv = t.session.flow.plan.read_artifacts(project)
     for st in pj["steps"]:
         st["tool"] = str(ki.root / "tools" / "run.py"); st["kind"] = "run"
+        st.update(command=["outputs/q.csv"], cwd=".")
     for it in inv["items"]:
         it["status"] = "resolved"; it["needs_user"] = False
     assert t.session.write_plan(pj, inv) == []
@@ -113,6 +114,7 @@ def test_run_tool_uses_only_environment_from_the_approved_step(
     step = plan["steps"][0]
     step.update({
         "tool": str(env_tool), "kind": "run",
+        "command": [], "cwd": ".",
         "env": {"VIC_OUTPUT": "${PROJECT}/outputs/env.json",
                 "VIC_KI_ROOT": "${KI_ROOT}"},
     })

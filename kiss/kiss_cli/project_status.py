@@ -517,6 +517,19 @@ def _plan_data(project: Path, flow, pj: dict, inv: dict, proof: dict,
                 return True
         return False
 
+    def _local_artifacts(item: dict) -> bool:
+        # Host presentation files have no KI producer receipt. Display only
+        # physical availability, and never follow an alias or external path.
+        paths = item.get("local_paths")
+        if not isinstance(paths, list) or not paths:
+            return False
+        try:
+            return all(isinstance(raw, str) and raw.startswith("artifacts/")
+                       and flow.project_tools.output_path(project, raw, require_file=True).stat().st_size > 0
+                       for raw in paths)
+        except (OSError, ValueError, RuntimeError):
+            return False
+
     rows: list[dict] = []
     consumed = {str(i) for st in pj.get("steps") or [] if isinstance(st, dict) for i in st.get("inputs") or []}
     for group in ("fetch", "you", "run"):
@@ -524,6 +537,11 @@ def _plan_data(project: Path, flow, pj: dict, inv: dict, proof: dict,
             item = by_id.get(str(row.get("id")), {})
             dataset_id = row.get("dataset_id") or ""
             how = row.get("how")
+            if (str(row.get("id")) not in consumed
+                    and str(row.get("id")) not in produced_by
+                    and how in ("prepared", "default") and _local_artifacts(item)):
+                row = {**row, "how": "on_disk", "note": ""}
+                how = "on_disk"
             if str(row.get("id")) not in consumed and how not in ("generated", "on_disk"):
                 status = "unused"          # listed by the agent, used by no step: nothing fetches it
             elif how == "generated":

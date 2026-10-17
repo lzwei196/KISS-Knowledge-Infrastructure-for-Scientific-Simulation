@@ -51,7 +51,7 @@ def _save_plan(case, turn):
     plan, inventory = turn.session.flow.plan.read_artifacts(turn.planning_worktree or case.project)
     plan["goal"] = "Reviewed fixture plan"
     for step in plan["steps"]:
-        step.update(tool=str(tool), kind="run")
+        step.update(tool=str(tool), kind="run", command=[], cwd=".")
     for item in inventory["items"]:
         item.update(status="resolved", needs_user=False)
     turn.session.flow.plan.write_artifacts(turn.planning_worktree or case.project, plan, inventory)

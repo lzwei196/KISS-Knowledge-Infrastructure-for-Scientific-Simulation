@@ -18,6 +18,7 @@ def case(tmp_path):
     project, flow = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["CRHM"]})])
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     return ki, project, flow, plan, inventory
 
 
@@ -71,15 +72,22 @@ def test_preflight_label_does_not_authorize_scientific_inputs(tmp_path):
 def test_hash_bound_project_check_and_real_ki_check_are_accepted(tmp_path):
     ki, project, flow, plan, inventory = case(tmp_path)
     authored = json.loads(api.execute_tool("write_project_data_tool", {
-        "ki": ki.name, "name": "inspect_reference", "source": "print('inspection only')\n", "purpose": "check"},
+        "ki": ki.name, "name": "inspect_reference", "source":
+        "from pathlib import Path\nPath('outputs').mkdir(exist_ok=True)\n"
+        "Path('outputs/inspection.csv').write_text('field,value\\nchecked,1\\n')\n", "purpose": "check"},
         ki, _cfg(project), project_mode=True, flow=flow))
     step = plan["steps"][0]
     step.update(id="CRHM:raw_field_check", kind="check", tool=authored["tool"],
                 project_data_tool=authored["project_data_tool"], outputs=["inspection_report"])
+    step.pop("command")
+    step.pop("cwd")
+    inventory["items"].append({"id": "inspection_report", "required_by": [ki.name],
+        "status": "resolved", "local_paths": ["outputs/inspection.csv"],
+        "acceptable_sources": [], "needs_user": False, "agent_resolvable": True})
     assert flow.write_plan(plan, inventory) == []
     assert not (project / "outputs").exists()  # authoring/review does not execute source
     step.pop("project_data_tool")
-    step.update(tool=str(ki.root / "tools/run.py"), id="CRHM:ki_check")
+    step.update(tool=str(ki.root / "tools/run.py"), id="CRHM:ki_check", command=["outputs/inspection.csv"], cwd=".")
     assert flow.write_plan(plan, inventory) == []
 
 

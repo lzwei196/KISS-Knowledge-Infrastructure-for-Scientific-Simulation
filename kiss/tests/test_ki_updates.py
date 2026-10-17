@@ -436,7 +436,7 @@ function element(selector){
   }
   return elements.get(selector);
 }
-const context={console,$:element,CUR:null,MODELS:null,STATUS:null,LAST_STATUS_CHECK:0,KIUPDATE:input.report,
+const context={console,GeoForgeKIScope:{get:()=>''},$:element,CUR:null,MODELS:null,STATUS:null,LAST_STATUS_CHECK:0,KIUPDATE:input.report,
   drawModelLabel(){},setTimeout(){return 1;},clearTimeout(){},
   window:{GeoForgeI18n:{language}},GeoForgeI18n:{language},
   fetch:async url=>({ok:true,json:async()=>url==='/api/ki-updates'?input.report:url==='/api/models'?[]:{}})};

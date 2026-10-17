@@ -150,8 +150,11 @@ def select_mode(workroot: Path, model: str, mode: str,
             candidate = Path(raw).expanduser()
             if not candidate.is_absolute():
                 raise ValueError("the existing installation path must be absolute")
-            candidate = candidate.resolve(strict=False)
-            if candidate == Path(candidate.anchor) or candidate == Path.home().resolve():
+            # Preserve a selected venv launcher spelling; resolving bin/python
+            # can silently turn it into a different base Python environment.
+            candidate = candidate.absolute()
+            resolved = candidate.resolve(strict=False)
+            if resolved == Path(candidate.anchor) or resolved == Path.home().resolve():
                 raise ValueError(
                     "choose the model installation or executable, not the disk or home folder")
             if not candidate.exists():
@@ -173,7 +176,8 @@ def select_mode(workroot: Path, model: str, mode: str,
 
 def record(model: str, workspace: Path, cfg, *, ki_root: Path | None = None,
            verified: bool | None = None, installation_mode: str | None = None,
-           existing_path: str | Path | None = None) -> dict:
+           existing_path: str | Path | None = None,
+           resolved_existing_path: str | Path | None = None) -> dict:
     """Write machine state beside the KI without changing accepted KI bytes."""
     workspace = Path(workspace).expanduser().resolve()
     path = workspace / RECORD_FILE
@@ -205,7 +209,8 @@ def record(model: str, workspace: Path, cfg, *, ki_root: Path | None = None,
     # A discovery-mode agent may identify the exact candidate it used after
     # inspecting several bounded hits. Preserve that evidence across the
     # deterministic verifier's final record rewrite.
-    value["resolved_existing_path"] = previous.get("resolved_existing_path")
+    value["resolved_existing_path"] = (str(resolved_existing_path)
+        if resolved_existing_path is not None else previous.get("resolved_existing_path"))
     value["discovery_candidates"] = previous.get("discovery_candidates") or []
     value["discovery_report"] = previous.get("discovery_report")
     value["discovered_at"] = previous.get("discovered_at")
@@ -249,7 +254,7 @@ def info(workroot: Path, model: str) -> dict:
     existing_raw = entry.get("existing_path") if isinstance(entry, dict) else None
     if not existing_raw and isinstance(local_record, dict):
         existing_raw = local_record.get("resolved_existing_path")
-    existing = (Path(str(existing_raw)).expanduser().resolve(strict=False)
+    existing = (Path(str(existing_raw)).expanduser().absolute()
                 if existing_raw else None)
     return {
         "path": str(workspace),

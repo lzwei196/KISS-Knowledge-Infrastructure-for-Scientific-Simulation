@@ -205,6 +205,33 @@ def typed_invocation_review_errors(step: dict) -> list[str]:
             + correction]
 
 
+def ordinary_invocation_review_errors(step: dict) -> list[str]:
+    """New KI-tool reviews bind the invocation; old executions keep their scope."""
+    if (not step.get("tool") or step.get("kind") == "download"
+            or "project_data_tool" in step or "calibration" in step):
+        return []
+    missing = [key for key in ("command", "cwd") if key not in step]
+    if not missing:
+        return []
+    return [f"ordinary KI tool requires explicit {', '.join(missing)} before review. "
+            "Set command to the literal tool-argument array ([] is valid for no arguments) "
+            "and cwd to a literal directory inside the project ('.' means the project root)."]
+
+
+def stdout_destination_review_errors(step: dict, project: Path, inventory: dict) -> list[str]:
+    """A new capture needs a fresh path; completed receipt validation does not."""
+    from .stdout_artifacts import contract
+    try:
+        value, _, destination = contract(step, project, inventory)
+        if destination.exists():
+            return [f"stdout capture destination {value['path']!r} already exists. "
+                    "Choose a fresh output path and update both stdout_artifact.path and its "
+                    "matching inventory local_paths before review; preserve the existing file."]
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as error:
+        return [str(error)]
+    return []
+
+
 def require_step_invocation(step: dict, project: Path, arguments, cwd) -> None:
     expected_args, expected_cwd = step_invocation(step, project)
     if expected_args is not None and arguments != expected_args:
@@ -1112,6 +1139,70 @@ def calibration_step_errors(step: dict, project: Path | None, *, check_files: bo
     return errors
 
 
+def project_data_output_paths(step: dict, inventory: dict, project: Path | None, *,
+                              allow_legacy_symbolic: bool = False) -> dict[str, set[Path]]:
+    """Resolve approved adapter artifacts; new review requires every output path.
+
+    Runtime may retain the old all-captured-file checks for already signed,
+    wholly symbolic plans. That compatibility is never used for new review.
+    """
+    from . import project_tools
+    if project is None:
+        raise ValueError("project data outputs need the current project")
+    project = Path(project).resolve()
+    ids = step.get("outputs") or []
+    if (not isinstance(ids, list) or any(not isinstance(i, str) or not i for i in ids)
+            or len(set(ids)) != len(ids)):
+        raise ValueError("project data output IDs must be unique nonempty strings")
+    items = inventory.get("items")
+    if not isinstance(items, list):
+        raise ValueError("project data outputs need the approved inventory")
+    explicit = any(isinstance(item, dict) and item.get("id") in ids for item in items)
+    resolved = {}
+    for ident in ids:
+        matches = [item for item in items if isinstance(item, dict) and item.get("id") == ident]
+        if len(matches) > 1:
+            raise ValueError(f"project data output {ident!r} needs an unambiguous approved inventory item")
+        paths = (matches[0].get("local_paths") or []) if matches else []
+        if not isinstance(paths, list):
+            raise ValueError(f"project data output {ident!r} needs exact local_paths")
+        resolved[ident] = set()
+        for path_index, value in enumerate(paths):
+            if not isinstance(value, str):
+                raise ValueError(f"project data output {ident!r} needs literal file paths")
+            try:
+                raw = Path(value)
+                relative = raw.relative_to(project).as_posix() if raw.is_absolute() else value
+                output = project_tools.output_path(project, relative)
+            except ValueError as error:
+                raise ValueError(project_tools.output_path_context(ident,
+                    f"inventory.local_paths[{path_index}]", value) + ": " + str(error)) from None
+            if output in resolved[ident]:
+                raise ValueError("project data output paths must be distinct")
+            resolved[ident].add(output)
+    for format_index, contract in enumerate(step["project_data_tool"].get("output_formats") or []):
+        ident = contract["output_id"]
+        try:
+            output = project_tools.output_path(project, contract["path"])
+        except ValueError as error:
+            raise ValueError(project_tools.output_path_context(ident,
+                f"project_data_tool.output_formats[{format_index}].path", contract["path"])
+                + ": " + str(error)) from None
+        if ident not in resolved:
+            raise ValueError("typed output ID is absent from this step's outputs")
+        if resolved[ident] and resolved[ident] != {output}:
+            raise ValueError("project data output inventory path differs from its approved format path")
+        resolved[ident].add(output)
+    seen = set()
+    for ident, paths in resolved.items():
+        if not paths and (explicit or not allow_legacy_symbolic):
+            raise ValueError(f"project data output {ident!r} needs exact inventory local_paths or a typed format path")
+        if seen.intersection(paths):
+            raise ValueError("project data output paths must be distinct across output IDs")
+        seen.update(paths)
+    return resolved
+
+
 def output_contract_review_errors(plan: dict, inventory: dict) -> list[str]:
     """Require a deliberate JSON result role on new reviews, without guessing it.
 
@@ -1210,7 +1301,8 @@ def ready_input_review_errors(plan: dict, inventory: dict, project: Path | None)
 
 def validate(plan: dict, inventory: dict, selected_kis: list[str],
              ki_roots: dict[str, Path] | None = None, *, for_execution: bool = False,
-             for_review: bool = False, project: Path | None = None) -> list[str]:
+             for_review: bool = False, project: Path | None = None,
+             ki_data_authority=None) -> list[str]:
     """Return a list of problems (empty = valid). Plan v3 A3 rules.
 
     Drafts may leave tools unassigned. for_review=True requires runnable steps
@@ -1297,6 +1389,7 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
         errs.extend(f"step {step_id!r}: {problem}" for problem in validate_step_invocation(st, project))
         if for_review:
             errs.extend(f"step {step_id!r}: {problem}" for problem in typed_invocation_review_errors(st))
+            errs.extend(f"step {step_id!r}: {problem}" for problem in ordinary_invocation_review_errors(st))
         environment_errors = validate_step_environment(st.get("env"))
         if (for_review and not environment_errors and st.get("env")
                 and project is not None and ki_roots.get(ki) is not None):
@@ -1344,11 +1437,19 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
                     errs.append(f"step {st.get('id')!r} input {inp!r} is still missing")
         if "stdout_artifact" in st:
             from .stdout_artifacts import step_errors as stdout_step_errors
+            stdout_errors = stdout_step_errors(st, project, inventory)
+            if for_review and not stdout_errors:
+                stdout_errors = stdout_destination_review_errors(st, project, inventory)
             errs.extend(f"step {st.get('id')!r}: {problem}"
-                        for problem in stdout_step_errors(st, project, inventory))
+                        for problem in stdout_errors)
         if "project_data_tool" in st:
             from .project_tools import step_errors
             errs.extend(f"step {st.get('id')!r}: {problem}" for problem in step_errors(st, project))
+            if for_review:
+                try:
+                    project_data_output_paths(st, inventory, project)
+                except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as error:
+                    errs.append(f"step {st.get('id')!r}: {error}")
         elif "calibration" in st:
             errs.extend(f"step {st.get('id')!r}: {problem}"
                         for problem in calibration_step_errors(st, project))
@@ -1378,6 +1479,10 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
             errs.append(f"scientific choice {ch.get('id')!r} must say high_impact true/false")
         if "options" in ch and not isinstance(ch["options"], list):
             errs.append(f"scientific choice {ch.get('id')!r} options must be an array")
+        if "decision" in ch and (not isinstance(ch["decision"], str) or not ch["decision"].strip()):
+            errs.append(f"scientific choice {ch.get('id')!r}: decision must be a nonempty string "
+                        "naming the actual chosen option, not a boolean, number or object; "
+                        "omit decision while the choice is unresolved")
     for edge in plan.get("coupling", []):
         if not isinstance(edge, dict) or ("edge_id" in edge and not isinstance(edge["edge_id"], str)):
             errs.append("coupling entries must be objects with a string edge_id when provided")
@@ -1387,6 +1492,8 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
     if for_review:
         errs.extend(output_contract_review_errors(plan, inventory))
         errs.extend(ready_input_review_errors(plan, inventory, project))
+        from .project_inputs import review_errors as project_input_errors
+        errs.extend(project_input_errors(plan, inventory, project, ki_roots, authority=ki_data_authority))
     return errs
 
 

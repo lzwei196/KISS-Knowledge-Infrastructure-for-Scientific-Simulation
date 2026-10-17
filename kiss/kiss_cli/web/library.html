@@ -305,6 +305,7 @@ select option:disabled{color:var(--fg-3)}
   </div></div>
 </main>
 
+<script src="/ki-scope.js"></script>
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
 <script>
@@ -702,7 +703,7 @@ async function askDataGuide(name){
 async function useInChat(name){
   const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({models:[name],provider:$("#prov").value||""})});
-  const s=await r.json(); location.href="/?session="+encodeURIComponent(s.id);
+  const s=await r.json();if(!r.ok){alert(s.error||"Could not create project");return} location.href=GeoForgeKIScope.url("/?session="+encodeURIComponent(s.id));
 }
 function drawSetup(){
   $("#drawer .body").innerHTML=[...SEL].map(n=>{
@@ -722,7 +723,7 @@ function drawSetup(){
 }
 function openAgentSetup(name){
   const p=$("#prov").value||"";
-  location.href="/setup?model="+encodeURIComponent(name)+(p?"&provider="+encodeURIComponent(p):"");
+  location.href="/setup?model="+encodeURIComponent(name)+(p?"&provider="+encodeURIComponent(p):"")+(GeoForgeKIScope.get()?"&library_scope="+encodeURIComponent(GeoForgeKIScope.get()):"");
 }
 async function workItOut(name){
   const box=$(`#su-${CSS.escape(name)} pre.live-log`); box.style.display="block";

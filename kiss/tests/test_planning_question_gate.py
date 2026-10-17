@@ -76,6 +76,7 @@ def save_draft(fixture, turn, goal="Agent-reviewed draft"):
     for step in plan["steps"]:
         step["tool"] = str(fixture.ki.root / "tools/run.py")
         step["kind"] = "run"
+        step.update(command=[], cwd=".")
     for item in inventory["items"]:
         item["status"] = "resolved"
         item["needs_user"] = False

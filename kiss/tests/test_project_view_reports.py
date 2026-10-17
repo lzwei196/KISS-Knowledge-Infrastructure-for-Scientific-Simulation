@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+from http.client import HTTPMessage
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -51,6 +52,7 @@ def test_existing_http_route_serves_original_json_with_security_headers(report, 
     monkeypatch.setattr(gui.sessions, "load", lambda *a: {"id": "b8b03523f587"})
     monkeypatch.setattr(gui.sessions, "project_path", lambda *a: project)
     h = object.__new__(gui.Handler)
+    h.headers = HTTPMessage()
     h.workroot = project.parent
     h.server = SimpleNamespace(server_port=12345)
     h.csrf_token = "isolated-fixture"
@@ -157,6 +159,7 @@ def signed_report(report, tmp_path, monkeypatch):
     fs = flowgate.FlowSession.open(project, {"Demo": ki})
     fs.move("task_received"); fs.move("kis_resolved", {"selected_kis": ["Demo"]})
     step = {"id": "Demo:report", "ki": "Demo", "kind": "check", "tool": str(tool),
+            "command": [], "cwd": ".",
             "inputs": [], "outputs": ["report"], "status": "planned"}
     plan = {"schema_version": "1.0", "goal": "Read a real report", "created_at": "fixture",
             "selected_kis": ["Demo"], "scientific_choices": [], "unresolved_questions": [], "steps": [step]}

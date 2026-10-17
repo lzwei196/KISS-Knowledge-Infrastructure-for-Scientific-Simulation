@@ -39,6 +39,7 @@ def status_project(tmp_path, monkeypatch):
         "schema_version": "1.0", "goal": "Status lifecycle fixture", "created_at": "fixture",
         "selected_kis": ["M"], "unresolved_questions": [], "scientific_choices": [],
         "steps": [{"id": "M:run", "ki": "M", "tool": str(tool), "kind": "run",
+                   "command": [], "cwd": ".",
                    "inputs": ["forcing"], "outputs": ["q"], "status": "planned"}],
     }
     inventory = {"schema_version": "1.0", "items": [{

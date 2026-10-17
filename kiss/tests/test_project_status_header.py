@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from http.client import HTTPMessage
 
 import pytest
 
@@ -19,6 +20,7 @@ NODE = shutil.which("node")
 def handler_for(case, monkeypatch):
     project, ki, man, cfg, config = case
     h = object.__new__(gui.Handler)
+    h.headers = HTTPMessage()
     h.workroot = project.parent
     h._setup_ok_for = lambda s: False
     h._ki = lambda name: KI(name, project.parent / "shared-library" / name)

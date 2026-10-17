@@ -1391,6 +1391,20 @@ def _current_file_status(project: Path, entry, observations: dict, *, output=Fal
         return "unsafe"
 
 
+def plan_dependencies(plan: dict | None) -> dict[str, set[str]]:
+    """Declared input edges use the most recent preceding producer in plan order."""
+    producers, dependencies = {}, {}
+    for step in (plan or {}).get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        sid = str(step.get("id"))
+        dependencies[sid] = {producers[item] for item in step.get("inputs") or []
+                             if item in producers and producers[item] != sid}
+        for item in step.get("outputs") or []:
+            producers[item] = sid
+    return dependencies
+
+
 def evidence(project: Path, plan: dict | None, approval: dict | None,
              output_dirs: tuple[str, ...] = ("outputs", "artifacts", "inputs", "calibration"),
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
@@ -1526,6 +1540,20 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         if id(d) in typed_output_failures and recorded not in {"failed", "stopped"}:
             return "failed"
         return recorded
+    def failure_summary(sid, d):
+        validation = d.get("validation")
+        validation = validation if isinstance(validation, dict) else {}
+        checks = validation.get("checks")
+        checks = checks if isinstance(checks, list) else []
+        return {
+            "plan_step_id": sid, "run_id": d.get("run_id"), "exit_code": d.get("exit_code"),
+            "validation_reason": typed_output_failures.get(id(d)) or
+                validation.get("reason") or "Required run validation failed",
+            "failed_checks": [{"check": str(check.get("check") or "")[:200],
+                               "detail": str(check.get("detail") or "")[:600]}
+                              for check in checks
+                              if isinstance(check, dict) and check.get("ok") is False][:10],
+        }
     rank = {"passed": 0, "failed": 2}
     attempts = sorted(bound_runs, key=lambda d: (_finished_at(d), rank.get(status(d), 1)))
     latest: dict[str, dict] = {}
@@ -1584,13 +1612,9 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     # Receipt inputs cover literal file arguments. Plan item edges also cover
     # tools that locate inputs through a case/configuration or modify them in
     # place, so stale upstream provenance cannot leave downstream passes current.
-    producers = {}
-    for sid, step in steps.items():
+    for sid, required in plan_dependencies(plan).items():
         if sid in dependencies:
-            dependencies[sid].update(producers[item] for item in step.get("inputs") or []
-                                     if item in producers and producers[item] != sid)
-        for item in step.get("outputs") or []:
-            producers[item] = sid
+            dependencies[sid].update(required)
     pending = True
     while pending:
         pending = False
@@ -1701,6 +1725,10 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
         "plan_errors": plan_errors, "stale_step_reasons": stale_reasons,
         "invalid_output_files": invalid_output_files,
         "superseded_failures": superseded,
+        # Only the latest authentic attempt for a currently required step. This
+        # must not be reconstructed from file order or historical chat failures.
+        "current_failures": [failure_summary(sid, d) for sid, d in sorted(latest.items())
+                             if sid in exec_steps and status(d) == "failed"],
         "validation": "failed" if failed_any else ("passed" if complete else "incomplete"),
         "receipts_verified": complete,
         "runs": [{"run_id": d.get("run_id"), "ki": d.get("ki"), "exit_code": d.get("exit_code"),

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from http.client import HTTPMessage
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from kiss_cli import gui
 
 def _get(path: str):
     handler = object.__new__(gui.Handler)
+    handler.headers = HTTPMessage()
     handler.path = path
     responses = []
     handler._send = lambda *response: responses.append(response)

@@ -194,6 +194,9 @@ def catalogue_bindings(catalog) -> dict:
     """Publication enrollment is restricted to the signed snapshot namespace."""
     from . import ki_updates
     root = Path(catalog.models_dir).resolve().parent
+    if root.parent == (ki_updates.update_root() / "scoped-snapshots").resolve():
+        from . import scoped_ki_updates
+        return scoped_ki_updates.catalogue_bindings(catalog)
     if root.parent != (ki_updates.update_root() / "snapshots").resolve():
         return {}
     try:

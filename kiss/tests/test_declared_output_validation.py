@@ -37,7 +37,7 @@ def contract(project, tool='tool.py'):
 
 
 @pytest.fixture
-def case(tmp_path, monkeypatch):
+def case(tmp_path, monkeypatch, request):
     monkeypatch.setenv('GEOFORGE_FLOW_KEYS',str(tmp_path/'keys'))
     project=tmp_path/'project';root=project/'models/M/ki';(root/'tools').mkdir(parents=True)
     (project/'runs').mkdir()
@@ -55,7 +55,14 @@ def case(tmp_path, monkeypatch):
     step,inventory=contract(project,str(tool))
     plan={'schema_version':'1.0','goal':'Check genuine harmless output collection','created_at':'test',
           'selected_kis':['M'],'unresolved_questions':[],'scientific_choices':[],'steps':[step]}
-    assert fs.write_plan(plan,inventory)==[]
+    if getattr(request, 'param', None) == 'legacy-tool-only':
+        # Historical approved scope deliberately allowed different argument
+        # arrays. Preserve that scope for the latest-attempt receipt regression.
+        fs.flow.plan.write_artifacts(project,plan,inventory)
+    else:
+        mode=getattr(getattr(request.node,'callspec',None),'params',{}).get('mode','ok')
+        step.update(command=[mode],cwd='.')
+        assert fs.write_plan(plan,inventory)==[]
     fs.flow.approval.approve(project,by='user');fs.reload_artifacts()
     fs.move('plan_written',{'plan_valid':True});fs.move('approved',{'approval':'OK'})
     fs.move('execution_started',{'setup_verified':True})
@@ -192,6 +199,7 @@ def test_support_role_cannot_be_changed_to_hide_a_declared_result(case):
     assert output_policy.receipt_errors(c.project,c.step,c.inventory,doc)
 
 
+@pytest.mark.parametrize('case',['legacy-tool-only'],indirect=True)
 def test_later_missing_output_attempt_does_not_resurrect_earlier_pass(case):
     c=case;invoke(c)
     assert c.fs.evidence()['receipts_verified']

@@ -15,8 +15,13 @@ def keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_REGISTRY", str(tmp_path / "registry"))
 
 
-def setup(tmp_path, source, *, directory=False):
+def setup(tmp_path, source, *, directory=False, outputs=None):
     c = case(tmp_path, source)
+    if outputs is not None:
+        c[3]["steps"][0]["outputs"] = list(outputs)
+        c[4]["items"] = [item for item in c[4]["items"] if item["id"] == "forcing"]
+        c[4]["items"].extend({"id": ident, "status": "missing", "local_paths": [path]}
+                               for ident, path in outputs.items())
     root = c[1] / "models/M/ki/test_cases/example"
     raw = root / "inputs/nested/deck.prj"
     raw.parent.mkdir(parents=True)
@@ -45,7 +50,8 @@ report.write_text(json.dumps({'copied':True,'expected':meta['expected']}))
 
 
 def test_explicit_case_files_stage_exact_bytes_with_granted_input_identity(tmp_path):
-    c, root, raw, meta = setup(tmp_path, STAGE)
+    c, root, raw, meta = setup(tmp_path, STAGE,
+        outputs={"deck": "outputs/cases/deck.prj", "report": "artifacts/stage.json"})
     before = {p: p.read_bytes() for p in (raw, meta)}
     grants = request(c)
     assert set(grants["read_roots"]) == {str(raw), str(meta)}
@@ -73,7 +79,8 @@ files={p.relative_to(root).as_posix():p.read_text() for p in root.rglob('*') if 
 out=pathlib.Path('outputs/listing.json');out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text(json.dumps(files))
 '''
-    c, root, raw, meta = setup(tmp_path, source, directory=True)
+    c, root, raw, meta = setup(tmp_path, source, directory=True,
+                             outputs={"listing": "outputs/listing.json"})
     grants = request(c)
     assert grants["list_roots"] == [str(root / "inputs")]
     assert set(grants["read_roots"]) == {str(raw), str(meta)}

@@ -81,7 +81,9 @@ def test_shipped_reader_runs_through_approved_tool_proxy_without_model_claim(tmp
             writer.writerow(["Fixture", f"2022-01-01 {hour:02}:00:00", "45.25", "-71.8", "1.25"])
     before = raw.read_bytes()
     plan, inventory = _plan(ki)
-    plan["steps"][0].update(id="read", kind="prepare", tool=str(root / "tools/read_observations.py"))
+    plan["steps"][0].update(id="read", kind="prepare", tool=str(root / "tools/read_observations.py"),
+                            command=["--source", str(raw), "--station", "Fixture", "--start", "2022-01-01",
+                                     "--end", "2022-01-01", "--output-dir", "outputs/read"], cwd=".")
     inventory["items"][0].update(chosen_source="existing_local", acceptable_sources=["existing_local"],
                                  local_paths=[str(raw)])
     assert fs.write_plan(plan, inventory) == []

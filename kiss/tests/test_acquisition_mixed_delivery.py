@@ -25,6 +25,7 @@ def _review(tmp_path, monkeypatch, delivery, manual_first):
     project, fs = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": ["M"]})])
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     plan["scientific_choices"] = []
     manual = deepcopy(inventory["items"][0])
     manual.update(id="manual", dataset_id="manual-yearbook", chosen_source="manual-yearbook",

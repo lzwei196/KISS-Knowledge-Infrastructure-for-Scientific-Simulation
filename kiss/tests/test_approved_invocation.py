@@ -18,7 +18,7 @@ from kiss_cli.manifest import Manifest
 ABSENT = object()
 
 
-def make_case(tmp_path, monkeypatch, *, command=ABSENT, cwd=ABSENT):
+def make_case(tmp_path, monkeypatch, *, command=ABSENT, cwd='.'):
     monkeypatch.setenv('GEOFORGE_FLOW_KEYS', str(tmp_path/'keys'))
     project = tmp_path/'project'; root = project/'models/M/ki'
     (root/'tools').mkdir(parents=True); (project/'runs').mkdir(); (project/'work').mkdir()
@@ -43,7 +43,14 @@ def make_case(tmp_path, monkeypatch, *, command=ABSENT, cwd=ABSENT):
     plan = {'schema_version':'1.0','goal':'Exact invocation fixture','selected_kis':['M'],
             'created_at':'test','unresolved_questions':[],'scientific_choices':[],'steps':[step]}
     inventory = {'schema_version':'1.0','items':[]}
-    assert flow.write_plan(plan, inventory) == []
+    if command is ABSENT:
+        # These fixtures explicitly exercise historical unbound-argv approval
+        # compatibility; they are not newly submitted plans.
+        assert flow.flow.plan.validate(plan, inventory, ['M'], {'M': root},
+                                       project=project, for_execution=True) == []
+        flow.flow.plan.write_artifacts(project, plan, inventory)
+    else:
+        assert flow.write_plan(plan, inventory) == []
     flow.flow.approval.approve(project, by='user'); flow.reload_artifacts()
     flow.move('plan_written', {'plan_valid':True}); flow.move('approved', {'approval':'OK'})
     flow.move('execution_started', {'setup_verified':True})

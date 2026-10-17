@@ -1176,11 +1176,15 @@ def _check_octave_package(v,contract,cfg,timeout,env):
 
 
 def check(ki, man=None, cfg=None, harvested: dict | None = None,
-          timeout: int = 25, python: str | None = None) -> Verdict:
+          timeout: int = 25, python: str | None = None, *, exact_python: bool = False) -> Verdict:
     """Run the four tests and return a verdict the agent can act on."""
     v = Verdict(model=getattr(ki, "name", str(ki)))
     py = python or (getattr(cfg, "python", None) if cfg else None)
-    if not py or getattr(sys, "frozen", False):
+    if exact_python and (not py or not Path(py).is_absolute() or not Path(py).is_file()):
+        v.imports_ok = False
+        v.detail = "The explicitly selected Python interpreter is missing; no fallback was used."
+        return v
+    if not exact_python and (not py or getattr(sys, "frozen", False)):
         from .install import runtime_python
         py = runtime_python(py)
 
@@ -1201,7 +1205,8 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
     package_module = _package_module(man)
     if package_module and package_module not in mods:
         mods.append(package_module)
-    py = select_python(cfg, py, mods, getattr(ki, "root", None))
+    if not exact_python:
+        py = select_python(cfg, py, mods, getattr(ki, "root", None))
     v.python = py
     from .paths import with_ki_tools_common
     probe_env = with_ki_tools_common(cfg) if cfg is not None else None

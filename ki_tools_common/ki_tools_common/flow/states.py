@@ -15,9 +15,12 @@ Rules that matter:
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import secrets
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
@@ -25,6 +28,54 @@ from pathlib import Path
 
 class FlowError(Exception):
     """A state move or an action that the flow does not allow. Loud, never downgraded."""
+
+
+_STATE_LOCKS: dict[str, threading.RLock] = {}
+_STATE_LOCKS_GUARD = threading.Lock()
+_REPLACE_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4)
+
+
+@contextmanager
+def _state_io_lock(project: Path):
+    """Serialize state file + current-pointer I/O across threads and processes."""
+    from . import receipts
+    project = Path(project).resolve()
+    root = receipts.registry_dir().resolve()
+    if receipts._inside(root, project):
+        raise FlowError("flow state lock must remain outside the project")
+    key = os.path.normcase(str(project))
+    with _STATE_LOCKS_GUARD:
+        lock = _STATE_LOCKS.setdefault(key, threading.RLock())
+    with lock:
+        root.mkdir(parents=True, exist_ok=True)
+        lock_path = receipts.registry_entry(project).with_suffix(".state.lock")
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        with os.fdopen(descriptor, "r+b") as stream, receipts._registry_lock(stream):
+            yield
+
+
+def _state_identity(project: Path, path: Path):
+    from . import receipts
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        digest = None
+    return digest, receipts.current_value(project, "state")
+
+
+def _replace_state(tmp: Path, target: Path, project: Path, expected) -> None:
+    """Retry only transient Windows replacement errors, without replacing a newer state."""
+    for attempt in range(len(_REPLACE_DELAYS) + 1):
+        if _state_identity(project, target) != expected:
+            raise FlowError("Flow state changed while saving; reload the current project state and retry")
+        try:
+            os.replace(tmp, target)
+            return
+        except OSError as error:
+            if (os.name != "nt" or getattr(error, "winerror", None) not in {5, 32, 33}
+                    or attempt == len(_REPLACE_DELAYS)):
+                raise
+            time.sleep(_REPLACE_DELAYS[attempt])
 
 
 class State(str, Enum):
@@ -220,6 +271,11 @@ class FlowContext:
 
     @classmethod
     def load(cls, project: Path) -> "FlowContext":
+        with _state_io_lock(project):
+            return cls._load(project)
+
+    @classmethod
+    def _load(cls, project: Path) -> "FlowContext":
         p = cls._path(project)
         ctx = cls(project=Path(project))
         if not p.exists():
@@ -261,8 +317,13 @@ class FlowContext:
         return ctx
 
     def save(self) -> Path:
+        with _state_io_lock(self.project):
+            return self._save()
+
+    def _save(self) -> Path:
         p = self._path(self.project)
         p.parent.mkdir(parents=True, exist_ok=True)
+        expected = _state_identity(self.project, p)
         d = asdict(self)
         d["project"] = str(self.project)
         d["state"] = self.state.value
@@ -279,10 +340,19 @@ class FlowContext:
         # final file where a sibling name could be agent-writable
         tmpdir = Path(self.project) / ".geoforge" / "tmp"
         tmpdir.mkdir(parents=True, exist_ok=True)
-        tmp = tmpdir / f"flow-state.{os.getpid()}.json"
-        tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(p)
-        _receipts.publish_current(Path(self.project), "state", d)
+        tmp = tmpdir / f"flow-state.{os.getpid()}.{secrets.token_hex(8)}.json"
+        try:
+            with tmp.open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(d, indent=2, ensure_ascii=False))
+                stream.flush()
+                os.fsync(stream.fileno())
+            _replace_state(tmp, p, Path(self.project), expected)
+            _receipts.publish_current(Path(self.project), "state", d)
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass  # Cleanup must not hide a failed state commit.
         return p
 
     def move(self, event: str, evidence: dict | None = None) -> State:

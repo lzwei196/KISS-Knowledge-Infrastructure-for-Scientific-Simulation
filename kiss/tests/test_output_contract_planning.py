@@ -22,7 +22,8 @@ def planning(tmp_path, monkeypatch):
     project, session = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": [ki.name]})])
     plan, inventory = _plan(ki)
-    plan["steps"][0].update(kind="check", inputs=[], outputs=["parsed"])
+    plan["steps"][0].update(kind="check", inputs=[], outputs=["parsed"],
+                            command=["outputs/read/parsed.json"], cwd=".")
     inventory["items"] = [{"id": "parsed", "status": "missing", "required_by": ["M"],
                            "local_paths": ["outputs/read/parsed.json"], "needs_user": False,
                            "agent_resolvable": True}]

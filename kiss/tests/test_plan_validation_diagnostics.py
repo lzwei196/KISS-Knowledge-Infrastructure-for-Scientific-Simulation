@@ -20,6 +20,7 @@ def planning(tmp_path, monkeypatch):
     project, session = _session(tmp_path, ki, [
         ("task_received", None), ("kis_resolved", {"selected_kis": [ki.name]})])
     plan, inventory = _plan(ki)
+    plan["steps"][0].update(command=["outputs/q.csv"], cwd=".")
     return ki, project, session, plan, inventory
 
 

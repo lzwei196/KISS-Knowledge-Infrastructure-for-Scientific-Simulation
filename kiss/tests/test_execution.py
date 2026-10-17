@@ -28,7 +28,8 @@ def _isolated_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("GEOFORGE_FLOW_KEYS", str(tmp_path / "keys"))
 
 
-def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None, declared_binary=None):
+def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None, declared_binary=None,
+             arguments=(), cwd=".", legacy_tool_only=False):
     project = (tmp_path / "project").resolve()
     root = project / "models" / "M" / "ki"
     (root / "tools").mkdir(parents=True)
@@ -70,7 +71,16 @@ def _project(tmp_path, *, python_tool=True, source=None, extra_tools=None, decla
         "acceptable_sources": ["local_fixture"], "chosen_source": "local_fixture",
         "local_paths": [], "agent_resolvable": True, "needs_user": False,
     }]}
-    assert fs.write_plan(plan, inventory) == []
+    if legacy_tool_only:
+        # Retry/help-probe regressions deliberately exercise the runtime guards
+        # for old approved tool-only scope. Keep real signer/execution gates;
+        # new explicit invocations are independently denied before these guards.
+        assert fs.flow.plan.validate(plan, inventory, ["M"], {"M": root},
+                                     project=project, for_execution=True) == []
+        fs.flow.plan.write_artifacts(project, plan, inventory)
+    else:
+        plan["steps"][0].update(command=list(arguments), cwd=cwd)
+        assert fs.write_plan(plan, inventory) == []
     fs.flow.approval.approve(project, by="auto")
     fs.reload_artifacts()
     fs.move("plan_written", {"plan_valid": True})
@@ -362,7 +372,7 @@ def test_rapid_attempts_keep_distinct_logs_and_signed_receipts(tmp_path, monkeyp
 @pytest.mark.parametrize("python_tool", [True, False])
 def test_receipt_records_relative_input_from_real_cwd_including_binary_first_argument(
         tmp_path, monkeypatch, python_tool):
-    ctx = _project(tmp_path, python_tool=python_tool)
+    ctx = _project(tmp_path, python_tool=python_tool, arguments=["forcing.csv"], cwd="inputs/case")
     cwd = ctx.project / "inputs" / "case"
     cwd.mkdir(parents=True)
     input_file = cwd / "forcing.csv"
@@ -492,7 +502,7 @@ def _evidence(ctx):
 
 @pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
 def test_stop_ends_a_running_tool_and_the_model_processes_it_started(tmp_path):
-    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    ctx = _project(tmp_path, source=_SLOW_TOOL, arguments=[str(tmp_path / "project/runs/pids.txt")])
     result, pids, elapsed = _run_slow_tool(ctx, timeout=None, stop_after=0.2)   # CLI: no deadline
     assert elapsed < 10 and not any(map(_alive, pids))
     assert result.status == "stopped" and "stopped by the user" in result.detail.lower()
@@ -506,7 +516,7 @@ def test_stop_ends_a_running_tool_and_the_model_processes_it_started(tmp_path):
 
 @pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
 def test_timeout_does_not_leave_the_model_child_running(tmp_path):
-    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    ctx = _project(tmp_path, source=_SLOW_TOOL, arguments=[str(tmp_path / "project/runs/pids.txt")])
     result, pids, _ = _run_slow_tool(ctx, timeout=1)
     assert result.status == "timed_out" and not any(map(_alive, pids))
 
@@ -515,7 +525,7 @@ def test_timeout_does_not_leave_the_model_child_running(tmp_path):
 @pytest.mark.parametrize("how", ["stop", "timeout"])
 @pytest.mark.parametrize("stdout", ["pipe", "log"])
 def test_a_model_in_its_own_session_is_ended_with_its_tool(tmp_path, how, stdout):
-    ctx = _project(tmp_path, source=_SESSION_TOOL)
+    ctx = _project(tmp_path, source=_SESSION_TOOL, arguments=[str(tmp_path / "project/runs/pids.txt"), stdout])
     result, pids, elapsed = _run_slow_tool(
         ctx, timeout=None if how == "stop" else 1, stop_after=0.2 if how == "stop" else None,
         extra=[stdout])
@@ -575,7 +585,7 @@ def test_requested_ki_uses_its_runtime_not_first_or_last_model(
     binary = shared.roles["binaries"] / "model"
     binary.write_text("fixture executable")
     binary.chmod(0o755)
-    ctx = _project(tmp_path, declared_binary=binary)
+    ctx = _project(tmp_path, declared_binary=binary, arguments=["--binary", str(binary)])
     other_root = ctx.project / "models" / "A" / "ki"
     other_root.mkdir(parents=True)
     # The saved M fixture initially uses project-wide defaults; remove it so
@@ -674,7 +684,7 @@ def _run_tool_process(ctx, *args, pythonpath=(), new_session=False):
 def test_sigterm_to_a_direct_cli_run_tool_still_ends_the_model_and_receipts_it(tmp_path, user_stop):
     # Stop SIGTERMs the agent CLI's process tree; a source-build run-tool is inside it.
     import signal
-    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    ctx = _project(tmp_path, source=_SLOW_TOOL, arguments=[str(tmp_path / "project/runs/pids.txt")])
     pidfile = ctx.project / "runs" / "pids.txt"
     proc = _run_tool_process(ctx, pidfile)
     deadline = time.time() + 20
@@ -724,7 +734,7 @@ def test_sigterm_while_the_receipt_is_written_does_not_lose_a_finished_run(tmp_p
 def test_run_tool_started_after_a_stop_launches_nothing(tmp_path):
     # The compiled app bridges run-tool into a Desktop child outside the CLI's tree:
     # a Stop that lands while it starts up must still keep the model from running.
-    ctx = _project(tmp_path, source=_SLOW_TOOL)
+    ctx = _project(tmp_path, source=_SLOW_TOOL, arguments=[str(tmp_path / "project/runs/pids.txt")])
     pidfile = ctx.project / "runs" / "pids.txt"
     execution.request_stop(ctx.project)
     proc = _run_tool_process(ctx, pidfile)
@@ -745,7 +755,7 @@ def test_help_probe_never_launches_or_supersedes_a_passed_step(
 
     # The fixture ignores options and would produce results even for --help.
     # A probe must be refused before launch, not run outside receipt tracking.
-    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL, legacy_tool_only=True)
     passed = _execute(ctx)
     assert passed.receipt["validation"] == "passed"
     evidence = ctx.flow.evidence()
@@ -773,7 +783,7 @@ def test_help_probe_never_launches_or_supersedes_a_passed_step(
 
 
 def test_help_probe_cannot_complete_an_unexecuted_step(tmp_path):
-    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL, legacy_tool_only=True)
     with pytest.raises(flowgate.FlowDenied, match="Help/version probes"):
         _execute(ctx, arguments=["--help"])
     assert _receipt_docs(ctx) == []
@@ -785,7 +795,8 @@ def test_help_probe_cannot_complete_an_unexecuted_step(tmp_path):
 @pytest.mark.parametrize("arguments", [[], ["--audit"], ["-v"],
                                      ["--help", "inputs/config.json"], ["--", "--help"]])
 def test_a_real_failed_retry_without_outputs_still_supersedes_a_pass(tmp_path, arguments):
-    ctx = _project(tmp_path, source="import sys\nif sys.argv[1:] != ['produce']:\n    sys.exit(2)\n" + _OUTPUT_TOOL)
+    ctx = _project(tmp_path, source="import sys\nif sys.argv[1:] != ['produce']:\n    sys.exit(2)\n" + _OUTPUT_TOOL,
+                   legacy_tool_only=True)
     assert _execute(ctx, arguments=["produce"]).receipt["validation"] == "passed"
     assert ctx.flow.evidence()["receipts_verified"]
 
@@ -800,7 +811,7 @@ def test_a_real_failed_retry_without_outputs_still_supersedes_a_pass(tmp_path, a
 
 
 def test_help_probe_does_not_restore_tampered_execution_evidence(tmp_path):
-    ctx = _project(tmp_path, source=_OUTPUT_TOOL)
+    ctx = _project(tmp_path, source=_OUTPUT_TOOL, legacy_tool_only=True)
     result = _execute(ctx)
     receipt_path = Path(result.receipt["receipt"])
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))

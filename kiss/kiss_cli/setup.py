@@ -613,6 +613,48 @@ def runtime_command(models_dir: Path, model: str, root: Path, *, action="init") 
     return _format_runtime_command(argv, pythonpath=pythonpath)
 
 
+def python_runtime_command() -> str:
+    """One provider-independent command; capability stays in the child env."""
+    if getattr(sys, "frozen", False):
+        argv, pythonpath = [sys.executable], None
+    else:
+        argv = [sys.executable, "-m", "kiss_cli"]
+        pythonpath = Path(__file__).resolve().parent.parent
+    argv += ["prepare-python-runtime", "--version", "3.12"]
+    return _format_runtime_command(argv, pythonpath=pythonpath)
+
+
+def runtime_bootstrap_guidance(*, available: bool, cli: bool = False) -> str:
+    text = (
+        "\n\n[HOST PYTHON RUNTIME PREPARATION]\n"
+        "When the KI or an upstream Requires-Python requirement rejects the current "
+        "Python version, use the host prepare_python_runtime operation before "
+        "installing model dependencies. Supply the required minor version (for example "
+        "3.12), or an exact patch if required. For a minor version the host resolves "
+        "the latest stable official patch and records the exact package. The host "
+        "downloads and verifies the official supported distribution, keeps the "
+        "workspace's bound interpreter path, and refreshes only its fresh runtime "
+        "proof. It does not approve KI edits or mark setup ready. KDT remains "
+        "required for KI edits, and normal host preflight remains mandatory. "
+        "Do not manually replace the bound environment or change kiss.python to "
+        "another path to bypass this operation.\n"
+        "A DENIED command is a boundary, not a request to disguise it. Never retry "
+        "a denied operation through a wrapper, child script, inline interpreter, "
+        "renamed executable, or another tool. Use the supported host operation "
+        "or report the concrete remaining blocker. These task rules and tool "
+        "checks do not establish an OS sandbox for CLI agents or child scripts.\n"
+    )
+    if not available:
+        return text + "No fresh runtime capability is active for this attempt. Do not attempt a runtime replacement.\n"
+    if cli:
+        return text + (
+            "Run this GeoForge host command from the exact setup workspace, replacing "
+            "only the example version with the required minor or exact release. It uses the "
+            "current child process capability; do not print or persist that capability.\n"
+            + python_runtime_command() + "\n")
+    return text + 'Call prepare_python_runtime with {"version":"3.12"}, substituting the required minor or exact release.\n'
+
+
 def prepare_common(cfg, repo_root: Path) -> Path:
     """Materialise helpers; versioned snapshots never overwrite an older copy."""
     source = Path(repo_root) / "ki_tools_common"
@@ -892,7 +934,95 @@ def prepare_python(cfg, live: Path, *, explicit_python: str | None = None):
     return install.ensure_python_env(cfg, base_python=base)
 
 
-def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
+def python_installation(man) -> bool:
+    """The selected software is itself a Python runtime/package, not a native engine."""
+    return (str(getattr(man, "binary_type", "") or "").casefold() == "python"
+            or getattr(getattr(man, "acquire", None), "strategy", None) == "pip")
+
+
+def prepare_existing_python(cfg, live: Path, selected: str | None):
+    """Validate and bind one explicit external interpreter without installing into it.
+
+    Only Python identity is checked here. Model-specific versions/imports still
+    belong to the unchanged KI preflight and normal software verification.
+    """
+    from . import ki_guard
+    install.check_cancelled()
+    path = Path(str(selected or "")).expanduser()
+    if not selected or not path.is_absolute() or not path.is_file():
+        return install.Step("python-env", False,
+            "Choose the exact existing Python executable, not an installation folder or a search candidate.")
+    # Preserve a venv's executable spelling: resolving its symlink to base
+    # Python would select a different environment on POSIX.
+    path = path.absolute()
+    active = (Path(live) / "SKILL.md").is_file() or ki_guard.is_managed(live)
+    if active:
+        saved = load_runtime_config(cfg.root)
+        if (saved.python != str(path) or saved.python != cfg.python
+                or saved.roles != cfg.roles or saved.relocation != cfg.relocation):
+            return install.Step("python-env", False,
+                "This KI already retains another runtime binding. Choose a new empty setup workspace "
+                "for the selected Python, or verify and adopt a runtime migration; existing KI and helpers were preserved.")
+        ki_guard.require_intact(live, required=ki_guard.is_managed(live))
+    if getattr(sys, "frozen", False) and path.resolve() == Path(sys.executable).resolve():
+        return install.Step("python-env", False, "Select a Python interpreter, not the GeoForge desktop executable.")
+    marker = "GEOFORGE_PYTHON_IDENTITY="
+    probe = ("import json,sys; print(" + repr(marker) + "+json.dumps({"
+             "'executable':sys.executable,'prefix':sys.prefix,'version':list(sys.version_info[:3])}))")
+    argv = [str(path), "-I", "-B", "-c", probe]
+    try:
+        rc, output = install._run(argv, cwd=cfg.root, timeout=30)
+        install.check_cancelled()
+        rows = [line[len(marker):] for line in output.splitlines() if line.startswith(marker)]
+        if rc or len(rows) != 1:
+            raise ValueError("the executable did not return the Python identity probe")
+        identity = json.loads(rows[0])
+        version = identity.get("version")
+        executable = Path(identity.get("executable", ""))
+        prefix = Path(identity.get("prefix", ""))
+        if (not isinstance(version, list) or len(version) != 3
+                or any(type(v) is not int for v in version) or version[0] != 3
+                or not executable.is_absolute() or not executable.is_file()
+                or not os.path.samefile(executable, path)
+                or not prefix.is_absolute() or not prefix.is_dir()):
+            raise ValueError("the returned identity does not match the selected Python 3 executable")
+        if active and Path(cfg.roles.get("python_env", "")) != prefix:
+            raise ValueError("the retained Python environment changed; use a new setup workspace or verified migration")
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        return install.Step("python-env", False,
+            f"Selected existing Python is not usable: {path}. {error}", commands=[shlex.join(argv)])
+    cfg.python = str(path)
+    cfg.roles["python_env"] = prefix
+    return install.Step("python-env", True,
+        f"Using selected existing Python {path} without installing or upgrading packages in it. "
+        "Model version and package requirements still need verification.",
+        commands=[shlex.join(argv)], evidence={"selected_python": str(path),
+            "prefix": str(prefix), "version": version, "model_verified": False})
+
+
+def prepare_readonly_helpers(cfg, repo_root: Path):
+    """Project helpers inside the workspace without editable pip installation."""
+    try:
+        live = prepare_common(cfg, repo_root)
+    except (ValueError, OSError) as error:
+        return install.Step("ki-tools-common", False, str(error))
+    return install.Step("ki-tools-common", True,
+        f"Workspace helpers prepared at {live}; nothing installed into the existing Python environment.")
+
+
+def check_existing_python_dependencies(man, cfg):
+    """Check installed distributions in the selected environment; never run pip."""
+    from .software_verification import _REQUIREMENT_PROBE
+    if not man.python_deps:
+        return install.Step("python-deps", True, "No Python dependencies declared.")
+    argv = [cfg.python, "-I", "-B", "-c", _REQUIREMENT_PROBE, json.dumps(man.python_deps)]
+    rc, output = install._run(argv, cwd=cfg.root, timeout=60)
+    return install.Step("python-deps", rc == 0,
+        output.strip()[-3000:] or "Existing Python dependency check failed.",
+        commands=[f"{cfg.python} [read-only declared Python requirement metadata check]"])
+
+
+def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path, *, existing_python: str | None = None):
     """Create the writable workspace and provider instruction files.
 
     This is bootstrap only.  It does not acquire or verify the simulator; the
@@ -904,7 +1034,9 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
     cfg = load_runtime_config(root) if cfg_file.exists() else paths.KissConfig.default(root)
-    runtime = prepare_python(cfg, root / "ki")
+    runtime = (prepare_existing_python(cfg, root / "ki", existing_python)
+               if existing_python is not None and python_installation(man)
+               else prepare_python(cfg, root / "ki"))
     if not runtime.ok:
         raise ValueError(runtime.detail)
     cfg_file.write_text(cfg.dumps(), encoding="utf-8")
@@ -938,7 +1070,10 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     # folder is recorded correctly but the agent is handed a false "tools not
     # found" failure.
     install.place_where_the_ki_expects(live_ki, None, cfg, None)
-    install_locations.record(ki.name, root, cfg, ki_root=live)
+    record_binding = ({"installation_mode": "existing", "existing_path": existing_python,
+                       "resolved_existing_path": cfg.python, "verified": False}
+                      if existing_python is not None and python_installation(man) else {})
+    install_locations.record(ki.name, root, cfg, ki_root=live, **record_binding)
     handoff.write_setup(
         live_ki, man, cfg, root,
         built_in_command=runtime_command(models_dir, ki.name, root),
@@ -1264,9 +1399,11 @@ available `curl`/`wget`, archive, package-manager, and build tools. Keep it
 inside this model workspace and invoke it by its absolute workspace path; it
 does not need to be installed system-wide or added to the global PATH. Prefer
 an upstream checksum and record the exact version/source. On Windows, a needed
-CPython minor version can be staged without administrator access from the
-official Python NuGet package, extracted inside the workspace, and invoked via
-its `tools/python.exe`. Do not bypass an upstream `Requires-Python` or other
+CPython version must be prepared through the fresh setup's host
+`prepare_python_runtime` operation (or its supplied GeoForge CLI command).
+The host verifies the official Python NuGet package and retains the bound
+workspace interpreter path. Do not replace that environment through a script
+or change its path manually. Do not bypass an upstream `Requires-Python` or other
 runtime compatibility bound merely to make an import probe green. Do not ask
 the user merely because a command is missing from PATH. Likewise, the absence
 of a prebuilt Python wheel does not prove a Windows source build is impossible:

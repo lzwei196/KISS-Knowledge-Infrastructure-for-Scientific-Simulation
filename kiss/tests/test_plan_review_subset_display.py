@@ -61,6 +61,7 @@ def clip_review(tmp_path, monkeypatch):
             "scientific_choices": [{"id": "data:forcing", "kind": "data_source", "item": "forcing",
                                     "options": ["cmfd", "other"], "picked": "cmfd", "high_impact": True}],
             "steps": [{"id": "M:run", "ki": "M", "kind": "run", "tool": str(tool),
+                       "command": [], "cwd": ".",
                        "inputs": ["forcing"], "outputs": ["q"], "status": "planned"}]}
     inventory = {"schema_version": "1.0", "items": [item]}
     assert fs.write_plan(plan, inventory) == []

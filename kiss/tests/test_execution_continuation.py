@@ -247,7 +247,9 @@ def test_cli_partial_root_view_rechecks_full_selected_scope(c):
 
 @pytest.mark.parametrize('event', ['preflight-fail', 'tool-denial', 'tool-error', 'limit', 'stopped'])
 def test_real_api_loop_failure_or_limit_cannot_request_continuation(c, monkeypatch, event):
-    calls = [call('run_preflight' if event == 'preflight-fail' else 'read_ki_file', {})]
+    tool = ('run_preflight' if event == 'preflight-fail' else
+            'run_ki_tool' if event == 'tool-error' else 'read_ki_file')
+    calls = [call(tool, {})]
     if event != 'limit': calls.append(prose('I have finished checking.'))
     turns = iter(calls)
     monkeypatch.setattr(api, '_openai_turn', lambda *a, **k: next(turns))

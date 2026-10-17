@@ -133,7 +133,7 @@ def test_wofost_routing_recipe_names_its_runtime_requirement_and_limits(zh):
 
 
 @pytest.mark.parametrize("rejected", [False, True])
-@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths"])
+@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"])
 def test_wofost_routing_is_not_offered_for_other_models_or_rejected_download(rejected, recipe):
     value = job(selected_kis=["WOFOST"] if rejected else ["SHAW"])
     if rejected:
@@ -142,7 +142,7 @@ def test_wofost_routing_is_not_offered_for_other_models_or_rejected_download(rej
     assert recipe not in result["nodes"]["#investigation-recipe"]["html"]
 
 
-@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths"])
+@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"])
 def test_wofost_routing_request_retains_explicit_recipe_and_model(recipe):
     result = evaluate(job=job(selected_kis=["WOFOST"]), action="draft", selected="WOFOST",
                       repairMode="maintenance", recipe=recipe)
@@ -151,7 +151,7 @@ def test_wofost_routing_request_retains_explicit_recipe_and_model(recipe):
 
 
 @pytest.mark.parametrize("selected,switch_to,offered", [("DSSAT", "WOFOST", True), ("WOFOST", "DSSAT", False)])
-@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths"])
+@pytest.mark.parametrize("recipe", ["wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"])
 def test_routing_choice_tracks_the_selected_model_in_a_multi_model_review(selected, switch_to, offered, recipe):
     result = evaluate(job=job(selected_kis=["DSSAT", "WOFOST"]), mode="repairChoices",
                       selected=selected, switchKi=switch_to, repairMode="maintenance",

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from . import flowgate, projectrun, setup as setup_flow
+from . import flowgate, projectrun, project_data_tools, setup as setup_flow
 
 APPROVAL_REQUEST_ID_PREFIX = "flow-approve-"
 
@@ -263,7 +263,8 @@ def respond(project: Path, *, action: dict | None, pending: dict | None,
         return Response("waiting", message=f"The selected KI workspace is not ready for approval: {error}. "
                         "Refresh its project workspace and review again; no execution was approved.")
     if errors := flow.plan.validate(pj, inv, list(execution_roots), execution_roots,
-                                    for_review=True, for_execution=True, project=project):
+                                    for_review=True, for_execution=True, project=project,
+                                    ki_data_authority=project_data_tools.require_ki_data_source):
         flow.plan.write_artifacts(project, pj, inv)
         setup_flow.clear_request(project)
         ctx.move("modify")
@@ -1011,7 +1012,8 @@ def issue(project: Path, fs, pj: dict, inv: dict, provider_note: str, *,
                if (it.get('catalogue') or {}).get('size') else "")
             for it in manual[:6]))
     ready = flow.plan.validate(pj, inv, list(fs.ki_roots), fs.ki_roots,
-                               for_review=True, for_execution=True, project=fs.project)
+                               for_review=True, for_execution=True, project=fs.project,
+                               ki_data_authority=project_data_tools.require_ki_data_source)
     card = _card(flow, fs, pj, inv, provider_note)
     if why:
         card["message"] += "\n\nWaiting on you\n  " + "\n  ".join(why[:8])

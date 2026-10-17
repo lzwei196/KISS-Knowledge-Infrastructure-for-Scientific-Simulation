@@ -127,6 +127,7 @@ def test_an_ordinary_calibrate_ki_step_cannot_be_used_by_the_native_operation(ca
     step = plan["steps"][0]
     step.pop("calibration")
     step["tool"] = str(fs.ki_roots["M"] / "tools" / "run.py")
+    step.update(command=[], cwd=".")
     assert fs.write_plan(plan, inv) == []
     fs.flow.approval.approve(fs.project)
     fs.reload_artifacts()

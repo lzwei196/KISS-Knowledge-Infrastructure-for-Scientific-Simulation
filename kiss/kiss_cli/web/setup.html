@@ -28,7 +28,7 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 .cardhead{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .cardhead h3{font-size:14px;margin:0;flex:1}.cardbody{padding:16px}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .controls select{max-width:250px}.agent-note{color:var(--fg2);font-size:12px;margin-top:9px}
-.install-location{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 12px;margin-bottom:12px}
+.install-location,.ki-selection{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 12px;margin-bottom:12px}
 .install-mode{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.mode-choice{text-align:left;padding:10px 11px;background:var(--raised)}
 .mode-choice b{display:block;font-size:12px}.mode-choice span{display:block;color:var(--fg2);font-size:10.5px;line-height:16px;margin-top:2px}
 .mode-choice.active{border-color:var(--brand);background:var(--brand50);box-shadow:inset 0 0 0 1px var(--brand)}.mode-panel[hidden]{display:none}
@@ -76,6 +76,10 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 <div class="shell">
   <div class="hero"><span class="mark">KI</span><div><h2 id="title">Loading…</h2>
     <p id="reference"></p></div><span id="statusbadge" class="badge warn">Checking</span></div>
+  <div class="ki-selection" id="kiselection">
+    <div class="controls"><button id="latestki">Use latest checked KI for a new setup</button><span id="kiselectionstate" role="status"></span></div>
+    <div class="install-location-note" id="kiselectionnote">Checks this KI and its dependencies from main, including shared tools. Uses a separate setup workspace and keeps this selection for new projects.</div>
+  </div>
   <div class="grid">
     <section class="card">
       <div class="cardhead"><span class="mark" style="width:27px;height:27px;border-radius:8px;font-size:10px">AI</span>
@@ -137,13 +141,14 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
     </section>
   </div>
 </div>
+<script src="/ki-scope.js"></script>
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
 <script>
 const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"",DATA_SESSION=params.get("session")||"";
 const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[c]));
 let STATE=null, PROVIDERS=[], busy=false, rawLog="",runStartedAt=0,lastSignalAt=0,installPathDirty=false,existingPathDirty=false,selectedInstallMode=null;
-let dataPreparing=false;
+let dataPreparing=false, selectingKI=false;
 let submitting=false,streaming=false,awaitingStatus=false,stopPending=false,stoppingJobId="",jobNotice="",statusUnavailable=false,stateMutationEpoch=0,stateLoadPromise=null;
 function activeSetupJob(){return !!(STATE&&STATE.job&&["running","stopping"].includes(STATE.job.state))}
 function projectSetup(){return !!(typeof DATA_SESSION!=="undefined"&&DATA_SESSION)}
@@ -232,6 +237,35 @@ function requestSummary(req){
 function drawLLM(){const p=PROVIDERS.find(x=>x.name===$("#provider").value)||{},ms=p.models||[];
   $("#llm").innerHTML=(p.kind==="cli"?'<option value="">Agent default</option>':'')+ms.map(m=>`<option>${esc(m)}</option>`).join("");
   $("#llm").style.display=ms.length||p.kind==="cli"?"":"none";}
+function drawKISelection(){
+  if(STATE)GeoForgeKIScope.set(STATE.library_scope||"");
+  const scoped=STATE?.library_scope||GeoForgeKIScope.get();
+  $("#latestki").hidden=projectSetup()||!!scoped;
+  $("#latestki").disabled=busy||selectingKI;
+  $("#latestki").textContent=isZh()?"使用最新已检查 KI，开始新设置":"Use latest checked KI for a new setup";
+  $("#kiselectionnote").textContent=isZh()?"检查主分支中的本 KI、依赖和共享工具。使用独立安装目录，新项目会保留这一版本。":"Checks this KI and its dependencies from main, including shared tools. Uses a separate setup workspace and keeps this selection for new projects.";
+  if(scoped)$("#kiselectionstate").textContent=(isZh()?"本项目使用的 KI：main@":"Selected KI: main@")+(STATE?.library_source_commit||"").slice(0,12);
+  $(".back").href=GeoForgeKIScope.url("/library");
+}
+async function useLatestKI(){
+  if(busy||selectingKI)return;
+  selectingKI=true;
+  const button=$("#latestki"),status=$("#kiselectionstate");button.disabled=true;
+  try{
+    const r=await fetch("/api/ki-selections",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL]})});
+    let job=await r.json();if(!r.ok)throw new Error(job.error||`HTTP ${r.status}`);
+    while(job.state==="checking"){
+      status.textContent=job.summary||(isZh()?"正在下载并检查所选 KI…":"Downloading and checking the selected KI…");
+      await new Promise(resolve=>setTimeout(resolve,1500));
+      const poll=await fetch("/api/ki-selections/"+encodeURIComponent(job.job_id));
+      job=await poll.json();if(!poll.ok)throw new Error(job.error||`HTTP ${poll.status}`);
+    }
+    if(job.state!=="ready"||!job.scope_id)throw new Error(job.error||job.summary||"KI selection could not be checked");
+    const target=new URL("/setup",location.href);target.searchParams.set("model",MODEL);target.searchParams.set("library_scope",job.scope_id);
+    if($("#provider").value)target.searchParams.set("provider",$("#provider").value);
+    location.href=target.pathname+target.search;
+  }catch(error){status.textContent=String(error.message||error);selectingKI=false;button.disabled=false}
+}
 async function loadProviders(){const d=await (await fetch("/api/providers")).json();PROVIDERS=d.providers||[];
   const usable=PROVIDERS.filter(p=>p.usable);$("#provider").innerHTML=PROVIDERS.map(p=>`<option value="${esc(p.name)}" ${p.usable?'':'disabled'}>${esc(p.label)}${p.usable?'':' — unavailable'}</option>`).join("");
   const requested=params.get("provider")||"";$("#provider").value=(usable.find(p=>p.name===requested)||usable.find(p=>p.name===d.default)||usable[0]||{}).name||"";drawLLM();}
@@ -280,9 +314,15 @@ async function saveInstallLocation(allowEmptyExisting=false,forStart=false){
   stateMutationEpoch++;installPathDirty=false;existingPathDirty=false;await loadState();return true;
 }
 function setupRecheckRequired(sw){return !!sw.requires_reverification||sw.primary_error?.name==="snapshot-changed";}
-function setupRecheckReason(){
-  return isZh()?"KI、安装配方或共享工具已更新。需要使用当前 KI 重新检查已有软件；以前的报告和软件仍然保留。":
+function setupRecheckReason(sw=STATE?.software||{}){
+  if(sw.primary_error?.name==="snapshot-changed")return isZh()?"KI、安装配方或共享工具已更新。需要使用当前 KI 重新检查已有软件；以前的报告和软件仍然保留。":
     "The KI, installation recipe, or shared tools changed. Recheck the existing software against the current KI; previous reports and software are retained.";
+  if(sw.primary_error?.name==="setup-active")return isZh()?"本次设置仍在进行，软件验证尚未完成。":
+    "The current setup attempt is still running; software verification is not complete.";
+  if(sw.previous_verification_passed)return isZh()?"以前的验证结果不能证明当前 KI 和运行环境已就绪，使用前需要重新检查。":
+    "Previous verification does not establish readiness for the current KI and runtime. Recheck them before use.";
+  return isZh()?"当前 KI 和运行环境尚需验证，请查看检查详情。":
+    "The current KI and runtime require verification. Check the details below.";
 }
 function drawVerification(sw){
   const zh=isZh(),recheck=setupRecheckRequired(sw),steps=sw.steps||[],unfinished=unfinishedSetupJob(),history=busy||recheck||(unfinished&&STATE.job.state!=="failed");
@@ -302,7 +342,8 @@ function drawVerification(sw){
       `${when}<div class="steps">${stepRows}</div>`):
       (message?"":`<div class="explain">${zh?'尚未检查。Agent 将运行 KI 预检。':'Not checked yet. The agent will run the KI preflight.'}</div>`));
 }
-function draw(){if(!STATE)return;busy=submitting||streaming||awaitingStatus||activeSetupJob();
+function draw(){
+  if(!STATE){drawKISelection();return}busy=submitting||streaming||awaitingStatus||activeSetupJob();drawKISelection();
   const sw=STATE.software||{},recheck=setupRecheckRequired(sw),unfinished=unfinishedSetupJob(),ok=!!sw.can_run&&!recheck&&!unfinished,failed=sw.state==="failed"||STATE.job?.state==="failed";
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
   $("#statusbadge").className=`badge ${busy?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=setupStopping()?setupJobLabel():busy?(requiredDataOperation()?(isZh()?"正在准备必需数据":"Preparing required data"):(isZh()?"正在验证":"Verification in progress")):unfinished?setupJobLabel():sw.label||"Setup needed";
@@ -433,11 +474,12 @@ async function chatForHelp(){
   const details=(zh?[`我在设置 ${MODEL} 时遇到了阻碍。`,block.title||"设置尚未完成。",block.message||"",block.command?`建议的命令是：${block.command}`:"",primary.detail?`验证错误是：${primary.detail}`:"","我无法按当前要求完成此操作。请帮我找出原因，只询问真正需要的信息，并提供安全的替代方案。请把这作为设置问题来讨论；在真实预检通过之前，不要声称软件已经验证。"]:[`I'm blocked while setting up ${MODEL}.`,block.title||"Setup did not finish.",block.message||"",block.command?`The suggested command is: ${block.command}`:"",primary.detail?`The verification error is: ${primary.detail}`:"","I cannot complete the requested action as written. Help me understand why, ask me only what you need to know, and suggest safe alternatives. Keep this as a setup discussion; do not claim the software is verified until its real preflight passes."]).filter(Boolean).join("\n\n");
   const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});
   if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Could not open help chat");return}const s=await r.json();
-  sessionStorage.setItem(`kiss.draft.${s.id}`,details);location.href="/?session="+encodeURIComponent(s.id);
+  sessionStorage.setItem(`kiss.draft.${s.id}`,details);location.href=GeoForgeKIScope.url("/?session="+encodeURIComponent(s.id));
 }
 async function uploadFile(){if(busy)return;const f=$("#userfile").files[0];if(!f)return;$("#upload").disabled=true;const r=await fetch(`/api/setup-upload?model=${encodeURIComponent(MODEL)}&name=${encodeURIComponent(f.name)}`,{method:"POST",body:f});
   if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Upload failed");$("#upload").disabled=false;return}stateMutationEpoch++;await loadState();startAgent();}
-async function useChat(){if(projectSetup()){location.href="/?session="+encodeURIComponent(DATA_SESSION);return}const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href="/?session="+encodeURIComponent(s.id)}
+async function useChat(){if(projectSetup()){location.href="/?session="+encodeURIComponent(DATA_SESSION);return}const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href=GeoForgeKIScope.url("/?session="+encodeURIComponent(s.id))}
+$("#latestki").onclick=useLatestKI;
 $("#installpath").oninput=()=>{installPathDirty=true;drawInstallLocation()};$("#existingpath").oninput=()=>{existingPathDirty=true;drawInstallLocation()};
 $("#modenew").onclick=()=>chooseInstallMode("new");$("#modeexisting").onclick=()=>chooseInstallMode("existing");$("#chooseinstall").onclick=chooseInstallLocation;$("#saveinstall").onclick=()=>saveInstallLocation(false);
 $("#chooseexistingfolder").onclick=()=>chooseExistingLocation("folder");$("#chooseexistingfile").onclick=()=>chooseExistingLocation("file");$("#saveexisting").onclick=()=>saveInstallLocation(false);$("#findexisting").onclick=()=>startAgent(true);

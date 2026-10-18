@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Wildfire simulation, fire behavior prediction, reinforcement learning
 **Authors**: MITRE Fireline (Welsh, Dotter, Doyle, Gandikota, Kempis, Schambach, Tapley, Threet)
 **Last updated**: 2026-08-09
-**Stats**: 6 tools, 5 skill docs, 25 diagnostic triplets, ~10,600 lines Python source
+**Stats**: ~10,600 lines Python source, current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -655,7 +655,7 @@ ki/
 │   ├── s4_execution.md                   # Running the simulation
 │   └── s5_output_analysis.md             # Interpreting and validating results
 ├── diagnostics/
-│   └── triplets.yaml                     # 15+ diagnostic triplets
+│   └── triplets.yaml                     # diagnostic triplets (count: KI map)
 └── workflow/
     └── workflow.md                        # Pipeline workflow diagram
 ```

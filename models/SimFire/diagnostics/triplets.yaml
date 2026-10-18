@@ -1,6 +1,6 @@
 # SimFire Diagnostic Triplets
 # symptom → diagnosis → remedy for common failure modes
-# 15+ entries covering unit conversions, parameters, runtime, and dependencies
+# Entries (15+ when this header was written; current count: the SKILL.md KI map) covering unit conversions, parameters, runtime, and dependencies
 
 - id: dt_001
   stage: s3_wind_setup

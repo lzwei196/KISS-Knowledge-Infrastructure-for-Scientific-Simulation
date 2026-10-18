@@ -66,7 +66,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Geomorphology, hydrology, stratigraphy, glaciology
 **Created by**: Landlab Development Team (CU Boulder, U Washington, Tulane)
 **Last updated**: 2026-04-29
-**Stats**: 7 tools | 5 skill documents | 22 diagnostic triplets | ~2,200 lines of validated code
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: production_validated (5 test cases: Whipple & Tucker 1999 analytical + SPACE binary Qs-Q + SPACE steady-state concavity + Loess Plateau SRTM real-DEM slope-area + Loess Plateau stream power SY + P export)
 
 ---
@@ -669,5 +669,5 @@ ki/
 │   ├── s4_component_assembly.md      # Coupling components
 │   └── s5_execution_output.md        # Running and analyzing
 └── diagnostics/
-    └── triplets.yaml                 # 22 symptom→diagnosis→remedy
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

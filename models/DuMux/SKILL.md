@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Groundwater flow and transport in porous media
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 22 diagnostic triplets | ~1,500 lines of validated Python | 4 new obs_datasets entries
+**Stats**: 4 new obs_datasets entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ## 11. Validated Results
 
@@ -364,7 +364,7 @@ DuMux writes output in VTK format (`.vtu` for unstructured, `.pvd` for time seri
 | `run_dumux` | s4 | `tools/run_dumux.py` | Build and execute DuMux simulation |
 | `parse_dumux_output` | s5 | `tools/parse_dumux_output.py` | VTK → CSV extraction, time series, spatial fields |
 
-**Total**: 4 tools, ~1,500 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 

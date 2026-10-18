@@ -494,7 +494,7 @@ ki/
 │   ├── s6_computation.md                 ← computation skill
 │   └── s7_output_analysis.md             ← analysis skill
 └── diagnostics/
-    └── triplets.yaml                     ← 15+ diagnostic triplets
+    └── triplets.yaml                     ← diagnostic triplets (count: KI map)
 ```
 
 ---

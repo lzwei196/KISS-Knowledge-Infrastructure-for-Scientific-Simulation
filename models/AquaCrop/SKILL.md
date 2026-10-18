@@ -355,7 +355,7 @@ with the value.
 
 ## Error Handling
 
-See `diagnostics/triplets.yaml` for 18 diagnostic triplets covering:
+See `diagnostics/triplets.yaml` for the diagnostic triplets (current count: the KI map at the top of this file) covering:
 - Missing/wrong ET0 (dt_001) -- most common error
 - Wrong GDD base temperature (dt_002) -- silent error, wrong phenology
 - Soil hydraulic ordering violation (dt_003) -- fatal assertion

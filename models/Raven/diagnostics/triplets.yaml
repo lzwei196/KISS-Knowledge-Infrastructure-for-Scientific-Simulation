@@ -1,7 +1,7 @@
 # ========================================================================
 # Raven Diagnostic Triplets
 # ========================================================================
-# 46 triplets (2026-10-03: dt_rav_026/027 removed with the VIC forcing route, dt_rav_046-050 added). Converted 2026-08-12 from the `triplets:` mapping to the
+# 46 triplets on 2026-10-03 (dt_rav_026/027 removed with the VIC forcing route, dt_rav_046-050 added; current count: the SKILL.md KI map). Converted 2026-08-12 from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.
@@ -11,7 +11,7 @@
 # Raven Hydrological Modelling Framework — Diagnostic Triplets
 # Package: hydrocraft-raven v1.0.0
 # Generated: 2026-03-21
-# Total: 25 triplets across 7 failure domains
+# Triplets (25 when this header was written; current count: the SKILL.md KI map) across 7 failure domains
   # ========================================================================
   # UNIT CONVERSION ERRORS (Raven's #1 trap — SILENT)
   # "Raven ignores units and will not do units conversion" — Raven cheat sheet

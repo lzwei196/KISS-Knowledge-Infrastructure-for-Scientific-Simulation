@@ -96,7 +96,7 @@ the tool and nothing is written. Details: `docs/s3_forcing_conversion_skill.md`.
 **Model**: Raven v4.1 (University of Waterloo, Prof. James Craig)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21
-**Stats**: 11 tools | 7 skill documents | 28 diagnostic triplets | 9 error log entries | ~4,500 lines of validated Python
+**Stats**: 9 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation Status**: `production_validated` -- Full HydroCraft data run on Bengbu basin (118,358 km2, CMFD 224 cells, 2000-2005)
 
 ---
@@ -170,7 +170,7 @@ numpy, pandas, geopandas, rasterio, shapely, netCDF4 (all in HydroCraft venv)
 | s10 | Coupling | `raven_vic_comparison.py` | Compare Raven vs VIC output |
 | -- | Validation | `validate_raven_inputs.py` | Cross-file consistency checks |
 
-**Total**: 11 tools, ~4,200 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Parallelism
 
@@ -653,6 +653,6 @@ knowledge_infrastructure/
     s9_calibration_skill.md
     coupling_skill.md
   diagnostics/
-    triplets.yaml                           # 25 diagnostic triplets
+    triplets.yaml                           # diagnostic triplets (count: KI map)
     error_log.yaml                          # Error log from real runs
 ```

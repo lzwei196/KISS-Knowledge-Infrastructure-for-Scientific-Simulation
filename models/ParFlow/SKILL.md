@@ -93,13 +93,13 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-22
 **Status**: **PRODUCTION VALIDATED** (Bengbu basin, real CMFD forcing, physically plausible discharge)
-**Stats**: 12 tools | 9 skill documents | 36 diagnostic triplets (12 validated) | 14 error log entries | 3,144 lines of validated Python
+**Stats**: 14 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of integrated surface-subsurface hydrology using ParFlow, directly coupled with HydroCraft's basin delineation, forcing, and downstream routing infrastructure. The 12 validated tools handle domain setup, subsurface parameterization, CLM land surface coupling, forcing conversion, solver configuration, execution, and output processing.
+This knowledge infrastructure enables autonomous simulation of integrated surface-subsurface hydrology using ParFlow, directly coupled with HydroCraft's basin delineation, forcing, and downstream routing infrastructure. The validated tools handle domain setup, subsurface parameterization, CLM land surface coupling, forcing conversion, solver configuration, execution, and output processing.
 
 **What ParFlow does**: 3D variably-saturated flow model that solves:
 - **3D Richards equation**: Pressure head through heterogeneous porous media (vadose + saturated zones in one equation)
@@ -251,7 +251,7 @@ Stage 7 depends on all upstream. Stage 8 depends on 7.
 | `parse_parflow_output` | s9 | `tools/s9_output/parse_parflow_output.py` | 250 | PFB to water table depth, ponding, storage timeseries |
 | `parflow_to_cama` | s10 | `tools/s10_coupling/parflow_to_cama.py` | 210 | ParFlow surface runoff to CaMa-Flood NetCDF input |
 
-**Total**: 12 tools, ~2,730 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Documents
 
@@ -569,7 +569,7 @@ State the bar from `docs/validation_convention.yaml`; a band stored as null in t
 
 ## Diagnostic Triplets
 
-36 triplets covering 9 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 9 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -610,7 +610,7 @@ State the bar from `docs/validation_convention.yaml`; a band stored as null in t
 | dt_pf_v011 | **silent** | pedotransfer | Cosby (1984) from VIC exponent gives sandy Ksat for clay soils |
 | dt_pf_v012 | degraded | domain_setup | Uniform K + uniform slope + uniform forcing = no spatial gradient |
 
-**Silent error count**: 15/36 (42%) -- consistent with cross-model patterns.
+**Silent error count** (when this section was written): 15/36 (42%) -- consistent with cross-model patterns.
 **Validated triplet count**: 12 (5 Chaohe + 7 Bengbu, 2026-03-22)
 
 ---
@@ -659,7 +659,7 @@ models/ParFlow/knowledge_infrastructure/
   docs/
     s1_domain_skill.md ... s9_output_skill.md
   diagnostics/
-    triplets.yaml                 # 25 diagnostic triplets
+    triplets.yaml                 # diagnostic triplets (count: KI map)
     error_log.yaml                # Errors from real runs
 
 model/parflow/

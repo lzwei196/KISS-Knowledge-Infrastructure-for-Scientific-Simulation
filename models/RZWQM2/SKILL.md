@@ -180,7 +180,7 @@ The infrastructure has three layers plus a workflow document:
 | **Workflow** | `workflow/workflow.md` | **Read first** — the end-to-end orchestration guide |
 | **Validated tools** | `tools/` | **CALL** these scripts — NEVER write custom scripts that duplicate their function |
 | **Skill documents** | `docs/` | **Read** and follow step-by-step |
-| **Diagnostic triplets** | `diagnostics/triplets.yaml` | **Look up** errors by symptom (22 triplets) |
+| **Diagnostic triplets** | `diagnostics/triplets.yaml` | **Look up** errors by symptom |
 | **Error log** | `diagnostics/error_log.yaml` | **Append** new errors found during runs |
 
 The pipeline definition and tool registry are in `knowledge_infrastructure.yaml`.
@@ -292,7 +292,7 @@ S10 Mass Project Generation        (CSV of sites → N complete scenarios)
 ### When something fails:
 
 1. **Match the symptom** against `diagnostics/triplets.yaml`. Each triplet has: symptom (what you observe), diagnosis (root cause), and remedy (exact fix).
-2. **Check the failure domain** — the 22 triplets cover: path resolution, parameter format, unit conversion, runtime errors, silent errors, and environment issues.
+2. **Check the failure domain** — the triplets cover: path resolution, parameter format, unit conversion, runtime errors, silent errors, and environment issues.
 3. **Silent errors are the most dangerous.** The model runs to completion but produces wrong results. Key silent errors:
    - dt_004: BRK precipitation in mm instead of inches (drainage 25x too high)
    - dt_008: Wrong soil texture from whitespace mismatch

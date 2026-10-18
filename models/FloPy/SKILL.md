@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: FloPy v3.11.0 (Python interface to MODFLOW 6, MODFLOW-2005, MODFLOW-NWT, MODFLOW-USG, MT3DMS, SEAWAT, MODPATH)
 **Domain**: Groundwater flow and transport modeling
 **Last updated**: 2026-03-25
-**Stats**: 5 tools | 7 skill documents | 20 diagnostic triplets | ~1,800 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `validated` (Freyberg aquifer, steady-state + transient)
 
 ---
@@ -500,7 +500,7 @@ Stages 1, 2, 3 can run in parallel after Stage 0. Stage 4 depends on 1+2+3.
 | `run_modflow` | s5 | `tools/run_modflow.py` | 250 | Execute MODFLOW with error handling |
 | `parse_modflow_output` | s6 | `tools/parse_modflow_output.py` | 400 | Binary output → CSV, arrays, plots |
 
-**Total**: 5 tools, ~1,600 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -694,7 +694,7 @@ pxs.plot_grid(colors='grey', linewidths=0.5)
 
 ## Diagnostics Summary
 
-20 diagnostic triplets in `diagnostics/triplets.yaml` covering:
+The diagnostic triplets in `diagnostics/triplets.yaml` (count: the KI map at the top of this file) cover:
 - **Unit conversion** (dt_001 — dt_008): Recharge mm→m, well L/s→m³/day, K consistency
 - **Indexing** (dt_009 — dt_010): Zero-based, stress period dictionaries
 - **Package configuration** (dt_011 — dt_015): MF6 vs MF2005, dry cells, precision, layered arrays

@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: HexWatershed (C++ mesh-independent flow direction model)
 **Created by**: Chang Liao, Pacific Northwest National Laboratory (PNNL)
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~8000 lines of C++
+**Stats**: ~8000 lines of C++ | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 

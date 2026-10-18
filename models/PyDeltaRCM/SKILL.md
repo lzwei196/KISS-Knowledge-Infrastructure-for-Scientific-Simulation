@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Authors**: Andrew J. Moodie, Jayaram Hariharan, Eric Barefoot, Paola Passalacqua
 **Paper**: Moodie et al. (2021), JOSS, 6(64), 3398
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `tested` (default delta, 5 timesteps)
 
 ---

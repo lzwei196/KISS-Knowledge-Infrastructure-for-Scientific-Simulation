@@ -28,20 +28,20 @@ CRITICAL NOTES:
 Usage:
     # Standard run
     python run_snowpack.py \\
-        --binary ./build/bin/snowpack \\
+        --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \\
         --config io.ini \\
         --end_date "1996-06-30T23:00"
 
     # Spinup mode
     python run_snowpack.py \\
-        --binary ./build/bin/snowpack \\
+        --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \\
         --config spinup.ini \\
         --end_date "1995-10-30T00:00" \\
         --mode spinup
 
     # Test with bundled example
     python run_snowpack.py \\
-        --binary ./build/bin/snowpack \\
+        --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \\
         --config tests/cfgfiles/io.ini \\
         --end_date "1996-06-15T00:00"
 """
@@ -53,6 +53,19 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+# Managed engine install on the server (bin/snowpack + lib/libsnowpack.so.3,
+# lib/libmeteoio.so.2; RUNPATH $ORIGIN/../lib). Used when --binary is not given.
+DEFAULT_BINARY = "KISSPATH_BINARIES/SNOWPACK/bin/snowpack"
+
+
+def find_binary(binary=None):
+    """Return the binary to run: --binary if given, else the managed install.
+
+    No search of PATH or other folders: a missing binary is reported by
+    validate_inputs() and the run stops.
+    """
+    return binary if binary else DEFAULT_BINARY
 
 
 def validate_inputs(args):
@@ -97,6 +110,11 @@ def ensure_output_dir(config_path):
         pass
 
     if output_path:
+        # SNOWPACK runs with cwd = the config's folder (see process()), so a
+        # relative METEOPATH is relative to that folder, not to the caller.
+        if not os.path.isabs(output_path):
+            output_path = os.path.join(
+                os.path.dirname(os.path.abspath(config_path)), output_path)
         os.makedirs(output_path, exist_ok=True)
         return output_path
     return None
@@ -191,8 +209,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run SNOWPACK simulation"
     )
-    parser.add_argument("--binary", required=True,
-                        help="Path to snowpack binary")
+    parser.add_argument("--binary", default=None,
+                        help="Path to snowpack binary (default: managed install "
+                             f"{DEFAULT_BINARY})")
     parser.add_argument("--config", required=True,
                         help="Path to .ini config file")
     parser.add_argument("--end_date", required=True,
@@ -204,12 +223,19 @@ def main():
                         help="Timeout in seconds (default: 3600)")
 
     args = parser.parse_args()
+    args.binary = find_binary(args.binary)
+    # Make a relative --binary absolute now (caller's cwd): the run itself
+    # changes cwd to the config's folder.
+    if os.sep in args.binary or os.path.exists(args.binary):
+        args.binary = os.path.abspath(args.binary)
 
     validate_inputs(args)
     result = process(args)
     result = validate_outputs(result)
 
     print(json.dumps(result, indent=2))
+    # Honest exit code: a failed or timed-out run must not exit 0.
+    sys.exit(0 if result.get("status") == "success" else 1)
 
 
 if __name__ == "__main__":

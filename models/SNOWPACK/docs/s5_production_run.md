@@ -86,7 +86,7 @@ TSS, energy balance not closing.
 ```bash
 # Standard production run
 python tools/run_snowpack.py \
-    --binary ./build/bin/snowpack \
+    --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \
     --config io.ini \
     --end_date "1996-06-30T23:00" \
     --mode production

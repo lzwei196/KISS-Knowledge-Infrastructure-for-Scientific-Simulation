@@ -32,8 +32,7 @@ import pandas as pd
 
 BASE = Path("KISSPATH_ROOT")
 KI_TOOLS = BASE / "models/SNOWPACK/knowledge_infrastructure/tools"
-SNOWPACK_BIN = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work"
-                    "/Alpine3D/local_install/bin/snowpack")
+SNOWPACK_BIN = Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack")
 SNOTEL_DIR = BASE / "data/obs/snotel"
 OUT = BASE / "models/SNOWPACK/outputs_run/mcclure_618"
 RESULT_DIR = Path(os.environ.get("SNOWPACK_RESULT_DIR",
@@ -273,15 +272,19 @@ def main():
     full,cal,val,obs_peak,sim_peak=score(res_csv)
     RESULT_DIR.mkdir(parents=True,exist_ok=True)
 
-    if full is None:
+    if full is None or cal is None or val is None:
+        why=("insufficient obs-sim overlap (<30 paired days)" if full is None else
+             "calibration or validation split has <30 paired days "
+             f"(cal={'ok' if cal else 'short'}, val={'ok' if val else 'short'})")
         result={"model_id":"SNOWPACK",
                 "this_location":"NRCS SNOTEL - US Snow Telemetry Network (>900 stations, 1978-present)",
                 "obs_source":"SNOTEL","status":"failed","tools_used":[],"tools_failed":[],
                 "metrics":{"nse":None,"kge":None,"pbias":None,"r":None,"period":None},
                 "water_balance":{"status":"N/A","residual_pct":None},
-                "notes":"insufficient obs-sim overlap (<30 paired days)"}
+                "notes":why}
         (RESULT_DIR/"result.json").write_text(json.dumps(result,indent=2))
-        print(json.dumps(result)); return
+        print(json.dumps(result))
+        sys.exit(1)                                 # a failed score must not exit 0
 
     notes=(
         f"SNOWPACK verifier at SNOTEL {SID} {NAME}, {STATE} ({ELEV:.0f} m, continental CO alpine) "

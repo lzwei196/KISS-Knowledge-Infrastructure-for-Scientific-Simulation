@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -12,11 +13,12 @@ from pathlib import Path
 MODEL_ID = "SNOWPACK"
 KI_DIR = Path(__file__).resolve().parent
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
-PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python3")
-SNOWPACK_BIN = Path(
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
-    "Alpine3D/local_install/bin/snowpack"
-)
+# Interpreter whose imports are checked: KI_PYTHON if set, else the interpreter running this
+# preflight (no host path pinned here; a missing interpreter is still a critical FAIL below).
+_KI_PYTHON = os.environ.get("KI_PYTHON")
+_PY_PICK = (shutil.which(_KI_PYTHON) if _KI_PYTHON else None) or _KI_PYTHON or sys.executable or "python3"
+PYTHON = Path(os.path.abspath(_PY_PICK) if (os.sep in _PY_PICK or os.path.exists(_PY_PICK)) else _PY_PICK)
+SNOWPACK_BIN = Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack")
 
 TOOL_FILES = [
     KI_DIR / "tools" / "build_sno_profile.py",

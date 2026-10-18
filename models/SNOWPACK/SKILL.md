@@ -170,7 +170,15 @@ make -j$(nproc) && make install
 - matplotlib (for visualization)
 - pyyaml
 
-**Binary location:** `build/bin/snowpack`
+**Binary location:** `build/bin/snowpack` after a source build. The managed engine install is
+`KISSPATH_BINARIES/SNOWPACK/bin/snowpack` (this is the default of `tools/run_snowpack.py`
+when `--binary` is not given), with `lib/libsnowpack.so.3` and `lib/libmeteoio.so.2` next to it
+(RUNPATH `$ORIGIN/../lib`, no `LD_LIBRARY_PATH` needed). It is SNOWPACK/MeteoIO 20260328.609d2ea, built
+with `DEBUG_ARITHM=ON`: the binary turns on floating-point traps (divide by zero, invalid, overflow), so a
+bad step stops the run with "Floating point exception" instead of writing NaN. SNOWPACK warns that this
+will likely crash the Richards equation solver (`WATERTRANSPORTMODEL_* = RICHARDSEQUATION`). The validated
+server runs (model folder outputs_run/* and runs/res5exp_alpine; server-only result folders, not shipped) all
+use `BUCKET` for snow and soil, which does not use that solver.
 **Test examples:** `Source/snowpack/tests/`
 
 ---
@@ -493,13 +501,13 @@ python tools/generate_config.py \
 
 # Step 4: Spinup (optional, stabilize soil temperatures)
 python tools/run_snowpack.py \
-  --binary ./build/bin/snowpack \
+  --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \
   --config spinup.ini \
   --mode spinup
 
 # Step 5: Run production simulation
 python tools/run_snowpack.py \
-  --binary ./build/bin/snowpack \
+  --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \
   --config io.ini
 
 # Step 6: Parse output to CSV

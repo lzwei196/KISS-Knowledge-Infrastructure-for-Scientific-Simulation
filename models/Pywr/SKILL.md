@@ -35,8 +35,9 @@
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-18 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -288,7 +289,7 @@ For tools that need both Pywr AND HydroCraft dependencies (geopandas, xarray, et
 
 ## Error Handling
 
-When errors occur, look up symptoms in `diagnostics/triplets.yaml` (15 triplets). Key triplets:
+When errors occur, look up symptoms in `diagnostics/triplets.yaml` (current count: the KI map at the top of this file). Key triplets:
 
 - **dt_pywr_001**: GLPK not found — install libglpk-dev
 - **dt_pywr_005**: Inflow all zeros — wrong VIC flux file format or upstream cells

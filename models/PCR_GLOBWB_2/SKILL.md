@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: PCR-GLOBWB 2 — Global Hydrological & Water Resources Model
 **Created by**: Department of Physical Geography, Utrecht University (Model); HydroCraft KI Dissection (Package)
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets | ~1,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `initial_dissection`
 
 ---

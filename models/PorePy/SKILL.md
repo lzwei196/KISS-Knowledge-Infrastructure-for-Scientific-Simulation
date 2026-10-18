@@ -63,8 +63,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | **Domain**       | Fractured porous media simulation (subsurface flow, poromechanics) |
 | **Language**     | Python 3.10+                                                 |
 | **Build**        | pip install (setuptools)                                     |
-| **Tools**        | 4 tools                                                      |
-| **Triplets**     | 18 diagnostic entries                                        |
+| **Tools**        | see the KI map at the top of this file |
+| **Triplets**     | see the KI map at the top of this file |
 | **Developers**   | Porous Media Group, University of Bergen, Norway             |
 | **License**      | GPL v3                                                       |
 

@@ -66,10 +66,10 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | Metric | Value |
 |--------|-------|
-| Tools | 5 |
+| Tools | see the KI map at the top of this file |
 | Pipeline stages | 8 |
-| Diagnostic triplets | 18 |
-| Skill documents | 6 |
+| Diagnostic triplets | see the KI map at the top of this file |
+| Skill documents | see the KI map at the top of this file |
 | Validation basin | TRB, Oregon |
 
 ---
@@ -440,7 +440,7 @@ as input, `TSS_monthly` is sediment-mode monthly routed total suspended sediment
 
 ## 9. Diagnostic Triplets (Top 5)
 
-See `diagnostics/triplets.yaml` for 18 symptom → diagnosis → remedy entries.
+See `diagnostics/triplets.yaml` for the symptom → diagnosis → remedy entries (current count: the KI map at the top of this file).
 Do not duplicate the full corpus here; read the YAML first on any error.
 
 | # | Triplet ID | Error / symptom | Diagnosis | Remedy |
@@ -479,5 +479,5 @@ ki/
 │   ├── s7_output_analysis_skill.md     # Output analysis
 │   └── s8_calibration_skill.md         # Calibration workflow
 └── diagnostics/
-    └── triplets.yaml              # 18 diagnostic triplets
+    └── triplets.yaml              # diagnostic triplets (count: KI map)
 ```

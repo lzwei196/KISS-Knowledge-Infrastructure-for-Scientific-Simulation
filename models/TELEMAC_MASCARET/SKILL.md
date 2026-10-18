@@ -66,9 +66,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Build System       | CMake >= 3.18                                               |
 | License            | GPL-3.0                                                     |
 | Validation Status  | analytic (bump test, subcritical/transcritical flow)         |
-| Tools              | 4 Python scripts                                            |
-| Skill Documents    | 6 markdown files                                            |
-| Diagnostic Triplets| 18 symptom-diagnosis-remedy entries                         |
+| Tools              | see the KI map at the top of this file |
+| Skill Documents    | see the KI map at the top of this file |
+| Diagnostic Triplets| see the KI map at the top of this file |
 
 ---
 
@@ -459,5 +459,5 @@ ki/
     s5_execution.md                 # Running TELEMAC
     s6_output_analysis.md           # Post-processing results
   diagnostics/
-    triplets.yaml                   # 18 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```

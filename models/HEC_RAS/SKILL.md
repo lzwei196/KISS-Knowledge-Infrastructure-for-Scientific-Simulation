@@ -78,7 +78,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: River / open-channel hydraulics (1-D & 2-D)
 **Binary**: `KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe`
 **Last updated**: 2026-06-03
-**Stats**: 11 tools | 6 docs | 20 diagnostic triplets
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `real` — computed vs **observed** water-surface elevations
 on the *Mixed Flow Regime Channel* example: **NSE 0.9965, RMSE 0.096 ft,
 KGE 0.977, PBIAS −0.09 %** (19 cross sections).

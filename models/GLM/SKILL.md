@@ -90,14 +90,14 @@ Then convert to GLM met format using this KI's tool: `tools/s2_met_forcing/conve
 **Model**: GLM v3.3.3 + AED2 water quality library
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21
-**Stats**: 16 tools | 12 skill documents | 30 diagnostic triplets | 7 error log entries | ~4,630 lines of validated Python
+**Stats**: 7 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `production_validated` (Miyun Reservoir, 2001-2010)
 
 ---
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous simulation of lake and reservoir thermodynamics using GLM (General Lake Model) on any lake worldwide, **without manual data preparation**. The 13 validated tools replace the standard R-based GLM workflow with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and water quality infrastructure.
+This knowledge infrastructure enables fully autonomous simulation of lake and reservoir thermodynamics using GLM (General Lake Model) on any lake worldwide, **without manual data preparation**. The validated tools replace the standard R-based GLM workflow with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and water quality infrastructure.
 
 **What GLM does**: 1D vertical hydrodynamic model for lakes and reservoirs. Simulates:
 - Thermal stratification (adaptive Lagrangian layers, up to 500)
@@ -383,7 +383,7 @@ Stages 9 and 10 depend on 8.
 | `calibrate_glm` | s9 | `tools/s9_output_analysis/calibrate_glm.py` | 260 | GLUE-style parameter calibration |
 | `glm_to_cama_outflow` | s10 | `tools/s10_coupling/glm_to_cama_outflow.py` | 150 | GLM outflow to CaMa-Flood lateral inflow |
 
-**Total**: 15 tools, ~4,630 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Knowledge
 
@@ -823,7 +823,7 @@ python tools/s9_output_analysis/plot_glm_results.py \
 
 ## Diagnostic Triplets
 
-29 triplets covering 7 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 7 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -860,7 +860,7 @@ python tools/s9_output_analysis/plot_glm_results.py \
 | dt_036 | **silent** | output_extraction | Fixed-depth temperature read off the ADAPTIVE Lagrangian grid — must interpolate (`parse_glm_output --depths`); GLM stamps END-of-day and duplicates the final timestep |
 | dt_037 | fatal/silent | observation_ingestion | ISMN db needs `immutable=1`; pair on `depth_from_m` (metres) not `depth_cm/100`; soil obs is a PROXY — score r, not PBIAS |
 
-**Silent error count**: 16/30 (53%) — higher than cross-model average due to lake-specific physics.
+**Silent error count** (when this section was written): 16/30 (53%) — higher than cross-model average due to lake-specific physics.
 
 **Most important triplet**: dt_027 — without `dt_iceon_avg=0.02` and `min_ice_thickness=0.001` in the `&snowice` block, GLM's ice model is silently disabled. This is undocumented in most GLM examples and caused 6 hours of debugging on Miyun Reservoir before discovery.
 
@@ -904,7 +904,7 @@ models/GLM/knowledge_infrastructure/
       glm_to_cama_outflow.py      # GLM -> CaMa-Flood coupling
   docs/                           # reference only (format_spec.yaml, Hipsey2019 PDF)
   diagnostics/
-    triplets.yaml                 # 30 diagnostic triplets (incl. 3 AED2-specific)
+    triplets.yaml                 # diagnostic triplets (incl. 3 AED2-specific; count: KI map)
     error_log.yaml                # Errors from real runs
 
 model/glm/

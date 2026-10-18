@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: GR4J daily lumped rainfall-runoff model via airGR R package v1.7.8
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets | ~1,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `production_validated` (airGR L0123001 built-in dataset)
 
 ---
@@ -79,7 +79,7 @@ See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous simulation of catchment rainfall-runoff processes using the GR4J model (Perrin et al., 2003) implemented in the airGR R package. The 4 validated Python tools replace manual R workflow steps with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and calibration infrastructure.
+This knowledge infrastructure enables fully autonomous simulation of catchment rainfall-runoff processes using the GR4J model (Perrin et al., 2003) implemented in the airGR R package. The validated Python tools replace manual R workflow steps with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and calibration infrastructure.
 
 **What GR4J does**: Four-parameter daily lumped conceptual hydrological model. Simulates:
 - Production store: soil moisture accounting (interception, evaporation, percolation)
@@ -279,7 +279,7 @@ These unit mismatches cause **silent failures** — the model runs but produces 
 | `run_gr4j` | s3-s4 | `tools/run_gr4j.py` | ~350 | Execute GR4J via rpy2 (simulation + calibration) |
 | `parse_gr4j_output` | s5-s6 | `tools/parse_gr4j_output.py` | ~300 | Extract results to CSV, compute metrics, plot |
 
-**Total**: 4 tools, ~1,100 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 

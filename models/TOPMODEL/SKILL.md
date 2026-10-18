@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: TOPMODEL BMI (Beven & Kirkby 1979, NOAA-OWP C implementation)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-28
-**Stats**: 5 tools | 6 skill documents | 18 diagnostic triplets | ~2,100 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: see `knowledge_infrastructure.yaml`
 
 ---

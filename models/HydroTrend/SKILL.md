@@ -347,12 +347,12 @@ Where B = lithology factor (0.3–3), Eh = anthropogenic factor (0.5–8).
 
 ## Diagnostic Triplets Summary
 
-See `diagnostics/triplets.yaml` for 20 symptom→diagnosis→remedy entries covering:
-- Unit conversion errors (6 entries)
-- Input format errors (4 entries)
-- Runtime/NaN crashes (3 entries)
-- Silent output errors (4 entries)
-- Build/dependency issues (3 entries)
+See `diagnostics/triplets.yaml` for the symptom→diagnosis→remedy entries (current count: the KI map at the top of this file) covering:
+- Unit conversion errors
+- Input format errors
+- Runtime/NaN crashes
+- Silent output errors
+- Build/dependency issues
 
 ---
 

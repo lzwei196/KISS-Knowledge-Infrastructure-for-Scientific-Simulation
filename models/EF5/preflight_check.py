@@ -6,7 +6,6 @@ HydroCraft Python imports, KI tool files, and recovery diagnostics before a run.
 It always finishes with a PREFLIGHT_REPORT= JSON line for the KDT gate.
 """
 
-import glob
 import json
 import os
 from pathlib import Path
@@ -17,7 +16,6 @@ import sys
 
 MODEL_ID = "EF5"
 KI_DIR = Path(__file__).resolve().parent
-MODEL_DIR = KI_DIR.parent
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 # Interpreter whose imports are checked: KI_PYTHON if set, else the interpreter running this
 # preflight (no host path pinned here; a missing interpreter is still a critical FAIL below).
@@ -26,7 +24,15 @@ TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 _KI_PYTHON = os.environ.get("KI_PYTHON")
 _PY_PICK = (shutil.which(_KI_PYTHON) if _KI_PYTHON else None) or _KI_PYTHON or sys.executable or "python3"
 PYTHON_ENV = Path(os.path.abspath(_PY_PICK) if (os.sep in _PY_PICK or os.path.exists(_PY_PICK)) else _PY_PICK)
-EF5_BINARY = MODEL_DIR / "bin" / "ef5"
+# EF5 binary, looked for in this order (same list as tools/run_ef5.py BINARY_CANDIDATES):
+#  1. managed engine install (server): bin/ef5 + lib/ with every non-system shared library it needs;
+#     RUNPATH is $ORIGIN/../lib (libs: $ORIGIN), so no LD_LIBRARY_PATH is set here. Same path as
+#     knowledge_infrastructure.yaml package.binary.path.
+#  2. source build in the same engine folder (desktop: KISS builds EF5 from source to source/repo/bin/ef5).
+# main() checks the first one that exists; if neither exists the binary check FAILS naming both.
+EF5_BINARY = Path("KISSPATH_BINARIES/EF5/bin/ef5")
+EF5_SOURCE_BUILD_BINARY = Path("KISSPATH_BINARIES/EF5/source/repo/bin/ef5")
+EF5_BINARY_CANDIDATES = (EF5_BINARY, EF5_SOURCE_BUILD_BINARY)
 
 REQUIRED_KI_FILES = [
     KI_DIR / "SKILL.md",
@@ -56,13 +62,6 @@ REQUIRED_IMPORTS = [
     "ki_tools_common.cross_platform",
     "ki_tools_common.debug_framework",
 ]
-
-KNOWN_LIB_DIRS = [
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/lib",
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/pkgs/geotiff-1.7.4-h222b469_0/lib",
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CWatM/conda_env/lib",
-]
-
 
 def diagnostic_fix(message):
     return f"{message}; check {TRIPLETS} for known recovery triplets"
@@ -113,6 +112,24 @@ def check_file(checks, path, label, critical=True, executable=False, kind="data"
             diagnostic_fix(f"{label} exists but is not executable; run chmod +x {p}"),
         )
     return add_check(checks, kind, p.resolve(), critical, "pass")
+
+
+def binary_check_file(path, checks):
+    """check_file for the EF5 binary, path first.
+
+    The path is the first argument so that the managed install path can be written as a literal
+    string at the call site in main(); KISS (kiss_cli.runnable.declared) reads the binary a KI
+    declares from calls whose first argument is such a literal string.
+    """
+    return check_file(checks, path, "EF5 binary", critical=True, executable=True, kind="binary")
+
+
+def pick_binary():
+    """First EF5_BINARY_CANDIDATES entry that exists, else None."""
+    for c in EF5_BINARY_CANDIDATES:
+        if c.is_file():
+            return c
+    return None
 
 
 def check_dir(checks, path, label, critical=True):
@@ -183,46 +200,21 @@ def parse_ldd_missing(output):
     return missing
 
 
-def lib_dirs_for(binary):
-    dirs = []
-    for d in KNOWN_LIB_DIRS:
-        if os.path.isdir(d) and d not in dirs:
-            dirs.append(d)
-    dirs.extend(d for d in sorted(glob.glob("KISSPATH_HOME/miniconda3/envs/*/lib")) if d not in dirs)
-
-    ldd = run_command(["ldd", str(binary)], timeout=20)
-    missing = parse_ldd_missing(ldd.stdout + ldd.stderr)
-    for soname in missing:
-        for d in dirs:
-            if os.path.exists(os.path.join(d, soname)):
-                break
-        else:
-            for root in [
-                "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2",
-                "KISSPATH_KI_ROOT/EF5",
-            ]:
-                for found in glob.glob(os.path.join(root, "**", soname), recursive=True):
-                    d = os.path.dirname(found)
-                    if d not in dirs:
-                        dirs.insert(0, d)
-                    break
-    return dirs
-
-
-def check_shared_libs(checks, binary_realpath, lib_dirs):
+def check_shared_libs(checks, binary_realpath):
+    # Check the loader exactly as tools/run_ef5.py runs the managed binary: the caller's
+    # environment, no extra library folders added (the binary's RUNPATH finds its own lib/).
     env = os.environ.copy()
-    env["LD_LIBRARY_PATH"] = ":".join(lib_dirs + ([env["LD_LIBRARY_PATH"]] if env.get("LD_LIBRARY_PATH") else []))
     result = run_command(["ldd", binary_realpath], timeout=20, env=env)
     output = result.stdout + result.stderr
     missing = parse_ldd_missing(output)
     if result.returncode == 0 and not missing:
         return add_check(checks, "binary", f"{binary_realpath} shared libraries", True, "pass"), env
     fix = diagnostic_fix(
-        "repair EF5 shared libraries or export LD_LIBRARY_PATH including "
-        + ":".join(KNOWN_LIB_DIRS)
+        f"repair the EF5 install: ldd {binary_realpath} failed "
+        f"(the managed install keeps its libraries in {EF5_BINARY.parent.parent / 'lib'})"
     )
     if missing:
-        fix = diagnostic_fix(f"missing EF5 shared libraries: {', '.join(missing)}")
+        fix = diagnostic_fix(f"missing EF5 shared libraries: {', '.join(missing)} (the managed install keeps them in {EF5_BINARY.parent.parent / 'lib'})")
     return add_check(checks, "binary", f"{binary_realpath} shared libraries", True, "fail", fix), env
 
 
@@ -253,11 +245,22 @@ def main():
     for path in REQUIRED_TOOLS:
         check_file(checks, path, path.name, critical=True)
 
-    binary_ok = check_file(checks, EF5_BINARY, "EF5 binary", critical=True, executable=True, kind="binary")
+    binary = pick_binary()
+    if binary is None:
+        binary_ok = add_check(
+            checks, "binary", EF5_BINARY, True, "fail",
+            diagnostic_fix("EF5 binary is missing; looked for (in order) "
+                           + "; ".join(str(c) for c in EF5_BINARY_CANDIDATES)),
+        )
+    elif binary == EF5_BINARY:
+        # Literal on purpose (KISS reads it, see binary_check_file); test_binary_location keeps it
+        # equal to EF5_BINARY.
+        binary_ok = binary_check_file("KISSPATH_BINARIES/EF5/bin/ef5", checks)
+    else:
+        binary_ok = binary_check_file(binary, checks)
     if binary_ok:
-        binary_realpath = str(EF5_BINARY.resolve())
-        lib_dirs = lib_dirs_for(binary_realpath)
-        libs_ok, env = check_shared_libs(checks, binary_realpath, lib_dirs)
+        binary_realpath = str(binary.resolve())
+        libs_ok, env = check_shared_libs(checks, binary_realpath)
         if libs_ok:
             check_binary_starts(checks, binary_realpath, env)
 

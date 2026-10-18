@@ -19,6 +19,23 @@ import sys
 import time
 from pathlib import Path
 
+# Where the EF5 binary is looked for when --binary is not given, in this order:
+#  1. managed engine install (server): bin/ef5 + its own lib/ folder; the binary's RUNPATH is
+#     $ORIGIN/../lib, so no LD_LIBRARY_PATH is needed.
+#  2. source build in the same engine folder (desktop: KISS builds EF5 from source to source/repo/bin/ef5).
+# The first one that is a file wins; if neither is, the run stops with an error naming both.
+MANAGED_BINARY = "KISSPATH_BINARIES/EF5/bin/ef5"
+SOURCE_BUILD_BINARY = "KISSPATH_BINARIES/EF5/source/repo/bin/ef5"
+BINARY_CANDIDATES = (MANAGED_BINARY, SOURCE_BUILD_BINARY)
+
+
+def find_binary(candidates=BINARY_CANDIDATES):
+    """First candidate that is a file, or None (the caller reports every path it tried)."""
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
 # ---------------------------------------------------------------------------
 # Configuration parser (lightweight)
 # ---------------------------------------------------------------------------
@@ -272,10 +289,12 @@ def preflight_check(control_path, binary_path):
 def resolve_shared_libs(binary_path):
     """Find directories that satisfy ef5's 'not found' shared libraries.
 
-    The ef5 binary is linked against libtiff/libgeotiff/libproj that live in
-    conda envs on this server, not on the default loader path — a fresh shell
-    gets `error while loading shared libraries: libproj.so.25` (exit 127).
-    We parse `ldd` for unresolved libs, then search a set of known conda-env
+    The managed install (MANAGED_BINARY) carries libtiff/libgeotiff/libproj and
+    their dependencies in its own lib/ (RUNPATH $ORIGIN/../lib), so ldd finds
+    nothing missing and this returns []. An older ef5 build given with --binary
+    may link against conda-env libraries that are not on the default loader path
+    (a fresh shell then gets `libproj.so.25: cannot open shared object file`,
+    exit 127); for that case we parse `ldd` for unresolved libs, then search a set of known conda-env
     lib dirs (and any dir already supplying a *resolved* ef5 dependency) for a
     file of that soname, and return the dirs to prepend to LD_LIBRARY_PATH.
     """
@@ -292,9 +311,9 @@ def resolve_shared_libs(binary_path):
             known_dirs.add(os.path.dirname(line.split("=>")[1].strip().split(" (")[0]))
     if not missing:
         return []
-    search = list(known_dirs) + [
-        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/lib",
-    ]
+    # The managed install (MANAGED_BINARY) resolves everything through its own lib/ and never
+    # reaches this search; it is only a fallback for an ef5 passed with --binary.
+    search = list(known_dirs)
     # Add all conda env lib dirs as a last resort
     import glob
     search += sorted(glob.glob("KISSPATH_HOME/miniconda3/envs/*/lib"))
@@ -968,12 +987,21 @@ def validate_output(control_path, stdout, stderr, returncode, run_start=None, pr
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Run EF5 with preflight and post-run validation")
-    parser.add_argument("--binary", required=True, help="Path to ef5 binary")
+    parser.add_argument("--binary", default=None,
+                        help="Path to ef5 binary (default: first existing of "
+                             + ", ".join(BINARY_CANDIDATES) + ")")
     parser.add_argument("--control", required=True, help="Path to control.txt")
     parser.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds")
     parser.add_argument("--skip-preflight", action="store_true", help="Skip preflight checks")
     parser.add_argument("--log", help="Log file path for output")
     args = parser.parse_args()
+    if args.binary is None:
+        args.binary = find_binary()
+        if args.binary is None:
+            print("[ERROR] EF5 binary not found; looked for (in order): "
+                  + "; ".join(BINARY_CANDIDATES) + ". Install EF5 there or pass --binary.",
+                  file=sys.stderr)
+            sys.exit(1)
     # The engine runs with cwd = the control file's folder; resolve the binary against the
     # caller's cwd first so a relative --binary still points at the same file.
     if os.sep in args.binary or os.path.exists(args.binary):

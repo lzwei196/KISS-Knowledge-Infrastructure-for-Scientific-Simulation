@@ -13,7 +13,7 @@ package:
   scientific_reference_version: EF5 v1.2 (Ensemble Framework For Flash Flood Forecasting; Flamig, Vergara
     & Gourley 2020, GMD 13:4943-4958)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CREST/source/repo/build/ef5
+    path: KISSPATH_BINARIES/EF5/bin/ef5
     type: work_dir
 pipeline:
   stages:

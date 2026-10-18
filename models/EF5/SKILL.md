@@ -113,7 +113,7 @@ This knowledge infrastructure enables autonomous distributed hydrologic simulati
 
 **Key design**: EF5 couples any water balance model with any routing model via a single configuration file (`control.txt`). Forcing data (precipitation, PET, temperature) are ingested as gridded files (ASC, BIF, TIF, TRMM, MRMS). Output is streamflow time series at gauge points and optional gridded fields (streamflow, soil moisture, SWE, return period, inundation depth).
 
-**Execution**: `ef5 [control.txt]` — single binary, single config file, no external runtime dependencies.
+**Execution**: `ef5 [control.txt]` — single binary, single config file. It needs libtiff, libgeotiff and libz at run time (on this server they ship in the engine folder's `lib/`, see "Server install" below).
 
 ---
 
@@ -139,8 +139,28 @@ make CXXFLAGS="-O3 -fopenmp"
 libz         — zlib compression (for gzipped TRMM files)
 libtiff      — TIFF raster I/O
 libgeotiff   — GeoTIFF spatial metadata
-libgomp      — OpenMP parallel processing (Linux)
+libgomp      — OpenMP parallel processing (Linux; only for an OpenMP build)
 ```
+
+### Server install (what the KI runs)
+
+- Binary: `KISSPATH_BINARIES/EF5/bin/ef5` (EF5 v1.2.3). It is a copy of
+  `models/EF5/bin/ef5` (same build, md5 a39d7a42... before patchelf changed only its RUNPATH),
+  the binary used by the `run_ef5.py` runs logged under `models/EF5/workspace_*` (GRDC real-case
+  calibrations included); a short real case gave byte-identical output with both. It is not an OpenMP build
+  (no libgomp in its NEEDED list), so one run uses one core.
+- `lib/` next to `bin/` holds the non-system shared libraries it loads (libtiff 6, libgeotiff 5,
+  libproj 25 and their dependencies such as libsqlite3, libcurl, ICU, libstdc++); RUNPATH is
+  `$ORIGIN/../lib` for the binary and `$ORIGIN` for the libraries, so no `LD_LIBRARY_PATH` is
+  needed. glibc, libm, libdl, libpthread and libresolv come from the system.
+- When `--binary` is not given, `tools/run_ef5.py` looks for the binary in this order and uses the first
+  that exists: (1) this managed install `KISSPATH_BINARIES/EF5/bin/ef5`, (2) a source
+  build in the same engine folder, `KISSPATH_BINARIES/EF5/source/repo/bin/ef5` (where the
+  desktop app builds EF5). If neither exists it stops with exit 1 and names both. `preflight_check.py`
+  uses the same order and checks the one it finds (file, `ldd` with nothing "not found", startup
+  banner); if neither exists the binary check fails naming both.
+- A caller-set `LD_LIBRARY_PATH` wins over RUNPATH; leave it unset (or without other libtiff/libproj
+  copies) so the shipped libraries are the ones loaded.
 
 ### DEM processing
 

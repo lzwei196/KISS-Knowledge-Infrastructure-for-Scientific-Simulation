@@ -1,6 +1,6 @@
 # SimPEG Diagnostic Triplets
 # Symptom → Diagnosis → Remedy for common failure modes
-# 18 entries covering 6 failure domains
+# Entries (18 when this header was written; current count: the SKILL.md KI map) covering 6 failure domains
 
 - id: dt_001
   stage: s2_model_parameters

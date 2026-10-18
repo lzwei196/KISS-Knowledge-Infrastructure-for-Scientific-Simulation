@@ -1,5 +1,5 @@
 # GeoClaw Diagnostic Triplets
-# 18 symptom → diagnosis → remedy entries covering the most common failure modes
+# Symptom → diagnosis → remedy entries (18 when this header was written; current count: the SKILL.md KI map) covering the most common failure modes
 # Organized by failure domain: unit_conversion, parameter_format, runtime, silent, dependency
 
 - id: dt_001

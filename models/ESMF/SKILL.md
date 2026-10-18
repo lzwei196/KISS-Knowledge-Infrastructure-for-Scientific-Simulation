@@ -413,7 +413,7 @@ ki/
 │   ├── s7_output_parsing.md          # Output extraction
 │   └── s8_regridding.md              # Regridding procedures
 ├── diagnostics/
-│   └── triplets.yaml                 # 20 symptom→diagnosis→remedy
+│   └── triplets.yaml                 # diagnostic triplets (count: KI map)
 └── workflow/
     └── workflow.md                   # Pipeline overview
 ```

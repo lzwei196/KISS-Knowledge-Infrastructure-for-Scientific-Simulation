@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Biogeochemistry / Dynamic Global Vegetation Model (DGVM)
 **Created by**: Auto-dissect pipeline
 **Last updated**: 2026-03-25
-**Stats**: 5 tools | 5 skill documents | 18 diagnostic triplets | ~2,200 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `documentation_validated`
 
 ---
@@ -471,7 +471,7 @@ python ki/tools/run_fates_case.py \
 | dt_017 | degraded | configuration | Plant hydraulics experimental and unstable |
 | dt_018 | fatal | runtime | Restart file version incompatibility |
 
-**Silent error count**: 13/18 (72%)
+**Silent error count** (when this section was written): 13/18 (72%)
 
 ---
 
@@ -524,7 +524,7 @@ ki/
 │   ├── s4_case_creation.md           ← CTSM case creation and build skill
 │   └── s5_output_analysis.md         ← Output parsing and analysis skill
 └── diagnostics/
-    └── triplets.yaml                 ← 18 symptom->diagnosis->remedy entries
+    └── triplets.yaml                 ← diagnostic triplets (count: KI map)
 ```
 
 ---

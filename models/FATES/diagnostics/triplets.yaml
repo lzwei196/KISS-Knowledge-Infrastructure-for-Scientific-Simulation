@@ -1,5 +1,5 @@
 # FATES Diagnostic Triplets
-# 18 symptom → diagnosis → remedy entries
+# Symptom → diagnosis → remedy entries (18 when this header was written; current count: the SKILL.md KI map)
 # Focus on unit conversion traps and silent failures
 
 - id: dt_001

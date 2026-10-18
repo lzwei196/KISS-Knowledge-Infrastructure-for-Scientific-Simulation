@@ -18,7 +18,15 @@ DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
 _KI_PYTHON = os.environ.get("KI_PYTHON")
 _PY_PICK = (shutil.which(_KI_PYTHON) if _KI_PYTHON else None) or _KI_PYTHON or sys.executable or "python3"
 PYTHON = Path(os.path.abspath(_PY_PICK) if (os.sep in _PY_PICK or os.path.exists(_PY_PICK)) else _PY_PICK)
-SNOWPACK_BIN = Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack")
+# SNOWPACK engine, looked up in this order: server managed install, then the
+# desktop (KISS) source build. SNOWPACK_BIN is the first one that is an
+# executable file, or None (critical FAIL naming both).
+MANAGED_BIN = Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack")
+SOURCE_BUILD_BIN = Path("KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack")
+SNOWPACK_BIN_CANDIDATES = (MANAGED_BIN, SOURCE_BUILD_BIN)
+SNOWPACK_BIN = next(
+    (c for c in SNOWPACK_BIN_CANDIDATES if c.is_file() and os.access(c, os.X_OK)), None
+)
 
 TOOL_FILES = [
     KI_DIR / "tools" / "build_sno_profile.py",
@@ -53,7 +61,8 @@ def add_check(checks, kind, subject, critical, passed, fix_text=""):
     )
 
 
-def check_file(checks, path, label, critical=True, executable=False):
+def check_file(path, label, checks, critical=True, executable=False):
+    # Path first: installers read the literal path given to check_file.
     path = Path(path)
     subject = path.resolve(strict=False)
     if not path.is_file():
@@ -179,38 +188,50 @@ def manifest_binary_path():
 
 def check_manifest_binary(checks):
     manifest_path = manifest_binary_path()
-    expected = SNOWPACK_BIN.resolve(strict=False)
-    passed = manifest_path is not None and manifest_path.resolve(strict=False) == expected
+    expected = {c.resolve(strict=False) for c in SNOWPACK_BIN_CANDIDATES}
+    passed = manifest_path is not None and manifest_path.resolve(strict=False) in expected
     if passed:
         print(f"  OK    manifest binary path: {manifest_path}")
     elif manifest_path is None:
         print("  FAIL  manifest binary path: not declared in knowledge_infrastructure.yaml")
     else:
-        print(f"  FAIL  manifest binary path: {manifest_path} != {SNOWPACK_BIN}")
+        print(f"  FAIL  manifest binary path: {manifest_path} is not one of "
+              + ", ".join(str(c) for c in SNOWPACK_BIN_CANDIDATES))
     add_check(
         checks,
         "data",
         KI_DIR / "knowledge_infrastructure.yaml",
         True,
         passed,
-        fix(f"Set package.implementation.binary.path to {SNOWPACK_BIN}"),
+        fix(f"Set package.implementation.binary.path to {MANAGED_BIN}"),
     )
     return passed
 
 
 def check_binary(checks):
-    subject = SNOWPACK_BIN.resolve(strict=False)
-    if not SNOWPACK_BIN.is_file():
-        print(f"  FAIL  SNOWPACK binary: not found at {SNOWPACK_BIN}")
+    if SNOWPACK_BIN is None:
+        where = ", ".join(str(c) for c in SNOWPACK_BIN_CANDIDATES)
+        print(f"  FAIL  SNOWPACK binary: no executable at any of: {where}")
         add_check(
             checks,
             "binary",
-            subject,
+            MANAGED_BIN.resolve(strict=False),
             True,
             False,
-            fix(f"Restore or rebuild the SNOWPACK executable at {SNOWPACK_BIN}"),
+            fix(f"Install the SNOWPACK engine at {MANAGED_BIN} (or build it at {SOURCE_BUILD_BIN})"),
         )
         return False
+    # Literal paths on purpose: installers read the literal path given to check_file to learn
+    # where this KI expects its binary.
+    if SNOWPACK_BIN == MANAGED_BIN:
+        found = check_file("KISSPATH_BINARIES/SNOWPACK/bin/snowpack",
+                           "SNOWPACK binary (managed install)", checks, executable=True)
+    else:
+        found = check_file("KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack",
+                           "SNOWPACK binary (source build)", checks, executable=True)
+    if not found:
+        return False
+    subject = SNOWPACK_BIN.resolve(strict=False)
     if not os.access(SNOWPACK_BIN, os.X_OK):
         print(f"  FAIL  SNOWPACK binary: not executable at {SNOWPACK_BIN}")
         add_check(checks, "binary", subject, True, False, fix(f"Run chmod +x {SNOWPACK_BIN}"))
@@ -253,9 +274,9 @@ def main():
 
     check_dir(checks, KI_DIR / "tools", "KI tools directory")
     for path in REQUIRED_FILES:
-        check_file(checks, path, f"required file {path.relative_to(KI_DIR)}")
+        check_file(path, f"required file {path.relative_to(KI_DIR)}", checks)
     for path in TOOL_FILES:
-        check_file(checks, path, f"tool file {path.relative_to(KI_DIR)}")
+        check_file(path, f"tool file {path.relative_to(KI_DIR)}", checks)
 
     check_manifest_binary(checks)
     check_binary(checks)

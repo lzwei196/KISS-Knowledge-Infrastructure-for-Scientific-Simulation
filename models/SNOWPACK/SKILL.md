@@ -171,10 +171,12 @@ make -j$(nproc) && make install
 - pyyaml
 
 **Binary location:** `build/bin/snowpack` after a source build. The managed engine install is
-`KISSPATH_BINARIES/SNOWPACK/bin/snowpack` (this is the default of `tools/run_snowpack.py`
-when `--binary` is not given), with `lib/libsnowpack.so.3` and `lib/libmeteoio.so.2` next to it
-(RUNPATH `$ORIGIN/../lib`, no `LD_LIBRARY_PATH` needed). It is SNOWPACK/MeteoIO 20260328.609d2ea, built
-with `DEBUG_ARITHM=ON`: the binary turns on floating-point traps (divide by zero, invalid, overflow), so a
+`KISSPATH_BINARIES/SNOWPACK/bin/snowpack`. When `--binary` is not given, `tools/run_snowpack.py`
+(and the preflight) use this managed install first, then the desktop source build
+`KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack`, and stop with an
+error naming both if neither exists. The managed install has `lib/libsnowpack.so.3` and `lib/libmeteoio.so.2` next to it
+(RUNPATH `$ORIGIN/../lib`, no `LD_LIBRARY_PATH` needed). The managed install is SNOWPACK/MeteoIO 20260328.609d2ea (a desktop source
+build is whatever KISS built there, not this exact build), built with `DEBUG_ARITHM=ON`: the binary turns on floating-point traps (divide by zero, invalid, overflow), so a
 bad step stops the run with "Floating point exception" instead of writing NaN. SNOWPACK warns that this
 will likely crash the Richards equation solver (`WATERTRANSPORTMODEL_* = RICHARDSEQUATION`). The validated
 server runs (model folder outputs_run/* and runs/res5exp_alpine; server-only result folders, not shipped) all

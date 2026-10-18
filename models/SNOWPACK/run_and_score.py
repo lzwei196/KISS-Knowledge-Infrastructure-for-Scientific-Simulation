@@ -49,7 +49,20 @@ BASE = Path("KISSPATH_ROOT")
 KI = BASE / "models/SNOWPACK/knowledge_infrastructure"
 KI_TOOLS = KI / "tools"
 sys.path.insert(0, str(BASE / "models/ki_tools_common"))
-SNOWPACK_BIN = Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack")
+# SNOWPACK engine, looked up in this order: server managed install, then the
+# desktop (KISS) source build. Neither present -> stop with an error naming both.
+SNOWPACK_BIN_CANDIDATES = (
+    Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack"),
+    Path("KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack"),
+)
+
+
+def find_snowpack_bin():
+    for cand in SNOWPACK_BIN_CANDIDATES:
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return cand
+    sys.exit("SNOWPACK binary not found (or not executable) at any of: "
+             + ", ".join(str(c) for c in SNOWPACK_BIN_CANDIDATES))
 OBS_TXT = Path("KISSPATH_HOME/桌面/数据/Canadian historical snow survey data"
                "/Cdn_Snow_Survey_Dataset_Lat_long_Minus_HQ-MELCC.txt")
 OUT = BASE / "models/SNOWPACK/outputs_run/yanks_1c41p"
@@ -246,7 +259,7 @@ def run_model():
     ini.write_text(t)
 
     print("[s4/s5] run_snowpack.py", flush=True)
-    rc = run_ki("run_snowpack.py", ["--binary", str(SNOWPACK_BIN), "--config", str(ini),
+    rc = run_ki("run_snowpack.py", ["--binary", str(find_snowpack_bin()), "--config", str(ini),
         "--end_date", end], log)
     assert rc == 0, f"run_snowpack rc={rc}"
 

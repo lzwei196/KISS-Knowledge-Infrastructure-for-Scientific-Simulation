@@ -54,18 +54,28 @@ import sys
 import time
 from pathlib import Path
 
-# Managed engine install on the server (bin/snowpack + lib/libsnowpack.so.3,
-# lib/libmeteoio.so.2; RUNPATH $ORIGIN/../lib). Used when --binary is not given.
-DEFAULT_BINARY = "KISSPATH_BINARIES/SNOWPACK/bin/snowpack"
+# Where to look when --binary is not given, in this order:
+#   1. server managed install (bin/snowpack + lib/libsnowpack.so.3,
+#      lib/libmeteoio.so.2; RUNPATH $ORIGIN/../lib)
+#   2. desktop (KISS) source build of the same engine
+MANAGED_BINARY = "KISSPATH_BINARIES/SNOWPACK/bin/snowpack"
+SOURCE_BUILD_BINARY = "KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack"
+BINARY_CANDIDATES = (MANAGED_BINARY, SOURCE_BUILD_BINARY)
 
 
 def find_binary(binary=None):
-    """Return the binary to run: --binary if given, else the managed install.
+    """Return the binary to run: --binary if given, else the first candidate
+    in BINARY_CANDIDATES that is an executable file.
 
-    No search of PATH or other folders: a missing binary is reported by
-    validate_inputs() and the run stops.
+    Returns None when --binary is not given and no candidate exists; main()
+    then stops with an error naming every candidate. No PATH search.
     """
-    return binary if binary else DEFAULT_BINARY
+    if binary:
+        return binary
+    for cand in BINARY_CANDIDATES:
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
 
 
 def validate_inputs(args):
@@ -210,8 +220,8 @@ def main():
         description="Run SNOWPACK simulation"
     )
     parser.add_argument("--binary", default=None,
-                        help="Path to snowpack binary (default: managed install "
-                             f"{DEFAULT_BINARY})")
+                        help="Path to snowpack binary (default: first of "
+                             + ", ".join(BINARY_CANDIDATES) + " that exists)")
     parser.add_argument("--config", required=True,
                         help="Path to .ini config file")
     parser.add_argument("--end_date", required=True,
@@ -224,6 +234,11 @@ def main():
 
     args = parser.parse_args()
     args.binary = find_binary(args.binary)
+    if args.binary is None:
+        print(json.dumps({"status": "error", "errors": [
+            "SNOWPACK binary not found (or not executable) at any of: "
+            + ", ".join(BINARY_CANDIDATES) + "; pass --binary"]}), file=sys.stderr)
+        sys.exit(1)
     # Make a relative --binary absolute now (caller's cwd): the run itself
     # changes cwd to the config's folder.
     if os.sep in args.binary or os.path.exists(args.binary):

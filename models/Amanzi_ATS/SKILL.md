@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Groundwater flow, reactive transport, integrated surface-subsurface hydrology
 **Created by**: Auto-dissection pipeline
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~1,200 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `NOT_RUNNABLE` (binary requires MPI+Trilinos build; KI tools validated with Python surrogate only)
 
 ---
@@ -81,7 +81,7 @@ See `data_ki/GRACE/SKILL.md` for GRACE TWS validation data.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of subsurface flow and reactive transport using Amanzi/ATS. The 4 validated tools replace manual XML editing and HDF5 parsing with a Python pipeline that integrates directly with HydroCraft's forcing, soil, and output infrastructure.
+This knowledge infrastructure enables autonomous simulation of subsurface flow and reactive transport using Amanzi/ATS. The validated tools replace manual XML editing and HDF5 parsing with a Python pipeline that integrates directly with HydroCraft's forcing, soil, and output infrastructure.
 
 **What Amanzi/ATS does**: Multi-physics framework for environmental subsurface simulation:
 - Variably saturated flow (Richards equation with van Genuchten/Brooks-Corey)
@@ -195,7 +195,7 @@ Stages 6 and 7 depend on 5.
 | `run_amanzi` | s5 | `tools/run_amanzi.py` | Execute Amanzi/ATS with validation |
 | `parse_amanzi_output` | s6 | `tools/parse_amanzi_output.py` | HDF5/observation → CSV extraction |
 
-**Total**: 4 tools, ~1,200 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -428,7 +428,7 @@ Gravity is specified as a 3D vector, typically (0, 0, -9.81). A positive Z gravi
 
 ## Diagnostic Triplets Summary
 
-18 triplets covering 5 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 5 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -451,7 +451,7 @@ Gravity is specified as a 3D vector, typically (0, 0, -9.81). A positive Z gravi
 | dt_017 | **silent** | silent_error | Zero-flux BC applied where recharge intended |
 | dt_018 | degraded | runtime | Timestep collapse from sharp wetting front |
 
-**Silent error count**: 10/18 (56%) — dominated by unit conversion traps.
+**Silent error count** (when this section was written): 10/18 (56%) — dominated by unit conversion traps.
 
 ---
 
@@ -512,7 +512,7 @@ ki/
     s4_xml_input_assembly.md            # XML input file construction skill
     s5_execution_and_output.md          # Running and parsing output skill
   diagnostics/
-    triplets.yaml                       # 18 diagnostic triplets
+    triplets.yaml                       # diagnostic triplets (count: KI map)
 ```
 
 ---

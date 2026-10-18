@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Source**: https://github.com/cryotools/cosipy
 **Domain**: Cryosphere — glacier and snowpack energy/mass balance
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 6 skill documents | 20 diagnostic triplets | ~2,400 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `validated` (Zhadang Glacier, Tibet, ERA5 2009)
 
 ---
@@ -299,7 +299,7 @@ data/input/HEF/data_stakes_hef.csv        # Stake validation data
 | `run_cosipy` | s4 | `tools/run_cosipy.py` | Execute COSIPY with preflight checks |
 | `parse_output` | s5 | `tools/parse_output.py` | Extract COSIPY netCDF results to CSV |
 
-**Total**: 4 tools, ~2,400 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 

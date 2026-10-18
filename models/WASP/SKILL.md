@@ -281,7 +281,7 @@ BMD2 concentrations are positive mg/L; temperature °C; volume m³; flow m³/s o
 
 ## 9. Diagnostic Triplets (Top 5)
 
-Full corpus: `diagnostics/triplets.yaml` (43 entries; real-engine ones are dt_wasp_027–043).
+Full corpus: `diagnostics/triplets.yaml` (current count: the KI map at the top of this file; real-engine ones are dt_wasp_027–043).
 
 | id | symptom | remedy |
 |---|---|---|

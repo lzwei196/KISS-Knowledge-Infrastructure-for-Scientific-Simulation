@@ -68,8 +68,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Build System | wmake (custom), Allwmake master script |
 | License | GPL v3 |
 | Source | https://github.com/OpenFOAM/OpenFOAM-dev |
-| Tools | 7 |
-| Diagnostic Triplets | 32 (20 general + 12 ocean/storm-surge) |
+| Tools | see the KI map at the top of this file |
+| Diagnostic Triplets | see the KI map at the top of this file (20 general + 12 ocean/storm-surge when this table was written) |
 | Validation | cavity tutorial; Hurricane Laura 2020 IB barometric (NSE=0.51, R=0.84 @ Grand Isle) |
 
 ---
@@ -704,5 +704,5 @@ ki/
 |   +-- s5_execution.md           # Running OpenFOAM skill
 |   +-- s6_postprocessing.md      # Output analysis skill
 +-- diagnostics/
-    +-- triplets.yaml             # 20 diagnostic triplets
+    +-- triplets.yaml             # diagnostic triplets (count: KI map)
 ```

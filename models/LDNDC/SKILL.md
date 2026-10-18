@@ -88,7 +88,7 @@ Require complete calendar years and finite weather; FLUXNET daily extrema must c
 
 > **Model**: LandscapeDNDC v1.37 (KIT/IMK-IFU)
 > **Domain**: Terrestrial biogeochemistry — C/N cycling, GHG emissions (N2O, CO2, CH4), nutrient leaching, crop yield
-> **Pipeline stages**: 10 | **Tools**: 19 | **Skill documents**: 10 | **Diagnostic triplets**: 22
+> **Pipeline stages**: 10 | current tool, stage-doc and triplet counts: the KI map at the top of this file
 > **Binary**: `model/ldndc/ldndc-1.37.linux64/bin/ldndc` (pre-built, Linux 64-bit)
 > **Status**: Validated on Bengbu wheat-maize (2000-2005) — N2O=4.9 kgN/ha/yr matches field measurements
 

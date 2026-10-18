@@ -306,4 +306,4 @@ outputs/{basin}/climate_projection/
 ---
 
 *This knowledge infrastructure was built using the Knowledge Dissection Toolkit (Zhang et al., Nature, under review).*
-*3 validated tools | 4 skill documents | 9 diagnostic triplets | 4 pipeline stages*
+*3 validated tools | 4 pipeline stages | current tool, stage-doc and triplet counts: the KI map at the top of this file*

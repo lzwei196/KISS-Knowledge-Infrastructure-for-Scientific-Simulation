@@ -69,9 +69,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Metric | Value |
 |--------|-------|
 | Pipeline stages | 9 |
-| Python tools | 4 |
-| Skill documents | 5 |
-| Diagnostic triplets | 20 |
+| Python tools | see the KI map at the top of this file |
+| Skill documents | see the KI map at the top of this file |
+| Diagnostic triplets | see the KI map at the top of this file |
 | Failure domains | 5 |
 
 ---
@@ -645,5 +645,5 @@ ki/
     s7_model_execution.md           # Model execution skill
     s8_output_analysis.md           # Output analysis skill
   diagnostics/
-    triplets.yaml                   # 20 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```

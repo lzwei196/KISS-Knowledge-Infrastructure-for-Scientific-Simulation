@@ -60,7 +60,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: Cell2Fire W (C2F-W) — unified Scott&Burgan, FBP-Canada, Kitral fire spread simulator
 **Source**: https://github.com/fire2a/C2F-W
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `build_validated` (Vilopriu 2013, Scott&Burgan model)
 
 ---

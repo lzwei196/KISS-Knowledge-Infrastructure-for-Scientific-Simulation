@@ -89,7 +89,7 @@ The tool reads the source itself through `ki_tools_common.load_forcing.load_hour
 **Model**: CE-QUAL-W2 v4.5 (2D laterally-averaged hydrodynamic and water quality)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-24
-**Stats**: 16 tools | 6 skill documents | 32 diagnostic triplets | 3,434 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `binary_only` (pending source compilation and example validation)
 
 ---
@@ -252,7 +252,7 @@ Stage 10 depends on s9. Stages 11-13 depend on s10.
 | `calibrate_w2` | s12 | `tools/s12_calibration/calibrate_w2.py` | 130 | GLUE calibration (WSC, EXH2O, AX, CBHE, TSED) |
 | `w2_to_cama_coupling` | s13 | `tools/s13_coupling/w2_to_cama_coupling.py` | 120 | W2 outflow to CaMa-Flood |
 
-**Total**: 16 tools, 3,434 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -428,7 +428,7 @@ python tools/s11_output_analysis/plot_w2_curtain.py \
 
 ## Diagnostic Triplets
 
-32 triplets across 8 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets across 8 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -465,7 +465,7 @@ python tools/s11_output_analysis/plot_w2_curtain.py \
 | dt_031 | **silent** | parameter_format | Met file form for v5: CSV with `$`, PHI in radians, JDAY local time, SRO needs SROC ON |
 | dt_032 | fatal | dependency_mismatch | run/parse tools knew only v4.x names (`w2_con.npt`, `tsr_*.opt`) |
 
-**Silent error count**: 18/32 (56%) — consistent with lake model error rates.
+**Silent error count** (when this section was written): 18/32 (56%) — consistent with lake model error rates.
 
 ---
 
@@ -514,7 +514,7 @@ models/CE_QUAL_W2/knowledge_infrastructure/
     s10_execution_skill.md
     s11_output_analysis_skill.md
   diagnostics/
-    triplets.yaml                 # 32 diagnostic triplets
+    triplets.yaml                 # diagnostic triplets (count: KI map)
 
 model/ce_qual_w2/
   bin/w2_v5                     # CE-QUAL-W2 executable (TO BE COMPILED)

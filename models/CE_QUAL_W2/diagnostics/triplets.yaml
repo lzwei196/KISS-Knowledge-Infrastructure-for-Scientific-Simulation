@@ -1,7 +1,7 @@
 # ============================================================================
 # CE-QUAL-W2 Diagnostic Triplets
-# 32 triplets across 8 failure domains
-# Silent errors: 18/32 (56%)
+# Triplets (32 when this header was written; current count: the SKILL.md KI map) across 8 failure domains
+# Silent errors when this header was written: 18/32 (56%)
 # ============================================================================
 
 - id: dt_001

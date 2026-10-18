@@ -62,8 +62,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Version**: 1.0.0
 **Target Model**: Elmer/Ice (Elmer FEM 26.1)
 **Domain**: Cryosphere — ice sheet and glacier dynamics
-**Tools**: 5 validated Python scripts
-**Diagnostics**: 18 triplets covering unit, mesh, solver, and physics traps
+**Counts**: tools, stage docs and triplets — see the KI map at the top of this file
+**Diagnostics**: triplets (count: the KI map at the top of this file) covering unit, mesh, solver, and physics traps
 **Validation**: ISMIP-HOM Experiment A benchmark
 
 ---
@@ -575,5 +575,5 @@ ki/
 │   ├── s7_postprocessing.md              # Output extraction
 │   └── s8_validation.md                  # Benchmark comparison
 └── diagnostics/
-    └── triplets.yaml                     # 18 symptom→diagnosis→remedy entries
+    └── triplets.yaml                     # diagnostic triplets (count: KI map)
 ```

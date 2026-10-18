@@ -948,7 +948,7 @@ HYPE and VIC serve complementary roles in HydroCraft:
 
 ## Common Errors and Diagnostics
 
-See `diagnostics/triplets.yaml` for the full triplet catalog (24 triplets). Key failure modes:
+See `diagnostics/triplets.yaml` for the full triplet catalog (count: the KI map at the top of this file). Key failure modes:
 
 1. **SLC fractions don't sum to 1.0** -- SILENT ERROR, no warning, wrong water balance
 2. **Missing trailing slash in info.txt paths** -- Fatal, but cryptic "file not found" message

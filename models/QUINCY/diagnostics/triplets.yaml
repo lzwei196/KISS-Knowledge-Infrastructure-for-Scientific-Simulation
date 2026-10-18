@@ -4,7 +4,7 @@
 # dt_quincy_001-025 describe the Python SURROGATE (tools/run_quincy.py) only; several
 # contradict the real engine (e.g. dt_quincy_001 says deg C, the engine needs K).
 # dt_quincy_026+ describe the REAL engine qs.bin (added 2026-10-07).
-# 25 surrogate triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# 25 surrogate triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.

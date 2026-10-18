@@ -1,7 +1,7 @@
 # ========================================================================
 # VIC Diagnostic Triplets
 # ========================================================================
-# 31 triplets. Converted 2026-08-12 from diagnostics/triplets.md,
+# 31 triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from diagnostics/triplets.md,
 # which was the ONLY copy — every reader looks for triplets.yaml, so this corpus was
 # invisible to the gate, the self-improve loop and the counters. Text is verbatim
 # from the markdown; triplets.md is kept as the human-readable rendering.

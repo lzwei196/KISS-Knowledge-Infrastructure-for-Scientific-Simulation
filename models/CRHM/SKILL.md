@@ -35,8 +35,9 @@
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-18 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -374,13 +375,13 @@ From the standard forcing series (what `ki_tools_common.load_forcing` returns) t
 
 ## Error Handling
 
-See `diagnostics/triplets.yaml` for 18 diagnostic triplets covering:
+See `diagnostics/triplets.yaml` for the diagnostic triplets (current count: the KI map at the top of this file) covering:
 - **Unit conversion** (dt_001, dt_002, dt_009): humidity, precipitation, VIC-CRHM mismatch
 - **Silent errors** (dt_006, dt_010, dt_011, dt_012, dt_016): parameter clamping, double-counting, winter gaps, CRS mismatch, wrong module
 - **Format errors** (dt_003, dt_005, dt_013, dt_018): .obs header, parameter count, section delimiters, timestep
 - **Runtime errors** (dt_004, dt_007, dt_008, dt_014, dt_017): module deps, paths, crashes, empty output, Boost
 
-**Silent errors account for 7 of 18 triplets (39%)** -- consistent with the 37% rate across all 15 models in the toolkit.
+**When this section was written, silent errors were 7 of 18 triplets (39%)** -- consistent with the 37% rate across all 15 models in the toolkit.
 
 ## Quick Start
 
@@ -465,7 +466,7 @@ attribution constraints that make daily magnitude scoring inadmissible there.
 ---
 
 *This knowledge infrastructure package was created using the Knowledge Dissection Toolkit (Zhang et al., Nature, under review).*
-*Package: hydrocraft-crhm v1.0.0 | 10 tools | 6 skill documents | 18 diagnostic triplets | 6 pipeline stages*
+*Package: hydrocraft-crhm v1.0.0 | 6 pipeline stages | current tool, stage-doc and triplet counts: the KI map at the top of this file*
 
 ---
 

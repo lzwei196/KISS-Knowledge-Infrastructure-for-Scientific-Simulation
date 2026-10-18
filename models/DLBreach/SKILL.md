@@ -138,7 +138,7 @@ S1 Installation ──> S2 Dam Geometry ──> S3 Reservoir Curve ──> S4 In
 - [S7 Output And Coupling](docs/s7_output.md) - parse 13-column output and inject breach flow to CaMa-Flood.
 - [S8 Visualization](docs/s8_visualization.md) - plot hydrograph and breach-geometry diagnostics.
 
-## Tools (11 Total)
+## Tools
 
 | Stage | Tool | Script | Purpose |
 |-------|------|--------|---------|

@@ -150,13 +150,13 @@ spatially interpolates to the LCC grid. Elevation correction requires the explic
 **Model**: WRF-Hydro v5.2.0 offline (NoahMP land surface + gridded routing)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21 (4 routing skill documents added)
-**Stats**: 14 tools | 6 skill documents | 49 diagnostic triplets | 28 error log entries | ~6,200 lines of validated Python
+**Stats**: 28 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous construction and execution of WRF-Hydro v5.2.0 in standalone/offline mode on any basin, **without requiring WPS or ArcGIS**. The 11 validated tools replace the standard NCAR workflow (WPS geogrid + ArcGIS GIS_tool + manual IDL scripts) with a Python-only pipeline that builds all domain files from raw global datasets.
+This knowledge infrastructure enables fully autonomous construction and execution of WRF-Hydro v5.2.0 in standalone/offline mode on any basin, **without requiring WPS or ArcGIS**. The validated tools replace the standard NCAR workflow (WPS geogrid + ArcGIS GIS_tool + manual IDL scripts) with a Python-only pipeline that builds all domain files from raw global datasets.
 
 **What WRF-Hydro standalone does**: Couples the Noah-MP land surface model (LSM) with gridded overland/subsurface/channel routing to simulate:
 - Surface/subsurface runoff, evapotranspiration, soil moisture (hourly, per LSM cell)
@@ -284,7 +284,7 @@ netCDF4, numpy, scipy, geopandas, rasterio, pyproj, whitebox
 | 11 | Output processing | (manual/future tool) | Discharge extraction from CHRTOUT |
 | -- | Full pipeline | `run_wrfhydro_full_pipeline.py` (438 lines) | End-to-end wrapper (stages 1-10) |
 
-**Total**: 14 tools, ~6,100 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Documents
 
@@ -1269,7 +1269,7 @@ moves one member of a physically constrained set.
 
 ## Diagnostic Triplets
 
-49 triplets (the authoritative count is `diagnostics/triplets.yaml` itself — the prose here has been wrong four different ways; regenerate rather than hand-count). Covering 8 failure domains + 6 Chaohe investigation + 3 audit additions + 3 arid basin cascade + 3 physics options audit + 3 address/spin-up/range (dt_v043, dt_v044, dt_v045). See `diagnostics/triplets.yaml` and `diagnostics/error_log.yaml`.
+Triplets (current count: the KI map at the top of this file; the authoritative count is `diagnostics/triplets.yaml` itself — the prose here has been wrong four different ways; regenerate rather than hand-count). Covering 8 failure domains + 6 Chaohe investigation + 3 audit additions + 3 arid basin cascade + 3 physics options audit + 3 address/spin-up/range (dt_v043, dt_v044, dt_v045). See `diagnostics/triplets.yaml` and `diagnostics/error_log.yaml`.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -1421,7 +1421,7 @@ knowledge_infrastructure/
     s11_output_interpretation_skill.md # CHRTOUT vs LDASOUT output guide
     model_couplings.yaml
   diagnostics/
-    triplets.yaml                   # 49 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
     error_log.yaml                  # 25 recorded errors from real runs (Chaohe + Bengbu)
 ```
 

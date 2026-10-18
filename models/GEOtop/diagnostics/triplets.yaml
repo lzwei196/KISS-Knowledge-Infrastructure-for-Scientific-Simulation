@@ -1,6 +1,6 @@
 # GEOtop Diagnostic Triplets
 # Symptom -> Diagnosis -> Remedy entries for common failures
-# 20 entries covering unit conversions, parameter format, file structure, runtime, initialization
+# Entries (20 when this header was written; current count: the SKILL.md KI map) covering unit conversions, parameter format, file structure, runtime, initialization
 
 - id: dt_001
   stage: s2_soil

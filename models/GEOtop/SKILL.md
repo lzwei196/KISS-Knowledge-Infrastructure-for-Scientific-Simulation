@@ -66,9 +66,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Language          | C++11                                                    |
 | Build System      | CMake 3.0+ (also Meson)                                 |
 | Last Updated      | 2026-07-21                                               |
-| Tools             | 6                                                        |
-| Skill Documents   | 5                                                        |
-| Diagnostic Triplets| 25                                                      |
+| Tools             | see the KI map at the top of this file |
+| Skill Documents   | see the KI map at the top of this file |
+| Diagnostic Triplets| see the KI map at the top of this file |
 
 ---
 
@@ -493,7 +493,7 @@ ki/
 |   |-- s6_model_execution.md         # Running the model
 |   |-- s7_output_parsing.md          # Interpreting and extracting outputs
 |-- diagnostics/
-|   |-- triplets.yaml                 # 20 symptom-diagnosis-remedy entries
+|   |-- triplets.yaml                 # diagnostic triplets (count: KI map)
 ```
 
 ---

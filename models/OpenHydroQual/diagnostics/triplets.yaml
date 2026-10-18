@@ -1,7 +1,7 @@
 # ==========================================================================
 # OpenHydroQual Diagnostic Triplets
 # ==========================================================================
-# 18 triplets. RESTORED 2026-08-12 from the KDT dag-generation
+# 18 triplets on 2026-08-12 (current count: the SKILL.md KI map). RESTORED that day from the KDT dag-generation
 # capture triplets.yaml
 # after the self-improve overlay overwrote the corpus. Top-level LIST — do not
 # wrap these entries in a `triplets:` key.

@@ -635,7 +635,7 @@ knowledge_infrastructure/
   tools/
     s1_subcatchment_delineation/    # 4 tools
     s2_drainage_network/            # 4 tools
-    s3_rainfall_forcing/            # 4 tools
+    s3_rainfall_forcing/            # 5 tools
     s4_lid_setup/                   # 3 tools
     s5_model_assembly/              # 3 tools
     s6_execution/                   # 3 tools
@@ -650,7 +650,7 @@ knowledge_infrastructure/
     s7_model_coupling_skill.md
     model_couplings.yaml
   diagnostics/
-    triplets.yaml                   # 20 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
   workflow/
     workflow.md                     # Pipeline summary
 ```

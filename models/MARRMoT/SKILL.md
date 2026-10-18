@@ -35,8 +35,9 @@
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-18 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -48,13 +49,13 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | tool (exact path) | invocation |
 |---|---|
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
-| `tools/calib_run_huaibin.py` | multi-structure fail-closed driver for 淮滨 Huaibin (SITE:huaibin, stcd 50229350, sha1-pinned obs): structure from `SYS1_MARRMOT_MODEL`, θ as `{"x1"..}` in `KDT_CALIB_PARAMS` checked against the model's own parRanges (`System1/offline/huai_scaleup/w4_lumped/marrmot_parranges.txt`), per-year splits, real model via `run_marrmot.py`; forcing `models/MARRMoT/huaibin/forcing/`. Optional fail-closed knobs: `KDT_MARRMOT_FORCING_FILE` (another forcing CSV of the same layout, e.g. a 1-year slice), `KDT_MARRMOT_INITIAL_STORES` (S0 in mm, one value per store, count checked against the structure name) — used by System 1's state-update experiment. System 1 W4, 2026-08-29 |
+| `tools/calib_run_huaibin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_huaibin.py --help` |
 | `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
 | `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
 | `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
 | `tools/run_marrmot.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_marrmot.py --help` |
 
-*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # MARRMoT Knowledge Infrastructure
@@ -212,6 +213,8 @@ Every value enters the model in specific units; no internal conversion is perfor
 | `convert_parameters`  | s2_params   | `tools/convert_parameters.py`    | ~280  | Soil/land data to model parameter vector         |
 | `run_marrmot`         | s5_execute  | `tools/run_marrmot.py`           | ~250  | Execute model via Octave subprocess              |
 | `parse_output`        | s6_output   | `tools/parse_output.py`          | ~250  | Parse Octave output to CSV with metrics          |
+| `calib_run`           | calibration | `tools/calib_run.py`             | ~220  | Run + score one calibration candidate (Bengbu 51080): reads θ from `calib/params.json`, runs `run_marrmot.py`, writes flat metrics JSON; no metrics file on any failure |
+| `calib_run_huaibin`   | calibration | `tools/calib_run_huaibin.py`     | ~430  | multi-structure fail-closed driver for 淮滨 Huaibin (SITE:huaibin, stcd 50229350, sha1-pinned obs): structure from `SYS1_MARRMOT_MODEL`, θ as `{"x1"..}` in `KDT_CALIB_PARAMS` checked against the model's own parRanges (`System1/offline/huai_scaleup/w4_lumped/marrmot_parranges.txt`), per-year splits, real model via `run_marrmot.py`; forcing `models/MARRMoT/huaibin/forcing/`. Optional fail-closed knobs: `KDT_MARRMOT_FORCING_FILE` (another forcing CSV of the same layout, e.g. a 1-year slice), `KDT_MARRMOT_INITIAL_STORES` (S0 in mm, one value per store, count checked against the structure name) — used by System 1's state-update experiment. System 1 W4, 2026-08-29 |
 
 ---
 
@@ -497,7 +500,7 @@ ki/
     s5_execution.md                  # Model execution skill
     s6_output_analysis.md            # Output parsing and validation skill
   diagnostics/
-    triplets.yaml                    # 15+ diagnostic triplets
+    triplets.yaml                    # diagnostic triplets (count: KI map)
 ```
 
 ---

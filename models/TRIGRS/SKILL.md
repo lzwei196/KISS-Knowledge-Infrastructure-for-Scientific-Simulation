@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: TRIGRS v2.1.00c (serial) + MPI parallel version
 **Source**: USGS (Rex L. Baum & Massimiliano Alvioli)
 **Last updated**: 2026-03-26
-**Stats**: 5 tools | 6 skill documents | 18 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `tutorial_validated` (USGS tutorial dataset, Srivastava-Yeh column test)
 
 ---
@@ -79,7 +79,7 @@ See `data_ki/USGS_Sediment/SKILL.md` for suspended sediment observations.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of rainfall-induced shallow landslide susceptibility using TRIGRS (Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis). The 5 validated tools replace the manual GIS + command-line TRIGRS workflow with a Python pipeline that automates grid preparation, parameter assignment, execution, and output parsing.
+This knowledge infrastructure enables autonomous simulation of rainfall-induced shallow landslide susceptibility using TRIGRS (Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis). The validated tools replace the manual GIS + command-line TRIGRS workflow with a Python pipeline that automates grid preparation, parameter assignment, execution, and output parsing.
 
 **What TRIGRS does**: Cell-by-cell transient pore-pressure and infinite-slope factor-of-safety model. Simulates:
 - Transient rainfall infiltration using analytical solutions (1D vertical flow)
@@ -377,7 +377,7 @@ cd src/TRIGRS && make trg
 
 ## Diagnostic Triplets Summary
 
-18 triplets covering 5 failure domains:
+Triplets covering 5 failure domains (current count: the KI map at the top of this file):
 - **unit_conversion** (7 triplets, 39%) -- SILENT errors, highest priority
 - **grid_format** (4 triplets, 22%) -- Grid mismatch and nodata issues
 - **parameter_logic** (3 triplets, 17%) -- Sign conventions, model selection
@@ -436,7 +436,7 @@ ki/
     s5_output_analysis.md               # Interpreting results
     s6_calibration_validation.md        # Calibration and validation
   diagnostics/
-    triplets.yaml                       # 18 symptom-diagnosis-remedy entries
+    triplets.yaml                       # diagnostic triplets (count: KI map)
   workflow/
     (pipeline workflow definitions)
 ```

@@ -68,9 +68,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | Metric | Value |
 |--------|-------|
-| Tools | 4 |
-| Skill Documents | 5 |
-| Diagnostic Triplets | 20 |
+| Tools | see the KI map at the top of this file |
+| Skill Documents | see `docs/` |
+| Diagnostic Triplets | see the KI map at the top of this file |
 | Validation Status | HJ Andrews Watershed 8 |
 
 ---
@@ -579,5 +579,5 @@ ki/
     04_model_execution.md           # Running the model
     05_output_analysis.md           # Parsing and analyzing results
   diagnostics/
-    triplets.yaml                   # 18 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```

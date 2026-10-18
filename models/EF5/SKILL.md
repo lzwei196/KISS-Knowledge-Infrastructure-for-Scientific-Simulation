@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **KDT version**: 5.1.2 (uses `ki_tools_common` for forcing/metrics/cross-platform)
 **Created by**: HyDROSLab, University of Oklahoma (Zac Flamig, Humberto Vergara, Race Clark, JJ Gourley, Yang Hong)
 **Last updated**: 2026-04-28 (added Stage-1 `prepare_basic_grids` tool; corrected `ef5 -p` documentation)
-**Stats**: 5 tools | 6 skill documents | 22 diagnostic triplets | ~1,600 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `source_dissected` (binary executes end-to-end at any prepared site; obs validation requires hourly TIMESTEP — see s5_execution.md)
 
 ---

@@ -1,5 +1,5 @@
 # CISM Diagnostic Triplets
-# 20 symptom -> diagnosis -> remedy entries
+# Symptom -> diagnosis -> remedy entries (20 when this header was written; current count: the SKILL.md KI map)
 # Covers: unit_conversion, parameter_format, runtime, io, solver
 
 - id: dt_001

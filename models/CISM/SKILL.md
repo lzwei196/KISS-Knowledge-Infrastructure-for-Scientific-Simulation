@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Language**: Fortran 90 with CMake build system
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-26
-**Stats**: 5 tools | 7 skill documents | 20 diagnostic triplets | ~1,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `synthetic_validated` (dome test case)
 
 ---
@@ -542,7 +542,7 @@ python3 ../../ki/tools/parse_cism_output.py --input dome.out.nc --output dome_re
 | dt_019 | Restart file missing fields | fatal |
 | dt_020 | NetCDF dimension mismatch | fatal |
 
-**Silent errors**: 12/20 (60%) -- model runs but produces incorrect results.
+**Silent errors** (when this section was written): 12/20 (60%) -- model runs but produces incorrect results.
 
 ---
 
@@ -566,5 +566,5 @@ ki/
 |   |-- s5_output_parsing.md          # Output analysis skill
 |   |-- s6_validation.md              # Validation and metrics skill
 |-- diagnostics/
-|   |-- triplets.yaml                 # 20 diagnostic triplets
+|   |-- triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

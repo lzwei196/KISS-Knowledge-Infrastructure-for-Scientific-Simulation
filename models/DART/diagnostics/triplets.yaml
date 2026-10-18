@@ -1,6 +1,6 @@
 ---
 # DART Diagnostic Triplets
-# 20 symptom → diagnosis → remedy entries for common DART failures
+# Symptom → diagnosis → remedy entries (20 when this header was written; current count: the SKILL.md KI map) for common DART failures
 # Organized by failure domain: unit_conversion, namelist_format, file_format,
 # runtime, ensemble_config, observation_handling
 

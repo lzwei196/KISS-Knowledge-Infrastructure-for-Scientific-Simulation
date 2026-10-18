@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Ensemble Data Assimilation
 **Language**: Fortran 90+ with NetCDF I/O
 **Created by**: auto_dissect pipeline
-**Tools**: 4 | **Docs**: 5 | **Diagnostics**: 20 | **Lines**: ~3000
+**Lines**: ~3000 | current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation**: Lorenz 63 OSSE
 
 ---
@@ -539,7 +539,7 @@ ncdump -h obs_diag_output.nc
 
 ## Diagnostic Triplets Summary
 
-20 diagnostic triplets covering 6 failure domains:
+Triplets covering 6 failure domains (current count: the KI map at the top of this file):
 
 | Domain | Count | Silent |
 |---|---|---|
@@ -584,5 +584,5 @@ ki/
 │   ├── s4_assimilation_execution.md  # Running filter
 │   └── s5_diagnostics.md            # Output analysis
 └── diagnostics/
-    └── triplets.yaml                 # 20 symptom→diagnosis→remedy entries
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

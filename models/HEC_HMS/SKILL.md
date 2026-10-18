@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: HEC-HMS 4.14 (USACE Hydrologic Engineering Center), official Linux build, run headless by `tools/run_hms_engine.py`
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-28
-**Stats**: 7 tools | 7 skill documents | 22 diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status (2026-10-06)**: the REAL engine reproduces the USACE castro sample exactly (runs Current + Future, 54/54 element peaks/volumes/peak times; Outlet peak 540.2749050 cfs) and, for run Current, scores NSE 0.858 / KGE 0.811 / r 0.933 / PBIAS +0.98 % against the observed Castro Valley outlet flow of 16 Jan 1973 (USACE parameters, no calibration by us; see Validation). The older Bengbu numbers came from the Python SURROGATE `run_hec_hms.py` and are NOT HEC-HMS results.
 
 ---

@@ -1,7 +1,7 @@
 # ============================================================================
 # HEC-HMS Diagnostic Triplets
 # ============================================================================
-# 22 diagnostic triplets covering 6 failure domains (dt_119-dt_122: real engine, 2026-10-06).
+# Diagnostic triplets (22 when this header was written; current count: the SKILL.md KI map) covering 6 failure domains (dt_119-dt_122: real engine, 2026-10-06).
 # Generated during HEC-HMS knowledge dissection for HydroCraft platform.
 # ============================================================================
 

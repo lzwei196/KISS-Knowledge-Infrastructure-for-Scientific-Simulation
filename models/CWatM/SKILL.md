@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: CWatM v1.5 (IIASA Water Security Group)
 **Domain**: Global/regional hydrology — daily water cycle simulation
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `dissection_complete`
 
 ---

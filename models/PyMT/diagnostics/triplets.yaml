@@ -1,6 +1,6 @@
 # PyMT Diagnostic Triplets
 # Symptom → Diagnosis → Remedy entries for common PyMT failures
-# 15+ entries covering unit conversion traps, configuration errors, and coupling issues
+# Entries (15+ when this header was written; current count: the SKILL.md KI map) covering unit conversion traps, configuration errors, and coupling issues
 
 - id: dt_001
   stage: s2_configure

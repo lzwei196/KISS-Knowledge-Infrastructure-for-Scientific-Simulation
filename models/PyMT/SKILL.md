@@ -557,7 +557,7 @@ ki/
 │   ├── s6_coupling.md                ← model coupling and mapping
 │   └── s7_analysis.md               ← post-processing and visualization
 └── diagnostics/
-    └── triplets.yaml                 ← 15+ symptom→diagnosis→remedy entries
+    └── triplets.yaml                 ← diagnostic triplets (count: KI map)
 ```
 
 ---

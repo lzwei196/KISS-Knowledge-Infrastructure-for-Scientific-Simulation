@@ -5,7 +5,7 @@
 # Python LUE SURROGATE (tools/run_lpjguess.py), NOT the LPJ-GUESS engine; their symptom starts
 # with "SURROGATE ONLY". 005-010 and 015-018 are general LPJ-GUESS knowledge; 019-035 were
 # reproduced on this server with the real 4.1.1 binary.
-# 18 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# 18 triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.
@@ -15,7 +15,7 @@
 # ============================================================================
 # LPJ-GUESS Diagnostic Triplets
 # ============================================================================
-# 18 diagnostic triplets covering 7 failure domains:
+# Diagnostic triplets (18 when this header was written; current count: the SKILL.md KI map) covering 7 failure domains:
 #   UNIT, IO_FORMAT, CONFIGURATION, PARAMETER, NUMERICAL, INITIALIZATION, OUTPUT
 # Generated from LPJ-GUESS knowledge infrastructure SKILL.md.
 # Domain: dynamic global vegetation model (C/N cycling, Fortran/C++)

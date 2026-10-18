@@ -262,7 +262,7 @@ FLUXNET2015 MM files are in gC m-2 d-1, so scoring is done in that unit.
 
 ## 9. Diagnostic Triplets (Top 5)
 
-35 entries in `diagnostics/triplets.yaml`; dt_lpjguess_019–035 are real-engine traps
+The entries in `diagnostics/triplets.yaml` (current count: the KI map at the top of this file); dt_lpjguess_019–035 are real-engine traps
 reproduced on this server. Most important:
 
 - **dt_lpjguess_019** — `searchradius_soil` segfaults `-input cf` (engine bug); the tool adds a site soil line instead.

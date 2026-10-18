@@ -60,7 +60,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: CSDMS (Community Surface Dynamics Modeling System), University of Colorado Boulder
 **Authors**: Eric W.H. Hutton, Mark D. Piper, Gregory E. Tucker
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 17 diagnostic triplets | ~1,200 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `specification_validated` (bmi-example-python heat model)
 
 ---

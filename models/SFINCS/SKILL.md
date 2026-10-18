@@ -87,14 +87,14 @@ SFINCS forcing tools are in `tools/s4_forcing/` in this KI:
 **Model**: SFINCS v2.x (Deltares)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-22
-**Stats**: 9 tools | 8 skill documents | 28 diagnostic triplets | 12 error log entries | ~2,379 lines of validated Python
+**Stats**: 12 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation**: Step 3 — Bengbu (Huai River) flood test (2026-03-22) — 384x455 cells, 100m, 397s, 6.99m max depth, CaMa-Flood cross-validated. Previous: Chaohe (2026-03-21) — 174x171 cells, 5.7s, 7.29m max depth.
 
 ---
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous 2D flood inundation simulation using SFINCS on any domain worldwide, integrated with HydroCraft's VIC + CaMa-Flood pipeline. The 8 validated tools handle domain setup, DEM processing, forcing conversion, configuration, execution, and post-processing.
+This knowledge infrastructure enables fully autonomous 2D flood inundation simulation using SFINCS on any domain worldwide, integrated with HydroCraft's VIC + CaMa-Flood pipeline. The validated tools handle domain setup, DEM processing, forcing conversion, configuration, execution, and post-processing.
 
 **What SFINCS does**: Reduced-complexity 2D shallow water solver for rapid flood inundation modeling:
 - **Coastal flooding**: Storm surge, tides, sea-level rise, wave setup
@@ -188,7 +188,7 @@ Stage 7 depends on 6. Stage 8 depends on 7.
 | `extract_sfincs_results` | s8 | `tools/s8_postprocess/extract_sfincs_results.py` | 230 | Parse sfincs_map.nc, flood stats, GeoTIFF export |
 | `plot_sfincs_flood_map` | s8 | `tools/s8_postprocess/plot_sfincs_flood_map.py` | 200 | Publication-quality flood depth map |
 
-**Total**: 10 tools, ~2,680 lines of validated Python.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Documents
 
@@ -683,7 +683,7 @@ python tools/s8_postprocess/plot_sfincs_flood_map.py \
 
 ## Diagnostic Triplets
 
-26 triplets covering 8 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 8 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 ### Original triplets (dt_001 to dt_020) — from dissection
 
@@ -774,7 +774,7 @@ models/SFINCS/knowledge_infrastructure/
   docs/
     s1_domain_skill.md ... s8_postprocess_skill.md
   diagnostics/
-    triplets.yaml                 # 26 diagnostic triplets (20 from dissection + 6 from Chaohe validation)
+    triplets.yaml                 # diagnostic triplets (first 20 from dissection + 6 from Chaohe validation; count: KI map)
     error_log.yaml                # 10 error log entries (6 promoted to triplets)
 
 model/sfincs/

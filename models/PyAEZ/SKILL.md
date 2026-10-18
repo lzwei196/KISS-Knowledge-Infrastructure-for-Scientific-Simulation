@@ -70,7 +70,7 @@ See `data_ki/SPAM/SKILL.md` for gridded yield data.
 # PyAEZ v2.2 Knowledge Infrastructure
 
 **Package**: hydrocraft-pyaez-crop v1.0.0
-**Stats**: 5 tools | 6 skill documents | 15+ diagnostic triplets | 6 pipeline stages
+**Stats**: 6 pipeline stages | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ## Overview
 
@@ -444,5 +444,5 @@ ki/
 │   ├── s4_soil_constraints.md       # Module IV skill doc
 │   └── s5_terrain_economic.md       # Modules V–VI skill doc
 └── diagnostics/
-    └── triplets.yaml                # 15 symptom→diagnosis→remedy entries
+    └── triplets.yaml                # diagnostic triplets (count: KI map)
 ```

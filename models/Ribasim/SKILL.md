@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Water resources / regional surface water management
 **Created by**: HydroCraft Auto-Dissect
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `prototype`
 
 ---
@@ -733,7 +733,7 @@ ribasim.run_ribasim("my_model/ribasim.toml")
 
 ## Diagnostic Triplets Summary
 
-18 triplets covering 5 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 5 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -756,7 +756,7 @@ ribasim.run_ribasim("my_model/ribasim.toml")
 | dt_017 | fatal | path_resolution | GeoPackage path not found |
 | dt_018 | fatal | path_resolution | NetCDF time series file not found |
 
-**Silent error count**: 10/18 (56%) — dominated by unit conversion traps.
+**Silent error count** (when this section was written): 10/18 (56%) — dominated by unit conversion traps.
 
 ---
 
@@ -777,7 +777,7 @@ ki/
     s3_execution.md                 # Running the model
     s4_output_analysis.md           # Parsing and analyzing results
   diagnostics/
-    triplets.yaml                   # 18 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```
 
 ### Forcing and execution checks (2026-10-03)

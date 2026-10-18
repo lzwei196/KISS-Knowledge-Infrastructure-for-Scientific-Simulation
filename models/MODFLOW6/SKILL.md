@@ -318,7 +318,7 @@ These tools automate the most error-prone setup steps using the global datasets 
 
 ## Error Handling
 
-When errors occur, look up symptoms in `diagnostics/triplets.yaml` (17 triplets across 7 failure domains). Key triplets:
+When errors occur, look up symptoms in `diagnostics/triplets.yaml` (current count: the KI map at the top of this file). Key triplets:
 - **dt_mf6_001**: Convergence failure — solver did not converge within iteration limit
 - **dt_mf6_002**: Dry cells in unconfined simulation — cells going dry causing oscillation
 - **dt_mf6_003**: Budget imbalance — percent discrepancy > 0.1%

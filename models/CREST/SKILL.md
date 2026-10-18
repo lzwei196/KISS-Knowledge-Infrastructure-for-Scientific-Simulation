@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **KDT version**: 5.1.2 (uses `ki_tools_common` for forcing/metrics/cross-platform)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-28 (added Stage-1 `prepare_basic_grids` tool; corrected `ef5 -p` documentation)
-**Stats**: 5 tools | 5 skill documents | 18 diagnostic triplets | ~1,900 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `production_validated` (Bengbu, Huai River Basin, 1981-1985 — surrogate-validated; real EF5 binary requires Stage-1 grid regeneration on prepared inputs, see s1_dem_preparation.md)
 
 ---
@@ -82,7 +82,7 @@ See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous distributed hydrological simulation using the CREST model within the EF5 framework. The 4 validated tools replace manual data preparation with a Python pipeline that integrates with HydroCraft's forcing, DEM, and soil infrastructure.
+This knowledge infrastructure enables fully autonomous distributed hydrological simulation using the CREST model within the EF5 framework. The validated tools replace manual data preparation with a Python pipeline that integrates with HydroCraft's forcing, DEM, and soil infrastructure.
 
 **What CREST does**: Distributed hydrological model simulating spatiotemporal water and energy fluxes on a regular grid. Key processes:
 

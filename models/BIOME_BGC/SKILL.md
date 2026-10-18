@@ -99,7 +99,7 @@ python tools/convert_forcing_to_bgc.py --source fluxnet --forcing_file <site>/FU
 
 > **Model**: BIOME-BGC 4.2 (University of Montana NTSG)
 > **Domain**: Terrestrial biogeochemistry -- daily C/N/water cycling for forests, grasslands, shrublands
-> **Pipeline stages**: 8 | **Tools**: 6 | **Skill documents**: 3 | **Diagnostic triplets**: 25
+> **Pipeline stages**: 8 | current tool, stage-doc and triplet counts: the KI map at the top of this file
 > **Binary**: `KISSPATH_BINARIES/biome-bgc/bgc-src/bgc`
 > **Status**: binary_only (bundled example data validated 2026-03-24)
 
@@ -433,7 +433,7 @@ Expected results for Missoula ENF (44 years, 1950-1993):
 
 ## Error Handling
 
-See `diagnostics/triplets.yaml` for 33 diagnostic triplets covering:
+See `diagnostics/triplets.yaml` for the diagnostic triplets (current count: the KI map at the top of this file) covering:
 - Unit conversion errors (dt_005-dt_010) -- **7 silent errors**, most dangerous
 - INI format errors (dt_002-dt_004, dt_011)
 - Spinup convergence issues (dt_012-dt_016)

@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Domain**: Cryosphere — spatially distributed snow, energy balance, and runoff in mountainous terrain
 - **Created**: 2026-03-26
 - **Last updated**: 2026-04-30
-- **Tools**: 4 | **Skill Documents**: 6 | **Diagnostic Triplets**: 22 | **Validation**: T3 (3 SNOTEL sites, 5 WY each)
+- **Validation**: T3 (3 SNOTEL sites, 5 WY each) | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ## ⛔ READ FIRST — the SNOTEL precipitation column is NOT cumulative (2026-08-09)
 
@@ -867,5 +867,5 @@ ki/
 │   ├── s5_execution.md                   # Running Alpine3D
 │   └── s6_output_analysis.md             # Output parsing and analysis
 └── diagnostics/
-    └── triplets.yaml                     # 18 symptom→diagnosis→remedy entries
+    └── triplets.yaml                     # diagnostic triplets (count: KI map)
 ```

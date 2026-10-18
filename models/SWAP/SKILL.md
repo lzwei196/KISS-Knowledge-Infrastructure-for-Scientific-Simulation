@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: SWAP v4.2.0
 **Developer**: Wageningen University and Research (WUR), The Netherlands
 **Last updated**: 2026-03-28
-**Stats**: 6 tools | 6 skill documents | 23 diagnostic triplets | ~1,600 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `analytic` (Hupselbrook, NL, 2002-2004) + `real-case` (FLUXNET US-Ne1, 2001-2013)
 
 ---
@@ -83,7 +83,7 @@ See `data_ki/RISMA/SKILL.md` for soil moisture observations.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of vadose zone water, solute, and heat transport using SWAP (Soil-Water-Atmosphere-Plant) on any field site worldwide, **without manual data preparation**. The 5 validated tools replace the standard manual SWAP workflow with a Python pipeline that integrates with HydroCraft's forcing, soil, and observation infrastructure.
+This knowledge infrastructure enables autonomous simulation of vadose zone water, solute, and heat transport using SWAP (Soil-Water-Atmosphere-Plant) on any field site worldwide, **without manual data preparation**. The validated tools replace the standard manual SWAP workflow with a Python pipeline that integrates with HydroCraft's forcing, soil, and observation infrastructure.
 
 **What SWAP does**: 1D vertical transport model for variably saturated soils. Simulates:
 - Soil water flow (Richards' equation with Mualem-van Genuchten hydraulics)

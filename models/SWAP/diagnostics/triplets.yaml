@@ -1,7 +1,7 @@
 # ============================================================================
 # SWAP Diagnostic Triplets
 # ============================================================================
-# 17 diagnostic triplets covering 6 failure domains.
+# Diagnostic triplets (17 when this header was written; current count: the SKILL.md KI map) covering 6 failure domains.
 # Generated during SWAP v4.2.0 knowledge dissection for HydroCraft platform.
 # ============================================================================
 

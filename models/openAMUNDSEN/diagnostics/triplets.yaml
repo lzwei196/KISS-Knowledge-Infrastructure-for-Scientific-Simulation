@@ -1,5 +1,5 @@
 # openAMUNDSEN Diagnostic Triplets
-# 18 symptom → diagnosis → remedy entries
+# Symptom → diagnosis → remedy entries (18 when this header was written; current count: the SKILL.md KI map)
 # Each covers a specific failure mode encountered in openAMUNDSEN setup and execution
 
 - id: dt_001

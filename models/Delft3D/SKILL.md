@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: Delft3D (D-Flow FM + Delft3D-FLOW) — Deltares
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-26
-**Stats**: 5 tools | 6 skill documents | 16 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `example_validated` (F34 test case, structured + unstructured grids)
 
 ---
@@ -83,7 +83,7 @@ See `data_ki/NDBC/SKILL.md` for wave buoy observations.
 This knowledge infrastructure enables fully autonomous setup and execution of Delft3D
 coastal, estuarine, and river hydrodynamic simulations using both the legacy Delft3D-FLOW
 (structured grids) and the modern D-Flow FM (Flexible Mesh, unstructured grids) engines.
-The 5 validated Python tools replace manual GUI-based workflows with a scripted pipeline
+The validated Python tools replace manual GUI-based workflows with a scripted pipeline
 that integrates with HydroCraft's forcing, bathymetry, and output analysis infrastructure.
 
 **What Delft3D does**: 2D/3D hydrodynamic model for coastal and inland waters. Simulates:
@@ -348,7 +348,7 @@ Each corresponds to a diagnostic triplet.
 | `run_delft3d` | s6 | `tools/run_delft3d.py` | 300 | Execute DIMR with preflight + monitoring |
 | `parse_delft3d_output` | s7 | `tools/parse_delft3d_output.py` | 350 | Parse NetCDF output → CSV + metrics |
 
-**Total**: 5 tools, ~1,660 lines of Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 

@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Model**: Community Land Model 5 / Community Terrestrial Systems Model (CTSM 5.4)
 - **Domain**: Biogeochemistry, Land Surface, Hydrology, Carbon-Nitrogen Cycling
 - **Created**: 2026-03-26
-- **Tools**: 4 Python scripts
+- **Counts**: tools, stage docs and triplets — see the KI map at the top of this file
 - **Validation**: Documented
 
 ---
@@ -558,7 +558,7 @@ See `diagnostics/triplets.yaml` for full details.
 | dt_021 | silent | silent_error | Averaged history stamped at END of interval — date by time_bounds midpoint |
 | dt_022 | fatal | dependency_mismatch | CTSM-5.4/NUOPC cesm.exe dead (ESMF built without PIO) — use CESM 2.2.2 MCT |
 
-**Silent errors:** 6 of 15 triplets (40%) are silent — the model runs but
+**Silent errors:** when this section was written, 6 of 15 triplets (40%) were silent — the model runs but
 produces incorrect results. The most critical is dt_001 (precipitation
 unit mismatch) which can produce runoff 86400x too high.
 
@@ -581,7 +581,7 @@ ki/
     s6_execution_skill.md               -- Model execution
     s7_output_analysis_skill.md         -- Output analysis and validation
   diagnostics/
-    triplets.yaml                       -- 15 diagnostic triplets
+    triplets.yaml                       -- diagnostic triplets (count: KI map)
 ```
 
 ---

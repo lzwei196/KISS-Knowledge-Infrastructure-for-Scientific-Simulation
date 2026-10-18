@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Language**: Python + Fortran + C extensions
 **Build**: Meson + mesonpy
 
-**Stats**: 7 pipeline stages | 4 tools | 116 source files | 20+ diagnostic triplets
+**Stats**: 7 pipeline stages | 116 source files | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 

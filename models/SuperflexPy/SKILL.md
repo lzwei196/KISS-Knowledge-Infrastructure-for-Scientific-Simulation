@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Authors**: Marco Dal Molin, Fabrizio Fenicia, Dmitri Kavetski
 **Created by**: Hydrocraft / auto_dissect
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill docs | 21 diagnostic triplets | ~2800 lines
+**Stats**: ~2800 lines | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -708,7 +708,7 @@ citation key provided by the convention. A null convention band is written as
 | dt_020 | silent | unit_conversion | Reanalysis PET exceeds the demand the structure needs; calibrate `cpet` (GR4J) / `Ce` (HBV) |
 | dt_021 | silent | unit_conversion | Negative reanalysis PET makes GR4J's interception filter ADD precipitation; use `--pet-min 0` |
 
-See `diagnostics/triplets.yaml` for full symptom→diagnosis→remedy entries (21 entries; dt_019-dt_021 added 2026-08-21, dt_018 corrected).
+See `diagnostics/triplets.yaml` for full symptom→diagnosis→remedy entries (21 on 2026-08-21: dt_019-dt_021 added that day, dt_018 corrected; current count: the KI map at the top of this file).
 
 ---
 
@@ -729,7 +729,7 @@ ki/
 │   ├── s5_model_execution.md       # Model execution skill
 │   └── s6_output_extraction.md     # Output parsing skill
 └── diagnostics/
-    └── triplets.yaml               # 21 diagnostic triplets
+    └── triplets.yaml               # diagnostic triplets (count: KI map)
 ```
 
 

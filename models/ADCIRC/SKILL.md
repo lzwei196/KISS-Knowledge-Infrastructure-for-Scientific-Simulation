@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: ADCIRC v56.2.1 — 2D/3D finite element circulation model
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 7 skill documents | 20 diagnostic triplets | ~1,600 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `build_tested`
 
 ---
@@ -79,7 +79,7 @@ See `data_ki/NDBC/SKILL.md` for wave buoy observations.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model). The 4 validated tools cover the core pipeline from meteorological forcing conversion through output extraction, replacing manual Fortran-era workflows with a Python pipeline that integrates with HydroCraft's coastal modeling infrastructure.
+This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model). The validated tools cover the core pipeline from meteorological forcing conversion through output extraction, replacing manual Fortran-era workflows with a Python pipeline that integrates with HydroCraft's coastal modeling infrastructure.
 
 **What ADCIRC does**: 2D/3D finite element hydrodynamic model for time-dependent free surface circulation and transport. Simulates:
 - Storm surge prediction (wind + pressure + tide + wave interaction)
@@ -186,7 +186,7 @@ For parallel (padcirc) runs, stage 6 includes:
 | `run_adcirc` | s6 | `tools/run_adcirc.py` | 350 | Execute ADCIRC with preflight and postflight checks |
 | `parse_adcirc_output` | s7 | `tools/parse_adcirc_output.py` | 450 | Parse fort.63/64/maxele to CSV + statistics |
 
-**Total**: 4 tools, ~1,600 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -428,7 +428,7 @@ python ki/tools/parse_adcirc_output.py \
 
 ## Diagnostic Triplets
 
-20 triplets covering 6 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 6 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -453,7 +453,7 @@ python ki/tools/parse_adcirc_output.py \
 | dt_019 | **silent** | dependency_mismatch | MPI version mismatch between adcprep and padcirc |
 | dt_020 | fatal | runtime | Domain decomposition fails on disconnected mesh |
 
-**Silent error count**: 11/20 (55%) — high due to ADCIRC's minimal runtime validation of input units.
+**Silent error count** (when this section was written): 11/20 (55%) — high due to ADCIRC's minimal runtime validation of input units.
 
 ---
 
@@ -476,5 +476,5 @@ ADCIRC/ki/
     s6_execution.md                     # Running serial and parallel ADCIRC
     s7_output_analysis.md               # Parsing and visualizing results
   diagnostics/
-    triplets.yaml                       # 20 diagnostic triplets
+    triplets.yaml                       # diagnostic triplets (count: KI map)
 ```

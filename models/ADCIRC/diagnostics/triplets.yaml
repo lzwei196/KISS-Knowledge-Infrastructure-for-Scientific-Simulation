@@ -1,7 +1,7 @@
 # ============================================================================
 # ADCIRC Diagnostic Triplets
 # ============================================================================
-# 20 diagnostic triplets covering 6 failure domains.
+# Diagnostic triplets (20 when this header was written; current count: the SKILL.md KI map) covering 6 failure domains.
 # Generated during ADCIRC knowledge dissection for HydroCraft platform.
 # ============================================================================
 

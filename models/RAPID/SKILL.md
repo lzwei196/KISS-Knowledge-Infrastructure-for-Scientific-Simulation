@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: RAPID (Routing Application for Parallel computatIon of Discharge)
 **Domain**: River network routing
 **Language**: Fortran 90 + PETSc
-**Tools**: 5 | **Skill Documents**: 6 | **Diagnostic Triplets**: 20
+**Counts**: tools, stage docs and triplets — see the KI map at the top of this file
 
 ---
 
@@ -453,5 +453,5 @@ ki/
 │   ├── s5_execution.md               # Running RAPID
 │   └── s6_output_analysis.md         # Output parsing and metrics
 └── diagnostics/
-    └── triplets.yaml                 # 20 symptom→diagnosis→remedy entries
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: PRMS v5.1.0 (USGS Precipitation-Runoff Modeling System)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-25
-**Stats**: 5 tools | 7 skill documents | 18 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `dissected`
 
 ---
@@ -80,7 +80,7 @@ See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of watershed hydrology using the USGS Precipitation-Runoff Modeling System (PRMS) v5.1.0 on any basin, **without manual data preparation**. The 5 validated tools replace the standard manual PRMS workflow with a Python pipeline that integrates directly with HydroCraft's forcing, soil, and routing infrastructure.
+This knowledge infrastructure enables autonomous simulation of watershed hydrology using the USGS Precipitation-Runoff Modeling System (PRMS) v5.1.0 on any basin, **without manual data preparation**. The validated tools replace the standard manual PRMS workflow with a Python pipeline that integrates directly with HydroCraft's forcing, soil, and routing infrastructure.
 
 **What PRMS does**: Deterministic, distributed-parameter, physically-based watershed model. Simulates:
 - Precipitation distribution (rain/snow partitioning by HRU, lapse rate methods)
@@ -194,7 +194,7 @@ Stage 5 depends on stage 4.
 | `run_prms` | s4 | `tools/run_prms.py` | 250 | Run PRMS with validation |
 | `parse_prms_output` | s5 | `tools/parse_prms_output.py` | 350 | Parse stat/CSV output, compute NSE/KGE/PBIAS |
 
-**Total**: 5 tools, ~1,700 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -627,7 +627,7 @@ Record achieved calibration, validation, and full-period metrics only after runn
 
 ## Diagnostic Triplets
 
-18 diagnostic triplets covering unit conversion, file format, parameterization, and runtime failures.
+Triplets covering unit conversion, file format, parameterization, and runtime failures (current count: the KI map at the top of this file).
 See `diagnostics/triplets.yaml` for the complete set.
 
 ---

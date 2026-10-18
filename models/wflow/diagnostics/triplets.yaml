@@ -1,7 +1,7 @@
 # ========================================================================
 # wflow Diagnostic Triplets
 # ========================================================================
-# 38 triplets (dt_w028 removed 2026-10-03 with the VIC-input tools). Converted 2026-08-12 from the `triplets:` mapping to the
+# 38 triplets on 2026-10-03 (dt_w028 removed that day with the VIC-input tools; current count: the SKILL.md KI map). Converted 2026-08-12 from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.

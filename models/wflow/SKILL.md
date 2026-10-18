@@ -131,7 +131,7 @@ python tools/s6_sediment/derive_usle_c.py --lat [LAT] --lon [LON]
 **Status**: **PRODUCTION_VALIDATED** (Bengbu basin, 2026-03-22)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-03
-**Stats**: 21 tools | 9 skill documents | 29 diagnostic triplets | ~5,681 lines of validated Python + Julia
+**Stats**: ~5,681 lines of validated Python + Julia | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -708,7 +708,7 @@ Stages 0-1 are sequential. Stages 2 and 3 depend on 1. Stage 4 depends on 2+3. S
 | `configure_reservoirs` | s10 | `tools/s10_reservoir/configure_reservoirs.py` | 380 | Add reservoir module to wflow TOML + staticmaps |
 | `run_wflow_full_pipeline` | all | `tools/run_wflow_full_pipeline.py` | 220 | End-to-end pipeline |
 
-**Total**: 20 tools + 1 pipeline wrapper + 1 Julia runner = ~6,688 lines
+**Total**: the tools above, including the pipeline wrapper, plus 1 Julia runner (current tool count: the KI map at the top of this file)
 
 ### Skill Documents
 
@@ -841,7 +841,7 @@ wflow_sbm needs PET as forcing input. If PET is missing, all precipitation becom
 
 ## Diagnostic Triplets Summary
 
-26 triplets covering 6 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 6 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -872,7 +872,7 @@ wflow_sbm needs PET as forcing input. If PET is missing, all precipitation becom
 | dt_w025 | **silent** | dependency_mismatch | Double-counting routing |
 | dt_w026 | **silent** | dependency_mismatch | Ksat unit mismatch across models |
 
-**Silent error count**: 14/26 (54%) — higher than cross-model average (37%) due to Julia ecosystem and cross-model unit traps.
+**Silent error count** (when this section was written): 14/26 (54%) — higher than cross-model average (37%) due to Julia ecosystem and cross-model unit traps.
 
 ---
 
@@ -965,7 +965,7 @@ models/wflow/knowledge_infrastructure/
     s9_coupling_skill.md
     s10_reservoir_skill.md
   diagnostics/
-    triplets.yaml                 # 29 diagnostic triplets
+    triplets.yaml                 # diagnostic triplets (count: KI map)
     error_log.yaml                # Errors from real runs
     episodes.yaml                 # Debugging stories
 

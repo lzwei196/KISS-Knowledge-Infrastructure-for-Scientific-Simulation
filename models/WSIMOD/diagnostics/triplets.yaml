@@ -1,5 +1,5 @@
 # WSIMOD Diagnostic Triplets
-# 18 symptom → diagnosis → remedy patterns for common WSIMOD failures
+# Symptom → diagnosis → remedy patterns (18 when this header was written; current count: the SKILL.md KI map) for common WSIMOD failures
 
 - id: dt_001
   stage: s3_forcing

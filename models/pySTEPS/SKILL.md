@@ -263,7 +263,7 @@ Accumulation period pitfalls:
 ## 9. Diagnostic Triplets (Top 5)
 
 Check `diagnostics/triplets.yaml` before debugging any model crash, wrong output, or
-unexpected values. The full corpus contains 20 entries; cite the real triplet ids from that
+unexpected values. The full corpus is there (current count: the KI map at the top of this file); cite the real triplet ids from that
 file in run notes instead of duplicating or renumbering them here.
 
 | # | Error | Diagnosis | Remedy |

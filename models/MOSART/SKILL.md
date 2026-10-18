@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Repository**: https://github.com/IMMM-SFA/mosartwmpy
 **Created by**: IMMM-SFA / PNNL (Travis Thurber et al.)
 **Last updated**: 2026-03-26
-**Stats**: 7 tools | 5 skill documents | 22 diagnostic triplets | ~2,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `validated`
 
 ---
@@ -453,7 +453,7 @@ CLI installed; use `mdb-tools`).
 
 ## Overview
 
-This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The 7 validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.
+This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.
 
 **What MOSART-WM does**: Grid-based river routing and water management model. Simulates:
 - Hillslope overland flow (Manning's equation on hillslope surface)

@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Author**: Daniel Shapero, University of Washington
 **Domain**: Cryosphere (ice sheets, ice shelves, ice streams, glaciers)
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 6 skill documents | 20 diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `structurally_validated`
 
 ---

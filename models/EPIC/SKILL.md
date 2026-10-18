@@ -670,7 +670,7 @@ knowledge_infrastructure.yaml       # machine-readable index
 preflight_check.py                  # environment check
 quick_validate.py                   # one-command KI validation
 templates/                          # shipped example workspace (copy-first!)
-tools/                              # 9 copy-first Python tools
-docs/                               # 7 stage guides
-diagnostics/triplets.yaml           # 17 symptom/diagnosis/remedy entries
+tools/                              # copy-first Python tools (count: KI map)
+docs/                               # stage guides
+diagnostics/triplets.yaml           # diagnostic triplets (count: KI map)
 ```

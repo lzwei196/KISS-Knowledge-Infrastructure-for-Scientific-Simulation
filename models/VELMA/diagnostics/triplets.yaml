@@ -1,7 +1,7 @@
 # ========================================================================
 # VELMA Diagnostic Triplets
 # ========================================================================
-# 30 triplets. dt_velma_001..024 were written for the Python SURROGATE (tools/run_velma.py:
+# 30 triplets when this header was written (current count: the SKILL.md KI map). dt_velma_001..024 were written for the Python SURROGATE (tools/run_velma.py:
 # Kelvin forcing JSON, params JSON); the precipitation-unit entries (001, 002) also apply to the
 # real engine's mm/day drivers. dt_velma_025..030 are for the REAL EPA VELMA 2.1 engine
 # (025-028 added 2026-10-06, 029-030 added 2026-10-07). Converted 2026-08-12 from the `triplets:` mapping to the

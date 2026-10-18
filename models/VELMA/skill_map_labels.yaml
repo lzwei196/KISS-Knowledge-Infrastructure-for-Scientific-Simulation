@@ -1,0 +1,14 @@
+# Hand-written labels for the projected KI map / tool index in SKILL.md.
+# generate_skill_map.py reads this file, so a re-projection keeps these words.
+# Edit here, not inside the projected blocks.
+tools:
+  tools/build_velma_weather_from_source.py: '**REAL engine weather drivers**'
+  tools/convert_forcing_to_velma.py: '**SURROGATE input, not VELMA**'
+  tools/convert_soil_to_velma.py: '**SURROGATE input, not VELMA**'
+  tools/parse_output_velma.py: '**SURROGATE output, not VELMA**'
+  tools/run_velma.py: '**SURROGATE, not VELMA**'
+  tools/run_velma_engine.py: '**REAL engine, default run route**'
+rows:
+  triplets: 001-024 written for the SURROGATE, 025-030 for the real engine
+why:
+  dag: 'the model''s identity = the REAL EPA VELMA 2.1 engine (the Python SURROGATE''s separate contract is `docs/surrogate_velma_4layer_dag.yaml`): every output''s medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked ''what does this model predict'', the dag is the answer, not a guess.'

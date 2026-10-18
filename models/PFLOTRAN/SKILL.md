@@ -60,7 +60,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Package**: hydrocraft-pflotran-subsurface v1.1.0
 **Domain**: Groundwater flow and reactive transport; 1D vadose zone soil moisture
 **Model**: PFLOTRAN (Parallel Flow and Transport)
-**Stats**: 4 tools, 5 skill documents, 26 diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Last updated**: 2026-08-18 — aligned body with KI dag/convention output and validation sections
   (previously 2026-04-30 — added 1D vadose zone / FLUXNET SWC validation workflow)
   (3-site campaign: CN-Din, CN-Qia, CN-HaM; best result NSE=0.471 at CN-HaM v2)

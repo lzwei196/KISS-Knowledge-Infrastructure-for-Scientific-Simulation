@@ -63,9 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Domain**: Cryosphere (snow/land-surface)
 - **Created**: 2026-03-26
 - **Updated**: 2026-04-30 (49-site SNOTEL batch validation)
-- **Tools**: 5
-- **Skill documents**: 6
-- **Diagnostic triplets**: 28
+- **Counts**: tools, stage docs and triplets — see the KI map at the top of this file
 - **Validation status**: production_validated (western US SNOTEL network)
 
 ---
@@ -781,5 +779,5 @@ ki/
 │   ├── s5_production_run.md          # Production run skill
 │   └── s6_output_extraction.md       # Output parsing skill
 └── diagnostics/
-    └── triplets.yaml                 # 20 symptom→diagnosis→remedy entries
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

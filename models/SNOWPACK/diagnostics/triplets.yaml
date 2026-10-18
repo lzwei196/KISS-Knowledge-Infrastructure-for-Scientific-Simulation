@@ -1,6 +1,6 @@
 # SNOWPACK Diagnostic Triplets
 # Each entry: symptom → diagnosis → remedy
-# 20 entries covering unit conversion, parameter format, path resolution,
+# Entries (20 when this header was written; current count: the SKILL.md KI map) covering unit conversion, parameter format, path resolution,
 # runtime, dependency mismatch, and silent error domains.
 
 - id: dt_001

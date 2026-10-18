@@ -762,4 +762,4 @@ bands — SUMMA has no glacier module), not a routing problem.
 ---
 
 *This knowledge infrastructure was built using the knowledge dissection methodology (Zhang et al., Nature, under review).*
-*Package: hydrocraft-summa v1.0.0 | 12 tools (~2,826 LOC) | 7 skill documents (~5,158 words) | 18 diagnostic triplets | 7 failure domains*
+*Package: hydrocraft-summa v1.0.0 | 7 failure domains | current tool, stage-doc and triplet counts: the KI map at the top of this file*

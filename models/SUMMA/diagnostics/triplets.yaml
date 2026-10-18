@@ -1,7 +1,7 @@
 # ========================================================================
 # SUMMA Diagnostic Triplets
 # ========================================================================
-# 34 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# 34 triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.

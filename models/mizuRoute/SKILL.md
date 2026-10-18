@@ -82,7 +82,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Repository**: https://github.com/ESCOMP/mizuRoute
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-22
-**Stats**: 7 tools | 8 skill documents | 20 diagnostic triplets | 2,115 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `production_validated` — Bengbu IRF routing, r=0.87 vs Lohmann, mass-conserving (Q=1795 m3/s), 3 serial stub bugs fixed
 
 ---
@@ -212,7 +212,7 @@ s0 ─────────────────────────�
 | `extract_discharge` | s6 | `tools/s6_postprocess/extract_discharge.py` | 275 | Parse output -> discharge CSV + metrics (NSE, KGE, RMSE) |
 | `compare_routing_methods` | s6 | `tools/s6_postprocess/compare_routing_methods.py` | 188 | Run all 5 methods and compare discharge |
 
-**Total**: 7 tools, 2,115 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Documents
 
@@ -384,7 +384,7 @@ python $TOOLS/s6_postprocess/extract_discharge.py \
 
 ## Diagnostic Triplets
 
-18 triplets covering 7 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 7 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -407,7 +407,7 @@ python $TOOLS/s6_postprocess/extract_discharge.py \
 | dt_m017 | fatal | path_resolution | Fortran CHARACTER truncation |
 | dt_m018 | **silent** | silent_error | Width estimation wrong for climate zone |
 
-**Silent error count**: 7/18 (39%) — consistent with cross-model average of 37%.
+**Silent error count** (when this section was written): 7/18 (39%) — consistent with cross-model average of 37%.
 
 ---
 
@@ -531,7 +531,7 @@ models/mizuRoute/knowledge_infrastructure/
     s6_comparison_skill.md        # Method comparison
     s_lake_routing_skill.md       # Lake/reservoir routing
   diagnostics/
-    triplets.yaml                 # 18 diagnostic triplets
+    triplets.yaml                 # diagnostic triplets (count: KI map)
     error_log.yaml                # Runtime error capture
 
 model/mizuRoute/

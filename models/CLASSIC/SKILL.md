@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: CLASSIC (CLASS v3.6.2 + CTEM v2.0)
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `dissected`
 
 ---

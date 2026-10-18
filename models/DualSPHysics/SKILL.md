@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: DualSPHysics v5.4.355 (Smoothed Particle Hydrodynamics)
 **Domain**: Coastal/ocean engineering, free-surface flows
 **Last updated**: 2026-03-26
-**Stats**: 5 tools | 5 skill documents | 18 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `example_validated` (DamBreak benchmark, Koshizuka & Oka 1996)
 
 ---

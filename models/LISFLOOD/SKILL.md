@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Large-scale rainfall-runoff, flood forecasting, water resources
 **Language**: Python (with Numba JIT-compiled soil loop and routing)
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~1,800 lines of validated Python
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `test_case_validated` (LF_ETRS89_UseCase cold run)
 
 ---
@@ -188,7 +188,7 @@ Stages 7-8 depend on 6.
 | `run_lisflood` | s6 | `tools/run_lisflood.py` | ~250 | Execute LISFLOOD with preflight validation |
 | `parse_lisflood_output` | s7 | `tools/parse_output.py` | ~300 | Parse NetCDF output to CSV/diagnostics |
 
-**Total**: 4 tools, ~1,200 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -502,7 +502,7 @@ LISFLOOD/ki/
     04_model_execution.md           # Running LISFLOOD (cold/warm start)
     05_output_analysis.md           # Output parsing, validation, calibration
   diagnostics/
-    triplets.yaml                   # 18 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 
 source/repo/
   src/lisf1.py                      # Entry point
@@ -532,7 +532,7 @@ source/repo/
 
 ## Diagnostic Triplets
 
-18 triplets covering 5 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 5 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -555,4 +555,4 @@ source/repo/
 | dt_017 | degraded | runtime | Numba compilation failure — falls back to slow Python |
 | dt_018 | **silent** | silent_error | WriteNetcdf off — no spatial output produced |
 
-**Silent error count**: 11/18 (61%) — dominated by unit conversion traps.
+**Silent error count** (when this section was written): 11/18 (61%) — dominated by unit conversion traps.

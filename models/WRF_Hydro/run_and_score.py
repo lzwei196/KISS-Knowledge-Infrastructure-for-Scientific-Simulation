@@ -10,7 +10,7 @@ Third location for the WRF-Hydro KI consistency check. Companions:
 Why Berounka: a clean, humid-continental, essentially unregulated central-European
 basin (~8,300 km2). This is a genuine generalization test for the KI OUTSIDE China
 and away from the regulated-arid failure mode -- comparable in scale/climate to the
-KI's own validated global cases (Kettle River, Balsas, Clutha, Spain GRDC).
+KI's own earlier global test cases (Kettle River, Balsas, Clutha, Spain GRDC; Balsas scores poorly).
 
 Gauge   : GRDC_6140250, 49.9604N 14.0854E, Caravan area 8295.554 km2.
 Obs     : GRDC-Caravan Extension NetCDF, variable `streamflow` in Caravan units of

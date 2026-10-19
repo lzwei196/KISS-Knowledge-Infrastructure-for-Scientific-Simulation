@@ -1032,8 +1032,15 @@ All other 7 configurations crash within 0-7 days:
 | Basin | r | PBIAS | Sim/Obs Q |
 |-------|---|-------|-----------|
 | Kettle River | **0.70** | +54% | 86/56 m³/s |
-| Balsas Brazil | **0.83** | **-3%** | 104/107 m³/s |
+| Balsas Brazil (short test, see note) | 0.83 | -3% | 104/107 m³/s |
 | Clutha NZ | **0.52** | -52% | 290/601 m³/s |
+
+**Balsas note (checked 2026-10-20):** the 0.83 / -3% row is a short 2011 test (run 2010-10..2011, 365 scored days)
+at river point idx 44, which is not the gauge-matched reach, and its NSE was **-3.8**. The full 7-year run at the gauge-matched
+reach (GRDC_3650415, idx 85, run 2005-2011, scored 2006-2011 = 2190 days, `verify_1_result.json` 2026-07-12) scores **NSE -17.9,
+KGE -2.85, r 0.68, PBIAS +43%** (146/102 m³/s). So Config A runs in the tropics, but uncalibrated it does not
+simulate Balsas well. The 2026-07-19 REFKDT sweep at Balsas is void: every new run (REFKDT 2, 3, 5, 8) ended with rc=1
+and all REFKDT values, with the 0.8 base, gave the same score.
 
 **Rule**: Always use Config A for production.
 

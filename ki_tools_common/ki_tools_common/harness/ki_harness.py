@@ -18,6 +18,7 @@ silently omit.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import subprocess
@@ -30,6 +31,59 @@ sys.path.insert(0, str(_HERE))  # CLI fallback for sibling imports
 PROJECT_PY = os.environ.get("HC_PROJECT_PYTHON",
                             "KISSPATH_PYTHON_ENV/bin/python")
 MARKER = "[KI HARNESS v1]"
+PREFLIGHT_REPORT_PREFIX = "PREFLIGHT_REPORT="
+PREFLIGHT_CHECK_KINDS = frozenset({"binary", "import", "data", "network", "run"})
+
+
+def preflight_fingerprint(ki_path, *, expected_model_id: str,
+                          expected_binary: str | os.PathLike | None) -> str:
+    """Bind a strict-preflight lease to its current executable and verifier inputs.
+
+    This function is shared by the host that issues the signed lease and the execution hook
+    that consumes it.  Keeping the byte-level identity calculation here prevents the two
+    enforcement surfaces from slowly acquiring different definitions of "the same preflight".
+    """
+    if not isinstance(expected_model_id, str) or not expected_model_id.strip():
+        raise ValueError("expected_model_id must be a non-empty string")
+    root = Path(ki_path).resolve()
+    preflight = root / "preflight_check.py"
+    if not preflight.is_file():
+        raise FileNotFoundError(f"no preflight_check.py at {root}")
+
+    binary_path = None
+    if expected_binary is not None:
+        try:
+            binary_value = os.fspath(expected_binary)
+        except TypeError as exc:
+            raise ValueError("expected_binary must be a non-empty path") from exc
+        if not isinstance(binary_value, str) or not binary_value.strip():
+            raise ValueError("expected_binary must be a non-empty path")
+        binary_path = os.path.realpath(binary_value)
+        if not os.path.isfile(binary_path):
+            raise FileNotFoundError(
+                f"expected_binary does not exist as a file: {binary_path}"
+            )
+
+    identity = json.dumps(
+        {
+            "model_id": expected_model_id,
+            "ki_root": str(root),
+            "expected_binary": binary_path,
+            "interpreter": PROJECT_PY,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hashlib.sha256(identity)
+    if binary_path is not None:
+        binary_digest = hashlib.sha256()
+        with open(binary_path, "rb") as binary_file:
+            for chunk in iter(lambda: binary_file.read(1024 * 1024), b""):
+                binary_digest.update(chunk)
+        digest.update(binary_digest.digest())
+    digest.update(preflight.read_bytes())
+    digest.update(Path(__file__).resolve().read_bytes())
+    return digest.hexdigest()
 
 # ── THE OBLIGATIONS REGISTRY (G3, 2026-08-20) ───────────────────────────────────────────────────
 # The ten KI-usage obligations exist on TWO surfaces: this module's contract() (injected into the
@@ -159,24 +213,209 @@ def manifest(ki_path) -> dict:
             "missing": sorted(k for k, v in arts.items() if not v)}
 
 
-def run_preflight(ki_path, timeout: int = 300) -> dict:
-    """Execute preflight_check.py with the project python; parse its JSON report if it emits one.
-    Raises KiHarnessError when the script is absent (readiness unknowable)."""
-    ki = Path(ki_path)
+def evaluate_preflight_output(output: str, returncode: int, *,
+                              expected_model_id: str | None = None,
+                              expected_binary: str | os.PathLike | None = None) -> dict:
+    """Validate one preflight process result without confusing health with contract validity.
+
+    ``contract_ok`` means the script produced one internally consistent structured report.
+    ``ready``/``ok`` additionally mean its critical prerequisites passed. A valid report may
+    therefore be contract-correct but not ready, which lets KDT accept the diagnostic artifact
+    while every execution driver still blocks the model run.
+    """
+    errors: list[str] = []
+    expected_model = None
+    if expected_model_id is not None:
+        if not isinstance(expected_model_id, str) or not expected_model_id.strip():
+            errors.append("expected_model_id must be a non-empty string")
+        else:
+            expected_model = expected_model_id
+
+    expected_binary_path = None
+    if expected_binary is not None:
+        try:
+            expected_binary_value = os.fspath(expected_binary)
+        except TypeError:
+            expected_binary_value = None
+        if not isinstance(expected_binary_value, str) or not expected_binary_value.strip():
+            errors.append("expected_binary must be a non-empty path")
+        else:
+            expected_binary_path = os.path.realpath(expected_binary_value)
+            if not os.path.isfile(expected_binary_path):
+                errors.append(
+                    f"expected_binary does not exist as a file: {expected_binary_path}"
+                )
+
+    if not isinstance(output, str):
+        errors.append("preflight output must be text")
+        output = ""
+
+    report = None
+    report_parsed = False
+    marker_lines = [
+        line for line in output.splitlines()
+        if line.startswith(PREFLIGHT_REPORT_PREFIX)
+    ]
+    if len(marker_lines) != 1:
+        errors.append(
+            f"preflight must emit exactly one {PREFLIGHT_REPORT_PREFIX} line; "
+            f"found {len(marker_lines)}"
+        )
+    else:
+        try:
+            report = json.loads(marker_lines[0][len(PREFLIGHT_REPORT_PREFIX):])
+            report_parsed = True
+        except (TypeError, ValueError) as exc:
+            errors.append(f"preflight report is not valid JSON: {exc}")
+
+    if "[MODEL" in output:
+        errors.append("preflight output contains an unfilled [MODEL...] placeholder")
+
+    checks = None
+    failed_checks: list[dict] = []
+    critical_checks: list[dict] = []
+    critical_failed = False
+    if report_parsed:
+        if not isinstance(report, dict):
+            errors.append("preflight report must be a JSON object")
+        else:
+            model_id = report.get("model_id")
+            if not isinstance(model_id, str) or not model_id.strip():
+                errors.append("preflight report model_id must be a non-empty string")
+            elif expected_model is not None and model_id != expected_model:
+                errors.append(
+                    f"preflight model_id {model_id!r} does not match expected "
+                    f"{expected_model!r}"
+                )
+
+            checks = report.get("checks")
+            if not isinstance(checks, list):
+                errors.append("preflight report checks must be a list")
+            else:
+                for index, check in enumerate(checks):
+                    where = f"preflight check {index}"
+                    if not isinstance(check, dict):
+                        errors.append(f"{where} must be an object")
+                        continue
+                    kind = check.get("kind")
+                    subject = check.get("subject")
+                    critical = check.get("critical")
+                    status = check.get("status")
+                    fix = check.get("fix")
+                    if not isinstance(kind, str) or kind not in PREFLIGHT_CHECK_KINDS:
+                        errors.append(
+                            f"{where} kind must be one of "
+                            f"{', '.join(sorted(PREFLIGHT_CHECK_KINDS))}"
+                        )
+                    if not isinstance(subject, str) or not subject.strip():
+                        errors.append(f"{where} subject must be a non-empty string")
+                    if type(critical) is not bool:
+                        errors.append(f"{where} critical must be boolean")
+                    if status not in ("pass", "fail"):
+                        errors.append(f"{where} status must be 'pass' or 'fail'")
+                    if not isinstance(fix, str):
+                        errors.append(f"{where} fix must be a string")
+                    elif status == "fail" and not fix.strip():
+                        errors.append(f"{where} failed but has no non-empty fix")
+
+                failed_checks = [
+                    check for check in checks
+                    if isinstance(check, dict) and check.get("status") == "fail"
+                ]
+                critical_checks = [
+                    check for check in checks
+                    if isinstance(check, dict) and check.get("critical") is True
+                ]
+                critical_failed = any(
+                    check.get("status") == "fail" for check in critical_checks
+                )
+                if not critical_checks:
+                    errors.append("preflight report has no critical checks")
+
+                if returncode == 0 and critical_failed:
+                    errors.append("preflight exit 0 contradicts a failed critical check")
+                elif returncode != 0 and critical_checks and not critical_failed:
+                    errors.append(
+                        "preflight nonzero exit contradicts all critical checks passing"
+                    )
+
+                if expected_binary_path is not None:
+                    verified = {
+                        os.path.realpath(check["subject"])
+                        for check in checks
+                        if isinstance(check, dict)
+                        and check.get("kind") in ("binary", "run")
+                        and check.get("critical") is True
+                        and check.get("status") == "pass"
+                        and isinstance(check.get("subject"), str)
+                        and check["subject"].strip()
+                    }
+                    if expected_binary_path not in verified:
+                        errors.append(
+                            "preflight did not pass a critical binary/run check for the "
+                            f"registered executable {expected_binary_path}"
+                        )
+
+    contract_ok = not errors
+    ready = contract_ok and returncode == 0 and bool(critical_checks) and not critical_failed
+    return {
+        "ok": ready,
+        "ready": ready,
+        "contract_ok": contract_ok,
+        "returncode": returncode,
+        "report": report,
+        "errors": errors,
+        "failed_checks": failed_checks,
+        "report_lines": len(marker_lines),
+    }
+
+
+def run_preflight(ki_path, timeout: int = 300, *,
+                  expected_model_id: str | None = None,
+                  expected_binary: str | os.PathLike | None = None) -> dict:
+    """Execute and strictly evaluate a KI preflight with the project interpreter.
+
+    Missing scripts and execution failures raise ``KiHarnessError`` because readiness could not be
+    measured. A script that runs but reports an unhealthy or invalid state returns ``ok=False``
+    with structured ``errors``/``failed_checks`` so callers can block and explain the repair.
+    """
+    ki = Path(ki_path).resolve()
     pf = ki / "preflight_check.py"
     if not pf.is_file():
         raise KiHarnessError(f"no preflight_check.py at {ki}")
-    r = subprocess.run([PROJECT_PY, str(pf)], capture_output=True, text=True,
-                       timeout=timeout, cwd=str(ki))
-    out = (r.stdout or "") + (r.stderr or "")
-    m = re.search(r"\{.*\}", out, re.S)
-    report = None
-    if m:
-        try:
-            report = json.loads(m.group(0))
-        except Exception:
-            report = None
-    return {"returncode": r.returncode, "report": report, "raw_tail": out[-800:]}
+    try:
+        r = subprocess.run(
+            [PROJECT_PY, str(pf)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            cwd=str(ki),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise KiHarnessError(
+            f"preflight timed out after {timeout}s at {pf}"
+        ) from exc
+    except OSError as exc:
+        raise KiHarnessError(f"preflight could not execute at {pf}: {exc}") from exc
+    stdout = r.stdout or ""
+    stderr = r.stderr or ""
+    separator = "" if not stdout or not stderr or stdout.endswith(("\n", "\r")) else "\n"
+    out = stdout + separator + stderr
+    result = evaluate_preflight_output(
+        out,
+        r.returncode,
+        expected_model_id=expected_model_id,
+        expected_binary=expected_binary,
+    )
+    provenance = {"preflight_path": str(pf), "interpreter": PROJECT_PY}
+    result.update({
+        **provenance,
+        "provenance": provenance,
+        "raw_tail": out[-800:],
+    })
+    return result
 
 
 def assert_injected(prompt_text: str) -> None:

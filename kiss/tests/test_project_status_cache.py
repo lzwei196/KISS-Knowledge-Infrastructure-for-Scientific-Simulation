@@ -155,3 +155,26 @@ def test_files_changed_during_inspection_are_not_returned_or_cached(cached_proje
     assert refreshed[2] == 200.0
     assert not _read(env, now=300.0)[1][0].reusable
     assert len(env.calls) == 2  # Only the stable, fresh negative verdict can be cached.
+
+
+def test_native_diagnostic_log_change_invalidates_status_cache(cached_project):
+    """A receipt's stdin stream logs are evidence inputs even outside outputs/."""
+    env = cached_project
+    logfile = env.project / "runs" / "logs" / "fixture.stdout.log"
+    logfile.parent.mkdir(parents=True)
+    logfile.write_bytes(b"Run Complete")
+    doc = json.loads(env.receipt.read_text(encoding="utf-8"))
+    doc["input_coverage"] = {"native_stdio_logs": {
+        "stdout": {"path": "runs/logs/fixture.stdout.log"}}}
+    # This is a cache-invalidation fixture, not a native-run authority claim.
+    env.receipt.write_text(json.dumps(env.flow.receipts.sign(env.project, doc)), encoding="utf-8")
+    _read(env)
+    previous = logfile.stat()
+    logfile.write_bytes(b"Run Failed!!")
+    os.utime(logfile, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+    assert logfile.stat().st_size == previous.st_size
+    _read(env, now=200.0)
+    assert len(env.calls) == 2
+    logfile.unlink()
+    _read(env, now=300.0)
+    assert len(env.calls) == 3

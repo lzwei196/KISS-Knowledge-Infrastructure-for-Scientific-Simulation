@@ -208,8 +208,8 @@ def write_setup(ki, man, cfg, dest: Path, *, built_in_command: str,
         hint = f"Read `{notes}` for the recorded installation experience on this OS.\n\n{hint}"
     body = f"""# {ki.name} — GeoForge autonomous setup
 
-You are the setup agent for **{ki.name}**. Own the loop until the scientific
-software's real preflight passes or a person must do something you cannot.
+You are the setup agent for **{ki.name}**. Own the loop until GeoForge's complete
+host software verification passes or a person must do something you cannot.
 
 ## Required loop
 
@@ -227,8 +227,12 @@ software's real preflight passes or a person must do something you cannot.
    On Windows, run the supplied host commands in PowerShell. Do not run
    preflight_check.py directly inside the protected KI. GeoForge checks a
    byte-identical execution copy so startup output cannot pollute the KI.
+   The supplied `kiss preflight` CLI command is diagnostic-only; its PASS is
+   insufficient for readiness. The API setup `run_preflight` tool performs the
+   complete host check, including manifest and runtime requirements.
 6. Keep repairing and retrying in this same task. Never claim success until
-   preflight passes, and never substitute a fake or simplified model.
+   GeoForge's complete host final check passes, and never substitute a fake
+   or simplified model. Finish diagnostics so the host can run that final check.
 
 The user selected `{dest}` as this model's installation workspace. The local
 path contract is recorded in `{dest / '.geoforge-install.json'}` and

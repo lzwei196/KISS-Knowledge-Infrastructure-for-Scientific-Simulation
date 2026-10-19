@@ -2160,6 +2160,7 @@ class SessionProjectTests(unittest.TestCase):
             shared = paths.KissConfig.default(root / "shared-install")
             fake_handler = object.__new__(gui.Handler)
             fake_handler._config = lambda _ki: shared
+            fake_handler._manifest = lambda _ki: Manifest.stub_for(_ki)
 
             run_ki, cfg = gui.Handler._session_workspace(fake_handler, project, ki)
             project = project.resolve()
@@ -3119,6 +3120,8 @@ class InstallStatusTests(unittest.TestCase):
                     interpreter = root / "venv" / "Scripts" / "python.exe"
                     interpreter.parent.mkdir(parents=True)
                     interpreter.touch()
+                if install._MODEL_ENV_PROBE in argv:
+                    return 0, '__GEOFORGE_MODEL_ENV__={"pip_available":true}'
                 return 0, "ok"
 
             with mock.patch.object(install.os, "name", "nt"), \
@@ -4448,7 +4451,7 @@ class AgentSetupTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(
-                api._read_text_page(path, start_line=1085, line_count=3),
+                api._read_text_page(path, start_line=1085, line_count=3).content,
                 "line-1085\nline-1086\nline-1087\n",
             )
             with self.assertRaisesRegex(api.ToolError, "line_count"):
@@ -5003,7 +5006,8 @@ class AgentSetupTests(unittest.TestCase):
             native_content = content if os.name == "nt" else content.replace("\n", "\r\n")
             call("write_work_file", path="source.c", content=native_content)
             self.assertEqual((root / "source.c").read_bytes(), content.replace("\n", "\r\n").encode())
-            read = call("read_work_file", path="source.c")
+            # Text reads are pages: file text plus a metadata header line.
+            read = call("read_work_file", path="source.c").content
             self.assertEqual(read, content)
             old = "\n".join(read.splitlines()[1:3])
             call("replace_work_text", path="source.c", old=old, new="a = 3\nb = 4\nc = 5")

@@ -83,6 +83,19 @@ class DataNeed:
 VERIFICATION = ("observed", "partial", "unverified", "manual")
 
 
+def validate_runtime_paths(value) -> dict | None:
+    """Validate an opt-in projection format, never execution or readiness."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"version", "mode"}:
+        raise ValueError("runtime_paths must contain exactly version and mode")
+    if type(value["version"]) is not int or value["version"] != 1:
+        raise ValueError("runtime_paths.version must be the integer 1")
+    if not isinstance(value["mode"], str) or value["mode"] != "role_tokens":
+        raise ValueError("runtime_paths.mode must be 'role_tokens'")
+    return {"version": 1, "mode": "role_tokens"}
+
+
 @dataclass
 class Manifest:
     model: str
@@ -119,6 +132,11 @@ class Manifest:
     notes: str = ""
     #: free-text guidance handed to the agent when automation stops short
     agent_hint: str = ""
+    #: Explicit portable role-token projection; grants no readiness or execution.
+    runtime_paths: dict | None = None
+
+    def __post_init__(self):
+        self.runtime_paths = validate_runtime_paths(self.runtime_paths)
 
     @classmethod
     def load(cls, path: Path) -> "Manifest":
@@ -153,6 +171,7 @@ class Manifest:
             system_deps=list(raw.get("system_deps") or []),
             data=[DataNeed.from_dict(d) for d in (raw.get("data") or [])],
             runtime_data=runtime_data,
+            runtime_paths=raw.get("runtime_paths"),
             reference_case=raw.get("reference_case"),
             startup_marker=raw.get("startup_marker", ""),
             notes=raw.get("notes", ""),
@@ -194,7 +213,12 @@ class Manifest:
 
 def document(manifest: Manifest) -> dict:
     """Canonical effective recipe; absent opt-in fields preserve legacy identities."""
+    runtime_paths = validate_runtime_paths(manifest.runtime_paths)
     value = asdict(manifest)
     if value.get("runtime_data") is None:
         value.pop("runtime_data", None)
+    if runtime_paths is None:
+        value.pop("runtime_paths", None)
+    else:
+        value["runtime_paths"] = runtime_paths
     return value

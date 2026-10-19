@@ -114,7 +114,8 @@ def test_gui_planning_gets_source_mapping_and_each_materialised_case(tmp_path, m
     task = "Run the shipped reference cases from " + ", ".join(str(model.root) for model in models)
     pre = flowrun.pre(project, task, list(names), catalogue, None, None)
     handler = object.__new__(gui.Handler)
-    handler.catalog, handler.workroot, handler.repo_root = catalogue, tmp_path, None
+    handler.catalog, handler.workroot = catalogue, tmp_path
+    handler.repo_root = Path(__file__).resolve().parents[2]
     handler._config = lambda model: configs[model.name]
     handler._workdir = lambda model: configs[model.name].root
     handler._status_for = lambda model: {"label": "Verified", "can_run": True}
@@ -139,6 +140,13 @@ def test_gui_planning_gets_source_mapping_and_each_materialised_case(tmp_path, m
     assert "[EXISTING CASE REPLAY]" in system
     assert "Planning still cannot execute" in system
     assert "submit the bounded plan through normal approval" in system
+    assert "On EVERY interview turn" not in system
+    assert "When an unchanged official/reference case or prior answers settle the required choices" in system
+    assert "finalize and submit BOTH plan and inventory for normal approval" in system
+    assert "If a material user decision is still unresolved, ask exactly ONE" in system
+    assert "An inaccessible file is an access/acquisition gap, not proof that it is absent on disk" in system
+    assert "not permission to invent scientific inputs" in system
+    assert "downloads still wait for that approval" in system
     assert "different path or revision" in system
     assert "inspect and reconcile it" in system
     assert "Use the project working KIs for instructions, file reads and tool execution" in system

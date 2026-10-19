@@ -1489,6 +1489,9 @@ def validate(plan: dict, inventory: dict, selected_kis: list[str],
     errs.extend(data_source_errors(plan, inventory))
     from .declared_outputs import plan_errors as declared_output_errors
     errs.extend(declared_output_errors(plan, inventory, project))
+    if for_review or for_execution:
+        from .public_downloads import plan_errors as public_download_errors
+        errs.extend(public_download_errors(plan, inventory))
     if for_review:
         errs.extend(output_contract_review_errors(plan, inventory))
         errs.extend(ready_input_review_errors(plan, inventory, project))

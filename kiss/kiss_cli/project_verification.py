@@ -1,9 +1,10 @@
 """Host receipts for the exact materialized KI and runtime used by a project.
 
-Only ``verify`` runs checks. ``status`` and ``require_current`` read evidence;
-opening/planning a project must never execute its preflight. This binds runtime
-configuration, not executable/package contents at the same paths, and proves
-neither a scientific result nor derivation from an upstream installation.
+Only ``verify`` runs KI preflight. ``status`` reads saved evidence; dispatch's
+``require_current`` also inspects native dependency and executable identities
+for supported profiles, writing bounded host evidence scratch. Opening/planning
+a project never executes its preflight. This proves neither a scientific result
+nor derivation from an upstream installation.
 """
 from __future__ import annotations
 
@@ -13,6 +14,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import stat
 import time
 import tomllib
 import uuid
@@ -24,6 +27,8 @@ from .manifest import Manifest
 POLICY = "project-runtime-preflight-v3-declared-runtime"
 _STATES = {"pending", "verified", "failed", "cancelled"}
 _MAX_RECEIPT_BYTES = 1024 * 1024
+_MAX_HISTORY_FILES = 256
+_MAX_HISTORY_BYTES = 16 * 1024 * 1024
 
 
 def _receipts():
@@ -71,9 +76,176 @@ def _read(path: Path):
     return doc
 
 
+def _history_dir(project: Path, model: str) -> Path:
+    current = _receipt_path(project, model)
+    directory = current.parent / "history" / current.stem
+    for candidate in (directory.parent, directory):
+        if candidate.resolve() != candidate:
+            raise ValueError("Project verification history location is aliased")
+    return directory
+
+
+def _receipt_bytes(path: Path) -> bytes:
+    """Bounded ordinary bytes; never follow a receipt link or create a key."""
+    path = ki_guard._io(path)
+    before = path.lstat()
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or getattr(before, "st_file_attributes", 0) & 0x400):
+        raise ValueError("Project verification receipt must be an ordinary unlinked file")
+    if before.st_size > _MAX_RECEIPT_BYTES:
+        raise ValueError("Project verification receipt is too large")
+    with path.open("rb") as stream:
+        opened = os.fstat(stream.fileno())
+        payload = stream.read(_MAX_RECEIPT_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    if (len(payload) > _MAX_RECEIPT_BYTES or any(getattr(before, key) != getattr(opened, key)
+            or getattr(opened, key) != getattr(after, key) for key in fields)):
+        raise ValueError("Project verification receipt changed while being read")
+    return payload
+
+
+def _authenticated(project: Path, model: str, payload: bytes):
+    doc = json.loads(payload.decode("utf-8"))
+    if not isinstance(doc, dict) or not _receipts().verify(project, doc):
+        raise ValueError("Project verification history record is unauthenticated")
+    if (doc.get("project") != str(project) or doc.get("model") != model
+            or doc.get("ki_root") != str(project / "models" / model / "ki")):
+        raise ValueError("Project verification history record has a different project or model")
+    return doc
+
+
+def _archive_current(project: Path, model: str, current: Path) -> None:
+    """Retain an authenticated observation, without claiming continued readiness."""
+    try:
+        payload = _receipt_bytes(current)
+    except FileNotFoundError:
+        return
+    try:
+        _authenticated(project, model, payload)
+    except (ValueError, TypeError):
+        # Reverification may replace an unauthenticated old receipt; it must
+        # never turn those bytes into authenticated historical evidence.
+        return
+    directory = _history_dir(project, model)
+    destination = ki_guard._io(directory / (hashlib.sha256(payload).hexdigest() + ".json"))
+    try:
+        existing = _receipt_bytes(destination)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None:
+        if existing != payload:
+            raise ValueError("Retained project verification history was modified")
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Exclusive creation never replaces an existing observation. Publication
+    # failures leave the current receipt untouched; a partial archive fails
+    # closed on retry instead of silently erasing the old check.
+    try:
+        with destination.open("xb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        pass
+    if _receipt_bytes(destination) != payload:
+        raise ValueError("Retained project verification history differs from its source")
+
+
+def history(project, model: str, limit: int = 8) -> dict:
+    """Read retained signed observations only; neither freshness nor completeness.
+
+    No config, model, runtime or preflight is inspected. Missing context in an
+    old authenticated record remains unknown, never today's build. A present
+    but malformed context is not silently treated as a legacy observation.
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 32:
+        raise ValueError("Project verification history limit must be between 1 and 32")
+    from . import runtime_provenance
+    project = Path(project).expanduser().resolve()
+    project_paths._model_home(project, model)  # model-name validation only
+    result = {"scope": "project_preflight", "historical": True,
+              "readiness_rechecked": False, "complete_history": False,
+              "records": [], "invalid_count": 0, "truncated": False}
+    try:
+        current = _receipt_path(project, model)
+        directory = _history_dir(project, model)
+        candidates = [(current, "current")]
+        try:
+            with os.scandir(ki_guard._io(directory)) as entries:
+                for index, entry in enumerate(entries):
+                    if index >= _MAX_HISTORY_FILES:
+                        result["truncated"] = True
+                        break
+                    if not re.fullmatch(r"[a-f0-9]{64}\.json", entry.name):
+                        result["invalid_count"] += 1
+                        continue
+                    candidates.append((directory / entry.name, "history"))
+        except FileNotFoundError:
+            pass
+    except (OSError, ValueError):
+        result["invalid_count"] += 1
+        return result
+    seen, used = set(), 0
+    for path, location in candidates:
+        try:
+            payload = _receipt_bytes(path)
+            used += len(payload)
+            if used > _MAX_HISTORY_BYTES:
+                result["truncated"] = True
+                break
+            digest = hashlib.sha256(payload).hexdigest()
+            if location == "history" and digest != path.stem:
+                raise ValueError("Historical receipt digest differs from its filename")
+            if digest in seen:
+                continue
+            doc = _authenticated(project, model, payload)
+            seen.add(digest)
+            row = {"receipt_sha256": digest, "location": location,
+                   "authentication": "verified", "provenance": "legacy_unknown",
+                   "verification_context": None}
+            if "verification_context" in doc:
+                try:
+                    row["verification_context"] = runtime_provenance.validate(doc["verification_context"])
+                    row["provenance"] = "recorded"
+                except (ValueError, TypeError):
+                    row["provenance"] = "invalid"
+                    result["invalid_count"] += 1
+            if row["provenance"] != "invalid":
+                if (doc.get("schema_version") != 1 or doc.get("state") not in _STATES
+                        or not isinstance(doc.get("attempt_id"), str)
+                        or not doc["attempt_id"] or len(doc["attempt_id"]) > 128):
+                    raise ValueError("Invalid historical preflight fields")
+                row.update(attempt_id=doc["attempt_id"], state=doc["state"])
+                for field in ("started_at", "checked_at"):
+                    value = doc.get(field)
+                    if value is not None:
+                        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                                or not 0 <= value < 1e12):
+                            raise ValueError("Invalid historical preflight time")
+                        row[field] = value
+            result["records"].append(row)
+        except FileNotFoundError:
+            if location != "current":
+                result["invalid_count"] += 1
+        except (OSError, ValueError, TypeError, UnicodeError):
+            result["invalid_count"] += 1
+    # The atomic current pointer is stronger ordering evidence than a wall
+    # clock. A clock rollback must not hide the current failed/cancelled check
+    # behind older passes when the bounded display is truncated.
+    result["records"].sort(key=lambda row: (row["location"] == "current",
+                                           row.get("checked_at", row.get("started_at", 0)),
+                                           row["receipt_sha256"]), reverse=True)
+    if len(result["records"]) > limit:
+        result["truncated"] = True
+        result["records"] = result["records"][:limit]
+    return result
+
+
 def _write(project: Path, model: str, doc: dict) -> dict:
     with ki_guard.operation(project / "models" / model / "ki"):
         path = _receipt_path(project, model)
+        _archive_current(project, model, path)
         sealed = _receipts().sign(project, dict(doc))
         payload = json.dumps(sealed, indent=2, ensure_ascii=False) + "\n"
         if len(payload.encode("utf-8")) > _MAX_RECEIPT_BYTES:
@@ -155,12 +327,16 @@ def _manifest(ki, supplied, receipt=None):
 
 def _identity(project, home, ki, manifest, receipt=None):
     from .runtime_arguments import declared_runtime_bindings
-    from . import runtime_data
+    from . import runtime_data, ki_data_lineage
     ki_guard.require_intact(ki.root, required=True)
     digest = ki_verification.content_digest(ki.root)
     if not digest:
         raise ValueError("Cannot fingerprint the project's exact KI tree")
     cfg = _config(project, home, ki.name)
+    # A derived setup repair remains conditional on its authenticated source,
+    # runtime and project maintenance history. Check the common host seam so
+    # API/CLI dispatch cannot retain readiness after that authority changes.
+    derivation = ki_data_lineage.require_setup_projection(project, ki.name, ki.root, cfg)
     man, document = _manifest(ki, manifest, receipt)
     # The checked effective manifest may be retained only in the signed receipt.
     from types import SimpleNamespace
@@ -168,6 +344,8 @@ def _identity(project, home, ki, manifest, receipt=None):
     return cfg, man, {
         "project": str(project), "model": ki.name, "ki_root": str(ki.root),
         "ki_content_digest": digest,
+        "setup_derivation": (_hash(derivation["project_derivation"])
+                             if derivation is not None and derivation.get("project_derivation") is not None else None),
         "runtime_identity": software_verification.runtime_identity(cfg),
         "declared_runtime_bindings": declared_runtime_bindings(ki.root),
         "effective_manifest_digest": _hash(document), "effective_manifest": document,
@@ -268,15 +446,25 @@ def verify(project, project_ki, manifest, *, source_ki=None, library_root=None,
 
     Revoke the previous pass before parsing or running anything. The caller
     retains responsibility for approving this check within its Flow/setup turn.
+    Proven byte-identical projection metadata may be revalidated here; status
+    reads and ordinary dispatch never perform that host metadata refresh.
     """
     project, home, ki = _target(project, project_ki)
+    from . import runtime_provenance
+    context = runtime_provenance.validate(runtime_provenance.capture())
     doc = {"schema_version": 1, "policy": POLICY, "attempt_id": uuid.uuid4().hex,
            "project": str(project), "model": ki.name, "ki_root": str(ki.root),
            "started_at": time.time(), "state": "pending", "ok": False,
-           "detail": "Checking the exact project KI and saved runtime bindings", "checks": []}
+           "detail": "Checking the exact project KI and saved runtime bindings", "checks": [],
+           "verification_context": context}
     _write(project, ki.name, doc)  # persistence failure must prevent any execution
     try:
         with install.cancellation_context(project, stop=stop, turn_id=turn_id), ki_guard.worker(ki.root):
+            install.check_cancelled()
+            from . import ki_adaptations
+            saved = _config(project, home, ki.name)
+            ki_adaptations.refresh_project_projection(ki.root, saved, model=ki.name, manifest=manifest)
+            install.check_cancelled()
             cfg, man, before = _identity(project, home, ki, manifest)
             doc.update(before)
             origin = _origin(source_ki, man, library_root)
@@ -293,7 +481,8 @@ def verify(project, project_ki, manifest, *, source_ki=None, library_root=None,
                 raise ValueError(step.detail or "Project KI manifest requirements failed")
             _saved, _man, after = _identity(project, home, ki, manifest)
             if (before != after or software_verification.runtime_identity(cfg) != before["runtime_identity"]
-                    or origin != _origin(source_ki, man, library_root)):
+                    or origin != _origin(source_ki, man, library_root)
+                    or runtime_provenance.validate(runtime_provenance.capture()) != context):
                 raise ValueError("Project KI, configuration, manifest, or supplied origin changed during verification")
             doc.update(state="verified", ok=True,
                        detail="Exact project KI preflight and manifest requirements passed")
@@ -308,11 +497,14 @@ def verify(project, project_ki, manifest, *, source_ki=None, library_root=None,
     return _finish(project, ki, doc)
 
 
-def require_current(project, model_name: str, ki_root, *, cfg=None) -> None:
+def require_current(project, model_name: str, ki_root, *, cfg=None, environment=None, stop=None,
+                    native_executable=None):
     """Guard materialized dispatch; leave explicit nonmaterialized legacy routes.
 
     Both namespace and resolved location count, so an alias cannot silently
-    downgrade a project KI into the legacy path. This function never runs checks.
+    downgrade a project KI into the legacy path. This never reruns KI preflight
+    or a model. Supported native profiles inspect current dependency/executable
+    identities using trusted host probes before dispatch.
     """
     project = Path(project).expanduser().resolve()
     project_paths._model_home(project, model_name)  # validate name/ownership
@@ -328,3 +520,11 @@ def require_current(project, model_name: str, ki_root, *, cfg=None) -> None:
         raise ValueError("Project KI verification required before execution: " + result["detail"])
     if cfg is not None and software_verification.runtime_identity(cfg) != result["receipt"]["runtime_identity"]:
         raise ValueError("Project KI launch configuration differs from its verified saved runtime bindings")
+    # All provider adapters reach this dispatch seam. Rehash authenticated
+    # native dependency/executable evidence; never accept an agent's pass flag.
+    from . import native_dependency_gate
+    if cfg is None:
+        cfg, _man, _identity_record = _identity(project, candidate.parent, KI(model_name, candidate), None, result["receipt"])
+    return native_dependency_gate.require_current(result["receipt"].get("effective_manifest", {}), cfg,
+                                           environment=environment, stop=stop,
+                                           native_executable=native_executable)

@@ -64,6 +64,9 @@ TOKENS: dict[str, str] = {
 
 TOKEN_RE = re.compile(r"KISSPATH_[A-Z_]+")
 PYTHON_TOKEN = "KISSPATH_PYTHON"
+# The active package is not the catalogue root and cannot be configured as a
+# user role. Only the host projecting a KI knows its final logical directory.
+CURRENT_KI_TOKEN = "KISSPATH_CURRENT_KI"
 
 # Older generated KIs can still contain paths into the private KDT build
 # scratch tree.  The private prefix is unavailable on every desktop, but the
@@ -279,8 +282,27 @@ def _portable(target) -> str:
     return text.replace('\\', "/") if os.name == "nt" else text
 
 
-def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
+def _current_ki_target(ki_target) -> Path | None:
+    """Validate a host-supplied logical target without resolving a staging tree."""
+    if ki_target is None:
+        return None
+    try:
+        target = Path(ki_target)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Current KI target must be an absolute path") from error
+    if (not target.is_absolute() or TOKEN_RE.search(str(target))
+            or "\x00" in str(target)):
+        raise ValueError("Current KI target must be absolute and contain no path tokens")
+    return target
+
+
+def unsubstitute(text: str, cfg, *, ki_target=None) -> tuple[str, int, set[str]]:
     """Replace ``KISSPATH_*`` tokens with real paths from ``cfg``.
+
+    ``KISSPATH_CURRENT_KI`` is bound only by the optional host-supplied
+    ``ki_target``: the final package directory, which may differ from the
+    physical directory where a projection is being prepared. It is never
+    taken from ``cfg.roles`` or inferred from the source/destination.
 
     Single regex pass, longest token first. Replacing sequentially would rescan
     text already written, so a real directory whose name happens to contain a
@@ -294,6 +316,7 @@ def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
     references to tooling that cannot exist here, and are reported by the caller
     rather than counted as failures.
     """
+    current_ki_target = _current_ki_target(ki_target)
     # Adjacent Python literals form one path at runtime. Join only literals
     # carrying the private marker so the migration rules see the full suffix.
     joined = 0
@@ -339,13 +362,18 @@ def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
     )
     by_token = {tok: role for role, tok in TOKENS.items()}
     by_token[PYTHON_TOKEN] = "__python_executable__"
+    by_token[CURRENT_KI_TOKEN] = "__current_ki__"
     undeliverable = {tok for tok, role in by_token.items() if role in LEAK_ROLES}
     unresolved: set[str] = set()
     n = (joined + migrated_python + migrated_sites + migrated_work +
          migrated_shared)
 
     ordered = sorted(by_token, key=len, reverse=True)
-    pattern = re.compile("|".join(re.escape(tok) for tok in ordered))
+    pattern = re.compile("|".join(
+        (r"(?<!\w)" + re.escape(tok) + r"(?!\w)")
+        if tok == CURRENT_KI_TOKEN else re.escape(tok)
+        for tok in ordered
+    ))
 
     def repl(m: "re.Match") -> str:
         nonlocal n
@@ -353,7 +381,10 @@ def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
         if tok in undeliverable:
             return tok
         role = by_token[tok]
-        target = getattr(cfg, "python", None) if role == "__python_executable__" else cfg.roles.get(role)
+        if role == "__current_ki__":
+            target = current_ki_target
+        else:
+            target = getattr(cfg, "python", None) if role == "__python_executable__" else cfg.roles.get(role)
         if target is None:
             unresolved.add(tok)
             return tok
@@ -416,7 +447,7 @@ def validate_materialisation_destination(dest: Path) -> Path:
     return dest
 
 
-def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
+def materialise(ki_root: Path, dest: Path, cfg, *, ki_target=None) -> MaterialiseReport:
     """Copy a placeholder KI to ``dest`` with real paths written in.
 
     This is what makes a ported KI runnable. The installed copy contains
@@ -425,10 +456,14 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
     rather than a requirement for correctness.
 
     The original package is never modified; ``dest`` is a working copy.
+    ``ki_target`` binds the current-package token to the final logical target,
+    not this potentially temporary destination. With no target it stays
+    unresolved, as do other unconfigured runtime tokens.
     """
     import shutil
     from . import ki_copy, ki_tree
 
+    ki_target = _current_ki_target(ki_target)
     ki_root = Path(ki_root)
     inventory = ki_tree.scan(ki_root)
     source_identity = ki_tree.digest(ki_root)
@@ -473,7 +508,7 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
             rep.skipped += 1
             continue
 
-        new_text, n, unresolved = unsubstitute(text, cfg)
+        new_text, n, unresolved = unsubstitute(text, cfg, ki_target=ki_target)
         if any(TOKENS[r] in new_text for r in LEAK_ROLES if r in TOKENS):
             rep.undeliverable_files += 1
             rep.undeliverable.append(str(rel))

@@ -175,7 +175,8 @@ def test_requirements_enforces_data_without_native_model(case):
 
 
 def test_legacy_manifest_document_matches_prior_asdict_and_no_contract_skips(case):
-    man=Manifest(model='Legacy');old=asdict(man);old.pop('runtime_data')
+    # Capture the canonical document from before either optional field existed.
+    man=Manifest(model='Legacy');old=asdict(man);old.pop('runtime_data');old.pop('runtime_paths')
     assert document(man)==old
     assert 'runtime_data' not in document(man)
     assert runtime_data.check(man,case.cfg).ok and runtime_data.check(man,case.cfg).skipped

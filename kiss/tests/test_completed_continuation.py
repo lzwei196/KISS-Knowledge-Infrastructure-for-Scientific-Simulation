@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kiss_cli import api, flowrun
+from kiss_cli import api, completed_phase, flowrun
 from .test_flowrun import _ki, _project, _cfg, _drive_planning, _approve
 
 
@@ -29,15 +29,28 @@ def test_completed_question_stays_closed_then_explicit_replan_needs_new_review(t
 
     readonly = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None, "What happened?")
     assert not readonly.execute and readonly.session.state.value == "COMPLETED"
-    assert "request_replan" in readonly.extra_prompt
+    assert "Do not call request_replan" in readonly.extra_prompt
     assert "run_ki_tool" not in readonly.session.api_tools()
+    assert "request_replan" not in readonly.session.api_tools()
+    with pytest.raises(api.ToolError, match="read-only"):
+        api.execute_tool("request_replan", {"reason": "Read finished results"}, ki,
+                         _cfg(project), project_mode=True, flow=readonly.session)
     flowrun.after(project, readonly, "The approved phase is complete.", setup_ok=True)
     assert readonly.session.state.value == "COMPLETED"
 
+    original_plan = (project / "runs/plan.json").read_bytes()
+    original_inventory = (project / "runs/data-inventory.json").read_bytes()
+    original_approval = (project / "runs/approval.json").read_bytes()
+    action = completed_phase.action(project, readonly.session.flow)
+    next_phase = flowrun.pre(project, "Continue with the next site phase", [ki.name], [ki], action, None)
+    assert next_phase.replan_reason and not next_phase.message
+    archive = project / ".geoforge/phase-history" / action["phase"]["approval_id"]
+    assert (archive / "plan.json").read_bytes() == original_plan
+    assert (archive / "data-inventory.json").read_bytes() == original_inventory
+    assert (archive / "approval.json").read_bytes() == original_approval
     continuation = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None,
-                                "Continue with the next site phase")
-    api.execute_tool("request_replan", {"reason": "User requested the next site phase"}, ki,
-                     _cfg(project), project_mode=True, flow=continuation.session)
+                                "Continue with the next site phase", replan_reason=next_phase.replan_reason)
+    assert continuation.kind == "planning"
     pj, inventory = continuation.session.plan, continuation.session.inventory
     pj["goal"] = "Run the next site phase"
     pj["steps"][0]["id"] = "M:next_phase"
@@ -83,15 +96,24 @@ def test_second_approved_phase_finishes_while_retaining_exact_prior_results(tmp_
         flowrun.after(project, execution, "Data phase done.", setup_ok=True)
         assert execution.session.state.value == "COMPLETED"
     # An executing agent may revise a failed attempt before closing its turn.
-    # This is the same explicit replan route; no state or receipt is fabricated.
+    # A completed phase instead requires the user's explicit next-phase action.
     original_output = (project / "outputs/prior/result.csv").read_bytes()
     receipt_dir = project / ".geoforge/receipts/model-runs"
     original_receipts = {path: path.read_bytes() for path in receipt_dir.glob("*.json")}
     original_approval = json.loads((project / "runs/approval.json").read_text())
-    continuation = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None,
-                                "Continue with the next phase")
-    api.execute_tool("request_replan", {"reason": "Next phase, preserving prior evidence"}, ki,
-                     _cfg(project), project_mode=True, flow=continuation.session)
+    if first_failed:
+        continuation = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None,
+                                    "Continue with the next phase")
+        assert continuation.session.state.value == "EXECUTING"
+        api.execute_tool("request_replan", {"reason": "Next phase, preserving prior evidence"}, ki,
+                         _cfg(project), project_mode=True, flow=continuation.session)
+    else:
+        action = completed_phase.action(project, execution.session.flow)
+        next_phase = flowrun.pre(project, "Continue with the next phase", [ki.name], [ki], action, None)
+        assert next_phase.replan_reason and not next_phase.message
+        continuation = flowrun.turn(project, [ki], _cfg(project), "api", "deepseek", None,
+                                    "Continue with the next phase", replan_reason=next_phase.replan_reason)
+        assert continuation.kind == "planning"
     pj, inventory = continuation.session.plan, continuation.session.inventory
     pj["goal"] = "Run the next phase"
     pj["steps"][0].update(id="M:next_phase", kind="run", tool=str(next_tool),

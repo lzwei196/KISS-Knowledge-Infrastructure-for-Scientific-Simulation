@@ -9,18 +9,40 @@ from pathlib import Path
 from . import helper_identity, install, ki_updates, ki_verification, paths
 
 
-def runtime_identity(cfg) -> str:
+def runtime_binding(cfg) -> dict:
     """Identify checked path bindings, not the contents of an installed runtime.
 
     Keep launcher and role spelling: following a symlink can erase which
     virtual environment or versioned installation the user selected.
     """
-    payload = {"schema_version": 1,
+    from . import runtime_context
+    return {"schema_version": 2,
+               "backend": runtime_context.binding(),
                "root": str(Path(cfg.root).expanduser().resolve()),
                "python": str(cfg.python),
                "roles": {name: str(value) for name, value in cfg.roles.items()},
                "relocation": cfg.relocation}
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def runtime_identity(cfg) -> str:
+    """Full readiness identity, including the application build and backend."""
+    return hashlib.sha256(json.dumps(runtime_binding(cfg), sort_keys=True).encode()).hexdigest()
+
+
+def projection_binding(cfg) -> dict:
+    """Static path provenance; application upgrades still expire readiness.
+
+    Keep exact workspace, machine, ownership and interpreter paths. App build,
+    kernel and interpreter content/version still expire full readiness, but
+    do not change role substitution. The host separately checks projection
+    policy and reproduced KI bytes before renewing older provenance.
+    """
+    binding = runtime_binding(cfg)
+    binding["backend"] = {key: value for key, value in binding["backend"].items()
+                          if key != "source_hash"}
+    if binding["backend"].get("kind") == "wsl" and "guest_path_identity" in binding["backend"]:
+        binding["backend"].pop("guest_identity", None)
+    return binding
 
 
 def identity(ki, man, library_root: Path | None) -> str | None:
@@ -84,9 +106,19 @@ raise SystemExit(bool(failures))
 
 
 def requirements(man, cfg, *, dependency_check=None) -> install.Step:
-    """Read-only check in the recorded interpreter; never install or run a model."""
+    """Check recorded runtime requirements; never install or run the model.
+
+Native dependency profiles compile host-owned synthetic probes in the private
+runtime area. Their evidence is separate from scientific model results.
+"""
     failures = []
     commands = []
+    native_evidence = {}
+    from . import native_dependency_gate
+    try:
+        native_evidence = native_dependency_gate.verify(man, cfg)
+    except (OSError, ValueError, RuntimeError) as error:
+        failures.append("Native dependency capability check: " + str(error))
     from . import runtime_data
     data_check = runtime_data.check(man, cfg)
     if not data_check.ok:
@@ -105,6 +137,9 @@ def requirements(man, cfg, *, dependency_check=None) -> install.Step:
             ready = False
         if not ready:
             failures.append(f"Coupled KI requires current verification: {name}")
+    evidence = {"runtime_data": data_check.evidence} if data_check.evidence else {}
+    if native_evidence:
+        evidence["native_dependencies"] = native_evidence
     return install.Step("manifest-requirements", not failures,
                         "\n".join(failures) if failures else "Current manifest requirements satisfied",
-                        commands=commands, evidence={"runtime_data": data_check.evidence} if data_check.evidence else {})
+                        commands=commands, evidence=evidence)

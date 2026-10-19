@@ -1,5 +1,6 @@
 """Current repair output is not input evidence; completed history stays readable."""
 from copy import deepcopy
+import json
 from pathlib import Path
 import os
 import threading
@@ -9,6 +10,17 @@ import pytest
 from kiss_cli import api, ki_review_agents as review, paths, providers
 from kiss_cli.catalog import KI
 from .test_ki_review_agents import bundle, draft, author_report, cli_help
+
+PAGE_HEADER = "[GeoForge text page] "
+
+
+def page_text(value):
+    """File text from a paged read result that must cover the whole file."""
+    header, separator, text = value.partition("\n")
+    assert header.startswith(PAGE_HEADER) and separator, value[:200]
+    metadata = json.loads(header[len(PAGE_HEADER):])
+    assert metadata["read_eof"] and metadata["next_start_line"] is None
+    return text
 
 
 def prior_evidence(root):
@@ -51,9 +63,9 @@ def test_actual_api_author_tools_exclude_current_log_keep_completed_history(draf
         assert "runs/repair-author-completed.log" in outputs["listing"]
         assert "runs/repair-author-completed.log" in outputs["runs"]
         assert outputs["own"].startswith("ERROR: The current author output log")
-        assert outputs["old"] == (root / "runs/repair-author-completed.log").read_text(encoding="utf-8")
-        assert outputs["candidate"] == (candidate / "SKILL.md").read_text(encoding="utf-8")
-        assert outputs["evidence"] == "Source-backed task evidence"
+        assert page_text(outputs["old"]) == (root / "runs/repair-author-completed.log").read_text(encoding="utf-8")
+        assert page_text(outputs["candidate"]) == (candidate / "SKILL.md").read_text(encoding="utf-8")
+        assert page_text(outputs["evidence"]) == "Source-backed task evidence"
         text = author_report()
         return text, [], [] if wire == "anthropic" else {"role": "assistant", "content": text}
     monkeypatch.setattr(api, "_anthropic_turn" if wire == "anthropic" else "_openai_turn", turn)
@@ -95,8 +107,8 @@ def test_exact_active_log_identity_is_blocked_but_independent_same_bytes_are_not
     listing = review._author_tool("list_work_files", {"subdir": "runs"}, engine, cfg, candidate, active_log=log)
     assert "active.log" not in listing and "active-alias.log" not in listing
     assert "runs/completed.log" in listing
-    assert review._author_tool("read_work_file", {"path": "runs/completed.log"},
-        engine, cfg, candidate, active_log=log) == "Live output"
+    assert page_text(review._author_tool("read_work_file", {"path": "runs/completed.log"},
+        engine, cfg, candidate, active_log=log)) == "Live output"
     assert log.read_text(encoding="utf-8") == "Live output"
 
 

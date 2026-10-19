@@ -624,6 +624,29 @@ def python_runtime_command() -> str:
     return _format_runtime_command(argv, pythonpath=pythonpath)
 
 
+def ki_repair_guidance(*, available: bool, cli: bool = False) -> str:
+    text = ("\n\n[HOST KI MAINTENANCE]\n"
+        "When a real setup check contradicts the installed official software or the "
+        "saved Windows/runtime paths, do not edit the active KI or fabricate files. "
+        "Use the host KI repair handoff with the concrete failing checks and evidence. "
+        "It runs three independent reviews, a supported bounded KDT repair, exact "
+        "verification, adoption and fresh host preflight. Existing published evidence "
+        "is reused only within the maintenance contract. Scientific edits need authoring. "
+        "A queued request ends your turn; do not perform more tools or ask the user "
+        "to approve the same repair again. GeoForge continues after your tools stop.\n")
+    if not available:
+        return text + "No host KI repair capability is active in this mode; report the exact defect.\n"
+    if not cli:
+        return text + 'Call request_ki_repair with {"issue":"the observed checks and evidence"}.\n'
+    if getattr(sys, "frozen", False):
+        argv, pythonpath = [sys.executable], None
+    else:
+        argv = [sys.executable, "-m", "kiss_cli"]
+        pythonpath = Path(__file__).resolve().parent.parent
+    argv += ["request-ki-repair", "--issue", "Describe the observed checks and evidence"]
+    return text + "Run from the exact setup workspace; replace only the issue text:\n" + _format_runtime_command(argv, pythonpath=pythonpath) + "\n"
+
+
 def runtime_bootstrap_guidance(*, available: bool, cli: bool = False) -> str:
     text = (
         "\n\n[HOST PYTHON RUNTIME PREPARATION]\n"
@@ -815,6 +838,16 @@ def materialise_active(ki_root: Path, live: Path, cfg, *, manifest=None, library
         # One-time migration records the current legacy baseline, not KDT
         # verification. Once recorded, drift can never re-enroll itself.
         ki_guard.enroll(live)
+        if live == Path(cfg.root) / "ki":
+            model = ((manifest.get("model") if isinstance(manifest, dict)
+                      else getattr(manifest, "model", None)) or Path(ki_root).name)
+            repair = ki_adaptations.setup_repair(live, cfg, source=ki_root,
+                model=model, library_root=library_root, manifest=manifest)
+            if repair is not None:
+                # This exact maintenance revision has its own host authority.
+                # Preserve the original upstream projection and require fresh
+                # runtime verification; adoption alone never marks setup ready.
+                return port.MaterialiseReport(dest=live)
         if Path(ki_root).resolve() != live.resolve():
             candidate = live.parent / f"ki-draft-{uuid.uuid4().hex[:12]}"
             report = ki_adaptations.materialise(ki_root, candidate, cfg,
@@ -865,6 +898,26 @@ def load_runtime_config(root: Path):
             raise ValueError(f"Saved runtime configuration paths.{name} must be a nonempty string")
         cfg.roles[name] = Path(value).expanduser()
     return cfg
+
+
+def save_runtime_config(cfg) -> bool:
+    """Persist changed bindings without invalidating evidence through formatting.
+
+    Exact saved bytes may be covered by a maintenance receipt. Keep comments,
+    ordering and whitespace when the saved runtime already means the same
+    thing; a real binding change still writes the new configuration and makes
+    any old receipt stale in the ordinary way.
+    """
+    config = Path(cfg.root) / paths.CONFIG_NAME
+    if config.exists():
+        saved = load_runtime_config(Path(cfg.root))
+        if (str(saved.root) == str(cfg.root) and saved.python == cfg.python
+                and {key: str(value) for key, value in saved.roles.items()}
+                == {key: str(value) for key, value in cfg.roles.items()}
+                and saved.relocation == cfg.relocation):
+            return False
+    config.write_text(cfg.dumps(), encoding="utf-8")
+    return True
 
 
 def prepare_python(cfg, live: Path, *, explicit_python: str | None = None):
@@ -1039,10 +1092,10 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path, *, existing_
                else prepare_python(cfg, root / "ki"))
     if not runtime.ok:
         raise ValueError(runtime.detail)
-    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+    save_runtime_config(cfg)
 
     prepare_common(cfg, repo_root)
-    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+    save_runtime_config(cfg)
     live = root / "ki"
     report = materialise_active(ki.root, live, cfg, manifest=man, library_root=repo_root)
     if report.unresolved or report.corrupted:
@@ -1205,6 +1258,39 @@ def discovery_guidance(report: dict | None) -> str:
     )
 
 
+def dependency_capability_guidance() -> str:
+    """Shared setup guidance, not a substitute for executable verification."""
+    from . import runtime_context
+    return runtime_context.guidance() + (
+        "\n[SOFTWARE VERIFICATION AUTHORITY]\n"
+        "In API setup, run_preflight invokes the same complete host verification as the final check: "
+        "saved runtime/KI projection, KI preflight, manifest requirements and native dependency checks. "
+        "For CLI providers, the supplied kiss preflight command is a KI diagnostic only; "
+        "its PASS does not establish installation readiness. After diagnostics, let GeoForge perform "
+        "the complete host final check. Only that current host result establishes software readiness. "
+        "A remaining manifest/runtime failure is active even when the KI diagnostic passes; "
+        "none of these checks establishes scientific end-to-end success.\n"
+        "\n[DEPENDENCY CAPABILITIES]\n"
+        "Keep the capabilities required by the declared model and its upstream build. "
+        "A dependency package importing, a compiler existing, or a static library "
+        "being produced does not prove that the model can link and use it. Check "
+        "the required native interfaces, features and runtime libraries together. "
+        "For example, netCDF classic support does not satisfy a model that uses "
+        "netCDF-4/HDF5, and a Python netCDF4 wheel does not supply a Fortran SDK. "
+        "Do not disable required features or force failed capability checks to pass "
+        "merely to finish compilation. Do not implement missing native dependency "
+        "APIs yourself, invent ABI constants, or replace unsupported routines with "
+        "no-ops that return success (including MPI routines). Obtain and build the "
+        "official dependency source or SDK instead. A launcher may forward to a "
+        "real installed tool, but must not substitute its semantics. "
+        "A reduced-feature diagnostic build remains "
+        "incomplete until the model's actual requirements are met. Preserve the "
+        "real compiler/linker and feature-probe evidence; do not claim scientific "
+        "end-to-end success from installation or preflight alone. Stay within the "
+        "current setup mode's permitted probes and data scope.\n"
+    )
+
+
 def resume_task(resumed: dict, root: Path, *, installation_mode: str = "new",
                 existing_paths: list[str] | None = None,
                 installation_only: bool = False,
@@ -1259,7 +1345,8 @@ def resume_task(resumed: dict, root: Path, *, installation_mode: str = "new",
         "gates still require a structured user request when they block progress. "
         "Do not bypass or auto-accept a licence, and do not report blocked work as passed.\n"
     )
-    return message
+    from . import setup_status
+    return message + dependency_capability_guidance() + setup_status.guidance(root)
 
 
 def agent_task(ki, cfg, root: Path, *, resumed: dict | None = None,
@@ -1277,6 +1364,8 @@ def agent_task(ki, cfg, root: Path, *, resumed: dict | None = None,
         "on this machine; an old failed attempt is not proof that a portable "
         "installation is impossible.\n" if notes else ""
     )
+    from . import setup_status
+    experience += setup_status.guidance(root)
     prior = ""
     if resumed:
         prior = (
@@ -1288,8 +1377,8 @@ def agent_task(ki, cfg, root: Path, *, resumed: dict | None = None,
     known_failure = ""
     if initial_failure.strip():
         known_failure = (
-            "\nGeoForge already ran the deterministic preflight. Start from this "
-            "failure instead of spending turns rediscovering it:\n"
+            "\nGeoForge already checked this setup attempt. Start from this latest "
+            "host failure instead of earlier build logs or rediscovering it:\n"
             f"{initial_failure.strip()[:12000]}\n"
         )
     existing_paths = [str(path) for path in (existing_paths or [])]
@@ -1358,6 +1447,7 @@ is required.
                     "solely because a binary exists at another path.\n")
         return f"""Install {ki.name} on this machine now.
 {experience}
+{dependency_capability_guidance()}
 
 {contract}
 {variant_guidance}
@@ -1450,8 +1540,9 @@ Windows; flex/bison code generation is part of compilation and is permitted in
 installation-only mode. Do not ask for approval merely to run those staged
 build helpers with the upstream grammar/source arguments.
 For models that require netCDF-C but have no usable Windows SDK, build the
-official netCDF-C source workspace-locally with unnecessary HDF5/DAP/tests
-disabled when the classic API is sufficient. A build being large or likely to
+official netCDF-C source workspace-locally. Disable HDF5/netCDF-4 only after
+the model's upstream requirements establish that the classic API is sufficient;
+otherwise build the required HDF5/netCDF-4 stack. A build being large or likely to
 take the rest of this turn is not a permission question: start it and continue
 until the actual time limit or a concrete build error is reached.
 Do not merely speculate that MinGW and an MSVC-built CPython are incompatible;
@@ -1478,11 +1569,15 @@ to the intended workspace environment before claiming installation success.
 
     return f"""Finish setting up {ki.name} on this machine now.
 {experience}
+{dependency_capability_guidance()}
 
-You own the complete KDT loop: inspect, act, run preflight, diagnose, repair,
-and retry. Read SKILL.md first and use the KI's validated tools and diagnostics.
+Inspect, act, run preflight, diagnose and retry. For KI defects, use the host
+KI maintenance handoff when supplied; do not claim you can adopt a KI by editing
+files yourself. Keep the complete KDT loop enforced through that handoff.
+Read SKILL.md first and use the KI's validated tools and diagnostics.
 Do not stop after merely explaining commands or after the first failed build.
-The only successful outcome is a passing preflight.
+The only successful setup outcome is GeoForge's complete host software verification passing,
+including manifest and runtime requirements; a KI-only diagnostic pass is insufficient.
 
 Use only this workspace, the bundled KI, declared existing-install candidates,
 and authoritative upstream sources. Do not inspect or copy artifacts from

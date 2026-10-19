@@ -75,6 +75,25 @@ def test_file_card_escapes_text_and_uses_only_its_session_asset_endpoint():
 
 
 @pytest.mark.parametrize('zh', [False, True])
+@pytest.mark.parametrize('evidence', ['receipt_bound', 'unvalidated', None])
+def test_output_media_visibly_distinguishes_technical_receipt_from_unvalidated_file(zh, evidence):
+    html = render({'kind': 'image', 'path': 'outputs/run/profile.png', 'mime': 'image/png',
+                   'file_provenance': {'scope': 'technical-file-association'}, 'evidence': evidence}, zh=zh)
+    assert '<img' in html and 'view-evidence' in html
+    if evidence == 'receipt_bound':
+        assert ('不代表科学验证通过' if zh else 'does not establish scientific validation') in html
+    else:
+        assert ('文件未验证' if zh else 'Unvalidated file') in html
+        assert ('当前有效回执' if zh else 'current receipt') in html
+
+
+def test_legacy_artifact_renderer_does_not_gain_output_receipt_badge():
+    html = render({'kind': 'image', 'path': 'artifacts/result.png', 'mime': 'image/png',
+                   'evidence': 'unvalidated', 'title': 'Result — experimental / unvalidated'})
+    assert 'view-evidence' not in html and 'experimental / unvalidated' in html
+
+
+@pytest.mark.parametrize('zh', [False, True])
 def test_composer_guidance_links_existing_reports_without_copying(zh):
     text = render(mode='prompt', zh=zh)
     assert 'outputs/**/*.json' in text and 'artifacts/' in text

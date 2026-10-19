@@ -9,7 +9,8 @@ import hashlib
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import re
 import stat
 
 POLICY = "approved-declared-outputs-v1"
@@ -39,6 +40,15 @@ def _path(project, raw):
         raise ValueError("Declared outputs require literal project file paths")
     project = Path(project).resolve()
     value = Path(raw)
+    if not value.is_absolute() and PureWindowsPath(raw).drive:
+        raise ValueError("Declared output paths cannot use Windows drive syntax")
+    # Validate before abspath: Windows can normalize away a trailing dot or
+    # space, and a colon must never be interpreted as an alternate data stream.
+    if os.name == "nt" and any(
+            part.endswith((".", " ")) or any(c in part for c in ':<>"|')
+            or any(ord(c) < 32 for c in part) or PureWindowsPath(part).is_reserved()
+            for part in value.parts if part != value.anchor):
+        raise ValueError("Declared output uses a nonordinary Windows filename")
     if value.drive and not value.is_absolute() or ".." in value.parts or "~" in value.parts:
         raise ValueError("Declared output paths cannot traverse or use drive-relative/home paths")
     path = Path(os.path.abspath(value if value.is_absolute() else project / value))
@@ -47,7 +57,7 @@ def _path(project, raw):
     except ValueError:
         raise ValueError("Declared output must stay inside the project") from None
     parts = relative.parts
-    if any(":" in part or part.endswith((".", " ")) for part in parts):
+    if os.name == "nt" and any(":" in part or part.endswith((".", " ")) for part in parts):
         raise ValueError("Declared output uses a nonordinary filename")
     if not parts or not (parts[0] in {"inputs", "outputs", "artifacts"}
                         or len(parts) > 2 and parts[:2] == ("runs", "logs")):
@@ -62,6 +72,96 @@ def _path(project, raw):
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValueError("Declared output must be an ordinary, unlinked file")
     return path, relative.as_posix()
+
+
+def _execution_alias_path(project, raw):
+    """The sole link exception is execution metadata, never an output path."""
+    if (not isinstance(raw, str) or not raw or len(raw) > 4096
+            or any(c in raw for c in "\0\r\n*?[]$\\")):
+        raise ValueError("Invalid execution alias path")
+    relative = Path(raw)
+    if (relative.is_absolute() or PureWindowsPath(raw).drive
+            or relative.as_posix() != raw or any(p in {"..", "~"} for p in relative.parts)
+            or len(relative.parts) < 2 or relative.parts[0] not in {"outputs", "artifacts"}
+            or relative.suffix.casefold() not in {"", ".exe"}):
+        raise ValueError("Execution alias must be an exact native path under project outputs")
+    # Reuse ordinary parent/path spelling checks without admitting the link
+    # itself as a scientific or supporting output.
+    _path(project, (relative.parent / ".execution-alias-parent-check").as_posix())
+    path = Path(project).resolve() / relative
+    info = path.lstat()
+    if not stat.S_ISLNK(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("Execution alias is not an ordinary symbolic link")
+    return path
+
+
+def _engine_option(option, ki):
+    model = re.sub(r"[^a-z0-9]+", "_", str(ki).casefold()).strip("_")
+    allowed = {"--binary", "--executable", "--exe"}
+    for spelling in {model, model.replace("_", "-")} - {""}:
+        for suffix in ("exe", "binary", "executable"):
+            allowed.update({f"--{spelling}_{suffix}", f"--{spelling}-{suffix}"})
+    return option in allowed
+
+
+def execution_alias_errors(project, receipt):
+    """Validate host-signed engine aliases without broadening output paths."""
+    try:
+        coverage = receipt.get("input_coverage") or {}
+        aliases = coverage.get("runtime_executable_aliases")
+        if aliases is None:
+            return []
+        if not isinstance(aliases, list) or not 0 < len(aliases) <= 100:
+            raise ValueError("Invalid execution alias metadata")
+        bindings = coverage.get("runtime_arguments")
+        if not isinstance(bindings, list):
+            raise ValueError("Execution alias lacks runtime argument authority")
+        seen = set()
+        for row in aliases:
+            if (not isinstance(row, dict) or set(row) != {"path", "target", "bytes", "sha256",
+                    "argument_index", "option", "runtime_path", "link_text"}
+                    or not _engine_option(row["option"], receipt.get("ki"))):
+                raise ValueError("Invalid engine alias role or metadata")
+            path = _execution_alias_path(project, row["path"])
+            key = row["path"].casefold() if os.name == "nt" else row["path"]
+            if key in seen:
+                raise ValueError("Duplicate execution alias")
+            seen.add(key)
+            binding = {"argument_index": row["argument_index"], "option": row["option"],
+                       "path": row["runtime_path"], "target": row["target"]}
+            if sum(item == binding for item in bindings) != 1:
+                raise ValueError("Execution alias does not match a captured engine argument")
+            target = Path(row["target"])
+            if (not target.is_absolute() or target.resolve(strict=True) != target
+                    or path.resolve(strict=True) != target or os.readlink(path) != row["link_text"]):
+                raise ValueError("Execution alias target changed")
+            size, digest = row["bytes"], row["sha256"]
+            if (type(size) is not int or not 0 < size <= 256 * 1024 * 1024
+                    or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)):
+                raise ValueError("Invalid engine alias byte identity")
+            from . import receipts
+            name = receipts._rel(target, Path(project))
+            entries = [entry for entry in receipt.get("inputs", [])
+                       if isinstance(entry, dict) and entry.get("path") == name]
+            if (len(entries) != 1 or entries[0].get("bytes") != size
+                    or entries[0].get("sha256") != digest or entries[0].get("missing")):
+                raise ValueError("Execution alias lacks the exact signed engine input hash")
+            info = target.stat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size != size:
+                raise ValueError("Execution alias engine bytes changed")
+            observed, remaining = hashlib.sha256(), size + 1
+            with target.open("rb") as stream:
+                while remaining:
+                    block = stream.read(min(1024 * 1024, remaining))
+                    if not block:
+                        break
+                    remaining -= len(block)
+                    observed.update(block)
+            if remaining != 1 or observed.hexdigest() != digest:
+                raise ValueError("Execution alias engine bytes changed")
+        return []
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError, AttributeError) as error:
+        return [str(error)]
 
 
 def binding(project, step, inventory):
@@ -202,6 +302,9 @@ def validate(project, ki_root, step, inventory, changed, *, run_facts, physical)
 def receipt_errors(project, step, inventory, receipt, *, check_files=True):
     """Keep invalid authentic attempts in latest-attempt ordering as failures."""
     try:
+        alias_errors = execution_alias_errors(project, receipt)
+        if alias_errors:
+            return alias_errors
         current = binding(project, step, inventory)
         recorded = receipt.get("declared_outputs")
         if current is None:

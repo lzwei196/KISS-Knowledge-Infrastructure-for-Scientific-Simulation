@@ -64,7 +64,7 @@ def case(tmp_path, monkeypatch, request):
 def run(case, route):
     if route == "gui":
         gui.run_install(case.ki, case.man, case.root, lambda _: None, case.library)
-        return json.loads((case.root / "status.json").read_text())["ok"]
+        return json.loads((case.root / "status.json").read_text(encoding="utf-8"))["ok"]
     args = SimpleNamespace(models=case.library / "models", model="Demo",
                            workdir=str(case.root), python=None, relocation="none")
     return cli.cmd_init(args) == 0

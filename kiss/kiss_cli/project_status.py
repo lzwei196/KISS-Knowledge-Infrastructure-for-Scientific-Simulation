@@ -78,6 +78,16 @@ def _evidence_stamp(project: Path, flow) -> tuple:
     A fresh cache entry still comes only from the shared receipt inspector.
     """
     files = {flow.receipts.keys_dir() / f"{flow.receipts.project_id(project)}.key"}
+    # Upload-origin metadata lives outside the project. Its deletion/tampering
+    # must evict a presentation verdict just as an edited uploaded file does.
+    try:
+        uploads = flow.receipts.upload_origin_dir(project)
+        files.add(uploads)
+        files.update(uploads.glob("*.json"))
+    except (OSError, ValueError, RuntimeError):
+        # Invalid registry directories are untrusted; stamp the configured
+        # root so its repair also invalidates this negative presentation.
+        files.add(flow.receipts.registry_dir())
     for name in ("plan.json", "data-inventory.json", "approval.json"):
         files.add(project / "runs" / name)
     base = project / flow.receipts.RECEIPT_DIR
@@ -94,6 +104,11 @@ def _evidence_stamp(project: Path, flow) -> tuple:
         # input directory. Its parent (and each existing nested directory)
         # changes metadata when a child is added, removed or replaced.
         coverage = _dict(doc.get("input_coverage"))
+        for entry in _dict(coverage.get("native_stdio_logs")).values():
+            raw = _dict(entry).get("path")
+            if isinstance(raw, str) and raw:
+                p = Path(raw)
+                files.add(p if p.is_absolute() else project / p)
         for directory in coverage.get("directories") or []:
             if isinstance(directory, dict):
                 for raw in [directory.get("path"), *(directory.get("subdirectories") or [])]:
@@ -130,7 +145,8 @@ def _checked_evidence(project: Path, flow, pj: dict, inv: dict, approval: str,
         if cached and cached[0] == stamp:
             return copy.deepcopy(cached[1])
     downloads = flow.receipts.inspect_downloads(project, inv, approval_sha256=ident)
-    proof = (flow.receipts.evidence(project, pj, approval_doc, inventory=inv,
+    from . import native_stdin
+    proof = (native_stdin.evidence(flow, project, pj, approval_doc, inventory=inv,
                                    enforcement=enforcement, _download_inspection=downloads)
              if approval == "OK" else {})
     result = (proof, downloads, now)
@@ -296,7 +312,8 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
               acquisition_progress: dict, data_acquired: bool, preflights: list | None = None) -> dict:
     active = activity.get("state") == "running" and activity.get("process_alive") is True
     preflights = preflights or []
-    failed_preflights = [row["name"] for row in preflights if row["state"] in {"failed", "cancelled", "stale"}]
+    failed_preflights = [row["name"] for row in preflights if row["state"] in {"failed", "cancelled"}]
+    stale_preflights = [row["name"] for row in preflights if row["state"] == "stale"]
     complete = (state == "COMPLETED" and approval == "OK"
                 and all(row["can_run"] for row in preflights)
                 and proof.get("receipts_verified") is True and proof.get("validation") == "passed")
@@ -332,6 +349,14 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
         status, actor = "failed", "agent"
         summary = ("Latest project preflight did not pass: " + ", ".join(failed_preflights)
                    + ". Verify the current project KI before running; a shared installation pass is separate.")
+    elif stale_preflights:
+        status, actor = "failed", "agent"
+        summary = ("Project preflight evidence is no longer current: " + ", ".join(stale_preflights)
+                   + ". Reverify the current project KI before further execution; expired evidence does not establish a new preflight failure.")
+        if state in {"FAILED", "FAILED_VALIDATION"}:
+            summary = "Flow records a failed attempt; inspect its details. " + summary
+        elif state == "COMPLETED":
+            summary += " Flow retains an earlier completion record; current readiness is not confirmed."
     elif proof.get("plan_errors"):
         status, actor = "failed", "agent"
         summary = ("The approved plan contains invalid steps. Revise the plan and review it again; "
@@ -382,6 +407,9 @@ def _progress(report: dict, *, state: str, stage: str, selected: list, plan: dic
               "goal": plan.get("goal") or report.get("goal") or "",
               "selected_kis": selected or report.get("selected_kis") or [],
               "flow_state": state or None, "execution_complete": complete,
+               "saved_flow_completed": state == "COMPLETED",
+               "preflight_currentness": ("failed" if failed_preflights else "stale" if stale_preflights else
+                                         "current" if preflights and all(row["can_run"] for row in preflights) else "unknown"),
               "science_complete": False, "scientific_validation": "not_established",
               "data_preparation_complete": data_complete,
               "completion_scope": ("data_preparation" if data_complete else
@@ -530,6 +558,20 @@ def _plan_data(project: Path, flow, pj: dict, inv: dict, proof: dict,
         except (OSError, ValueError, RuntimeError):
             return False
 
+    def _local_generated(item: dict) -> bool:
+        # Presence is not producer evidence. Require every declared file to be
+        # ordinary and project-contained; never follow aliases or infer that a
+        # directory's existing children satisfy an output contract.
+        paths = item.get("local_paths")
+        if not isinstance(paths, list) or not paths:
+            return False
+        try:
+            return all(isinstance(raw, str) and raw.startswith(("outputs/", "artifacts/"))
+                       and flow.project_tools.output_path(project, raw, require_file=True).stat().st_size > 0
+                       for raw in paths)
+        except (OSError, ValueError, RuntimeError):
+            return False
+
     rows: list[dict] = []
     consumed = {str(i) for st in pj.get("steps") or [] if isinstance(st, dict) for i in st.get("inputs") or []}
     for group in ("fetch", "you", "run"):
@@ -545,9 +587,10 @@ def _plan_data(project: Path, flow, pj: dict, inv: dict, proof: dict,
             if str(row.get("id")) not in consumed and how not in ("generated", "on_disk"):
                 status = "unused"          # listed by the agent, used by no step: nothing fetches it
             elif how == "generated":
-                status = "produced" if produced_by.get(str(row.get("id"))) in passed else "pending"
+                status = ("produced" if produced_by.get(str(row.get("id"))) in passed else
+                          "present_unverified" if _local_generated(item) else "pending")
             elif how in ("prepared", "default"):
-                status = "pending"
+                status = "present_unverified" if _local_generated(item) else "pending"
             elif how == "provide":
                 target = project / str(row.get("target_path") or "")
                 status = "present_unverified" if any(p.is_file() and not p.name.startswith(".") for p in target.rglob("*")) \

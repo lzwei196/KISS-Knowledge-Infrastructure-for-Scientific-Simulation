@@ -266,7 +266,7 @@ def refresh(ticket, ki, live_ki, cfg, *, library_root, manifest, change=None):
         with install.scratch_directory(".setup-runtime-proof-", None) as scratch:
             candidate = Path(scratch) / "ki"
             report, renewed = ki_adaptations.project_runtime(portable, candidate, cfg,
-                model=ki.name, target_root=live_ki.root)
+                model=ki.name, target_root=live_ki.root, manifest=origin.get("effective_manifest"))
             if (report.unresolved or report.corrupted or renewed is None
                     or ki_verification.content_digest(candidate) != origin["projected_digest"]
                     or renewed["runtime"] != current_runtime):

@@ -33,7 +33,8 @@ def case(tmp_path, monkeypatch):
         yield tmp_path, base, monkeypatch, engine
 
 
-def archive(case, *, dependencies=None, bad=None, include_dependency=True, unsafe=False, manifests=None):
+def archive(case, *, dependencies=None, bad=None, include_dependency=True, unsafe=False, manifests=None,
+            missing_manifests=()):
     tmp, base, monkeypatch, engine = case
     path = tmp / "source.zip"
     packages = ["Demo", "Unrelated"] + (["Dependency"] if include_dependency else [])
@@ -46,8 +47,9 @@ def archive(case, *, dependencies=None, bad=None, include_dependency=True, unsaf
                     text = "print('missing report contract')\n"
                 z.writestr(f"repo/models/{name}/{relative}", text)
             deps = "\ndepends_on: " + json.dumps(dependencies) if name == "Demo" and dependencies is not None else ""
-            z.writestr(f"repo/kiss/manifests/{name}.yaml", (manifests or {}).get(name,
-                       f"kiss_manifest_version: 1\nmodel: {name}\nverified: unverified\n" + deps))
+            if name not in missing_manifests:
+                z.writestr(f"repo/kiss/manifests/{name}.yaml", (manifests or {}).get(name,
+                           f"kiss_manifest_version: 1\nmodel: {name}\nverified: unverified\n" + deps))
         if unsafe:
             z.writestr("repo/models/../escape.py", "bad")
     monkeypatch.setattr(ki_updates.UpdateManager, "_download", lambda _, dest: shutil.copyfile(path, dest))
@@ -56,6 +58,132 @@ def archive(case, *, dependencies=None, bad=None, include_dependency=True, unsaf
 
 def build(case, **kwargs):
     return scoped._Builder(case[1], ["Demo"], kwargs.pop("expected_commit", "d" * 40)).build()
+
+
+def test_missing_install_recipe_keeps_checked_package_available_for_agent_setup(case):
+    from kiss_cli.manifest import Manifest
+    archive(case, missing_manifests={"Demo"})
+
+    result = build(case)
+
+    assert result["state"] == "ready", result
+    root, meta = scoped.require_selection(result["scope_id"])
+    ki = catalog.Catalog(root / "models").get("Demo")
+    assert ki.manifest is None
+    assert not (root / "kiss/manifests/Demo.yaml").exists(), "Do not fabricate official recipe bytes"
+    stub = Manifest.stub_for(ki)
+    assert stub.verified == "unverified" and not stub.trustworthy
+    assert stub.depends_on == []
+    assert meta["selected_models"] == ["Demo"]
+    assert meta["publication_acceptance"]["native_regression"] == "not_run"
+    assert [row["name"] for row in meta["publication_acceptance"]["packages"]] == ["Demo"]
+    assert {row[0] for row in case[3].seen} >= {"candidate"}, "Missing recipe cannot skip KDT"
+    assert ki_guard.require_intact(ki.root)
+    assert result["global_library_changed"] is False
+
+
+def test_declared_dependency_without_its_own_recipe_is_still_included_and_checked(case):
+    archive(case, dependencies=["Dependency"], missing_manifests={"Dependency"})
+
+    result = build(case)
+
+    assert result["state"] == "ready", result
+    root, meta = scoped.require_selection(result["scope_id"])
+    assert meta["selected_models"] == ["Demo", "Dependency"]
+    assert {row["name"] for row in meta["publication_acceptance"]["packages"]} == {"Demo", "Dependency"}
+    assert not (root / "kiss/manifests/Dependency.yaml").exists()
+    assert ki_guard.require_intact(root / "models/Dependency")
+
+
+def test_windows_shaw_with_only_macos_recipe_uses_unverified_inferred_route(case):
+    from kiss_cli.manifest import Manifest
+    path = archive(case)
+    case[2].setattr(ki_updates, "installation_platform", lambda: "windows")
+    case[2].setattr(catalog, "installation_platform", lambda: "windows")
+    with zipfile.ZipFile(path, "a") as zipped:
+        for relative, text in package_files("SHAW").items():
+            if relative == "dag.yaml":
+                text = text.replace("  repo_url: https://example.org/model\n", "")
+            zipped.writestr(f"repo/models/SHAW/{relative}", text)
+        zipped.writestr("repo/models/SHAW/kiss.macos.arm64.yaml",
+                        "kiss_manifest_version: 1\nmodel: SHAW\nverified: unverified\n")
+
+    result = scoped._Builder(case[1], ["SHAW"], "d" * 40).build()
+
+    assert result["state"] == "ready", result
+    root, meta = scoped.require_selection(result["scope_id"])
+    ki = catalog.Catalog(root / "models").get("SHAW")
+    assert ki.manifest is None, "A macOS-only recipe must not become the Windows recipe"
+    assert (ki.root / "kiss.macos.arm64.yaml").is_file()
+    assert not (ki.root / "kiss.windows.yaml").exists()
+    assert not (root / "kiss/manifests/SHAW.yaml").exists()
+    stub = Manifest.stub_for(ki)
+    assert stub.verified == "unverified" and stub.acquire.strategy == "manual"
+    assert meta["selected_models"] == ["SHAW"]
+    assert [row["name"] for row in meta["publication_acceptance"]["packages"]] == ["SHAW"]
+    assert meta["publication_acceptance"]["native_regression"] == "not_run"
+    assert {row[0] for row in case[3].seen} >= {"candidate"}
+    assert ki_guard.require_intact(ki.root)
+
+
+@pytest.mark.parametrize("failure", ["package", "kdt"])
+def test_missing_recipe_never_bypasses_package_or_kdt_failure(case, failure):
+    archive(case, missing_manifests={"Demo"}, bad="Demo" if failure == "package" else None)
+    if failure == "kdt":
+        case[3].ok = False
+
+    result = build(case)
+
+    assert result["state"] == "error" and result["scope_id"] is None
+    assert not list((ki_updates.update_root() / "scoped-snapshots").glob("*"))
+    if failure == "kdt":
+        assert "fixture KDT failure" in result["error"]
+
+
+@pytest.mark.parametrize("placement", ["shipped", "platform"])
+@pytest.mark.parametrize("recipe", [
+    "kiss_manifest_version: 1\nmodel: Foreign\n",
+    "kiss_manifest_version: 999\nmodel: Demo\n",
+    "kiss_manifest_version: 1\nmodel: [\n",
+    "kiss_manifest_version: 1\nmodel: Demo\nruntime_paths: {version: 1, mode: unknown}\n",
+])
+def test_existing_invalid_recipe_is_not_replaced_by_an_inferred_stub(case, placement, recipe):
+    if placement == "shipped":
+        archive(case, manifests={"Demo": recipe})
+    else:
+        # A valid fallback must not hide a broken preferred platform recipe.
+        path = archive(case)
+        with zipfile.ZipFile(path, "a") as zipped:
+            zipped.writestr("repo/models/Demo/kiss.linux.yaml", recipe)
+
+    result = build(case)
+
+    assert result["state"] == "error" and result["scope_id"] is None
+    assert not list((ki_updates.update_root() / "scoped-snapshots").glob("*"))
+
+
+def test_present_nonfile_recipe_is_not_treated_as_missing(case):
+    root = case[0] / "nonfile-source"
+    ki = root / "models/Demo"
+    ki.mkdir(parents=True)
+    (ki / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+    # The regular fallback path exists but is a directory, not absent metadata.
+    (root / "kiss/manifests/Demo.yaml").mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="not a regular file"):
+        scoped._closure(root, ["Demo"])
+
+
+def test_adding_recipe_after_acceptance_invalidates_missing_recipe_selection(case):
+    archive(case, missing_manifests={"Demo"})
+    result = build(case)
+    assert result["state"] == "ready", result
+    root, _ = scoped.require_selection(result["scope_id"])
+    (root / "kiss/manifests/Demo.yaml").write_text(
+        "kiss_manifest_version: 1\nmodel: Demo\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        scoped.require_selection(result["scope_id"])
 
 
 def test_unrelated_invalid_package_does_not_enter_selection_or_change_global_state(case):
@@ -248,6 +376,31 @@ def test_repeat_revalidates_and_reuses_identical_selection(case):
     assert first["scope_id"] == second["scope_id"]
     assert first["job_id"] != second["job_id"]
     assert len(case[3].seen) == 2
+
+
+def test_new_commit_with_identical_packages_keeps_both_pinned_selections_valid(case):
+    archive(case)
+    first = build(case)
+    assert first["state"] == "ready"
+    old_root, old_meta = scoped.require_selection(first["scope_id"])
+    original = ki_updates.UpdateManager._remote_revision
+
+    def new_commit(manager):
+        result = original(manager)
+        manager._source_commit = "e" * 40
+        manager._archive_ref = manager._source_commit
+        return result
+
+    case[2].setattr(ki_updates.UpdateManager, "_remote_revision", new_commit)
+    second = build(case, expected_commit="e" * 40)
+    assert second["state"] == "ready", second
+    new_root, new_meta = scoped.require_selection(second["scope_id"])
+    assert first["scope_id"] != second["scope_id"]
+    assert old_meta["content_sha256"] == new_meta["content_sha256"]
+    assert old_meta["source_commit"] == "d" * 40
+    assert new_meta["source_commit"] == "e" * 40
+    assert scoped.require_selection(first["scope_id"]) == (old_root, old_meta)
+    assert scoped.require_selection(second["scope_id"]) == (new_root, new_meta)
 
 
 def test_async_job_can_be_polled_without_full_update_side_effect(case):

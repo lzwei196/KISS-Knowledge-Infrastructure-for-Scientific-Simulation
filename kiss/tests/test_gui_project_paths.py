@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from kiss_cli import gui, paths, project_paths
 from kiss_cli.catalog import KI
+from kiss_cli.manifest import Manifest
 
 
 def _setup(tmp_path, monkeypatch):
@@ -30,6 +31,9 @@ def _setup(tmp_path, monkeypatch):
     handler = object.__new__(gui.Handler)
     handler._config = lambda ki: installs[ki.name]
     handler.repo_root = None
+    # This path-migration harness intentionally has no application/library
+    # tree. Supply its effective legacy recipe explicitly, just as setup does.
+    handler._manifest = lambda ki: Manifest(model=ki.name)
     monkeypatch.setattr(gui.install, "runtime_python", lambda *args: sys.executable)
     legacy = project_paths.model_config(project, "B", installs["B"])
     legacy.roles["static"] = project / "outputs" / "B" / "legacy-deck"
@@ -114,6 +118,79 @@ def test_empty_batch_does_not_replace_legacy_root(tmp_path, monkeypatch):
     before = (project / paths.CONFIG_NAME).read_bytes()
     assert handler._session_workspaces(project, []) == []
     assert (project / paths.CONFIG_NAME).read_bytes() == before
+
+
+def test_fresh_project_uses_setup_derivation_without_raw_reprojection(tmp_path, monkeypatch):
+    from kiss_cli import project_setup_repair
+
+    handler, project, kis, installs, _legacy = _setup(tmp_path, monkeypatch)
+    seen = []
+
+    def derive(source, live, cfg, **kwargs):
+        seen.append(kwargs)
+        assert kwargs["setup_root"] == installs["A"].root
+        assert cfg.roles["outputs"] == project / "outputs" / "A"
+        live.mkdir(parents=True)
+        (live / "SKILL.md").write_text("maintained project paths")
+        (live.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+        from types import SimpleNamespace
+        return SimpleNamespace(unresolved=[], corrupted=[]), {"preflight_passed": False}
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("approved setup derivation must not be replaced by a raw projection")
+
+    monkeypatch.setattr(project_setup_repair, "materialise", derive)
+    monkeypatch.setattr(gui.port, "materialise", unexpected)
+    local, cfg = handler._session_workspace(project, kis["A"])
+    assert len(seen) == 1
+    assert (local.root / "SKILL.md").read_text() == "maintained project paths"
+    assert project_paths.load_model_config(project, "A").dumps() == cfg.dumps()
+    assert not (project / "status.json").exists()
+
+
+@pytest.mark.parametrize("retained", [False, True])
+def test_pending_or_stale_project_derivation_blocks_both_workspace_branches(tmp_path, monkeypatch, retained):
+    from kiss_cli import project_setup_repair, ki_data_lineage
+
+    handler, project, kis, _installs, _legacy = _setup(tmp_path, monkeypatch)
+    if retained:
+        handler._session_workspace(project, kis["A"])
+    before = (project / paths.CONFIG_NAME).read_bytes()
+
+    def stale(*args, **kwargs):
+        raise ValueError("project maintenance is pending or stale")
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("invalid derivation must not fall back to raw projection or re-adoption")
+
+    monkeypatch.setattr(ki_data_lineage, "require_setup_projection", stale)
+    monkeypatch.setattr(project_setup_repair, "materialise", unexpected)
+    with pytest.raises(ValueError, match="pending or stale"):
+        handler._session_workspace(project, kis["A"])
+    assert (project / paths.CONFIG_NAME).read_bytes() == before
+
+
+def test_retained_project_authenticates_own_derivation_without_reapplying_setup(tmp_path, monkeypatch):
+    from kiss_cli import project_setup_repair, ki_data_lineage
+
+    handler, project, kis, _installs, _legacy = _setup(tmp_path, monkeypatch)
+    local, cfg = handler._session_workspace(project, kis["A"])
+    original = (local.root / "SKILL.md").read_bytes()
+    seen = []
+
+    def authenticate(current_project, model, live, current_cfg):
+        assert current_project == project
+        seen.append((live, current_cfg.dumps(), model))
+        return {"preflight_passed": False}
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("retained project must not re-adopt setup maintenance")
+
+    monkeypatch.setattr(ki_data_lineage, "require_setup_projection", authenticate)
+    monkeypatch.setattr(project_setup_repair, "materialise", unexpected)
+    handler._session_workspace(project, kis["A"])
+    assert seen == [(local.root, cfg.dumps(), "A")]
+    assert (local.root / "SKILL.md").read_bytes() == original
 
 
 @pytest.mark.parametrize("chat", ["auto", "pinned"])

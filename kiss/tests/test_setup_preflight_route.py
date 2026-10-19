@@ -73,14 +73,18 @@ def test_locked_workspace_file_is_a_recoverable_tool_error(workspace, monkeypatc
     root, ki, cfg = workspace
     locked = root / "locked.lease"
     locked.write_text("owner", encoding="utf-8")
-    original = type(locked).read_text
+    original_text, original_bytes = type(locked).read_text, type(locked).read_bytes
 
-    def read(path, *args, **kwargs):
-        if path == locked:
-            raise PermissionError(13, "Permission denied", str(path))
-        return original(path, *args, **kwargs)
+    def locking(original):
+        def read(path, *args, **kwargs):
+            if path == locked:
+                raise PermissionError(13, "Permission denied", str(path))
+            return original(path, *args, **kwargs)
+        return read
 
-    monkeypatch.setattr(type(locked), "read_text", read)
+    # Paged text reads use read_bytes; keep read_text locked as well.
+    monkeypatch.setattr(type(locked), "read_text", locking(original_text))
+    monkeypatch.setattr(type(locked), "read_bytes", locking(original_bytes))
     with pytest.raises(api.ToolError, match="Cannot read locked.lease"):
         api.execute_tool("read_work_file", {"path": "locked.lease"},
                          ki, cfg, setup_mode=True)

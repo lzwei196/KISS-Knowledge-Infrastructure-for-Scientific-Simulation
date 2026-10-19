@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.parse
 import urllib.request
 import zipfile
 import uuid
@@ -122,7 +123,8 @@ class InstallResult:
 
 
 def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
-         env: dict | None = None, *, full_output: bool = False) -> tuple[int, str]:
+         env: dict | None = None, *, full_output: bool = False,
+         encoding: str | None = None) -> tuple[int, str]:
     """Return rc and combined output; preflight can retain the complete capture.
 
     Other installation callers keep their established 8,000-character tail.
@@ -145,7 +147,8 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
                 else ["/bin/sh", "-c", cmd]) if isinstance(cmd, str) else cmd
         result = execution.run_process(
             argv, cwd=cwd or Path.cwd(), env=child_env,
-            timeout=timeout, project=project, stop=stop, turn_id=turn_id)
+            timeout=timeout, project=project, stop=stop, turn_id=turn_id,
+            **({"encoding": encoding} if encoding else {}))
         output = result.stdout + result.stderr + ("\n" + result.detail if result.detail else "")
         output = output if full_output else output[-8000:]
         try:
@@ -163,7 +166,7 @@ def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
         p = subprocess.run(
             cmd, cwd=cwd, shell=shell, timeout=timeout,
             capture_output=True, text=True, errors="replace",
-            env=child_env,
+            env=child_env, **({"encoding": encoding} if encoding else {}),
         )
         output = p.stdout + p.stderr
         return p.returncode, output if full_output else output[-8000:]
@@ -417,6 +420,157 @@ def run_download_worker(request_path: Path) -> int:
     return 0
 
 
+def _build_checkout(src: Path, acquire, commands: list[str], env=None) -> tuple[str, dict]:
+    """Inspect a build checkout without refreshing, repairing or discarding it.
+
+    HEAD's tree, rather than the index, defines which source files must exist:
+    a failed checkout and sparse/skip-worktree flags must not hide missing files.
+    Local portability patches and generated files remain the user's work. This
+    verifies the superproject checkout, not submodule contents or remote freshness.
+    """
+    evidence: dict = {}
+
+    def git(*args, required=True):
+        cmd = ["git", "--no-optional-locks", "-c", "core.fsmonitor=false",
+               "-C", str(src), *args]
+        rc, out = _run(cmd, timeout=120, env=env, full_output=True, encoding="utf-8")
+        commands.append(" ".join(cmd))
+        if len(out) > 8 * 1024 * 1024:
+            raise ValueError("Git checkout inspection exceeds the 8 MiB output limit")
+        if rc:
+            if not required:
+                return None
+            raise ValueError(f"Git {args[0]} check failed: {out.strip()[-500:]}")
+        return out
+
+    def repo_identity(value):
+        value = value.strip().rstrip("/\\")
+        parsed = urllib.parse.urlsplit(value)
+        # GitHub documents both HTTPS spellings for the same repository. Do
+        # not generalize this alias to arbitrary servers, local paths or SSH.
+        if (parsed.scheme.lower() in {"http", "https"}
+                and parsed.netloc.lower() == "github.com"
+                and not parsed.query and not parsed.fragment
+                and len(parsed.path.strip("/").split("/")) == 2):
+            path = parsed.path.removesuffix(".git")
+            return f"{parsed.scheme.lower()}://github.com{path}"
+        # Preserve URL/SSH identities; normalize ordinary local repository paths.
+        if "://" in value or (":" in value and not re.match(r"^[A-Za-z]:[/\\]", value)):
+            return value
+        return os.path.normcase(str(Path(value).resolve()))
+
+    try:
+        top = git("rev-parse", "--show-toplevel").strip()
+        if Path(top).resolve() != src.resolve():
+            raise ValueError("Git worktree root is not the configured source directory")
+        origin = git("remote", "get-url", "origin").strip()
+        if repo_identity(origin) != repo_identity(acquire.repo):
+            raise ValueError("checkout origin does not match the manifest repository")
+        head = git("rev-parse", "--verify", "HEAD^{commit}", required=False)
+        head = head.strip() if head is not None else ""
+        if not re.fullmatch(r"[0-9a-f]{40,64}", head):
+            raise ValueError("checkout has no readable HEAD commit")
+        ref = (acquire.ref or "").strip()
+        evidence.update(repo=acquire.repo, requested_ref=ref or None, resolved_commit=head,
+                        ref_scope="local fetched state; no remote freshness check")
+        if ref and ref != "HEAD":
+            if re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+                candidates = [ref]
+            elif ref.startswith("refs/tags/") or ref.startswith("refs/remotes/origin/"):
+                candidates = [ref]
+            elif ref.startswith("refs/heads/"):
+                candidates = ["refs/remotes/origin/" + ref[len("refs/heads/"):]]
+            else:
+                candidates = ["refs/tags/" + ref, "refs/remotes/origin/" + ref]
+            targets = {}
+            for candidate in candidates:
+                value = git("rev-parse", "--verify", "--end-of-options",
+                            candidate + "^{commit}", required=False)
+                if value is not None:
+                    targets[candidate] = value.strip()
+            if not targets:
+                raise ValueError(f"requested ref {ref!r} is unavailable in this checkout; "
+                                 "obtain that revision deliberately before retrying")
+            if len(set(targets.values())) != 1:
+                raise ValueError(f"requested ref {ref!r} is ambiguous between a tag and branch")
+            expected = next(iter(targets.values()))
+            evidence["requested_commit"] = expected
+            if head != expected:
+                raise ValueError(f"checkout HEAD {head[:12]} does not match requested "
+                                 f"ref {ref!r} ({expected[:12]})")
+        else:
+            evidence["ref_scope"] = "existing HEAD observed; manifest does not pin a commit"
+
+        tree = git("ls-tree", "-r", "-z", "HEAD")
+        records = [row for row in tree.split("\0") if row]
+        if len(records) > 100000:
+            raise ValueError("checkout exceeds the 100,000 tracked-entry inspection limit")
+        missing, gitlinks = [], []
+        tracked = 0
+        for row in records:
+            header, rel = row.split("\t", 1)
+            mode, kind, _oid = header.split(" ")
+            parts = rel.split("/")
+            if any(part in {"", ".", ".."} for part in parts) or Path(rel).is_absolute():
+                raise ValueError("Git returned an invalid tracked path")
+            if os.name == "nt":
+                reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+                reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT")
+                                for number in "123456789¹²³")
+                if any(part.endswith((".", " "))
+                       or part.split(".", 1)[0].rstrip(" ").upper() in reserved
+                       or any(ord(char) < 32 or char in '<>:"\\|?*' for char in part)
+                       for part in parts):
+                    evidence["unrepresentable_tracked"] = [rel]
+                    raise ValueError(f"checkout is incomplete: tracked path {rel!r} cannot be "
+                                     "represented as an ordinary Windows source file; do not "
+                                     "disable NTFS protections or silently exclude this source")
+            if kind == "commit" and mode == "160000":
+                gitlinks.append(rel)
+                continue
+            if kind != "blob" or mode not in {"100644", "100755", "120000"}:
+                raise ValueError(f"unsupported tracked source entry {rel!r}")
+            path = src.joinpath(*parts)
+            tracked += 1
+            # Git for Windows may materialise a tracked symlink as a text file.
+            present = path.is_file() or (mode == "120000" and path.is_symlink())
+            if not present:
+                missing.append(rel)
+        evidence.update(tracked_files=tracked, submodule_paths=gitlinks,
+                        submodules_verified=False, missing_tracked=missing[:20])
+        if missing:
+            raise ValueError(f"checkout is incomplete: {len(missing)} tracked source file(s) "
+                             f"missing or not files: {', '.join(repr(p) for p in missing[:8])}. "
+                             "This may be an interrupted/unsupported checkout or sparse selection")
+
+        if git("ls-files", "--unmerged", "-z"):
+            raise ValueError("checkout index contains unresolved merge conflicts")
+        status = git("status", "--porcelain=v1", "-z", "--untracked-files=no",
+                     "--ignore-submodules=all")
+        changes = []
+        entries = iter(status.split("\0"))
+        for row in entries:
+            if not row:
+                continue
+            code, path = row[:2], row[3:]
+            changes.append({"status": code, "path": path})
+            if "R" in code or "C" in code:
+                next(entries, None)  # the second NUL-delimited rename/copy path
+            if code[0] == "D" or "U" in code or code in {"AA", "DD"}:
+                evidence["tracked_changes"] = changes
+                raise ValueError(f"checkout has a staged deletion or unresolved conflict: {path!r}")
+        flags = git("ls-files", "-v", "-z")
+        hidden = [row[2:] for row in flags.split("\0")
+                  if row and (row[0].islower() or row[0] == "S")]
+        evidence.update(tracked_changes=changes, index_visibility_limited=hidden,
+                        local_changes_preserved=True, untracked_files="preserved; not inspected")
+        return "", evidence
+    except (ValueError, OSError) as exc:
+        return (f"Source checkout cannot be reused: {exc}. No files were reset or removed. "
+                "Inspect and repair the checkout while preserving local work, or choose a fresh "
+                "installation directory; then retry."), evidence
+
+
 def _acq_build(man, prefix, python, env=None):
     a = man.acquire
     if not a.repo:
@@ -473,12 +627,18 @@ def _acq_build(man, prefix, python, env=None):
             return Step("acquire[build]", False, f"clone failed: {out.strip()[-400:]}",
                         commands=cmds), None
 
+    problem, source = _build_checkout(src, a, cmds, env=env)
+    if problem:
+        return Step("acquire[build]", False, problem, commands=cmds,
+                    evidence={"source_checkout": source}), None
+
     for c in a.commands:
         rc, out = _run(c, cwd=src, env=env)
         cmds.append(c)
         if rc != 0:
             return Step("acquire[build]", False,
-                        f"`{c}` failed (rc={rc}):\n{out.strip()[-1500:]}", commands=cmds), None
+                        f"`{c}` failed (rc={rc}):\n{out.strip()[-1500:]}", commands=cmds,
+                        evidence={"source_checkout": source}), None
 
     binary = src / a.produces if a.produces else None
     if binary and not binary.exists():
@@ -500,11 +660,18 @@ def _acq_build(man, prefix, python, env=None):
             found = f"; {len(hits)} candidates named {want}" if hits else ""
             return Step("acquire[build]", False,
                         f"build reported success but {a.produces} is absent{found}",
-                        commands=cmds), None
+                        commands=cmds, evidence={"source_checkout": source}), None
     if binary:
         binary.chmod(binary.stat().st_mode | 0o111)
-    return Step("acquire[build]", True, f"built from {a.repo}@{a.ref or 'HEAD'}",
-                commands=cmds), binary
+    detail = f"built from {a.repo}@{a.ref or 'HEAD'} (observed {source['resolved_commit'][:12]})"
+    if source["tracked_changes"] or source["index_visibility_limited"]:
+        detail += (f"; local source changes preserved ({len(source['tracked_changes'])} tracked "
+                   f"changes, {len(source['index_visibility_limited'])} index visibility flags); "
+                   "this is not a pristine-source build")
+    if source["submodule_paths"]:
+        detail += "; submodule contents were not verified by the source checkout check"
+    return Step("acquire[build]", True, detail, commands=cmds,
+                evidence={"source_checkout": source}), binary
 
 
 def _acq_wine(man, prefix, python, env=None):
@@ -1188,6 +1355,49 @@ def runtime_python(configured: str | None = None) -> str:
     return find_base_python() or "python3"
 
 
+_MODEL_ENV_PROBE = r"""
+import importlib.util, json, os, pathlib, site, sys, sysconfig
+target = pathlib.Path(sys.argv[1])
+expected_python = pathlib.Path(sys.argv[2])
+normal = lambda value: os.path.normcase(os.path.abspath(value))
+if (normal(sys.prefix) != normal(target) or normal(sys.prefix) == normal(sys.base_prefix)
+        or normal(sys.executable) != normal(expected_python) or site.ENABLE_USER_SITE):
+    raise RuntimeError('Model interpreter is not the expected isolated virtual environment')
+config = {}
+for line in (target / 'pyvenv.cfg').read_text().splitlines():
+    if '=' in line:
+        key, value = line.split('=', 1)
+        config[key.strip().lower()] = value.strip().lower()
+if config.get('include-system-site-packages') != 'false':
+    raise RuntimeError('Model virtual environment must not inherit system site packages')
+for name in ('purelib', 'platlib', 'scripts', 'data'):
+    if not pathlib.Path(sysconfig.get_path(name)).resolve().is_relative_to(target.resolve()):
+        raise RuntimeError('Model installation path escapes its virtual environment: ' + name)
+for entry in sys.path:
+    path = pathlib.Path(entry)
+    if (any(part in {'site-packages', 'dist-packages'} for part in path.parts)
+            and not path.resolve().is_relative_to(target.resolve())):
+        raise RuntimeError('Model interpreter imports packages outside its virtual environment')
+spec = importlib.util.find_spec('pip')
+if spec is not None and (not spec.origin or not pathlib.Path(spec.origin).resolve().is_relative_to(target.resolve())):
+    raise RuntimeError('Model pip resolves outside its virtual environment')
+print('__GEOFORGE_MODEL_ENV__=' + json.dumps({'pip_available': spec is not None}))
+"""
+
+
+def _model_env_probe(interpreter: Path, target: Path) -> tuple[bool, bool, str]:
+    rc, out = _run([str(interpreter), "-I", "-c", _MODEL_ENV_PROBE, str(target), str(interpreter)])
+    marker = "__GEOFORGE_MODEL_ENV__="
+    if rc == 0 and marker in out:
+        try:
+            row = json.loads(out.rpartition(marker)[2].splitlines()[0])
+            if isinstance(row, dict) and type(row.get("pip_available")) is bool:
+                return True, row["pip_available"], ""
+        except (ValueError, IndexError):
+            pass
+    return False, False, out.strip()[-600:] or "Interpreter isolation probe returned no valid result"
+
+
 def ensure_python_env(cfg, base_python: str | None = None) -> Step:
     """Guarantee an interpreter that survives relocation.
 
@@ -1196,26 +1406,32 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
     installed into. See find_base_python for why the frozen app must not use
     sys.executable as the base.
     """
-    import subprocess as _sp
-
-    target = Path(cfg.roles["python_env"])
+    target = Path(cfg.roles["python_env"]).absolute()
     # ``venv`` follows the platform's native layout.  POSIX puts the
     # interpreter in ``bin/python`` while Windows uses
     # ``Scripts/python.exe``.  Looking only in ``bin`` made every successful
     # Windows venv creation look like a failure and skipped model acquisition.
     interpreter = (target / "Scripts" / "python.exe"
                    if os.name == "nt" else target / "bin" / "python")
-    if interpreter.exists():
-        rc, _ = _run([str(interpreter), "-c", "import sys; print(sys.version)"])
-        if rc == 0:
+    # Keep existing/partial environments intact. A redirect or a broken old
+    # launcher is an explicit repair decision, never grounds for a blind delete.
+    try:
+        for path in (target, *target.parents):
+            if path.exists() and (path.is_symlink() or getattr(path.lstat(), "st_file_attributes", 0) & 0x400):
+                return Step("python-env", False, f"Python environment path is linked: {path}")
+    except OSError as error:
+        return Step("python-env", False, str(error))
+    existing = interpreter.exists()
+    if existing:
+        valid, pip_ready, detail = _model_env_probe(interpreter, target)
+        if not valid:
+            return Step("python-env", False, f"Existing Python environment requires repair; files preserved: {detail}")
+        if pip_ready:
             cfg.python = str(interpreter)
-            return Step("python-env", True, f"using {interpreter}")
-        # A venv built from a frozen binary in an earlier version: unusable.
-        import shutil as _sh
-        _sh.rmtree(target, ignore_errors=True)
+            return Step("python-env", True, f"using isolated interpreter {interpreter}")
 
     base = base_python or find_base_python()
-    if base is None:
+    if not existing and base is None:
         return Step(
             "python-env", False,
             "No Python 3 found on this machine, and the app cannot conjure one "
@@ -1223,13 +1439,42 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
             "    macOS:  brew install python  (or: xcode-select --install)\n"
             "    Linux:  sudo apt install python3-venv python3-pip")
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    rc, out = _run([base, "-m", "venv", str(target)], timeout=300)
-    if rc != 0 or not interpreter.exists():
-        return Step("python-env", False,
-                    f"could not create a venv with {base}: {out.strip()[-300:]}")
+    commands = []
+    if not existing:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [base, "-m", "venv", "--without-pip", str(target)]
+        commands.append(" ".join(cmd))
+        rc, out = _run(cmd, timeout=300)
+        if rc != 0 or not interpreter.exists():
+            return Step("python-env", False,
+                        f"could not create a venv with {base}: {out.strip()[-300:]}", commands=commands)
+        valid, pip_ready, detail = _model_env_probe(interpreter, target)
+        if not valid:
+            return Step("python-env", False, f"Created Python environment failed isolation checks: {detail}", commands=commands)
+    else:
+        pip_ready = False
+    if not pip_ready:
+        # Prefer bundled offline pip. Debian/Ubuntu may omit ensurepip; the
+        # existing base pip can seed this exact isolated target via --python.
+        cmd = [str(interpreter), "-I", "-m", "ensurepip", "--upgrade", "--default-pip"]
+        commands.append(" ".join(cmd))
+        rc, out = _run(cmd, timeout=300)
+        valid, pip_ready, detail = _model_env_probe(interpreter, target)
+        if not valid:
+            return Step("python-env", False, f"Python environment isolation changed during pip bootstrap: {detail}", commands=commands)
+        if not pip_ready:
+            if base is None:
+                return Step("python-env", False, "Isolated Python exists but pip is missing; a base Python with pip 22.3+ is required", commands=commands)
+            cmd = [base, "-I", "-m", "pip", "--isolated", "--python", str(interpreter), "install",
+                   "--require-virtualenv", "--prefix", str(target), "--disable-pip-version-check", "--no-input", "--no-deps", "pip"]
+            commands.append(" ".join(cmd))
+            rc, out = _run(cmd, timeout=600, env={"PIP_CONFIG_FILE": os.devnull, "PYTHONSAFEPATH": "1"})
+            valid, pip_ready, detail = _model_env_probe(interpreter, target)
+            if rc != 0 or not valid or not pip_ready:
+                return Step("python-env", False, "Could not seed pip into the isolated model environment; "
+                            "base Python needs pip 22.3+ with --python support. " + (detail or out.strip()[-600:]), commands=commands)
     cfg.python = str(interpreter)
-    return Step("python-env", True, f"created {interpreter} (from {base})")
+    return Step("python-env", True, f"{'repaired pip in' if existing else 'created'} isolated interpreter {interpreter}", commands=commands)
 
 
 def install_ki_tools_common(cfg, repo_root: Path) -> Step:

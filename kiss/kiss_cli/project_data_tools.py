@@ -8,6 +8,17 @@ import uuid
 from pathlib import Path
 
 
+MAX_WORKER_REQUEST_BYTES = 8 * 1024 * 1024
+
+
+def encode_worker_request(request: dict) -> bytes:
+    """Transport exact grants via a bounded private stream, not argv."""
+    raw = json.dumps(request, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    if len(raw) > MAX_WORKER_REQUEST_BYTES:
+        raise ValueError("project data invocation exceeds the 8 MiB request limit")
+    return raw
+
+
 def write(project: Path, ki: str, name: str, source: str, purpose: str, *, output_formats=None) -> dict:
     from ki_tools_common.flow import project_tools
     if not isinstance(name, str) or not isinstance(source, str) or purpose not in project_tools.PURPOSES:
@@ -204,7 +215,7 @@ def _reference_case_inputs(project: Path, ki: str, path: Path) -> tuple[list[Pat
 
 def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
                      *, input_files: list[str] | None = None, step: dict | None = None,
-                     inventory: dict | None = None) -> dict:
+                     inventory: dict | None = None, input_snapshot: dict | None = None) -> dict:
     """Validate data artifact structure, not scientific correctness or model readiness.
 
     Missing observation fields and quality flags are legitimate raw evidence.
@@ -212,20 +223,6 @@ def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
     """
     checks = [{"check": "data_tool_exit_zero", "ok": exit_code == 0, "level": "fail"},
               {"check": "data_artifacts_present", "ok": bool(outputs), "level": "fail"}]
-    if inventory is not None and isinstance(step, dict) and "project_data_tool" in step:
-        try:
-            declared = _declared_output_paths(project, step, inventory)
-            actual = {Path(path).absolute() for path in outputs}
-            for ident, paths in declared.items():
-                for path in sorted(paths):
-                    checks.append({"check": "declared_data_output_fresh:" + ident,
-                        "ok": path in actual and path.is_file() and path.stat().st_size > 0,
-                        "detail": f"{ident}: {path.relative_to(Path(project).resolve()).as_posix()} "
-                                  "must be a nonempty artifact freshly captured in this attempt",
-                        "level": "fail"})
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-            checks.append({"check": "declared_data_output_contract", "ok": False,
-                           "detail": str(exc), "level": "fail"})
     typed, contracts_by_path = None, {}
     if (isinstance(step, dict) and isinstance(step.get("project_data_tool"), dict)
             and step["project_data_tool"].get("version") == 2):
@@ -261,6 +258,10 @@ def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
                 result.update(block)
         return result.hexdigest()
     copies = {}
+    archive_copies = None
+    empty_archive_outputs = set()
+    has_archives = any(str(value).lower().endswith((".tar", ".tar.gz", ".tgz", ".zip"))
+                       for value in input_files or [])
     for output in outputs:
         path = Path(output)
         if path.absolute() in contracts_by_path:
@@ -272,9 +273,42 @@ def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
         try:
             if not any(path.resolve().is_relative_to(Path(project).resolve() / root) for root in ("outputs", "artifacts")):
                 raise ValueError("artifact is outside outputs/ or artifacts/")
-            if not path.is_file() or not path.stat().st_size:
-                raise ValueError("artifact is missing or empty")
-            if path.suffix.lower() == ".json":
+            if not path.is_file():
+                raise ValueError("artifact is missing")
+            output_size = path.stat().st_size
+            output_hash = None
+            basic = path.suffix.lower() in {".json", ".csv", ".tsv", ".txt", ".md"}
+            if not basic and output_size:
+                # Preserve the existing whole-input copy route and its evidence.
+                output_hash = digest(path)
+                for value in input_files or []:
+                    source = Path(value).resolve()
+                    if (source == path.resolve() or not source.is_relative_to(Path(project).resolve())
+                            or not source.is_file() or source.stat().st_size != output_size):
+                        continue
+                    if source not in copies:
+                        copies[source] = digest(source)
+                    if copies[source] == output_hash:
+                        copy_evidence = {"scope": "unchanged_input_copy",
+                                         "source": source.relative_to(Path(project).resolve()).as_posix(),
+                                         "sha256": output_hash, "bytes": output_size}
+                        detail = "exact bytes and SHA-256 match an explicitly granted input; no scientific validation"
+                        break
+            if not copy_evidence and has_archives:
+                from .archive_input_copies import ArchiveCopies
+                if archive_copies is None:
+                    archive_copies = ArchiveCopies(project, input_files or [], input_snapshot)
+                copy_evidence = archive_copies.match(output_size, output_hash or digest(path), output=path) or {}
+                if copy_evidence:
+                    detail = ("exact bytes and SHA-256 match a regular member of an approved input archive; "
+                              "input preparation only, no scientific validation")
+                    if output_size == 0:
+                        empty_archive_outputs.add(path.absolute())
+            if copy_evidence:
+                pass  # Raw preservation, even if the original JSON/CSV is not parseable.
+            elif not output_size:
+                raise ValueError("artifact is empty without an exact path-bound approved archive member")
+            elif path.suffix.lower() == ".json":
                 if path.stat().st_size > 16_000_000:
                     raise ValueError("JSON report exceeds 16 MB; write tabular observations as CSV")
                 doc = json.loads(path.read_text(encoding="utf-8-sig"), parse_constant=bad_constant)
@@ -301,28 +335,35 @@ def validate_outputs(project: Path, outputs: list[Path], exit_code: int | None,
                         raise ValueError("report contains binary content")
                 detail = "text report only; not independent data or model validation"
             else:
-                output_size = path.stat().st_size
-                output_hash = digest(path)
-                for value in input_files or []:
-                    source = Path(value).resolve()
-                    if (source == path.resolve() or not source.is_relative_to(Path(project).resolve())
-                            or not source.is_file() or source.stat().st_size != output_size):
-                        continue
-                    if source not in copies:
-                        copies[source] = digest(source)
-                    if copies[source] == output_hash:
-                        copy_evidence = {"scope": "unchanged_input_copy",
-                                         "source": source.relative_to(Path(project).resolve()).as_posix(),
-                                         "sha256": output_hash, "bytes": output_size}
-                        detail = "exact bytes and SHA-256 match an explicitly granted input; no scientific validation"
-                        break
-                if not copy_evidence:
-                    raise ValueError("data artifact format is unsupported; use JSON, CSV, TSV, a text report, or an unchanged copy of an explicitly granted input")
+                raise ValueError("data artifact format is unsupported; use JSON, CSV, TSV, a text report, "
+                                 "or an unchanged copy of an explicitly granted input or approved archive member")
             ok = True
         except (OSError, ValueError, UnicodeError, csv.Error) as exc:
             detail = str(exc)
         checks.append({"check": f"data_artifact_structure:{path.name}", "ok": ok,
                        "detail": detail, "level": "fail", **copy_evidence})
+    if inventory is not None and isinstance(step, dict) and "project_data_tool" in step:
+        try:
+            declared = _declared_output_paths(project, step, inventory)
+            actual = {Path(path).absolute() for path in outputs}
+            for ident, paths in declared.items():
+                for path in sorted(paths):
+                    checks.append({"check": "declared_data_output_fresh:" + ident,
+                        "ok": path in actual and path.is_file()
+                              and (path.stat().st_size > 0 or path in empty_archive_outputs),
+                        "detail": f"{ident}: {path.relative_to(Path(project).resolve()).as_posix()} "
+                                  "must be freshly captured and nonempty, or an exact path-bound empty archive member",
+                        "level": "fail"})
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
+            checks.append({"check": "declared_data_output_contract", "ok": False,
+                           "detail": str(exc), "level": "fail"})
+    if archive_copies is not None:
+        try:
+            archive_copies.require_current()
+            checks.append({"check": "archive_copy_inputs_current", "ok": True, "level": "fail"})
+        except (OSError, ValueError) as exc:
+            checks.append({"check": "archive_copy_inputs_current", "ok": False,
+                           "detail": str(exc), "level": "fail"})
     if typed is not None:
         try:
             current = project_tools.output_validation_binding(step)

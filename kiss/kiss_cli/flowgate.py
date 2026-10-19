@@ -44,6 +44,10 @@ PLAN_VALIDATION_LOG = Path(".geoforge/plan-validation.jsonl")
 _PLAN_LOG_BYTES = 128 * 1024
 _PLAN_RECORD_BYTES = 32 * 1024
 _PLAN_LOG_LOCK = threading.Lock()
+READONLY_API_TOOLS = frozenset({
+    "read_ki_file", "list_ki_files", "list_skills", "read_skill",
+    "search_diagnostics", "list_project_files", "read_project_file",
+})
 
 
 def _plan_proposal_summary(plan, inventory):
@@ -199,6 +203,7 @@ class FlowSession:
     database_access_mode: str = "direct"
     # Only this turn's latest attempted pair, never replay errors from old logs.
     plan_submission_errors: tuple[str, ...] = field(default_factory=tuple, init=False, repr=False)
+    readonly: bool = field(default=False, init=False)
 
     # ---------------------------------------------------------------- construction
     @classmethod
@@ -231,23 +236,35 @@ class FlowSession:
         return self.flow.approval.check(self.project)
 
     def move(self, event: str, evidence: dict | None = None):
+        if self.readonly:
+            raise FlowDenied("This is a read-only follow-up; lifecycle changes require an explicit user action")
         return self.ctx.move(event, evidence)
 
     # ---------------------------------------------------------------- tool gating (api.py B4)
     def api_tools(self) -> frozenset[str]:
         tools = self.flow.policy.api_tools_for(self.state)
+        if self.state.value == "COMPLETED":
+            tools = tools - {"request_replan"}
+        if self.readonly:
+            tools = tools & READONLY_API_TOOLS
         if self.database_access_mode == "direct":
             return tools
         return frozenset(tools - set(self.flow.policy.DATABASE_API_TOOLS))
 
     def check_tool(self, name: str) -> None:
         """Raise ``FlowDenied`` when ``name`` is not allowed in the current state."""
+        if self.readonly and name not in READONLY_API_TOOLS:
+            raise FlowDenied(f"'{name}' is not allowed in this read-only follow-up. "
+                             "Inspect existing files and answer in chat. Use Plan next phase "
+                             "in Project status for new work; a pending plan uses its Modify action.")
         if name not in self.api_tools() or not self.flow.policy.api_tool_allowed(self.state, name):
             raise FlowDenied(
                 f"'{name}' is not allowed while the project is in {self.state.value}. "
                 + _hint(self.state))
 
     def write_allowed(self, path: Path) -> bool:
+        if self.readonly:
+            return False
         return self.flow.policy.write_allowed(Path(path), self.project, list(self.ki_roots.values()),
                                               self.state)
 
@@ -328,14 +345,15 @@ class FlowSession:
         return step
 
     def request_replan(self, reason: str) -> str:
-        """Continue an executing or completed phase through a revised plan.
+        """Repair an executing phase through a revised plan.
 
         The approval is revoked and ``write_plan`` becomes available at once, so
         the agent that discovered the problem can write the corrected plan in
         the same turn instead of stopping to ask for a state change."""
         S = self.flow.states.State
-        if self.state not in (S.EXECUTING, S.COMPLETED):
-            raise FlowDenied(f"request_replan requires EXECUTING or COMPLETED, not {self.state.value}")
+        if self.readonly or self.state is not S.EXECUTING:
+            raise FlowDenied("request_replan requires an EXECUTING turn. Completed phases use "
+                             "the user's explicit Plan next phase action in Project status.")
         self.move("replan")
         self.flow.approval.revoke(self.project, reason or "agent requested a plan change")
         self.reload_artifacts()
@@ -372,6 +390,7 @@ class FlowSession:
                         started_at: float, finished_at: float, exit_code: int | None,
                         before: dict, plan_step_id: str | None, stdout_tail: str = "",
                         captured_stdout: str | None = None,
+                        full_stdout: str | None = None, full_stderr: str | None = None,
                         forcing_source: str | None = None,
                         expected_approval_sha256: str | None = None,
                         execution_status: str | None = None,
@@ -380,6 +399,7 @@ class FlowSession:
                         data_input_files: list[str] | None = None,
                         input_snapshot: dict | None = None,
                         output_preimages: dict | None = None,
+                        runtime_authorization=None,
                         calibration_result: dict | None = None) -> dict:
         """Write the signed run receipt + validation for one tool/model run and return a
         small summary for the agent. Receipts are bound to the current approval; an
@@ -413,6 +433,23 @@ class FlowSession:
             subs += ("calibration/runs",)
         after = _snapshot(self.project, subs=subs)
         outputs = _changed(before, after)
+        from ki_tools_common.flow import declared_outputs
+        binding_current = runtime_authorization is not None
+        if binding_current:
+            try:
+                runtime_authorization.checked_bindings(self.project, input_arguments or [], cwd)
+            except (OSError, ValueError):
+                # Changed during the attempt: no engine-link exemption. The
+                # receipt is kept and its runtime binding check fails it.
+                binding_current = False
+        if (binding_current and declared_outputs.ordinary(step)
+                and step.get("outputs")):
+            from . import native_artifacts
+            outputs, input_snapshot = native_artifacts.capture(
+                self.project, ki, outputs, before=before,
+                authorization=runtime_authorization,
+                arguments=input_arguments or [], cwd=cwd,
+                input_snapshot=input_snapshot, policy=declared_outputs)
         step = next(s for s in self.plan["steps"] if str(s.get("id")) == str(plan_step_id))
         typed_calibration = kind == "calibrate" and isinstance(step.get("calibration"), dict)
         if typed_calibration:
@@ -449,6 +486,22 @@ class FlowSession:
         logs_dir.mkdir(parents=True, exist_ok=True)
         log = logs_dir / f"{ki}_{time.strftime('%Y%m%dT%H%M%S', time.localtime(started_at))}_{secrets.token_hex(6)}.log"
         log.write_text(stdout_tail, encoding="utf-8", errors="replace")
+        stderr_log = None
+        if "stdin" in step:
+            from . import native_stdin
+            expected_stdin = native_stdin.binding(step, self.project, ki_root, self.inventory,
+                                                  for_execution=True)
+            if (input_snapshot is None or input_snapshot.get("input_coverage", {}).get("native_stdin") != expected_stdin
+                    or not isinstance(full_stdout, str) or not isinstance(full_stderr, str)):
+                raise FlowDenied("native stdin receipt requires exact pre-launch binding and full diagnostic streams")
+            stderr_log = log.with_name(log.stem + "_stderr.log")
+            streams = {}
+            for label, path, content in (("stdout", log, full_stdout), ("stderr", stderr_log, full_stderr)):
+                data = content.encode("utf-8", errors="replace")
+                path.write_bytes(data)
+                streams[label] = {"path": path.relative_to(self.project).as_posix(), "bytes": len(data),
+                                  "sha256": hashlib.sha256(data).hexdigest()}
+            input_snapshot["input_coverage"]["native_stdio_logs"] = streams
         physical = kind in ("run", "model_run", "route", "calibrate")
         from .catalog import KI
         package_meta = KI(ki, Path(ki_root)).meta
@@ -477,7 +530,8 @@ class FlowSession:
                 self.project, outputs, exit_code,
                 input_files=data_input_files if "project_data_tool" in step else None,
                 step=step if "project_data_tool" in step else None,
-                inventory=self.inventory if "project_data_tool" in step else None)
+                inventory=self.inventory if "project_data_tool" in step else None,
+                input_snapshot=input_snapshot if "project_data_tool" in step else None)
         elif typed_calibration:
             validation = calibration.validate_receipt_result(calibration_result, step["calibration"])
             report_path = self.project / str(calibration_result.get("report_path") or "")
@@ -521,6 +575,7 @@ class FlowSession:
                             cwd=str(cwd), started_at=started_at, finished_at=finished_at,
                             exit_code=exit_code, inputs=inputs, outputs=outputs,
                             stdout_log=str(log), plan_step_id=plan_step_id,
+                            **({"stderr_log": str(stderr_log)} if stderr_log is not None else {}),
                             approval_sha256=expected_approval_sha256 or self.approval_id,
                             forcing_source=forcing_source,
                             validation=validation, execution_status=execution_status,
@@ -597,6 +652,8 @@ class FlowSession:
 
     def write_plan(self, plan: dict, inventory: dict) -> list[str]:
         """Validate and write the two plan files. Returns validation errors (empty = written)."""
+        if self.readonly:
+            raise FlowDenied("A read-only follow-up cannot replace the plan or data inventory")
         self.plan_submission_errors = ()
         proposal = _plan_proposal_summary(plan, inventory)
         stage = "calibration_binding"
@@ -610,6 +667,10 @@ class FlowSession:
             errs = self.flow.plan.validate(plan, inventory, list(self.ki_roots), self.ki_roots,
                                           for_review=True, project=self.project,
                                           ki_data_authority=project_data_tools.require_ki_data_source)
+            from . import native_stdin
+            errs.extend(native_stdin.plan_errors(plan, inventory, self.project, self.ki_roots))
+            from . import planning_outputs
+            errs.extend(planning_outputs.plan_errors(plan, inventory, self.project))
             if errs:
                 self.plan_submission_errors = tuple(_redact_plan_error(e) for e in errs[:30])
                 _record_plan_validation(self.project, proposal, result="rejected", stage=stage, errors=errs)
@@ -661,47 +722,96 @@ class FlowSession:
                              "and keeps its receipt; do not download a replacement")
         if str(item.get("decision") or "").lower() in {"user", "provide", "you"}:
             raise FlowDenied(f"the user provides {item_id!r}; use their file, do not download one")
-        safe_item = "".join(c if c.isalnum() or c in "-_." else "_" for c in item_id)[:80]
-        dest_dir = self.project / "inputs" / "raw" / safe_item
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        name = filename or (Path(parsed.path).name or "download.bin")
-        name = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)[:160]
-        dest = dest_dir / name
-        if not _under(dest, dest_dir):
-            raise FlowDenied("bad filename")
-        requested_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        req = urllib.request.Request(url, headers={"User-Agent": "GeoForge-Desktop/flow"})
-        status = None
-        with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as fh:
-            status = getattr(resp, "status", None)
-            total = 0
-            while True:
-                chunk = resp.read(1 << 20)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_bytes:
-                    fh.close(); dest.unlink(missing_ok=True)
-                    raise FlowDenied(f"download exceeds {max_bytes} bytes")
-                fh.write(chunk)
-        path = r.record_download(self.project, item_id=item_id, source=parsed.netloc,
-                                 request_url=url, http_status=status, raw_files=[dest],
-                                 approval_sha256=self.approval_id, requested_at=requested_at,
-                                 plan_step_id=plan_step_id,
-                                 inventory_item=next((it for it in (self.inventory or {}).get("items", [])
-                                                      if str(it.get("id")) == item_id), None))
-        # mark the inventory item as ready (the app does this, not the agent)
+        from ki_tools_common.flow import public_downloads
+        declared = [(s, i) for s in (self.plan or {}).get("steps", [])
+                    if isinstance(s, dict)
+                    for i in public_downloads.public_items(s, self.inventory or {})
+                    if i.get("id") == item_id]
+        try:
+            if declared:
+                matches = [(s, i) for s, i in declared if s.get("id") == plan_step_id]
+                if len(matches) != 1:
+                    raise ValueError("name the approved public download plan_step_id for this item")
+                expected = public_downloads.binding(matches[0][1])
+                if url != expected["url"]:
+                    raise ValueError("download URL differs from the approved chosen_source; revise the plan")
+                resolved = public_downloads.target(item_id, url,
+                            expected["filename"] if filename is None else filename)
+                if resolved["path"] != expected["path"]:
+                    raise ValueError("download filename differs from the approved local_paths target: "
+                                     + expected["path"])
+            else:
+                resolved = public_downloads.target(item_id, url, filename)
+        except ValueError as error:
+            raise FlowDenied(str(error)) from None
+        dest = self.project / resolved["path"]
+        safe_item = dest.parent.name
+        receipt_file = self.project / r.RECEIPT_DIR / r.DATA_SUB / (safe_item + ".json")
+        lock_file = receipt_file.with_suffix(".lock")
+        # Neither target nor lock may follow an existing alias out of its approved tree.
+        for path in (dest, receipt_file, lock_file):
+            if not _under(path, self.project) or any(
+                    p.is_symlink() for p in (path, *path.parents) if p != self.project):
+                raise FlowDenied("download target or receipt path is not an ordinary project path")
+        receipt_file.parent.mkdir(parents=True, exist_ok=True)
+        approval = self.approval_id
+        with lock_file.open("a+b") as lock, r._registry_lock(lock):
+            if receipt_file.exists():
+                try:
+                    if receipt_file.stat().st_size > 256 * 1024:
+                        raise ValueError("oversized receipt")
+                    old = json.loads(receipt_file.read_text(encoding="utf-8"))
+                    same = (r.verify(self.project, old) and old.get("kind") == "download"
+                            and old.get("item_id") == item_id and old.get("request_url") == url
+                            and [f.get("path") for f in old.get("raw_files", [])] == [resolved["path"]]
+                            and not old.get("processed_files"))
+                except (OSError, ValueError, TypeError, AttributeError):
+                    same = False
+                if not same:
+                    raise FlowDenied("existing download evidence for this item names a different or "
+                                     "unverifiable request/file; preserve it and use a new item in a revised plan")
+            if self.approval_status() != "OK" or self.approval_id != approval:
+                raise FlowDenied("approval changed before the download")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            partial = dest.with_name("." + dest.name + "." + secrets.token_hex(8) + ".part")
+            requested_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            req = urllib.request.Request(url, headers={"User-Agent": "GeoForge-Desktop/flow"})
+            status = None
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp, partial.open("xb") as fh:
+                    status = getattr(resp, "status", None)
+                    total = 0
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise FlowDenied(f"download exceeds {max_bytes} bytes")
+                        fh.write(chunk)
+                if self.approval_status() != "OK" or self.approval_id != approval:
+                    raise FlowDenied("approval changed during the download; no new receipt issued")
+                partial.replace(dest)
+                path = r.record_download(self.project, item_id=item_id, source=parsed.netloc,
+                                         request_url=url, http_status=status, raw_files=[dest],
+                                         approval_sha256=approval, requested_at=requested_at,
+                                         plan_step_id=plan_step_id, inventory_item=item)
+            finally:
+                partial.unlink(missing_ok=True)
+        # Physical paths are planned, never guessed or silently rewritten after approval.
         if self.inventory:
             for it in self.inventory.get("items") or []:
                 if isinstance(it, dict) and str(it.get("id")) == item_id:
                     it["status"] = "ready"
-                    it.setdefault("local_paths", []).append(dest.relative_to(self.project).as_posix())
-        return {"receipt": str(path), "path": dest.relative_to(self.project).as_posix(),
+                    if resolved["path"] not in it.setdefault("local_paths", []):
+                        it["local_paths"].append(resolved["path"])
+        return {"receipt": str(path), "path": resolved["path"],
                 "bytes": dest.stat().st_size, "http_status": status}
 
     def evidence(self, enforcement: str = "exact") -> dict:
-        return self.flow.receipts.evidence(self.project, self.plan, self.approval_doc,
-                                           enforcement=enforcement, inventory=self.inventory)
+        from . import native_stdin
+        return native_stdin.evidence(self.flow, self.project, self.plan, self.approval_doc,
+                                     enforcement=enforcement, inventory=self.inventory, ki_roots=self.ki_roots)
 
 
 class FlowDenied(Exception):
@@ -726,9 +836,9 @@ def _hint(state) -> str:
     if v in ("SETUP_REQUIRED", "SETUP_RUNNING"):
         return "The KI software is not verified yet; finish setup first."
     if v == "COMPLETED":
-        return ("The approved phase is complete. If the user requests additional work, call "
-                "request_replan and submit the next phase for review; retain the existing inputs "
-                "and results. A status question alone needs no new plan.")
+        return ("The approved phase is complete. Answer from existing results without changing "
+                "the plan, inventory, approval, scripts or outputs. New work starts only when "
+                "the user selects Plan next phase in Project status.")
     if v in ("VERIFYING", "FAILED_VALIDATION", "FAILED"):
         return "This run is closed; a rerun needs a fresh approval."
     return ""

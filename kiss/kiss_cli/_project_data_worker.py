@@ -24,8 +24,35 @@ import sys
 from urllib.parse import unquote, urlsplit, parse_qs
 
 
+MAX_REQUEST_BYTES = 8 * 1024 * 1024
+STDIN_REQUEST_MODE = "--request-stdin-v1"
+
+
+def read_request():
+    """Read bounded host-owned bytes without a command-line length dependency."""
+    if len(sys.argv) >= 3 and sys.argv[2] == STDIN_REQUEST_MODE:
+        if len(sys.argv) != 4 or not re.fullmatch(r"[0-9a-f]{64}", sys.argv[3]):
+            raise ValueError("invalid project data request digest")
+        raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
+        if len(raw) > MAX_REQUEST_BYTES:
+            raise ValueError("project data request exceeds the byte limit")
+        if hashlib.sha256(raw).hexdigest() != sys.argv[3]:
+            raise ValueError("project data request bytes changed in transport")
+    else:
+        # Retain the small legacy invocation for packaged workers and old hosts.
+        if len(sys.argv) != 3:
+            raise ValueError("invalid project data worker invocation")
+        raw = sys.argv[2].encode("utf-8")
+        if len(raw) > 20000:
+            raise ValueError("large project data requests require stdin transport")
+    request = json.loads(raw.decode("utf-8"))
+    if not isinstance(request, dict):
+        raise ValueError("project data request must be an object")
+    return request
+
+
 def main():
-    request = json.loads(sys.argv[2])
+    request = read_request()
     source = Path(request["source"]).resolve()
     if Path(sys.argv[1]).resolve() != source:
         raise RuntimeError("worker source does not match reviewed invocation")

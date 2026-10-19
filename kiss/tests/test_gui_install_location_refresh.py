@@ -13,7 +13,7 @@ from kiss_cli import gui
 
 @pytest.fixture
 def location_server(tmp_path, monkeypatch):
-    ki = SimpleNamespace(name="DSSAT")
+    ki = SimpleNamespace(name="DSSAT", root=tmp_path / "ki" / "DSSAT")
     setup_roots = []
     handlers = []
 

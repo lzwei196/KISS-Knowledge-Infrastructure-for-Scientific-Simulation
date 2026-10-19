@@ -180,6 +180,25 @@ def typed_output_errors(project: Path, step: dict, validation: dict, receipt_out
     return []
 
 
+def _binding_version(binding: dict) -> str:
+    """Describe schema selection without echoing arbitrary submitted values."""
+    if "version" not in binding:
+        return "<missing>"
+    version = binding["version"]
+    if (type(version) is bool or type(version) is int and -999 <= version <= 999
+            or type(version) is float and version in {1.0, 2.0}
+            or isinstance(version, str) and version in {"1", "2"}):
+        return f"{version!r} ({type(version).__name__})"
+    return f"<{type(version).__name__}>"
+
+
+def _binding_fields(fields: set) -> str:
+    """Only bounded field names, never their values, enter validation feedback."""
+    names = sorted(repr(key) if isinstance(key, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", key)
+                   else f"<invalid {type(key).__name__} field name>" for key in fields)
+    return "[" + ", ".join(names[:20]) + (f", ... ({len(names) - 20} more)" if len(names) > 20 else "") + "]"
+
+
 def step_errors(step: dict, project: Path | None) -> list[str]:
     try:
         if project is None:
@@ -190,9 +209,18 @@ def step_errors(step: dict, project: Path | None) -> list[str]:
         version = binding.get("version")
         fields = FIELDS | {"output_formats"} if version == 2 else FIELDS
         if set(binding) != fields:
-            raise ValueError("project_data_tool must contain version, purpose, source_sha256, arguments, cwd, timeout_seconds; version 2 also requires output_formats")
-        if type(version) is not int or version not in {1, 2} or binding["purpose"] not in PURPOSES:
-            raise ValueError("unsupported project data tool version or purpose")
+            raise ValueError(
+                f"project_data_tool schema mismatch: actual version={_binding_version(binding)}; "
+                "expected version: integer 1 or 2; "
+                f"missing fields={_binding_fields(fields - set(binding))}; "
+                f"unexpected fields={_binding_fields(set(binding) - fields)}; "
+                f"expected fields={_binding_fields(fields)} (version 2 also requires output_formats). "
+                "Copy only the returned project_data_tool binding; inputs and outputs belong to the plan step.")
+        if type(version) is not int or version not in {1, 2}:
+            raise ValueError(f"unsupported project data tool version: actual version={_binding_version(binding)}; "
+                             "expected version: integer 1 or 2")
+        if binding["purpose"] not in PURPOSES:
+            raise ValueError("unsupported project data tool purpose; expected reader, converter or check")
         if step.get("kind") not in {"check", "prepare"} or "calibration" in step:
             raise ValueError("project data tools support only check or prepare steps, never model execution/calibration")
         if not Path(str(step.get("tool") or "")).is_absolute():

@@ -103,9 +103,13 @@ def study_design_questions() -> str:
         "unchanged replay; do not ask the user to redesign a basin study or select new forcing or "
         "observations. Preserve the case's declared pass criteria and tolerances, including the "
         "distinction between required checks and informational fingerprints. Do not turn an "
-        "informational cross-platform hash into a new pass-criterion question. Ask only if the "
-        "requested case is ambiguous or a required file/dependency "
-        "is actually missing. Replace unrelated auto-draft study steps with the case's real run "
+        "informational cross-platform hash into a new pass-criterion question. Ask only when a "
+        "material user decision for this plan remains unresolved, such as which case to use or "
+        "a scope change needed to resolve a confirmed missing file/dependency. An inaccessible "
+        "file is an access/acquisition gap, not proof that it is absent on disk and not permission "
+        "to invent scientific inputs. State the observed access error, use the permitted inspection "
+        "or acquisition route, and retain any unverified requirement. Replace unrelated auto-draft "
+        "study steps with the case's real run "
         "and checks, record its local inputs, and submit the bounded plan through normal approval. "
         "Planning still cannot execute; once approved, use the permitted KI tool and retained "
         "receipts. Report reference reproduction separately from new-site or observational "
@@ -232,6 +236,11 @@ _PLAN_SCHEMA_NOTE = (
     "metadata-only: covered is not scientific validation; unknown needs inspection and "
     "insufficient requires a different selection or explicit revised scope. Acceptable sources "
     "are alternatives, not a chosen dataset.\n"
+    "  Public host download steps use one inventory item per required file. Pin chosen_source to "
+    "one exact http(s) URL and local_paths to one exact inputs/raw/<sanitized-item-id>/<filename> "
+    "target returned by describe_download_target (CLI: download-target). A five-file dependency "
+    "requires five items; a single archive is one file/item. A download step passes only when "
+    "every output item has its own current receipt. No source list or prose creates a download.\n"
     "  If the user prefers Baidu Pan/manual delivery, persist delivery_preference:'manual' "
     "on the inventory; an item may explicitly override it with 'auto' or 'manual'. Omission "
     "inherits the inventory preference, whose default is 'auto'. This controls delivery "
@@ -418,10 +427,12 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "If location, period or scientific objective is unresolved, read only the KI references "
         "needed to explain that ONE question and ask it immediately. Do not rewrite both draft "
         "files or inspect every pipeline stage before asking. Complete the full KI/input review "
-        "incrementally, before FINAL submission. On EVERY interview turn, ask the next question "
-        "before any full-plan serialization; do not rewrite plan.json or data-inventory.json "
-        "while another user decision remains. Prior answers are already retained in the host "
-        "conversation: read and use them directly. "
+        "incrementally, before FINAL submission. Ask a question only when a material user decision "
+        "for this plan remains unresolved; while it does, ask before full-plan serialization and "
+        "do not rewrite plan.json or data-inventory.json. Prior answers are already retained in "
+        "the host conversation: read and use them directly. When an unchanged official/reference "
+        "case or prior answers settle the required choices, finalize and submit BOTH plan and "
+        "inventory for normal approval; do not manufacture another interview question. "
         "A validated example in a different basin, climate or crop is an example, not an applicable "
         "default for this project. Disclose that transfer needs justification; never present an "
         "example's period, spin-up, soil or management as scientifically validated at the new site.",
@@ -442,7 +453,8 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "and from validated model-ready input. Check files already available in authorized "
         "project/KI locations. User files, KI-supported defaults/preparation and upstream "
         "outputs are legitimate sources without GeoForge Database access. Do not download anything.",
-        "  4. Ask exactly ONE unresolved decision/question at a time, then STOP and wait for "
+        "  4. If a material user decision is still unresolved, ask exactly ONE unresolved "
+        "decision/question at a time, then STOP and wait for "
         "the user's answer. Read prior answers and saved choices first: do not re-ask settled "
         "values, replace user overrides, or ask which KI when it is already selected. Explain "
         "this decision and show its KI-supported recommended/default option with evidence and "
@@ -463,6 +475,11 @@ def planning_block(kis: dict[str, Path], plan: dict, inventory: dict, project: P
         "Bash in this planning turn. Approval and execution happen in a LATER, separate session — do not ask "
         "'shall I proceed'; the app asks the user.",
     ]
+    if wrappers and wrappers.get("download_target"):
+        lines.append("[PUBLIC DOWNLOAD TARGET] Before planning public files, query "
+                     f"`{wrappers['download_target']} --item <id> [--filename <name>] <url>`. "
+                     "This is pure planning: no network, files, approval or readiness. Use its "
+                     "inventory.chosen_source and inventory.local_paths verbatim, one file per item.")
     if wrappers and wrappers.get("request_user_action"):
         lines.append(
             "[QUESTION HANDOFF] This CLI has no native request_user_action tool. Instead, call "

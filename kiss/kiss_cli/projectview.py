@@ -2,8 +2,8 @@
 
 Agents describe a view in ``artifacts/project-view.json``.  GeoForge owns the
 renderer and never evaluates JavaScript or HTML supplied by a model or KI.
-Existing projects still get a useful view because displayable artifacts are
-discovered automatically when no manifest has been published.
+Existing projects still get a useful view because displayable outputs and
+artifacts are discovered automatically when no manifest has been published.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import re
 import stat
 from datetime import datetime, timezone
@@ -39,6 +40,11 @@ ASSET_MIMES = {
     ".pdf": "application/pdf",
 }
 
+# Model tools commonly write these display files beside their native results.
+# Keep active/document/3-D formats outside this additional output-media scope.
+OUTPUT_ASSET_MIMES = {suffix: ASSET_MIMES[suffix] for suffix in
+                      (".png", ".jpg", ".jpeg", ".gif", ".webp", ".csv", ".mp4", ".webm")}
+
 KINDS = {"metric", "image", "animation", "map", "table", "file", "model3d"}
 MEDIA_KINDS = {"image", "animation", "map", "table", "file", "model3d"}
 ID_RE = re.compile(r"[^a-zA-Z0-9_-]+")
@@ -61,6 +67,8 @@ def _artifacts_root(project: Path) -> Path:
 
 
 def _safe_asset(project: Path, value: str, *, must_exist: bool = True) -> tuple[Path, str]:
+    if str(value).startswith("outputs/"):
+        return _safe_output_media(project, value)
     relative = Path(str(value or ""))
     if relative.is_absolute() or ".." in relative.parts:
         raise ProjectViewError("project view asset paths must be relative")
@@ -82,41 +90,53 @@ def _safe_asset(project: Path, value: str, *, must_exist: bool = True) -> tuple[
 def resolve_asset(project: Path, relative: str) -> tuple[Path, str]:
     """Resolve an asset for the HTTP layer without permitting traversal."""
     if str(relative).startswith("outputs/"):
-        return _safe_report(project, relative), "application/json"
+        if Path(relative).suffix.casefold() == ".json":
+            return _safe_report(project, relative), "application/json"
+        return _safe_output_media(project, relative)
     return _safe_asset(project, relative, must_exist=True)
 
 
-def _safe_report(project: Path, value: str) -> Path:
-    """Only ordinary original JSON reports, never project internals or aliases."""
+def _safe_output_file(project: Path, value: str, extensions: set[str]) -> Path:
+    """Only ordinary allowlisted output files, never project internals or aliases."""
     if (not isinstance(value, str) or len(value) > 1600 or "\\" in value or ":" in value
             or any(ord(c) < 32 for c in value)):
-        raise ProjectViewError("report links need a literal outputs/ JSON path")
+        raise ProjectViewError("output links need a literal outputs/ path")
     parts = value.split("/")
     if (len(parts) < 2 or parts[0] != "outputs" or any(
             not part or part.startswith(".") or part.endswith((".", " ")) for part in parts)
-            or Path(value).suffix.casefold() != ".json"):
-        raise ProjectViewError("report links must name an existing outputs/ JSON file")
+            or Path(value).suffix.casefold() not in extensions):
+        raise ProjectViewError("output links must name an existing allowlisted outputs/ file")
     root = Path(project).absolute()
     path = root.joinpath(*parts)
     try:
         if path.resolve() != path or not path.resolve().is_relative_to(root):
-            raise ProjectViewError("report links cannot use aliases")
+            raise ProjectViewError("output links cannot use aliases")
         for item in (path, *path.parents):
             info = item.lstat()
             if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
-                raise ProjectViewError("report links cannot use linked or reparse-point paths")
+                raise ProjectViewError("output links cannot use linked or reparse-point paths")
         info = path.stat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise ProjectViewError("report links require an ordinary file without hardlinks")
+            raise ProjectViewError("output links require an ordinary file without hardlinks")
         if info.st_size > MAX_ASSET_BYTES:
-            raise ProjectViewError("project report is larger than 100 MB")
+            raise ProjectViewError("project output file is larger than 100 MB")
     except OSError as error:
-        raise ProjectViewError("project report is missing or unreadable") from error
+        raise ProjectViewError("project output file is missing or unreadable") from error
     return path
 
 
-def _report_identity(project: Path, relative: str) -> dict:
-    path = _safe_report(project, relative)
+def _safe_report(project: Path, value: str) -> Path:
+    """Original JSON reports retain their separate file-only contract."""
+    return _safe_output_file(project, value, {".json"})
+
+
+def _safe_output_media(project: Path, value: str) -> tuple[Path, str]:
+    path = _safe_output_file(project, value, set(OUTPUT_ASSET_MIMES))
+    return path, OUTPUT_ASSET_MIMES[path.suffix.casefold()]
+
+
+def _output_identity(project: Path, relative: str) -> dict:
+    path = _safe_output_file(project, relative, set(OUTPUT_ASSET_MIMES) | {".json"})
     before = path.stat()
     digest = hashlib.sha256()
     total = 0
@@ -124,13 +144,13 @@ def _report_identity(project: Path, relative: str) -> dict:
         while chunk := handle.read(min(1024 * 1024, before.st_size - total + 1)):
             total += len(chunk)
             if total > before.st_size:
-                raise ProjectViewError("project report changed while being read")
+                raise ProjectViewError("project output file changed while being read")
             digest.update(chunk)
-    after = _safe_report(project, relative).stat()
+    after = _safe_output_file(project, relative, set(OUTPUT_ASSET_MIMES) | {".json"}).stat()
     if (total != before.st_size or
             (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
             (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
-        raise ProjectViewError("project report changed while being read")
+        raise ProjectViewError("project output file changed while being read")
     return {"path": relative, "sha256": digest.hexdigest(), "bytes": total,
             "source": "project-output", "scope": "technical-file-association"}
 
@@ -145,7 +165,11 @@ def _report_receipts(project: Path) -> dict:
             return {}
         plan, inventory = flow.plan.read_artifacts(project)
         approval = flow.approval.read(project)
-        proof = flow.receipts.evidence(project, plan, approval, inventory=inventory, output_dirs=())
+        from . import native_stdin
+        # The view consumes only current associations. Keep their full checks,
+        # but omit old-output hashing and the unused historical display list.
+        proof = native_stdin.evidence(flow, project, plan, approval, inventory=inventory,
+                                      output_dirs=(), include_history=False)
         statuses = {row["run_id"]: row for row in proof.get("runs", [])}
         latest, writers = {}, {}
         rank = {"passed": 0, "failed": 2}
@@ -264,7 +288,8 @@ def _normalize_panel(project: Path, raw: dict, index: int) -> dict:
             raise ProjectViewError(f"metric panel {panel['id']} needs a string or numeric value")
         panel["value"] = _text(value, 160)
     else:
-        report = kind == "file" and str(raw.get("path") or "").startswith("outputs/")
+        report = (kind == "file" and str(raw.get("path") or "").startswith("outputs/")
+                  and Path(str(raw["path"])).suffix.casefold() == ".json")
         if report:
             path = _safe_report(project, str(raw["path"]))
             mime = "application/json"
@@ -273,8 +298,10 @@ def _normalize_panel(project: Path, raw: dict, index: int) -> dict:
         relative = path.relative_to(_project_root(project)).as_posix()
         panel["path"] = relative
         panel["mime"] = mime
-        if report:
-            panel["file_provenance"] = _report_identity(project, relative)
+        if relative.startswith("outputs/"):
+            # Association with current exact-byte evidence is technical
+            # provenance, never a claim of scientific validation.
+            panel["file_provenance"] = _output_identity(project, relative)
         if kind == "table" and path.suffix.casefold() != ".csv":
             raise ProjectViewError("table panels currently require a CSV artifact")
         if kind == "table":
@@ -420,26 +447,56 @@ def _auto_panel(project: Path, path: Path, index: int) -> dict:
     }, index)
 
 
+def displayable_assets(project: Path):
+    """Discover allowlisted display files without walking linked directories."""
+    project = Path(project).absolute()
+
+    def ordinary_directory(path):
+        try:
+            info = path.lstat()
+            return (stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)
+                    and not getattr(info, "st_file_attributes", 0) & 0x400)
+        except OSError:
+            return False
+
+    for name, allowed in (("artifacts", ASSET_MIMES), ("outputs", OUTPUT_ASSET_MIMES)):
+        root = project / name
+        if not ordinary_directory(root):
+            continue
+        for current, directories, files in os.walk(root, followlinks=False):
+            directories[:] = [part for part in directories
+                              if ordinary_directory(Path(current) / part)
+                              and (name != "outputs" or not part.startswith("."))]
+            for filename in files:
+                path = Path(current) / filename
+                if path.suffix.casefold() not in allowed:
+                    continue
+                try:
+                    yield resolve_asset(project, path.relative_to(project).as_posix())
+                except (OSError, ValueError):
+                    continue
+
+
 def _automatic(project: Path) -> dict:
-    root = _artifacts_root(project)
-    paths: list[Path] = []
-    if root.is_dir():
-        for path in sorted(root.rglob("*"), key=lambda item: item.stat().st_mtime if item.is_file() else 0,
-                           reverse=True):
-            try:
-                if (path.is_file() and path.name != MANIFEST_NAME
-                        and path.suffix.casefold() in ASSET_MIMES
-                        and path.stat().st_size <= MAX_ASSET_BYTES):
-                    paths.append(path)
-            except OSError:
-                continue
-            if len(paths) >= MAX_PANELS:
-                break
-    panels = _label_panels(project, [_auto_panel(project, path, index) for index, path in enumerate(paths)])
+    candidates = []
+    for path, _mime in displayable_assets(project):
+        try:
+            candidates.append((path.stat().st_mtime_ns, path))
+        except OSError:
+            continue
+    panels = []
+    for _time, path in sorted(candidates, key=lambda item: (item[0], str(item[1])), reverse=True):
+        try:
+            panels.append(_auto_panel(project, path, len(panels)))
+        except (OSError, ValueError):
+            continue
+        if len(panels) >= MAX_PANELS:
+            break
+    panels = _label_panels(project, panels)
     state = {
         "version": 1,
         "title": "Project view",
-        "summary": "Automatically assembled from this conversation's project artifacts.",
+        "summary": "Automatically assembled from this conversation's project outputs and artifacts.",
         "layout": "grid",
         "skills": [],
         "kis": [],
@@ -449,9 +506,9 @@ def _automatic(project: Path) -> dict:
         "customized": False,
     }
     state["revision"] = _revision(project, state)
-    if paths:
+    if panels:
         try:
-            latest = max(path.stat().st_mtime for path in paths)
+            latest = max((Path(project) / panel["path"]).stat().st_mtime for panel in panels)
             state["updated_at"] = datetime.fromtimestamp(
                 latest, timezone.utc).isoformat()
         except OSError:
@@ -465,7 +522,7 @@ def load(project: Path) -> dict:
     project = _project_root(project)
     manifest = _artifacts_root(project) / MANIFEST_NAME
     if not manifest.is_file():
-        return _automatic(project)
+        return _automatic(supplied_project)
     try:
         if manifest.stat().st_size > MAX_MANIFEST_BYTES:
             raise ProjectViewError("project view manifest is larger than 256 KB")
@@ -475,6 +532,6 @@ def load(project: Path) -> dict:
         result["customized"] = True
         return result
     except (OSError, json.JSONDecodeError, ProjectViewError) as exc:
-        fallback = _automatic(project)
+        fallback = _automatic(supplied_project)
         fallback["error"] = f"The saved project view could not be loaded: {exc}"
         return fallback

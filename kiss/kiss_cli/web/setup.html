@@ -70,6 +70,7 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
   <a class="back" href="/library" title="Back to KI Library">←</a>
   <img class="logo" src="/logo.svg" alt="GeoForge">
   <h1>Agent setup</h1><span class="sub" id="headmodel"></span>
+  <button id="runtimechoice">运行环境 / Runtime</button>
   <button data-language-toggle>简体中文</button>
   <button id="theme">◐</button>
 </header>
@@ -110,6 +111,12 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
           <button id="chat" style="display:none">Use KI in chat</button></div>
         <div class="agent-note" id="jobnotice" role="status"></div>
         <div class="agent-note" id="requiredatanote" role="status"></div>
+        <div class="install-location" id="caserepair" hidden>
+          <b id="caserepairtitle"></b><p class="explain" id="caserepairexplain"></p>
+          <textarea id="casegoal" rows="4" maxlength="4000" style="width:100%;font:inherit" aria-label="Project software repair goal"></textarea>
+          <div class="controls"><button id="repaircase" class="primary"></button><a id="caseproject"></a></div>
+          <div class="agent-note" id="caseoutcome" role="status"></div>
+        </div>
         <div class="agent-note">The agent reads this KI and its KDT diagnostics, installs inside the model workspace, checks the real software, and repairs failures until it passes or needs you.</div>
         <div class="activity" id="setupactivity" aria-live="polite">
           <div class="activity-main"><span class="agent-orbit" aria-hidden="true"></span>
@@ -146,12 +153,14 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 <script src="/i18n.js"></script>
 <script>
 const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"",DATA_SESSION=params.get("session")||"";
+const CASE_SESSION=params.get("case_session")||"";
 const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[c]));
 let STATE=null, PROVIDERS=[], busy=false, rawLog="",runStartedAt=0,lastSignalAt=0,installPathDirty=false,existingPathDirty=false,selectedInstallMode=null;
-let dataPreparing=false, selectingKI=false;
+let dataPreparing=false, selectingKI=false, capacityIssue=null;
 let submitting=false,streaming=false,awaitingStatus=false,stopPending=false,stoppingJobId="",jobNotice="",statusUnavailable=false,stateMutationEpoch=0,stateLoadPromise=null;
 function activeSetupJob(){return !!(STATE&&STATE.job&&["running","stopping"].includes(STATE.job.state))}
 function projectSetup(){return !!(typeof DATA_SESSION!=="undefined"&&DATA_SESSION)}
+function caseSession(){return typeof CASE_SESSION!=="undefined"?CASE_SESSION:""}
 function setupStopping(){return !!(STATE&&STATE.job&&(STATE.job.state==="stopping"||stoppingJobId===STATE.job.id))}
 function unfinishedSetupJob(){return !!(STATE&&STATE.job&&["failed","cancelled","interrupted","waiting_for_user"].includes(STATE.job.state))}
 function setupJobLabel(){
@@ -173,6 +182,23 @@ function currentSetupLabel(){
   if(requiredDataOperation())return isZh()?"正在准备必需数据":"Preparing required data";
   if(activeSetupJob())return isZh()?"正在设置":"Setup running";
   return submitting?(isZh()?"正在提交设置":"Submitting setup"):(isZh()?"正在确认设置状态":"Checking setup status");
+}
+function capacityContext(){return JSON.stringify([STATE?.workdir||STATE?.install_location?.path||"",STATE?.library_scope||"",STATE?.job?.id||""])}
+function currentCapacityIssue(){
+  if(capacityIssue&&capacityIssue.context!==capacityContext()){capacityIssue=null;jobNotice=""}
+  return capacityIssue;
+}
+function capacityLabel(){return isZh()?"需要释放磁盘空间":"Free disk space"}
+function capacityMessage(){return isZh()?"本次设置请求因磁盘空间检查未通过而暂停，尚未开始新的设置或验证。请释放下列位置所在磁盘的空间，然后重试。":"This setup request paused at the disk-space check. No new setup or verification started. Free space on the volumes listed below, then retry."}
+function capacityDetails(issue){
+  return issue.volumes.map(v=>{
+    const path=`<div class="path">${esc(v.path||"")}</div>`;
+    if(v.error)return path+`<p>${isZh()?"无法读取剩余空间，请检查此位置后重试：":"Could not check free space. Check this location and retry: "}${esc(v.error)}</p>`;
+    const free=Number(v.free_bytes),required=Number(v.required_bytes),mib=1024*1024;
+    if(!Number.isFinite(free)||!Number.isFinite(required)||free<0||required<0)return path;
+    const extra=Math.ceil(Math.max(0,required-free)/mib);
+    return path+`<p>${isZh()?`可用 ${(free/mib).toFixed(1)} MiB；至少需要 ${(required/mib).toFixed(1)} MiB。还需释放 ${extra} MiB。`:`${(free/mib).toFixed(1)} MiB available; at least ${(required/mib).toFixed(1)} MiB needed. Free another ${extra} MiB.`}</p>`;
+  }).join("");
 }
 function fmtSize(n){return n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(1)+" KB":n+" B"}
 function isZh(){return !!(window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN")}
@@ -203,7 +229,7 @@ function drawActivity(){
   const box=$("#setupactivity");if(!box)return;
   const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
   box.classList.toggle("on",busy&&!waiting);if(!busy||waiting)return;
-  const now=Date.now(),phase=setupPhase(),savedStart=STATE&&STATE.job&&STATE.job.started_at;
+  const now=Date.now(),phase=setupPhase(),savedStart=activeSetupJob()&&STATE.job.started_at;
   const started=(typeof savedStart==="number"?savedStart*1000:Date.parse(savedStart))||runStartedAt||now;
   $("#activitytitle").innerHTML=`${esc(currentSetupLabel())}<span class="live-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;
   $("#activitymeta").textContent=statusUnavailable?(isZh()?"状态连接暂不可用；正在尝试重新连接。":"Status connection unavailable; trying to reconnect."):
@@ -216,7 +242,7 @@ function drawActivity(){
 function drawRunState(){
   const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
   drawActivity();
-  if(!busy){$("#runstate").textContent=setupJobLabel();return}
+  if(!busy){$("#runstate").textContent=currentCapacityIssue()?capacityLabel():setupJobLabel();return}
   if(setupStopping()){$("#runstate").textContent=setupJobLabel();return}
   if(waiting){$("#runstate").textContent=isZh()?"正在等待你的授权":"Waiting for your permission";return}
   $("#runstate").innerHTML=`<span class="spin"></span> ${esc(currentSetupLabel())}`;
@@ -229,8 +255,8 @@ function managedWorkspacePermission(req){
 function requestSummary(req){
   const message=String(req.message||"").trim();
   if(message.length<=650)return message;
-  if(req.kind==="permission")return isZh()?`${MODEL} 的源码和本地工具链已经准备好。Agent 只需要在这个模型工作区内运行一条命令，然后即可继续验证。`:
-    `${MODEL} source and its local toolchain are ready. The agent needs to run one command inside this model workspace, then it can continue verification.`;
+  if(req.kind==="permission")return isZh()?"设置需要完成下面的操作。继续前请展开查看完整说明。":
+    "Setup requires the action below. Expand the full explanation before continuing.";
   return isZh()?"Agent 已经完成能够自主处理的步骤。下面只显示现在需要你处理的一件事；完整技术报告可以展开查看。":
     "The agent completed the steps it could handle. The one action needed from you is shown below; expand the technical report for full details.";
 }
@@ -240,7 +266,7 @@ function drawLLM(){const p=PROVIDERS.find(x=>x.name===$("#provider").value)||{},
 function drawKISelection(){
   if(STATE)GeoForgeKIScope.set(STATE.library_scope||"");
   const scoped=STATE?.library_scope||GeoForgeKIScope.get();
-  $("#latestki").hidden=projectSetup()||!!scoped;
+  $("#latestki").hidden=projectSetup()||!!caseSession()||!!scoped;
   $("#latestki").disabled=busy||selectingKI;
   $("#latestki").textContent=isZh()?"使用最新已检查 KI，开始新设置":"Use latest checked KI for a new setup";
   $("#kiselectionnote").textContent=isZh()?"检查主分支中的本 KI、依赖和共享工具。使用独立安装目录，新项目会保留这一版本。":"Checks this KI and its dependencies from main, including shared tools. Uses a separate setup workspace and keeps this selection for new projects.";
@@ -325,7 +351,7 @@ function setupRecheckReason(sw=STATE?.software||{}){
     "The current KI and runtime require verification. Check the details below.";
 }
 function drawVerification(sw){
-  const zh=isZh(),recheck=setupRecheckRequired(sw),steps=sw.steps||[],unfinished=unfinishedSetupJob(),history=busy||recheck||(unfinished&&STATE.job.state!=="failed");
+  const zh=isZh(),capacity=currentCapacityIssue(),recheck=setupRecheckRequired(sw),steps=sw.steps||[],unfinished=unfinishedSetupJob(),history=!!capacity||busy||recheck||(unfinished&&STATE.job.state!=="failed");
   const recorded=zh?"已记录：":"Recorded: ";
   const stepRows=steps.map(s=>{
     const outcome=s.ok?(zh?"通过":"passed"):s.recovered?(zh?"已修复":"repaired"):s.deferred?(zh?"在各项目中处理":"handled in each project"):s.skipped?(zh?"已跳过":"skipped"):(zh?"失败":"failed");
@@ -335,18 +361,34 @@ function drawVerification(sw){
   }).join("");
   const when=sw.checked_at?`<div class="explain">${zh?'记录时间：':'Recorded check: '}${esc(sw.checked_at)}</div>`:"";
   let message=busy?(requiredDataOperation()?(zh?"正在准备必需的运行数据。此操作不会运行模型或完成软件验证。":"Preparing required runtime data. This operation does not run the model or verify the software."):(zh?"验证正在进行。本次尝试的最终结果尚未确认。":"Verification is in progress. The final result of this attempt is not yet confirmed.")):
-    recheck?setupRecheckReason():unfinished?(zh?"本次设置未完成。以下记录不代表本次验证通过。":"This setup did not complete. Recorded checks do not establish a pass for this attempt."):"";
+    capacity?capacityMessage():recheck?setupRecheckReason():unfinished?(zh?"本次设置未完成。以下记录不代表本次验证通过。":"This setup did not complete. Recorded checks do not establish a pass for this attempt."):"";
   if(busy&&recheck)message+=' '+setupRecheckReason();
   $("#verification").innerHTML=(message?`<div class="explain">${esc(message)}</div>`:"")+
     (steps.length?(history?`<details class="request-details"><summary>${zh?'以前记录的检查结果 · 不代表当前验证通过':'Previously recorded checks · not a current verification pass'}</summary>${when}<div class="steps">${stepRows}</div></details>`:
       `${when}<div class="steps">${stepRows}</div>`):
       (message?"":`<div class="explain">${zh?'尚未检查。Agent 将运行 KI 预检。':'Not checked yet. The agent will run the KI preflight.'}</div>`));
 }
+function drawCaseRepair(){
+  const sid=caseSession(),panel=$("#caserepair"),goal=$("#casegoal"),saved=STATE?.setup_intent;
+  panel.hidden=!sid;if(!sid)return;
+  $(".install-location").style.display="none";
+  $("#caserepairtitle").textContent=isZh()?"为此项目修复软件":"Repair software for this project";
+  $("#caserepairexplain").textContent=isZh()?"明确说明案例需要的编译或运行要求。Agent 将在原安装位置调查和修复；软件预检通过不代表案例兼容或科学验证通过。旧报告保留，受影响的项目需要重新检查。":"Describe the case's build or runtime requirement. The agent will investigate and repair in the saved installation. Software verification does not establish case compatibility or scientific validation. Old reports remain; affected projects need fresh checks.";
+  if(saved?.session===sid&&!goal.__edited&&!goal.value)goal.value=saved.goal||"";
+  goal.disabled=busy;
+  goal.oninput=()=>{goal.__edited=true;$("#repaircase").disabled=busy||!$("#provider").value||!goal.value.trim()};
+  $("#repaircase").textContent=isZh()?"按此目标启动 Agent 修复":"Start agent repair for this goal";
+  $("#repaircase").disabled=busy||!$("#provider").value||!goal.value.trim()||!!(STATE.request&&STATE.request.status==="waiting");
+  $("#repaircase").onclick=()=>startAgent(false,false,true);
+  $("#caseproject").href="/?session="+encodeURIComponent(sid);
+  $("#caseproject").textContent=isZh()?"返回项目":"Return to project";
+  $("#caseoutcome").textContent=saved?.session===sid?(isZh()?"案例要求尚未验证。":"Case requirement remains unverified. ")+(saved.detail||""):"";
+}
 function draw(){
   if(!STATE){drawKISelection();return}busy=submitting||streaming||awaitingStatus||activeSetupJob();drawKISelection();
-  const sw=STATE.software||{},recheck=setupRecheckRequired(sw),unfinished=unfinishedSetupJob(),ok=!!sw.can_run&&!recheck&&!unfinished,failed=sw.state==="failed"||STATE.job?.state==="failed";
+  const sw=STATE.software||{},capacity=currentCapacityIssue(),recheck=setupRecheckRequired(sw),unfinished=unfinishedSetupJob(),ok=!!sw.can_run&&!recheck&&!unfinished&&!capacity,failed=sw.state==="failed"||STATE.job?.state==="failed";
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
-  $("#statusbadge").className=`badge ${busy?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=setupStopping()?setupJobLabel():busy?(requiredDataOperation()?(isZh()?"正在准备必需数据":"Preparing required data"):(isZh()?"正在验证":"Verification in progress")):unfinished?setupJobLabel():sw.label||"Setup needed";
+  $("#statusbadge").className=`badge ${busy||capacity?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=setupStopping()?setupJobLabel():busy?(requiredDataOperation()?(isZh()?"正在准备必需数据":"Preparing required data"):(isZh()?"正在验证":"Verification in progress")):capacity?capacityLabel():unfinished?setupJobLabel():sw.label||"Setup needed";
   $("#provider").disabled=busy;$("#llm").disabled=busy;
   const rd=STATE.required_data||{},dataAction=$("#preparedata");
   dataAction.style.display=rd.declared?"":"none";
@@ -356,7 +398,7 @@ function draw(){
   $("#stop").style.display=busy?"":"none";$("#stop").disabled=!activeSetupJob()||STATE.job?.can_stop===false||setupStopping()||stopPending;
   $("#stop").textContent=setupStopping()||stopPending?(isZh()?"正在停止…":"Stopping…"):(isZh()?"停止设置":"Stop setup");
   $("#jobnotice").textContent=statusUnavailable?(isZh()?"暂时无法读取服务器状态。连接恢复前将保留当前设置状态。":"Cannot read server status. Keeping the current setup state until the connection returns."):
-    jobNotice||(unfinished?`${setupJobLabel()}${STATE.job.detail?' · '+STATE.job.detail:''}`:"");
+    capacity?capacityMessage():jobNotice||(unfinished?`${setupJobLabel()}${STATE.job.detail?' · '+STATE.job.detail:''}`:"");
   const installMode=selectedInstallMode||(STATE.install_location||{}).installation_mode||"new";
   $("#chat").style.display=ok&&!busy?"":"none";$("#start").textContent=ok?"Re-check with agent":installMode==="existing"?(isZh()?"验证已有软件":"Verify existing software"):STATE.agent_ready?"Continue agent":"Start agent setup";
   const log=$(".log");if(!submitting&&!streaming&&typeof STATE.log_tail==="string"){rawLog=STATE.log_tail;log.textContent=presentSetupLog(rawLog);log.scrollTop=log.scrollHeight;}
@@ -364,14 +406,21 @@ function draw(){
     recheck?(isZh()?"已保存的设置日志 · 不代表更新后的 KI 已验证":"Saved setup log · does not establish verification for the updated KI"):
       (isZh()?"已保存的设置日志 · 可能包含以前的尝试":"Saved setup log · may include earlier attempts"):"";
   const req=STATE.request,att=STATE.attention;
-  if(projectSetup()){
+  if(capacity&&!busy){
+    $("#needbadge").className="badge warn";$("#needbadge").textContent=capacityLabel();
+    $("#need").innerHTML=`<div class="request"><h4>${esc(capacityLabel())}</h4><p>${esc(capacityMessage())}</p>${capacityDetails(capacity)}<p>${isZh()?"这是空间估算，不是空间预留；重试后仍须通过软件验证。":"This is an estimate, not a space reservation; software verification must still pass after retrying."}</p><div class="controls"><button class="primary" id="capacityretry">${isZh()?"已释放空间，重试设置":"Space freed — retry setup"}</button></div></div>`;
+    $("#capacityretry").disabled=!$("#provider").value;
+    $("#capacityretry").onclick=()=>startAgent(capacity.discoverExisting,capacity.requiredDataOnly,capacity.caseRepair);
+    $("#start").disabled=!$("#provider").value;
+  }else if(projectSetup()){
     const pc=STATE.project_preflight||{},label=isZh()?"检查项目预检":"Check project preflight";
     $(".install-location").style.display="none";
     $("#start").textContent=label;$("#start").disabled=busy||!pc.can_check;
     $("#provider").disabled=true;$("#llm").disabled=true;
     $("#needbadge").className=ok?"badge ok":"badge warn";
     $("#needbadge").textContent=busy?(isZh()?"正在检查项目":"Checking project"):ok?(isZh()?"项目预检已通过":"Project preflight passed"):(isZh()?"需要项目检查":"Project check required");
-    $("#need").innerHTML=`<div class="request"><h4>${esc(label)}</h4><p>${esc(pc.detail||"")}</p><p>${isZh()?"检查此项目已保存的 KI、运行环境和必需数据。不会修改共享安装，不会自动运行模型。":"Checks this project's saved KI, runtime and required data. Does not change shared installation readiness or automatically start the model."}</p><div class="controls"><button class="primary" id="retry">${esc(label)}</button></div></div>`;
+    const repairLink=GeoForgeKIScope.url("/setup?model="+encodeURIComponent(MODEL)+"&case_session="+encodeURIComponent(DATA_SESSION));
+    $("#need").innerHTML=`<div class="request"><h4>${esc(label)}</h4><p>${esc(pc.detail||"")}</p><p>${isZh()?"检查此项目已保存的 KI、运行环境和必需数据。不会修改共享安装，不会自动运行模型。":"Checks this project's saved KI, runtime and required data. Does not change shared installation readiness or automatically start the model."}</p><div class="controls"><button class="primary" id="retry">${esc(label)}</button>${busy?"":`<a href="${esc(repairLink)}">${isZh()?"为此项目修复软件…":"Repair software for this project…"}</a>`}</div></div>`;
     $("#retry").disabled=busy||!pc.can_check;$("#retry").onclick=()=>startAgent(false);
   }else if(req&&req.status==="waiting"){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Needs you now";
@@ -411,7 +460,7 @@ function draw(){
       `<div class="explain">Nothing is waiting on you. The agent can continue working autonomously.${files?`<div class="files"><b>Files supplied</b>${files}</div>`:""}</div>`;
     $("#start").disabled=busy||!$("#provider").value;
   }
-  drawInstallLocation();drawRunState();
+  drawInstallLocation();drawRunState();drawCaseRepair();
   drawVerification(sw);
 }
 async function loadState(){
@@ -422,7 +471,7 @@ async function loadState(){
   if(!stateLoadPromise){
     const epoch=stateMutationEpoch;
     stateLoadPromise=(async()=>{
-      try{const r=await fetch("/api/setup/"+encodeURIComponent(MODEL)+(typeof DATA_SESSION!=="undefined"&&DATA_SESSION?"?session="+encodeURIComponent(DATA_SESSION):""));if(!r.ok)throw new Error(`HTTP ${r.status}`);
+      try{const r=await fetch("/api/setup/"+encodeURIComponent(MODEL)+(typeof DATA_SESSION!=="undefined"&&DATA_SESSION?"?session="+encodeURIComponent(DATA_SESSION):caseSession()?"?case_session="+encodeURIComponent(caseSession()):""));if(!r.ok)throw new Error(`HTTP ${r.status}`);
         const state=await r.json();if(epoch!==stateMutationEpoch)return {epoch,ok:false};
         STATE=state;statusUnavailable=false;if(!submitting&&!streaming)awaitingStatus=false;
         if(!STATE.job||STATE.job.id!==stoppingJobId||!activeSetupJob())stoppingJobId="";draw();return {epoch,ok:true};
@@ -432,18 +481,24 @@ async function loadState(){
   const result=await stateLoadPromise;
   return result.epoch===stateMutationEpoch?result.ok:loadState();
 }
-async function startAgent(discoverExisting=false,requiredDataOnly=false){
+async function startAgent(discoverExisting=false,requiredDataOnly=false,caseRepair=false){
   if(busy||!STATE)return;
+  const caseIntent=caseRepair?{kind:"case_repair",session:caseSession(),goal:$("#casegoal").value.trim()}:null;
+  if(caseRepair&&(!caseIntent.session||!caseIntent.goal||caseIntent.goal.length>4000||discoverExisting||requiredDataOnly))return;
   if(requiredDataOnly&&(!STATE.required_data?.can_prepare||installPathDirty||existingPathDirty||!!(selectedInstallMode&&selectedInstallMode!==(STATE.install_location||{}).installation_mode)))return;
   const projectCheck=projectSetup()&&!requiredDataOnly;
   if(projectCheck&&(discoverExisting||!STATE.project_preflight?.can_check))return;
-  dataPreparing=requiredDataOnly;submitting=true;jobNotice="";draw();let sent=false;
+  const previousCapacity=currentCapacityIssue();capacityIssue=null;
+  dataPreparing=requiredDataOnly;submitting=true;jobNotice="";runStartedAt=Date.now();draw();let sent=false;
   try{
-    if((!requiredDataOnly&&!projectCheck&&!await saveInstallLocation(discoverExisting,true))||activeSetupJob())return;
+    if(previousCapacity&&!await loadState()){capacityIssue=previousCapacity;return}
+    if((!requiredDataOnly&&!projectCheck&&!caseRepair&&!caseSession()&&!await saveInstallLocation(discoverExisting,true))||activeSetupJob())return;
     rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;$(".log").textContent="";
     sent=true;awaitingStatus=true;stateMutationEpoch++;
-    const r=await fetch(projectCheck?"/api/setup-project-preflight":requiredDataOnly?"/api/setup-required-data":"/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(projectCheck?{model:MODEL,session:DATA_SESSION}:requiredDataOnly?{model:MODEL,...(typeof DATA_SESSION!=="undefined"&&DATA_SESSION?{session:DATA_SESSION}:{})}:{model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value,discover_existing:!!discoverExisting})});
-    if(!r.ok){const d=await r.json().catch(()=>({}));if("job" in d)acceptSetupJob(d.job);awaitingStatus=false;jobNotice=d.error||`HTTP ${r.status}`;return}
+    const r=await fetch(projectCheck?"/api/setup-project-preflight":requiredDataOnly?"/api/setup-required-data":"/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(projectCheck?{model:MODEL,session:DATA_SESSION}:requiredDataOnly?{model:MODEL,...(typeof DATA_SESSION!=="undefined"&&DATA_SESSION?{session:DATA_SESSION}:{})}:{model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value,discover_existing:!!discoverExisting,...(caseSession()?{session:caseSession()}:{}),...(caseIntent?{setup_intent:caseIntent}:{})})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));if("job" in d)acceptSetupJob(d.job);awaitingStatus=false;
+      if(d.code==="setup_storage_capacity")capacityIssue={context:capacityContext(),volumes:Array.isArray(d.capacity)?d.capacity.filter(v=>v&&typeof v==="object"):[],discoverExisting,requiredDataOnly,caseRepair};
+      jobNotice=d.error||`HTTP ${r.status}`;return}
     stateMutationEpoch++;streaming=true;submitting=false;draw();const rd=r.body.getReader(),dec=new TextDecoder(),log=$(".log");
     for(;;){const{done,value}=await rd.read();if(done)break;lastSignalAt=Date.now();rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight}rawLog+=dec.decode();
   }catch(e){jobNotice=sent?(isZh()?"实时连接已中断，正在查询服务器保存的状态。关闭实时显示不会停止设置。":"Live connection interrupted; checking the server's saved status. Closing the live display does not stop setup."):
@@ -453,7 +508,7 @@ async function startAgent(discoverExisting=false,requiredDataOnly=false){
 async function stopAgent(){
   if(!activeSetupJob()||STATE.job?.can_stop===false||setupStopping()||stopPending)return;
   const id=STATE.job.id;stopPending=true;jobNotice="";draw();
-  try{const projectCheck=STATE.job?.provider==="project-preflight";const r=await fetch(projectCheck?"/api/setup-project-preflight-stop":"/api/setup-stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,job_id:id,...(projectCheck?{session:DATA_SESSION}:{})})});
+  try{const projectCheck=STATE.job?.provider==="project-preflight";const r=await fetch(projectCheck?"/api/setup-project-preflight-stop":"/api/setup-stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,job_id:id,...(projectCheck?{session:DATA_SESSION}:caseSession()?{session:caseSession()}:{})})});
     const d=await r.json();if("job" in d)acceptSetupJob(d.job);
     if(r.ok){if(STATE.job?.id===id&&activeSetupJob())stoppingJobId=id}
     else jobNotice=d.error||`HTTP ${r.status}`;
@@ -462,11 +517,11 @@ async function stopAgent(){
 }
 async function resumeAgent(){
   if(busy)return;const note=$("#note").value;submitting=true;draw();let resumed=false;
-  try{const r=await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note})});
+  try{const r=await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note,...(caseSession()?{session:caseSession()}:{})})});
     const d=await r.json().catch(()=>({}));if(!r.ok){if("job" in d)acceptSetupJob(d.job);jobNotice=d.error||`HTTP ${r.status}`}else{stateMutationEpoch++;resumed=true;awaitingStatus=true}
   }catch(e){jobNotice=isZh()?"无法提交继续请求。请重试。":"Could not submit the resume request. Please retry."}
   finally{submitting=false;await loadState();draw()}
-  if(resumed&&!busy)await startAgent();
+  if(resumed&&!busy)await startAgent(false,false,!!(caseSession()&&STATE.setup_intent?.session===caseSession()));
 }
 async function chatForHelp(){
   const block=(STATE.request&&STATE.request.status==="waiting")?STATE.request:(STATE.attention||{}),sw=STATE.software||{},primary=sw.primary_error||{};
@@ -480,6 +535,8 @@ async function uploadFile(){if(busy)return;const f=$("#userfile").files[0];if(!f
   if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Upload failed");$("#upload").disabled=false;return}stateMutationEpoch++;await loadState();startAgent();}
 async function useChat(){if(projectSetup()){location.href="/?session="+encodeURIComponent(DATA_SESSION);return}const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href=GeoForgeKIScope.url("/?session="+encodeURIComponent(s.id))}
 $("#latestki").onclick=useLatestKI;
+$("#runtimechoice").onclick=()=>{const q=new URLSearchParams({model:MODEL,provider:$("#provider").value||"api:deepseek"});location.href="/runtime?"+q};
+fetch('/api/runtime/identity').then(r=>r.json()).then(identity=>{if(identity.distro){$("#runtimechoice").textContent='Linux · '+identity.distro;$("#runtimechoice").title='独立 Linux 工作区 / Bound Linux workspace'}}).catch(()=>{});
 $("#installpath").oninput=()=>{installPathDirty=true;drawInstallLocation()};$("#existingpath").oninput=()=>{existingPathDirty=true;drawInstallLocation()};
 $("#modenew").onclick=()=>chooseInstallMode("new");$("#modeexisting").onclick=()=>chooseInstallMode("existing");$("#chooseinstall").onclick=chooseInstallLocation;$("#saveinstall").onclick=()=>saveInstallLocation(false);
 $("#chooseexistingfolder").onclick=()=>chooseExistingLocation("folder");$("#chooseexistingfile").onclick=()=>chooseExistingLocation("file");$("#saveexisting").onclick=()=>saveInstallLocation(false);$("#findexisting").onclick=()=>startAgent(true);

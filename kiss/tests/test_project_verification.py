@@ -74,6 +74,56 @@ def test_real_preflight_signs_exact_project_without_touching_shared_status(case,
     pv.require_current(project, ki.name, ki.root, cfg=cfg)
 
 
+@pytest.mark.parametrize("reason", ["pending project derivation", "stale setup runtime"])
+def test_derived_authority_loss_blocks_cached_dispatch_and_fresh_preflight(case, monkeypatch, reason):
+    from kiss_cli import ki_data_lineage
+    project, ki, man, cfg, config = case
+    _passing(monkeypatch)
+    assert pv.verify(project, ki, man)["ok"]
+    before = config.read_bytes()
+
+    def reject(current_project, model, live, saved):
+        assert current_project == project
+        assert live == ki.root and saved.root == project and model == ki.name
+        raise ValueError(reason)
+
+    monkeypatch.setattr(ki_data_lineage, "require_setup_projection", reject)
+    _forbid_checks(monkeypatch)
+    result = pv.status(project, ki)
+    assert not result["can_run"] and reason in result["detail"]
+    with pytest.raises(ValueError, match=reason):
+        pv.require_current(project, ki.name, ki.root, cfg=cfg)
+    result = pv.verify(project, ki, man)
+    assert not result["ok"] and reason in result["detail"]
+    assert config.read_bytes() == before
+
+
+def test_receipt_remembers_required_derivation_after_optional_record_disappears(case, monkeypatch):
+    from kiss_cli import ki_data_lineage
+    project, ki, man, cfg, _config = case
+    _passing(monkeypatch)
+    monkeypatch.setattr(ki_data_lineage, "require_setup_projection",
+                        lambda *args: {"project_derivation": {"setup_adoption_digest": "bound-setup"}})
+    result = pv.verify(project, ki, man)
+    assert result["ok"] and result["receipt"]["setup_derivation"]
+    monkeypatch.setattr(ki_data_lineage, "require_setup_projection", lambda *args: None)
+    _forbid_checks(monkeypatch)
+    assert not pv.status(project, ki)["can_run"]
+    with pytest.raises(ValueError, match="verification required"):
+        pv.require_current(project, ki.name, ki.root, cfg=cfg)
+
+
+def test_existing_ordinary_maintenance_lineage_keeps_its_project_verification_route(case, monkeypatch):
+    from kiss_cli import ki_data_lineage
+    project, ki, man, cfg, _config = case
+    _passing(monkeypatch)
+    monkeypatch.setattr(ki_data_lineage, "require_setup_projection",
+                        lambda *args: {"kind": "maintenance_data_lineage", "adoptions": ["existing"]})
+    result = pv.verify(project, ki, man)
+    assert result["ok"] and result["receipt"]["setup_derivation"] is None
+    pv.require_current(project, ki.name, ki.root, cfg=cfg)
+
+
 def test_shared_source_pass_does_not_certify_failing_project(case, tmp_path, monkeypatch):
     project, ki, man, cfg, _config = case
     source = KI(ki.name, tmp_path / "upstream" / ki.name)

@@ -135,3 +135,51 @@ SHAW, VIC and other models rather than adding an unconditional path rewrite.
 
 The shared Flow synchronization checklist also records the new input-grant
 module so a later server/shared-library sync cannot silently omit it.
+
+## Follow-up source work: declared portable paths (unreleased)
+
+Desktop now has an explicit general path route alongside the existing strict
+WOFOST compatibility rewrite. A KI's effective installation manifest can declare:
+
+```yaml
+runtime_paths:
+  version: 1
+  mode: role_tokens
+```
+
+For this route, Desktop expands the existing interpreter, helper and data roles
+and the new `KISSPATH_CURRENT_KI` token. The new token is supplied only by the
+host and names the final package directory: `<installation>/ki` or
+`<project>/models/<model>/ki`. It does not mean the catalogue root and cannot be
+overridden through user path roles. A temporary candidate is materialized with
+its final logical destination, so adopting it does not retain temporary paths.
+Reference-case files remain byte-for-byte copies.
+
+The effective manifest, route implementation, source, target and configuration
+remain bound by the existing signed projection records. Declared bundled KIs
+also use complete projections; they cannot acquire leftover files from an old
+installation. Portable KDT review, exact runtime adoption, project preflight
+and execution receipts remain separate requirements. If the effective recipe
+changes during the final agent check, Desktop refuses to publish success.
+
+An absent declaration keeps the prior behavior, including the exact WOFOST
+legacy-code recognizer. Unknown declarations and conflicting package/effective
+declarations fail before projection; a failed legacy rewrite never falls back
+to the general route. This change does not infer arbitrary hardcoded paths,
+convert the bundled 127 packages, or edit a published KI. A package conversion
+still needs its ordinary KDT authoring/review flow. Portable repair reuse does
+not grant permission to change its original installation/path contract.
+
+The new tests exercise real host copying, signed lineage, GUI workspace creation
+and adoption/reuse with synthetic KIs and explicitly synthetic KDT evidence.
+They are not native-model, live DeepSeek GUI or installer acceptance. Real
+WOFOST/DSSAT acceptance with a KDT-reviewed portable KI remains the next test;
+the published Windows 0.6.60 release is unchanged. Same-path package-content
+currentness remains a separate follow-up to this path-only change.
+
+Final targeted regression for this follow-up: **525 passed**, with no failures
+or skips. The 51 warnings are Python 3.11 venv deprecations. Independent code
+review identified the effective-recipe race described above; its correction
+and regression tests are included. This is a focused integration run, not a
+new full-suite or installer acceptance. The local JUnit report is
+`desktop-portable-paths-20261017.xml`.

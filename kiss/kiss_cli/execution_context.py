@@ -150,3 +150,116 @@ def historical_messages(messages) -> list[dict]:
 def current_prompt(request: str, host_handoff: str) -> str:
     """Also used for resumed CLI calls, which do not replay the full system prompt."""
     return "[CURRENT USER REQUEST]\n" + request + "\n\n" + host_handoff
+
+
+def _inspection_history(session, current: dict) -> dict:
+    """Small authenticated historical observations; no readiness/config repair."""
+    from . import project_paths, project_verification, runtime_provenance, software_history
+    result = {"scope": "retained_verification_observations_only", "complete_history": False,
+              "records": [], "invalid_count": 0, "unavailable_scopes": [], "truncated": False}
+    names = sorted(session.ki_roots)
+    result["truncated"] = len(names) > 8
+    for name in names[:8]:
+        sources = []
+        try:
+            sources.append(("project_preflight", project_verification.history(session.project, name, limit=8)))
+        except (OSError, ValueError, TypeError, RuntimeError):
+            result["unavailable_scopes"].append({"model": name, "scope": "project_preflight"})
+        try:
+            # This parser is explicitly read-only; the legacy config loader can
+            # repair TOML and must never be used by an inspection.
+            home = project_paths._model_home(session.project, name)
+            cfg = project_verification._config(session.project, home, name)
+            installation = cfg.roles.get("home")
+            if installation is not None:
+                sources.append(("shared_software_verification", software_history.history(installation, name, limit=8)))
+        except (OSError, ValueError, TypeError, RuntimeError):
+            result["unavailable_scopes"].append({"model": name, "scope": "shared_software_verification"})
+        for scope, history in sources:
+            if history.get("unavailable"):
+                result["unavailable_scopes"].append({"model": name, "scope": scope})
+            result["invalid_count"] += history.get("invalid_count", 0)
+            result["truncated"] |= history.get("truncated", False)
+            groups = {}
+            for record in history.get("records", []):
+                if record.get("provenance") == "invalid":
+                    continue
+                if record.get("authentication") != "verified" and record.get("authenticated") is not True:
+                    result["invalid_count"] += 1
+                    continue
+                attempt = (record.get("attempt_id") or record.get("operation_id")
+                           or record.get("event_id") or record.get("receipt_sha256"))
+                groups.setdefault(attempt, []).append(record)
+            for index, group in enumerate(groups.values()):
+                if index >= 3 or len(result["records"]) >= 16:
+                    result["truncated"] = True
+                    continue
+                def outcome(row):
+                    return row.get("state", row.get("outcome"))
+                record = max(group, key=lambda row: (row.get("location") == "current",
+                    outcome(row) not in {None, "pending"}, row.get("checked_at", row.get("started_at", 0))))
+                terminal_states = {outcome(row) for row in group if outcome(row) not in {None, "pending"}}
+                ambiguous = not any(row.get("location") == "current" for row in group) and len(terminal_states) > 1
+                saved = record.get("verification_context")
+                try:
+                    comparison = runtime_provenance.compare(saved, current)
+                except (ValueError, TypeError):
+                    result["invalid_count"] += 1
+                    continue
+                fields = {key: record[key] for key in ("attempt_id", "operation_id", "state", "outcome",
+                    "started_at", "checked_at", "check_scope", "location") if key in record}
+                if ambiguous:
+                    fields.pop("state", None)
+                    fields["outcome"] = "unknown_conflicting_retained_transitions"
+                    fields["retained_outcomes"] = sorted(terminal_states)
+                result["records"].append({"model": name, "scope": scope, **fields,
+                    "authentication": "verified", "provenance": "recorded" if saved is not None else "legacy_unknown",
+                    "verification_context": saved, "comparison_with_current_host": comparison})
+    return result
+
+
+def inspection_snapshot(session) -> dict:
+    """Current read-only context, without renewing readiness or saved evidence."""
+    from . import runtime_context, runtime_provenance
+    runtime = runtime_context.identity()
+    current = runtime_provenance.capture()
+    facts = {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "saved_flow_state": session.state.value,
+        "saved_approval_id": session.approval_id,
+        "runtime": {key: runtime[key] for key in
+                    ("kind", "platform", "source_hash", "distro", "user", "workspace")
+                    if key in runtime},
+        "turn_mode": "read_only_inspection",
+        "setup_or_execution_authorized": False,
+        "readiness_rechecked": False,
+        "receipt_authenticity_rechecked": False,
+        "receipt_authenticity_scope": "scientific_model_run_receipts_not_rechecked",
+        "current_host": current,
+        "verification_history": _inspection_history(session, current),
+        "saved_plan_goal_is_historical": True,
+        "current_update_cause": "not_established_by_this_inspection",
+    }
+    return facts
+
+
+def inspection_handoff(session, *, facts=None) -> str:
+    facts = inspection_snapshot(session) if facts is None else facts
+    return ("[CURRENT HOST INSPECTION CONTEXT]\n" + json.dumps(facts, ensure_ascii=False, indent=2)
+            + "\nThese facts describe this turn and the saved workflow, not a new model run or "
+              "fresh scientific validation. Earlier conversation diagnoses refer to earlier attempts. "
+              "Do not report an earlier REPLAN_REQUIRED transition or rebuild as current. "
+              "An application update can expire readiness without changing the model executable "
+              "or its outputs. An expired check is not evidence that a new check failed. "
+              "Only current file evidence can establish that software, paths or results changed; "
+              "if the reason is not available, say it is unverified. Distinguish saved completion "
+              "from permission to execute again. Do not infer authentication from a signature field. "
+              "For 'this/current/latest app update', identify CURRENT_HOST's build first. "
+              "Names or update descriptions in the saved plan goal and earlier chat are HISTORICAL, "
+              "not the identity or cause of the current update. Use the retained verification observations "
+              "to say which check belongs to which recorded build. A legacy_unknown record has no "
+              "authenticated saved build: explicitly say unknown; do not borrow a build name from the plan. "
+              "The history reader authenticates only the listed setup/preflight observations, not model "
+              "runs or present readiness. A different portable payload may reflect application or library "
+              "changes; it does not prove a rebuilt model, new preflight failure or rerun. If the user asks "
+              "about update history, separate current host, retained checks and unknown causes in the answer.")

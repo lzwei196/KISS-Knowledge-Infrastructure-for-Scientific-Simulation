@@ -179,6 +179,16 @@ def _project_runtime_config(project: Path, model: str, active: Path):
     return project_verification._config(project, home, model)
 
 
+def _runtime_config(doc: dict, model: str, active: Path):
+    if doc.get("setup_binding"):
+        binding = doc["setup_binding"]
+        if (binding.get("ki_name") != model or binding.get("active_root") != str(active)
+                or Path(doc["project"]) / "ki" != active):
+            raise InvestigationError("Setup maintenance runtime belongs to another target")
+        return setup_flow.load_runtime_config(Path(doc["project"]))
+    return _project_runtime_config(Path(doc["project"]), model, active)
+
+
 def _sources(project: Path, ki_roots: dict) -> dict[str, Path]:
     sources = {"project": project}
     for name, value in sorted(ki_roots.items()):
@@ -290,6 +300,9 @@ def _assert_context(doc: dict) -> None:
 
 
 def _assert_current(doc: dict) -> None:
+    if doc.get("setup_binding"):
+        from . import setup_ki_repair
+        setup_ki_repair.require_binding(doc["setup_binding"])
     sources = {name: Path(value["root"]) for name, value in doc["source_state"].items()}
     try:
         if not all(root.is_dir() for root in sources.values()):
@@ -353,12 +366,20 @@ def resolve_rejected_update_source(identity, names) -> dict:
 
 
 def create(project, session, ki_roots: dict[str, Path], provider, model="", issue="", *,
-           publication_sources: dict | None = None) -> dict:
+           publication_sources: dict | None = None, setup_binding: dict | None = None) -> dict:
     project = _project(project)
     if not ki_roots:
         raise InvestigationError("Select at least one KI to investigate")
     with _LOCK:
-        sources = _sources(project, ki_roots)
+        if setup_binding is not None:
+            from . import setup_ki_repair
+            if (publication_sources is not None or setup_binding.get("root") != str(project)
+                    or {k: str(Path(v).resolve()) for k, v in ki_roots.items()} !=
+                        {setup_binding.get("ki_name"): setup_binding.get("active_root")}):
+                raise InvestigationError("Setup investigation must match its host-owned exact target")
+            sources = setup_ki_repair.sources(setup_binding)
+        else:
+            sources = _sources(project, ki_roots)
         maintenance_sources = {}
         if publication_sources:
             from . import ki_maintenance
@@ -372,7 +393,7 @@ def create(project, session, ki_roots: dict[str, Path], provider, model="", issu
         # absolute paths cannot become a reusable repair by reverse substitution.
         from . import ki_adaptations
         projections, projection_issues = {}, {}
-        for name, root in ki_roots.items():
+        for name, root in ({} if setup_binding is not None else ki_roots).items():
             root = Path(root).resolve()
             config = project / "models" / name / paths.CONFIG_NAME
             baseline = ki_guard._read(root)
@@ -428,6 +449,10 @@ def create(project, session, ki_roots: dict[str, Path], provider, model="", issu
                "reviewers": [{"role": role, "status": "pending"} for role in ROLES],
                "combined_report": None, "draft": None, "verification": None, "apply": None,
                "native_verified": False}
+        if setup_binding is not None:
+            doc["setup_binding"] = setup_binding
+            from . import setup_ki_repair
+            setup_ki_repair.require_binding(setup_binding)
         _save(project, doc)
         _signed(_root(project, ident) / "capture.json", {"source_state": state, "context_digest": digest})
     return get(project, ident)
@@ -521,7 +546,7 @@ def get(project, job_id=None) -> dict:
                 # verify/apply; this flag only offers that guarded action.
                 _assert_context(doc)
                 _require_verified_candidates(doc)
-                public["can_apply"] = bool(doc["draft"]["project_local"])
+                public["can_apply"] = bool(doc["draft"]["project_local"] or doc["draft"].get("setup_local"))
             except (ValueError, RuntimeError, OSError) as exc:
                 public["stale_reason"] = str(exc)
         if doc["status"] in {"reviewing", "verifying", "authoring", "applying"} and job_id not in _RUNNING:
@@ -850,7 +875,7 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
     if repair_mode not in {"authoring", "maintenance"}:
         raise InvestigationError("Choose authoring or maintenance repair")
     if repair_mode == "maintenance" and maintenance_recipe not in {
-            "tool_inventory", "preflight_reporting", "package_contract", "wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"}:
+            "tool_inventory", "preflight_reporting", "package_contract", "wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider", "epanet_runtime_paths", "shaw_runtime_paths"}:
         raise InvestigationError("Choose a supported maintenance recipe")
     if repair_mode != "maintenance" and maintenance_recipe:
         raise InvestigationError("Maintenance recipes require maintenance repair mode")
@@ -864,16 +889,20 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
         active = Path(doc["ki_roots"][ki_name])
         expected = project / "models" / ki_name / "ki"
         local = active == expected.resolve() and active.is_relative_to(project)
+        setup_local = bool(doc.get("setup_binding") and active == project / "ki"
+                           and doc["setup_binding"].get("ki_name") == ki_name)
+        if doc.get("setup_binding") and (not setup_local or repair_mode != "maintenance"):
+            raise InvestigationError("Setup repairs require a supported exact maintenance recipe")
         retained_source = doc.get("maintenance_sources", {}).get(ki_name)
         if retained_source and repair_mode != "maintenance":
             raise InvestigationError("Rejected update sources support maintenance drafts only; full authoring requires its own evidence")
-        if repair_mode == "maintenance" and not local and not retained_source:
+        if repair_mode == "maintenance" and not (local or setup_local) and not retained_source:
             raise InvestigationError("Prepare this KI in the project before creating a maintenance repair")
         runtime_cfg = None
-        if repair_mode == "maintenance" and maintenance_recipe in {"wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider"}:
-            if not local:
+        if repair_mode == "maintenance" and maintenance_recipe in {"wofost_parameter_routing", "wofost_runtime_paths", "wofost_crop_provider", "epanet_runtime_paths", "shaw_runtime_paths"}:
+            if not (local or setup_local):
                 raise InvestigationError("WOFOST runtime maintenance requires a prepared project KI and its saved runtime")
-            runtime_cfg = _project_runtime_config(project, ki_name, active)
+            runtime_cfg = _runtime_config(doc, ki_name, active)
         lineage = doc.get("portable_projections", {}).get(ki_name) if local and repair_mode != "maintenance" else None
         source = Path(lineage["portable_root"]) if lineage else active
         maintenance_source = None
@@ -905,8 +934,10 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
                         "base_digest": digest, "project_local": local, "active_root": str(active),
                         "authoring_scope": "portable" if lineage else "local",
                         "repair_mode": repair_mode}
+        if setup_local:
+            doc["draft"]["setup_local"] = True
         if maintenance_source is not None:
-            from . import ki_maintenance_dispatch
+            from . import ki_maintenance_registry as ki_maintenance_dispatch
             runtime_args = {}
             if maintenance_recipe == "wofost_runtime_paths":
                 from . import ki_path_contracts, software_verification
@@ -914,6 +945,10 @@ def create_draft(project, job_id, ki_name, *, repair_mode="authoring", maintenan
                 doc["draft"].update(maintenance_runtime_identity=software_verification.runtime_identity(runtime_cfg),
                     maintenance_config_identity=ki_path_contracts.config_identity(runtime_cfg),
                     maintenance_target_root=str(active))
+            elif maintenance_recipe in {"epanet_runtime_paths", "shaw_runtime_paths"}:
+                from . import software_verification
+                runtime_args = {"runtime_config": runtime_cfg, "target_root": active}
+                doc["draft"]["maintenance_runtime_identity"] = software_verification.runtime_identity(runtime_cfg)
             projected = ki_maintenance_dispatch.apply_recipe(candidate, source=source,
                 recipe=maintenance_recipe, name=ki_name, **runtime_args)
             doc["draft"].update(maintenance_source=maintenance_source,
@@ -978,7 +1013,7 @@ def _candidate_changes(doc: dict, candidate: Path, digest: str) -> dict:
 
 def _maintenance_candidate_changes(doc: dict, candidate: Path, report: dict) -> dict:
     """Use the exact file/alias comparison authenticated by the maintenance gate."""
-    from . import ki_maintenance_dispatch
+    from . import ki_maintenance_registry as ki_maintenance_dispatch
     current = ki_maintenance_dispatch.require_current(candidate, report, source=doc["draft"]["maintenance_source"])
     # require_current compares the full inventories, including alias identity,
     # and rejects any added/removed file or changed alias. A generic text-only
@@ -998,7 +1033,7 @@ def _require_verified_candidates(doc: dict) -> Path:
     draft, verification = doc["draft"], doc["verification"]
     candidate = Path(draft["path"])
     if draft.get("repair_mode") == "maintenance":
-        from . import ki_maintenance_dispatch
+        from . import ki_maintenance_registry as ki_maintenance_dispatch
         if draft.get("authoring_scope") != "local":
             raise InvestigationError("Maintenance repair is restricted to this project")
         if ki_verification.content_digest(candidate) != draft.get("maintenance_projection_digest"):
@@ -1007,14 +1042,24 @@ def _require_verified_candidates(doc: dict) -> Path:
         _require_maintenance_runtime(doc, verification["report"], verification.get("runtime_identity"))
         return candidate
     if draft.get("authoring_scope") == "portable":
-        from . import software_verification
+        from . import software_verification, ki_adaptations
         ki_verification.require_current(candidate, verification["portable_report"])
         candidate = Path(verification["runtime_candidate"])
-        cfg = _project_runtime_config(Path(doc["project"]), draft["ki_name"], Path(draft["active_root"]))
+        cfg = _runtime_config(doc, draft["ki_name"], Path(draft["active_root"]))
         if software_verification.runtime_identity(cfg) != verification["runtime_identity"]:
             raise InvestigationError("Runtime bindings changed after portable repair verification")
         path_projection = verification.get("path_projection")
-        if draft["ki_name"] == "WOFOST" and path_projection is None:
+        origin = ki_adaptations.projection(Path(draft["active_root"]), cfg)
+        declared_paths = bool(origin and origin["context"].get("runtime_paths"))
+        if declared_paths:
+            registration = ki_adaptations._auth(verification.get("registration"))
+            if (registration.get("kind") != "prepared_registration"
+                    or registration.get("origin") != origin
+                    or registration.get("runtime_digest") != ki_verification.content_digest(candidate)
+                    or registration.get("portable_digest") != ki_verification.content_digest(Path(draft["path"]))
+                    or path_projection is not None):
+                raise InvestigationError("Portable path registration is stale; verify the exact candidates again")
+        if draft["ki_name"] == "WOFOST" and not declared_paths and path_projection is None:
             raise InvestigationError("Portable WOFOST repair lacks current path projection evidence; verify again")
         if path_projection is not None:
             from . import ki_fresh_paths
@@ -1033,10 +1078,11 @@ def _require_maintenance_runtime(doc: dict, report: dict, expected_identity) -> 
     path_repair = report.get("maintenance_recipe") == ki_path_contracts.RECIPE
     interface = any(row.get("path") in {ki_maintenance_wofost.TOOL_PATH, ki_maintenance_crop.TOOL_PATH}
                     for row in report.get("changes", []))
-    if not interface and not path_repair:
+    setup_paths = report.get("maintenance_recipe") in {"epanet_runtime_paths", "shaw_runtime_paths"}
+    if not interface and not path_repair and not setup_paths:
         return
     draft = doc["draft"]
-    cfg = _project_runtime_config(Path(doc["project"]), draft["ki_name"], Path(draft["active_root"]))
+    cfg = _runtime_config(doc, draft["ki_name"], Path(draft["active_root"]))
     if not expected_identity or software_verification.runtime_identity(cfg) != expected_identity:
         raise InvestigationError("Runtime bindings changed after maintenance interface verification; verify again")
     if interface:
@@ -1072,18 +1118,18 @@ def verify_draft(project, job_id) -> dict:
         maintenance = doc["draft"].get("repair_mode") == "maintenance"
         maintenance_runtime = None
         if maintenance:
-            from . import ki_maintenance_dispatch
+            from . import ki_maintenance_registry as ki_maintenance_dispatch
             if ki_verification.content_digest(candidate) != doc["draft"].get("maintenance_projection_digest"):
                 raise InvestigationError("Maintenance draft differs from the selected recipe; create a fresh repair draft")
             runtime_args = {}
             if doc["draft"].get("maintenance_recipe") in {"wofost_parameter_routing", "wofost_crop_provider"}:
                 from . import software_verification
-                cfg = _project_runtime_config(project, doc["draft"]["ki_name"], Path(doc["draft"]["active_root"]))
+                cfg = _runtime_config(doc, doc["draft"]["ki_name"], Path(doc["draft"]["active_root"]))
                 maintenance_runtime = software_verification.runtime_identity(cfg)
                 runtime_args["runtime_python"] = cfg.python
             elif doc["draft"].get("maintenance_recipe") == "wofost_runtime_paths":
                 from . import ki_path_contracts, software_verification
-                cfg = _project_runtime_config(project, doc["draft"]["ki_name"], Path(doc["draft"]["active_root"]))
+                cfg = _runtime_config(doc, doc["draft"]["ki_name"], Path(doc["draft"]["active_root"]))
                 maintenance_runtime = software_verification.runtime_identity(cfg)
                 if (maintenance_runtime != doc["draft"].get("maintenance_runtime_identity")
                         or ki_path_contracts.config_identity(cfg) != doc["draft"].get("maintenance_config_identity")
@@ -1091,6 +1137,13 @@ def verify_draft(project, job_id) -> dict:
                     raise InvestigationError("Runtime path bindings changed after draft creation; create a fresh repair draft")
                 runtime_args.update(maintenance_recipe=ki_path_contracts.RECIPE, runtime_config=cfg,
                                     target_root=Path(doc["draft"]["active_root"]))
+            elif doc["draft"].get("maintenance_recipe") in {"epanet_runtime_paths", "shaw_runtime_paths"}:
+                from . import software_verification
+                cfg = _runtime_config(doc, doc["draft"]["ki_name"], Path(doc["draft"]["active_root"]))
+                maintenance_runtime = software_verification.runtime_identity(cfg)
+                if maintenance_runtime != doc["draft"].get("maintenance_runtime_identity"):
+                    raise InvestigationError("Setup runtime changed after creating the maintenance draft")
+                runtime_args.update(runtime_config=cfg, target_root=Path(doc["draft"]["active_root"]))
             verifier = ki_maintenance_dispatch.recipe_verifier(doc["draft"].get("maintenance_recipe"))
             report = verifier.verify_candidate(candidate,
                 source=doc["draft"]["maintenance_source"], name=doc["draft"]["ki_name"], **runtime_args)
@@ -1117,10 +1170,12 @@ def verify_draft(project, job_id) -> dict:
             if report.get("ok"):
                 from . import ki_adaptations, software_verification
                 active = Path(doc["draft"]["active_root"])
-                cfg = _project_runtime_config(project, doc["draft"]["ki_name"], active)
+                cfg = _runtime_config(doc, doc["draft"]["ki_name"], active)
                 runtime = _root(project, job_id) / "runtime-candidates" / ident
+                origin = ki_adaptations.projection(active, cfg)
                 projection, path_projection = ki_adaptations.project_runtime(candidate, runtime, cfg,
-                    model=doc["draft"]["ki_name"], target_root=active)
+                    model=doc["draft"]["ki_name"], target_root=active,
+                    manifest=origin.get("effective_manifest") if origin else None)
                 if projection.unresolved or projection.corrupted:
                     raise InvestigationError("Portable repair has unresolved or corrupted runtime path bindings")
                 runtime_report = ki_verification.verify_candidate(runtime,

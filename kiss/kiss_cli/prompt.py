@@ -93,6 +93,25 @@ def _long_job_detach() -> str:
 #: survives the parent; Stop reaches receipted runs through their own marker.
 HEADLESS_LONG_JOB_RULE = _HEADLESS_LONG_JOB_TEMPLATE.format(detach=_long_job_detach())
 
+NATIVE_STDIN_RULE = r"""[DECLARED NATIVE MODEL PROMPTS]
+If the KI's declared native model binary asks for a case filename or menu answer,
+read its KI guidance and plan the exact answers in the execution step as
+stdin: {"text":"case.inp\n\n"}, alongside explicit command (argv) and cwd.
+Command arguments do not answer interactive stdin prompts; declare those answers
+separately in stdin, never as extra argv values.
+Each nonempty line must be one numeric or yes/no/true/false answer, or one file path relative
+to that cwd whose exact project path is listed in this step's input inventory.
+Use at most 4096 UTF-8 bytes; no absolute paths, traversal, placeholders,
+shell commands or compound instructions. Inventoried filenames may contain
+spaces; preserve their exact spelling. Empty lines are permitted.
+The text's CR/LF characters are preserved exactly; GeoForge adds no final newline.
+This is only for declared native model binaries, not Python tools, project data
+tools or calibration. Both API run_ki_tool and CLI execution take stdin from the
+approved plan; never supply it as a per-call override or use shell redirection.
+The user reviews these exact answers before execution. Changed answers require a
+revised plan and approval. Planning still cannot run the model.
+"""
+
 
 def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, str | None]:
     """The shared KI-usage contract, or ('', reason) if it is unavailable."""
@@ -238,6 +257,7 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
             f"  outputs    {cfg.roles.get('outputs')}\n"
         )
 
+    parts.append(NATIVE_STDIN_RULE)
     if headless and execute:
         parts.append(HEADLESS_LONG_JOB_RULE)
 
@@ -252,7 +272,8 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
     if task:
         parts.append(f"[TASK]\n{task.strip()}\n")
 
-    return "\n".join(parts)
+    from . import runtime_context
+    return runtime_context.guidance() + "\n".join(parts)
 
 
 def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True,
@@ -322,8 +343,10 @@ def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True,
         if reference_cases:
             parts.append(reference_cases)
         parts.append("")
+    parts.append(NATIVE_STDIN_RULE)
     if headless and execute:
         parts.append(HEADLESS_LONG_JOB_RULE)
     if task:
         parts.append(f"[TASK]\n{task.strip()}")
-    return "\n".join(parts)
+    from . import runtime_context
+    return runtime_context.guidance() + "\n".join(parts)

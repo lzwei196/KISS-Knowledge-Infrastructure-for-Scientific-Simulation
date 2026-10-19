@@ -57,9 +57,20 @@ def test_logs_cannot_hide_invalid_scientific_results(case, tmp_path, bad_data, c
     assert any(c["check"] == check and not c["ok"] for c in validation["checks"])
 
 
-@pytest.mark.parametrize("name", ["simulation.log", "stderr.txt", "result.stderr.log.csv"])
-def test_generic_log_and_result_names_keep_numeric_validation(case, tmp_path, name):
+@pytest.mark.parametrize("name", ["simulation.log", "stderr.txt"])
+def test_generic_diagnostic_names_do_not_supply_result_values(case, tmp_path, name):
     ki, result = case
+    other = tmp_path / name
+    other.write_text(FORTRAN_NOTE, encoding="utf-8")
+    validation = receipts.validate_outputs(ki, [result, other], run_facts=FACTS)
+    assert validation["status"] == "passed"
+    assert any(c["check"] == "diagnostic_log:" + name for c in validation["checks"])
+    assert receipts.validate_outputs(ki, [other], run_facts=FACTS)["status"] != "passed"
+
+
+def test_separately_produced_structured_result_keeps_numeric_validation(case, tmp_path):
+    ki, result = case
+    name = "result.stderr.log.csv"
     other = tmp_path / name
     other.write_text(FORTRAN_NOTE, encoding="utf-8")
     validation = receipts.validate_outputs(ki, [result, other], run_facts=FACTS)

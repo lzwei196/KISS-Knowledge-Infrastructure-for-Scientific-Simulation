@@ -418,7 +418,7 @@ def activate_maintenance(root: Path, draft: Path, report: dict, *, source: dict 
     The separate receipt never satisfies the ordinary authoring/import gate.
     The investigation caller still owns three reviews and project invalidation.
     """
-    from . import ki_maintenance_dispatch
+    from . import ki_maintenance_registry as ki_maintenance_dispatch
     root = Path(root).resolve()
 
     def validate(candidate):

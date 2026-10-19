@@ -205,7 +205,8 @@ def _state(project, selected):
                     key = _key(project, row.get('path')) if isinstance(row, dict) else None
                     if key and _reference_path(project, row['path']).is_dir():
                         protected_dirs.add(key)
-    proof = flow.receipts.evidence(project, plan, approval, inventory=inv)
+    from . import native_stdin
+    proof = native_stdin.evidence(flow, project, plan, approval, inventory=inv)
     context = _digest({'project': str(project), 'selected': sorted(chosen), 'files': hashes,
         'plan': plan, 'inventory': inv, 'approval': approval, 'state': ctx.state.value,
         'unreceipted': proof.get('unreceipted_artifacts', [])})

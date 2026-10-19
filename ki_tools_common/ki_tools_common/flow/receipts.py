@@ -33,6 +33,7 @@ import json
 import math
 import os
 import secrets
+import stat
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -339,6 +340,138 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
+def upload_origin_dir(project: Path, *, create: bool = False) -> Path:
+    """Protected host provenance, never project-supplied input metadata."""
+    base = registry_dir()
+    if _inside(base, project):
+        raise ReceiptError("Upload origin registry must be outside the project")
+    directory = base / "input-uploads" / project_id(project)
+    for path in (base, base / "input-uploads", directory):
+        if create:
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if path.exists() or path.is_symlink():
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or (
+                    getattr(info, "st_file_attributes", 0) & 0x400):
+                raise ReceiptError("Upload origin registry is not an ordinary directory")
+    return directory
+
+
+def _upload_file(project: Path, raw: str) -> dict:
+    """Hash one ordinary upload with stable identity; links never gain provenance."""
+    root = Path(project).resolve()
+    if not isinstance(raw, str) or "\\" in raw or ":" in raw:
+        raise ReceiptError("Invalid upload path")
+    parts = raw.split("/")
+    if (any(part in ("", ".", "..") for part in parts)
+            or not (len(parts) == 3 and parts[:2] == ["inputs", "uploads"]
+                    or len(parts) == 4 and parts[:2] == ["inputs", "user"])):
+        raise ReceiptError("Upload must be in the exact browser input namespace")
+    path = root.joinpath(*parts)
+
+    def inspect():
+        for candidate in (root, *[root.joinpath(*parts[:i]) for i in range(1, len(parts) + 1)]):
+            info = candidate.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise ReceiptError("Upload path must not contain links or reparse points")
+            if candidate != path and not stat.S_ISDIR(info.st_mode):
+                raise ReceiptError("Upload parent is not an ordinary directory")
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ReceiptError("Upload must be an ordinary single-link file")
+        if path.resolve() != path:
+            raise ReceiptError("Upload path changed")
+        return info
+
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+    before = inspect()
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    digest = hashlib.sha256()
+    with os.fdopen(fd, "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if identity(opened) != identity(before) or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+            raise ReceiptError("Upload changed before reading")
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+        after = os.fstat(handle.fileno())
+        if identity(after) != identity(before) or after.st_nlink != 1:
+            raise ReceiptError("Upload changed during reading")
+    if identity(inspect()) != identity(before):
+        raise ReceiptError("Upload changed after reading")
+    return {"path": raw, "bytes": before.st_size, "sha256": digest.hexdigest()}
+
+
+def record_user_upload(project: Path, path: Path, data: bytes, *, reconfirm: Path | None = None) -> None:
+    """Called only after a browser upload; origin is neither approval nor validation.
+
+    A filename collision still creates a new exclusive file. Only a fresh body
+    can also reconfirm the exact original name, and only while its bytes match.
+    There is no directory enrollment or automatic migration of existing inputs.
+    """
+    root = Path(project).resolve()
+    expected = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    current = _upload_file(root, Path(path).absolute().relative_to(root).as_posix())
+    if any(current[key] != value for key, value in expected.items()):
+        raise ReceiptError("Saved upload differs from the browser body")
+    entries = [current]
+    if reconfirm is not None and Path(reconfirm) != Path(path):
+        try:
+            original = _upload_file(root, Path(reconfirm).absolute().relative_to(root).as_posix())
+            if all(original[key] == value for key, value in expected.items()):
+                entries.append(original)
+        except (OSError, ValueError, RuntimeError):
+            pass  # An unsafe or different collision remains untrusted and untouched.
+    directory = upload_origin_dir(root, create=True)
+    for entry in entries:
+        # Recheck immediately before publication, including a reconfirmed name.
+        if _upload_file(root, entry["path"]) != entry:
+            raise ReceiptError("Upload changed before origin recording")
+        doc = sign(root, {"kind": "browser-input-upload", "version": 1,
+                          "project_id": project_id(root), "file": entry, "uploaded_at": _now()})
+        target = directory / (hashlib.sha256(entry["path"].encode("utf-8")).hexdigest() + ".json")
+        temporary = target.with_name(target.name + "." + secrets.token_hex(8) + ".tmp")
+        try:
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(doc, handle, ensure_ascii=False, sort_keys=True)
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def uploaded_input_files(project: Path) -> set[str]:
+    """Intact authenticated upload-origin paths; never sufficient to produce results."""
+    trusted: set[str] = set()
+    try:
+        directory = upload_origin_dir(project)
+        paths = list(directory.glob("*.json"))
+        if len(paths) > 4096:
+            return trusted
+    except (OSError, ValueError, RuntimeError):
+        return trusted
+    for path in paths:
+        try:
+            info = path.lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 8192
+                    or stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400):
+                continue
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            if (not verify(project, doc) or doc.get("kind") != "browser-input-upload"
+                    or type(doc.get("version")) is not int or doc["version"] != 1
+                    or doc.get("project_id") != project_id(project)):
+                continue
+            entry = doc.get("file")
+            if (not isinstance(entry, dict) or set(entry) != {"path", "bytes", "sha256"}
+                    or path.stem != hashlib.sha256(entry["path"].encode("utf-8")).hexdigest()
+                    or _upload_file(project, entry["path"]) != entry):
+                continue
+            trusted.add(entry["path"])
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):
+            continue
+    return trusted
+
+
 # ---------------------------------------------------------------------------
 # record
 # ---------------------------------------------------------------------------
@@ -560,14 +693,29 @@ def _is_number(tok: str) -> bool:
         return False
 
 
+def _netcdf_container(path: Path) -> bool:
+    """Recognize container bytes, never a model-specific filename extension.
+
+    A signature selects the NetCDF decoder; it does not establish that the
+    container is valid or contains a scientific result. HDF5 may contain
+    unrelated data and still has to pass that decoder and the existing checks.
+    """
+    with path.open("rb") as stream:
+        prefix = stream.read(8)
+    return prefix[:4] in (b"CDF\x01", b"CDF\x02", b"CDF\x05") or prefix == b"\x89HDF\r\n\x1a\n"
+
+
 def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[float] | None, int | None, str]:
     """Numeric read of one output. NetCDF: ONLY the rank-1 variable(s) when present in the
     file (codex #5), else all data variables (and say so). Text/CSV: per-column, dropping
     strictly-increasing index/time columns so a time axis can never satisfy 'has positive
     values'. Returns (values, n_rows_or_steps, note)."""
-    suf = path.suffix.lower()
+    netcdf = False
     try:
-        if suf in (".nc", ".nc4", ".netcdf"):
+        netcdf = _netcdf_container(path)
+        if not netcdf and path.suffix.lower() in (".nc", ".nc4", ".netcdf"):
+            return None, None, "NETCDF_UNINSPECTABLE: file has no NetCDF/HDF5 container signature"
+        if netcdf:
             try:
                 import xarray as xr
                 import numpy as np
@@ -634,7 +782,9 @@ def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[fl
                     return vals, n, note
             except Exception as error:  # noqa: BLE001
                 return None, None, f"NETCDF_UNINSPECTABLE: {type(error).__name__}"
-        text = path.read_text(encoding="utf-8", errors="ignore").replace("\ufeff", "")
+        text = path.read_text(encoding="utf-8").replace("\ufeff", "")
+        if "\x00" in text:
+            return None, None, "unreadable (binary data is not a numeric text result)"
         lines = [ln for ln in text.splitlines() if ln.strip()]
         # (web defect 3, codex rounds 2-4) the HEADER is the LAST number-free line before the first
         # data row — commented (`# time q`) or not, after any prose preamble; cells are parsed with the csv reader (quotes, inner spaces) so header and data
@@ -709,13 +859,31 @@ def _load_series(path: Path, prefer_vars: tuple[str, ...] = ()) -> tuple[list[fl
         vals = [v for c in data_cols for v in c]
         return vals, rows, ("text" if vals else "text: only an axis-like column, no result column")
     except Exception as e:
-        return None, None, f"unreadable ({type(e).__name__})"
+        prefix = "NETCDF_UNINSPECTABLE" if netcdf else "unreadable"
+        return None, None, f"{prefix}: {type(e).__name__}"
 
 
 def _diagnostic_stream_log(path: Path) -> bool:
     """Recognize explicit stdout/stderr captures, never generic model .log files."""
     name = path.name.lower()
     return name in {"stdout.log", "stderr.log"} or name.endswith((".stdout.log", ".stderr.log"))
+
+
+def _diagnostic_result_log(path: Path) -> bool:
+    """Conventional diagnostics cannot supply scientific numeric evidence.
+
+    This is a generic filename convention, not a model allowlist or a claim
+    to classify arbitrary prose. A separately produced structured data file
+    such as result.stderr.log.csv is still inspected as data. All artifacts
+    remain hashed by the receipt regardless of this classification.
+    """
+    import re
+    if _diagnostic_stream_log(path):
+        return True
+    if path.suffix.lower() in {".csv", ".tsv", ".nc", ".nc4", ".netcdf"}:
+        return False
+    return bool(re.search(r"(?:^|[._-])(?:log|logs|diag|diagnostic|diagnostics|stdout|stderr)(?:$|[._-])",
+                          path.name.lower()))
 
 
 def _validate_png(path: Path) -> tuple[bool, str]:
@@ -796,7 +964,7 @@ def validate_outputs(ki_root: Path, outputs: list, *, expected_steps: int | None
         p = Path(out)
         if not p.is_file():
             add(f"exists:{p.name}", False, str(p)); continue
-        if _diagnostic_stream_log(p):
+        if _diagnostic_result_log(p):
             add(f"diagnostic_log:{p.name}", True,
                 f"{p.stat().st_size} bytes; retained as evidence, excluded from numeric result checks")
             continue
@@ -1128,6 +1296,7 @@ class RuntimeArgumentCapture:
     cwd: str
     arguments: tuple[str, ...]
     bindings: tuple[tuple[int, str, str, str], ...]
+    expected_files: tuple[tuple[str, int, str], ...] = ()
 
     def checked_bindings(self, project, arguments, cwd):
         if (str(Path(project).resolve()) != self.project or str(Path(cwd).resolve()) != self.cwd
@@ -1135,7 +1304,36 @@ class RuntimeArgumentCapture:
                 or not isinstance(self.bindings, tuple)
                 or any(not isinstance(binding, tuple) for binding in self.bindings)):
             raise ValueError("Runtime argument authorization differs from this invocation")
-        return _runtime_binding_rows(Path(project).resolve(), arguments, self.bindings, cwd)
+        rows = _runtime_binding_rows(Path(project).resolve(), arguments, self.bindings, cwd)
+        if self.expected_files:
+            if (not isinstance(self.expected_files, tuple)
+                    or any(not isinstance(row, tuple) or len(row) != 3 for row in self.expected_files)):
+                raise ValueError("Malformed verified runtime file identities")
+            targets = {row["target"] for row in rows}
+            seen = set()
+            for target, size, digest in self.expected_files:
+                if (not isinstance(target, str) or target not in targets or target in seen
+                        or type(size) is not int or not 0 < size <= 256 * 1024 * 1024
+                        or not isinstance(digest, str) or len(digest) != 64
+                        or any(c not in "0123456789abcdef" for c in digest)):
+                    raise ValueError("Malformed verified runtime file identity")
+                seen.add(target)
+                path = Path(target)
+                if path.stat().st_size != size:
+                    raise ValueError("Verified runtime argument bytes changed: " + target)
+                observed, remaining = hashlib.sha256(), size + 1
+                with path.open("rb") as stream:
+                    while remaining:
+                        block = stream.read(min(1024 * 1024, remaining))
+                        if not block:
+                            break
+                        observed.update(block)
+                        remaining -= len(block)
+                if remaining != 1 or observed.hexdigest() != digest:
+                    raise ValueError("Verified runtime argument bytes changed: " + target)
+            if seen != targets:
+                raise ValueError("Verified runtime file identities do not cover every argument")
+        return rows
 
 
 def _runtime_coverage_errors(project, receipt):
@@ -1410,7 +1608,8 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
              artifact_suffixes: tuple[str, ...] = (".nc", ".csv", ".txt", ".out", ".dat", ".tif",
                                                    ".png", ".json", ".bin"),
              enforcement: str = "none", inventory: dict | None = None, *,
-             _download_inspection: list[DownloadEvidence] | None = None) -> dict:
+             _download_inspection: list[DownloadEvidence] | None = None,
+             include_history: bool = True) -> dict:
     """Machine-readable summary the UI shows and COMPLETED requires. Trusts ONLY receipts
     that verify AND are bound to the current approval (`approval_sha256 == the signed
     approval issuance's unique signature`), name a selected KI and a planned step. COMPLETED needs every
@@ -1424,6 +1623,11 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     receipts are `assurance: containment`, not `cryptographic`. Only when the provider's tool
     wall was EXACT (Claude allowedTools without a Read grant on the key dir; the API proxy,
     which gives the agent no file access at all) is the signature a proof against the agent."""
+    # Display-only callers may omit history, but never while classifying
+    # artifacts for completion: historical paths affect orphan classification.
+    output_dirs = tuple(output_dirs)
+    if type(include_history) is not bool or (not include_history and output_dirs):
+        raise ValueError("Omitting receipt history requires output_dirs=() (display-only query)")
     project = Path(project)
     plan = plan or {}
     approval = approval or {}
@@ -1522,11 +1726,14 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
             bound_dl.append(result.receipt)
         else:
             rejected.append({"path": str(result.path), "why": result.reason})
+    from .public_downloads import step_complete as public_download_complete
     passed_downloads = {str(d.get("plan_step_id")) for d in bound_dl
                         if str(d.get("plan_step_id")) in steps
                         and str(d.get("plan_step_id")) not in invalid_steps
                         and steps[str(d.get("plan_step_id"))].get("kind") == "download"
-                        and d.get("raw_files") and not any(f.get("missing") for f in d["raw_files"])}
+                        and d.get("raw_files") and not any(f.get("missing") for f in d["raw_files"])
+                        and public_download_complete(steps[str(d.get("plan_step_id"))],
+                                                     inventory or {}, bound_dl)}
 
     # Every attempt keeps its receipt, but each step stands on its LATEST bound attempt and each
     # output file on the latest attempt that wrote it. So a retry supersedes a failure, a later
@@ -1638,7 +1845,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     for d in bound_dl:
         for o in (d.get("raw_files") or []) + (d.get("processed_files") or []):
             receipted_outputs.add(o.get("path"))
-    historical_outputs = _historical_outputs(project, runs, cur, set(writer))
+    historical_outputs = _historical_outputs(project, runs, cur, set(writer)) if include_history else []
     historical_paths = {entry["path"] for entry in historical_outputs}
     # Inputs the approved inventory names under inputs/ are the plan's data, not results, and
     # the host's own calibration manifest is written at project creation: neither is an
@@ -1653,6 +1860,21 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
     calibration_inputs = {item for step in steps.values()
                           if step.get("kind") == "calibrate" and isinstance(step.get("calibration"), dict)
                           for item in step.get("inputs") or []} - produced
+    # A browser upload proves input origin, not a model result. Explicit
+    # produced paths (including directory descendants) and every authenticated
+    # run's output remain producer-bound, even after an upload of equal bytes.
+    produced_paths: set[Path] = set()
+    for item in (inventory or {}).get("items") or []:
+        if isinstance(item, dict) and item.get("id") in produced:
+            for raw in item.get("local_paths") or []:
+                try:
+                    path = Path(str(raw))
+                    produced_paths.add((path if path.is_absolute() else root / path).resolve())
+                except (OSError, ValueError, RuntimeError):
+                    continue
+    recorded_outputs = {str(entry.get("path")) for _, doc, valid in runs if valid
+                        for entry in doc.get("outputs") or [] if isinstance(entry, dict)}
+    uploaded_inputs = uploaded_input_files(root)
     for item in (inventory or {}).get("items") or []:
         for raw in (item.get("local_paths") or []) if isinstance(item, dict) else []:
             try:
@@ -1661,7 +1883,7 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                     .relative_to(root).as_posix()
             except (OSError, ValueError, RuntimeError):
                 continue
-            if rel.startswith("inputs/"):
+            if rel.startswith("inputs/") and item.get("id") not in produced:
                 declared_inputs.add(rel)
                 resolved = root / rel
                 if resolved.is_dir():
@@ -1694,8 +1916,14 @@ def evidence(project: Path, plan: dict | None, approval: dict | None,
                 declared_child = ((root / "inputs") in p.absolute().parents and
                                   any(resolved.is_relative_to(directory)
                                       for directory in declared_input_dirs))
-                if (rel not in receipted_outputs and rel not in declared_inputs
-                        and rel not in historical_paths and not declared_child):
+                producer_bound = rel in recorded_outputs or any(
+                    resolved == path or resolved.is_relative_to(path) for path in produced_paths)
+                uploaded_original = (rel in uploaded_inputs and
+                    p.absolute().relative_to(root).as_posix() == rel)
+                input_only = not producer_bound and (
+                    rel in declared_inputs or declared_child or uploaded_original)
+                if (rel not in receipted_outputs and not input_only
+                        and rel not in historical_paths):
                     unreceipted.append(rel)
 
     passed_steps = {sid for sid, d in latest.items()

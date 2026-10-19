@@ -27,7 +27,7 @@ function element(key){
 element('#msg').value=input.draft||'Existing project question.';
 // The full page declares this optional controller before setControls().
 const context={CUR:{id:'original'},INVESTIGATION:null,PENDING_ATTACHMENTS:new Map(),UPLOADING:new Map(),
-  DRAFTS:new Map(),INFLIGHT:new Map(),console,$:element,
+  DRAFTS:new Map(),INFLIGHT:new Map(),PENDING_ACTIONS:new Map(),console,$:element,
   chineseUI:()=>Boolean(input.zh),currentProviderReady:()=>true,updateActivityUI(){},
   renderAttachments(){renders.push(context.CUR?.id);},
   async refreshData(){refreshes.push(context.CUR?.id);},
@@ -52,6 +52,7 @@ context.fetch=async(url,options)=>{
   return {ok:!response.error,status:response.error?400:200,json:async()=>response};
 };
 vm.createContext(context);
+vm.runInContext(page.slice(page.indexOf('function renderNextPhaseComposerNotice(){'),page.indexOf('function stageNextPhase(')),context);
 vm.runInContext(page.slice(page.indexOf('function setControls(on){'),page.indexOf('$("#send").onclick=send;')),context);
 vm.runInContext(page.slice(page.indexOf('let UPLOAD_ITEM='),page.indexOf('$("#paperfile").onchange=')),context);
 (async()=>{

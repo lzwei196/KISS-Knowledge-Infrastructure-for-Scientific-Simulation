@@ -95,9 +95,10 @@ def test_existing_artifact_cannot_bypass_ki_step_or_input_readiness(case, role):
                       'inputs': ['figure'] if role == 'prepared-input' else [],
                       'outputs': ['figure'] if role == 'native-output' else []}]
     result = project_data(case)
-    assert result['items'][0]['status'] == 'pending'
-    assert result['items'][0]['evidence_source'] == 'project_inventory'
-    assert project_status._data_summary(result)['available'] == 0
+    assert result['items'][0]['status'] == 'present_unverified'
+    assert result['items'][0]['evidence_source'] == 'local_files'
+    assert project_status._data_summary(result)['available'] == 1
+    assert result['items'][0]['scientific_validation'] == 'pending'
     if role == 'native-output':
         passed = project_data(case, {'steps_passed': ['M:run']})
         assert passed['items'][0]['status'] == 'produced'

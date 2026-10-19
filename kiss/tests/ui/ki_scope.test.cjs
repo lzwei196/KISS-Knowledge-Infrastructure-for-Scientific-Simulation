@@ -91,12 +91,15 @@ test('a slower old scoped catalogue cannot overwrite a newer opened global proje
   // follows the accepted CUR assignment and does not control this race.
   const shipped = html.slice(start, end) + 'return CUR;\n}';
   let active = '', resolveA, resolveB;
+  const urls = [];
   const catalogueA = new Promise(resolve => {resolveA = resolve;});
   const catalogueB = new Promise(resolve => {resolveB = resolve;});
   const response = value => ({ok: true, json: async () => value});
   const context = vm.createContext({OPEN_SEQ: 0, CUR: null, ACTION_SESSION: null,
     MODELS: [], STATUS: {}, STATUS_REFRESHING: null, LAST_STATUS_CHECK: 0,
-    GeoForgeKIScope: {get: () => active, set: value => {active = value;}},
+    GeoForgeKIScope: {get: () => active, set: value => {active = value;},
+      url: value => value + (active ? '&library_scope=' + active : '')},
+    history: {replaceState: (_state, _title, url) => urls.push(url)},
     refreshMachineStatus: async () => {},
     fetch: async url => {
       if (url === '/api/session/A') return response({id: 'A', library_scope: scope});
@@ -118,6 +121,7 @@ test('a slower old scoped catalogue cannot overwrite a newer opened global proje
   assert.equal(context.CUR.id, 'B');
   assert.equal(context.MODELS[0].name, 'GLOBAL');
   assert.equal(active, '');
+  assert.deepEqual(urls, ['/?session=B']);
 });
 
 test('overlapping opens in the same new scope still load its catalogue and installation status', async () => {
@@ -126,12 +130,15 @@ test('overlapping opens in the same new scope still load its catalogue and insta
   const end = html.indexOf('  rememberSessionSummary(CUR);', start);
   const shipped = html.slice(start, end) + 'return CUR;\n}';
   let active = '', finishA, finishB, catalogueCalls = 0;
+  const urls = [];
   const catalogueA = new Promise(resolve => {finishA = resolve;});
   const catalogueB = new Promise(resolve => {finishB = resolve;});
   const response = value => ({ok: true, json: async () => value});
   const context = vm.createContext({OPEN_SEQ: 0, CUR: null, ACTION_SESSION: null,
     MODELS: [{name: 'GLOBAL'}], STATUS: {GLOBAL: {}}, LAST_STATUS_CHECK: Date.now(),
-    GeoForgeKIScope: {get: () => active, set: value => {active = value;}},
+    GeoForgeKIScope: {get: () => active, set: value => {active = value;},
+      url: value => value + (active ? '&library_scope=' + active : '')},
+    history: {replaceState: (_state, _title, url) => urls.push(url)},
     fetch: async url => {
       if (url.startsWith('/api/session/')) return response({id: url.at(-1), library_scope: scope});
       if (url === '/api/models') return ++catalogueCalls === 1 ? catalogueA : catalogueB;
@@ -151,6 +158,7 @@ test('overlapping opens in the same new scope still load its catalogue and insta
   assert.equal(context.MODELS[0].name, 'SCOPED');
   assert.equal(context.STATUS.SCOPED.can_run, false);
   assert.equal(context.STATUS.GLOBAL, undefined);
+  assert.deepEqual(urls, ['/?session=B&library_scope=' + scope]);
 });
 
 test('a pending global update watcher cannot overwrite a newly selected project scope', async () => {

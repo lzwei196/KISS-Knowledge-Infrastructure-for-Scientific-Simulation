@@ -15,13 +15,14 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
+import sys
 import tempfile
 import uuid
 
 from . import firstrun, helper_identity, ki_copy, ki_guard, ki_tree, ki_verification, port
 from . import software_verification
 from .catalog import KI, installation_platform
-from .manifest import Manifest
+from .manifest import Manifest, validate_runtime_paths
 
 POLICY = "portable-ki-adaptation-v1"
 PROJECTION_POLICY = "kiss-role-projection-v2"
@@ -142,13 +143,57 @@ def _prepared_helper(cfg, helper_root=None):
             if helper and (Path(helper) / helper_identity.MARKER).exists() else None)
 
 
+def _recipe(source, model, manifest=None):
+    """Resolve the host's effective recipe without losing shipped fallbacks.
+
+    A supplied recipe cannot opt a package out of its own declared path mode.
+    Other installation fields keep their existing host-selected semantics.
+    """
+    ki = KI(model, Path(source))
+    own = manifest_document(Manifest.load(ki.manifest)) if ki.manifest else None
+    recipe = manifest_document(manifest) if is_dataclass(manifest) else manifest
+    recipe = own if recipe is None else recipe
+    if recipe is not None and (not isinstance(recipe, dict) or recipe.get("model") != model):
+        raise AdaptationError("Adaptation manifest belongs to another model")
+    declaration = validate_runtime_paths(recipe.get("runtime_paths")) if recipe else None
+    if own is not None and validate_runtime_paths(own.get("runtime_paths")) != declaration:
+        raise AdaptationError("Effective runtime path declaration differs from the selected KI manifest")
+    return recipe
+
+
+def runtime_path_contract(source, model, manifest=None):
+    """Select an explicit path convention; this grants no execution/readiness."""
+    recipe = _recipe(source, model, manifest)
+    return validate_runtime_paths(recipe.get("runtime_paths")) if recipe else None
+
+
+def _portable_path_identity():
+    from . import implementation_identity, manifest
+    return _hash({"policy": "declared-role-paths-v1",
+                  "projection": implementation_identity.module_digest(sys.modules[__name__]),
+                  "port": implementation_identity.module_digest(port),
+                  "manifest": implementation_identity.module_digest(manifest)})
+
+
+def _runtime_target(cfg, model, target_root):
+    """Only the host's own installation/project KI directory may be bound."""
+    if (not isinstance(model, str) or not model or model in {".", ".."}
+            or any(c in model for c in "/\\\0")):
+        raise AdaptationError("Invalid model for runtime path binding")
+    root = Path(cfg.root)
+    if target_root is None or not root.is_absolute() or not Path(target_root).is_absolute():
+        raise AdaptationError("Runtime paths require an explicit absolute workspace and KI target")
+    target = Path(target_root)
+    if (target not in (root / "ki", root / "models" / model / "ki")
+            or target.resolve() != target or port.TOKEN_RE.search(str(target))):
+        raise AdaptationError("Runtime path target must be this model's exact unaliased workspace")
+    return target
+
+
 def _context(source, cfg, *, model=None, library_root=None, manifest=None, helper_root=None):
     model = model or Path(source).name
-    ki = KI(model, Path(source))
-    manifest = manifest if manifest is not None else (Manifest.load(ki.manifest) if ki.manifest else None)
-    if manifest is not None and getattr(manifest, "model", model) != model:
-        raise AdaptationError("Adaptation manifest belongs to another model")
-    recipe = manifest_document(manifest) if is_dataclass(manifest) else manifest
+    recipe = _recipe(source, model, manifest)
+    declaration = validate_runtime_paths(recipe.get("runtime_paths")) if recipe else None
     prepared = _prepared_helper(cfg, helper_root)
     expected = (helper_identity.source_identity(Path(library_root))
                 if library_root is not None and (Path(library_root) / "ki_tools_common").is_dir() else None)
@@ -158,11 +203,15 @@ def _context(source, cfg, *, model=None, library_root=None, manifest=None, helpe
     # the host-selected source comparison, captured in signed provenance here.
     helpers = prepared if prepared is not None and expected == prepared else None
     from . import ki_fresh_paths
-    return {"model": model, "upstream_digest": _digest(source),
+    context = {"model": model, "upstream_digest": _digest(source),
             "platform": installation_platform(), "architecture": platform.machine().casefold(),
             "effective_manifest_digest": _hash(recipe), "helper_source_digest": helpers,
             "projection_policy": PROJECTION_POLICY,
-            "path_normalizer": ki_fresh_paths.source_digest() if model == "WOFOST" else None}
+            "path_normalizer": (_portable_path_identity() if declaration else
+                                ki_fresh_paths.source_digest() if model == "WOFOST" else None)}
+    if declaration is not None:
+        context["runtime_paths"] = declaration
+    return context
 
 
 def _selected(context):
@@ -273,7 +322,7 @@ def require_inspection_current(view: dict) -> None:
 
 
 def _projection_doc(source, dest, cfg, context, selected, *, library_root=None, reconciliation=None,
-                    path_projection=None, target_root=None):
+                    path_projection=None, target_root=None, manifest=None):
     upstream, upstream_digest = _remember(source)
     if upstream_digest != context["upstream_digest"]:
         raise AdaptationError("Portable source changed before its projection provenance was recorded")
@@ -287,14 +336,19 @@ def _projection_doc(source, dest, cfg, context, selected, *, library_root=None, 
             target_root=target_root or dest, ordinary_digest=path_projection["ordinary_digest"],
             ordinary_files=path_projection["ordinary_files"])
         ki_fresh_paths.require_fresh_current(path_projection)
+    recipe = _recipe(source, context["model"], manifest)
+    if _hash(recipe) != context["effective_manifest_digest"]:
+        raise AdaptationError("Effective recipe changed before its projection was recorded")
     return {**_base(), "kind": "projection", "live_root": str(Path(dest).absolute()),
             "context": context, "context_id": _hash(context),
+            "effective_manifest": recipe,
             "upstream_root": str(upstream), "upstream_digest": upstream_digest,
             "portable_root": portable, "portable_digest": portable_digest,
             "portable_report": selected["portable_report"] if selected else None,
             "adaptation_id": selected["adaptation_id"] if selected else None,
             "projected_digest": _digest(dest),
             "runtime_identity": software_verification.runtime_identity(cfg),
+            "projection_binding": software_verification.projection_binding(cfg),
             "source_root": str(Path(source).absolute()),
             "library_root": str(Path(library_root).absolute()) if library_root else None,
             "reconciliation_needed": reconciliation is not None,
@@ -324,8 +378,9 @@ def _materialise(source, dest, cfg, *, model=None, library_root=None, manifest=N
     runtime_before = software_verification.runtime_identity(cfg)
     selected, reconciliation = _selected(context)
     portable = Path(selected["portable_root"]) if selected else source
+    recipe = _recipe(source, context["model"], manifest)
     report, path_projection = project_runtime(portable, dest, cfg, model=context["model"],
-                                               target_root=target_root or dest)
+                                               target_root=target_root or dest, manifest=recipe)
     if report.unresolved or report.corrupted:
         return report
     if (context != _context(source, cfg, model=model, library_root=library_root,
@@ -336,7 +391,7 @@ def _materialise(source, dest, cfg, *, model=None, library_root=None, manifest=N
         ki_verification.require_current(portable, selected["portable_report"])
     doc = _projection_doc(source, dest, cfg, context, selected, library_root=library_root,
                           reconciliation=reconciliation, path_projection=path_projection,
-                          target_root=target_root)
+                          target_root=target_root, manifest=recipe)
     if doc["runtime_identity"] != runtime_before:
         raise AdaptationError("Runtime configuration changed before its projection provenance was recorded")
     ki_guard.enroll(dest)
@@ -344,7 +399,7 @@ def _materialise(source, dest, cfg, *, model=None, library_root=None, manifest=N
     return report
 
 
-def project_runtime(source, dest, cfg, *, model, target_root):
+def project_runtime(source, dest, cfg, *, model, target_root, manifest=None):
     """Materialise a new KI with one exact host path overlay, without approval.
 
     Physical staging and logical deployment paths are separate. This helper
@@ -359,12 +414,20 @@ def project_runtime(source, dest, cfg, *, model, target_root):
     ki_guard.require_intact(source, required=False)
     source_before = _digest(source)
     runtime_before = software_verification.runtime_identity(cfg)
+    recipe = _recipe(source, model, manifest)
+    recipe_before = _hash(recipe)
+    declaration = runtime_path_contract(source, model, recipe)
+    logical = _runtime_target(cfg, model, target_root) if declaration else None
     try:
-        changes = ki_fresh_paths.expected_fresh_changes(source, model, cfg, target_root=target_root)
+        # An explicit convention is selected BEFORE the legacy rewrite. An
+        # unrecognized legacy package must never fall through on an exception.
+        changes = ({} if declaration else
+                   ki_fresh_paths.expected_fresh_changes(source, model, cfg, target_root=target_root))
         runtime_paths = ki_fresh_paths._fresh_runtime(cfg) if changes else None
     except (ValueError, OSError, SyntaxError, TypeError) as error:
         raise AdaptationError(f"Unsupported {model} fresh path contract; verify a reconciled KI before use: {error}") from error
-    report = port.materialise(source, dest, cfg)
+    report = (port.materialise(source, dest, cfg, ki_target=logical) if declaration else
+              port.materialise(source, dest, cfg))
     if report.unresolved or report.corrupted:
         return report, None
     path_projection = None
@@ -381,10 +444,58 @@ def project_runtime(source, dest, cfg, *, model, target_root):
         if path_projection["runtime"] != runtime_paths:
             raise AdaptationError("Runtime/helper bytes changed during fresh path projection")
         ki_fresh_paths.require_fresh_current(path_projection)
-    if (_digest(source) != source_before
+    if (_digest(source) != source_before or _hash(_recipe(source, model, manifest)) != recipe_before
             or software_verification.runtime_identity(cfg) != runtime_before):
         raise AdaptationError("Source or saved runtime context changed during KI projection")
     return report, path_projection
+
+
+def require_path_binding(doc, cfg):
+    """Read the declared route inside an already authenticated projection.
+
+    This checks static path provenance only. Legacy WOFOST fingerprint proofs
+    remain in path_projection and use their own stronger runtime checker.
+    """
+    context = doc["context"]
+    declaration = validate_runtime_paths(context.get("runtime_paths"))
+    recipe = doc.get("effective_manifest")
+    if "effective_manifest" in doc and _hash(recipe) != context["effective_manifest_digest"]:
+        raise AdaptationError("Saved effective recipe differs from its signed projection context")
+    if declaration is None:
+        if recipe and validate_runtime_paths(recipe.get("runtime_paths")) is not None:
+            raise AdaptationError("Declared path route is missing from the projection context")
+        return
+    if (recipe is None or validate_runtime_paths(recipe.get("runtime_paths")) != declaration
+            or context.get("path_normalizer") != _portable_path_identity()
+            or context.get("projection_policy") != PROJECTION_POLICY
+            or doc.get("path_projection") is not None):
+        raise AdaptationError("Declared runtime path policy changed; prepare and verify a fresh projection")
+    root = _retained(doc["portable_root"], doc["portable_digest"])
+    if runtime_path_contract(root, context["model"], recipe) != declaration:
+        raise AdaptationError("Portable source no longer declares its recorded path convention")
+    _runtime_target(cfg, context["model"], doc.get("logical_target"))
+
+
+def setup_repair(live, cfg, *, source, model, library_root, manifest=None):
+    """Read an exact adopted setup repair without rewriting portable lineage.
+
+    A maintenance revision is not the upstream runtime projection. Its own
+    signed setup journal must prove the selected source, saved configuration,
+    helpers, candidate and current maintenance verification. Missing authority
+    returns None; present but stale authority must never fall back to ordinary
+    projection or silently re-materialise the source.
+    """
+    from . import setup_ki_repair
+
+    root = Path(cfg.root)
+    target = Path(live)
+    if (not root.is_absolute() or root.resolve() != root
+            or target != root / "ki" or target.resolve() != target):
+        raise AdaptationError("Setup repair requires this installation's exact unaliased KI")
+    _runtime_target(cfg, model, target)
+    recipe = _recipe(source, model, manifest)
+    return setup_ki_repair.require_adoption(root, source_root=Path(source),
+        library_root=library_root, manifest=recipe, cfg=cfg)
 
 
 def projection(live, cfg):
@@ -395,12 +506,13 @@ def projection(live, cfg):
         return None
     if (doc.get("kind") != "projection" or doc.get("live_root") != str(live)
             or doc.get("projected_digest") != _digest(live)
-            or doc.get("runtime_identity") != software_verification.runtime_identity(cfg)
             or doc.get("context_id") != _hash(doc.get("context"))):
         raise AdaptationError("KI projection or its runtime binding changed; retained provenance is stale")
+    require_projection_runtime(doc, cfg)
     ki_guard.require_intact(live)
     _retained(doc["upstream_root"], doc["upstream_digest"])
     root = _retained(doc["portable_root"], doc["portable_digest"])
+    require_path_binding(doc, cfg)
     expected_helpers = doc["context"].get("helper_source_digest")
     prepared_helpers = _prepared_helper(cfg)
     if expected_helpers is not None and prepared_helpers != expected_helpers:
@@ -415,6 +527,297 @@ def projection(live, cfg):
             raise AdaptationError("Fresh projection policy/target differs from its signed lineage")
         ki_fresh_paths.require_fresh_current(report, candidate_root=live)
     return doc
+
+
+def require_projection_runtime(doc, cfg):
+    """Check static path/backend binding without refreshing a signed record."""
+    if "projection_binding" in doc:
+        if doc["projection_binding"] != software_verification.projection_binding(cfg):
+            raise AdaptationError("KI projection paths or runtime binding changed; retained provenance is stale")
+    elif doc.get("runtime_identity") != software_verification.runtime_identity(cfg):
+        raise AdaptationError("The application/runtime verification changed; revalidate the retained projection before checking readiness")
+
+
+def _legacy_guest_paths(doc, cfg):
+    """Prove an old guest hash changed only in its interpreter content.
+
+    A historical signed dependency report supplies one candidate Python hash,
+    not current dependency authority. Matching the *entire* old identity hash
+    proves all remaining guest fields unchanged. No package/probe/readiness
+    result is imported. Version/kernel changes have no legacy fallback.
+    """
+    from . import runtime_context
+    old = doc.get("projection_binding")
+    current = software_verification.projection_binding(cfg)
+    backend = current.get("backend", {})
+    if (not isinstance(old, dict) or backend.get("kind") != "wsl"
+            or "guest_path_identity" not in backend):
+        return None
+    old_backend = old.get("backend", {})
+    old_guest = old_backend.get("guest_identity")
+    if not isinstance(old_guest, str) or not re.fullmatch(r"[a-f0-9]{64}", old_guest):
+        return None
+    reconstructed = {**current, "backend": {
+        **{key: value for key, value in backend.items() if key != "guest_path_identity"},
+        "guest_identity": old_guest}}
+    if reconstructed != old:
+        return None  # Exact all roles, outer paths, user, distro and workspace.
+    observed = runtime_context.guest_observation()
+    full_backend = software_verification.runtime_binding(cfg)["backend"]
+    if (runtime_context.guest_digest(observed) != full_backend.get("guest_identity")
+            or runtime_context.guest_path_digest(observed) != backend["guest_path_identity"]):
+        raise AdaptationError("Current guest evidence differs from the bound runtime")
+    if runtime_context.guest_digest(observed) == old_guest:
+        return {"kind": "identical_guest_path_schema", "previous_guest_identity": old_guest}
+    return next((candidate for candidate in _historical_guest_candidates(cfg)
+                 if candidate["previous_guest_identity"] == old_guest), None)
+
+
+def _historical_guest_candidates(cfg):
+    """Yield exact old guest preimages, never old capability/readiness grants."""
+    from . import runtime_context
+    backend = software_verification.runtime_binding(cfg)["backend"]
+    if backend.get("kind") != "wsl" or "guest_path_identity" not in backend:
+        return
+    observed = runtime_context.guest_observation()
+    if (runtime_context.guest_digest(observed) != backend.get("guest_identity")
+            or runtime_context.guest_path_digest(observed) != backend["guest_path_identity"]):
+        raise AdaptationError("Current guest evidence differs from the bound runtime")
+    # Keep the authority spelling used by the native gate's HMAC key identity;
+    # Windows extended I/O spelling is only for reading the stored file.
+    authority = firstrun.data_dir() / "dependency-capabilities"
+    if not authority.is_dir():
+        return
+    expected_binding = {"distro": backend["distro"], "user": backend["user"],
+        "workspace": backend["workspace"], "workspace_id": backend["id"],
+        "python": "/usr/bin/python3"}
+    if observed["python"] != expected_binding["python"]:
+        return
+    from . import dependency_capabilities
+    with os.scandir(authority) as entries:
+        for index, entry in enumerate(entries):
+            if index >= 128:
+                raise AdaptationError("Historical runtime evidence exceeds the projection refresh bound")
+            if not re.fullmatch(r"[a-f0-9]{64}\.json", entry.name):
+                continue
+            if not entry.is_file(follow_symlinks=False):
+                raise AdaptationError("Historical runtime identity record must be an ordinary file")
+            path = ki_guard._io(Path(entry.path))
+            if not path.is_file() or path.stat().st_size > MAX_RECORD_BYTES:
+                raise AdaptationError("Invalid historical runtime identity record")
+            try:
+                wrapper = json.loads(path.read_text(encoding="utf-8"))
+                report = wrapper.get("capabilities") if isinstance(wrapper, dict) else None
+                if (not isinstance(report, dict) or not _receipts().verify(authority, report)
+                        or report.get("policy") != dependency_capabilities.POLICY
+                        or report.get("profile") != dependency_capabilities.PROFILE
+                        or report.get("binding") != expected_binding
+                        or report.get("model_readiness") is not False):
+                    continue
+                row = report["evidence"]["system_files"].get(observed["python_realpath"], {})
+                digest = row.get("sha256")
+                if (row.get("path") != observed["python_realpath"]
+                        or type(row.get("bytes")) is not int or not 0 < row["bytes"] <= 64 * 1024 * 1024
+                        or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)):
+                    continue
+                previous = {**observed, "python_sha256": digest}
+                old_guest = runtime_context.guest_digest(previous)
+                if old_guest == report.get("backend_identity"):
+                    yield {"kind": "exact_python_content_preimage", "previous_guest_identity": old_guest,
+                        "historical_report_sha256": _hash(report), "model_readiness": False}
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+
+
+def _legacy_source_only_change(doc, cfg):
+    """Prove the complete opaque old runtime hash from bounded exact preimages.
+
+    Directory names supply bounded candidate preimages, not authority. Matching
+    the authenticated old hash binds every other runtime field exactly, even
+    roles unused by the KI. An authenticated historical Python hash may replace
+    only interpreter content, and must first reproduce its whole old guest hash.
+    No missing-build, changed-path or different-machine fallback.
+    """
+    from . import runtime_backend
+    current = software_verification.runtime_binding(cfg)
+    backend = current["backend"]
+    if backend.get("kind") != "wsl":
+        return False
+    selected = runtime_backend.WSLBinding(backend["distro"], backend["user"],
+        backend["workspace"], backend["id"])
+    apps = Path(selected.workspace) / "app"
+    ki_guard._io(apps)
+    if not apps.is_dir():
+        return False
+    candidates = []
+    with os.scandir(apps) as entries:
+        for index, entry in enumerate(entries):
+            if index >= 128:
+                raise AdaptationError("Retained application inventory exceeds the projection refresh bound")
+            if re.fullmatch(r"[a-f0-9]{64}", entry.name) and entry.is_dir(follow_symlinks=False):
+                ki_guard._io(Path(entry.path))
+                candidates.append(entry.name)
+    def match(candidate):
+        for source_hash in candidates:
+            for shape in (candidate, {key: value for key, value in candidate.items()
+                                      if key != "guest_path_identity"}):
+                payload = {**current, "backend": {**shape, "source_hash": source_hash}}
+                digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+                if digest == doc.get("runtime_identity"):
+                    return source_hash
+        return None
+    if source_hash := match(backend):
+        return {"kind": "exact_application_source_preimage", "source_hash": source_hash,
+                "model_readiness": False}
+    for witness in _historical_guest_candidates(cfg):
+        candidate = {**backend, "guest_identity": witness["previous_guest_identity"]}
+        if source_hash := match(candidate):
+            return {**witness, "kind": "exact_opaque_runtime_preimage", "source_hash": source_hash,
+                    "previous_runtime_identity": doc["runtime_identity"]}
+    return False
+
+
+def _recheck_fresh_policy(doc, live):
+    """Only the policy fingerprint may expire in an otherwise exact proof."""
+    from . import ki_fresh_paths
+    report = doc.get("path_projection")
+    if (not isinstance(report, dict)
+            or report.get("logical_target") != doc.get("logical_target")
+            or report.get("policy_sha256") != doc["context"].get("path_normalizer")):
+        raise AdaptationError("Fresh projection policy/target differs from its signed lineage")
+    checked = {**report, "policy_sha256": ki_fresh_paths.source_digest()}
+    # Full source/runtime/ordinary inventory and unchanged decisions must still
+    # reproduce under the current verifier. This is not an exception fallback.
+    ki_fresh_paths.require_fresh_current(checked, candidate_root=live)
+
+
+def refresh_project_projection(live, cfg, *, model, manifest=None):
+    """Explicit project preflight may renew its retained ordinary provenance.
+
+    Use the project's original selected library, never the latest catalogue.
+    A later maintenance revision retains its own composition/adoption gates.
+    """
+    live = Path(live).absolute()
+    if live != Path(cfg.root) / "models" / model / "ki":
+        raise AdaptationError("Project projection refresh requires its exact per-KI target")
+    from . import ki_data_lineage
+    if ki_data_lineage.require_setup_projection(cfg.root, model, live, cfg) is not None:
+        # These approvals embed the exact original signed projection. Never
+        # rewrite it, including while an incomplete derivation has old bytes.
+        return False
+    original = _read(_location(live))
+    if original is None or original.get("projected_digest") != _digest(live):
+        return False
+    # The current project manifest may already contain substituted machine
+    # paths. Reprojection must use its authenticated portable recipe; the
+    # caller separately checks the actual runtime manifest before readiness.
+    return refresh_projection(live, cfg, source=original["source_root"], model=model,
+        library_root=original.get("library_root"),
+        manifest=original.get("effective_manifest"))
+
+
+def refresh_projection(live, cfg, *, source, model, library_root, manifest=None):
+    """Host setup revalidation: renew only exact static projection provenance.
+
+    No active KI, saved configuration, helper or readiness state is changed.
+    An old opaque runtime identity must reproduce its complete hash after only
+    bounded app-source/Python-content substitution. An older explicit path
+    binding may prove the same exact Python-content-only guest change.
+    A current deterministic projection must reproduce every
+    active byte before the host may renew its own policy/binding record.
+    """
+    live, source = Path(live).absolute(), Path(source).absolute()
+    with ki_guard.operation(live):
+        original = _read(_location(live))
+        if original is None:
+            return False
+        try:
+            projection(live, cfg)
+            return False
+        except AdaptationError:
+            pass
+        except ValueError:
+            from . import ki_fresh_paths
+            old_paths = original.get("path_projection")
+            if (not isinstance(old_paths, dict)
+                    or old_paths.get("policy_sha256") == ki_fresh_paths.source_digest()):
+                raise
+            _recheck_fresh_policy(original, live)
+        _runtime_target(cfg, model, live)
+        runtime_before = software_verification.runtime_identity(cfg)
+        from . import setup
+        if live == Path(cfg.root) / "ki":
+            saved_config = lambda: setup.load_runtime_config(cfg.root)
+        else:
+            from . import project_verification
+            saved_config = lambda: project_verification._config(Path(cfg.root), live.parent, model)
+        if software_verification.runtime_identity(saved_config()) != runtime_before:
+            raise AdaptationError("Projection refresh requires the exact saved runtime paths")
+        if (original.get("kind") != "projection" or original.get("live_root") != str(live)
+                or original.get("logical_target") != str(live)
+                or original.get("context_id") != _hash(original.get("context"))
+                or original.get("projected_digest") != _digest(live)):
+            raise AdaptationError("Projection refresh cannot adopt changed or unauthenticated KI bytes")
+        guest_refresh = None
+        if "projection_binding" in original:
+            try:
+                require_projection_runtime(original, cfg)
+            except AdaptationError:
+                guest_refresh = _legacy_guest_paths(original, cfg)
+                if guest_refresh is None:
+                    raise
+        elif original.get("runtime_identity") != runtime_before:
+            guest_refresh = _legacy_source_only_change(original, cfg)
+            if not guest_refresh:
+                raise AdaptationError("Cannot prove an application-source-only change or exact historical Python-content preimage; retain the original runtime paths and backend")
+        ki_guard.require_intact(live)
+        ki_guard.require_intact(source)
+        _retained(original["upstream_root"], original["upstream_digest"])
+        portable = _retained(original["portable_root"], original["portable_digest"])
+        context = _context(source, cfg, model=model, library_root=library_root, manifest=manifest)
+        old_context = original["context"]
+        if ({key: value for key, value in context.items() if key != "path_normalizer"}
+                != {key: value for key, value in old_context.items() if key != "path_normalizer"}):
+            raise AdaptationError("Projection source, helpers or effective recipe changed; reviewed reconciliation is required")
+        if _hash(original.get("effective_manifest")) != old_context["effective_manifest_digest"]:
+            raise AdaptationError("Signed effective recipe differs from projection context")
+        if original.get("portable_report"):
+            ki_verification.require_current(portable, original["portable_report"])
+        old_paths = original.get("path_projection")
+        if old_paths is not None:
+            from . import ki_fresh_paths
+            if old_paths.get("runtime") != ki_fresh_paths._fresh_runtime(cfg):
+                raise AdaptationError("Fresh-path runtime bytes changed; application refresh cannot replace their proof")
+            _recheck_fresh_policy(original, live)
+        selected = ({key: original[key] for key in
+            ("portable_root", "portable_digest", "portable_report", "adaptation_id")}
+            if original.get("adaptation_id") else None)
+        with tempfile.TemporaryDirectory(prefix="projection-recheck-", dir=_home()) as temporary:
+            candidate = Path(temporary) / "ki"
+            result, path_projection = project_runtime(portable, candidate, cfg,
+                model=model, target_root=live, manifest=manifest)
+            if result.unresolved or result.corrupted or _digest(candidate) != original["projected_digest"]:
+                raise AdaptationError("Current projection differs from the intact active KI; verified adoption is required")
+            updated = _projection_doc(source, live, cfg, context, selected,
+                library_root=library_root, reconciliation=original.get("reconciliation"),
+                path_projection=path_projection, target_root=live, manifest=manifest)
+            if (_read(_location(live)) != original or _digest(live) != original["projected_digest"]
+                    or software_verification.runtime_identity(cfg) != runtime_before
+                    or software_verification.runtime_identity(saved_config()) != runtime_before
+                    or _context(source, cfg, model=model, library_root=library_root, manifest=manifest) != context):
+                raise AdaptationError("Projection context changed during host revalidation")
+            ki_guard.require_intact(live)
+            audit_id = uuid.uuid4().hex
+            _write(_home() / "projection-refreshes" / (audit_id + ".json"), {
+                **_base(), "kind": "projection_revalidation", "previous": original,
+                "new_projection_digest": updated["projected_digest"],
+                "new_projection_binding": updated["projection_binding"],
+                "new_context": context, "guest_path_refresh": guest_refresh,
+                "model_readiness": False})
+            updated["projection_refresh"] = {"audit_id": audit_id,
+                "ki_changed": False, "model_readiness": False}
+            _write(_location(live), updated)
+        return True
 
 
 # Only path spellings newly introduced into executable/configuration text are
@@ -555,6 +958,7 @@ def prepare_registration(live, cfg, portable, portable_report, runtime_candidate
     from . import ki_fresh_paths
     if (origin["context"].get("projection_policy") != PROJECTION_POLICY
             or (origin["context"].get("model") == "WOFOST"
+                and not origin["context"].get("runtime_paths")
                 and origin["context"].get("path_normalizer") != ki_fresh_paths.source_digest())):
         raise AdaptationError("Portable lineage uses an older path projection policy; reconcile and review its source before reuse")
     portable, runtime_candidate = Path(portable), Path(runtime_candidate)
@@ -566,7 +970,8 @@ def prepare_registration(live, cfg, portable, portable_report, runtime_candidate
     with tempfile.TemporaryDirectory(prefix="projection-check-", dir=_home()) as scratch:
         expected = Path(scratch) / "ki"
         result, expected_paths = project_runtime(portable, expected, cfg,
-            model=origin["context"]["model"], target_root=live)
+            model=origin["context"]["model"], target_root=live,
+            manifest=origin.get("effective_manifest"))
         if result.unresolved or result.corrupted or _digest(expected) != _digest(runtime_candidate):
             raise AdaptationError("Runtime candidate is not the exact projection of the portable repair")
         path_projection = None
@@ -599,9 +1004,10 @@ def register(prepared, live, cfg):
         raise AdaptationError("No prepared portable repair registration")
     live = Path(live).absolute()
     origin = prepared["origin"]
-    if (origin.get("live_root") != str(live)
-            or origin.get("runtime_identity") != software_verification.runtime_identity(cfg)):
+    require_path_binding(origin, cfg)
+    if origin.get("live_root") != str(live):
         raise AdaptationError("Portable repair belongs to another project/runtime binding")
+    require_projection_runtime(origin, cfg)
     if _prepared_helper(cfg) != origin["context"].get("helper_source_digest"):
         raise AdaptationError("Prepared shared helpers no longer match the signed portable lineage")
     with ki_guard.operation(live):

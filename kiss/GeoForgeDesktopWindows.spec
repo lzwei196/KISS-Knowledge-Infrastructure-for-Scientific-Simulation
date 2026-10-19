@@ -28,6 +28,42 @@ with (SOURCE / "pyproject.toml").open("rb") as version_file:
     VERSION = tomllib.load(version_file)["project"]["version"]
 ICON = REPO / "assets" / "logo.ico"
 KI_TOOLS_SOURCE = REPO / "ki_tools_common"
+
+
+def portable_linux_datas(repo):
+    """Ship Linux-readable source; PyInstaller's Windows PYZ is not portable.
+
+    Use repository source roots only. Exclude local authority, settings and
+    development caches, keeping case/document assets within shipped KIs.
+    """
+    excluded_dirs = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+                     ".geoforge", ".venv", "venv", "node_modules", "flow-keys", "flow-registry"}
+    excluded_files = {"kiss.toml", "status.json", "installation-test.json", ".geoforge-install.json",
+                      "settings.json", ".DS_Store", ".env"}
+    roots = (("kiss/kiss_cli", True), ("kiss/manifests", True),
+             ("ki_tools_common", True), ("kiss/system_kis", False),
+             ("kiss/data_kis", False), ("kiss/vendor", False))
+    rows = []
+    for relative, code in roots:
+        folder = repo / relative
+        if not folder.is_dir():
+            raise RuntimeError("Required portable Linux source is missing: " + str(folder))
+        for path in sorted(folder.rglob("*")):
+            parts = path.relative_to(folder).parts
+            if (any(p in excluded_dirs or p.endswith(".egg-info") for p in parts)
+                    or (code and any(p in {"tests", "test"} for p in parts))
+                    or path.name in excluded_files or path.name.startswith(".env.")
+                    or path.suffix.lower() in {".pyc", ".pyo", ".key", ".pem"}):
+                continue
+            if path.is_symlink() or getattr(path.lstat(), "st_file_attributes", 0) & 0x400:
+                raise RuntimeError("Portable Linux source cannot contain linked paths: " + str(path))
+            if path.is_file():
+                target = Path("linux-runtime") / path.relative_to(repo).parent
+                rows.append((str(path), target.as_posix()))
+    rows.append((str(repo / "kiss" / "pyproject.toml"), "linux-runtime/kiss"))
+    return rows
+
+
 # Development/stress-test scratch directories are not KI packages.
 ki_packages = sorted(p for p in (REPO / "models").iterdir()
                      if p.is_dir() and (p / "SKILL.md").is_file()
@@ -103,6 +139,7 @@ a = Analysis(
     pathex=[str(SOURCE), str(KI_TOOLS_SOURCE)],
     binaries=[*trust_binaries, *netcdf_binaries, *calibration_binaries],
     datas=[
+        *portable_linux_datas(REPO),
         (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
         # Launched by the configured Python beside execution.__file__, outside PYZ.
         (str(SOURCE / "kiss_cli" / "_project_data_worker.py"), "kiss_cli"),

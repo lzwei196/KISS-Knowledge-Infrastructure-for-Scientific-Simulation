@@ -354,6 +354,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <small id="acquisition-execution"></small>
     </div>
     <div class="composerbox" id="dropzone">
+      <div class="hint" id="next-phase-note" hidden role="status"><span id="next-phase-copy"></span> <button id="next-phase-cancel">Cancel next phase</button></div>
       <div class="attachlist" id="attachlist"></div>
       <div class="composer">
         <div id="slashmenu"></div>
@@ -616,7 +617,7 @@ document.addEventListener("keydown",event=>{
 function artifactImage(alt,raw,sid){
   const rel=String(raw||"").trim().replace(/^&lt;|&gt;$/g,"");
   const parts=rel.split("/");
-  if(!sid||parts[0]!=="artifacts"||parts.some(p=>!p||p===".."||p===".")||!/^.*\.(png|jpe?g|gif|webp|svg)$/i.test(rel))return null;
+  if(!sid||!["artifacts","outputs"].includes(parts[0])||parts.some(p=>!p||p===".."||p===".")||!/^.*\.(png|jpe?g|gif|webp|svg)$/i.test(rel)||(parts[0]==="outputs"&&(!/\.(png|jpe?g|gif|webp)$/i.test(rel)||/[\\:\x00-\x1f]/.test(rel)||parts.some(p=>p.startsWith(".")||/[. ]$/.test(p)))))return null;
   const src=`/api/session/${encodeURIComponent(sid)}/artifact?path=${encodeURIComponent(rel)}`;
   const caption=alt||parts[parts.length-1];
   return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
@@ -742,6 +743,8 @@ let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}},
     PROV={providers:[],any_usable:false,check_state:"loading"}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
 const PENDING_ACTIONS=new Map();
 let VIEW_RENDERED_KEY="";
+const VIEW_REQUESTS=new Map();
+const VIEW_FRESH_REQUESTS=new Map();
 // Work is isolated by chat. A slow model in one project must never freeze
 // navigation or prevent a second conversation from starting.
 const INFLIGHT=new Map(), PENDING_ATTACHMENTS=new Map(), UPLOADING=new Map(), DRAFTS=new Map();
@@ -851,13 +854,13 @@ async function loadAll(){
     void refreshProviders(false,false);
     const requested=new URLSearchParams(location.search).get("session");
     if(requested&&SESSIONS.some(s=>s.id===requested)){
-      await openSession(requested);
-      const draft=sessionStorage.getItem(`kiss.draft.${requested}`);
-      if(draft){$("#msg").value=draft;sessionStorage.removeItem(`kiss.draft.${requested}`);$("#msg").focus();}
-      if(draft&&sessionStorage.getItem(`kiss.autosend.${requested}`)){
-        sessionStorage.removeItem(`kiss.autosend.${requested}`);autoSendSession=requested;
+      if(await openSession(requested)){
+        const draft=sessionStorage.getItem(`kiss.draft.${requested}`);
+        if(draft){$("#msg").value=draft;sessionStorage.removeItem(`kiss.draft.${requested}`);$("#msg").focus();}
+        if(draft&&sessionStorage.getItem(`kiss.autosend.${requested}`)){
+          sessionStorage.removeItem(`kiss.autosend.${requested}`);autoSendSession=requested;
+        }
       }
-      history.replaceState({},"",GeoForgeKIScope.url("/?session="+encodeURIComponent(requested)));
     }
     else if(!CUR && SESSIONS.length) await openSession(SESSIONS[0].id);
     else if(!CUR) drawEmpty();
@@ -1042,10 +1045,30 @@ function drawViewStatus(view=VIEW){
   button.classList.toggle("run-complete",count>0);
   button.title=count?(chineseUI()?`本对话已有 ${count} 个动态展示面板`:`${count} dynamic panels are ready for this chat`):(chineseUI()?"为本对话创建动态项目界面":"Create a dynamic Project View for this chat");
 }
-async function refreshViewStatus(id=CUR&&CUR.id){
+function requestProjectView(id,fresh=false){
+  if(fresh&&VIEW_FRESH_REQUESTS.has(id))return VIEW_FRESH_REQUESTS.get(id);
+  if(fresh&&VIEW_REQUESTS.has(id)){
+    // An explicit completion/manual refresh needs a post-event snapshot.
+    // Queue one request after the old one; repeated events share that queue.
+    const queued=VIEW_REQUESTS.get(id).catch(()=>{}).then(()=>requestProjectView(id));
+    VIEW_FRESH_REQUESTS.set(id,queued);
+    const clear=()=>{if(VIEW_FRESH_REQUESTS.get(id)===queued)VIEW_FRESH_REQUESTS.delete(id);};
+    queued.then(clear,clear);return queued;
+  }
+  if(VIEW_REQUESTS.has(id))return VIEW_REQUESTS.get(id);
+  const request=(async()=>{
+    const response=await fetch(`/api/session/${id}/view`);
+    const view=await response.json().catch(()=>({}));
+    return {ok:response.ok,view};
+  })();
+  VIEW_REQUESTS.set(id,request);
+  const clear=()=>{if(VIEW_REQUESTS.get(id)===request)VIEW_REQUESTS.delete(id);};
+  request.then(clear,clear);return request;
+}
+async function refreshViewStatus(id=CUR&&CUR.id,fresh=false){
   if(!id)return null;
-  const r=await fetch(`/api/session/${id}/view`);if(!r.ok)return null;
-  const view=await r.json();if(CUR&&CUR.id===id)drawViewStatus(view);return view;
+  const result=await requestProjectView(id,fresh);if(!result.ok)return null;
+  if(CUR&&CUR.id===id)drawViewStatus(result.view);return result.view;
 }
 function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
@@ -1201,6 +1224,7 @@ async function openSession(id){
   if(seq!==OPEN_SEQ||GeoForgeKIScope.get()!==expectedScope)return;
   MODELS=models;STATUS=status;LAST_STATUS_CHECK=Date.now();
   CUR=next;
+  history.replaceState({},"",GeoForgeKIScope.url("/?session="+encodeURIComponent(CUR.id)));
   rememberSessionSummary(CUR);SESSIONS=mergeSessionSummaries(SESSIONS);
   invalidateProjectStatus(id);
   if(INVESTIGATION)INVESTIGATION.sync();
@@ -1218,10 +1242,11 @@ async function openSession(id){
   drawProviders();
   drawRunStatus(null);                 // never show the previous chat's status or banner
   await refreshRun(id);
-  await refreshViewStatus(id);
-  if($("#viewpanel").classList.contains("open"))await refreshProjectView(false);
+  if(CUR?.id===id&&$("#viewpanel").classList.contains("open"))await refreshProjectView(false);
+  else await refreshViewStatus(id);
   setControls(true);
   await maybeShowAction(id);
+  return seq===OPEN_SEQ&&CUR?.id===id&&GeoForgeKIScope.get()===expectedScope;
 }
 function drawModelLabel(){
   const status=projectHeaderStatus(),ms=status.names,zh=chineseUI();
@@ -1411,10 +1436,11 @@ function renderPlanReview(r,rawMessage){
   const count=(cls,label,list)=>Array.isArray(list)&&list.length?`<div class="prgroup ${cls}"><b>${esc(label)} (${list.length})</b></div>`:"";
   const meta=[...(r.kis||[]).map(k=>`KI · ${k}`),...(r.coupling||[]).map(c=>`${zh?"耦合":"coupled"} · ${c}`),r.study_area?`${zh?"区域":"area"} · ${r.study_area}`:"",r.period?`${zh?"时段":"period"} · ${r.period}`:""].filter(Boolean);
   const NEEDS_TOOL=new Set(["process","run","model_run","calibrate","route","couple","prepare","download"]);
-  const toolText=s=>{if(s.tool)return ` · <code>${esc(s.tool)}</code>`;if(s.kind==="check")return ` · <span style="color:var(--fg-3)">${zh?"由 GeoForge 执行（预检）":"run by GeoForge (preflight)"}</span>`;if(!NEEDS_TOOL.has(String(s.kind||"process")))return ` · <span style="color:var(--fg-3)">${zh?"由 Agent 直接产出":"written by the agent"}</span>`;return ` · <span style="color:var(--block)">${zh?"缺少工具，无法执行":"no tool — cannot execute"}</span>`;};
+  const toolText=s=>{if(s.tool)return ` · <code>${esc(s.tool)}</code>`;if(s.kind==="download")return ` · <span style="color:var(--fg-3)">${zh?"由 GeoForge 下载并记录回执":"downloaded by GeoForge with a receipt"}</span>`;if(s.kind==="check")return ` · <span style="color:var(--fg-3)">${zh?"由 GeoForge 执行（预检）":"run by GeoForge (preflight)"}</span>`;if(!NEEDS_TOOL.has(String(s.kind||"process")))return ` · <span style="color:var(--fg-3)">${zh?"由 Agent 直接产出":"written by the agent"}</span>`;return ` · <span style="color:var(--block)">${zh?"缺少工具，无法执行":"no tool — cannot execute"}</span>`;};
   const calibrationText=s=>{const c=s.calibration;if(!c)return "";return `<div class="prgroup"><b>${zh?"校准设置":"Calibration settings"}</b><div>${zh?"算法":"Algorithm"}: ${esc(c.algorithm)} · ${zh?"请求的优化预算":"Requested optimizer budget"}: ${esc(c.budget)} · ${zh?"随机种子":"Seed"}: ${esc(c.seed)}</div><small>${zh?"采样器的初始化或批处理可能增加实际评估次数。":"Sampler initialization or batches may require additional evaluations."}</small><div>${zh?"决定性指标":"Determining metric"}: ${esc(c.determining_metric||(zh?"由合同中的目标确定":"from contract objectives"))}</div><div>${zh?"参数范围与默认值":"Parameter bounds and defaults"}: <code>${esc(JSON.stringify(s.calibration_parameters||[]))}</code></div><div>${zh?"观测类型":"Observation shapes"}: <code>${esc(JSON.stringify(c.obs_shape_by_var))}</code></div><div>${zh?"案例":"Case"}: ${esc(c.expected_case_id||(zh?"未指定":"not specified"))}</div><details><summary>${zh?"已绑定的校准合同与适配器":"Bound calibration contract and adapter"}</summary><code>${esc(c.contract_path)}</code><small style="display:block">${zh?"合同 SHA-256":"Contract SHA-256"}: ${esc(c.contract_sha256)}</small><small style="display:block">${zh?"适配器 SHA-256":"Adapter SHA-256"}: ${esc(c.runner_sha256)}</small></details></div>`;};
   const projectDataText=s=>{const t=s.project_data_tool;if(!t)return "";return `<div class="prgroup"><b>${zh?"项目专用数据工具":"Project data tool"}</b> · ${esc(t.purpose||"")}<details><summary>${zh?"查看代码与运行设置":"Review code and run settings"}</summary><div><code>${esc(t.source_path||s.tool||"")}</code></div><div>SHA-256: <code>${esc(t.source_sha256||"")}</code></div><div>${zh?"参数":"Arguments"}: <code>${esc(JSON.stringify(t.arguments||[]))}</code></div><div>${zh?"工作目录":"Working directory"}: <code>${esc(t.cwd||".")}</code> · ${zh?"超时（秒）":"Timeout (seconds)"}: ${esc(t.timeout_seconds)}</div>${(t.errors||[]).length?`<div>${esc(t.errors.join("; "))}</div>`:`<pre>${esc(t.source_preview||"")}</pre>${t.source_truncated?`<small>${zh?"代码预览已截断；完整代码保存在上面的项目路径。":"Code preview is truncated; the complete source is at the project path above."}</small>`:""}`}</details></div>`;};
-  const steps=(r.steps||[]).map(s=>`<li><b>${esc(s.id||"")}</b><span class="prkind">${esc(s.kind||"")}</span>${toolText(s)}${s.env&&s.env.length?` <span class="prtag">env ${s.env.length}</span>`:""}${calibrationText(s)}${projectDataText(s)}</li>`).join("");
+  const nativeStdinText=s=>{if(!s.stdin||typeof s.stdin.text!=="string")return "";return `<div class="prgroup"><b>${zh?"模型交互输入":"Model prompt answers"} (stdin)</b><div>${zh?"命令参数":"Command arguments"}: <code>${esc(JSON.stringify(s.command))}</code></div><div>${zh?"工作目录":"Working directory"}: <code>${esc(s.cwd)}</code></div><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(s.stdin.text))}</pre><small>${zh?"引号界定文本；\\r、\\n 表示准确的换行字符。GeoForge 不会额外添加换行。":"Quotes delimit the text; \\r and \\n show exact line endings. GeoForge adds no newline."}</small></div>`;};
+  const steps=(r.steps||[]).map(s=>`<li><b>${esc(s.id||"")}</b><span class="prkind">${esc(s.kind||"")}</span>${toolText(s)}${s.env&&s.env.length?` <span class="prtag">env ${s.env.length}</span>`:""}${calibrationText(s)}${projectDataText(s)}${nativeStdinText(s)}</li>`).join("");
   const delivLabel={served:zh?"直接下载":"direct download",manual:zh?"网盘手动下载":"Baidu manual download",subset:zh?"服务器裁剪":"server clip",external:zh?"外部数据源":"external source"};
   const dataChoices=(r.data_choices||[]).length?`<div class="prsec" id="pr-data-choices"><h4>${zh?"数据来源，你来选":"Data sources, your pick"} · ${r.data_choices.length}</h4><div class="hint" style="margin:0 0 6px">${zh?"每项输入的候选数据源，推荐项已选中。改选外部数据源后，需要更新方案并重新审核。":"Candidate sources for each input; the recommendation is preselected. Switching to an external source requires an updated plan and a new review."}</div>${r.data_choices.map(c=>`<div class="prgroup"><b><code>${esc(c.item)}</code></b>${c.rationale?`<small style="display:block;color:var(--muted)">${esc(c.rationale)}</small>`:""}<div style="display:grid;gap:4px;margin-top:4px">${c.options.map(o=>`<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="radio" name="dc-${esc(c.id)}" data-choice="${esc(c.id)}" value="${esc(o.dataset_id)}" ${o.dataset_id===c.picked?"checked":""} style="width:auto;margin-top:4px"><span><code>${esc(o.dataset_id)}</code>${o.name?` · ${esc(o.name)}`:""}<small style="display:block">${esc(delivLabel[o.delivery]||o.delivery||"")}${o.size_label?` · ${esc(o.size_label)}`:""}${o.period?` · ${esc((o.period[0]||"")+"–"+(o.period[1]||""))}`:""}${o.dataset_id===c.picked?` · ${zh?"推荐":"recommended"}`:""}</small></span></label>`).join("")}</div></div>`).join("")}</div>`:"";
   const decisions=(r.decisions||[]).filter(c=>c.high_impact).map(c=>`<li>${esc(c.kind||c.id||"")}: ${esc((c.options||[]).join(" / "))}${c.picked?` → <b>${esc(String(c.picked))}</b>`:""} ${c.decided?`<span class="prtag">${zh?"已决定":"decided"}</span>`:`<span class="prtag" style="color:var(--warn)">${zh?"待你决定":"needs you"}</span>`}${c.answered?`<small style="display:block;color:var(--muted)">${zh?"来自你的回答：":"From your answer: "}${esc(c.answered)}</small>`:""}</li>`).join("");
@@ -1542,7 +1568,8 @@ async function ensureSession(){
   while(!CUR){
     choice=await chooseProjectLocation(choice);if(choice===null)return null;
     const created=await createSessionAt(choice);if(!created)continue;
-    CUR=created;drawSessions();
+    DRAFTS.set(created.id,$("#msg").value);
+    if(!await openSession(created.id))return null;
   }
   return CUR;
 }
@@ -1681,7 +1708,7 @@ async function send(){
   // do this through GeoForge's setup tools). Refresh the machine-level badge
   // as soon as that turn ends; otherwise the reply can truthfully say
   // "preflight passed" while the header keeps showing its stale failure.
-  await Promise.allSettled([refreshMachineStatus(true,true),refreshRun(target),refreshViewStatus(target)]);
+  await Promise.allSettled([refreshMachineStatus(true,true),refreshRun(target),refreshViewStatus(target,true)]);
   drawSessions();
   if(CUR&&CUR.id===target)await maybeShowAction(target).catch(()=>{});
 }
@@ -1707,6 +1734,9 @@ function setControls(on){
   if(INVESTIGATION)INVESTIGATION.sync();
   $("#skills").disabled=!available||active;
   $("#attach").disabled=!available||active||uploading;
+  const nextPhase=$("#plan-next-phase");if(nextPhase)nextPhase.disabled=!available||active||uploading;
+  const inspection=$("#inspect-existing");if(inspection)inspection.disabled=!available||active||uploading;
+  renderNextPhaseComposerNotice();
   updateActivityUI();
 }
 $("#send").onclick=send;
@@ -1800,6 +1830,7 @@ function viewTable(panel){
 }
 function viewPanel(panel){
   const kind=panel.kind||"file",url=panel.path?viewAsset(panel.path):"";
+  const outputEvidence=panel.file_provenance&&String(panel.path||"").startsWith("outputs/")?`<div class="view-caption view-evidence">${panel.evidence==="receipt_bound"?(chineseUI()?"已关联当前回执；这不代表科学验证通过。":"Current receipt linked; this does not establish scientific validation."):(chineseUI()?"文件未验证：尚未确认与当前有效回执的关联。":"Unvalidated file: no confirmed association with a current receipt.")}</div>`:"";
   let body="";
   if(kind==="metric")body=`<div class="view-metric"><strong>${esc(panel.value)}</strong>${panel.unit?`<span>${esc(panel.unit)}</span>`:""}${panel.status?`<small>${esc(panel.status)}</small>`:""}</div>`;
   else if(kind==="table")body=viewTable(panel);
@@ -1807,7 +1838,7 @@ function viewPanel(panel){
   else if(panel.mime==="video/mp4"||panel.mime==="video/webm")body=`<video class="view-video" src="${esc(url)}" controls autoplay muted loop playsinline preload="metadata"></video>`;
   else if((panel.mime||"").startsWith("image/"))body=`<a href="${esc(url)}" target="_blank" rel="noreferrer"><img class="view-media" src="${esc(url)}" alt="${esc(panel.title)}" loading="lazy"></a>`;
   else body=`<a class="view-file" href="${esc(url)}" target="_blank" rel="noreferrer"><span class="mark">${kind==="model3d"?"3D":"↗"}</span><span>${esc(panel.path||panel.title)}</span></a>`;
-  return `<article class="view-card" data-panel-id="${esc(panel.id||"")}" data-panel-revision="${esc(panel.revision||"")}"><div class="view-card-head"><b>${esc(panel.title||kind)}</b><small>${esc(kind)}</small></div>${body}${panel.caption?`<div class="view-caption">${esc(panel.caption)}</div>`:""}</article>`;
+  return `<article class="view-card" data-panel-id="${esc(panel.id||"")}" data-panel-revision="${esc(panel.revision||"")}"><div class="view-card-head"><b>${esc(panel.title||kind)}</b><small>${esc(kind)}</small></div>${body}${outputEvidence}${panel.caption?`<div class="view-caption">${esc(panel.caption)}</div>`:""}</article>`;
 }
 function renderProjectView(view){
   const panels=Array.isArray(view&&view.panels)?view.panels:[],tags=[...(view.kis||[]).map(item=>`KI · ${item}`),...(view.skills||[]).map(item=>`Skill · ${item}`)];
@@ -1826,27 +1857,33 @@ function patchProjectView(view){
   existing.forEach(card=>card.querySelectorAll("video").forEach(video=>video.pause()));
   body.replaceChildren(...next.childNodes);
 }
-async function refreshProjectView(open=true){
+async function refreshProjectView(open=true,fresh=false){
   if(!CUR)return;
   const id=CUR.id;
   if(open&&!VIEW_RENDERED_KEY.startsWith(`${id}:`))$("#viewbody").innerHTML=`<span class="spin"></span>${chineseUI()?"正在加载项目视图…":"Loading Project View…"}`;
-  const r=await fetch(`/api/session/${id}/view`),view=await r.json().catch(()=>({}));
+  const {ok,view}=await requestProjectView(id,fresh);
   if(!CUR||CUR.id!==id)return;
-  if(r.ok){
+  if(ok){
     const key=`${id}:${view.revision||"unversioned"}`;drawViewStatus(view);
     if(VIEW_RENDERED_KEY!==key){patchProjectView(view);VIEW_RENDERED_KEY=key;}
   }
   else $("#viewbody").innerHTML=`<div class="banner">${esc(view.error||(chineseUI()?"无法加载项目视图":"Could not load Project View"))}</div>`;
 }
+async function pollProjectView(){
+  // Explicit open/session/turn-completion refreshes still discover new panels.
+  // Background tabs and closed views do not repeatedly inspect output proofs.
+  if(!CUR||document.hidden||!$("#viewpanel").classList.contains("open"))return;
+  await refreshProjectView(false);
+}
 function pauseProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.pause());}
 function resumeProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.play().catch(()=>{}));}
 function projectViewPrompt(){
-  if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。媒体展示文件放在 artifacts/；file 面板可以直接链接已有 outputs/**/*.json 报告的原始路径。不要用图表代替报告，也不要为了发布链接而复制报告文件。文件链接或回执绑定不代表科学验证。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
-  return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Keep media display files under artifacts/. A file panel may directly link an existing outputs/**/*.json report at its original path. Never substitute a chart for a report or copy report bytes merely to publish a link. A file link or receipt binding does not establish scientific validation. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
+  if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。新建展示文件放在 artifacts/；已有 outputs/ 下的 PNG/JPEG/GIF/WebP、CSV 和 MP4/WebM 可以直接展示，不必复制。file 面板可以直接链接已有 outputs/**/*.json 报告的原始路径。不要用图表代替报告，也不要为了发布链接而复制报告文件。文件链接或回执绑定不代表科学验证。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
+  return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Keep new display files under artifacts/. Existing PNG/JPEG/GIF/WebP images, CSV tables and MP4/WebM videos under outputs/ can be shown directly without copying. A file panel may directly link an existing outputs/**/*.json report at its original path. Never substitute a chart for a report or copy report bytes merely to publish a link. A file link or receipt binding does not establish scientific validation. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
 }
 $("#openview").onclick=async()=>{if(INVESTIGATION)INVESTIGATION.close();$("#datapanel").classList.remove("open");$("#viewpanel").classList.add("open");await refreshProjectView(true);resumeProjectMedia();};
 $("#view-close").onclick=()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");};
-$("#view-refresh").onclick=()=>refreshProjectView(true);
+$("#view-refresh").onclick=()=>refreshProjectView(true,true);
 $("#view-folder").onclick=()=>$("#openproject").click();
 $("#view-agent").onclick=async()=>{
   pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#msg").value=projectViewPrompt();
@@ -1869,6 +1906,48 @@ function projectStatusRequest(data){
   // The host resolves current requests; never revive a historical blocker here.
   const request=data.project_status?.request;
   return request&&request.status==="waiting"?request:{};
+}
+function nextPhaseCapability(data){
+  const action=data?.next_phase_action,phase=action?.phase;
+  if(action?.kind!=="plan_next_phase"||phase?.state!=="COMPLETED"||data?.project_status?.progress?.flow_state!=="COMPLETED")return null;
+  return ["approval_id","plan_sha256","data_inventory_sha256"].every(key=>typeof phase[key]==="string"&&phase[key])?action:null;
+}
+function renderNextPhaseAction(data){
+  if(!CUR||!nextPhaseCapability(data))return "";
+  return `<div class="dataitem"><button id="plan-next-phase" ${sessionBusy()||sessionUploading()?"disabled":""}>${chineseUI()?"规划下一阶段":"Plan next phase"}</button><small>${chineseUI()?"先描述下一阶段目标，再发送。新计划仍需批准后才能执行。":"Describe the next goal, then send. A new plan still needs approval before execution."}</small></div>`;
+}
+function renderInspectionAction(data){
+  if(!CUR||!data?.project_status?.progress?.flow_state)return "";
+  return `<div class="dataitem"><button id="inspect-existing" ${sessionBusy()||sessionUploading()?"disabled":""}>${chineseUI()?"查看已有文件":"Inspect existing files"}</button><small>${chineseUI()?"只读取和解释已有记录，不运行模型或更改计划。":"Read and explain existing records without running the model or changing the plan."}</small></div>`;
+}
+function renderNextPhaseComposerNotice(){
+  const notice=$("#next-phase-note");if(!notice)return;
+  const kind=CUR&&PENDING_ACTIONS.get(CUR.id)?.kind,inspect=kind==="inspect_existing";
+  const pending=inspect||kind==="plan_next_phase";
+  notice.hidden=!pending||sessionBusy();
+  $("#next-phase-copy").textContent=inspect?(chineseUI()?"此消息仅查看已有文件，不会运行、安装或更改计划。":"This message only inspects existing files; it cannot run, install or change the plan."):(chineseUI()?"发送此消息将开始规划下一阶段，不会批准执行。":"Sending this message starts planning the next phase; it does not approve execution.");
+  const cancel=$("#next-phase-cancel");cancel.textContent=inspect?(chineseUI()?"取消只读查看":"Cancel inspection"):(chineseUI()?"取消下一阶段":"Cancel next phase");
+  cancel.disabled=sessionBusy();
+  cancel.onclick=()=>{if(!CUR||sessionBusy()||!["plan_next_phase","inspect_existing"].includes(PENDING_ACTIONS.get(CUR.id)?.kind))return;PENDING_ACTIONS.delete(CUR.id);renderNextPhaseComposerNotice();};
+}
+function stageInspection(sid){
+  if(!CUR||CUR.id!==sid||sessionBusy(sid)||sessionUploading(sid))return;
+  PENDING_ACTIONS.set(sid,{kind:"inspect_existing"});
+  $("#datapanel").classList.remove("open");
+  if(!$("#msg").value.trim())$("#msg").value=chineseUI()?"请查看已有文件，解释当前结果和仍未确认的问题。":"Inspect the existing files and explain the current results and remaining uncertainties.";
+  DRAFTS.set(sid,$("#msg").value);
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  renderNextPhaseComposerNotice();$("#msg").focus();
+}
+function stageNextPhase(data,sid){
+  const action=nextPhaseCapability(data);
+  if(!action||!CUR||CUR.id!==sid||sessionBusy(sid)||sessionUploading(sid))return;
+  PENDING_ACTIONS.set(sid,JSON.parse(JSON.stringify(action)));
+  $("#datapanel").classList.remove("open");
+  if(!$("#msg").value.trim())$("#msg").value=chineseUI()?"请规划下一阶段：":"Please plan the next phase: ";
+  DRAFTS.set(sid,$("#msg").value);
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  renderNextPhaseComposerNotice();$("#msg").focus();
 }
 function statusEvidenceText(observation){
   const source=String(observation.source||""),age=observation.age_seconds;
@@ -2006,7 +2085,7 @@ function renderData(data){
       const active=Boolean(run.goal)&&run.status!=="complete"&&i===current;
       return `<div class="runstep ${active?'active':''}"><span class="stepdot">${active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
     }).join("")}</div>`;
-  const progress=`<div class="datacard"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${progressTitle}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div><div class="hint" style="margin:0 0 8px">${esc(runStatusSummary(run)||(run.goal?"":(zhP?"在对话中描述科学目标即可开始。":"Describe the scientific goal in chat to begin.")))}</div>${run.goal?`<div class="dataitem"><b>${zhP?"目标":"Goal"}</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0">${modelchips}</div>`:""}${progressStages}${progressEvidence?`<small class="hint" data-status-evidence>${esc(progressEvidence)}</small>`:""}</div>`;
+  const progress=`<div class="datacard"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${progressTitle}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div><div class="hint" style="margin:0 0 8px">${esc(runStatusSummary(run)||(run.goal?"":(zhP?"在对话中描述科学目标即可开始。":"Describe the scientific goal in chat to begin.")))}</div>${run.goal?`<div class="dataitem"><b>${zhP?"目标":"Goal"}</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0">${modelchips}</div>`:""}${progressStages}${renderNextPhaseAction(data)}${renderInspectionAction(data)}${progressEvidence?`<small class="hint" data-status-evidence>${esc(progressEvidence)}</small>`:""}</div>`;
   const sourceFiles=files.filter(f=>!/(^|\/)README(?:\.[^/]*)?$/i.test(f.relative_path||f.name||""));
   const datasetChecks=plans.flatMap(plan=>(plan.datasets||[]).map(item=>({...item,model:plan.model||"KI"})));
   // A later project stage is not evidence that each input was validated.
@@ -2358,6 +2437,8 @@ async function refreshData(){
   LAST_PREP=r.ok?data:null;
   $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
   if(r.ok){
+    const nextPhase=$("#plan-next-phase");if(nextPhase)nextPhase.onclick=()=>stageNextPhase(data,requestedSession);
+    const inspection=$("#inspect-existing");if(inspection)inspection.onclick=()=>stageInspection(requestedSession);
     refreshUnreceiptedArtifacts(requestedSession);
     refreshPreparationEstimates(requestedSession).catch(error=>{
       if(CUR?.id===requestedSession&&$("#preparation-estimates"))$("#preparation-estimates").textContent=error.message;
@@ -2931,7 +3012,7 @@ setInterval(updateActivityUI,1000);
 setInterval(refreshSessionList,5000);
 setInterval(()=>refreshAcquisitionProgress().catch(()=>{}),5000);
 
-setInterval(()=>{if(!CUR)return;if($("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});else refreshViewStatus().catch(()=>{});},5000);
+setInterval(()=>pollProjectView().catch(()=>{}),5000);
 $("#ki-update-view").onclick=()=>location.href=GeoForgeKIScope.url("/library?updates=1");
 $("#ki-update-dismiss").onclick=()=>$("#ki-update-toast").classList.remove("open");
 async function resumeInvestigation(sid,message){

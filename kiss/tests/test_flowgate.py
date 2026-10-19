@@ -407,7 +407,7 @@ def test_read_and_list_ki_files_reach_every_selected_ki(tmp_path):
     fs = flowgate.FlowSession.open(project, {"A": a.root, "B": b.root}, python=sys.executable)
     fs.move("task_received"); fs.move("kis_resolved", {"selected_kis": ["A", "B"]})
     assert api.execute_tool("read_ki_file", {"path": "docs/note.md", "ki": "B"}, a, _cfg(project),
-                            project_mode=True, flow=fs) == "B doc"
+                            project_mode=True, flow=fs).content == "B doc"
     assert "docs/note.md" in api.execute_tool("list_ki_files", {"ki": "B"}, a, _cfg(project), project_mode=True, flow=fs)
     with pytest.raises(api.ToolError, match="not one of the selected KIs"):
         api.execute_tool("read_ki_file", {"path": "SKILL.md", "ki": "C"}, a, _cfg(project), project_mode=True, flow=fs)
@@ -488,6 +488,14 @@ def test_request_replan_unlocks_write_plan_in_the_same_turn(tmp_path, completed)
         fs.move("validated", evidence)
     preserved = {str(p): p.read_bytes() for folder in ("outputs", ".geoforge/receipts")
                  for p in (project / folder).rglob("*") if p.is_file()}
+    if completed:
+        assert "request_replan" not in fs.api_tools()
+        with pytest.raises(api.ToolError):
+            api.execute_tool("request_replan", {"reason": "S1 needs a site polygon"}, ki, _cfg(project),
+                             project_mode=True, flow=fs)
+        assert fs.state.value == "COMPLETED" and fs.approval_status() == "OK"
+        assert all(Path(p).read_bytes() == value for p, value in preserved.items())
+        return  # completed phases use the explicit GUI action tested separately
     assert "request_replan" in fs.api_tools() and "write_plan" not in fs.api_tools()
     with pytest.raises(api.ToolError, match="not allowed while the project is in"):
         api.execute_tool("write_plan", {"plan": pj, "data_inventory": inv}, ki, _cfg(project),

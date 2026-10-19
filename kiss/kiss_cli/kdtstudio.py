@@ -373,13 +373,47 @@ def _user_evidence(root: Path) -> list[dict]:
 
 
 def _probe_source(root: Path, doc: dict) -> Path | None:
+    """Resolve only a source explicitly named by this job's probe.
+
+    KDT emits ``source_dir``; older engines used ``source_root``. Missing or
+    invalid metadata must not turn into Path("") and inspect the service cwd.
+    """
     try:
         report = json.loads((root / "probe" / "probe_report.json").read_text(
             encoding="utf-8"))
-        source = Path(str(report.get("source_root") or "")).expanduser().resolve()
-    except (OSError, json.JSONDecodeError, ValueError):
+        if not isinstance(report, dict):
+            return None
+        sources = []
+        for key in ("source_dir", "source_root"):
+            if key not in report:
+                continue
+            value = report[key]
+            if not isinstance(value, str) or not value.strip():
+                return None
+            path = Path(value)
+            if not path.is_absolute():
+                return None
+            sources.append(path.resolve(strict=True))
+        if not sources or any(path != sources[0] for path in sources[1:]):
+            return None
+        source = sources[0]
+        if not source.is_dir():
+            return None
+        # Probe copies/clones belong to this job. Resolving the candidate
+        # before containment also rejects a link escaping that directory.
+        owned = root.resolve() / "probe" / "source"
+        if source.is_relative_to(owned):
+            return source
+        # Legacy local probes may name the exact user-selected source rather
+        # than its job-owned copy. This does not admit siblings or ancestors.
+        selected = doc.get("source")
+        if (doc.get("source_type") == "local" and isinstance(selected, str)
+                and selected.strip() and Path(selected).is_absolute()
+                and source == Path(selected).resolve(strict=True)):
+            return source
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError):
         return None
-    return source if source.is_dir() else None
+    return None
 
 
 def _source_evidence(source: Path | None) -> dict[str, list[str]]:

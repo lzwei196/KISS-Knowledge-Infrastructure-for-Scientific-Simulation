@@ -514,6 +514,20 @@ def cmd_run_tool(args) -> int:
     return {"timed_out": 124, "interrupted": 130, "stopped": 130}.get(result.status, 1)
 
 
+def cmd_download_target(args) -> int:
+    """Resolve a public file target without opening a project or making a request."""
+    from . import flowgate
+    flowgate.load()
+    from ki_tools_common.flow.public_downloads import target
+    try:
+        result = target(args.item, args.url, args.filename)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def cmd_fetch(args) -> int:
     """Download one public file for an APPROVED plan and write the signed download receipt."""
     from . import flowgate
@@ -532,6 +546,17 @@ def cmd_fetch(args) -> int:
         return 1
     print("[RECEIPT] " + json.dumps(info, ensure_ascii=False))
     return 0
+
+
+def cmd_request_ki_repair(args) -> int:
+    from . import setup_repair_bridge
+    try:
+        result = setup_repair_bridge.request(args.issue)
+    except (OSError, ValueError) as error:
+        print(f"request-ki-repair refused: {error}", file=sys.stderr)
+        return 3
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("queued") else 1
 
 
 def cmd_prepare_python_runtime(args) -> int:
@@ -766,6 +791,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--json", action="store_true")
     q.set_defaults(fn=cmd_papers)
 
+    q = sub.add_parser("request-ki-repair", help="request bounded KDT repair through the active GUI setup")
+    q.add_argument("--issue", required=True, help="the observed KI defect and evidence")
+    q.set_defaults(fn=cmd_request_ki_repair)
+
     q = sub.add_parser("prepare-python-runtime", help="prepare Python through the active fresh GUI setup")
     q.add_argument("--version", required=True, help="CPython minor or exact release, e.g. 3.12 or 3.12.9")
     q.set_defaults(fn=cmd_prepare_python_runtime)
@@ -801,6 +830,12 @@ def build_parser() -> argparse.ArgumentParser:
     q = sub.add_parser("ask-question", help="show one planning question; never approve, download or run")
     q.add_argument("question", help="one JSON object with kind=choice, title, message and options")
     q.set_defaults(fn=cmd_ask_question)
+
+    q = sub.add_parser("download-target", help="read-only exact public download destination for planning")
+    q.add_argument("url")
+    q.add_argument("--item", required=True)
+    q.add_argument("--filename")
+    q.set_defaults(fn=cmd_download_target)
 
     q = sub.add_parser("fetch", help="download one public file for an approved plan and write its receipt")
     q.add_argument("url")
@@ -1082,7 +1117,9 @@ def main(argv: list[str] | None = None) -> int:
     # gets launchd's bare PATH, not the user's shell PATH.
     if argv is None:
         argv = _sys.argv[1:]
-    if not argv or argv[0] != "_setup-discovery-worker":
+    from . import runtime_context
+    supervised = runtime_context.identity()["kind"] == "wsl"
+    if not supervised and (not argv or argv[0] != "_setup-discovery-worker"):
         from . import shellenv
         shellenv.adopt()
     # Discovery inherits the parent's prepared PATH. Starting a login shell
@@ -1093,6 +1130,9 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         argv = ["app"]
     args = build_parser().parse_args(argv)
+    if args.cmd != "_setup-discovery-worker":
+        from . import runtime_provenance
+        runtime_provenance.capture()  # loaded service/CLI build, before any checks or edits
     if args.cmd == "run":
         _rescue_run_options(args)
         if args.argv and args.argv[0] == "--":

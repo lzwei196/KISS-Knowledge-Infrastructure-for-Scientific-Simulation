@@ -17,7 +17,10 @@ MAX_BYTES = 256 * 1024
 _LOCK = threading.Lock()
 _FIELDS = frozenset({'phase', 'reason', 'tool', 'provider', 'finish_reason',
     'state', 'turn_id', 'approval_id', 'call_count', 'text_chars', 'error',
-    'blocked', 'malformed_arguments', 'step'})
+    'blocked', 'malformed_arguments', 'step', 'read_path', 'read_kind',
+    'read_requested_start_line', 'read_requested_line_count', 'read_start_line',
+    'read_end_line', 'read_total_lines', 'read_eof', 'next_start_line',
+    'read_chars', 'read_source_sha256', 'read_file_sha256', 'read_page_sha256'})
 
 
 def record(project, event, **metadata):

@@ -658,6 +658,13 @@ def save_upload(workroot: Path, s: dict, filename: str, data: bytes, item: str =
                 name = f"{stem}-{uuid.uuid4().hex}{suffix}"
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
+        # The host records only browser origin and exact current bytes. This
+        # does not approve a plan or satisfy any declared producer/input check.
+        # Keep exclusive collision storage; a real repeat upload can reconfirm
+        # the original sanitized name only if it is an intact ordinary copy.
+        from . import flowgate
+        flowgate.load().receipts.record_user_upload(
+            project, folder / name, data, reconfirm=(folder / clean if name != clean else None))
         return folder / name
     finally:
         if directory_fd is not None:

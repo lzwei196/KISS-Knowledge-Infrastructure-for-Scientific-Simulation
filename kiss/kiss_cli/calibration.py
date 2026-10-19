@@ -229,6 +229,14 @@ def _adapter(project: Path, ki) -> dict:
                destination / "calibration.yaml")
     _copy_once(source / "tools" / "calib_run.py",
                destination / "tools" / "calib_run.py")
+    return _adapter_status(project, ki)
+
+
+def _adapter_status(project: Path, ki) -> dict:
+    """Observe an existing project adapter without preparing or repairing it."""
+    name = str(ki.name)
+    source = Path(ki.root)
+    destination = project / "calibration" / "kis" / _slug(name)
     contract = (destination / "calibration.yaml").is_file()
     runner = (destination / "tools" / "calib_run.py").is_file()
     return {
@@ -425,9 +433,20 @@ def _run_summaries(project: Path, limit: int = 20) -> list[dict]:
 
 
 def project_state(project: Path, kis=()) -> dict:
-    """User-facing readiness and honest run history for one chat project."""
+    """Read current availability and retained project state without preparing it.
+
+    The saved framework manifest describes the last explicit preparation. A
+    status GET must not refresh that record, copy adapters, or create a fresh
+    workspace merely because a KI is selected.
+    """
     project = Path(project).resolve()
-    status = ensure_project(project, kis)
+    adapters = {str(item["ki"]): item for item in _saved_adapters(project / "calibration")
+                if item.get("ki")}
+    for ki in kis:
+        item = _adapter_status(project, ki)
+        adapters[str(item["ki"])] = item
+    status = {**framework_status(), "adapters": sorted(adapters.values(),
+        key=lambda item: str(item.get("ki", "")).casefold())}
     cases = _case_files(project)
     runs = _run_summaries(project)
     ready = [item for item in status.get("adapters", [])

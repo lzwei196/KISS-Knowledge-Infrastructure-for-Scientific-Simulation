@@ -66,7 +66,7 @@ def _runtime_option(option: str, model: str) -> bool:
     return option in allowed
 
 
-def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False):
+def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False, native_capability=None):
     """Check API and CLI arguments immediately before common dispatch.
 
     Only an exact named native runtime or declared support-data root can leave
@@ -80,6 +80,17 @@ def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False):
         raise ValueError("arguments must be a list of short strings")
     receipt = None
     runtime_bindings = []
+    expected_files = {}
+    if native_capability is not None:
+        from .native_dependency_gate import VerifiedArguments
+        if not allow_runtime or not isinstance(native_capability, VerifiedArguments):
+            raise ValueError("Native argument capability requires a verified shipped KI tool")
+        # Reject a named runtime option with no value instead of interpreting
+        # the option token itself as a harmless relative project path.
+        for index, token in enumerate(arguments):
+            if (_runtime_option(token, ki) or token in {"--mpirun", "--mpiexec"}) and (
+                    index + 1 == len(arguments) or arguments[index + 1].startswith("--")):
+                raise ValueError("Named native runtime option requires its verified path: " + token)
     for index, token in enumerate(arguments):
         option = ""
         value = token
@@ -95,6 +106,14 @@ def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False):
             raise ValueError("tool argument must not use a drive-relative path: " + value)
         candidate = _lexical(candidate if candidate.is_absolute() else cwd / candidate)
         resolved = candidate.resolve()
+        if native_capability is not None and (_runtime_option(option, ki) or option in {"--mpirun", "--mpiexec"}):
+            # Profile role constraints precede containment: a workspace shim
+            # cannot substitute for the independently verified engine or MPI.
+            role = "engine" if _runtime_option(option, ki) else "mpi_launcher"
+            alias, target, size, digest = native_capability.binding(cfg, role, candidate)
+            runtime_bindings.append((index, option, alias, target))
+            expected_files[target] = (target, size, digest)
+            continue
         if any(resolved == base or base in resolved.parents for base in (project, root)):
             continue
         if allow_runtime and (_runtime_option(option, ki) or option == "--runtime-data"):
@@ -133,6 +152,9 @@ def validate(*, project, ki, ki_root, cfg, arguments, cwd, allow_runtime=False):
         # signed project preflight. Request/plan JSON cannot supply it. Load the
         # same bundled module as FlowSession so its type has one runtime identity.
         from .flowgate import load
-        return load().receipts.RuntimeArgumentCapture(
-            str(project), str(cwd), tuple(arguments), tuple(runtime_bindings))
+        capture = load().receipts.RuntimeArgumentCapture(
+            str(project), str(cwd), tuple(arguments), tuple(runtime_bindings),
+            expected_files=tuple(expected_files.values()))
+        capture.checked_bindings(project, arguments, cwd)
+        return capture
     return None

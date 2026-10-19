@@ -62,10 +62,12 @@ function harness(options = {}) {
     let CUR={id:'locked',provider:'api:deepseek',binding_locked:true};
     let KIND='cli',KIND_SYNCED_FOR,LAST_PROVIDER_CHECK=0,PROVIDER_REFRESHING=null;
     let SESSIONS=[],MODELS=[],SKILLS=[],MCP={},PROJECT_LOCATION={};
+    const PENDING_ACTIONS=new Map();
     const SESSION_SUMMARIES=new Map();
     ${fn('mergeSessionSummaries')}
     ${fn('kindOf')}
     ${fn('currentProviderReady')}
+    ${fn('renderNextPhaseComposerNotice')}
     ${fn('setControls')}
     ${fn('drawProviders')}
     ${fn('refreshProviders')}

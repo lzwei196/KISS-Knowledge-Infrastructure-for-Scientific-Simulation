@@ -37,7 +37,7 @@ const context={
   esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
   durationLabel:seconds=>`${Math.floor(Number(seconds)||0)}s`,
   drawRunStatus:run=>{context.drawnRun=run;},
-  itemNote:()=>'',sessionBusy:()=>false,
+  itemNote:()=>'',sessionBusy:()=>false,sessionUploading:()=>false,
   $:element,document:{querySelectorAll:()=>[]},
   navigator:{clipboard:{writeText:async value=>{context.copied=value;}}},
   showActionPicker:(request,id)=>{context.picked={request,id};},

@@ -30,6 +30,13 @@ KI_URL = ("https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-"
 
 def data_dir() -> Path:
     """Per-user application data, by platform convention."""
+    import os
+    override = os.environ.get("GEOFORGE_APP_DATA_DIR")
+    if override:
+        selected = Path(override)
+        if not selected.is_absolute() or "\0" in override:
+            raise ValueError("GEOFORGE_APP_DATA_DIR must be an absolute path")
+        return selected
     home = Path.home()
     if platform.system() == "Darwin":
         return home / "Library" / "Application Support" / "KISS"

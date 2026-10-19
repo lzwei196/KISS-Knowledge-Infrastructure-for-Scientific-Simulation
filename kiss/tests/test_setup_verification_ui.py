@@ -27,7 +27,7 @@ class TestDate extends Date{static now(){return input.now??Date.now()}}
 const context={console,Date:TestDate,TextDecoder,$:element,MODEL:'CRHM',STATE:input.states[0],busy:false,
   selectedInstallMode:'existing',rawLog:'',runStartedAt:0,lastSignalAt:0,installPathDirty:false,existingPathDirty:false,
   submitting:false,streaming:false,awaitingStatus:false,stopPending:false,stoppingJobId:'',jobNotice:'',
-  statusUnavailable:false,stateMutationEpoch:0,stateLoadPromise:null,selectingKI:false,
+  statusUnavailable:false,stateMutationEpoch:0,stateLoadPromise:null,selectingKI:false,capacityIssue:null,
   GeoForgeKIScope:{get:()=>'',set:()=>{},url:value=>value},
   isZh:()=>!!input.zh,esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
   presentSetupLog:s=>s,setupPhase:()=>0,
@@ -48,7 +48,8 @@ context.fetch=async(url,options)=>{
   if(url==='/api/setup-resume')return response(input.resumeResponse?.body||{ok:true},input.resumeResponse?.status||200);
   if(url!=='/api/setup-agent')throw new Error('Unexpected request '+url);
   if(input.deferPost)await new Promise(resolve=>{releasePost=resolve});
-  if(input.postResponse)return response(input.postResponse.body,input.postResponse.status);
+  const post=input.postResponses?.shift()||input.postResponse;
+  if(post)return response(post.body,post.status);
   return {ok:true,status:200,body:{getReader:()=>({read:async()=>{
     await new Promise((resolve,reject)=>{finishStream=error=>error?reject(new Error('Live display disconnected')):resolve()});
     return {done:true};
@@ -64,7 +65,7 @@ shipped('function drawInstallLocation(','function chooseInstallMode(');
 shipped('function setupRecheckRequired(','async function chatForHelp(');
 function snapshot(){snapshots.push({...Object.fromEntries([...elements].map(([key,e])=>[key,
   {text:e.textContent,html:e.innerHTML,className:e.className,disabled:e.disabled,display:e.style.display}])),
-  __calls:[...calls],__busy:context.busy,__jobState:context.STATE.job?.state});}
+  __calls:[...calls],__busy:context.busy,__jobState:context.STATE.job?.state,__canRun:context.STATE.software?.can_run});}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
   context.draw();snapshot();
@@ -80,6 +81,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
     else if(action.kind==='settle_polls')await Promise.all(pollTasks);
     else if(action.kind==='begin_stop'){pollTasks.push(context.stopAgent());await tick()}
     else if(action.kind==='start'){const wasBusy=context.busy,next=context.startAgent(false);if(!wasBusy)pending=next;await tick()}
+    else if(action.kind==='capacity_retry'){pending=element('#capacityretry').onclick();await tick()}
     else if(action.kind==='post'){releasePost();await tick()}
     else if(action.kind==='finish'){finishStream(action.error);await pending}
     else if(action.kind==='stop')await context.stopAgent();
@@ -417,3 +419,116 @@ def test_compact_activity_reports_setup_state_without_inferring_agent_work(zh):
     for result in (initial, disconnected):
         assert "Agent working" not in result["#runstate"]["html"]
         assert "Agent 正在处理" not in result["#runstate"]["html"]
+
+
+CAPACITY_RESPONSE = {"status": 507, "body": {
+    "code": "setup_storage_capacity", "error": "Setup paused for disk space. Original English diagnostic.",
+    "state": "waiting_for_user", "needs_user": True,
+    "capacity": [{"path": "C:/GeoForge/profile", "free_bytes": 0,
+                  "required_bytes": int(68.3 * 1024 * 1024)}]}}
+
+
+@pytest.mark.parametrize("zh", [False, True])
+@pytest.mark.parametrize("previous", ["failed", "passed"])
+def test_capacity_refusal_supersedes_old_job_and_marks_old_checks_as_history(zh, previous):
+    old = {**PASSED, "job": job("failed" if previous == "failed" else "completed"),
+           "workdir": "C:/models/CRHM", "attention": None}
+    if previous == "failed":
+        old["software"] = {**PASSED["software"], "state": "failed", "can_run": False,
+                           "steps": [{"name": "preflight", "ok": False, "detail": "Old missing path"}]}
+    _, refused, polled = render(old, zh=zh, postResponse=CAPACITY_RESPONSE,
+                               actions=[{"kind": "start"}, {"kind": "poll"}])
+    for result in (refused, polled):
+        label = "需要释放磁盘空间" if zh else "Free disk space"
+        assert result["#statusbadge"]["text"] == label
+        assert result["#statusbadge"]["className"] == "badge warn"
+        assert result["#needbadge"]["text"] == label
+        assert result["#runstate"]["text"] == label
+        assert "C:/GeoForge/profile" in result["#need"]["html"]
+        assert ("还需释放 69 MiB" if zh else "Free another 69 MiB") in result["#need"]["html"]
+        assert ("尚未开始新的设置或验证" if zh else "No new setup or verification started") in result["#jobnotice"]["text"]
+        assert "Original English diagnostic" not in result["#jobnotice"]["text"]
+        assert 'id="capacityretry"' in result["#need"]["html"]
+        assert not result["#capacityretry"]["disabled"]
+        assert ("以前记录的检查结果" if zh else "Previously recorded checks") in result["#verification"]["html"]
+        assert "✓" not in result["#verification"]["html"]
+        assert result["#chat"]["display"] == "none"
+        # A transient UI blocker does not rewrite the saved readiness or job.
+        assert result["__canRun"] is old["software"]["can_run"]
+        assert result["__jobState"] == old["job"]["state"]
+        assert 'class="step bad"' not in result["#verification"]["html"]
+    assert [c["url"] for c in polled["__calls"]].count("/api/setup-agent") == 1
+    assert all(c["url"] == "/api/setup-agent" or c["url"].startswith("/api/setup/")
+               for c in polled["__calls"])
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_capacity_retry_refetches_and_stays_unverified_until_new_host_result(zh):
+    old = {**PASSED, "job": job("failed"), "workdir": "C:/models/CRHM"}
+    done = {**PASSED, "job": job("completed", identifier="attempt-2"), "workdir": old["workdir"]}
+    _, refused, retrying, completed = render(old, done, zh=zh,
+        postResponses=[CAPACITY_RESPONSE], actions=[{"kind": "start"},
+            {"kind": "capacity_retry"}, {"kind": "finish", "state": 1}])
+    urls = [c["url"] for c in retrying["__calls"]]
+    assert urls == ["/api/setup-agent", "/api/setup/CRHM", "/api/setup/CRHM", "/api/setup-agent"]
+    assert retrying["#statusbadge"]["text"] == ("正在验证" if zh else "Verification in progress")
+    assert 'id="capacityretry"' not in retrying["#need"]["html"]
+    assert retrying["#chat"]["display"] == "none" and retrying["#start"]["disabled"]
+    assert "✓" not in retrying["#verification"]["html"]
+    assert completed["#statusbadge"]["className"] == "badge ok"
+    assert completed["#chat"]["display"] == ""
+
+
+def test_capacity_retry_with_unavailable_status_keeps_blocker_and_does_not_submit():
+    _, _, result = render(PASSED, postResponse=CAPACITY_RESPONSE, actions=[
+        {"kind": "start"}, {"kind": "capacity_retry", "pollFails": True}])
+    assert result["#needbadge"]["text"] == "Free disk space"
+    assert result["#chat"]["display"] == "none"
+    assert "Cannot read server status" in result["#jobnotice"]["text"]
+    assert len([c for c in result["__calls"] if c["url"] == "/api/setup-agent"]) == 1
+
+
+def test_capacity_retry_still_blocked_by_host_does_not_claim_space_was_freed():
+    _, _, result = render(PASSED, postResponse=CAPACITY_RESPONSE,
+                          actions=[{"kind": "start"}, {"kind": "capacity_retry"}])
+    assert result["#needbadge"]["text"] == "Free disk space"
+    assert "Free another 69 MiB" in result["#need"]["html"]
+    assert result["#chat"]["display"] == "none"
+    assert "✓" not in result["#verification"]["html"]
+    assert len([c for c in result["__calls"] if c["url"] == "/api/setup-agent"]) == 2
+
+
+@pytest.mark.parametrize("change", ["workdir", "library_scope", "job"])
+def test_capacity_issue_is_bound_to_its_workspace_scope_and_attempt(change):
+    old = {**PASSED, "workdir": "C:/models/CRHM", "library_scope": "scope-a", "job": job("completed")}
+    new = {**old, change: {"workdir": "D:/models/CRHM", "library_scope": "scope-b",
+                         "job": job(identifier="attempt-2")}[change]}
+    _, _, result = render(old, new, postResponse=CAPACITY_RESPONSE,
+                          actions=[{"kind": "start"}, {"kind": "poll", "state": 1}])
+    assert 'id="capacityretry"' not in result["#need"]["html"]
+    assert "disk space" not in result["#jobnotice"]["text"]
+
+
+@pytest.mark.parametrize("zh", [False, True])
+def test_capacity_probe_error_is_localized_and_escaped(zh):
+    response = {"status": 507, "body": {**CAPACITY_RESPONSE["body"],
+        "capacity": [{"path": "C:/<profile>", "error": "<probe failed>"}]}}
+    _, result = render(PASSED, zh=zh, noProvider=True, postResponse=response,
+                       actions=[{"kind": "start"}])
+    assert ("无法读取剩余空间" if zh else "Could not check free space") in result["#need"]["html"]
+    assert "C:/&lt;profile>" in result["#need"]["html"]
+    assert "&lt;probe failed>" in result["#need"]["html"]
+    assert result["#capacityretry"]["disabled"]
+
+
+def test_untyped_http_507_does_not_invent_a_capacity_diagnosis():
+    _, result = render(STALE, postResponse={"status": 507, "body": {"error": "Other server failure"}},
+                       actions=[{"kind": "start"}])
+    assert 'id="capacityretry"' not in result["#need"]["html"]
+    assert result["#jobnotice"]["text"] == "Other server failure"
+
+
+def test_submitting_new_attempt_does_not_reuse_old_attempt_elapsed_time():
+    old = {**STALE, "job": job("failed", started_at=1790000000)}
+    _, submitting = render(old, now=1791619207000, deferPost=True, actions=[{"kind": "start"}])
+    assert submitting["#activitytime"]["text"] == "00:00"

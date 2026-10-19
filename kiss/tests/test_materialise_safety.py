@@ -6,6 +6,7 @@ import pytest
 
 from kiss_cli import gui, paths, port
 from kiss_cli.catalog import KI
+from kiss_cli.manifest import Manifest
 
 
 @pytest.mark.parametrize("operation", ["materialise", "assets", "desktop"])
@@ -48,7 +49,8 @@ def test_refresh_rejects_destination_links_before_any_write(tmp_path, operation,
     # The first sorted source must not be copied before a later alias is found.
     assert not (destination / "00-first.txt").exists()
     cfg = paths.KissConfig.default(tmp_path / "installed-M")
-    with pytest.raises(ValueError, match="symlink"):
+    # Desktop project creation may refuse earlier, in project maintenance's own alias check.
+    with pytest.raises(ValueError, match="symlink|aliased paths"):
         if operation == "materialise":
             port.materialise(source, destination, cfg)
         elif operation == "assets":
@@ -56,6 +58,7 @@ def test_refresh_rejects_destination_links_before_any_write(tmp_path, operation,
         else:
             handler = object.__new__(gui.Handler)
             handler._config = lambda ki: cfg
+            handler._manifest = Manifest.stub_for
             handler.repo_root = None
             handler._session_workspace(project, KI("M", source))
     assert not (destination / "00-first.txt").exists()

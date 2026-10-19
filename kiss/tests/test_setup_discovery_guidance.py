@@ -152,7 +152,7 @@ def test_installation_only_existing_mode_uses_startup_probe_and_keeps_restrictio
 def test_regular_existing_setup_keeps_licence_and_scientific_verification_gates(tmp_path):
     text = task(tmp_path, installation_mode="existing", discovery_report=report())
     assert "Read SKILL.md first" in text and "complete KDT loop" in text
-    assert "The only successful outcome is a passing preflight" in text
+    assert "The only successful setup outcome is GeoForge's complete host software verification passing" in text
     assert "If a licence, login, protected download, system privilege" in text
     assert "Do not pretend that blocked work passed" in text
     assert "placeholder scientific/model file" in text

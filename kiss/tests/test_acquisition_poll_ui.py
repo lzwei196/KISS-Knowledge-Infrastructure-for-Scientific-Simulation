@@ -95,6 +95,9 @@ context.runStateText=()=>'';
 shipped('async function refreshData(){','$("#opendata").onclick=');
 shipped('async function sendDataPanelPrompt(','async function startDataAgent(');
 shipped('$("#acquisition-open").onclick=','$("#activity-refresh").onclick=');
+// The page timer delegates its hidden/closed-view guard to this shipped helper.
+// Keep the real guard; the rendering stub above still fails if it is bypassed.
+shipped('async function pollProjectView(){','function pauseProjectMedia()');
 // These are the actual page-lifetime timers after send() has cleared runPoll
 // and deleted INFLIGHT. Do not reconstruct their logic in the fixture.
 shipped('setInterval(updateActivityUI,1000);','$("#ki-update-view").onclick=');
@@ -335,6 +338,7 @@ const acquiring={session:'A',selected_kis:[],project_preflights:[],goal:'A',stat
 // Include the real scope helper and the independent catalogue/status surfaces
 // openSession now loads before it commits the new current project.
 const context={console,Date,URL,URLSearchParams,Headers,location:new URL('http://127.0.0.1:8799/'),
+  history:{replaceState(){}},
   SESSIONS:[],KI_UPDATE_REVISION:'fixture',CUR:{id:'A'},RUN:null,INVESTIGATION:null,DRAFTS:new Map(),OPEN_SEQ:0,ACTION_SESSION:null,
   MODELS:[],STATUS:{},LAST_STATUS_CHECK:0,
   CHAT_FOLLOW:true,INFLIGHT:new Map(),DATA_ACTIONS:new Set(),$:element,sessionBusy:()=>false,
@@ -399,3 +403,109 @@ def test_switching_chats_never_shows_the_previous_projects_banner(mode):
     assert not observed["before"]["hidden"] and "cmfd-A" in observed["before"]["text"]
     for moment in ("loading", "later", "after"):
         assert observed[moment]["hidden"], (moment, observed[moment])
+
+
+SESSION_URL_RUNNER = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const page=fs.readFileSync(process.argv[1],'utf8').replaceAll('\r\n','\n'),mode=process.argv[2];
+function fn(name){
+  const start=page.search(new RegExp(`(?:async )?function ${name}\\(`));
+  assert.ok(start>=0,name);const end=page.indexOf('\n}',start);assert.ok(end>start,name);
+  return page.slice(start,end+2);
+}
+function deferred(){let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};}
+const response=value=>({ok:true,json:async()=>value});
+const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
+const waiting=deferred(),entered=deferred(),writes=[],elements=new Map(),storage=new Map();
+const firstScope='a'.repeat(32),nextScope='b'.repeat(32);
+const sessions={A:{id:'A',title:'A',messages:[],library_scope:firstScope},
+  B:{id:'B',title:'B',messages:[],library_scope:mode==='unscoped'?'':nextScope},
+  C:{id:'C',title:'C',messages:[],library_scope:'c'.repeat(32)}};
+function element(name){
+  if(!elements.has(name))elements.set(name,{value:'',innerHTML:'',textContent:'',style:{},scrollHeight:0,
+    classList:{contains:()=>false},focus(){}});
+  return elements.get(name);
+}
+const location=new URL(`http://127.0.0.1:8800/?session=A&library_scope=${firstScope}`);
+let context;
+context=vm.createContext({console,Date,URL,URLSearchParams,Headers,location,Promise,
+  history:{replaceState(_state,_title,url){location.href=new URL(url,location).href;writes.push(url);}},
+  sessionStorage:{getItem:key=>storage.get(key)||null,removeItem:key=>storage.delete(key)},
+  document:{addEventListener(){}},$:element,OPEN_SEQ:0,CUR:sessions.A,SESSIONS:Object.values(sessions),
+  DRAFTS:new Map(),ACTION_SESSION:null,INVESTIGATION:null,MODELS:[],STATUS:{},LAST_STATUS_CHECK:0,
+  INFLIGHT:new Map([['A',{raw:'ongoing A response'}]]),CHAT_FOLLOW:true,
+  drawSessions(){},rememberSessionSummary(){},mergeSessionSummaries:rows=>rows,invalidateProjectStatus(){},
+  closeActionPicker(){},drawModelLabel(){},drawSkillButton(){},renderLiveTurn(){},renderAttachments(){},
+  drawProviders(){},drawRunStatus(){},refreshRun:async()=>{},refreshViewStatus:async()=>{},
+  refreshProjectView:async()=>{},setControls(){},maybeShowAction:async()=>{},
+  refreshProviders:async()=>{},refreshMachineStatus:async()=>{},drawEmpty(){},
+  setTimeout(){},chineseUI:()=>false,esc:String,currentProviderReady:()=>false,
+  chooseProjectLocation:async()=>({project_name:'B'}),LAST_PROJECT_ERROR:'',
+  fetch:async(url,options)=>{
+    if(url==='/api/sessions')return response(options?.method==='POST'?sessions.B:Object.values(sessions));
+    if(url.startsWith('/api/session/')){
+      const id=url.split('/')[3];
+      if(mode==='late-session'&&id==='B'){entered.resolve();await waiting.promise;}
+      return response(sessions[id]);
+    }
+    if(url==='/api/models')return response([]);
+    if(url==='/api/status'){
+      const scope=context.GeoForgeKIScope.get();
+      if((mode==='late-status'||mode==='scope-changed'||mode==='failed-status')&&scope===nextScope){
+        entered.resolve();await waiting.promise;
+        if(mode==='failed-status')return {ok:false,json:async()=>({error:'unavailable'})};
+      }
+      return response({});
+    }
+    return response([]);
+  }});
+context.window=context;
+vm.runInContext(fs.readFileSync(path.join(path.dirname(process.argv[1]),'ki-scope.js'),'utf8'),context);
+vm.runInContext([fn('openSession'),fn('loadAll'),fn('createSessionAt'),fn('ensureSession')].join('\n'),context);
+const run=code=>vm.runInContext(code,context);
+(async()=>{
+  if(mode==='bootstrap'){
+    context.CUR=null;
+    context.refreshRun=async id=>{if(id==='A'){entered.resolve();await waiting.promise;}};
+    storage.set('kiss.draft.A','saved A draft');storage.set('kiss.autosend.A','yes');
+    const loading=run('loadAll()');await entered.promise;
+    await run('openSession("B")');element('#msg').value='unsent B draft';
+    waiting.resolve();await loading;
+    assert.equal(element('#msg').value,'unsent B draft');
+    assert.equal(storage.get('kiss.draft.A'),'saved A draft');
+    assert.equal(storage.get('kiss.autosend.A'),'yes');
+  }else if(mode==='create'){
+    context.CUR=null;
+    element('#msg').value='new project draft';
+    const created=await run('ensureSession()');assert.equal(created.id,'B');
+    assert.equal(element('#msg').value,'new project draft');
+  }else if(['late-session','late-status'].includes(mode)){
+    const opening=run('openSession("B")');await entered.promise;
+    assert.equal(writes.length,0,'pending session must not replace current URL');
+    await run('openSession("C")');waiting.resolve();await opening;
+  }else if(mode==='scope-changed'){
+    const opening=run('openSession("B")');await entered.promise;
+    context.GeoForgeKIScope.set('c'.repeat(32));waiting.resolve();await opening;
+    assert.equal(writes.length,0);assert.equal(context.CUR.id,'A');
+  }else if(mode==='failed-status'){
+    const opening=run('openSession("B")');await entered.promise;waiting.resolve();
+    await assert.rejects(opening,/Could not load/);assert.equal(writes.length,0);
+    assert.equal(context.CUR.id,'A');
+  }else await run('openSession("B")');
+  const expected=['late-session','late-status'].includes(mode)?'C':
+    ['scope-changed','failed-status'].includes(mode)?'A':'B';
+  assert.equal(context.CUR.id,expected);
+  assert.equal(location.searchParams.get('session'),expected);
+  assert.equal(location.searchParams.get('library_scope'),sessions[expected].library_scope||null);
+  assert.equal(context.INFLIGHT.get('A').raw,'ongoing A response');
+  assert.equal(context.INFLIGHT.size,1);
+  process.stdout.write(JSON.stringify({session:expected,writes}));
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+
+
+@pytest.mark.parametrize("mode", ["switch", "unscoped", "late-session", "late-status",
+    "scope-changed", "failed-status", "bootstrap", "create"])
+def test_session_url_follows_only_committed_project_and_scope(mode):
+    subprocess.run([NODE, "-e", SESSION_URL_RUNNER, str(PAGE), mode],
+                   capture_output=True, text=True, encoding="utf-8", check=True, timeout=10)

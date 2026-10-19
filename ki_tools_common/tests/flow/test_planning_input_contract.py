@@ -105,7 +105,7 @@ def test_defaults_and_presence_are_not_claimed_as_scientific_readiness(planning_
     assert "Do not rewrite both draft files" in text
     assert "before FINAL submission" in text
     assert "an example, not an applicable default for this project" in text
-    assert "On EVERY interview turn" in text
+    assert "On EVERY interview turn" not in text
     assert "Do NOT rebuild the full drafts before asking the next question" in text
     assert "FINALIZATION ONLY" in text
 
@@ -147,6 +147,9 @@ def test_final_handoff_waits_for_settled_choices_and_preserves_prior_answers(pla
     assert "Do NOT rebuild the full drafts before asking the next question" in text
     assert "Do not claim a final plan submission or say a question was issued before its handoff succeeds" in text
     assert "Once all required choices are settled, write BOTH" in text
+    assert "When an unchanged official/reference case or prior answers settle the required choices" in text
+    assert "finalize and submit BOTH plan and inventory for normal approval" in text
+    assert "do not manufacture another interview question" in text
     assert "downloads still wait for that approval" in text
     assert (plan, inventory) == before
 
@@ -192,7 +195,11 @@ def test_local_inputs_and_one_decision_apply_to_every_database_mode(
         *planning_case, database_access_mode=database_mode, wrappers=wrappers)
     assert "legitimate sources without GeoForge Database access" in text
     assert "Preserve the user's supplied files and chosen overrides" in text
-    assert "Ask exactly ONE unresolved decision/question at a time, then STOP" in text
+    assert "Ask a question only when a material user decision for this plan remains unresolved" in text
+    assert "If a material user decision is still unresolved, ask exactly ONE unresolved decision/question at a time, then STOP" in text
+    assert "An inaccessible file is an access/acquisition gap, not proof that it is absent on disk" in text
+    assert "not permission to invent scientific inputs" in text
+    assert "retain any unverified requirement" in text
     assert "KI-supported recommended/default option with evidence" in text
     assert "if no applicable default is supported, say so rather than inventing a number" in text
     assert "Do not send a questionnaire or bundle unrelated decisions" in text

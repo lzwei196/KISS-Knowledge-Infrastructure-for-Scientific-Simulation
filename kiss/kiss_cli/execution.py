@@ -8,9 +8,11 @@ Local fixture processes can exercise the same interface without a provider.
 from __future__ import annotations
 
 import os
+import hashlib
 import json
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -536,12 +538,17 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         raise flowgate.FlowDenied("project data execution requires an approved Flow plan")
     if (cwd != project and project not in cwd.parents) or not cwd.is_dir():
         raise flowgate.FlowDenied("execution directory must exist inside the project")
-    approved_env, approval_id = {}, None
+    approved_env, approval_id, stdin_binding = {}, None, None
     if flow is not None:
         approval_id = _fresh_approval(flow, project)
         step = flow.check_step_tool(plan_step_id, ki, tool)
         try:
             flow.flow.plan.require_step_invocation(step, project, arguments, cwd)
+            from . import native_stdin
+            stdin_binding = native_stdin.binding(step, project, ki_root, flow.inventory,
+                                                for_execution=True)
+            if stdin_binding is not None and python_tool:
+                raise ValueError("native stdin cannot be sent through a Python interpreter")
         except (OSError, TypeError, ValueError, RuntimeError) as exc:
             raise flowgate.FlowDenied(str(exc)) from exc
         if "stdout_artifact" in step:
@@ -595,6 +602,7 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
     child_env.update(approved_env)
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
     command = ([str(cfg.python), str(tool)] if python_tool else [str(tool)]) + list(arguments)
+    worker_payload = None
     if project_data_tool:
         try:
             request = project_data_tools.worker_request(project, tool, step, flow.inventory or {}, arguments,
@@ -608,27 +616,33 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         child_env = {key: value for key, value in os.environ.items() if key.upper() in keep}
         child_env = turn_environment(project, turn_id=turn_id, env=child_env)
         worker = Path(__file__).with_name("_project_data_worker.py")
-        encoded_request = json.dumps(request, ensure_ascii=False)
-        if len(encoded_request) > 20000:
-            raise flowgate.FlowDenied("project data invocation is too large; select fewer precise input files")
-        command = [str(cfg.python), "-I", "-S", str(worker), str(tool), encoded_request]
+        try:
+            worker_payload = project_data_tools.encode_worker_request(request)
+        except (TypeError, ValueError) as exc:
+            raise flowgate.FlowDenied(str(exc)) from exc
+        command = [str(cfg.python), "-I", "-S", str(worker), str(tool),
+                   "--request-stdin-v1", hashlib.sha256(worker_payload).hexdigest()]
     before = flowgate._snapshot(project) if flow is not None else None
     if flow is not None and (flow.approval_status() != "OK" or approval_id !=
                             flow.flow.approval.approval_id(flow.flow.approval.read(project))):
         raise flowgate.FlowDenied("approval changed before execution; no process was launched")
+    native_capability = None
     if not project_data_tool:
         # The shared installation pass does not verify this project's projected
         # KI. Recheck at dispatch as well as in the GUI: old EXECUTING states and
         # direct CLI wrappers must not bypass a missing or stale project check.
         from . import project_verification
         try:
-            project_verification.require_current(project, ki, requested_root, cfg=cfg)
+            native_capability = project_verification.require_current(project, ki, requested_root, cfg=cfg,
+                                                 environment=child_env, stop=stop,
+                                                 **({"native_executable": tool} if not python_tool else {}))
         except (OSError, ValueError) as exc:
             raise flowgate.FlowDenied(f"project KI verification required for {ki}: {exc}") from exc
     from . import runtime_arguments
     try:
         runtime_authorization = runtime_arguments.validate(project=project, ki=ki, ki_root=requested_root, cfg=cfg,
-            arguments=arguments, cwd=cwd, allow_runtime=not project_data_tool)
+            arguments=arguments, cwd=cwd, allow_runtime=not project_data_tool,
+            **({"native_capability": native_capability} if python_tool and native_capability is not None else {}))
     except (OSError, ValueError, RuntimeError) as exc:
         raise flowgate.FlowDenied(str(exc)) from exc
     capture_arguments = list(arguments)
@@ -645,6 +659,11 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         capture_arguments += request["input_files"]
     input_snapshot = flow.capture_step_inputs(step, capture_arguments, cwd,
         **({"runtime_authorization": runtime_authorization} if runtime_authorization is not None else {})) if flow is not None else None
+    if stdin_binding is not None:
+        captured_files = {entry.get("path") for entry in input_snapshot["inputs"]}
+        if not set(stdin_binding["input_files"]).issubset(captured_files):
+            raise flowgate.FlowDenied("stdin filename is missing from the approved input capture")
+        input_snapshot["input_coverage"]["native_stdin"] = stdin_binding
     output_preimages = None
     if project_data_tool:
         try:
@@ -652,10 +671,9 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
                 approval_sha256=approval_id, step_id=plan_step_id)
             request["existing_outputs"] = [{**row, "path": str(project / row["path"])}
                 for row in (output_preimages or {}).get("outputs", [])]
-            encoded_request = json.dumps(request, ensure_ascii=False)
-            if len(encoded_request) > 20000:
-                raise ValueError("project data invocation is too large; select fewer precise output files")
-            command = [str(cfg.python), "-I", "-S", str(worker), str(tool), encoded_request]
+            worker_payload = project_data_tools.encode_worker_request(request)
+            command = [str(cfg.python), "-I", "-S", str(worker), str(tool),
+                       "--request-stdin-v1", hashlib.sha256(worker_payload).hexdigest()]
         except (OSError, TypeError, ValueError, RuntimeError) as exc:
             raise flowgate.FlowDenied(str(exc)) from exc
         if flow.approval_status() != "OK" or approval_id != flow.flow.approval.approval_id(
@@ -668,9 +686,27 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
             raise flowgate.FlowDenied(str(exc)) from exc
     started = time.time()
     stdout_capture = flow is not None and "stdout_artifact" in step
-    run = run_process(command, cwd=cwd, env=child_env, timeout=timeout, project=project,
-                      stop=stop, turn_id=turn_id,
-                      **({"encoding": "utf-8", "errors": "strict"} if stdout_capture else {}))
+    stdin_stream = None
+    try:
+        if stdin_binding is not None or worker_payload is not None:
+            # A binary file descriptor avoids TextIOWrapper's Windows newline
+            # translation while leaving existing stdout decoding/supervision intact.
+            try:
+                stdin_stream = tempfile.TemporaryFile(mode="w+b")
+                payload = worker_payload if worker_payload is not None else stdin_binding["text"].encode("utf-8")
+                if stdin_stream.write(payload) != len(payload):
+                    raise OSError("incomplete stdin write")
+                stdin_stream.seek(0)
+            except (OSError, ValueError) as error:
+                raise flowgate.FlowDenied("cannot prepare approved process input; no process was launched: "
+                                          + str(error)) from error
+        run = run_process(command, cwd=cwd, env=child_env, timeout=timeout, project=project,
+                          stop=stop, turn_id=turn_id,
+                          **({"stdin": stdin_stream} if stdin_stream is not None else {}),
+                          **({"encoding": "utf-8", "errors": "strict"} if stdout_capture else {}))
+    finally:
+        if stdin_stream is not None:
+            stdin_stream.close()
     if run.status == "stopped" and run.process_started is False:
         # Not an attempt: no receipt, so a step that already passed is not demoted.
         raise flowgate.FlowDenied("stopped by the user; no process was launched")
@@ -697,9 +733,12 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
                 before=before, plan_step_id=plan_step_id,
                 stdout_tail=(output + ("\n" + detail if detail else ""))[-20000:],
                 captured_stdout=run.stdout if stdout_capture else None,
+                **({"full_stdout": run.stdout, "full_stderr": run.stderr}
+                   if stdin_binding is not None else {}),
                 expected_approval_sha256=approval_id,
                 execution_status=status, process_started=run.process_started,
                 input_snapshot=input_snapshot,
+                runtime_authorization=runtime_authorization,
                 output_preimages=output_preimages,
                 data_input_files=request["input_files"] if project_data_tool else None,
                 input_arguments=list(arguments) + (request["input_files"] if project_data_tool else []))

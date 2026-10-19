@@ -70,9 +70,16 @@ def _closure(root: Path, requested: list[str]) -> list[str]:
             raise ValueError(f"Required KI is absent from this official revision: {name}")
         ki = catalog.packages[name]
         path = ki.manifest or root / "kiss" / "manifests" / (name + ".yaml")
-        if not path.is_file():
-            raise ValueError(f"Official installation manifest is missing: {name}")
-        manifest = Manifest.load(path)
+        if path.is_file():
+            manifest = Manifest.load(path)
+        elif path.exists() or path.is_symlink():
+            raise ValueError(f"Official installation manifest is not a regular file: {name}")
+        else:
+            # Match normal Desktop setup when this platform has no recipe.
+            # The in-memory stub declares no dependencies or readiness; it is
+            # never written into the official tree. Every selected package
+            # still passes the unchanged publication/KDT gate below.
+            manifest = Manifest.stub_for(ki)
         if manifest.model != name:
             raise ValueError(f"Official manifest names a different KI: {name}")
         dependencies = manifest.depends_on

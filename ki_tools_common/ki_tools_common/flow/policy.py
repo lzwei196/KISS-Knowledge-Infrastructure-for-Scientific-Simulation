@@ -48,7 +48,8 @@ DATABASE_API_TOOLS = frozenset({"search_catalogue", "describe_dataset", "estimat
                                 "estimate_preparation"})
 _BASE_API = frozenset({"read_ki_file", "list_ki_files", "list_skills", "read_skill",
                        "search_diagnostics", "list_project_files", "read_project_file",
-                       "report_project_progress", "request_user_action"}) | DATABASE_API_TOOLS
+                       "report_project_progress", "request_user_action",
+                       "describe_download_target"}) | DATABASE_API_TOOLS
 API_TOOLS_BY_STATE: dict[State, frozenset[str]] = {s: _BASE_API for s in State}
 API_TOOLS_BY_STATE[State.PLANNING] = _BASE_API | {"write_plan", "write_calibration_adapter", "write_project_data_tool"}
 API_TOOLS_BY_STATE[State.REPLAN_REQUIRED] = _BASE_API | {"write_plan", "write_calibration_adapter", "write_project_data_tool"}
@@ -222,6 +223,8 @@ def _claude_planning_tools(project: Path, ki_roots: dict[str, Path], python: str
         tools.append(f"Bash({wrappers['obs_search']}:*)")
     if wrappers and wrappers.get("request_user_action"):
         tools.append(f"Bash({wrappers['request_user_action']}:*)")
+    if wrappers and wrappers.get("download_target"):
+        tools.append(f"Bash({wrappers['download_target']}:*)")
     return tools
 
 

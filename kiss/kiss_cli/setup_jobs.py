@@ -180,15 +180,19 @@ def _leases(workroot, model, root):
         raise
 
 
-def _revoke(root: Path, model: str, detail: str, *, preserve_error=False) -> None:
+def _revoke(root: Path, model: str, detail: str, *, preserve_error=False, new_attempt=False) -> None:
     """Revoke readiness only while holding this installation folder's lease."""
     path = root / "status.json"
     doc = _read(path) or {}
+    if new_attempt:
+        from . import setup_status
+        doc = setup_status.begin(root, doc, model=model, operation="setup")
     error = (doc.get("primary_error") if preserve_error and not doc.get("ok") else None)
     # Preserve a concrete preflight/integrity diagnosis, but the initial
     # running placeholder cannot remain the reason for a terminal failure.
-    if (isinstance(error, dict) and error.get("name") == "setup-job"
-            and error.get("detail") == _PENDING_VERIFICATION_DETAIL):
+    if (isinstance(error, dict) and (error.get("name"), error.get("detail")) in {
+            ("setup-job", _PENDING_VERIFICATION_DETAIL),
+            ("verification-pending", "Software verification has not completed.")}):
         error = None
     doc.update(model=model, ok=False, verified_at=None, verification_identity=None,
                runtime_identity=None, ki_content_digest=None,
@@ -350,7 +354,7 @@ def start(workroot, model, root, provider, installation_only=False) -> Job:
     path, _, lockpath = _paths(workroot, model)
     try:
         with _record_lock(lockpath):
-            _revoke(root, model, _PENDING_VERIFICATION_DETAIL)
+            _revoke(root, model, _PENDING_VERIFICATION_DETAIL, new_attempt=True)
             turn_id = execution.begin_turn(root)
             now = time.time()
             doc = {"schema_version": 1, "id": uuid.uuid4().hex, "model": model,

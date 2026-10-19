@@ -181,6 +181,29 @@ def _planning_document_schemas() -> dict:
         properties = {key: {} for key in schema["required"]}
         properties["schema_version"] = {"type": "string", "enum": [contract.SCHEMA_VERSION]}
         properties.update({key: {"type": "array", "items": {}} for key in arrays})
+        if name == "plan":
+            # Make the executable contract discoverable structurally, not only
+            # in prose after a large plan. Other supported step fields remain
+            # permitted and the host validator stays authoritative.
+            properties["steps"]["items"] = {
+                "type": "object", "required": list(contract.PLAN_SCHEMA["step_required"]),
+                "properties": {
+                    "id": {"type": "string"}, "ki": {"type": "string"},
+                    "tool": {"type": ["string", "null"]},
+                    "inputs": {"type": "array", "items": {"type": "string"}},
+                    "outputs": {"type": "array", "items": {"type": "string"}},
+                    "status": {"type": "string", "enum": list(contract.PLAN_SCHEMA["step_status"])},
+                    "command": {"type": "array", "items": {"type": "string"},
+                                "description": "Literal argv only; these values are never stdin or shell commands."},
+                    "cwd": {"type": "string", "description": "Working directory inside this project."},
+                    "stdin": {"type": "object", "required": ["text"], "additionalProperties": False,
+                              "properties": {"text": {"type": "string"}},
+                              "description": "Optional approved prompt answers for a declared native binary. "
+                                  "Exact UTF-8 text and CR/LF; at most 4096 bytes. Each nonempty line is "
+                                  "a numeric/menu answer or exact inventoried filename relative to cwd. "
+                                  "Requires command and cwd; unavailable for Python/data/calibration tools."},
+                },
+            }
         result[name] = {"type": "object", "required": list(schema["required"]),
                         "properties": properties,
                         "description": "One complete document, including schema_version='1.0'; never a patch or fragment."}
@@ -199,10 +222,14 @@ def tool_schemas(ki, *, setup_mode: bool = False,
             "description": (
                 "Read a file from this model's Knowledge Infrastructure package "
                 "(SKILL.md, dag.yaml, diagnostics/triplets, docs/, tools/). "
-                "Always read SKILL.md before proposing how to run the model."
+                "Always read SKILL.md before proposing how to run the model. "
+                "Text pages report their actual line range, EOF and next_start_line; "
+                "continue with that start_line only when more text is needed. offset is unsupported. "
+                "PDFs and binary files cannot be read as text."
             ),
             "input_schema": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "path": {"type": "string",
                              "description": "path relative to the KI root, e.g. 'SKILL.md'"},
@@ -229,10 +256,14 @@ def tool_schemas(ki, *, setup_mode: bool = False,
         {
             "name": "run_preflight",
             "description": (
-                "Run this KI's preflight_check.py and return its output. This is "
-                "the authoritative answer to whether the model is ready to run."
+                "Run GeoForge's complete software verification: saved runtime and KI projection, "
+                "KI preflight, manifest requirements and any native dependency capability checks. "
+                "A KI-only pass cannot produce a setup PASS. This does not verify scientific results."
+                if setup_mode else
+                "Run this KI's preflight_check.py as a diagnostic and return its output. "
+                "This alone does not establish host software readiness or scientific validity."
             ),
-            "input_schema": {"type": "object", "properties": {}},
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
         {
             "name": "list_skills",
@@ -312,7 +343,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
             {
                 "name": "run_ki_tool",
                 "description": (
-                    "Run one Python preparation tool shipped inside the selected KI. "
+                    "Run one Python tool shipped inside the selected KI, or its declared native model binary. "
                     "Use this for data conversion, grid/soil/weather preparation, "
                     "configuration generation, validation, and model harness steps. "
                     "Arguments may reference this chat project or this KI package. "
@@ -325,7 +356,11 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "runs/logs/ is the tracked log exception. Process success alone is insufficient. "
                     "Do not replace a KI tool with improvised calculations. Required "
                     "environment values are taken automatically from this approved plan step; "
-                    "do not try to install startup hooks or mutate the system environment."
+                    "do not try to install startup hooks or mutate the system environment. "
+                    "For a declared native binary, approved step stdin:{text:string} supplies literal "
+                    "prompt answers automatically with exact line endings. Command argv cannot answer "
+                    "stdin prompts; never pass stdin as a tool-call argument. This capability excludes "
+                    "Python, project data tools and calibration."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "tool_path": {"type": "string", "description": "Python tool path relative to the KI root, "
@@ -359,6 +394,8 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "Return includes the exact tool path and project_data_tool binding: fill its arguments, cwd "
                     "and timeout_seconds, then include it in a kind=check or prepare plan step for normal review. "
                     "The step must include the returned project_data_tool object; a tool path alone cannot bind it. "
+                    "Use the returned step_template: inputs and outputs are step fields, not binding fields. "
+                    "Keep the binding's exact keys; use arguments, not args, and do not copy the whole response into it. "
                     "For PCSE weather CSV with a metadata preamble or single-campaign agro YAML, supply explicit "
                     "output_formats to receive a version 2 binding; preserve that binding in the plan. "
                     "This is trusted reviewed source, not an OS sandbox. Data outputs must be fresh outputs/ or "
@@ -485,7 +522,7 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "creating real artifacts. GeoForge renders the declared metrics, "
                     "images, animations, maps, CSV tables, files, and 3D-model "
                     "previews; it never executes model-written HTML or JavaScript. "
-                    "Media paths must name existing files below artifacts/. "
+                    "Media paths must name existing files below artifacts/, or existing raster images, CSV or videos below outputs/. "
                     "A kind=file panel may directly link an existing outputs/**/*.json "
                     "report at its original path. Never substitute a chart for a report "
                     "or copy report bytes merely to publish a link. A file link or "
@@ -584,6 +621,21 @@ def tool_schemas(ki, *, setup_mode: bool = False,
     if setup_mode:
         tools += [
             {
+                "name": "request_ki_repair",
+                "description": (
+                    "Hand a demonstrated KI portability/preflight defect to the host's "
+                    "bounded KDT repair workflow. Describe the evidence, then end this "
+                    "turn when queued: the host runs three independent reviews, verifies "
+                    "a supported repair, adopts it and reruns preflight after your tools "
+                    "stop. Never edit active KI files or request another permission. "
+                    "Unsupported repairs remain blocked with a concrete explanation."
+                ),
+                "input_schema": {"type": "object", "additionalProperties": False,
+                    "properties": {"issue": {"type": "string", "minLength": 1,
+                                               "maxLength": 2000}},
+                    "required": ["issue"]},
+            },
+            {
                 "name": "prepare_python_runtime",
                 "description": (
                     "Ask GeoForge to prepare a supported CPython version for "
@@ -620,9 +672,11 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 "name": "read_work_file",
                 "description": (
                     "Read a text file from the writable setup workspace. Use "
-                    "start_line/line_count to page through large build files."
+                    "start_line/line_count to page through large build files. Pages report "
+                    "their actual range, EOF and next_start_line; offset is unsupported. "
+                    "PDFs and binary files cannot be read as text."
                 ),
-                "input_schema": {"type": "object", "properties": {
+                "input_schema": {"type": "object", "additionalProperties": False, "properties": {
                     "path": {"type": "string"},
                     "start_line": {"type": "integer", "minimum": 1},
                     "line_count": {"type": "integer", "minimum": 1,
@@ -797,12 +851,13 @@ def tool_schemas(ki, *, setup_mode: bool = False,
             {
                 "name": "request_replan",
                 "description": (
-                    "EXECUTING or COMPLETED. Use when the user requests work beyond a completed "
-                    "phase, or when the approved plan cannot be carried out as written "
+                    "EXECUTING only. Use when the approved plan cannot be carried out as written "
                     "(a tool needs a different input, a data source is unusable, a step or "
                     "scientific choice must change). GeoForge moves the project to REPLAN_REQUIRED, "
                     "revokes the approval, and makes write_plan available immediately, so you "
-                    "write the corrected plan in this same turn. Do not improvise around the plan."
+                    "write the corrected plan in this same turn. Completed phases require the user's "
+                    "Plan next phase action in Project status. Read-only follow-ups cannot replan. "
+                    "Do not improvise around the plan."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "reason": {"type": "string", "description": "one sentence: what must change and why"},
@@ -818,9 +873,23 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "two documents together are large, send them in two calls: first only "
                     "plan, then only data_inventory; GeoForge combines these two complete documents. "
                     "Each supplied document replaces its previous version. An inventory must include "
-                    "its entire items array: splitting items across calls does NOT append or merge them."
+                    "its entire items array: splitting items across calls does NOT append or merge them. "
+                    "A declared native model step needing prompt answers may include stdin:{text:string} "
+                    "with explicit command argv and cwd: at most 4096 UTF-8 bytes, one numeric/yes-no "
+                    "answer or inventoried input filename relative to cwd per nonempty line. "
+                    "No shell text, absolute/traversing paths or placeholders. Exact inventoried filenames may contain spaces. "
+                    "Line endings are exact; no newline is added. Python/data/calibration steps cannot use stdin."
                 ),
                 "input_schema": {"type": "object", "properties": _planning_document_schemas()},
+            },
+            {
+                "name": "describe_download_target",
+                "description": "Read-only planning resolver: no network, file writes or approval. "
+                    "Return the exact future public-file path and inventory fields. Use one item per file; "
+                    "acceptable_sources are alternatives. Explicit filename is optional; redirects do not rename it.",
+                "input_schema": {"type": "object", "additionalProperties": False, "properties": {
+                    "url": {"type": "string"}, "item_id": {"type": "string"},
+                    "filename": {"type": "string"}}, "required": ["url", "item_id"]},
             },
             {
                 "name": "fetch_data",
@@ -828,7 +897,9 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "EXECUTING only. Download one public http(s) file into inputs/raw/<item_id>/ "
                     "and write a signed download receipt (URL, status, sha256). Use it for every "
                     "download the approved data inventory calls for; a download made any other "
-                    "way has no receipt and cannot count."
+                    "way has no receipt and cannot count. For explicit public download steps, "
+                    "URL and filename must match the approved single-file inventory binding. "
+                    "Query describe_download_target while planning; use separate items for required files."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "url": {"type": "string"},
@@ -898,24 +969,79 @@ def _safe_relative_file_listing(base: Path, root: Path, limit: int,
     return sorted(names)
 
 
+class _TextPage(str):
+    """Text tool result with host-only diagnostic metadata, never file contents."""
+    def __new__(cls, content, metadata):
+        value = super().__new__(cls, "[GeoForge text page] " + json.dumps(metadata, sort_keys=True) + "\n" + content)
+        value.content = content
+        value.read_metadata = metadata
+        return value
+
+
+def _read_page_error(message, metadata):
+    error = ToolError(message)
+    error.read_metadata = metadata
+    return error
+
+
+def _read_page_arguments(args, *, ki=False):
+    allowed = {"path", "start_line", "line_count"} | ({"ki"} if ki else set())
+    if set(args) - allowed:
+        raise _read_page_error(
+            "Unsupported text-read argument. Use start_line (1-based) and line_count; "
+            "offset is not supported and was not applied. No file was read.",
+            {"read_kind": "invalid_arguments", "read_path": str(args.get("path", ""))})
+    return args.get("start_line", 1), args.get("line_count", 1000)
+
+
 def _read_text_page(path: Path, start_line: object = 1,
-                    line_count: object = 1000) -> str:
-    """Read a bounded page without forcing agents to invent shell pipelines."""
-    try:
-        start = int(start_line or 1)
-        count = int(line_count or 1000)
-    except (TypeError, ValueError) as error:
-        raise ToolError("start_line and line_count must be integers") from error
+                    line_count: object = 1000, *, relative_path: str | None = None) -> str:
+    """Return only complete lines, with explicit coverage and continuation."""
+    metadata = {"read_path": relative_path if relative_path is not None else path.name,
+                "read_kind": "text",
+                "read_source_sha256": hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()}
+    if type(start_line) is not int or type(line_count) is not int:
+        raise _read_page_error("start_line and line_count must be integers", metadata)
+    start, count = start_line, line_count
+    metadata.update(read_requested_start_line=start, read_requested_line_count=count)
     if start < 1 or count < 1 or count > 2000:
-        raise ToolError("start_line must be >= 1 and line_count must be 1..2000")
+        raise _read_page_error("start_line must be >= 1 and line_count must be 1..2000", metadata)
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        raw = path.read_bytes()
     except OSError as error:
-        raise ToolError(
+        raise _read_page_error(
             f"Cannot read {path.name}: {type(error).__name__}. "
             "The file may be locked or unavailable; continue with other "
-            "evidence and do not change its permissions.") from error
-    return "".join(lines[start - 1:start - 1 + count])[:60000]
+            "evidence and do not change its permissions.", metadata) from error
+    metadata["read_file_sha256"] = hashlib.sha256(raw).hexdigest()
+    sample = raw[:65536]
+    is_pdf = path.suffix.lower() == ".pdf" or sample.lstrip().startswith(b"%PDF-")
+    is_binary = (b"\x00" in sample or sample.startswith((b"\x89PNG", b"\xff\xd8\xff", b"GIF87a", b"GIF89a",
+                  b"PK\x03\x04", b"\x1f\x8b", b"SQLite format 3", b"\x7fELF", b"CDF\x01", b"CDF\x02", b"\x89HDF")))
+    if is_pdf or is_binary:
+        metadata["read_kind"] = "pdf" if is_pdf else "binary"
+        raise _read_page_error("This is a PDF/binary file, not a text page. No document text was read. "
+            "Use its accompanying text documentation or an available format-aware reader; "
+            "do not infer file contents from a filename or decoded binary bytes.", metadata)
+    lines = raw.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n").splitlines(keepends=True)
+    selected, chars = [], 0
+    for line in lines[start - 1:start - 1 + count]:
+        if chars + len(line) > 60000:
+            if not selected:
+                metadata.update(read_kind="overlong_line", read_total_lines=len(lines), read_start_line=start)
+                raise _read_page_error("This line exceeds the 60000-character text-page limit. "
+                    "No partial line was returned or counted as read; use a format-aware reader.", metadata)
+            break
+        selected.append(line)
+        chars += len(line)
+    content = "".join(selected)
+    end = start + len(selected) - 1 if selected else None
+    eof = start - 1 + len(selected) >= len(lines)
+    metadata.update(read_start_line=start if selected else None, read_end_line=end,
+                    read_total_lines=len(lines), read_eof=eof,
+                    next_start_line=None if eof else end + 1, read_chars=len(content),
+                    read_page_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest())
+    return _TextPage(content, metadata)
 
 
 def _replace_workspace_text(text: str, old: str, new: str, expected: int) -> str:
@@ -1587,7 +1713,8 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     turn_id = (setup_context or {}).get("_turn_id")
     from . import execution
     if ((stop is not None and stop()) or
-            execution.stop_requested(project_root, turn_id=turn_id)):
+            (not (flow is not None and getattr(flow, "readonly", False) is True) and
+             execution.stop_requested(project_root, turn_id=turn_id))):
         raise ToolError("Stopped by the user; no further tool work may start in this turn.")
     progress_root = project_root
     if (bool((setup_context or {}).get("installation_only")) and name in {
@@ -1658,11 +1785,11 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError("Effective KI inspection is only available during read-only task intake")
 
     if name == "read_ki_file":
+        start, count = _read_page_arguments(args, ki=True)
         p, _r = _ki_scoped(args.get("path", ""))
         if not p.is_file():
             raise ToolError(f"no such file in this KI: {args.get('path')}")
-        return _read_text_page(
-            p, args.get("start_line", 1), args.get("line_count", 1000))
+        return _read_text_page(p, start, count, relative_path=p.relative_to(_r).as_posix())
 
     if name == "list_ki_files":
         if intake_read_map is not None and not args.get("ki") and args.get("subdir", ".") in (None, "", "."):
@@ -1675,9 +1802,28 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if bool((setup_context or {}).get("installation_only")):
             raise ToolError("Full preflight is outside installation-only scope; use the declared import and executable startup checks.")
         from . import install as _install
+        if setup_mode:
+            if args:
+                raise ToolError("run_preflight accepts no overrides; the host owns the current setup binding")
+            verify = (setup_context or {}).get("verify_software")
+            if not callable(verify):
+                raise ToolError("Host software verification is unavailable for this setup turn. "
+                                "Continue through the Setup page; a KI-only check cannot establish readiness.")
+            try:
+                with _install.cancellation_context(project_root, stop=stop, turn_id=turn_id):
+                    step = verify()
+            except (OSError, ValueError, RuntimeError, _install.InstallStopped) as error:
+                raise ToolError("Host software verification did not complete: " + str(error)) from None
+            if not isinstance(step, _install.Step) or type(step.ok) is not bool:
+                raise ToolError("Host software verification returned no valid verdict; setup remains unverified")
+            if ((stop is not None and stop()) or execution.stop_requested(project_root, turn_id=turn_id)):
+                raise ToolError("Stopped by the user; software verification was interrupted")
+            return (f"{'PASS' if step.ok else 'FAIL'}\nHost software verification "
+                    "(KI + manifest + runtime requirements; not scientific validation).\n" + step.detail)
         step = _install.run_preflight(ki, cfg.python, cfg, project=project_root,
                                       stop=stop, turn_id=turn_id)
-        return f"{'PASS' if step.ok else 'FAIL'}\n{step.detail}"
+        return (f"{'PASS' if step.ok else 'FAIL'}\nKI preflight diagnostic only; "
+                "host software verification is still required.\n" + step.detail)
 
     if name == "search_diagnostics":
         kw = (args.get("keyword") or "").lower()
@@ -1803,6 +1949,9 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(str(exc)) from None
 
     if project_mode and name in {"run_ki_tool", "run_project_data_tool"}:
+        if any(key in args for key in ("stdin", "stdin_text")):
+            raise ToolError("Native stdin comes only from the approved plan step; "
+                            "do not supply stdin or stdin_text to an execution call")
         project_data = name == "run_project_data_tool"
         if project_data and flow is None:
             raise ToolError("Project data tools require a current approved Flow plan")
@@ -2115,6 +2264,18 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(str(error)) from None
         return json.dumps(result, indent=2, ensure_ascii=False)
 
+    if project_mode and name == "describe_download_target":
+        if set(args) - {"url", "item_id", "filename"}:
+            raise ToolError("describe_download_target accepts only url, item_id and optional filename")
+        from . import flowgate
+        flowgate.load()
+        from ki_tools_common.flow.public_downloads import target
+        try:
+            return json.dumps(target(args.get("item_id"), args.get("url"), args.get("filename")),
+                              ensure_ascii=False)
+        except ValueError as error:
+            raise ToolError(str(error)) from None
+
     if project_mode and name == "fetch_data":
         if flow is None:
             raise ToolError("fetch_data is available only in a flow-managed project")
@@ -2274,6 +2435,19 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         note = "" if flow is None else "\n(the stage is tracked by GeoForge from the plan/approval/receipts; only status and summary were taken from your report)"
         return "Project status updated:\n" + json.dumps(state, indent=2) + note
 
+    if setup_mode and name == "request_ki_repair":
+        from . import setup_repair_bridge
+        if not isinstance(args, dict) or set(args) != {"issue"}:
+            raise ToolError("request_ki_repair accepts only issue")
+        callback = (setup_context or {}).get("request_ki_repair")
+        if not callable(callback):
+            raise ToolError("KI repair requires an active GUI setup repair capability")
+        try:
+            return json.dumps(callback(setup_repair_bridge.issue_argument(args["issue"])),
+                              ensure_ascii=False)
+        except (ValueError, OSError) as exc:
+            raise ToolError(str(exc)) from None
+
     if setup_mode and name == "prepare_python_runtime":
         from . import setup_bridge
         if not isinstance(args, dict) or set(args) != {"version"}:
@@ -2308,13 +2482,13 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         return "\n".join(names) or "(empty)"
 
     if setup_mode and name == "read_work_file":
+        start, count = _read_page_arguments(args)
         p = _inside_work(args.get("path") or "")
         if not p.is_file():
             raise ToolError(f"no such workspace file: {args.get('path')}")
         if _user_only_file(p, project_root):
             raise ToolError("that file contains private user-only request details")
-        return _read_text_page(
-            p, args.get("start_line", 1), args.get("line_count", 1000))
+        return _read_text_page(p, start, count, relative_path=p.relative_to(workroot).as_posix())
 
     if setup_mode and name == "write_work_file":
         p = _inside_work(args.get("path") or "")
@@ -3237,7 +3411,8 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             yield text
         if not calls:
             state_name = getattr(getattr(flow, "state", None), "value", "")
-            if flow is not None and state_name in _HANDOFF_STATES and not handoff and not nudged:
+            if (flow is not None and not getattr(flow, "readonly", False)
+                    and state_name in _HANDOFF_STATES and not handoff and not nudged):
                 # Prose is not a handoff. One nudge, then the turn ends and flowrun.after
                 # reports the missing submission as today.
                 nudged = True
@@ -3256,6 +3431,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
 
         results = []
         for call_id, name, args in calls:
+            read_metadata = {}
             if handle is not None and handle.stopped.is_set():
                 yield f"\n[{prov.label} stopped by the user before {name}]"
                 return
@@ -3270,7 +3446,9 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                     out = execute_tool(name, args, ki, cfg, setup_mode=setup_mode,
                                        setup_context=tool_context,
                                        project_mode=project_mode, flow=flow)
+                    read_metadata = getattr(out, "read_metadata", {})
                 except ToolError as e:
+                    read_metadata = getattr(e, "read_metadata", {})
                     out = f"ERROR: {e}"
             handoff = handoff or _handoff_made(name, args, str(out))
             from . import execution_continuation
@@ -3281,8 +3459,17 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             diagnostic('tool_result', tool=name, reason=blocker or 'nonblocking',
                        blocked=bool(blocker), malformed_arguments='_vendor_argument_error' in args,
                        error=str(out) if str(out).startswith(('ERROR:', 'DENIED', 'FAIL', 'PLAN NOT WRITTEN')) else None,
-                       step=step)
+                       step=step, **read_metadata)
             results.append((call_id, out))
+            if name == "request_ki_repair" and setup_mode:
+                try:
+                    repair_queued = json.loads(out).get("queued") is True
+                except (ValueError, TypeError, AttributeError):
+                    repair_queued = False
+                if repair_queued:
+                    yield "\n[GeoForge: KI repair queued; handing this setup to the host KDT workflow]\n"
+                    diagnostic('turn_end', reason='setup_ki_repair', step=step)
+                    return
             if (name == "request_user_action" and flow is not None
                     and getattr(getattr(flow, "state", None), "value", "") in _HANDOFF_STATES
                     and not str(out).startswith(("ERROR:", "DENIED"))):

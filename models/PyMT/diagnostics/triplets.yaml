@@ -324,7 +324,7 @@
     error_pattern: "Segmentation fault|dtype.*incompatible"
     detection_method: error_match
   diagnosis:
-    root_cause: "PyMT requires numpy < 2 (pinned in requirements.txt, see issue #173). numpy 2.x changes array internals."
+    root_cause: "Upstream requirements.txt pins numpy<2 (see issue #173); numpy 2.x changed array internals. Server note 2026-10-19: the server PyMT venv runs numpy 2.4.3 and its 5 installed plugins (pure Python, no compiled code) load and instantiate; FrostNumber, Ku and KuEnhanced also ran a few update() steps, Nwis and Nwm were not stepped (need a USGS site / network)."
     explanation: >
       numpy 2.0 changed the C API for array dtypes. Compiled BMI libraries
       built against numpy 1.x will segfault or produce garbage when used
@@ -332,13 +332,13 @@
       backends.
     affected_components: [all compiled BMI plugins]
   remedy:
-    action: "Pin numpy: pip install 'numpy<2' or use conda environment"
+    action: "In a fresh env with compiled BMI plugins: pin numpy (pip install 'numpy<2') or use conda; on this server's PyMT venv (numpy 2.4.3, checked 2026-10-19; its 5 plugins have no compiled code) do NOT downgrade unless the error is shown to come from numpy"
     tool_to_run: null
     manual_steps:
       - "Check numpy version: python -c 'import numpy; print(numpy.__version__)'"
-      - "If >= 2.0: pip install 'numpy<2'"
-      - "Recreate venv if needed"
-    prevention: "Always create environments with numpy<2 for PyMT"
+      - "If >= 2.0 AND the failing plugin has compiled code (.so): pip install 'numpy<2' in a fresh env; never downgrade the shared server venv without the owner"
+      - "Recreate a fresh venv if needed (never the shared server venv without the owner)"
+    prevention: "New environments with compiled BMI plugins: create with numpy<2 (upstream pin)"
   severity: fatal
   cross_references: [dt_011]
 

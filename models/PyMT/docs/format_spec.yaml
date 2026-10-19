@@ -93,21 +93,25 @@ dependencies:
   purpose: NetCDF I/O
 - name: numpy
   version: <2
-  purpose: Array operations (numpy 2 breaks compiled BMI libs)
+  purpose: "Array operations. <2 is the upstream pin (see #173: risk for compiled BMI libs); the server venv runs 2.4.3, see known_issues numpy2"
 - name: scipy
   purpose: Scientific computing
 - name: xarray
   purpose: Labeled array data
 known_issues:
 - id: numpy2
-  description: Requires numpy < 2. numpy 2.x causes silent dtype issues and segfaults
-    in compiled BMI libs
+  description: "Upstream requirements.txt pins numpy < 2 (see #173; reported risk: silent dtype
+    issues and segfaults in compiled BMI libs). Checked 2026-10-19: the server PyMT venv runs
+    numpy 2.4.3 and its 5 installed models load and instantiate; a full simulation
+    under numpy 2 is not yet proven, so check dtypes after get_value."
   reference: 'issue #173'
 - id: pkg_resources_deprecation
   description: "pkg_resources deprecation warning from model_collection.py \u2014\
     \ works but will need migration"
-- id: no_plugins
-  description: "No model plugins installed in current venv \u2014 framework works\
-    \ but cannot run actual simulations"
+- id: plugins_separate
+  description: "Model plugins are separate packages; pymt.models lists only what is
+    installed. Checked 2026-10-19: the server PyMT venv has pymt_permamodel
+    (FrostNumber, Ku, KuEnhanced), pymt_nwis (Nwis) and pymt-nwm (Nwm); any other
+    model needs its pymt_<name> package first."
 - id: flat_arrays
   description: get_value() always returns flattened 1D arrays regardless of grid dimensionality

@@ -172,7 +172,7 @@ pip install -e ".[testing]"
 | matplotlib | any | Visualization |
 | model_metadata | >=0.7, <0.8 | Model metadata discovery |
 | netcdf4 | any | NetCDF I/O |
-| numpy | <2 | Array operations |
+| numpy | <2 upstream pin (#173); server venv runs 2.4.3 | Array operations |
 | pyyaml | any | YAML parsing |
 | scipy | any | Scientific computing |
 | shapely | any | Geometric operations |
@@ -256,12 +256,17 @@ azimuth (clockwise from north) while internal math uses counter-clockwise from e
 **Fix:** Use `get_value(var_name, angle="azimuth")` or `angle="math"`.
 
 ### ALERT 5: numpy < 2 requirement
-PyMT requires `numpy < 2` (pinned in requirements.txt, issue #173). Installing
-numpy 2.x causes silent array dtype issues and potential segfaults in compiled
-BMI libraries.
+Upstream PyMT pins `numpy < 2` (requirements.txt: `numpy<2  # see #173`). The reported risk:
+numpy 2.x can cause silent array dtype issues and segfaults in compiled BMI libraries.
 
 **Detection:** Segfaults, dtype errors, import failures
-**Fix:** `pip install "numpy<2"` or use conda environment.
+**Fix (fresh env with compiled plugins):** `pip install "numpy<2"` or use conda environment. On the
+server venv do not downgrade — see the server state below.
+
+**Server state (checked 2026-10-19):** the server PyMT venv runs numpy 2.4.3; its 5 installed
+models (FrostNumber, Ku, KuEnhanced, Nwis, Nwm) load and instantiate. A full simulation under
+numpy 2 is not yet proven — check value dtypes after `get_value`. None of the 5 installed plugins
+has compiled code (no `.so` files), so the compiled-library risk does not apply to them.
 
 ### ALERT 6: Model plugins are separate packages
 `from pymt.models import Cem` will raise `ImportError` unless `pymt_cem` is

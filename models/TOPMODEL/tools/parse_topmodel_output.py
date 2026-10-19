@@ -17,6 +17,16 @@ import argparse
 import numpy as np
 from datetime import datetime, timedelta
 import csv
+import re
+
+# Qobs written by convert_forcing_to_topmodel.py on missing observed days.
+OBS_PLACEHOLDER = -9999.0
+
+# What topmodel.c prints: "%d %lf %lf". Python's int()/float() alone would also
+# take '1_0', '+5' or '1_0.5', so each field is matched first.
+_INT_RE = re.compile(r'[0-9]+')
+_FLOAT_RE = re.compile(r'[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?'
+                       r'|[+-]?(?:nan|inf|infinity)', re.IGNORECASE)
 
 
 def validate_inputs(hyd_file, topmod_file=None):
@@ -45,6 +55,16 @@ def parse_hyd_out(hyd_file):
     columns swapped, which silently corrupted NSE/PBIAS. They are read in the
     correct order here.
 
+    STRICT: every line must be exactly `int float float` (plain digits for the
+    step, a plain decimal or exponent number for Q), the steps must be exactly
+    1..n in order, and the file must end with a newline. A 2-field line, a
+    non-numeric field, a blank line, a skipped or repeated step or a last row cut
+    off by an interrupted write raises ValueError with the line number; nothing
+    is skipped or guessed.
+    A well-formed 'nan'/'inf' value is returned as is. Both scorers refuse it:
+    calibrate_topmodel.score() rejects the trial, and this file's CLI (main())
+    stops with exit 2.
+
     Returns:
         timesteps: array of timestep indices
         q_sim: simulated discharge (m/step)
@@ -55,28 +75,26 @@ def parse_hyd_out(hyd_file):
     q_obs = []
 
     with open(hyd_file, 'r') as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) >= 3:
-                try:
-                    t = int(parts[0])
-                    qo = float(parts[1])  # Qobs (column 2)
-                    qs = float(parts[2])  # Qsim (column 3)
-                    timesteps.append(t)
-                    q_sim.append(qs)
-                    q_obs.append(qo)
-                except ValueError:
-                    continue
-            elif len(parts) == 2:
-                # No timestep index: assume "Qobs Qsim" to match the 3-col order
-                try:
-                    qo = float(parts[0])
-                    qs = float(parts[1])
-                    timesteps.append(len(timesteps) + 1)
-                    q_sim.append(qs)
-                    q_obs.append(qo)
-                except ValueError:
-                    continue
+        text = f.read()
+    if not text:
+        raise ValueError(f"{hyd_file}: empty hyd.out")
+    if not text.endswith('\n'):
+        raise ValueError(f"{hyd_file}: does not end with a newline (last row cut off?)")
+    for n, line in enumerate(text[:-1].split('\n'), 1):
+        parts = line.split()
+        if len(parts) != 3:
+            raise ValueError(f"{hyd_file} line {n}: expected 3 fields 'it Qobs Qsim', got {len(parts)}: {line[:80]!r}")
+        if not (_INT_RE.fullmatch(parts[0]) and _FLOAT_RE.fullmatch(parts[1])
+                and _FLOAT_RE.fullmatch(parts[2])):
+            raise ValueError(f"{hyd_file} line {n}: not 'int float float': {line[:80]!r}")
+        t = int(parts[0])
+        qo = float(parts[1])  # Qobs (column 2)
+        qs = float(parts[2])  # Qsim (column 3)
+        if t != n:
+            raise ValueError(f"{hyd_file} line {n}: step {t}, expected {n} (steps must be 1..n in order)")
+        timesteps.append(t)
+        q_sim.append(qs)
+        q_obs.append(qo)
 
     return np.array(timesteps), np.array(q_sim), np.array(q_obs)
 
@@ -224,11 +242,13 @@ def write_csv(output_file, timesteps, q_sim, q_obs, start_date=None, dt_hours=1.
             if start_date:
                 dt = start_date + timedelta(hours=dt_hours * i)
                 row.append(dt.strftime('%Y-%m-%d %H:%M'))
-            row.extend([f"{q_sim[i]:.8e}", f"{q_obs[i]:.8e}"])
+            # A missing-day placeholder Qobs is written as an empty cell.
+            missing = q_obs[i] == OBS_PLACEHOLDER
+            row.extend([f"{q_sim[i]:.8e}", "" if missing else f"{q_obs[i]:.8e}"])
             if basin_area_km2:
                 q_sim_m3s = convert_depth_per_step_to_m3s(q_sim[i], basin_area_km2, seconds_per_step)
                 q_obs_m3s = convert_depth_per_step_to_m3s(q_obs[i], basin_area_km2, seconds_per_step)
-                row.extend([f"{q_sim_m3s:.4f}", f"{q_obs_m3s:.4f}"])
+                row.extend([f"{q_sim_m3s:.4f}", "" if missing else f"{q_obs_m3s:.4f}"])
             writer.writerow(row)
 
     print(f"Wrote CSV: {output_file}")
@@ -282,6 +302,20 @@ def main():
         topmod_results = parse_topmod_out(args.topmod_file)
         print(f"  Read {len(topmod_results['timestep'])} timesteps from topmod.out")
 
+    # The whole file must be clean before anything is scored: a nan/inf Qsim or
+    # Qobs means the run or the file is broken, and a NSE on the rows left would
+    # look clean. (The -9999 placeholder is finite, so it passes this check.)
+    bad_sim = ~np.isfinite(q_sim)
+    if bad_sim.any():
+        raise ValueError(f"hyd.out has {int(bad_sim.sum())} nonfinite Qsim values "
+                         f"(first at step {int(timesteps[bad_sim][0])}); the run is broken, not scored")
+    bad_obs = ~np.isfinite(q_obs)
+    if bad_obs.any():
+        raise ValueError(f"hyd.out has {int(bad_obs.sum())} nonfinite Qobs values "
+                         f"(first at step {int(timesteps[bad_obs][0])}); not scored")
+    if args.spinup_steps < 0 or args.spinup_steps >= len(timesteps):
+        raise ValueError(f"--spinup-steps {args.spinup_steps} leaves no row of the {len(timesteps)} in hyd.out")
+
     # Step 3: Discard spinup
     if args.spinup_steps > 0:
         idx = args.spinup_steps
@@ -290,9 +324,19 @@ def main():
         q_obs = q_obs[idx:]
         print(f"  After spinup removal: {len(timesteps)} timesteps")
 
-    # Step 4: Compute metrics
+    # Step 4: Compute metrics. Rows whose Qobs is the converter's missing-day
+    # placeholder (-9999, listed in inputs.dat.provenance.json) are not scored;
+    # any other negative Qobs means the file is not what the converter wrote.
     print("=== Step 3: Computing metrics ===")
-    metrics = compute_all_metrics(q_sim, q_obs)
+    placeholder = q_obs == OBS_PLACEHOLDER
+    if (q_obs[~placeholder] < 0).any():
+        raise ValueError("hyd.out has negative Qobs values that are not the -9999 missing-day placeholder")
+    if placeholder.any():
+        print(f"  {int(placeholder.sum())} rows hold the missing-observation placeholder "
+              f"{OBS_PLACEHOLDER:g}; they are not scored")
+    if placeholder.all():
+        raise ValueError("no observed row to score (every row after spin-up is a missing-day placeholder)")
+    metrics = compute_all_metrics(q_sim[~placeholder], q_obs[~placeholder])
 
     print(f"  NSE  = {metrics['NSE']:.4f}")
     print(f"  KGE  = {metrics['KGE']:.4f}")
@@ -301,8 +345,8 @@ def main():
 
     if args.basin_area_km2:
         seconds_per_step = args.dt_hours * 3600.0
-        q_sim_m3s = convert_depth_per_step_to_m3s(q_sim, args.basin_area_km2, seconds_per_step)
-        q_obs_m3s = convert_depth_per_step_to_m3s(q_obs, args.basin_area_km2, seconds_per_step)
+        q_sim_m3s = convert_depth_per_step_to_m3s(q_sim[~placeholder], args.basin_area_km2, seconds_per_step)
+        q_obs_m3s = convert_depth_per_step_to_m3s(q_obs[~placeholder], args.basin_area_km2, seconds_per_step)
         metrics_m3s = compute_all_metrics(q_sim_m3s, q_obs_m3s)
         print(f"\n  In m³/s:")
         print(f"  Mean sim = {metrics_m3s['mean_sim']:.2f} m³/s")
@@ -331,4 +375,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except ValueError as exc:
+        print(f'ERROR: {exc}', file=sys.stderr)
+        sys.exit(2)

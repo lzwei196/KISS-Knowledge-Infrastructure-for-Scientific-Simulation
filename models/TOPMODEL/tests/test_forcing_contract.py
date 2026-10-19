@@ -90,10 +90,76 @@ class ForcingTests(unittest.TestCase):
     def test_supplied_observations_must_be_complete_and_preserve_zero(self):
         obs=self.root/'obs.tsv';dates=pd.date_range('2000-01-01',periods=3)
         pd.DataFrame({'dates':dates,'Q':[0.,2.,3.]}).to_csv(obs,sep='\t',index=False)
-        np.testing.assert_allclose(m.load_obs_qmhr(str(obs),'2000-01-01',3,1),[0,.1728,.2592])
-        pd.DataFrame({'dates':dates,'Q':[1.,-99.,3.]}).to_csv(obs,sep='\t',index=False)
-        with self.assertRaises(ValueError):self.run_convert(obs_file=str(obs),basin_area_km2=1)
+        depth,missing=m.load_obs_qmhr(str(obs),'2000-01-01',3,1)
+        np.testing.assert_allclose(depth,[0,.1728,.2592]);self.assertFalse(missing.any())
+        self.run_convert(obs_file=str(obs),basin_area_km2=1)
+        info=json.loads(Path(str(self.out)+'.provenance.json').read_text())
+        self.assertEqual(info['observation_mode'],'provided_complete');self.assertNotIn('obs_missing_rows',info)
         with self.assertRaises((ValueError,FileNotFoundError)):self.run_convert(obs_file=str(self.root/'absent'),basin_area_km2=1)
+    def write_obs(self,text):
+        obs=self.root/'obs.tsv';obs.write_text(text);return str(obs)
+    def test_gap_rows_get_placeholder_and_sidecar_lists_them(self):
+        # -99.9 sentinel, -99 sentinel, empty Q cell, and a date with no row at all
+        obs=self.write_obs('dates\tQ\n2000-01-01\t-99.9\n2000-01-02\t2\n2000-01-03\t\n2000-01-04\t0\n2000-01-05\t-99\n')
+        data=dict(ndays=6,start_date='2000-01-01',prec_mm_day=np.zeros(6),temp_K=np.full(6,283.15),tmin_C=np.full(6,5.),tmax_C=np.full(6,15.))
+        for dt,steps in [(24,1),(12,2)]:
+            with self.subTest(dt=dt):
+                self.run_convert(data,dt=dt,obs_file=obs,basin_area_km2=1)
+                q=np.loadtxt(self.out,skiprows=1)[:,2]
+                info=json.loads(Path(str(self.out)+'.provenance.json').read_text())
+                self.assertEqual(info['observation_mode'],'provided_with_gaps')
+                self.assertEqual(info['obs_missing_days'],['2000-01-01','2000-01-03','2000-01-05','2000-01-06'])
+                self.assertEqual(info['obs_missing_count_days'],4);self.assertEqual(info['obs_placeholder_value'],-9999.0)
+                rows=[d*steps+k+1 for d in [0,2,4,5] for k in range(steps)]
+                self.assertEqual(info['obs_missing_rows'],rows)
+                self.assertTrue((q[np.array(rows)-1]==-9999).all())
+                kept=np.delete(q,np.array(rows)-1)
+                np.testing.assert_allclose(kept,np.repeat([.1728/steps,0.],steps))   # true zero kept
+                self.assertEqual(m.validate_outputs(str(self.out),6*steps,rows),[])
+                self.assertTrue(m.validate_outputs(str(self.out),6*steps))           # not listed -> error
+                self.assertTrue(m.validate_outputs(str(self.out),6*steps,rows+[steps+1]))  # listed but real value (2000-01-02)
+    def test_custom_sentinel_replaces_defaults(self):
+        obs=self.write_obs('dates\tQ\n2000-01-01\t-1\n2000-01-02\t2\n2000-01-03\t3\n')
+        depth,missing=m.load_obs_qmhr(obs,'2000-01-01',3,1,missing_values=[-1])
+        self.assertEqual(missing.tolist(),[True,False,False])
+        obs=self.write_obs('dates\tQ\n2000-01-01\t-99.9\n2000-01-02\t2\n2000-01-03\t3\n')
+        with self.assertRaises(ValueError):m.load_obs_qmhr(obs,'2000-01-01',3,1,missing_values=[-1])
+        for bad in [[0],[5.],[np.nan]]:
+            with self.subTest(bad=bad),self.assertRaises(ValueError):m.load_obs_qmhr(obs,'2000-01-01',3,1,missing_values=bad)
+    def test_bad_observations_are_refused(self):
+        head='dates\tQ\n'
+        cases={'junk':'2000-01-01\tabc\n2000-01-02\t2\n','other negative':'2000-01-01\t-5\n2000-01-02\t2\n',
+               'written nan':'2000-01-01\tnan\n2000-01-02\t2\n','NA text':'2000-01-01\tNA\n2000-01-02\t2\n',
+               'inf':'2000-01-01\tinf\n2000-01-02\t2\n','duplicate date':'2000-01-01\t1\n2000-01-01\t2\n',
+               'unordered':'2000-01-02\t1\n2000-01-01\t2\n','time of day':'2000-01-01 06:00\t1\n2000-01-02\t2\n',
+               'all missing':'2000-01-01\t-99.9\n2000-01-02\t\n',
+               'date with no Q field':'2000-01-01\n2000-01-02\t2\n2000-01-03\t3\n'}
+        for name,body in cases.items():
+            with self.subTest(name=name):
+                obs=self.write_obs(head+body);self.out.write_text('old valid output\n')
+                with self.assertRaises(ValueError):self.run_convert(obs_file=obs,basin_area_km2=1)
+                self.assertEqual(self.out.read_text(),'old valid output\n')
+        obs=self.write_obs(head+'2000-01-01\t1\n2000-01-02\t2\n2000-01-03\t3\n')
+        for area in [None,0,-1,np.nan]:
+            with self.subTest(area=area),self.assertRaises(ValueError):self.run_convert(obs_file=obs,basin_area_km2=area)
+    def test_short_row_is_refused_but_empty_cell_is_missing(self):
+        # empty Q cell (tab present) = missing day; a row cut short (no tab, or a
+        # missing trailing field) = refused, never a quiet gap
+        depth,missing=m.load_obs_qmhr(self.write_obs('dates\tQ\n2000-01-01\t\n2000-01-02\t2\n'),'2000-01-01',2,1)
+        self.assertEqual(missing.tolist(),[True,False])
+        depth,missing=m.load_obs_qmhr(self.write_obs('dates\tQ\r\n2000-01-01\t\r\n2000-01-02\t2\r\n'),'2000-01-01',2,1)
+        self.assertEqual(missing.tolist(),[True,False])                       # CRLF file
+        for name,text in {'no tab':'dates\tQ\n2000-01-01\n2000-01-02\t2\n',
+                          'three columns, last missing':'dates\tQ\tflag\n2000-01-01\t1\n2000-01-02\t2\tA\n'}.items():
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'fewer than'):
+                m.load_obs_qmhr(self.write_obs(text),'2000-01-01',2,1)
+        depth,missing=m.load_obs_qmhr(self.write_obs('dates\tQ\tflag\n2000-01-01\t\tA\n2000-01-02\t2\t\n'),'2000-01-01',2,1)
+        self.assertEqual(missing.tolist(),[True,False])                       # all fields present
+    def test_output_validator_uses_given_placeholder(self):
+        obs=self.write_obs('dates\tQ\n2000-01-01\t-99.9\n2000-01-02\t2\n2000-01-03\t3\n')
+        self.run_convert(obs_file=obs,basin_area_km2=1)
+        self.assertEqual(m.validate_outputs(str(self.out),3,[1]),[])
+        self.assertTrue(m.validate_outputs(str(self.out),3,[1],placeholder=-1.0))
     def test_output_validator_rejects_nonfinite_values(self):
         self.out.write_text('1  1.0\n nan 0.0 0.0\n')
         self.assertTrue(m.validate_outputs(str(self.out),1))

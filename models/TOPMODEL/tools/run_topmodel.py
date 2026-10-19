@@ -208,12 +208,17 @@ def validate_outputs(run_dir):
             # Check reasonable values
             with open(hyd_out, 'r') as f:
                 first_line = f.readline().split()
-            if len(first_line) >= 2:
-                q_sim = float(first_line[1])
-                # Q should be in m/hr, typically 1e-6 to 1e-2
+            # hyd.out columns are `it Qobs Qsim` (topmodel.c results()), so
+            # Qsim is the 3rd field; the 2nd is Qobs and may be the -9999
+            # missing-day placeholder.
+            if len(first_line) >= 3:
+                q_sim = float(first_line[2])
+                # Q is a depth per time step (m/step), typically 1e-6 to 1e-2
                 if q_sim > 1.0:
-                    errors.append(f"Q_sim={q_sim} m/hr seems too high (>1 m/hr)")
-                print(f"hyd.out: {size} bytes, first Q_sim={q_sim:.6e} m/hr")
+                    errors.append(f"Q_sim={q_sim} m/step seems too high (>1 m/step)")
+                print(f"hyd.out: {size} bytes, first Q_sim={q_sim:.6e} m/step")
+            else:
+                errors.append(f"hyd.out first line has {len(first_line)} fields, expected 3 (it Qobs Qsim)")
 
     if not errors:
         print("OUTPUT VALIDATION PASSED")

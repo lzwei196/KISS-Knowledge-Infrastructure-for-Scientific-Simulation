@@ -2,7 +2,9 @@
 """Convert complete source weather to TOPMODEL per-step depths in metres.
 
 Hargreaves requires actual daily Tmin/Tmax/Tmean and latitude/date-derived Ra.
-Missing rain, temperatures or derived PET fail before output. Header dt is 1.0
+Missing rain, temperatures or derived PET fail before output. Missing observed
+Q days (declared sentinel, empty cell or no row) are written as Qobs -9999 and
+listed in the sidecar (observation_mode provided_with_gaps). Header dt is 1.0
 for the NOAA-OWP BMI row-index convention; physical dt is recorded separately.
 """
 
@@ -196,14 +198,27 @@ def extract_basin_mean_forcing(forcing_dir,shapefile,start_date,end_date,lat_cen
                 source=dict(kind='cmfd',files={k:v for k,v in sources.items() if k!='step_seconds'},latitude=lat_center,longitude=lon_center,spatial_method='nearest source grid cell',source_step_seconds=step,source_step_basis='declared by source files',temperature_extrema='min/max of complete original subdaily samples'))
 
 
-def load_obs_qmhr(obs_file,start_date,ndays,basin_area_km2,seconds_per_day=86400.0):
-    """Observed Q (m3/s) → daily runoff depth (m); supplied data must be complete.
+DEFAULT_OBS_MISSING_VALUES=(-99.9,-99.0)
+OBS_PLACEHOLDER=-9999.0
 
+
+def load_obs_qmhr(obs_file,start_date,ndays,basin_area_km2,seconds_per_day=86400.0,missing_values=DEFAULT_OBS_MISSING_VALUES):
+    """Observed Q (m3/s) → daily runoff depth (m), plus which days are missing.
+
+    Returns (depth, missing): depth is NaN on missing days. A day is missing when
+    its Q equals a declared sentinel in missing_values, its Q cell is empty, or
+    the file has no row for it. A row with too few fields (a date with no Q
+    field at all) is refused, not counted as missing. Everything else must be a finite Q >= 0 (true
+    zero flow is kept); any other negative, infinite or non-numeric Q, bad or
+    duplicated dates, or a period with no observed day at all is refused.
     With no observation file, zeros are native-format placeholders only and may
     not be scored as observations. The writer records that mode in provenance.
     """
     import pandas as pd
-    if obs_file is None:return np.zeros(ndays)
+    if obs_file is None:return np.zeros(ndays),np.zeros(ndays,bool)
+    sentinels=np.asarray(list(missing_values),dtype=float)
+    if not np.isfinite(sentinels).all() or (sentinels>=0).any():
+        raise ValueError(f'Observation missing-value sentinels must be finite and negative (a value >= 0 could hide real flow): {sentinels.tolist()}')
     if not Path(obs_file).is_file():raise FileNotFoundError(f'Observation file not found: {obs_file}')
     if basin_area_km2 is None or not np.isfinite(basin_area_km2) or basin_area_km2<=0:
         raise ValueError('Observed discharge conversion requires a finite positive basin area')
@@ -215,21 +230,54 @@ def load_obs_qmhr(obs_file,start_date,ndays,basin_area_km2,seconds_per_day=86400
         except UnicodeDecodeError:continue
     else:raise ValueError(f'Cannot decode observations: {obs_file}')
     import io
-    df=pd.read_csv(io.StringIO(text),sep='\t')
+    # Q is read as text so that only a truly empty cell counts as missing; a
+    # written 'nan'/'inf'/'NA' is refused below, never quietly dropped.
+    df=pd.read_csv(io.StringIO(text),sep='\t',dtype=str,keep_default_na=False)
     if not {'dates','Q'}.issubset(df):raise ValueError('Observation file requires dates and Q columns')
-    dates=pd.DatetimeIndex(pd.to_datetime(df.dates,format='mixed',errors='raise'))
+    # pandas fills a row that is too short (e.g. a date with no tab and no Q)
+    # with '', which would look like an empty Q cell. Only a row that has every
+    # field, with the Q cell itself empty, is a missing day; a short row is refused.
+    lines=[s for s in text.splitlines() if s!='']
+    nfield=len(df.columns)
+    if len(lines)-1!=len(df):raise ValueError(f'Observation file: {len(lines)-1} data lines but {len(df)} rows read; cannot line them up')
+    short=[i for i,s in enumerate(lines[1:]) if s.count('\t')<nfield-1]
+    if short:
+        raise ValueError(f'Observation file: {len(short)} rows have fewer than {nfield} tab-separated fields '
+                         f'(first: line {short[0]+2}: {lines[short[0]+1][:60]!r}); write an empty Q cell for a missing day')
+    dates=pd.DatetimeIndex(pd.to_datetime(df.dates.str.strip(),format='mixed',errors='raise'))
     if dates.hasnans or dates.tz is not None or not (dates==dates.normalize()).all() or dates.has_duplicates or not dates.is_monotonic_increasing:
         raise ValueError('Observation dates must be unique, ordered daily dates')
+    cells=df.Q.str.strip()
+    empty=(cells=='').to_numpy()
+    q=np.full(len(cells),np.nan)
+    if (~empty).any():q[~empty]=pd.to_numeric(cells[~empty],errors='raise').to_numpy(dtype=float)
+    sentinel=np.zeros(len(q),bool)
+    for v in sentinels:sentinel|=np.isclose(q,v,rtol=0,atol=1e-9)
+    bad=~empty&~sentinel&(~np.isfinite(q)|(q<0))
+    if bad.any():
+        rows=np.flatnonzero(bad)[:10]
+        raise ValueError(f'Observed Q: invalid values (not a declared missing value {sentinels.tolist()}, not finite and >= 0) '
+                         f'on {[str(dates[i].date()) for i in rows]}: {q[rows].tolist()}')
+    q[empty|sentinel]=np.nan
     requested=pd.date_range(start_date,periods=ndays,freq='D')
-    q=pd.Series(pd.to_numeric(df.Q,errors='raise').to_numpy(),index=dates).reindex(requested)
-    values=_required(q.to_numpy(),f'Observed Q ({start_date}, {ndays} days)',ndays,minimum=0)
-    return values*seconds_per_day/(basin_area_km2*1e6)
+    values=pd.Series(q,index=dates).reindex(requested).to_numpy()
+    missing=np.isnan(values)
+    if missing.all():raise ValueError(f'Observed Q ({start_date}, {ndays} days): no observed day in the requested period')
+    return values*seconds_per_day/(basin_area_km2*1e6),missing
 
 
 def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
                                 obs_file=None, basin_area_km2=None,
-                                output_file='inputs.dat'):
-    """Write validated per-step rain/PET/Q depths and a provenance sidecar."""
+                                output_file='inputs.dat',
+                                obs_missing_values=DEFAULT_OBS_MISSING_VALUES):
+    """Write validated per-step rain/PET/Q depths and a provenance sidecar.
+
+    Missing observed days are written as Qobs = OBS_PLACEHOLDER (-9999) on every
+    step of that day and listed in the sidecar (observation_mode
+    provided_with_gaps, obs_missing_rows 1-based). The placeholder is negative so
+    a scorer that ignores the sidecar gets a clearly wrong number, not a quietly
+    wrong one.
+    """
     ndays=forcing_data['ndays']
     if not isinstance(ndays,(int,np.integer)) or isinstance(ndays,bool) or ndays<=0:raise ValueError('ndays must be a positive integer')
     if not np.isfinite(dt_hours) or dt_hours<=0 or dt_hours>24 or not np.isclose(24/dt_hours,round(24/dt_hours)):
@@ -267,14 +315,16 @@ def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
 
     # Observed discharge (per-step depth). Disaggregating obs the same way keeps
     # it on the same per-step footing as the simulated flow.
-    qobs_daily = load_obs_qmhr(obs_file, forcing_data['start_date'], ndays,
-                               basin_area_km2)
+    qobs_daily, obs_missing = load_obs_qmhr(obs_file, forcing_data['start_date'], ndays,
+                                            basin_area_km2, missing_values=obs_missing_values)
     qobs_step = qobs_daily / steps_per_day
 
     # Disaggregate daily to sub-daily (uniform within day)
     rain_hourly = np.repeat(prec_step, steps_per_day)
     pet_hourly = np.repeat(pet_step, steps_per_day)
     qobs_hourly = np.repeat(qobs_step, steps_per_day)
+    missing_hourly = np.repeat(obs_missing, steps_per_day)
+    qobs_hourly[missing_hourly] = OBS_PLACEHOLDER
 
     # Header timestep MUST be 1.0. The NOAA-OWP standalone binary advances time
     # as `current_time_step += dt` (bmi_topmodel.c Update) and then uses
@@ -286,7 +336,7 @@ def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
     # rate parameters (t0, td, chv, rv) are therefore interpreted per-day.
     model_dt = 1.0
     if (rain_hourly>0.5).any():raise ValueError('Rainfall exceeds the existing 0.5 m/step validation ceiling')
-    _required(qobs_hourly,'Qobs depth',nstep,minimum=0)
+    _required(qobs_hourly[~missing_hourly],'Qobs depth',int((~missing_hourly).sum()),minimum=0)
     with open(output_file, 'w') as f:
         f.write(f"{nstep}  {model_dt:.1f}\n")
         for i in range(nstep):
@@ -297,10 +347,18 @@ def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
                     daily_to_subdaily='uniform redistribution within each observed day' if steps_per_day>1 else 'one step per day',
                     pet_method='Hargreaves with source Tmin/Tmax/Tmean; latitude/date-derived FAO56 Ra in mm/day',
                     source=forcing_data.get('source'),
-                    observation_mode='provided_complete' if obs_file else 'not_supplied_placeholder_not_for_scoring',
+                    observation_mode=('not_supplied_placeholder_not_for_scoring' if not obs_file
+                                      else 'provided_with_gaps' if obs_missing.any() else 'provided_complete'),
                     obs_file=str(Path(obs_file).resolve()) if obs_file else None,
                     obs_sha256=hashlib.sha256(Path(obs_file).read_bytes()).hexdigest() if obs_file else None,
                     output_sha256=hashlib.sha256(Path(output_file).read_bytes()).hexdigest())
+    if obs_file and obs_missing.any():
+        all_dates=[(start_dt+timedelta(days=i)).strftime('%Y-%m-%d') for i in range(ndays)]
+        provenance.update(obs_placeholder_value=OBS_PLACEHOLDER,
+                          obs_missing_values=[float(v) for v in obs_missing_values],
+                          obs_missing_count_days=int(obs_missing.sum()),
+                          obs_missing_days=[all_dates[i] for i in np.flatnonzero(obs_missing)],
+                          obs_missing_rows=[int(i)+1 for i in np.flatnonzero(missing_hourly)])
     Path(str(output_file)+'.provenance.json').write_text(json.dumps(provenance,indent=2,allow_nan=False)+'\n')
     phys_hours = 24.0 / steps_per_day
     print(f"Wrote {output_file}: {nstep} steps (model dt=1.0, "
@@ -309,9 +367,15 @@ def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
     return nstep
 
 
-def validate_outputs(output_file, nstep):
-    """Validate the generated inputs.dat file."""
+def validate_outputs(output_file, nstep, missing_rows=(), placeholder=OBS_PLACEHOLDER):
+    """Validate the generated inputs.dat file.
+
+    missing_rows (1-based, from the sidecar) are the only rows allowed to hold
+    the Qobs placeholder; they must hold exactly it. Any other negative Qobs is
+    an error.
+    """
     errors = []
+    missing_rows = set(int(r) for r in missing_rows)
 
     if not os.path.exists(output_file):
         errors.append(f"Output file not created: {output_file}")
@@ -345,7 +409,9 @@ def validate_outputs(output_file, nstep):
         if not np.isfinite([rain,pe,qobs]).all():
             errors.append(f'Line {i}: nonfinite rain/PET/Qobs')
             continue
-        if qobs<0:errors.append(f'Line {i}: negative observed discharge')
+        if i in missing_rows:
+            if qobs!=placeholder:errors.append(f'Line {i}: listed as a missing observation but Qobs={qobs}, not {placeholder}')
+        elif qobs<0:errors.append(f'Line {i}: negative observed discharge')
         if rain > rain_ceiling:
             errors.append(f"Line {i}: rain={rain} m/step exceeds {rain_ceiling:.3f} m "
                           f"(implausible at dt={file_dt}h)")
@@ -374,6 +440,9 @@ def main():
     parser.add_argument('--dt-hours', type=float, default=1.0, help='Time step in hours')
     parser.add_argument('--shapefile', default=None, help='Optional reference basin geometry; extraction uses the supplied representative point')
     parser.add_argument('--obs-file', default=None, help='Observed discharge file')
+    parser.add_argument('--obs-missing-value', type=float, action='append', default=None,
+                        help='Negative missing-data sentinel in the obs file (repeatable; default -99.9 and -99). '
+                             'Missing days are written as Qobs -9999 and listed in the sidecar.')
     parser.add_argument('--basin-area-km2', type=float, default=None, help='Basin area in km²')
     parser.add_argument('--output', default='inputs.dat', help='Output file path')
 
@@ -398,12 +467,18 @@ def main():
     nstep = convert_to_topmodel_inputs(
         forcing_data, args.dt_hours, args.lat,
         obs_file=args.obs_file, basin_area_km2=args.basin_area_km2,
-        output_file=args.output
+        output_file=args.output,
+        obs_missing_values=args.obs_missing_value or DEFAULT_OBS_MISSING_VALUES
     )
 
     # Step 3: Validate outputs
     print("=== Step 4: Validating outputs ===")
-    errors=validate_outputs(args.output, nstep)
+    info=json.loads(Path(str(args.output)+'.provenance.json').read_text())
+    if info.get('obs_missing_rows'):
+        print(f"  {info['obs_missing_count_days']} observed days missing; Qobs written as "
+              f"{info['obs_placeholder_value']:g} on those rows (observation_mode {info['observation_mode']})")
+    errors=validate_outputs(args.output, nstep, info.get('obs_missing_rows') or (),
+                            placeholder=float(info.get('obs_placeholder_value',OBS_PLACEHOLDER)))
     return 2 if errors else 0
 
 

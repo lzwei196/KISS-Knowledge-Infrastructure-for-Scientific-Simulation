@@ -64,6 +64,38 @@ class CalibrateTests(unittest.TestCase):
         m2=self.score([1.,2.,3.],[1.,0.,3.],[True,True,True])['calibration']
         self.assertEqual(m2['n'],3);self.assertLess(m2['NSE'],1.0)
         with self.assertRaises(SystemExit):self.score([1.,2.,3.],[1.,-99.9,3.],[True]*3)
+    def gaps(self,rows=(2,),**kw):
+        self.inp.write_text('3  1.0\n 0.001 0.001 0.001\n 0.001 0.001 -9999\n 0.001 0.001 0.0\n')
+        self.sidecar(**dict(dict(observation_mode='provided_with_gaps',obs_placeholder_value=-9999.0,obs_missing_count_days=len(rows),
+                                 obs_missing_rows=list(rows)),**kw))
+    def test_gap_sidecar_masks_listed_rows_and_keeps_true_zero(self):
+        self.gaps();mask,src=c.observation_mask(str(self.run),3,start='2000-01-01')
+        self.assertEqual(mask.tolist(),[True,False,True]);self.assertIn('provided_with_gaps',src)
+    def test_bad_gap_sidecars_are_refused(self):
+        for rows,kw in [((3,),{}),((2,2),{}),((0,),{}),((4,),{}),((),{}),((2,),dict(obs_missing_count_days=2)),
+                        ((2,),dict(obs_placeholder_value=0.0)),((2,),dict(obs_placeholder_value=-99.9))]:
+            with self.subTest(rows=rows,kw=kw):
+                self.gaps(rows,**kw)
+                with self.assertRaises(SystemExit):c.observation_mask(str(self.run),3,start='2000-01-01')
+        # an unlisted negative value in a verified file is refused, gaps or not
+        self.inp.write_text('3  1.0\n 0.001 0.001 -9999\n 0.001 0.001 -9999\n 0.001 0.001 0.0\n')
+        self.sidecar(observation_mode='provided_with_gaps',obs_placeholder_value=-9999.0,obs_missing_count_days=1,obs_missing_rows=[2])
+        with self.assertRaises(SystemExit):c.observation_mask(str(self.run),3,start='2000-01-01')
+        self.inp.write_text('3  1.0\n 0.001 0.001 0.001\n 0.001 0.001 -9999\n 0.001 0.001 0.0\n');self.sidecar()
+        with self.assertRaises(SystemExit):c.observation_mask(str(self.run),3,start='2000-01-01')
+    def test_mask_may_only_drop_rows(self):
+        self.gaps();f=self.run/'mask.txt'
+        f.write_text('1\n1\n1\n')
+        with self.assertRaises(SystemExit):c.observation_mask(str(self.run),3,str(f),start='2000-01-01')
+        f.write_text('1\n0\n0\n');mask,_=c.observation_mask(str(self.run),3,str(f),start='2000-01-01')
+        self.assertEqual(mask.tolist(),[True,False,False])
+    def test_unreadable_hyd_out_is_a_rejected_trial_with_reason(self):
+        dates=[datetime(2000,1,1)+timedelta(days=i) for i in range(2)]
+        for text in ['1 0.1 0.2\n2 0.1\n','1 0.1 0.2\n2 0.1 0.2','1 0.1 0.2\n2 x 0.2\n']:
+            (self.run/'hyd.out').write_text(text)
+            with self.subTest(text=text),patch.object(c.subprocess,'run',return_value=SimpleNamespace(returncode=0)),patch.object(c,'write_params_dat'):
+                self.assertIsNone(c.score(str(self.run),{},dates,'B',('2000-01-01','2000-01-02'),('2000-01-01','2000-01-02'),np.array([True,True])))
+                self.assertIn('hyd.out not readable',c.LAST_REJECT['reason'])
     def test_cli_help_has_no_unshipped_import(self):
         p=subprocess.run([sys.executable,str(TOOL),'--help'],capture_output=True,text=True)
         self.assertEqual(p.returncode,0,p.stderr)

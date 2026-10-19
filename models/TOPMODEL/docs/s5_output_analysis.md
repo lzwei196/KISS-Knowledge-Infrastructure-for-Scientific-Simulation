@@ -9,7 +9,7 @@ and compute standard hydrological performance metrics.
 
 | Input | Description |
 |-------|-------------|
-| hyd.out | TOPMODEL hydrograph output (Q_sim, Q_obs in m/hr) |
+| hyd.out | TOPMODEL hydrograph output, `it Qobs Qsim` (observed first), per-step depth in m |
 | topmod.out | Detailed model state output |
 | Observed discharge | Station data file (m³/s) |
 | Basin area (km²) | For unit conversion |
@@ -27,10 +27,14 @@ and compute standard hydrological performance metrics.
 ### 1. Parse hyd.out
 
 ```python
-# hyd.out format: timestep  Q_sim  Q_obs  (m/hr)
-data = np.genfromtxt('hyd.out')
-q_sim_mhr = data[:, 1]  # or data[:, 0] if no timestep column
-q_obs_mhr = data[:, 2]  # or data[:, 1]
+# hyd.out format: it  Qobs  Qsim  (per-step depth, m); see topmodel.c results()
+# Use the KI parser: it refuses 2-field, non-numeric or cut-off lines and steps
+# that are not exactly 1..n. A well-formed nan/inf is returned as is: it means
+# the run is broken, so drop the run, not the row (the parser CLI exits 2).
+from parse_topmodel_output import parse_hyd_out
+ts, q_sim_mhr, q_obs_mhr = parse_hyd_out('hyd.out')
+# Missing observed days hold Qobs -9999 (listed in inputs.dat.provenance.json):
+observed = q_obs_mhr != -9999.0
 ```
 
 ### 2. Convert to m³/s
@@ -56,7 +60,8 @@ q_obs_m3s = obs['Q'].values
 
 - Match dates between simulation and observations
 - Discard spinup period (typically first year)
-- Handle missing values (NaN)
+- Missing observed days are the Qobs -9999 rows (see step 1); score only the other rows
+- A nan/inf anywhere in hyd.out means a broken run: do not score it
 
 ### 5. Compute metrics
 
@@ -89,6 +94,7 @@ q_obs_m3s = obs['Q'].values
 | Spinup included in metrics | Artificially low NSE | Discard first year |
 | Daily obs vs hourly sim | Length mismatch | Aggregate sim to daily |
 | Q_obs = 0 everywhere in hyd.out | Qobs not loaded | Provide obs file separately |
+| Q_obs = -9999 on some rows | Missing observed days (sidecar `obs_missing_rows`) | Never score them; `calibrate_topmodel.py` and the parser CLI drop them |
 | Simulated Q is steady/flat | Wrong TWI or parameters | Check subcat.dat, increase szm |
 
 ## Example

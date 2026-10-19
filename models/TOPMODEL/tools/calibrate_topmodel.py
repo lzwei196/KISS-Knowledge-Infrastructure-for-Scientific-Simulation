@@ -41,8 +41,10 @@ Usage:
 
 <run_dir> must already contain run_bmi and data/{inputs.dat,subcat.dat}.
 Observed rows come from data/inputs.dat.provenance.json (strict converter,
-hash-matched, observation_mode=provided_complete) or from --obs-mask; legacy
-inputs.dat without either is refused (old converters wrote 0 for missing days).
+hash-matched, observation_mode provided_complete or provided_with_gaps, the
+latter listing its missing rows) and may be narrowed further by --obs-mask;
+legacy inputs.dat without a sidecar needs --obs-mask (old converters wrote 0
+for missing days) and is refused without one.
 Writes calib_result.json (best_params + cal/val/full metrics) into <run_dir>.
 """
 import os, sys, subprocess, json, argparse, hashlib
@@ -93,6 +95,21 @@ def compute_calval_metrics(dates, obs, sim, cal_start, cal_end, val_start, val_e
             'full': _period_metrics(obs[cm | vm], sim[cm | vm])}
 
 
+OBS_MODES = ("provided_complete", "provided_with_gaps")
+
+
+def _qobs_column(inp, nstep):
+    """Qobs (column 3) of inputs.dat, after checking the table shape."""
+    try:
+        table = np.loadtxt(inp, skiprows=1, ndmin=2)
+    except ValueError as exc:
+        raise SystemExit(f"calibrate_topmodel: cannot read inputs.dat rows: {exc}. Not calibrated.")
+    if table.shape != (nstep, 3):
+        raise SystemExit(f"calibrate_topmodel: inputs.dat holds {table.shape} values, expected "
+                         f"({nstep}, 3). Not calibrated.")
+    return table[:, 2]
+
+
 def observation_mask(run_dir, nstep, obs_mask_file=None, start=None):
     """Which inputs.dat rows hold REAL observations.
 
@@ -101,11 +118,15 @@ def observation_mask(run_dir, nstep, obs_mask_file=None, start=None):
       * If data/inputs.dat.provenance.json exists it is ALWAYS checked, mask or
         not: its output_sha256 must match inputs.dat, one row = one day
         (physical_dt_hours 24), steps == nstep, start_date == --start, and the
-        Qobs column must be real (observation_mode 'provided_complete'; a
-        placeholder column is refused even with a mask).
-      * --obs-mask FILE (one 0/1 per row, 1 = real observation) then picks the
-        observed rows; without a mask every row of a verified file is real
-        (true zero flow kept).
+        Qobs column must be real (observation_mode 'provided_complete' or
+        'provided_with_gaps'; a placeholder column is refused even with a mask).
+      * 'provided_with_gaps': the sidecar's obs_missing_rows (1-based) are not
+        observed. inputs.dat itself is checked too: those rows must hold exactly
+        obs_placeholder_value and every other row a finite Qobs >= 0.
+      * --obs-mask FILE (one 0/1 per row, 1 = real observation) may then only
+        DROP rows; marking a sidecar-missing row as observed stops the run.
+        Without a mask every observed row of a verified file is real (true zero
+        flow kept).
       * With no sidecar a mask is required. Such legacy files carry no timestep
         metadata (the header dt is always 1.0); they are taken as one row per
         day, the documented Bengbu/Wangjiaba convention, and labelled so.
@@ -145,14 +166,44 @@ def observation_mask(run_dir, nstep, obs_mask_file=None, start=None):
         raise SystemExit(f"calibrate_topmodel: --start {start} differs from the inputs.dat start "
                          f"{info['start_date']} in the provenance sidecar; dates would be shifted. "
                          "Not calibrated.")
-    if info.get("observation_mode") != "provided_complete":
+    mode = info.get("observation_mode")
+    if mode not in OBS_MODES:
         raise SystemExit("calibrate_topmodel: inputs.dat Qobs is a placeholder "
-                         f"(observation_mode={info.get('observation_mode')!r}); there is nothing "
+                         f"(observation_mode={mode!r}); there is nothing "
                          "real to calibrate against (a mask cannot make it real). Not calibrated.")
-    src = f"provenance sidecar {side} (start {info['start_date']})"
+    qobs = _qobs_column(inp, nstep)
+    observed = np.ones(nstep, bool)
+    if mode == "provided_with_gaps":
+        rows = info.get("obs_missing_rows")
+        ph = info.get("obs_placeholder_value")
+        if (not isinstance(rows, list) or not rows or len(set(rows)) != len(rows)
+                or not all(isinstance(r, int) and not isinstance(r, bool) and 1 <= r <= nstep for r in rows)):
+            raise SystemExit("calibrate_topmodel: provided_with_gaps sidecar needs obs_missing_rows as a "
+                             f"non-empty list of unique row numbers 1..{nstep}. Not calibrated.")
+        if info.get("obs_missing_count_days") != len(rows):
+            raise SystemExit("calibrate_topmodel: sidecar obs_missing_count_days "
+                             f"{info.get('obs_missing_count_days')} differs from {len(rows)} listed rows "
+                             "(one row = one day). Not calibrated.")
+        if not isinstance(ph, (int, float)) or isinstance(ph, bool) or not np.isfinite(ph) or ph >= 0:
+            raise SystemExit(f"calibrate_topmodel: sidecar obs_placeholder_value {ph!r} must be a finite "
+                             "negative number. Not calibrated.")
+        observed[np.asarray(rows) - 1] = False
+        if not (qobs[~observed] == ph).all():
+            raise SystemExit("calibrate_topmodel: a row listed as missing in the sidecar does not hold the "
+                             f"placeholder {ph} in inputs.dat. Not calibrated.")
+    if not (np.isfinite(qobs[observed]).all() and (qobs[observed] >= 0).all()):
+        raise SystemExit("calibrate_topmodel: an inputs.dat row the sidecar treats as observed has a "
+                         "nonfinite or negative Qobs. Not calibrated.")
+    if not observed.any():
+        raise SystemExit("calibrate_topmodel: the sidecar marks no row as observed. Not calibrated.")
+    src = f"provenance sidecar {side} (start {info['start_date']}, {mode}, {int((~observed).sum())} missing rows)"
     if mask is not None:
+        if (mask & ~observed).any():
+            bad = (np.flatnonzero(mask & ~observed) + 1)[:10].tolist()
+            raise SystemExit("calibrate_topmodel: --obs-mask marks rows as observed that the sidecar lists "
+                             f"as missing (rows {bad}); a mask may only drop rows. Not calibrated.")
         return mask, src + f" + obs-mask file {os.path.abspath(obs_mask_file)}"
-    return np.ones(nstep, bool), src
+    return observed, src
 
 
 # Robust calibrated incumbent (Bengbu 51080, DEM-TWI 250m, TL=10.92): the
@@ -173,19 +224,32 @@ def build_dates(run_dir, start):
     return nstep, [start + timedelta(days=i) for i in range(nstep)]
 
 
+# Why the most recent trial was rejected (score() returned None); shown in the
+# exit message when nothing could be scored.
+LAST_REJECT = {"reason": None}
+
+
+def _reject(reason):
+    LAST_REJECT["reason"] = reason
+    return None
+
+
 def score(run_dir, params, dates, basin, cal, val, obs_mask):
     write_params_dat(os.path.join(run_dir, "data/params.dat"), params, basin)
     r = subprocess.run([os.path.join(run_dir, "run_bmi")], cwd=run_dir,
                        capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
-        return None
-    ts, qs, qo = parse_hyd_out(os.path.join(run_dir, "hyd.out"))
+        return _reject(f"run_bmi exit code {r.returncode}")
+    try:
+        ts, qs, qo = parse_hyd_out(os.path.join(run_dir, "hyd.out"))
+    except (ValueError, OSError) as exc:
+        return _reject(f"hyd.out not readable: {exc}")
     # topmodel.c results() writes exactly one "it Qobs Q" line for it=1..nstep.
     # Anything else (skipped/malformed/truncated rows) would shift the
     # row-to-date and row-to-mask mapping, so the trial is rejected.
     n = len(dates)
     if len(ts) != n or not np.array_equal(np.asarray(ts), np.arange(1, n + 1)):
-        return None
+        return _reject(f"hyd.out rows are not exactly 1..{n} (got {len(ts)} rows)")
     qs, qo, dd = np.asarray(qs, float), np.asarray(qo, float), dates
     valid = obs_mask.copy()
     # A row marked observed must hold a finite, nonnegative value (zero is a
@@ -196,9 +260,9 @@ def score(run_dir, params, dates, basin, cal, val, obs_mask):
     # A numerically failed trial (any nonfinite simulated flow) is rejected,
     # never scored on the finite remainder.
     if not np.isfinite(qs).all():
-        return None
+        return _reject("nonfinite simulated flow")
     if not valid.any():
-        return None          # no observation at all: nothing to score
+        return _reject("no observed row")          # nothing to score
     dd = [d for d, v in zip(dd, valid) if v]
     return compute_calval_metrics(dd, qo[valid], qs[valid],
                                   cal_start=cal[0], cal_end=cal[1],
@@ -217,7 +281,8 @@ def main():
                     help="evaluate only the incumbent seed (no search)")
     ap.add_argument("--obs-mask", default=None,
                     help="text file, one 0/1 per inputs.dat row (1 = real observation); "
-                         "needed when inputs.dat has no matching provenance sidecar")
+                         "needed when inputs.dat has no matching provenance sidecar; with a "
+                         "sidecar it may only drop rows")
     args = ap.parse_args()
 
     run_dir = os.path.abspath(args.run_dir)
@@ -265,17 +330,18 @@ def main():
     if args.seed_only:
         if _cal_nse(best_m) is None:
             sys.exit("calibrate_topmodel: the seed could not be scored (run failed or no "
-                     "usable observations in the calibration window); nothing written")
+                     "usable observations in the calibration window); nothing written. "
+                     f"Last rejection: {LAST_REJECT['reason']}")
     elif best_m is None:
         sys.exit("calibrate_topmodel: no trial could be scored (every run failed or the "
                  "observations have no usable values/variation in the calibration "
-                 "window); calib_result.json NOT written")
+                 f"window); calib_result.json NOT written. Last rejection: {LAST_REJECT['reason']}")
 
     # Re-run the chosen set so run_dir holds the canonical hyd.out for it.
     best_m = score(run_dir, best_params, dates, args.basin, cal_win, val_win, obs_mask)
     if _cal_nse(best_m) is None:
         sys.exit("calibrate_topmodel: the re-run of the chosen set could not be scored; "
-                 "calib_result.json NOT written")
+                 f"calib_result.json NOT written. Last rejection: {LAST_REJECT['reason']}")
     print("\n=== BEST PARAMS ===\n" + json.dumps(best_params, indent=2))
     print("=== METRICS ===\n" + json.dumps(best_m, indent=2, default=float))
     if best_m and best_m['validation']['NSE'] is not None:

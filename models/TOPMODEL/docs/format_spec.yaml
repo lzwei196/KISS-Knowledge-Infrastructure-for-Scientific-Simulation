@@ -33,7 +33,9 @@ inputs:
     model_input_format: inputs.dat column 3, per-timestep depth; optional, used only for diagnostic NSE
       and hyd.out comparison
     notes: Read by inputs() in standalone mode; not a BMI input variable. Used by results() to compute
-      internal NSE and to write the observed column of hyd.out.
+      internal NSE and to write the observed column of hyd.out. The converter writes -9999 on missing
+      observed days and lists those rows in inputs.dat.provenance.json (observation_mode provided_with_gaps);
+      the internal NSE then uses the placeholder and is meaningless, score with calibrate_topmodel.py.
   parameters:
   - name: szm
     unit: m

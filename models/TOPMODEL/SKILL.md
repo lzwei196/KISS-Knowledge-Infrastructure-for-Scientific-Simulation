@@ -79,7 +79,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Observed discharge**: read the gauge text file directly
   (`$ROOT/data/obs/BB/51080_bengbu.txt` for Bengbu 51080). The
   `data_ki/ObservedQ/tools/` reader does NOT exist in KDT 5.0. **Obs trap**: the
-  Bengbu record uses a `-99.9` missing-data sentinel. The repaired converter rejects incomplete supplied observation periods. For independent scoring, mask missing sentinels explicitly and retain true Q=0; never score an absent-observation placeholder.
+  Bengbu record uses a `-99.9` missing-data sentinel. The converter marks missing days instead of failing: a declared sentinel (`--obs-missing-value`, repeatable, default `-99.9` and `-99`), an empty Q cell (the row still has every field) or a date with no row becomes Qobs `-9999` in `inputs.dat`, and the sidecar lists those rows (`observation_mode: provided_with_gaps`, `obs_missing_rows`). Any other negative, non-numeric or infinite Q, or a row cut short (a date with no Q field), is still refused. True Q=0 is kept. `calibrate_topmodel.py` scores only the observed rows; never score the `-9999` placeholder or an absent-observation placeholder.
   - **Alternate Huai obs source — "China Gauge Flux — 淮河"**
     (`KISSPATH_DATA/china_water_level/淮河txt/`): a TAB-separated multi-gauge set,
     header `stcd  dates  z  Q  name`, `dates` = `%Y-%-m-%-d` (no zero-pad, e.g.
@@ -310,7 +310,7 @@ Plus water balance summary at end.
 
 ### hyd.out
 
-Two columns per timestep: Q_simulated  Q_observed (both in m/hr)
+Three columns per timestep, `it Qobs Qsim` (`topmodel.c` results(): `"%d %lf %lf\n", it, Qobs[it], Q[it]`), observed BEFORE simulated, both per-step depths (m/step). Missing observed days show Qobs `-9999.000000`. `parse_hyd_out` requires every line to be exactly `int float float` and the file to end with a newline; a 2-field, non-numeric or cut-off line, or steps that are not exactly 1..n, raise an error (CLI exit 2); nothing is skipped or guessed. A well-formed `nan`/`inf` is passed on, and both scorers refuse it: `calibrate_topmodel.py` rejects the trial, and the `parse_topmodel_output.py` CLI exits 2 on any nonfinite Qsim or Qobs, and also when no observed row is left after spin-up.
 
 ---
 
@@ -393,16 +393,20 @@ Writes `calib_result.json` (best_params + cal/val/full metrics + which rows were
 
 **Which Qobs rows are scored.** Old converters wrote `0` for missing observed
 days, so a zero in `inputs.dat` is not trusted by itself. The driver scores rows only when
-(a) `data/inputs.dat.provenance.json` from the strict converter matches the file hash, says
-`observation_mode: provided_complete`, one row per day, and the same `--start`
-(then every row is real and true zero flow is kept), or (b) you pass
+(a) `data/inputs.dat.provenance.json` from the converter matches the file hash, says
+`observation_mode: provided_complete` (every row observed, true zero flow kept) or
+`provided_with_gaps` (every row except the listed `obs_missing_rows`), one row per day,
+and the same `--start`; or (b) a legacy file with no sidecar plus
 `--obs-mask FILE` with one `0/1` per `inputs.dat` row (1 = real observation).
 If a sidecar exists it is always checked, even with a mask (hash, one row per
-day, steps, `--start`, real Qobs column); a placeholder Qobs column is refused
-even with a mask. With no sidecar a mask is required and the file is taken as one
+day, steps, `--start`, real Qobs column, listed rows hold exactly the `-9999`
+placeholder and every other row a finite Qobs >= 0); a placeholder Qobs column is refused
+even with a mask, and with a sidecar the mask may only DROP rows (marking a listed
+missing row as observed stops the run). With no sidecar a mask is required and the file is taken as one
 row per day (legacy convention; such files carry no timestep metadata).
-Otherwise it stops with an error. A trial with any nonfinite simulated flow, or
-whose `hyd.out` does not hold exactly rows 1..nstep, is rejected, never scored on
+Otherwise it stops with an error. A trial with any nonfinite simulated flow, a
+`hyd.out` the strict parser refuses, or a `hyd.out` that does not hold exactly rows
+1..nstep, is rejected (the reason is shown if nothing could be scored), never scored on
 the part that is left. Metrics (NSE, KGE-2009, PBIAS, r) are
 computed inside the tool; no server-only module is needed.
 

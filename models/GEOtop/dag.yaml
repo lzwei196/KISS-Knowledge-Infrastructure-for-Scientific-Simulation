@@ -37,7 +37,7 @@ boundary:
 inputs:
   forcing:
     - {category: forcing, name: "AirT", unit: "Celsius", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column, DD/MM/YYYY hh:mm dates, -9999 nodata", notes: "Required. Kelvin input drives energy-balance non-convergence / hanging."}
-    - {category: forcing, name: "Iprec", unit: "mm per time step", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Accumulated depth per model time step, NOT a rate; wrong rate units scale total precipitation by ~1000x."}
+    - {category: forcing, name: "Iprec", unit: "mm/h", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column read through HeaderIPrec (intensity, keywords.h:437); record stamped at the END of its interval", notes: "Intensity in mm/h whatever the record spacing (depth per record / record hours); a depth written here is 3x too big at 3-hourly records and 24x at daily (dt_004)."}
     - {category: forcing, name: "RelHum", unit: "% (0-100)", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Required. Fraction (0-1) is read as 0.x% (near-zero ET)."}
     - {category: forcing, name: "WindSp", unit: "m/s", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column"}
     - {category: forcing, name: "WindDir", unit: "degrees (0-360)", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Recommended; drives terrain wind redistribution and blowing snow."}

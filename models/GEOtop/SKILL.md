@@ -29,14 +29,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-20 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -104,8 +104,26 @@ precip kg/m²/s → mm per 3-h step).
 
 **Set `--dt` to the forcing's NATIVE step** (CMFD/MSWX 3-hourly → `10800`, daily →
 `86400`). Any change of record spacing has to redistribute Iprec as a *depth*, not
-interpolate it — see dt_022. GEOtop interpolates between meteo records internally,
-so a coarser meteo file does not force a coarser `TimeStepEnergyAndWater`.
+interpolate it — see dt_022. GEOtop does NOT interpolate between meteo records
+under the default `LinearInterpolation = 0` (`parameters.cc:2166`, `meteo.cc:54`
+→ `time_interp_constant`): each record is held over (t−dt, t]. A coarser meteo
+file therefore does not force a coarser `TimeStepEnergyAndWater`, and the stamp
+rule below assumes that default (with `LinearInterpolation = 1` the state values
+would lag by dt/2, and a HeaderPrec column stops the run, `input.cc:459-466`).
+
+**Every record is stamped at the END of the interval it covers** (GEOtop uses a
+record stamped t for (t−dt, t], `meteodata.cc:137-245`). `convert_forcing.py`
+re-stamps each source to that rule (`stamp_rules`, `align_to_interval_end`,
+checked 2026-10-19): CMFD rain is already interval-end; CMFD srad/lrad (centred)
+and temp/pres/shum/wind (instant) become the mean of the records at t−3 h and t;
+MSWX shortwave (centred, checked 2026-10-20) is paired the same way; the other MSWX
+variables and NASA POWER hourly records (interval start) move one step later; daily
+records (day D at D 00:00) move to D+1 00:00. For a CSV say what a row stamped t
+holds: `--csv-stamp end` (default, means/totals over (t−step, t]), `start`
+(over [t, t+step), moved one step later) or `instant` (state values measured AT t,
+as most station files are: each interval gets the mean of its two end values,
+rain = total since the row before). With `end`/`start` the state columns MUST be
+interval means, or they are used step/2 late (1.5 h for 3-hourly data). See dt_026.
 
 **CMFD timestamps are UTC.** Verified at 36 N/116 E: the SRad diurnal peak falls at
 03–06 UTC, bracketing solar noon 12:00 − 116/15 = 04:27 UTC. So set both
@@ -234,17 +252,22 @@ Van Genuchten `alpha` in the soil file is in **1/mm** (not 1/cm or 1/m).
 Literature values are usually in 1/cm: divide by 10 to convert to 1/mm.
 The test case uses alpha=0.00131 (1/mm) which is 0.0131 (1/cm).
 
-### 5.4 Unit Trap: Precipitation in mm (dt_004)
-Meteorological forcing `Iprec` is **precipitation intensity in mm** over the time step.
-If your forcing is in mm/hr and time step is 900 s, multiply by 0.25.
-If forcing is in m/s (like some reanalyses), multiply by 1000*dt.
-Here dt is the INPUT record spacing: `convert_forcing.py --source csv` turns a
+### 5.4 Unit Trap: Precipitation (dt_004)
+The meteo column read through **`HeaderIPrec` is an intensity in mm/h**
+(`keywords.h:437`), whatever the record spacing. (`HeaderPrec`, `keywords.h:438`,
+is mm per meteo step; only then does `fill_Pint` work out the intensity.)
+`convert_forcing.py` keeps Iprec as a depth per record inside the tool and writes
+`depth / (dt/3600)` mm/h. A 6 mm 3-hourly record is written as 2.0; a 12 mm daily
+record as 0.5. Writing the depth itself makes GEOtop apply it every hour of the
+record: 3x the rain at 3-hourly records and 24x at daily records (this was the
+case before 2026-10-19).
+Inside the tool, dt is the INPUT record spacing: `--source csv` turns a
 rate into a depth per input record first and only then moves depth to `--dt`.
 CSV records around --start..--end must be evenly spaced (no gaps there), ISO 8601 times unless `--date-format`,
 and `--rh-unit specific` needs `temp` + `pres` columns. The output must cover
 `--start`..`--end` at `--dt` exactly, or the tool stops (non-zero exit). When
 coarsening and no full interval exists before `--start`, the first row has Iprec
-= -9999 (GEOtop never uses the first record's Iprec).
+= -9999 (its interval lies before the simulation start).
 
 ### 5.5 Unit Trap: Relative Humidity in PERCENT (dt_005)
 `RelHum` in meteo files must be **0-100 (percent)**, not 0-1 fraction.
@@ -269,23 +292,27 @@ The configuration file uses `key<TAB>=<TAB>value` format.
 Some editors convert tabs to spaces, which may cause parse failures.
 Comments start with `!`.
 
-### 5.10 JDfrom0 Carries the Solar Clock (dt_021)
-GEOtop takes the sun's position from the **fractional part of `JDfrom0`**, not from
-the `Date` column: `h = (JDfrom0 - floor(JDfrom0))*24 + lon/15 - StandardTime + Et`
-(`radiation.cc::SolarHeight`). So `frac(JDfrom0)*24` **must equal the hour of day**
-— midnight is `.0000`, 01:00 is `.0417`. A fractional day offset (e.g. `365.25+1`)
-silently shifts the sun by 6 h: the shortwave pulse lands hours after true solar
-noon, daytime skin temperature comes out ~10 K too cold, and air temperature —
-which GEOtop reads directly — still looks fine. Anchor against the shipped test
-`tests/1D/Matsch_B2_Ref_007`: `02/10/2009 00:00 = 734047.0000`.
+### 5.10 JDfrom0 Must Equal GEOtop's Clock (dt_021)
+When the meteo file has a `JDfrom0` column, GEOtop places the records by it and
+ignores `Date` (`fixing_dates`, `meteodata.cc:589-607`). The model clock is
+Python `(date - datetime(1,1,1)).days + 367 + hour/24` (`times.cc:130-138`), so
+`02/10/2009 01:00 = 734048.041667` and `01/11/2017 00:00 = 737000.0`. Write 6
+decimals. The sun follows the model clock (`energy.balance.cc:117`), not this
+column, so a wrong offset moves the forcing against the sun: `+366.25` (fixed
+2026-06-23) moved it 1 day + 6 h (daytime skin ~10 K too cold); `+366` (fixed
+2026-10-19) moved all forcing exactly 1 day early, keeping the daily shape, so it
+stayed hidden. Do NOT anchor on the shipped `tests/1D/Matsch_B2_Ref_007` meteo
+(`734047.0` for 02/10/2009 00:00): that file is itself one day off; 9 of the 12
+shipped meteo files match the clock. `run_and_score.py check_meteo` checks the
+whole value.
 
-### 5.11 Iprec Is an Accumulated Depth, Not a Rate (dt_004, dt_022)
-The value on the record at time *t* is the depth accumulated over *(t−dt, t]*.
-GEOtop derives the intensity itself (`meteodata.cc::fill_Pint` divides by the
-record spacing). Two consequences: (a) never rescale Iprec "to an intensity";
-(b) if you change the record spacing you must redistribute the depth (split on
+### 5.11 Changing the Record Spacing (dt_004, dt_022)
+The record at time *t* covers *(t−dt, t]*. Inside `convert_forcing.py` Iprec is
+the depth of that interval; it becomes mm/h only when the file is written (5.4).
+If you change the record spacing you must redistribute the depth (split on
 upsample, sum on downsample) — interpolating it multiplies total precipitation by
-`native_step / target_step`.
+`native_step / target_step`. On upsample, state columns (interval means) are
+interpolated between interval centres, not interval ends.
 
 ### 5.12 Horizon Files Are Required for Radiation (dt_010)
 If `FlagSkyViewFactor=1` and `HorizonMeteoStationFile` is set, the horizon file
@@ -321,7 +348,7 @@ Other dag outputs named by this KI are: `SWE`, `snowDepth`, `soilTz`,
 
 ### 6.2 meteoXXXX.txt (Meteorological Forcing)
 - **Format**: CSV with header row
-- **Columns**: Date, JDfrom0, Iprec(mm), WindSp(m/s), WindDir(deg), RelHum(%), AirT(C), Swglobal(W/m2), CloudTrans(0-1), [LWin(W/m2), DewT(C), AirPress(mbar)]
+- **Columns**: Date, JDfrom0 (GEOtop clock, +367), Iprec(mm/h, HeaderIPrec), WindSp(m/s), WindDir(deg), RelHum(%), AirT(C), Swglobal(W/m2), CloudTrans(0-1), [LWin(W/m2), DewT(C), AirPress(mbar)]
 - **Nodata**: -9999
 - **One file per station**: meteo0001.txt, meteo0002.txt, ...
 

@@ -34,7 +34,7 @@ inputs:
   - name: AirT
     unit: Celsius
   - name: Iprec
-    unit: mm per time step
+    unit: mm/h
   - name: RelHum
     unit: '% (0-100)'
   - name: WindSp
@@ -143,6 +143,6 @@ validation:
 summary:
   total_tools: 6
   total_stage_docs: 5
-  total_diagnostic_triplets: 25
+  total_diagnostic_triplets: 27
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

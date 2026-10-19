@@ -6,10 +6,18 @@ Supports: CMFD, MSWX, ERA5, NASA POWER, generic CSV.
 
 CRITICAL UNIT CONVERSIONS:
   - GEOtop expects RelHum in PERCENT (0-100), not fraction (0-1)
-  - GEOtop expects Iprec in mm per time step, not mm/hr or m/s
+  - The Iprec column is read through HeaderIPrec, which GEOtop takes as an
+    INTENSITY in mm/h (keywords.h:437). Inside this tool Iprec is the depth
+    (mm) of each record; it is divided by the record length in hours only when
+    the file is written. (HeaderPrec, keywords.h:438, would be mm per step.)
   - GEOtop expects AirT in Celsius, not Kelvin
   - GEOtop expects Swglobal in W/m2 (instantaneous, not accumulated)
   - GEOtop expects dates in DD/MM/YYYY hh:mm format (European)
+  - JDfrom0 must equal GEOtop's own clock (times.cc:130-138): Python days
+    since 0001-01-01 + 367. A JDfrom0 column overrides Date (meteodata.cc:589-607).
+  - A record stamped t is used for the interval (t-dt, t] (meteodata.cc:137-245),
+    so every record is stamped at the END of the interval it covers (see
+    stamp_rules / align_to_interval_end).
   - Missing values MUST be -9999 (not NaN, -999, or blank)
 
 Usage:
@@ -76,31 +84,27 @@ def validate_inputs(args):
 
 
 def date_to_jd_from0(dt):
-    """Convert datetime to Julian Day from year 0 (GEOtop convention).
+    """Convert datetime to GEOtop's JDfrom0 (the model's own day count).
 
-    JDfrom0 = integer day count since GEOtop's day-0 epoch PLUS the
-    fractional day (hour/24). The fractional part MUST equal the time of day
-    so that GEOtop's solar-position routine (radiation.cc: solar hour
-    h = (JD-floor(JD))*24 + dh) lands the sun at the correct local clock time.
+    GEOtop builds its clock with convert_dateeur12_JDfrom0 (times.cc:130-138):
+        days = 1 + 366 + (year-1)*365 + leap days;  JDfrom0 = JD-of-year + days
+    which is Python (dt - datetime(1,1,1)).days + 367 + hour/24 for every
+    date (checked for every day 1900-2100). When the meteo file has a JDfrom0
+    column GEOtop uses it AS IS to place the records and ignores Date
+    (fixing_dates, meteodata.cc:589-607), so this must match that clock.
 
-    Calibration anchor (shipped reference test tests/1D/Matsch_B2_Ref_007):
-        02/10/2009 00:00  ->  734047.0000   (midnight => .0000, not .25)
-        02/10/2009 01:00  ->  734047.0417
-    datetime(2009,10,2) - datetime(1,1,1) = 733681 days, so the integer
-    offset is 734047 - 733681 = 366 (an INTEGER).
-
-    BUGFIX (2026-06-23, GEOtop MODIS-LST real case): the previous constant
-    `+ 365.25 + 1` (= 366.25) injected a spurious +0.25 day = +6 h into the
-    FRACTIONAL part of every timestamp. Midnight became .25 (=06:00), so
-    GEOtop placed the sun ~6 h late and applied the shortwave pulse hours
-    after the real solar noon. Surface/skin temperature (Tsurface) came out
-    far too cold at the true daytime overpass time (~10 K low vs MODIS LST),
-    while air temperature -- which GEOtop reads directly and does not phase
-    against sun position -- looked fine. A classic silent error. Use the
-    correct integer offset so frac(JDfrom0)*24 == hour-of-day exactly.
+    BUGFIX (2026-10-19): the offset was 366, copied from the shipped test
+    Matsch_B2_Ref_007 (02/10/2009 00:00 -> 734047.0). That test's meteo is
+    itself one day off: its own output prints 02/10/2009 01:00 as 734048.0417,
+    and 9 of the 12 shipped meteo files agree with the clock. With 366 all
+    forcing was used one day early. The sun is NOT taken from this column but
+    from the model clock (energy.balance.cc:117), which is why a whole-day
+    error kept the daily shape and stayed hidden.
+    (The older +366.25, fixed 2026-06-23, also moved the records by 6 h.)
+    Evidence: models/GEOtop/verify_forcing_bugs_20261019/VERIFY.md section 1.
     """
     delta = dt - datetime(1, 1, 1)
-    return delta.days + delta.seconds / 86400.0 + 366
+    return delta.days + delta.seconds / 86400.0 + 367
 
 
 def kelvin_to_celsius(t):
@@ -137,9 +141,11 @@ def specific_to_relative_humidity(q, t_celsius, p_mbar=1013.25):
 
 
 def convert_precip(precip, from_unit, dt_seconds):
-    """Convert precipitation to mm per time step.
+    """Convert precipitation to the depth (mm) of each input record.
 
-    CRITICAL: GEOtop Iprec = total mm accumulated over the time step.
+    Inside this tool Iprec is a depth per record (so resampling can sum and
+    split it). process() turns it into the mm/h intensity that GEOtop's
+    HeaderIPrec column needs only when the file is written.
 
     Args:
         precip: Precipitation values
@@ -187,15 +193,17 @@ exactly like nasa_power / mswx.
 
 
 def read_generic_csv(input_path, col_map, temp_unit, rh_unit, precip_unit,
-                     date_format=None, pres_unit="Pa", start=None, end=None):
+                     date_format=None, pres_unit="Pa", start=None, end=None,
+                     csv_stamp="end"):
     """Read a generic CSV file with user-specified column mapping and units.
 
     Input contract (all checked, nothing guessed):
       * time column ``datetime`` (or the col-map name): ISO 8601
         (YYYY-MM-DD hh:mm) unless --date-format is given (e.g. GEOtop's own
         "%d/%m/%Y %H:%M"). A day-first date is never read month-first.
-      * the records that bracket --start..--end: no duplicates, evenly spaced
-        (see _window_slice); the file is sorted by time first.
+      * the records that bracket --start..--end (after re-stamping, below): no
+        duplicates, evenly spaced (see _window_slice); the file is sorted by
+        time first. With csv_stamp "instant" no time stamp may repeat anywhere.
       * every column the col-map names must exist in the file.
       * -9999 / -9998 in a data column = missing (NaN), never converted.
       * precipitation rates (mm_hr, mm_day, m_s, kg_m2_s) become depths over
@@ -203,6 +211,21 @@ def read_generic_csv(input_path, col_map, temp_unit, rh_unit, precip_unit,
       * rh_unit 'specific' (kg/kg) is turned into RH % from the same row's air
         temperature and pressure; both columns must be mapped (no standard
         pressure is put in their place). Pressure is also written as AirPress.
+      * time stamps: GEOtop uses a record stamped t for (t-dt, t]
+        (meteodata.cc:137-245). csv_stamp says what a row stamped t holds:
+          "end" (default)  the means/totals over (t-step, t]: kept as is;
+          "start"          the means/totals over [t, t+step): every row is
+                           moved one input step later;
+          "instant"        state values (AirT, RelHum, wind, radiation,
+                           pressure) measured AT t, as most station files
+                           are: (t-step, t] gets the mean of the values at
+                           t-step and t (the "pair" rule), and the first row
+                           is dropped. Rain is taken as the total since the
+                           row before, i.e. stamped at the end.
+        With "end" and "start" every state column MUST be an interval mean:
+        an instant at t given as "end" is used for (t-step, t], i.e. step/2
+        late (1.5 h for 3-hourly data), at any --dt (when --dt is shorter,
+        to_grid interpolates between interval centres, which keeps that lag).
     """
     mapping = json.loads(col_map) if isinstance(col_map, str) else dict(col_map)
     tcol = mapping.get("datetime", "datetime")
@@ -235,12 +258,11 @@ def read_generic_csv(input_path, col_map, temp_unit, rh_unit, precip_unit,
     data_cols = sorted({mapping.get(k, v) for k, v in known.items()} & set(df.columns) - {tcol})
     df[data_cols] = df[data_cols].apply(pd.to_numeric, errors="raise").astype(float)
     df[data_cols] = df[data_cols].mask(df[data_cols].isin([NODATA, -9998]))
-    # input record spacing, checked only over the records that bracket the
-    # requested window (a gap elsewhere in the file does not matter)
-    t = df.index.as_unit("s").asi8
-    g0 = int(t[0]) if start is None else _secs(start)
-    g1 = int(t[-1]) if end is None else _secs(end)
-    ia, ib, native = _window_slice(df.index, g0, g1, input_path)
+    if csv_stamp not in ("end", "start", "instant"):
+        raise ValueError(f"--csv-stamp must be 'end', 'start' or 'instant', got {csv_stamp!r}")
+    # input record spacing (the most common one over the whole file); the
+    # records around the window are checked AFTER re-stamping, below
+    native = _native_step(df.index, input_path)
 
     result = pd.DataFrame(index=df.index)
 
@@ -306,7 +328,111 @@ def read_generic_csv(input_path, col_map, temp_unit, rh_unit, precip_unit,
     if lw_col in df.columns:
         result["LWin"] = df[lw_col].astype(float)
 
+    # re-stamp to GEOtop's rule (the row stamped t holds (t-step, t]) BEFORE the
+    # window is checked, so a file that covers the window only after the move
+    # is accepted and one that does not is refused (2026-10-20)
+    if csv_stamp == "start":
+        result.index = result.index + pd.Timedelta(seconds=int(native))
+    elif csv_stamp == "instant":
+        # state values are instants at t: (t-step, t] gets the mean of the
+        # values at t-step and t; rain is taken as the total since the record
+        # before (stamped at the end); the first record is dropped
+        rules = {c: ("end" if c == "Iprec" else "pair") for c in result.columns}
+        result = align_to_interval_end(result, rules, native)
+    t = result.index.as_unit("s").asi8
+    g0 = int(t[0]) if start is None else _secs(start)
+    g1 = int(t[-1]) if end is None else _secs(end)
+    # only the records that bracket the requested window must be evenly spaced
+    # (a gap elsewhere in the file does not matter)
+    _window_slice(result.index, g0, g1, input_path)
     return result
+
+
+# What a source's record stamped t holds, and how it is moved onto GEOtop's
+# rule (a record stamped t is used for (t-step, t], meteodata.cc:137-245).
+# Checked 2026-10-19 at 36.0N 116.0E, Nov 2017, read only; scripts and numbers:
+# models/GEOtop/verify_forcing_bugs_20261019/ (stamp_check/, scripts/check_*).
+#   "end"   the value for (t-step, t]               -> kept as is
+#   "start" the value for [t, t+step)               -> stamped t+step
+#   "pair"  an instant at t, or a mean centred on t -> the value for (t-step, t]
+#           is the mean of the records at t-step and t (stamp t)
+_SUBDAILY_STAMP_RULES = {
+    # CMFD 2.0 manual: prec = mean over the 3 h before t; srad/lrad = mean over
+    # (t-1.5, t+1.5) (srad lines up best with the sun there: corr 0.914-0.918
+    # centred vs 0.83 start, 0.73 end; one point, one month); temp, pres, shum,
+    # wind = instant values at t. NOT settled for srad: against NASA POWER
+    # hourly (a review check) CMFD srad fits interval END better; the two
+    # references disagree. CMFD lrad was never checked against data.
+    "cmfd": {"Iprec": "end", "Swglobal": "pair", "LWin": "pair", "AirT": "pair",
+             "shum": "pair", "pres_pa": "pair", "WindSp": "pair"},
+    # MSWX: P lines up with CMFD prec stamped t+3 (corr 0.964 vs 0.313): strong.
+    # Tair as the [t, t+3) mean is WEAK evidence (RMSE 1.20 K vs 1.39 as an
+    # instant; by hour mixed). SWd is CENTRED on t (2026-10-20 clear-sky test
+    # against the sun, 6 points, all of 2017, stamp_check/swd_envelope.json:
+    # corr 0.91-0.98 centred vs 0.89-0.94 [t, t+3); the clear-sky envelope
+    # leans -0.04..-0.05/h centred, +0.07..+0.10/h [t, t+3); zero lean is about
+    # 0.5 h after t, so "pair" is ~0.5 h off and "start" ~1 h). LWd, wind,
+    # humidity and pressure were not checked; they keep "start" like P/Tair.
+    "mswx": {"Iprec": "start", "Swglobal": "pair", "LWin": "start", "AirT": "start",
+             "shum": "start", "pres_pa": "start", "WindSp": "start"},
+    # NASA POWER hourly: HH holds [HH, HH+1). Only shortwave was checked
+    # (TOA_SW_DWN corr 0.994 with the sun over [HH, HH+1), 0.959 centred; the
+    # clear-sky envelope of ALLSKY_SFC_SW_DWN leans least for [HH, HH+1)).
+    # T2M, wind, humidity and pressure are ASSUMED to follow the same rule.
+    "nasa_power": {c: "start" for c in ("Iprec", "Swglobal", "LWin", "AirT", "shum",
+                                        "pres_pa", "WindSp")},
+}
+
+
+def stamp_rules(source, daily):
+    """Per-column stamp rule for a load_forcing source (see _SUBDAILY_STAMP_RULES).
+
+    Every daily loader returns day D's total or mean stamped D 00:00, so a
+    daily record is always "start" (it becomes D+1 00:00)."""
+    cols = ("Iprec", "Swglobal", "LWin", "AirT", "shum", "pres_pa", "WindSp")
+    if daily:
+        return {c: "start" for c in cols}
+    if source not in _SUBDAILY_STAMP_RULES:
+        raise ValueError(f"no stamp rule for sub-daily source '{source}'")
+    return dict(_SUBDAILY_STAMP_RULES[source])
+
+
+def align_to_interval_end(df, rules, step):
+    """Re-stamp every column so that the row stamped t holds the value for (t-step, t].
+
+    rules: {column: "end" | "start" | "pair"} for EVERY column (a column
+    without a rule stops). step: the record spacing in seconds. Only stamps
+    that every column can fill are kept, so the first record of a "pair"
+    column (no record before it) is dropped and nothing is made up; to_grid
+    then raises CoverageError when the window is not covered, and the caller
+    loads one more day. A NaN value stays NaN (and a pair with it is NaN).
+    """
+    idx = pd.DatetimeIndex(df.index)
+    if not idx.is_unique:
+        raise ValueError("forcing has duplicate time stamps; which record is right is not guessed")
+    missing = [c for c in df.columns if c not in rules]
+    if missing:
+        raise ValueError(f"no stamp rule for column(s) {missing}")
+    td = pd.Timedelta(seconds=int(step))
+    cols = {}
+    for c in df.columns:
+        s = pd.Series(df[c].to_numpy(dtype=float), index=idx)
+        rule = rules[c]
+        if rule == "end":
+            cols[c] = s
+        elif rule == "start":
+            cols[c] = pd.Series(s.to_numpy(), index=idx + td)
+        elif rule == "pair":
+            before = pd.Series(s.to_numpy(), index=idx + td)       # record t-step, at t
+            keep = idx.intersection(before.index)
+            cols[c] = (s.reindex(keep) + before.reindex(keep)) / 2.0
+        else:
+            raise ValueError(f"unknown stamp rule '{rule}' for column {c}")
+    common = None
+    for s in cols.values():
+        common = s.index if common is None else common.intersection(s.index)
+    common = common.sort_values()
+    return pd.DataFrame({c: cols[c].reindex(common) for c in df.columns}, index=common)
 
 
 def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=3600,
@@ -316,13 +442,17 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
     This is the canonical HydroCraft forcing loader. It returns point series
     already in SI-ish units, which we map onto the GEOtop meteo columns:
 
-        precip_mm  (mm per timestep)  -> Iprec      (mm per step) [direct]
+        precip_mm  (mm per record)    -> Iprec      (mm per record; mm/h when written)
         temp_c     (Celsius)          -> AirT       (Celsius)
         srad_wm2   (W/m2)             -> Swglobal   (W/m2)
         wind_ms    (m/s)             -> WindSp      (m/s)
         shum_kgkg + pres_pa + temp   -> RelHum      (PERCENT, via humidity util)
         lrad_wm2   (W/m2)             -> LWin       (W/m2, optional)
         pres_pa    (Pa)              -> AirPress    (mbar, optional)
+
+    The records are first re-stamped to the END of the interval they cover
+    (align_to_interval_end with stamp_rules); RelHum is worked out after that,
+    from the re-stamped temperature, humidity and pressure.
 
     WindDir is not provided by the point loader -> NODATA.
     Returns a DatetimeIndex-ed DataFrame of the loaded days (start..end days
@@ -333,9 +463,10 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
     step is daily (dt >= 86400) we call load_DAILY_forcing instead of
     load_hourly_forcing. The hourly loader for MSWX/NASA-POWER scans many
     sub-daily files and is ~minutes *per year* (times out on a 10-yr run);
-    the daily loader returns the same point series in ~3 s/yr. GEOtop happily
-    interpolates daily meteo entries to its internal TimeStepEnergyAndWater,
-    exactly as the shipped Bengbu reference run does. The daily NASA-POWER
+    the daily loader returns the same point series in ~3 s/yr. GEOtop runs on
+    daily meteo records as the shipped Bengbu reference run does; under the
+    default LinearInterpolation = 0 it does not interpolate them but holds each
+    record over (t-dt, t] (see SKILL.md and dt_026). The daily NASA-POWER
     schema names mean temperature `temp_mean_c` (not `temp_c`), so we coalesce.
     """
     from ki_tools_common.humidity import specific_humidity_to_rh
@@ -367,31 +498,40 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
     pres_pa = np.asarray(out.get("pres_pa", np.full(len(dates), 101325.0)), dtype=float)
     shum = np.asarray(out.get("shum_kgkg", np.full(len(dates), np.nan)), dtype=float)
 
-    # Relative humidity in PERCENT (dt_005). Clip to physical 1-100 range.
-    rh = specific_humidity_to_rh(shum, temp_c + 273.15, pres_pa)
-    rh = np.clip(np.asarray(rh, dtype=float), 1.0, 100.0)
-
-    # PRECIP DEPTH (corrected 2026-07-21, GEOtop NCP MODIS-LST real case):
-    # load_forcing returns precip_mm as the DEPTH accumulated over its own
-    # native step (mm/day for the daily loader, mm/3h for CMFD/MSWX sub-daily),
-    # which is exactly GEOtop's Iprec semantics -- meteodata.cc::fill_Pint
-    # divides Iprec by the record spacing to get the intensity. So it is passed
-    # through VERBATIM here; any change of record spacing is handled once, and
-    # depth-conservingly, by resample_meteo(). The former unconditional
-    # `if daily: iprec /= 24` (which assumed Iprec was an mm/h intensity) is
-    # removed: it was compensating for the old interpolating resample, and left
-    # in place it would now under-count daily-forced precipitation 24x.
-    iprec = np.asarray(out["precip_mm"], dtype=float)
-    df = pd.DataFrame({
-        "Iprec": iprec,                                          # mm accumulated per record
+    # PRECIP DEPTH: load_forcing returns precip_mm as the depth over its own
+    # record (mm/day for the daily loader, mm/3h for CMFD/MSWX, mm/h for NASA
+    # POWER hourly). It stays a depth through re-stamping and to_grid; process()
+    # writes it as the mm/h intensity HeaderIPrec needs (keywords.h:437).
+    # fill_Pint (meteodata.cc:854-895) does NOT touch this column: it only fills
+    # the intensity from a HeaderPrec column when the intensity is absent.
+    raw = pd.DataFrame({
+        "Iprec": np.asarray(out["precip_mm"], dtype=float),      # mm per record
         "WindSp": np.asarray(out.get("wind_ms", np.zeros(len(dates))), dtype=float),
-        "WindDir": np.full(len(dates), NODATA, dtype=float),
-        "RelHum": rh,
         "AirT": temp_c,
+        "shum": shum,
+        "pres_pa": pres_pa,
         "Swglobal": np.asarray(out["srad_wm2"], dtype=float),
         "LWin": np.asarray(out.get("lrad_wm2", np.full(len(dates), np.nan)), dtype=float),
-        "AirPress": pres_pa / 100.0,                            # Pa -> mbar
     }, index=dates)
+    step = 86400 if daily else int(out.get("timestep_seconds") or 0)
+    if step <= 0:
+        raise ValueError(f"{source}: the loader did not say its record step")
+    raw = align_to_interval_end(raw, stamp_rules(source, daily), step)
+
+    # Relative humidity in PERCENT (dt_005). Clip to physical 1-100 range.
+    rh = specific_humidity_to_rh(raw["shum"].to_numpy(), raw["AirT"].to_numpy() + 273.15,
+                                 raw["pres_pa"].to_numpy())
+    rh = np.clip(np.asarray(rh, dtype=float), 1.0, 100.0)
+    df = pd.DataFrame({
+        "Iprec": raw["Iprec"].to_numpy(),
+        "WindSp": raw["WindSp"].to_numpy(),
+        "WindDir": np.full(len(raw), NODATA, dtype=float),
+        "RelHum": rh,
+        "AirT": raw["AirT"].to_numpy(),
+        "Swglobal": raw["Swglobal"].to_numpy(),
+        "LWin": raw["LWin"].to_numpy(),
+        "AirPress": raw["pres_pa"].to_numpy() / 100.0,          # Pa -> mbar
+    }, index=raw.index)
     # Drop optional columns that are entirely missing
     for c in ("LWin", "AirPress"):
         if df[c].isna().all():
@@ -402,15 +542,14 @@ def read_via_load_forcing(source, lat, lon, start, end, forcing_dir=None, dt=360
 def resample_meteo(df, dt_seconds):
     """Resample a meteo DataFrame to `dt_seconds`, conserving precipitation DEPTH.
 
-    Iprec is NOT a rate: GEOtop reads it as the water depth ACCUMULATED since
-    the previous meteo record and derives the intensity itself by dividing by
-    the record spacing --
-
-        meteodata.cc :: fill_Pint()
-            data[i][PrecInt] = data[i][Prec] / (JD[i] - JD[i-1]);  // mm/d
-            data[i][PrecInt] /= 24.;                               // mm/h
-
-    so a record at time t owns the interval (t-dt, t].
+    Inside this tool Iprec is the water depth of each record, and a record
+    at time t owns the interval (t-dt, t] (GEOtop time_interp_constant,
+    meteodata.cc:137-245). The depth is turned into the mm/h intensity that
+    GEOtop's HeaderIPrec column holds (keywords.h:437) only when process()
+    writes the file. (Correction 2026-10-19: this note used to say GEOtop
+    divides Iprec by the record spacing in fill_Pint. It does not: fill_Pint,
+    meteodata.cc:854-895, only works on a HeaderPrec column. GEOtop read the
+    depth as mm/h, so 3-hourly rain was 3x and daily rain 24x too big.)
 
     BUGFIX (2026-07-21, GEOtop NCP MODIS-LST real case): the old line
 
@@ -419,18 +558,14 @@ def resample_meteo(df, dt_seconds):
     interpolated EVERY column, Iprec included. Upsampling 3-hourly CMFD
     (mm per 3 h) to an hourly meteo file therefore wrote the full 3-hour depth
     into each of the 3 hourly records -- 3x the true precipitation, silently.
-    The same defect inflated daily->hourly by 24x; a prior run papered over
-    that specific case with an unconditional `iprec /= 24` in the daily branch
-    of read_via_load_forcing() (see its PRECIP-INTENSITY note, whose stated
-    rationale -- "GEOtop reads Iprec as an intensity in mm/h" -- is refuted by
-    fill_Pint above). That /24 is now redundant *and wrong* once the resample
-    conserves depth, so it has been removed: depth handling lives HERE, in one
-    place, driven by the actual native-vs-target step.
+    Depth handling lives HERE, in one place, driven by the actual
+    native-vs-target step.
 
     Rules:
       * state/flux columns (AirT, RelHum, WindSp, Swglobal, LWin, ...):
-        upsample -> linear interpolation; downsample -> interval mean.
-      * Iprec (accumulated depth): upsample -> split the depth evenly across
+        upsample -> linear interpolation between interval centres;
+        downsample -> interval mean.
+      * Iprec (depth): upsample -> split the depth evenly across
         the sub-intervals it covers; downsample -> sum over the interval.
 
     CONSERVED INVARIANT -- verify with this, not with the raw column sum:
@@ -438,16 +573,17 @@ def resample_meteo(df, dt_seconds):
         sum(Iprec[1:])  before  ==  sum(Iprec[1:])  after
 
     The FIRST record is excluded on purpose. Its interval reaches back before
-    the file starts, so fill_Pint sets data[0][PrecInt] = novalue and GEOtop
-    never integrates it. Upsampling likewise has nowhere to put that leading
-    depth. Checked at 3h->1h, 3h->6h, 3h->3h and 1d->1h: the depth GEOtop
-    actually applies is preserved exactly. A naive total-column-sum check will
-    look "lossy" by exactly the first record and must not be re-"fixed".
+    the file starts, so GEOtop cannot integrate it over a whole interval.
+    Upsampling likewise has nowhere to put that leading depth. A naive
+    total-column-sum check will look "lossy" by exactly the first record and
+    must not be re-"fixed".
 
     2026-10-16: now a thin wrapper over to_grid() over the whole input (gaps,
     uneven spacing and partial intervals stop instead of being filled).
     process() calls to_grid() on the requested --start/--end window directly,
     AFTER loading native records that bracket it, so no edge is lost.
+    (Upsampling the whole input stops with CoverageError: the last stamp's
+    centre-based interpolation needs one native record after the end.)
     """
     return to_grid(df, None, None, dt_seconds)
 
@@ -468,6 +604,22 @@ def _secs(ts):
     return int(pd.Timestamp(ts).value // 10**9)
 
 
+def _native_step(index, what):
+    """The input record step in seconds: the most common spacing over the WHOLE
+    sorted index (so a short window cannot hide a missing record)."""
+    t = pd.DatetimeIndex(index).as_unit("s").asi8
+    if len(t) < 2:
+        raise ValueError(f"{what}: needs at least 2 records, got {len(t)}")
+    if pd.DatetimeIndex(index).hasnans:
+        raise ValueError(f"{what}: time column has unreadable stamps")
+    d_all = np.diff(t)
+    pos = d_all[d_all > 0]
+    if pos.size == 0:
+        raise ValueError(f"{what}: all records have the same time stamp")
+    vals, cnt = np.unique(pos, return_counts=True)
+    return int(vals[np.argmax(cnt)])
+
+
 def _window_slice(index, g0, g1, what, dt=None):
     """Rows [ia, ib] of a SORTED time index that bracket the window g0..g1
     (epoch seconds): the last record at or before g0 and the first at or after
@@ -484,11 +636,8 @@ def _window_slice(index, g0, g1, what, dt=None):
     duplicate outside the stretch does not matter. Raises CoverageError when
     the input does not reach g0 or g1.
     """
+    native = _native_step(index, what)
     t = pd.DatetimeIndex(index).as_unit("s").asi8
-    if len(t) < 2:
-        raise ValueError(f"{what}: needs at least 2 records, got {len(t)}")
-    if pd.DatetimeIndex(index).hasnans:
-        raise ValueError(f"{what}: time column has unreadable stamps")
     lo_short, hi_short = g0 < t[0], g1 > t[-1]
     if lo_short or hi_short:
         raise CoverageError(
@@ -496,12 +645,6 @@ def _window_slice(index, g0, g1, what, dt=None):
             f"{pd.Timestamp(int(t[-1]), unit='s')} does not reach the requested "
             f"{pd.Timestamp(g0, unit='s')} .. {pd.Timestamp(g1, unit='s')}",
             need_before=lo_short, need_after=hi_short)
-    d_all = np.diff(t)
-    pos = d_all[d_all > 0]
-    if pos.size == 0:
-        raise ValueError(f"{what}: all records have the same time stamp")
-    vals, cnt = np.unique(pos, return_counts=True)
-    native = int(vals[np.argmax(cnt)])
     ia = int(np.searchsorted(t, g0, side="right")) - 1
     ib = int(np.searchsorted(t, g1, side="left"))
     lo_c = int(t[ia])
@@ -539,11 +682,17 @@ def to_grid(df, start, end, dt_seconds):
     records that bracket the window must be unique and evenly spaced (no gap
     there, see _window_slice); every output stamp must be covered, else
     CoverageError (nothing is extrapolated or filled). Rules (record at t
-    owns (t-step, t], GEOtop meteodata.cc::fill_Pint):
+    owns (t-step, t], GEOtop time_interp_constant, meteodata.cc:137-245; the
+    input must already be stamped that way, see align_to_interval_end):
       * dt < native (upsample; native must be a multiple of dt and the grid
-        must land on native stamps): state columns are linear between the two
-        native records around each stamp; Iprec = depth of the native record
-        that owns the stamp (first native stamp >= t) * dt/native.
+        must land on native stamps): a state column's native record is the
+        mean over its interval, so it sits at the interval centre t - native/2;
+        the output value for (g-dt, g] is the linear interpolation at
+        g - dt/2 between the two native centres around it (2026-10-19; it
+        used to interpolate at g between interval ends, which lagged by
+        (native-dt)/2). The last stamp may need one native record after the
+        window; without it CoverageError(need_after). Iprec = depth of the
+        native record that owns the stamp (first native stamp >= t) * dt/native.
       * dt >= native (same step or downsample; dt a multiple of native, grid
         stamps on native stamps): each stamp t takes the dt/native native
         records in (t-dt, t]: mean for state columns, sum for Iprec. All of
@@ -551,9 +700,8 @@ def to_grid(df, start, end, dt_seconds):
         FIRST stamp only: if the input has no full interval before it (the
         input starts at the window start), the first row keeps the native
         record AT that stamp for state columns and Iprec = NaN (-9999).
-        GEOtop never uses the first record's Iprec (fill_Pint sets
-        PrecInt[0] = novalue; -9999 is number_novalue, not number_absent),
-        so no applied rain is lost and none is made up: sum(Iprec[1:]) is kept.
+        The first record's interval lies before the simulation start, so no
+        applied rain is lost and none is made up: sum(Iprec[1:]) is kept.
     A NaN in an input record stays NaN in every output value it feeds
     (written as -9999), never averaged around.
     """
@@ -600,21 +748,38 @@ def to_grid(df, start, end, dt_seconds):
                 first_partial = True
         else:
             first_partial = True
-    sub = df.iloc[ia:ib + 1]
-    t = t_all[ia:ib + 1]
+    hi = ib
+    if dt < native and (g1 - dt / 2.0) > (int(t_all[ib]) - native / 2.0):
+        # the last stamp's centre lies past the centre of record ib: one more
+        # native record is needed (one is always enough, see the docstring)
+        if ib + 1 >= len(t_all):
+            raise CoverageError(
+                f"forcing: the stamp {pd.Timestamp(g1, unit='s')} needs one input record "
+                f"after {df.index[ib]} (interpolation between interval centres)",
+                need_after=True)
+        if int(t_all[ib + 1]) - int(t_all[ib]) != native:
+            raise ValueError(f"forcing: records are not evenly spaced after {df.index[ib]} "
+                             f"(input step {native} s). Missing records are not filled in.")
+        hi = ib + 1
+    sub = df.iloc[ia:hi + 1]
+    t = t_all[ia:hi + 1]
     vals = {c: sub[c].to_numpy(dtype=float) for c in cols}
     out = {c: np.full(grid.size, np.nan) for c in cols}
     if dt < native:
         k = np.searchsorted(t, grid, side="left")          # first native >= stamp
-        exact = t[k] == grid
-        km = np.where(exact, k, k - 1)
-        w = np.where(exact, 0.0, (grid - t[km]) / float(native))
+        # state columns: native interval means sit at their centres
+        cen = t.astype(float) - native / 2.0
+        q = grid.astype(float) - dt / 2.0                  # centre of output interval
+        j = np.searchsorted(cen, q, side="left")           # first centre >= q
+        exact = cen[j] == q
+        jm = np.where(exact, j, j - 1)
+        w = np.where(exact, 0.0, (q - cen[jm]) / float(native))
         for c in cols:
             v = vals[c]
             if c == "Iprec":
                 out[c] = v[k] * (dt / float(native))
             else:
-                out[c] = np.where(exact, v[k], v[km] * (1.0 - w) + v[k] * w)
+                out[c] = np.where(exact, v[j], v[jm] * (1.0 - w) + v[j] * w)
     else:
         n = dt // native
         k1 = np.searchsorted(t, grid, side="left")          # index of stamp t (exists)
@@ -645,20 +810,26 @@ def process(args):
         # Online/point loader via ki_tools_common (canonical HydroCraft path).
         # The requested days are loaded first; only if the native records do
         # not bracket start/end at --dt (e.g. 3-hourly data, window 01:00-23:00)
-        # is one more day read on that side, and then the window must be fully
-        # covered or the run stops.
+        # is one more day read on that side. The extra days are kept from try
+        # to try (one edge can show up only after the other is fixed, e.g. a
+        # "pair" column drops the first record and the last stamp needs one
+        # record after the end), so at most 3 tries: (0,0), then one side,
+        # then both. One extra day per side is always enough (the largest
+        # re-stamp is one day, for daily records); a CoverageError that adds
+        # no new side stops the run.
         fdir = args.input if (args.input and os.path.exists(args.input)) else None
         pad = (0, 0)
-        for attempt in (0, 1):
+        while True:
             raw = read_via_load_forcing(args.source, args.lat, args.lon, start, end, fdir,
                                         dt=args.dt, pad_days=pad)
             try:
                 df = to_grid(raw, start, end, args.dt)
                 break
             except CoverageError as e:
-                if attempt:
+                new = (max(pad[0], int(e.need_before)), max(pad[1], int(e.need_after)))
+                if new == pad:
                     raise
-                pad = (1 if e.need_before else 0, 1 if e.need_after else 0)
+                pad = new
                 print(json.dumps({"status": "info", "message":
                                   f"{e}; loading one more day {pad} (before, after)"}),
                       file=sys.stderr)
@@ -667,7 +838,7 @@ def process(args):
             args.input, args.col_map,
             args.temp_unit, args.rh_unit, args.precip_unit,
             date_format=args.date_format, pres_unit=args.pres_unit,
-            start=start, end=end,
+            start=start, end=end, csv_stamp=args.csv_stamp,
         )
         df = to_grid(raw, start, end, args.dt)
     else:
@@ -682,6 +853,9 @@ def process(args):
     meteo_cols = ["Iprec", "WindSp", "WindDir", "RelHum", "AirT", "Swglobal", "CloudTrans"]
     optional_cols = ["LWin", "DewT", "AirPress"]
 
+    # Iprec is a depth per record inside the tool; HeaderIPrec is mm/h
+    # (keywords.h:437), so divide by the record length in hours here.
+    dt_hours = args.dt / 3600.0
     rows = []
     for ts, row in df.iterrows():
         dt_obj = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
@@ -690,8 +864,10 @@ def process(args):
 
         r = {
             "Date": date_str,
-            "JDfrom0": f"{jd:.4f}",
-            "Iprec": f"{row.get('Iprec', 0):.4f}" if pd.notna(row.get("Iprec")) else str(NODATA),
+            # 6 decimals: with 4, 11:00 (0.4583) is not 11/24 and a record
+            # covers 1.0008 h
+            "JDfrom0": f"{jd:.6f}",
+            "Iprec": f"{row.get('Iprec') / dt_hours:.6f}" if pd.notna(row.get("Iprec")) else str(NODATA),
             "WindSp": f"{row.get('WindSp', 0):.2f}" if pd.notna(row.get("WindSp")) else str(NODATA),
             "WindDir": f"{row.get('WindDir', 0):.2f}" if pd.notna(row.get("WindDir")) else str(NODATA),
             "RelHum": f"{row.get('RelHum', 50):.2f}" if pd.notna(row.get("RelHum")) else str(NODATA),
@@ -762,11 +938,11 @@ def validate_outputs(output_path):
         prec_valid = df["Iprec"][df["Iprec"] != NODATA]
         if len(prec_valid) > 0:
             if prec_valid.min() < 0:
-                errors.append(f"CRITICAL: Iprec min = {prec_valid.min():.4f} < 0 mm/step.")
-            if prec_valid.max() > 200:
+                errors.append(f"CRITICAL: Iprec min = {prec_valid.min():.4f} < 0 mm/h.")
+            if prec_valid.max() > 100:
                 warnings.append(
-                    f"Iprec max = {prec_valid.max():.1f} mm/step. Very high. "
-                    "Check if units are mm/hr vs mm/step."
+                    f"Iprec max = {prec_valid.max():.1f} mm/h. Very high. "
+                    "Check --precip-unit (the file holds an intensity in mm/h)."
                 )
 
     # Check date format
@@ -829,6 +1005,13 @@ def main():
                              "e.g. '%%d/%%m/%%Y %%H:%%M' for day-first dates)")
     parser.add_argument("--pres-unit", default="Pa", choices=["Pa", "hPa"],
                         help="Unit of the CSV pressure column ('pres' in --col-map)")
+    parser.add_argument("--csv-stamp", default="end", choices=["end", "start", "instant"],
+                        help="What a CSV row stamped t holds. end (default): means/totals over "
+                             "(t-step, t]. start: means/totals over [t, t+step) (moved one step "
+                             "later). instant: state values measured AT t, as most station files "
+                             "are (each interval gets the mean of its two end values; rain = total "
+                             "since the row before; the first row is dropped). With end/start the "
+                             "state columns must be interval means, or they are used step/2 late.")
 
     args = parser.parse_args()
     validate_inputs(args)

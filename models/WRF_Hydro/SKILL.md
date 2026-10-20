@@ -294,7 +294,7 @@ netCDF4, numpy, scipy, geopandas, rasterio, pyproj, whitebox
 | s6 | `docs/s6_groundwater_skill.md` | GW bucket model (Coeff/Expon/Zmax), inverted seasonal cycle diagnosis, baseflow calibration |
 | s9 | `docs/s9_runoff_options_skill.md` | All 5 RUNOFF_OPTIONS (SIMGM, SIMTOP, Schaake96, BATS, Xinanjiang), REFKDT calibration |
 | s11 | `docs/s11_output_interpretation_skill.md` | LDASOUT vs CHRTOUT vs RTOUT vs GWOUT, correct discharge extraction, water balance verification, VIC comparison |
-| -- | `docs/calibration_guide.md` | 24 parameters across 6 files, Tier 1-3 priority, Schaake formula, Chaohe results |
+| -- | `docs/calibration_guide.md` | 24 parameters across 6 files, Tier 1-3 priority, Schaake formula, Chaohe lessons |
 
 ### Parallelism
 
@@ -324,113 +324,37 @@ Stages 3, 4, 5, 6 can run in parallel after stage 2 (geo_em). Stage 8 (forcing) 
 
 ---
 
-## VALIDATED Results
+## Validation Status: Lessons from Past Test Runs
 
-### Chaohe Basin (2026-03-19)
+Scores from single test cases are not kept in this file. They live in each run's own
+result file and in the run records. What those tests taught:
 
-- **Basin**: Chaohe, ~8,783 km^2, semi-humid North China
-- **Period**: 2001-01-01 to 2001-01-07 (7 days)
-- **Grid**: 126 x 116 LSM cells @ 1 km, 504 x 464 routing cells @ 250 m
-- **Forcing**: VIC 3-hourly from existing Chaohe run, converted to 168 hourly LDASIN files (how this early test was run; that converter was removed on 2026-10-02 — build forcing with `cmfd_to_ldasin.py` now)
-- **Result**: 168 hourly LDASOUT + CHRTOUT + RTOUT + GWOUT outputs
-- **Status**: SUCCESS — "The model finished successfully" in stdout
-- **Output directory**: `outputs/chaohe_wrf_test/`
-
-### Bengbu Basin 1km (2026-03-20)
-
-- **Basin**: Bengbu (Huai River), ~121,330 km^2, humid subtropical
-- **Period**: 2001-07-01 to 2001-07-14 (14 days, July start to avoid frozen soil crash)
-- **Grid**: 535 x 442 LSM cells @ 1 km, 2140 x 1768 routing cells @ 250 m (3.8M routing cells)
-- **Forcing**: VIC 3-hourly from existing Bengbu run (CMFD), converted to hourly LDASIN (how this early test was run; that converter was removed on 2026-10-02 — build forcing with `cmfd_to_ldasin.py` now)
-- **Result**: 14 LDASOUT + 14 GWOUT outputs, 72 min on 2 MPI cores
-- **Status**: SUCCESS — physically meaningful output after 3 critical bug fixes (D8, SWDOWN, elevation)
-- **Output directory**: `outputs/bengbu_wrfhydro_2000_2005/`
-
-### Bengbu Basin 0.25deg 6-year (2026-03-20) — CHRTOUT Comparison
-
-- **Basin**: Bengbu (Huai River), ~121,330 km^2, humid subtropical
-- **Period**: 2000-01-01 to 2005-12-31 (6 years)
-- **Grid**: 22 x 18 LSM cells @ 0.25deg, 88 x 72 routing cells @ ~7 km
-- **Forcing**: CMFD direct via `cmfd_to_ldasin.py` (no VIC intermediate)
-- **Result**: 2,192 daily LDASOUT + CHRTOUT + GWOUT outputs, **19 min runtime**
-- **Discharge comparison with VIC (CHRTOUT)**:
-  - **WRF-Hydro mean**: 1,090 m^3/s
-  - **VIC mean**: 1,535 m^3/s
-  - **Correlation r = 0.84** (daily, 2000-2005)
-  - **Best year**: 2003, r = 0.92
-  - **Ratio**: WRF-Hydro/VIC = 0.71 (WRF-Hydro 29% lower)
-  - Both bracket observed ~1,000-1,500 m^3/s at Bengbu station
-- **Output directory**: `outputs/bengbu_wrfhydro_025deg_2000_2005/`
-
-**Key finding**: WRF-Hydro and VIC agree well in timing (r=0.84) despite being completely independent models with different physics (Noah-MP vs VIC energy balance). The 29% amplitude difference is expected with default uncalibrated parameters.
-
-### Chaohe Basin Systematic Investigation (2026-03-20) — WHY WRF-Hydro FAILS HERE
-
-- **Basin**: Chaohe, ~8,783 km^2, semi-humid monsoon North China
-- **Period**: 2000-01-01 to 2000-12-31 (1 year)
-- **Resolutions tested**: 0.1deg and 0.25deg
-- **Result**: r ~ 0 (no correlation with VIC), Q far below VIC
-
-#### Two-Basin Comparison
-
-| Metric | Bengbu (Huai River) | Chaohe |
-|--------|-------------------|--------|
-| Basin area | 121,330 km^2 | 8,783 km^2 |
-| Climate | Humid subtropical | Semi-humid monsoon |
-| Terrain | Flat plain | Mountain |
-| VIC mean Q | 1,535 m^3/s | 23.2 m^3/s |
-| WRF-Hydro Q (0.25deg) | 1,090 m^3/s | 5.8 m^3/s |
-| WRF-Hydro Q (0.1deg) | — | 17.8 m^3/s |
-| Correlation r | **0.84** | **~0** |
-| Verdict | Good agreement | **FAILS** |
-
-#### Resolution Sensitivity
-
-| Resolution | Mean Q (m^3/s) | r vs VIC | Grid cells |
-|-----------|---------------|---------|------------|
-| 0.25deg | 5.8 | 0.19 | ~20 |
-| 0.1deg | 17.8 | -0.08 | ~110 |
-
-Resolution affects **volume** (3x difference) but NOT **event timing** (r still ~0).
-
-#### Systematic Investigation: 6 Hypotheses Tested
-
-1. **Channel threshold scaling** — Tested 5 thresholds (5, 10, 20, 50, 170): all give same Q (4-6 m^3/s). **Not the bottleneck.**
-2. **Resolution** — 0.1deg gives 3x more Q than 0.25deg, but r still ~0. Volume improves, timing doesn't.
-3. **Noah-MP infiltration** — Schaake96 with REFKDT=3.0 produces only 0.158mm surface runoff from 23.8mm rain (VIC: 3.78mm). **24x less surface runoff.** **ROOT CAUSE of timing failure.**
-4. **RUNOFF_OPTION=5 (MMF)** — Crashes: needs MMF_RUNOFF_FILE not in standard pipeline. Use option 1 or 3.
-5. **GW bucket dominance** — When channels are broken, all flow goes through GW bucket producing **inverted seasonal cycle** (winter > summer in monsoon basin).
-6. **Inverted seasonality** — Consequence of items 3+5: no storm peaks + GW-dominated baseflow.
-
-#### Root Cause: Noah-MP REFKDT Too High
-
-The fundamental issue is that Noah-MP's Schaake96 scheme with default REFKDT=3.0 produces essentially zero surface runoff in mountain basins. All rain infiltrates into soil, and the only discharge pathway is through the groundwater bucket (slow, dampened, wrong timing). This explains why:
-- Channel threshold doesn't matter (nothing to route)
-- Resolution changes volume but not timing
-- Seasonal cycle is inverted (GW baseflow timing, not rainfall timing)
-
-**Fix**: Reduce REFKDT from 3.0 to 0.5-1.0 (⚠️ address is BUILD-DEPENDENT — see dt_v043: on a build without `-DSPATIAL_SOIL` this file is never read and REFKDT lives in GENPARM.TBL). This is the #1 calibration priority for mountain/semi-arid basins.
-
-#### Shared Findings
-
-`outputs/chaohe_wrfhydro_010deg_2000/wrfhydro_chaohe_findings.yaml`
-
-### Spain GRDC Basin (2026-04-03) — GLOBAL BASIN + ARID CLIMATE TEST
-
-- **Basin**: GRDC_6217140, Guadalquivir tributary, ~15,660 km², Mediterranean Spain
-- **Period**: 2010-10-01 to 2011-01-24 (115 days of output)
-- **Grid**: 24 x 22 LSM cells @ 10 km, 96 x 88 routing cells @ 2.5 km
-- **Forcing**: NASA POWER hourly via `tools/s8_forcing/nasa_power_to_ldasin.py`, 13,176 LDASIN files
-- **Observed data**: GRDC station 6217140, daily discharge (365 days in 2011)
-- **Channel routing**: All 3 options tested (diffusive wave = 115 days, Muskingum = 5 days, Musk-Cunge = 3 days)
-- **Result (channel_option=3)**:
-  - **r = 0.456** (timing correlation, uncalibrated)
-  - **PBIAS = -96.3%** (severe volume underestimate)
-  - **Sim mean**: 3.85 m³/s vs **Obs mean**: 104.5 m³/s
-  - Volume underestimate caused by uncalibrated REFKDT=3.0 (same as Chaohe)
-- **Key finding**: **Arid Basin Trap Cascade** — 3 sequential crashes (dt_v037 → dt_v038 → dt_v036) that each mask the next. All 3 fixes must be applied simultaneously. Documented as Section 21 in Critical Domain Knowledge.
-- **Routing KI validation**: Route_Link.nc (142 reaches), spatialweights.nc (490 data records), GWBUCKPARM_UDMP (142 BasinDim) — all generated correctly by new KI tools.
-- **Output directory**: `outputs/grdc_spain_wrfhydro_test/`
+- **Cold start in a basin with frozen winter soil: start in July, not January**
+  (dt_v023). The early Bengbu 1 km test needed this.
+- **D8 encoding, SWDOWN cap and elevation correction** (Critical Domain Knowledge
+  sections 5, 10 and 9) were the three fixes that first made the output physically
+  meaningful.
+- **Mountain / semi-arid basins (Chaohe test, 2026-03-20): low, mistimed flow comes from
+  infiltration, not from the channels or the grid.**
+  - Changing the channel threshold did not change discharge: it is not the bottleneck.
+  - A finer grid raised the volume but did not fix the event timing.
+  - Schaake96 with the default REFKDT=3.0 lets almost all rain infiltrate in mountain
+    basins, so almost no surface runoff forms. All flow then goes through the slow
+    groundwater bucket: no storm peaks, and an inverted seasonal cycle (winter flow
+    above summer flow in a monsoon basin).
+  - **Fix**: reduce REFKDT from 3.0 to 0.5-1.0 (⚠️ address is BUILD-DEPENDENT — see
+    dt_v043: on a build without `-DSPATIAL_SOIL` this file is never read and REFKDT
+    lives in GENPARM.TBL). This is the #1 calibration priority for mountain/semi-arid basins.
+  - RUNOFF_OPTION=5 (MMF) crashes: it needs an MMF_RUNOFF_FILE that the standard
+    pipeline does not build. Use option 1 or 3.
+  - Findings file: `outputs/chaohe_wrfhydro_010deg_2000/wrfhydro_chaohe_findings.yaml`.
+- **Arid basins (Spain GRDC_6217140 test, 2026-04-03): three crashes in a row, each
+  hiding the next** (dt_v037 → dt_v038 → dt_v036). All three fixes must be applied
+  together (Critical Domain Knowledge section 21). Of the three channel routing options
+  only diffusive wave kept running; Muskingum and Muskingum-Cunge stopped within days.
+  With the uncalibrated REFKDT=3.0 the volume was far too low, the same cause as in
+  Chaohe. The KI routing tools built Route_Link.nc, spatialweights.nc and
+  GWBUCKPARM_UDMP correctly in this test.
 
 ---
 
@@ -448,7 +372,7 @@ User wants discharge simulation
     │   - NO Route_Link.nc needed
     │   - NO spatialweights.nc needed
     │   - CHRTOUT output: discharge at every channel GRID CELL
-    │   - DEFAULT for HydroCraft — proven on Bengbu (r=0.84), Chaohe, Miyun
+    │   - DEFAULT for HydroCraft — used in the Bengbu, Chaohe and Miyun tests
     │
     └── Reach-based routing? ────────► channel_option = 1 (Muskingum) or 2 (Muskingum-Cunge)
         - REQUIRES: Route_Link.nc (reach topology + channel geometry)
@@ -629,7 +553,7 @@ This section is the authoritative reference for ALL physics switches in WRF-Hydr
 |-------|------|--------|---------------|-----------|-------|
 | 1 | TOPMODEL (SIMGM) | ✅ Available | Standard pipeline only | Chaohe (recommended for mountain) | Saturation-excess with GW table; best for mountain/semi-arid |
 | 2 | TOPMODEL-equilibrium (SIMTOP) | ✅ Available | Standard pipeline only | -- | Simplified Option 1 without explicit GW model |
-| 3 | Schaake96 | ✅ Available (DEFAULT) | Standard pipeline only | Bengbu (r=0.84), Spain (r=0.46) | Infiltration-excess; REFKDT=3.0 too high for mountains (dt_v018) |
+| 3 | Schaake96 | ✅ Available (DEFAULT) | Standard pipeline only | Bengbu, Spain | Infiltration-excess; REFKDT=3.0 too high for mountains (dt_v018) |
 | 4 | BATS | ✅ Available | Standard pipeline only | -- | Simple bucket; limited calibration potential |
 | 5 | Miguez-Macho & Fan | ❌ CRASHES | MMF_RUNOFF_FILE (not in pipeline) | Chaohe (crash confirmed) | Fatal: dt_v019. Use Option 1 instead |
 | 7 | Xinanjiang | ⚠️ Untested | Unknown | -- | Listed in v5.4 docs; not present in v5.2 source. DO NOT USE without verification |
@@ -656,7 +580,7 @@ This section is the authoritative reference for ALL physics switches in WRF-Hydr
 |-------|------|--------|---------------|-----------|-------|
 | 1 | Muskingum (reach-based) | ✅ Available | Route_Link.nc + spatialweights.nc + UDMP_OPT=1 | Spain (5 days output) | Requires reach-based setup |
 | 2 | Muskingum-Cunge (reach-based) | ✅ Available | Route_Link.nc + spatialweights.nc + UDMP_OPT=1 | Spain (3 days output) | Supports compound_channel |
-| 3 | Diffusive Wave (gridded) | ✅ Available (DEFAULT) | Fulldom_hires.nc + CHANPARM.TBL only | Bengbu (r=0.84), Chaohe, Spain (115 days) | Simplest setup; proven reliable |
+| 3 | Diffusive Wave (gridded) | ✅ Available (DEFAULT) | Fulldom_hires.nc + CHANPARM.TBL only | Bengbu, Chaohe, Spain | Simplest setup; proven reliable |
 
 **GWBASESWCRT detail:**
 
@@ -998,7 +922,7 @@ t0OutputFlag = 0                    ! No output at time 0
 ```
 A SMOIS floor in wrfinput_d01.nc is only applied as an opt-in stand-in with an explicit value (`--fix-domain-gaps --smois-floor F`, rule `SMOIS = max(SMOIS, F)`), recorded cell by cell in `domain_edits.json`.
 
-**Validated**: Spain GRDC_6217140 (Mediterranean, 15,660 km²). With all fixes: 115 days of CHRTOUT output, r=0.456 vs observed. Without fixes: crashes within 1-5 days through 3 different error paths.
+**Evidence**: Spain GRDC_6217140 test (Mediterranean). With all fixes the run keeps going; without them it crashes within 1-5 days through 3 different error paths.
 
 ### 22. Only Config A is Production-Ready for Global Basins (dt_v042) — CRITICAL
 
@@ -1027,20 +951,10 @@ All other 7 configurations crash within 0-7 days:
 
 **Basins tested**: Kettle River WA/BC (snow), Balsas Brazil (tropical), Clutha NZ (oceanic) — identical behavior across all 3 continents.
 
-**Config A results (uncalibrated):**
-
-| Basin | r | PBIAS | Sim/Obs Q |
-|-------|---|-------|-----------|
-| Kettle River | **0.70** | +54% | 86/56 m³/s |
-| Balsas Brazil (short test, see note) | 0.83 | -3% | 104/107 m³/s |
-| Clutha NZ | **0.52** | -52% | 290/601 m³/s |
-
-**Balsas note (checked 2026-10-20):** the 0.83 / -3% row is a short 2011 test (run 2010-10..2011, 365 scored days)
-at river point idx 44, which is not the gauge-matched reach, and its NSE was **-3.8**. The full 7-year run at the gauge-matched
-reach (GRDC_3650415, idx 85, run 2005-2011, scored 2006-2011 = 2190 days, `verify_1_result.json` 2026-07-12) scores **NSE -17.9,
-KGE -2.85, r 0.68, PBIAS +43%** (146/102 m³/s). So Config A runs in the tropics, but uncalibrated it does not
-simulate Balsas well. The 2026-07-19 REFKDT sweep at Balsas is void: every new run (REFKDT 2, 3, 5, 8) ended with rc=1
-and all REFKDT values, with the 0.8 base, gave the same score.
+**Rule (void sweeps)**: a parameter sweep in which every run ends with rc=1, or every value gives
+the same score, is void: most likely the scorer read old output. Before scoring, check that each run's
+diag_hydro says `The model finished successfully` (the exit code alone is not enough, see section 23)
+and that its CHRTOUT files are new (seen in the 2026-07-19 Balsas REFKDT sweep).
 
 **Rule**: Always use Config A for production.
 
@@ -1332,7 +1246,6 @@ Triplets (current count: the KI map at the top of this file; the authoritative c
 | Land surface | VIC energy/water balance | Noah-MP (multiple physics options) |
 | Parallelism | None (serial) | MPI (domain decomposition) |
 | Setup complexity | grid + soil + veg + forcing | 8 domain files + forcing + TBL |
-| **Bengbu discharge** | **1,535 m^3/s mean** | **1,090 m^3/s mean (r=0.84)** |
 
 ---
 
@@ -1490,8 +1403,8 @@ These warnings appear during normal operation and can be safely ignored:
 ### 22. Regulated North-China (Haihe) gauges: r-ceiling domain limit (Zijingguan 2026-07-10)
 
 At Juma/拒马河 @ 紫荆关 (Zijingguan, Haihe, Hebei) the stock Config-A run with the
-mountain-tuned default REFKDT=0.8 already applied scores **r=0.32, NSE=-1.25,
-PBIAS=+128%**. This is NOT a tool bug — every tool this basin exercised was verified
+mountain-tuned default REFKDT=0.8 already applied gave a very low r and a large
+over-prediction (scores in that run's own result file, not here). This is NOT a tool bug — every tool this basin exercised was verified
 correct (discharge extraction gauge-matched to 0.12 km; REFKDT=0.8; OVROUGHRTFAC a
 Fulldom 2D field). It is a **domain limitation**:
 
@@ -1499,9 +1412,9 @@ Fulldom 2D field). It is a **domain limitation**:
   operation, irrigation withdrawal, or groundwater-pumping** representation. Haihe /
   North-China gauges are among the most heavily human-managed in China, so the observed
   record's phase and volume are decoupled from natural runoff.
-- **NSE <= r^2.** With r pinned at ~0.32, r^2 = 0.10, so **NSE >= 0.5 is structurally
-  unreachable at this gauge by ANY parameter set.** Check r BEFORE targeting an NSE.
-- The +128% over-prediction is the mirror image of the pre-REFKDT-fix Chaohe/Spain
+- **NSE <= r^2.** When r is below about 0.71 (r^2 < 0.5) at a gauge, **NSE >= 0.5 is
+  structurally unreachable there by ANY parameter set.** Check r BEFORE targeting an NSE.
+- The over-prediction is the mirror image of the pre-REFKDT-fix Chaohe/Spain
   under-prediction: with REFKDT lowered the surface-runoff pathway is open and the model
   now over-produces relative to abstraction-depressed observed flow.
 

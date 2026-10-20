@@ -162,6 +162,22 @@ def _auto_elevation(lat, lon):
         return -99.0
 
 
+def _fld(v):
+    """One 6-char .WTH data field that keeps a leading blank.
+
+    DSSAT (Utilities/READS.for PARSE_HEADERS) reads each data column from the character after the blank that
+    ends the previous header, so a field is 5 characters, not 6. A 6-digit '{:6.1f}' value such as wind
+    1072.9 km/d has no leading blank and DSSAT reads '072.9' = 72.9. Values that do not fit in 5 characters
+    with one decimal (>= 999.95 or <= -99.95) are written without decimals; all other values are unchanged.
+    """
+    s = f"{v:6.1f}"
+    if s[0] != ' ':
+        s = f"{v:6.0f}"
+    if s[0] != ' ':
+        raise ValueError(f"weather value {v!r} does not fit a 5-character DSSAT field")
+    return s
+
+
 def write_wth(daily, output_path, station_name, lat, lon, elev=-99.0):
     """Write DSSAT .WTH weather file.
     If elev=-99 (missing), auto-looks up from DEM via ki_tools_common.terrain.
@@ -186,7 +202,7 @@ def write_wth(daily, output_path, station_name, lat, lon, elev=-99.0):
             yy = d['date'].year % 100
             jday = d['date'].timetuple().tm_yday
             date_str = f"{yy:02d}{jday:03d}"
-            f.write(f"{date_str:5s}{d['srad']:6.1f}{d['tmax']:6.1f}{d['tmin']:6.1f}{d['rain']:6.1f}{d['wind']:6.1f}\n")
+            f.write(f"{date_str:5s}{_fld(d['srad'])}{_fld(d['tmax'])}{_fld(d['tmin'])}{_fld(d['rain'])}{_fld(d['wind'])}\n")
 
     print(f"Written: {output_path} ({len(daily)} days)")
     print(f"  TAV={tav:.1f}°C  AMP={amp:.1f}°C")

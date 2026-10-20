@@ -196,7 +196,8 @@ Source reference: `DETAIL.CDE` lines 348-413.
 | FE005 | Urea                            | 46% N       | Hydrolyzes to NH4; most common N source|
 | FE006 | Diammonium phosphate (DAP)      | 18% N, 46% P2O5 | Supplies both N and P             |
 | FE010 | Urea ammonium nitrate (UAN)     | 28-32% N    | Liquid fertilizer                      |
-| FE016 | Triple superphosphate (TSP)     | 0% N, 46% P2O5  | P source only                     |
+| FE014 | Triple superphosphate (TSP)     | 0% N, 46% P2O5  | P source only (DETAIL.CDE:361)    |
+| FE016 | Potassium chloride (KCl, MOP)   | 0% N, 50% K     | K only (DETAIL.CDE:363; K by weight, FERCH048.SDA) |
 | FE019 | Urea super granules (USG)       | 46% N       | Deep-placed urea for rice              |
 
 **CRITICAL WARNING**: The FMCD code determines which nutrient is applied. Using FMCD=FE005 (urea) when you intended to apply P will result in N being applied instead of P. Always verify that FMCD matches the intended nutrient. If you need to apply both N and P, either use FE006 (DAP) or create two separate application lines.
@@ -495,7 +496,7 @@ If automatic management switches are set in the simulation controls, the corresp
 | Pitfall                                          | Symptom                                            | Resolution                                                    |
 |--------------------------------------------------|----------------------------------------------------|---------------------------------------------------------------|
 | Fertilizer date before SDATE                     | Fertilizer not applied; low yield                  | Ensure all FDATE >= SDATE                                     |
-| Wrong FMCD code (N instead of P)                 | Wrong nutrient applied; unexpected N response      | Verify FMCD against DETAIL.CDE; FE005=urea (N), FE016=TSP (P)|
+| Wrong FMCD code (N instead of P)                 | Wrong nutrient applied; unexpected N response      | Verify FMCD against DETAIL.CDE; FE005=urea (N), FE014=TSP (P), FE016=KCl (K)|
 | Harvest date before planting date                | No harvest; HWAH = 0 or -99                        | Set HDATE > PDATE or use -99 for maturity                     |
 | IIRRI='A' but detailed schedule expected         | Auto-irrigation overrides FileX schedule           | Change IIRRI to 'R' for reported irrigation                   |
 | EFIR not set (defaults to 1.0)                   | Overestimating water delivery                      | Explicitly set EFIR to 0.70-0.90 based on method              |

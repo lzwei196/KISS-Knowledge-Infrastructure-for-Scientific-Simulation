@@ -264,9 +264,9 @@ KISSPATH_HOME/DSSAT/build/bin/dscsm048 B DSSBatch.v48
 |---|---|
 | China, quick setup | `convert_hwsd_to_sol.py` |
 | Any region, best accuracy | `convert_soilgrids_to_sol.py` ← preferred |
-| NE China (Mollisol zone) | `convert_soilgrids_to_sol.py` — includes BD correction |
+| NE China (Mollisol zone) | `convert_soilgrids_to_sol.py` — Mollisol BD cut OFF by default (since 2026-10-18); `--enable_mollisol_bd_correction` only as a named test |
 
-`convert_soilgrids_to_sol.py` advantages: 6 depth layers (vs 2), Saxton-Rawls 2006 PTF (vs 1986), direct bdod from SoilGrids, depth-varying SOC/pH, Mollisol BD correction for NE China black soils. Uses `KISSPATH_DATA/soilgrids_global/` (global) with China-optimised fallback to `KISSPATH_DATA/soilgrids/`.
+`convert_soilgrids_to_sol.py` advantages: 6 depth layers (vs 2), Saxton-Rawls 2006 PTF (vs 1986), direct bdod from SoilGrids, depth-varying SOC/pH, optional Mollisol BD cut for NE China black soils (OFF by default: it was tuned on HWSD density in the May 2026 NE China SHAW run, not on SoilGrids, and has no recorded paper source). Uses `KISSPATH_DATA/soilgrids_global/` (global) with China-optimised fallback to `KISSPATH_DATA/soilgrids/`.
 
 **Minimum gap between saturation and field capacity (both converters, since 2026-10).** Where the Saxton & Rawls
 density step leaves too little room above field capacity, the converters do the paper's own repair (Saxton & Rawls
@@ -648,8 +648,14 @@ result = setup_rice(
 | PHINT | Phyllochron interval (GDD) | 55-90 | Default 83, need leaf data to change |
 
 ### Rice-Specific Notes
-- Rice uses transplanting (PLME=T, PAGE=23 for seedling age) in the FileX
-- Paddy rice needs flood irrigation management (IR011=bund height, IR009=flood depth)
+- Transplanted rice: create_workdir plme='T' with page (seedling age at transplanting, days), penv (nursery mean
+  temperature, C) and plph (plants per hill), all from local practice. There is no general default: the DSSAT
+  examples are tropical (DTSP8502/IRMZ8601: PAGE 23-25 d, PENV 25-26 C; PULU0001 35 d, 30 C), cool-climate nurseries
+  run longer (NE China japonica trials 32-43 d: sowing to transplant dates in Table 1 of Li et al. 2009 Acta Agron Sin
+  35(5):921, Shenyang/Gongzhuling/Wuchang). ppop = plants/m2; the writer puts hills/m2 = ppop/plph in PPOE,
+  which is what CERES-Rice reads for transplanting (RI_Grosub.for:1316, 1343; DSSAT examples: PPOP 75, PPOE 25, PLPH 3).
+  Start soil water at each layer's DUL with ic_water='dul' (otherwise a fixed 0.45 in every rice layer).
+- Paddy rice needs flood irrigation management, as reported irrigation rows (IRRIG=R), codes from Management/IRRIG.for: IR009 = bund height (mm), IR010 = puddling (present = puddled), IR008 = percolation (mm/day), IR011 = keep a constant flood depth (mm) until the next IR001-IR006, IR009 or IR011 event (Management/Flood_Irrig.for resets it; IR011 0 stops topping up, it does not drain). Transplanted rice: dssat_workdir_setup create_workdir plme='T' with page/penv/plph and irrigation='events'.
 - N fertilizer: typically 120-180 kg/ha in China (use NPKGRIDS for site-specific rates)
 - The model does NOT have a separate .ECO file — ecotype params are in .SPE
 - For double-cropping in South China, run two separate experiments (early + late)

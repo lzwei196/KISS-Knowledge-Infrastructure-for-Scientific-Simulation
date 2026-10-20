@@ -150,13 +150,15 @@ def read_cmfd_points(forcing_dir, points, start_year, end_year, verbose=True):
                     wind = np.full(len(points), 150.0)
 
                 for k, (name, _, _) in enumerate(points):
+                    # a point outside the CMFD land mask is NaN; keep NaN (max(0.0, nan) would give 0.0) so
+                    # main() refuses to write it instead of writing zero rain / radiation / wind
                     daily[name].append({
                         'date': date,
-                        'srad': max(0.0, float(srad[k])),
+                        'srad': _nonneg(srad[k]),
                         'tmax': float(tmax[k]),
                         'tmin': float(tmin[k]),
-                        'rain': max(0.0, float(rain[k])),
-                        'wind': max(0.0, float(wind[k])),
+                        'rain': _nonneg(rain[k]),
+                        'wind': _nonneg(wind[k]),
                     })
 
         if verbose:
@@ -164,6 +166,21 @@ def read_cmfd_points(forcing_dir, points, start_year, end_year, verbose=True):
             print(f"  Year {year}: {n} cumulative days x {len(points)} points", flush=True)
 
     return daily
+
+
+def _nonneg(v):
+    """max(0, v) for a finite value; a non-finite value is returned unchanged."""
+    v = float(v)
+    return max(0.0, v) if np.isfinite(v) else v
+
+
+def _first_nonfinite(recs):
+    """Date and field of the first non-finite value in a point's daily records, or None."""
+    for r in recs:
+        for f in ('srad', 'tmax', 'tmin', 'rain', 'wind'):
+            if not np.isfinite(r[f]):
+                return r['date'], f
+    return None
 
 
 def read_points_csv(path):
@@ -246,12 +263,22 @@ def main():
             sys.stderr.write(f"ERROR: no CMFD data extracted for {station} "
                              f"({lat}, {lon})\n")
             continue
+        bad = _first_nonfinite(recs)
+        if bad is not None:
+            failed.append(station)
+            sys.stderr.write(f"ERROR: CMFD has missing values for {station} ({lat}, {lon}), first "
+                             f"{bad[1]} on {bad[0]:%Y-%m-%d} (outside the CMFD land mask?); not written\n")
+            continue
         e = elev if elev > -99.0 else a.elev
-        write_wth(recs, out_path(station), station, lat, lon, e)
+        # write under a temporary name and rename when complete, so an interrupted run never leaves a
+        # partial .WTH that --resume would skip
+        tmp = out_path(station) + '.part'
+        write_wth(recs, tmp, station, lat, lon, e)
+        os.replace(tmp, out_path(station))
 
     print(f"Wrote {len(todo) - len(failed)}/{len(todo)} .WTH files to {a.out_dir}")
     if failed:
-        sys.stderr.write(f"FAILED points (no data): {failed}\n")
+        sys.stderr.write(f"FAILED points (no data or missing values): {failed}\n")
         sys.exit(2)
 
 

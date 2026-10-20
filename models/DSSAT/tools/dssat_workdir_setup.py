@@ -88,6 +88,10 @@ CROP_REGISTRY = {
 # Genotype file suffixes
 GENOTYPE_SUFFIXES = [".CUL", ".ECO", ".SPE"]
 
+# Crops whose genotype FILE name differs from the model prefix in CROP_REGISTRY (cultivar look-up and
+# preflight check). CROPGRO-Cotton runs as CRGRO048 but its cultivars are in COGRO048.CUL.
+GENOTYPE_FILE_OVERRIDE = {"CO": "COGRO048"}
+
 # Default cultivars per crop (used if caller doesn't specify)
 DEFAULT_CULTIVARS = {
     "MZ": ("IB0035", "McCurdy 84aa"),
@@ -490,6 +494,37 @@ def _generate_filex(
     pldp = management.get("pldp", 5)
     fert_n = management.get("fert_n", 120)
     fert_date_offset = management.get("fert_date_offset", 30)
+    pm_albedo = management.get("pm_albedo")
+    pm_width_cm = management.get("pm_width_cm")
+    # Planting method (rice transplanting). Omitted = direct seeding 'S', PAGE/PENV/PLPH -99 (FileX unchanged).
+    plme = str(management.get("plme", "S")).upper()
+    ic_water = management.get("ic_water")
+    if ic_water not in (None, "dul"):
+        raise ValueError(f"ic_water must be None (old fixed start water) or 'dul', got {ic_water!r}")
+    page, penv, plph = management.get("page"), management.get("penv"), management.get("plph")
+    if plme not in ("S", "T"):
+        raise ValueError(f"plme must be 'S' (direct seeding) or 'T' (transplanting): {plme!r}")
+    if plme == "T":
+        if crop != "RI":
+            raise ValueError("plme='T' (transplanting) is only supported for rice (crop RI)")
+        if page is None or penv is None or plph is None:
+            raise ValueError("plme='T' needs page (seedling age, days), penv (nursery mean temperature, C) and plph (plants per hill)")
+        page, penv, plph = float(page), float(penv), float(plph)
+        if not (0 < page <= 99) or not (0 < penv < 50) or not (0 < plph <= 99):
+            raise ValueError(f"transplant values out of range: page {page} (1-99 d), penv {penv} (0-50 C), plph {plph} (0-99)")
+        if float(f"{page:.0f}") <= 0 or float(f"{plph:.1f}") <= 0:
+            raise ValueError(f"page / plph round to 0 in the FileX: {page}, {plph}")
+    elif page is not None or penv is not None or plph is not None:
+        raise ValueError("page / penv / plph are only used with plme='T'")
+    if (pm_albedo is None) != (pm_width_cm is None):
+        raise ValueError("plastic mulch needs both pm_albedo and pm_width_cm (or neither)")
+    if pm_albedo is not None:
+        pm_albedo, pm_width_cm = float(pm_albedo), float(pm_width_cm)
+        if not (0.0 < pm_albedo < 1.0) or not (0.0 < pm_width_cm <= 999.0):
+            raise ValueError(f"pm_albedo must be in (0, 1) and pm_width_cm in (0, 999]: {pm_albedo}, {pm_width_cm}")
+        # values as written (F6.2 / F6.1); DSSAT IPFLD turns a written 0 into 'missing' = film silently off
+        if float(f"{pm_albedo:.2f}") <= 0.0 or float(f"{pm_width_cm:.1f}") <= 0.0:
+            raise ValueError(f"pm_albedo / pm_width_cm round to 0 in the FileX (F6.2 / F6.1): {pm_albedo}, {pm_width_cm}")
 
     # ------------------------------------------------------------------
     # Irrigation mode (added so a gridded ensemble can express an IRRIGATED
@@ -715,6 +750,14 @@ def _generate_filex(
     lines.append("@L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR")
     # Fixed-width Fortran format: L(2)+XCRD(16)+YCRD(16)+ELEV(10)+AREA(18)+SLEN(6)+FLWR(6)+SLAS(6)+FLHST(6)+FHDUR(6) = 92 chars
     lines.append(f"{1:>2d}{lat:>16.4f}{lon:>16.4f}{-99:>10d}{0:>18d}{0:>6d}{0:>6d}{0:>6d}{-99:>6d}{-99:>6d}")
+    if pm_albedo is not None:
+        # Plastic (polyethylene) mulch, DSSAT 4.8 IPFLD 3rd FIELDS block, format (I3,4F6.0): L, PMALB, PMWD.
+        # Model effect (SOILDYN SETPM): cover fraction = PMWD / PLRS (capped at 1); soil evaporation x (1 - fraction)
+        # (SOILEV / ESR_SoilEvap); rain and snowmelt on the film run off (RNOFF); albedo = PMALB only at full cover.
+        # No explicit film-warming model (only the albedo change at full cover reaches soil temperature, STEMP).
+        # The film has no dates: it applies to every simulated day, also outside the crop season.
+        lines.append("@L PMALB  PMWD")
+        lines.append(f"{1:>3d}{pm_albedo:>6.2f}{pm_width_cm:>6.1f}")
     lines.append("")
 
     # Initial conditions
@@ -738,7 +781,10 @@ def _generate_filex(
         (210, sh2o_init, 0.5, 0.5),
     ]
     for depth, sh2o, snh4, sno3 in ic_layers:
-        lines.append(f" 1   {depth:>3d} {sh2o:>5.3f}  {snh4:>4.1f}  {sno3:>4.1f}")
+        # ic_water='dul': SH2O = -99, and DSSAT itself starts every soil layer at that layer's DUL
+        # (IPSLIN.for:164 LMATCH keeps -99, :174-175 SWINIT < 0 -> DUL(L)). Default: the fixed value above.
+        sh2o_txt = "  -99" if ic_water == "dul" else f"{sh2o:>5.3f}"
+        lines.append(f" 1   {depth:>3d} {sh2o_txt}  {snh4:>4.1f}  {sno3:>4.1f}")
     lines.append("")
 
     # Planting details
@@ -746,7 +792,20 @@ def _generate_filex(
     lines.append("@P PDATE EDATE  PPOP  PPOE  PLME  PLDS  PLRS  PLRD  PLDP  PLWT  PAGE  PENV  PLPH  SPRL                        PLNAME")
     # Format PPOP: use integer if >=100 (wheat=350), decimal if <100 (maize=7.2)
     ppop_str = f"{ppop:>5.0f}" if ppop >= 100 else f"{ppop:>5.1f}"
-    lines.append(f" 1 {planting_yyddd:>5d}   -99 {ppop_str} {ppop_str}     S     R   {plrs:>3d}     0   {pldp:>3d}   -99   -99   -99   -99     0                        -99")
+    ppoe_str = ppop_str
+    if plme == "T":
+        # FileX columns (ipexp.for IPPLNT_Inp FORMAT 60, 1X,F5.0 each): PAGE 63-68, PENV 69-74, PLPH 75-80
+        tp = f"{page:>6.0f}{penv:>6.1f}{plph:>6.1f}"
+        # Transplanted rice reads PPOE as HILLS per m2: TPLANTS = PLTPOP (PPOE), PLANTS = TPLANTS * PLPH
+        # (RI_Grosub.for:1316, 1343-1344 = the ITRANS 3 branch set for PLME T in RI_Phenol.for:1009-1010;
+        # ipexp.for:972 reads PPOP -> PLANTS, PPOE -> PLTPOP). So PPOE = ppop / plph.
+        hills = ppop / plph
+        ppoe_str = f"{hills:>5.1f}" if hills < 100 else f"{hills:>5.0f}"
+        if float(ppoe_str) <= 0:
+            raise ValueError(f"hills per m2 (ppop / plph) rounds to 0 in the FileX: {ppop} / {plph}")
+    else:
+        tp = "   -99   -99   -99"
+    lines.append(f" 1 {planting_yyddd:>5d}   -99 {ppop_str} {ppoe_str}     {plme}     R   {plrs:>3d}     0   {pldp:>3d}   -99{tp}     0                        -99")
     lines.append("")
 
     # Irrigation — default rainfed for non-rice; flooded auto-irrigation for
@@ -1074,6 +1133,27 @@ def create_workdir(
         'fmcd'?, 'facd'?, 'depth_cm'?, 'name'?}] or (when, n_kgha[, fmcd]) tuples; overrides
         fert_n/fert_date_offset; [] = no application), irrigation_events (list of (yyddd, mm) tuples).
 
+        ic_water : {None, 'dul'}, optional
+            Start soil water. None (default) = the old fixed value in every layer (0.45 rice, 0.20 others), FileX
+            unchanged. 'dul' = SH2O written as -99, so DSSAT starts each soil layer at its own drained upper limit
+            (field capacity) from the .SOL file (IPSLIN.for:174-175; KI docs s6 Step 3 Option 2).
+
+        plme : {'S', 'T'}, optional
+            Planting method. 'S' (default) = direct seeding, FileX unchanged. 'T' = transplanted rice (crop RI
+            only): PDATE is the transplanting date; page = seedling age at transplanting (days), penv = mean
+            nursery temperature (C), plph = plants per hill (all three required with 'T', written to PAGE /
+            PENV / PLPH). ppop is plants per m2 (hills per m2 x plants per hill), written to PPOP; PPOE gets
+            hills per m2 = ppop / plph, which is what CERES-Rice reads for transplanting (RI_Grosub.for:1316).
+
+        pm_albedo, pm_width_cm : float, optional (both or neither)
+            Plastic film mulch (DSSAT 4.8 *FIELDS PMALB / PMWD block). pm_width_cm is the film-covered
+            width per row spacing (plrs); cover fraction = pm_width_cm / plrs, capped at 1. DSSAT then cuts
+            soil evaporation by that fraction and sends rain/snowmelt falling on the film to runoff (irrigation
+            is not affected). There is no explicit film-warming model; pm_albedo replaces the soil albedo only at
+            full cover (then STEMP uses it). The film has no dates: it applies to every simulated day, also
+            outside the crop season. Values must stay > 0 after rounding to F6.2 / F6.1. Omitted = no film
+            (FileX unchanged).
+
         plant_mode : {'reported', 'auto', 'forced'}, optional
             'reported' (default) -> PLANT=R, sow on planting_date every season.
             'auto' -> PLANT=A, DSSAT sows on the first day in
@@ -1144,7 +1224,7 @@ def create_workdir(
     else:
         cul_name = cultivar  # Use code as name if not in defaults
         # Try to look up the name from the CUL file
-        cul_file = DSSAT_GENOTYPE / f"{genotype_prefix}.CUL"
+        cul_file = DSSAT_GENOTYPE / f"{GENOTYPE_FILE_OVERRIDE.get(crop, genotype_prefix)}.CUL"
         if cul_file.exists():
             with open(cul_file, "r") as f:
                 for line in f:
@@ -1528,7 +1608,7 @@ def _preflight_check(
     # Check cultivar exists in .CUL file
     crop_info = CROP_REGISTRY.get(crop)
     if crop_info:
-        genotype_prefix = crop_info[1]
+        genotype_prefix = GENOTYPE_FILE_OVERRIDE.get(crop, crop_info[1])
         cul_base = f"{genotype_prefix}.CUL"
         cul_path = os.path.join(workdir, cul_base)
         if os.path.isfile(cul_path):

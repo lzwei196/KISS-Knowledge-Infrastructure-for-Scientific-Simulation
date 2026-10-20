@@ -11,7 +11,7 @@ Advantages over convert_hwsd_to_sol.py:
   - Bulk density directly from SoilGrids bdod (not estimated from saturation)
   - Depth-varying SOC and pH per layer
   - Saxton & Rawls 2006 PTF (density-adjusted saturation)
-  - Mollisol BD correction for NE China black soils (黑土)  [optional flag]
+  - Mollisol BD correction for NE China black soils (黑土)  [OFF by default since 2026-10-18; opt-in flag]
   - SLPF = 1.00 baseline (SOC-derived SLPF available as sensitivity option)
 
 Data sources (automatically selected by region):
@@ -30,9 +30,9 @@ Usage:
     # Self-test (no lat/lon required):
     python convert_soilgrids_to_sol.py --test
 
-    # Disable Mollisol correction (outside NE China):
-    python convert_soilgrids_to_sol.py --lat 30.0 --lon 120.0 \\
-        --output SOIL.SOL --disable_mollisol_bd_correction
+    # Mollisol BD correction is OFF by default (since 2026-10-18); turn it on only as a named test:
+    python convert_soilgrids_to_sol.py --lat 44.05 --lon 126.05 \\
+        --output SOIL.SOL --enable_mollisol_bd_correction
 
     # Minimum gap between saturation and field capacity (default 0.05, tested on maize only;
     # 0.01 to 0.2 in whole thousandths), or the old files:
@@ -80,9 +80,14 @@ RAW_SOILGRIDS_UNITS = False
 # Enable SOC-derived SLPF only as a named sensitivity test.
 USE_NEUTRAL_SLPF = True
 
-# Empirical BD correction for NE China black soils (黑土). Validated against
-# the SHAW global cold-China pipeline. Disable for non-NE-China simulations.
-ENABLE_MOLLISOL_BD_CORRECTION = True
+# Empirical BD correction for NE China black soils (黑土). OFF by default since 2026-10-18 (owner decision).
+# Origin: the May 2026 NE China SHAW run (outputs/ne_china_shaw_vic_dssat/run_shaw_parallel.py --mollisol_bd)
+# used it in the SHAW soil tool vic_to_shaw_soil.py (removed 2026-10-02) to correct HWSD density
+# (HWSD ~1.40-1.60 g/cm3 vs ~1.05-1.25 in field measurements; no paper source recorded). The 3 VIC-layer
+# factors were copied here and stretched to 6 layers. SoilGrids topsoil density in NE China is already
+# ~1.14 (median of the 4,739 NE rice cells), so the HWSD-tuned cut does not carry over, and paddy soils
+# are not black-soil uplands. Turn on only as a named sensitivity test (--enable_mollisol_bd_correction).
+ENABLE_MOLLISOL_BD_CORRECTION = False
 
 # Mollisol correction parameters (project-specific)
 MOLLIC_LAT = (38.0, 54.0)
@@ -625,11 +630,10 @@ def classify_texture(sand: float, silt: float, clay: float) -> str:
 
 
 def _mollisol_correct_bd(bdod_vals: List[float], lat: float, lon: float,
-                         enabled: bool = True) -> List[float]:
+                         enabled: bool = False) -> List[float]:
     """
-    Optional empirical BD correction for NE China black soils (黑土).
-    Project-specific; validated against SHAW global cold-China pipeline.
-    Disable for simulations outside the NE China Mollisol zone.
+    Optional empirical BD correction for NE China black soils (黑土), tuned on HWSD density in the
+    May 2026 NE China SHAW run (see ENABLE_MOLLISOL_BD_CORRECTION). Off unless enabled.
     """
     if not enabled:
         return bdod_vals
@@ -904,8 +908,10 @@ def main() -> None:
                     help="CSV uses raw SoilGrids integer-scaled units")
     ap.add_argument("--soc_slpf", action="store_true", default=False,
                     help="Use SOC-derived SLPF heuristic instead of neutral 1.00")
+    ap.add_argument("--enable_mollisol_bd_correction", action="store_true", default=False,
+                    help="Turn ON the HWSD-tuned NE China Mollisol BD cut (off by default; sensitivity tests only)")
     ap.add_argument("--disable_mollisol_bd_correction", action="store_true", default=False,
-                    help="Disable empirical NE China Mollisol BD correction")
+                    help="Kept for old callers; the correction is already off by default")
     ap.add_argument("--min_gap", type=float, default=MIN_GAP_DEFAULT,
                     help=f"Minimum SSAT - SDUL and pore space - SDUL (default {MIN_GAP_DEFAULT}, tested on maize "
                          f"only; {MIN_GAP_FLOOR} to 0.2 in whole thousandths); the density used is lowered to reach "
@@ -930,8 +936,9 @@ def main() -> None:
         RAW_SOILGRIDS_UNITS = True
     if args.soc_slpf:
         USE_NEUTRAL_SLPF = False
-    if args.disable_mollisol_bd_correction:
-        ENABLE_MOLLISOL_BD_CORRECTION = False
+    if args.enable_mollisol_bd_correction and args.disable_mollisol_bd_correction:
+        ap.error("--enable_mollisol_bd_correction and --disable_mollisol_bd_correction contradict each other")
+    ENABLE_MOLLISOL_BD_CORRECTION = bool(args.enable_mollisol_bd_correction)
 
     soil_id = args.soil_id
     if soil_id is None:

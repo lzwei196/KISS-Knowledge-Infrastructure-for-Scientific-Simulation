@@ -493,13 +493,13 @@ The dag's rank-1 output is `discharge`, with unit `m3/s` and description:
 | `SWE` | `pbias` | zero_centered | satisfactory `17.3` (`endrizzi2014`, `avanzi2023`); good `8.5` (`endrizzi2014`, `avanzi2023`); very_good `3.2` (`endrizzi2014`, `avanzi2023`) |
 | `SWE` | `rmse` | minimize | satisfactory `300` (`avanzi2023`); good `200` (`avanzi2023`); very_good `95` (`avanzi2023`) |
 
-### Achieved Results Recorded in This Body
+### Case Results
 
-The body currently records two validation anchors below: the repository reference
-case `tests/1D/Matsch_B2_Ref_007`, and an end-to-end North China Plain point
-recipe comparing `Tsurface` against MODIS MOD11A2. The field bars above are the
-cited convention bars extracted for `discharge` and `SWE`; no discharge achieved
-metric is stated in this body section.
+Scores from single test cases are not kept in this file. They live in each run's own
+result file and in the run records. Below, section 12 describes the repository
+reference case `tests/1D/Matsch_B2_Ref_007`, and section 13 gives the point recipe
+for comparing `Tsurface` against MODIS MOD11A2, both without scores. The field bars
+above are the cited convention bars extracted for `discharge` and `SWE`.
 
 ---
 
@@ -541,22 +541,11 @@ and snow processes over a representative Alpine grassland site.
 
 ---
 
-## 13. Validated Recipe: Point LST vs MODIS MOD11A2
+## 13. Recipe: Point LST vs MODIS MOD11A2
 
-Reproduced end-to-end 2026-07-21 at the **North China Plain cropland pixel**
-(36.0 N, 116.0 E, 44 m, MODIS tile h27v05), Nov 2017 spin-up → Jan 2018:
-
-| Metric | Value |
-|--------|-------|
-| NSE  | **0.601** |
-| r    | **0.968** |
-| KGE  | 0.447 |
-| PBIAS| +0.62 % |
-| RMSE | 4.18 K |
-| n    | 8 (4 windows × day+night) |
-
-Uncalibrated. Water balance closes: P 23.3 − ET 35.4 − ΔS (−12.3) = 0.1 mm
-residual (0.6 %), GEOtop's own cumulative `Mass_balance_error` = 0.0004 mm.
+End-to-end recipe for scoring point `Tsurface` against MODIS MOD11A2 land surface
+temperature on a flat cropland pixel. It was first run on 2026-07-21 at a North
+China Plain pixel; that run's scores are in its own result file, not here.
 Runner: `models/GEOtop/run_and_score.py` (resumable at every stage).
 
 ### The chain
@@ -564,8 +553,8 @@ Runner: `models/GEOtop/run_and_score.py` (resumable at every stage).
 1. **s0** `ki_tools_common.terrain.get_terrain` → elevation. Force slope/aspect = 0
    on a flat plain; a 90 m DEM produces noisy sub-degree slopes that only perturb
    the radiation geometry.
-2. **s2** `convert_soil.py --source hwsd` → 17 layers to 3160 mm. Keep the **top
-   layer ≤ 20 mm** — the dag records that a coarser upper discretization injects
+2. **s2** `convert_soil.py --source hwsd` → soil layers from the HWSD profile. Keep
+   the **top layer ≤ 20 mm** — the dag records that a coarser upper discretization injects
    >1 °C of ground-temperature error.
 3. **s4** `convert_forcing.py --source cmfd --dt 10800` (see Data Preparation).
 4. **s5** `geotop.inpts` from `tests/1D/Matsch_B2_Ref_007`, changing:
@@ -575,8 +564,8 @@ Runner: `models/GEOtop/run_and_score.py` (resumable at every stage).
    (the Matsch template says `"AirP"`, which does **not** match what
    `convert_forcing.py` writes — a silently dropped pressure column),
    `FreeDrainageAtBottom=0` (closed column ⇒ the water balance is checkable),
-   `InitSoilTemp` = the November mean air temperature.
-5. **s6** `run_geotop.py` — 92 days at a 900 s step runs in seconds.
+   `InitSoilTemp` = the mean air temperature of the run's first month.
+5. **s6** `run_geotop.py` — a few months at a 900 s step run in seconds.
 6. **s7** `parse_output.py --output-type point` → `Tsurface[C]`.
 7. **s8** `read_modis_lst.py` → pair → `ki_tools_common.metrics.all_metrics`.
 
@@ -589,15 +578,17 @@ overpass instant, over only the **clear-sky** days of the window. So:
   (never at a fixed UTC hour, never at local noon);
 * average over `Clear_sky_days` / `Clear_sky_nights` days, choosing the clearest
   (day: largest daily ΣSwglobal; night: lowest LWin/σT⁴) — dt_025;
-* score in **Kelvin**. In Celsius the winter series straddles 0 and the
-  ratio-based metrics detonate: PBIAS −96.7 % / KGE −0.12 in °C versus
-  +0.62 % / +0.45 in K for the identical series — dt_024.
+* score in **Kelvin**. In Celsius the winter series straddles 0, so the
+  ratio-based metrics (PBIAS, KGE) give wildly different, meaningless values for
+  the identical series — dt_024.
 
 ### Known residual: diurnal amplitude deficit
 
-Simulated day−night contrast is 4–6 K against 11–15 K observed (day too cold,
-night too warm) even after clear-sky matching, while r stays 0.97. This is *not*
-a clock error — dt_021 would depress r as well. The leading explanation is that
+In the first run of this recipe the simulated day−night contrast was much smaller
+than the observed one (day too cold, night too warm) even after clear-sky matching,
+while the correlation stayed high. This is *not* a clock error: it remained after
+the forcing clock fix of 2026-10-19 (dt_021); evidence:
+`models/GEOtop/rerun_ncp_20261019/fixed_forcing_20261020/RESULT.md`. The leading explanation is that
 `Tsurface` is the **ground** skin temperature beneath the canopy, whereas MODIS
 sees the effective radiometric temperature of the canopy+soil mixture; with
 `CanopyFraction > 0` the ground term is damped relative to the satellite view.

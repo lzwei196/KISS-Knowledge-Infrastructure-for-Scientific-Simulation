@@ -130,3 +130,81 @@ def test_generated_row_passes_real_registration_pipeline_with_required_seals(cas
     # Preparation does not adopt into the live KI or issue native readiness.
     assert "run_reference_case.py" not in (case.live / "SKILL.md").read_text()
 
+
+
+# Seen in real WRF-Hydro and ParFlow repair drafts (2026-10-20): prose
+# alternatives, role paths after a closed code span, relative links and
+# Ubuntu-owned locations that a Linux install recipe has to name.
+@pytest.mark.parametrize("text", [
+    "Launch with `mpirun`/`mpiexec`.\n",
+    "NetCDF is found by (`nc-config`/`nf-config`).\n",
+    "`REFKDT`/`SLOPE`/`SMCMAX` come from GENPARM.TBL.\n",
+    "Install into `KISSPATH_BINARIES`/wrf_hydro/Run/wrf_hydro.exe.\n",
+    "reported by check_parflow_dir()/check_file() and run_parflow.py\n",
+    "| build-essential | C/C++/Fortran toolchain |\n",
+    'sha256sum "$INSTALL_RUN"/*.TBL\n',
+    "See [the build record](../tools/s10_execution/wrfhydro_builds.json).\n",
+    "PYTHONPATH=KISSPATH_PYTHON_ENV/lib/python3*/site-packages\n",
+    "Ubuntu puts libHYPRE in /usr/lib/x86_64-linux-gnu, headers in /usr/include/hypre.\n",
+    "The launcher is /usr/bin/mpiexec; check /etc/os-release.\n",
+])
+def test_prose_and_distribution_paths_are_portable(trees, text):
+    check(trees, text)
+
+
+@pytest.mark.parametrize("text, literal", [
+    ("Built under /usr/local/hypre/lib.\n", "/usr/local/hypre/lib."),
+    ("Run `/home/user/venv/bin/python` first.\n", "/home/user/venv/bin/python`"),
+    ('PARFLOW_DIR="/opt/parflow"\n', "/opt/parflow"),
+    ("Data: /mnt/disk1/Hydrocraft_server/x.nc\n", "/mnt/disk1/Hydrocraft_server/x.nc"),
+    ("Copy C:/Users/me/x.dat here.\n", "C:/Users/me/x.dat"),
+])
+def test_machine_paths_are_still_rejected_and_named(trees, text, literal):
+    with pytest.raises(adapt.AdaptationError, match="machine path") as error:
+        check(trees, text)
+    assert repr(literal) in str(error.value)
+    assert "SKILL.md" in str(error.value)
+
+
+def test_error_lists_at_most_five_paths(trees):
+    text = "".join(f"/home/user{n}/x\n" for n in range(7))
+    with pytest.raises(adapt.AdaptationError) as error:
+        check(trees, text)
+    assert "'/home/user0/x'" in str(error.value) and "and 2 more" in str(error.value)
+
+
+@pytest.mark.parametrize("text", [
+    "WRF-Hydro executable:  {KISSPATH_BINARIES}/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro_NoahMP.exe\n",
+    "TBL parameter tables:  {KISSPATH_BINARIES}/wrf_hydro/source/trunk/NDHMS/Run/ — the five\n",
+    "| exe | `{KISSPATH_BINARIES}/parflow/install/bin/parflow` |\n",
+    "Tables: {KISSPATH_BINARIES}/model/Run/*.TBL\n",
+])
+def test_documented_path_roles_are_portable(trees, text):
+    check(trees, text)
+
+
+@pytest.mark.parametrize("name, text", [
+    ("SKILL.md", "{KISSPATH_BINARIES}/../../home/user/x\n"),
+    ("SKILL.md", "{KISSPATH_BINARIES}/model /home/user/x\n"),
+    ("tool.py", "path = '{KISSPATH_BINARIES}/model/bin/x'\n"),
+    ("settings.yaml", "path: '{KISSPATH_BINARIES}/model/bin/x'\n"),
+])
+def test_documented_role_rule_is_markdown_only_and_cannot_escape(trees, name, text):
+    with pytest.raises(adapt.AdaptationError, match="machine path"):
+        check(trees, text, name=name)
+
+
+def test_arithmetic_is_not_a_path(trees):
+    check(trees, "If RAINRATE > 0.1 everywhere, the /10800 division was missed; halve it /2.5\n")
+
+
+def test_every_offending_file_is_named_at_once(trees):
+    base, candidate, cfg = trees
+    (candidate / "SKILL.md").write_text("Run /home/user/a\n", encoding="utf-8")
+    (candidate / "notes.md").write_text("See /opt/model/b\n", encoding="utf-8")
+    (candidate / "tool.py").write_text("PATH = '/mnt/disk1/c'\n", encoding="utf-8")
+    with pytest.raises(adapt.AdaptationError, match="machine path") as error:
+        adapt._portable_changes(base, candidate, cfg)
+    message = str(error.value)
+    for name, literal in (("SKILL.md", "/home/user/a"), ("notes.md", "/opt/model/b"), ("tool.py", "/mnt/disk1/c")):
+        assert f"{name}: {literal!r}" in message

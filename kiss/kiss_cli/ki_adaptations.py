@@ -823,8 +823,35 @@ def refresh_projection(live, cfg, *, source, model, library_root, manifest=None)
 # Only path spellings newly introduced into executable/configuration text are
 # rejected. Existing upstream provenance is not rewritten, and quoted URLs are
 # not mistaken for file paths. Bound values are checked independently below.
-_ABSOLUTE = re.compile(r'''(?<![\w:/<])(?:[A-Za-z]:[/\\][^\s\"'<>|]+|\\\\[^\s\"'<>|]+|/(?:[^/\s\"'<>]+/)*[^/\s\"'<>]+)''')
+# A slash right after a closed code span, quote, call or glob is a
+# continuation, not a root: "`mpirun`/`mpiexec`", "`KISSPATH_BINARIES`/bin",
+# "$RUN"/*.TBL, "dir()/name()", "C++/Fortran", "python3*/site-packages".
+# Relative "./" and "../" are not roots either. An opening span or quote such
+# as "`/home/user/x`" is still an absolute path. Braced placeholders are left
+# to the documentation-only {KI} rule below.
+_ABSOLUTE = re.compile(r'''(?<![\w:/<.*+)\]])(?<!\w[`"'])(?:[A-Za-z]:[/\\][^\s\"'<>|]+|\\\\[^\s\"'<>|]+|/(?:[^/\s\"'<>]+/)*[^/\s\"'<>]+)''')
+# Distribution-owned locations are identical on every machine of a platform,
+# and a Linux install recipe has to name them (/usr/lib/x86_64-linux-gnu,
+# /usr/include/hypre, /usr/bin/mpirun). /usr/local, /opt, /home and /mnt are
+# per-machine and stay rejected.
+_SYSTEM_ROOTS = ("/usr/", "/bin/", "/sbin/", "/lib/", "/lib32/", "/lib64/", "/etc/", "/dev/",
+                 "/proc/", "/sys/", "/tmp/")
+_SYSTEM_EXACT = {"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/etc", "/tmp"}
+
+
+def _distribution_path(path):
+    """True for text that matches the pattern but names no machine-specific location."""
+    path = path.rstrip(".,;:)`'\"")
+    if re.fullmatch(r"/\d+(?:\.\d+)?", path):
+        return True  # arithmetic in prose, e.g. "the /10800 division"
+    if path == "/usr/local" or path.startswith("/usr/local/"):
+        return False
+    return path in _SYSTEM_EXACT or path.startswith(_SYSTEM_ROOTS)
+
+
 _KI_DOC_PATH = re.compile(r'''(?<![\w{])\{KI\}/(?P<relative>[\w./-]+)(?=$|[\s`"'|])''')
+# Documentation may also name a path role the same way: {KISSPATH_BINARIES}/model/Run/.
+_ROLE_DOC_PATH = re.compile(r'''(?<![\w{])\{KISSPATH_[A-Z0-9_]+\}(?P<relative>(?:/[\w.*-]+)*/?)(?=$|[\s`"'|,;)])''')
 _RUNTIME_SUFFIXES = port.TEXT_SUFFIXES | {".ps1", ".bat", ".cmd", ".prj", ".xml", ".ctl"}
 
 
@@ -852,12 +879,28 @@ def _portable_changes(base, candidate, cfg):
     previous = _path_spellings(base)
     bound = {str(value).replace("\\", "/") for value in
              [cfg.root, cfg.python, *cfg.roles.values()] if len(str(value)) > 3}
-    for name, text in _path_spellings(candidate).items():
+    offenders = []
+    for name, text in sorted(_path_spellings(candidate).items()):
         before = previous.get(name, "")
         introduced = _absolute_literals(name, text) - _absolute_literals(name, before)
         normalized, old = text.replace("\\", "/"), before.replace("\\", "/")
-        if introduced or any(value in normalized and value not in old for value in bound):
-            raise AdaptationError(f"Portable repair introduces a machine path in {name}; use KI path roles")
+        found = sorted(introduced) + sorted(value for value in bound
+                                            if value in normalized and value not in old)
+        if found:
+            offenders.append((name, found))
+    if offenders:
+        # Name every file and the exact text: an author told only "a machine path"
+        # in one file at a time has to guess, one repair round per file.
+        parts = []
+        for name, found in offenders[:8]:
+            shown = ", ".join(repr(item[:120]) for item in found[:5])
+            if len(found) > 5:
+                shown += f" and {len(found) - 5} more"
+            parts.append(f"{name}: {shown}")
+        if len(offenders) > 8:
+            parts.append(f"and {len(offenders) - 8} more files")
+        raise AdaptationError("Portable repair introduces a machine path in " + "; ".join(parts) +
+                              "; use KI path roles")
 
 
 def _absolute_literals(name, text):
@@ -876,8 +919,16 @@ def _absolute_literals(name, text):
                 return match[0]
             return " " * len(match[0])
         text = _KI_DOC_PATH.sub(doc_path, text)
+
+        def role_path(match):
+            if ".." in match["relative"].split("/"):
+                invalid_doc_paths.add(match[0])
+                return match[0]
+            return " " * len(match[0])
+        text = _ROLE_DOC_PATH.sub(role_path, text)
     if Path(name).suffix.casefold() != ".py":
-        return set(_ABSOLUTE.findall(text)) | invalid_doc_paths
+        found = {path for path in _ABSOLUTE.findall(text) if not _distribution_path(path)}
+        return found | invalid_doc_paths
     # Inspect values, not operators: Python `value /2` is division. A later
     # '/suffix' fragment in an f-string is not an independent absolute path.
     values = []
@@ -901,7 +952,8 @@ def _absolute_literals(name, text):
         collect(ast.parse(text))
     except SyntaxError as exc:
         raise AdaptationError(f"Portable repair has invalid Python in {name}") from exc
-    return {path for value in values for path in _ABSOLUTE.findall(value)}
+    return {path for value in values for path in _ABSOLUTE.findall(value)
+            if not _distribution_path(path)}
 
 
 def _adds_same_engine_data_requirements(before, after):

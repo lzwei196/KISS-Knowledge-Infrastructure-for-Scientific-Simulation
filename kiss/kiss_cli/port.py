@@ -100,6 +100,253 @@ _INTERNAL_SHARED_ROOT = re.compile(
     r"(?:/ki_tools_common)?"
 )
 
+# KIs authored on the HydroCraft server build paths from the server root in
+# code: ``ROOT / "model" / "hype"``, ``os.path.join(HYDROCRAFT_ROOT, "python_env",
+# "bin", "python")``, ``f"{BASE}/data/obs/..."``. Publishing replaced the root
+# literal with KISSPATH_ROOT but kept the relative parts, so binding wrote
+# ``<project>/model/...`` -- a place a desktop never has. LEGACY_PREFIXES already
+# describes the server layout (model -> binaries, python_env -> python_env,
+# data/obs -> obs, ...); the same rows are applied to those root-relative parts,
+# so each path lands in the role its absolute spelling would have.
+#
+# Only port.materialise opts in, per KI. SHAW and WOFOST are excluded: their
+# maintenance recipes (ki_maintenance_shaw, ki_path_contracts/ki_fresh_paths)
+# recognise the published files and their plain role expansion exactly.
+SERVER_LAYOUT_EXCLUDED_KIS = frozenset({"SHAW", "WOFOST"})
+
+
+def _server_rows() -> list[tuple[str, str]]:
+    root = next(prefix for prefix, role in LEGACY_PREFIXES if role == "server_root")
+    rows = [(prefix[len(root) + 1:], role) for prefix, role in LEGACY_PREFIXES
+            if prefix.startswith(root + "/")]
+    return sorted(rows, key=lambda row: len(row[0]), reverse=True)
+
+
+_SERVER_ROWS = _server_rows()
+_SERVER_TEXT = re.compile(r"KISSPATH_ROOT/(?P<rel>[^\s'\"`<>)\]},;{]+)")
+_PATH_CALLS = {"Path", "PurePath", "PurePosixPath", "PureWindowsPath"}
+
+
+def server_layout_applies(name: str | None) -> bool:
+    return name not in SERVER_LAYOUT_EXCLUDED_KIS
+
+
+def package_name(ki_root: Path) -> str:
+    """The KI's declared ``package.name``; its folder name when undeclared.
+
+    Drafts live in ``candidate/`` and project copies in ``ki/``, so the folder
+    alone cannot identify the package.
+    """
+    import yaml
+    try:
+        doc = yaml.safe_load((Path(ki_root) / "knowledge_infrastructure.yaml").read_text(encoding="utf-8"))
+        name = doc["package"]["name"]
+        if isinstance(name, str) and name:
+            return name
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError):
+        pass
+    return Path(ki_root).name
+
+
+def _server_relative(rel: str) -> str | None:
+    """``data/obs/x`` -> ``KISSPATH_OBS/x``; None when no LEGACY_PREFIXES row applies."""
+    clean = rel.strip("/")
+    for prefix, role in _SERVER_ROWS:
+        if clean == prefix or clean.startswith(prefix + "/"):
+            rest = clean[len(prefix):].lstrip("/")
+            mapped = f"{TOKENS[role]}/{rest}" if rest else TOKENS[role]
+            return mapped + "/" if rel.endswith("/") else mapped
+    return None
+
+
+def _server_root_names(tree: ast.AST) -> set[str]:
+    """Names whose every assignment is the server root."""
+    values: dict[str, list[ast.AST]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    values.setdefault(target.id, []).append(node.value)
+    roots: set[str] = set()
+    while True:
+        found = {name for name, assigned in values.items()
+                 if name not in roots and all(_is_server_root(v, roots) for v in assigned)}
+        if not found:
+            return roots
+        roots |= found
+
+
+def _is_server_root(node: ast.AST, roots: set[str]) -> bool:
+    if isinstance(node, ast.Constant):
+        return node.value == "KISSPATH_ROOT"
+    if isinstance(node, ast.Name):
+        return node.id in roots
+    if isinstance(node, ast.Call):
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+        if name in _PATH_CALLS | {"str", "fspath", "abspath", "realpath", "expanduser"} and len(node.args) == 1:
+            return _is_server_root(node.args[0], roots)
+        if name in {"get", "getenv"} and len(node.args) == 2:   # os.environ.get("HYDROCRAFT_ROOT", root)
+            return _is_server_root(node.args[1], roots)
+        if isinstance(func, ast.Attribute) and name in {"resolve", "absolute", "expanduser"} and not node.args:
+            return _is_server_root(func.value, roots)
+    return False
+
+
+def _strings(nodes) -> list[str]:
+    """The leading run of string literals."""
+    run = []
+    for node in nodes:
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            break
+        run.append(node.value)
+    return run
+
+
+def _joined(run: list[str]) -> str:
+    return "/".join(part.strip("/") for part in run if part.strip("/"))
+
+
+def _rewrite_server_python(text: str) -> tuple[str, int]:
+    """Rewrite root-built Python path expressions; unchanged unless the result parses."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return text, 0
+    roots = _server_root_names(tree)
+    lines = text.splitlines(keepends=True)
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+
+    def offset(lineno: int, col: int) -> int:
+        line = lines[lineno - 1]
+        return starts[lineno - 1] + len(line.encode("utf-8")[:col].decode("utf-8", "ignore"))
+
+    # Bracket tokens by absolute offset. Python positions a parenthesised operand
+    # without its parentheses -- ROOT / ("a/" "b") -- so a span ending at that
+    # operand must also take the ")" that closes inside the replaced text.
+    import io
+    import tokenize
+    opens, closes = [], []
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.OP and tok.string in "()":
+                at = starts[tok.start[0] - 1] + tok.start[1]
+                (opens if tok.string == "(" else closes).append(at)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return text, 0
+
+    def span(first: ast.AST, last: ast.AST) -> tuple[int, int]:
+        begin = offset(first.lineno, first.col_offset)
+        end = offset(last.end_lineno, last.end_col_offset)
+        unclosed = sum(begin <= at < end for at in opens) - sum(begin <= at < end for at in closes)
+        for at in closes:
+            if unclosed <= 0:
+                break
+            if at >= end:
+                end, unclosed = at + 1, unclosed - 1
+        return begin, end
+
+    path_bound = any(isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == "Path" for a in n.names)
+                     for n in ast.walk(tree))
+
+    def quote(node: ast.AST) -> str:
+        # Reuse the replaced literal's quote: it may sit inside an f-string
+        # of the other quote, which Python < 3.12 cannot nest.
+        source = text[offset(node.lineno, node.col_offset):].lstrip("( \t\r\n").lstrip("rRbBuU")
+        return source[0] if source[:1] in {"'", '"'} else '"'
+
+    def path_of(mapped: str, q: str) -> str:
+        call = "Path" if path_bound else f"__import__({q}pathlib{q}).Path"
+        return f"{call}({q}{mapped}{q})"
+
+    edits: dict[tuple[int, int], str] = {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Div, ast.Add)):
+            chain, left = [], node
+            while isinstance(left, ast.BinOp) and type(left.op) is type(node.op):
+                chain.insert(0, left)
+                left = left.left
+            run = _strings(link.right for link in chain)
+            if not run or not _is_server_root(left, roots):
+                continue
+            q = quote(chain[0].right)
+            if isinstance(node.op, ast.Div):
+                mapped = _server_relative(_joined(run))
+                replacement = mapped and path_of(mapped, q)
+            else:
+                joined = "".join(run)
+                mapped = joined.startswith("/") and _server_relative(joined)
+                replacement = mapped and f"{q}{mapped}{q}"
+            if replacement:
+                edits[span(left, chain[len(run) - 1].right)] = replacement
+        elif isinstance(node, ast.Call) and node.args and not node.keywords:
+            func = node.func
+            name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+            joins = (name == "join" and isinstance(func, ast.Attribute)
+                     and not isinstance(func.value, ast.Constant)) or name in _PATH_CALLS
+            if joins and len(node.args) >= 2 and _is_server_root(node.args[0], roots):
+                run = _strings(node.args[1:])
+                mapped = run and _server_relative(_joined(run))
+                if mapped:
+                    q = quote(node.args[1])
+                    edits[span(node.args[0], node.args[len(run)])] = f"{q}{mapped}{q}"
+            elif (name == "joinpath" and isinstance(func, ast.Attribute)
+                  and _is_server_root(func.value, roots)):
+                run = _strings(node.args)
+                mapped = run and len(run) == len(node.args) and _server_relative(_joined(run))
+                if mapped:
+                    edits[span(node, node)] = path_of(mapped, quote(node.args[0]))
+        elif isinstance(node, ast.JoinedStr) and roots:
+            begin, end = span(node, node)
+            source = text[begin:end]
+
+            def fstring(match: "re.Match") -> str:
+                mapped = _server_relative(match.group("rel"))
+                return mapped if mapped else match.group(0)
+
+            names = "|".join(re.escape(name) for name in sorted(roots))
+            rewritten = re.sub(r"\{\s*(?:" + names + r")\s*\}(?P<rel>/[^{}'\"\\]+)", fstring, source)
+            if rewritten != source:
+                edits[(begin, end)] = rewritten
+
+    applied, cursor, out = 0, len(text), []
+    for begin, end in sorted(edits, reverse=True):
+        if end > cursor:            # overlaps an edit already taken: leave it as written
+            continue
+        out.append(text[end:cursor])
+        out.append(edits[(begin, end)])
+        cursor = begin
+        applied += 1
+    out.append(text[:cursor])
+    result = "".join(reversed(out))
+    try:
+        ast.parse(result)
+    except (SyntaxError, ValueError):
+        return text, 0
+    return result, applied
+
+
+def _migrate_server_layout(text: str) -> tuple[str, int]:
+    """Map server-root-relative paths through LEGACY_PREFIXES (code first, then text)."""
+    if "KISSPATH_ROOT" not in text:
+        return text, 0
+    text, changed = _rewrite_server_python(text)
+
+    def plain(match: "re.Match") -> str:
+        nonlocal changed
+        mapped = _server_relative(match.group("rel"))
+        if not mapped:
+            return match.group(0)
+        changed += 1
+        return mapped
+
+    return _SERVER_TEXT.sub(plain, text), changed
+
+
 TEXT_SUFFIXES = {".py", ".md", ".yaml", ".yml", ".sh", ".txt", ".cfg", ".ini",
                  ".json", ".toml", ".nml", ".inp"}
 
@@ -296,8 +543,13 @@ def _current_ki_target(ki_target) -> Path | None:
     return target
 
 
-def unsubstitute(text: str, cfg, *, ki_target=None) -> tuple[str, int, set[str]]:
+def unsubstitute(text: str, cfg, *, ki_target=None,
+                 server_layout: bool = False) -> tuple[str, int, set[str]]:
     """Replace ``KISSPATH_*`` tokens with real paths from ``cfg``.
+
+    ``server_layout`` also maps paths built from the server root through
+    LEGACY_PREFIXES (see ``_migrate_server_layout``). Only ``materialise`` sets
+    it, per KI; other callers expand literals exactly as before.
 
     ``KISSPATH_CURRENT_KI`` is bound only by the optional host-supplied
     ``ki_target``: the final package directory, which may differ from the
@@ -348,6 +600,7 @@ def unsubstitute(text: str, cfg, *, ki_target=None) -> tuple[str, int, set[str]]
     text, migrated_work = _INTERNAL_WORK_PATH.subn(migrate_work_path, text)
     text, migrated_shared = _INTERNAL_SHARED_ROOT.subn(
         "KISSPATH_KI_TOOLS_COMMON", text)
+    text, migrated_server = _migrate_server_layout(text) if server_layout else (text, 0)
 
     # Older KIs describe the interpreter as
     # ``KISSPATH_PYTHON_ENV/bin/python``.  Substituting only the environment
@@ -366,7 +619,7 @@ def unsubstitute(text: str, cfg, *, ki_target=None) -> tuple[str, int, set[str]]
     undeliverable = {tok for tok, role in by_token.items() if role in LEAK_ROLES}
     unresolved: set[str] = set()
     n = (joined + migrated_python + migrated_sites + migrated_work +
-         migrated_shared)
+         migrated_shared + migrated_server)
 
     ordered = sorted(by_token, key=len, reverse=True)
     pattern = re.compile("|".join(
@@ -469,6 +722,7 @@ def materialise(ki_root: Path, dest: Path, cfg, *, ki_target=None) -> Materialis
     source_identity = ki_tree.digest(ki_root)
     if not source_identity:
         raise ValueError("Cannot establish KI source identity before materialisation")
+    server_layout = server_layout_applies(package_name(ki_root))
     dest = validate_materialisation_destination(dest)
     source_root = ki_root.resolve()
     if source_root == dest or source_root in dest.parents or dest in source_root.parents:
@@ -508,7 +762,8 @@ def materialise(ki_root: Path, dest: Path, cfg, *, ki_target=None) -> Materialis
             rep.skipped += 1
             continue
 
-        new_text, n, unresolved = unsubstitute(text, cfg, ki_target=ki_target)
+        new_text, n, unresolved = unsubstitute(text, cfg, ki_target=ki_target,
+                                               server_layout=server_layout)
         if any(TOKENS[r] in new_text for r in LEAK_ROLES if r in TOKENS):
             rep.undeliverable_files += 1
             rep.undeliverable.append(str(rel))

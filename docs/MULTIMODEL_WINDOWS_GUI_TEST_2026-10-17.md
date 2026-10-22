@@ -359,6 +359,25 @@ by the path-only recipe and must not be presented as full reference acceptance.
 A future bounded KDT change can retain the server default and add a separately
 evidenced profile for this exact official Windows binary.
 
+**Resolved 2026-10-20 (Claude, comparison evidence, no KI change).** The 599-line
+baseline was reproduced in WSL Ubuntu 24.04: the ZIP's own `Shaw303.for`, built
+with the KI's recipe (`gfortran 13.3.0 -O2 -w -std=legacy
+-fallow-argument-mismatch`) and run on the five Trial inputs (hashes match
+`manifest.json`), gives `out.out` with 599 lines and SHA-256 prefix
+`4977b7d5c012b873`, exactly the KI's recorded value; `water.out` and `frost.out`
+also match their recorded prefixes. Diffing it with the 601-line Windows file:
+the two extra lines are the two `SNOWCOVER IS ASSUMED GONE` messages, written by
+the list-directed `WRITE (21,*)` at `Shaw303.for` lines 9458–9459. The official
+Windows executable wraps that record at 80 columns, putting the two values on a
+second line; gfortran does not. Every other difference is compiler formatting: 14
+blank lines (`''` vs `' '`), one label's padding from a continued string
+(lines 2696–2697), `-0.00` vs `0.00` in `water.out`, and 30 lines (29 in `out.out`, one in
+`energy.out`) whose numbers differ by at most one unit in the last printed digit. `temp.out`, `moist.out` and `frost.out` text is
+identical apart from line endings. The out.out line count is therefore
+compiler-dependent, not scientific evidence. Evidence:
+`C:/GeoForge-Tests-20261019/claude-verification/shaw-out-601-vs-599/`. The KI
+check itself is unchanged and still returns 2 on the official Windows binary.
+
 Remaining GUI acceptance: DS-requested three reviews and real KDT adoption;
 fresh SHAW preflight; authentic Trial with retained outputs; all five official
 reader CSVs; restart/recheck; new upstream selection without old readiness.
@@ -2378,9 +2397,14 @@ tag explicitly, for example `git checkout tags/v5.2.0`, and verify `.version`.
 | Engine | Result against GeoForge's 504 streamflow values |
 | --- | --- |
 | Same beta3 binary | Identical (max difference 0.0); 168 CHANOBS, 8 LDASOUT, both completion banners |
-| Fresh v5.2.0 build (`1571e9f6`, same CMake options plus `-fallow-argument-mismatch`) | Max difference 0.0122 m3/s; metrics identical to three decimals |
+| Fresh v5.2.0 build (`1571e9f6`, same CMake options plus `-fallow-argument-mismatch`, but no `CMAKE_BUILD_TYPE`, so `-O2` instead of Release `-O3`) | Max difference 0.0122 m3/s; metrics identical to three decimals |
 
 GeoForge's run is therefore reproducible, but it is a **v5.2.0-beta3** result.
+
+Correction (same day): the 0.0122 m3/s difference comes from the optimisation level, not the
+source version. The scratch build had no `CMAKE_BUILD_TYPE` (`-O2`); GeoForge's recipe builds
+`Release` (`-O3`). The engine later rebuilt by GeoForge setup from the v5.2.0 tag with Release
+flags reproduces the beta3 run's 504 streamflow values exactly (maximum difference 0.0).
 It should not be described as exact v5.2.0 until the engine is rebuilt from the
 release tag and the binding is reverified.
 

@@ -5,7 +5,7 @@
   "release_date": "2026-10-22",
   "source": {
     "branch": "windows-version",
-    "code_commit": "e8db24fabc2895ebb6319c36e3f8ebf97be6053f",
+    "code_commit": "02c1c7942d1e005ad987bf3a281169586cbec2bc",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
     "release_tag": "windows-v0.6.61",
     "commit_scope": "Application implementation is pinned by application_code_commit. Windows-release-validation.json identifies the exact release tag/build commit and final checks.",
@@ -13,7 +13,7 @@
     "checked_main_commit": "d3f3c0d7300faeea94535da0935f3d5f85c54f5b",
     "build_label": "windows-0.6.61-20261022",
     "working_tree": false,
-    "application_code_commit": "e8db24fabc2895ebb6319c36e3f8ebf97be6053f",
+    "application_code_commit": "02c1c7942d1e005ad987bf3a281169586cbec2bc",
     "previous_release_tag": "windows-v0.6.60"
   },
   "ki_library": {
@@ -38,7 +38,7 @@
     ],
     "desktop_catalogue_count": 129,
     "shared_tools_commit": "201123aa1f0fbaadbc485223b2c2891e1a5f1570",
-    "desktop_flow_commit": "e8db24fabc2895ebb6319c36e3f8ebf97be6053f",
+    "desktop_flow_commit": "02c1c7942d1e005ad987bf3a281169586cbec2bc",
     "scope": "Bundled 127 scientific KIs and 2 observation data KIs retain the prior release snapshot. Updated desktop/shared-flow code is pinned by source.application_code_commit. Downloaded Library updates and local KDT-approved repairs are separate; the DSSAT acceptance used those separate revisions."
   },
   "changes": [
@@ -85,7 +85,7 @@
     {
       "id": "ki-library-status-labels",
       "area": "desktop",
-      "summary": "Show KI trust and software state separately: Not accepted on this computer, Edited — needs verification, No install route, Installed; replaces the single 'KI draft requires verification' label."
+      "summary": "Show KI trust and software state separately: Not accepted on this computer, Edited — needs verification, No install route (only when no recipe, source, package or recorded installation exists for this platform), Installed; replaces the single 'KI draft requires verification' label."
     }
   ],
   "compatibility": {

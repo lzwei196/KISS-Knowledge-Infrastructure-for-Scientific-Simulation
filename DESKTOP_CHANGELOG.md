@@ -39,7 +39,10 @@ Desktop update agents should read the JSON manifest first and use this file to e
   KI trust refusal was shown as "KI draft requires verification", even for
   untouched bundled KIs. Cards now say Not accepted on this computer, Edited —
   needs verification, No install route, or Installed; acceptance of a KI's files
-  says nothing about whether its software can be installed here.
+  says nothing about whether its software can be installed here. No install
+  route appears only when GeoForge knows no way to install the KI on this
+  platform (no recipe, source, package or recorded installation); on Windows no
+  bundled KI is in that state.
 - The release build records a content fingerprint of every bundled KI inside
   the executable. A bundled KI whose files match is accepted in any folder and
   after an in-place upgrade, so a computer that used an earlier GeoForge no

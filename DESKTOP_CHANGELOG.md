@@ -35,6 +35,16 @@ Desktop update agents should read the JSON manifest first and use this file to e
   paths that never exist on a desktop. Across the 127 bundled KIs this removes
   every such path (17 KIs, 212 lines) except in SHAW and WOFOST, whose maintenance
   recipes own their paths.
+- The KI Library separates four questions that one label used to cover. Every
+  KI trust refusal was shown as "KI draft requires verification", even for
+  untouched bundled KIs. Cards now say Not accepted on this computer, Edited —
+  needs verification, No install route, or Installed; acceptance of a KI's files
+  says nothing about whether its software can be installed here.
+- The release build records a content fingerprint of every bundled KI inside
+  the executable. A bundled KI whose files match is accepted in any folder and
+  after an in-place upgrade, so a computer that used an earlier GeoForge no
+  longer blocks the whole library when the app runs from a new folder. Edited
+  files still need KDT. Development caches and Git link files are not bundled.
 - A fresh Windows WOFOST setup and DeepSeek GUI run (2026-10-17) completed all 8
   approved steps with native output and figures, using two project-local
   KDT-approved KI repairs; it is not an out-of-box claim for the bundled library.
@@ -49,7 +59,9 @@ Desktop update agents should read the JSON manifest first and use this file to e
   投影文件、在隔离副本中运行草稿自带测试与 KDT，并把真实失败（含门禁拒绝与阻断性检查）反馈给
   修复 Agent；将 KI 安装到项目时，代码中基于服务器根目录的 model/、python_env/、data/ 等路径
   按既有服务器目录表映射到桌面对应角色（SHAW、WOFOST 除外）；模型源码按配方指定的发布标签构建，
-  不再误用同名分支。随包 KI 库与 0.6.60 相同；单个项目中验证的 KI 修复（如 WRF-Hydro 的
+  不再误用同名分支。KI 库卡片分别显示“本机尚未接受此 KI”“已被修改，需要重新验证”“暂无安装途径”
+  和“已安装”，不再把所有信任拒绝都显示为“KI 草稿需要验证”；发布构建在可执行文件中记录每个随包 KI
+  的内容指纹，文件一致的随包 KI 在任何文件夹中都会被接受。随包 KI 库与 0.6.60 相同；单个项目中验证的 KI 修复（如 WRF-Hydro 的
   Ubuntu 24.04 安装指南与率定适配器）未随包发布。已知限制：Linux 后端会保留被拒绝的 KI 更新副本
   及旧的应用暂存副本，WSL 磁盘占用会持续增长，需手动清理。
 

@@ -62,8 +62,11 @@ Windows 0.6.61 adds a supervised WSL Linux runtime for project work, runs KI
 repairs as automatic passes that return the draft's own test results and KDT
 findings to the repair agent, and installs KIs with server-layout paths mapped to
 the matching desktop folders. Model sources are built from the release tag a
-recipe names, never from a same-named branch. The bundled KI library is
-unchanged from 0.6.60.
+recipe names, never from a same-named branch. The KI Library shows separately
+whether a KI's files are accepted on this computer or were edited, whether it
+has an install route, and whether it is installed, and the app accepts its own
+bundled KIs in any folder by fingerprints recorded at build time. The bundled
+KI library is unchanged from 0.6.60.
 
 Earlier reviewed DeepSeek GUI testing completed a native DSSAT reference run, the KDT-repaired
 reader, observation extraction and comparison with four verified execution

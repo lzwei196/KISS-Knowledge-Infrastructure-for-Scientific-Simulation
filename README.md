@@ -45,25 +45,25 @@ model predicts your study site accurately.
 
 ## Download and install
 
-### Windows x64 — 0.6.60
+### Windows x64 — 0.6.61
 
-Download from the [**Windows 0.6.60 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.60):
+Download from the [**Windows 0.6.61 release**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/tag/windows-v0.6.61):
 
-- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Setup-v0.6.60-Windows-x64.exe)
-- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-v0.6.60-Windows-x64.zip)
-- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/SHA256SUMS-Windows.txt)
+- [**Installer — recommended**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Setup-v0.6.61-Windows-x64.exe)
+- [**Portable ZIP**](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-v0.6.61-Windows-x64.zip)
+- [SHA-256 checksums](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/SHA256SUMS-Windows.txt)
 
 No separate Python installation is needed for the desktop application. Model
 binaries, compilers and model-specific environments may still need setup. Open
 **KI Library → Set up with agent** and check the final verification result;
 installation can require your help.
 
-Windows 0.6.60 improves setup and path adaptation after KI updates, reuses
-compatible KDT-approved maintenance repairs, checks ready input paths and tool
-arguments before approval, and continues an approved run after project
-preflight. Completion now reports verified execution separately from scientific
-validation. The Codex launcher also correctly composes sandbox arguments for
-fresh and resumed commands.
+Windows 0.6.61 adds a supervised WSL Linux runtime for project work, runs KI
+repairs as automatic passes that return the draft's own test results and KDT
+findings to the repair agent, and installs KIs with server-layout paths mapped to
+the matching desktop folders. Model sources are built from the release tag a
+recipe names, never from a same-named branch. The bundled KI library is
+unchanged from 0.6.60.
 
 Earlier reviewed DeepSeek GUI testing completed a native DSSAT reference run, the KDT-repaired
 reader, observation extraction and comparison with four verified execution
@@ -105,12 +105,12 @@ both English and Simplified Chinese.
 
 | Guide | English | 简体中文 |
 |---|---|---|
-| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
-| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
-| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.60/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
+| Illustrated quickstart — exactly 3 pages | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Quickstart-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Quickstart-ZH-CN-v0.6.55.pdf) |
+| Full user manual | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Manual-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Manual-ZH-CN-v0.6.55.pdf) |
+| Calibration guide | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Calibration-EN-v0.6.55.pdf) | [PDF](https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation/releases/download/windows-v0.6.61/GeoForge-Desktop-Calibration-ZH-CN-v0.6.55.pdf) |
 
 The app's **Guide / 使用指南** menu opens the same guides as offline HTML or PDF.
-These are the unchanged **0.6.55 guide edition**, included with Windows 0.6.60;
+These are the unchanged **0.6.55 guide edition**, included with Windows 0.6.61;
 the document filenames retain that edition number. [Guide sources and earlier
 editions](docs/manual/README.md) are also available in the repository.
 

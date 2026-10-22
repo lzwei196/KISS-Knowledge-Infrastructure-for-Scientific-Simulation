@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.60",
-  "release_date": "2026-10-15",
+  "version": "0.6.61",
+  "release_date": "2026-10-22",
   "source": {
     "branch": "windows-version",
     "code_commit": "38c463d7f751180b3dc0d0c0b10203baa4e3ed35",
     "repository": "https://github.com/lzwei196/KISS-Knowledge-Infrastructure-for-Scientific-Simulation",
-    "release_tag": "windows-v0.6.60",
+    "release_tag": "windows-v0.6.61",
     "commit_scope": "Application implementation is pinned by application_code_commit. Windows-release-validation.json identifies the exact release tag/build commit and final checks.",
     "integrated_mac_commit": "bc7882564e4aedea61f080c43cb0adb5e9b4ec71",
-    "checked_main_commit": "889a6e70332e31b21911efb0a08ac2fa2a067e03",
-    "build_label": "windows-0.6.60-20261015",
+    "checked_main_commit": "d3f3c0d7300faeea94535da0935f3d5f85c54f5b",
+    "build_label": "windows-0.6.61-20261022",
     "working_tree": false,
     "application_code_commit": "38c463d7f751180b3dc0d0c0b10203baa4e3ed35",
-    "previous_release_tag": "windows-v0.6.58"
+    "previous_release_tag": "windows-v0.6.60"
   },
   "ki_library": {
     "package_count": 127,
@@ -43,39 +43,39 @@
   },
   "changes": [
     {
-      "id": "ki-runtime-adaptation",
+      "id": "wsl-linux-runtime",
+      "area": "runtime",
+      "summary": "Run project work in a supervised WSL Linux runtime (named-user transport, sidecar service, runtime provenance, native dependency gates); the Windows package ships the sidecar's Linux-readable source."
+    },
+    {
+      "id": "setup-binding-and-repair-lineage",
       "area": "setup",
-      "summary": "Bind setup, runtime paths and required data to current KI/recipe/helper identities; refresh current project readiness after changes."
+      "summary": "Bind the selected interpreter and helper revision, separate fresh from retained setups, keep KI repair lineage and project setup repair consistent, add SHAW and EPANET maintenance recipes, and write Windows state files safely under brief sharing errors."
     },
     {
-      "id": "kdt-maintenance-intake",
+      "id": "upstream-receipts-and-native-outputs",
+      "area": "execution",
+      "summary": "Require current successful receipts for declared upstream producers, validate native NetCDF outputs and keep failed history out of the current attempt."
+    },
+    {
+      "id": "tag-first-source-refs",
+      "area": "installation",
+      "summary": "Resolve a recipe's Git ref tag-first so a release tag is never replaced by a same-named branch (WRF-Hydro v5.2.0 versus the stale v5.2.0-beta3 branch)."
+    },
+    {
+      "id": "automatic-ki-repair-feedback",
       "area": "knowledge-infrastructure",
-      "summary": "Enforce KDT maintenance, reuse valid evidence and expose compatible signed repairs during fresh Auto KI inspection without granting runtime readiness."
+      "summary": "Run up to three KI repair passes with host-regenerated projections, the draft's own tests on an isolated copy and KDT; return test output, KDT failures, portability refusals and blocking doctor findings to the author."
     },
     {
-      "id": "approved-execution-contracts",
-      "area": "execution",
-      "summary": "Check ready inputs, actual typed arguments and output contracts before review/approval; continue after project preflight and require current signed evidence."
+      "id": "portability-gate-precision",
+      "area": "knowledge-infrastructure",
+      "summary": "Name every offending file and accept distribution-owned Linux paths in install documentation; per-machine paths stay rejected."
     },
     {
-      "id": "honest-status-and-review-ui",
-      "area": "desktop",
-      "summary": "Separate completed execution from scientific validation; prevent stale approval popups crossing chats and failed attempts satisfying current work."
-    },
-    {
-      "id": "windows-packaging-and-cli",
-      "area": "packaging",
-      "summary": "Bundle runtime_data source identity and correctly compose Codex fresh/resumed sandbox arguments."
-    },
-    {
-      "id": "verified-native-runtime-aliases",
-      "area": "execution",
-      "summary": "Carry verified native executable aliases into signed input evidence, pin target bytes and reject retargeted aliases without relaxing ordinary input path checks."
-    },
-    {
-      "id": "windows-process-supervision",
-      "area": "execution",
-      "summary": "Clean up observed child processes after wrapper exit and preserve the actual virtual-environment wrapper during bounded graceful Stop so it can record the outcome."
+      "id": "server-layout-path-binding",
+      "area": "setup",
+      "summary": "When a KI is installed into a project, map server-root paths built in code (model/, python_env/, data/obs, data/soil, outputs/ ...) through the server layout table to desktop roles; SHAW and WOFOST excluded."
     }
   ],
   "compatibility": {
@@ -83,7 +83,7 @@
     "saved_model_install_locations_preserved": true,
     "proxy_credentials_stored_in_release": false,
     "platform_notes": {
-      "windows": "Windows x64 only. Python is included; AI providers and scientific models are configured or installed separately. Browser frontend and tray exit are retained.",
+      "windows": "Windows x64 only. Python is included; AI providers and scientific models are configured or installed separately. Browser frontend and tray exit are retained. The WSL Linux runtime needs a user-installed WSL Ubuntu distribution and a named Linux user.",
       "macos": "This release does not replace the macOS application assets.",
       "linux": "This release does not replace the Linux application assets."
     }
@@ -104,19 +104,29 @@
       "scope": "Existing installed runtime and separately KDT-approved local repair; no bundled-KI, new-site, calibration, or all-model claim."
     },
     "latest_checked_library_update": {
-      "source_commit": "889a6e70332e31b21911efb0a08ac2fa2a067e03",
+      "source_commit": "d3f3c0d7300faeea94535da0935f3d5f85c54f5b",
       "checked": 127,
-      "accepted": 110,
-      "rejected": 17,
+      "accepted": 121,
+      "rejected": 6,
       "activated": false,
       "native_execution_performed": false
     },
     "limits": [
-      "DS plan construction required reviewer corrections.",
-      "Live Claude inspection was blocked by expired OAuth.",
-      "Live Codex inspection was blocked by installed CLI/model/reasoning compatibility; fresh/resume command composition passed independent tests.",
+      "The bundled KI library is unchanged from 0.6.60; KI repairs verified in individual projects (for example WRF-Hydro's Ubuntu 24.04 install guide and calibration adapter) are not bundled.",
+      "The Linux backend keeps a copy of each rejected KI library update and does not remove old staged application copies; WSL disk use grows until cleaned manually.",
+      "Server home-directory datasets and toolchains referenced by 20 KIs, and a few machine-specific paths (CaMa_Flood, VIC, Noah_MP), still need per-KI repair.",
+      "Live provider coverage beyond the recorded DeepSeek GUI cases was not retested for this release.",
       "Native macOS/Linux application testing is outside this Windows release."
-    ]
+    ],
+    "recent_gui_acceptance": {
+      "date": "2026-10-17",
+      "case": "WOFOST Wangjiaba maize, rainfed WLP_FD, 1980-06-01..1980-09-07",
+      "provider": "DeepSeek API through GUI",
+      "executable_steps_passed": 8,
+      "native_output_rows": 99,
+      "final_yield_kg_ha": 2267.1084,
+      "scope": "Fresh Python 3.12.10 environment and PCSE 6.0.12 with two project-local KDT-approved KI repairs; no bundled-KI, calibration or all-model claim."
+    }
   },
   "agent_update_protocol": [
     "Read release-manifest.json before changing an installation.",
@@ -130,6 +140,6 @@
     "edition": "0.6.55",
     "quickstart_revision": "illustrated-2026-10-02",
     "validation": "docs/manual/0.6.55/validation.json",
-    "scope": "Unchanged reviewed 0.6.55 PDF/HTML edition, including illustrated three-page quickstarts in English and Chinese, bundled with Windows 0.6.60."
+    "scope": "Unchanged reviewed 0.6.55 PDF/HTML edition, including illustrated three-page quickstarts in English and Chinese, bundled with Windows 0.6.61."
   }
 }

@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing release tag to receive the Windows assets
         required: true
-        default: windows-v0.6.60
+        default: windows-v0.6.61
       reuse_0658_source_validation:
         description: Reuse the pinned successful 0.6.58 source tests for a packaging-only retry
         type: boolean

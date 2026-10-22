@@ -6,6 +6,53 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## v0.6.61 — WSL Linux runtime, automatic KI repair and portable KI paths
+
+- Run project scientific work in a supervised WSL Linux runtime: a host-owned,
+  named-user transport, a sidecar service with runtime provenance, and native
+  dependency gates. The Windows package ships the Linux-readable source the
+  sidecar needs.
+- Setup binds the selected interpreter and helper revision, tells fresh setups
+  from retained installations, and keeps KI repair lineage and project setup
+  repair consistent. SHAW and EPANET gain maintenance recipes. Windows state files
+  are written safely when another process holds them briefly.
+- Execution requires current successful receipts for declared upstream producers,
+  validates native NetCDF outputs, and keeps failed history without presenting it
+  as the current attempt.
+- Model sources are built from the release tag a recipe names, never from a
+  same-named branch. WRF-Hydro's v5.2.0 tag sits beside a stale v5.2.0 branch at
+  v5.2.0-beta3, which earlier builds used by mistake.
+- KI repair runs up to three authoring passes automatically. After each pass the
+  host regenerates the projected KI files, runs the draft's own tests on an
+  isolated copy and KDT, and returns the real failures to the repair agent: test
+  output, KDT failures, portability refusals and the desktop doctor's blocking
+  findings.
+- The portability gate names every offending file and accepts distribution-owned
+  Linux paths in install documentation; per-machine paths stay rejected.
+- Installing a KI into a project maps server-layout paths built in code (model/,
+  python_env/, data/obs, data/soil, outputs/ ...) to the matching desktop roles
+  through the existing server layout table, instead of leaving <project>/model/...
+  paths that never exist on a desktop. Across the 127 bundled KIs this removes
+  every such path (17 KIs, 212 lines) except in SHAW and WOFOST, whose maintenance
+  recipes own their paths.
+- A fresh Windows WOFOST setup and DeepSeek GUI run (2026-10-17) completed all 8
+  approved steps with native output and figures, using two project-local
+  KDT-approved KI repairs; it is not an out-of-box claim for the bundled library.
+- The bundled KI library is unchanged from 0.6.60. The latest main-library check
+  (main d3f3c0d7) accepted 121 and rejected 6 packages and was not activated. KI
+  repairs verified in individual projects, such as WRF-Hydro's Ubuntu 24.04
+  install guide and its calibration adapter, are not bundled.
+- Known limit: the Linux backend's automatic KI update check keeps a copy of each
+  rejected library update, and old staged application copies are not removed, so
+  WSL disk use grows until it is cleaned up manually.
+- Windows 0.6.61 新增受监管的 WSL Linux 运行环境；KI 修复改为自动多轮进行，每轮由宿主重新生成
+  投影文件、在隔离副本中运行草稿自带测试与 KDT，并把真实失败（含门禁拒绝与阻断性检查）反馈给
+  修复 Agent；将 KI 安装到项目时，代码中基于服务器根目录的 model/、python_env/、data/ 等路径
+  按既有服务器目录表映射到桌面对应角色（SHAW、WOFOST 除外）；模型源码按配方指定的发布标签构建，
+  不再误用同名分支。随包 KI 库与 0.6.60 相同；单个项目中验证的 KI 修复（如 WRF-Hydro 的
+  Ubuntu 24.04 安装指南与率定适配器）未随包发布。已知限制：Linux 后端会保留被拒绝的 KI 更新副本
+  及旧的应用暂存副本，WSL 磁盘占用会持续增长，需手动清理。
+
 ## v0.6.60 — Windows setup, KI maintenance and execution evidence
 
 - The 0.6.59 candidate was withheld after fresh hosted validation exposed test

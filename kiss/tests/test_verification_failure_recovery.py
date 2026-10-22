@@ -112,7 +112,8 @@ def test_new_attempt_rechecks_candidate_then_only_offers_guarded_apply(web_case,
 @pytest.mark.parametrize("legacy", [False, True])
 def test_build_preserves_actual_error_as_context_but_clears_old_authority(web_case, monkeypatch, legacy):
     c = web_case
-    (legacy_failure if legacy else fail_verification)(c)
+    failed = (legacy_failure if legacy else fail_verification)(c)
+    old = (failed.get("verification") or {}).get("id")
     seen = []
     monkeypatch.setattr(gui.ki_review_agents, "author_draft", lambda *args, **kw:
         seen.append(kw) or {"status": "completed", "raw_response": "Draft edited; checks pending."})
@@ -122,7 +123,11 @@ def test_build_preserves_actual_error_as_context_but_clears_old_authority(web_ca
     c.threads.pop(0)()
     assert RECIPE_ERROR in seen[0]["task_extra"]
     saved = inv.get(c.project, c.job["id"])
-    assert saved["status"] == "draft" and saved["verification"] is None and not saved["can_apply"]
+    # A build runs the host's automatic repair rounds. The unchanged bad
+    # candidate fails fresh checks; the earlier verification never carries over.
+    assert saved["status"] == "verification_failed" and not saved["can_apply"]
+    assert saved["verification"] and saved["verification"]["id"] != old
+    assert len(saved["auto_repair"]["rounds"]) == inv.AUTO_REPAIR_ROUNDS
 
 
 @pytest.mark.parametrize("verb", ["build", "verify"])

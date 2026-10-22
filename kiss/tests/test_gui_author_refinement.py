@@ -40,7 +40,8 @@ def test_gui_refinement_reaches_author_without_rewriting_frozen_reviews(case,mon
     after=inv.get(case.project,job['id'])
     for field in ('reviewers','context','combined_report','issue'):
         assert after.get(field)==before.get(field)
-    assert after['status']=='draft' and not after.get('verification')
+    # The build continues into the host's own checks; a verdict comes only from them.
+    assert after['status'] in ('verified','verification_failed') and after['auto_repair']['rounds']
 
 
 def test_author_log_preserves_user_refinement_without_readiness(draft,monkeypatch):

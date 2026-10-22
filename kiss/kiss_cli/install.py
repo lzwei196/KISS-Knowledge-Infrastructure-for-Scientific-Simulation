@@ -420,13 +420,58 @@ def run_download_worker(request_path: Path) -> int:
     return 0
 
 
-def _build_checkout(src: Path, acquire, commands: list[str], env=None) -> tuple[str, dict]:
+def _remote_ref(repo: str, ref: str, env=None) -> tuple[dict | None, str]:
+    """Resolve a named recipe ref on the remote, tags before same-named branches.
+
+    Git revision syntax (gitrevisions) reads ``NAME`` as ``refs/tags/NAME``
+    before ``refs/heads/NAME``, but ``git clone --branch NAME`` prefers the
+    branch. NCAR's WRF-Hydro publishes release tag v5.2.0 beside a stale
+    v5.2.0 branch at v5.2.0-beta3, so ``--branch`` silently built the
+    pre-release. Returns (resolution, "") or (None, reason).
+    """
+    ref = ref.strip()
+    if ref.startswith("refs/tags/"):
+        kinds, name = ("tags",), ref[len("refs/tags/"):]
+    elif ref.startswith("refs/heads/"):
+        kinds, name = ("heads",), ref[len("refs/heads/"):]
+    else:
+        kinds, name = ("tags", "heads"), ref
+    if not name or name.startswith("-") or any(c.isspace() for c in name):
+        return None, f"requested ref {ref!r} is not a single Git ref name"
+    if not repo or repo.startswith("-"):
+        return None, "manifest repository is not a Git location"
+    wanted = {f"refs/{kind}/{name}" for kind in kinds}
+    # An annotated tag lists its commit only on the explicitly requested peeled name.
+    peeled = {f"refs/tags/{name}^{{}}"} if "tags" in kinds else set()
+    cmd = ["git", "ls-remote", repo, *sorted(wanted | peeled)]
+    rc, out = _run(cmd, timeout=120, env=env)
+    if rc != 0:
+        return None, f"cannot list remote refs for {ref!r}: {out.strip()[-300:]}"
+    found = {}
+    for line in out.splitlines():
+        sha, _, refname = line.strip().partition("\t")
+        if re.fullmatch(r"[0-9a-f]{40,64}", sha):
+            found[refname] = sha
+    tag = found.get(f"refs/tags/{name}^{{}}") or found.get(f"refs/tags/{name}")
+    branch = found.get(f"refs/heads/{name}")
+    if "tags" in kinds and tag and f"refs/tags/{name}" in wanted:
+        return {"kind": "tag", "name": name, "commit": tag,
+                "shadowed_branch_commit": branch if branch and branch != tag else None}, ""
+    if "heads" in kinds and branch:
+        return {"kind": "branch", "name": name, "commit": branch,
+                "shadowed_branch_commit": None}, ""
+    return None, f"requested ref {ref!r} was not found on {repo}"
+
+
+def _build_checkout(src: Path, acquire, commands: list[str], env=None,
+                    remote: dict | None = None) -> tuple[str, dict]:
     """Inspect a build checkout without refreshing, repairing or discarding it.
 
     HEAD's tree, rather than the index, defines which source files must exist:
     a failed checkout and sparse/skip-worktree flags must not hide missing files.
     Local portability patches and generated files remain the user's work. This
-    verifies the superproject checkout, not submodule contents or remote freshness.
+    verifies the superproject checkout, not submodule contents. ``remote`` is a
+    ``_remote_ref`` resolution; without it, the ref is checked offline.
     """
     evidence: dict = {}
 
@@ -473,7 +518,24 @@ def _build_checkout(src: Path, acquire, commands: list[str], env=None) -> tuple[
         ref = (acquire.ref or "").strip()
         evidence.update(repo=acquire.repo, requested_ref=ref or None, resolved_commit=head,
                         ref_scope="local fetched state; no remote freshness check")
-        if ref and ref != "HEAD":
+        if remote is not None:
+            expected = remote["commit"]
+            evidence.update(requested_commit=expected, requested_ref_kind=remote["kind"],
+                            shadowed_branch_commit=remote["shadowed_branch_commit"],
+                            ref_scope="remote ref listed; a tag precedes a same-named branch")
+            if head != expected:
+                hint = ""
+                if remote["kind"] == "tag":
+                    tag = "refs/tags/" + remote["name"]
+                    hint = (f" Obtain the tag deliberately, preserving or reapplying any local "
+                            f"patches: git -C {src} fetch --depth 1 origin {tag}:{tag} && "
+                            f"git -C {src} checkout --detach {tag}")
+                    if remote["shadowed_branch_commit"] == head:
+                        hint = (f" HEAD is the same-named branch, not the {remote['name']} "
+                                f"release tag." + hint)
+                raise ValueError(f"checkout HEAD {head[:12]} does not match requested ref "
+                                 f"{ref!r} ({remote['kind']} {expected[:12]}).{hint}")
+        elif ref and ref != "HEAD":
             if re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
                 candidates = [ref]
             elif ref.startswith("refs/tags/") or ref.startswith("refs/remotes/origin/"):
@@ -581,6 +643,12 @@ def _acq_build(man, prefix, python, env=None):
     # working binary that the KI's own preflight cannot find.
     src = prefix
     cmds: list[str] = []
+    named = (a.ref or "").strip()
+    remote, remote_problem = None, ""
+    if named and named != "HEAD" and not re.fullmatch(r"[0-9a-fA-F]{7,40}", named) \
+            and not named.startswith("refs/remotes/"):
+        remote, remote_problem = _remote_ref(a.repo, named, env=env)
+        cmds.append(f"git ls-remote {a.repo} {named}")
     if not (src / ".git").exists():
         # `--branch` takes a branch or tag, never a commit. We ask agents to pin
         # the ref because an unpinned build is not reproducible, and a pinned
@@ -616,10 +684,33 @@ def _acq_build(man, prefix, python, env=None):
                         ["git", "-C", str(src), "checkout", "-q", sha],
                         env=env)
                     cmds.append(f"git -C {src} checkout {sha}")
+        elif remote is not None and remote["kind"] == "tag":
+            # Fetch exactly the release tag; `clone --branch` would take a
+            # same-named branch instead (see _remote_ref).
+            tag = "refs/tags/" + remote["name"]
+            src.mkdir(parents=True, exist_ok=True)
+            # Like clone, record HEAD before populating the new, empty worktree,
+            # so an interrupted checkout is reported file by file on retry.
+            steps = [["git", "init", "-q", str(src)],
+                     ["git", "-C", str(src), "remote", "add", "origin", a.repo],
+                     ["git", "-C", str(src), "fetch", "--depth", "1", "--no-tags",
+                      "origin", f"{tag}:{tag}"],
+                     ["git", "-C", str(src), "update-ref", "--no-deref", "HEAD",
+                      remote["commit"]],
+                     ["git", "-C", str(src), "read-tree", "-u", "--reset", "HEAD"]]
+            rc, out = 0, ""
+            for c in steps:
+                rc, out = _run(c, env=env)
+                cmds.append(" ".join(c))
+                if rc != 0:
+                    break
+        elif named and remote is None and remote_problem:
+            return Step("acquire[build]", False, f"clone failed: {remote_problem}",
+                        commands=cmds), None
         else:
             clone = ["git", "clone", "--depth", "1"]
             if a.ref:
-                clone += ["--branch", a.ref]
+                clone += ["--branch", remote["name"] if remote else a.ref]
             clone += [a.repo, str(src)]
             rc, out = _run(clone, env=env)
             cmds.append(" ".join(clone))
@@ -627,7 +718,9 @@ def _acq_build(man, prefix, python, env=None):
             return Step("acquire[build]", False, f"clone failed: {out.strip()[-400:]}",
                         commands=cmds), None
 
-    problem, source = _build_checkout(src, a, cmds, env=env)
+    problem, source = _build_checkout(src, a, cmds, env=env, remote=remote)
+    if remote_problem:
+        source["remote_ref_check"] = remote_problem
     if problem:
         return Step("acquire[build]", False, problem, commands=cmds,
                     evidence={"source_checkout": source}), None

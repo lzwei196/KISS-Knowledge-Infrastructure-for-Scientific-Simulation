@@ -146,7 +146,8 @@ def test_failed_clone_with_surviving_git_is_rechecked_on_retry(upstream, tmp_pat
 
     def failed_checkout(command, **kwargs):
         nonlocal interrupted
-        if isinstance(command, list) and command[:2] == ["git", "clone"]:
+        # A tag ref is fetched explicitly and populated by read-tree, not clone.
+        if isinstance(command, list) and (command[:2] == ["git", "clone"] or "read-tree" in command):
             rc, out = real(command, **kwargs)
             assert rc == 0, out
             (target / "source.f90").unlink()
@@ -348,3 +349,51 @@ def test_symlink_entry_with_windows_text_checkout_is_complete(upstream, tmp_path
     step = acquire(manifest(upstream, "links"), target)
     assert step.ok, step.detail
 
+
+
+@pytest.fixture
+def shadowed(upstream):
+    """NCAR layout: release tag v5 is newer than a stale same-named branch."""
+    stale = git(upstream, "rev-parse", "HEAD")
+    git(upstream, "branch", "v5", stale)
+    (upstream / "source.f90").write_text("program release\nend program\n", encoding="utf-8")
+    git(upstream, "commit", "-qam", "release")
+    git(upstream, "tag", "v5")
+    return stale, git(upstream, "rev-parse", "HEAD")
+
+
+def test_fresh_clone_takes_release_tag_not_same_named_branch(upstream, tmp_path, built, shadowed):
+    stale, release = shadowed
+    target = tmp_path / "fresh-release"
+    step = acquire(manifest(upstream, "v5"), target)
+    assert step.ok, step.detail
+    source = step.evidence["source_checkout"]
+    assert source["resolved_commit"] == release
+    assert source["requested_ref_kind"] == "tag"
+    assert source["shadowed_branch_commit"] == stale
+    assert not any("--branch" in command for command in step.commands)
+    assert (target / "source.f90").read_text(encoding="utf-8").startswith("program release")
+
+
+def test_existing_branch_checkout_is_not_reused_as_release_tag(upstream, tmp_path, built, shadowed):
+    stale, release = shadowed
+    target = clone(upstream, tmp_path, ref="v5")  # clone --branch picks the stale branch
+    assert git(target, "rev-parse", "HEAD") == stale
+    step = acquire(manifest(upstream, "v5"), target)
+    assert not step.ok and "same-named branch" in step.detail
+    assert "fetch --depth 1 origin refs/tags/v5:refs/tags/v5" in step.detail
+    assert not built and git(target, "rev-parse", "HEAD") == stale
+    # The suggested deliberate acquisition then passes, despite the stale branch ref.
+    git(target, "fetch", "-q", "--depth", "1", "origin", "refs/tags/v5:refs/tags/v5")
+    git(target, "checkout", "-q", "--detach", "refs/tags/v5")
+    step = acquire(manifest(upstream, "v5"), target)
+    assert step.ok, step.detail
+    assert step.evidence["source_checkout"]["resolved_commit"] == release
+
+
+def test_explicit_branch_ref_still_selects_the_branch(upstream, tmp_path, built, shadowed):
+    stale, _release = shadowed
+    step = acquire(manifest(upstream, "refs/heads/v5"), tmp_path / "branch")
+    assert step.ok, step.detail
+    source = step.evidence["source_checkout"]
+    assert source["resolved_commit"] == stale and source["requested_ref_kind"] == "branch"

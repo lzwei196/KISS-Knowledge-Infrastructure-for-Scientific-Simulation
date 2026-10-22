@@ -306,8 +306,9 @@ def test_post_startup_source_drift_invalidates_ready_badge(example):
     assert status_path.read_bytes() == saved
 
 
-def test_library_card_separates_trust_install_route_and_installation(example, tmp_path):
+def test_library_card_separates_trust_install_route_and_installation(example, tmp_path, monkeypatch):
     handler, ki, cfg, _ = example
+    monkeypatch.setattr(catalog, "installation_platform", lambda: "windows")
     current_status(handler, ki, cfg)
     handler.catalogue_integrity_errors = {}
     assert handler._status_for(ki)["label"] == "Installed"
@@ -321,4 +322,25 @@ def test_library_card_separates_trust_install_route_and_installation(example, tm
     handler._workdir = lambda _ki: tmp_path / "never-installed"
     handler._default_status_files = {}
     handler._manifest_setup_kind = lambda _ki: "manual"
+    # No recipe, source repository or package: the platform note decides.
     assert handler._status_for(ki)["label"] == "No install route"
+    from kiss_cli import gui
+    monkeypatch.setattr(gui, "_recorded_platform_install", lambda _root: True)
+    assert handler._status_for(ki)["label"] == "Setup needed"
+
+
+@pytest.mark.parametrize("note, routed", [
+    (None, False),
+    ("Latest recorded attempt: **needs-user** (2026-09-04).\n", False),
+    ("Latest recorded attempt: **installed** (2026-09-05).\n", True),
+    ("Observed 2026-10-01: builds and runs natively on Windows x64.\n", True),
+])
+def test_install_route_comes_from_this_platforms_install_note(tmp_path, monkeypatch, note, routed):
+    from kiss_cli import gui
+    monkeypatch.setattr(catalog, "installation_platform", lambda: "windows")
+    if note is not None:
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "install.windows.md").write_text(note, encoding="utf-8")
+        (tmp_path / "docs" / "install.macos.md").write_text(
+            "Latest recorded attempt: **installed**\n", encoding="utf-8")
+    assert gui._recorded_platform_install(tmp_path) is routed

@@ -364,6 +364,22 @@ OBSERVATORY_PAGE = (Path(__file__).parent / "web" / "observatory.html")
 KI_TRUST_LABELS = {"not_accepted": "Not accepted on this computer",
                    "edited": "Edited — needs verification"}
 
+
+def _recorded_platform_install(ki_root: Path) -> bool:
+    """Whether the KI's install note for this platform records an installation.
+
+    Read only for KIs with no recipe, source repository or Python package, to
+    tell a known agent-guided route from none. A generated note states its
+    latest attempt's outcome; a hand-written note documents an observed build.
+    """
+    from .catalog import installation_platform
+    try:
+        text = (Path(ki_root) / "docs" / f"install.{installation_platform()}.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    outcome = re.search(r"Latest recorded attempt: \*\*([a-z_-]+)\*\*", text)
+    return outcome.group(1) == "installed" if outcome else bool(text.strip())
+
 INPUT_GROUPS = (
     ("forcing", "Forcing"),
     ("parameters", "Parameters"),
@@ -2028,7 +2044,8 @@ class Handler(BaseHTTPRequestHandler):
             return {"state": "setup", "label": "Ready to set up",
                     "can_run": False, "setup_kind": "one-click"}
         if setup_kind == "manual":
-            return {"state": "manual", "label": "No install route",
+            return {"state": "manual",
+                    "label": "Setup needed" if _recorded_platform_install(ki.root) else "No install route",
                     "can_run": False, "setup_kind": "manual"}
         return {"state": "setup", "label": "Setup needed",
                 "can_run": False, "setup_kind": "guided"}

@@ -5750,7 +5750,7 @@ verification are different states; never claim this test verified the KI."""
                     previous_verification = job.get("verification")
                     previous_error = job.get("error")
                     job = ki_investigation.mark_authoring(project, job_id)
-                    def work():
+                    def author_pass(feedback):
                         extra = ("Repair this project-linked KI using the frozen investigation evidence and "
                             "the three independent reports in this workspace. Preserve scientific input "
                             "contracts and acceptance criteria. Follow KDT; never edit the live project.\n" +
@@ -5761,6 +5761,8 @@ verification are different states; never claim this test verified the KI."""
                         if previous_error:
                             extra += ("\n[PREVIOUS HOST REPAIR ERROR — still unresolved until checked]\n" +
                                       str(previous_error))
+                        if feedback:
+                            extra += "\n" + feedback
                         if author_notes.strip():
                             extra += ("\n[USER REPAIR REFINEMENT — within the same reviewed scope]\n" +
                                       author_notes + "\nThese instructions do not change the frozen reviews, "
@@ -5777,6 +5779,10 @@ verification are different states; never claim this test verified the KI."""
                         return ki_investigation.mark_authored(project, job_id,
                             error=None if outcome.get("status") == "completed" else outcome.get("error", "Authoring interrupted"),
                             author_report=outcome.get("raw_response"))
+                    def work():
+                        if job["draft"].get("repair_mode", "authoring") != "authoring":
+                            return author_pass("")
+                        return ki_investigation.automatic_repair(project, job_id, author_pass)
                 elif action == "verify":
                     job = ki_investigation.mark_verifying(project, job_id)
                     def work():

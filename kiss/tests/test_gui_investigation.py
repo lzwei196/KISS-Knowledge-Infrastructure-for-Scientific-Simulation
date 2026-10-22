@@ -183,7 +183,10 @@ def test_author_retry_receives_the_previous_host_gate_failure(case,monkeypatch):
     assert status==202,response
     threads[0]()
     assert "PREVIOUS HOST KDT CHECK" in prompts[0] and "MISSING_EXECUTION_POLICY" in prompts[0]
-    assert inv.get(case.project,job["id"])["verification"] is None
+    # The build now reruns the draft's checks and KDT itself; the old failure is not reused.
+    current=inv.get(case.project,job["id"])
+    assert current["auto_repair"]["rounds"][0]["author"]=="completed"
+    assert (current["verification"] or {}).get("report",{}).get("error")!="MISSING_EXECUTION_POLICY"
 
 
 def test_apply_forwards_exact_id_and_keeps_old_provider_binding_on_rejection(case,monkeypatch):

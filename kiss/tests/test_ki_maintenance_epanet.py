@@ -8,6 +8,7 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -253,3 +254,24 @@ def test_additive_registry_does_not_accept_stale_epanet_receipt(case):
         stream.write(b"changed executable")
     with pytest.raises(ValueError):
         registry.require_current(case.candidate, report, source=case.source)
+
+
+@pytest.mark.parametrize("autocrlf", ["true", "false", "input"])
+def test_pinned_case_fixture_survives_windows_checkout(tmp_path, autocrlf):
+    # A converting checkout once turned the LF case into CRLF on the release runner,
+    # so every recipe test failed CASE_SHA256 there while passing locally.
+    repo, checkout = tmp_path / "repo", tmp_path / "checkout"
+    relative = Path("kiss/tests/fixtures/epanet_tutorial.inp")
+    (repo / relative).parent.mkdir(parents=True)
+    root = Path(__file__).resolve().parents[2]
+    (repo / ".gitattributes").write_bytes((root / ".gitattributes").read_bytes())
+    (repo / relative).write_bytes((FIXTURES / "epanet_tutorial.inp").read_bytes())
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+    git("init", "--quiet")
+    git("-c", "core.autocrlf=false", "add", "--", ".gitattributes", relative.as_posix())
+    git("-c", f"core.autocrlf={autocrlf}", "checkout-index", "--all",
+        "--prefix=" + checkout.as_posix() + "/")
+    assert hashlib.sha256((checkout / relative).read_bytes()).hexdigest() == fix.CASE_SHA256

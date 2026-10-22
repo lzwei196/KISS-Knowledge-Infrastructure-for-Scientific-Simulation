@@ -8,3 +8,6 @@ kiss/data_kis/*/tools/read_observations.py text eol=lf
 # Golden overlay fixtures assert exact authenticated bytes, including newlines.
 # Preserve their literal Git payload instead of applying checkout conversion.
 kiss/tests/fixtures/stable_windows_guidance/** -text
+# The EPANET maintenance recipe pins the tutorial case's SHA-256; its tests
+# write the published fixtures in both newline forms themselves.
+kiss/tests/fixtures/epanet_* -text

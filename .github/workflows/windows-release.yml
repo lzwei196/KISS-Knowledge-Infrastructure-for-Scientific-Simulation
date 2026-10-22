@@ -22,7 +22,8 @@ jobs:
       source_commit: ${{ steps.source.outputs.commit }}
       source_validation_run: ${{ steps.source.outputs.validation_run }}
     runs-on: windows-latest
-    timeout-minutes: 60
+    # The desktop suite grew to ~7,600 tests; 0.6.61's first run reached 85% at 60 minutes.
+    timeout-minutes: 120
     env:
       PYTHONUTF8: "1"
     steps:

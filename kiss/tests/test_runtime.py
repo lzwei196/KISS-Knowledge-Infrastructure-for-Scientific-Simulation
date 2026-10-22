@@ -2527,7 +2527,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn('(?:-->|$)/g,"")', page)
         self.assertIn("The live response connection was interrupted", page)
         self.assertNotIn("The request failed: ${e.message||e}", page)
-        self.assertIn("Verified on this machine", page)
+        self.assertIn('"Installed"', page)
         self.assertIn('src="/logo.svg"', page)
         self.assertIn('id="newsess" disabled', page)
         self.assertIn("setControls(true)", page)

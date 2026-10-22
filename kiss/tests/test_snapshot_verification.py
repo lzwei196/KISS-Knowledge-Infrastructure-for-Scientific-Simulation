@@ -301,4 +301,24 @@ def test_post_startup_source_drift_invalidates_ready_badge(example):
     assert not state["can_run"] and state["requires_reverification"]
     assert state["primary_error"]["name"] == "ki-source"
     assert "changed" in state["primary_error"]["detail"].lower()
+    assert state["label"] == "Edited — needs verification"
+    assert state["primary_error"]["trust"] == "edited"
     assert status_path.read_bytes() == saved
+
+
+def test_library_card_separates_trust_install_route_and_installation(example, tmp_path):
+    handler, ki, cfg, _ = example
+    current_status(handler, ki, cfg)
+    handler.catalogue_integrity_errors = {}
+    assert handler._status_for(ki)["label"] == "Installed"
+    handler.catalogue_integrity_errors = {ki.name: (
+        "New catalogue KI has no current KDT acceptance or exact recorded legacy provenance; "
+        "a new --models directory cannot restart migration")}
+    refused = handler._status_for(ki)
+    assert refused["label"] == "Not accepted on this computer" and not refused["can_run"]
+    assert refused["primary_error"]["trust"] == "not_accepted"
+    handler.catalogue_integrity_errors = {}
+    handler._workdir = lambda _ki: tmp_path / "never-installed"
+    handler._default_status_files = {}
+    handler._manifest_setup_kind = lambda _ki: "manual"
+    assert handler._status_for(ki)["label"] == "No install route"

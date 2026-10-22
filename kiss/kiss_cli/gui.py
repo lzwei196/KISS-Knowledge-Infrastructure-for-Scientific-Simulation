@@ -359,6 +359,11 @@ SETUP_PAGE = (Path(__file__).parent / "web" / "setup.html")
 STUDIO_PAGE = (Path(__file__).parent / "web" / "studio.html")
 OBSERVATORY_PAGE = (Path(__file__).parent / "web" / "observatory.html")
 
+# Library-card wording for a KI the integrity guard refuses. Trust in the KI's
+# files is separate from whether its software has an install route or is installed.
+KI_TRUST_LABELS = {"not_accepted": "Not accepted on this computer",
+                   "edited": "Edited — needs verification"}
+
 INPUT_GROUPS = (
     ("forcing", "Forcing"),
     ("parameters", "Parameters"),
@@ -1109,7 +1114,7 @@ The KI contract is your internal checklist, not a form for the user.
 - GeoForge-managed software in the current KI's configured binaries directory
   may be passed directly to a KI tool. Do not ask the user to copy a managed
   model binary into the project merely to satisfy path isolation.
-- When GeoForge marks a KI "Verified on this machine", that verdict came from
+- When GeoForge marks a KI "Installed" (verified on this machine), that verdict came from
   the KI's real software preflight on this Mac. Before claiming an executable
   or declared coupled model is missing, rerun that preflight with the configured
   interpreter and inspect the exact configured binaries directory. A denied or
@@ -1830,7 +1835,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             ki_guard.require_intact(ki.root)
         except (ValueError, RuntimeError, OSError) as error:
-            raise KeyError(f"{ki.name}: KI draft requires verification: {error}") from error
+            label = KI_TRUST_LABELS[ki_guard.integrity_problem(str(error))]
+            raise KeyError(f"{ki.name}: {label}: {error}") from error
         return ki
 
     def _workdir(self, ki) -> Path:
@@ -1887,16 +1893,17 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, RuntimeError, OSError) as error:
                 source_error = str(error)
         if source_error:
-            return {"state": "setup", "label": "KI draft requires verification",
+            trust = ki_guard.integrity_problem(source_error)
+            return {"state": "setup", "label": KI_TRUST_LABELS[trust],
                     "can_run": False, "setup_kind": setup_kind,
                     "requires_reverification": True,
-                    "primary_error": {"name": "ki-source", "detail": source_error}}
+                    "primary_error": {"name": "ki-source", "trust": trust, "detail": source_error}}
         live = wd / "ki"
         if ki_guard.is_managed(live):
             try:
                 ki_guard.require_intact(live)
             except (ValueError, RuntimeError, OSError) as error:
-                return {"state": "setup", "label": "KI edit needs verification",
+                return {"state": "setup", "label": KI_TRUST_LABELS["edited"],
                         "can_run": False, "setup_kind": setup_kind,
                         "requires_reverification": True,
                         "primary_error": {"name": "ki-edit", "detail": str(error)}}
@@ -2006,7 +2013,7 @@ class Handler(BaseHTTPRequestHandler):
                                  and st["primary_error"].get("name") == "verification-required")
                 return {
                     "state": "verified" if ok else "setup" if waiting_check else "failed",
-                    "label": "Verified on this machine" if ok else "Verification required" if waiting_check else "Verification failed",
+                    "label": "Installed" if ok else "Verification required" if waiting_check else "Verification failed",
                     "can_run": ok,
                     "checked_at": st.get("checked_at"),
                     "verified_at": st.get("verified_at") if ok else None,
@@ -2021,7 +2028,7 @@ class Handler(BaseHTTPRequestHandler):
             return {"state": "setup", "label": "Ready to set up",
                     "can_run": False, "setup_kind": "one-click"}
         if setup_kind == "manual":
-            return {"state": "manual", "label": "Manual setup",
+            return {"state": "manual", "label": "No install route",
                     "can_run": False, "setup_kind": "manual"}
         return {"state": "setup", "label": "Setup needed",
                 "can_run": False, "setup_kind": "guided"}

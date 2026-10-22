@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import shutil
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -470,3 +471,67 @@ def test_adoption_requires_valid_report_and_current_candidate(active, monkeypatc
     assert (active / "SKILL.md").read_text() == "candidate"
     assert list(active.parent.glob("ki-previous-*/SKILL.md"))[0].read_text() == "original instructions"
     ki_guard.require_intact(active)
+
+
+def _release(monkeypatch, *roots):
+    """Stand in for a frozen build that recorded these KI folders' digests."""
+    prints = {root.name: ki_verification.content_digest(root) for root in roots}
+    monkeypatch.setattr(ki_guard, "_bundled_fingerprints", lambda: prints)
+    return prints
+
+
+def _shipped(base, text="bundled instructions"):
+    package = base / "models" / "Release_KI"
+    package.mkdir(parents=True)
+    (package / "SKILL.md").write_text(text, encoding="utf-8")
+    return package
+
+
+def test_build_fingerprints_are_read_only_in_frozen_builds(monkeypatch):
+    monkeypatch.setitem(sys.modules, "geoforge_bundled_library",
+                        SimpleNamespace(FINGERPRINTS={"A": "1" * 64}))
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    assert ki_guard._bundled_fingerprints() == {}
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert ki_guard._bundled_fingerprints() == {"A": "1" * 64}
+
+
+def test_bundled_library_in_a_new_folder_is_accepted_by_build_fingerprints(active, monkeypatch):
+    # This computer's one-time migration already happened, for other bytes.
+    ki_guard.enroll_catalogue(Catalog(active.parent))
+    package = _shipped(active.parent.parent / "release")
+    refused = ki_guard.enroll_catalogue(Catalog(package.parent))
+    assert ki_guard.integrity_problem(refused["errors"]["Release_KI"]) == "not_accepted"
+    _release(monkeypatch, package)
+    moved = active.parent.parent / "moved" / "models"
+    shutil.copytree(package.parent, moved)
+    for catalogue in (package.parent, moved):
+        result = ki_guard.enroll_catalogue(Catalog(catalogue))
+        assert not result["errors"] and result["enrolled"] == ["Release_KI"]
+        assert ki_guard.require_intact(catalogue / "Release_KI")["origin"] == "bundled_release"
+    assert ki_verification.current_report(moved / "Release_KI") is None, "a build record is not a KDT pass"
+
+
+def test_build_fingerprints_never_accept_edited_bytes(active, monkeypatch):
+    ki_guard.enroll_catalogue(Catalog(active.parent))
+    package = _shipped(active.parent.parent / "release")
+    _release(monkeypatch, package)
+    (package / "SKILL.md").write_text("edited after the build", encoding="utf-8")
+    result = ki_guard.enroll_catalogue(Catalog(package.parent))
+    assert ki_guard.integrity_problem(result["errors"]["Release_KI"]) == "not_accepted"
+    assert not ki_guard.is_managed(package)
+
+
+def test_in_place_upgrade_adopts_the_next_release_bytes(active, monkeypatch):
+    package = _shipped(active.parent.parent / "installed", "previous release")
+    _release(monkeypatch, package)
+    assert not ki_guard.enroll_catalogue(Catalog(package.parent))["errors"]
+    (package / "SKILL.md").write_text("next release", encoding="utf-8")
+    with pytest.raises(ki_guard.KIIntegrityError) as changed:
+        ki_guard.require_intact(package)
+    assert ki_guard.integrity_problem(str(changed.value)) == "edited"
+    stale = ki_guard.enroll_catalogue(Catalog(package.parent))
+    assert ki_guard.integrity_problem(stale["errors"]["Release_KI"]) == "edited"
+    prints = _release(monkeypatch, package)
+    assert not ki_guard.enroll_catalogue(Catalog(package.parent))["errors"]
+    assert ki_guard.require_intact(package)["digest"] == prints["Release_KI"]

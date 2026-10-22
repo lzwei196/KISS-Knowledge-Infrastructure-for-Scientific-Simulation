@@ -1035,7 +1035,7 @@ No KI was pre-selected for this session. From the catalogue above:
 3. THEN read the chosen KI's SKILL.md and follow it. Do not improvise a
    pipeline the KI already defines; do not substitute simplified formulas for
    the real model.
-4. If its software is not "Verified on this machine", discussion is allowed but
+4. If its software is not "Installed" (verified on this machine), discussion is allowed but
    do not claim to have run it. Tell the user to verify it in the KI Library.
 If the task needs no KI at all (a general question), say so and answer.
 """

@@ -206,7 +206,7 @@ def test_changed_library_source_is_rejected_before_any_project_preparation(tmp_p
     c = build_case(tmp_path, monkeypatch)
     (c.source / "preflight_check.py").write_text("print('unverified source')")
     assert chat(c) is None
-    assert "KI draft requires verification" in "".join(c.messages)
+    assert "Edited — needs verification" in "".join(c.messages)
     assert not (c.project / "models/Demo/kiss.toml").exists()
     assert not list(c.project.rglob("execution.json"))
 

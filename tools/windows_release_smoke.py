@@ -380,6 +380,61 @@ def check(bundle: Path, report: dict) -> None:
                           flow="passed", ki_update_branch=updates["branch"])
         finally:
             stop(process)
+        report["bundled_library_on_used_computer"] = check_used_computer_library(
+            executable, bundle, isolated, env)
+
+
+def seed_used_guard() -> dict:
+    """Leave the signed one-time KI inventory an earlier GeoForge would have left.
+
+    Host source, isolated homes: the inventory records none of this bundle's
+    KI bytes, as on a computer whose trust migration ran for an older library.
+    """
+    from kiss_cli import ki_guard
+    ki_guard._legacy_installation_roots = lambda: []
+    inventory, created = ki_guard._legacy_inventory()
+    assert created and not inventory["models"], inventory
+    return {"seeded_inventory_records": 0}
+
+
+def check_used_computer_library(executable: Path, bundle: Path, isolated: Path, env: dict) -> dict:
+    """Every bundled KI is accepted through the build's own fingerprints.
+
+    With the seeded inventory there is no legacy, KDT or published route for
+    these bytes, so a refusal here is what users saw as every KI blocked.
+    """
+    used = dict(env, GEOFORGE_KI_GUARD_HOME=str(isolated / "ki-guard-used"))
+    seeded = subprocess.run([sys.executable, "-B", str(Path(__file__).resolve()), str(bundle),
+                             "--seed-used-guard", "--report", str(isolated / "used-guard.json")],
+                            cwd=isolated, env=used, capture_output=True, encoding="utf-8",
+                            timeout=120, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert seeded.returncode == 0, (seeded.stdout, seeded.stderr)
+    with socket.socket() as available:
+        available.bind(("127.0.0.1", 0))
+        port = available.getsockname()[1]
+    process = subprocess.Popen(
+        [str(executable), "gui", "--no-browser", "--desktop-server",
+         "-p", str(port), "-w", str(isolated / "work-used")],
+        cwd=isolated, env=used, creationflags=subprocess.CREATE_NO_WINDOW)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        deadline = time.monotonic() + 180
+        while True:
+            assert process.poll() is None, "Frozen HTTP server exited during startup"
+            try:
+                with opener.open(f"http://127.0.0.1:{port}/api/status", timeout=120) as response:
+                    status = json.loads(response.read().decode("utf-8"))
+                break
+            except (OSError, TimeoutError):
+                if time.monotonic() > deadline:
+                    raise RuntimeError("Frozen HTTP server did not start in 180 seconds")
+                time.sleep(0.5)
+    finally:
+        stop(process)
+    refused = {name: row.get("label") for name, row in status.items()
+               if (row.get("primary_error") or {}).get("name") == "ki-source"}
+    assert len(status) == 127 + len(BUNDLED_DATA_KIS) and not refused, refused
+    return {"passed": True, "kis": len(status), "accepted_by": "build fingerprints"}
 
 
 def main() -> None:
@@ -387,10 +442,13 @@ def main() -> None:
     parser.add_argument("bundle", type=Path)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--projection-worker", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--seed-used-guard", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     report = {"bundle": str(args.bundle.resolve()), "passed": False}
     try:
-        if args.projection_worker is not None:
+        if args.seed_used_guard:
+            report.update(seed_used_guard())
+        elif args.projection_worker is not None:
             report.update(check_wofost_projection(args.bundle.resolve() / "_internal",
                                                  args.projection_worker, Path(sys.executable)))
         else:

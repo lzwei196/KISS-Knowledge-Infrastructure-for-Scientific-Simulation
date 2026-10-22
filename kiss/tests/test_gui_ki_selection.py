@@ -44,7 +44,7 @@ def test_broken_known_ki_can_be_selected_without_enrollment_or_adapter_copy(case
     assert status == 200 and body["models"] == ["VIC"]
     assert sessions.load(handler.workroot, session["id"])["models"] == ["VIC"]
     assert not ki_guard.is_managed(known.root) and not copied
-    with pytest.raises(KeyError, match="requires verification"):
+    with pytest.raises(KeyError, match="Not accepted on this computer"):
         handler._ki("VIC")
 
 

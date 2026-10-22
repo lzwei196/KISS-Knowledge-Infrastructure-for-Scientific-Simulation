@@ -23,6 +23,33 @@ class KIIntegrityError(ValueError):
     pass
 
 
+# Messages for bytes that differ from what this computer accepted. Every other
+# integrity refusal means the bytes were never accepted here.
+_CHANGED = ("Active KI changed", "Catalogue KI differs from its host baseline")
+
+
+def integrity_problem(message: str) -> str:
+    """Classify a refusal for the library card: 'edited' or 'not_accepted'."""
+    return "edited" if str(message).startswith(_CHANGED) else "not_accepted"
+
+
+def _bundled_fingerprints() -> dict[str, str]:
+    """KI content digests the release build recorded for the library it bundled.
+
+    Frozen builds only. The PyInstaller spec generates this module into the
+    executable's archive, beside the code rather than the editable KI files, so
+    a moved or reinstalled copy of the shipped bytes is recognised in any folder
+    while any edited byte still needs KDT acceptance.
+    """
+    if not getattr(sys, "frozen", False):
+        return {}
+    try:
+        import geoforge_bundled_library as bundled
+    except ImportError:
+        return {}
+    return {str(name): str(digest) for name, digest in bundled.FINGERPRINTS.items()}
+
+
 _LOCK = threading.RLock()
 _WORKERS: dict[str, threading.RLock] = {}
 _ACTIVE: dict[str, int] = {}
@@ -256,6 +283,7 @@ def enroll_catalogue(catalog) -> dict:
     receipts = flowgate.load().receipts
     result = {"enrolled": [], "errors": {}, "legacy_migration": False}
     published = published_acceptance.catalogue_bindings(catalog)
+    bundled = _bundled_fingerprints()
     try:
         legacy, migrated = _legacy_inventory()
         legacy_digests = {item["digest"] for item in legacy["models"]}
@@ -276,14 +304,15 @@ def enroll_catalogue(catalog) -> dict:
             root = Path(ki.root).absolute()
             try:
                 digest = _digest(root)
+                release = bundled.get(ki.name) == digest
                 before = known.get(ki.name)
                 if before is not None:
-                    if before != {"root": str(root), "digest": digest}:
+                    if before != {"root": str(root), "digest": digest} and not release:
                         accepted = _read(root)
                         if (before.get("root") != str(root) or accepted is None or
                                 accepted.get("origin") != "verified_candidate" or accepted.get("digest") != digest):
                             raise KIIntegrityError("Catalogue KI differs from its host baseline; explicit verified adoption is required")
-                else:
+                elif not release:
                     known_baseline = _read(root)
                     recorded = bool(known_baseline and known_baseline.get("digest") == digest)
                     if not recorded and digest not in legacy_digests:
@@ -296,7 +325,10 @@ def enroll_catalogue(catalog) -> dict:
                 # Record source identity even if backing up a legacy tree fails;
                 # a later attempt can only retry those same recorded bytes.
                 known[ki.name] = {"root": str(root), "digest": digest}
-                enroll(root)
+                if release:
+                    _adopt_release(root, digest)
+                else:
+                    enroll(root)
                 result["enrolled"].append(ki.name)
             except (OSError, ValueError, RuntimeError) as exc:
                 result["errors"][ki.name] = str(exc)
@@ -307,6 +339,32 @@ def enroll_catalogue(catalog) -> dict:
         temp.write_text(json.dumps(doc, indent=2), encoding="utf-8")
         temp.replace(path)
     return result
+
+
+def _adopt_release(root: Path, digest: str) -> dict:
+    """Record the exact bytes this release bundled as the root's baseline.
+
+    Replaces an older baseline for the same root, as when an installer upgrade
+    rewrites the bundled library in place. The digest is the build's record,
+    never a value derived from whatever bytes happen to be on disk.
+    """
+    root = Path(root).absolute()
+    if root.is_symlink():
+        raise KIIntegrityError("Cannot enroll a linked KI root")
+    if _home() == root or root in _home().parents:
+        raise KIIntegrityError("KI baseline records must stay outside the KI")
+    with operation(root), _LOCK:
+        doc = _read(root)
+        if doc is not None and doc.get("digest") == digest:
+            return doc
+        entry = _entry(root)
+        backup = entry / digest[:12]
+        _io(entry).mkdir(parents=True, exist_ok=True)
+        if not _io(backup).exists():
+            _copy(root, backup)
+        if _digest(backup) != digest:
+            raise KIIntegrityError("KI bytes differ from the release build record")
+        return _save(root, digest, origin="bundled_release")
 
 
 def enroll(root: Path) -> dict:

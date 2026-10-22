@@ -50,8 +50,9 @@ def test_actual_frozen_data_layout_preserves_reader_packages(spec_name, tmp_path
     entries = [n for n in datas.elts if isinstance(n, ast.Tuple)
                and any(isinstance(v, ast.Constant) and v.value == "data_kis" for v in ast.walk(n))]
     assert len(entries) == 1
+    # The Windows spec bundles a cache-free staged copy of SOURCE/data_kis.
     source, dest = eval(compile(ast.Expression(entries[0]), str(spec), "eval"),
-                        {"__builtins__": {}, "str": str, "SOURCE": SOURCE})
+                        {"__builtins__": {}, "str": str, "SOURCE": SOURCE, "KI_STAGE": SOURCE})
     bundle = tmp_path / "bundle"
     shutil.copytree(source, bundle / dest)
     monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)

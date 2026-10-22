@@ -805,7 +805,7 @@ function stateClass(n){
   return s==="verified"?"ok":s==="failed"?"block":"warn";}
 function stateLabel(n){
   const s=STATUS[n]||{};
-  return s.label||(s.state==="verified"?"Verified on this machine":"Setup needed");}
+  return s.label||(s.state==="verified"?"Installed":"Setup needed");}
 
 async function refreshMachineStatus(redraw=true,force=false){
   // Verification belongs to this Mac, not to one chat. It may change in the

@@ -133,9 +133,7 @@ The old `data_ki/CMFD/SKILL.md` / `data_ki/HWSD/SKILL.md` references are STALE (
 
 ## Building a NEW basin from scratch (validated chain)
 
-There is no `quickstart_swatplus.py` in this KI — the Bengbu/Wangjiaba decks under `outputs/` were
-built by a script that no longer exists on disk. Use this chain instead. Validated end-to-end at
-Zijingguan (紫荆关, Juma River, Haihe, 1767 km², 6 subbasins / 27 HRUs) on 2026-07-09.
+There is no `quickstart_swatplus.py` in this KI. Use this chain instead.
 
 ```bash
 # S1 — clip the national DEM to a bbox around the basin first, then delineate.
@@ -148,14 +146,12 @@ python tools/s1/delineate_watershed.py dem_clip.tif <lat> <lon> delin/ 25 0.01
 
 # S1b — REQUIRED for any multi-subbasin basin: build the real channel routing topology.
 #       Without channel_topology.json the deck falls back to one-hop "STAR" routing (every
-#       subbasin discharging straight to the outlet), which destroys hydrograph timing —
-#       this is the documented root cause of an NSE = -1.26 run on 2026-08-19, where the
-#       agent only found this tool by listing tools/s1/ after 5 model runs and 4 calibration
-#       rounds. Run it here, not after you see a bad NSE.
+#       subbasin discharging straight to the outlet), which destroys hydrograph timing.
+#       Run it here, not after you see a bad NSE.
 #      Feed it the RASTER + the grids delineate_watershed.py already wrote — that is
 #      the tool's own documented preference and it matters: with only
 #      --subbasin_shp + --dem_path it re-breaches the DEM and every reach length
-#      falls back to the local-area relation (11/11 on the Rio San Pedro Mezquital).
+#      falls back to the local-area relation.
 python tools/s1/build_channel_topology.py \
     --subbasin_raster delin/subbasins.tif --dem_path dem_clip.tif \
     --flow_dir delin/flow_direction.tif --flow_acc delin/flow_accumulation.tif \
@@ -173,8 +169,7 @@ python tools/s1/build_channel_topology.py \
 #      WARNING, so read them: a repair on the MAIN stem means the DEM clip is wrong.
 #   -> subbasins.shp must already be MASKED to the watershed. wbt.subbasins() runs
 #      over the whole DEM; delineate_watershed.py masks it (fixed 2026-08-20). On
-#      an unmasked file you get a partition of the DEM box, not of the basin —
-#      639 polygons instead of 11 on the Rio San Pedro Mezquital.
+#      an unmasked file you get a partition of the DEM box, not of the basin.
 #   -> BUILDING IT IS NOT ENOUGH: it is only used if you PASS it to S2 below
 #      (--channel_topology). Building it and omitting the flag leaves you with STAR routing
 #      and no error message.
@@ -184,12 +179,10 @@ python tools/s1/build_channel_topology.py \
 #      ⚠️ THEIR DEFAULTS (esco 0.15 / cn3_swf 0.0 / perco 0.75) ARE A HUMID-MONSOON
 #      PRESET, chosen for the Chinese Huai/Yangtze basins. perco=0.75 sends most
 #      percolation to the aquifer, which returns as delayed baseflow. In an ARID or
-#      SEMI-ARID basin that is the dominant error: at Rio San Pedro Mezquital
-#      (Mexico, P 609 mm/yr, PET 1430 mm/yr) the default deck put ET/P at only 55%
-#      and yielded 266 mm/yr (44% runoff coefficient) against a real ~95 mm/yr, i.e.
-#      2.7x the observed discharge, with 46% of outlet flow arriving as groundwater
-#      return two to three months after the rain. Landscape fluxes (basin_ls) were
-#      correctly timed — it is the routed channel hydrograph that lags.
+#      SEMI-ARID basin that is the dominant error: the default deck can put ET/P far
+#      too low and give several times the observed water yield, with much of the outlet
+#      flow arriving as groundwater return months after the rain. Landscape fluxes
+#      (basin_ls) can be correctly timed while the routed channel hydrograph lags.
 #      For a basin with PET/P > ~2, start from `--perco 0.30` and re-check ET/P
 #      against an independent ET product before trusting the water yield.
 python tools/s2/generate_hru_from_global.py --basin_shp delin/watershed.shp \
@@ -206,7 +199,7 @@ python tools/s3/prepare_weather_files.py cmfd $CMFD_3HR "$COORDS" \
 #   so pass a PLACEHOLDER for the forcing-dir argument (it is ignored):
 #       python tools/s3/prepare_weather_files.py nasa_power - "$COORDS" \
 #           2008-01-01 2021-12-31 weather/ "$NAMES"
-#   ~2 s per station-year, all 5 SWAT+ variables, verified in Mexico 2026-08-20.
+#   ~2 s per station-year, all 5 SWAT+ variables.
 #   MSWX (`mswx $MSWX_DIR`) is the higher-resolution global option but its annual
 #   files are gzip-chunked ONE GLOBAL SLAB PER TIMESTEP: every (variable, year)
 #   costs a full ~76 GB decompression (~5 min each, more on a loaded box), i.e.
@@ -218,9 +211,9 @@ cp weather/* TxtInOut/
 python tools/s3/generate_weather_stations.py TxtInOut/pcp.cli "$COORDS" "$COORDS" TxtInOut
 
 # ⚠️ ROUTING METHOD: codes.bsn rte_cha MUST stay 0 (the official SWAT+ default; the generator
-#      now writes 0). rte_cha=1 (rev59 Muskingum) delayed the Huaibin 61-channel outlet by
-#      ~3+ WEEKS with volume intact — invisible to PBIAS/water-balance checks, uncalibratable
-#      (every speed lever pinned and still late), and small decks (Xixian, 33 ch) can PASS
+#      now writes 0). rte_cha=1 (rev59 Muskingum) can delay the outlet of a large channel
+#      network by WEEKS with volume intact — invisible to PBIAS/water-balance checks,
+#      uncalibratable (every speed lever pinned and still late), and small decks can PASS
 #      while big networks fail, so validation on a headwater proves nothing here (dt_054).
 #      Existing decks: fix codes.bsn col 8 AND delete _calib_pristine* so it rebuilds.
 
@@ -412,7 +405,10 @@ from sub-daily observations.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Source of truth:** `docs/validation_convention.yaml` for pass/fail bars and
 `dag.yaml` for the output being judged. A metric value without the field's cited
@@ -515,8 +511,8 @@ and `tileno3` instead of their real unit.
 
 ⚠️ **`sedmin` is PHOSPHORUS, not nitrogen** (corrected 2026-08-20). Until then this
 section and `parse_nutrient_output.py` both summed `sedmin` into TN — that adds a P flux
-to the N load *and* drops the two real N terms `lat3no3` and `tileno3`. At Wangjiaba the
-error was ~+40 % on TN. The correct landscape loads are:
+to the N load *and* drops the two real N terms `lat3no3` and `tileno3` (dt_049). The
+correct landscape loads are:
 
 ```
 TN_load (kg) = basin_area_ha × (sedorgn + surqno3 + lat3no3 + tileno3)   # kg N/ha/day
@@ -552,8 +548,8 @@ and use HRU-level nutrient exports instead.
 
 ### CRITICAL: Validating WQ against CONCENTRATION observations (guokongzhan / 国控站)
 
-China National Surface-Water Quality auto-monitoring stations (guokongzhan, e.g. station
-2258 蚌埠闸上) report **in-stream CONCENTRATION (mg/L)** of specific species (NH3-N, TP,
+China National Surface-Water Quality auto-monitoring stations (guokongzhan) report
+**in-stream CONCENTRATION (mg/L)** of specific species (NH3-N, TP,
 CODMn, DO), usually with **no co-located discharge**.
 
 Because `wq_cha=0` is mandatory (Rev 59.3 QUAL2E blowup, see above), SWAT+ here produces
@@ -562,20 +558,19 @@ state** — no baseflow / benthic / point-source / gate-retention floor. Therefo
 
 1. **Never derive in-stream concentration as `HRU_load / channel_flo_out`.** With no
    in-stream floor it reads ~0 mg/L in dry/winter months while a real gate-regulated
-   station holds a ~0.1 mg/L floor, so pattern correlation collapses (station 2258 TP:
-   r=0.27, NSE=-7.25, 2026-06-08). This is a DOMAIN limit, **not** a calibration target —
+   station holds a ~0.1 mg/L floor, so pattern correlation collapses (dt_wq_004). This is
+   a DOMAIN limit, **not** a calibration target —
    do not tune parameters to chase it (no state variable exists to fit).
 
 2. **Species must match.** Reliable SWAT+ output is TOTAL-N export (surqno3 + sedorgn),
-   NOT a single dissolved species. Comparing it to obs NH3-N gives PBIAS ~ -3000%.
+   NOT a single dissolved species. Comparing it to obs NH3-N gives a huge negative PBIAS.
    NH3-N speciation needs in-stream QUAL2E, which is disabled — do not compare them.
 
 **Correct WQ validation target:** compare annual/monthly **LOADS (kg)** with
 `validate_water_quality.py` (PBIAS for loads, R for monthly) against obs given as
 TN_kg/TP_kg, or concentration **paired with measured discharge** so load = C×Q can be
 formed. A bare concentration series at a gate-regulated sluice is NOT a valid target for
-this KI. (At station 2258 the load-side TP PBIAS was +37.7%, within Moriasi 2007/2015
-±40% "satisfactory" — loads are usable; the derived-concentration comparison is not.)
+this KI. (Loads are usable; the derived-concentration comparison is not.)
 
 
 ### om_water.ini (Channel Initial Concentrations)
@@ -660,8 +655,8 @@ Aggressive HRU thresholds (>20%) remove significant land area. The removed area 
 
 > **WHICH NAMES REV59 ACTUALLY APPLIES (dt_045).** Being listed in `cal_parms.cal` is
 > NECESSARY BUT NOT SUFFICIENT — the rev59 binary declares many parameters it never applies
-> from `calibration.cal`. Measured at Zijingguan (2026-07-10) by running the real binary once
-> per parameter at an extreme value and md5-ing the 18-yr daily outlet series:
+> from `calibration.cal`. Measured by running the real binary once per parameter at an
+> extreme value and md5-ing the daily outlet series:
 >
 > - **APPLIED**: `cn2` `esco` `epco` `k` `alpha` `lat_ttime` `flo_min`
 > - **SILENT NO-OP** (bit-identical output): `canmx` `surlag` `awc` `delay` `revap_co`
@@ -693,10 +688,9 @@ Aggressive HRU thresholds (>20%) remove significant land area. The removed area 
 
 **EVERY basin-object (`bsn`) name is a calibration.cal no-op** — that is what the `surlag` result
 was really saying. `msk_co1`/`msk_co2`/`msk_x` are bsn names, so the Muskingum channel routing
-was previously uncalibratable. This is not cosmetic: at Zijingguan the shipped default
-`msk_co1/msk_co2 = 0.75/0.25` put the 2023-08-01 flood peak (89.2% of the observed variance) a
-day LATE, pinning `r_val` at 0.647 and hence `NSE_val` at its r² ceiling of 0.418. Equal weights
-land the peak on the observed day: `r_val` 0.823, `NSE_val` 0.417 → 0.669.
+was previously uncalibratable. This is not cosmetic: the shipped default
+`msk_co1/msk_co2 = 0.75/0.25` can put a flood peak a day LATE and pin NSE at its r² ceiling;
+equal weights can land the peak on the observed day (dt_047).
 
 **Mass-balance invariants that actually catch a routing bug (dt_046).** `outlet / wateryld` is
 NOT a mass-balance test: `basin_wb`'s `wateryld` column is `surq_gen + latq` only and EXCLUDES
@@ -714,9 +708,9 @@ search on NSE is near-degenerate — select on **KGE** instead and report NSE.
 | revap_co | 0.02-0.2 | Groundwater revap coefficient | absval |
 | flo_min | 0-5000 | Minimum flow to shallow aquifer (mm) | absval |
 
-**Recommended starting calibration for new basins** — DIRECTION-AWARE. First run UNCALIBRATED (or with a neutral cn2 0 preset), read the outlet PBIAS sign, THEN pick the matching preset key in `generate_calibration_file.py`. Applying the OVER-predict recipe (cn2 -50%, esco 0.15) to an UNDER-predicting basin strips storm quickflow and collapses rainfall–runoff correlation (Xixian: r 0.31, NSE -2.36, PBIAS -32%). Do NOT assume the over-predict direction.
-- Humid subtropical, OVER-predicting (PBIAS > 0, e.g. Bengbu +253%) -> preset `humid_subtropical_overpredict`: CN2 -50% pctchg, ESCO 0.15, cn3_swf 0.0, perco 0.75
-- Humid subtropical, UNDER-predicting (PBIAS < 0, e.g. Xixian -32%) -> preset `humid_subtropical_underpredict`: CN2 +5% pctchg, ESCO 0.85, perco 0.50 (preserves quickflow -> restores r; restricts ET -> raises yield)
+**Recommended starting calibration for new basins** — DIRECTION-AWARE. First run UNCALIBRATED (or with a neutral cn2 0 preset), read the outlet PBIAS sign, THEN pick the matching preset key in `generate_calibration_file.py`. Applying the OVER-predict recipe (cn2 -50%, esco 0.15) to an UNDER-predicting basin strips storm quickflow and collapses rainfall–runoff correlation. Do NOT assume the over-predict direction.
+- Humid subtropical, OVER-predicting (PBIAS > 0) -> preset `humid_subtropical_overpredict`: CN2 -50% pctchg, ESCO 0.15, cn3_swf 0.0, perco 0.75
+- Humid subtropical, UNDER-predicting (PBIAS < 0) -> preset `humid_subtropical_underpredict`: CN2 +5% pctchg, ESCO 0.85, perco 0.50 (preserves quickflow -> restores r; restricts ET -> raises yield)
 - Semi-arid: CN2 -20%, ESCO 0.50, perco 0.30
 - Tropical: CN2 -40%, ESCO 0.20, perco 0.60
 
@@ -728,7 +722,7 @@ search on NSE is near-degenerate — select on **KGE** instead and report NSE.
 > `generate_calibration_file.py` now aliases the latter and DROPS any unmatched name with a warning
 > instead of writing a silent no-op. Always diff a calibrated `channel_day.txt` against the
 > uncalibrated baseline to confirm a preset actually did something (`dt_042`).
-Without calibration, SWAT+ may OVER- or UNDER-estimate runoff depending on forcing/soil (Bengbu uncalibrated +253% PBIAS; Xixian under-predicts). Always check the PBIAS sign before selecting a preset.
+Without calibration, SWAT+ may OVER- or UNDER-estimate runoff depending on forcing/soil. Always check the PBIAS sign before selecting a preset.
 
 **DEEP-AQUIFER LOSS (`rchg_dp`) — the dominant VOLUME lever when cn2/esco are already maxed.**
 When a humid basin STILL over-predicts after the `_overpredict` preset (cn2 -50%, esco 0.15)
@@ -746,22 +740,20 @@ python tools/s6/generate_calibration_file.py \
 ```
 Physically `rchg_dp` lumps un-modeled consumptive losses (irrigation withdrawal, flood
 diversion/detention, regional groundwater pumping) — defensible for heavily human-impacted
-basins. **Validated WANGJIABA recipe (Huai 30,630 km², over-predicting +34% PBIAS):**
-`cn2 absval 25` + `rchg_dp 0.78` closes the full-period water balance (PBIAS +34%→-0.87%) and
-lifts held-out **validation NSE -0.83 → +0.20, KGE 0.11 → 0.60** (full NSE -0.94 → -0.49). The
-residual ceiling is structural: daily r caps at ~0.59 (single-region CMFD cannot phase the
-spring freshet, same as Xixian) and the un-attenuated surface-runoff peaks hold sd_ratio ~1.5.
+basins. Even after `rchg_dp` closes the water balance, the remaining error can be
+structural: daily r is capped when single-region CMFD cannot phase the spring freshet,
+and un-attenuated surface-runoff peaks keep sd_ratio high.
 
 **CHANNEL ROUTING attenuation (`n`, `s` on the `rte` object) — usually NOT worth it on daily
 single-region-forced basins.** Slowing channels (high Manning `n`, low slope `s` in
 `hydrology.cha`/`hyd-sed-lte.cha`, both calibratable via the `rte` obj in cal_parms.cal) DOES
 attenuate over-predicted flood peaks, but at this grid resolution the multi-day travel time it
-needs phase-shifts the daily hydrograph and CRASHES r (Wangjiaba: mann 0.05→0.30 + slope
-0.01→0.0005 dropped r 0.60→0.43, net NSE worse). Manning `n` alone (at fixed slope) barely
+needs phase-shifts the daily hydrograph and CRASHES r, so net NSE gets worse. Manning `n`
+alone (at fixed slope) barely
 attenuates because velocity is slope-dominated. Prefer `rchg_dp` for volume and accept the
 peak-variance ceiling.
 
-**STRUCTURAL (HRU-generation) hydrology defaults — NOT fixable by calibration.cal.** `perco` and `cn3_swf` live in `hydrology.hyd` (written by `tools/s2/generate_hru_from_global.py`) and are absent from `cal_parms.cal`, so calibration.cal CANNOT change them. The defaults (esco 0.15, cn3_swf 0.0, perco 0.75) are tuned for OVER-predicting humid basins (Bengbu): they route drainage to slow baseflow and suppress wet-season quickflow. On an UNDER-predicting basin (e.g. Xixian, PBIAS -32%, r 0.31) they produce a baseflow-dominated, over-smoothed hydrograph that decorrelates from rainfall (no calibration preset can recover r). For under-predicting humid basins, REGENERATE the HRUs with `python tools/s2/generate_hru_from_global.py ... --esco 0.85 --cn3_swf 0.5 --perco 0.30` to preserve storm quickflow and restore timing BEFORE applying the humid_subtropical_underpredict calibration preset.
+**STRUCTURAL (HRU-generation) hydrology defaults — NOT fixable by calibration.cal.** `perco` and `cn3_swf` live in `hydrology.hyd` (written by `tools/s2/generate_hru_from_global.py`) and are absent from `cal_parms.cal`, so calibration.cal CANNOT change them. The defaults (esco 0.15, cn3_swf 0.0, perco 0.75) are tuned for OVER-predicting humid basins: they route drainage to slow baseflow and suppress wet-season quickflow. On an UNDER-predicting basin they produce a baseflow-dominated, over-smoothed hydrograph that decorrelates from rainfall (no calibration preset can recover r). For under-predicting humid basins, REGENERATE the HRUs with `python tools/s2/generate_hru_from_global.py ... --esco 0.85 --cn3_swf 0.5 --perco 0.30` to preserve storm quickflow and restore timing BEFORE applying the humid_subtropical_underpredict calibration preset.
 
 ---
 

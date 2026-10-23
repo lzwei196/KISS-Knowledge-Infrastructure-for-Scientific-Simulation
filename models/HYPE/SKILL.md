@@ -285,18 +285,12 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before
 | Water-quality analysis | `c1TN`, `c1TP` | ug/L | daily or configured output period |
 | Calibration/scoring tools | `cout` against `rout`/`Qobs.txt` | m^3/s | daily or configured criterion period |
 
-## 11. Validated Results
+## 11. Validation Status
 
-### Test Basin: Bengbu -- Huai River
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-| Property | Value |
-|----------|-------|
-| Location | Huai River at Bengbu |
-| Area | ~121,330 km^2 |
-| Period | 1980-1990, with 1980 warmup and 1981-1990 evaluated |
-| Resolution | lumped 1-subbasin setup with daily forcing |
-
-### Performance Metrics -- judged against the field's bar, not intuition
+### Pass bars -- judged against the field's bar, not intuition
 
 **Source: `docs/validation_convention.yaml`.** Bands below are copied from the convention. Null
 bands are written as `no cited threshold`.
@@ -307,29 +301,22 @@ Extracted convention facts:
 - CONVENTION BAR for `snow`: metric=`nse`, direction=`maximize`, satisfactory=`no cited threshold`, cites=none
 - CONVENTION BAR for `snow`: metric=`csi`, direction=`maximize`, satisfactory=`no cited threshold`, cites=none
 
-> Bar for `cout` (nse, per `pandit2025`, `shrestha2020`): satisfactory >= 0.5,
-> good >= 0.7, very_good >= 0.8. Bengbu achieved 0.678, which is satisfactory.
+| Dag variable | Metric | Direction | Bar (convention, cited) |
+|--------------|--------|-----------|--------------------------|
+| `cout` | nse | maximize | satisfactory >= 0.5, good >= 0.7, very_good >= 0.8 (`pandit2025`, `shrestha2020`) |
+| `cout` | pbias | zero_centered | very_good within 5, good within 10, satisfactory within 15 (`pandit2025`) |
+| `snow` | nse | maximize | no cited threshold |
+| `snow` | csi | maximize | no cited threshold |
 
-> Bar for `cout` (pbias, per `pandit2025`): very_good within 5, good within 10,
-> satisfactory within 15, direction zero_centered. Bengbu achieved +19.8%, outside
-> the satisfactory band.
+### Input data rules
 
-| Dag variable | Metric | Direction | Achieved value in this SKILL | Bar (convention, cited) | Verdict |
-|--------------|--------|-----------|------------------------------|--------------------------|---------|
-| `cout` | nse | maximize | 0.678 | satisfactory >= 0.5, good >= 0.7, very_good >= 0.8 (`pandit2025`, `shrestha2020`) | satisfactory |
-| `cout` | pbias | zero_centered | +19.8% | very_good within 5, good within 10, satisfactory within 15 (`pandit2025`) | outside satisfactory |
-| `snow` | nse | maximize | not evaluated here | no cited threshold | no verdict |
-| `snow` | csi | maximize | not evaluated here | no cited threshold | no verdict |
-
-### Data Replacement Tracking
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | CMFD 0.1 degree 3-hourly converted to daily in the validated Bengbu run | production_validated for Bengbu | keep unit checks from `dt_u03` active |
-| Soil/SLC | KI stage outputs | production_validated for the documented Bengbu setup | SLC fractions must sum to 1.0 |
-| Land cover | KI stage outputs | production_validated for the documented Bengbu setup | represented through SLC fractions |
-| DEM/routing | KI stage outputs | production_validated for the documented Bengbu setup | use semi-distributed setup for large basins when routing attenuation matters |
-| Initial conditions | warmup period | production_validated for Bengbu discharge | 1980 warmup, 1981-1990 evaluated |
+| Component | Source | Rule |
+|-----------|--------|------|
+| Forcing | CMFD 0.1 degree 3-hourly, converted to daily | keep unit checks from `dt_u03` active |
+| Soil/SLC | KI stage outputs | SLC fractions must sum to 1.0 |
+| Land cover | KI stage outputs | represented through SLC fractions |
+| DEM/routing | KI stage outputs | use semi-distributed setup for large basins when routing attenuation matters |
+| Initial conditions | warmup period | run a warmup year before the evaluated period |
 
 ## 12. Parameter Selection by Region
 
@@ -959,41 +946,11 @@ See `diagnostics/triplets.yaml` for the full triplet catalog (count: the KI map 
 
 ---
 
-## Validated Results
+## Setup errors seen in past runs (rules)
 
-### Bengbu (蚌埠) — Huai River, 1981-1990 (production_validated)
-
-| Metric | Value |
-|--------|-------|
-| Basin | Huai River @ Bengbu, ~121,330 km² |
-| Period | 1980-1990 (1980 warmup, 1981-1990 evaluated) |
-| Forcing | CMFD 0.1° 3-hourly → daily |
-| Setup | Lumped (1 subbasin), 3 SLC classes |
-| NSE | **0.678** |
-| KGE | **0.740** |
-| R² | 0.712 |
-| PBIAS | +19.8% (slight overprediction) |
-| Mean obs Q | ~900 m³/s |
-| Mean sim Q | ~1,080 m³/s |
-| Seasonal cycle | Captured correctly (monsoon peak Jun-Aug) |
-| Output | `outputs/bengbu_hype_1980_1990/` |
-| Plots | `hype_discharge_comparison.png`, `hype_scatter.png`, `hype_annual_cycle.png` |
-
-**Errors found during validation** (9 run attempts):
-1. CMFD precip in kg/m²/s — must ×10800 (dt_u03)
-2. GeoClass streamdepth=0 → zero discharge (dt_s08)
-3. SLC fractions validation needed (dt_s01)
-
-### Chaohe (潮河) — North China, 2001-2010
-
-| Metric | Value |
-|--------|-------|
-| Basin | Chaohe @ Zhangjiaofen, ~8,783 km² |
-| Period | 2000-2010 (2000 warmup, 2001-2010 evaluated) |
-| Setup | Lumped (1 subbasin) |
-| Mean sim Q | 21.7 m³/s |
-| Literature Q | 31-47 m³/s |
-| Assessment | 46% low — needs calibration or semi-distributed setup |
+1. CMFD precipitation is in kg/m²/s: multiply by 10800 for a 3-hourly sum (`dt_u03`).
+2. GeoClass streamdepth = 0 gives zero discharge (`dt_s08`).
+3. Check that SLC fractions sum to 1.0 (`dt_s01`).
 
 ---
 

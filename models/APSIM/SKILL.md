@@ -512,13 +512,12 @@ data, and it moves PBIAS without removing the trend it was chosen to handle. A
 sub-window may be reported as an ADDITIONAL diagnostic, clearly labelled, never
 as a substitute.
 
-**Worked example (GDHY wheat, Balcarce AR, 1984-2016, n=33).** Raw `r = -0.19`
-looked like an anti-correlated model. `trend_metrics` on the SAME pairs gives
-`r_detr = +0.14`, `r_firstdiff = +0.33`, `slope_obs = +0.074 t/ha/yr`,
-`slope_sim = -0.042 t/ha/yr`. The negative raw r was entirely an artefact of the
-obs technology trend. The only real model finding is `pbias = +40.8%`, i.e. the
-attainable-vs-actual yield gap of triplet dt_019 - handle that with
-region-matched management (dt_019), not with a metric change.
+**Lesson (triplet dt_020).** On a regional aggregate yield series, a negative raw `r`
+can come entirely from the obs technology trend. Run `trend_metrics` on the SAME
+pairs and read `r_detr` and `r_firstdiff` before calling the model anti-correlated.
+A large positive `pbias` left after this is the attainable-vs-actual yield gap of
+triplet dt_019 - handle that with region-matched management (dt_019), not with a
+metric change.
 
 ### 8.3 Calibration / validation split
 
@@ -528,10 +527,11 @@ independent information. For an uncalibrated forward run, either split the
 seasons into two disjoint periods or declare a single period and omit the
 `_cal` / `_val` fields.
 
-## 11. Validated Results
+## 11. Validation Status
 
-No achieved calibration, validation, or full-period metric values are stated in
-the provided KI facts. Grade `Grain.Wt` runs against `docs/validation_convention.yaml`;
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
+Grade `Grain.Wt` runs against `docs/validation_convention.yaml`;
 do not substitute remembered crop-model thresholds.
 
 ### Performance Metrics — convention bars for `Grain.Wt`
@@ -552,10 +552,10 @@ lower values are better; for maximize metrics, higher values are better.
 
 | Component | Source | Status | Notes |
 |-----------|--------|--------|-------|
-| Forcing | Pipeline | Pending validation result in this document | Use `preflight_check.py` before any run. |
-| Soil | Pipeline | Pending validation result in this document | Use KI soil conversion tools and `docs/format_spec.yaml`. |
+| Forcing | Pipeline | See run records | Use `preflight_check.py` before any run. |
+| Soil | Pipeline | See run records | Use KI soil conversion tools and `docs/format_spec.yaml`. |
 | APSIM execution | Actual APSIM binary/package | Required | Do not substitute a simplified formula or approximation. |
-| Observations | Observation-binding workflow | Pending validation result in this document | Choose obs shape from the dag before computing metrics. |
+| Observations | Observation-binding workflow | See run records | Choose obs shape from the dag before computing metrics. |
 
 ## 9. File Structure
 

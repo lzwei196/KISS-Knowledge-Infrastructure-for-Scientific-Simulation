@@ -364,6 +364,14 @@ OBSERVATORY_PAGE = (Path(__file__).parent / "web" / "observatory.html")
 KI_TRUST_LABELS = {"not_accepted": "Not accepted on this computer",
                    "edited": "Edited — needs verification"}
 
+# An installation whose last passing check is merely out of date (KI revision,
+# library update, projection). Each project's exact preflight runs when an
+# approved plan executes, so the card does not present it as a blocker.
+CHECKED_WHEN_RUN = "Installed · checked when it runs"
+# A check that is pending with no earlier pass (e.g. after data-only
+# preparation): equally not a blocker, but it claims no installation.
+UNCHECKED_WHEN_RUN = "Checked when it runs"
+
 
 def _recorded_platform_install(ki_root: Path) -> bool:
     """Whether the KI's install note for this platform records an installation.
@@ -1930,7 +1938,7 @@ class Handler(BaseHTTPRequestHandler):
                 if ok and (not ki_guard.is_managed(live) or
                            not st.get("ki_content_digest") or
                            st["ki_content_digest"] != ki_verification.content_digest(live)):
-                    return {"state": "setup", "label": "Recheck KI revision",
+                    return {"state": "setup", "label": CHECKED_WHEN_RUN,
                             "can_run": False, "setup_kind": setup_kind,
                             "requires_reverification": True,
                             "checked_at": st.get("checked_at"), "verified_at": None,
@@ -1977,7 +1985,7 @@ class Handler(BaseHTTPRequestHandler):
                     except (OSError, ValueError, TypeError) as error:
                         runtime_error = f"Cannot verify saved installation configuration: {error}"
                     if runtime_error:
-                        return {"state": "setup", "label": "Recheck runtime projection" if runtime_error_name == "runtime-projection" else "Recheck runtime settings", "can_run": False,
+                        return {"state": "setup", "label": CHECKED_WHEN_RUN if runtime_error_name == "runtime-projection" else "Recheck runtime settings", "can_run": False,
                                 "setup_kind": setup_kind, "requires_reverification": True,
                                 "checked_at": st.get("checked_at"), "verified_at": None,
                                 "previous_verification_passed": True,
@@ -1993,7 +2001,7 @@ class Handler(BaseHTTPRequestHandler):
                         stale = True
                     if stale:
                         return {
-                            "state": "setup", "label": "Recheck updated KI", "can_run": False,
+                            "state": "setup", "label": CHECKED_WHEN_RUN, "can_run": False,
                             "checked_at": st.get("checked_at"), "verified_at": None,
                             "software_version": st.get("software_version"), "steps": st.get("steps", []),
                             "primary_error": {"name": "snapshot-changed", "detail":
@@ -2029,7 +2037,7 @@ class Handler(BaseHTTPRequestHandler):
                                  and st["primary_error"].get("name") == "verification-required")
                 return {
                     "state": "verified" if ok else "setup" if waiting_check else "failed",
-                    "label": "Installed" if ok else "Verification required" if waiting_check else "Verification failed",
+                    "label": "Installed" if ok else UNCHECKED_WHEN_RUN if waiting_check else "Verification failed",
                     "can_run": ok,
                     "checked_at": st.get("checked_at"),
                     "verified_at": st.get("verified_at") if ok else None,
@@ -4001,7 +4009,8 @@ class Handler(BaseHTTPRequestHandler):
         detail = result["detail"]
         return {"project_preflight": {"session": sid, "can_check": available, "detail": detail},
                 "job": job, "request": None, "attention": None, "agent_ready": False,
-                "software": {**result, "label": "Project preflight passed" if result["can_run"] else "Project preflight required",
+                "software": {**result, "label": "Project preflight passed" if result["can_run"] else
+                    "Project preflight failed" if result.get("state") == "failed" else "Checked when the model runs",
                     "steps": receipt.get("checks", []), "checked_at": receipt.get("checked_at")},
                 "log_tail": live.get("check_log", "") if ours else detail}
 
@@ -6802,11 +6811,16 @@ verification are different states; never claim this test verified the KI."""
                     json.dumps(declarations, ensure_ascii=False) + "\nHost check:\n" +
                     "".join(preflight_messages))
             if project_check_pending and flowrun.current_state(project) == "EXECUTING":
-                out("[The project's KI or runtime verification is missing or stale. "
-                    "Review the current binding and approve a revised plan before execution.]\n")
-                flowrun.project_setup_failed(project, resolved,
-                    "Project verification changed; review the current plan and runtime.")
-                return None
+                # The project preflight belongs to the run: check the exact
+                # project pairs now instead of sending an approved plan back for
+                # re-approval. Dispatch still requires this fresh pass.
+                out("[The project's KI or runtime check is missing or stale; "
+                    "checking it before running the approved plan.]\n")
+                if not Handler._verify_project_preflight(self, project, resolved_with_cfg, out, runtime_events):
+                    if not _user_stopped(runtime_events):
+                        flowrun.project_setup_failed(project, resolved,
+                            "Project preflight failed; inspect the exact KI check above.")
+                    return None
             if repair_pending and (flow_pre is None or not flow_pre.gated):
                 out("[The repaired KI requires a new approved plan and project preflight before execution.]\n")
                 return None

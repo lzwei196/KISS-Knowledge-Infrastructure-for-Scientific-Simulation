@@ -66,7 +66,8 @@ def test_data_only_prepares_pinned_bytes_once_never_claims_readiness(data_case):
     assert setup_jobs.status(c.workroot,'Demo')['state']=='completed'
     assert not saved_status(c)['ok'] and saved_status(c)['verified_at'] is None
     assert saved_status(c)['primary_error']['name']=='verification-required'
-    assert c.handler._status_for(c.ki)['label']=='Verification required'
+    # Pending with no earlier pass: not a blocker, and it claims no installation.
+    assert c.handler._status_for(c.ki)['label']=='Checked when it runs'
     assert 'does not establish readiness' in ''.join(c.output)
     assert ki_verification.content_digest(c.live.root)==before
     assert (c.root/'kiss.toml').read_bytes()==config

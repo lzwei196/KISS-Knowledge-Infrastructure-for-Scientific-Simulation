@@ -75,6 +75,9 @@ def test_legacy_snapshot_report_requires_recheck_without_mutation(example):
     assert state["requires_reverification"] and not state["can_run"]
     assert state["verified_at"] is None
     assert path.read_bytes() == original and binary.read_bytes() == b"existing native bytes"
+    # Out of date, not broken: each project's exact check runs with its approved plan.
+    assert state["label"] == "Installed · checked when it runs"
+    assert gui._project_check_allowed_by_shared_status(state, shared_root=cfg.root)
 
 
 def test_matching_snapshot_identity_is_verified(example):

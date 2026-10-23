@@ -796,7 +796,9 @@ function projectHeaderStatus(){
   const rows=matching?saved.project_preflights:[];
   const passed=unique.filter(name=>rows.filter(row=>row.name===name).length===1&&
     rows.some(row=>row.name===name&&row.state==="verified"&&row.can_run===true));
-  const failed=rows.some(row=>unique.includes(row.name)&&["failed","stale","cancelled"].includes(row.state));
+  // Only a check that ran and failed is a problem. A stale, stopped or missing
+  // check simply runs again when an approved plan starts.
+  const failed=unique.filter(name=>!passed.includes(name)&&rows.some(row=>row.name===name&&row.state==="failed"));
   return {names:unique,known:Boolean(matching),passed,failed,pending:unique.filter(name=>!passed.includes(name))};
 }
 
@@ -1254,13 +1256,15 @@ function drawModelLabel(){
   const badge=$("#kistatus"),old=$("#kibanner");if(old)old.remove();
   badge.title=zh?"此项目当前 KI、运行环境和数据的技术预检；不等于独立科学验证。":"Technical preflight of this project's current KI, runtime and data; independent scientific validation is separate.";
   if(!ms.length){badge.className="statuspill";badge.textContent=zh?"按任务选择 KI":"Chooses for each task";return;}
-  if(!status.known){badge.className="statuspill";badge.textContent=zh?"项目预检尚未确认":"Project preflight unconfirmed";return;}
-  badge.className=`statuspill ${!status.pending.length?"ok":status.failed?"block":"warn"}`;
-  badge.textContent=ms.length===1&&!status.pending.length?(zh?"项目预检通过":"Project preflight passed"):
-    `${status.passed.length}/${ms.length} ${zh?"项目预检通过":"project preflights passed"}`;
-  if(status.pending.length){
-    const pending=status.pending,href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}&session=${encodeURIComponent(CUR.id)}`:GeoForgeKIScope.url("/library");
-    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${zh?"尚无当前项目预检通过的证据。可继续讨论；执行前必须通过项目检查。":"does not have a current passing project preflight. You can keep chatting; project checks must pass before execution."} <a href="${href}">${zh?"查看项目设置":"Review project setup"}</a></div>`);
+  if(!status.known){badge.className="statuspill";badge.textContent=zh?"运行时检查":"Checked when it runs";return;}
+  const failed=status.failed;
+  badge.className=`statuspill ${!status.pending.length?"ok":failed.length?"block":""}`.trim();
+  badge.textContent=!status.pending.length?(ms.length===1?(zh?"项目预检通过":"Project preflight passed"):`${ms.length}/${ms.length} ${zh?"项目预检通过":"project preflights passed"}`):
+    failed.length?(ms.length===1?(zh?"项目预检未通过":"Project preflight failed"):`${failed.length}/${ms.length} ${zh?"项目预检未通过":"project preflights failed"}`):
+    (zh?"运行时检查":"Checked when it runs");
+  if(failed.length){
+    const href=failed.length===1?`/setup?model=${encodeURIComponent(failed[0])}&session=${encodeURIComponent(CUR.id)}`:GeoForgeKIScope.url("/library");
+    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(failed.join(", "))}</b> ${zh?"上次项目预检未通过。运行前 GeoForge 会再次检查；请先查看失败原因。":"failed its last project preflight. GeoForge checks again before running; review the failure first."} <a href="${href}">${zh?"查看项目设置":"Review project setup"}</a></div>`);
   }
 }
 function addTurn(who,cls){
@@ -2072,7 +2076,11 @@ function renderData(data){
   const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
   const preflights=projection.project_preflights||[];
   const selectedPreflights=runModels.map(name=>preflights.filter(row=>row.name===name));
-  const softwareLabel=runModels.length?`${selectedPreflights.filter(rows=>rows.length===1&&rows[0].state==="verified"&&rows[0].can_run===true).length} / ${runModels.length} ${chineseUI()?'项目预检通过':'project preflights passed'}`:'Auto KI';
+  const passedCount=selectedPreflights.filter(rows=>rows.length===1&&rows[0].state==="verified"&&rows[0].can_run===true).length;
+  const failedCount=selectedPreflights.filter(rows=>rows.some(row=>row.state==="failed")&&!(rows.length===1&&rows[0].can_run===true)).length;
+  // Unchecked or stale projects are checked when the approved plan runs; only failures are counted against them.
+  const softwareLabel=!runModels.length?'Auto KI':passedCount===runModels.length?`${passedCount} / ${runModels.length} ${chineseUI()?'项目预检通过':'project preflights passed'}`:
+    failedCount?`${failedCount} / ${runModels.length} ${chineseUI()?'项目预检未通过':'project preflights failed'}`:(chineseUI()?'项目预检在运行时进行':'Project preflight runs with the model');
   const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?runCompletionTitle(run):run.status==="failed"?"Project needs attention":run.status==="unknown"?"Status unconfirmed":run.goal?"Ready to continue":"Ready when you are";
   const stateClass=run.status==="complete"?"ok":run.status==="waiting_for_user"?"warn":run.status==="failed"?"block":"";
   const current=run.stage?runGroupIndex(run.stage):-1, executionDone=run.status==="complete"&&run.execution_complete===true;

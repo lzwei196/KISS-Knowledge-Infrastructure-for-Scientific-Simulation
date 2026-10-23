@@ -31,7 +31,11 @@ def test_project_recheck_preserves_session_skips_install_form_and_needs_no_provi
         actions=[{'kind': 'start'}, {'kind': 'poll', 'state': 1}, {'kind': 'finish', 'state': 2}])
     assert not old['#retry']['disabled'] and not old['#start']['disabled']
     assert old['.install-location']['display'] == 'none'
-    assert ('不会自动运行模型' if zh else 'automatically start the model') in old['#need']['html']
+    assert ('也不会运行模型' if zh else 'or start the model') in old['#need']['html']
+    # An unchecked project is checked when its approved plan runs; it is not shown as blocked.
+    assert ('批准的计划开始运行时 GeoForge 也会自动检查' if zh else 'automatically when an approved plan starts') in old['#need']['html']
+    assert old['#needbadge']['text'] == ('运行模型时检查' if zh else 'Checked when the model runs')
+    assert old['#needbadge']['className'] == 'badge'
     post = next(row for row in started['__calls'] if row['url'] == '/api/setup-project-preflight')
     assert post['body'] == {'model': 'CRHM', 'session': '555555555555'}
     assert not any(row['url'] in ('/api/setup-agent', '/api/setup-location') for row in finished['__calls'])

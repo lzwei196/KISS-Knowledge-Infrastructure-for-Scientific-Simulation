@@ -388,7 +388,7 @@ function draw(){
   if(!STATE){drawKISelection();return}busy=submitting||streaming||awaitingStatus||activeSetupJob();drawKISelection();
   const sw=STATE.software||{},capacity=currentCapacityIssue(),recheck=setupRecheckRequired(sw),unfinished=unfinishedSetupJob(),ok=!!sw.can_run&&!recheck&&!unfinished&&!capacity,failed=sw.state==="failed"||STATE.job?.state==="failed";
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
-  $("#statusbadge").className=`badge ${busy||capacity?'warn':ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=setupStopping()?setupJobLabel():busy?(requiredDataOperation()?(isZh()?"正在准备必需数据":"Preparing required data"):(isZh()?"正在验证":"Verification in progress")):capacity?capacityLabel():unfinished?setupJobLabel():sw.label||"Setup needed";
+  $("#statusbadge").className=`badge ${busy||capacity?'warn':ok?'ok':failed?'bad':projectSetup()?'':'warn'}`;$("#statusbadge").textContent=setupStopping()?setupJobLabel():busy?(requiredDataOperation()?(isZh()?"正在准备必需数据":"Preparing required data"):(isZh()?"正在验证":"Verification in progress")):capacity?capacityLabel():unfinished?setupJobLabel():sw.label||"Setup needed";
   $("#provider").disabled=busy;$("#llm").disabled=busy;
   const rd=STATE.required_data||{},dataAction=$("#preparedata");
   dataAction.style.display=rd.declared?"":"none";
@@ -417,10 +417,12 @@ function draw(){
     $(".install-location").style.display="none";
     $("#start").textContent=label;$("#start").disabled=busy||!pc.can_check;
     $("#provider").disabled=true;$("#llm").disabled=true;
-    $("#needbadge").className=ok?"badge ok":"badge warn";
-    $("#needbadge").textContent=busy?(isZh()?"正在检查项目":"Checking project"):ok?(isZh()?"项目预检已通过":"Project preflight passed"):(isZh()?"需要项目检查":"Project check required");
+    // The check also runs automatically when an approved plan starts, so an
+    // unchecked project is not presented as blocked; only a real failure is.
+    $("#needbadge").className=ok?"badge ok":failed?"badge bad":"badge";
+    $("#needbadge").textContent=busy?(isZh()?"正在检查项目":"Checking project"):ok?(isZh()?"项目预检已通过":"Project preflight passed"):failed?(isZh()?"项目预检未通过":"Project preflight failed"):(isZh()?"运行模型时检查":"Checked when the model runs");
     const repairLink=GeoForgeKIScope.url("/setup?model="+encodeURIComponent(MODEL)+"&case_session="+encodeURIComponent(DATA_SESSION));
-    $("#need").innerHTML=`<div class="request"><h4>${esc(label)}</h4><p>${esc(pc.detail||"")}</p><p>${isZh()?"检查此项目已保存的 KI、运行环境和必需数据。不会修改共享安装，不会自动运行模型。":"Checks this project's saved KI, runtime and required data. Does not change shared installation readiness or automatically start the model."}</p><div class="controls"><button class="primary" id="retry">${esc(label)}</button>${busy?"":`<a href="${esc(repairLink)}">${isZh()?"为此项目修复软件…":"Repair software for this project…"}</a>`}</div></div>`;
+    $("#need").innerHTML=`<div class="request"><h4>${esc(label)}</h4><p>${esc(pc.detail||"")}</p><p>${isZh()?"检查此项目已保存的 KI、运行环境和必需数据；批准的计划开始运行时 GeoForge 也会自动检查。不会修改共享安装，也不会运行模型。":"Checks this project's saved KI, runtime and required data; GeoForge also runs this check automatically when an approved plan starts. Does not change shared installation readiness or start the model."}</p><div class="controls"><button class="primary" id="retry">${esc(label)}</button>${busy?"":`<a href="${esc(repairLink)}">${isZh()?"为此项目修复软件…":"Repair software for this project…"}</a>`}</div></div>`;
     $("#retry").disabled=busy||!pc.can_check;$("#retry").onclick=()=>startAgent(false);
   }else if(req&&req.status==="waiting"){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Needs you now";

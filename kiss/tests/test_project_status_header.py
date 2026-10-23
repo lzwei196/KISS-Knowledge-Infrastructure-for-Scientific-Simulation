@@ -223,8 +223,14 @@ def test_current_project_pass_overrides_shared_dirty_header(zh):
 def test_shared_pass_cannot_substitute_project_failure_or_absence(state):
     result = ui("header", shared={"Demo": {"state": "verified", "can_run": True}},
                 run={"project_preflights": [{"name": "Demo", "state": state, "can_run": False}]})
-    assert result["cls"] != "statuspill ok" and "0/1" in result["badge"]
-    assert "session=one" in result["banner"]
+    assert result["cls"] != "statuspill ok"
+    if state == "failed":
+        assert result["cls"] == "statuspill block" and result["badge"] == "Project preflight failed"
+        assert "session=one" in result["banner"]
+    else:
+        # Not yet checked for this project: it is checked when an approved plan runs.
+        assert result["cls"] == "statuspill" and result["badge"] == "Checked when it runs"
+        assert not result["banner"]
 
 
 @pytest.mark.parametrize("rows", [[], [{"name": "Other", "state": "verified", "can_run": True}],

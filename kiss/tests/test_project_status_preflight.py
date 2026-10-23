@@ -68,5 +68,17 @@ def test_status_panel_does_not_substitute_shared_installation_for_project_pass(z
     data["project_status"]["project_preflights"] = [{"name": "Demo", "state": "failed", "can_run": False}]
     data["project_status"]["progress"] = progress(data["project_status"]["project_preflights"])
     html = evaluate(data, zh=zh)["html"]
-    assert ("0 / 1 项目预检通过" if zh else "0 / 1 project preflights passed") in html
+    assert ("1 / 1 项目预检未通过" if zh else "1 / 1 project preflights failed") in html
     assert "Ready to continue" not in html and "1 / 1 software verified" not in html
+    assert "project preflights passed" not in html and "项目预检通过" not in html
+
+
+@pytest.mark.parametrize("zh", [False, True])
+@pytest.mark.parametrize("state", ["stale", "unverified"])
+def test_status_panel_shows_an_unchecked_project_as_checked_when_it_runs(zh, state):
+    data = fixture_data()
+    data["project_status"]["project_preflights"] = [{"name": "Demo", "state": state, "can_run": False}]
+    data["project_status"]["progress"] = progress(data["project_status"]["project_preflights"])
+    html = evaluate(data, zh=zh)["html"]
+    assert ("项目预检在运行时进行" if zh else "Project preflight runs with the model") in html
+    assert "failed" not in html.split("statuspill")[1][:80] and "passed" not in html.split("statuspill")[1][:80]

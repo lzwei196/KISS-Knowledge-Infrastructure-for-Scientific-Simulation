@@ -161,7 +161,7 @@ def test_explicit_inspection_cli_policy_cannot_inherit_running_or_changed_state(
         assert not turn.wrappers and not turn.session.write_allowed(project / "runs/plan.json")
 
 
-def test_ordinary_execution_still_refuses_stale_project_before_provider(phase, monkeypatch):
+def _stale_execution(phase, monkeypatch, *, passes):
     project, fs, ki = phase
     fs.ctx.state = fs.flow.states.State.EXECUTING
     fs.ctx.save()
@@ -169,13 +169,44 @@ def test_ordinary_execution_still_refuses_stale_project_before_provider(phase, m
     handler = _handler(SimpleNamespace(project=project, ki=ki,
         cfg=paths.KissConfig.default(project)), monkeypatch, "api", capture)
     monkeypatch.setattr(gui.Handler, "_project_setup_ok", lambda *_: False)
-    monkeypatch.setattr(api, "run", _deny("provider before stale execution refusal"))
-    calls, pieces = [], []
-    monkeypatch.setattr(flowrun, "project_setup_failed", lambda *_a, **_k: calls.append(True))
+    checks, failed = [], []
+
+    def preflight(_self, checked_project, pairs, out, _events=None):
+        checks.append((checked_project, [item.name for item, _cfg in pairs]))
+        out(f"\n{ki.name} exact project preflight: {'PASS' if passes else 'FAIL'}\n")
+        return passes
+
+    monkeypatch.setattr(gui.Handler, "_verify_project_preflight", preflight)
+    monkeypatch.setattr(flowrun, "project_setup_failed", lambda *_a, **_k: failed.append(True))
+    return project, ki, handler, checks, failed
+
+
+def test_stale_project_check_during_execution_fails_before_provider(phase, monkeypatch):
+    project, ki, handler, checks, failed = _stale_execution(phase, monkeypatch, passes=False)
+    monkeypatch.setattr(api, "run", _deny("provider after a failed project preflight"))
+    pieces = []
     turn = gui.Handler._chat_with_models(handler, [ki.name], "api:deepseek", "Continue execution",
         lambda piece: pieces.append(piece) or True, project, flow_pre=flowrun.Pre(names=[ki.name]))
-    assert turn is None and calls == [True]
-    assert "verification is missing or stale" in "".join(pieces)
+    assert turn is None and failed == [True]
+    # The host ran the exact project check itself instead of asking for re-approval.
+    assert checks == [(project, [ki.name])]
+    text = "".join(pieces)
+    assert "checking it before running the approved plan" in text and "PASS" not in text
+
+
+def test_stale_project_check_during_execution_reruns_and_continues(phase, monkeypatch):
+    project, ki, handler, checks, failed = _stale_execution(phase, monkeypatch, passes=True)
+    reached = []
+
+    def provider(*_args, **_kwargs):
+        reached.append(True)
+        yield "Provider fixture continued the approved plan."
+
+    monkeypatch.setattr(api, "run", provider)
+    gui.Handler._chat_with_models(handler, [ki.name], "api:deepseek", "Continue execution",
+        lambda _piece: True, project, flow_pre=flowrun.Pre(names=[ki.name]))
+    assert checks == [(project, [ki.name])] and not failed
+    assert reached == [True]
 
 
 @pytest.mark.parametrize("state,explicit", [("COMPLETED", False), ("EXECUTING", True)])

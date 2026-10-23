@@ -41,4 +41,5 @@ def test_legacy_setup_has_no_required_data_action():
 
 def test_project_setup_link_preserves_current_session():
     page=(Path(ui.PAGE).parent/'app.html').read_text(encoding='utf-8')
-    assert '/setup?model=${encodeURIComponent(pending[0])}&session=${encodeURIComponent(CUR.id)}' in page
+    # The header links only a KI whose project preflight failed, keeping this session.
+    assert '/setup?model=${encodeURIComponent(failed[0])}&session=${encodeURIComponent(CUR.id)}' in page

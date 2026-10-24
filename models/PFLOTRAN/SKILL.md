@@ -63,7 +63,6 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Last updated**: 2026-08-18 — aligned body with KI dag/convention output and validation sections
   (previously 2026-04-30 — added 1D vadose zone / FLUXNET SWC validation workflow)
-  (3-site campaign: CN-Din, CN-Qia, CN-HaM; best result NSE=0.471 at CN-HaM v2)
 
 ---
 
@@ -560,7 +559,7 @@ END
 
 ### 7.6 Common Grid Configurations
 
-For Bengbu-basin-scale (catchment) simulations:
+For basin-scale (catchment) simulations:
 - Horizontal resolution: 100–500 m
 - Vertical layers: 5–20 layers, thinner near surface
 - Total cells: 10,000–1,000,000
@@ -604,16 +603,10 @@ rank-1 validation campaign.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-### PFLOTRAN KI Validation Campaigns
-
-| Campaign | Scope | Result stated in this KI body | Interpretation |
-|---|---|---|---|
-| FLUXNET SWC 3-site campaign | CN-Din, CN-Qia, CN-HaM | best result NSE=0.471 at CN-HaM v2 | Existing body result; compare only against the correct variable's convention bar. |
-| CN-HaM SMAP L4 sm_rootzone 2019 winter window | obs only 2019-01-01..01-19 | snow gating + IC datum 0.645 m flipped r from -0.83 to +0.84, PBIAS -11% to +0.8% | Existing body marks NSE structurally invalid because obs std is 0.107% VWC. |
-| CN-Din FLUXNET SWC | subtropical forest | NSE=-0.17 | Existing body attributes bias to P-ET deficit treatment. |
-| CN-Qia FLUXNET SWC | plantation forest | structural +54% wet bias | Existing body marks monsoon regime structurally unsuitable. |
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics -- convention bars
 
@@ -638,8 +631,7 @@ hydrology thresholds.
 ## 10. 1D Vadose Zone Column — FLUXNET SWC Validation Workflow
 
 Use this workflow to validate PFLOTRAN Richards-equation physics against
-FLUXNET tower soil moisture observations (SWC_F_MDS_1). Validated against
-3 Chinese FLUXNET sites (CN-Din, CN-Qia, CN-HaM).
+FLUXNET tower soil moisture observations (SWC_F_MDS_1).
 
 ### 10.1 Site Pre-screening (run before any model setup)
 
@@ -682,15 +674,6 @@ for p in p_vals:
 | P/ET annual ratio | > 1.5 | 1.0–1.5 | < 1.0 |
 | Max monsoon P / mean ET | < 2 | 2–3 | > 3 (see dt_026) |
 | phi_est vs HWSD phi | within 15% | 15–30% diff | > 30% (override) |
-
-**Pre-screened Chinese sites:**
-
-| Site | Ecosystem | Suitability | Notes |
-|------|-----------|-------------|-------|
-| CN-HaM | Alpine meadow, Qinghai | ✅ Suitable | Override phi→0.60; NSE=0.47 achieved |
-| CN-Din | Subtropical forest | ⚠️ Marginal | RZ=2.0m; NSE=-0.17 (bias from P-ET deficit treatment) |
-| CN-Qia | Plantation forest | ❌ Unsuitable | Monsoon regime; structural +54% wet bias (dt_026) |
-| CN-Cha | Temperate forest, Jilin | ❌ Unsuitable | 9/12 months ET>P; min T=-25.7°C |
 
 ### 10.2 Soil Properties (HWSD lookup + corrections)
 
@@ -766,11 +749,9 @@ for date, p_mm, t in zip(dates, precip, tmean):
 #   Pc = ((Se**(-1/m))-1)**(1/n)/alpha ; head=Pc/9804 ; DATUM = z_top - head
 ```
 
-Validated: SMAP L4 sm_rootzone at CN-HaM 2019 (obs only 2019-01-01..01-19, a
-deep-winter window). Snow gating + IC datum 0.645 m flipped r from -0.83 to
-+0.84, PBIAS -11% → +0.8%. NOTE the obs over a frozen window is near-constant
-(std 0.107% VWC), so NSE is denominator-collapsed and STRUCTURALLY INVALID —
-score with magnitude_accuracy (PBIAS), not NSE (dt_027).
+NOTE: over a deep-winter window the obs is often near-constant, so NSE is
+denominator-collapsed and STRUCTURALLY INVALID — score with magnitude_accuracy
+(PBIAS), not NSE (dt_027).
 
 **Root zone depth selection** (dt_020):
 
@@ -1011,7 +992,7 @@ h5ls column.h5
 ## 13. File Naming Conventions
 
 ```
-<site>_<mode>.in           # Input deck (e.g., bengbu_richards.in)
+<site>_<mode>.in           # Input deck (e.g., basin_richards.in)
 <site>_<mode>.h5           # HDF5 output
 <site>_<mode>-obs-0.tec    # Observation file (0-indexed)
 <site>_<mode>-mas.dat      # Mass balance

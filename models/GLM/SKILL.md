@@ -91,7 +91,7 @@ Then convert to GLM met format using this KI's tool: `tools/s2_met_forcing/conve
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21
 **Stats**: 7 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status**: `production_validated` (Miyun Reservoir, 2001-2010)
+**Validation status**: `production_validated`
 
 ---
 
@@ -236,46 +236,12 @@ The full corpus lives in `diagnostics/triplets.yaml`; do not duplicate or renumb
 | 4 | `dt_006` | GLM crashes during basin setup | `H[]` and `A[]` morphometry arrays are not ascending bottom-to-top | Sort morphometry bottom-to-top and keep `A[0]` at the bottom |
 | 5 | `dt_036` | Fixed-depth temperature metrics are silently wrong | Output read directly from adaptive Lagrangian layers | Use `parse_glm_output.py --depths` to interpolate to fixed depths |
 
-## 11. Validated Results
+## 11. Validation Status
 
-This section restates validated campaigns already documented below and the KI's sourced convention bars. The dag's rank-1 validation variable is `lake_level`; no convention bar for `lake_level` is stated here unless it is present in `docs/validation_convention.yaml`.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-### Test Basin: Miyun Reservoir
-
-| Property | Value |
-|----------|-------|
-| Location | 40.48N, 116.97E |
-| Period | 2001-2010 |
-| Forcing | CMFD daily from VIC Chaohe simulation |
-| Runtime | 3-4 seconds for 10 years |
-| Status | Production validation campaign documented in this file |
-
-| Result | Value | Status |
-|--------|-------|--------|
-| Summer surface T (JJA) | 28.2 C simulated vs 24-28 C published | PASS |
-| Winter surface T (DJF) | 3.4 C simulated vs 0-2 C published | Warm bias |
-| Annual mean T | 15.5 C simulated vs 10-12 C published | Warm bias |
-| Ice days/year | 71 simulated vs ~120 published | REASONABLE |
-| Max ice thickness | 0.28 m simulated vs 0.3-0.5 m published | REASONABLE |
-| Lake level variation | 0.007 m simulated vs 5-15 m published | Water balance issue |
-
-### Test Basin: Lake Catoma, Alabama
-
-| Property | Value |
-|----------|-------|
-| Location | 34.1932N, -86.8052E |
-| Period | 2014 spin-up discarded; 2015-01-01..2020-12-30 scored |
-| Observation proxy | ISMN / SCAN station `Cullman-NAHRC` soil temperature |
-| Runtime | GLM 7 years in ~2 s; whole pipeline ~3 min |
-| Status | Depth-matched temperature comparison documented in this file |
-
-| Matched depth | NSE | r | KGE | PBIAS |
-|---|---:|---:|---:|---:|
-| 0.0508 m (headline) | 0.723 | 0.937 | 0.835 | +14.9 % |
-| 0.1016 m | 0.711 | 0.933 | 0.837 | +14.1 % |
-| 0.2032 m | 0.712 | 0.942 | 0.820 | +14.3 % |
-| 0.508 m | 0.681 | 0.936 | 0.801 | +14.2 % |
-| 1.016 m | 0.400 | 0.910 | 0.600 | +13.7 % |
+The dag's rank-1 validation variable is `lake_level`; no convention bar for `lake_level` is stated here unless it is present in `docs/validation_convention.yaml`.
 
 ### Performance Metrics -- convention bars
 
@@ -541,15 +507,14 @@ Each WQ variable needs one value per `num_depths` depth level. The total number 
 > **DEPTH-RESOLVED / COLUMN WQ validation (dt_034, 2026-06-28): csv_point is
 > single-point only — do NOT use it for column statistics.** A fixed depth-below-surface
 > csv_point level intermittently writes spurious `0.0` when the lake level/Lagrangian
-> layers move it onto a boundary (e.g. DeGray AR showed exact-0.0 DO at 5 m & 20 m
-> sandwiched between oxic 1 m/10 m/40 m). For a full DO/WQ profile read `output.nc`
+> layers move it onto a boundary (exact-0.0 DO at some depths
+> sandwiched between oxic depths). For a full DO/WQ profile read `output.nc`
 > **one timestep at a time** at only the dates you need — `np.squeeze(ds['OXY_oxy'][i])[:NS[i]]`
 > with `NS` (active layers) and `H` (layer heights); a bulk `[:]` read of the padded
 > z=500 variable **segfaults libnetcdf** (no traceback). Thickness-weight (diff(H))
 > for a column mean; top/bottom active layer = surface/bottom DO; OXY_oxy ×32/1000 → mg/L.
-> **SOD lever:** shipped `Fsed_oxy=-40` over-depletes meso-/oligotrophic hypolimnia
-> (DeGray DO col-mean PBIAS −48%); `Fsed_oxy≈-12`, `Ksed_oxy≈50` → PBIAS −6%, surface
-> DO r 0.89/NSE 0.53. For depthless WQP grab profiles the unambiguous pairing is
+> **SOD lever:** shipped `Fsed_oxy=-40` over-depletes meso-/oligotrophic hypolimnia;
+> reduce to `Fsed_oxy≈-12` and raise `Ksed_oxy≈50` (dt_034). For depthless WQP grab profiles the unambiguous pairing is
 > per-date obs-max ↔ sim top-layer (surface DO).
 
 > 
@@ -557,13 +522,12 @@ Each WQ variable needs one value per `num_depths` depth level. The total number 
 > 2026-06-28).** The dag exposes `OXY_oxy` solely as `point_time_series`; for a
 > 1-D column model a "point" is one DEPTH. A thickness-weighted COLUMN-MEAN is an
 > INVENTED aggregate (not a dag-prescribed support) and MUST NOT be the headline
-> metric -- it masks the epilimnion/hypolimnion split the model resolves (DeGray
-> col-mean NSE 0.06 hid a surface PASS r 0.89 and a bottom FAIL PBIAS -95%). When
-> obs carry NO sample depth (e.g. WQP DeGray station ARDEQH2O_WQX-LOUA019A/B -- ALL
-> ActivityDepth/ActivityTop/Bottom/ResultDepth fields empty AT THE PROVIDER,
-> verified by fresh WQP pull), score ONLY surface DO: sim top active layer vs
+> metric -- it masks the epilimnion/hypolimnion split the model resolves. When
+> obs carry NO sample depth (e.g. WQP stations whose
+> ActivityDepth/ActivityTop/Bottom/ResultDepth fields are empty AT THE PROVIDER),
+> score ONLY surface DO: sim top active layer vs
 > per-date near-surface (epilimnetic = max) obs. Validating BOTTOM / hypolimnetic
-> DO requires a DEPTH-RESOLVED obs source; none exists for DeGray in WQP, so
+> DO requires a DEPTH-RESOLVED obs source; when none exists,
 > hypolimnetic-DO validation is data-limited (requires_data), NOT a model verdict.
 
 ### How to Enable Phytoplankton (Step by Step)
@@ -662,62 +626,12 @@ SiO2:   mg/L  = SIL_rsi (mmol Si/m3) * 60.08 / 1000
 
 ---
 
-## Validation: Miyun Reservoir (2026-03-22)
+## Setup errors seen in past runs (rules)
 
-**Basin**: Miyun Reservoir (密云水库), Beijing, China
-**Coordinates**: 40.48N, 116.97E
-**Period**: 2001-2010 (10 years)
-**Forcing**: CMFD daily (from VIC Chaohe simulation)
-**Runtime**: 3-4 seconds for 10 years
-
-### Morphometry
-- Max depth: 60 m, Surface area: 188 km2, Volume: ~4,521 MCM
-- Crest elevation: 155 m ASL, 13 depth-area levels
-- Inflow: Chaohe River VIC routing output (x2 approximate)
-- Outflow: constant 15 m3/s (Beijing water supply withdrawal)
-
-### Results vs Published Data
-
-| Metric | Simulated | Published | Status |
-|--------|-----------|-----------|--------|
-| Summer surface T (JJA) | 28.2 C | 24-28 C | PASS |
-| Winter surface T (DJF) | 3.4 C | 0-2 C | Warm bias |
-| Annual mean T | 15.5 C | 10-12 C | Warm bias |
-| Max surface T | 33.0 C | 28-32 C | Reasonable |
-| Min surface T | -0.36 C | < 0 (ice) | PASS |
-| Ice days/year | 71 | ~120 | REASONABLE |
-| Max ice thickness | 0.28 m | 0.3-0.5 m | REASONABLE |
-| Lake level variation | 0.007 m | 5-15 m | Water balance issue |
-
-### Key Findings
-
-1. **Seasonal thermal cycle is correct**: Summer heating to 28-33 C and winter cooling to near-zero matches published data well. The seasonal pattern is realistic.
-
-2. **Ice model requires `dt_iceon_avg` parameter (dt_027 -- THE critical finding)**: Without `dt_iceon_avg` and `min_ice_thickness` in the `&snowice` block, the ice model is silently disabled. The surface asymptotes to 0.002 C but never freezes. Adding `dt_iceon_avg = 0.02` and `min_ice_thickness = 0.001` enables ice formation. This parameter controls the averaging period (days) for ice onset temperature check. Values >0.04 days disable ice again on this lake. This is the single most important GLM configuration parameter for ice simulation and is undocumented in most examples.
-
-3. **Annual mean T is ~3-5 C warm**: Published annual mean is 10-12 C, simulated is 15.4 C. The warm bias is primarily from overestimating summer surface temperatures (28.4 vs published 24-28 C upper bound).
-
-4. **Precipitation missing from forcing (dt_024)**: CMFD-to-GLM conversion did not include precipitation. Rain=0 and Snow=0 for entire simulation. This affects water balance (lake level stuck at crest) but not thermal performance significantly.
-
-5. **subdaily forcing parsing fails (dt_026)**: 3-hourly CMFD forcing with `subdaily=.true.` produces unrealistic output (max T = 4.5 C). Must use daily forcing with `subdaily=.false.`.
-
-6. **timefmt must match date format (dt_025)**: `generate_glm_nml.py` hardcoded `timefmt=3` but generated datetime strings. Fixed to auto-detect: `timefmt=2` for strings, `timefmt=3` for seconds.
-
-### Tuned Parameters (Miyun)
-
-```
-coef_mix_conv = 0.05       # reduced from 0.2 (less convective mixing)
-coef_wind_stir = 0.18      # reduced from 0.402 (sheltered reservoir)
-coef_mix_hyp = 0.3         # reduced from 0.5 (less deep mixing)
-wind_factor = 0.7          # CMFD wind overestimates for sheltered valley
-lw_factor = 0.95           # slight LW reduction
-min_layer_thick = 0.05     # thinner surface layers
-max_layer_thick = 0.5      # matches Sparkling example
-sed_temp_mean = 5.0        # colder for 40.5N
-sed_temp_amplitude = 6.0   # moderate amplitude
-dt_iceon_avg = 0.02        # CRITICAL: ice onset averaging period (days)
-min_ice_thickness = 0.001  # CRITICAL: minimum ice thickness (m)
-```
+1. Without `dt_iceon_avg` and `min_ice_thickness` in `&snowice` the ice model is silently off (dt_027; see Critical Domain Knowledge 8).
+2. Check that the met CSV carries precipitation: Rain=0 and Snow=0 for the whole run is a silent water-balance error (dt_024).
+3. With 3-hourly CMFD, give GLM daily forcing with `subdaily=.false.`; `subdaily=.true.` gives a flat temperature (dt_026).
+4. `timefmt` must match the start/stop format: `timefmt=2` for datetime strings, `timefmt=3` for seconds (dt_025).
 
 ---
 
@@ -862,7 +776,7 @@ Triplets covering 7 failure domains (current count: the KI map at the top of thi
 
 **Silent error count** (when this section was written): 16/30 (53%) — higher than cross-model average due to lake-specific physics.
 
-**Most important triplet**: dt_027 — without `dt_iceon_avg=0.02` and `min_ice_thickness=0.001` in the `&snowice` block, GLM's ice model is silently disabled. This is undocumented in most GLM examples and caused 6 hours of debugging on Miyun Reservoir before discovery.
+**Most important triplet**: dt_027 — without `dt_iceon_avg=0.02` and `min_ice_thickness=0.001` in the `&snowice` block, GLM's ice model is silently disabled. This is undocumented in most GLM examples.
 
 **AED2-specific triplets**: dt_028/029/030 cover the three most common AED2 configuration errors. dt_029 (zero nutrient inflow) is the most insidious -- AED2 runs successfully but produces unrealistically low chlorophyll because there is no external nutrient supply.
 
@@ -915,25 +829,9 @@ model/glm/
 
 ---
 
-## Validation: Lake Catoma, Alabama vs ISMN soil temperature (2026-08-11)
+## Fixed-depth temperature obs (e.g. ISMN soil temperature as a proxy)
 
-**Lake**: Lake Catoma reservoir (HydroLAKES Hylak_id 113187), Cullman Co., Alabama, USA
-(34.1932N, -86.8052E, 1.37 km2, HydroLAKES depth_avg 19.3 m, Dis_avg 1.631 m3/s)
-**Obs**: ISMN / SCAN station `Cullman-NAHRC` (34.19492N, -86.79897E, 0.61 km from the lake),
-`soil_temperature` daily means at 0.0508 / 0.1016 / 0.2032 / 0.508 / 1.016 m
-**Forcing**: NASA POWER daily (`convert_met_to_glm.py --forcing_source nasa_power`)
-**Period**: 2014 spin-up (discarded) + 2015-01-01..2020-12-30 scored (2191 paired days)
-**Runtime**: GLM 7 years in ~2 s; whole pipeline (incl. HydroLAKES read + POWER fetch) ~3 min
-
-| Matched depth | NSE | r | KGE | PBIAS |
-|---|---|---|---|---|
-| 0.0508 m (headline) | 0.723 | 0.937 | 0.835 | +14.9 % |
-| 0.1016 m | 0.711 | 0.933 | 0.837 | +14.1 % |
-| 0.2032 m | 0.712 | 0.942 | 0.820 | +14.3 % |
-| 0.508 m | 0.681 | 0.936 | 0.801 | +14.2 % |
-| 1.016 m | 0.400 | 0.910 | 0.600 | +13.7 % |
-
-**How to reproduce the depth-matched comparison** (this is the pattern for ANY fixed-depth
+**How to run a depth-matched comparison** (this is the pattern for ANY fixed-depth
 temperature obs — thermistor chain, profile logger, soil sensor):
 
 ```bash
@@ -950,23 +848,20 @@ python tools/s9_output_analysis/parse_glm_output.py --output_nc output/output.nc
 
 ### Findings
 
-1. **The uncalibrated seasonal cycle is right; the offset is physical, not a bug.**
-   r = 0.94 at every depth. The +14 % PBIAS is dominated by WINTER: simulated water
-   ~11.5 C vs observed soil ~7.5 C. Water has far more thermal inertia than soil, so a
-   soil-temperature station is a PROXY — score the pattern (r/NSE), and do NOT tune Kw /
+1. **A soil-temperature station is a PROXY; the offset is physical, not a bug.**
+   Water has far more thermal inertia than soil, so a magnitude offset (mostly in
+   winter) is expected — score the pattern (r/NSE), and do NOT tune Kw /
    wind_factor to chase the magnitude offset against a non-water sensor (dt_037).
-   The documented ~3-5 C summer warm bias (LW handling) shows up here too: simulated
-   surface max 34.06 C vs a realistic 30-31 C for an Alabama reservoir.
-2. **NSE degrades with depth (0.72 -> 0.40 at 1 m) while r stays 0.91** — the model's
+2. **Against a soil proxy, NSE drops with depth while r stays high** — the model's
    1 m water temperature is nearly as fast as its surface, whereas 1 m SOIL damps and
    lags; that divergence is the proxy limit, again not a model error.
-3. **`build_morphometry --from_hydrolakes` inherits a modelled depth.** HydroLAKES gives
-   Lake Catoma depth_avg 19.3 m and `lookup_hydrolakes` estimates depth_max = 2.5 x
-   depth_avg = 48.2 m for a 1.37 km2 reservoir — implausibly deep. Surface/epilimnion
+3. **`build_morphometry --from_hydrolakes` inherits a modelled depth.** `lookup_hydrolakes`
+   estimates depth_max = 2.5 x HydroLAKES depth_avg, which can be implausibly deep for a
+   small reservoir. Surface/epilimnion
    temperature is insensitive to it, but ANY hypolimnetic or Schmidt-stability claim on a
    HydroLAKES-only morphometry is unsupported: get a real bathymetry or state the caveat.
-4. **`configure_outflow --mode balance` keeps the water balance closed** — lake level
-   range 0.24 m over 7 years with constant Dis_avg inflow, no crest pinning.
+4. **`configure_outflow --mode balance` keeps the water balance closed** with constant
+   Dis_avg inflow, no crest pinning.
 
 ---
 

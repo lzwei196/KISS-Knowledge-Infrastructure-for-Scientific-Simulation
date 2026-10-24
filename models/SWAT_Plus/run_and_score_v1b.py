@@ -7,18 +7,22 @@ Runs the SWAT+ rev59 binary FRESH on the validated calibrated Bengbu deck
 extracts outlet discharge via the KI's s9 extract_discharge tool, scores
 against the Bengbu gauge, closes the water balance, writes the VERIFIER JSON.
 """
-import sys, os, json, subprocess, time
+import sys, os, json, shutil, subprocess, time
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 ROOT      = "KISSPATH_ROOT"
-TXTINOUT  = Path(ROOT) / "models/SWAT+/knowledge_infrastructure/calib/run_txtinout"
+DECK      = Path(ROOT) / "models/SWAT+/knowledge_infrastructure/calib/run_txtinout"
 BINARY    = Path(ROOT) / "models/SWAT+/bin/swatplus_rev59"
 OBS       = Path(ROOT) / "data/obs/BB/51080_bengbu.txt"
 KI        = Path(ROOT) / "models/SWAT+/knowledge_infrastructure"
 OUTDIR    = Path(ROOT) / "models/SWAT+/detached/verify_1"
 RESULT    = OUTDIR / "result.json"
+# SWAT+ writes its outputs into its cwd, so it runs on a fresh copy of the deck
+# beside the result. The KI deck is read in place, never written: a desktop
+# project's KI copy is verified byte-for-byte.
+TXTINOUT  = OUTDIR / "run_txtinout"
 
 sys.path.insert(0, str(KI / "tools/s9"))
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
@@ -31,7 +35,9 @@ from auto_dissect_multi_agent.validators.standard_calval import compute_calval_m
 
 
 def run_binary():
-    # force a genuine fresh run: clear stale channel output
+    # force a genuine fresh run: a new copy of the deck, minus stale channel output
+    shutil.rmtree(TXTINOUT, ignore_errors=True)
+    shutil.copytree(DECK, TXTINOUT)
     for n in ("channel_sd_day.txt", "channel_day.txt"):
         p = TXTINOUT / n
         if p.exists():

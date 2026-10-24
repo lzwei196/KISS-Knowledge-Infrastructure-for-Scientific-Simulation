@@ -3,16 +3,22 @@
 
 Usage:  python calib_run.py --workdir <wd> --out <metrics.json>
 
-Contract (calibration.yaml): the calibration kit has already written this
-candidate's parameters into <KI>/calib/params.json (json_path addresses x1..x4).
+Contract (calibration.yaml, injection.mode: runner): the calibration kit hands this
+candidate's parameters as a JSON object {x1,x2,x3,x4} at $KDT_CALIB_PARAMS.
 This script:
   1. reads the CURRENT theta from that file (x1,x2,x3,x4 -> [x1,x2,x3,x4]);
   2. runs the model end-to-end via the KI's tools/run_marrmot.py (the SAME forward
      path the validated Bengbu 51080 real-case used), over the cached CMFD/Oudin
-     forcing and the Bengbu obs (reused from the real-case run, or rebuilt once);
+     forcing and the Bengbu obs (copied from the real-case run, or rebuilt once
+     per --workdir);
   3. scores simulated Q (mm/d) vs observed Q with ki_tools_common.metrics.all_metrics
      on the split selected by env KDT_CALIB_SPLIT ("calibration" | "holdout");
-  4. writes a FLAT lowercase metrics dict {nse,kge,pbias,r,...} as JSON to --out.
+  4. writes a FLAT lowercase metrics dict {nse,kge,pbias,r,...} as JSON to --out,
+     echoing the theta it ran as __kdt__.applied_params.
+
+The KI is read in place and never written: on a desktop it is the project's
+verified copy, which the integrity guard refuses once a byte changes. Every file
+this script writes (cached inputs, the forward-run scratch) lives under --workdir.
 
 Determining metric for Q/point_time_series is NSE (temporal_pattern_match); PBIAS
 (magnitude_accuracy) is also gate-valid. objectives.py reads flat lowercase keys
@@ -43,17 +49,18 @@ import pandas as pd
 KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
 KTC = "KISSPATH_KI_TOOLS_COMMON"
 MODEL = "m_07_gr4j_4p_2s"
-MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
+sys.path.insert(0, os.path.join(KI, "tools"))
+from octave_runtime import marrmot_source  # noqa: E402
+# The installed source (binaries/MARRMoT/source/repo/MARRMoT on a desktop), else the server checkout.
+MARRMOT_SRC = marrmot_source() or "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
 AREA_KM2 = 121330.0
 CENTROID_LAT = 33.0
 START_Y, END_Y = 1979, 1990
 CMFD_DIR = "KISSPATH_FORCING/huai/Data_forcing_01dy_025deg"
 OBS_TXT = "KISSPATH_OBS/BB/51080_bengbu.txt"
 
-PARAMS_JSON = os.path.join(KI, "calib", "params.json")
-CACHE = os.path.join(KI, "calib")                 # cached deterministic inputs
-FORCING = os.path.join(CACHE, "forcing.csv")
-OBS = os.path.join(CACHE, "obs_q.csv")
+# Cached deterministic inputs: <workdir>/calib, set by main() from --workdir.
+CACHE = FORCING = OBS = None
 # Fallback source: the validated real-case run already built these exact files.
 REAL_CASE = "KISSPATH_KI_ROOT/MARRMoT/detached/real_case"
 
@@ -71,12 +78,15 @@ def _die(msg):
 
 
 def read_theta():
-    """Read the CURRENT candidate theta the kit wrote into calib/params.json."""
+    """Read the CURRENT candidate theta the kit handed over in $KDT_CALIB_PARAMS."""
+    pf = os.environ.get("KDT_CALIB_PARAMS")
+    if not pf:
+        _die("KDT_CALIB_PARAMS is not set; the calibration kit hands each candidate there")
     try:
-        d = json.load(open(PARAMS_JSON))
+        d = json.load(open(pf))
         return [float(d["x1"]), float(d["x2"]), float(d["x3"]), float(d["x4"])]
     except Exception as e:
-        _die(f"cannot read theta from {PARAMS_JSON}: {e}")
+        _die(f"cannot read theta from {pf}: {e}")
 
 
 def ensure_inputs():
@@ -137,7 +147,7 @@ def _rebuild_inputs():
 def run_model(theta, workdir):
     """One forward run of m_07 with theta over the cached forcing. Returns the
     simulated Q_mm_d array, or dies (no metrics -> +inf) on failure."""
-    run_dir = os.path.join(workdir or CACHE, "calib_run_scratch")
+    run_dir = os.path.join(workdir, "calib_run_scratch")
     os.makedirs(run_dir, exist_ok=True)
     ts_csv = os.path.join(run_dir, "marrmot_timeseries.csv")
     run_json = os.path.join(run_dir, "run.json")
@@ -189,9 +199,13 @@ def score(sim, workdir):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workdir", default=CACHE)
+    ap.add_argument("--workdir", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    global CACHE, FORCING, OBS
+    CACHE = os.path.join(os.path.abspath(args.workdir), "calib")
+    FORCING = os.path.join(CACHE, "forcing.csv")
+    OBS = os.path.join(CACHE, "obs_q.csv")
 
     theta = read_theta()
     # feasibility mirror of the contract's ranges (cheap reject, no run)
@@ -204,6 +218,8 @@ def main():
     ensure_inputs()
     sim = run_model(theta, args.workdir)
     metrics = score(sim, args.workdir)
+    # Runner-mode proof the kit checks: echo every parameter it handed over.
+    metrics["__kdt__"] = {"applied_params": dict(zip(("x1", "x2", "x3", "x4"), theta))}
 
     # Write only on full success (atomic-ish): temp then rename.
     tmp = args.out + ".tmp"

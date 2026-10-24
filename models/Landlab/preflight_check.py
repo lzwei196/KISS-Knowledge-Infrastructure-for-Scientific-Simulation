@@ -82,15 +82,30 @@ def check_python_env() -> None:
     )
 
 
+def imported_package() -> Path | None:
+    """The landlab/__init__.py the interpreter actually imports, or None."""
+    try:
+        proc = run_python("import landlab, os; print(os.path.realpath(landlab.__file__))")
+    except subprocess.TimeoutExpired:
+        return None
+    lines = proc.stdout.strip().splitlines() if proc and proc.returncode == 0 else []
+    return Path(lines[-1]) if lines else None
+
+
 def check_manifest_package() -> None:
-    ok = MANIFEST_PACKAGE.is_file()
-    print(("  OK    " if ok else "  FAIL  ") + f"Manifest Landlab package file: {MANIFEST_PACKAGE}")
+    # The models DB recorded the server's source checkout; a pip install (the
+    # desktop route) puts the same package in the interpreter's site-packages.
+    imported = imported_package()
+    package = imported if imported is not None and imported.is_file() else MANIFEST_PACKAGE
+    ok = package.is_file()
+    print(("  OK    " if ok else "  FAIL  ") + f"Manifest Landlab package file: {package}")
     add_check(
         "binary",
-        MANIFEST_PACKAGE,
+        package,
         True,
         ok,
-        f"Restore the Landlab source package file recorded in the models DB. Check {TRIPLETS}.",
+        f"Install Landlab {EXPECTED_VERSION} in {PYTHON_ENV}, or restore the source package "
+        f"file recorded in the models DB ({MANIFEST_PACKAGE}). Check {TRIPLETS}.",
     )
 
 

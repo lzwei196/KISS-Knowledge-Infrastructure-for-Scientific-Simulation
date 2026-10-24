@@ -2,11 +2,12 @@
 # real-case gauge: Bengbu 51080, Huai River, China (121,330 km2), daily Q.
 #
 # The forward model exposes its parameters as a single theta vector passed on the
-# CLI to tools/run_marrmot.py (--theta). To give a generic optimizer a stable,
-# round-trippable edit surface, theta is materialized as four named scalars in
-# calib/params.json (json_path addresses). tools/calib_run.py reads that file,
-# assembles theta=[x1,x2,x3,x4], runs the KI's run_marrmot.py over the cached
-# CMFD/Oudin forcing, and scores Q vs the Bengbu obs on the requested split.
+# CLI to tools/run_marrmot.py (--theta). The kit hands each candidate to
+# tools/calib_run.py as four named scalars in $KDT_CALIB_PARAMS (runner injection),
+# so no parameter file is edited in the KI. calib_run.py assembles
+# theta=[x1,x2,x3,x4], runs the KI's run_marrmot.py over the CMFD/Oudin forcing
+# cached under {workdir}, scores Q vs the Bengbu obs on the requested split, and
+# echoes theta as __kdt__.applied_params.
 #
 # GR4J has exactly four calibratable parameters and ALL of them are in the pool:
 # x1 (production store) and x2 (groundwater exchange) are the volume/magnitude
@@ -28,6 +29,11 @@ targets:
   - var: Q
     weight: 1.0
 
+# The KI is read in place, never written: a desktop project's KI copy is verified
+# byte-for-byte, so the candidate travels in $KDT_CALIB_PARAMS, not a KI file.
+injection:
+  mode: runner
+
 parameters:
   - name: x1
     description: "Maximum capacity of the production (soil-moisture) store; GR4J x1. Primary control on the ET/runoff partition and thus streamflow volume (PBIAS)."
@@ -40,10 +46,8 @@ parameters:
     tie: null
     activation: always
     address:
-      kind: json_path
-      file: "calib/params.json"
-      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
-      path: "x1"
+      kind: runner
+      note: "theta[0] on run_marrmot.py --theta; handed over in $KDT_CALIB_PARAMS"
 
   - name: x2
     description: "Groundwater exchange coefficient; GR4J x2. Positive imports / negative exports water across the catchment boundary — a direct volume-bias (PBIAS) lever. Can be negative, so identity transform."
@@ -56,10 +60,8 @@ parameters:
     tie: null
     activation: always
     address:
-      kind: json_path
-      file: "calib/params.json"
-      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
-      path: "x2"
+      kind: runner
+      note: "theta[1] on run_marrmot.py --theta; handed over in $KDT_CALIB_PARAMS"
 
   - name: x3
     description: "Maximum capacity of the (nonlinear) routing store; GR4J x3. Sets baseflow storage/recession — shapes hydrograph timing and low-flow dynamics that NSE rewards."
@@ -72,10 +74,8 @@ parameters:
     tie: null
     activation: always
     address:
-      kind: json_path
-      file: "calib/params.json"
-      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
-      path: "x3"
+      kind: runner
+      note: "theta[2] on run_marrmot.py --theta; handed over in $KDT_CALIB_PARAMS"
 
   - name: x4
     description: "Time base of the unit hydrographs; GR4J x4. Controls the rising/falling limb timing (flood-peak lag) — a pure temporal-pattern (NSE) lever."
@@ -88,10 +88,8 @@ parameters:
     tie: null
     activation: always
     address:
-      kind: json_path
-      file: "calib/params.json"
-      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
-      path: "x4"
+      kind: runner
+      note: "theta[3] on run_marrmot.py --theta; handed over in $KDT_CALIB_PARAMS"
 
 # GR4J's four parameters are structurally independent (no ordering relation), so no
 # hard cross-parameter constraints. Feasibility is enforced purely by the ranges.

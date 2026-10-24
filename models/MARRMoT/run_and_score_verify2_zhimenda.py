@@ -34,7 +34,10 @@ import pandas as pd
 
 KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
 KTC = "KISSPATH_KI_TOOLS_COMMON"
-MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
+sys.path.insert(0, os.path.join(KI, "tools"))
+from octave_runtime import marrmot_source  # noqa: E402
+# The installed source (binaries/MARRMoT/source/repo/MARRMoT on a desktop), else the server checkout.
+MARRMOT_SRC = marrmot_source() or "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
 STATE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_2"
 VALIDATORS = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
 CMFD_DIR = "KISSPATH_FORCING/Data_forcing_01dy_010deg"

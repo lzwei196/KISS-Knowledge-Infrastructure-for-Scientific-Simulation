@@ -115,7 +115,9 @@ NMON = 12 * (len(SPINUP_YEARS) + len(EVAL_YEARS))          # 48 transient period
 CAL_MONTHS = [(y, m) for y in (2019, 2020) for m in range(1, 13)]
 HOLDOUT_MONTHS = [(2021, m) for m in range(1, 13)]
 # Cache keyed BY STATION so a sibling site's forcing can never be mistaken for this one.
-CMFD_CACHE = os.path.join(KI, "calib", f"cmfd_monthly_{STATION}.json")
+# It lives under --workdir, never in the KI: a desktop project's KI copy is verified
+# byte-for-byte, so the KI is only read in place.
+CMFD_CACHE_NAME = f"cmfd_monthly_{STATION}.json"
 # Fixed structure (not calibrated): Jiangxi 双季稻 LATE-rice window — transplanting late
 # July through the October harvest, i.e. the 伏秋旱 summer-autumn dry spell when this
 # cell's CMFD precip collapses (2019: 26.8/6.7/25.0 mm in Aug/Sep/Oct). Only the
@@ -454,11 +456,12 @@ def read_params():
     return p, handed
 
 
-def ensure_forcing_cache():
-    """One-time CMFD prepare for THIS station's cell (~4 min); every later eval reads
-    the cache (~0 s)."""
-    os.makedirs(os.path.dirname(CMFD_CACHE), exist_ok=True)
-    if not os.path.exists(CMFD_CACHE):
+def ensure_forcing_cache(workdir):
+    """One-time CMFD prepare for THIS station's cell (~4 min) per workdir; every later
+    eval in it reads the cache (~0 s)."""
+    cache = os.path.join(workdir, "calib", CMFD_CACHE_NAME)
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    if not os.path.exists(cache):
         from ki_tools_common.load_forcing import load_daily_forcing
         years = SPINUP_YEARS + EVAL_YEARS
         d = load_daily_forcing("cmfd", LAT, LON, min(years), max(years), forcing_dir=CMFD_DIR)
@@ -466,16 +469,16 @@ def ensure_forcing_cache():
         for dt, p in zip(d["dates"], np.asarray(d["precip_mm"])):
             k = (dt.year, dt.month)
             monthly[k] = monthly.get(k, 0.0) + (0.0 if not np.isfinite(p) else float(p))
-        tmp = f"{CMFD_CACHE}.tmp.{os.getpid()}"      # os.replace is atomic: a concurrent
+        tmp = f"{cache}.tmp.{os.getpid()}"           # os.replace is atomic: a concurrent
         with open(tmp, "w") as fh:                   # reader sees old or new, never partial
             fh.write(json.dumps({f"{y}-{m}": v for (y, m), v in monthly.items()}))
-        os.replace(tmp, CMFD_CACHE)
-    with open(CMFD_CACHE) as fh:
+        os.replace(tmp, cache)
+    with open(cache) as fh:
         monthly = {tuple(map(int, k.split("-"))): float(v) for k, v in json.load(fh).items()}
     missing = [f"{y}-{m:02d}" for y in (SPINUP_YEARS + EVAL_YEARS) for m in range(1, 13)
                if (y, m) not in monthly]
     if missing:
-        raise RuntimeError(f"CMFD cache {CMFD_CACHE} missing months {missing}")
+        raise RuntimeError(f"CMFD cache {cache} missing months {missing}")
     return monthly
 
 
@@ -838,7 +841,7 @@ def main(args):
     if os.path.basename(db_path) != want_db:
         raise RuntimeError(f"resolved obs DB {db_path} is not the declared {want_db!r}")
     obs, obs_prov = load_obs(db_path, obsdec)
-    monthly_precip = ensure_forcing_cache()
+    monthly_precip = ensure_forcing_cache(workdir)
 
     rs = _load_module(RUNNER_PY, "mf6_real_case_runner")
     shim = pin_site(rs, params["ss"])

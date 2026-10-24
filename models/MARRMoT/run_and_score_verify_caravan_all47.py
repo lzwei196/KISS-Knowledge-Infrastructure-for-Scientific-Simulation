@@ -57,7 +57,10 @@ import pandas as pd
 
 KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
 KTC = "KISSPATH_KI_TOOLS_COMMON"
-MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
+sys.path.insert(0, os.path.join(KI, "tools"))
+from octave_runtime import marrmot_source  # noqa: E402
+# The installed source (binaries/MARRMoT/source/repo/MARRMoT on a desktop), else the server checkout.
+MARRMOT_SRC = marrmot_source() or "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
 MODEL_DIR = os.path.join(MARRMOT_SRC, "Models", "Model files")
 STATE = ("KISSPATH_KI_ROOT/MARRMoT/detached/"
          "verify_1_552cdb7920214f599b09b21a44396f70")

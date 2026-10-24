@@ -6,10 +6,10 @@ install_dir: Landlab
 
 acquire:
   strategy: pip
-  package: landlab
+  package: "landlab==2.10.1"
   produces: landlab
 
-python_deps: [landlab]
+python_deps: ["landlab==2.10.1"]
 
 reference_case: >-
   python -c "import landlab; print(landlab.__name__, 'importable')"
@@ -18,4 +18,6 @@ notes: >-
   OBSERVED 2026-08-18: `kiss init Landlab` installed landlab 2.11.0 into a clean venv
   and the KI's own preflight_check.py passed with no hand-written recipe. The
   package name was resolved from the KI directory name and confirmed by import,
-  not assumed from a PyPI name match.
+  not assumed from a PyPI name match. Pinned to 2.10.1 since: the KI's preflight
+  requires exactly the version it was validated on, and PyPI ships 2.10.1 wheels
+  for Windows (cp311-cp313).

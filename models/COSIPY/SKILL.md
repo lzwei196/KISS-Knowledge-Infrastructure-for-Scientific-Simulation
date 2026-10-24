@@ -184,7 +184,10 @@ facts above; it is not a replacement for `docs/format_spec.yaml` or `dag.yaml`.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Source of truth for pass bands**: `docs/validation_convention.yaml`. The
 convention file wins over remembered thresholds. Null bands in the convention
@@ -214,12 +217,6 @@ run-specific metric value; do not assign a verdict without the achieved value.
 | `MB` | `pbias` | zero_centered | no cited threshold | no cited threshold | no cited threshold | none |
 | `surfMB` | `rmse` | minimize | `<= 0.17` (`arndt2024`, `huintjes2015`) | `<= 0.34` (`arndt2024`, `huintjes2015`) | `<= 0.36` (`arndt2024`, `huintjes2015`) | `arndt2024`, `huintjes2015` |
 | `surfMB` | `r` | maximize | no cited threshold | `>= 0.83` (`huintjes2015`) | `>= 0.73` (`huintjes2015`) | `huintjes2015` |
-
-### Additional validated point-snow result already recorded in this KI body
-
-| Site / station | Period | Forcing | Configuration note | Metrics |
-|----------------|--------|---------|--------------------|---------|
-| Canadian Historical Daily Snow Depth Database station `117CA90` GLACIER NP MT FIDELITY | WY2001-2014; NASA POWER 2009-2014; skip WY2010 as spinup; eval-start `2010-08-01` | Daily NASA POWER | point-snow constants template, `mult_factor_RRR = 1.7` | overall NSE `0.892` / KGE `0.829` / r `0.952` / PBIAS `-1.5%`; cal WY2011-12 NSE `0.890`; val WY2013-14 NSE `0.890` |
 
 ### Data replacement tracking
 
@@ -531,8 +528,7 @@ python COSIPY.py -s path/to/slurm_config.toml
 ## Non-Glacier (Point / Seasonal-Snow) Runs & Environment Notes
 
 COSIPY ships glacier-centric. The following were discovered while verifying it as a
-seasonal-snow point model against SNOTEL SWE (passing result: r=0.80, NSE=0.64,
-KGE=0.76, PBIAS=4.7%). Encode them so they are not rediscovered.
+seasonal-snow point model against SNOTEL SWE. Encode them so they are not rediscovered.
 
 ### Environment (REQUIRED) — netCDF4 backend is broken; use the h5netcdf shim
 - The shared `python_env` netCDF4 backend is broken on this host
@@ -592,14 +588,6 @@ obs cm -> m. dag variable = `SNOWHEIGHT`, obs_shape = `point_time_series`
   `engine='h5netcdf'` — the netcdf4 backend is broken, see dt_022).
 - There is NO obs-reader tool in this KI; extract one station's `snd` to a
   `Date,snd` CSV (select by `station_id`), then feed `parse_output --mode compare`.
-- VALIDATED point (2026-06-22): station `117CA90` GLACIER NP MT FIDELITY
-  (51.23 N, -117.72 E, 1875 m) — deep alpine seasonal snow, full coverage
-  WY2001-2014. Daily NASA POWER forcing 2009-2014, the point-snow constants
-  template, `mult_factor_RRR = 1.7` (orographic undercatch) -> overall
-  NSE 0.892 / KGE 0.829 / r 0.952 / PBIAS -1.5% (cal WY2011-12 NSE 0.890,
-  val WY2013-14 NSE 0.890). The default `mult_factor_RRR = 2.0` over-accumulates
-  here (PBIAS +16%); 1.7 zeroes the bias. Skip WY2010 as spinup (eval-start
-  2010-08-01).
 
 ### run_cosipy preflight path resolution (dt_023)
 `run_cosipy.py` is meant to be invoked from the KI dir with `--source-dir <repo>`.

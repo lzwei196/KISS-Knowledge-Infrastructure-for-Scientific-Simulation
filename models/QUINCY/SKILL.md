@@ -69,8 +69,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 > `tools/convert_parameters_to_quincy.py` and `tools/parse_output_quincy.py` are an older
 > **Python stand-in** (analytic re-implementation, monthly step, no C-N-P pools). They are
 > kept for the record and labelled SURROGATE in their headers and `--help`. **Their output is not
-> QUINCY output and must never be reported as such** (their old FI-Hyy scores, NSE 0.95 after
-> calibration, sit under `validation.surrogate_metrics_not_quincy` in knowledge_infrastructure.yaml).
+> QUINCY output and must never be reported as such.**
 > Triplets dt_quincy_001-025 and `docs/surrogate/` (incl. the stand-in's own contract
 > `docs/surrogate/surrogate_quincy_analytic_dag.yaml`) belong to that stand-in. Everything else in
 > this document is the real engine.
@@ -83,8 +82,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 > **Domain**: terrestrial biogeochemistry (coupled C-N-P, water and energy)
 > **Last updated**: 2026-10-07
 > **Validation status**: real engine (tier `tested`); built-in self-tests reproduced byte for byte
-> (no official site example is public); FI-Hyy (FLUXNET2015) 1996-2014 scored against tower
-> fluxes as a validation run (untuned engine defaults, nothing calibrated)
+> (no official site example is public)
 
 ---
 
@@ -184,16 +182,16 @@ KI=KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
 # (default reference <engine>/run_builtin_<mode>; prints "reproduced": true, exit 0)
 $PY $KI/tools/run_quincy_engine.py --mode test_canopy   --run_dir /tmp/q_can   # 10/10 files
 $PY $KI/tools/run_quincy_engine.py --mode test_radiation --run_dir /tmp/q_rad  # 2/2 files
-# site run, step by step (the FI-Hyy validation run, ~10 min):
-C=/tmp/q_fihyy
-$PY $KI/tools/build_quincy_climate.py --source fluxnet --site FI-Hyy --start_year 1996 --end_year 2014 \
-    --ndep_kgN_ha_yr 7.4 --pdep_kgP_ha_yr 0.05 --out_dir $C/climate
-$PY $KI/tools/build_quincy_site_config.py --lat 61.8474 --lon 24.2948 --site FI-Hyy --soil hwsd \
-    --elevation_m 181 --out $C/site_config.json
+# site run, step by step:
+C=/tmp/q_site
+$PY $KI/tools/build_quincy_climate.py --source fluxnet --site <FLUXNET_ID> --start_year <Y1> --end_year <Y2> \
+    --ndep_kgN_ha_yr <cited value> --pdep_kgP_ha_yr <cited value> --out_dir $C/climate
+$PY $KI/tools/build_quincy_site_config.py --lat <lat> --lon <lon> --site <FLUXNET_ID> --soil hwsd \
+    --elevation_m <m> --out $C/site_config.json
 $PY $KI/tools/run_quincy_engine.py --mode land --run_dir $C/run --climate_dir $C/climate \
     --site_config $C/site_config.json --spinup_years 500
 $PY $KI/tools/parse_quincy_engine_output.py --run_dir $C/run --out_dir $C/parsed
-$PY $KI/tools/score_quincy_vs_fluxnet.py --daily_csv $C/parsed/quincy_daily.csv --site FI-Hyy \
+$PY $KI/tools/score_quincy_vs_fluxnet.py --daily_csv $C/parsed/quincy_daily.csv --site <FLUXNET_ID> \
     --out_dir $C/score --figure $C/score/fluxnet_fit.png
 ```
 
@@ -202,8 +200,7 @@ The same chain as one script (outside the KI, server only):
 Optional calibration lever: `edit_quincy_parameters.py` → `run_quincy_engine.py --param_list`.
 Stage docs: `docs/s0_configuration.md` … `docs/s5_validation.md`.
 
-**Expected runtime**: 1-4 s per simulated year at a 30-min step (machine load); FI-Hyy
-500-yr spin-up + 19 years took 573 s on 2026-10-07. Self-tests < 1 s.
+**Expected runtime**: 1-4 s per simulated year at a 30-min step (machine load). Self-tests < 1 s.
 
 **Exit codes** of `run_quincy_engine.py`: 0 success, 2 bad input (engine not started), 3 engine
 failed (exit code, missing "End QUINCY model", non-empty `.err`, or a "Please check!" log line —
@@ -317,7 +314,10 @@ Full corpus: `diagnostics/triplets.yaml` (dt_quincy_026-044 real engine; 001-025
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Engine check — built-in self-tests (the public release has no official site example)
 
@@ -329,57 +329,35 @@ The only reference check is therefore the engine's built-in code self-tests run 
 run (10/10 files). `test_radiation`: log and stdout byte-identical (2/2). Run 2026-10-07 through
 `tools/run_quincy_engine.py` (default reference = the build-time run).
 
-### Real case: FI-Hyy (Hyytiälä, Finland), FLUXNET2015
-
-| Property | Value |
-|----------|-------|
-| Location | 61.8474 N, 24.2948 E, 181 m; boreal Scots pine, QUINCY PFT 5 (BNE, engine site list) |
-| Period | 1996-2014 (19 years) after a 500-yr spin-up cycling 1996-2014 |
-| Forcing | FLUXNET2015 FULLSET_HH tower met (half-hourly), CO2_F_MDS; N deposition 7.4 kg N ha-1 yr-1 (Korhonen et al. 2013), P deposition 0.05 kg P ha-1 yr-1 (assumption) |
-| Soil | HWSD topsoil (silty clay, pH 4.3) — not the site's sandy podzol (dt_quincy_038) |
-| Parameters | engine defaults, untuned |
-| Role | **validation** — nothing calibrated; all 19 years are scored |
-| Outputs | `KISSPATH_KI_ROOT/QUINCY/detached/real_case/38e41ff2e4094bf4bfb5c2e4a3b084d0/case/` (climate, run, parsed, score); an identical earlier run (byte-identical forcing and GPP file) in `KISSPATH_OUTPUTS/quincy_fihyy_real_engine/` |
-
-### Performance metrics — judged against the field's bar
+### Pass bars — judged against the field's bar
 
 > Bar for `GPP` (r², per `docs/validation_convention.yaml`, cites tramontana2016, thum2025, thum2019):
 > satisfactory ≥ 0.7, good / very good: no cited threshold.
-> Achieved: daily r² = 0.937 (r 0.968) → **satisfactory (passes)**.
 
-| Variable | n days | Daily NSE | Daily r (r²) | KGE | PBIAS % | Monthly NSE | Bar (convention, cited) |
-|--------|-----|------|------|------|------|------|-------|
-| GPP | 6260 | 0.917 | 0.968 (0.937) | 0.828 | −11.5 | 0.956 | r² ≥ 0.7 satisfactory → passes |
-| LE | 6585 | 0.550 | 0.864 (0.746) | 0.614 | +29.7 | 0.732 | r² ≥ 0.7 → passes |
-| Reco | 6260 | 0.812 | 0.943 (0.889) | 0.775 | +9.2 | 0.874 | r² ≥ 0.6 → passes |
-| NEE | 6260 | 0.493 | 0.822 (0.676) | −0.069 | −95.9 | 0.455 | no cited threshold (null) |
-| H | 6671 | 0.339 | 0.658 (0.432) | 0.400 | −47.5 | 0.617 | r² ≥ 0.7 → fails |
+| Variable | Bar (convention, cited) |
+|--------|-------|
+| GPP | r² ≥ 0.7 satisfactory |
+| LE | r² ≥ 0.7 |
+| Reco | r² ≥ 0.6 |
+| NEE | no cited threshold (null) |
+| H | r² ≥ 0.7 |
 
-Annual sums: GPP 986 vs tower 1159 g C m-2 yr-1; Reco 977 vs 914; NEE −9.5 vs −246 (equilibrium
-stand, dt_quincy_044). Water balance residual 7.8 % of P; LE/(λ·ET) 1.18 (snow sublimation,
-dt_quincy_039); ecosystem C still rising 3.5 % per 100 yr at the end of spin-up.
-Days with daily QC < 0.75 and Feb 29 excluded; carbon fluxes compared in g C m-2 d-1 (FULLSET_DD;
-its yearly sums equal FULLSET_YY). Carbon variables share the same 6,260 days 1996-06-13..2014-12-31.
+How runs are scored: days with daily QC < 0.75 and Feb 29 excluded; carbon fluxes compared in
+g C m-2 d-1 (FULLSET_DD; its yearly sums equal FULLSET_YY; dt_quincy_033).
 Tower met drives the model, the scored fluxes are independent eddy-covariance measurements.
 
-**How to read GPP NSE 0.92.** Checked 2026-10-07 from the raw engine file and the raw FLUXNET file
-(`KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_QUINCY/rescore_fihyy_independent.py`): model GPP
-is the engine's own output (no day equals the tower value; max 9.7 g C m-2 d-1; no negative days;
-mean seasonal cycle Jan 0.02 → Jul 7.3 against tower 8.5 g C m-2 d-1). At this boreal site the
-seasonal cycle dominates: the tower's own day-of-year climatology scores NSE 0.893 on the same
-days, and a linear fit of tower GPP on tower SW and air temperature 0.817. So the engine adds only
-a little day-to-day skill on top of the seasonal cycle; the high NSE is mostly a correct season.
+At a site with a strong seasonal cycle, a high daily GPP NSE can come mostly from a correct season.
+Before claiming day-to-day skill, score the tower's own day-of-year climatology on the same days
+and compare.
 
-Figure: `KISSPATH_KI_ROOT/QUINCY/figures/s8_validation.png`.
+### Input data rules
 
-### Data replacement tracking
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | FLUXNET2015 tower / NASA POWER | Validated (tower); engine-run only (NASA POWER) | daily NASA POWER route ran 2004-2005 without spin-up, not scored |
-| Soil | HWSD | Pending | wrong texture at FI-Hyy |
-| PFT | engine site list | Validated | |
-| Initial conditions | 500-yr spin-up | Validated | drift 3.5 %/100 yr |
+| Component | Source | Rule |
+|-----------|--------|------|
+| Forcing | FLUXNET2015 tower / NASA POWER | tower met is the default at FLUXNET sites (§3.1) |
+| Soil | HWSD | HWSD texture can be wrong at the site scale; use explicit site soil when known (dt_quincy_038) |
+| PFT | engine site list | |
+| Initial conditions | 500-yr spin-up | check spin-up drift (dt_quincy_034) |
 
 ---
 
@@ -387,7 +365,7 @@ Figure: `KISSPATH_KI_ROOT/QUINCY/figures/s8_validation.png`.
 
 | Climate / Region | Key settings | Rationale |
 |---|---|---|
-| Boreal conifer (FLUXNET ENF) | PFT 5 (BNE), 500-yr spin-up, site N deposition | engine site list; untuned GPP NSE 0.92 at FI-Hyy |
+| Boreal conifer (FLUXNET ENF) | PFT 5 (BNE), 500-yr spin-up, site N deposition | engine site list |
 | Temperate broadleaf | PFT 4 (BDS) | engine fluxnet2 site list |
 | Grassland / pasture | PFT 7/8 (C3/C4 grass), 9/10 pasture | PFT parameter edits only for PFT ≤ 8 (dt_quincy_037) |
 | Tropical | PFT 1/2/3; keep `include_phosphorus` on | P limitation matters (Yu et al. 2020) |
@@ -409,7 +387,7 @@ Figure: `KISSPATH_KI_ROOT/QUINCY/figures/s8_validation.png`.
 | Parameter | Value |
 |-----------|-------|
 | Spinup length | 500 years (default `--spinup_years 500`), cycling the forcing years |
-| Why | starts from bare ground; in 2026-10-07 probes with the engine's default soil, a 38-yr spin-up gave GPP 699 vs 934 g C m-2 yr-1 after 500 yr, daily NSE 0.66 vs 0.89 (dt_quincy_034; the scored run with HWSD soil: 986, NSE 0.917) |
+| Why | starts from bare ground; a short spin-up leaves GPP and LAI too low and still trending (dt_quincy_034) |
 | Discard from metrics | yes — spin-up goes to `*_spinup_yearly.txt`, scoring uses the forcing period only |
 
 ---

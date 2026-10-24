@@ -102,12 +102,16 @@ $PY tools/run_velma_engine.py \
 #         (sha256 d690b67f2af3acd11721eb27f5c7e5f2d6ad8155cadd9f645ae670634b053ce8)
 ```
 
-### Validated results (real engine)
+### Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
+
+Official example (shipped by EPA):
 
 | Case | Weather | Period | Engine NSE (mm/d) | Notes |
 |---|---|---|---|---|
 | Official BlueRiver_Example, HJA WS10 (OR) | HJA station P/T shipped with the example | 1969-2008 | 0.7954 (RMSE 3.609 mm/d) | 2026-10-06, `run_velma_engine.py`, matches the build log exactly; official parameters, no calibration |
-| HJA WS10 real case | MSWX (nearest 0.1 deg cell), P + Tair via `build_velma_weather_from_source.py` | 1981-2008 scored (1980 warm-up) | 0.5933 | **Validation** (no calibration by us). Daily Q, 10,227 days: NSE 0.593, KGE 0.560, PBIAS -14.3 %, r 0.787 -> meets the convention bands (NSE >= 0.5, abs PBIAS <= 15 %). Spin-up 1969-79 on station weather (1975 clearcut), state carried into 1980. Same window with station weather: NSE 0.796. EPA set the parameters up for WS10 with station weather, so this tests the weather input, not a new site. Reproduce: `KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_VELMA/score_ws10_mswx.py` |
 
 Mean annual (official example): rain+snow 2217 mm, simulated runoff 1715 mm (observed 1483 mm), ET 698 mm.
 
@@ -143,18 +147,13 @@ Mean annual (official example): rain+snow 2217 mm, simulated runoff 1715 mm (obs
 **License**: Public domain (USEPA)
 **Created**: 2026-03-30
 
-The facts block below is the OLD Python SURROGATE's (Bengbu, Huai River); it is not a VELMA result.
-
-**Surrogate validation**: Bengbu station (51080), Huai River Basin, China (1980--1990)
+The facts block below is the OLD Python SURROGATE's; it is not a VELMA result.
 
 | Metric | Value |
 |--------|-------|
 | Tools (surrogate era) | 4 |
 | Pipeline stages | 7 |
 | Diagnostic triplets (surrogate era) | 14 |
-| Validation basin | Huai River at Bengbu |
-| Calibration NSE (surrogate) | 0.80 |
-| Validation KGE (surrogate) | 0.80 |
 
 ---
 
@@ -172,8 +171,6 @@ cell weights and require all selected values to be present.
 The hydrology equations, JSON schema and Kelvin temperature contract described
 below belong to the local **Python analytic approximation** in `run_velma.py`.
 They are not evidence of equivalence to EPA's original distributed Java model.
-The historical Bengbu performance numbers below apply only to that local
-approximation and have not been independently reproduced by this repair.
 The KI preflight now checks the REAL engine (launcher, JVelma.jar banner,
 `run_velma_engine.py`) as critical, and the Python surrogate as non-critical.
 
@@ -570,26 +567,16 @@ else:
 
 ---
 
-## 9. Historical Python SURROGATE results (not VELMA; not revalidated here)
+## 9. Validation Status
 
-**Basin**: Huai River at Bengbu (Station 51080), China
-**Area**: 121,330 km2
-**Forcing**: CMFD V0200 0.25-deg daily
-**Tier**: analytic (Python reimplementation of VELMA physics)
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-| Period               | NSE   | KGE   | r     | PBIAS (%) | RMSE (m3/s) |
-|----------------------|-------|-------|-------|-----------|-------------|
-| Calibration 1981-85  | 0.80  | 0.80  | >0.85 | <10       | --          |
-| Validation 1986-90   | >0.60 | >0.60 | >0.75 | <15       | --          |
-
-Calibration method: Differential evolution (scipy), 80 iterations, population 20.
-Objective: -(0.5*NSE + 0.5*KGE - 0.002*|PBIAS|) on 1981--1985 calibration period.
-Spinup year: 1980.
+Calibration method (SURROGATE, `run_velma.py --mode calibrate`): Differential evolution (scipy), 80 iterations, population 20.
+Objective: -(0.5*NSE + 0.5*KGE - 0.002*|PBIAS|) on the calibration period.
+Reserve the first year of forcing for spin-up (dt_velma_010).
 
 ### Performance bars from validation convention
-
-(The numbers discussed right below are the SURROGATE's Bengbu numbers. The real engine's WS10
-result is under REAL ENGINE -> Validated results.)
 
 **Source**: `docs/validation_convention.yaml`. The convention is the authority
 for metric direction, pass-bands, and citation keys; if these bars and the
@@ -601,14 +588,6 @@ convention ever disagree, the convention wins.
 | `Q_sim_m3s` | pbias | zero_centered | <= 15.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | <= 10.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | no cited threshold (`ortuani2020`, `golmohammadi2014`) | `ortuani2020`, `golmohammadi2014` |
 | `Q_sim_m3s` | pbias | zero_centered | <= 15.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | <= 10.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | no cited threshold (`ortuani2020`, `golmohammadi2014`) | `ortuani2020`, `golmohammadi2014` |
 | `mean_et_mm_d` | nse | maximize | >= 0.5 (`ahn2017`) | no cited threshold (`ahn2017`) | no cited threshold (`ahn2017`) | `ahn2017` |
-
-For `Q_sim_m3s`, the reported calibration NSE of 0.80 is above the cited good
-threshold of 0.65 (`ortuani2020`, `golmohammadi2014`); the convention provides
-no cited very-good threshold for NSE. The reported calibration PBIAS of <10%
-is within the cited good absolute-PBIAS threshold of 10.0 (`ortuani2020`,
-`golmohammadi2014`); the convention provides no cited very-good threshold for
-PBIAS. The validation PBIAS of <15% is within the cited satisfactory
-absolute-PBIAS threshold of 15.0 (`ortuani2020`, `golmohammadi2014`).
 
 ---
 
@@ -622,7 +601,7 @@ absolute-PBIAS threshold of 15.0 (`ortuani2020`, `golmohammadi2014`).
 | Hargreaves method   | Model internal      | PET          | mm/d    | From temperature (K) + srad (W/m2)  |
 | HWSD / SoilGrids    | Soil converter      | Ksat, n, FC  | mm/d, --| Per-layer pedotransfer functions     |
 | VELMA output        | Parse output        | Discharge    | m3/s    | Daily at basin outlet                |
-| Observed gauge      | Validation          | Discharge    | m3/s    | Bengbu station                       |
+| Observed gauge      | Validation          | Discharge    | m3/s    | Daily at the gauge                   |
 
 ---
 

@@ -97,7 +97,7 @@ the tool and nothing is written. Details: `docs/s3_forcing_conversion_skill.md`.
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21
 **Stats**: 9 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation Status**: `production_validated` -- Full HydroCraft data run on Bengbu basin (118,358 km2, CMFD 224 cells, 2000-2005)
+**Validation Status**: `production_validated`
 
 ---
 
@@ -377,13 +377,12 @@ sim, raven_obs = load_discharge_series(f"{run_dir}/output", basin_name)   # cale
 Do **not** write your own `read_hydrograph()` helper in a run script; that is how
 the lag gets reintroduced. Proof the correction is right: after the shift,
 Raven's own `(observed)` column equals the raw gauge file on identical calendar
-dates (Tangnaihai, 3286 days, max abs diff 0.0).
+dates.
 
 ### 12. WatershedStorage "Total [mm]" is NOT physical storage (dt_rav_035)
 
-`Total [mm]` bundles the **`Cum. Losses to Atmosphere` accumulator** (6744.8 of
-6828.6 mm after 12 alpine years at Tangnaihai). Using `delta(Total)` as ΔS
-double-counts ET and reports a ~77% closure FAIL on a run whose native
+`Total [mm]` bundles the **`Cum. Losses to Atmosphere` accumulator**. Using `delta(Total)` as ΔS
+double-counts ET and reports a large closure FAIL on a run whose native
 `MB Error [mm]` closes to machine zero. Use the KI tool:
 
 ```python
@@ -538,18 +537,15 @@ observation .rvt and gauge elevation).
 
 ---
 
-## 11. Validated Results -- Bengbu Basin (Step 3 Production Validation)
+## 11. Validation Status
 
-**Basin**: Bengbu (Huai River, 118,358 km2, humid subtropical monsoon)
-**Period**: 2000-01-01 to 2005-12-31, CMFD forcing (224 grid cells aggregated to basin mean; made in March 2026 by a forcing route that has since been removed — rebuild with `--basin_shp` before reusing these numbers)
-**Data**: ALL inputs from HydroCraft global datasets (CMFD forcing, China DEM 90m, AVHRR land cover)
-**Reference**: VIC 5.1.0 + Lohmann routing (mean Q = 1,509 m3/s)
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics -- Convention Bars
 
 These bars restate `docs/validation_convention.yaml`; if this section and the
-convention file disagree, `docs/validation_convention.yaml` wins. The Bengbu
-production run below compares Raven to VIC, while the headline field bar for
+convention file disagree, `docs/validation_convention.yaml` wins. The headline field bar for
 `discharge (STREAMFLOW)` applies to gauged discharge validation after spinup.
 
 | Dag variable | Obs shape | Metric | Direction | Convention bar, cited |
@@ -560,50 +556,12 @@ production run below compares Raven to VIC, while the headline field bar for
 | `Soil water storage (SOIL[i])` | `point_time_series` | `r` | maximize | satisfactory >= `0.70` (`gripgl2022`); good >= `0.80` (`gripgl2022`); very good >= `0.90` (`gripgl2022`) |
 | `Soil water storage (SOIL[i])` | `spatial_time_series` | `r` | maximize | satisfactory >= `0.70` (`gripgl2022`); good >= `0.80` (`gripgl2022`); very good >= `0.90` (`gripgl2022`) |
 
-### Ensemble Results (5 model structures, uncalibrated)
-
-| Model | Mean Q (m3/s) | Max Q (m3/s) | r vs VIC | NSE vs VIC | PBIAS |
-|-------|--------------|-------------|----------|------------|-------|
-| **MOHYSE** (best) | 1,755 | 16,848 | **0.920** | **0.787** | +14.3% |
-| HBV-Light | 2,291 | 19,707 | **0.944** | 0.592 | +49.2% |
-| HMETS | 974 | 7,318 | **0.891** | 0.647 | -36.6% |
-| HYMOD | 1,960 | 35,253 | **0.841** | -0.820 | +27.7% |
-| GR4J | 1,133 | 17,049 | **0.704** | 0.323 | -26.2% |
-| *VIC+Lohmann* | *1,509* | *16,614* | *1.000* | *1.000* | *0%* |
-
-### Validation Criteria (all PASSED)
-
-| Criterion | Requirement | Result |
-|-----------|------------|--------|
-| Mean Q magnitude | 500-2,250 m3/s (within 50% of obs ~1,000-1,500) | All 5 models within range |
-| Correlation | r > 0.5 vs VIC | All 5 models: r = 0.70-0.94 |
-| Seasonal pattern | Monsoon peak Jun-Sep | All models: 57-66% in Jun-Sep (VIC: 61%) |
-| Physical reasonableness | No negative Q, correct magnitude | All models physically reasonable |
-
-### Key Findings
-
-1. **MOHYSE is the best uncalibrated model** for Bengbu (NSE=0.787, r=0.920). Its simple structure (10 params) matches the humid subtropical climate well.
-2. **HBV-Light has highest correlation** (r=0.944) but overshoots (PBIAS=+49%) due to insufficient ET in default parameterization.
-3. **All 5 models capture monsoon seasonality** correctly (56-66% of flow in Jun-Sep vs VIC's 61%).
-4. **Structural uncertainty** (ensemble spread): mean Q ranges from 974 to 2,291 m3/s across models (CV=0.35), demonstrating Raven's value for quantifying model choice uncertainty.
-
-### Data Replacement Tracking (Step 2 Complete)
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | HydroCraft (CMFD) | Validated | 224 cells, annual P=1035mm, T=15.4C |
-| DEM | HydroCraft (China DEM 90m) | Validated | Elev range -10 to 2123m |
-| Land cover | HydroCraft (AVHRR 1km) | Validated | Wetland 67%, shrub 21%, grassland 9% |
-| Soil | HWSD defaults (LOAM) | Validated | Used template defaults |
-| Basin boundary | HydroCraft shapefile | Validated | Area 118,358 km2 |
-| Initial conditions | Cold start | Validated | 1-year spinup discarded |
-
-### Errors Found During Validation
+### Errors found in past runs
 
 1. **err_005, err_006**: faults of an early forcing route that read another model's forcing files. That route was removed on 2026-10-03 (dt_rav_046); the forcing is now built straight from the source.
 2. **err_007 (MODERATE)**: `build_rvp_parameters.py` HRU parser used `line.split()` on comma-separated .rvh files, producing wrong class names. **Fixed** by detecting and handling CSV format.
 3. **err_008 (MODERATE)**: `build_rvp_parameters.py` read column [9] (AQUIFER_PROFILE = `[NONE]`) as terrain class instead of column [10]. **Fixed** by reading correct column index.
-4. **err_009 (CRITICAL)**: `select_model_template.py` GR4J template put `GR4J_X1-X4` as `:GlobalParameter` but Raven v4.1 requires them as soil/land-use properties. Template also used `:SWCanopyCorrect` (not recognized in v4.1). **Workaround**: Used hand-crafted templates from working Chaohe run (`run_ensemble_v2.py`). Generic tools need refactoring.
+4. **err_009 (CRITICAL)**: `select_model_template.py` GR4J template put `GR4J_X1-X4` as `:GlobalParameter` but Raven v4.1 requires them as soil/land-use properties. Template also used `:SWCanopyCorrect` (not recognized in v4.1). Generic tools need refactoring.
 
 ---
 

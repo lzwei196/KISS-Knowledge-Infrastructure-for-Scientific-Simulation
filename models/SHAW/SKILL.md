@@ -268,7 +268,10 @@ Check `diagnostics/triplets.yaml` before debugging. The full corpus stays in YAM
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Headline Validation Target
 
@@ -285,16 +288,6 @@ Every threshold below is the convention threshold and carries its citation key. 
 | `total_water_content_profile` | RMSE | minimize | `<= 0.04` (`shaw2012`, `li2015`) | `<= 0.03` (`shaw2012`, `li2015`) | `<= 0.02` (`shaw2012`, `li2015`) |
 | `liquid_water_content_profile` | NSE | maximize | `>= 0.5` (`moriasi2015`) | `>= 0.6` (`moriasi2015`) | `>= 0.8` (`moriasi2015`) |
 | `liquid_water_content_profile` | RMSE | minimize | `<= 0.08` (`zhao2016`) | `<= 0.05` (`zhao2016`) | `<= 0.03` (`zhao2016`) |
-
-No convention-sourced achieved NSE value for `soil_temperature_profile` is stated in the extracted facts above. The validation narratives below report site-specific RMSE, Bias, R2, frost/snow behavior, and water-balance checks; do not recast those as NSE verdicts unless the metric is computed against the convention.
-
-### Existing Validation Cases in This SKILL
-
-| Case | Location / domain | Period | Main reported checks |
-|------|-------------------|--------|----------------------|
-| JackPine Boreal Forest, OJP BERMS | Saskatchewan, Canada | 1999 | Soil temperature RMSE/Bias/R2 by depth; water balance |
-| Manitoba Station 544, Alexander Prairie | Manitoba, Canada | Nov 2019-Oct 2020 | Soil temperature RMSE/Bias/R2 by depth; frost/snow behavior; water balance |
-| NE China Black Soil Domain | 6 stations, 2021-2022 | 2021-2022 | Liquid water-content behavior, BPAR freeze-thaw correction, growing-season dry bias |
 
 ---
 
@@ -344,8 +337,6 @@ Rules the tool enforces:
 - `--mode hourly` writes `JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR` (use `MTSTEP=0`, JH 0..23). Loader times are UTC, so the tool shifts them to local standard time (`--utc_offset`, default `round(lon/15)`) and keeps whole local days only. 3-hour sources (CMFD, MSWX) are written as three hourly records per step (state held, rain split evenly).
 - The tool prints annual rain totals and mean temperature (`--summary_json` saves them). Check them: annual rain should be several hundred to about 1500 mm for most land sites, never near zero.
 - Loader wind is at 10 m. Set the `.sit` Line E instrument height (2nd value) to 10.0 when using loader weather.
-
-Checked 2026-10-02: CMFD (32.43, 115.6), 2010 — tool daily records 816.06 mm, `load_daily_forcing('cmfd')` 816.06 mm (the written `.wea`, rounded to 0.1 mm per day, sums to 815.4 mm). NASA POWER at RISMA ON2 (45.3, -75.0): 906 / 1004 / 1271 / 951 / 1045 mm for 2015-2019, against 738 / 796 / 1347 / 994 / 889 mm in the station table.
 
 **Data Validation Reference**: CMFD/MSWX/NASA POWER units and traps are handled and documented in `ki_tools_common/load_forcing.py` (the `data_ki/*/tools` paths are stale).
 Soil properties: `from ki_tools_common.soil_utils import lookup_hwsd`.
@@ -510,7 +501,7 @@ ZS  SAND  SILT  CLAY  ROCK  OM  RHOB  SATK  SATKLAT  AIRENTRY  SAT  B
 | 2 | SILT | % | Silt |
 | 3 | CLAY | % | Clay |
 | 4 | ROCK | % by **weight** | Rock/gravel share of the soil mass (SHAW 3.0 user manual). HWSD gravel is % by **volume**: `create_site_file.py` converts it as ROCK = gravel_vol × 2650 / RHOB (2650 kg/m³ = SHAW's RHOM; SHAW turns it back into a volume the same way) |
-| 5 | OM | % by weight | Organic **matter** = organic carbon × 1.724 (van Bemmelen factor). In `update_sit_file(soil_properties=...)` pass `om` (organic matter, written as is) or `oc` (organic carbon, converted); both must agree. Before 2026-10-15 `oc` was written into OM unconverted, so RISMA check results from `run_and_score.py` / `run_and_score_verify2.py` made before then used OM about 1.7× too low |
+| 5 | OM | % by weight | Organic **matter** = organic carbon × 1.724 (van Bemmelen factor). In `update_sit_file(soil_properties=...)` pass `om` (organic matter, written as is) or `oc` (organic carbon, converted); both must agree. Before 2026-10-15 `oc` was written into OM unconverted, so check results made before then used OM about 1.7× too low |
 | 6 | RHOB | kg/m³ | Bulk density (written as `1360.`) |
 | 7 | SATK | cm/hr | Saturated hydraulic conductivity |
 | 8 | SATKLAT | cm/hr | Lateral saturated conductivity (0 = none) |
@@ -642,83 +633,20 @@ The coupling approach:
 
 ---
 
-## Validated: JackPine Boreal Forest (OJP BERMS), Saskatchewan, Canada
+## Setup errors seen in past runs (rules)
 
-**Data source**: BERMS (Boreal Ecosystem Research and Monitoring Sites)
-- Operated by Environment and Climate Change Canada (ECCC)
-- Site: Old Jack Pine (OJP), ~53.916°N, 104.692°W, 580m elevation
-- Part of FLUXNET / AmeriFlux network
-- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/sas_forest/`
-- Reference: Barr et al. (2012) JGR-Biogeosciences; Zha et al. (2010) Global Change Biology
-
-**Data used**:
-- `JackPine_Met.csv` — 30-min: T, P, SWi, RH, WS, LWi (1998-2016)
-- `JackPine_Soil.csv` — 30-min: VWC (5 depths) + ST (6 depths: 2,5,10,20,50,100 cm)
-- `JackPine_Snow.csv` — 30-min: SnowT, SD_Clearing, SD_BlwCanopy
-
-**Simulation**: 1999, hourly timestep, 365 days, ~30 seconds runtime
-
-### Soil Temperature Performance (uncalibrated)
-
-| Depth | RMSE (°C) | Bias (°C) | R² |
-|-------|----------|----------|-----|
-| 2 cm | 4.32 | +0.01 | 0.921 |
-| 5 cm | 4.32 | +0.05 | 0.910 |
-| 10 cm | 3.95 | +0.16 | 0.914 |
-| 20 cm | 3.33 | +0.25 | 0.921 |
-| 50 cm | 1.45 | +0.19 | 0.955 |
-| 100 cm | 1.83 | +0.31 | 0.913 |
-
-### Water Balance
-- Annual P: 466 mm (literature ~430 mm)
-- ET: 499 mm
-- Snowmelt: 47 mm
-
-### Input Format Issues Found (3 triplets)
+### Input format issues
 - dt_v003: MCANFLG=0 must NOT have root distribution line
 - dt_v004: NSALT=0 must NOT have ASALT/DISPER columns
 - dt_v005: Weather file needs +24h padding for EOF avoidance
 
-### Output files
-All at `outputs/shaw_jackpine/`: 6 validation plots + SHAW input/output files
-
----
-
-## Validated: Manitoba Station 544 (Alexander Prairie), Canada
-
-**Data source**: Manitoba Agriculture Weather Program (MAWP)
-- Station 544, Alexander, Manitoba (49.81°N, 100.37°W, 460m elevation)
-- Prairie grassland (no canopy, MCANFLG=0)
-- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba/`
-- Soil temperature at 4 depths: 5, 20, 50, 100 cm
-
-**Simulation**: Nov 2019 – Oct 2020, **daily weather input (MTSTEP=1)**, 364 days
-
-### Soil Temperature Performance (uncalibrated)
-
-| Depth | RMSE (°C) | Bias (°C) | R² |
-|-------|----------|----------|-----|
-| 5 cm | 6.17 | -2.54 | 0.895 |
-| 20 cm | 5.00 | -1.81 | 0.894 |
-| 50 cm | 3.89 | -0.70 | 0.821 |
-| 100 cm | 2.93 | -2.09 | 0.778 |
-
-### Frost & Snow
-- Max frost depth: 25.1 cm (realistic for thin snowpack)
-- Max snow depth: 11.8 cm, SWE: 11.8 mm (low — station precip gauge undercounts snow)
-- Cold bias (-2 to -3°C) caused by insufficient snow insulation
-
-### Water Balance
-- Annual ET: ~208 mm (expected ~350 mm — low due to precip undercatch)
-- Freeze-thaw cycle captured: soil freezes Nov-Mar, thaws by April
-
-### Errors Found During Validation (6 triplets: shaw_026-031)
+### Errors found during setup (6 triplets: shaw_026-031)
 
 | # | Error | Impact | Fix |
 |---|-------|--------|-----|
 | shaw_026 | MTSTEP=0 but daily data | Zero precip read | Set MTSTEP=1 for daily |
 | shaw_027 | Weather columns YR DOY instead of DOY YR | Wrong dates | Swap columns 1-2 |
-| shaw_028 | Solar noon HRNOON=0.01 (should be 12.3) | Precip assigned to hour 0 | Compute from longitude |
+| shaw_028 | Solar noon HRNOON=0.01 (should be ~12.0-12.5) | Precip assigned to hour 0 | Compute from longitude |
 | shaw_029 | Solar radiation MJ/m²/day not converted to W/m² | 11.6x too low energy | Multiply by 11.574 |
 | shaw_030 | JSTART = first .wea DOY (needs +1) | No previous-day data | JSTART = first_wea_doy + 1 |
 | shaw_031 | .sit generated from scratch, not from template | Multiple format errors | Use setup_shaw_from_template.py |
@@ -729,73 +657,11 @@ SHAW supports BOTH formats via the MTSTEP flag in .inp Line B:
 
 | MTSTEP | Format | Columns | Use when |
 |--------|--------|---------|----------|
-| 0 | Hourly | JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR (9 cols) | BERMS, FLUXNET, NASA POWER hourly |
-| 1 | **Daily** | JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR (8 cols) | Manitoba MAWP, CMFD/MSWX aggregated, Environment Canada |
+| 0 | Hourly | JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR (9 cols) | FLUXNET, NASA POWER hourly |
+| 1 | **Daily** | JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR (8 cols) | CMFD/MSWX aggregated, Environment Canada |
 | 2 | Custom | Same as hourly, at NHRPDT intervals | Custom interval data |
 
 **CRITICAL**: The daily format has NO hour column and uses TMAX/TMIN (not instantaneous TA). SOLAR is average daily W/m² (not instantaneous). Always verify column count matches MTSTEP.
-
-### Output files
-All at `outputs/shaw_manitoba_544/`: validation_soil_temp.png, validation_frost_snow.png
-
----
-
-## Validated: NE China Black Soil Domain — 6 Stations (2021–2022)
-
-**Data source**: Black Soil Observation Data NE China V2.0 (32 AWS/soil stations)
-- Local path: `data/china_data/BlackSoilObsData_NE_China_V2.0/ObservationData/`
-- Sensor: combined AWS with TDR soil moisture + soil temperature at a single depth
-- Format: xlsx, header at row 10, ~30-min records
-- Column format varies by station (8–15 columns): use column index, not name matching
-
-**6 validation cells and station mapping:**
-
-| Cell label | Station name | Lat/Lon (sensor) | 0.25° cell | Data period | Depth |
-|---|---|---|---|---|---|
-| `47p3750_123p6250` | EcologicalQiqihar (Fulaerji) | 47.269°N, 123.686°E | 47.375°N, 123.625°E | May 2021–Dec 2022 | unknown (est. 5–10cm) |
-| `47p8750_125p3750` | YianVegetables | 47.875°N, 125.375°E | same | May 2021–Dec 2022 | **20cm and 40cm** |
-| `43p3750_124p3750` | LishuSiping | 43.375°N, 124.375°E | same | Jun–Nov 2022 | **20cm** (mulch + bare) |
-| `47p3750_126p3750` | HailunSuihua | 47.254°N, 126.473°E | 47.375°N, 126.375°E | Jun–Dec 2022 | unknown (est. 5–10cm) |
-| `44p6250_123p6250` | ChanglingSongyuan | 44.625°N, 123.625°E | same | Jun–Dec 2022 | unknown (est. 5–10cm) |
-| `46p6250_131p6250` | YouyiShuangyashan | 46.625°N, 131.625°E | same | Jun–Dec 2022 | unknown (est. 5–10cm) |
-
-**Observed monthly soil moisture (% VWC)** — EcologicalQiqihar (best station, 2 full years):
-
-| Month | SM (%) | ST (°C) | Notes |
-|-------|--------|---------|-------|
-| May | 33–35 | 12–16 | Post-snowmelt refill |
-| Jun | 37–38 | 20 | Peak growing season onset |
-| Jul | 40–41 | 23–25 | Maximum moisture |
-| Aug | 34–40 | 21–22 | Post-rain peak |
-| Sep | 26–39 | 16–18 | Drainage |
-| Oct | 27–35 | 6–8 | Pre-freeze drying |
-| Nov | 21–29 | -1 | Onset of freezing |
-| Dec | 13–17 | -5 to -9 | Partially frozen (liquid water) |
-| Jan | ~13 | -9 | Deeply frozen |
-| Feb | ~13 | -9 | Peak frozen |
-| Mar | ~21 | -3 | Thaw begins |
-| Apr | ~33 | 4 | Rapid thaw refill |
-
-Growing season (May–Oct) mean: **35.5%**  |  Winter (Nov–Mar) mean: **18.2%** (liquid only)
-
-**Literature reference (Chinese Geographical Science, Springer):**  
-NE China Mollisol field capacity = 23.5–37% VWC, mean **31.65%** across 113 soil profiles.  
-Winter liquid water (frozen Mollisol, 5–20cm): **0–10% VWC** in frozen layers [from-memory, unverified beyond search result].
-
-**Key obs data notes:**
-- EcologicalQiqihar is the only station with complete freeze-thaw cycle data (Qiqihar city, MWRC experimental base)
-- YianVegetables and LishuSiping measure at 20–40cm — not directly comparable to SHAW 5cm node
-- HailunSuihua, ChanglingSongyuan, YouyiShuangyashan show anomalously high SM (50–70%) starting Jun 2022 only — likely sensor calibration issue or near-saturated wetland soil; treat with caution
-- Compare SHAW `liquid.out` (not `moist.out`) against these sensors — sensors detect liquid water only
-
-**SHAW performance (6-cell HWSD-corrected run, `ne_china_shaw_hwsd/`):**
-- Before BPAR fix (BPAR=30): Qiqihar SM PBIAS = +29.4% (soil never froze, liquid stayed at 35% while obs dropped to 13%)
-- After BPAR fix (BPAR=6.92 from Rawls 1982): Qiqihar winter liquid drops to 11–17% — physically correct
-- Growing season dry bias (PBIAS ≈ −24%): caused by HWSD bulk density overestimate (BD=1380 vs. ~1100 kg/m³ for NE China Mollisols)
-
-**Run scripts:**
-- 6-cell validation: `outputs/ne_china_shaw_vic_dssat/run_shaw_hwsd_validation.py`
-- Full 2223-cell domain: `outputs/ne_china_shaw_vic_dssat/run_shaw_parallel.py` (includes `fix_bpar_quartz_in_sit()` as of 2026-05-13)
 
 
 ### Daily CSV integrity (2026-10-03)

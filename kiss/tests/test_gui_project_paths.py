@@ -100,10 +100,10 @@ def test_materialization_failure_does_not_discard_legacy_global_bindings(tmp_pat
     before = (project / paths.CONFIG_NAME).read_bytes()
     real_materialise = gui.port.materialise
 
-    def materialise(root, live, cfg):
+    def materialise(root, live, cfg, **kwargs):
         if Path(root).name == "B":
             raise OSError("test materialization failure")
-        return real_materialise(root, live, cfg)
+        return real_materialise(root, live, cfg, **kwargs)
 
     monkeypatch.setattr(gui.port, "materialise", materialise)
     with pytest.raises(OSError, match="test materialization failure"):
@@ -206,10 +206,10 @@ def test_chat_surfaces_failed_materialization_without_provider_fallback(tmp_path
     monkeypatch.setattr(gui.projectrun, "prompt_block", lambda project: "")
     real_materialise = gui.port.materialise
 
-    def materialise(root, live, cfg):
+    def materialise(root, live, cfg, **kwargs):
         if Path(root).name == "B":
             raise OSError("test materialization failure")
-        return real_materialise(root, live, cfg)
+        return real_materialise(root, live, cfg, **kwargs)
 
     def unexpected_provider(*args, **kwargs):
         pytest.fail("a failed batch must not invoke a provider with partial KI config")

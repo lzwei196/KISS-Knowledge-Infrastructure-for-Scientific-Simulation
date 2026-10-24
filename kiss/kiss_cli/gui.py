@@ -1882,6 +1882,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _status_for(self, ki, *, include_setup_job: bool = True) -> dict:
         """User-facing software state for one KI on this machine."""
+        status = self._software_status(ki, include_setup_job=include_setup_job)
+        # "Checked when it runs" promises that an approved run makes the check
+        # itself. When the run would stop for setup instead (e.g. no absolute
+        # saved interpreter), say that.
+        if (status.get("label") in (CHECKED_WHEN_RUN, UNCHECKED_WHEN_RUN)
+                and not _project_check_allowed_by_shared_status(status, shared_root=self._workdir(ki))):
+            status["label"] = "Setup needed"
+        return status
+
+    def _software_status(self, ki, *, include_setup_job: bool = True) -> dict:
         wd = self._workdir(ki)
         job = (setup_jobs.status(_installation_workroot(self), ki.name, expected_root=wd)
                if include_setup_job else None)

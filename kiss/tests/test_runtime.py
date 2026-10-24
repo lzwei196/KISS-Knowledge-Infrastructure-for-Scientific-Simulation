@@ -3244,7 +3244,7 @@ class AgentSetupTests(unittest.TestCase):
             # slashes even on Windows (native backslashes could become escapes).
             self.assertIn(cfg.roles["outputs"].as_posix(), installed)
 
-    def test_agent_prepare_maps_legacy_ki_tools_before_first_preflight(self):
+    def test_agent_prepare_binds_legacy_ki_tools_before_first_preflight(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             package = root / "repo" / "models" / "Demo"
@@ -3252,6 +3252,8 @@ class AgentSetupTests(unittest.TestCase):
             (package / "tools" / "prepare.py").write_text("print('ready')\n")
             (package / "preflight_check.py").write_text(
                 'check_dir("KISSPATH_KI_ROOT/Demo/knowledge_infrastructure/tools", '
+                '"KI tools directory")\n'
+                'check_dir("KISSPATH_KI_ROOT/Demo/legacy_layout/tools", '
                 '"KI tools directory")\n'
             )
             common = root / "repo" / "ki_tools_common" / "ki_tools_common"
@@ -3265,10 +3267,16 @@ class AgentSetupTests(unittest.TestCase):
                     root / "repo" / "models",
                 )
 
-            expected = (root / "work" / "models" / "Demo" /
-                        "knowledge_infrastructure" / "tools")
+            # The server's own KI folder binds straight to the KI ...
+            preflight = (live.root / "preflight_check.py").read_text()
+            declared = [Path(line.split('"')[1]) for line in preflight.splitlines()]
+            self.assertEqual(declared[0].resolve(), (live.root / "tools").resolve())
+            self.assertFalse((root / "work" / "models" / "Demo" / "knowledge_infrastructure").exists())
+            # ... and any other layout still gets a link to what the KI ships.
+            expected = root / "work" / "models" / "Demo" / "legacy_layout" / "tools"
             self.assertTrue(expected.is_symlink())
             self.assertEqual(expected.resolve(), (live.root / "tools").resolve())
+            self.assertEqual(declared[1].resolve(), (live.root / "tools").resolve())
             self.assertEqual(
                 cfg.roles["ki_root"], (root / "work" / "models").resolve())
 

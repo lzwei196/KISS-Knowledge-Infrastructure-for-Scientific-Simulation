@@ -102,6 +102,29 @@ def test_explicit_original_source_write_still_fails_integrity(case):
     assert (case.root / "SKILL.md").read_text() == "unapproved original write"
 
 
+@pytest.mark.parametrize("deep", [False, True])
+def test_py_compile_of_a_bound_live_ki_path_leaves_the_ki_intact(case, deep):
+    # Bound KI paths name the live KI, not the execution copy (AquaCrop's
+    # MODEL_ENTRY); py_compile writes bytecode even with PYTHONDONTWRITEBYTECODE.
+    # The cache mirrors the source's full path: deep sources pass Windows' MAX_PATH.
+    entry = case.root / "tools" / "helper.py"
+    if deep:
+        entry = case.root / "tools" / ("s9_output_analysis_" * 4) / ("validate_" * 6) / "helper.py"
+        entry.parent.mkdir(parents=True)
+        entry.write_text("VALUE = 42\n", encoding="utf-8")
+    before = seal(case, "import subprocess, sys\n"
+                        f"subprocess.run([sys.executable, '-m', 'py_compile', {str(entry)!r}], check=True)\n"
+                        "import importlib.util\n"
+                        f"spec = importlib.util.spec_from_file_location('helper', {str(entry)!r})\n"
+                        "spec.loader.exec_module(importlib.util.module_from_spec(spec))\n"
+                        "print('PASS fixture')\n")
+    step = run(case)
+    assert step.ok and step.evidence["source_intact"], step.detail
+    assert ki_verification.content_digest(case.root) == before
+    assert not list(case.root.rglob("__pycache__"))
+    ki_guard.require_intact(case.root)
+
+
 def test_runtime_binding_change_during_probe_cannot_pass(case, monkeypatch):
     seal(case, "print('PASS fixture')\n")
     original = install._run

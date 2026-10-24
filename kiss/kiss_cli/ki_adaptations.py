@@ -426,8 +426,11 @@ def project_runtime(source, dest, cfg, *, model, target_root, manifest=None):
         runtime_paths = ki_fresh_paths._fresh_runtime(cfg) if changes else None
     except (ValueError, OSError, SyntaxError, TypeError) as error:
         raise AdaptationError(f"Unsupported {model} fresh path contract; verify a reconciled KI before use: {error}") from error
-    report = (port.materialise(source, dest, cfg, ki_target=logical) if declaration else
-              port.materialise(source, dest, cfg))
+    # Every KI binds its own paths to its final directory, not this physical
+    # destination (port._migrate_own_package). A declared route also validates
+    # that directory strictly; otherwise it is the host's own target.
+    final = logical if declaration else (Path(target_root).absolute() if target_root is not None else None)
+    report = port.materialise(source, dest, cfg, ki_target=final, model=model)
     if report.unresolved or report.corrupted:
         return report, None
     path_projection = None

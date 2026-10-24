@@ -133,8 +133,8 @@ def test_whole_overlay_verification_rejects_unrelated_modification(tmp_path, mon
 def test_source_change_during_real_materialise_never_publishes_a_proof(tmp_path, monkeypatch):
     source, cfg, target = case(tmp_path)
     materialise = port.materialise
-    def changed(base, dest, config):
-        result = materialise(base, dest, config)
+    def changed(base, dest, config, **kwargs):
+        result = materialise(base, dest, config, **kwargs)
         (base / "notes.txt").write_text("source changed")
         return result
     monkeypatch.setattr(port, "materialise", changed)

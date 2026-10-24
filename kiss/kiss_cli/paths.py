@@ -314,6 +314,25 @@ def with_ki_tools_common(cfg: KissConfig, env: dict[str, str] | None = None) -> 
     return out
 
 
+def without_ki_bytecode(env: dict[str, str], cache: Path) -> dict[str, str]:
+    """Keep Python bytecode out of the protected KI tree.
+
+    A KI's bound paths name its live folder, and ``py_compile`` -- which many
+    KI preflights run on their own scripts -- writes a .pyc beside the source
+    even with PYTHONDONTWRITEBYTECODE set. Any new file there marks the KI as
+    changed. A cache prefix sends both import and py_compile bytecode to
+    ``cache`` instead.
+
+    Python mirrors each source's full path below the prefix, which doubles
+    the path length; on Windows the extended-length form keeps that writable
+    past MAX_PATH without the system long-path setting.
+    """
+    prefix = os.path.abspath(cache)
+    if os.name == "nt" and not prefix.startswith("\\\\?\\"):
+        prefix = ("\\\\?\\UNC\\" + prefix[2:]) if prefix.startswith("\\\\") else "\\\\?\\" + prefix
+    return {**env, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPYCACHEPREFIX": prefix}
+
+
 def with_python_runtime(python: str | Path,
                         env: dict[str, str] | None = None) -> dict[str, str]:
     """Activate a workspace-local conda interpreter for child processes.

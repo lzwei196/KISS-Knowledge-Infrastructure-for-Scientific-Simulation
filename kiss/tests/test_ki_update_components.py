@@ -349,7 +349,7 @@ def test_snapshot_continuation_preserves_pair_and_reads_retained_guidance(tmp_pa
     request, project, ki, saved, live = _snapshot_project(tmp_path)
     original = {p.name: p.read_bytes() for p in live.iterdir()}
     config_bytes = (live.parent / paths.CONFIG_NAME).read_bytes()
-    monkeypatch.setattr(gui.port, "materialise", lambda *_a: pytest.fail("retained KI was refreshed"))
+    monkeypatch.setattr(gui.port, "materialise", lambda *_a, **_k: pytest.fail("retained KI was refreshed"))
     monkeypatch.setattr(gui, "_copy_missing_assets", lambda *_a: pytest.fail("new shared code was mixed in"))
     resolved, cfg = request._session_workspace(project, ki)
     assert cfg.roles["ki_tools_common"] == saved.roles["ki_tools_common"]

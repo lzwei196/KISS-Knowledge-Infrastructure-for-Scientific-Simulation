@@ -600,7 +600,7 @@ def _execute_ki_tool(*, flow, cfg, project: Path, ki: str, ki_root: Path,
         from .settings import with_provider_proxy
         child_env = with_provider_proxy(provider_id, child_env)
     child_env.update(approved_env)
-    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    child_env = paths.without_ki_bytecode(child_env, Path(tempfile.gettempdir()) / "geoforge-pycache")
     command = ([str(cfg.python), str(tool)] if python_tool else [str(tool)]) + list(arguments)
     worker_payload = None
     if project_data_tool:

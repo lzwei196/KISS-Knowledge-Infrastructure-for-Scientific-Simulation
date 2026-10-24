@@ -343,9 +343,9 @@ def test_installer_stop_from_emit_does_not_start_next_phase(tmp_path, monkeypatc
     (ki_root / "SKILL.md").write_text("# Local setup fixture\n")
     invoked = []
     real_materialise = gui.port.materialise
-    def materialise(*args):
+    def materialise(*args, **kwargs):
         invoked.append("materialise")
-        return real_materialise(*args)
+        return real_materialise(*args, **kwargs)
     monkeypatch.setattr(gui.port, "materialise", materialise)
     def phase(name):
         def run(*args, **kwargs):

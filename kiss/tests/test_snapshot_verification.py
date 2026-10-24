@@ -80,6 +80,18 @@ def test_legacy_snapshot_report_requires_recheck_without_mutation(example):
     assert gui._project_check_allowed_by_shared_status(state, shared_root=cfg.root)
 
 
+@pytest.mark.parametrize("python", ["python3", "missing"])
+def test_out_of_date_check_a_run_cannot_make_says_setup_needed(example, python):
+    handler, ki, cfg, _ = example
+    write_status(cfg)
+    saved = replace(cfg, python=python if python == "python3" else str(cfg.root / "missing" / "python.exe"))
+    (cfg.root / "kiss.toml").write_text(saved.dumps(), encoding="utf-8")
+    state = handler._status_for(ki)
+    # A run would stop for setup (no absolute saved interpreter), not check it itself.
+    assert not gui._project_check_allowed_by_shared_status(state, shared_root=cfg.root)
+    assert state["label"] == "Setup needed" and not state["can_run"]
+
+
 def test_matching_snapshot_identity_is_verified(example):
     handler, ki, cfg, _ = example
     current_status(handler, ki, cfg)

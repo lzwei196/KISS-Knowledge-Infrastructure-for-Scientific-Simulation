@@ -912,11 +912,12 @@ def place_where_the_ki_expects(ki, binary: Path | None, cfg,
                     notes.append(f"could not link install tree at {declared_root}: {e}")
                 break
 
-    # The KI ships tools/ and declares it at KISSPATH_KI_ROOT/<name>/
-    # knowledge_infrastructure/tools, while materialisation puts the package at
-    # ki/. Ten of the KIs disagree about that middle segment among themselves,
-    # so rather than encode a layout, link what the package actually contains
-    # to wherever it says the directory lives.
+    # The KI ships tools/ and may declare it below the model's server home.
+    # Projection binds the KI's own knowledge_infrastructure/ spelling to ki/
+    # (port._migrate_own_package); any other middle segment, or a declaration
+    # read without projection, still names a folder there. Rather than encode
+    # a layout, link what the package actually contains to wherever it says
+    # the directory lives.
     ki_root = Path(getattr(ki, "root", "")) if getattr(ki, "root", None) else None
     for decl in runnable.declared_dirs(ki):
         want = resolve(decl)
@@ -1295,7 +1296,10 @@ def _run_preflight_copy(ki, python: str, cfg, *, project) -> Step:
             from .paths import have_sandbox, sandbox_command
             if have_sandbox():
                 argv = sandbox_command(launch_cfg, argv, cwd=scratch)
-        env = {"PYTHONDONTWRITEBYTECODE": "1"}
+        from .paths import without_ki_bytecode
+        # Beside the execution copy: bound KI paths name the live KI, and a
+        # preflight's py_compile of them must not add files there.
+        env = without_ki_bytecode({}, attempt / "pycache")
         if launch_cfg is not None:
             from .paths import with_ki_tools_common, with_python_runtime
             env = with_python_runtime(python, with_ki_tools_common(launch_cfg, env))

@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-28
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status (2026-10-06)**: the REAL engine reproduces the USACE castro sample exactly (runs Current + Future, 54/54 element peaks/volumes/peak times; Outlet peak 540.2749050 cfs) and, for run Current, scores NSE 0.858 / KGE 0.811 / r 0.933 / PBIAS +0.98 % against the observed Castro Valley outlet flow of 16 Jan 1973 (USACE parameters, no calibration by us; see Validation). The older Bengbu numbers came from the Python SURROGATE `run_hec_hms.py` and are NOT HEC-HMS results.
+**Validation status (2026-10-06)**: the REAL engine reproduces the USACE castro sample exactly (runs Current + Future, 54/54 element peaks/volumes/peak times; Outlet peak 540.2749050 cfs) and, for run Current, scores NSE 0.858 / KGE 0.811 / r 0.933 / PBIAS +0.98 % against the observed Castro Valley outlet flow of 16 Jan 1973 (USACE parameters, no calibration by us; see Validation).
 
 ---
 
@@ -328,23 +328,12 @@ to pandas datetime, 2400 must map to 00:00 of the next day.
 | Caveat | parameters are the USACE ones, probably fitted to this same storm, so this is not an independent test |
 | Reproduce | `run_hms_engine.py --project castro/castro.hms --run Current --workdir OUT --export Outlet:FLOW --export_dss "castro.dss::/CASTRO VALLEY/OUTLET/FLOW//10MIN/OBS/"`; pair `OUT/exports/Current_Outlet_FLOW.csv` with `dss_CASTRO_VALLEY_OUTLET_FLOW_10MIN_OBS.csv` on `value_m3s` at the 60 shared times; `ki_tools_common.metrics.all_metrics(obs, sim)` (re-checked 2026-10-06: NSE 0.85793) |
 
-### Bengbu Basin, Huai River (Station 51080) — SURROGATE only, not HEC-HMS (and Bengbu is the excluded guardrail case)
-
-| Item | Value |
-|------|-------|
-| Basin | Bengbu, Huai River, China |
-| Station | 51080 (drainage area ~121,330 km²) |
-| Period | 1981-1990 (1980 spinup) |
-| Forcing | CMFD 0.25° daily (precip, temp) |
-| Soil | HWSD → SCS soil groups → Curve Number |
-| Land cover | AVHRR 1km → CN adjustment |
-| Loss method | SCS Curve Number (Ia = 0.05S) |
-| Transform | SCS Unit Hydrograph |
-| Baseflow | Linear Reservoir (recession) |
-
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 This section restates the KI's validation convention facts. The convention file
 wins if this body ever disagrees with `docs/validation_convention.yaml`.
@@ -360,14 +349,12 @@ wins if this body ever disagrees with `docs/validation_convention.yaml`.
 | `loss` | `pbias` | zero_centered | no cited threshold | no cited threshold | no cited threshold | none |
 
 Real-engine metric values come from `run_hms_engine.py` exports scored with
-`ki_tools_common.metrics` (Castro Valley, above). The older Bengbu values came from
-`validate_hms.py` on SURROGATE output. This section records the cited pass-bands used
+`ki_tools_common.metrics` (Castro Valley, above). This section records the cited pass-bands used
 to judge those values.
 
-The models DB still stores the surrogate's Bengbu metrics (NSE 0.909 / KGE 0.948 / r 0.955)
-for HEC-HMS. `knowledge_infrastructure.yaml` lists them only under
-`validation.surrogate_metrics_not_hec_hms`; its `validation.metrics` hold the real-engine
-Castro Valley score (NSE 0.858, 60 points, in-sample). Regenerating the manifest from the DB
+The models DB still stores SURROGATE metrics for HEC-HMS. `knowledge_infrastructure.yaml`
+lists them only under `validation.surrogate_metrics_not_hec_hms`; its `validation.metrics` hold the
+real-engine score. Regenerating the manifest from the DB
 would project the surrogate metrics again -- re-check it after any regeneration.
 
 ---
@@ -494,8 +481,8 @@ End:
 | Soil | HWSD China | Available | `KISSPATH_ROOT/.../soil/HWSD_China_Geo.img` |
 | Land Cover | AVHRR 1km | Available | `KISSPATH_ROOT/.../landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif` |
 | DEM | SRTM 90m | Available | `KISSPATH_ROOT/.../dem/china_dem_90m/china_dem_90m.tif` |
-| Basin Shape | Bengbu | Available | `KISSPATH_ROOT/.../shp/bengbu_shp/bengbu_clip.shp` |
-| Observation | Bengbu 51080 | Available | `KISSPATH_ROOT/.../obs/BB/51080_bengbu.txt` |
+| Basin Shape | basin outline shapefile | per basin | `/path/to/basin.shp` |
+| Observation | outlet gauge record | per basin | `/path/to/obs.txt` |
 
 ---
 
@@ -515,7 +502,7 @@ Steps 1-6 below are the SURROGATE daily-CSV workflow (NOT HEC-HMS).
 ```bash
 python3 ki/tools/convert_forcing_to_hms.py \
   --forcing_dir KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/ \
-  --basin_shp KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
+  --basin_shp /path/to/basin.shp \
   --start_date 1980-01-01 --end_date 1990-12-31 \
   --pet_csv /path/to/source_documented_daily_pet.csv \
   --output_dir ./forcing_out/
@@ -526,7 +513,7 @@ python3 ki/tools/convert_forcing_to_hms.py \
 python3 ki/tools/convert_soil_to_hms.py \
   --soil_file KISSPATH_STATIC/HWSD_China_Geo.img \
   --landcover_file KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif \
-  --basin_shp KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
+  --basin_shp /path/to/basin.shp \
   --output_file ./soil_params.json
 ```
 
@@ -551,7 +538,7 @@ python3 ki/tools/parse_hms_output.py \
 ```bash
 python3 ki/tools/validate_hms.py \
   --sim_csv ./discharge_daily.csv \
-  --obs_file KISSPATH_OBS/BB/51080_bengbu.txt \
+  --obs_file /path/to/obs.txt \
   --start_date 1981-01-01 --end_date 1990-12-31 \
   --output_figure ./validation.png
 ```
@@ -560,7 +547,7 @@ python3 ki/tools/validate_hms.py \
 ```bash
 python3 ki/tools/calibrate_hms.py \
   --forcing_csv ./forcing_out/basin_avg_forcing.csv \
-  --obs_file KISSPATH_OBS/BB/51080_bengbu.txt \
+  --obs_file /path/to/obs.txt \
   --basin_area_km2 121330 \
   --start_date 1981-01-01 --end_date 1990-12-31 \
   --n_samples 500 \

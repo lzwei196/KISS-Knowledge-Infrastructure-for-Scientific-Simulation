@@ -77,21 +77,20 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Forcing**: use native subdaily CMFD for the strict converter. Actual within-day samples provide the Hargreaves extrema; daily mean temperature is insufficient. Representative-point extraction is explicitly recorded, not called basin averaging.
 - **Soil**: `ki_tools_common.soil_utils` (HWSD lookup, Rosetta van Genuchten).
 - **Observed discharge**: read the gauge text file directly
-  (`$ROOT/data/obs/BB/51080_bengbu.txt` for Bengbu 51080). The
-  `data_ki/ObservedQ/tools/` reader does NOT exist in KDT 5.0. **Obs trap**: the
-  Bengbu record uses a `-99.9` missing-data sentinel. The converter marks missing days instead of failing: a declared sentinel (`--obs-missing-value`, repeatable, default `-99.9` and `-99`), an empty Q cell (the row still has every field) or a date with no row becomes Qobs `-9999` in `inputs.dat`, and the sidecar lists those rows (`observation_mode: provided_with_gaps`, `obs_missing_rows`). Any other negative, non-numeric or infinite Q, or a row cut short (a date with no Q field), is still refused. True Q=0 is kept. `calibrate_topmodel.py` scores only the observed rows; never score the `-9999` placeholder or an absent-observation placeholder.
+  (`$ROOT/data/obs/<gauge dir>/<gauge file>.txt`). The
+  `data_ki/ObservedQ/tools/` reader does NOT exist in KDT 5.0. **Obs trap**: a
+  gauge record can use a `-99.9` missing-data sentinel. The converter marks missing days instead of failing: a declared sentinel (`--obs-missing-value`, repeatable, default `-99.9` and `-99`), an empty Q cell (the row still has every field) or a date with no row becomes Qobs `-9999` in `inputs.dat`, and the sidecar lists those rows (`observation_mode: provided_with_gaps`, `obs_missing_rows`). Any other negative, non-numeric or infinite Q, or a row cut short (a date with no Q field), is still refused. True Q=0 is kept. `calibrate_topmodel.py` scores only the observed rows; never score the `-9999` placeholder or an absent-observation placeholder.
   - **Alternate Huai obs source — "China Gauge Flux — 淮河"**
     (`KISSPATH_DATA/china_water_level/淮河txt/`): a TAB-separated multi-gauge set,
     header `stcd  dates  z  Q  name`, `dates` = `%Y-%-m-%-d` (no zero-pad, e.g.
     `1980-6-1`), `Q` = discharge in **m³/s**, missing sentinel is **`-99`** (exclude the sentinel; preserve valid `Q=0`). 8 gauges: `蚌埠`=Bengbu, `王家坝`=Wangjiaba, `息县`=Xixian,
     `淮滨`=Huaibin, `阜阳`=Fuyang, `鲁台子`=Lutaizi, `蒋家集`=Jiangjiaji,
     `周口`=Zhoukou; records span ~1950-2024. `蚌埠.txt` (stcd 50104200) is the
-    SAME physical Bengbu station as `BB/51080_bengbu.txt` — the validated
-    incumbent reproduces here (1981-1990 full NSE 0.435, val NSE 0.494, PBIAS
-    −18.6), so it is a drop-in cross-check obs. Q(m³/s) → daily per-step depth
+    SAME physical Bengbu station as `BB/51080_bengbu.txt`, so it is a drop-in
+    cross-check obs. Q(m³/s) → daily per-step depth
     (m) = `Q * 86400 / area_m2`; equivalently convert sim m/step → m³/s via
     `Q_mhr * area_m2 / 86400` and score in m³/s (NSE/KGE/r/PBIAS identical either
-    way). Use area = 121,330 km² (1.2133e11 m²) for Bengbu.
+    way).
 
 
 ## Overview
@@ -150,8 +149,8 @@ cd source/repo/
 
 ## TIMESTEP CONVENTION — daily runs use dt=1.0 (1 step = 1 day)
 
-> **READ THIS before trusting the "m/hr" labels below.** The validated
-> Bengbu/Wangjiaba pipeline runs DAILY forcing with the `inputs.dat` header
+> **READ THIS before trusting the "m/hr" labels below.** The daily
+> pipeline runs DAILY forcing with the `inputs.dat` header
 > `dt = 1.0`, so **1 step = 1 day** and the rain/PE/Qobs columns are
 > **per-DAY depths in metres**, not literally m/hr. The C binary indexes
 > `rain[]`/`pe[]` by integer step and is only safe at `dt = 1.0` (see hazard
@@ -410,33 +409,26 @@ Otherwise it stops with an error. A trial with any nonfinite simulated flow, a
 the part that is left. Metrics (NSE, KGE-2009, PBIAS, r) are
 computed inside the tool; no server-only module is needed.
 
-**DO NOT blindly maximize cal-NSE.** At Bengbu the calibration window (1981-85)
-is volume-biased (wetter, higher peaks, PBIAS −34%) relative to validation
-(+5.5%); one parameter set cannot satisfy both. Three documented attempts to
-push cal-NSE or select on cal-KGE COLLAPSED held-out val (val-NSE → 0.17, and
-−0.97 for cal-KGE selection). The shipped incumbent (val NSE 0.494 / KGE 0.66)
-is a ROBUST sweet spot, not the cal-optimum. **If a search does not beat the
-incumbent's *validation* metrics, keep the incumbent.** Note also `t0` is
-**ln(T0)** and must be ≈8 to match the high TL (~10.9) of a coarse-resampled
-large-basin DEM — the pre-DEM seed t0=4.81 over-buffers baseflow (val NSE −0.55).
+**DO NOT blindly maximize cal-NSE.** A calibration window can be volume-biased
+relative to the validation window; when it is, one parameter set may not satisfy
+both. Pushing cal-NSE or selecting on cal-KGE can COLLAPSE held-out val. The shipped
+incumbent seed (`INCUMBENT` in `tools/calibrate_topmodel.py`) was calibrated on one
+large basin; there it is a ROBUST sweet spot, not the cal-optimum. **On any basin,
+if a search does not beat the seed's *validation* metrics on that basin, keep the
+seed.** Note also `t0` is
+**ln(T0)** and must be ≈8 to match the high TL of a coarse-resampled
+large-basin DEM — a low seed t0 (the pre-DEM seed was 4.81) over-buffers baseflow.
 
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 Validated scoring is tied to the dag headline variable, not to a guessed
 hydrologic preference. The rank-1 output is `Q (simulated discharge)`, with unit
 `m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)`.
-
-### Documented Bengbu / Huai incumbent
-
-The body-documented incumbent uses the Bengbu station with area `121,330 km²`
-(`1.2133e11 m²`) and the 1981-1990 period noted above. The alternate Huai obs
-source is a drop-in cross-check for the same physical Bengbu station; the
-documented incumbent reproduces there with 1981-1990 full NSE `0.435`, validation
-NSE `0.494`, and PBIAS `−18.6`. The calibration section also records the robust
-incumbent as validation NSE `0.494` / KGE `0.66`, while failed cal-heavy searches
-collapsed held-out validation NSE to `0.17` and `−0.97` for cal-KGE selection.
 
 ### Convention bars from `docs/validation_convention.yaml`
 
@@ -450,12 +442,6 @@ rather than substituting an uncited value.
 | `Q (simulated discharge)` | PBIAS | zero_centered | `abs(PBIAS) <= 10.0` (`kouchi2017`, `das2020`) | `abs(PBIAS) <= 15.0` (`kouchi2017`, `das2020`) | `abs(PBIAS) <= 25.0` (`kouchi2017`, `das2020`) |
 | `Q (simulated discharge)` | CSI | maximize | no cited threshold (`thiemig2015`) | no cited threshold (`thiemig2015`) | `>= 0.5` (`thiemig2015`) |
 | `qb (baseflow)` | NSE | maximize | no cited threshold | no cited threshold | no cited threshold |
-
-For `Q (simulated discharge)`, the documented validation NSE `0.494` is just
-below the cited satisfactory NSE threshold `0.5` (`kouchi2017`, `das2020`).
-The documented PBIAS `−18.6` is within the cited satisfactory zero-centered
-PBIAS band `25.0` and outside the cited good band `15.0`
-(`kouchi2017`, `das2020`).
 
 ---
 
@@ -488,7 +474,7 @@ To convert to volumetric discharge (m³/s):
 Q_m3s = Q_mhr * basin_area_m2 / 3600
 ```
 
-For Bengbu basin (~121,330 km²):
+For a basin of ~121,330 km²:
 ```
 Q_m3s = Q_mhr * 121330e6 / 3600
 ```

@@ -67,7 +67,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: Landlab Development Team (CU Boulder, U Washington, Tulane)
 **Last updated**: 2026-04-29
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status**: production_validated (5 test cases: Whipple & Tucker 1999 analytical + SPACE binary Qs-Q + SPACE steady-state concavity + Loess Plateau SRTM real-DEM slope-area + Loess Plateau stream power SY + P export)
+**Validation status**: production_validated
 
 ---
 
@@ -245,27 +245,21 @@ Source of truth: `dag.yaml` and `docs/format_spec.yaml`. Landlab is unit-agnosti
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 Source of truth for validation bars: `docs/validation_convention.yaml`. Null convention bands are written as `no cited threshold`; no uncited threshold is substituted.
 
 ### Performance Metrics -- judged against the field's bar
 
-| DAG variable | Headline metric | Direction | Convention bar, cited | KI result currently documented |
-|--------------|-----------------|-----------|------------------------|-------------------------------|
-| `sediment_yield` | `pbias` | zero_centered | very good: `|PBIAS| <= 10` (moriasi2015); good: `|PBIAS| <= 15` (moriasi2015); satisfactory: `|PBIAS| <= 20` (moriasi2015) | Loess Plateau sediment-yield run reports `8390.6 t/km^2/yr` against `2,000-10,000 t/km^2/yr`; the body does not state a PBIAS value. |
-| `topographic__elevation` | `csi` | maximize | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` | Whipple & Tucker steady-state run reports slope-area `r^2 = 0.9978`, relief `810.2 m`, and wall time `2.2 s`; no CSI value is stated. |
-| `concavity (theta)` | `pbias` | zero_centered | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` | SPACE steady-state run reports theta `0.464`; Loess Plateau slope-area run reports theta `0.1631`; Whipple & Tucker run reports theta `0.488` against expected `0.500`. |
-| `steepness (ks)` | `pbias` | zero_centered | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` | The DAG exposes `steepness (ks)` as a derived slope-area metric; this body does not state a validated ks value. |
-
-### Documented validation cases
-
-| Case | Configuration source | Reported result |
-|------|----------------------|-----------------|
-| SPACE Binary -- Atchafalaya Qs-Q + Concavity (2026-04-29) | `tools/dissect_atchafalaya_ssc_q_surrogate.py`; outputs under `outputs/landlab_atchafalaya_ssc_q/` | `b_sim = 0.897`, log-log `r = 0.978`, theta `0.464`, obs `r = 0.809`; all listed as PASS in this body. |
-| Loess Plateau Real-DEM Slope-Area (2026-04-29) | `tools/dissect_loess_plateau_slope_area.py` | theta `0.1631`, binned `R^2 = 0.8659`, channel nodes `12,315`; all listed as PASS in this body. |
-| Loess Plateau Sediment Yield + Particulate-P Export (2026-04-29) | `tools/dissect_loess_plateau_sediment_yield.py`; outputs under `outputs/landlab_loess_sediment/` | sediment yield `8390.6 t/km^2/yr`; particulate-P export `134.25 kg/ha/yr`; both listed as PASS in this body. |
-| Whipple & Tucker (1999) Steady-State Test (2026-03-25) | Python Landlab component run described below | slope-area `r^2 = 0.9978`, theta `0.488`, relief `810.2 m`, wall time `2.2 s`; listed as PASS where thresholds are stated in this body. |
+| DAG variable | Headline metric | Direction | Convention bar, cited |
+|--------------|-----------------|-----------|------------------------|
+| `sediment_yield` | `pbias` | zero_centered | very good: `|PBIAS| <= 10` (moriasi2015); good: `|PBIAS| <= 15` (moriasi2015); satisfactory: `|PBIAS| <= 20` (moriasi2015) |
+| `topographic__elevation` | `csi` | maximize | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` |
+| `concavity (theta)` | `pbias` | zero_centered | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` |
+| `steepness (ks)` | `pbias` | zero_centered | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` |
 
 ### Data replacement tracking
 
@@ -273,7 +267,7 @@ Source of truth for validation bars: `docs/validation_convention.yaml`. Null con
 |-----------|--------|--------|-------|
 | Forcing | CMFD/MSWX/NASA POWER via `ki_tools_common.load_forcing.load_daily_forcing` where meteorological forcing is needed | Available | Landscape-evolution sediment-yield runs commonly use uniform runoff_rate, not a daily hydrograph. |
 | Soil | HWSD or other soil data via `convert_soil_params.py` | Available | Convert depth from cm to m before Landlab fields. |
-| DEM / topography | SRTM/ASTER/LiDAR through `convert_dem_to_grid.py` | Validated in Loess Plateau cases | DEM must be projected in meters and NoData must be closed. |
+| DEM / topography | SRTM/ASTER/LiDAR through `convert_dem_to_grid.py` | Available | DEM must be projected in meters and NoData must be closed. |
 | Initial conditions | Landlab grid fields (`topographic__elevation`, `soil__depth`, `bedrock__elevation`) | Available | Field locations and units must match component expectations. |
 
 ---
@@ -431,125 +425,40 @@ These are the most dangerous unit mismatches in Landlab workflows:
 
 ---
 
-## Validation: SPACE Binary — Atchafalaya Qs-Q + Concavity (2026-04-29)
+## Synthetic test setups (how-to)
 
-### Configuration — Test 1 (Qs-Q binary)
+### SPACE Qs-Q test (quasi-1D channel)
 - Grid: 3×51 quasi-1D channel, dx=500 m, slope=5×10⁻⁴, soil_depth=2 m
 - Component: SpaceLargeScaleEroder (K_sed=2.5e-5, m_sp=0.5, n_sp=1.0, v_s=5 m/yr, H*=1 m)
 - Method: warmup 800 steps × 1 yr; then 7 runoff-rate probes (single SPACE step, no uplift)
 - Fit: log(Qs) vs log(Q) — sediment mass flux vs water flux
 
-### Configuration — Test 2 (Steady-state concavity)
+### SPACE steady-state concavity test
 - Grid: 50×50 RasterModelGrid, dx=200 m, open south boundary
 - Duration: 4000 × 500 yr = 2 Myr; uplift U=1e-3 m/yr
 
-### Results
-| Test | Metric | Value | Threshold | Status |
-|------|--------|-------|-----------|--------|
-| T1: Qs-Q binary | b_sim | 0.897 | [0.35, 1.20] | PASS |
-| T1: Qs-Q binary | r (log-log) | 0.978 | ≥ 0.90 | PASS |
-| T2: Concavity | θ | 0.464 | [0.40, 0.55] | PASS |
-| Context: data quality | obs r | 0.809 | ≥ 0.65 | PASS |
-
-### Key Findings
-1. b_sim=0.897 reflects transport-limited SPACE behavior (86.5% sediment-dominated, long travel distance) — physically correct for these parameters
-2. Detachment-limited regime (b→m=0.5) requires bare bedrock (H→0) or very high v_s; transport-limited (b→1.0) matches Atchafalaya obs b=1.077
-3. Fitting Qs vs Q (not SSC vs Q) is essential — SSC = Qs/Q ∝ Q^(m-1) = Q^(-0.5) always gives negative exponent regardless of model correctness
-4. Steady-state θ=0.464 confirms SPACE correctly implements stream-power scaling (Whipple & Tucker 1999 theoretical θ=0.5)
-
-### Output
-- Figure: `outputs/landlab_atchafalaya_ssc_q/validation_figure.png`
-- Metrics: `outputs/landlab_atchafalaya_ssc_q/metrics.json`
-- Run: `python tools/dissect_atchafalaya_ssc_q_surrogate.py`
-
----
-
-## Validation: Loess Plateau Real-DEM Slope-Area (2026-04-29)
-
-### Configuration
-- DEM: SRTM 30m, tile N36E109 (~36.64°N 109.33°E, Shaanxi, China)
-- Clip: 500×500 px (15 km × 15 km), dx=30 m, z=[953, 1369] m
-- Tool: `convert_dem_to_grid.py` → `FlowAccumulator(D8 + DepressionFinderAndRouter)`
-- Slope method: 2D spatial gradient |∇z| (binned; D8 receiver slope is noisy on SRTM)
-- Channel threshold: A ≥ 0.1 km²; 25 log-spaced area bins
-
-### Results vs Published Loess Plateau Concavity
-| Metric | Simulated | Reference | Status |
-|--------|-----------|-----------|--------|
-| Concavity θ | 0.1631 | 0.10–0.35 (Loess Plateau gullies) | PASS |
-| R² (binned) | 0.8659 | — | PASS (≥ 0.30) |
-| Channel nodes | 12,315 | — | PASS (≥ 20) |
-
-### Key Findings
-1. Binned slope-area R²=0.866 confirms Landlab correctly extracts channel scaling from real terrain
-2. θ=0.163 is consistent with actively eroding Loess Plateau gullies (lower than global mountain-river average θ≈0.45)
-3. D8 receiver slope (`topographic__steepest_slope`) gives θ≈0.13 and R²≈0.08 on SRTM — use spatial gradient instead (dt_018)
-4. Single-outlet boundary (`closed_all_but_outlet`) depresses θ toward 0 — use `open_all` for DEM clips (dt_019)
-5. SRTM integer elevations create discrete slope bands; log-spaced binning recovers R²=0.87 from a raw scatter of R²=0.07
-
-### Triplets exercised
-- dt_018: D8 slope artifact on filled DEMs → use spatial gradient
-- dt_019: single-outlet boundary depresses θ → use open_all
-
----
-
-## Validation: Loess Plateau Sediment Yield + Particulate-P Export (2026-04-29)
-
-### Configuration
-- DEM: SRTM 30m, tile N36E109, clip 500×500 px (15 km × 15 km), dx=30 m, z=[953, 1369] m
-- Model: Detachment-limited stream power law E = K_sp × A^0.5 × S (no SPACE; see dt_022)
-- Boundary: `closed_all_but_outlet` (lowest boundary node = outlet, z=959 m, node 189499)
-- Flow routing: `FlowAccumulator(D8 + DepressionFinderAndRouter)`, runoff_rate=3.17e-9 m/s (100 mm/yr)
-- K_sp calibration: K_sp = SY_target / (mean(A^0.5 × S) × ρ_bulk × 1e6) → 1.64e-4 m^0/yr
-- Bulk density: 1400 kg/m³; Soil P: 800 mg/kg; P enrichment ratio: 2.0
-- P export: TP = SY × 10 × P_soil_ppm × ER × 1e-6
-
-### Results vs Published Yellow River Tributary Yields
-| Metric | Simulated | Reference | Status |
-|--------|-----------|-----------|--------|
-| Sediment yield | 8390.6 t/km²/yr | 2,000–10,000 t/km²/yr (Liu 1985; Wang 2011) | PASS |
-| Particulate-P export | 134.25 kg/ha/yr | 0.5–200 kg/ha/yr (threshold) | PASS |
-
-### Key Findings
-1. SPACE is unsuitable for annual SY from real DEMs — transport-limited regime gives ~2.7% export efficiency; use DL stream power instead (dt_022)
-2. K_sp calibrated analytically so mean gross erosion = target SY; no iterative tuning needed
-3. Spatial gradient |∇z| (np.gradient on 2D elevation array) gives physically meaningful slopes for SY; D8 receiver slope is too noisy at cell scale (dt_018)
-4. `closed_all_but_outlet` is mandatory for watershed-scale SY (single catchment definition); `open_all` creates many sub-basins and underestimates outlet flux
-5. P export (TP=134.25 kg/ha/yr) is gross potential; actual at watershed outlet is 0.3–0.7× lower due to within-basin P retention
-
-### Triplets exercised
-- dt_022: SPACE near-zero SY on real DEMs → use DL stream power for annual SY
-
-### Output
-- Figure: `outputs/landlab_loess_sediment/validation_figure.png`
-- Metrics: `outputs/landlab_loess_sediment/metrics.json`
-- Run: `python tools/dissect_loess_plateau_sediment_yield.py`
-
----
-
-## Validation: Whipple & Tucker (1999) Steady-State Test (2026-03-25)
-
-### Configuration
+### Whipple & Tucker (1999) steady-state test
 - Grid: 50×50 `RasterModelGrid`, dx=100 m
 - Components: FlowAccumulator(D8) + StreamPowerEroder(K=1e-5, m=0.5, n=1.0) + LinearDiffuser(D=0.01 m²/yr)
 - Uplift: 1e-3 m/yr uniform
 - Duration: 2 Myr, dt=500 yr (4000 steps)
 - Boundary: South edge open, other three closed
 
-### Results vs Analytical Solution
-| Metric | Simulated | Expected | Status |
-|--------|-----------|----------|--------|
-| Slope-area r² | 0.9978 | ~1.0 | PASS |
-| Concavity (θ) | 0.488 | 0.500 | PASS (2.4% error) |
-| Relief (m) | 810.2 | ~800 | PASS |
-| Wall time | 2.2 s | — | — |
+## Lessons from past runs (rules)
 
-### Key Findings
-1. Slope-area correlation r=0.9978 confirms steady-state channel profiles
-2. Concavity index θ=0.488 vs theoretical 0.500 (2.4% error, within discretization)
-3. Relief stabilized at 810.2 m after 2 Myr of evolution
-4. All three components (FlowAccumulator, StreamPowerEroder, LinearDiffuser) validated
-5. Wall time 2.2s for 4000 steps on 50×50 grid demonstrates computational efficiency
+1. Fit Qs vs Q directly, never SSC = Qs/Q vs Q: SSC vs Q always gives a negative exponent,
+   whatever the model does (`dt_020`).
+2. If the SPACE Qs-Q exponent b is outside [0.35, 1.20], check whether SPACE runs in the
+   detachment-limited or transport-limited regime (H, H*, v_s) (`dt_021`).
+3. For slope-area on a real DEM, use the 2D spatial gradient |∇z| with log-spaced area bins,
+   not the D8 receiver slope (`topographic__steepest_slope`) (`dt_018`).
+4. For slope-area on a DEM clip, use `open_all` boundaries; a single-outlet boundary
+   (`closed_all_but_outlet`) pushes θ toward 0 (`dt_019`).
+5. Do not use SPACE for annual sediment yield on a real DEM; use detachment-limited stream
+   power, set K_sp analytically from the target SY, and use `closed_all_but_outlet` for
+   watershed-scale SY (`dt_022`).
+6. P export from TP = SY × 10 × P_soil_ppm × ER × 1e-6 is a gross potential; the amount at the
+   watershed outlet is lower because of P retention inside the basin.
 
 ---
 
@@ -561,9 +470,9 @@ These are the most dangerous unit mismatches in Landlab workflows:
 | `convert_soil_params.py` | s3 | `tools/convert_soil_params.py` | ~220 | HWSD soil → grid fields (depth, K, porosity) |
 | `run_landlab.py` | s5 | `tools/run_landlab.py` | ~280 | Execute Landlab simulation from YAML config |
 | `parse_landlab_output.py` | s6 | `tools/parse_landlab_output.py` | ~250 | Extract grid fields → CSV/NetCDF + metrics |
-| `dissect_atchafalaya_ssc_q_surrogate.py` | validation | `tools/dissect_atchafalaya_ssc_q_surrogate.py` | ~280 | SSC-Q surrogate validation vs USGS-07381600 (n=357, r=0.8092) |
-| `dissect_loess_plateau_slope_area.py` | validation | `tools/dissect_loess_plateau_slope_area.py` | ~430 | Real-DEM slope-area: SRTM N36E109, θ=0.163 R²=0.866 PASS |
-| `dissect_loess_plateau_sediment_yield.py` | validation | `tools/dissect_loess_plateau_sediment_yield.py` | ~280 | DL stream power SY + particulate-P: SY=8390.6 t/km²/yr PASS, TP=134.25 kg/ha/yr PASS |
+| `dissect_atchafalaya_ssc_q_surrogate.py` | validation | `tools/dissect_atchafalaya_ssc_q_surrogate.py` | ~280 | SPACE Qs-Q rating and steady-state concavity check |
+| `dissect_loess_plateau_slope_area.py` | validation | `tools/dissect_loess_plateau_slope_area.py` | ~430 | Real-DEM slope-area (spatial gradient, log-binned) |
+| `dissect_loess_plateau_sediment_yield.py` | validation | `tools/dissect_loess_plateau_sediment_yield.py` | ~280 | DL stream power SY + particulate-P export |
 
 ---
 

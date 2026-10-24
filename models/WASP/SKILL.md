@@ -79,9 +79,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 > **Version**: EPA WASP 8.5.0 (real engine) + legacy analytic surrogate
 > **Domain**: surface-water quality (rivers, lakes, reservoirs, estuaries)
 > **Last updated**: 2026-10-07
-> **Validation status**: official EPA example reproduced exactly; one real case (Lake Erie Central
-> Basin, validation - nothing calibrated): water temperature very good (NSE 0.99), DO (all data)
-> below the bar (NSE −0.01) - the deck has no algae/nutrients (not configured yet)
+> **Validation status**: official EPA example reproduced exactly; real-case results: see the run records
 
 ---
 
@@ -148,8 +146,7 @@ Daily weather time functions (days relative to the run start), from
 ### 3.2 Static Inputs
 Segment depth and volume, elevation (constant 57 + segment parameter 24; DO saturation pressure),
 latitude/longitude (constants 2/3), SOD (segment parameter 32, g O₂/m²/d), CBOD decay (constant
-47), initial concentrations per system. Data source of the Lake Erie case: depth 12 m from the
-GLNPO August temperature profiles, elevation 174 m.
+47), initial concentrations per system.
 
 ### 3.3 Configuration Files
 Only the `.wif`. Every value written must also have its **"used" flag = 1** or the engine
@@ -200,8 +197,8 @@ On this server the same chain is wrapped by `KISSPATH_KI_ROOT/WASP/run_and_score
 valid BMD2 header and no unexpected ERROR line; the wine exit code is ignored (it is 2 on good
 runs). Exit codes: 0 ok, 1 failed, 2 bad command line, 3 WINE/engine missing.
 
-**Expected runtime**: official example 3.4 s; Lake Erie 10-box case 28 s for 11 years
-(about 2.6 s per simulated year); case build 8 s; whole runner 42 s (weather reused).
+**Expected runtime**: official example 3.4 s; a 10-box lake case about 2.6 s per
+simulated year; case build 8 s; whole runner 42 s (weather reused).
 
 ---
 
@@ -269,7 +266,7 @@ Stage docs: `docs/s1_forcing_preparation.md`, `s2_parameter_setup.md` (API keywo
 | GLNPO depth | text "PRFL-15" | m | parsed from ResultCommentText |
 
 ## 8b. CMFD/MSWX Data Conventions
-CMFD is China-only (Lake Erie uses NASA POWER). MSWX is global; the shared loader handles both
+CMFD is China-only. MSWX is global; the shared loader handles both
 through the same `--source` switch. NASA POWER is always fetched live (`REALTIME=1`).
 
 ## 8c. Sign Conventions and Output Units
@@ -304,7 +301,10 @@ Full corpus: `diagnostics/triplets.yaml` (current count: the KI map at the top o
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### 11.1 Official example (engine repeat test)
 EPA Steady State example (`test_cases/steady_state/`), 2026-10-07 through `run_wasp_engine.py`:
@@ -313,64 +313,29 @@ seg 9 = 5.7412233, CBOD seg 1 = 105.90371, temperature seg 9 = 21.372213 °C —
 2026-10-06 build log run. **PASS (exact).** This is a repeat-run check, not a physical validation
 (EPA ships no reference output).
 
-### 11.2 Real case: Lake Erie Central Basin surface layer (validation, nothing calibrated)
-
-| Property | Value |
-|----------|-------|
-| Engine | EPA WASP 8.5.0 `waspccli.exe` under WINE through `tools/run_wasp_engine.py` (closed out, 0 unexpected ERROR lines) |
-| Location | box at 41.95 N, 81.55 W; obs = 11 EPA GLNPO "Great Lake" stations (ER30, ER31, ER32, ER36, ER37, ER38, ER42, ER43, ER73, ER78M, ER95B) in bbox −82.5…−80.4 E, 41.35…42.6 N |
-| Model setup | EPA Steady State deck edited through EPA's API: 10 identical isolated boxes, 12 m deep, Flow Routing; segment 1 scored; systems CBOD, DO, solids, water temperature only (no algae, no nutrients, SOD 0) |
-| Period | 2004 spin-up; scored 2005–2014 |
-| Forcing | NASA POWER daily (live), `build_wasp_weather_from_source.py` |
-| Obs | WQP `wqp_lakes` Lake_Erie_Central, samples ≤ 5 m, one row per station-day (176 DO, 197 temperature rows; April and August cruises only) |
-| Calibration | **none** — every value is an engine default, a literature value or read from the data (depth 12 m = August mixed-layer depth from GLNPO profiles). These are validation numbers. |
-| Run | `KISSPATH_KI_ROOT/WASP/detached/real_case/c5fa2a53d2794a7c82a8b5ba157f79f0/` (re-scored 2026-10-07 with the corrected obs QC; a rebuild of the case through the current tools gave a byte-identical extract) |
-
-### Performance Metrics — judged against the field's bar, not intuition
+### Pass bars — judged against the field's bar, not intuition
 
 > Bar for `do_timeseries` and `temperature_timeseries` (NSE, per `arnold2012`, `efdc2021`,
 > `deepavarsa2023`, `piccolroaz2013` in `docs/validation_convention.yaml`): satisfactory ≥ 0.5,
 > good: no cited threshold, very good ≥ 0.75.
-> Headline `do_timeseries`, all data (176 station-days): **NSE −0.01 → below the bar (not validated)**.
-> Water temperature (197 station-days): **NSE 0.99 → very good**.
 
-| Variable | Rows | NSE | KGE | PBIAS (%) | r | RMSE | Note |
-|---|---|---|---|---|---|---|---|
-| `do_timeseries`, all data (headline) | 176 | −0.011 | 0.605 | +20.0 | 0.671 | 2.91 mg/L | per-station median NSE −0.014 (11 stations) |
-| `do_timeseries`, cruise-QC subset | 176 | −0.011 | 0.605 | +20.0 | 0.671 | 2.91 mg/L | same rows: the only excluded cruises (dead sensors) have no in-range values |
-| `temperature_timeseries` | 197 | 0.992 | 0.953 | +2.8 | 0.997 | 0.96 °C | per-station median NSE 0.992 |
+Scoring rules from past runs:
+- The headline is always all data (`do_all`); the cruise-QC subset (`do_sensor_qc`) is reported next to it (dt_wasp_037).
+- Cruise QC uses the cruise's own data, never the model; a cruise is left out only when the sensor is proven wrong (dt_wasp_041).
+- Score a lake model against lake stations, not river samples (dt_wasp_035).
+- With no algae and no nutrients in the deck, simulated DO stays at about 1.03 × saturation; report it as a limit, do not tune (dt_wasp_042).
+- Surrogate numbers are not WASP results (dt_wasp_040).
 
-The same run scored against the per-day network mean (`--network-mean`, support changes from day
-to day) gives DO NSE −0.207 (n 30) and temperature 0.994 (n 33).
+### Input data rules
 
-Cruise QC on this data (from the cruise's own data, never from the model; dt_wasp_041):
-- EXCLUDED (sensor proven wrong): 2009-08 and 2010-04 (`sensor_dead`: every DO value negative;
-  the range filter already removes them, so no scored row changes).
-- DIAGNOSTIC only, data kept: 2012-04 and 2013-04 (whole column and surface at 37–39 % of
-  saturation in a mixed April column), 2012-08 (19 %, stratified column) — `sat_offset_unconfirmed`;
-  2005-04 and 2006-08 — `winkler_disagree_unmatched_depth` (CTD ≤ 5 m vs Winkler of unknown depth,
-  ratio 0.72 and 1.35). A sensor fault is likely for some of these, but low DO alone, or a Winkler
-  sample from an unknown depth, does not prove it, so they stay in the score.
-- Sensitivity only (not a result): leaving the 5 diagnostic cruises out gives DO NSE 0.80,
-  r 0.94, PBIAS +7.9 % (n 124). It shows how much these cruises drive the DO score.
-
-Caveats, in plain words: the deck has **no algae and no nutrients** (not configured yet), so the
-simulated DO stays at about 1.03 × saturation and cannot show algal supersaturation or depletion
-(dt_wasp_042) — this explains much of the +20 % DO bias. Only April and August are observed, so
-the seasonal contrast carries most of the score. The surrogate's older "Lake Erie" numbers (R =
-0.885 temperature, 0.816 DO) were scored mostly against tributary stream samples (dt_wasp_035),
-are not WASP results and are not comparable.
-
-### Data Replacement Tracking
-
-| Component | Source | Status | Notes |
-|---|---|---|---|
-| Forcing | NASA POWER via shared loader | Validated (ranges) | dew point and cloud derived |
-| Soil | — | n/a | no soil in a lake box |
-| Land cover | — | n/a | |
-| DEM / elevation | 174 m (lake level) | Set | used flag checked in .OUT echo |
-| Initial conditions | climatological (DO 13, T 2 °C on Jan 1) | Pending | one spin-up year |
-| Morphometry | depth 12 m from GLNPO August profiles | Set | single layer |
+| Component | Source | Rule |
+|---|---|---|
+| Forcing | NASA POWER / CMFD / MSWX via shared loader | check ranges; dew point and cloud are derived |
+| Soil | — | no soil in a lake box |
+| Land cover | — | n/a |
+| DEM / elevation | lake level | set constant 57 + param 24 with used flags; check the used flag in the .OUT echo |
+| Initial conditions | climatological | one spin-up year |
+| Morphometry | depth = summer mixed-layer depth from temperature profiles | single layer |
 
 ---
 
@@ -403,7 +368,7 @@ are not WASP results and are not comparable.
 
 ## 14. Spinup Requirements
 
-One year (2004) before scoring. The 12 m box forgets its initial temperature within weeks and
+One year before scoring. The lake box forgets its initial temperature within weeks and
 its initial DO within days (wind reaeration); CBOD (1 mg/L) decays away in a few months because
 the box has no loads.
 

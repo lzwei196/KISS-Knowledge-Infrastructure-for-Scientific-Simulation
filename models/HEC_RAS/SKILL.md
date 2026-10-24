@@ -363,10 +363,7 @@ radiation, wind, and soil tables are not HEC-RAS inputs.
 > **`tools/author_steady_geometry.py`** (DEM + centerline →
 > `ki_tools_common.terrain_ops.cut_cross_sections` → trapezoidal cross sections
 > injected into the template `.rNN`, keeping 19 XS / 4 pts so the
-> "Section - Arrays Sizes" header stays valid). **Demonstrated end-to-end on
-> Bengbu** (`china_dem_90m`, 19 DEM cross sections, observed Q quantiles
-> 3810/6812 m³/s → WS 69.33..81.22 ft, `RasSteady.exe` rc=0, real hydraulics in
-> the results HDF). Limitation: this value-swap path inherits the template's
+> "Section - Arrays Sizes" header stays valid). Limitation: this value-swap path inherits the template's
 > longitudinal layout (reach lengths / river stations); fully general XS
 > count/spacing additionally needs regenerating the array-size header (next
 > `tool_build`). And steady **produces stage, consumes discharge** — a
@@ -437,7 +434,10 @@ error→remedy catalogue (HDF seeding, LD_PRELOAD, unit traps, Wine Mono, etc.).
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Test Case: Mixed Flow Regime Channel
 
@@ -495,7 +495,7 @@ stated here.
 
 ---
 
-## 12. Routing-test recipe (Wangjiaba → Bengbu, Huai River)
+## 12. Routing-test recipe (upstream gage → downstream gage)
 
 > ⚠️ **STEADY new-river now works (§10); this §12 UNSTEADY Q→Q routing recipe is
 > still blocked.** For a steady water-surface profile on a new reach use
@@ -509,9 +509,7 @@ stated here.
 > `GeomCrossSection`, `RasUnsteady`, `RasCmdr.compute_plan_linux`) and a
 > DEM→cross-section authoring step. `ras_commander` 0.93.0 **IS installed** — import
 > it via `KISSPATH_PYTHON_ENV/bin/python3`; the only missing
-> piece is a `tools/` wrapper that authors geometry from a DEM. Every Bengbu run to date has therefore been
-> **structurally blocked at the authoring stage** — the Bengbu Q/stage metrics
-> are *uncomputable*, not poor. The recipe is kept as the design target for when
+> piece is a `tools/` wrapper that authors geometry from a DEM. The recipe is kept as the design target for when
 > those dependencies are added. Until then HEC-RAS validates only on geometry
 > that already ships a `.gNN.hdf` + `.rNN` (dev example, §11).
 
@@ -520,11 +518,8 @@ This is the orchestrator's primary real-case validation for HEC-RAS. It tests
 which is the natural validation for HEC-RAS (the model consumes upstream Q and
 routes it downstream — it does not produce Q de novo).
 
-**Reach.** Huai River, China. Upstream gage **Wangjiaba** (id `wangjiaba_51030`,
-32.43 N, 115.60 E, `KISSPATH_OBS/WJB/HUAIH-51030-wangjiaba.txt`)
-→ downstream gage **Bengbu** (id `bengbu_51080`, 32.93 N, 117.38 E,
-`KISSPATH_OBS/BB/51080_bengbu.txt`). ~200 km reach.
-Both files share period 1952-05-30 to 1997-12-31, daily resolution, columns
+**Reach.** A real river reach between an upstream gage and a downstream gage
+whose observed daily files share a long common period, with columns that
 include `discharge_m3s` and `water_level_m`.
 
 **Pattern.**
@@ -533,18 +528,18 @@ include `discharge_m3s` and `water_level_m`.
      (or any project shipping `.gNN.hdf` + a plan file).
    - Use `RasGeo` / `GeomCrossSection` to overwrite station-elevation tables
      with cross sections sampled from MERIT-Hydro DEM (`KISSPATH_DATA/MERIT_Hydro/`,
-     3-arcsec tiles) along the Wangjiaba→Bengbu centerline. Δx ≈ 200-500 m.
+     3-arcsec tiles) along the reach centerline. Δx ≈ 200-500 m.
    - Use `RasUnsteady` to set:
-     * Upstream BC = Wangjiaba `discharge_m3s` time series (read with
+     * Upstream BC = upstream-gage `discharge_m3s` time series (read with
        `read_obs_q.py` or `data_ki/ObservedQ/SKILL.md` recipe).
      * Downstream BC = normal-depth (friction slope) or stage-Q rating.
      * Plan title, time window matching the obs overlap.
 2. **Run (plain WINE, no Mono).** `RasCmdr.compute_plan(prj, plan_id, num_cores=4)`
    invokes the Fortran solvers (`HEC-RAS.exe`, `RasUnsteady.exe`) under WINE.
-3. **Extract modelled Q at Bengbu.** `HdfResultsMesh` (or `parse_output_hecras.py`
+3. **Extract modelled Q at the downstream gage.** `HdfResultsMesh` (or `parse_output_hecras.py`
    for 1D unsteady) — pull discharge time series at the cross-section nearest
-   Bengbu (32.93 N, 117.38 E).
-4. **Compare** modelled Bengbu Q vs observed Bengbu Q over a common 1–3 year
+   the downstream gage.
+4. **Compare** modelled downstream Q vs observed downstream Q over a common 1–3 year
    window (NSE, KGE, r, PBIAS, peak-lag). Use the standard validators.
 
 **Why this is the right test.** HEC-RAS is a 1D/2D hydrodynamic solver — its
@@ -556,8 +551,8 @@ here because both gages have long contiguous daily Q records.)
 
 **Pitfalls.** (a) Make sure the unsteady time step Δt is small enough for the
 Courant condition along the reach (`Δt ≤ Δx / c` with `c ≈ √(g h)`). (b) The
-~200 km reach has tributaries; for a first cut, ignore them — the model will
+reach may have tributaries; for a first cut, ignore them — the model will
 under-predict peaks. To add lateral inflow, use `RasUnsteady` flow-distributions
 on internal cross sections. (c) Normal-depth downstream BC induces an error
-band near the downstream end; place the Bengbu extraction cross section ≥ 5 km
+band near the downstream end; place the downstream extraction cross section ≥ 5 km
 upstream of the downstream BC to avoid it.

@@ -159,6 +159,130 @@ def test_projection_binds_the_final_directory_not_its_staging_copy(tmp_path, cfg
     assert Path(entry) == live / "tools/run.py"
 
 
+def test_the_servers_model_venv_is_the_configured_environment(cfg):
+    cfg.python = str(cfg.root / "env" / "python.exe")
+    text = ('PY = "KISSPATH_KI_ROOT/Demo/venv/bin/python"\n'
+            'SITE = Path("KISSPATH_KI_ROOT/Demo") / "venv" / "lib" / "python3.12" / "site-packages"\n')
+    bound = bind(text, cfg)
+    assert value(bound, "PY") == Path(cfg.python)
+    assert value(bound, "SITE") == Path(cfg.roles["python_env"]) / "lib/python3.12/site-packages"
+
+
+def test_another_package_name_for_the_home_is_this_machines_home(cfg):
+    package = port.OwnPackage(frozenset({"SWAT_Plus", "SWAT+"}), frozenset({"run_and_score.py"}), home="SWAT_Plus")
+    text = ('BIN = "KISSPATH_KI_ROOT/SWAT+/bin/swatplus_rev59"\n'
+            'HOME = "KISSPATH_KI_ROOT/SWAT+"\n'
+            'CASE = Path("KISSPATH_KI_ROOT/SWAT+") / "bengbu_v1"\n'
+            'KI = "KISSPATH_KI_ROOT/SWAT+/knowledge_infrastructure/tools"\n'
+            'RUN = "KISSPATH_KI_ROOT/SWAT+/run_and_score.py"\n')
+    bound = bind(text, cfg, package, ki_target=target(cfg, "SWAT_Plus"))
+    assert value(bound, "BIN") == home(cfg, "SWAT_Plus") / "bin/swatplus_rev59"
+    assert value(bound, "HOME") == home(cfg, "SWAT_Plus")
+    assert value(bound, "CASE") == home(cfg, "SWAT_Plus") / "bengbu_v1"
+    assert value(bound, "KI") == target(cfg, "SWAT_Plus") / "tools"
+    assert value(bound, "RUN") == target(cfg, "SWAT_Plus") / "run_and_score.py"
+
+
+def test_the_servers_system_python_is_the_configured_interpreter(cfg):
+    cfg.python = str(cfg.root / "env" / "python.exe")
+    text = ('PY = "/usr/bin/python3"\nPY2 = sys.executable or \'/usr/bin/python3.12\'\n'
+            'CC = "/usr/bin/clang"\n# run with /usr/bin/python3\n'
+            'command: ["/usr/bin/python3", "tools/calib_run.py"]\n')
+    bound = bind(text, cfg)
+    assert f'PY = "{port._portable(cfg.python)}"' in bound
+    assert f"or '{port._portable(cfg.python)}'" in bound
+    assert f'command: ["{port._portable(cfg.python)}", "tools/calib_run.py"]' in bound
+    assert 'CC = "/usr/bin/clang"' in bound and "# run with /usr/bin/python3" in bound
+    assert port.unsubstitute(text, cfg)[0] == text         # only a KI's own projection does this
+
+
+def _search_path(source, cfg, name="env"):
+    bound = bind("import os\n" + source, cfg)
+    scope = {}
+    exec(bound, scope)
+    return bound, scope[name]
+
+
+def test_search_paths_join_with_the_platforms_separator(cfg):
+    common = port._portable(cfg.roles["ki_tools_common"])
+    bound, env = _search_path(
+        'A = "a"\nenv = {"PATH": "p", "PYTHONPATH": "q"}\n'
+        'env["PYTHONPATH"] = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect:" + env["PYTHONPATH"]\n'
+        'env["PATH"] = f"{A}/bin:{A}/scripts:{env[\'PATH\']}"\n'
+        'env["PYTHONPATH"] = ":".join(["x", "y"]) + (":" + env["PYTHONPATH"])\n'
+        'env.update(dict(PATH=A + ":" + env["PATH"]))\n'
+        'env["LD_LIBRARY_PATH"] = "l:" + "m"\n', cfg)
+    assert env["PYTHONPATH"] == os.pathsep.join(["x", "y", common, "q"])
+    assert env["PATH"] == os.pathsep.join(["a", "a/bin", "a/scripts", "p"])
+    assert env["LD_LIBRARY_PATH"] == "l:m"                  # read only where ":" is the separator
+
+
+@pytest.mark.parametrize("source", [
+    'env = {}\nenv["PATH"] = "C:\\\\tools;" + "p"\n',                 # already a Windows list
+    'W = 3\nenv = {}\nenv["PATH"] = f"{W:>4}"\n',                    # a format spec, not a list
+    'env = {}\nenv["URL"] = "http://a:b"\n',                         # not a search path
+])
+def test_search_path_rewrites_leave_other_text_alone(cfg, source):
+    bound, _ = _search_path(source, cfg)
+    assert bound == "import os\n" + source
+
+
+def test_search_paths_need_os_in_the_module(cfg):
+    text = 'env = {}\nenv["PATH"] = "a:" + "b"\n'
+    assert bind(text, cfg) == text
+
+
+def test_engine_validators_import_from_the_shared_helpers(cfg):
+    common = REPO / "ki_tools_common"
+    text = ("from auto_dissect_multi_agent.validators.standard_calval import compute_calval_metrics\n"
+            "import auto_dissect.validators.preflight_forcing as pf\n")
+    bound = port.unsubstitute(text, cfg)[0]
+    assert bound.splitlines() == ["from validators.standard_calval import compute_calval_metrics",
+                                  "import validators.preflight_forcing as pf"]
+    for name in ("__init__.py", "standard_calval.py", "preflight_forcing.py"):
+        assert (common / "validators" / name).is_file()
+
+
+@pytest.mark.skipif(not LIBRARY.is_dir(), reason="KI library not in this checkout")
+def test_library_kis_bound_for_a_desktop_keep_no_server_interpreter_or_helper_gap(tmp_path):
+    """Every KI, projected like a project copy: no /usr/bin/python3, no unshipped helper."""
+    cfg = paths.KissConfig.default(tmp_path / "project")
+    cfg.python = str(tmp_path / "env" / "python.exe")
+    common = REPO / "ki_tools_common"
+    cfg.roles["ki_tools_common"] = common
+    helper = re.compile(re.escape(port._portable(common)) + r"/((?:validators|ki_tools_common)/[\w./-]+?\.py)\b")
+    left = []
+    for ki in sorted(p for p in LIBRARY.iterdir() if (p / "SKILL.md").is_file()):
+        names = {ki.name, port.package_name(ki)}
+        if not all(map(port.server_layout_applies, names)):
+            continue
+        files = frozenset(p.relative_to(ki).as_posix() for p in ki.rglob("*") if p.is_file())
+        package = port.OwnPackage(frozenset(names), files, home=ki.name)
+        for path in ki.rglob("*"):
+            rel = path.relative_to(ki)
+            if (not path.is_file() or rel.parts[0] in {"test_cases", "docs", "diagnostics"}
+                    or path.suffix.lower() not in {".py", ".yaml", ".yml"}):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            bound = port.unsubstitute(text, cfg, ki_target=tmp_path / "project/models" / ki.name / "ki",
+                                      own_package=package)[0]
+            where = f"{ki.name}/{rel.as_posix()}"
+            if path.suffix == ".py":
+                try:
+                    ast.parse(text)
+                except SyntaxError:
+                    pass
+                else:
+                    ast.parse(bound)
+            left += [f"{where}: {m.group(0)}" for m in port._SYSTEM_PYTHON.finditer(bound)]
+            left += [f"{where}: {m.group(1)}" for m in helper.finditer(bound)
+                     if not (common / m.group(1)).is_file()]
+    assert left == []
+
+
 @pytest.mark.skipif(not LIBRARY.is_dir(), reason="KI library not in this checkout")
 def test_no_library_ki_keeps_a_literal_path_to_its_server_ki_folder():
     left = []

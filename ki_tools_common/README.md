@@ -23,6 +23,12 @@ pip install -e ".[dev]"   # with pytest
 | `io_helpers` | Standard JSON result dict, flexible date parsing, Bengbu obs reader, FLUXNET reader | 326 files |
 | `forcing_sources` | CMFD/MSWX/ERA5/FLUXNET variable metadata and conversion factor lookup | 68 files |
 
+`validators/` beside the package is the KDT engine's validation package
+(`standard_calval.py`, `preflight_forcing.py`), copied unchanged from
+KDT-single at commit `631e5c50cb0c` (the engine GeoForge pins). KIs import it
+as `validators` with this folder's root on `sys.path`/`PYTHONPATH`; it is not
+installed as a package.
+
 ## Usage
 
 ```python

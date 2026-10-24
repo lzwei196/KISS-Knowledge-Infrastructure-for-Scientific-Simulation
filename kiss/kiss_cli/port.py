@@ -394,6 +394,9 @@ def _migrate_server_layout(text: str) -> tuple[str, int]:
 # build/, outputs -- is the model's home on the server and stays there: a run
 # writing into the KI would change its verified bytes. Folders are therefore
 # never matched by existence alone; ``outputs/`` can exist in both places.
+# Two exceptions: the home's venv/ was the server's per-model Python, so it is
+# the configured environment here, and a home spelled with another of the
+# package's names (SWAT+) is the one home this machine has (<models>/<model>).
 _KI_FOLDERS = ("knowledge_infrastructure", "ki")
 _OWN_TEXT = re.compile(r"KISSPATH_KI_ROOT/[^\s'\"`<>)\]},;{]+")
 
@@ -403,6 +406,9 @@ class OwnPackage:
     """The names a KI's server paths use for it, and the files it ships."""
     names: frozenset[str]
     files: frozenset[str]
+    #: The model's home folder name here (<models>/<home>). A home spelled with
+    #: another of the package's names -- SWAT+ for SWAT_Plus -- maps to it.
+    home: str | None = None
 
     def root(self, value: str) -> str | None:
         """``KISSPATH_KI_ROOT`` or ``KISSPATH_KI_ROOT/<KI>`` as a code root."""
@@ -419,12 +425,18 @@ class OwnPackage:
         """``KISSPATH_KI_ROOT/<KI>/knowledge_infrastructure/x`` -> ``KISSPATH_CURRENT_KI/x``."""
         head, _, rest = path.partition("/")
         name, _, rest = rest.partition("/")
-        if head != TOKENS["ki_root"] or name not in self.names or not rest.strip("/"):
+        if head != TOKENS["ki_root"] or name not in self.names:
             return None
         first, _, inner = rest.partition("/")
-        if rest.rstrip("/") in self.files:
+        if rest.strip("/") and rest.rstrip("/") in self.files:
             inner = rest
+        elif first == "venv":
+            # The server's per-model environment; a desktop runs the KI in its
+            # configured one (KISSPATH_PYTHON_ENV/bin/python is the interpreter).
+            return f"{TOKENS['python_env']}/{inner}" if inner else TOKENS["python_env"]
         elif first not in _KI_FOLDERS:
+            if self.home and name != self.home:
+                return f"{head}/{self.home}{path[len(head) + 1 + len(name):]}"
             return None
         return f"{CURRENT_KI_TOKEN}/{inner}" if inner or rest.endswith("/") else CURRENT_KI_TOKEN
 
@@ -444,6 +456,129 @@ def _migrate_own_package(text: str, own: OwnPackage) -> tuple[str, int]:
         return mapped
 
     return _OWN_TEXT.sub(plain, text), changed
+
+
+# The server's Linux system interpreter, written as a whole string literal
+# (``PY = "/usr/bin/python3"``, a contract's ``command: ["/usr/bin/python3", ...]``).
+# A desktop runs the KI under its configured interpreter instead.
+_SYSTEM_PYTHON = re.compile(r"""(?P<q>["'])/usr(?:/local)?/bin/python(?:3(?:\.\d+)?)?(?P=q)""")
+# The engine's validators ship in ki_tools_common, where the
+# INTERNAL_NOT_SHIPPED/auto_dissect paths already lead (_INTERNAL_SHARED_ROOT).
+_INTERNAL_VALIDATORS_IMPORT = re.compile(
+    r"\b(?P<kw>from|import)\s+auto_dissect(?:_multi_agent)?\.validators\b")
+
+# Search paths Windows reads. KIs written on Linux join the entries with ":",
+# which on Windows fuses them into one entry that does not exist; os.pathsep is
+# ":" on POSIX, so rewriting to it changes nothing there. LD_LIBRARY_PATH and
+# DYLD_LIBRARY_PATH are read only where ":" is already right, and are left as
+# written (EPANET's maintenance recipe pins that code).
+_SEARCH_PATHS = frozenset({"PATH", "PYTHONPATH"})
+# Text that is already a native Windows list, a drive or a URL, not a POSIX list.
+_NOT_POSIX_LIST = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\/]|;|://")
+_ONE_FSTRING = re.compile(r"""(?P<prefix>[fF][rR]?|[rR][fF])(?P<q>["'])(?P<body>(?:(?!(?P=q)).)*)(?P=q)\Z""", re.S)
+
+
+def _search_path_values(tree: ast.AST):
+    """Expressions assigned to a search-path environment variable."""
+    def named(node):
+        return isinstance(node, ast.Constant) and node.value in _SEARCH_PATHS
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Subscript) and named(target.slice) for target in targets):
+                yield node.value
+        elif isinstance(node, ast.Call):
+            yield from (keyword.value for keyword in node.keywords if keyword.arg in _SEARCH_PATHS)
+        elif isinstance(node, ast.Dict):
+            yield from (value for key, value in zip(node.keys, node.values) if named(key))
+
+
+def _fstring_separators(source: str) -> str:
+    """``f"{a}:{b}"`` -> ``f"{a}{os.pathsep}{b}"``; text inside braces stays."""
+    match = _ONE_FSTRING.match(source)
+    if not match:
+        return source
+    body = match.group("body")
+    out, literal, depth, i = [], [], 0, 0
+    while i < len(body):
+        if depth == 0 and body[i:i + 2] in ("{{", "}}"):
+            out.append(body[i:i + 2])
+            i += 2
+            continue
+        char = body[i]
+        if char == "{":
+            depth += 1
+        elif char == "}" and depth:
+            depth -= 1
+        elif depth == 0:
+            literal.append(char)
+        out.append("{os.pathsep}" if depth == 0 and char == ":" else char)
+        i += 1
+    literal = "".join(literal)
+    if ":" not in literal or _NOT_POSIX_LIST.search(literal):
+        return source
+    return f"{match.group('prefix')}{match.group('q')}{''.join(out)}{match.group('q')}"
+
+
+def _portable_search_paths(text: str) -> tuple[str, int]:
+    """Join search-path entries with os.pathsep instead of the POSIX ':'."""
+    if ":" not in text or not any(var in text for var in _SEARCH_PATHS):
+        return text, 0
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return text, 0
+    if not any(isinstance(node, ast.Import) and any(a.name == "os" and not a.asname for a in node.names)
+               for node in ast.walk(tree)):
+        return text, 0
+    lines = text.splitlines(keepends=True)
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+
+    def offset(lineno: int, col: int) -> int:
+        line = lines[lineno - 1]
+        return starts[lineno - 1] + len(line.encode("utf-8")[:col].decode("utf-8", "ignore"))
+
+    edits: dict[tuple[int, int], str] = {}
+    for value in _search_path_values(tree):
+        inside = {id(child) for node in ast.walk(value) if isinstance(node, ast.JoinedStr)
+                  for child in ast.walk(node) if child is not node}
+        for node in ast.walk(value):
+            if id(node) in inside or not isinstance(node, (ast.JoinedStr, ast.Constant)):
+                continue
+            span = (offset(node.lineno, node.col_offset), offset(node.end_lineno, node.end_col_offset))
+            if isinstance(node, ast.JoinedStr):
+                rewritten = _fstring_separators(text[span[0]:span[1]])
+                if rewritten != text[span[0]:span[1]]:
+                    edits[span] = rewritten
+            elif (isinstance(node.value, str) and ":" in node.value
+                  and not _NOT_POSIX_LIST.search(node.value)):
+                parts = node.value.split(":")
+                pieces = []
+                for index, part in enumerate(parts):
+                    if part:
+                        pieces.append(repr(part))
+                    if index < len(parts) - 1:
+                        pieces.append("os.pathsep")
+                edits[span] = pieces[0] if len(pieces) == 1 else f"({' + '.join(pieces)})"
+
+    applied, cursor, out = 0, len(text), []
+    for begin, end in sorted(edits, reverse=True):
+        if end > cursor:
+            continue
+        out.append(text[end:cursor])
+        out.append(edits[(begin, end)])
+        cursor = begin
+        applied += 1
+    out.append(text[:cursor])
+    result = "".join(reversed(out))
+    try:
+        ast.parse(result)
+    except (SyntaxError, ValueError):
+        return text, 0
+    return result, applied
 
 
 TEXT_SUFFIXES ={".py", ".md", ".yaml", ".yml", ".sh", ".txt", ".cfg", ".ini",
@@ -649,8 +784,10 @@ def unsubstitute(text: str, cfg, *, ki_target=None, server_layout: bool = False,
     ``server_layout`` also maps paths built from the server root through
     LEGACY_PREFIXES (see ``_migrate_server_layout``). ``own_package`` binds
     the KI's own server-layout paths to ``ki_target`` (see
-    ``_migrate_own_package``) and needs that target. Only ``materialise`` sets
-    them, per KI; other callers expand literals exactly as before.
+    ``_migrate_own_package``) and needs that target. With it, the server's
+    Linux system interpreter literal becomes the configured one and search-path
+    lists join with os.pathsep. Only ``materialise`` sets them, per KI; other
+    callers expand literals exactly as before.
 
     ``KISSPATH_CURRENT_KI`` is bound only by the optional host-supplied
     ``ki_target``: the final package directory, which may differ from the
@@ -701,10 +838,15 @@ def unsubstitute(text: str, cfg, *, ki_target=None, server_layout: bool = False,
     text, migrated_work = _INTERNAL_WORK_PATH.subn(migrate_work_path, text)
     text, migrated_shared = _INTERNAL_SHARED_ROOT.subn(
         "KISSPATH_KI_TOOLS_COMMON", text)
+    text, migrated_imports = _INTERNAL_VALIDATORS_IMPORT.subn(r"\g<kw> validators", text)
     text, migrated_server = _migrate_server_layout(text) if server_layout else (text, 0)
     # After the server rule: it can turn ROOT / "models" / <KI> into a KI-root path.
-    text, migrated_own = (_migrate_own_package(text, own_package)
-                          if own_package is not None and current_ki_target is not None else (text, 0))
+    desktop = own_package is not None and current_ki_target is not None
+    text, migrated_own = _migrate_own_package(text, own_package) if desktop else (text, 0)
+    # Before roles expand: a bound Windows path brings its own drive colon.
+    text, migrated_lists = _portable_search_paths(text) if desktop else (text, 0)
+    text, migrated_system = (_SYSTEM_PYTHON.subn(rf"\g<q>{PYTHON_TOKEN}\g<q>", text)
+                             if desktop else (text, 0))
 
     # Older KIs describe the interpreter as
     # ``KISSPATH_PYTHON_ENV/bin/python``.  Substituting only the environment
@@ -722,8 +864,8 @@ def unsubstitute(text: str, cfg, *, ki_target=None, server_layout: bool = False,
     by_token[CURRENT_KI_TOKEN] = "__current_ki__"
     undeliverable = {tok for tok, role in by_token.items() if role in LEAK_ROLES}
     unresolved: set[str] = set()
-    n = (joined + migrated_python + migrated_sites + migrated_work +
-         migrated_shared + migrated_server + migrated_own)
+    n = (joined + migrated_python + migrated_sites + migrated_work + migrated_shared +
+         migrated_imports + migrated_server + migrated_own + migrated_lists + migrated_system)
 
     ordered = sorted(by_token, key=len, reverse=True)
     pattern = re.compile("|".join(
@@ -832,7 +974,8 @@ def materialise(ki_root: Path, dest: Path, cfg, *, ki_target=None,
     server_layout = server_layout_applies(package_name(ki_root))
     names = {package_name(ki_root), *([model] if model else [])}
     own_package = (OwnPackage(frozenset(names), frozenset(
-                       entry.relative for entry in inventory.entries if entry.kind == "file"))
+                       entry.relative for entry in inventory.entries if entry.kind == "file"),
+                       home=model or package_name(ki_root))
                    if ki_target is not None and all(map(server_layout_applies, names)) else None)
     dest = validate_materialisation_destination(dest)
     source_root = ki_root.resolve()

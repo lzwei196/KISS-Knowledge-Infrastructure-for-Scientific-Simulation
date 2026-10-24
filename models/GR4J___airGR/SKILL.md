@@ -434,7 +434,10 @@ For each daily time step:
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Test Basin
 
@@ -476,11 +479,10 @@ freshet), run with `--snow` (alias for `--model cemaneige_gr4j`). The CemaNeige
 variant needs the `TempMean_degC` column (written by `convert_forcing_to_gr4j` by
 default) and runs as a single elevation layer if no HypsoData is supplied.
 
-**WHY IT MATTERS (HYDAT 08NH120 Moyie R., BC, 2026-06-23):** plain GR4J on this
-alpine snowmelt basin calibrated to NSE 0.14 only, with X2 forced to +7.3 mm/d
-(far outside the typical −5..3 range) to import phantom groundwater faking the
-spring freshet. Adding `--snow` lifted calibration NSE to 0.80 / validation 0.77
-and returned X2 to a physical +0.34. Diagnostic tell: if your best-fit X2 is large
+**WHY IT MATTERS:** on an alpine snowmelt basin, plain GR4J calibrates poorly and
+pushes X2 far outside the typical −5..3 range, importing phantom groundwater to fake
+the spring freshet. Adding `--snow` gives a much better calibration and returns X2 to
+a physical value. Diagnostic tell: if your best-fit X2 is large
 and you're on a cold catchment, you are missing snow — switch to `--snow`.
 Calibration example (6-param, CemaNeige adds X5=CTG, X6=Kf):
 ```
@@ -489,10 +491,10 @@ run_gr4j.py --forcing forcing_gr4j.csv --output sim.csv --mode calibration --sno
 # then simulate with the calibrated 6 params: --mode simulation --snow --x1..--x6
 ```
 
-**ELEVATION LAYERS (`--hypso-json`, added 2026-07-13, Lancang 允景洪):** by default
+**ELEVATION LAYERS (`--hypso-json`, added 2026-07-13):** by default
 CemaNeige runs as a SINGLE elevation layer at the forcing elevation, which smears
-snow across the full relief. For high-relief basins (>1500 m relief — e.g. the
-Lancang at Jinghong spans ~550-5,500 m), pass the catchment-params JSON written by
+snow across the full relief. For high-relief basins (>1500 m relief), pass the
+catchment-params JSON written by
 `convert_catchment_params` (must contain the 101-point `hypsometry` array from the
 basin-masked DEM): `--snow --hypso-json catchment_params.json [--nlayers 5]`.
 airGR then extrapolates T and P over the elevation bands

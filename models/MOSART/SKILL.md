@@ -241,7 +241,10 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before
 | Gauge scoring / observed discharge comparison | `RIVER_DISCHARGE_OVER_LAND_LIQ` | m3/s | Output averaging window, commonly daily or monthly |
 | Managed-water analysis | `WRM_SUPPLY`, `WRM_DEFICIT`, `WRM_STORAGE` | m3/s or m3 | Output averaging window |
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Sourced from `knowledge_infrastructure.yaml` and `docs/validation_convention.yaml`; do
 not loosen, transfer, or invent thresholds. Null convention bands are written as
@@ -250,24 +253,20 @@ not loosen, transfer, or invent thresholds. Null convention bands are written as
 | Source field | Value |
 |--------------|-------|
 | Validation tier | `validated` |
-| Manifest tier justification | measured: NSE=0.837, KGE=0.874, R=0.919, 2 scorecard(s) |
-| Manifest metrics | best_nse=0.8367, best_kge=0.8741, best_r=0.9186 |
 | Rank-1 judged output | `RIVER_DISCHARGE_OVER_LAND_LIQ` |
 
 ### Performance Metrics - judged against the field's bar, not intuition
 
-| Dag variable | Metric | Direction | Convention band (cited) | Achieved value in sourced KI files |
-|--------------|--------|-----------|--------------------------|-----------------------------------|
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) | best_nse=0.8367 in `knowledge_infrastructure.yaml` |
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) | not supplied by `knowledge_infrastructure.yaml` |
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) | same convention appears for both point and spatial time-series shapes |
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) | same convention appears for both point and spatial time-series shapes |
-| `WRM_SUPPLY` | pbias | zero_centered | no cited threshold | not supplied by `knowledge_infrastructure.yaml` |
+| Dag variable | Metric | Direction | Convention band (cited) |
+|--------------|--------|-----------|--------------------------|
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) |
+| `WRM_SUPPLY` | pbias | zero_centered | no cited threshold |
 
-The rank-1 NSE value `best_nse=0.8367` exceeds the cited very_good band
-(`moriasi2007`, `swat_gomti2019`) for
-`RIVER_DISCHARGE_OVER_LAND_LIQ`. No achieved PBIAS value is stated in the manifest, so
-do not infer one. For `WRM_SUPPLY`, the convention explicitly has no cited threshold, so
+The same NSE and PBIAS bars apply to both point and spatial time-series shapes.
+For `WRM_SUPPLY`, the convention explicitly has no cited threshold, so
 do not transfer the streamflow PBIAS bands (`moriasi2007`, `swat_gomti2019`).
 
 ### Data Replacement Tracking
@@ -300,7 +299,7 @@ against the cited convention bars above.
 **Data Validation Reference**: This model takes runoff from upstream hydrological models (VIC, mHM, etc.) as input.
 See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
 
-### REAL-CASE APPLICABILITY — read before attempting a new gauge/period (verified 2026-06-21, MOSART @ HYDAT 05BB001)
+### REAL-CASE APPLICABILITY — read before attempting a new gauge/period
 
 MOSART-WM is a **routing model, not a rainfall-runoff model**. It cannot generate
 discharge from meteorological forcing alone — it requires a **gridded runoff field
@@ -311,40 +310,29 @@ is a CATEGORY ERROR for MOSART: its "forcing" is runoff, not meteorology. There 
 gridded-runoff product on the server (no ERA5-Land/GSWP3/runoff in the dataset index);
 the only runoff source is to run the VIC KI over the basin first.
 
-### CHINA BASIN REAL-CASE — VIC runoff routed on MOSART's own domain (MOSART @ 唐乃亥/Tangnaihai, upper Yellow R; first run 2026-07-11, domain rebuilt from data sources 2026-10-03)
+### CHINA BASIN REAL-CASE — VIC runoff routed on MOSART's own domain
 
 MOSART needs two things, and they come from different places:
 1. **Its own domain, built from data sources with its own tools** (never from VIC set-up
    files — owner rule 2026-10-02):
    - `tools/delineate_d8_from_merit.py` → ArcASCII `direc` / `xmask` / `frac` from MERIT Hydro,
      gated on the published drainage area (`--published-area-km2`). Give a `--bbox` that holds
-     the WHOLE basin (Tangnaihai: `95.0,31.5,104.0,36.5`); use the same resolution as the
+     the WHOLE basin; use the same resolution as the
      runoff grid (0.25°).
    - `tools/build_mosart_grid.py --dem <DEM> --expected-area-km2 <published>` → full
      mosartwmpy grid (all 20 REQUIRED_VARIABLES). Cell elevation = mean of the DEM pixels in
      the cell (China 90 m DEM inside China, MERIT DEM elsewhere); no fill.
    - `convert_grid_parameters.py --validate-only` → 0 errors, 0 warnings.
-   Tangnaihai: 251 cells (the same cells the VIC run covers), 122,732 km² at the gauge cell
-   (+0.62% vs published 121,972), scoring cell (35.375,100.125).
-2. **Runoff = another model's RESULT** (a coupling on results). VIC Tangnaihai runoff exists
-   in `outputs/tangnaihai/vic_result/` (2005-2016, 251 cells); if missing, re-run
-   `vic_classic.exe -g outputs/tangnaihai/vic_temp/global_param_tangnaihai.txt`. The runner
+2. **Runoff = another model's RESULT** (a coupling on results): run the VIC KI over the basin
+   first and use its flux files. The runner
    grids flux cols 16=OUT_RUNOFF, 17=OUT_BASEFLOW (mm/day, skiprows=3) onto the MOSART mesh and
    feeds `convert_runoff_forcing.py`. Check that EVERY MOSART cell with frac>0 has a runoff
    value — a cell with no runoff silently routes zero.
 
-Result 2026-10-03 (same VIC runoff, new domain, not tuned; spin-up 2005-06):
-NSE 0.868 / KGE 0.868 / PBIAS +6.5% for 2007-2016 (cal 2007-11 NSE 0.914 / KGE 0.936;
-val 2012-16 NSE 0.825 / KGE 0.799 / PBIAS +11.4%), against the old VIC/Lohmann-D8 +
-VIC-soil-elevation grid NSE 0.837 / KGE 0.874 (re-scored with the same code: identical).
-The two networks share 248 of 249 runoff cells (frac differs by 0.003 on average); the VIC soil
-elevations were off the DEM cell means by RMSE 135 m (max 554 m). DEM cell means are
-smoother, so more cells sit at the hillslope floor (hslp 0.005: 57% vs 32%).
-
-**GAUGE-CELL OUTFLOW TRAP (critical, cost the Bengbu run its number):** a cell with
+**GAUGE-CELL OUTFLOW TRAP (critical, T021):** a cell with
 `dnID == -1` is treated by mosartwmpy as the terminal OCEAN outlet, and its
 `RIVER_DISCHARGE_OVER_LAND_LIQ` is **0** — the basin discharge then appears in the cell
-one step UPSTREAM. An interior gauge (Tangnaihai is NOT a river mouth) must therefore be a
+one step UPSTREAM. An interior gauge (one that is not a river mouth) must therefore be a
 THROUGH-cell: `build_mosart_grid.py` redirects the primary outlet to a steepest-descent
 inactive neighbour (new frac=0 sink) so the gauge cell's channel_outflow == basin
 discharge, and records the cell to score in grid attrs `scoring_lat`/`scoring_lon`. Score
@@ -356,29 +344,7 @@ VIC flux (result) → delineate_d8_from_merit → build_mosart_grid --dem → gr
 (2005-2016, 3h step, WM disabled — Longyangxia reservoir is DOWNSTREAM of Tangnaihai so the
 gauge is quasi-natural) → parse+score. Spin-up 2005-06; cal 2007-11 / val 2012-16.
 
-### BENGBU / HUAI follow-up (verified 2026-06-22, MOSART @ gauge 51080) — runoff EXISTS but topology still blocks
-
-Unlike Bow@Banff, gridded VIC 5.1.0 runoff DOES exist for the Huai basin
-(`KISSPATH_OUTPUTS/bengbu_1980_1990_cama/cama_input/bengbu_runoff_1d_{Y}.nc`,
-0.25°, 16×24, combined `Runoff` mm/day, 1980-1990). The full real-binary chain runs:
-`convert_runoff_forcing` (combined-runoff split + lat-orient fix, see below) →
-`convert_grid_parameters` (validate) → `run_mosartwmpy` (1980-1990, ~30 min, 132 monthly
-files) → `parse_mosart_output`. **But the result is still structurally invalid:**
-- The only Bengbu grid available is the SYNTHETIC one from the dissection
-  (`auto_dissect*/_work/MOSART/bengbu_mosart_grid.nc`); the KI has no real delineation tool.
-  Its synthetic D8 over-accumulates to 242,644 km² (true basin 121,330) and routes the main
-  channel to cell (33.375,117.625) — NOT the Bengbu gauge.
-- Real-binary discharge at the true gauge cell (32.875,117.375) is **exactly 0** for the
-  whole run (gauge is off the synthetic channel). The subdomain "32.94,117.35" extracts a
-  DISCONNECTED sub-basin whose best outlet peaks ~28 m³/s.
-- Best-available-outlet metrics vs obs 51080 (1980-1990, point_time_series):
-  **NSE −0.39, r 0.46, KGE −0.38, PBIAS −91%** (sim mean 85 vs obs 942 m³/s, ~91% low).
-- The dissection's reported "NSE 0.286 / r 0.828 / PBIAS +44" came from a HAND-CODED routing
-  surrogate (`bengbu_validate_fast.py`, a custom Python accumulation loop), NOT mosartwmpy —
-  it is NOT reproducible with the real binary. Treat that number as non-KDT-compliant.
-- Conclusion: the missing-basin-delineation block applies to China basins too, even when
-  upstream VIC runoff is present. To get a valid Bengbu discharge you need a CORRECT routing
-  grid (MERIT-Hydro topology conditioned on the Huai network), which the KI cannot build.
+### Runoff conversion and tool limits
 
 `convert_runoff_forcing.py` upgrades made 2026-06-22 (now in canonical KI):
 - `--total-var <name> --surface-fraction <f>`: split a single COMBINED total-runoff field
@@ -396,17 +362,14 @@ What the KI tools do and do NOT do:
   logic — it just opens the input and checks fields). There is no basin-delineation /
   grid-building tool.
 
-Consequence for a standalone gauge real-case (e.g. HYDAT 05BB001 Bow R. at Banff, 2006–2015):
-- The bundled NLDAS 1/8° CONUS grid (`input/domains/mosart_conus_nldas_grid.nc`) DOES
-  cover Bow at Banff (cell 51.1875,-115.5625; subdomain extraction works). The binary +
-  full chain (run_mosartwmpy → parse_mosart_output) run end-to-end.
-- BUT the only runoff that ships is `runoff_1981_05.nc` (May 1981 CONUS). NO gridded runoff
-  exists on the server for North America 2006–2015 (all VIC outputs are China basins), and
-  the KI provides no way to make it. **The requested 2006–2015 discharge comparison is
-  therefore structurally uncomputable** without first running VIC/CLM for that basin+period.
-- Best-achievable demo (May-1981 cold start, Bow subdomain): freshet onset timing is
-  captured (r≈0.80 vs HYDAT daily) but magnitude is ~95% low (NSE≈−1.0) — dominated by
-  cold-start channel filling + only-one-month forcing. Not a calibratable real-case.
+For a gauge inside the bundled NLDAS 1/8° CONUS grid
+(`input/domains/mosart_conus_nldas_grid.nc`: the lower 48 US states plus a strip of
+southern Canada; check that the gauge's cell is in the grid first): the grid can serve
+as the domain (subdomain extraction works), but the only runoff that ships is the
+tutorial `runoff_1981_05.nc`
+(May 1981 CONUS). It is not a stand-in for real runoff: a one-month cold-start run is
+dominated by channel filling, so discharge is far too low (timing may still look right)
+and it cannot be calibrated.
 
 To run a genuine new-basin real-case you must FIRST produce gridded runoff for the period
 (run an LSM such as the VIC KI over the basin), then route that RESULT here. MOSART's own
@@ -415,16 +378,13 @@ not from the LSM's set-up files.
 
 ### DOMAIN-CONSISTENCY TRAP — the VIC domain and the MOSART domain must be the SAME cells
 
-(Found 2026-07-19 at Wangjiaba; it silently invalidated the 2026-07-11 run.)
-
 The MOSART domain comes from the delineated triplet; the VIC domain comes from a
 SHAPEFILE fed to the VIC KI's `s1_grid/make_basin_grid_nc.py` via `VIC_BASIN_SHP`.
-Nothing forced them to agree, so it was possible — and it happened — to route a
-correct-looking network over a domain covering only **52% of the published basin
-area** (Wangjiaba: 15,959 of 30,600 km²; the whole northern Hong/Ru headwater arm up
-to ~34°N was outside the ArcASCII bbox). The run still completed, the network was
-internally coherent, and it scored NSE 0.72 — the truncation showed up only as a
-persistent low bias (PBIAS −24%). **A plausible NSE does not prove the domain is
+Nothing forced them to agree, so it is possible to route a correct-looking network
+over a domain that covers only part of the published basin area (part of the basin
+outside the ArcASCII bbox). The run still completes, the network is internally
+coherent and the NSE can look good — the truncation shows up only as a persistent
+low bias. **A plausible NSE does not prove the domain is
 complete.** Guard it with BOTH of:
 
 1. `frac_to_basin_shp.py` — derive the VIC shapefile FROM the delineated frac, so
@@ -434,8 +394,7 @@ complete.** Guard it with BOTH of:
    neighbours.)
 2. `build_mosart_grid.py --expected-area-km2 <published> [--area-tol 0.10]` — hard
    gate: the frac-weighted `areaTotal` AT THE SCORING CELL must match the published
-   basin area. Exits 1 and writes no NetCDF on failure. The reference standard is
-   Tangnaihai's +0.62% (MERIT triplet, 2026-10-03); the truncated Wangjiaba domain trips it at −47.84%. The gate
+   basin area. Exits 1 and writes no NetCDF on failure. The gate
    deliberately does NOT fall back to `areaTotal[active].max()` when no scoring cell
    was identified — it hard-fails, because that fallback could pass a network whose
    main channel never reaches the gauge.

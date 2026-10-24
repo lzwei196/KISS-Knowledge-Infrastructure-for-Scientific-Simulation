@@ -167,8 +167,7 @@ every call site passes `(nrows, ncols, …)` positionally, e.g.
 The ASCII `ncols` line therefore lands in mHM's `nrows`, and
 `calculate_grid_properties()` then derives `xllcornerOut` from `ncolsIn` — mixing
 the x-origin with the y-extent. For a **non-square** L0 no geographically correct
-header can satisfy the L2 check: at Wangjiaba (239 × 213 @ 0.01°) mHM demanded
-`xll=113.12, yll=31.35` while the true origin is `(113.24, 31.46)`, and aborted with
+header can satisfy the L2 check: mHM demands a wrong `xll`/`yll` and aborts with
 `L2_variable_init: size mismatch in grid file for level2`. mHM's own test domains
 are square (240 × 240), so upstream never trips over it. With a square L0 of side
 `N` and ratio `R`, `xllOut = xll0 + N·cs0 − (N/R)·cs1 = xll0` under either reading.
@@ -191,27 +190,18 @@ contributing area, simulated discharge is ~half of observed and *no* parameter s
 can recover it. You will see good timing (`r > 0.8`) with a stubborn
 `PBIAS ≈ −50%`, and you will waste the whole calibration chasing it.
 
-Measured at Wangjiaba (2026-07-09):
-
-| Source | Area | vs documented 30,630 km² |
-|--------|------|--------------------------|
-| `data/shp/wangjiaba_shp` (3 nested polygons, largest) | 15,952 km² | **−48%** |
-| whitebox D8 on `china_dem_90m` at the gauge | 15,782 km² | −48% |
-| **MERIT-Hydro `upa` at the snapped outlet** | **30,844 km²** | **+0.7%** |
-| MERIT-Hydro reverse-traced catchment | 29,638 km² | −3.2% |
-
-Bare-earth D8 *reproduces the shapefile's error* rather than exposing it: on the
-flat, leveed Huai plain the China 90 m DEM routes the Hong River (洪河, ~12,000 km²)
-to a confluence just **downstream** of Wangjiaba. Two wrong methods agreeing is not
+Bare-earth D8 can *reproduce the shapefile's error* rather than expose it: on a
+flat, leveed plain a 90 m DEM can route a large tributary to a confluence just
+**downstream** of the gauge. Two wrong methods agreeing is not
 corroboration. MERIT-Hydro's flow direction is hydrologically corrected against
 observed river networks and ships `upa` (upstream area, km²), so the outlet can be
 snapped to the *documented* area instead of guessed:
 
 ```bash
 python tools/s1_domain/delineate_basin_merit.py \
-    --outlet_lon 115.617 --outlet_lat 32.433 --target_area_km2 30630 \
-    --bbox 112.5 31.0 116.2 34.4 --snap_deg 0.06 \
-    --out_shp runs/basin/wangjiaba_merit.shp
+    --outlet_lon <lon> --outlet_lat <lat> --target_area_km2 <documented area> \
+    --bbox <W> <S> <E> <N> --snap_deg 0.06 \
+    --out_shp runs/basin/<basin>_merit.shp
 ```
 
 It refuses to emit a basin more than `--max_area_error_pct` (default 10%) from the
@@ -287,45 +277,22 @@ This is the workflow that makes mHM uniquely valuable. Without calibration, MPR
 parameters are German defaults (Mosel basin) that produce mediocre results
 elsewhere.
 
-**Reference (Wangjiaba 51030, Huai, 29,638 km², CMFD 0.25°, Oudin PET,
-L0 0.01° / L1 = L11 0.25°, spin-up 1980):**
+> Before calibrating, rule out input defects. A truncated basin (dt_s09), an ×10800
+> CMFD daily precipitation factor (dt_s10) and a Hargreaves PET from a synthesised
+> diurnal range (dt_s11) look like a model failure, and no parameter set fixes them.
 
-| Parameters | NSE | KGE | r | PBIAS |
-|-----------|-----|-----|---|-------|
-| German MPR defaults, full 1981–1990 | 0.442 | 0.456 | 0.861 | **+41.2%** |
-| defaults, cal 1981–1985 | 0.302 | 0.301 | 0.887 | +48.2% |
+## 11. Validation Status
 
-The uncalibrated defaults *over*-predict runoff in a humid subtropical basin
-(they under-evaporate), the mirror image of the sign you get in dry basins. The
-`+41%` bias, not the correlation, is what calibration must fix — `r = 0.86`
-already shows the routing and forcing are right.
+**Validation status**: `binary_only`. The field judgement of a run comes from
+`docs/validation_convention.yaml`, not from intuition.
 
-> A prior Wangjiaba run reported `NSE = −0.344, PBIAS = −94.7%`. That was **not**
-> an mHM property: it was three stacked input defects — a 52%-truncated basin
-> (dt_s09), an ×10800 CMFD daily precipitation factor (dt_s10), and a Hargreaves
-> PET of 98 mm/day from a synthesised diurnal range (dt_s11). Fixing the inputs
-> moved the *uncalibrated* model from −0.344 to +0.442 before a single parameter
-> was touched.
-
-## 11. Validated Results
-
-**Validation status**: `binary_only`. The KI can execute the real mHM binary and
-records benchmark and Wangjiaba reference results, but the field judgement of a
-run comes from `docs/validation_convention.yaml`, not from intuition.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Headline Variable Judged by the Dag
 
 The dag's rank-1 output is `mRM_runoff (routed discharge)` with unit `m3 s-1`:
 Routed streamflow discharge on the L11 routing network, extracted at gauge cells.
-
-### Recorded Results in This Body
-
-| Case | Period | Setup | NSE | KGE | r | PBIAS |
-|------|--------|-------|-----|-----|---|-------|
-| Bundled Mosel basin test case | bundled test case | mHM v5.13.1 binary/source noted above | 0.77 | 0.75 | not stated | not stated |
-| Wangjiaba 51030, Huai, 29,638 km2 | full 1981-1990 | German MPR defaults, CMFD 0.25 deg, Oudin PET, L0 0.01 deg / L1 = L11 0.25 deg, spin-up 1980 | 0.442 | 0.456 | 0.861 | +41.2% |
-| Wangjiaba 51030, Huai, 29,638 km2 | cal 1981-1985 | German MPR defaults, CMFD 0.25 deg, Oudin PET, L0 0.01 deg / L1 = L11 0.25 deg, spin-up 1980 | 0.302 | 0.301 | 0.887 | +48.2% |
-| Prior defective Wangjiaba run | not stated | truncated basin plus forcing/PET defects; kept only as a diagnostic anti-example | -0.344 | not stated | not stated | -94.7% |
 
 ### Convention Bars from `docs/validation_convention.yaml`
 
@@ -335,12 +302,6 @@ Routed streamflow discharge on the L11 routing network, extracted at gauge cells
 | `mRM_runoff (routed discharge)` | `pbias` | zero_centered | satisfactory: 25 (`moriasi2007`, `moriasi2015`); good: 15 (`moriasi2007`, `moriasi2015`); very_good: 10 (`moriasi2007`, `moriasi2015`) |
 | `aET (actual evapotranspiration)` | `spaef` | maximize | satisfactory: no cited threshold (`koch2018`, `demirel2018`, `dembele2022`); good: no cited threshold (`koch2018`, `demirel2018`, `dembele2022`); very_good: no cited threshold (`koch2018`, `demirel2018`, `dembele2022`) |
 | `aET (actual evapotranspiration)` | `nse` | maximize | satisfactory: no cited threshold (convention cites no keys) |
-
-For the rank-1 discharge variable, the recorded Wangjiaba default runs do not
-meet the `nse` satisfactory threshold of 0.5 (`moriasi2007`, `moriasi2015`,
-`arnold2012`) and do not meet the `pbias` satisfactory threshold of 25
-(`moriasi2007`, `moriasi2015`). They are useful setup diagnostics, not final
-calibrated validation results.
 
 ### Step 1: Calibrate on a Gauged Basin
 
@@ -435,8 +396,8 @@ python tools/s6_namelist/generate_mhm_namelists.py --config ... --domain_info ..
 python tools/s10_regionalize/transfer_mpr_params.py \
     --calibrated_nml /path/to/gauged_basin/mhm_parameter_calibrated.nml \
     --target_dir /path/to/ungauged_basin \
-    --source_basin "Bengbu" \
-    --target_basin "Wangjiaba"
+    --source_basin "<gauged_basin>" \
+    --target_basin "<ungauged_basin>"
 
 # 2c. Run forward simulation with transferred parameters
 python tools/s7_execute/run_mhm.py --run_dir /path/to/ungauged_basin
@@ -524,7 +485,7 @@ Monthly LAI values per class
 > `data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif` and it uses the **UMD**
 > 14-class legend, **not IGBP** (its `.vat.dbf` global counts confirm it:
 > value 11 = 11.8M cells = cropland; value 12 = 87M = bare). Under IGBP,
-> 11 = Permanent Wetlands — so an IGBP lookup relabels all Huai cropland as wetland
+> 11 = Permanent Wetlands — so an IGBP lookup relabels all cropland as wetland
 > and replaces the seasonal crop LAI curve (0.0–5.2) with a flat 2–5 year-round.
 > Use `--legend umd`. A **uniform** land-cover grid is never a valid result: it
 > silently disables every land-cover-dependent MPR transfer function.
@@ -602,7 +563,7 @@ the one validated place where source units are normalised (`precip_mm` → mm/da
 >
 > For temperature-only daily forcing use **`--pet_method 0`**: the s4 tool
 > pre-computes **Oudin (2005)** PET from `tavg` + latitude and mHM reads it
-> (`processCase(5)=0`). At Wangjiaba this gives 925 mm/yr, max 6.5 mm/day.
+> (`processCase(5)=0`).
 > `convert_forcing_to_mhm.py` refuses `--pet_method 1` when the mean diurnal
 > range is < 0.1 K.
 

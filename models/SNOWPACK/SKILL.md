@@ -62,9 +62,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Model**: SNOWPACK 3.7.1
 - **Domain**: Cryosphere (snow/land-surface)
 - **Created**: 2026-03-26
-- **Updated**: 2026-04-30 (49-site SNOTEL batch validation)
+- **Updated**: 2026-04-30
 - **Counts**: tools, stage docs and triplets — see the KI map at the top of this file
-- **Validation status**: production_validated (western US SNOTEL network)
+- **Validation status**: production_validated
 
 ---
 
@@ -176,9 +176,8 @@ error naming both if neither exists. The managed install has `lib/libsnowpack.so
 (RUNPATH `$ORIGIN/../lib`, no `LD_LIBRARY_PATH` needed). The managed install is SNOWPACK/MeteoIO 20260328.609d2ea (a desktop source
 build is whatever KISS built there, not this exact build), built with `DEBUG_ARITHM=ON`: the binary turns on floating-point traps (divide by zero, invalid, overflow), so a
 bad step stops the run with "Floating point exception" instead of writing NaN. SNOWPACK warns that this
-will likely crash the Richards equation solver (`WATERTRANSPORTMODEL_* = RICHARDSEQUATION`). The validated
-server runs (model folder outputs_run/* and runs/res5exp_alpine; server-only result folders, not shipped) all
-use `BUCKET` for snow and soil, which does not use that solver.
+will likely crash the Richards equation solver (`WATERTRANSPORTMODEL_* = RICHARDSEQUATION`). Use
+`BUCKET` for snow and soil, which does not use that solver.
 **Test examples:** `Source/snowpack/tests/`
 
 ---
@@ -377,7 +376,10 @@ from the dag and triplets rather than hand-editing it.
 
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Bars from `docs/validation_convention.yaml`
 
@@ -393,46 +395,6 @@ number.
 | `SWE` | `mean_bias` | zero-centered | \|mean_bias\| ≤ 9.3 | \|mean_bias\| ≤ 36.0 | \|mean_bias\| ≤ 55.0 | `wever2015`, `schmucki2014` |
 | `MS_SNOWPACK_RUNOFF` | `nse` | maximize | ≥ 0.73 | ≥ 0.66 | ≥ 0.57 | `wever2015` |
 | `MS_SNOWPACK_RUNOFF` | `r2` | maximize | ≥ 0.87 | ≥ 0.78 | ≥ 0.68 | `wever2015` |
-
-The SNOTEL batch below is a production validation result for HS behavior. Its
-legacy NSE counts are descriptive run diagnostics, not convention pass-bands
-for `HS`; grade HS against the cited `rmse` and `mean_bias` bars above when
-those metrics are available.
-
-### HydroCraft SNOTEL 49-site batch (2026-04-30)
-
-- **Network**: NRCS SNOTEL, 49 sites, western US (AZ, CA, CO, ID, MT, NM, NV, OR, UT, WA, WY)
-- **Period**: ~1990–2026 (site-dependent; ≤5-WY spinup before first valid HS obs)
-- **Elevation range**: 1,073–3,536 m
-- **Forcing**: SNOTEL observed T+P; ISWR from Iqbal/Hottel clear-sky model; ILWR from Brutsaert (1975) with RH=0.80
-- **Output**: Daily snow depth (HS) compared against SNOTEL pillow HS sensor
-- **Timestep**: 60-minute SNOWPACK steps, daily output
-
-| Metric | Value |
-|--------|-------|
-| Sites with valid NSE (n_matched ≥ 30) | 33 / 49 |
-| Median NSE | **0.776** |
-| Mean NSE | 0.564 |
-| Sites above legacy positive-skill screening count | 26 / 33 |
-| Sites with positive NSE | 28 / 33 |
-| Sites with negative NSE | 5 / 33 |
-
-**Top 5 sites:**
-
-| Site ID | Name | State | NSE | PBIAS |
-|---------|------|-------|-----|-------|
-| 618 | Mc Clure Pass | CO | 0.948 | −3% |
-| 332 | Ben Lomond Peak | UT | 0.944 | +0.4% |
-| 609 | Madison Plateau | MT | 0.932 | −6% |
-| 668 | North French Creek | WY | 0.918 | −11% |
-| 637 | Mores Creek Summit | ID | 0.908 | 0% |
-
-**Climate-regime pattern**: Continental interior sites (CO, ID, UT, WY, MT) NSE 0.70–0.95. Maritime Pacific sites (CA, OR, WA coast/Sierra) NSE −1.0 to +0.82; systematic overestimation (PBIAS +80–145%) at low-elevation maritime sites from underestimated ILWR at high ambient RH (see dt_028).
-
-**Results location**: `outputs/snowpack_snotel_34a319d8/`
-- `results_all_sites.json` — per-site metrics
-- `summary_NSE_all_sites.png` — histogram + elevation scatter + map
-- `grid_all_sites_depth.png` — 6×6 per-site time series
 
 ### Bundled test case
 
@@ -519,7 +481,7 @@ python tools/parse_output.py \
 
 ---
 
-## Operational Lessons — SNOTEL 49-Site Batch (2026-04-30)
+## Operational Lessons — Batch Runs
 
 These are non-obvious findings from running SNOWPACK at scale that are NOT
 covered by the unit-trap table or official docs. Read before any batch run.
@@ -577,7 +539,7 @@ When expanding daily forcing to hourly rows before SMET conversion:
 
 Do NOT pre-divide by 24 before writing — convert_forcing.py handles it.
 
-### E. Maritime Pacific sites: expect PBIAS > 80% with fixed RH = 0.80
+### E. Maritime Pacific sites: fixed RH = 0.80 over-estimates snow (dt_028)
 
 The Brutsaert (1975) ILWR parameterization with fixed RH = 0.80 underestimates
 downwelling LW by ~30 W/m² at maritime sites where actual RH ~ 0.90–0.95.
@@ -590,7 +552,7 @@ high-accumulation maritime/alpine sites the deficit is large enough that the
 observed peak SWE pillow value EXCEEDS the gauge's reported annual precip — a
 physical impossibility that proves undercatch. Driving SNOWPACK with the raw
 gauge PSUM then produces a large negative SWE/HS PBIAS (under-accumulation)
-even when phase correlation r is excellent (~0.95).
+even when phase correlation r is excellent.
 
 `convert_forcing.py` now exposes `--precip_scale <factor>` (default 1.0 = off),
 a multiplicative undercatch correction applied after unit conversion. Diagnose
@@ -598,20 +560,15 @@ the factor from `peak_obs_SWE / cool-season_gauge_precip`, or tune to zero the
 SWE PBIAS. Mirrors the precip-scale knob in the Sac-SMA / MARRMoT / GR4J /
 COSIPY KIs.
 
-**Validated example — SNOTEL 679 Paradise, WA (Mt Rainier, 1570 m, maritime,
-peak SWE ~2.8 m):** RH = 0.90 + `--precip_scale 1.8` lifts SWE from
-NSE 0.52 / PBIAS −45% (raw gauge) to **NSE 0.90 / KGE 0.88 / r 0.95 /
-PBIAS +2%** over WY2006–2015. Without the multiplier the maritime site is
-mass-starved, not over-accumulated — the OPPOSITE of the dt_028 HS over-
-accumulation failure mode, so check the sign of the bias before reaching for an
-ILWR/RH fix. Note: because forcing is expanded to hourly before the 60-min run,
-the 25 mm/day single-step PSUM stability cap used in the HS batch script is
-unnecessary here and would smear large maritime storms — raise it (≥100 mm/day)
-when running hourly-expanded forcing.
+Without the multiplier a snowy maritime site is mass-starved, not over-accumulated — the
+OPPOSITE of the dt_028 HS over-accumulation failure mode, so check the sign of the bias before
+reaching for an ILWR/RH fix. Note: because forcing is expanded to hourly before the 60-min run,
+a 25 mm/day single-step PSUM stability cap is unnecessary here and would smear large maritime
+storms — raise it (≥100 mm/day) when running hourly-expanded forcing.
 
-### F. SNOTEL sites with HS obs starting after 2002
+### F. SNOTEL sites with no obs-sim overlap
 
-~16 of 49 sites (33%) have no obs-sim overlap because:
+Some sites have no obs-sim overlap because:
 1. HS sensor installed after the simulation end, OR
 2. SNOWPACK crashed during spinup before reaching the obs period
 
@@ -621,41 +578,32 @@ the SNOTEL station's first HS date before concluding the site has no data.
 ### H. Continental CO/interior alpine: fall thin-pack crash is ENDEMIC; late-melt is fixed by a SEASONAL spring-shortwave boost (do NOT raise RH/CF year-round)
 
 Two coupled facts at cold continental-interior SNOTEL sites (CO/WY high alpine,
-peak SWE ~0.3–0.5 m), confirmed at SNOTEL 663 Niwot Ridge CO (3021 m) and
-cross-checked against the 49-site batch:
+peak SWE ~0.3–0.5 m):
 
 1. **The early-season (Oct–Nov) thin-pack `compTemperatureProfile` crash (dt_022)
-   recurs mid-record, not just in spinup.** In the validated batch, most CO
-   sites terminated at a fall date inside the eval window (Beartown 2008-11,
-   Columbine 2005-11, Mc Clure Pass 2010-11) yet still scored well on the
-   partial record (Mc Clure NSE 0.948). So a run that crashes at e.g.
-   2008-10-12 and yields `n_matched ≈ 1000` over 3 winters is a VALID
+   recurs mid-record, not just in spinup.** A run that crashes at a fall date
+   inside the eval window but still has a long obs-sim overlap is a VALID
    evaluation, not a failure — compute the metric on the available overlap.
    Capping spinup (Lesson A) does NOT avoid a crash whose forcing event lies
    inside the eval window.
 
 2. **Late melt-out is the dominant NSE error, and it is in TENSION with fall
    crash-survival.** With RH=0.80 / default CO cloud-factor 0.60, accumulation
-   (Jan–Mar) matches obs to within a few %, but the pack melts ~2–3 weeks late
-   (Niwot: sim retained 2.3× obs SWE in May, lingered into June). The instinct
+   (Jan–Mar) can match obs well, but the pack melts late. The instinct
    to add melt energy by raising RH (→ILWR) or the cloud factor (→ISWR)
    BACKFIRES on robustness: any extra fall energy keeps the Oct–Nov pack thinner
    for longer, deepening the thin-instability regime and crashing the solver
-   EARLIER (Niwot: RH 0.88 crashed 2004 vs 2008; CO CF 0.72 crashed 2000). This
-   is the OPPOSITE of the maritime Paradise case (Lesson E/G), where higher RH
+   EARLIER. This is the OPPOSITE of the maritime case (Lesson E/G), where higher RH
    both stabilized and improved the fit — do not transfer the maritime RH knob
    to continental sites.
 
    **Fix: decouple the two seasons.** Keep fall/winter forcing cold (RH 0.80,
    default CF) for solver stability, and apply a shortwave multiplier ONLY in
-   the ablation window (DOY 91–181, Apr 1–Jun 30). At Niwot a `SPRING_SW_FACTOR`
-   of 1.45 over Apr–Jun lifted SWE from **NSE 0.47 → 0.86 / KGE 0.85 / r 0.95 /
-   PBIAS +3.8%** (WY2006–2008, n=1016) while leaving the fall crash date
-   unchanged (still 2008-10-12 — proving the boost does not touch fall physics).
-   The large factor compensates for the combined high-snow-albedo + sunny
-   high-altitude clear-sky underestimate of absorbed spring shortwave. See the
-   `expand_hourly` seasonal `sf` mask in
-   `outputs/snowpack_niwot_swe/run_niwot.py`. This mirrors the precip_scale /
+   the ablation window (DOY 91–181, Apr 1–Jun 30). A spring-only boost does not
+   change the fall crash date (it does not touch fall physics).
+   The factor compensates for the combined high-snow-albedo + sunny
+   high-altitude clear-sky underestimate of absorbed spring shortwave.
+   This mirrors the precip_scale /
    melt-energy knobs in the GR4J/Sac-SMA/MARRMoT snow KIs but applied
    seasonally rather than globally.
 
@@ -692,7 +640,7 @@ cross-checked against the 49-site batch:
 | dt_025 | fatal    | parameter_format  | COORDSYS=LATLON not recognized            |
 | dt_026 | fatal    | parameter_format  | STATION1 deprecated, use METEOFILE1       |
 | dt_027 | fatal    | parameter_format  | .sno missing CanopyDirectThroughfall etc  |
-| dt_028 | silent   | silent_error      | Maritime PBIAS>80%: ILWR cold bias        |
+| dt_028 | silent   | silent_error      | Maritime HS over-estimate: ILWR cold bias |
 
 See `diagnostics/triplets.yaml` for full details.
 

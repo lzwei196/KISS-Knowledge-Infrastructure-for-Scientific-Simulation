@@ -76,14 +76,13 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 > **Version**: KINEROS2 K2shell 25-Oct-2019 (ARS-SWRC/KINEROS2 commit f0bbae2), gfortran build
 > **Domain**: hydrology -- event rainfall-runoff and erosion on small watersheds
 > **Last updated**: 2026-10-06 (rebuilt around the real engine)
-> **Validation status**: production_validated on the official ARS samples (reproduced exactly);
-> one real-observation comparison (Walnut Gulch flume 11, 4 Aug 1980, in-sample)
+> **Validation status**: production_validated on the official ARS samples (reproduced exactly)
 
 > **SURROGATE WARNING.** `tools/run_kineros2.py` (+ `convert_forcing_to_kineros2.py`,
 > `convert_soil_to_kineros2.py`, `parse_output_kineros2.py`, docs in `docs/surrogate/`) is a
 > **Python SURROGATE** -- a lumped, daily, Green-Ampt + two-reservoir stand-in written before the real
-> engine existed on this server. It is **not KINEROS2**. Never report its output (e.g. the Huaihe at
-> Bengbu, 121,330 km2, NSE 0.851 still recorded in the models DB) as KINEROS2 results. The real model
+> engine existed on this server. It is **not KINEROS2**. Never report its output (some of it is
+> still recorded in the models DB) as KINEROS2 results. The real model
 > is run by `tools/run_kineros2_engine.py`.
 
 ---
@@ -310,7 +309,10 @@ corrected on 2026-10-06; ids tagged `applies_to: python_surrogate` concern the s
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Test Basin: Walnut Gulch subwatershed 11 (USDA-ARS WGEW, Arizona), storm of 4 Aug 1980
 
@@ -331,31 +333,27 @@ raw ARS gage export is identical to the shipped one (10/10 gages).
 
 > Bar for `discharge` (NSE, per `leta2023` and `cirilo2020`, Moriasi-style classes transferred from
 > daily/monthly flow): satisfactory ≥ 0.50, good ≥ 0.65, very good ≥ 0.75; PBIAS within ±25 %
-> satisfactory. Achieved on WG11 4 Aug 1980 with the ARS readme multipliers: NSE 0.812 → **very good
-> by that band**, but PBIAS (on the 3-min grid) +26.6 % → **just outside satisfactory**; one event, in-sample.
+> satisfactory.
 
-| Metric | Calibration | Validation | Full Period | Bar (convention, cited) |
-|--------|-------------|------------|-------------|-------------------------|
-| NSE | 0.855 (multipliers re-fit, in-sample) | - | 0.812 (ARS readme multipliers) | satisfactory/good/very good 0.50/0.65/0.75, `leta2023` |
-| KGE | - | - | 0.720 | no cited threshold |
-| PBIAS (%) | - | - | +26.6 (3-min grid) | ±25 satisfactory, `leta2023` |
-| r | - | - | 0.910 | no cited threshold |
-| Peak error | -31.0 % | - | -25.6 % (18.84 vs 25.32 m3/s) | no cited threshold (null band) |
-| Time to peak | - | - | 66 vs 72 min | no cited threshold |
-| Event volume | +4.7 % | - | +27.6 % (46,544 vs 36,490 m3) | ±25 satisfactory (`leta2023`, transferred) |
+| Metric | Bar (convention, cited) |
+|--------|-------------------------|
+| NSE | satisfactory/good/very good 0.50/0.65/0.75, `leta2023` |
+| KGE | no cited threshold |
+| PBIAS (%) | ±25 satisfactory, `leta2023` |
+| r | no cited threshold |
+| Peak error | no cited threshold (null band) |
+| Time to peak | no cited threshold |
+| Event volume | ±25 satisfactory (`leta2023`, transferred) |
 
-Validation tier: **real** observation (independent flume data), but **in-sample**: the readme
-multipliers were chosen by ARS for this storm. No blind multi-event test has been run yet.
+### Input data rules
 
-### Data Replacement Tracking
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | WGEW DAP recording gages via fetch + build tools | Validated | rebuilt 4Aug80.pre identical to ARS file |
-| Soil | HWSD + Table 1 tool | Pending | class KS 0.135 in/hr vs ARS 0.40-0.52 in/hr (dt_kineros2_053) |
-| Land cover | ARS sample values | Pending | no roughness tool; edit by hand |
-| DEM / elements | ARS sample cascade | Pending | no discretiser in this KI (AGWA) |
-| Initial conditions | ARS gage SAT 0.09-0.13 | Validated (sample) | event specific |
+| Component | Source | Rule |
+|-----------|--------|------|
+| Forcing | WGEW DAP recording gages via fetch + build tools | rebuilt 4Aug80.pre identical to ARS file |
+| Soil | HWSD + Table 1 tool | class KS 0.135 in/hr vs ARS 0.40-0.52 in/hr (dt_kineros2_053) |
+| Land cover | ARS sample values | no roughness tool; edit by hand |
+| DEM / elements | ARS sample cascade | no discretiser in this KI (AGWA) |
+| Initial conditions | ARS gage SAT 0.09-0.13 | event specific |
 
 ---
 
@@ -376,12 +374,12 @@ multipliers were chosen by ARS for this storm. No blind multi-event test has bee
 - Hortonian runoff only; saturation-excess catchments are outside its physics.
 - Needs an element cascade; this KI copies and edits existing ones but has no DEM discretiser.
 - Gridded hourly rain cannot represent convective intensities (dt_kineros2_036).
-- The WG11 comparison is a single, in-sample event; volume +27.6 % and a slow simulated recession.
+- Only one in-sample event has been compared with observed flow; a blind multi-event test is still needed.
 - `PIPE`, `URBAN`, `ADDER`, `DIVERTER` and compound channels are edited by hand (no tool).
-- The models DB still stores the surrogate's daily metrics (NSE 0.851 / KGE 0.882 / r 0.923, Huaihe at Bengbu) and tier
-  for KINEROS2. `knowledge_infrastructure.yaml` lists them only under `validation.surrogate_metrics_not_kineros2`;
-  its `validation.metrics` hold the real-engine WG11 score (NSE 0.8115, 121 points, in-sample). Regenerating the
-  manifest with generate_ki_manifest.py would project the DB's surrogate metrics again -- re-check it after any regeneration.
+- The models DB still stores SURROGATE daily metrics and tier for KINEROS2.
+  `knowledge_infrastructure.yaml` lists them only under `validation.surrogate_metrics_not_kineros2`.
+  Regenerating the manifest with generate_ki_manifest.py would project the DB's surrogate metrics
+  again -- re-check it after any regeneration.
 
 ---
 

@@ -179,15 +179,6 @@ GDD crops: `BarleyGDD`, `CottonGDD`, `DryBeanGDD`, `MaizeGDD`, `PaddyRiceGDD`, `
 
 GDD variants are preferred because they adapt phenology to local temperature. Calendar-day variants use fixed development timing.
 
-### Validated Results (2026-04-11, 3×3 matrix)
-
-| Site | Crop | Default yield | With fertility adj | Obs (SPAM) | WP used |
-|------|------|---------------|-------------------|------------|---------|
-| Bengbu | Maize | 13,923 (potential) | **5,376** | 5,500 | WP=15, CCx=0.80 |
-| Bengbu | Wheat | 1,644 | needs tuning | 5,750 | default (too low) |
-| Harbin | Maize | 13,585 (potential) | ~7,000 | 6,000-8,000 | WP=20, CCx=0.85 |
-| São Paulo | Soybean | 4,771 | — | 3,250 | default (acceptable) |
-
 ### CRITICAL: Soil Fertility Stress (AquaCrop's #1 trap for humid regions)
 
 AquaCrop-OSPy does **NOT model nitrogen limitation**. In humid regions (precip > ET0), water stress never activates and yields converge to potential (~14 t/ha for maize). This is NOT a bug — it's by design.
@@ -206,21 +197,23 @@ crop.CCx = 0.80   # Default 0.96 → reduce for sub-optimal stand density
 | 33.7 (default) | 0.96 | ~14,000 kg/ha | Potential (US irrigated, optimal N) |
 | 30.0 | 0.90 | ~12,300 kg/ha | High-input **rainfed** (US Corn Belt — IA/IL/NE/WI/MN) |
 | 25.0 | 0.85 | ~9,000 kg/ha | High-input commercial (NE China, Brazil) |
-| 20.0 | 0.80 | ~7,000 kg/ha | Moderate-input (Harbin rainfed) |
-| 15.0 | 0.80 | ~5,400 kg/ha | Low-input (Bengbu traditional) |
+| 20.0 | 0.80 | ~7,000 kg/ha | Moderate-input rainfed |
+| 15.0 | 0.80 | ~5,400 kg/ha | Low-input traditional |
 | 12.0 | 0.75 | ~4,000 kg/ha | Subsistence (Sub-Saharan Africa) |
+
+The expected yields are rough values from single runs; the real yield also
+depends on the site's weather, soil and season.
 
 For wheat: default WP=15 is already low — the issue is different (phenology tuning needed for Chinese winter wheat varieties).
 
 **Rule**: If your site has P > ET0 during the growing season (monsoon Asia, humid tropics), you MUST reduce WP/CCx or yields will be unrealistically high. AquaCrop only limits growth via water — there is no N/P module.
 
-**Conversely, high-input optimal-N regions need a HIGH WP.** For the US Corn Belt
-(verified 2026-06-30 vs SPAM 2020, 40.0-43.5N x 98-88W maize) the SPAM regional
-mean is ~12.3 t/ha. Default WP=33.7/CCx=0.96 drives sim to potential (~14 t/ha)
-and over-predicts by +12.4%; **WP=30/CCx=0.90 (planting 05/05) centers the
-regional mean at PBIAS -1.4%**. So WP is a two-sided knob: drop it for low-input
-monsoon Asia (WP=13.8 China maize), raise it toward potential for high-input US
-maize. Do NOT carry the China WP=13.8 over to a US/EU site — it undershoots ~55%.
+**Conversely, high-input optimal-N regions need a HIGH WP.** Default
+WP=33.7/CCx=0.96 drives sim to potential (~14 t/ha), which can over-predict a
+high-input rainfed region; the table's WP=30/CCx=0.90 row (planting 05/05) was
+calibrated on one US Corn Belt region. So WP is a two-sided knob: drop it for low-input
+monsoon Asia, raise it toward potential for high-input US
+maize. Do NOT carry a low-input China WP over to a US/EU site — it undershoots badly.
 
 ### 6. Irrigation Methods (S5)
 
@@ -302,7 +295,10 @@ for output identity and units, read `dag.yaml`.
 
 ---
 
-## Validated Results and Convention Bars
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics -- judged against the field's bar, not intuition
 
@@ -379,7 +375,7 @@ See `diagnostics/triplets.yaml` for the diagnostic triplets (current count: the 
 See `docs/model_couplings.yaml` for data flows between AquaCrop-OSPy and:
 - **VIC**: Soil moisture -> InitialWaterContent
 - **HWSD**: Sand/Clay/OrgMat -> `add_layer_from_texture()`
-- **CaMa-Flood**: Flood depth/duration -> AquaCrop GroundWater object for mechanistic waterlogging stress — **IMPLEMENTED** via `apply_cama_flood.py` (s6_field_management). Validation: Bengbu maize 1985: 14.18 t/ha (no flood) -> 4.28 t/ha (with flood, -69.8%). 177 flood days from CaMa-Flood.
+- **CaMa-Flood**: Flood depth/duration -> AquaCrop GroundWater object for mechanistic waterlogging stress — **IMPLEMENTED** via `apply_cama_flood.py` (s6_field_management).
   ```python
   from apply_cama_flood import build_groundwater_from_cama
   gw, df = build_groundwater_from_cama("model/cmf_v420_pkg/out/<run>", lat, lon, start, end)
@@ -542,13 +538,11 @@ so the retry loop correctly skips.
 
 Why: a national aggregate is dominated by a multi-decade technology/management
 trend that a weather-only model (AquaCrop has no N module) cannot reproduce.
-Both sim and obs trend upward, so a **raw r looks deceptively high** (China
-maize 2000-2018: raw r=0.85) while the **detrended residuals share no
-co-movement** (detrended_r≈0.00). The high raw r is pure trend-coupling, not
-skill. Verified 2026-06-08: WP=13.8 gives PBIAS −0.34% (excellent magnitude)
-but sim trend slope is only 0.028 vs obs 0.084 t/ha/yr (slope_ratio 0.34) — the
-model captures the magnitude well and the trend *direction* but only ~1/3 of its
-*rate*, exactly as expected for a weather-only model against a tech-driven series.
+Both sim and obs trend upward, so a **raw r looks deceptively high** while the
+**detrended residuals share no co-movement** (dt_017_aggregate_detrended_r_expected_zero). The high raw r is pure
+trend-coupling, not skill. A weather-only model can get the magnitude and the
+trend *direction* right but only part of the trend *rate*, as expected against a
+tech-driven series.
 
 Use the dedicated tool — it returns the dag-valid families and refuses to lead
 with raw NSE/r:
@@ -567,28 +561,24 @@ A 0-D single-point weather-only run CANNOT reproduce the detrended inter-annual
 residuals of a NATIONAL / sub-national aggregate: that residual variability is
 driven by area shifts, irrigation expansion, sub-national heterogeneity and
 policy -- none of which a point run sees -- so `detrended_r ≈ 0` is the
-EXPECTED, physically-correct outcome (China maize 2000-2018: detrended_r=0.001),
+EXPECTED, physically-correct outcome,
 NOT a phenology/calibration defect, and adding trend rate is impossible without a
 fertility/technology forcing the model isn't given. For a
 `regional_aggregate_time_series` obs the acceptance gate is ONLY
-`magnitude_accuracy` (|decadal PBIAS| small; here -0.34%) plus `trend_match` sign
+`magnitude_accuracy` (|decadal PBIAS| small) plus `trend_match` sign
 and `slope_ratio` -- do NOT trigger a retry on detrended_r here. To genuinely
 validate AquaCrop's inter-annual *weather* response, supply a `point_time_series`
 obs (a co-located multi-year field trial); only THERE is a low detrended_r a real
 phenology/GDD-variant or planting-window issue (dt_002/dt_005).
 
-**Validated FAOSTAT calibration (China mainland maize, verified 2026-06-08).**
-Point (34.0N, 113.0E North China Plain), `Soil('Loam')`, `Crop('Maize',
-planting_date='06/10')`, NASA POWER daily forcing 2000-2018, FAO-56 PM ET0.
-The SKILL fertility guide's `WP=15` (tuned to Bengbu low-input) leaves a +8%
-positive bias against the FAOSTAT *national* series, which pushes NSE negative
-(-0.38) even though r is strong (0.85). Dropping to **`crop.WP = 13.8`** (keep
-`CCx = 0.80`) centers the bias (PBIAS -0.3%) and lifts **NSE to +0.49** with
-r=0.849, KGE=0.35. Note the KGE/NSE trade-off: yield scales ~linearly with WP,
-so lowering WP also shrinks sim interannual std (alpha<1), nudging KGE down ~0.02
-while NSE gains ~0.9 — center the bias for NSE, accept the small KGE cost. Use
-WP≈13.8 as the national-series default for China maize; WP=15 remains correct
-for a single low-input *field* site like Bengbu.
+**FAOSTAT national series: center the bias with WP.** A WP tuned to a single
+low-input *field* site can leave a positive bias against a *national* series,
+which pushes NSE negative even when r is strong. Lowering `crop.WP` (keep `CCx`)
+centers the bias. Note the KGE/NSE trade-off: yield scales ~linearly with WP,
+so lowering WP also shrinks sim interannual std (alpha<1), nudging KGE down a little
+while NSE gains — center the bias for NSE, accept the small KGE cost. A WP found
+this way (e.g. WP≈13.8 for China maize) was calibrated at one point against one
+series; treat it as a starting value, not a general default.
 
 ---
 
@@ -633,15 +623,3 @@ to match the *production regime*, NOT tuned to the obs:
 - **China / developing-world low-input rainfed maize (SPAM ~5,000-6,000):**
   down-calibrate (`WP≈13.8-15, CCx=0.80`) — humid + no N module would otherwise
   collapse to the ~14 t/ha potential envelope.
-
-**Validated SPAM regional aggregates:**
-
-| Region | Crop | Config | Sim mean | SPAM mean | PBIAS |
-|--------|------|--------|----------|-----------|-------|
-| North China Plain (34-37N,113-116.5E) | maize | Loam, WP=13.8 CCx=0.80, plant 06/10 | 5,622 | 5,945 | -5.4% |
-| US Corn Belt / Iowa (40.5-43N,96-91W) | maize | SiltLoam, **DEFAULT** WP/CCx, plant 05/01 | ~14,400 | ~14,200 | ~+1% (verify) |
-
-The two rows show the same model spanning a ~2.5× yield gradient using only the
-correct fertility-regime WP/CCx — the magnitude lever the SKILL fertility table
-encodes. The single-cell Iowa check (42.0N,93.5W): SiltLoam default → 14,651 vs
-SPAM 14,300 (+2.5%); Loam default → 14,195 (-0.7%).

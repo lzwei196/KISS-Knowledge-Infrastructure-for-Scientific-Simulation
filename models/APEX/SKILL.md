@@ -86,13 +86,12 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Source**: https://epicapex.tamu.edu/software/
 **Language**: Fortran 90 (Intel Fortran compiled, PE32 executable)
 **Domain**: Field- and watershed-scale agronomy / hydrology / water-quality
-**Validation status**: `validated` — Bengbu China corn 6.21 t/ha vs 5.6 observed (+11% bias).
-Multi-subarea farm (4 fields) validated with CMFD weather, HWSD soil, GGCMI calendar.
+**Validation status**: `validated`
 
 **CRITICAL: Use v0806, NOT v1501.** The v1501 binary has a confirmed issue where annual
 crops produce zero biomass (BIOM=0.01) due to P cycling NaN in the Century C/N model.
 Exhaustively tested with 25 PARM fixes, soil P initialization 3-50 ppm, Century pool
-initialization from OC — still zero yield. v0806 produces 4.46-6.21 t/ha corn.
+initialization from OC — still zero yield. v0806 gives normal non-zero corn yields.
 Template: Riesel TX cropland (ex1_RiselTX), NOT WRE pasture.
 Binary: `reference/APEX0806.exe` (run via `wine APEX0806.exe`).
 
@@ -542,41 +541,31 @@ MANDATORY setup rules (dag.yaml `outputs[YLDG].observability`, lines 146-151):
 1. **Classify as an aggregate and DETREND before scoring variability.**
    Set `obs_shape=regional_aggregate_time_series`,
    `comparison_mode=aggregate_trend_comparison`. Regional/gridded yields carry a
-   technology/management **trend** (e.g. the Bengbu 32.75N,117.25E GDHY cell rises
-   ~3.0 -> 4.7 t/ha over 1981-2016) that a fixed-management, weather-driven APEX
+   technology/management **trend** that a fixed-management, weather-driven APEX
    run structurally CANNOT reproduce. Before comparing inter-annual variability,
    apply a `detrending_option` (`linear_residual` or `first_difference`) to BOTH
    sim and obs and compute r on the residuals; report level `pbias` for magnitude
    AND detrended `r` for pattern. NEVER score the raw levels of a trended aggregate
-   as `point_time_series` -- that yields spuriously catastrophic scores (this case:
-   nse -20.5, r 0.06 against a trend the model was never expected to track).
-
+   as `point_time_series` -- that yields spuriously catastrophic scores against a
+   trend the model was never expected to track.
 2. **Management must be CELL-AVERAGE representative, not field-optimal.**
-   A single high-input subarea (PHU1800, N=184.8 kg/ha at full potential) yields
-   the field-trial optimum ~6.7 t/ha -- nearly 2x the GDHY cell average of ~3.4 t/ha
-   (this case: pbias +96%). Disabling auto-irrigation ALONE is insufficient. For a
+   A single high-input subarea at full potential yields about the field-trial optimum,
+   which can be far above a gridded cell average. Disabling auto-irrigation ALONE is
+   insufficient. For a
    0.5-deg area-average, configure management representative of the actual regional
    cropping: reduce N toward the regional mean application rate, use the regional
-   cultivar/PHU, keep the dominant water regime (rainfed/supplemental for the Huai
-   plain), and/or apply an area-weighted marginal-land fraction, so the simulated
-   MEAN targets the GDHY cell mean (~3.4 t/ha) rather than the field-trial validation
-   target (5.6-6.2 t/ha). This is a *representativeness* setup choice (dag `scope_in`:
+   cultivar/PHU, keep the region's dominant water regime (rainfed, supplemental or fully irrigated), and/or
+   apply an area-weighted marginal-land fraction, so the simulated
+   MEAN targets the cell mean rather than a field-trial
+   yield. This is a *representativeness* setup choice (dag `scope_in`:
    management/fertilization/irrigation), NOT parameter calibration.
 
 ---
 
-## Validated Results (template §11)
+## Validation Status (template §11)
 
-### Test case: Bengbu China corn
-
-| Property | Value |
-|---|---|
-| Location | Bengbu, China |
-| Crop | corn |
-| Simulated yield | 6.21 t/ha |
-| Observed yield | 5.6 t/ha |
-| Reported bias | +11% |
-| Validation status | `validated` |
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics — judged against the field's bar, not intuition
 
@@ -596,15 +585,15 @@ For minimize `nrmse`, lower values are better. No uncited threshold is implied f
 any metric or output not listed in `docs/validation_convention.yaml`; write
 `no cited threshold` when the convention has a null band.
 
-### Data Replacement Tracking
+### Input data rules
 
-| Component | Source | Status | Notes |
-|---|---|---|---|
-| Forcing | CMFD weather pipeline | validated for the Bengbu China corn case | Prepared through KI tools |
-| Soil | HWSD soil pipeline | validated for the Bengbu China corn case | Prepared through KI tools |
-| Management / crop calendar | GGCMI calendar and APEX0806-compatible operation schedules | validated for the Bengbu China corn case | Use `tools/s9_generate_crop_opc.py` for compatible op and fertilizer codes |
-| Execution binary | `reference/APEX0806.exe` via Wine | validated | Use v0806 for crop-yield work |
-| Parsing and scoring | `tools/s7_parse_output.py`; `docs/validation_convention.yaml` | validated convention available | Score against cited bars, not intuition |
+| Component | Source | Rule |
+|---|---|---|
+| Forcing | `tools/s2_convert_forcing.py` (`--source` cmfd for China, mswx, or nasa_power = default) | Prepared through KI tools |
+| Soil | HWSD soil pipeline | Prepared through KI tools |
+| Management / crop calendar | GGCMI calendar and APEX0806-compatible operation schedules | Use `tools/s9_generate_crop_opc.py` for compatible op and fertilizer codes |
+| Execution binary | `reference/APEX0806.exe` via Wine | Use v0806 for crop-yield work |
+| Parsing and scoring | `tools/s7_parse_output.py`; `docs/validation_convention.yaml` | Score against cited bars, not intuition |
 
 ---
 

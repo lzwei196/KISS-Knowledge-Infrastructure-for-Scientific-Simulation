@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-28 (added Stage-1 `prepare_basic_grids` tool; corrected `ef5 -p` documentation)
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status**: `production_validated` (Bengbu, Huai River Basin, 1981-1985 — surrogate-validated; real EF5 binary requires Stage-1 grid regeneration on prepared inputs, see s1_dem_preparation.md)
+**Validation status**: `production_validated` (surrogate-validated, synthetic forcing; real EF5 binary requires Stage-1 grid regeneration on prepared inputs, see s1_dem_preparation.md)
 
 ---
 
@@ -514,13 +514,10 @@ Calibration parameter blocks define min/max ranges for each parameter.
 
 ---
 
-## Validated Results: Bengbu Basin, Huai River (2026-03-25)
+## Validation Status
 
-**Basin**: Bengbu (Station 51080), Huai River Basin, China
-**Area**: 121,330 km²
-**Period**: 1981-01-01 to 1985-12-31 (warmup: 1980)
-**Forcing**: Synthetic climatological (seasonal pattern from CMFD monthly means)
-**Binary**: EF5 v1.2.3, compiled from source with g++
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Field Validation Bars
 
@@ -539,51 +536,6 @@ For `STREAMFLOW (Q)`, NSE is judged as maximize with satisfactory `0.5` and
 very good `0.75` under `van_griensven2012`, `bouregreg2011`, and `arnold2012`.
 PBIAS is judged as zero-centered with satisfactory `25.0` and very good `10.0`
 under `van_griensven2012` and `bouregreg2011`.
-
-### Results
-
-| Metric | Value | Convention bar |
-|--------|-------|----------------|
-| NSE | -2.81 | `STREAMFLOW (Q)` satisfactory `0.5` and very good `0.75` (`van_griensven2012`, `bouregreg2011`, `arnold2012`) |
-| KGE | -1.18 | no cited threshold |
-| R (Pearson) | 0.658 | `SOILMOISTURE (SM)` has no cited threshold for `r`; no `STREAMFLOW (Q)` `r` bar is stated here |
-| R² | 0.433 | no cited threshold |
-| PBIAS | 213.6% | `STREAMFLOW (Q)` zero-centered satisfactory `25.0` and very good `10.0` (`van_griensven2012`, `bouregreg2011`) |
-| RMSE | 2777.6 m³/s | no cited threshold |
-
-### Data Replacement Tracking
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | Synthetic climatological forcing using seasonal pattern from CMFD monthly means | surrogate-validated | Real CMFD/MSWX forcing is expected to improve metrics |
-| Soil/CREST parameters | KI parameter setup for Bengbu validation | surrogate-validated | Parameters listed below |
-| DEM / routing grids | EF5/CREST preparation workflow | production path present | Stage-1 grid regeneration required on prepared inputs |
-| Observed discharge | Bengbu station 51080 comparison series | used for validation | Metrics reported above |
-| EF5 binary | EF5 v1.2.3 compiled with g++ | production-validated | Binary compiles and runs |
-
-### Parameters used
-
-| Parameter | Value |
-|-----------|-------|
-| WM | 220 mm |
-| B | 0.45 |
-| IM | 2% |
-| KE | 0.55 |
-| FC | 5 mm/hr |
-| IWU | 40% |
-| LEAKO | 0.25 |
-| LEAKI | 0.008 |
-
-### Key Findings
-
-1. **CREST water balance reproduces seasonal monsoon pattern**: R=0.658 with synthetic forcing demonstrates the model correctly generates summer peaks and winter baseflow.
-2. **Volume bias expected with synthetic forcing**: PBIAS=213.6% reflects climatological approximation, not model error. Real CMFD/MSWX forcing would substantially improve all metrics.
-3. **EF5 binary v1.2.3 compiles and runs correctly** on Ubuntu with g++ and libtiff/libgeotiff from conda.
-4. **Model state (SM) properly initialized** via IWU=40% of WM=220mm, giving SM_init=88mm.
-
-### Validation Figure
-
-See `figures/s8_validation.png` — observed=black, simulated=#2563EB, metrics box top-right.
 
 ---
 

@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Domain**: Cryosphere — spatially distributed snow, energy balance, and runoff in mountainous terrain
 - **Created**: 2026-03-26
 - **Last updated**: 2026-04-30
-- **Validation**: T3 (3 SNOTEL sites, 5 WY each) | current tool, stage-doc and triplet counts: the KI map at the top of this file
+- **Validation**: T3 | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ## ⛔ READ FIRST — the SNOTEL precipitation column is NOT cumulative (2026-08-09)
 
@@ -72,36 +72,24 @@ The NRCS SNOTEL daily export column
     Precipitation Accumulation (in) Start of Day Values
 
 is the **DAILY INCREMENT, in inches**, despite the word "Accumulation" in its
-name. It is *not* a water-year running total. Evidence at SNOTEL 590
-(2005-10 → 2015-09): the raw column sums to **1069 mm/yr**, its largest single
-value in ten years is **2.10 in** (a water-year cumulative would have to exceed
-40 in), and only **70%** of day-to-day steps are non-negative.
+name. It is *not* a water-year running total. Evidence from ten years of
+station data: the raw column sums to a plausible annual precipitation, its
+largest single value is about 2 in (a water-year cumulative would have to exceed
+40 in), and only about 70% of day-to-day steps are non-negative (dt_024).
 
 Every Alpine3D run in this KI up to 2026-08-09 applied `.diff().clip(lower=0)`
 to that column (`t3_runs/build_site.py` → `build_snotel_forcing`), which keeps
-only the day-over-day *increases* and discards **~44% of the precipitation**:
+only the day-over-day *increases* and discards **~44% of the precipitation**.
 
-| site | raw column | after `.diff()` | loss |
-|---|---:|---:|---:|
-| 590 Lone Mountain, MT | 1069 mm/yr | 604 mm/yr | −43% |
-| 828 Trial Lake, UT | 1106 | 669 | −40% |
-| 637 Mores Creek Summit, ID | 1200 | 718 | −40% |
-| 679 Paradise, WA | 3832 | 1740 | −55% |
-
-**This single data bug is the −40…−60% SWE PBIAS reported at every validated
-site below, and the reason NSE stalled in the 0.31–0.39 band.** The physical
-explanations previously given for that bias — "the gauge ~1660 mm/yr cannot
-build the observed 2.3 m pillow" at Paradise, "pillow over-read", "orographic
-undercatch" — attribute a parsing bug to physics. Note that the `dt_023`
-maritime remedy factor (×1.9) is close to the reciprocal of the Paradise loss
-(3832/1740 = 2.2): it was numerically compensating for the differencing, not
-correcting the gauge.
+Because the loss is a near-constant fraction, timing survives (r stays high)
+and only the SWE magnitude collapses (strongly negative PBIAS). This is easy to
+misread as gauge undercatch, orographic undercatch or pillow over-read, and to
+"correct" with a multiplicative precip factor; such a factor only hides the
+parsing bug (dt_024).
 
 **Correct handling: use the column AS IS**, converting inches → mm
-(`convert_forcing_to_smet.py --precip-unit in`). At a fresh continental site
-with *no* precip factor at all this yields NSE ≈ 0.83 / PBIAS ≈ −10% on daily
-SWE. Before re-deriving any SWE bias as a physical effect, check the forcing
-total against the raw gauge.
+(`convert_forcing_to_smet.py --precip-unit in`). Before re-deriving any SWE
+bias as a physical effect, check the forcing total against the raw gauge.
 
 ## Resolving a SNOTEL station (coordinates, elevation, timezone)
 
@@ -118,71 +106,30 @@ The station triplet is `<id>:<STATE>:SNTL`; the id is the filename stem of
 `KISSPATH_OBS/snotel/<id>_daily.csv` and the state is
 in that file's `# SNOTEL <id>: <Name>, <ST>` comment line.
 
-## Validated Test Cases (Tier-3, real DEM + real obs)
+## Setup rules from past SNOTEL point runs
 
-These are server-only result files: they are **not shipped** with the KI or the
-installed engine. On the GeoForge build server they stay in the Alpine3D build work
-folder (`auto_dissect/_work/Alpine3D/t3_runs/`), and the 2026-08-09 Lone Mountain run
-stays in the server model folder `models/Alpine3D/runs/lone_mountain_mt/`. The engine
-folder `KISSPATH_BINARIES/Alpine3D/` holds the engine only (on the server:
-`bin/`, `lib/`, `include/`, `share/`), never these runs. Outside the build server the
-numbers below are a record only; the run files are not there to open:
-
-⚠️ Every row in the table below was produced with the differenced (i.e. ~44%
-too dry) precipitation described above. Treat their NSE/PBIAS as a **floor**,
-not as Alpine3D's skill. The 2026-08-09 Lone Mountain row is the first run with
-correct precipitation.
-
-| Site | SNOTEL | Climate | r | NSE | KGE | PBIAS | Period | precip |
-|---|---:|---|---:|---:|---:|---:|---|---|
-| Lone Mountain, MT | 590 | continental | see below | see below | | | 2010-10 → 2020-09 (held out) | **raw (correct)** |
-
-| Site | SNOTEL | Climate | r | NSE | KGE | Period |
-|---|---:|---|---:|---:|---:|---|
-| Trial Lake, UT | 828 | continental | 0.79 | +0.31 | +0.19 | 2014-10 → 2019-09 |
-| Mores Creek Summit, ID | 637 | continental-W | 0.85 | +0.39 | +0.20 | 2014-10 → 2019-09 |
-| Paradise, WA (Mt Rainier) | 679 | maritime | 0.62 | −0.22 | −0.11 | 2014-10 → 2019-09 (baseline, no remedy) |
-| Paradise, WA (Mt Rainier) | 679 | maritime | 0.71 | **+0.33** | +0.46 | 2006-01 → 2015-12 (dt_023 remedy, 1×1) |
-
-Continental sites have positive skill against daily SNOTEL SWE. Maritime
-sites (Paradise) fail two ways under single-station daily disaggregation:
-(1) orographic precip is undercaught and the SNOTEL gauge under-reads heavy
-wet snow (gauge ~1660 mm/yr cannot build the observed 2.3 m pillow), and
-(2) the synthetic ±6 K diurnal TA cycle + high roughness drive excessive
-turbulent melt, so the pack peaks in Jan–Mar and melts out months early
-(Apr–Jun sim/obs SWE ratio ≈ 0.09). The `undercatch_wmo` filter (dt_020)
-alone is far too weak. **Maritime remedy (dt_023, added 2026-06-19):** apply
-a multiplicative precip undercatch factor (~1.9) via
-`convert_forcing_to_smet.py --precip-undercatch-factor`, damp the diurnal TA
-amplitude to ~2.5 K, lower `ROUGHNESS_LENGTH` to ~0.003 m, and raise the
-`PSUM_PH` snow threshold to ~275.35 K. `build_site.py` now carries these as
-per-site `precip_factor`/`diurnal_amp`/`roughness`/`snow_thresh_K` overrides
-on `Paradise_WA`. Driver: `t3_runs/build_site.py` + `validate_all.py`.
-
-**Maritime remedy VERIFIED (2026-06-19, SNOTEL 679, WY2006–2015):** the dt_023
-overrides were tested on the full 2006-01-01..2015-12-31 daily SWE window and
-**PASS**: NSE **+0.33**, r **0.71**, KGE **+0.46**, PBIAS −40% (n=3651 days; cold
-start 2005-10-01, scored from 2006-01-01). This overturns the −0.22 baseline.
-The pack still under-accumulates (sim mean 511 vs obs 853 mm; the ×1.9 factor is
-a floor, not a ceiling) but peak SWE (2442 vs 2764 mm) and timing (r 0.71) are now
-good. Three new `build_site.py` knobs make this run reproducible and tractable:
-  - **Period is now configurable** per-site via `sim_start` / `sim_end` /
-    `eval_start` (was hardcoded WY15-19). Cold-start the autumn *before* the eval
-    window; `observed_swe.csv` is filtered to `eval_start` so the spinup autumn is
-    excluded from metrics.
-  - **Deep-maritime tractability:** a 10-yr Paradise run at 11×11/15-min is
-    compute-bound (the correct 2+ m pillow grows the finite-element count, so
-    per-step cost balloons — ~5 h+ and climbing). Single-station point-SWE only
-    scores the POI cell, so `grid_n=1` + `calc_step=60` + `light_output=True`
-    (1×1 column, 1 SNOWPACK sub-step/hr, grids/prof off, daily TS) cuts it to
-    **~15 min** with no change to the scored center-cell SWE. The validated 11×11
-    config remains the reference for any *spatial* fidelity claim.
-  - **POI centering fix:** the POI is now written at the centre of the centre cell
-    (`poi_e/poi_n`), not the cell corner. A corner POI is on the domain edge and
-    Alpine3D aborts with `InvalidArgument: Invalid POI` — fatal on a 1×1 grid.
-    Harmless (+50 m, same cell) on larger grids.
-  - `validate_all.py` POI glob generalized from the hardcoded `5_*` index to
-    `*_<exp>.smet`, so it finds the POI file for any grid size (1×1 → `0_0_…`).
+- **Maritime sites (dt_023).** Under single-station daily disaggregation a warm,
+  near-isothermal maritime pack can melt out far too early: the synthetic ±6 K
+  diurnal TA cycle and a high roughness drive too much turbulent melt. The
+  dt_023 remedy (tuned at one maritime site) damps the diurnal TA amplitude to
+  ~2.5 K (`convert_forcing_to_smet.py --diurnal-amp`), lowers
+  `ROUGHNESS_LENGTH` to ~0.003 m and raises the `PSUM_PH` snow threshold to
+  ~275.35 K. Its ~1.9 precip factor was set before dt_024 was found: re-derive
+  any precip factor on correct (not differenced) forcing.
+- **Spin-up.** Cold-start the autumn *before* the evaluation window and score
+  only from the evaluation start, so the spin-up autumn is not in the metrics
+  (`build_site.py` `sim_start` / `sim_end` / `eval_start`).
+- **Single-point runs.** Point SWE against one station only scores the POI
+  cell. A deep pack grows the finite-element count, so a long run on a large
+  grid at a 15-min step can take many hours. A 1×1 grid with `calc_step=60` and
+  light output (grids/profiles off, daily TS) cuts this a lot; in one past run
+  it left the scored centre-cell SWE unchanged — check that on your own site.
+  Use the full grid for any *spatial* claim.
+- **POI position.** Write the POI at the centre of the centre cell, not the
+  cell corner. A corner POI is on the domain edge and Alpine3D aborts with
+  `InvalidArgument: Invalid POI` — fatal on a 1×1 grid.
+- **POI file name.** The POI output file name carries the cell index (1×1 →
+  `0_0_…`), so find it with a `*_<exp>.smet` glob, not a hard-coded index.
 
 Note: the `build_site.py` io.ini template has **no `[SnowpackAdvanced]` section**,
 so `ALPINE3D` defaults FALSE (dt_016 warning at startup) — the run is effectively
@@ -288,7 +235,10 @@ Output units explicitly documented in this KI body:
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 This section restates the KI's validation facts and the convention bar. If this
 section and `docs/validation_convention.yaml` disagree, the convention file
@@ -304,23 +254,8 @@ wins.
 | good | no cited threshold | esmsnowmip2018 |
 | satisfactory | nrmse <= 1.0 | esmsnowmip2018 |
 
-No `nrmse` achieved value is stated in the validated-run body below. Existing
-validated SWE rows report `r`, `NSE`, `KGE`, and `PBIAS`; do not translate those
-metrics into the convention bar without a sourced `nrmse` value.
-
-### Documented Validated SWE Runs
-
-| Site | SNOTEL | Climate | r | NSE | KGE | PBIAS | Period | Precipitation note |
-|---|---:|---|---:|---:|---:|---:|---|---|
-| Lone Mountain, MT | 590 | continental | see existing table below | see existing table below | | | 2010-10 to 2020-09 (held out) | raw (correct) |
-| Trial Lake, UT | 828 | continental | 0.79 | +0.31 | +0.19 | | 2014-10 to 2019-09 | differenced precipitation; floor |
-| Mores Creek Summit, ID | 637 | continental-W | 0.85 | +0.39 | +0.20 | | 2014-10 to 2019-09 | differenced precipitation; floor |
-| Paradise, WA (Mt Rainier) | 679 | maritime | 0.62 | -0.22 | -0.11 | | 2014-10 to 2019-09 | baseline, no remedy; differenced precipitation; floor |
-| Paradise, WA (Mt Rainier) | 679 | maritime | 0.71 | +0.33 | +0.46 | -40% | 2006-01 to 2015-12 | dt_023 remedy, 1x1 |
-
-Rows marked "differenced precipitation" were produced before the 2026-08-09
-SNOTEL precipitation correction documented above. Treat their NSE/PBIAS as a
-floor, not as Alpine3D's skill.
+Do not translate `r`, `NSE`, `KGE` or `PBIAS` into this bar; it needs an
+`nrmse` value.
 
 ---
 
@@ -427,7 +362,7 @@ alone; `t3_runs/build_site.py` is no longer required):
 
 Reference end-to-end driver using only these tools:
 `KISSPATH_KI_ROOT/Alpine3D/run_and_score.py`
-(SNOTEL 590 Lone Mountain, MT; resumable at every stage).
+(builds one SNOTEL site; resumable at every stage).
 
 ---
 

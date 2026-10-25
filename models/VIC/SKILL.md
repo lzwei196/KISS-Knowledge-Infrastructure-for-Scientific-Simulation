@@ -80,7 +80,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 *30 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
-**Calibration driver note (kept outside the projected index):** `tools/calib_run_huaibin_merit.py` is the System 1 SITE:huaibin driver (gauge 50229350, `huaibin_merit` 38-cell MERIT domain, per-year splits `KDT_CALIB_SPLIT=<year>`, declared sets via `KDT_CALIB_SPLIT_SETS`, `SYS1_DOMAIN_ROOT`/`SYS1_FORCING_ROOT`/`SYS1_FORCEYEAR`); certified by the kit against `System1/models/vic/reference_run_huaibin.json` (2026-08-29).
+**Calibration driver note (kept outside the projected index):** `tools/calib_run_huaibin_merit.py` is the System 1 SITE:huaibin driver (gauge 50229350, `huaibin_merit` 38-cell MERIT domain, per-year splits `KDT_CALIB_SPLIT=<year>`, declared sets via `KDT_CALIB_SPLIT_SETS`, `SYS1_DOMAIN_ROOT`/`SYS1_FORCING_ROOT`/`SYS1_FORCEYEAR`).
 
 ---
 
@@ -174,9 +174,8 @@ python preflight_check.py
 # then run s1 through s10 in order.
 ```
 
-Expected runtime depends on basin size and period. The Harbin reference noted
-below used 866 cells; water-balance mode costs about 95 s per simulated year for
-that case.
+Expected runtime depends on basin size and period. Water-balance mode costs about
+95 s per simulated year for a basin of about 870 cells.
 
 ---
 
@@ -304,19 +303,13 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-Source: `docs/validation_convention.yaml` and the reference-run notes already
-present in this KI body. This section states the field bars and does not invent
-new achieved scores.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-### Reference Basins Recorded In This KI
-
-| Basin | Cells | Period | Routed daily result note |
-|-------|-------|--------|--------------------------|
-| Bengbu 51080 (Huai, lowland, regulated) | 224 | 1981-90 | routed daily NSE ~0.15; PBIAS +44% |
-| Tangnaihai (upper Yellow, alpine) | 251 | cal 2007-11 / val 2012-16 | see `detached/real_case/result.json` |
-| Harbin (Songhua, cold/snowmelt) | 866 | cal 1981-85 / val 1986-87 | see `detached/real_case/result.json`; held-out NSE plateau 0.488-0.521 across routing velocity plateau |
+Source: `docs/validation_convention.yaml`. This section states the field bars and
+does not invent new achieved scores.
 
 ### Performance Metrics -- judged against the field's bar, not intuition
 
@@ -406,7 +399,7 @@ stages unmodified — no in-place editing, no `config_paths.py` regex rewriting:
 | `VIC_OUTLET_LON`, `VIC_OUTLET_LAT` | gauge coords — **required** for a new basin (s9 pour point + max-accum assertion) |
 | `VIC_DEM` | DEM for delineation, e.g. `data/dem/china_dem_90m/china_dem_90m.tif` |
 | `VIC_STREAM_THRESHOLD` | stream threshold in **native DEM cells**; scale with basin size (20k for 10³ km², 200k for 4×10⁵ km²) |
-| `VIC_ROUT_VELOCITY` | Lohmann channel celerity, m/s. **Default 1.5 is a Bengbu value — do NOT inherit it.** See "routing travel time" below (dt_vic_028) |
+| `VIC_ROUT_VELOCITY` | Lohmann channel celerity, m/s. **Default 1.5 was set on one basin — do NOT inherit it.** See "routing travel time" below (dt_vic_028) |
 | `VIC_ROUT_DIFF` | Lohmann diffusivity, m²/s. Default 800. Larger values *advance* the peak as well as broaden it |
 
 The last four DEM/outlet variables are read only by `s5_routing/build_routing_param.py`,
@@ -457,8 +450,8 @@ Validate the routing grid before trusting any hydrograph:
 ### 🔴 Also validate the routing TRAVEL TIME — a correct grid is not enough (dt_vic_028)
 
 A routing grid can be perfect and the hydrograph still worthless, because
-`VIC_ROUT_VELOCITY` defaults to **1.5 m/s — the value that reproduced Bengbu**
-(121,330 km²). Inheriting it at a larger, flatter basin makes the model respond
+`VIC_ROUT_VELOCITY` defaults to **1.5 m/s — a value set on one mid-size lowland basin**.
+Inheriting it at a larger, flatter basin can make the model respond
 weeks too early. Two numbers settle it, both from `s5_routing/run_routing.py`:
 
 ```python
@@ -475,18 +468,16 @@ two agree — on the **calibration window only**. Never fit velocity to NSE.
 `MAKE_UHM` clips each cell's impulse response at `LE*DT = 48 h` and renormalises it, so
 once `xmask/velocity > 48 h` the kernel stops changing and `uh_lag` asymptotes to
 `mean(UH.all) + mean_path_in_cells × ~1.3 d`. Below that threshold velocity is an **inert
-knob** and an optimiser will walk to its lower bound while reporting "improvement". At
-哈尔滨 the ceiling is 29.8 d against an observed demand of ~33 d: v = 0.002 and v = 0.15
-differ by 2 d of lag and 0.03 of held-out NSE. When the target is unreachable, pin
+knob** and an optimiser will walk to its lower bound while reporting "improvement".
+When the target is unreachable, pin
 velocity to the `rout_velocity` `range` lower bound in `calibration.yaml` (0.10 m/s),
 report the plateau's NSE spread, and state that the scheme is structurally insufficient.
 
 Two facts that keep being rediscovered the hard way:
 
 * **`NSE ≤ r²`.** Compute zero-lag `r` *before* concluding a bad NSE needs soil
-  calibration. At 哈尔滨 the default velocity held `r` at 0.589, so NSE could not
-  exceed 0.347 — the target of 0.5 was arithmetically unreachable and no soil
-  parameter could have rescued it.
+  calibration. If zero-lag `r` is low, an NSE target above `r²` is arithmetically
+  unreachable and no soil parameter can rescue it.
 * **Routing conserves mass at every velocity.** `rout` renormalises `UH_S`
   (`unit_hyd_routines.f`), so velocity moves *timing* and can NEVER move PBIAS.
   A volume bias is therefore never evidence that the routing is right, and a
@@ -503,10 +494,10 @@ the within-cell UH alone can never supply more than ~12 d of lag.
 
 `fill_parameters1.py` initialises every soil layer at `init_moist = 66.79 mm`
 (~10-14% saturation) and the KI column is 1.9 m deep. The standard split gives it ONE
-spin-up year. At 哈尔滨 the column needs **5-6 years**: baseflow climbs 22 → 111 mm/yr
-and 31-Dec storage 320 → 500 mm across 1980-1987, so the *calibration* window is the
-least equilibrated part of the record and PBIAS **grows** as the model equilibrates
-(+19.5% → +28.5% → +36.8%). That reads exactly like overfitting and is not.
+spin-up year. Some basins need **several years**: baseflow and 31-Dec storage keep
+climbing through the calibration window, so the *calibration* window is the
+least equilibrated part of the record and PBIAS **grows** as the model equilibrates.
+That reads exactly like overfitting and is not.
 
 Before scoring, plot `OUT_SOIL_MOIST_* + OUT_SWE` on 31 Dec of each year and annual
 `OUT_BASEFLOW`. If either still trends at `CAL_START`, start the simulation earlier —
@@ -522,46 +513,23 @@ contiguous fully-observed decade, or you will "validate" on zero days
 (dt_vic_021). Example: 唐乃亥 has valid daily Q only for
 {1985, 1987, 2007-2020, 2022, 2023}.
 
-### Reference runs
+### Rules from past runs
 
-| basin | cells | period | routed daily NSE |
-|---|---|---|---|
-| Bengbu 51080 (Huai, lowland, regulated) | 224 | 1981-90 | ~0.15 (PBIAS +44%) |
-| 唐乃亥 Tangnaihai (upper Yellow, alpine) | 251 | cal 2007-11 / val 2012-16 | see `detached/real_case/result.json` |
-| 哈尔滨 Harbin (Songhua, cold/snowmelt) | 866 | cal 1981-85 / val 1986-87 | see `detached/real_case/result.json` |
-
-Harbin is the KI's first snow-dominated basin: 384,411 km² above the gauge (398,330 km²
-of frac-weighted routed area), mean annual air temperature −5 … +7 °C, and a spring
-freshet driven by snowmelt. The observed record is ice-affected in winter and the basin is
-partly regulated (Fengman on the Second Songhua, Nierji on the Nen).
-
-**Read this before rerunning Harbin — the 2026-07-10 run overturned three earlier
-assumptions:**
-
-1. The dominant error was **never** the soil parameters. It was `VIC_ROUT_VELOCITY = 1.5`
-   m/s, giving a 6.2 d basin travel time against an observed 28 d lag. Zero-lag `r` was
-   0.589, so NSE was capped at 0.347. Slowing the routing lifts `r` to ~0.90 and the NSE
-   ceiling to ~0.80 — **without touching a single soil parameter and without changing
-   PBIAS by one part in 10⁴** (dt_vic_028). But note the second half of dt_vic_028:
-   `uh_lag` saturates at 29.8 d, the basin demands ~33 d, and velocity is **inert below
-   ~0.15 m/s**. Harbin is run at the pool bound v = 0.10 m/s, and held-out NSE varies only
-   0.488–0.521 across the entire plateau. Route_1.0 is structurally insufficient here;
-   report that rather than optimising inside the plateau.
-2. Spin-up of one year is **not enough** here; the deep store is still filling through the
-   calibration period, and PBIAS grows +19.5% → +36.8% across the record (dt_vic_030).
-3. `FROZEN_SOIL TRUE` was not merely "worth revisiting" — it was **impossible**: the soil
-   file carried `bubble = -9999` and `fs_active = 0`, and `NODES` must be ≥ 10 once
-   `EXP_TRANS` turns on. Both are fixed (dt_vic_031); the cold-region template is
-   `docs/vic_param/global_param_template_frozen.txt`.
-
-What remains after all of that is a **volume** bias (PBIAS ≈ +29% over 1981-87, +37% on
-the equilibrated 1986-87 window) that routing physically cannot touch. Budyko (Fu, ω=2.6)
-on CMFD `P = 589 mm/yr` and `PET ≈ 750 mm/yr` predicts a natural `Q ≈ 134 mm/yr`; VIC
-gives ≈ 150 (trending to ≈ 180 as the store fills) and the gauge records 116. VIC is
-modestly wet of Budyko and the gauge modestly dry of it — consistent with CMFD's
-undercatch-corrected precipitation *plus* real consumptive use on the Songnen Plain and
-reservoir regulation. Report it; do not calibrate it away. NSE at Harbin is **bias-limited,
-not timing-limited**: remove the volume bias post hoc and NSE_val ≈ 0.80 = r².
+1. In a large flat basin the main error can be the routing velocity, not the soil
+   parameters. Measure the observed lag against the UH lag first, and watch for the
+   velocity plateau where `uh_lag` stops changing; if the needed lag is above it,
+   report that route_1.0 is structurally insufficient rather than optimising inside
+   the plateau (dt_vic_028).
+2. One spin-up year can be too short; check the storage and baseflow trend before
+   reading a cal/val gap (dt_vic_030).
+3. `FROZEN_SOIL TRUE` needs real `bubble` values and `fs_active = 1` in the soil file
+   (`fill_parameters2.py` now writes them), and `NODES` must be ≥ 10 once `EXP_TRANS`
+   turns on. Use the cold-region template
+   `docs/vic_param/global_param_template_frozen.txt` (dt_vic_031).
+4. A volume bias that is left after routing and spin-up are fixed cannot be touched by
+   routing. Check it against a Budyko estimate (e.g. Fu) from the forcing P and PET.
+   Where the gauge sits below natural runoff because of water use or reservoir
+   regulation, report the bias; do not calibrate it away.
 
 ---
 

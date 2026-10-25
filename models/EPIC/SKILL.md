@@ -311,20 +311,16 @@ family with no row in the registry is never dropped -- it is reported in
 one of the var's other shapes.
 
 **Raw inter-annual `r` / `NSE` / `KGE` are NOT a verdict against an area-average
-yield obs.** Two independent structural reasons, both verified at Changchun
-(GDHY 44.25N 125.25E maize, 1997-2016, n=20):
+yield obs.** Two independent structural reasons:
 
-1. *Technology trend.* The obs rises +0.163 t/ha/yr (2.66%/yr of mean; 1997-2006
-   mean 5.25 -> 2007-2016 mean 6.97 t/ha). That is cultivar turnover, input
-   intensification and mechanisation -- a fixed-management, fixed-cultivar,
-   fixed-PPOP EPIC run has no mechanism for it (sim slope +0.003 t/ha/yr,
-   slope_ratio 0.02). Raw `r` collapsed to 0.21; **detrended r = 0.38 and
-   first-difference r = 0.59** -- the weather signal is there once the trend is
-   removed.
+1. *Technology trend.* An area-average yield obs often rises year on year from
+   cultivar turnover, input intensification and mechanisation -- a
+   fixed-management, fixed-cultivar, fixed-PPOP EPIC run has no mechanism for it.
+   Raw `r` can collapse; detrended and first-difference `r` show whether the
+   weather signal is there once the trend is removed.
 2. *Variance damping.* A 0.5deg cell mean averages hundreds of heterogeneous
    fields, so its inter-annual variance is smaller than any single field's.
-   Detrended sd was 0.55 t/ha (obs) vs 1.07 t/ha (sim). `NSE`/`KGE` penalise
-   that scale mismatch as if it were model error.
+   `NSE`/`KGE` penalise that scale mismatch as if it were model error.
 
 This is exactly the dag caveat on the `regional_aggregate_time_series` block
 ("compare detrended trend, not inter-annual r") and `docs/validation_convention.yaml`
@@ -375,11 +371,11 @@ Before scoring:
    `sim_market = sim_dry / (1 - w)`  ==  `obs_dry = obs_market * (1 - w)`.
 4. Report PBIAS on **both** bases regardless.
 
-This is not cosmetic -- at Changchun the undeclared choice moved the dag's
-*determining* metric from PBIAS **+26.8%** (dry-vs-as-published, i.e. a basis
-MISMATCH) to **+50.1%** (`w=0.155`). A determining metric must never be free to
-double on an undocumented per-run judgement call — which is exactly why the
-basis now lives in a cited registry rather than in the agent's head.
+This is not cosmetic -- the undeclared choice (a dry-vs-as-published basis
+MISMATCH, or `w=0.155`) can move the dag's *determining* metric (PBIAS) a lot
+(EPIC_025). A determining metric must never be free to change on an
+undocumented per-run judgement call — which is exactly why the basis now lives
+in a cited registry rather than in the agent's head.
 
 ### Known residual magnitude bias (do NOT tune it away)
 
@@ -528,8 +524,8 @@ no irrigation field at all (verified by sweeping all 21 of its integers through
 the binary), so **every irrigated run this KI ever produced was dryland** —
 triplet **EPIC_032**, which supersedes item 3 of EPIC_019. EPIC_019's "at a
 monsoon site irrigation cannot help" still holds *for monsoon sites*: check the
-`.ACY WS` column first. At Po Valley (45.25N 9.75E) WS is 25-35 stress days and
-furrow irrigation moves 1984 maize from 7.70 to 10.25 t/ha dry (IRGA 200 mm).
+`.ACY WS` column first. Where WS shows many water-stress days, irrigation can
+move the yield a lot (EPIC_032).
 
 ### Non-China sites: terrain and forcing
 
@@ -626,7 +622,10 @@ are negative or zero.
   Forcing/soil/terrain LOADERS live in `ki_tools_common`
   (`load_forcing`, `soil_utils`, `terrain`), not under `data_ki/*/tools/`.
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 This section restates `docs/validation_convention.yaml` for the dag rank-1
 variable. The convention wins over remembered thresholds: all YLDG bands below

@@ -128,7 +128,7 @@ python tools/s6_sediment/derive_usle_c.py --lat [LAT] --lon [LON]
 
 **Package**: `hydrocraft-wflow` v1.1.0
 **Model**: wflow v1.1.0-dev (Wflow.jl) — wflow_sbm + wflow_sediment
-**Status**: **PRODUCTION_VALIDATED** (Bengbu basin, 2026-03-22)
+**Status**: **PRODUCTION_VALIDATED**
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-03
 **Stats**: ~5,681 lines of validated Python + Julia | current tool, stage-doc and triplet counts: the KI map at the top of this file
@@ -145,7 +145,7 @@ python tools/s6_sediment/derive_usle_c.py --lat [LAT] --lon [LON]
 | Model variants | `wflow_sbm` hydrology + `wflow_sediment` erosion/transport |
 | Primary domain | Distributed hydrology and sediment transport |
 | Spatial mode | Distributed gridded basin model |
-| Validation status | `PRODUCTION_VALIDATED` for Bengbu basin |
+| Validation status | `PRODUCTION_VALIDATED` |
 
 ---
 
@@ -200,7 +200,7 @@ Known build issues are not copied here in full because `diagnostics/triplets.yam
 
 ## 5. Execution
 
-Execute the real Wflow.jl model through `tools/s4_execution/run_wflow.py`; do not replace it with a simplified hydrologic formula or Python approximation. The validated Bengbu run completed 1,096 timesteps over 224 cells in 14 seconds after the Julia environment was available; first runs can pause 30-60 seconds for Julia JIT compilation.
+Execute the real Wflow.jl model through `tools/s4_execution/run_wflow.py`; do not replace it with a simplified hydrologic formula or Python approximation. A daily run of about 1,100 timesteps over about 220 cells takes about 14 seconds once the Julia environment is available; first runs can pause 30-60 seconds for Julia JIT compilation.
 
 ---
 
@@ -321,55 +321,30 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging. These
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-### Test Basin: Bengbu (Huai River)
-
-| Property | Value |
-|----------|-------|
-| Basin | Huai River @ Bengbu (~121,330 km2) |
-| Period | 2003-2005 (2003 warmup) |
-| Resolution | 0.25 deg (224 cells, 16x24 grid) |
-| Forcing | CMFD 3-hourly -> daily (P, T, PET Hargreaves) |
-| Soil | HWSD (KsatVer, theta_s, theta_r, expt; this March 2026 run read them from the VIC soil parameter file, today's build reads HWSD directly) |
-| DEM | china_dem_90m (resampled to 0.25 deg) |
-| Routing | Kinematic wave, daily timestep |
-| Runtime | 14 seconds (1,096 timesteps, 224 cells) |
-| Output directory | `outputs/bengbu_wflow_test/` |
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics — judged against the field's bar, not intuition
 
 The headline dag variable is `river discharge (q_river / river_water__volume_flow_rate)`. The convention bars below restate `docs/validation_convention.yaml`; each threshold carries its citation key, and null convention bands are written as no cited threshold.
 
-| Dag variable | Metric | Direction | Convention bar, cited | Achieved in this SKILL body |
-|--------------|--------|-----------|------------------------|-----------------------------|
-| river discharge (q_river / river_water__volume_flow_rate) | KGE | maximize | satisfactory >= 0.4 (vanverseveld2024); good >= 0.7 (vanverseveld2024) | no KGE value stated in this SKILL body |
-| river discharge (q_river / river_water__volume_flow_rate) | NSE | maximize | satisfactory >= 0.5 (singh2019, golmohammadi2014); good >= 0.65 (singh2019, golmohammadi2014); very_good >= 0.75 (singh2019, golmohammadi2014) | no NSE value stated in this SKILL body |
-| unrouted runoff (runoff) | CSI | maximize | no cited threshold | no CSI value stated in this SKILL body |
+| Dag variable | Metric | Direction | Convention bar, cited |
+|--------------|--------|-----------|------------------------|
+| river discharge (q_river / river_water__volume_flow_rate) | KGE | maximize | satisfactory >= 0.4 (vanverseveld2024); good >= 0.7 (vanverseveld2024) |
+| river discharge (q_river / river_water__volume_flow_rate) | NSE | maximize | satisfactory >= 0.5 (singh2019, golmohammadi2014); good >= 0.65 (singh2019, golmohammadi2014); very_good >= 0.75 (singh2019, golmohammadi2014) |
+| unrouted runoff (runoff) | CSI | maximize | no cited threshold |
 
-### Validated Bengbu Run Values
+### Input data (China setup; outside China use the checklist in "Running a basin outside China")
 
-| Metric / diagnostic | Value |
-|---------------------|-------|
-| wflow mean Q | 1,088 m3/s (2004-2005) |
-| VIC mean Q | 1,767 m3/s (raw unrouted runoff sum) |
-| wflow/VIC ratio | 0.615 |
-| Correlation r | 0.404 (lag=0), 0.621 (lag=-3d) |
-| Monsoon cycle | Present (Jul ~5,500 m3/s, Jan ~90 m3/s) |
-| Annual precip | ~1,125 mm/yr |
-| PET | ~1,009 mm/yr |
-| wflow runoff | ~283 mm/yr |
-| VIC runoff | ~459 mm/yr |
-
-### Data Replacement Tracking
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | CMFD 3-hourly -> daily | validated for Bengbu | P, T, PET Hargreaves |
-| Soil | HWSD, read directly by run_hydromt_build.py (the March 2026 Bengbu run took it from the VIC soil parameter file) | validated for Bengbu | KsatVer, theta_s, theta_r, expt |
-| DEM | china_dem_90m | validated for Bengbu | resampled to 0.25 deg |
-| Routing | wflow kinematic wave | validated for Bengbu | daily timestep |
-| Sediment | wflow_sediment pipeline | available | run only after SBM hydrology output exists |
+| Component | Source | Note |
+|-----------|--------|------|
+| Forcing | CMFD 3-hourly -> daily (inside China; MSWX outside) | P, T, PET Hargreaves |
+| Soil | HWSD, read directly by run_hydromt_build.py | KsatVer, theta_s, theta_r, expt |
+| DEM | china_dem_90m (inside China; MERIT DEM outside) | resampled to the model grid (e.g. 0.25 deg) |
+| Routing | wflow kinematic wave | daily timestep |
+| Sediment | wflow_sediment pipeline | run only after SBM hydrology output exists |
 
 ---
 
@@ -379,7 +354,7 @@ These are physically informed starting points and coupling cautions, not calibra
 
 | Climate / region | Key parameters / source choices | Rationale |
 |------------------|---------------------------------|-----------|
-| China basins with CMFD coverage | CMFD forcing, China 90 m DEM, HWSD soils | Matches the Bengbu production-validated setup |
+| China basins with CMFD coverage | CMFD forcing, China 90 m DEM, HWSD soils | Uses the China-only CMFD forcing and 90 m DEM where they cover the basin |
 | Non-China basins | MSWX forcing, MERIT DEM, MERIT-Hydro dir/upa/elv, HWSD soils | Avoids the China-only DEM and CMFD assumptions |
 | Low-relief basins / floodplains | MERIT-Hydro flow directions and upstream area | Coarse DEM D8 can be noise in low relief |
 | Reservoir basins | GRanD lookup and configured reservoir cells | Reservoirs must be placed on river cells and capacity converted from MCM to m3 |
@@ -387,31 +362,12 @@ These are physically informed starting points and coupling cautions, not calibra
 
 ---
 
-## Validated Basins
+## Build and run lessons
 
-### Bengbu (Huai River) — Production Validated (2026-03-22)
-
-| Metric | Value |
-|--------|-------|
-| Basin | Huai River @ Bengbu (~121,330 km2) |
-| Period | 2003-2005 (2003 warmup) |
-| Resolution | 0.25 deg (224 cells, 16x24 grid) |
-| Forcing | CMFD 3-hourly -> daily (P, T, PET Hargreaves) |
-| Soil | HWSD (KsatVer, theta_s, theta_r, expt; this March 2026 run read them from the VIC soil parameter file, today's build reads HWSD directly) |
-| DEM | china_dem_90m (resampled to 0.25 deg) |
-| Routing | Kinematic wave (built-in), daily timestep |
-| wflow mean Q | 1,088 m3/s (2004-2005) |
-| VIC mean Q | 1,767 m3/s (raw unrouted runoff sum) |
-| wflow/VIC ratio | 0.615 |
-| Correlation r | 0.404 (lag=0), **0.621 (lag=-3d)** |
-| Monsoon cycle | Present (Jul ~5,500 m3/s, Jan ~90 m3/s) |
-| Runtime | 14 seconds (1,096 timesteps, 224 cells) |
-| Output dir | `outputs/bengbu_wflow_test/` |
-
-**Key findings**:
-- The 3-day lag between wflow and VIC is expected: VIC Q is raw runoff+baseflow sum without routing, while wflow applies kinematic wave routing through the river network.
-- wflow mean Q is ~38% lower than VIC raw runoff sum, partly because routing introduces storage/lag effects and the kinematic wave attenuates peaks.
-- Annual precip ~1,125 mm/yr, PET ~1,009 mm/yr, wflow runoff ~283 mm/yr, VIC runoff ~459 mm/yr.
+- Comparing with VIC: a lag of a few days is expected when VIC Q is the raw
+  runoff+baseflow sum without routing, because wflow applies kinematic wave routing
+  through the river network. Magnitude differences between the two models are also
+  expected; report timing and magnitude separately (dt_w020).
 
 ### Critical: LDD Generation (3 interacting problems — dt_w027)
 
@@ -434,9 +390,9 @@ same bug as the cycle problem above. dt_w014's remedy says "if the LDD target
 leaves the active mask, set LDD = 5 (pit)". That rule is correct *given* a mask
 that agrees with the flow network — but when the mask is a rasterised shapefile
 (derived from a different, finer DEM) it does NOT agree cell-for-cell, so every
-misaligned edge cell becomes a pit. Xixian at 0.1° produced **20 outlets in a
-128-cell basin**: 19 fabricated sub-basins draining nowhere, and discharge at the
-gauge integrating only a fraction of the catchment. wflow runs happily. There is
+misaligned edge cell becomes a pit. The basin can end up with **many outlets**:
+fabricated sub-basins draining nowhere, and discharge at the
+gauge integrating only a fraction of the catchment (dt_w036). wflow runs happily. There is
 no error. The hydrograph just has the wrong magnitude.
 
 **Always check `n_outlets` in the s1 build output. It must be exactly 1.**
@@ -449,16 +405,15 @@ construction and only the true outlet is a pit.
 ### Critical: on low-relief basins, coarse-DEM D8 is noise — use MERIT-Hydro
 
 Deriving D8 from a nearest-neighbour-resampled DEM works on terrain with relief.
-On a floodplain it does not: neighbouring 0.1° cells on the Huai plain differ by
-a few metres, so the drainage pattern is essentially arbitrary. At Xixian this
-snapped the outlet ~30 km from the gauge and got the area +13% wrong.
+On a floodplain it does not: neighbouring 0.1° cells on a low-relief plain differ by
+a few metres, so the drainage pattern is essentially arbitrary. The outlet can
+snap tens of km from the gauge and the basin area can be far off (dt_w037).
 
 Pass `--merit_hydro_dir` to upscale MERIT-Hydro's hydrologically corrected
 3-arcsec D8 (`*_dir.tif`) and upstream-area (`*_upa.tif`) grids instead. Each
 coarse cell's outlet pixel is the max-`upa` basin pixel inside it; walking
 downstream on the fine network to the next active coarse cell gives the coarse
-direction. At Xixian this gave 97 cells / 10,171 km², **−0.2%** against the
-published 10,190 km², one outlet, zero cycles.
+direction. Pass `--expected_area_km2` (published gauge area) and check `area_error_pct` is within a few percent, with one outlet and zero cycles (dt_w037).
 
 MERIT-Hydro tiles ship as 30°×30° tars under `KISSPATH_DATA/MERIT_Hydro/v1.0.1/`.
 Do NOT hand-roll `tar xf` (the member path and the s/w hemisphere tile names are
@@ -484,7 +439,7 @@ network is set by `RiverSlope`.
 
 In MERIT-Hydro mode a coarse cell is active when ≥ `--merit_cell_fraction`
 (default 0.5) of it lies inside the traced basin. The outlet cell sits at the
-downstream tip and is routinely far below that — 24 % at Rio Pelotas. Activating
+downstream tip and is routinely far below that. Activating
 it *after* the upscaled LDD is built is too late: every upstream trace has
 already walked past an "inactive" gauge cell and attached to the first active
 cell **downstream** of it, so nothing drains to the outlet and the reachability
@@ -515,12 +470,10 @@ DEM sampled from KISSPATH_DATA/MERIT_DEM: 374/391 cells valid, -0 - 1738 m
 ### Critical: dt_w040's DEM fix has been ROLLED BACK once — verify it every run
 
 The auto-resolution of the elevation source (`_resolve_dem_path` /
-`_sample_dem` in `run_hydromt_build.py`) was reverted at some point between the
-2026-08-05 Rio Pelotas run and 2026-08-08, leaving the old hard default to
-`china_dem_90m.tif`. On the Saar every sample came back nodata, the
-nearest-neighbour gap fill had no donor, and the build carried on over a uniform
--9999 surface — `DEM sampled: -9999 - -9999 m`, `RiverSlope` median 1.67e-04
-(the floor). It restores to `86 - 887 m` and 1.57e-03 once the fix is back.
+`_sample_dem` in `run_hydromt_build.py`) was reverted once, leaving the old hard default to
+`china_dem_90m.tif`. On a non-China basin every sample then comes back nodata, the
+nearest-neighbour gap fill has no donor, and the build carries on over a uniform
+-9999 surface — `DEM sampled: -9999 - -9999 m`, and `RiverSlope` sits on the area-based slope floor (`_slope_floor`) in every cell instead of on the terrain.
 
 **Read the `DEM sampled from ...` line every single run.** It must name a real
 source and report `N/N cells valid` with a plausible elevation range. If it says
@@ -538,8 +491,8 @@ REF_DEPTH included, is NaN by definition.
 `derive_landsurface_params.py` used to read ONE HWSD pixel per cell, at the cell
 centre, so a single cell centred on a city or a reservoir failed the whole build
 with `mapping unit(s) [7001, 7003] carry no usable REF_DEPTH row ... fix the soil
-join`. Nothing is wrong with the join — the Saar basin simply contains
-Saarbrücken and open water. It now samples the cell's FULL footprint and
+join`. Nothing is wrong with the join — the basin simply contains
+a city and open water. It now samples the cell's FULL footprint and
 area-weights REF_DEPTH / texture over the SOIL units inside it, excluding the
 declared non-soil ones (`hwsd_nonsoil_mapping_units_excluded` and
 `hwsd_nonsoil_pixel_fraction` in the provenance record what was dropped). A cell
@@ -551,8 +504,8 @@ with **no** soil pixel at all still fails, and so does a unit that claims
 `derive_landsurface_params.py` pads its GLC_FCS30 mosaic with `LC_PAD_SENTINEL`
 so a staging gap can be told from in-tile nodata. The tiles are **uint8 with no
 declared nodata** (`nodatavals == (None,)`), so *any* value in 0-255 can appear
-as raw fill: the previous sentinel 255 was "absent from the legend" and absent
-from the Rio Pelotas tiles, yet 9,277 pixels of the Saar window carry it. The
+as raw fill: the previous sentinel 255 was "absent from the legend", yet some
+tile windows carry it. The
 sentinel is now **300** with the mosaic read as int16 — outside the product's
 dtype, so it is unreachable by construction.
 
@@ -596,16 +549,6 @@ That equals outlet discharge only by accident — any larger neighbouring channe
 inside the window, or a tributary flood peak, silently reports a different cell.
 Pass `--outlet_lat/--outlet_lon` to `generate_wflow_toml.py` to emit a
 `coordinate.x/coordinate.y` column that samples the gauge cell explicitly.
-
-### Chaohe (Partial Test, 2026-03-21)
-
-| Metric | Value |
-|--------|-------|
-| Basin | Chaohe @ Zhangjiaofen (~8,783 km2) |
-| Period | 2005-2006 |
-| Resolution | 0.25 deg (27 cells, 5x7 grid) |
-| wflow mean Q | ~6.7 m3/s |
-| Status | partial_replacement (placeholder soil params) |
 
 ---
 

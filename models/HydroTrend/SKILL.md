@@ -369,7 +369,10 @@ The default test case simulates a Greenland fjord (1000 years, starting 1908) wi
 - Mean annual T ~24.9°C, annual P ~1.24 m/yr
 - BQART sediment formula with lithology=0.3, anthropogenic=1.0
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 Performance is judged against `docs/validation_convention.yaml`; do not replace
 these cited bars with intuition or remembered thresholds. The headline dag
@@ -388,13 +391,6 @@ variable is `Q`.
 For zero-centered `pbias`, apply the bands to absolute percent bias around zero.
 The convention currently lists the `Q` `pbias` bar twice with identical bands;
 keep both entries in sync with `docs/validation_convention.yaml`.
-
-### Reported Run Results Already Documented In This Skill
-
-| Case | Variable | Reported result | Convention context |
-|------|----------|-----------------|--------------------|
-| Low-relief snowmelt-prairie / seasonal gauges, e.g. HYDAT 05EC005 Redwater R, AB | Daily `Q` | zero-lag `r=0.287`, `r=0.53` at +6-day lag, `PBIAS +8%`, `simmax~obsmax`, and structural daily `NSE <= r^2 ~ 0.08` | Use `Q` `pbias` bars from `moriasi2015`; no cited `r` threshold is stated here. |
-| Huai @ Wangjiaba, GloFAS dis24, 30,630 km2, 2003/2007/2018/2020 | Daily `Q` | pooled daily `NSE -0.96 -> 0.73`, `r 0.56 -> 0.86`, `KGE -> 0.86`, `PBIAS 0.8%` after routing attenuation (`L=600 km`, `v=0.6 m/s`) | Use `Q` `nse` bars from `moriasi2007`, `moriasi2015` and `Q` `pbias` bars from `moriasi2015`; no cited `KGE` or `r` threshold is stated here. |
 
 Do not invent validation verdicts for metrics without convention bars. Where the
 convention holds a null band, write `no cited threshold`.
@@ -429,12 +425,10 @@ released the instant air temperature crosses the melt point, with **no snowpack
 cold-content/ripening delay** and **no distributed-melt spreading**. It also has
 no frozen-soil infiltration or depression-storage / fill-and-spill routing.
 
-Consequence at **low-relief snowmelt-prairie / seasonal gauges** (e.g. HYDAT
-05EC005 Redwater R, AB, relief 135 m): the simulated freshet **leads observed by
-a constant ~6 days and is too broad**. Daily Pearson r is therefore capped near
-0.3 (verified: zero-lag r=0.287, but r=0.53 at +6-day lag), so NSE <= r^2 ~ 0.08
-regardless of magnitude calibration — even though mean/variance/peak match
-(PBIAS +8%, simmax~obsmax).
+Consequence at **low-relief snowmelt-prairie / seasonal gauges**: the simulated
+freshet can **lead observed by a few days and be too broad**. Daily Pearson r
+then stays low, and NSE (at most about r^2) stays low regardless of magnitude
+calibration — even when mean/variance/peak match (dt_025).
 
 **Validation guidance:** daily-Q-vs-gauge comparison is reliable only for
 nival or rainfall-dominated basins whose freshet timing is **channel-routing-
@@ -452,10 +446,7 @@ mechanism — the channel travel-time lag in `hydrorain.c` (`distbins`), set by
 defaults (short length / fast velocity, ~3-day spread) storm peaks run 2–5×
 above a network-routed reference (GloFAS/LISFLOOD), giving negative NSE even
 after the mean is calibrated. **Increase L and/or lower v so the spread
-(~L/v ÷ 86400 days) matches the basin concentration time.** Verified on
-**Huai @ Wangjiaba (GloFAS dis24, 30,630 km²)**: `L=600 km, v=0.6 m/s`
-(~12-day spread) lifted pooled daily **NSE −0.96 → 0.73, r 0.56 → 0.86,
-KGE → 0.86, PBIAS 0.8%** across 2003/2007/2018/2020. Set the mean independently
+(~L/v ÷ 86400 days) matches the basin concentration time** (dt_024). Set the mean independently
 via evaporation (lines 26 dry-evap + 26b groundwater-ET α, mm/d) and add
 baseflow damping with a large groundwater store (line 33). See triplet ht_022.
 

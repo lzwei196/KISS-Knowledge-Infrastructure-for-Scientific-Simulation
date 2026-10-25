@@ -101,11 +101,6 @@ The model reads an **XML configuration file** and a **DEM raster**, then outputs
 - Salles, 2016, PLoS ONE, 11(4), e0154295
 - Braun & Willett, 2013, Geomorphology, 170-179
 
-**Validated Real Sites** (see `docs/REFERENCES.md` for full details):
-- Pearl River, MS/LA, USA — 21.5 mm/kyr model vs 21.5 mm/kyr obs (PBIAS=0.0%)
-- Modder River, Free State, ZA — 12.8 mm/kyr model vs 5–20 mm/kyr obs (PBIAS=+2.1%)
-- Multi-site stats: r=0.71, NSE=0.48, KGE=0.51, RMSE=4.9 mm/kyr
-
 **Critical Calibration Insight**: The dominant erosion process depends on relief.
 Low-relief (<200 m): caerial (hillslope diffusion) controls denudation, Kd is irrelevant.
 High-relief (>500 m): Kd (SPL erodibility) controls denudation, caerial is secondary.
@@ -535,7 +530,10 @@ the full file into this body because duplicated remedies drift.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Source of truth**: `docs/validation_convention.yaml`. The field bar for this
 KI is unresolved for the listed headline metrics; all stated null bands are

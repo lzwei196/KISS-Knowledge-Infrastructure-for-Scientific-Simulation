@@ -88,7 +88,7 @@ SFINCS forcing tools are in `tools/s4_forcing/` in this KI:
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-22
 **Stats**: 12 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation**: Step 3 — Bengbu (Huai River) flood test (2026-03-22) — 384x455 cells, 100m, 397s, 6.99m max depth, CaMa-Flood cross-validated. Previous: Chaohe (2026-03-21) — 174x171 cells, 5.7s, 7.29m max depth.
+**Validation**: Step 3 — real-basin flood test; results: see the run records.
 
 ---
 
@@ -119,7 +119,7 @@ Version:          v2.3.2 mt. Faber+ (compiled 2026-03-21)
 Source:           github.com/Deltares/SFINCS main branch (GPL-3.0)
 Build:            gfortran 13.3 + libnetcdff 4.6.0
 Dependencies:     libnetcdff7, libgfortran5, libnetcdf19, libhdf5 (system packages)
-Validated:        Chaohe basin flood test (174x171, 100m, 5.7s, 7.29m max depth) + 50x50 flat test
+Validated:        real-basin flood test (see the run records) + 50x50 flat test
 ```
 
 **To compile from source** (if binary not yet built):
@@ -248,7 +248,10 @@ agents must preserve when building inputs and interpreting outputs.
 
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics - judged against the field's bar, not intuition
 
@@ -269,31 +272,11 @@ reported against an observed inundation mask, with satisfactory >= `0.5`
 `0.8` (`wing2018`, `wing2021`). If no independent observation exists, report a null
 metric with the reason rather than substituting a proxy score.
 
-### Chaohe Basin Flood Test (2026-03-21)
-- **Domain**: 174x171 cells at 100m resolution, downstream Chaohe basin (40.50-40.65N, 116.60-116.80E)
-- **Event**: Aug 2-12, 2008 monsoon rainfall (88.7mm total; in this early test the CMFD rain came through VIC forcing files — that reader was removed on 2026-10-02, use `--source cmfd`)
-- **DEM**: China DEM 90m, elevation range 143-1387m
-- **Runtime**: 5.7 seconds (OpenMP, 4 threads)
-- **Max flood depth**: 7.29m (valley bottoms)
-- **Flood volume**: 37.9 million m3
-- **Flooded area**: 1,887 cells with depth >0.3m
-- **Physical validation**: Water accumulates along NE-SW trending valleys matching terrain structure
-- **Bugs found**: 6 (err_006 through err_010 + err_004), all fixed and promoted to triplets dt_v001-dt_v006
-- **Key lesson**: First real-basin run exposed 3 FATAL bugs (ind format, precip column, time offset) and 1 SILENT bug (mask=2 draining inland terrain) that the 50x50 synthetic test did not catch
+### Lesson from past runs (rule)
 
-### Bengbu (Huai River) Flood Test (2026-03-22) — Step 3 Validation
-- **Domain**: 384x455 = 174,720 cells at 100m resolution, Huai River floodplain near Bengbu city (32.7-33.1N, 117.1-117.5E)
-- **Event**: July 2003 monsoon flood (390mm total rainfall; CMFD rain came through VIC forcing files in this early test — that reader was removed on 2026-10-02, use `--source cmfd`)
-- **DEM**: China DEM 90m, elevation range 3.5-310.2m (river channel to hills)
-- **Runtime**: 397 seconds (OpenMP, 4 threads)
-- **Max flood depth**: 6.99m (river channel depressions)
-- **Flood volume**: 701 million m3
-- **Flooded area**: 44,933 cells with depth >0.3m; 27,107 cells >1.0m; 2,179 cells >3.0m
-- **Mass balance**: rain volume 681M m3, stored volume 701M m3 (ratio 1.03 — excellent conservation)
-- **CaMa-Flood comparison**: CaMa max flood depth at same location/period = 8.17m at 15-arcmin resolution, consistent with SFINCS 6.99m at 100m resolution. CaMa peak discharge = 6,790 m3/s (confirms major flood event)
-- **Validation criteria**: All 5 criteria PASS — (1) non-zero flood depth, (2) max < 20m, (3) water in low areas, (4) no NaN, (5) positive flood volume
-- **Bugs found**: 2 new bugs (err_011: extract tool used zsmax instead of hmax, err_012: generate_sfincs_inp used netprecipfile instead of precipfile)
-- **Key insight**: The 2003 Huai River flood was one of the worst in the period — 390mm in July produced extensive floodplain inundation. SFINCS results are physically consistent with both CaMa-Flood coarse routing and historical records. This validates SFINCS with real HydroCraft data at a different basin, climate zone (humid subtropical), and terrain (lowland floodplain vs Chaohe mountainous).
+- A small synthetic test (e.g. a 50x50 flat grid) did not catch the `sfincs.ind` format bug or
+  the mask=2 inland-drain bug. Run one real domain before trusting new or changed tools
+  (dt_v001, dt_v005; the current rules are dt_v023 and dt_v021).
 
 ---
 
@@ -311,32 +294,29 @@ SFINCS emits `hmax` (max water depth), `zsmax`/`zs` (water surface elevation),
 **How to score against a stage gauge WITHOUT making it circular** (added 2026-08-05).
 Forcing SFINCS with the discharge measured AT the gauge and then scoring the water
 level at that same gauge is self-referential — the 2026-08-02 reviewer audit rejected
-exactly that (`r = 0.954 by construction`). Use TWO stations on the same river:
+exactly that. Use TWO stations on the same river:
 `hydat_to_sfincs_boundary.py --flow_station <UPSTREAM Q gauge> --obs_stations <DOWNSTREAM stage gauge>`.
 The model then has to turn an inflow hydrograph into a stage through its own
 bathymetry, roughness and momentum — a real hydrodynamic test.
 
 **Two stations is NECESSARY but NOT SUFFICIENT** (amended 2026-08-05, dt_v024). The
-downstream gauge must add INFORMATION, not just a different station name. On the Fraser
-Hope -> Agassiz reach the two-station rule was followed exactly and still produced a
-degenerate score: with no unforced tributary between them and +0.5% drainage area,
-`r(Q_08MF005, h_08MF035) = 0.9939/0.9950`, and a zero-hydraulics power-law rating
-`h = 0.0311*Q^0.577 + 10.314` fitted on 2021 scored **NSE 0.9993** on 2022 — above
-SFINCS's own 0.9744. The metric measured the rating curve, not the hydraulics.
+downstream gauge must add INFORMATION, not just a different station name. With no unforced
+tributary between the two gauges and almost the same drainage area, the downstream stage is
+a near-monotone transform of the upstream discharge: a zero-hydraulics power-law rating
+`h = a*Q^b + c` fitted on the calibration period can score a higher NSE on the validation
+period than SFINCS itself. The metric then measures the rating curve, not the hydraulics.
 Before scoring, run:
 `tools/s9_validation/screen_obs_independence.py --dis_file … --candidates <id:levels_csv> --cal_period … --val_period … --sim_his …`
 It exits NON-ZERO on a degenerate target. Reject any candidate with `r(BC, obs) > 0.95`
 or `NSE_model <= NSE_naive`, and quote `information_gain = NSE_model - NSE_naive`
 next to every headline number. Prefer a target the BC does not determine: a gauge below
-an unforced tributary confluence (Fraser: add `--flow_station 08MF005,08MG013` — Harrison
-River, 7890 km², up to 1280 m³/s — and score in the Harrison system), a multi-gauge
-longitudinal water-surface profile (08MF072/08MF074/08MF035), an off-channel floodplain
+an unforced tributary confluence (force the tributary too: `--flow_station` takes a comma
+list), a multi-gauge longitudinal water-surface profile, an off-channel floodplain
 gauge, or the dag's flood-hazard target (`hmax`/extent vs a SAR mask, scored with CSI).
 If nothing survives the screen, report a NULL metric with reason
 `no_independent_obs_target` — never a degenerate number.
-Also keep `qinf` BELOW the mean precipitation intensity: this run set `qinf = 1.0 mm/hr`
-against a mean MSWX rainfall of 0.1495 mm/hr (6.7x), which deletes the pluvial term
-entirely and leaves the prescribed hydrograph as the sole driver. The screen warns on this.
+Also keep `qinf` BELOW the mean precipitation intensity: a higher `qinf` deletes the pluvial
+term entirely and leaves the prescribed hydrograph as the sole driver. The screen warns on this.
 
 **Datum registration is mandatory for `zs`** (the dag caveat 'requires shared datum').
 HYDAT levels are metres in the station's OWN vertical datum (`STATIONS.DATUM_ID` ->
@@ -348,8 +328,7 @@ SURVEY OF CANADA DATUM -> 605 CGVD2013:EPOCH2010, +0.163 m) and then the CGVD201
 geoid step via PROJ (+0.244 m to EGM2008 here), and FAILS if no chain exists.
 The dag sets detrending_options: ['none'] for point_zs, so an obs-FITTED offset is a calibrated
 parameter: it disqualifies the period it was fitted on from being reported as a metric. A fitted
-offset far larger than the metadata conversion (Fraser 2026-08-05: 1.4035 m fitted vs 0.4073 m
-metadata total — 3.4x, or 8.6x the 0.163 m HYDAT gauge-datum step alone) is absorbing GLO-30's
+offset far larger than the metadata conversion is absorbing GLO-30's
 missing channel bathymetry, not registering a datum.
 
 | Surveyed high-water marks | `hmax` / `zsmax` | `magnitude_accuracy` (PBIAS) | — |
@@ -364,8 +343,8 @@ to you as the observation.
 
 **Greenland/Antarctic domains currently have no scoreable flood obs on this server**,
 and the KI has no ice/snow-melt source term (s4 offers rainfall and CaMa-Flood
-discharge only; CaMa-Flood has no Greenland domain), so melt-driven events such as the
-11 July 2012 Watson River flood can only be run pluvial-only.
+discharge only; CaMa-Flood has no Greenland domain), so melt-driven events
+can only be run pluvial-only.
 
 ---
 
@@ -487,11 +466,10 @@ File sizes MUST be `dep = man = n_active*4`, `msk = n_active`, `ind = (n_active+
 Until 2026-08-05 the KI wrote full `nmax*mmax` grids in **C order with row 0 = NORTH**
 for all four. SFINCS reads exactly `n_active` values from each file, so it consumed the
 top strip of the raster as if it were the compressed array — the simulated domain was a
-scrambled, upside-down fragment, with **no error message**. Measured on a 345×285 Fraser
-domain: 25,067 active cells written, **5,406 read**, and every `msk=3` outflow cell lost;
-observation points returned `point_zb = -999` and `point_zs` all-NaN, and `hmax` was
-uniformly +9999. This is the mechanism behind the Chaohe record's
-`flooded_cells == total_cells == 29754, flood_fraction = 1.0`.
+scrambled, upside-down fragment, with **no error message**. Signs: far fewer cells read
+than written, every `msk=3` outflow cell lost, observation points return `point_zb = -999`
+and `point_zs` all-NaN, `hmax` uniformly +9999, or every cell reported flooded
+(`flooded_cells == total_cells`, `flood_fraction = 1.0`).
 
 Write with `build_sfincs_topobathy.py` (fixed) and read back with its
 `read_binary_map(topobathy_dir, nmax, mmax)` helper — never `np.fromfile(...).reshape(nmax, mmax)`.
@@ -710,7 +688,7 @@ Triplets covering 8 failure domains (current count: the KI map at the top of thi
 | dt_019 | **silent** | io_path | Mask all zeros -> output all zeros |
 | dt_020 | fatal | parameter | Manning's n < 0.01 -> CFL instability |
 
-### Validated triplets (dt_v001 to dt_v006) — from Chaohe basin test
+### Validated triplets (dt_v001 to dt_v006) — from the first real-basin test
 
 | ID | Severity | Domain | Summary | Error Log |
 |----|----------|--------|---------|-----------|
@@ -719,14 +697,14 @@ Triplets covering 8 failure domains (current count: the KI map at the top of thi
 | dt_v005 | **silent** | boundary_condition | mask=2 drains inland terrain at 0m water level | err_010 |
 | dt_v006 | degraded | runtime | gfortran SIGABRT after "Simulation finished" — output valid | err_004 |
 
-### Validated triplets (dt_v007 to dt_v008) — from Bengbu flood test
+### Validated triplets (dt_v007 to dt_v008) — from a second real-basin test
 
 | ID | Severity | Domain | Summary | Error Log |
 |----|----------|--------|---------|-----------|
 | dt_v007 | **silent** | variable_selection | extract_sfincs_results used `zsmax` (water surface elevation) instead of `hmax` (water depth) — flood depths 310m instead of 7m | err_011 |
 | dt_v008 | **silent** | config_generation | generate_sfincs_inp wrote `netprecipfile` but ASCII precip needs `precipfile` — silently falls back to no precipitation | err_012 |
 
-### Validated triplets (dt_v016 to dt_v020) — from the Kangerlussuaq / Watson River test (2026-08-02)
+### Validated triplets (dt_v016 to dt_v020) — from a real-domain test (2026-08-02)
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -774,7 +752,7 @@ models/SFINCS/knowledge_infrastructure/
   docs/
     s1_domain_skill.md ... s8_postprocess_skill.md
   diagnostics/
-    triplets.yaml                 # diagnostic triplets (first 20 from dissection + 6 from Chaohe validation; count: KI map)
+    triplets.yaml                 # diagnostic triplets (first 20 from dissection + 6 from the first real-basin test; count: KI map)
     error_log.yaml                # 10 error log entries (6 promoted to triplets)
 
 model/sfincs/

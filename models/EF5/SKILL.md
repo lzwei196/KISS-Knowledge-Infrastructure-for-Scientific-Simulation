@@ -542,7 +542,10 @@ This subsection restates the KI's `dag.yaml` output facts. If this body and
 
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 The KI body does not claim a completed validation campaign. Its current validation
 status is `source_dissected`: the binary executes end-to-end at prepared sites, while
@@ -566,12 +569,12 @@ The headline dag output is:
 
 ### Performance metrics
 
-| Metric | Calibration | Validation | Full period | Bar (convention, cited) |
-|--------|-------------|------------|-------------|-------------------------|
-| NSE for `discharge` | pending | pending | pending | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
-| PBIAS for `discharge` | pending | pending | pending | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
-| CSI for `discharge` flood events | pending | pending | pending | no cited threshold |
-| NSE for `swe` | pending | pending | pending | no cited threshold |
+| Metric | Achieved values | Bar (convention, cited) |
+|--------|-----------------|-------------------------|
+| NSE for `discharge` | see run records | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
+| PBIAS for `discharge` | see run records | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
+| CSI for `discharge` flood events | see run records | no cited threshold |
+| NSE for `swe` | see run records | no cited threshold |
 
 ### Data replacement tracking
 

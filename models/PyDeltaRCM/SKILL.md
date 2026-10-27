@@ -384,7 +384,10 @@ Example: 1 year of model time at If=0.05 represents 20 years of real time.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 This section restates `docs/validation_convention.yaml` and `knowledge_infrastructure.yaml`; do not substitute remembered thresholds. The convention file wins for pass bands, and null bands are written as `no cited threshold`.
 

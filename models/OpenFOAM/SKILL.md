@@ -70,7 +70,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Source | https://github.com/OpenFOAM/OpenFOAM-dev |
 | Tools | see the KI map at the top of this file |
 | Diagnostic Triplets | see the KI map at the top of this file (20 general + 12 ocean/storm-surge when this table was written) |
-| Validation | cavity tutorial; Hurricane Laura 2020 IB barometric (NSE=0.51, R=0.84 @ Grand Isle) |
+| Validation | cavity tutorial; real-case results: see the run records |
 
 ---
 
@@ -426,7 +426,6 @@ It is NOT appropriate for basin-scale ocean/storm surge domains (>100 km horizon
 - Fields: h (depth), hU (depth-integrated velocity), h0 (bed topography)
 - Typical dt = 0.5 × dx / √(g·h) = 0.5 × 4886 / √(9.81×40) = 123s → 4320 steps for 5 days
 - Barometric forcing: set h0(x,y,t) = −(p_atm − p_ref)/(ρ·g) (inverted barometer)
-- Reference performance: IB-only gives NSE=0.51, R=0.84 vs NOAA obs @ Grand Isle for Laura 2020
 
 ### dk_011: libparallel.so Must Be Built Before decomposePar
 When building individual OpenFOAM utilities (not running Allwmake), the dependency
@@ -500,7 +499,10 @@ With uniform domain-averaged forcing: the IB rise and p_rgh change cancel → η
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 This section restates the KI's validation facts and `docs/validation_convention.yaml`
 convention bars. A missing/null convention band is written as "no cited threshold";
@@ -511,7 +513,6 @@ no threshold is inferred.
 | Case | Metric / result | Location | Notes |
 |------|-----------------|----------|-------|
 | cavity tutorial | not supplied in extracted facts | not supplied in extracted facts | Listed in the KI validation summary. |
-| Hurricane Laura 2020 IB barometric | NSE=0.51, R=0.84 | Grand Isle | Listed in the KI validation summary. |
 
 ### Performance Metrics -- judged against the field's bar, not intuition
 
@@ -526,13 +527,6 @@ validation-convention facts. The available convention bars supplied by the KI ar
 | `U` | scatter_index | minimize | no cited threshold (hydro_guidance2017) | no cited threshold (hydro_guidance2017) | 0.5 (hydro_guidance2017) |
 | `p` | nse | maximize | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) |
 | `p` | comparison_error | minimize | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) |
-
-### Achieved Metrics Against Convention Bars
-
-| Case | Metric | Achieved | Convention bar |
-|------|--------|----------|----------------|
-| Hurricane Laura 2020 IB barometric | NSE | 0.51 | `p` nse has no cited threshold (no citation key in convention). |
-| Hurricane Laura 2020 IB barometric | R | 0.84 | no convention bar supplied in extracted facts. |
 
 ### Data Replacement Tracking
 

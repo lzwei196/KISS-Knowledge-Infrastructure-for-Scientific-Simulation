@@ -184,7 +184,7 @@ S3 (met)  ──┼──> S5 (control file) ──> S6 (run) ──> S7 (parse)
 S4 (rain) ──┘
 ```
 
-> **S1 MESH — RESOLVED 2026-06-21 (run 05GA008 Sounding Creek):** `tools/build_tribs_mesh.py` builds the `.points` mesh (OPTMESHINPUT=1) by wrapping pytRIBS.
+> **S1 MESH — RESOLVED 2026-06-21:** `tools/build_tribs_mesh.py` builds the `.points` mesh (OPTMESHINPUT=1) by wrapping pytRIBS.
 > **S2 SPATIAL MAPS — RESOLVED 2026-06-21:** `tools/build_tribs_spatial_maps.py`
 > builds the basin-specific `.soi`/`.lan`/`.iwt` rasters (distributed mode) by
 > wrapping pytRIBS `SoilProcessor.create_soil_map`/`write_soil_table`/
@@ -211,7 +211,7 @@ S4 (rain) ──┘
 > **DOMAIN VALIDITY — basin-suitability gate (READ before choosing a verifier gauge):**
 > tRIBS is a *continuous, fully-distributed* model whose runoff is generated and
 > routed over a **D8 contributing drainage network**. It is INVALID — discharge
-> metrics are structurally poor (r<0.5) regardless of tools or calibration — on
+> metrics are structurally poor regardless of tools or calibration — on
 > basins where the delineated (gross) area badly overestimates the *effective*
 > contributing area, or where flow is ephemeral / zero-dominated. Before trusting
 > metrics, require ALL of:
@@ -220,13 +220,11 @@ S4 (rain) ──┘
 >     non-contributing / fill-and-spill / prairie-pothole terrain);
 >   - humid-to-subhumid foothill / mountain morphology (the happy_jack / big_spring
 >     benchmark regime), NOT semi-arid prairie.
-> If a target gauge fails these, **remap the verifier obs to a native-domain HYDAT
+> If a target gauge fails these, **remap the verifier obs to a native-domain
 > gauge** (perennial, fully-contributing foothill/mountain catchment) and stop
 > retrying — null/poor metrics there are a domain-validity issue, not a KI defect.
-> **DO NOT use HYDAT 05GA008 Sounding Creek nr Oyen AB for metric validation:**
-> semi-arid Palliser-Triangle ephemeral prairie stream, gross ~2990 km² vs effective
-> contributing ~580 km² (~5× non-contributing pothole terrain). It is a valid
-> end-to-end *setup* smoke-test for the S1/S2 tools but NOT a metric benchmark.
+> A gauge that fails the gate can still serve as an end-to-end *setup* smoke-test
+> for the S1/S2 tools, but NOT as a metric benchmark.
 > (S2 build_tribs_spatial_maps.py is API-verified against pytRIBS 0.5.0 but not yet
 > run end-to-end; validate it on the remapped contributing-area gauge. In
 > --soil-mode local it expects sand/clay in g/kg, not percent.)
@@ -503,7 +501,7 @@ python parse_tribs_output.py --input output/ --output results/
 
 ---
 
-## 11A. Validated Results (sourced from validation convention)
+## 11A. Validation Status (sourced from validation convention)
 
 This KI grades model skill against `docs/validation_convention.yaml`, not
 against intuition. The convention bars below are the sourced validation bars
@@ -530,9 +528,8 @@ kinematic-wave channel routing.
 | Total evapotranspiration (EvpTtrs / EvapoTranspiration) | bias | zero_centered | no cited threshold | no cited threshold | abs(BIAS) <= 10.0 (sivandran2013) | sivandran2013 |
 | Total evapotranspiration (EvpTtrs / EvapoTranspiration) | rmse | minimize | no cited threshold | no cited threshold | RMSE <= 50.0 (sivandran2013) | sivandran2013 |
 
-No achieved performance metrics or data replacement status values were included
-in the extracted KI facts for this edit. Do not invent them in `SKILL.md`; run
-the validation stage and then restate the generated results exactly.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ---
 

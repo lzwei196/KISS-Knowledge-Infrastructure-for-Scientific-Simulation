@@ -246,9 +246,9 @@ inputs:
 outputs:
   primary:
   - name: streamflow
-    unit: m/day (depth per unit basin area)
-    description: Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow *
-      basin_area / 86400.
+    unit: mm/day
+    description: Total basin streamflow as water depth per area (basin.daily writes astreamflow x 1000,
+      output_basin.c:446); convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400.
     validation_rank: 1
     emitted_in: basin daily output
     observability:

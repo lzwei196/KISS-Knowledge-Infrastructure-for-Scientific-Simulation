@@ -453,7 +453,7 @@ anyway`.
 `run_hydromt_build.py` used to default `dem_path` to `china_dem_90m.tif`. On any
 non-China basin every sample is nodata, the gap fill has no donor, and the tool
 fell through to a **flat 500 m placeholder** — `Slope` and `RiverSlope` then
-collapse to the 1e-4 floor and kinematic-wave celerity is set by that floor
+collapse to the slope floor and kinematic-wave celerity is set by that floor
 instead of the terrain. wflow runs; the hydrograph is simply wrong.
 
 The DEM is now resolved per basin: `--dem_path` > config `data.dem_path` > auto
@@ -473,7 +473,7 @@ The auto-resolution of the elevation source (`_resolve_dem_path` /
 `_sample_dem` in `run_hydromt_build.py`) was reverted once, leaving the old hard default to
 `china_dem_90m.tif`. On a non-China basin every sample then comes back nodata, the
 nearest-neighbour gap fill has no donor, and the build carries on over a uniform
--9999 surface — `DEM sampled: -9999 - -9999 m`, and `RiverSlope` sits on the area-based slope floor (`_slope_floor`) in every cell instead of on the terrain.
+-9999 surface — `DEM sampled: -9999 - -9999 m`, and `RiverSlope` sits on the area-based slope floor (`_slope_floor`) in every cell instead of on the terrain (coarse-D8 path; with `--merit_hydro_dir` and the MERIT `elv` tiles staged, RiverSlope is taken from the MERIT-Hydro sub-grid channel profile instead, except cells that fall back to the coarse drop; the `RiverSlope (...)` build-log line names the method used).
 
 **Read the `DEM sampled from ...` line every single run.** It must name a real
 source and report `N/N cells valid` with a plausible elevation range. If it says

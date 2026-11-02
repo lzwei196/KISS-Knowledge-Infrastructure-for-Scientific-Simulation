@@ -396,10 +396,6 @@ This section restates `docs/validation_convention.yaml` and `knowledge_infrastru
 | Source | Field | Value |
 |--------|-------|-------|
 | `knowledge_infrastructure.yaml` | validation tier | `validated` |
-| `knowledge_infrastructure.yaml` | tier justification | `measured: NSE=1.000, KGE=0.999, R=1.000, 2 scorecard(s)` |
-| `knowledge_infrastructure.yaml` | best_nse | `0.99999` |
-| `knowledge_infrastructure.yaml` | best_kge | `0.999` |
-| `knowledge_infrastructure.yaml` | best_r | `0.99999` |
 
 ### Performance Metrics - Convention Bars
 
@@ -577,8 +573,8 @@ Length: 5000
 Width: 10000
 SLR: 5e-9
 # Note: SLR is in m/s of model time. With If=0.05:
-# Real rate = 5e-9 m/s * 86400 s/day * 365.25 day/yr / If
-#           = 3.15 mm/yr real-world equivalent
+# Real rate = 5e-9 m/s * 86400 s/day * 365.25 day/yr * If
+#           = about 7.9 mm/yr real-world equivalent
 ```
 
 ---

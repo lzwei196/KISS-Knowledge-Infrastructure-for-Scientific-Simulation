@@ -66,7 +66,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Developer**: Wageningen University and Research (WUR), The Netherlands
 **Last updated**: 2026-03-28
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status**: `analytic` (Hupselbrook, NL, 2002-2004) + `real-case` (FLUXNET US-Ne1, 2001-2013)
+**Validation status**: `analytic` (Hupselbrook, NL, 2002-2004) + `real-case` (see the run records)
 
 ---
 
@@ -138,13 +138,12 @@ Reproduced bit-for-bit 2026-08-11 through `tools/run_swap.py` + `tools/parse_swa
 (0.8 s, balance deviation 0.00 cm). NOTE: the binary exits with code **100** on success — see
 Critical Domain Knowledge #9.
 
-**Second validated site (2026-08-11)**: FLUXNET2015 **US-Ne1** (irrigated maize, Mead NE,
-41.1651 N / -96.4766 E), 2001-2013, NASA POWER daily forcing + HWSD soil, full pipeline
-s1-s7 through the KI tools. Uncalibrated daily ET vs eddy-covariance:
-r 0.76 / KGE -0.12 / NSE -1.14 / PBIAS +48% against `LE_F_MDS`, and
-r 0.75 / KGE 0.36 / NSE -0.13 / PBIAS +17.6% against energy-balance-corrected `LE_CORR`.
-Water balance closes to 0.0 mm over 4383 d. The residual bias is over-irrigation from the
-shipped `maizes.crp` scheduling defaults (dt_023), not a forcing/unit error.
+**Irrigated sites (dt_023)**: if SCHEDULE is switched to 1 in `maizes.crp` (shipped as 0), its
+shipped scheduling block (TCS=1, TREL=0.95) irrigates whenever Tact/Tpot drops below 0.95, which
+can cause over-irrigation and push simulated ET above flux-tower ET.
+Compare annual irrigation with the site record before blaming forcing or units. Part of an
+ET gap against FLUXNET `LE_F_MDS` can be the eddy-covariance energy-balance closure gap;
+also compare against `LE_CORR`.
 
 ---
 
@@ -414,7 +413,10 @@ variable `salinity`, `standard_name = sea_water_salinity`, dims (time, depth, la
 
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Hupselbrook, Netherlands
 
@@ -434,27 +436,6 @@ Water balance for 2002:
 | Transpiration | 38.17 cm |
 | Soil evaporation | 16.69 cm |
 | Drainage | 22.11 cm |
-
-### FLUXNET2015 US-Ne1
-
-| Property | Value |
-|----------|-------|
-| Site | US-Ne1, irrigated maize, Mead NE |
-| Location | 41.1651 N / -96.4766 E |
-| Period | 2001-2013 |
-| Inputs | NASA POWER daily forcing + HWSD soil |
-| Pipeline | Full s1-s7 through the KI tools |
-| Water balance closure | 0.0 mm over 4383 d |
-
-Uncalibrated daily ET against eddy-covariance observations:
-
-| Observation target | r | KGE | NSE | PBIAS |
-|--------------------|---|-----|-----|-------|
-| `LE_F_MDS` | 0.76 | -0.12 | -1.14 | +48% |
-| `LE_CORR` | 0.75 | 0.36 | -0.13 | +17.6% |
-
-The residual bias is over-irrigation from the shipped `maizes.crp` scheduling defaults
-(`dt_023`), not a forcing/unit error.
 
 ### Performance Metrics — judged against `docs/validation_convention.yaml`
 

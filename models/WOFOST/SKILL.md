@@ -274,13 +274,10 @@ print(f"Final DVS: {df['DVS'].iloc[-1]:.2f}")
 - **RAIN unit is context-dependent** -- In a **CSVWeatherDataProvider CSV the RAIN column is mm/day** (PCSE divides it by 10 -> cm internally); only the *internal model variable* / a hand-built WeatherDataContainer use cm/day. Writing the CSV in cm makes rainfall 10-100x too low -> drought-stressed crop, low yield. Ground truth: create_csv_weather_file.py docstring + dt_004.
 - **VAP is kPa, NOT hPa or mbar** — Vapor pressure must be in kPa. 1 kPa = 10 hPa = 10 mbar.
 
-### Validated Results — Bengbu (March 2026 run, DB crop params)
-| Crop | WOFOST | DSSAT | AquaCrop |
-|------|:---:|:---:|:---:|
-| Winter wheat | **3,543 kg/ha** | 3,217 | 6,307 |
-| Grain maize | **6,102 kg/ha** | 5,780 | 14,281 |
+### Validation Status
 
-WOFOST matches DSSAT within 10% for both crops with default parameters.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### ⚠️ Validating against FAOSTAT NATIONAL yields — scale/trend mismatch (added 2026-06-08)
 Point or few-point WOFOST runs compared to a FAOSTAT NATIONAL yield series are a **domain/scale mismatch**, not a fair skill test. The national aggregate is spatially smoothed across many agro-climates, partly irrigated, and rises on a multi-decade technology trend (improved hybrids, fertiliser, management). A fixed-parameter, weather-driven point sim has far higher interannual variance (drought-year crop failures -> TWSO≈0; wet years -> high yield) than the buffered national mean, so **raw NSE/KGE are intrinsically very negative and raw r is low regardless of model quality.**
@@ -290,11 +287,9 @@ Point or few-point WOFOST runs compared to a FAOSTAT NATIONAL yield series are a
 - Otherwise **detrend BOTH series and report detrended r** as the skill metric (removes the technology trend the model cannot reproduce).
 - Pick a **rainfed semi-arid country+crop in WLP_FD** to maximise the weather-driven signal.
 
-**Empirical anchor (Morocco wheat, 3 points, 1985-2024, WLP_FD, fixed Nov sowing, default Winter_wheat_107):** raw r=0.278, **detrended r=0.287** — i.e. detrending does NOT lift this case above the 0.5 skill threshold. The residual gap is structural (point-vs-national aggregate) + uncalibrated fixed-calendar agromanagement (Mediterranean wheat sowing follows the autumn rains, not a fixed date), which is **calibration / human-engineering territory, not a KI artifact bug.** Do not treat a low r on a point-vs-national comparison as a forcing/physics failure.
+Even after detrending, a point-vs-national comparison can stay below the 0.5 skill threshold. The residual gap is structural (point-vs-national aggregate) + uncalibrated fixed-calendar agromanagement (Mediterranean wheat sowing follows the autumn rains, not a fixed date), which is **calibration / human-engineering territory, not a KI artifact bug.** Do not treat a low r on a point-vs-national comparison as a forcing/physics failure.
 
 > **CANONICAL TOOL (added 2026-06-08):** Use `tools/s8_yield_analysis/validate_against_faostat.py SIM_CSV CROP COUNTRY OUT_JSON [UNITS]` for FAOSTAT-national validation. It is **obs_shape-aware**: it classifies the comparison as `regional_aggregate_time_series` and reports ONLY the dag-valid metric families — `magnitude_accuracy` (pbias, decadal_mean_pbias, mean_abs_pct_err) and `trend_match` (detrended r, first-difference r, trend-slope ratio). Raw NSE/r/KGE are relegated to an `invalid_for_obs_shape` block (the pre-retry gate REJECTs them as `REJECT_WRONG_METRIC` if reported as the verdict — see triplet dt_faostat_obs_shape). SIM_CSV needs columns `year,sim_tha`. The other s8 tools (compute_gridded_yield / compare_wofost_dssat / generate_yield_map) remain for gridded/cross-model work.
->
-> **Validated reference (USA Corn Belt maize, 3-pt avg, PP mode, 1991-2023, default Grain_maize_205):** magnitude_accuracy pbias +6.6% (decadal +3.4%); trend_match detrended r=0.506, first-diff r=0.611. This PASSES under the correct framing — raw NSE=-1.4/r=0.09 are structurally meaningless for this obs_shape and must NOT be the verdict.
 
 ### Performance Metrics — Convention Bars
 
@@ -320,11 +315,11 @@ Point or few-point WOFOST runs compared to a FAOSTAT NATIONAL yield series are a
 | Variety | TSUM1 | TSUM2 | Best for | Yield range |
 |---------|-------|-------|----------|-------------|
 | Grain_maize_201 | 750 | 859 | Short season, N Europe | Low at 32°N |
-| Grain_maize_204 | 855 | 900 | Medium season, C Europe / China | Good for Bengbu |
-| Grain_maize_205 | 900 | 1000 | Long season, NE China / US Corn Belt | Best for Harbin |
+| Grain_maize_204 | 855 | 900 | Medium season, C Europe / China | Good at ~33°N |
+| Grain_maize_205 | 900 | 1000 | Long season, NE China / US Corn Belt | Best at ~46°N |
 
 ### Spring Wheat Note
-PCSE has no dedicated spring wheat variety. Use `Winter_wheat_107` (VERNSAT=5 days, effectively spring type) for spring-sown sites like Harbin.
+PCSE has no dedicated spring wheat variety. Use `Winter_wheat_107` (VERNSAT=5 days, effectively spring type) for spring-sown sites.
 
 ### 2. Vernalization for Winter Crops
 - Winter wheat/barley REQUIRE vernalization parameters: VERNSAT (days), VERNBASE (base temp), VERNDVS (DVS to force-stop vernalization).
@@ -424,10 +419,9 @@ backwards and held the large fix hostage to the small one):
 
 1. **Now: point this tool at `ki_tools_common.soil_utils.saxton_rawls` as it stands.** Map
    `wilting_point`→`SMW`, `field_capacity`→`SMFCF`, `saturation`→`SM0`, and correct the
-   `pedotransfer_wosten` citation. Measured effect: re-running C01 rainfed through PCSE with each
-   soil moved yield by **+10.5% / +42.1% / 0%** across three seasons. That is the bulk of the error.
-2. **Separately, not blocking (1): upgrade the canonical function itself.** It is worth a further
-   3–5% at that cell — real, but do not delay (1) for it. The genuine continuous Saxton & Rawls
+   `pedotransfer_wosten` citation. That step fixes the bulk of the error.
+2. **Separately, not blocking (1): upgrade the canonical function itself.** It is worth a smaller
+   further gain — real, but do not delay (1) for it. The genuine continuous Saxton & Rawls
    (2006) already exists in the library in at least six copies, e.g.
    `DSSAT/.../convert_hwsd_to_sol.py::saxton_rawls` and
    `SWAT_Plus/.../s4/hwsd_to_swatplus_soil.py::saxton_rawls_awc` (the same correct equations).
@@ -451,8 +445,7 @@ clay 15–26% all return the same values, stepping at clay 27%.
 (`SMW < SMFCF < SM0`) and a porosity ceiling. All three hold at half-scale. Ordering checks cannot
 detect a uniform bias — a range check against texture class is needed.
 
-**Impact on the record**: this voided the C01 stage-1 WOFOST-vs-DSSAT comparison; see
-`KISSPATH_DATA/System1/offline/huai_scaleup/C01_STAGE1_FINDINGS.md`. Any past WLP result built with
+**Impact on the record**: any past WLP result built with
 this tool should be treated as run on a too-dry soil until re-run.
 
 ---

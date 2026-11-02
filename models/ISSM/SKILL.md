@@ -62,15 +62,12 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-30
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status**: `synthetic_only` — only the SquareIceShelf/SquareSheet
-NightlyRun benchmarks have been executed (`_work/ISSM/issm_run_test{101,201,301}.py`,
-domain `Square.exp` is a 5-point square, not a real glacier).
+**Validation status**: `synthetic_only` (SquareIceShelf/SquareSheet
+NightlyRun benchmarks; domain `Square.exp` is a 5-point square, not a real glacier).
 **Real-site validation**: NOT DONE. Before claiming a real-site result, fetch
 BedMachine geometry + MEaSUREs surface velocity for a chosen target
 (e.g. Pine Island Glacier, Thwaites, Jakobshavn) and use
-`tools/convert_geometry_to_issm.py` to build a real `md` from them. Today
-the KI's `outputs/` and `_work/ISSM/` contain no real-glacier mesh,
-geometry, friction, or velocity data.
+`tools/convert_geometry_to_issm.py` to build a real `md` from them.
 
 ---
 
@@ -564,18 +561,18 @@ Triplets covering 5 failure domains (current count: the KI map at the top of thi
 
 ---
 
-## Validated Results (template section 11)
+## Validation Status (template section 11)
 
-**Current validation status**: `synthetic_only`. The KI has executed only the
-SquareIceShelf/SquareSheet NightlyRun benchmarks in
-`_work/ISSM/issm_run_test{101,201,301}.py`; the `Square.exp` domain is a
-5-point square, not a real glacier. Real-site validation is not done.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
+
+**Current validation status**: `synthetic_only` (SquareIceShelf/SquareSheet
+NightlyRun benchmarks; the `Square.exp` domain is a 5-point square, not a real
+glacier). Real-site validation is not done.
 
 Before claiming a real-site result, fetch BedMachine geometry and MEaSUREs surface
 velocity for a glaciated target such as Pine Island Glacier, Thwaites, or Jakobshavn,
-then use `tools/convert_geometry_to_issm.py` to build a real `md`. The current
-`outputs/` and `_work/ISSM/` contents contain no real-glacier mesh, geometry,
-friction, or velocity data.
+then use `tools/convert_geometry_to_issm.py` to build a real `md`.
 
 ### Convention Bars from `docs/validation_convention.yaml`
 

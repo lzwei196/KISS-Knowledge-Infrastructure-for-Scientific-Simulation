@@ -252,11 +252,11 @@ Read `diagnostics/triplets.yaml` on any error. These five real IDs cover the mos
 | `stage` | nse | maximize | satisfactory >= 0.50 (`moriasi2007`, `roth2016`); good >= 0.65 (`moriasi2007`, `roth2016`); very good >= 0.75 (`moriasi2007`, `roth2016`) | no field-stage body result recorded here |
 | `stage` | pbias | zero_centered | satisfactory = no cited threshold; good = no cited threshold; very good = no cited threshold | no field-stage body result recorded here |
 | `depth` | nse | maximize | satisfactory >= 0.50 (`moriasi2007`, `roth2016`); good >= 0.65 (`moriasi2007`, `roth2016`); very good >= 0.75 (`moriasi2007`, `roth2016`) | no field-depth body result recorded here |
-| `stage (analytical-benchmark centerline)` | nse | maximize | no cited threshold in convention for analytical centerline stage | best_nse=0.9999775984887547 |
-| `stage (analytical-benchmark centerline)` | kge | maximize | no cited threshold in convention for analytical centerline stage | best_kge=0.9982459570150168 |
-| `stage (analytical-benchmark centerline)` | r | maximize | no cited threshold in convention for analytical centerline stage | best_r=0.9999955436562552 |
+| `stage (analytical-benchmark centerline)` | nse | maximize | no cited threshold in convention for analytical centerline stage | see run records |
+| `stage (analytical-benchmark centerline)` | kge | maximize | no cited threshold in convention for analytical centerline stage | see run records |
+| `stage (analytical-benchmark centerline)` | r | maximize | no cited threshold in convention for analytical centerline stage | see run records |
 
-Manifest validation tier: tested. Manifest tier justification: `measured: NSE=1.000, KGE=0.998, R=1.000`. This is an analytical centerline-stage benchmark result, not a completed body-campaign validation of rank-1 `inundation_extent`.
+Manifest validation tier: tested. This tier rests on the analytical centerline-stage benchmark (scores: see run records), not on a completed body-campaign validation of rank-1 `inundation_extent`.
 
 ### Data Replacement Tracking
 
@@ -368,7 +368,7 @@ python tools/parse_anuga_output.py \
 
 ### Riverine workflow — stage at a gauge (worked example, HYDAT)
 
-Validated 2026-08-09 on the Fraser River: inlet driven by observed discharge at
+Example: inlet driven by observed discharge at
 HYDAT `08MF005` (Fraser R. at Hope), stage scored at HYDAT `08MF035` (Fraser R.
 near Agassiz) 31 km downstream. Drive from an **upstream** station and score at
 a **different, downstream** station — driving and scoring the same gauge only

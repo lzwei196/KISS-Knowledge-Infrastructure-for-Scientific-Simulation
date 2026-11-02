@@ -159,7 +159,7 @@ states:
 outputs:
   - var: "streamflow"
     validation_rank: 1
-    unit: "m/day (depth per unit basin area)"
+    unit: "mm/day"
     description: "Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400."
     emitted_in: "basin daily output"
     observability:

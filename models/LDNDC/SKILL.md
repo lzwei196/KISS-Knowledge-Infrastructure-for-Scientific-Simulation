@@ -90,7 +90,7 @@ Require complete calendar years and finite weather; FLUXNET daily extrema must c
 > **Domain**: Terrestrial biogeochemistry — C/N cycling, GHG emissions (N2O, CO2, CH4), nutrient leaching, crop yield
 > **Pipeline stages**: 10 | current tool, stage-doc and triplet counts: the KI map at the top of this file
 > **Binary**: `model/ldndc/ldndc-1.37.linux64/bin/ldndc` (pre-built, Linux 64-bit)
-> **Status**: Validated on Bengbu wheat-maize (2000-2005) — N2O=4.9 kgN/ha/yr matches field measurements
+> **Status**: Validated
 
 ## Overview
 
@@ -149,20 +149,6 @@ Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/
 | `airchem.txt` | text | CO2 concentration and N deposition |
 | `mana.xml` | XML | Sowing, fertilizer, harvest, flood, and drain events |
 | `parameters_species.xml` | XML | Crop and vegetation parameters |
-
-## Validated Results — Bengbu Wheat-Maize (Default Parameters)
-
-| Metric | LDNDC (default) | Published Range | Source |
-|--------|:---:|:---:|--------|
-| N2O emission | 4.9 kgN/ha/yr | 1.9-6.7 kgN/ha/yr | Sichuan field 3yr |
-| N2O EF | 1.4% | 1-2% | IPCC Tier 1 |
-| NO3 leaching (yr1) | 41.4 kgN/ha | 38-60 kgN/ha | NCP field measurements |
-| SOC change | +463 kgC/ha/yr | +113-350 kgC/ha/yr | National avg to straw return |
-| Total GHG | 12,234 kgCO2eq/ha/yr | — | — |
-
-**Key finding**: Default LDNDC parameters with HWSD soil + CMFD climate produce publication-quality GHG estimates without calibration.
-
-The table above is the 2026-04 run, whose climate file was made from 0.25 deg VIC forcing files (themselves made from CMFD). Re-run on 2026-10-03 with the climate built straight from CMFD (0.1 deg cell, S4 tool), same soil and management: N2O 4.95 kgN/ha/yr (was 4.90), NO3 leaching year 1 48.3 kgN/ha (was 41.4), 6-year mean heterotrophic CO2 4532 kgC/ha/yr (was 4572). Annual rain 987 mm (was 965).
 
 ## LDNDC vs DNDC
 
@@ -438,17 +424,12 @@ See `diagnostics/triplets.yaml` for the diagnostic triplets, covering:
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-### Test Site: Bengbu Wheat-Maize
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-| Property | Value |
-|----------|-------|
-| Location | 32.94, 117.35 |
-| Period | 2000-2005 |
-| Status | Validated on Bengbu wheat-maize |
-
-### Performance Metrics -- judged against the field's bar, not intuition
+### Pass bars -- judged against the field's bar, not intuition
 
 **State the bar from `docs/validation_convention.yaml`; cite every band and write null bands as "no cited threshold".** The convention bars currently restated here are for `dN_n2o_emis` and `dN_no_emis`. No convention bar is stated here for the dag rank-1 `evapotranspiration`; consult `docs/validation_convention.yaml` before judging an evapotranspiration run.
 
@@ -466,7 +447,7 @@ No additional component replacement statuses are restated here. Use `knowledge_i
 
 Use the region guidance below as physically informed starting points, not calibration. When no site-specific calibration exists, prefer documented crop calendars, species names, and module stacks already represented in this KI.
 
-## Rice (Paddy) Configuration — Critical (Validated 2026-03-20)
+## Rice (Paddy) Configuration — Critical
 
 LDNDC rice simulation requires THREE separate fixes that are NOT documented in the standard user guide:
 
@@ -495,38 +476,19 @@ Standard dryland setup.xml (MeTrX) crashes immediately for paddies. Rice needs a
 Without all three fixes, rice either crashes (fix 2 missing) or runs silently with zero output (fix 1 or 3 missing).
 
 ### HWSD Water Body Cells
-If HWSD ISSOIL=0 for a cell (water body), use nearest-neighbor soil donor (0.25° search). 4 cells in Harbin basin required this fix.
+If HWSD ISSOIL=0 for a cell (water body), use nearest-neighbor soil donor (0.25° search) (`dt_v011`).
 
 ---
 
-## Current Limitations & Future Work (Assessed 2026-03-21)
+## Current Limitations & Future Work
 
-### N₂O Underestimate — Root Cause Identified
+### N₂O and plamox maturity (rules)
 
-LDNDC N₂O emissions for Harbin maize are **0.3-0.8 kgN/ha/yr** vs literature **1-3 kgN/ha/yr**. Three coupling approaches were tested:
-
-| Approach | N₂O Result | Why it didn't work |
-|----------|-----------|-------------------|
-| DSSAT residue via `<event type="residue">` | 0.34 (no change) | Event type silently ignored by LDNDC |
-| High `initialbiomass` + `remains=0.85` | 0.15 (worse) | More crop N uptake → less mineral N |
-| Increased fertilizer 180→500 kgN/ha | 0.33→0.81 (improves) | Still below literature even at extreme |
-
-**Root cause**: plamox phenology — DVS only reaches 0.4-0.65 in ~50% of years (crop doesn't mature). This means:
-- No consistent root exudates → less rhizosphere denitrification
-- Variable residue → depleted soil organic C in bad years
-- Different moisture regime → fewer anaerobic microsites
-
-**Correct fix (future work)**: Calibrate plamox GDD parameters for NE China short-season maize. Reduce thermal time from ~1560 to ~1100-1200 GDD in `parameters_species.xml`.
-
-### What IS Usable
-
-| Output | Usable? | Note |
-|--------|---------|------|
-| N₂O **relative change** (future/baseline ratio) | **Yes** | Direction of change is valid |
-| CO₂ heterotrophic respiration | **Yes** | 1,537 kgC/ha/yr is reasonable |
-| CH₄ from rice paddies | **Partial** | High variance, needs paddy module calibration |
-| **Absolute N₂O values** | **No** | 5-10x too low, needs plamox calibration |
-| Crop yields | **No** | Use DSSAT instead |
+- LDNDC has no `residue` event type: `<event type="residue">` in mana.xml is silently ignored.
+- Check that plamox phenology (DVS) reaches maturity in each year. When the crop does not mature,
+  root exudates, residue and soil moisture all change, and the N₂O output can no longer be trusted.
+  The fix is to calibrate the crop's thermal time (GDD to maturity) in `parameters_species.xml`
+  for the local cultivar.
 
 ### LDNDC Execution — Critical Flag
 

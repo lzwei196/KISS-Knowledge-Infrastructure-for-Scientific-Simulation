@@ -130,10 +130,8 @@ published GRDC mean.
 **PET product bias (dt_020)** — ERA5-Land PET is a well-watered potential and in
 humid maritime catchments exceeds P. GR4J's `InterceptionFilter` removes
 `min(P, PET)` first, so raw Caravan PET can cap the model below the *observed*
-runoff. On the Irish gauges: P 995, PET 1208, Q_obs 604 mm/yr — interception
-alone removes 444 mm/yr, leaving a 551 mm/yr ceiling under a 604 mm/yr
-observation. Calibrate a PET coefficient: `--free-params ... cpet` for GR4J,
-`Ce` for HBV (calibrated values 0.44 and 0.39 on the same catchment).
+runoff. Calibrate a PET coefficient: `--free-params ... cpet` for GR4J,
+`Ce` for HBV.
 
 
 ## Overview

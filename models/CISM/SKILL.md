@@ -161,8 +161,6 @@ tests/dome/               # Parabolic dome benchmark
   dome.out.nc              # Output after run
 ```
 
-**Validated**: dome test case runs with SIA (Glide) and HO (Glissade) dynamics.
-
 ---
 
 ## Pipeline (8 stages)
@@ -452,7 +450,10 @@ Priority order for calibration (highest impact first):
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Source of truth for bars**: `docs/validation_convention.yaml`. A metric value
 without the field's cited pass-band is not a verdict. The convention wins over

@@ -190,9 +190,6 @@ python tools/mesh_builder.py --dem KISSPATH_DATA/MERIT_DEM/n40e005_dem.tif \
     --target-elem-area-km2 0.12 --aquifer-thickness-m 15
 ```
 
-Verified 2026-08-02: 49.5 km² Chiuni catchment (Corsica, FR) → 752 elements,
-446 nodes, 14 river segments; `flux-pihm` runs it end to end.
-
 **Conventions the generator encodes** (all verified against `input/ShaleHills`):
 
 | Rule | Why | Failure if broken |

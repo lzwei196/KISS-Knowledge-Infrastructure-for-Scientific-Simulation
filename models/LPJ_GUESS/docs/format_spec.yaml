@@ -108,7 +108,7 @@ inputs:
 outputs:
   primary:
   - name: GPP
-    unit: umol/m2/s
+    unit: umol CO2/m2/s
     description: Gross Primary Production (terrestrial vegetation carbon assimilation flux).
     validation_rank: 1
     emitted_in: mgpp.out (kgC m-2 month-1; GPP minus leaf respiration); converted to umol/m2/s by parse_lpjguess_engine_output.py

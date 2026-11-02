@@ -68,13 +68,13 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 > **Version**: LPJ-GUESS 4.1.1 (real engine) — KI rewired 2026-10-07
 > **Domain**: terrestrial biogeochemistry / dynamic vegetation (C, N, water)
 > **Last updated**: 2026-10-07
-> **Validation status**: real engine; official demo reproduced exactly; one FLUXNET site scored as validation, untuned (manifest tier `tested`)
+> **Validation status**: real engine; official demo reproduced exactly (manifest tier `tested`)
 > **Default run route**: `tools/run_lpjguess_engine.py` (the real `guess` binary). The surrogate is never the default.
 
 > **SURROGATE WARNING.** `tools/run_lpjguess.py`, `convert_forcing_to_lpjguess.py`,
 > `convert_parameters_to_lpjguess.py` and `parse_output_lpjguess.py` are a **Python
 > light-use-efficiency SURROGATE** (LUE GPP + Q10 respiration) kept for history. They are
-> **not LPJ-GUESS** and their numbers (e.g. a calibrated GPP NSE ~0.90) must never be reported
+> **not LPJ-GUESS** and their numbers must never be reported
 > as LPJ-GUESS results (dt_lpjguess_033). Their old contract is kept apart in
 > `docs/surrogate_lpjguess_lue_dag.yaml`; their old scores sit only under
 > `validation.surrogate_metrics_not_lpjguess` in `knowledge_infrastructure.yaml`. Triplets
@@ -276,7 +276,10 @@ reproduced on this server. Most important:
 Inputs are CF-NetCDF files and text; outputs are whitespace tables. A coupler can feed any
 daily CF forcing on a lat/lon grid (gridlist = indices) and read the monthly tables.
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Official example (global_demo)
 
@@ -284,52 +287,26 @@ daily CF forcing on a lat/lon grid (gridlist = indices) and read the monthly tab
 **19/19 `.out` files byte-identical** to the build-time run (max abs diff 0). Matches the
 build log (e.g. final-year total cmass: Amazon 16.497, C. Europe 8.466, Canada boreal 4.847 kgC m-2).
 
-### Test site: DE-Tha (Tharandt, Germany; 50.9624 N, 13.5652 E; planted Norway spruce)
+### Scoring against FLUXNET2015
 
-**Role: validation only. Nothing was calibrated.** Default, untuned run: all 12 global PFTs
-as shipped in `global.ins` (potential natural vegetation, PNV), GLOBFIRM fire, 500-year
-spin-up, constant pre-industrial N deposition. Forcing NASA POWER 1984-2014 at the tower
-point (not tower meteorology); CO2 Law Dome + NOAA Mauna Loa (1901-2014); soil code 2 from the
-0.5-degree cell (13.75, 50.75). Engine run 15 s, last year 2014.
-
-Scored run (2026-10-07, KDT detached run):
-`KISSPATH_KI_ROOT/LPJ_GUESS/detached/real_case/752ec75aabc741d9b7a241e383174692/work/run_detha/run`
-(an earlier identical run, same `mgpp.out` bytes: `KISSPATH_OUTPUTS/lpjguess_detha_real_engine/run`).
-Figure: `KISSPATH_KI_ROOT/LPJ_GUESS/figures/s8_validation.png`.
-
-Observations: FLUXNET2015 FULLSET_MM for DE-Tha. Months kept where `NEE_VUT_REF_QC >= 0.5`;
-the same 221 months for every variable, 1996-07 .. 2014-12. Compared in gC m-2 d-1 (mm d-1 for ET):
-
-| Variable (monthly) | engine | tower | NSE | KGE | r | PBIAS % | RMSE |
-|---|---|---|---|---|---|---|---|
-| GPP (dag rank 1) | `mgpp` (GPP minus leaf resp.) | `GPP_NT_VUT_REF` | 0.690 | 0.611 | 0.963 | −34.8 | 2.22 |
-| Reco | `mra + mrh` | `RECO_NT_VUT_REF` | 0.851 | 0.853 | 0.950 | −12.0 | 0.89 |
-| NEE | `mnee` (= mrh − mnpp, no fire C) | `NEE_VUT_REF` | 0.006 | 0.048 | 0.826 | −83.5 | 1.77 |
-| ET (not a dag output) | `maet + mevap + mintercep` | `LE_F_MDS` × 0.0864/2.45 | 0.686 | 0.655 | 0.927 | +8.8 | 0.43 mm d-1 |
-
-Means: GPP obs 5.36 vs engine 3.49; NEE obs −1.67 vs engine −0.28; Reco obs 3.66 vs 3.22;
-ET obs 1.11 vs 1.20. Water balance over 1984-2014: P 22408 mm, ET 13483 mm, runoff 8836 mm,
-residual 89 mm (0.4 %). Re-scored from the existing outputs with `ki_tools_common.metrics.all_metrics`
-and plain numpy (they agree): `KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_LPJ-GUESS/score_detha.py`.
+Observations: FLUXNET2015 FULLSET_MM. The parser keeps months where `NEE_VUT_REF_QC >= 0.5`
+(`--min_qc`). Compared in gC m-2 d-1 (mm d-1 for ET):
+GPP = `mgpp` vs `GPP_NT_VUT_REF`; Reco = `mra + mrh` vs `RECO_NT_VUT_REF`;
+NEE = `mnee` vs `NEE_VUT_REF`; ET (not a dag output) = `maet + mevap + mintercep` vs
+`LE_F_MDS` × 0.0864/2.45.
 
 **Judged against `docs/validation_convention.yaml`** (GPP, Reco, NEE: headline NSE, only
-cited band = satisfactory NSE ≥ 0, walker2014; no good/very-good tier is cited): GPP 0.69
-and Reco 0.85 pass the floor. NEE 0.006 is above the floor by a hair, i.e. no real skill
-beyond the observed mean; treat NEE as **not reproduced**. ET has no dag entry.
-
-**Known bias (why GPP and NEE are too small).** The default run grows PNV, not the planted
-spruce stand: in 2014 `cmass` is 5.96 of 6.77 kgC m-2 temperate broadleaf summergreen (TeBS)
-and only 0.21 needleleaf (BNE + BINE). So winter GPP is near zero (Dec-Feb calendar-month means: engine 0.02-0.07 vs
-tower 0.51-0.97 gC m-2 d-1) and the summer peak is low (June mean 8.2 vs 11.2; dt_lpjguess_027); `mgpp` also excludes
-leaf respiration (dt_lpjguess_025). NEE: the 500-year spin-up grows unmanaged natural vegetation
-(no planting, thinning or harvest), so the stand has no young managed-stand history and the
-sink is far too small (dt_lpjguess_034).
+cited band = satisfactory NSE ≥ 0, walker2014; no good/very-good tier is cited). ET has no dag entry.
 Zhu et al. 2020 report a site-mean GPP RMSE of 2.13 gC m-2 d-1 as context (not a gate).
 
-Side test (a configuration choice, not calibration, and NOT the reported result): only BNE +
-C3G allowed (`--set 'pft "X" ( include 0 )'` for the other 10 PFTs), same forcing:
-GPP NSE 0.80, PBIAS −25.8 %; Reco NSE 0.87; ET NSE 0.72; NEE NSE −0.22
-(`KISSPATH_OUTPUTS/lpjguess_detha_real_engine/sensitivity_needleleaf_only/`).
+**Known biases of the default (untuned) run.** The default run grows potential natural
+vegetation (all 12 global PFTs), not a planted stand, so at a planted conifer site winter GPP
+can be near zero and the summer peak low (dt_lpjguess_027). To represent the real stand, switch
+the absent PFTs off with `--set 'pft "X" ( include 0 )'` and label that run a configuration
+choice, not calibration. `mgpp` also excludes leaf respiration (dt_lpjguess_025). NEE: the
+spin-up grows unmanaged natural vegetation (no planting, thinning or harvest), so in a young or
+growing managed forest, which has no young-stand or management history in the model, the sink
+can come out too small; compare GPP and Reco first (dt_lpjguess_034).
 
 ### Data Replacement Tracking
 
@@ -340,7 +317,7 @@ GPP NSE 0.80, PBIAS −25.8 %; Reco NSE 0.87; ET NSE 0.72; NEE NSE −0.22
 | Soil | shipped LPJ soil-code map | shipped data |
 | N deposition | constant pre-industrial | default (file missing) |
 | Engine | LPJ-GUESS 4.1.1 binary | real model |
-| Observations | FLUXNET2015 DE-Tha | independent |
+| Observations | FLUXNET2015 | independent |
 
 ## 12. Parameter Selection by Region
 
@@ -360,7 +337,7 @@ Soil code comes from the 0.5° map.
 `nyear_spinup 500` (shipped default), cycling the first 30 forcing years (detrended
 temperature). The calendar starts 500 years before the first forcing year and CO2 is read
 by calendar year (`cfinput.cpp` `set_first_calendar_year`, `co2[date.get_calendar_year()]`);
-years before the CO2 file's first year get its first value (`globalco2file.cpp`). For DE-Tha
+years before the CO2 file's first year get its first value (`globalco2file.cpp`). For example
 (forcing 1984-2014, CO2 file 1901-2014) the spin-up covers 1484-1983: 1484-1900 at 296.2 ppm,
 then 1901-1983 with the real rising CO2 record. Then the real years. N limitation
 is off for the first 100 spin-up years (`freenyears`). Boreal/peat sites may need 1000+ years

@@ -146,8 +146,7 @@ libgomp      — OpenMP parallel processing (Linux; only for an OpenMP build)
 
 - Binary: `KISSPATH_BINARIES/EF5/bin/ef5` (EF5 v1.2.3). It is a copy of
   `models/EF5/bin/ef5` (same build, md5 a39d7a42... before patchelf changed only its RUNPATH),
-  the binary used by the `run_ef5.py` runs logged under `models/EF5/workspace_*` (GRDC real-case
-  calibrations included); a short real case gave byte-identical output with both. It is not an OpenMP build
+  the binary used by the `run_ef5.py` runs logged under `models/EF5/workspace_*`; a short real case gave byte-identical output with both. It is not an OpenMP build
   (no libgomp in its NEEDED list), so one run uses one core.
 - `lib/` next to `bin/` holds the non-system shared libraries it loads (libtiff 6, libgeotiff 5,
   libproj 25 and their dependencies such as libsqlite3, libcurl, ICU, libstdc++); RUNPATH is

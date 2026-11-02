@@ -83,7 +83,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-22
 **Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
-**Validation status**: `production_validated` — Bengbu IRF routing, r=0.87 vs Lohmann, mass-conserving (Q=1795 m3/s), 3 serial stub bugs fixed
+**Validation status**: `production_validated` — 3 serial stub bugs fixed
 
 ---
 
@@ -411,20 +411,10 @@ Triplets covering 7 failure domains (current count: the KI map at the top of thi
 
 ---
 
-## Validated Results
+## Validation Status
 
-### Step 3: Bengbu Basin (2000-2005, 0.25deg, IRF routing)
-
-**Configuration**: 224 VIC grid cells -> 224 HRU/segments, grid-based D8 network topology, IRF routing (route_opt 0 1), daily timestep.
-
-**Data Replacement Tracking**:
-
-| Component | Source | Status | Notes |
-|-----------|--------|--------|-------|
-| Forcing | HydroCraft (VIC runoff) | Validated | 224 cells, mean 1.07 mm/day |
-| Network topology | HydroCraft (DEM + D8) | Validated | 224 segments, 7 outlets |
-| Routing params | Default (velo=1.0, diff=800) | Applied | No calibration |
-| Output writing | PIO serial stubs | **Fixed** | pio_setframe was no-op (dt_m019) |
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics - Field Convention Bars
 
@@ -440,31 +430,10 @@ Triplets covering 7 failure domains (current count: the KI map at the top of thi
 
 The headline metric bars for `routed_discharge` are: NSE satisfactory `0.5` (`moriasi2007`, `moriasi2015`), good `0.7` (`moriasi2007`, `moriasi2015`), very good `0.8` (`moriasi2007`, `moriasi2015`); PBIAS zero-centered satisfactory `15.0` (`moriasi2015`), good `10.0` (`moriasi2015`), very good `5.0` (`moriasi2015`).
 
-The existing Bengbu result table below reports run-specific sanity checks and comparisons. The convention bars above are the cited thresholds for formal scoring.
-
-**Results (after MPI stub fix)**:
-
-| Metric | Value | Target | Status |
-|--------|-------|--------|--------|
-| Mean Q (sum all 7 outlets) | **1795 m3/s** | 770-2300 m3/s | **PASS** |
-| Mean Q (main outlet, Seg 147) | **1033 m3/s** | - | 63% of basin area |
-| Mass conservation (basRunoff) | **1.000** | ~1.0 | **PASS** |
-| Correlation vs Lohmann (all outlets) | **r = 0.87** | r > 0.5 | **PASS** |
-| Correlation vs Lohmann (main outlet) | **r = 0.82** | r > 0.5 | **PASS** |
-| Volume ratio (mizuRoute / Lohmann) | **1.19** | 0.5-2.0 | **PASS** |
-| Seasonal cycle | Correct monsoon peak | Summer peak | **PASS** |
-| Runtime | ~30 seconds | - | Fast |
-
 **Known Issues (all fixed)**:
-1. **MPI serial stub data corruption (FIXED, err_001)**: `MPI_SCATTERV` stub declared buffers as `integer(*)`, causing 4-byte copy steps for 8-byte `real(dp)` data. Tributary HRUs (50%) received corrupted/zero runoff. **This was the root cause of the 88% magnitude loss.** Fix: multiply count/displacement by `words_per_element` (2 for double precision). Applied to all 7 collective MPI stubs.
+1. **MPI serial stub data corruption (FIXED, err_001)**: `MPI_SCATTERV` stub declared buffers as `integer(*)`, causing 4-byte copy steps for 8-byte `real(dp)` data. Tributary HRUs (50%) received corrupted/zero runoff. Fix: multiply count/displacement by `words_per_element` (2 for double precision). Applied to all 7 collective MPI stubs.
 2. **PIO serial stub output bug (FIXED, dt_m019)**: `pio_setframe` was a no-op in the serial stub, causing `pio_write_darray` to always write at record position 0.
-3. **Multiple outlets (7)**: Grid-based D8 on 0.25deg creates 7 outlet segments. Main outlet (seg 147) captures 141/224 cells. Sum of all outlets gives correct total discharge. Use finer DEM-based topology for single-outlet production runs.
-
-### Chaohe Basin (2000-2010, 0.25deg, IRF routing)
-
-**Configuration**: 27 VIC grid cells -> 27 HRU/segments, grid-based D8 topology, IRF routing.
-
-**Results**: Outlet Q = 2.69 m3/s (low but non-zero after NaN fix). Same PIO output bug limited analysis to 1 valid timestep per year before fix.
+3. **Multiple outlets**: Grid-based D8 on a 0.25deg grid can create several outlet segments. Sum of all outlets gives correct total discharge. Use finer DEM-based topology for single-outlet production runs (dt_m015).
 
 ---
 
@@ -482,19 +451,19 @@ The existing Bengbu result table below reports run-specific sanity checks and co
 
 **Impact**: Without fix, only 1 of 365 daily values per year was written. All time-series analysis was impossible.
 
-### err_001: MPI serial stub data corruption — ROOT CAUSE OF 88% MAGNITUDE LOSS (FIXED 2026-03-22)
+### err_001: MPI serial stub data corruption — ROOT CAUSE OF LARGE MAGNITUDE LOSS (FIXED 2026-03-22)
 
 **Severity**: fatal, **Domain**: unit_conversion
 
-**Symptom**: `basRunoff` for tributary HRUs (112 of 224 = 50%) is zero, causing 75-90% total discharge magnitude loss. Timing correlation remains correct (r=0.70+) because the correctly-routed mainstem HRUs have the right temporal pattern.
+**Symptom**: `basRunoff` for tributary HRUs (about 50%) is zero, causing a large total discharge magnitude loss. Timing correlation remains correct because the correctly-routed mainstem HRUs have the right temporal pattern.
 
 **Root cause**: Serial MPI stubs (`route/build/serial_stubs/mpi_stubs.f90`) declare all buffer parameters as `integer :: sendbuf(*), recvbuf(*)` (4-byte assumed-size arrays). When `real(dp)` (8-byte double precision) data is passed through `MPI_SCATTERV`, the copy loop `recvbuf(i) = sendbuf(displs(1) + i)` iterates by 4-byte integer steps instead of 8-byte double steps. For `recvcount=N` double-precision elements, only `N * 4` bytes are copied instead of `N * 8` bytes, corrupting the entire tributary HRU runoff array. The `MPI_SCATTERV` stub is used in `scatter_runoff()` to distribute `basinRunoff` from the master proc to the tributary domain.
 
-**Why exactly 50% is zero**: mizuRoute splits HRUs into "mainstem" and "tributary" domains for parallel processing. In serial mode (1 proc), mainstem HRUs are copied via a direct Fortran assignment (works correctly), while tributary HRUs are distributed via `MPI_SCATTERV` (corrupted by the bug). For Bengbu, the domain decomposition assigns ~112 HRUs to each domain.
+**Why exactly 50% is zero**: mizuRoute splits HRUs into "mainstem" and "tributary" domains for parallel processing. In serial mode (1 proc), mainstem HRUs are copied via a direct Fortran assignment (works correctly), while tributary HRUs are distributed via `MPI_SCATTERV` (corrupted by the bug).
 
 **Fix**: In each MPI stub function, determine `words_per_element` from the `datatype` parameter: 2 for `MPI_DOUBLE_PRECISION` (=3) and `MPI_INTEGER8` (=2), 1 for `MPI_INTEGER` (=1) and `MPI_REAL` (=4). Multiply element count and displacement by `words_per_element` before the copy loop. Applied to all 7 collective operations: `MPI_SCATTERV`, `MPI_GATHERV`, `MPI_ALLGATHERV`, `MPI_ALLGATHER`, `MPI_Alltoallv`, `MPI_REDUCE`, `MPI_ALLREDUCE`.
 
-**Impact**: After fix, basRunoff ratio = 1.0000 (exact mass conservation), total outlet Q = 1795 m3/s (matches expected), r = 0.87 vs Lohmann.
+**Impact**: After fix, basRunoff ratio = 1.0000 (exact mass conservation).
 
 **Discovery method**: Systematic per-HRU comparison of input vs output basRunoff. Exactly 112/224 HRUs had zero, and the zero set corresponded to output positions 112-223 (topologically-sorted tributary domain). Traced through the data flow: `sort_flux` -> `scatter_runoff` -> `MPI_SCATTERV` -> corrupted `basinRunoff_trib`.
 

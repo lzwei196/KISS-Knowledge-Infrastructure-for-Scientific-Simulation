@@ -432,8 +432,8 @@ snapped gauge pixel and the summed basin area, against `--expected_area_km2`.
 Agreement within a few percent means the LDD upscaling found the right river.
 
 **Spin-up.** A large basin starts with empty channels and an empty groundwater
-store. At Jiujiang (1.5 M km²) a 10-day spin-up produced 60 m³/s against an
-observed 10,000 m³/s. Allow 2–3 years between `StepStart` and `SpinUp`.
+store, so a spin-up of only a few days gives discharge far below the observed
+flow. Allow 2–3 years between `StepStart` and `SpinUp`.
 
 ---
 
@@ -471,12 +471,11 @@ if the basin needs a faster store, that range contains no solution.
 *is* the groundwater linear-reservoir residence time τ in **days**, and a sane search range
 is τ ∈ [2, 40].
 
-**Symptom of getting this wrong** (measured at Jiujiang, Yangtze, 1.5 M km², 2010–2023):
-with the KI's old default (`recessionCoeff = 0.02`, factor `1.0` → τ = 50 d) baseflow was
-**414 of 553 mm/yr (BFI 0.75)** and its climatology **peaked in October** while CMFD
-precipitation peaks in June. That quarter-cycle phase lag capped the correlation at
-r = 0.729, hence `NSE ≤ r² = 0.531` — unreachable no matter how bias and variance are
-corrected. Dropping to τ = 4 d lifted r to 0.852 and NSE from 0.44 → 0.65 on 2010–2013.
+**Symptom of getting this wrong** (`cwatm_dt_017`):
+with the KI's old default (`recessionCoeff = 0.02`, factor `1.0` → τ = 50 d) baseflow takes
+most of the runoff (high BFI) and its climatology peaks months after precipitation.
+That phase lag caps the correlation r, hence `NSE ≤ r²` — unreachable no matter how
+bias and variance are corrected. Calibrating τ over [2, 40] as in the recipe above removes the lag.
 
 **Always check the baseflow fraction and its phase before calibrating anything else.** Write
 `OUT_Map_MonthAvg = runoff, baseflow`, take the basin-area-weighted mean of each, and compare

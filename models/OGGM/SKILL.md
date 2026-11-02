@@ -396,14 +396,12 @@ ds = utils.compile_run_output(gdirs)
 - **Glacier fraction:** ~10% of basin area (20,000+ km2 of glaciers)
 - **RGI region:** 15 (South Asia East)
 - **Significance:** High glacier contribution to discharge (15-25% annually, 40-60% late summer)
-- **HydroCraft status:** VIC+CaMa calibrated (NSE=0.90), ready for OGGM coupling
 - **Peak water:** Projected 2030-2060 depending on SSP
 
 ### Heihe Upper (黑河上游)
 - **Glacier fraction:** ~5% of basin area
 - **RGI region:** 13 (Central Asia) / 10 (North Asia)
 - **Significance:** Arid basin, glacier melt critical for summer baseflow
-- **HydroCraft status:** VIC+CaMa simulated, uncalibrated
 - **Peak water:** Potentially already passed or imminent
 
 ### Central Asian Rivers (Syr Darya, Amu Darya)

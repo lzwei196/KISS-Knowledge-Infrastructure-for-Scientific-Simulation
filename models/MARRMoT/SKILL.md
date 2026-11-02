@@ -368,8 +368,7 @@ Two optimisers are available via `--optimizer`:
     HYDAT records (e.g. prairie creeks gauged only Mar-Oct) need no masking**.
   - `--restarts N` : **IPOP restarts (doubled popsize each)**. A single
     mean-start CMA-ES run gets trapped in a local optimum on the rugged
-    conceptual-hydrology objective surface — observed at 05CG004:
-    mean-start cal_NSE **0.199**, with `--restarts 6` cal_NSE **0.329**.
+    conceptual-hydrology objective surface.
     Always use ≥5 restarts for a real calibration.
   - `--max-fun-evals` : total eval budget across restarts. Each eval is one
     full simulation over `1:cal_end`. **Cost scales sharply with numStores**:
@@ -396,9 +395,7 @@ driven by accumulated winter snow, so under-caught snowfall systematically
 damps the simulated freshet. `--cold-precip-scale F --cold-precip-threshold T`
 multiplies precip by `F` only on days with mean-T < `T` (default 0 °C),
 boosting winter accumulation **without** inflating ET-dominated summer months
-(which a global `--precip-scale` does, over-producing runoff). At 05CG004
-(Bullpound Ck), `--cold-precip-scale 1.7` lifted held-out val NSE
-0.152→0.209 and improved r at every period.
+(which a global `--precip-scale` does, over-producing runoff).
 
 ---
 

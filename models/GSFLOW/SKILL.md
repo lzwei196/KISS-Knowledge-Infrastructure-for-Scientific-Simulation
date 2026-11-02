@@ -589,11 +589,7 @@ discharge observations.
 - Expected NSE: 0.5–0.8 (calibrated; convention bands cited in Section 15:
   `0.5` satisfactory and `0.8` very_good per moriasi2007 and moriasi2015)
 
-### Bengbu Basin (Huai River, China)
-- Station: 51080 (Bengbu)
-- Area: ~121,330 km²
-- Period: 1980–1990 (1980 spinup, validate 1981–1990)
-- Forcing: CMFD 0.25° daily
+### Large basins
 - Note: Requires full GSFLOW setup with MODFLOW grid — complex for large basins.
   Alternative: Run PRMS-only mode for surface-water validation.
 

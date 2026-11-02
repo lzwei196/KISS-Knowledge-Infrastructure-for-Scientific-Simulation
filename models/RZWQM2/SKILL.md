@@ -100,7 +100,7 @@ generate correctly without a validated starting point.
 KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/
 ```
 
-This is a clean, validated Bengbu wheat project with:
+This is a clean wheat template project with:
 - All 8 required input files (cntrl.dat, rzwqm.dat, rzinit.dat, plgen.dat, .met, .brk, .sno, .ana path)
 - DSSAT crop databases for maize, wheat, and soybean (.CUL, .ECO, .SPE + RZX files)
 - Pre-patched Linux binary (`main_ryzen_patched`) with correct ELF interpreter

@@ -249,16 +249,13 @@ with `paramCheck/height of canopy top is less than the height of the canopy bott
 For **Chinese basins**: `MODIFIED_IGBP_MODIS_NOAH`. The USGS table has no rice paddy
 type and the crosswalk is imprecise.
 
-**Worked failure (Jinghong, Lancang, 142,695 km², 2026-07-10).** A driver derived
-`vegTypeIndex` from elevation — `z<1800 m → USGS 13`, `<3000 m → 15`, else `7`.
-AVHRR reads **closed shrubland** (canopy 1.1 m, LAI 0.0 in winter) for all 16 lowland
-sub-basins and 15 of 18 mid-elevation ones. The rule gave 42% of the basin — the
-wettest 42% — an evergreen 16–20 m canopy with LAI 4.5 in *every month*, which
-transpired and re-evaporated intercepted water right through the dry season:
-`scalarTotalET` 766.8 mm/yr against a `P − Q_obs` ceiling of 555 mm/yr, i.e. PBIAS
-−66%. Three rounds of routing and calibration work chased a bias that vegetation had
-already made unreachable. **Check `scalarTotalET < P − Q_obs` before touching routing
-or parameters** — routing is mass-conserving and cannot move PBIAS.
+**Worked failure (dt_027).** Deriving `vegTypeIndex` from elevation instead of land
+cover can give a shrubland basin an evergreen 16–20 m canopy with LAI 4.5 in *every
+month*, which transpires and re-evaporates intercepted water right through the dry
+season, so `scalarTotalET` exceeds the `P − Q_obs` ceiling and PBIAS stays stuck
+strongly negative. Routing and calibration work cannot reach that bias. **Check
+`scalarTotalET < P − Q_obs` before touching routing or parameters** — routing is
+mass-conserving and cannot move PBIAS.
 
 ### 2b. Soil Parameter Estimation — ROSETTA van Genuchten (RECOMMENDED)
 
@@ -334,8 +331,7 @@ About the histogram itself:
 bins, so with daily forcing the delay can span 2000 days. Mean delay =
 `routingGammaShape × routingGammaScale`. The **compiled default scale is 20000 s
 (5.6 h)** — effectively no attenuation. Leaving it at the default is why lumped
-runs on large basins produce a hydrograph far too flashy for the gauge:
-Bengbu (121,330 km²) scored NSE −2.56 with r 0.38.
+runs on large basins produce a hydrograph far too flashy for the gauge.
 
 **Rule of thumb**: basins > ~5,000 km² need an explicit `routingGammaScale`.
 Start at scale ≈ (basin concentration time)/shape, i.e. 1–10 days for 10⁴–10⁵ km².
@@ -393,7 +389,7 @@ SUMMA's runtime scales linearly with the number of HRUs. The `create_gru_hru.py`
 
 **Guidance from Clark et al. 2015**: GRUs are spatially contiguous with no lateral moisture exchange; HRUs within a GRU can share a conceptual aquifer. Use multi-HRU for mountain basins where sub-grid variability matters (e.g., north vs south facing slopes). For flat/uniform basins, 1 HRU per GRU is standard practice.
 
-**Example**: Bengbu 0.25° with 224 GRUs: single-HRU ran in 98 min; multi-HRU (8304 HRUs) was estimated at 35+ hours.
+**Example**: a 0.25° domain with 224 GRUs: single-HRU ran in 98 min; multi-HRU (8304 HRUs) was estimated at 35+ hours.
 
 ### 5b. Initial Conditions — matric head and moisture MUST agree (dt_034)
 
@@ -426,21 +422,16 @@ negative). **s4 must now run BEFORE s5.** Read back the stdout JSON
 is right. Without `--trial_params_nc` the tool still runs but logs a loud
 WARNING and falls back to the contradictory constant.
 
-Measured on Tangnaihai (74 GRUs, 9-month cold-start smoke, identical forcing /
-parameters / decisions): Jan–Sep runoff **0.33 mm → 67.1 mm**.
-
 ### 6. Spinup Required — Two-Phase Strategy for Subtropical Basins
 
 > **Scope check first.** The two-phase strategy below is a remedy for basins
-> where `nrg_flux` **fails to converge from cold start** (documented on
-> subtropical Bengbu). It is not a universal prescription, and applying it
+> where `nrg_flux` **fails to converge from cold start** (seen on a
+> subtropical basin). It is not a universal prescription, and applying it
 > where it is not needed does harm: `presTemp` produces **zero ET**, so a
 > `presTemp` spinup year fills the soil with water that should have evaporated
 > and hands phase 2 a wetter-than-real profile. **Run a short cold-start
 > `nrg_flux` smoke first** — if it completes, use single-phase `nrg_flux` and
-> discard the spinup year. On Tangnaihai (74 GRUs, alpine, 4160 m) a 9-month
-> cold-start `nrg_flux` smoke ran to completion with no convergence failures in
-> 2 min, so single-phase was the correct choice.
+> discard the spinup year.
 >
 > If the real problem is that runoff stays at zero, the cause is usually the
 > initial **soil moisture**, not the temperature boundary condition — fix
@@ -465,7 +456,7 @@ Cold-start initial conditions produce 1-2 years of unrealistic output. More crit
 - `nrg_flux` boundary condition is used (full energy balance triggers the stiff phase-change equations)
 - Large distributed domains (>50 GRUs) — more HRUs means more chances for one to fail
 
-**Confirmed behavior on Bengbu (Huai River, 32-35°N)**:
+**Behavior seen on a subtropical basin with brief winters**:
 - `nrg_flux` crashes at the first freezing event (Dec/Jan) for ALL GRUs
 - `presTemp` runs but produces zero ET → zero runoff (diagnostic mode only)
 - Summer start (Jul-Nov) runs successfully for 5 months, crashes when Dec freezing begins
@@ -477,7 +468,7 @@ Cold-start initial conditions produce 1-2 years of unrealistic output. More crit
 
 **For subtropical/temperate basins** (China, SE Asia, S. Europe): Use VIC, mHM, HYPE, or wflow instead. These models handle seasonal freezing without convergence issues.
 
-**USGS vegetation table limitation**: No rice paddy or subtropical cropland types. The `create_gru_hru.py` tool now applies IGBP→USGS crosswalk (dt_024) to avoid the critical misclassification where AVHRR class 11 (Wetland/Cropland, 74% of Bengbu) was mapped to USGS class 11 (Deciduous Broadleaf Forest, 20m canopy) — causing `canopySnow` convergence failures due to excessive canopy snow interception on what should be flat rice paddies.
+**USGS vegetation table limitation**: No rice paddy or subtropical cropland types. The `create_gru_hru.py` tool now applies IGBP→USGS crosswalk (dt_024) to avoid the critical misclassification where AVHRR class 11 (Wetland/Cropland) was mapped to USGS class 11 (Deciduous Broadleaf Forest, 20m canopy) — causing `canopySnow` convergence failures due to excessive canopy snow interception on what should be flat rice paddies.
 
 ### 6. HRU ID Consistency
 
@@ -650,7 +641,7 @@ reasoning forbids it here.
 mean facing a *whole-cell* observation — different support, and the resulting
 bias is a masking artifact rather than a model verdict. Pass
 `--min_cell_coverage 0.75` to `compare_spatial_field.py` and read back
-`n_cells_dropped_by_coverage`. On Tangnaihai this keeps 38 of 74 cells.
+`n_cells_dropped_by_coverage`.
 
 **The scored pairs are written to CSV.** `compare_spatial_field.py` emits
 `--output_csv` (default: the JSON path with a `.csv` suffix) with columns

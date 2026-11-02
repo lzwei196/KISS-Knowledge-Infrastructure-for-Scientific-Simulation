@@ -323,9 +323,9 @@ HYDAT levels are metres in the station's OWN vertical datum (`STATIONS.DATUM_ID`
 `DATUM_LIST`; only names containing GEODETIC are comparable with a DEM at all), and a
 global DEM over water reports the river SURFACE at acquisition, not the bed. Register the datum from METADATA, never from the obs: run
 `register_vertical_datum.py --station <id> --dem_vertical_datum <EGM2008 for GLO-30>`, which
-chains STATIONS.DATUM_ID -> DATUM_LIST -> STN_DATUM_CONVERSION (e.g. 08MF035: 35 GEODETIC
-SURVEY OF CANADA DATUM -> 605 CGVD2013:EPOCH2010, +0.163 m) and then the CGVD2013 -> DEM-datum
-geoid step via PROJ (+0.244 m to EGM2008 here), and FAILS if no chain exists.
+chains STATIONS.DATUM_ID -> DATUM_LIST -> STN_DATUM_CONVERSION (station datum -> a national
+geodetic datum such as CGVD2013, plus its offset) and then the geodetic-datum -> DEM-datum
+geoid step via PROJ (e.g. to EGM2008), and FAILS if no chain exists.
 The dag sets detrending_options: ['none'] for point_zs, so an obs-FITTED offset is a calibrated
 parameter: it disqualifies the period it was fitted on from being reported as a metric. A fitted
 offset far larger than the metadata conversion is absorbing GLO-30's
@@ -428,9 +428,9 @@ For fluvial-only (CaMa-Flood BC), this is usually consistent. For coastal (tidal
 
 The binary has NO command-line arguments. It reads `sfincs.inp` from the current working directory. All file paths in `sfincs.inp` are relative to CWD. Always `cd` to the run directory before executing.
 
-### 4. Mask value 2 = outflow (dt_007)
+### 4. Edge cells need a boundary mask value (dt_v021; see "1. Mask values" above)
 
-Edge cells of the active domain MUST have mask=2 (outflow) to allow water to exit. If set to 3 (active), water accumulates at boundaries unrealistically.
+Edge cells where water must leave the active domain need a boundary mask value: `msk=3` (outflow) on an inland reach, `msk=2` (water-level boundary) only where a real water level is set. If the edge is left as 1 (active) with no boundary, water accumulates at the edges.
 
 ### 5. CFL stability (dt_009)
 

@@ -49,7 +49,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-# KDT dt_vic_023: netCDF4 MUST be imported before xarray. See diagnostics/triplets.md.
+# KDT dt_vic_023: netCDF4 MUST be imported before xarray. See diagnostics/triplets.yaml.
 import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")

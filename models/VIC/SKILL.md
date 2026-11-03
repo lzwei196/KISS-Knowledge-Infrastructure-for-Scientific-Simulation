@@ -2,7 +2,7 @@
 >
 > You MUST run the **actual model binary or package** described in this document.
 > If the model fails to import, compile, or execute, you MUST:
-> 1. Check `diagnostics/triplets.md` for a matching error pattern
+> 1. Check `diagnostics/triplets.yaml` for a matching error pattern
 > 2. Try the fix suggested in the triplet's `remedy` section
 > 3. If still failing, report the error to the user with full details
 >
@@ -14,7 +14,7 @@
 > to verify that the model binary/package and required data are available.
 >
 > **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
-> 1. **Check triplets** — `diagnostics/triplets.md` may already cover this error
+> 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
 > 2. **Read official docs** — The model's own documentation for expected formats/units
 > 3. **Find working examples** — Check `outputs/` or the model's shipped test data
 > 4. **Fix the tool** — With knowledge of what "correct" looks like

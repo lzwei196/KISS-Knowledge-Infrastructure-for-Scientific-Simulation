@@ -1,5 +1,5 @@
 # KDT dt_vic_023: netCDF4 MUST be imported before xarray, and every
-# xr.open_dataset() MUST pin `engine=`. See diagnostics/triplets.md.
+# xr.open_dataset() MUST pin `engine=`. See diagnostics/triplets.yaml.
 import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 import numpy as np

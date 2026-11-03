@@ -4,7 +4,7 @@
 # 31 triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from diagnostics/triplets.md,
 # which was the ONLY copy — every reader looks for triplets.yaml, so this corpus was
 # invisible to the gate, the self-improve loop and the counters. Text is verbatim
-# from the markdown; triplets.md is kept as the human-readable rendering.
+# from the markdown; triplets.md was removed 2026-11-03, so this file is the only copy.
 # ========================================================================
 
 - id: dt_vic_001

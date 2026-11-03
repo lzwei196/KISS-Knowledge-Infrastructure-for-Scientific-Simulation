@@ -50,7 +50,7 @@ class KI:
 
     @property
     def triplets(self) -> Path | None:
-        for cand in ("diagnostics/triplets.md", "diagnostics/triplets.yaml"):
+        for cand in ("diagnostics/triplets.yaml", "diagnostics/triplets.md"):
             p = self._maybe(cand)
             if p:
                 return p

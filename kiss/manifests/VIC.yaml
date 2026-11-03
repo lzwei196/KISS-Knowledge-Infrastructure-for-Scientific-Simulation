@@ -50,6 +50,6 @@ agent_hint: >-
   VIC has no routing. Gauge discharge ALWAYS requires a routing step afterwards
   (VIC-Lohmann or CaMa-Flood) — never compare raw VIC runoff to a gauge.
   If make fails it is nearly always a missing netCDF or libm flag in
-  vic/drivers/classic/Makefile; check diagnostics/triplets.md first.
+  vic/drivers/classic/Makefile; check diagnostics/triplets.yaml first.
   Note: s2_forcing/rechunk_mswx.py has an unclosed parenthesis and will not
   import — it is broken upstream, not by the installer.

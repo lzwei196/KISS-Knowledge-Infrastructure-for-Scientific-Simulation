@@ -245,7 +245,7 @@ def process(args):
     # SFINCS is a flood model, not an ocean model. Carrying 100-600 m of standing
     # water inside the active domain (a) forces a tiny internal CFL timestep and
     # (b) contributes nothing to the land inundation being simulated. Cutting the
-    # deep water out moves the mask=2 outflow ring onto the SHORELINE, which is
+    # deep water out moves the open-boundary ring (--outflow_value) onto the SHORELINE, which is
     # exactly where a coastal domain wants its open boundary.
     if args.min_elev is not None:
         deep = (msk > 0) & (dem_data < args.min_elev)

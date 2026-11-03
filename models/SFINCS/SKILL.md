@@ -531,10 +531,10 @@ Item 9 / dt_v005 gives the inland-vs-coastal rule, but a **mixed** domain (shore
 so an upland edge cell drains the whole domain. Use the new flags:
 
 ```bash
-# coastal: cut the sea out of the active domain, outflow only on the shoreline
-build_sfincs_topobathy.py --min_elev 0.0 --outflow_max_elev 5.0
-# inland: closed boundary everywhere
-build_sfincs_topobathy.py --outflow_max_elev -9999
+# coastal: cut the sea out of the active domain, water-level boundary (msk=2) only on the shoreline
+build_sfincs_topobathy.py --min_elev 0.0 --outflow_max_elev 5.0 --outflow_value 2
+# inland: outflow (msk=3) only on the downstream side, e.g. west
+build_sfincs_topobathy.py --outflow_value 3 --outflow_edges w
 ```
 
 Also note: with `zsini = 0`, **any active cell below MSL starts full of standing
@@ -673,12 +673,12 @@ Triplets covering 8 failure domains (current count: the KI map at the top of thi
 | dt_004 | **silent** | unit_conversion | Vertical datum EGM96 vs MSL offset 20-40m |
 | dt_005 | fatal | spatial_error | CRS mismatch: geographic deg with metric dx/dy |
 | dt_006 | **silent** | spatial_error | Grid origin mismatch after reprojection |
-| dt_007 | **silent** | spatial_error | Edge cells mask=3 instead of mask=2 (no outflow) |
+| dt_007 | **silent** | spatial_error | Outlet edge left as 1 (active) = closed wall; use msk=3 inland, msk=2 only on a coast with a water level |
 | dt_008 | degraded | spatial_error | Subgrid ratio > 30x causes checkerboard |
 | dt_009 | fatal | timestep | CFL violation: dt > dx/sqrt(g*h) -> NaN crash |
 | dt_010 | degraded | timestep | Advection + low alpha -> oscillations |
 | dt_011 | degraded | timestep | Grid too fine -> 100x runtime |
-| dt_012 | **silent** | boundary | Bnd point on inactive mask cell -> ignored |
+| dt_012 | **silent** | boundary | No mask=2 cells on the open edge -> bnd/bzs water level has no effect |
 | dt_013 | degraded | boundary | Source point on hilltop -> artificial pond |
 | dt_014 | **silent** | coupling | Double-counted precipitation (VIC + SFINCS) |
 | dt_015 | **silent** | coupling | CaMa discharge sign -> reverse flow |

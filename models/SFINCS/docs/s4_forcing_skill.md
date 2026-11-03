@@ -81,7 +81,7 @@ does not grow as the number of timesteps multiplied by the number of grid cells.
 1. Precipitation max < 200 mm/hr (if higher, check units — dt_001)
 2. Precipitation not all zero during known storm period (dt_002)
 3. Discharge values positive for inflow points (dt_015)
-4. Boundary points fall on active mask cells (dt_012)
+4. Water-level boundary: the mask has mask=2 cells on the edge next to the bnd points (dt_012)
 5. No double-counting (dt_014)
 
 ## Common Pitfalls
@@ -89,6 +89,6 @@ does not grow as the number of timesteps multiplied by the number of grid cells.
 - **dt_001**: The #1 silent error. mm/3hr passed as mm/hr = 3x too much rain.
 - **dt_002**: m/s passed as mm/hr = effectively zero rain.
 - **dt_003**: VIC mm/day passed as CaMa m3/s = 86,400x too small.
-- **dt_012**: BC point on inactive cell — silently ignored.
+- **dt_012**: No mask=2 cells on the open edge — the bnd/bzs water level is silently ignored.
 - **dt_014**: Both rainfall and VIC runoff in SFINCS = double water.
 - **dt_016**: Daily CaMa output for sub-hourly SFINCS = artificial 24hr ramps.

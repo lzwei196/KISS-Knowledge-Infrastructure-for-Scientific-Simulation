@@ -57,7 +57,7 @@ Build SFINCS topography (sfincs.dep), active cell mask (sfincs.msk), and index (
    These are COMPRESSED maps holding only the active cells in sfincs.ind order — a full
    nmax*mmax grid makes SFINCS silently simulate a scrambled fragment (dt_v023).
 2. Active cells > 0 (mask values > 0)
-3. Edge active cells have mask=2 (outflow), not mask=3
+3. The outlet edge has mask=3 (outflow) on an inland domain, or mask=2 (water-level boundary) only on a coast with a real water level; interior cells are 1
 4. Elevation range is physically reasonable (not all -9999)
 5. No extreme elevation spikes (check max-min < 10000m)
 
@@ -65,6 +65,6 @@ Build SFINCS topography (sfincs.dep), active cell mask (sfincs.msk), and index (
 
 - **dt_004**: Vertical datum mismatch (EGM96 vs WGS84 ellipsoid = 20-40m offset). For coastal modeling, this is CRITICAL.
 - **dt_006**: Grid origin displacement after reprojection. Tool reads from grid_info.json (single source of truth).
-- **dt_007**: All edge cells set to mask=3. Tool auto-detects edges and sets to mask=2.
+- **dt_007**: Outlet edge left as 1 (active), so it is a closed wall and water piles up at the edges. Tool sets the open edge to mask=3 by default (--outflow_value 3, dt_v021).
 - **dt_019**: Mask all zeros — shapefile CRS does not match grid EPSG.
 - **dt_008**: Subgrid ratio > 30x causes artifacts. Keep computational:subgrid ratio at 5-20x.

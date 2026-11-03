@@ -135,7 +135,7 @@ residual = rain - et - q + ds  # Should be near 0
 ### Step 7: Multi-variable Validation
 
 Beyond streamflow, validate:
-- **Snow:** SWE against SNOTEL (m water equivalent)
+- **Snow:** SWE against SNOTEL (model snowpack is mm in .daily files, m in output-filter CSV)
 - **ET:** against MODIS ET (model evap + trans in .daily files are already mm/day)
 - **LAI:** against MODIS LAI (m^2/m^2, direct comparison)
 - **Soil moisture:** against in-situ or SMAP (volumetric)

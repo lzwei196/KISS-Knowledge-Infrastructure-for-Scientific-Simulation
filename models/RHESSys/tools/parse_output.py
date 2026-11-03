@@ -153,6 +153,7 @@ def parse_legacy_output(filepath, level):
     """Parse space-delimited RHESSys legacy output."""
     columns = COLUMN_MAP.get(level, BASIN_DAILY_COLUMNS)
     records = []
+    header_found = False
 
     with open(filepath) as f:
         for line_num, line in enumerate(f, 1):
@@ -168,6 +169,7 @@ def parse_legacy_output(filepath, level):
             if not parts[0].replace("-", "").replace(".", "").isdigit():
                 if not records:
                     columns = parts
+                    header_found = True
                 continue
 
             row = {}
@@ -178,6 +180,11 @@ def parse_legacy_output(filepath, level):
                     row[col] = ""
 
             records.append(row)
+
+    if records and not header_found:
+        print(f"WARNING: no header line in {filepath}; using the old fixed column list, "
+              "which does not match real RHESSys files (e.g. 'streamflow' there is gw.storage). "
+              "Check the columns before using the numbers.", file=sys.stderr)
 
     return records
 
@@ -234,7 +241,11 @@ def convert_streamflow(records, basin_area_m2, depth_unit="mm/day"):
 
 
 def compute_water_balance(records):
-    """Add water balance check column: P - ET - Q - dS."""
+    """Add water balance check column: P - ET - Q.
+
+    There is no storage-change (dS) term here, so a large residual can be water stored
+    in the basin (snow, soil, surface detention), not a parser error.
+    """
     for rec in records:
         try:
             # basin.daily header names (add_headers.c): precip = rain+snow, trans = sat+unsat

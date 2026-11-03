@@ -315,11 +315,11 @@ filter:
 | `evaporation` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Total evaporation |
 | `transpiration_sat_zone` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Transpiration from sat zone |
 | `transpiration_unsat_zone` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Transpiration from unsat zone |
-| `sat_deficit` | m | patch | Saturation deficit |
-| `unsat_storage` | m | patch | Unsaturated zone storage |
-| `rz_storage` | m | patch | Root zone storage |
-| `snowpack.water_equivalent_depth` | m | patch | SWE |
-| `detention_store` | m | patch | Surface detention |
+| `sat_deficit` | mm in .daily files (m in output-filter CSV) | patch | Saturation deficit |
+| `unsat_storage` | mm in .daily files (m in output-filter CSV) | patch | Unsaturated zone storage |
+| `rz_storage` | mm in .daily files (m in output-filter CSV) | patch | Root zone storage |
+| `snowpack.water_equivalent_depth` | mm in .daily files (m in output-filter CSV) | patch | SWE |
+| `detention_store` | mm in .daily files (m in output-filter CSV) | patch | Surface detention |
 | `cs.leafc` | kg C/m^2 | stratum | Leaf carbon |
 | `cs.net_psn` | kg C/m^2/day | stratum | Net photosynthesis |
 | `epv.proj_lai` | m^2/m^2 | stratum | Projected LAI |
@@ -330,7 +330,7 @@ filter:
 
 **CRITICAL UNIT TRAP:** Legacy `<prefix>_basin.daily` / `_patch.daily` write water terms x1000,
 so streamflow is **mm/day over the basin** (output_basin.c:446), not m^3/s and not m/day.
-Other m-unit rows above are also x1000 (mm) in those files. The output filter (`-of`)
+The storage rows above (sat_deficit to detention_store) are also x1000 (mm) in those files. The output filter (`-of`)
 writes raw model values (m, m/day). To convert basin.daily streamflow to m^3/s:
 `Q_m3s = streamflow / 1000 * basin_area / 86400`. See `dt_002`.
 

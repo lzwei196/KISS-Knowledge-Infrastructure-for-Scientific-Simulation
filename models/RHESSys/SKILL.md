@@ -274,7 +274,7 @@ and `dag.yaml` disagree, the dag wins.
 
 **Headline output** (`validation_rank: 1`):
 
-> `streamflow` — Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400. (`m/day (depth per unit basin area)`)
+> `streamflow` — Total basin streamflow as water depth per area (basin.daily writes astreamflow x 1000, output_basin.c:446); convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400. (`mm/day`)
 
 Other dag outputs: `evaporation`, `transpiration (sat + unsat zone)`,
 `snowpack.water_equivalent_depth`, `lai (proj_lai / effective_lai)`,
@@ -311,10 +311,10 @@ filter:
 
 | Variable | Unit | Level | Description |
 |----------|------|-------|-------------|
-| `streamflow` | m/day (depth per unit basin area) | basin | Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400. |
-| `evaporation` | m/day | basin/patch | Total evaporation |
-| `transpiration_sat_zone` | m/day | basin/patch | Transpiration from sat zone |
-| `transpiration_unsat_zone` | m/day | basin/patch | Transpiration from unsat zone |
+| `streamflow` | mm/day in basin.daily (m/day in output-filter CSV) | basin | Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400. |
+| `evaporation` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Total evaporation |
+| `transpiration_sat_zone` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Transpiration from sat zone |
+| `transpiration_unsat_zone` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Transpiration from unsat zone |
 | `sat_deficit` | m | patch | Saturation deficit |
 | `unsat_storage` | m | patch | Unsaturated zone storage |
 | `rz_storage` | m | patch | Root zone storage |
@@ -328,9 +328,11 @@ filter:
 | `soil_cs.totalc` | kg C/m^2 | patch | Total soil carbon |
 | `litter_cs.totalc` | kg C/m^2 | patch | Total litter carbon |
 
-**CRITICAL UNIT TRAP:** Streamflow output is in **m/day per unit basin area**,
-not m^3/s. To convert to m^3/s: `Q_m3s = streamflow * basin_area / 86400`.
-See `dt_002`.
+**CRITICAL UNIT TRAP:** Legacy `<prefix>_basin.daily` / `_patch.daily` write water terms x1000,
+so streamflow is **mm/day over the basin** (output_basin.c:446), not m^3/s and not m/day.
+Other m-unit rows above are also x1000 (mm) in those files. The output filter (`-of`)
+writes raw model values (m, m/day). To convert basin.daily streamflow to m^3/s:
+`Q_m3s = streamflow / 1000 * basin_area / 86400`. See `dt_002`.
 
 ---
 
@@ -353,7 +355,7 @@ outputs, `dag.yaml` is the source of truth.
 | Variable | From unit | To unit | Conversion | Triplet |
 |----------|-----------|---------|------------|---------|
 | Precipitation | mm/day | m/day | / 1000 | dt_001 |
-| Streamflow output | m/day (depth per unit basin area) | m^3/s discharge target | * basin_area / 86400 | dt_002 |
+| Streamflow output (basin.daily) | mm/day (depth over the basin) | m^3/s discharge target | / 1000 * basin_area / 86400 | dt_002 |
 | Temperature | K | deg C | - 273.15 | dt_003 |
 | Soil depth | cm | m | / 100 | dt_004 |
 | Ksat | cm/hr | m/day | * 0.24 | dt_005 |

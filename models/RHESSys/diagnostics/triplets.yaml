@@ -21,7 +21,7 @@
       100% or total water yield is orders of magnitude above precipitation.
 
       '
-    error_pattern: streamflow > 0.1 m/day/m^2 for humid watersheds
+    error_pattern: streamflow > 100 mm/day for humid watersheds
     detection_method: value_comparison
   diagnosis:
     root_cause: Precipitation input is in mm/day instead of m/day
@@ -55,21 +55,22 @@
     error_pattern: streamflow comparison off by orders of magnitude
     detection_method: value_comparison
   diagnosis:
-    root_cause: Streamflow output is in m/day per m^2 basin area, not m^3/s
-    explanation: 'RHESSys reports streamflow as depth per time per unit area (m/day/m^2). To compare with
-      observed discharge in m^3/s: Q_m3s = streamflow * basin_area_m2 / 86400. Skipping this conversion
-      gives dimensionally incorrect comparisons.
+    root_cause: Streamflow output is water depth over the basin in mm/day, not m^3/s
+    explanation: 'RHESSys basin.daily reports streamflow as depth per day over the basin in mm/day (it writes
+      astreamflow x 1000, output_basin.c:446). To compare with observed discharge in m^3/s: Q_m3s =
+      streamflow / 1000 * basin_area_m2 / 86400. Skipping this conversion gives dimensionally incorrect comparisons.
 
       '
     affected_components:
     - output parsing
     - validation metrics
   remedy:
-    action: 'Apply conversion: Q_m3s = streamflow * basin_area / 86400'
+    action: 'Apply conversion: Q_m3s = streamflow / 1000 * basin_area / 86400'
     tool_to_run: parse_output.py --basin-area <area_m2>
     manual_steps:
     - Determine total basin area in m^2
-    - Multiply streamflow values by basin area
+    - Divide streamflow values by 1000 (mm to m)
+    - Multiply by basin area
     - Divide by 86400 (seconds per day)
     prevention: Always specify --basin-area when parsing output for comparison
   cross_references:

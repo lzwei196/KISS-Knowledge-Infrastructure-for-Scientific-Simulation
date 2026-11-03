@@ -118,8 +118,8 @@ echo $?  # Should be 0
 ls -la out/run1_basin.daily
 wc -l out/run1_basin.daily
 
-# Quick check: streamflow should be reasonable (0 to ~0.05 m/day for most basins)
-awk '{print $24}' out/run1_basin.daily | sort -n | tail -5
+# Quick check: streamflow (column 19, mm/day) should be reasonable (0 to ~50 mm/day for most basins)
+awk 'NR>1 {print $19}' out/run1_basin.daily | sort -n | tail -5
 
 # Check for NaN or Inf
 grep -c -i "nan\|inf" out/run1_basin.daily

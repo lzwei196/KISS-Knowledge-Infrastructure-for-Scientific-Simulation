@@ -160,7 +160,7 @@ outputs:
   - var: "streamflow"
     validation_rank: 1
     unit: "mm/day"
-    description: "Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400."
+    description: "Total basin streamflow as water depth per area (basin.daily writes astreamflow x 1000, output_basin.c:446); convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400."
     emitted_in: "basin daily output"
     observability:
       comparable_obs_shapes:
@@ -169,12 +169,12 @@ outputs:
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
           caveats:
-            - "Output is m/day/m^2 not m^3/s; must convert with basin area before gauge comparison (dt_002)."
+            - "Output is mm/day over the basin, not m^3/s; must convert with basin area before gauge comparison (dt_002)."
             - "Comparing a small RHESSys domain against a large-basin gauge via specific discharge assumes uniform runoff generation over the full gauge drainage area."
       detrending_options: ["none"]
   - var: "evaporation"
     validation_rank: 3
-    unit: "m/day"
+    unit: "mm/day"
     description: "Total surface/soil/litter evaporation."
     emitted_in: "basin/patch daily output"
     observability:
@@ -187,7 +187,7 @@ outputs:
       detrending_options: ["none"]
   - var: "transpiration (sat + unsat zone)"
     validation_rank: 5
-    unit: "m/day"
+    unit: "mm/day"
     description: "Canopy transpiration drawn from saturated and unsaturated zones."
     emitted_in: "basin/patch daily output"
     observability:
@@ -201,7 +201,7 @@ outputs:
       detrending_options: ["none"]
   - var: "snowpack.water_equivalent_depth"
     validation_rank: 4
-    unit: "m"
+    unit: "mm"
     description: "Snow water equivalent per patch."
     emitted_in: "patch daily output"
     observability:
@@ -250,9 +250,9 @@ outputs:
       detrending_options: ["none"]
   - var: "streamflow_NO3 / streamflow_DON"
     validation_rank: 2
-    unit: "kgN/m^2/day"
+    unit: "gN/m^2/day"
     description: "Nitrate and dissolved organic nitrogen export in streamflow."
-    emitted_in: "basin daily output"
+    emitted_in: "basin daily growth output (<prefix>_grow_basin.daily)"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
@@ -276,7 +276,7 @@ outputs:
       detrending_options: ["none"]
   - var: "sat_deficit / unsat_storage / rz_storage / theta (soil moisture)"
     validation_rank: 9
-    unit: "m (storage) or dimensionless (relative saturation)"
+    unit: "mm (storage) or dimensionless (relative saturation)"
     description: "Patch-level subsurface water storage / relative saturation state."
     emitted_in: "patch daily output"
     observability:

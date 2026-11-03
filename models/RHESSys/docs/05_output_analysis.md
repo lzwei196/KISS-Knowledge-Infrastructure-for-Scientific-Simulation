@@ -54,19 +54,19 @@ python ki/tools/parse_output.py \
 
 ### Step 3: Unit Conversion for Streamflow
 
-**CRITICAL:** RHESSys streamflow output is in **m/day per unit basin area**
-(i.e., depth/time). To compare with observed discharge (m^3/s):
+**CRITICAL:** RHESSys basin.daily streamflow is in **mm/day over the basin**
+(depth/time; output_basin.c:446 writes astreamflow x 1000). To compare with observed discharge (m^3/s):
 
 ```
-Q_m3s = streamflow_m_day × basin_area_m2 / 86400
+Q_m3s = streamflow_mm_day / 1000 × basin_area_m2 / 86400
 ```
 
 Where:
-- `streamflow_m_day` = model output value
+- `streamflow_mm_day` = model output value (basin.daily column `streamflow`)
 - `basin_area_m2` = total basin area in m^2
 - `86400` = seconds per day
 
-**TRAP dt_002:** Forgetting this conversion and comparing m/day/m^2 directly
+**TRAP dt_002:** Forgetting this conversion and comparing mm/day directly
 against m^3/s gives dimensionally wrong results that can appear plausible for
 small basins but are always wrong.
 
@@ -86,14 +86,18 @@ python ki/tools/parse_output.py \
 |--------|----------|----------|------|
 | 1-3 | 1-3 | day, month, year | — |
 | 4 | 4 | basinID | — |
-| 24 | 24 | streamflow | m/day/m^2 |
-| 9-10 | 9-10 | trans_sat, trans_unsat | m/day |
-| 13 | 13 | evap | m/day |
-| 15 | 15 | sat_deficit | m |
-| 17 | 17 | unsat_storage | m |
-| 21 | 21 | snow_stored | m |
-| 26 | 26 | LAI | m^2/m^2 |
-| 33-34 | 33-34 | streamflow_NO3, streamflow_DON | kg N/m^2/day |
+| 19 | 19 | streamflow | mm/day |
+| 16 | 16 | trans (sat + unsat) | mm/day |
+| 14 | 14 | evap | mm/day |
+| 8 | 8 | sat_def | mm |
+| 10 | 10 | unsat_stor | mm |
+| 15 | 15 | snowpack | mm |
+| 22 | 22 | lai | m^2/m^2 |
+| 37 | 37 | precip | mm/day |
+
+Positions are from the header line of `<prefix>_basin.daily` (add_headers.c); read columns
+by header name, not by position. streamflow_NO3 / streamflow_DON are in `<prefix>_grow_basin.daily`
+(columns 35 and 37), written x1000 (gN/m^2/day, output_growth_basin.c:440-442).
 
 ### Step 5: Validation Metrics
 
@@ -121,10 +125,10 @@ PBIAS = 100 * sum(Qsim - Qobs) / sum(Qobs)
 
 ```python
 # Check: P - ET - Q - dS ≈ 0
-rain = sum(data['rain'])
-et = sum(data['evap']) + sum(data['trans_sat']) + sum(data['trans_unsat'])
+rain = sum(data['precip'])            # basin.daily header names, all mm or mm/day
+et = sum(data['evap']) + sum(data['trans'])
 q = sum(data['streamflow'])
-ds = data['sat_deficit'].iloc[-1] - data['sat_deficit'].iloc[0]
+ds = data['sat_def'].iloc[-1] - data['sat_def'].iloc[0]
 residual = rain - et - q + ds  # Should be near 0
 ```
 
@@ -132,7 +136,7 @@ residual = rain - et - q + ds  # Should be near 0
 
 Beyond streamflow, validate:
 - **Snow:** SWE against SNOTEL (m water equivalent)
-- **ET:** against MODIS ET (mm/day × 1000 → m/day)
+- **ET:** against MODIS ET (model evap + trans in .daily files are already mm/day)
 - **LAI:** against MODIS LAI (m^2/m^2, direct comparison)
 - **Soil moisture:** against in-situ or SMAP (volumetric)
 
@@ -158,7 +162,7 @@ import csv
 with open('out/basin_daily.csv') as f:
     rows = list(csv.DictReader(f))
 sf = [float(r['streamflow']) for r in rows if r.get('streamflow')]
-print(f'Streamflow: min={min(sf):.6f} max={max(sf):.6f} mean={sum(sf)/len(sf):.6f} m/day/m^2')
+print(f'Streamflow: min={min(sf):.6f} max={max(sf):.6f} mean={sum(sf)/len(sf):.6f} mm/day')
 "
 ```
 
@@ -166,7 +170,7 @@ print(f'Streamflow: min={min(sf):.6f} max={max(sf):.6f} mean={sum(sf)/len(sf):.6
 
 | Trap | Symptom | Fix | Triplet |
 |------|---------|-----|---------|
-| Comparing m/day/m^2 vs m^3/s | Metrics make no sense | Convert with basin area | dt_002 |
+| Comparing mm/day vs m^3/s | Metrics make no sense | Convert with basin area | dt_002 |
 | All zeros in output | TEC events before start | Fix TEC dates | dt_014 |
 | Streamflow 1000x too high | Precip in mm not m | Fix input precip units | dt_001 |
 | Negative streamflow | Numerical instability | Check soil params, reduce timestep | dt_018 |
@@ -182,7 +186,7 @@ sim = pd.read_csv("out/basin_daily.csv", parse_dates=["date"])
 
 # Convert streamflow to m^3/s
 basin_area = 1e6  # m^2
-sim["Q_m3s"] = sim["streamflow"].astype(float) * basin_area / 86400
+sim["Q_m3s"] = sim["streamflow"].astype(float) / 1000 * basin_area / 86400  # mm/day -> m^3/s
 
 # Load observations
 obs = pd.read_csv("obs_streamflow.csv", parse_dates=["date"])

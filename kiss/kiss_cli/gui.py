@@ -5096,6 +5096,10 @@ verification are different states; never claim this test verified the KI."""
                     return "completed", "Software verified; requested case compatibility remains unverified."
                 emit(f"\n{ki.name} is verified and ready to use.\n")
                 return "completed", "Software verification passed."
+            elif getattr(job.handle, "provider_failure", None):
+                # The AI connection, not the agent, ended this attempt.
+                emit(f"\n{job.handle.provider_failure}\n")
+                return "failed", job.handle.provider_failure
             else:
                 emit("\nThe check still fails. Continue the agent for another repair pass.\n")
                 return "failed", "Software verification still fails; see the saved log."

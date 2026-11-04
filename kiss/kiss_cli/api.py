@@ -71,6 +71,8 @@ class TurnHandle:
         self._response = None
         self._lock = threading.Lock()
         self.response_metadata: dict = {}
+        # Set when a provider error, not the agent, ended the turn.
+        self.provider_failure: str | None = None
 
     def attach(self, response) -> None:
         with self._lock:
@@ -2924,6 +2926,31 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
 # --- wire formats -----------------------------------------------------------
 
+def provider_failure(label: str, error: str) -> str:
+    """Name the provider error that ended an agent's work, and what the user can do."""
+    match = re.match(r"HTTP (\d{3}) from \S+: (.*)", error, re.S)
+    code = int(match.group(1)) if match else None
+    said = error
+    if match:
+        said = f"HTTP {code}"
+        try:
+            reason = json.loads(match.group(2))["error"]["message"]
+            said += f" {str(reason)[:200]}"
+        except (ValueError, KeyError, TypeError):
+            pass
+    if code == 402:
+        advice = "The account has no balance left. Top it up or choose another AI connection, then try again."
+    elif code in (401, 403):
+        advice = "The API key was refused. Check it in Settings, then try again."
+    elif code == 429:
+        advice = "The provider is limiting requests or its quota is used up. Wait, then try again."
+    elif code is not None and code < 500:
+        advice = "The provider rejected the request. Try again; if it repeats, choose another AI connection."
+    else:
+        advice = "The service is busy or unreachable. Try again later."
+    return f"{label} could not continue ({said[:300]}). {advice}"
+
+
 def _open(url: str, headers: dict, payload: dict, *, provider: str):
     """Open the provider request with the connection-level retries only."""
     req = urllib.request.Request(
@@ -3276,6 +3303,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         flow.continuation_blocked_reason = None
     from . import provider_diagnostics
     handle = handle or TurnHandle()
+    handle.provider_failure = None
     diagnostic_project = getattr(flow, 'project', None) if project_mode else None
     diagnostic_turn_id = (setup_context or {}).get('_turn_id')
     def diagnostic(event, **metadata):
@@ -3287,6 +3315,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
     if not key:
         diagnostic('turn_end', reason='missing_provider_key')
         yield f"[{prov.label}: set {prov.env_key} — get one at {prov.signup}]"
+        handle.provider_failure = f"{prov.label} has no API key. Add it in Settings, then try again."
         return
 
     want = model or prov.default_model
@@ -3367,6 +3396,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                 yield f"\n[{prov.label}: connection dropped; retrying once]\n"
                 continue
             yield f"\n[{prov.label} failed: {e}]"
+            handle.provider_failure = provider_failure(prov.label, str(e))
             return
 
         finish_reason = handle.response_metadata.get('finish_reason')

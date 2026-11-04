@@ -40,8 +40,31 @@ def test_model_environment_removes_host_python_configuration_only(tmp_path):
     cfg = SimpleNamespace(roles={})
     actual = paths.with_ki_tools_common(cfg, inherited)
     assert actual == {"PATH": "toolchain", "HTTPS_PROXY": "http://proxy.example",
-                      "GEOFORGE_EXECUTION_TURN": "current-turn", "PYTHONNOUSERSITE": "1"}
+                      "GEOFORGE_EXECUTION_TURN": "current-turn", "PYTHONNOUSERSITE": "1",
+                      **({"PYTHONUTF8": "1"} if os.name == "nt" else {})}
     assert inherited["PYTHONPATH"] == "host", "parent/host dispatch environment is not mutated"
+
+
+def test_ki_python_text_means_utf8_as_where_the_kis_were_written(tmp_path):
+    # SuperflexPy on Chinese Windows: "km²" in --help, an em dash in a result
+    # file written without an encoding, and a child's output read back through
+    # a text pipe -- each failed under the gbk default.
+    child = tmp_path / "child.py"
+    child.write_text("import sys\nprint('Runoff ratio 0.4 \\u2014 area km\\u00b2', file=sys.stderr)\n",
+                     encoding="utf-8")
+    preflight = tmp_path / "preflight.py"
+    preflight.write_text(
+        "import subprocess, sys\n"
+        "print('area in km\\u00b2')\n"
+        "with open('result.txt', 'w') as f:\n"
+        "    f.write('ok \\u2014 done')\n"
+        "assert open('result.txt', encoding='utf-8').read() == 'ok \\u2014 done'\n"
+        f"r = subprocess.run([sys.executable, {str(child)!r}], text=True, capture_output=True)\n"
+        "assert '\\u2014' in r.stderr, r.stderr\n"
+        "print('PASSED')\n", encoding="utf-8")
+    code, output = install._run([sys.executable, str(preflight)], cwd=tmp_path, encoding="utf-8")
+    assert code == 0, output
+    assert "area in km\u00b2" in output and "PASSED" in output
 
 
 @pytest.mark.parametrize("supervised", [False, True])

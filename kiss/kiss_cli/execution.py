@@ -413,7 +413,8 @@ def run_process(command: list[str] | str, *, cwd, env, timeout: float | None,
         started = True
         LIVE_PROCESSES.add(proc)
         if os.name == "nt" and isinstance(proc, _POPEN):
-            from .processes import WindowsProcessTracker
+            from .processes import WindowsProcessTracker, contain
+            contain(proc, project, captured)
             tracker = WindowsProcessTracker(proc, command)
             proc._geoforge_process_tree = tracker
             tracker.start()

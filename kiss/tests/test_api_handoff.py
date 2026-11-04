@@ -23,13 +23,13 @@ def _env(tmp_path):
     return SimpleNamespace(root=tmp_path), SimpleNamespace(root=tmp_path)
 
 
-def _run(turns, flow=None, execute=None):
+def _run(turns, flow=None, execute=None, handle=None):
     with mock.patch.dict(api.os.environ, {"DEMO_API_KEY": "test"}), \
          mock.patch.object(api, "_openai_turn", side_effect=turns) as turn, \
          mock.patch.object(api, "execute_tool", side_effect=execute or (lambda *a, **k: "ok")), \
          mock.patch.object(api, "tool_schemas", return_value=[]):
         out = "".join(api.run(PROV, SimpleNamespace(), SimpleNamespace(), "sys", "task",
-                              project_mode=True, flow=flow))
+                              project_mode=True, flow=flow, handle=handle))
     return out, turn.call_count
 
 
@@ -97,6 +97,30 @@ def test_transport_failure_is_retried_once():
     boom2 = api.ToolError("provider stream interrupted: TimeoutError: timed out")
     out, calls = _run([boom, boom2, _prose("never")], _flow("EXECUTING"))
     assert calls == 2 and "Demo API failed" in out
+
+
+def test_provider_error_that_ends_the_turn_is_named_on_the_handle():
+    handle = api.TurnHandle()
+    body = '{"error":{"message":"Insufficient Balance","type":"insufficient_balance_error"}}'
+    boom = api.ToolError(f"HTTP 402 from https://example.invalid/chat/completions: {body}")
+    out, calls = _run([boom], _flow("EXECUTING"), handle=handle)
+    assert calls == 1 and "Demo API failed: HTTP 402" in out
+    assert handle.provider_failure == (
+        "Demo API could not continue (HTTP 402 Insufficient Balance). The account has no "
+        "balance left. Top it up or choose another AI connection, then try again.")
+    _run([_prose("recovered")], _flow("EXECUTING"), handle=handle)
+    assert handle.provider_failure is None, "a later healthy turn clears it"
+
+
+@pytest.mark.parametrize("error, says", [
+    ("HTTP 401 from https://x/y: {}", "API key was refused"),
+    ("HTTP 429 from https://x/y: not json", "limiting requests"),
+    ('HTTP 503 from https://x/y: {"error":{"message":"Service is too busy"}}', "busy or unreachable"),
+    ("cannot reach https://x/y: [Errno 11001] getaddrinfo failed", "busy or unreachable"),
+])
+def test_provider_failure_advice(error, says):
+    text = api.provider_failure("Demo API", error)
+    assert text.startswith("Demo API could not continue (") and says in text
 
 
 def test_focused_tools_map_onto_the_legacy_handler(monkeypatch, tmp_path):

@@ -201,6 +201,22 @@ def test_http_disconnect_reconnect_conflicts_and_stop_without_intact_ki(ready, m
         thread.join(5)
 
 
+def test_provider_error_is_named_instead_of_asking_for_a_repair_pass(ready, monkeypatch):
+    c = ready
+    failure = "Demo API could not continue (HTTP 402 Insufficient Balance). Top it up, then try again."
+
+    def provider(*args, **kwargs):
+        kwargs["handle"].provider_failure = failure
+        yield "\n[Demo API failed: HTTP 402]"
+    monkeypatch.setattr(api, "run", provider)
+    monkeypatch.setattr(install, "run_preflight",
+                        lambda *args, **kwargs: install.Step("preflight", False, "binary missing"))
+    c.handler._stream_agent_setup({"model": "Demo", "provider": "api:deepseek"})
+    job = setup_jobs.status(c.workroot, "Demo")
+    assert job["state"] == "failed" and job["detail"] == failure
+    assert failure in "".join(c.output) and "another repair pass" not in "".join(c.output)
+
+
 def test_source_changed_during_setup_cannot_claim_completed(ready, monkeypatch):
     c = ready
     def provider(*args, **kwargs):

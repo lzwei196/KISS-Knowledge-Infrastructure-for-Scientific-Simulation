@@ -1304,7 +1304,8 @@ def _run_preflight_copy(ki, python: str, cfg, *, project) -> Step:
             from .paths import with_ki_tools_common, with_python_runtime
             env = with_python_runtime(python, with_ki_tools_common(launch_cfg, env))
         evidence["launch_attempted"] = True
-        rc, out = _run(argv, cwd=scratch, timeout=600, env=env, full_output=True)
+        # A Python preflight writes UTF-8 (model_python_environment).
+        rc, out = _run(argv, cwd=scratch, timeout=600, env=env, full_output=True, encoding="utf-8")
         check_cancelled()
         after = _preflight_inputs(scratch)
         changed = [name for name, row in inputs.items() if after.get(name) != row]

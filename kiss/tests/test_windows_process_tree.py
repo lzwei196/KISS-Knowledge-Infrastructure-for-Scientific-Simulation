@@ -270,3 +270,65 @@ def test_termination_checks_identity_on_the_handle_it_terminates():
 
 def test_kernel32_bindings_are_built_once():
     assert processes._kernel32() is processes._kernel32()
+
+
+def test_attempt_job_ends_a_build_detached_from_a_command_that_exited(tmp_path):
+    # An agent's "make &" from a shell that then exits: no living parent links
+    # the build to anything GeoForge watches, so only the attempt's job reaches it.
+    middle = _spawner(tmp_path / "middle.pids", _SLEEP, "")
+    processes.open_attempt(tmp_path, "turn-1")
+    other = None
+    entries = []
+    try:
+        root = _launch(_spawner(tmp_path / "root.pids", middle, ""))
+        processes.contain(root, tmp_path, "turn-1")
+        other = _launch(_SLEEP)                       # started outside the attempt
+        processes.contain(other, tmp_path, "turn-2")
+        _, middle_pid = _pids(tmp_path / "root.pids")
+        _, leaf_pid = _pids(tmp_path / "middle.pids")
+        entries = [_identity(leaf_pid)]
+        root.wait(timeout=20)
+        assert _wait_dead([(middle_pid, processes._windows_creation_time(middle_pid) or 0)], 20) == []
+        assert processes._windows_running(*entries[0]), "the detached build is still running"
+        processes.terminate_attempt(tmp_path, "turn-1")
+        assert _wait_dead(entries, 3) == []
+        assert other.poll() is None, "another attempt's process is untouched"
+    finally:
+        processes.close_attempt(tmp_path, "turn-1")
+        _cleanup([p for p in (other,) if p is not None], entries)
+
+
+def _detached_build(tmp_path, name):
+    """A build left running by a command that already exited; its leaf identity."""
+    middle = _spawner(tmp_path / f"{name}-middle.pids", _SLEEP, "")
+    shim = _launch(_spawner(tmp_path / f"{name}.pids", middle, ""))
+    return shim, tmp_path / f"{name}-middle.pids"
+
+
+@pytest.mark.parametrize("ending", ["stop", "finish"])
+def test_setup_attempt_contains_its_commands_and_ends_a_detached_build(tmp_path, monkeypatch, ending):
+    from kiss_cli import setup_jobs
+    root = tmp_path / "workspace"
+    root.mkdir()
+    job = setup_jobs.start(tmp_path / "work", "Demo", root, "builtin")
+    seen, real = [], processes.contain
+    monkeypatch.setattr(processes, "contain",
+                        lambda proc, project, turn: seen.append((project, turn)) or real(proc, project, turn))
+    shim, entries = None, []
+    try:
+        execution.run_process([_PYTHON, "-c", "pass"], cwd=root, env=dict(os.environ),
+                              timeout=30, project=root, turn_id=job.turn_id)
+        assert seen == [(root, job.turn_id)], "every setup command joins the attempt"
+        shim, leafs = _detached_build(tmp_path, ending)
+        processes.contain(shim, root, job.turn_id)
+        entries = [_identity(_pids(leafs)[1])]
+        shim.wait(timeout=20)
+        assert processes._windows_running(*entries[0])
+        if ending == "stop":
+            job.request_stop()
+        else:
+            job.finish("failed", "fixture attempt ended")
+        assert _wait_dead(entries, 3) == []
+    finally:
+        job.finish("failed", "fixture attempt ended")
+        _cleanup([p for p in (shim,) if p is not None], entries)

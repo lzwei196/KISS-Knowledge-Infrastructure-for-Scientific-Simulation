@@ -1139,6 +1139,9 @@ def _run(provider: Provider, prompt: str, cwd: Path,
             cleanup_home(kimi_home)
         yield f"[failed to start {provider.label}: {e}]"
         return
+    if turn_project:
+        from .processes import contain
+        contain(proc, turn_project, turn_id)
 
     if runtime_events is not None:
         now = time.time()

@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 
-from . import api, execution, install, install_locations
+from . import api, execution, install, install_locations, processes
 
 
 ACTIVE = frozenset({"running", "stopping"})
@@ -254,6 +254,8 @@ class Job:
                     execution.terminate_tree(proc)
                 except OSError:
                     pass  # It may have exited after poll().
+            # Including builds the agent detached from the command that started them.
+            processes.terminate_attempt(self.root, self.turn_id)
             # Publish only after terminate_tree has registered its escalation
             # worker. Shutdown may now safely snapshot/wait for those workers.
             self._signalled = True
@@ -314,6 +316,8 @@ class Job:
             if self._done.is_set():
                 return _public(self._doc)
             try:
+                # Nothing this attempt started outlives it.
+                processes.close_attempt(self.root, self.turn_id)
                 doc = _read(self._path)
                 if not doc or doc.get("id") != self.id:
                     raise ValueError("setup job record changed before completion")
@@ -366,6 +370,7 @@ def start(workroot, model, root, provider, installation_only=False) -> Job:
             _write(path, doc)
             _write(_root_record(root), doc)
             job = Job(workroot, doc, leases)
+            processes.open_attempt(root, turn_id)
             with _LIVE_LOCK:
                 _LIVE[job.id] = job
             threading.Thread(target=job._watch, daemon=True,

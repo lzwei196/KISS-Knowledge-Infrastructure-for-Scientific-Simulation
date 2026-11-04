@@ -289,6 +289,12 @@ def model_python_environment(env: dict[str, str] | None = None) -> dict[str, str
                  "PYTHONEXECUTABLE", "__PYVENV_LAUNCHER__"):
         out.pop(name, None)
     out["PYTHONNOUSERSITE"] = "1"
+    if os.name == "nt":
+        # KIs are written and validated where Python's text default is UTF-8.
+        # Windows' default is the ANSI code page (gbk on Chinese Windows), so
+        # their "km²" help text, result files and pipes broke there. UTF-8 mode
+        # gives every read, write, print and pipe the meaning they were tested with.
+        out.setdefault("PYTHONUTF8", "1")
     return out
 
 

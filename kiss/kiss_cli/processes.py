@@ -63,6 +63,12 @@ def _kernel32():
     k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
     k32.CloseHandle.argtypes = [wintypes.HANDLE]
     k32.CloseHandle.restype = wintypes.BOOL
+    k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    k32.AssignProcessToJobObject.restype = wintypes.BOOL
+    k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    k32.TerminateJobObject.restype = wintypes.BOOL
     return k32, PROCESSENTRY32W
 
 
@@ -459,3 +465,70 @@ def terminate_process_tree(proc: subprocess.Popen) -> None:
         os.killpg(proc.pid, signal.SIGKILL)
     except (OSError, ProcessLookupError):
         pass
+
+
+# --- Windows job objects ---------------------------------------------------
+#
+# The tracker above polls: a child started in the background by a shell that
+# then exits (an msys ``make &``) can appear and lose its parent between two
+# snapshots, and is never seen. Such a process can also keep a finished
+# command's pipes open, so the command never returns and Stop waits on it.
+# A job object is OS containment: whatever a member starts stays a member,
+# whatever happens to its parent. One job holds everything one setup attempt
+# starts; Stop and the end of the attempt end the whole job.
+
+_ATTEMPTS: dict[str, int] = {}
+_ATTEMPTS_LOCK = threading.Lock()
+
+
+def _attempt_key(project, turn_id) -> str:
+    return os.path.normcase(os.path.realpath(project)) + "\0" + str(turn_id or "")
+
+
+def open_attempt(project, turn_id) -> None:
+    """Contain every process this attempt starts from now on (Windows only)."""
+    if os.name != "nt":
+        return
+    k32, _ = _kernel32()
+    job = k32.CreateJobObjectW(None, None)
+    if not job:
+        return                                # the polling tracker still applies
+    with _ATTEMPTS_LOCK:
+        previous = _ATTEMPTS.pop(_attempt_key(project, turn_id), None)
+        _ATTEMPTS[_attempt_key(project, turn_id)] = job
+    if previous:
+        k32.CloseHandle(previous)
+
+
+def contain(proc, project, turn_id) -> None:
+    """Add a just-started process to its attempt's job, if that attempt is open."""
+    handle = getattr(proc, "_handle", None)
+    if os.name != "nt" or project is None or handle is None:
+        return
+    with _ATTEMPTS_LOCK:
+        job = _ATTEMPTS.get(_attempt_key(project, turn_id))
+        if job:
+            # Refused only for an unusual enclosing job; polling still applies.
+            _kernel32()[0].AssignProcessToJobObject(job, int(handle))
+
+
+def terminate_attempt(project, turn_id) -> None:
+    """End every process the attempt started, detached ones included."""
+    if os.name != "nt":
+        return
+    with _ATTEMPTS_LOCK:
+        job = _ATTEMPTS.get(_attempt_key(project, turn_id))
+        if job:
+            _kernel32()[0].TerminateJobObject(job, 1)
+
+
+def close_attempt(project, turn_id) -> None:
+    """End what the attempt left running and release its job."""
+    if os.name != "nt":
+        return
+    with _ATTEMPTS_LOCK:
+        job = _ATTEMPTS.pop(_attempt_key(project, turn_id), None)
+    if job:
+        k32, _ = _kernel32()
+        k32.TerminateJobObject(job, 1)
+        k32.CloseHandle(job)

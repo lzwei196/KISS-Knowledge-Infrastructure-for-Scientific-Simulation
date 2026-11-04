@@ -934,6 +934,7 @@ def prepare_python(cfg, live: Path, *, explicit_python: str | None = None):
     if Path(cfg.root).resolve() != Path(live).parent.resolve():
         return install.Step("python-env", False,
                             "Saved runtime configuration names a different workspace root; restore kiss.toml before setup.")
+    ki_guard.retire_removed(live)
     active = (Path(live) / "SKILL.md").is_file() or ki_guard.is_managed(live)
     if active:
         if not (Path(cfg.root) / paths.CONFIG_NAME).is_file():
@@ -1008,6 +1009,7 @@ def prepare_existing_python(cfg, live: Path, selected: str | None):
     # Preserve a venv's executable spelling: resolving its symlink to base
     # Python would select a different environment on POSIX.
     path = path.absolute()
+    ki_guard.retire_removed(live)
     active = (Path(live) / "SKILL.md").is_file() or ki_guard.is_managed(live)
     if active:
         saved = load_runtime_config(cfg.root)

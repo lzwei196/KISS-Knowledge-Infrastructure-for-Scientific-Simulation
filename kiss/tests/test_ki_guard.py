@@ -1,6 +1,7 @@
 """Host KI integrity lifecycle: no real providers, installers or model runs."""
 from pathlib import Path
 import json
+import os
 import shutil
 import sys
 from types import SimpleNamespace
@@ -280,6 +281,54 @@ def test_setup_does_not_refresh_enrolled_ki(active):
         setup.materialise_active(source, active, paths.KissConfig.default(active.parent))
     ki_guard.require_intact(active)
     assert list(active.parent.glob("ki-draft-*/SKILL.md"))[0].read_text() == "new upstream instructions"
+
+
+def replace_folder(folder):
+    # The user deletes the whole installation, then installs at the same path.
+    # Renaming first keeps the old directory alive, so the new one cannot reuse
+    # its identity even on file systems that recycle inode numbers.
+    old = folder.with_name(folder.name + "-deleted")
+    folder.rename(old)
+    folder.mkdir()
+    shutil.rmtree(old)
+
+
+def test_removed_installation_folder_installs_again(active):
+    source = active.parent.parent / "library" / "M"
+    source.mkdir(parents=True)
+    for name in ("SKILL.md", "preflight_check.py"):
+        (source / name).write_bytes((active / name).read_bytes())
+    replace_folder(active.parent)
+    cfg = paths.KissConfig.default(active.parent)
+    (active.parent / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+    assert setup.prepare_python(cfg, active, explicit_python=sys.executable).ok
+    assert not ki_guard.is_managed(active)
+    retired = list((ki_guard._home() / "retired").glob("*/baseline.json"))
+    assert len(retired) == 1, "the old record is kept, not deleted"
+    report = setup.materialise_active(source, active, cfg)
+    assert not report.unresolved and not report.corrupted
+    assert ki_guard.require_intact(active)["container"] == ki_guard._container(active)
+
+
+def test_removing_only_the_ki_keeps_its_record(active):
+    shutil.rmtree(active)
+    assert ki_guard.retire_removed(active) is None and ki_guard.is_managed(active)
+    with pytest.raises(ki_guard.KIIntegrityError, match="was removed"):
+        ki_guard.require_intact(active)
+
+
+@pytest.mark.skipif(os.name != "nt" and not hasattr(os.stat_result, "st_birthtime"),
+                    reason="needs folder creation times")
+def test_record_without_folder_identity_retires_only_for_a_newer_folder(active, monkeypatch):
+    with monkeypatch.context() as m:
+        m.setattr(ki_guard, "_container", lambda root: None)
+        shutil.rmtree(ki_guard._entry(active))
+        ki_guard.enroll(active)
+    assert "container" not in ki_guard._read(active)
+    shutil.rmtree(active)
+    assert ki_guard.retire_removed(active) is None
+    replace_folder(active.parent)
+    assert ki_guard.retire_removed(active) is not None and not ki_guard.is_managed(active)
 
 
 def test_existing_host_metadata_and_cache_do_not_force_setup_upgrade(active):

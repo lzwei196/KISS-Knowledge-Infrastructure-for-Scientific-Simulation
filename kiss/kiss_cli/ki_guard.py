@@ -151,11 +151,26 @@ def _read(root: Path) -> dict | None:
     return doc
 
 
+def _container(root: Path) -> dict | None:
+    """The folder holding a KI, as its file system identifies it.
+
+    A folder deleted and created again at the same path is a different
+    directory, so a record cannot outlive the installation it protected.
+    """
+    try:
+        info = os.stat(_io(Path(root).absolute().parent))
+    except OSError:
+        return None
+    return {"device": info.st_dev, "inode": info.st_ino} if info.st_ino else None
+
+
 def _save(root: Path, digest: str, *, origin: str) -> dict:
     from . import flowgate
     receipts = flowgate.load().receipts
+    container = _container(root)
     doc = receipts.sign(root, {"schema_version": 1, "root": str(root.absolute()),
-                              "digest": digest, "origin": origin})
+                              "digest": digest, "origin": origin,
+                              **({"container": container} if container else {})})
     entry = _entry(root)
     _io(entry).mkdir(parents=True, exist_ok=True)
     temp = entry / f"state-{uuid.uuid4().hex}.tmp"
@@ -388,6 +403,41 @@ def enroll(root: Path) -> dict:
         return _save(root, digest, origin="existing_host_baseline")
 
 
+def retire_removed(root: Path) -> Path | None:
+    """Set aside the record of a KI whose whole installation folder was removed.
+
+    Host setup only, before it decides between an active and a fresh KI.
+    Removing or moving just the KI tree, or editing status files, never
+    qualifies: the folder holding the KI must itself be a different directory
+    from the one recorded. Records from before folder identities were kept
+    qualify only if that folder was created after the record was written.
+    The record and its backup are moved under retired/, never deleted.
+    """
+    root = Path(root).absolute()
+    with operation(root), _LOCK:
+        doc = _read(root)
+        if doc is None or os.path.lexists(_io(root)):
+            return None
+        current, recorded = _container(root), doc.get("container")
+        if current is None:
+            return None
+        if recorded is not None:
+            removed = recorded != current
+        else:
+            info = os.stat(_io(root.parent))
+            created = getattr(info, "st_birthtime", None)
+            if created is None and os.name == "nt":
+                created = info.st_ctime  # creation time on Windows before Python 3.12
+            written = os.stat(_io(_entry(root) / "baseline.json")).st_mtime
+            removed = created is not None and created > written
+        if not removed:
+            return None
+        retired = _home() / "retired" / f"{_entry(root).name}-{uuid.uuid4().hex[:8]}"
+        _io(retired.parent).mkdir(parents=True, exist_ok=True)
+        _io(_entry(root)).rename(_io(retired))
+        return retired
+
+
 def require_intact(root: Path, *, required: bool = True) -> dict | None:
     """Never enroll or accept changed bytes as a new baseline."""
     root = Path(root).absolute()
@@ -397,6 +447,9 @@ def require_intact(root: Path, *, required: bool = True) -> dict | None:
             if not required:
                 return None
             raise KIIntegrityError(f"KI has no host baseline: {root}")
+        if not os.path.lexists(_io(root)):
+            raise KIIntegrityError(
+                f"Active KI was removed: {root}. Restore it, or install into a new empty folder.")
         if root.is_symlink() or _digest(root) != doc["digest"]:
             raise KIIntegrityError(
                 f"Active KI changed: {root}. Keep edits in a KI draft and verify "

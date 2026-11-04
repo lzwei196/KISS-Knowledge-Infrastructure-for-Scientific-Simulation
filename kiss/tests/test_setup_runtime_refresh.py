@@ -7,6 +7,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 from types import SimpleNamespace
 import venv
@@ -157,6 +158,17 @@ def test_previous_installation_cannot_claim_freshness_by_editing_status(case):
     moved = c.root / "preserved-ki"
     c.live.root.rename(moved)
     assert runtime.begin(c.root) is None
+
+
+def test_removed_installation_folder_is_fresh_again(case):
+    # Deleting the whole folder leaves nothing the old record protected.
+    old = case.root.with_name("workspace-deleted")
+    case.root.rename(old)
+    case.root.mkdir()
+    shutil.rmtree(old)
+    ticket = runtime.begin(case.root)
+    assert ticket is not None
+    runtime.close(ticket)
 
 
 def test_fresh_ticket_requires_saved_configuration_before_capture(tmp_path, monkeypatch):

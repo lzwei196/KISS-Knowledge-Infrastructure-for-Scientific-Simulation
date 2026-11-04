@@ -60,12 +60,14 @@ def begin(root, *, allowed=True):
     """Called by the host before creating the first active setup KI.
 
     No provider-controlled readiness flag is consulted. An existing or formerly
-    enrolled KI cannot become fresh by deleting its files or status.json.
+    enrolled KI cannot become fresh by deleting its files or status.json; only
+    a removed and recreated installation folder retires its record.
     """
     if not allowed:
         return None
     root = Path(root).absolute()
     live = root / "ki"
+    ki_guard.retire_removed(live)
     if (root.resolve() != root or live.exists() or live.is_symlink()
             or ki_guard.is_managed(live)):
         return None

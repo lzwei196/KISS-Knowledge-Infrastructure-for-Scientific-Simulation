@@ -25,7 +25,13 @@ Usage:
   python convert_met.py --input forcing.csv --output site.met \\
       --lat -27.18 --lon 151.26 --station "Dalby" \\
       --source csv --csv-date-col date --csv-radn-col ssrd \\
-      --csv-maxt-col tmax --csv-mint-col tmin --csv-rain-col tp
+      --csv-maxt-col tmax --csv-mint-col tmin --csv-rain-col tp \\
+      --csv-radn-units W/m2 --csv-temp-units K --csv-rain-units m/day
+
+Units are never guessed from the size of the values: NetCDF inputs use each
+variable's `units` attribute (missing/unknown -> stop); CSV inputs have no
+unit metadata, so --csv-radn-units, --csv-temp-units and --csv-rain-units are
+REQUIRED for CSV.
 """
 
 import argparse
@@ -135,15 +141,73 @@ def compute_tav_amp(maxt, mint, doy=None):
     return round(tav, 2), round(amp, 2)
 
 
+# Rainfall below this (mm/day) is not a tiny rounding/packing artefact: it is
+# a missing-value marker (e.g. -9999) or bad data. It must NOT become a dry
+# day; it becomes NaN so the required-column check stops the tool.
+RAIN_NEG_TOL_MM = -0.05   # values in (-0.05, 0) print as 0.0 at 0.1 mm anyway
+
+
+def _rain_mm(v):
+    """Daily rain (mm) -> value for the .met file; bad negatives -> NaN."""
+    v = float(v)
+    if v != v:                      # NaN stays NaN (caught in process)
+        return v
+    if v < 0:
+        return 0.0 if v > RAIN_NEG_TOL_MM else float("nan")
+    return v
+
+
 def read_netcdf_era5(filepath, lat, lon, start, end):
     """Read ERA5 NetCDF data and convert units."""
     ds = xr.open_dataset(filepath)
 
-    # Find nearest grid point
-    ds_point = ds.sel(latitude=lat, longitude=lon, method="nearest")
+    # Find nearest grid point. Longitude is picked by CIRCULAR distance, so
+    # the file's convention (0..360 or -180..180) does not matter and the
+    # wrap point is handled (e.g. -0.1 on a 0..359.75 grid -> 0, not 359.75).
+    if "latitude" not in ds.coords or "longitude" not in ds.coords:
+        ds.close()
+        raise SystemExit(f"ERROR: {filepath}: needs 'latitude' and 'longitude' "
+                         f"coordinates. Nothing written.")
+    lon_vals = np.asarray(ds["longitude"].values, dtype=float)
+    lon_q = float(lon)
+    circ = np.abs(((lon_vals - lon_q) + 180.0) % 360.0 - 180.0)
+    ds_point = ds.sel(latitude=lat, method="nearest").isel(longitude=int(np.nanargmin(circ)))
+    # The chosen cell must really be near the site (not an edge cell of a
+    # grid that does not cover it).
+    lat_sel = float(ds_point["latitude"].values)
+    lon_sel = float(ds_point["longitude"].values)
+    dlon = abs(((lon_sel - lon_q) + 180.0) % 360.0 - 180.0)
+    def _step(v):
+        v = np.unique(np.asarray(v, dtype=float))
+        return float(np.min(np.diff(v))) if v.size > 1 else None
+    lat_step, lon_step = _step(ds["latitude"].values), _step(ds["longitude"].values)
+    if ((lat_step is not None and abs(lat_sel - lat) > lat_step) or
+            (lon_step is not None and dlon > lon_step) or
+            (lat_step is None and abs(lat_sel - lat) > 0.5) or
+            (lon_step is None and dlon > 0.5)):
+        ds.close()
+        raise SystemExit(f"ERROR: {filepath}: nearest cell ({lat_sel}, {lon_sel}) is "
+                         f"not near the site ({lat}, {lon}); the file does not cover "
+                         f"it. Nothing written.")
+
+    # The time step is checked on the WHOLE time axis, before any date
+    # filter: after slicing, a single remaining hourly step would look like a
+    # "daily" record. Accumulations ('J m-2', 'm') are per time step, so the
+    # file must be daily. Gaps (whole-day steps > 1 day) are allowed here and
+    # caught for the requested period by the completeness check in process().
+    all_times = pd.DatetimeIndex(ds_point.time.values)
+    if len(all_times) < 2:
+        ds.close()
+        raise SystemExit(f"ERROR: {filepath}: only {len(all_times)} time stamp(s); the "
+                         f"daily time step cannot be checked. Nothing written.")
+    steps = np.unique(np.diff(all_times.values).astype("timedelta64[s]").astype(np.int64))
+    if steps.min() <= 0 or np.any(steps % 86400 != 0) or int(steps.min()) != 86400:
+        ds.close()
+        raise SystemExit(f"ERROR: {filepath}: time step is not one day "
+                         f"({steps[:5]} s); APSIM .met is daily. Nothing written.")
 
     # Time filtering
-    if start:
+    if start or end:
         ds_point = ds_point.sel(time=slice(start, end))
 
     # Variable name mapping (ERA5 conventions)
@@ -162,49 +226,62 @@ def read_netcdf_era5(filepath, lat, lon, start, end):
     }
     var_map.update(alt_names)
 
-    data = {}
+    data, units = {}, {}
     for src_var, tgt_var in var_map.items():
         if src_var in ds_point:
             data[tgt_var] = ds_point[src_var].values
+            u = ds_point[src_var].attrs.get("units")
+            if u is None:
+                ds.close()
+                raise SystemExit(f"ERROR: {filepath}: variable '{src_var}' has no units "
+                                 f"attribute; units are not guessed. Nothing written.")
+            units[tgt_var] = (src_var, " ".join(str(u).replace("**", "").split()))
 
     times = pd.DatetimeIndex(ds_point.time.values)
     ds.close()
+
+    # Units come from each variable's own `units` attribute (never from the
+    # size of the values). The daily time step was checked above on the
+    # whole (unfiltered) time axis.
+
+    def factor(tgt, table):
+        src, u = units[tgt]
+        if u not in table:
+            raise SystemExit(f"ERROR: {filepath}: {src} units {u!r} are not known "
+                             f"(known: {sorted(table)}); nothing converted or written.")
+        return table[u]
+
+    RADN = {"J m-2": 1e-6, "J m-2 day-1": 1e-6, "J m-2 d-1": 1e-6,
+            "MJ m-2": 1.0, "MJ m-2 day-1": 1.0, "MJ m-2 d-1": 1.0,
+            "W m-2": 0.0864, "W/m2": 0.0864}
+    TOFF = {"K": -273.15, "degC": 0.0, "degree_Celsius": 0.0, "C": 0.0}
+    RAIN = {"m": 1000.0, "m day-1": 1000.0, "m d-1": 1000.0, "mm": 1.0,
+            "mm day-1": 1.0, "mm d-1": 1.0, "kg m-2": 1.0,
+            "kg m-2 s-1": 86400.0, "mm s-1": 86400.0}
+    f_radn = factor("radn", RADN) if "radn" in data else None
+    o_maxt = factor("maxt", TOFF) if "maxt" in data else None
+    o_mint = factor("mint", TOFF) if "mint" in data else None
+    f_rain = factor("rain", RAIN) if "rain" in data else None
+    o_td = factor("vp_src", TOFF) if "vp_src" in data else None
 
     # Unit conversions
     records = []
     for i, t in enumerate(times):
         row = {"year": t.year, "day": t.dayofyear}
 
-        # Radiation: J/m²/day → MJ/m²/day (÷1e6) or W/m² → MJ/m²/day (×0.0864)
         if "radn" in data:
-            val = float(data["radn"][i])
-            if val > 50:  # Likely W/m² or J/m²/day
-                if val > 1000:  # J/m²/day
-                    row["radn"] = round(val / 1e6, 1)
-                else:  # W/m²
-                    row["radn"] = round(val * 0.0864, 1)
-            else:
-                row["radn"] = round(val, 1)
-
-        # Temperature: K → °C
+            row["radn"] = round(float(data["radn"][i]) * f_radn, 1)
         if "maxt" in data:
-            val = float(data["maxt"][i])
-            row["maxt"] = round(kelvin_to_celsius(val) if val > 100 else val, 1)
+            row["maxt"] = round(float(data["maxt"][i]) + o_maxt, 1)
         if "mint" in data:
-            val = float(data["mint"][i])
-            row["mint"] = round(kelvin_to_celsius(val) if val > 100 else val, 1)
+            row["mint"] = round(float(data["mint"][i]) + o_mint, 1)
 
-        # Rainfall: m → mm
         if "rain" in data:
-            val = float(data["rain"][i])
-            row["rain"] = round(val * 1000 if val < 1 else val, 1)
-            row["rain"] = max(0, row["rain"])
+            row["rain"] = round(_rain_mm(float(data["rain"][i]) * f_rain), 1)
 
         # Vapor pressure from dewpoint: hPa
         if "vp_src" in data:
-            td = float(data["vp_src"][i])
-            if td > 100:
-                td -= 273.15
+            td = float(data["vp_src"][i]) + o_td
             row["vp"] = round(float(saturation_vapor_pressure(td)), 1)
 
         records.append(row)
@@ -227,7 +304,8 @@ def read_load_forcing(args):
     start_year = int(args.start[:4])
     end_year = int(args.end[:4])
     d = load_daily_forcing(lf_source, args.lat, args.lon, start_year, end_year,
-                           forcing_dir=args.forcing_dir)
+                           forcing_dir=args.forcing_dir,
+                           period=(args.start, args.end))
 
     # Normalize dates to python datetime (load_forcing may return numpy datetime64)
     raw_dates = d["dates"]
@@ -260,7 +338,7 @@ def read_load_forcing(args):
             rec["radn"] = round(float(srad[i]) * 0.0864, 1)
         rec["maxt"] = round(float(tmax[i]), 1)
         rec["mint"] = round(float(tmin[i]), 1)
-        rec["rain"] = round(max(0.0, float(precip[i])), 1)
+        rec["rain"] = round(_rain_mm(precip[i]), 1)  # bad negative -> NaN
         # Vapour pressure (hPa) from specific humidity + pressure: e = q*p/(0.622+0.378q)
         if shum is not None and pres is not None:
             q = float(shum[i]); p = float(pres[i])
@@ -272,6 +350,12 @@ def read_load_forcing(args):
         records.append(rec)
 
     return records
+
+
+# Declared CSV units (--csv-*-units) -> APSIM units (MJ/m2/day, degC, mm/day)
+CSV_RADN_UNITS = {"MJ/m2/day": 1.0, "W/m2": 0.0864, "J/m2/day": 1e-6}
+CSV_TEMP_UNITS = {"C": 0.0, "K": -273.15}
+CSV_RAIN_UNITS = {"mm/day": 1.0, "m/day": 1000.0}
 
 
 def read_csv_input(filepath, args):
@@ -286,6 +370,19 @@ def read_csv_input(filepath, args):
         args.csv_rain_col or "rain": "rain",
     }
 
+    # A CSV carries no unit metadata, so the units must be given on the
+    # command line (no guessing from the size of the values).
+    need = {"--csv-radn-units": args.csv_radn_units,
+            "--csv-temp-units": args.csv_temp_units,
+            "--csv-rain-units": args.csv_rain_units}
+    missing = [k for k, v in need.items() if v is None]
+    if missing:
+        raise SystemExit(f"ERROR: CSV input has no unit metadata; give {missing} "
+                         f"explicitly. Nothing written.")
+    f_radn = CSV_RADN_UNITS[args.csv_radn_units]
+    o_temp = CSV_TEMP_UNITS[args.csv_temp_units]
+    f_rain = CSV_RAIN_UNITS[args.csv_rain_units]
+
     records = []
     for _, row in df.iterrows():
         dt = pd.Timestamp(row[date_col])
@@ -294,13 +391,12 @@ def read_csv_input(filepath, args):
         for src, tgt in col_map.items():
             if src in row:
                 val = float(row[src])
-                # Auto-detect and convert units
-                if tgt == "radn" and val > 50:
-                    val = val * 0.0864  # W/m² → MJ/m²/day
-                elif tgt in ("maxt", "mint") and val > 100:
-                    val -= 273.15  # K → °C
-                elif tgt == "rain" and val < 0:
-                    val = 0.0
+                if tgt == "radn":
+                    val = val * f_radn
+                elif tgt in ("maxt", "mint"):
+                    val = val + o_temp
+                elif tgt == "rain":
+                    val = _rain_mm(val * f_rain)   # -9999 etc. -> NaN
                 rec[tgt] = round(val, 1)
 
         records.append(rec)
@@ -325,16 +421,79 @@ def process(args):
         else:
             records = read_csv_input(args.input, args)
 
+    # Keep only the days inside --start/--end (each bound on its own). Not
+    # every reader filters (CSV never does; NetCDF only on the bounds given),
+    # so the filter is done once here, before any check.
+    def _rec_day(r):
+        return datetime(int(r["year"]), 1, 1) + timedelta(days=int(r["day"]) - 1)
+    lo = datetime.strptime(args.start[:10], "%Y-%m-%d") if args.start else None
+    hi = datetime.strptime(args.end[:10], "%Y-%m-%d") if args.end else None
+    if lo is not None and hi is not None and lo > hi:
+        raise SystemExit(f"ERROR: --start {args.start} is after --end {args.end}; "
+                         f"nothing written.")
+    records = [r for r in records
+               if (lo is None or _rec_day(r) >= lo) and (hi is None or _rec_day(r) <= hi)]
+
+    # Every required APSIM column must hold a real value on every day; a
+    # missing one stops the tool (nothing is filled in, nothing is written).
+    if not records:
+        raise SystemExit("ERROR: no weather records in the requested period; "
+                         "nothing written.")
+
+    def _real(r, k):
+        v = r.get(k)
+        try:
+            return v is not None and math.isfinite(float(v))
+        except (TypeError, ValueError):
+            return False
+
+    for k in ("year", "day", "radn", "maxt", "mint", "rain"):
+        bad = [r for r in records if not _real(r, k)]
+        if bad:
+            first = ", ".join(f"{r.get('year')}/{r.get('day')}" for r in bad[:5])
+            raise SystemExit(
+                f"ERROR: required APSIM column '{k}' is missing or invalid (NaN, or rain below "
+                f"{RAIN_NEG_TOL_MM} mm such as a -9999 marker) on {len(bad)} of "
+                f"{len(records)} days (first year/day: {first}). Nothing is filled "
+                f"in; nothing written.")
+
+    # The days themselves must be complete: one record per day, in order,
+    # from --start (or the first record) to --end (or the last record). A
+    # missing day is not a missing value, so the check above cannot see it.
+    rec_days = [_rec_day(r) for r in records]
+    d0 = datetime.strptime(args.start[:10], "%Y-%m-%d") if args.start else rec_days[0]
+    d1 = datetime.strptime(args.end[:10], "%Y-%m-%d") if args.end else rec_days[-1]
+    want_days = [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
+    if rec_days != want_days:
+        have = set(rec_days)
+        lost = [d for d in want_days if d not in have]
+        raise SystemExit(
+            f"ERROR: daily records are not complete in {d0:%Y-%m-%d}..{d1:%Y-%m-%d}: "
+            f"{len(records)} records for {len(want_days)} days, {len(lost)} missing "
+            f"(first: {', '.join(f'{d:%Y-%m-%d}' for d in lost[:5])}), "
+            f"{len(rec_days) - len(set(rec_days))} duplicated. Nothing is filled "
+            f"in; nothing written.")
+
     # Compute tav and amp
-    maxt_vals = [r.get("maxt", 20) for r in records]
-    mint_vals = [r.get("mint", 10) for r in records]
-    doy_vals = [r.get("day", 1) for r in records]
+    maxt_vals = [r["maxt"] for r in records]
+    mint_vals = [r["mint"] for r in records]
+    doy_vals = [r["day"] for r in records]
     tav, amp = compute_tav_amp(maxt_vals, mint_vals, doy=doy_vals)
 
-    # Determine which optional columns are present
-    has_vp = any("vp" in r for r in records)
-    has_pan = any("pan" in r for r in records)
-    has_wind = any("wind" in r for r in records)
+    # Optional columns (APSIM works without them) are written only when EVERY
+    # day has a real value; a partly missing optional column is left out with
+    # a warning, never filled.
+    dropped_optional = {}
+    present = {}
+    for k in ("pan", "vp", "wind"):
+        n_real = sum(1 for r in records if _real(r, k))
+        present[k] = n_real == len(records)
+        if 0 < n_real < len(records):
+            dropped_optional[k] = len(records) - n_real
+            print(f"WARNING: optional column '{k}' is missing on "
+                  f"{len(records) - n_real} of {len(records)} days; the column is "
+                  f"left out of the .met file (not filled).", file=sys.stderr)
+    has_pan, has_vp, has_wind = present["pan"], present["vp"], present["wind"]
 
     # Build header
     lines = []
@@ -365,19 +524,19 @@ def process(args):
     # Data rows
     for rec in records:
         vals = [
-            f"{rec.get('year', 1900):8d}",
-            f"{rec.get('day', 1):4d}",
-            f"{rec.get('radn', 0.0):8.1f}",
-            f"{rec.get('maxt', 20.0):8.1f}",
-            f"{rec.get('mint', 10.0):8.1f}",
-            f"{rec.get('rain', 0.0):8.1f}",
+            f"{rec['year']:8d}",
+            f"{rec['day']:4d}",
+            f"{rec['radn']:8.1f}",
+            f"{rec['maxt']:8.1f}",
+            f"{rec['mint']:8.1f}",
+            f"{rec['rain']:8.1f}",
         ]
         if has_pan:
-            vals.append(f"{rec.get('pan', 0.0):8.1f}")
+            vals.append(f"{rec['pan']:8.1f}")
         if has_vp:
-            vals.append(f"{rec.get('vp', 10.0):8.1f}")
+            vals.append(f"{rec['vp']:8.1f}")
         if has_wind:
-            vals.append(f"{rec.get('wind', 2.0):8.1f}")
+            vals.append(f"{rec['wind']:8.1f}")
         lines.append("  ".join(vals))
 
     return {
@@ -388,6 +547,7 @@ def process(args):
         "tav": tav,
         "amp": amp,
         "columns": cols,
+        "optional_columns_left_out": dropped_optional,
     }
 
 
@@ -457,6 +617,14 @@ def main():
     parser.add_argument("--csv-maxt-col", type=str, default="maxt")
     parser.add_argument("--csv-mint-col", type=str, default="mint")
     parser.add_argument("--csv-rain-col", type=str, default="rain")
+    # CSV has no unit metadata: these are REQUIRED for CSV input (no default
+    # and no guessing from the values)
+    parser.add_argument("--csv-radn-units", choices=sorted(CSV_RADN_UNITS), default=None,
+                        help="units of the CSV radiation column (required for CSV)")
+    parser.add_argument("--csv-temp-units", choices=sorted(CSV_TEMP_UNITS), default=None,
+                        help="units of the CSV maxt/mint columns (required for CSV)")
+    parser.add_argument("--csv-rain-units", choices=sorted(CSV_RAIN_UNITS), default=None,
+                        help="units of the CSV rain column, daily totals (required for CSV)")
 
     args = parser.parse_args()
 

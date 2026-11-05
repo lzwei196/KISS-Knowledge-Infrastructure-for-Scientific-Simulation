@@ -171,7 +171,8 @@ def parse_statvar_output(statvar_file, variables=None):
         var1 element_id
         var2 element_id
         ...
-        YYYY MM DD HH MM SS MS val1 val2 ...
+        timestep YYYY MM DD HH MM SS val1 val2 ...
+    (statvar_out.f90 writes Timestep, Nowtime(1:6), values)
     """
     if not os.path.isfile(statvar_file):
         raise FileNotFoundError(f"Statvar file not found: {statvar_file}")
@@ -197,7 +198,7 @@ def parse_statvar_output(statvar_file, variables=None):
         if len(parts) < 7 + n_vars:
             continue
         try:
-            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+            y, m, d = int(parts[1]), int(parts[2]), int(parts[3])
             record = {"date": f"{y:04d}-{m:02d}-{d:02d}"}
             for j, var in enumerate(var_names):
                 record[var] = float(parts[7 + j])
@@ -281,6 +282,150 @@ def parse_sfr_gage(gage_file):
     return records
 
 
+# Control-file rules: the same code as tools/run_gsflow.py (kept in step).
+def read_control(control_file):
+    """GSFLOW/PRMS control file -> {name: [values as text]}, read like the engine
+    (prms/sm_read_control_file.f90): a block starts at a line whose first four
+    characters are '####', then the name, the number of values (>= 1), the type
+    (1 integer, 2 real, 4 text); text values are one per line; numbers are read
+    list-directed (separated by blanks or commas, may span lines, r*v = r copies of v).
+    Raises ValueError for a malformed or incomplete block."""
+    with open(control_file) as f:
+        lines = [l.rstrip("\n") for l in f]
+    params = {}
+    i = 0
+    while i < len(lines):
+        if lines[i][:4] != "####":
+            i += 1
+            continue
+        start = i + 1
+        try:
+            name = lines[i + 1].strip()
+            n = int(lines[i + 2].replace(",", " ").split()[0])
+            ptype = int(lines[i + 3].replace(",", " ").split()[0])
+        except (IndexError, ValueError):
+            raise ValueError(f"{control_file}: malformed block at line {start}")
+        if not name or n < 1 or ptype not in (1, 2, 4):
+            raise ValueError(f"{control_file}: malformed block '{name}' at line {start} "
+                             f"(number of values {n}, type {ptype})")
+        i += 4
+        if ptype == 4:
+            vals = [l.strip() for l in lines[i:i + n]]
+            if len(vals) < n or any(v[:4] == "####" for v in vals):
+                raise ValueError(f"{control_file}: block '{name}' has fewer than {n} text values")
+            i += n
+        else:
+            vals = []
+            while len(vals) < n:
+                if i >= len(lines) or lines[i][:4] == "####":
+                    raise ValueError(f"{control_file}: block '{name}' has fewer than {n} values")
+                # list-directed read: '!' starts a comment
+                for tok in lines[i].split("!", 1)[0].replace(",", " ").split():
+                    if len(vals) >= n:
+                        break  # the read is complete; the rest of the line is ignored
+                    if "*" in tok:
+                        rep, _, v = tok.partition("*")
+                        try:
+                            vals.extend([v] * min(int(rep), n - len(vals)))
+                        except ValueError:
+                            raise ValueError(f"{control_file}: bad value '{tok}' in block '{name}'")
+                    else:
+                        vals.append(tok)
+                i += 1
+            for v in vals[:n]:
+                try:
+                    int(v) if ptype == 1 else float(v.replace("d", "e").replace("D", "e"))
+                except ValueError:
+                    raise ValueError(f"{control_file}: bad value '{v}' in block '{name}'")
+            vals = vals[:n]
+        params[name] = vals
+    return params
+
+
+def model_kind(params):
+    """Model dispatch as in gsflow/gsflow_prms.f90:
+    'prms_only' (PRMS*, DAILY: full PRMS run, PRMS_only active),
+    'prms_pre' (FROST, CLIMATE, WRITE_CLIMATE, POTET, TRANSPIRE, CONVERT: PRMS_only
+               pre-process modes that return before the PRMS summary),
+    'modsim_prms' (MODSIM-PRMS, MODSIM-PRMS-LOOSE: PRMS runs, PRMS_only off),
+    'coupled' (GSFLOW*, MODSIM-GSFLOW), 'modflow' (MODFLOW*, MODSIM-MODFLOW, MODSIM)."""
+    vals = params.get("model_mode") or ["GSFLOW5"]
+    mode = vals[0]
+    if mode[:4] == "    " or not mode.strip():
+        mode = "GSFLOW5"
+    up = mode.strip()
+    if up[:4] in ("PRMS", "prms") or up[:5] == "DAILY":
+        return "prms_only"
+    if up[:6] in ("GSFLOW", "gsflow") or up[:13] == "MODSIM-GSFLOW":
+        return "coupled"
+    if up[:7] in ("MODFLOW", "modflow") or up[:14] == "MODSIM-MODFLOW":
+        return "modflow"
+    if up[:11] == "MODSIM-PRMS":
+        return "modsim_prms"
+    if up[:6] == "MODSIM":
+        return "modflow"
+    return "prms_pre"
+
+
+def control_flag(params, name, default):
+    """Integer control value; the engine default only when the entry is absent.
+    A present but unreadable value is an error (never a silent default)."""
+    vals = params.get(name)
+    if not vals:
+        return default
+    try:
+        return int(vals[0])
+    except ValueError:
+        raise ValueError(f"control parameter {name}: not an integer: {vals[0]!r}")
+
+
+def enabled_outputs(params):
+    """Output files this run writes, by the engine's switches and defaults
+    (sm_read_control_file.f90, gsflow_prms.f90, gsflow_sum.f90):
+    [(param, file name as in the control file or the engine default)]."""
+    defaults = {"model_output_file": "prms.out", "csv_output_file": "prms_summary.csv",
+                "gsflow_output_file": "gsflow.out", "stat_var_file": "statvar.out",
+                "var_save_file": "prms_ic.out"}
+    kind = model_kind(params)
+    prms_runs = kind in ("prms_only", "modsim_prms", "coupled")
+    names = []
+    if kind == "coupled":
+        names.append("gsflow_output_file")
+        if control_flag(params, "gsf_rpt", 1) == 1:
+            names.append("csv_output_file")
+    if kind == "prms_only" and control_flag(params, "csvON_OFF", 0) > 0:
+        names.append("csv_output_file")
+    if kind == "prms_pre":
+        # CLIMATE, TRANSPIRE and POTET call summary_output (statvar); the others write
+        # no summary file this tool can check
+        mode = (params.get("model_mode") or [""])[0].strip().upper()
+        if (mode.startswith(("CLIMATE", "TRANSPIRE", "POTET"))
+                and control_flag(params, "statsON_OFF", 0) == 1):
+            names.append("stat_var_file")
+    if prms_runs:
+        if control_flag(params, "print_debug", 0) > -2:
+            names.append("model_output_file")
+        if control_flag(params, "statsON_OFF", 0) == 1:
+            names.append("stat_var_file")
+        if control_flag(params, "save_vars_to_file", 0) == 1:
+            names.append("var_save_file")
+    return [(n, (params.get(n) or [defaults[n]])[0]) for n in names]
+
+
+def _enabled_output(control_file, run_dir=None):
+    """(path, 'csv'|'statvar') of the time-series output this run writes (CSV first,
+    else statvar), else (None, None). Relative paths are taken from run_dir (the
+    folder GSFLOW ran in; default the control file's folder, as run_gsflow.py)."""
+    params = read_control(control_file)
+    base = os.path.abspath(run_dir or os.path.dirname(os.path.abspath(control_file)))
+    outs = dict(enabled_outputs(params))
+    for name, kind in (("csv_output_file", "csv"), ("stat_var_file", "statvar")):
+        if name in outs:
+            f = outs[name]
+            return (f if os.path.isabs(f) else os.path.join(base, f)), kind
+    return None, None
+
+
 def convert_cfs_to_cms(records, var_name="basin_cfs"):
     """Convert streamflow from cfs to cms."""
     for rec in records:
@@ -330,6 +475,21 @@ def write_csv(records, output_path, variables=None):
     print(f"  Columns: {', '.join(columns)}")
 
 
+# Date text as written by GSFLOW: 2.4.0 gsflow.csv uses MM/DD/YYYY; the statvar
+# and Year/Month/Day paths of this tool write YYYY-MM-DD
+DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d")
+
+
+def parse_date(text):
+    """datetime for a date in one of DATE_FORMATS, else None."""
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(text.strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def validate_outputs(output_path, records):
     """Validate the extracted data."""
     errors = []
@@ -359,11 +519,13 @@ def validate_outputs(output_path, records):
     if "date" in records[0]:
         dates = [r["date"] for r in records]
         if len(dates) > 1:
-            d0 = datetime.strptime(dates[0], "%Y-%m-%d")
-            d1 = datetime.strptime(dates[-1], "%Y-%m-%d")
-            expected_days = (d1 - d0).days + 1
-            if len(records) != expected_days:
-                errors.append(f"Date gaps: expected {expected_days} days, got {len(records)}")
+            d0, d1 = parse_date(dates[0]), parse_date(dates[-1])
+            if d0 is None or d1 is None:
+                errors.append(f"Date format not recognised ({dates[0]!r}); date check skipped")
+            else:
+                expected_days = (d1 - d0).days + 1
+                if len(records) != expected_days:
+                    errors.append(f"Date gaps: expected {expected_days} days, got {len(records)}")
 
     if errors:
         for e in errors:
@@ -381,6 +543,9 @@ def main():
     parser.add_argument("--csv-file", help="Direct path to PRMS CSV output")
     parser.add_argument("--statvar-file", help="Direct path to statvar output")
     parser.add_argument("--csv-out", required=True, help="Output CSV file path")
+    parser.add_argument("--working-dir", default=None,
+                        help="Folder GSFLOW ran in (relative paths of the control file are taken "
+                             "from it; default: the control file's folder, as run_gsflow.py)")
     parser.add_argument("--variables", help="Comma-separated variable names")
     parser.add_argument("--basin-area-km2", type=float, help="Basin area for runoff→Q conversion")
     args = parser.parse_args()
@@ -409,15 +574,39 @@ def main():
         print(f"  Parsing statvar: {args.statvar_file}")
         records = parse_statvar_output(args.statvar_file, variables)
     elif args.output_dir:
-        # Try to find CSV output first, then statvar
-        csv_files = [f for f in os.listdir(args.output_dir) if f.endswith(".csv")]
-        if csv_files:
-            csv_path = os.path.join(args.output_dir, csv_files[0])
-            print(f"  Found CSV output: {csv_path}")
-            records = parse_csv_output(csv_path, variables)
+        # Which file: with --control-file, the CSV or statvar file the control file
+        # switches on; otherwise the only CSV, else the only statvar file in the
+        # folder. Several candidates -> error (no guessing).
+        if args.control_file:
+            try:
+                path, kind = _enabled_output(args.control_file, args.working_dir)
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                sys.exit(1)
+            if path is None:
+                print("ERROR: the control file switches on neither a CSV summary nor a statvar "
+                      "file", file=sys.stderr)
+                sys.exit(1)
+            if not os.path.isfile(path):
+                print(f"ERROR: {kind} output named in the control file not found: {path}",
+                      file=sys.stderr)
+                sys.exit(1)
+            print(f"  Using {kind} output from the control file: {path}")
+            records = (parse_csv_output(path, variables) if kind == "csv"
+                       else parse_statvar_output(path, variables))
         else:
-            stat_files = [f for f in os.listdir(args.output_dir) if "statvar" in f.lower()]
-            if stat_files:
+            csv_files = sorted(f for f in os.listdir(args.output_dir) if f.endswith(".csv"))
+            stat_files = sorted(f for f in os.listdir(args.output_dir) if "statvar" in f.lower())
+            if len(csv_files) > 1 or (not csv_files and len(stat_files) > 1):
+                print(f"ERROR: several candidate files in {args.output_dir}: "
+                      f"{csv_files or stat_files}; give --csv-file, --statvar-file or "
+                      "--control-file", file=sys.stderr)
+                sys.exit(1)
+            if csv_files:
+                csv_path = os.path.join(args.output_dir, csv_files[0])
+                print(f"  Found CSV output: {csv_path}")
+                records = parse_csv_output(csv_path, variables)
+            elif stat_files:
                 stat_path = os.path.join(args.output_dir, stat_files[0])
                 print(f"  Found statvar output: {stat_path}")
                 records = parse_statvar_output(stat_path, variables)
@@ -425,6 +614,11 @@ def main():
     if not records:
         print("ERROR: No records extracted from output files", file=sys.stderr)
         sys.exit(1)
+    if variables:
+        missing = [v for v in variables if not any(v in r for r in records)]
+        if missing:
+            print(f"ERROR: variable(s) {missing} not in the output", file=sys.stderr)
+            sys.exit(1)
 
     print(f"  Extracted {len(records)} records")
 
@@ -437,8 +631,12 @@ def main():
     print(f"\n[3/3] Writing output")
     write_csv(records, args.csv_out, variables)
 
-    # ── Step 4: Validate ──
+    # ── Step 4: Validate ── (date gaps, constant or negative flow are advisory
+    # warnings; a missing output file is a failure)
     validate_outputs(args.csv_out, records)
+    if not os.path.isfile(args.csv_out):
+        print(f"ERROR: output CSV not written: {args.csv_out}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\nDone! Extracted time series → {args.csv_out}")
 

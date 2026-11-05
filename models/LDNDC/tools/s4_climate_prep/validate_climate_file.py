@@ -24,9 +24,19 @@ def process():
     warnings = []
     errors = []
     lines = Path(CLIMATE_FILE).read_text().strip().split("\n")
+    # Native LDNDC climate files start with %global/%climate/%attributes
+    # blocks; the column header is the first line after the %data marker.
+    data_marks = [i for i, l in enumerate(lines) if l.strip() == "%data"]
+    if len(data_marks) > 1:
+        errors.append("Duplicate %data block")
+    if data_marks:
+        lines = lines[data_marks[0] + 1:]
+    elif lines and lines[0].lstrip().startswith("%"):
+        errors.append("Native LDNDC header blocks found but no %data block")
+        lines = []
     if len(lines) < 2:
         errors.append("File has no data rows")
-    header = lines[0]
+    header = lines[0] if lines else ""
     if "\t" not in header:
         errors.append("Header is not tab-separated")
     cols = header.replace("#", "").strip().split("\t")

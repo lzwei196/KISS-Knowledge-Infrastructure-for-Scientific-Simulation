@@ -1,0 +1,35 @@
+{
+  "test_case": "CRHM Bad Lake (official regression project badlake.prj)",
+  "engine": {
+    "name": "CRHM",
+    "version": "4.7_16",
+    "binary": "crhm",
+    "source": "Centre for Hydrology, University of Saskatchewan (CRHMcode); project from the CRHMcode system_regression_test suite",
+    "license": "see COPYING.txt (GPL) in the CRHMcode distribution"
+  },
+  "ki": {
+    "model": "CRHM",
+    "repo": "KISS-Knowledge-Infrastructure-for-Scientific-Simulation"
+  },
+  "simulation": {
+    "start": "1973-01-01",
+    "end": "1976-01-01",
+    "hru": 3,
+    "note": "Bad Lake, Saskatchewan \u2014 the canonical CRHM example"
+  },
+  "files": {
+    "inputs/badlake.prj": {
+      "bytes": 5893,
+      "sha256": "6aa62239ba20fcfb219e9cc485c14a79022f3eb2dca7bb6e774150bbb9eebd55"
+    },
+    "inputs/prj/BadLake/Badlake73_76.obs": {
+      "bytes": 1923876,
+      "sha256": "f1611bc7326c30ea8ab963c2dcb80a76e09ca5723765b53ea044d24e84ca62c1"
+    }
+  },
+  "run": {
+    "cwd": "a clean dir holding badlake.prj and prj/BadLake/Badlake73_76.obs (the prj's obs path is relative to cwd)",
+    "command": "crhm badlake.prj -o badlake_output.txt",
+    "reference": "python run_reference.py"
+  }
+}

@@ -264,7 +264,7 @@ outputs:
     validation_rank: 10
     unit: "degC"
     description: "Depth-resolved soil temperature per node."
-    emitted_in: ".ate / .vap"
+    emitted_in: ".tem / .vap"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
@@ -522,7 +522,7 @@ safety:
   warnings:
     - "ORES must be strictly less than OSAT for every soil layer, NPAR > 1.001, and ALFA positive, or the MvG retention curve is undefined."
     - "Pressure heads must be negative in the unsaturated zone."
-    - "Water-balance closure |Sum_In - Sum_Out - dStorage| should be < 0.1 cm/yr; larger deviations indicate numerical problems (CRITDEVMASBAL triggers a .dwb.csv error file)."
+    - "Water-balance closure |Sum_In - Sum_Out - dStorage| should be < 0.1 cm/yr; larger deviations indicate numerical problems (CRITDEVMASBAL triggers a <OUTFIL>.dwb deviation file; SWAP keeps running)."
     - "Three run-time message classes exist (input-data errors, infeasible-combination warnings, fatal calculation errors that stop the run); a successful run logs 'Swap simulation okay!'."
     - "Under frozen-soil/frost conditions reduction factors are applied to hydraulic conductivity, root water uptake, drainage and bottom flux, and snowpack insulation adjusts the soil-temperature top boundary."
   assumptions:

@@ -1,0 +1,19 @@
+{
+ "schema": "wrfhydro_build_record/v1",
+ "about": "One entry per WRF-Hydro executable this KI may calibrate. Matched by the sha256 of the executable file (symlinks resolved). spatial_soil says whether that binary reads soil parameters from soil_properties.nc (SPATIAL_SOIL on) or from GENPARM.TBL/SOILPARM.TBL (off). Add an entry only from evidence about THAT binary; see calibrate_wrfhydro.build_record_help().",
+ "builds": [
+  {
+   "exe_sha256": "2a1c07f38d0f8c26ff84a3bbafb0c2a56c48db709e0bf2b903064f25e12ea788",
+   "exe_name": "wrf_hydro_NoahMP.exe",
+   "exe_size_bytes": 4000072,
+   "where": "HydroCraft server install, model/wrf_hydro/source/trunk/NDHMS/Run/ (wrf_hydro.exe -> wrf_hydro_NoahMP.exe), built 2026-04-03",
+   "spatial_soil": false,
+   "evidence": [
+    "binary: objdump -d of this exact file (sha256 above) defines __module_hrldas_netcdf_io_MOD_read_3d_soil at 0x1ab30, and there are 0 call / jmp / address references to it from outside its own body, while there are 376 calls into other module_hrldas_netcdf_io routines (e.g. read_hrldas_hdrinfo at 0x5db75). The routine is linked but never called.",
+    "source: the only READ_3D_SOIL call site is Land_models/NoahMP/IO_code/module_NoahMP_hrldas_driver.F:1085-1086, inside '#ifdef SPATIAL_SOIL'; macros:3-6 sets -DSPATIAL_SOIL only when SPATIAL_SOIL=1 at make time.",
+    "so this binary never opens soil_properties.nc; REFKDT/SLOPE/SMCMAX etc. come from GENPARM.TBL/SOILPARM.TBL."
+   ],
+   "recorded": "2026-10-15"
+  }
+ ]
+}

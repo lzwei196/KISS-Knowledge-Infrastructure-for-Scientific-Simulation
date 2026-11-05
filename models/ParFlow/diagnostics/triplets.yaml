@@ -1,7 +1,7 @@
 # ========================================================================
 # ParFlow Diagnostic Triplets
 # ========================================================================
-# 36 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# 36 triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.
@@ -11,7 +11,7 @@
 # ParFlow Diagnostic Triplets
 # Created by: Jianyun Zhang Research Group, Hohai University
 # Date: 2026-03-22
-# Total: 36 triplets across 9 failure domains
+# Triplets (36 when this header was written; current count: the SKILL.md KI map) across 9 failure domains
   # ============================================================
   # UNIT CONVERSION TRAPS (silent errors -- HIGHEST PRIORITY)
   # ============================================================

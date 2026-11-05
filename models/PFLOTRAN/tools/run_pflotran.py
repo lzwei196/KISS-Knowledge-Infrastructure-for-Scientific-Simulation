@@ -16,7 +16,8 @@ Outputs:
     - HDF5 output file (<prefix>.h5)
     - Observation files (<prefix>-obs-*.tec)
     - Mass balance file (<prefix>-mas.dat)
-    - Screen output log (<prefix>.out)
+    - PFLOTRAN's own screen/output file (<prefix>.out, written by PFLOTRAN)
+    - This wrapper's log (<prefix>_run_log.txt: command, return code, stdout, stderr)
     - Execution summary JSON
 
 Usage:
@@ -29,6 +30,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -81,17 +83,19 @@ def validate_inputs(args):
     pflotran_bin = find_pflotran_binary(args.pflotran_bin)
     if pflotran_bin is None:
         errors.append(
-            "PFLOTRAN binary not found. Specify with --pflotran-bin or "
-            "ensure 'pflotran' is in PATH."
+            "No usable PFLOTRAN binary: --pflotran-bin / $PFLOTRAN_BIN is not an executable "
+            f"file, or (neither given) the server default {SERVER_DEFAULT_BINARY} is missing."
         )
     elif not os.access(pflotran_bin, os.X_OK):
         errors.append(f"PFLOTRAN binary not executable: {pflotran_bin}")
 
     # Check MPI
+    mpirun = None
     if args.nproc > 1:
-        mpirun = shutil.which("mpirun") or shutil.which("mpiexec")
+        mpirun = find_mpirun(getattr(args, "mpirun", None))
         if mpirun is None:
-            errors.append("mpirun/mpiexec not found but nproc > 1")
+            errors.append("No usable MPI launcher for nproc > 1 (--mpirun / $PFLOTRAN_MPIRUN "
+                          f"not executable, or server default {SERVER_DEFAULT_MPIRUN} missing)")
 
     # Check nproc
     if args.nproc < 1:
@@ -102,45 +106,66 @@ def validate_inputs(args):
         errors.append(f"Timeout must be > 0: {args.timeout}")
 
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings,
-            "pflotran_bin": pflotran_bin}
+            "pflotran_bin": pflotran_bin, "mpirun": mpirun}
+
+
+# Server default build (same path the KI preflight_check.py checks)
+SERVER_DEFAULT_BINARY = "KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran"
 
 
 def find_pflotran_binary(user_path=None):
     """Find PFLOTRAN binary.
 
     Search order:
-    1. User-specified path
-    2. PATH lookup
-    3. Common installation locations
-    4. Docker container
+    1. User-specified path (--pflotran-bin)
+    2. $PFLOTRAN_BIN
+    3. Server default build (as in preflight_check.py)
+    An explicit choice (1 or 2) that is not an executable file is an error: there
+    is no fallback to another PFLOTRAN.
 
     Returns:
         str or None: Path to PFLOTRAN binary
     """
-    if user_path and os.path.isfile(user_path):
-        return user_path
+    for label, explicit in (("--pflotran-bin", user_path),
+                            ("$PFLOTRAN_BIN", os.environ.get("PFLOTRAN_BIN"))):
+        if explicit:
+            if os.path.isfile(explicit) and os.access(explicit, os.X_OK):
+                return explicit
+            print(f"  ERROR: {label} {explicit} is not an executable file")
+            return None
 
-    # Check PATH
-    in_path = shutil.which("pflotran")
-    if in_path:
-        return in_path
-
-    # Common locations
-    common_paths = [
-        "/usr/local/bin/pflotran",
-        "/opt/pflotran/bin/pflotran",
-        os.path.expanduser("~/pflotran/src/pflotran/pflotran"),
-        os.path.expanduser("~/pflotran/pflotran"),
-    ]
-
-    for p in common_paths:
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            return p
+    if os.path.isfile(SERVER_DEFAULT_BINARY) and os.access(SERVER_DEFAULT_BINARY, os.X_OK):
+        return SERVER_DEFAULT_BINARY
 
     return None
 
 
-def build_command(pflotran_bin, input_file, nproc):
+# MPI launcher of the same OpenMPI the server PFLOTRAN/PETSc link against
+# (KISSPATH_HOME/miniconda3/lib/libmpi.so.40). The `mpirun` first on PATH
+# (~/.local/bin/orterun, another OpenMPI) fails with "undefined symbol
+# MPI_Neighbor_alltoallv_init".
+SERVER_DEFAULT_MPIRUN = "KISSPATH_HOME/miniconda3/bin/mpirun"
+
+
+def find_mpirun(user_path=None):
+    """MPI launcher: --mpirun, then $PFLOTRAN_MPIRUN, then the server default.
+
+    An explicit choice that is not an executable file is an error (None); no
+    PATH lookup, so a launcher from another MPI is never picked silently.
+    """
+    for label, explicit in (("--mpirun", user_path),
+                            ("$PFLOTRAN_MPIRUN", os.environ.get("PFLOTRAN_MPIRUN"))):
+        if explicit:
+            if os.path.isfile(explicit) and os.access(explicit, os.X_OK):
+                return os.path.abspath(explicit)
+            print(f"  ERROR: {label} {explicit} is not an executable file")
+            return None
+    if os.path.isfile(SERVER_DEFAULT_MPIRUN) and os.access(SERVER_DEFAULT_MPIRUN, os.X_OK):
+        return SERVER_DEFAULT_MPIRUN
+    return None
+
+
+def build_command(pflotran_bin, input_file, nproc, mpirun=None):
     """Build the execution command.
 
     PFLOTRAN command format:
@@ -158,7 +183,7 @@ def build_command(pflotran_bin, input_file, nproc):
     input_prefix = os.path.splitext(os.path.basename(input_file))[0]
 
     if nproc > 1:
-        mpirun = shutil.which("mpirun") or shutil.which("mpiexec")
+        mpirun = mpirun or find_mpirun()
         cmd = [mpirun, "-n", str(nproc), pflotran_bin, "-pflotranin", input_file]
     else:
         cmd = [pflotran_bin, "-pflotranin", input_file]
@@ -222,7 +247,7 @@ def run_pflotran(cmd, workdir, timeout, log_file=None):
             "elapsed_s": elapsed,
             "success": False,
         }
-    except FileNotFoundError as e:
+    except OSError as e:
         return {
             "returncode": -2,
             "stdout": "",
@@ -232,66 +257,216 @@ def run_pflotran(cmd, workdir, timeout, log_file=None):
         }
 
 
-def validate_outputs(input_file, workdir, run_result):
+# Sub-blocks of OUTPUT that end with their own END or "/"
+# (factory_subsurface_read.F90 OUTPUT reader, output.F90 OutputFileRead)
+_OUTPUT_SUBBLOCKS = {"SNAPSHOT_FILE", "OBSERVATION_FILE", "MASS_BALANCE_FILE",
+                     "VARIABLES", "AVERAGE_VARIABLES", "TOTAL_MASS_REGIONS"}
+
+
+def _requested_outputs(input_file):
+    """What the deck's OUTPUT block asks PFLOTRAN to write.
+
+    Returns {'hdf5': bool (snapshot HDF5), 'obs_hdf5': bool (OBSERVATION_FILE
+    FORMAT HDF5 -> <prefix>-obs-region.h5), 'mass_balance': bool, 'known': bool}.
+    'known' is False when the deck pulls in other files (EXTERNAL_FILE) or cannot
+    be read; then nothing is treated as required. Comments (# !) and skip/noskip
+    blocks are ignored.
+    """
+    req = {"hdf5": False, "obs_hdf5": False, "mass_balance": False, "known": True,
+           "screen_off": False, "file_off": False}
+    try:
+        with open(input_file) as f:
+            lines = f.readlines()
+    except OSError:
+        req["known"] = False
+        return req
+    skipping = 0
+    in_output = False
+    stack = []
+    for line in lines:
+        words = re.split(r"[#!]", line, 1)[0].upper().split()
+        if not words:
+            continue
+        if words[0] == "SKIP":
+            skipping += 1
+            continue
+        if words[0] == "NOSKIP":
+            skipping = max(0, skipping - 1)
+            continue
+        if skipping:
+            continue
+        if words[0] == "EXTERNAL_FILE":
+            req["known"] = False
+        if not in_output:
+            if words[0] == "OUTPUT":
+                in_output, stack = True, []
+            continue
+        if words[0] in ("END", "/"):
+            if stack:
+                stack.pop()
+            else:
+                in_output = False
+            continue
+        if words[0] in _OUTPUT_SUBBLOCKS:
+            stack.append(words[0])
+            if words[0] == "MASS_BALANCE_FILE":
+                req["mass_balance"] = True
+            continue
+        block = stack[-1] if stack else "OUTPUT"
+        if words[0] == "SCREEN" and words[1:2] == ["OFF"]:
+            req["screen_off"] = True
+        if words[0] == "OUTPUT_FILE" and words[1:2] == ["OFF"]:
+            req["file_off"] = True
+        if words[0] == "FORMAT" and "HDF5" in words[1:]:
+            if block == "OBSERVATION_FILE":
+                req["obs_hdf5"] = True
+            elif block in ("OUTPUT", "SNAPSHOT_FILE"):
+                req["hdf5"] = True
+        if words[0] == "MASS_BALANCE" and block == "OUTPUT":
+            req["mass_balance"] = True
+    return req
+
+
+def _output_kind(name, prefix):
+    """Kind of a PFLOTRAN output file name for this prefix, else None."""
+    p = re.escape(prefix)
+    patterns = [
+        ("obs_hdf5", rf"^{p}-obs-region\.h5$"),
+        ("hdf5", rf"^{p}(-\d+)?(-aveg)?\.h5$"),
+        ("obs", rf"^{p}-obs-\d+\.(tec|pft)$"),
+        ("tec", rf"^{p}(-vel)?-\d+\.tec$"),
+        ("regression", rf"^{p}\.regression$"),
+        ("mass_balance", rf"^{p}-mas\.dat$"),
+    ]
+    for kind, pat in patterns:
+        if re.match(pat, name):
+            return kind
+    return None
+
+
+def _file_state(folders):
+    """{path: (mtime_ns, size)} of the files directly in the given folders."""
+    state = {}
+    for d in folders:
+        if os.path.isdir(d):
+            for name in os.listdir(d):
+                path = os.path.join(d, name)
+                if os.path.isfile(path):
+                    st = os.stat(path)
+                    state[path] = (st.st_mtime_ns, st.st_size)
+    return state
+
+
+def _output_folders(input_file, workdir):
+    """PFLOTRAN names outputs after the -pflotranin path, so they land next to the
+    deck; workdir comes second."""
+    folders = []
+    for d in (os.path.dirname(os.path.abspath(input_file)), os.path.abspath(workdir)):
+        if d not in folders:
+            folders.append(d)
+    return folders
+
+
+def validate_outputs(input_file, workdir, run_result, before=None):
     """Validate PFLOTRAN outputs after execution.
 
     Checks:
-    1. HDF5 output file exists and is non-empty
-    2. Observation files exist (if configured)
-    3. Mass balance file exists
-    4. No PETSC errors in output
-    5. Simulation completed message present
+    1. PFLOTRAN's end-of-run line "Wall Clock Time:" is present
+    2. No PETSc errors in stderr
+    3. HDF5 / mass balance file written by this run if the deck's OUTPUT block asks
+       for them (before = _file_state taken just before the run)
+    4. Output files found are listed (deck folder first, then workdir)
 
     Returns:
-        dict with 'valid' (bool), 'warnings' (list), 'output_files' (dict)
+        dict with 'valid' (bool), 'errors' (list), 'warnings' (list), 'output_files' (dict)
     """
+    errors = []
     warnings = []
     output_files = {}
     prefix = os.path.splitext(os.path.basename(input_file))[0]
+    requested = _requested_outputs(input_file)
 
-    # Check for completion message
-    if "Simulation Complete" not in run_result.get("stdout", ""):
-        if run_result.get("success"):
-            warnings.append("No 'Simulation Complete' message in output")
+    def is_new(path):
+        if before is None:
+            return True
+        st = os.stat(path)
+        return before.get(path) != (st.st_mtime_ns, st.st_size)
+
+    # PFLOTRAN v6 ends a finished run with " Wall Clock Time: ..." (there is no
+    # "Simulation Complete" line). It goes to the screen and to PFLOTRAN's own
+    # <prefix>.out; either can be switched off (SCREEN OFF / OUTPUT_FILE OFF).
+    if run_result.get("success"):
+        marker = "Wall Clock Time:" in run_result.get("stdout", "")
+        own_out = os.path.join(os.path.dirname(os.path.abspath(input_file)), f"{prefix}.out")
+        if not marker and os.path.isfile(own_out) and is_new(own_out):
+            with open(own_out, errors="replace") as fh:
+                marker = "Wall Clock Time:" in fh.read()
+        if not marker:
+            if requested.get("screen_off") and requested.get("file_off"):
+                warnings.append("No 'Wall Clock Time:' end-of-run line to check (deck has "
+                                "SCREEN OFF and OUTPUT_FILE OFF)")
+            else:
+                errors.append("Return code 0 but no 'Wall Clock Time:' end-of-run line in "
+                              f"PFLOTRAN's screen output or {prefix}.out")
 
     # Check for PETSc errors
     stderr = run_result.get("stderr", "")
     if "PETSC ERROR" in stderr or "PETSc Error" in stderr:
-        warnings.append(f"PETSc error detected in stderr")
+        errors.append("PETSc error detected in stderr")
 
-    # Check for convergence failures
+    # Check for convergence failures (information only)
     stdout = run_result.get("stdout", "")
     if "Time step cut" in stdout:
         cut_count = stdout.count("Time step cut")
         warnings.append(f"Time step was cut {cut_count} times (convergence issues)")
 
-    # Check HDF5 output
-    h5_file = os.path.join(workdir, f"{prefix}.h5")
-    if os.path.isfile(h5_file):
-        size_mb = os.path.getsize(h5_file) / (1024 * 1024)
-        output_files["hdf5"] = {"path": h5_file, "size_mb": round(size_mb, 2)}
-        if size_mb < 0.001:
-            warnings.append(f"HDF5 output file is nearly empty ({size_mb:.4f} MB)")
-    else:
-        warnings.append(f"HDF5 output file not found: {h5_file}")
+    new_kinds = set()
+    for d in _output_folders(input_file, workdir):
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            path = os.path.join(d, f)
+            kind = _output_kind(f, prefix)
+            if kind is None or not os.path.isfile(path):
+                continue
+            if kind == "hdf5":
+                key = "hdf5" if f == f"{prefix}.h5" else f"hdf5_{f}"
+            elif kind == "obs_hdf5":
+                key = "obs_hdf5"
+            elif kind in ("regression", "mass_balance"):
+                key = kind
+            else:
+                key = f"{kind}_{f}"
+            if key in output_files:
+                continue  # the deck folder has precedence
+            info = {"path": path, "new": is_new(path)}
+            if kind == "hdf5":
+                size_mb = os.path.getsize(path) / (1024 * 1024)
+                info["size_mb"] = round(size_mb, 2)
+                if size_mb < 0.001:
+                    warnings.append(f"HDF5 output file is nearly empty ({size_mb:.4f} MB): {path}")
+            elif kind == "obs":
+                info["size_kb"] = round(os.path.getsize(path) / 1024, 2)
+            output_files[key] = info
+            if info["new"]:
+                new_kinds.add(kind)
 
-    # Check observation files
-    obs_pattern = f"{prefix}-obs-"
-    for f in os.listdir(workdir):
-        if f.startswith(obs_pattern) and f.endswith(".tec"):
-            obs_path = os.path.join(workdir, f)
-            output_files[f"obs_{f}"] = {"path": obs_path, "size_kb": round(os.path.getsize(obs_path) / 1024, 2)}
+    if run_result.get("success"):
+        if not requested["known"]:
+            warnings.append("Deck uses EXTERNAL_FILE: requested outputs not checked")
+        else:
+            if requested["hdf5"] and "hdf5" not in new_kinds:
+                errors.append(f"Deck asks for FORMAT HDF5 but this run wrote no {prefix}*.h5")
+            if requested["obs_hdf5"] and "obs_hdf5" not in new_kinds:
+                errors.append(f"Deck asks for observation HDF5 but this run wrote no "
+                              f"{prefix}-obs-region.h5")
+            if requested["mass_balance"] and "mass_balance" not in new_kinds:
+                errors.append(f"Deck asks for a mass balance file but this run wrote no "
+                              f"{prefix}-mas.dat")
 
-    # Check mass balance
-    mas_file = os.path.join(workdir, f"{prefix}-mas.dat")
-    if os.path.isfile(mas_file):
-        output_files["mass_balance"] = {"path": mas_file}
-    else:
-        warnings.append("Mass balance file not found (may not be configured)")
+    valid = run_result.get("success", False) and not errors
 
-    valid = run_result.get("success", False) and len([w for w in warnings if "error" in w.lower()]) == 0
-
-    return {"valid": valid, "warnings": warnings, "output_files": output_files}
+    return {"valid": valid, "errors": errors, "warnings": warnings, "output_files": output_files}
 
 
 def diagnose_failure(run_result):
@@ -363,15 +538,21 @@ def diagnose_failure(run_result):
 def main():
     parser = argparse.ArgumentParser(description="PFLOTRAN execution wrapper")
     parser.add_argument("--input-file", required=True, help="Path to .in file")
-    parser.add_argument("--pflotran-bin", help="Path to PFLOTRAN binary")
+    parser.add_argument("--pflotran-bin", help="Path to PFLOTRAN binary "
+                        "(else $PFLOTRAN_BIN, else the server default build)")
     parser.add_argument("--nproc", type=int, default=1, help="MPI processes")
+    parser.add_argument("--mpirun", help="MPI launcher for --nproc > 1 (else $PFLOTRAN_MPIRUN, "
+                        "else the server default matching PFLOTRAN's MPI)")
     parser.add_argument("--timeout", type=int, default=3600, help="Max runtime (s)")
     parser.add_argument("--workdir", help="Working directory (default: input file dir)")
 
     args = parser.parse_args()
 
+    # Absolute paths: the engine runs in --workdir, not in the caller's folder
+    args.input_file = os.path.abspath(args.input_file)
     if args.workdir is None:
-        args.workdir = os.path.dirname(os.path.abspath(args.input_file))
+        args.workdir = os.path.dirname(args.input_file)
+    args.workdir = os.path.abspath(args.workdir)
 
     print("=" * 60)
     print("PFLOTRAN Execution Wrapper")
@@ -389,18 +570,20 @@ def main():
         print("\nPre-flight checks FAILED. Cannot proceed.")
         sys.exit(1)
 
-    pflotran_bin = validation["pflotran_bin"]
+    pflotran_bin = os.path.abspath(validation["pflotran_bin"])
     print(f"  Binary: {pflotran_bin}")
     print(f"  Input: {args.input_file}")
-    print(f"  Processes: {args.nproc}")
+    print(f"  Processes: {args.nproc}" + (f" (MPI launcher: {validation['mpirun']})" if validation.get("mpirun") else ""))
 
     # Step 2: Build and run
     print("\n[2/4] Executing PFLOTRAN...")
-    cmd = build_command(pflotran_bin, args.input_file, args.nproc)
+    cmd = build_command(pflotran_bin, args.input_file, args.nproc, validation.get("mpirun"))
 
     prefix = os.path.splitext(os.path.basename(args.input_file))[0]
-    log_file = os.path.join(args.workdir, f"{prefix}.out")
+    # Not <prefix>.out: that is PFLOTRAN's own output file
+    log_file = os.path.join(args.workdir, f"{prefix}_run_log.txt")
 
+    state_before = _file_state(_output_folders(args.input_file, args.workdir))
     run_result = run_pflotran(cmd, args.workdir, args.timeout, log_file)
 
     print(f"\n  Return code: {run_result['returncode']}")
@@ -408,11 +591,16 @@ def main():
 
     # Step 3: Validate outputs
     print("\n[3/4] Validating outputs...")
-    output_validation = validate_outputs(args.input_file, args.workdir, run_result)
+    output_validation = validate_outputs(args.input_file, args.workdir, run_result,
+                                         before=state_before)
+    for e in output_validation["errors"]:
+        print(f"  ERROR: {e}")
     for w in output_validation["warnings"]:
         print(f"  WARNING: {w}")
     for name, info in output_validation["output_files"].items():
         print(f"  Output: {name} -> {info.get('path', 'N/A')}")
+
+    success = run_result["success"] and output_validation["valid"]
 
     # Step 4: Diagnose if failed
     if not run_result["success"]:
@@ -423,6 +611,8 @@ def main():
             print(f"  Diagnosis: {d['diagnosis']}")
             print(f"  Remedy: {d['remedy']}")
             print()
+    elif not success:
+        print("\n[4/4] PFLOTRAN returned 0 but the output checks failed (see ERROR lines)")
     else:
         print("\n[4/4] Execution successful!")
 
@@ -435,8 +625,9 @@ def main():
         "command": " ".join(cmd),
         "returncode": run_result["returncode"],
         "elapsed_s": run_result["elapsed_s"],
-        "success": run_result["success"],
+        "success": success,
         "output_files": output_validation["output_files"],
+        "errors": output_validation["errors"],
         "warnings": output_validation["warnings"],
         "stdout_first_500": run_result["stdout"][:500],
         "stderr_first_500": run_result["stderr"][:500],
@@ -447,7 +638,7 @@ def main():
         json.dump(summary, f, indent=2)
     print(f"\n  Summary: {summary_path}")
 
-    sys.exit(0 if run_result["success"] else 1)
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

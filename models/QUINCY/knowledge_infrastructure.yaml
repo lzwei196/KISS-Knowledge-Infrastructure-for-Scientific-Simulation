@@ -1,126 +1,107 @@
-# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
-# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+# knowledge_infrastructure.yaml -- the KI's manifest. Shape projected from dag.yaml + KI contents;
+# package and validation hand-written 2026-10-07 so the real engine's numbers and the SURROGATE's
+# numbers stay apart (generate_ki_manifest.py would re-project the surrogate's DB metrics).
 
 package:
   name: QUINCY
-  language: python
+  language: fortran
   implementation:
-    id: quincy-analytic-py
-    version: analytic reimplementation (QUINCYModel, monthly timestep)
-    provenance: Python; HydroCraft analytic reimplementation of QUINCY's core biogeochemistry (Farquhar
-      photosynthesis with N-limited Vcmax, CENTURY-like heterotrophic respiration, temperature-driven
-      LAI), not the upstream MPI-BGC Fortran QUINCY.
-  scientific_reference_version: QUINCY v1.0 (Thum et al. 2019, GMD; revision 1996 lineage) — analytic
-    single-site C-N reimplementation of the coupled C-N(-P) terrestrial-biogeochemistry formulation
+    id: quincy-standalone-qs.bin
+    version: qs-2026.04-public, commit 2851ba3120a268fbdf7947537c12c071493b1735, gfortran 13.3 build,
+      ASCII text output
+    provenance: Upstream MPI-BGC Fortran QUINCY standalone, cloned from https://git.bgc-jena.mpg.de/quincy-model/qs-open-access
+      and built with ./compile_quincy.sh gs; binary KISSPATH_HOME/engine_builds_20261006/QUINCY/src/x86_64-gfortran/bin/qs.bin;
+      driven by tools/run_quincy_engine.py. The older Python stand-in (tools/run_quincy.py) is a SURROGATE
+      and is NOT described by this dag.
+    run_tool: tools/run_quincy_engine.py
+    surrogate:
+      id: quincy-analytic-py
+      tool: tools/run_quincy.py
+      contract: docs/surrogate/surrogate_quincy_analytic_dag.yaml
+      status: SURROGATE - Python analytic stand-in (monthly step, no C-N-P pools), not QUINCY; never report
+        its output as QUINCY
+  scientific_reference_version: QUINCY v1.0 (Thum et al. 2019, GMD 12:4781) lineage; public release qs-2026.04-public
+    (MPI-BGC, BSD-3-Clause, DOI 10.17871/quincy-model-2019) -- real engine
   binary:
-    path: KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure/tools/run_quincy.py
-    type: Python
-pipeline:
-  stages: []
-tools:
-  count: 4
-  files:
+    path: KISSPATH_HOME/engine_builds_20261006/QUINCY/src/x86_64-gfortran/bin/qs.bin
+    type: ELF
+  run_tool: tools/run_quincy_engine.py
+  run_tool_note: default run route = the REAL QUINCY engine (qs.bin, headless) via tools/run_quincy_engine.py
+    (modes land / plant / canopy; self-tests test_canopy / test_radiation); forcing from tools/build_quincy_climate.py,
+    site from tools/build_quincy_site_config.py, optional multipliers from tools/edit_quincy_parameters.py,
+    output read by tools/parse_quincy_engine_output.py, scored by tools/score_quincy_vs_fluxnet.py
+  surrogate_tools_not_this_model:
+  - tools/run_quincy.py
   - tools/convert_forcing_to_quincy.py
   - tools/convert_parameters_to_quincy.py
   - tools/parse_output_quincy.py
+  surrogate_contract: docs/surrogate/surrogate_quincy_analytic_dag.yaml
+pipeline:
+  stages:
+  - s0_configuration
+  - s1_forcing_conversion
+  - s2_parameter_setup
+  - s3_model_execution
+  - s4_output_parsing
+  - s5_validation
+tools:
+  count: 11
+  files:
+  - tools/_quincy_common.py
+  - tools/build_quincy_climate.py
+  - tools/build_quincy_site_config.py
+  - tools/convert_forcing_to_quincy.py
+  - tools/convert_parameters_to_quincy.py
+  - tools/edit_quincy_parameters.py
+  - tools/parse_output_quincy.py
+  - tools/parse_quincy_engine_output.py
   - tools/run_quincy.py
+  - tools/run_quincy_engine.py
+  - tools/score_quincy_vs_fluxnet.py
 inputs:
   forcing:
-  - name: SW_IN (incoming shortwave radiation)
+  - name: sw_srf_down (surface downward shortwave radiation)
     unit: W/m2
-  - name: TA (air temperature at 2 m)
-    unit: deg C
-  - name: VPD (vapor pressure deficit)
+  - name: lw_srf_down (surface downward longwave radiation)
+    unit: W/m2
+  - name: t_air (near-surface air temperature)
+    unit: K
+  - name: q_air (near-surface specific humidity)
+    unit: g/kg
+  - name: press_srf (surface air pressure)
     unit: hPa
-  - name: PRECIP (precipitation)
+  - name: rain / snow or precip (precipitation rate)
     unit: mm/day
-  - name: CO2 (atmospheric CO2 mole fraction)
-    unit: ppm
-  - name: DAYLENGTH (day fraction driver)
-    unit: hours
-  - name: LW_IN (incoming longwave radiation, optional)
-    unit: W/m2
-  - name: WIND (wind speed, optional)
+  - name: wind_air (wind speed)
     unit: m/s
-  - name: PA (air pressure, optional)
-    unit: kPa
+  - name: co2_mixing_ratio (atmospheric CO2)
+    unit: ppm
+  - name: nhx_srf_down, noy_srf_down (N deposition)
+    unit: mg N/m2/day
+  - name: p_srf_down (P deposition)
+    unit: mg P/m2/day
   parameters:
-  - name: vcmax25 (max carboxylation rate at 25C)
-    unit: umol/m2/s
-  - name: jmax_vcmax_ratio (Jmax/Vcmax ratio)
+  - name: plant_functional_type_id (QUINCY PFT 1-14)
     unit: '-'
-  - name: alpha_j (quantum yield of electron transport)
-    unit: mol/mol
-  - name: theta_j (curvature of light response)
+  - name: soil sand / silt / clay fractions
+    unit: fraction 0-1
+  - name: bulk density
+    unit: kg/m3
+  - name: soil_ph
     unit: '-'
-  - name: ea_vcmax (activation energy for Vcmax)
-    unit: J/mol
-  - name: ea_jmax (activation energy for Jmax)
-    unit: J/mol
-  - name: n_leaf_ref (reference leaf nitrogen content)
-    unit: gN/m2_leaf
-  - name: vcmax_n_slope (Vcmax per unit leaf N)
-    unit: umol/s/gN
-  - name: g1_bb (Ball-Berry slope parameter)
-    unit: '-'
-  - name: r_maint_leaf (leaf maintenance respiration at 25C)
-    unit: umol/m2leaf/s
-  - name: r_maint_stem (stem maintenance respiration at 25C)
-    unit: umol/m2ground/s
-  - name: r_maint_root (root maintenance respiration at 25C)
-    unit: umol/m2ground/s
-  - name: r_growth_frac (growth respiration fraction of NPP)
-    unit: '-'
-  - name: ea_rd (activation energy for dark respiration)
-    unit: J/mol
-  - name: rh_base (base heterotrophic respiration rate at Tref)
-    unit: umol/m2/s
-  - name: rh_q10 (Q10 temperature sensitivity of Rh)
-    unit: '-'
-  - name: rh_t_ref (reference temperature for Rh)
-    unit: deg C
-  - name: rh_precip_scale (precipitation scaling for moisture response)
-    unit: '-'
-  - name: rh_precip_opt (optimal precipitation for decomposition)
-    unit: mm/day
-  - name: lai_max (maximum LAI)
-    unit: m2/m2
-  - name: lai_min (minimum / evergreen-base LAI)
-    unit: m2/m2
-  - name: lai_t_opt (temperature for maximum LAI)
-    unit: deg C
-  - name: lai_t_range (temperature range for LAI response)
-    unit: deg C
-  - name: cn_leaf (leaf C:N ratio)
-    unit: gC/gN
-  - name: cn_root (fine-root C:N ratio)
-    unit: gC/gN
-  - name: cn_wood (wood C:N ratio)
-    unit: gC/gN
-  - name: cp_leaf (leaf C:P ratio)
-    unit: gC/gP
-  - name: np_leaf (leaf N:P ratio)
-    unit: gN/gP
-  - name: Kc (Michaelis constant for carboxylation at 25C; Ea 79430 J/mol)
-    unit: umol/mol
-  - name: Ko (Michaelis constant for oxygenation at 25C; Ea 36380 J/mol)
-    unit: mmol/mol
-  - name: Gamma_star (CO2 compensation point at 25C; Ea 37830 J/mol)
-    unit: umol/mol
-  - name: Oi (intercellular O2 concentration)
-    unit: mmol/mol
-  initial_conditions_note: The analytic reimplementation carries no explicit prognostic pool state and
-    does not document initial-condition inputs; LAI and effective Vcmax are recomputed diagnostically
-    each timestep from forcing and parameters. (Upstream QUINCY initializes from bare-ground plus a default
-    SOM profile and a multi-decade spin-up; that does not apply to this surrogate.)
+  - name: soil depth
+    unit: m
+  - name: process parameters (lnd_q_assimi/veg/sb/spq/pheno/rad, lctlib PFT 1-8)
+    unit: multiplier of engine default
+  initial_conditions_note: The engine starts from bare ground and default soil pools; the state is built
+    by the transient spin-up (run_quincy_engine.py --spinup_years). No restart files exist in the text-output
+    build.
   initial_conditions: []
   boundary_conditions:
-  - name: lat (site latitude)
+  - name: latitude, longitude
     unit: deg
-  - name: lon (site longitude)
-    unit: deg
-  - name: pft (plant functional type selector)
-    unit: '-'
+  - name: elevation
+    unit: m
 io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
   observable:
@@ -134,14 +115,85 @@ outputs:
   - H
   other: []
 validation:
-  tier: not_runnable
-  tier_justification: 'measured: NSE=0.952, R=0.980'
+  tier: tested
+  tier_justification: 'REAL engine. No official site example exists in the public release (it is gated behind
+    DKRZ GitLab / qs-open-access@bgc-jena.mpg.de), so the reference check is the engine''s built-in self-tests:
+    test_canopy (10/10 files) and test_radiation (2/2 files) reproduce the build-time runs byte for byte through
+    run_quincy_engine.py. Real case: FLUXNET2015 FI-Hyy 1996-2014, VALIDATION of the default untuned engine
+    (nothing calibrated): daily GPP NSE 0.917, r 0.968 (r2 0.937 >= 0.7 cited band) -> passes; the obs
+    day-of-year climatology alone scores NSE 0.893, so most of the GPP skill is the seasonal cycle'
   metrics:
-    best_nse: 0.9516
-    best_r: 0.9804
+    selftest_test_canopy_files_identical: 10
+    selftest_test_canopy_files_compared: 10
+    selftest_test_radiation_files_identical: 2
+    selftest_test_radiation_files_compared: 2
+    fihyy_gpp_daily_1996_2014_nse: 0.9174
+    fihyy_gpp_daily_1996_2014_kge: 0.8285
+    fihyy_gpp_daily_1996_2014_r: 0.9678
+    fihyy_gpp_daily_1996_2014_pbias_pct: -11.5
+    fihyy_gpp_daily_1996_2014_rmse_gC_m2_d: 0.9774
+    fihyy_gpp_daily_1996_2014_n_days: 6260
+    fihyy_gpp_monthly_1996_2014_nse: 0.9565
+    fihyy_gpp_daily_obs_doy_climatology_benchmark_nse: 0.8929
+    fihyy_gpp_annual_sum_gC_m2_yr_model: 986
+    fihyy_gpp_annual_sum_gC_m2_yr_tower: 1159
+    fihyy_reco_daily_1996_2014_nse: 0.8118
+    fihyy_reco_daily_1996_2014_r: 0.9428
+    fihyy_reco_daily_1996_2014_pbias_pct: 9.2
+    fihyy_nee_daily_1996_2014_nse: 0.4934
+    fihyy_nee_daily_1996_2014_kge: -0.0687
+    fihyy_nee_daily_1996_2014_r: 0.8219
+    fihyy_nee_daily_1996_2014_pbias_pct: -95.9
+    fihyy_nee_annual_sum_gC_m2_yr_model: -9.5
+    fihyy_nee_annual_sum_gC_m2_yr_tower: -246.1
+    fihyy_le_daily_1996_2014_nse: 0.5501
+    fihyy_le_daily_1996_2014_r: 0.8636
+    fihyy_le_daily_1996_2014_pbias_pct: 29.7
+    fihyy_le_daily_1996_2014_n_days: 6585
+    fihyy_h_daily_1996_2014_nse: 0.3386
+    fihyy_h_daily_1996_2014_r: 0.6575
+    fihyy_h_daily_1996_2014_pbias_pct: -47.5
+    fihyy_h_daily_1996_2014_n_days: 6671
+    fihyy_water_balance_residual_pct_of_P: 7.8
+  metrics_source:
+    engine: REAL QUINCY qs.bin (qs-2026.04-public, sha256 1460dc68...0bab) via tools/run_quincy_engine.py --mode
+      land, not the Python surrogate
+    role: 'validation: nothing calibrated. Engine defaults, PFT 5 (BNE) from the engine''s own FLUXNET site list,
+      500-year transient spin-up from bare ground cycling 1996-2014, then 1996-2014 at a 30-min step'
+    run: FLUXNET2015 FI-Hyy FULLSET_HH tower met 1996-2014 (gap-filled, half-hourly; Feb 29 dropped), CO2_F_MDS
+      (899 gaps filled from the Law Dome / Mauna Loa annual record); N deposition 7.4 kg N ha-1 yr-1 (Korhonen
+      et al. 2013, split 50/50 NHx/NOy by assumption), P deposition 0.05 kg P ha-1 yr-1 (assumption); HWSD
+      topsoil (silty clay, pH 4.3); run dir KISSPATH_KI_ROOT/QUINCY/detached/real_case/38e41ff2e4094bf4bfb5c2e4a3b084d0/case
+      (an earlier identical run, byte-identical climate.dat and vegflux_c_daily.txt, is KISSPATH_OUTPUTS/quincy_fihyy_real_engine)
+    scored_series: 'daily values vs FLUXNET2015 FI-Hyy FULLSET_DD (g C m-2 d-1 for carbon, W m-2 for LE/H), days
+      with daily QC >= 0.75 only, Feb 29 dropped: GPP = vegflux_c GPP x 12.011 vs GPP_NT_VUT_REF; Reco = (Growth+Maint+NTransform+NFixation
+      resp) + HetResp vs RECO_NT_VUT_REF; NEE = Reco - GPP (positive = source) vs NEE_VUT_REF (all three on NEE_VUT_REF_QC,
+      6,260 days 1996-06-13..2014-12-31); LE = Qle vs LE_F_MDS (6,585 days); H = Qh vs H_F_MDS (6,671 days)'
+    known_bias: spun-up equilibrium stand with no age / thinning history -> net sink near zero (NEE -9.5 vs -246
+      g C m-2 yr-1, dt_quincy_044); GPP 15 % low in annual sum (986 vs 1159); HWSD gives silty clay at a sandy-till
+      podzol (dt_quincy_038); LE +30 %, H -48 %
+    plausibility: model GPP is the engine's own output (0 of 6,260 days equal to the obs; max 9.7 g C m-2 d-1, no negative
+      days, seasonal cycle Jan 0.02 -> Jul 7.3 vs tower 8.5); FLUXNET daily carbon units g C m-2 d-1 checked against
+      FULLSET_YY; benchmarks on the same days -- obs day-of-year climatology NSE 0.893, a linear fit of obs GPP on tower
+      SW and air temperature NSE 0.817
+    reproduce: KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_QUINCY/rescore_fihyy_independent.py (plain numpy and
+      ki_tools_common.metrics.all_metrics agree with the run's score.json); tools/score_quincy_vs_fluxnet.py on
+      case/parsed/quincy_daily.csv gives the full table
+  surrogate_metrics_not_quincy:
+    note: OLD Python SURROGATE (tools/run_quincy.py, analytic monthly re-implementation), calibrated by differential
+      evolution at FI-Hyy on 1996-2008 (156 months) and checked on 2009-2014 (72 months), monthly values. These are
+      NOT QUINCY results (hydrocraft.db test_runs surrogate_FI-Hyy_* say "Not creditable - model binary never ran"); the
+      models DB row still carries them as best_nse/best_r, so a regenerated manifest would project them again --
+      re-check after any regeneration.
+    tool: tools/run_quincy.py
+    gpp_validation_2009_2014_monthly_nse: 0.9516
+    gpp_validation_2009_2014_monthly_r: 0.9804
+    nee_validation_2009_2014_monthly_nse: 0.9153
+    reco_validation_2009_2014_monthly_nse: 0.9079
 summary:
-  total_tools: 4
-  total_stage_docs: 0
-  total_diagnostic_triplets: 25
-  generated: '2026-08-15'
-  generated_by: generate_ki_manifest.py (projection; regenerate any time)
+  total_tools: 11
+  total_stage_docs: 6
+  total_diagnostic_triplets: 44
+  generated: '2026-10-07'
+  generated_by: hand-written in the projected shape (generate_ki_manifest.py would re-project the surrogate's
+    DB metrics; see validation.surrogate_metrics_not_quincy)

@@ -1,5 +1,5 @@
 # Elmer/Ice Diagnostic Triplets
-# 18 symptom → diagnosis → remedy entries for common failure modes
+# Symptom → diagnosis → remedy entries (18 when this header was written; current count: the SKILL.md KI map) for common failure modes
 # Severity: silent (wrong results, no error), degraded (poor accuracy), fatal (crash)
 
 - id: dt_001

@@ -52,7 +52,10 @@ Resumable at stage level:
   * forcing  -- symlinked from the reference run when the rebuilt geo_em grid is
                 bit-identical; otherwise regenerated month by month, and any month
                 whose LDASIN count already matches its expected hour count is skipped
-  * model    -- skipped when the CHRTOUT count already matches the simulation days
+  * model    -- skipped only when wrfhydro_run_gate says the run is finished (completion
+                banner in a current diag_hydro.* AND run_inputs.json, written at launch,
+                matching the current namelists/DOMAIN/FORCING/dates); else old outputs
+                are moved aside (kept) and the model runs from scratch
   * scoring  -- always recomputed (cheap)
 Final action: writes the complete verifier result object to
   KISSPATH_KI_ROOT/WRF_Hydro/detached/verify_1/result.json
@@ -79,6 +82,10 @@ PY = "/usr/bin/python3"
 
 sys.path.insert(0, str(TOOLS / "s11_output"))
 sys.path.insert(0, str(VALID))
+# wrfhydro_run_gate / wrfhydro_domain_edits ship inside the KI, in tools/ next to this file
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+import wrfhydro_run_gate as gate
+import wrfhydro_domain_edits as de
 
 STATE_DIR = ROOT / "models/WRF_Hydro/detached/verify_1"
 RUN = ROOT / "outputs/bengbu_wrfhydro_verify1"
@@ -115,6 +122,10 @@ AGGFACTRT = 4
 STREAM_THRESHOLD = 100
 
 START, END = _dt.date(1980, 1, 1), _dt.date(1990, 12, 31)
+# REFKDT for s5 build_soil_properties.py: an explicit choice of THIS runner
+# (the tool has no default since 2026-10-05). 0.8 is the value this runner
+# effectively used before (the tool's old built-in value), kept unchanged.
+REFKDT = 0.8
 SCORE_START = "1981-01-01"                    # 1980 = spinup, discarded
 CAL = ("1981-01-01", "1986-12-31")
 VAL = ("1987-01-01", "1990-12-31")
@@ -138,6 +149,12 @@ def log(msg):
     print(line, flush=True)
     with open(LOG, "a") as f:
         f.write(line + "\n")
+
+
+# Domain stand-in edits: OFF unless --fix-domain-gaps (see __main__); every
+# edit recorded (wrfhydro_domain_edits; soil gaps filled from neighbours).
+EDITS = de.DomainEdits(fix=False, soilparm_tbl=ROOT / "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL", log=log)
+DOMAIN_EDIT_REC = {}
 
 
 def sh(cmd, cwd=None, timeout=None):
@@ -178,7 +195,7 @@ def build_domain():
     TOOLS_USED.append("s1_domain/define_lambert_domain.py")
 
     have = [f for f in DOMAIN_FILES if (DOMAIN / f).exists()]
-    if len(have) == len(DOMAIN_FILES):
+    if len(have) == len(DOMAIN_FILES) and not de.rebuild_incomplete(DOMAIN):
         log(f"  domain: all {len(DOMAIN_FILES)} files present, skip rebuild")
         TOOLS_USED.extend(["s2_geo_em/build_geo_em.py",
                            "s3_wrfinput/build_wrfinput.py",
@@ -186,46 +203,54 @@ def build_domain():
                            "s5_soil_properties/build_soil_properties.py",
                            "s6_groundwater/build_groundwater.py"])
         return
-    log(f"  domain: {len(have)}/{len(DOMAIN_FILES)} present -> rebuilding s1..s6")
+    log(f"  domain: {len(have)}/{len(DOMAIN_FILES)} present"
+        f"{' (earlier rebuild did not finish)' if de.rebuild_incomplete(DOMAIN) else ''} -> rebuilding s1..s6")
+    # Rebuild into a FRESH DOMAIN: the old one (files + edit record) is moved aside
+    # whole, so no old, already-edited file can mix with new ones; the mark stays
+    # until every file is built (an interrupted rebuild is rebuilt again).
+    de.start_rebuild(DOMAIN, log)
 
     sh([PY, TOOLS / "s2_geo_em/build_geo_em.py",
         "--domain_json", ddef, "--dem_path", DEM,
         "--landcover_path", LANDCOVER, "--hwsd_raster", HWSD_RASTER,
         "--hwsd_mdb", HWSD_MDB, "--basin_shp", BASIN_SHP,
-        "--output", DOMAIN / "geo_em.d01.nc"], timeout=7200)
+        "--output", DOMAIN / "geo_em.d01.nc"] + EDITS.tool_flags(), timeout=7200)
     TOOLS_USED.append("s2_geo_em/build_geo_em.py")
 
     geo = DOMAIN / "geo_em.d01.nc"
     sh([PY, TOOLS / "s3_wrfinput/build_wrfinput.py",
         "--geo_em", geo, "--output_path", DOMAIN / "wrfinput_d01.nc",
-        "--start_month", START.month, "--soilparm_tbl", SOILPARM])
+        "--start_month", START.month, "--soilparm_tbl", SOILPARM] + EDITS.tool_flags())
     TOOLS_USED.append("s3_wrfinput/build_wrfinput.py")
 
     sh([PY, TOOLS / "s4_fulldom/build_fulldom_hires.py",
         "--geo_em", geo, "--domain_json", ddef, "--dem_path", DEM,
         "--basin_shp", BASIN_SHP, "--output_path", DOMAIN / "Fulldom_hires.nc",
-        "--aggfactrt", AGGFACTRT, "--stream_threshold", STREAM_THRESHOLD],
+        "--aggfactrt", AGGFACTRT, "--stream_threshold", STREAM_THRESHOLD] + EDITS.tool_flags(),
        timeout=7200)
     TOOLS_USED.append("s4_fulldom/build_fulldom_hires.py")
 
-    sh([PY, TOOLS / "s5_soil_properties/build_soil_properties.py",
+    sh([PY, TOOLS / "s5_soil_properties/build_soil_properties.py", "--refkdt", REFKDT,
         "--geo_em", geo, "--output_path", DOMAIN / "soil_properties.nc",
-        "--soilparm_tbl", SOILPARM, "--mptable_tbl", MPTABLE])
+        "--soilparm_tbl", SOILPARM, "--mptable_tbl", MPTABLE] + EDITS.tool_flags())
     TOOLS_USED.append("s5_soil_properties/build_soil_properties.py")
 
     sh([PY, TOOLS / "s6_groundwater/build_groundwater.py",
         "--geo_em", geo, "--domain_json", ddef, "--basin_shp", BASIN_SHP,
-        "--output_dir", DOMAIN, "--hydro_tbl", HYDROTBL])
+        "--output_dir", DOMAIN, "--hydro_tbl", HYDROTBL] + EDITS.tool_flags())
     TOOLS_USED.append("s6_groundwater/build_groundwater.py")
 
     missing = [f for f in DOMAIN_FILES if not (DOMAIN / f).exists()]
     if missing:
         raise RuntimeError(f"domain rebuild left files missing: {missing}")
+    de.finish_rebuild(DOMAIN)
     log("  domain: rebuilt all 8 files")
 
 
 def grids_match():
-    """True when the rebuilt geo_em grid is identical to the reference run's."""
+    """True when the rebuilt geo_em grid is identical to the reference run's:
+    XLAT_M, XLONG_M AND HGT_M, the three fields cmfd_to_ldasin.py reads (HGT_M
+    drives its temperature/pressure elevation correction)."""
     a, b = DOMAIN / "geo_em.d01.nc", REF / "DOMAIN/geo_em.d01.nc"
     if not b.exists():
         return False
@@ -233,13 +258,19 @@ def grids_match():
         da, db = nc.Dataset(str(a)), nc.Dataset(str(b))
         la, lb = np.asarray(da["XLAT_M"][:]), np.asarray(db["XLAT_M"][:])
         oa, ob = np.asarray(da["XLONG_M"][:]), np.asarray(db["XLONG_M"][:])
+        if "HGT_M" not in da.variables or "HGT_M" not in db.variables:
+            da.close(); db.close()
+            log("  grid comparison: HGT_M missing in a geo_em -> cannot show equal elevations")
+            return False
+        ha, hb = np.asarray(da["HGT_M"][:], dtype="f8"), np.asarray(db["HGT_M"][:], dtype="f8")
         da.close(); db.close()
-        if la.shape != lb.shape:
+        if la.shape != lb.shape or ha.shape != hb.shape:
             log(f"  grid shapes differ: {la.shape} vs {lb.shape}")
             return False
         dmax = max(float(np.abs(la - lb).max()), float(np.abs(oa - ob).max()))
-        log(f"  grid max |dlat/dlon| vs reference = {dmax:.3e} deg")
-        return dmax < 1e-6
+        hmax = float(np.abs(ha - hb).max())
+        log(f"  grid max |dlat/dlon| vs reference = {dmax:.3e} deg, max |dHGT_M| = {hmax:.3e} m")
+        return dmax < 1e-6 and hmax < 1e-3
     except Exception as e:  # noqa: BLE001
         log(f"  grid comparison failed: {e!r}")
         return False
@@ -261,6 +292,11 @@ def build_forcing(reuse):
     so the series must extend one day past END (KI defect D1)."""
     FORCING.mkdir(parents=True, exist_ok=True)
     force_end = END + _dt.timedelta(days=1)      # 1991-01-01, supplies hour KHOUR
+    # Forcing on another grid (e.g. before a DOMAIN rebuild) is never reused.
+    _ok, _why = gate.forcing_matches_domain(FORCING, DOMAIN / "geo_em.d01.nc")
+    if not _ok:
+        log(f"  forcing: existing FORCING not reusable ({_why})")
+        gate.move_forcing_aside(FORCING, log)
 
     if reuse:
         n = 0
@@ -301,6 +337,7 @@ def build_forcing(reuse):
         raise RuntimeError(
             f"forcing at hour KHOUR missing ({khour_file.name}); the run would "
             "abort in read_hydro_forcing_mpp1() (KI defect D1)")
+    gate.stamp_forcing(FORCING, DOMAIN / "geo_em.d01.nc")
     log(f"  FORCING total: {n} LDASIN files; hour-KHOUR file present")
     return n
 
@@ -323,18 +360,8 @@ def patch_hydro_namelist():
 def run_model():
     n_chrt = len(glob.glob(str(RUN / "*.CHRTOUT_DOMAIN1")))
     need = expected_days()
-    if n_chrt >= need:
-        log(f"  model: {n_chrt}/{need} CHRTOUT present, skipping run")
-        TOOLS_USED.extend(["s9_namelists/generate_namelists.py",
-                           "s10_execution/run_wrfhydro.py"])
-        return
-    log(f"  model: {n_chrt}/{need} CHRTOUT -> running WRF-Hydro from scratch")
-    for pat in ("*.CHRTOUT_DOMAIN1", "*.LDASOUT_DOMAIN1", "*.GWOUT_DOMAIN1",
-                "*.RTOUT_DOMAIN1", "*.CHRTOUT_GRID1", "RESTART*", "HYDRO_RST*",
-                "diag_hydro.*"):
-        for f in glob.glob(str(RUN / pat)):
-            os.remove(f)
-
+    # Namelists (deterministic) are written first so the finished check compares
+    # against the namelists this code would run now.
     # generate_namelists.py exposes ONLY these flags; its stock defaults are
     # already Config A (RUNOFF_OPTION=3, channel_option=3, GWBASESWCRT=1).
     sh([PY, TOOLS / "s9_namelists/generate_namelists.py",
@@ -345,23 +372,41 @@ def run_model():
     TOOLS_USED.append("s9_namelists/generate_namelists.py")
     patch_hydro_namelist()
 
+    gate.require_forcing_source(RUN, FORCING)
+    ok, gwhy = gate.check_finished(RUN, START.isoformat(), END.isoformat(), tables=True, exe=TBL_DIR / "wrf_hydro.exe", tbl_dir=TBL_DIR)
+    if ok:
+        log(f"  model: finished earlier ({gwhy}; {n_chrt}/{need} CHRTOUT), skipping run")
+        TOOLS_USED.append("s10_execution/run_wrfhydro.py")
+        return
+    log(f"  model: not finished ({gwhy}; {n_chrt}/{need} CHRTOUT) -> running WRF-Hydro from scratch")
+    aside, n_aside = gate.move_outputs_aside(RUN)
+    if aside:
+        log(f"  old outputs ({n_aside} files) moved to {aside.name} (kept)")
+    # launch-time only: the run folder gets the install tables; a run-local table
+    # that differs is moved aside (kept), never deleted. Checks only read them.
+    _staged, _kept = gate.stage_tables(RUN, TBL_DIR, keep_dir=(aside / "tables") if aside else None)
+    if _kept:
+        log(f"  run-local parameter tables that differed from the install kept in {_kept}")
+    gate.write_run_inputs(RUN, START.isoformat(), END.isoformat(), tables=True, exe=TBL_DIR / "wrf_hydro.exe", tbl_dir=TBL_DIR)
+
     sh([PY, TOOLS / "s10_execution/run_wrfhydro.py",
-        "--run_dir", RUN, "--nproc", NPROC, "--timeout", 400000],
+        "--run_dir", RUN, "--tbl_dir", TBL_DIR, "--exe", TBL_DIR / "wrf_hydro.exe", "--nproc", NPROC, "--timeout", 400000],
        timeout=420000)
     TOOLS_USED.append("s10_execution/run_wrfhydro.py")
 
+    gwhy = gate.require_finished_after_run(RUN, START.isoformat(), END.isoformat(), tables=True, exe=TBL_DIR / "wrf_hydro.exe", tbl_dir=TBL_DIR)
     n_chrt = len(glob.glob(str(RUN / "*.CHRTOUT_DOMAIN1")))
-    log(f"  model finished: {n_chrt} CHRTOUT files")
-    if n_chrt < need * 0.95:
-        raise RuntimeError(f"model produced only {n_chrt}/{need} CHRTOUT files")
+    log(f"  model finished: {n_chrt} CHRTOUT files ({gwhy})")
 
 
 # ------------------------------------------------------------------ stage 11
 def pick_outlet():
     """Gauge-matched outlet. KI defect D2: extract_discharge.py has no
     find_gauge_feature()/--gauge_lat, only argmax(streamflow). We select the
-    basin outlet as the max-Strahler-order feature carrying the largest mean
-    flow, and cross-check it against the KI's own argmax detector."""
+    feature NEAREST THE GAUGE among the top two Strahler orders (same rule as
+    run_and_score.py / run_and_score_verify2.py), and record the KI's own argmax
+    detector only as a cross-check. (Before 2026-10-05 this picked the top-order
+    feature with the largest mean flow, i.e. an argmax, not the gauge.)"""
     from extract_discharge import find_outlet_feature
 
     files = sorted(RUN.glob("*.CHRTOUT_DOMAIN1"))
@@ -379,11 +424,12 @@ def pick_outlet():
     ds.close()
 
     qmean = qsum / len(sample)
-    top = order == order.max()
-    idx = int(np.where(top)[0][np.argmax(qmean[top])])
-
-    dist = float(np.hypot((lat[idx] - GAUGE_LAT) * 111.0,
-                          (lon[idx] - GAUGE_LON) * 111.0 * np.cos(np.radians(GAUGE_LAT))))
+    omax = int(order.max())
+    cand = np.where(order >= max(1, omax - 1))[0]
+    dist_all = np.hypot((lat - GAUGE_LAT) * 111.0,
+                        (lon - GAUGE_LON) * 111.0 * np.cos(np.radians(GAUGE_LAT)))
+    idx = int(cand[np.argmin(dist_all[cand])])
+    dist = float(dist_all[idx])
     ki_idx = int(find_outlet_feature(RUN))
     TOOLS_USED.append("s11_output/extract_discharge.py")
     info = {"feature_idx": idx, "feature_id": int(fid[idx]),
@@ -410,7 +456,9 @@ def extract_and_score(idx):
 
     obs = load_obs(str(OBS_PATH))
     merged = obs.join(sim, how="inner").dropna()
-    merged = merged[merged.index >= pd.Timestamp(SCORE_START)]
+    # END cut too: the run writes one more daily CHRTOUT, stamped END+1 00:00
+    merged = merged[(merged.index >= pd.Timestamp(SCORE_START)) &
+                    (merged.index <= pd.Timestamp(END))]
     merged.to_csv(STATE_DIR / "discharge_comparison.csv")
     log(f"  paired days after spinup: {len(merged)} "
         f"({merged.index.min()} .. {merged.index.max()})")
@@ -525,6 +573,7 @@ def main():
     try:
         log("=== stage 1-6: domain ===")
         build_domain()
+        DOMAIN_EDIT_REC.clear(); DOMAIN_EDIT_REC.update(de.ensure_domain_record(DOMAIN, EDITS, STATE_DIR, log))
         reuse = grids_match()
 
         log("=== stage 8: forcing ===")
@@ -547,7 +596,8 @@ def main():
         }
 
         if scored is None:
-            result["status"] = "completed"
+            # no metrics = failed (JSON status and exit code agree)
+            result["status"] = "failed"
             result["metrics"]["metrics_null_reason"] = (
                 f"only {len(merged)} paired sim/obs days after spinup")
         else:
@@ -609,8 +659,8 @@ def main():
             "find_outlet_feature() (argmax streamflow). Gauge matching was done here "
             "and cross-checked against that argmax. (D3) hydro.namelist hard-codes "
             "CHRTOUT_GRID=1/RTOUT_DOMAIN=1 with no flag; patched off post-generation "
-            "(I/O only). Discharge is taken from CHRTOUT at the max-Strahler-order "
-            "outlet feature, not from basin-mean LDASOUT SFCRNOFF (dt_v009). "
+            "(I/O only). Discharge is taken from CHRTOUT at the feature nearest the gauge "
+            "among the top two Strahler orders, not from basin-mean LDASOUT SFCRNOFF (dt_v009). "
             + (" ".join(NOTES_EXTRA) if NOTES_EXTRA else "")
         )
     except Exception as e:  # noqa: BLE001
@@ -634,6 +684,9 @@ def main():
         "D3 hydro.namelist template hard-codes CHRTOUT_GRID=1 / RTOUT_DOMAIN=1",
     ]
 
+    if DOMAIN_EDIT_REC:
+        result["domain_edits"] = de.summary_for_result(DOMAIN_EDIT_REC)
+        result["notes"] = ((result.get("notes") or "") + " " + de.summary_sentence(DOMAIN_EDIT_REC)).strip()
     out = STATE_DIR / "result.json"
     with open(out, "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
@@ -641,4 +694,12 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse as _ap
+    _args = de.add_cli(_ap.ArgumentParser(description="WRF-Hydro runner")).parse_args()
+    EDITS = de.DomainEdits(fix=_args.fix_domain_gaps, smois_floor=_args.smois_floor,
+                           tslb_floor=_args.tslb_floor, accept_unknown_history=_args.accept_unknown_domain_history, soilparm_tbl=ROOT / "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL", log=log)
+    import time as _time
+    _t0 = _time.time()
     main()
+    # a failed/partial run, or one without metrics, must not exit 0
+    gate.exit_by_result(STATE_DIR / "result.json", _t0, key="status")

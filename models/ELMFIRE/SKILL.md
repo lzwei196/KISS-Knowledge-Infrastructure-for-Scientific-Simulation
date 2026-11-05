@@ -60,7 +60,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: ELMFIRE 2025.1002
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 20 diagnostic triplets | ~1,500 lines of validated Python
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `tutorial_validated` (Tutorial 01 — Constant Wind)
 
 ---
@@ -77,7 +77,7 @@ See `data_ki/MTBS/SKILL.md` for fire perimeter observations.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous wildfire spread simulation using ELMFIRE on any landscape, **without manual data preparation**. The 4 validated tools replace the standard shell-script workflow with a Python pipeline that generates GeoTIFF inputs, configures Fortran namelists, executes the model, and parses outputs.
+This knowledge infrastructure enables autonomous wildfire spread simulation using ELMFIRE on any landscape, **without manual data preparation**. The validated tools replace the standard shell-script workflow with a Python pipeline that generates GeoTIFF inputs, configures Fortran namelists, executes the model, and parses outputs.
 
 **What ELMFIRE does**: 2D Eulerian level-set wildfire spread model. Simulates:
 - Fire perimeter propagation (level-set equations on raster grid)
@@ -433,7 +433,7 @@ python convert_landscape_to_elmfire.py --dem dem.tif --fuel fbfm40.tif --out ./i
 python convert_weather_to_elmfire.py --ws 15 --wd 0 --m1 3 --m10 4 --m100 5 --out ./inputs
 
 # 2. Run
-python run_elmfire.py --namelist ./inputs/elmfire.data --np 4
+python run_elmfire.py --namelist ./inputs/elmfire.data --case-dir . --np 4
 
 # 3. Parse
 python parse_elmfire_output.py --outputs_dir ./outputs --out results.csv
@@ -443,7 +443,7 @@ python parse_elmfire_output.py --outputs_dir ./outputs --out results.csv
 
 ```bash
 # Set NUM_ENSEMBLE_MEMBERS = 100 and RANDOM_IGNITIONS = .TRUE.
-python run_elmfire.py --namelist ./inputs/elmfire.data --np 16
+python run_elmfire.py --namelist ./inputs/elmfire.data --case-dir . --np 16
 # Post-process
 elmfire_post_2025.1002 ./outputs/elmfire_post.data
 ```

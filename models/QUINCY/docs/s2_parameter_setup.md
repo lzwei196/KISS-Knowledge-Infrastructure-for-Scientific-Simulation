@@ -1,88 +1,38 @@
-# S2 Parameter Setup
+# s2 — Site and parameters: `site_config.json` and `parameter_slm_run.list`
 
 ## Purpose
-
-Create, validate, query, or modify the PFT parameter JSON used by the analytic QUINCY model. The tool is `tools/convert_parameters_to_quincy.py`, and its defaults encode this KI's coupled C-N-P parameter set for `enf`, `dbf`, `ebf`, and `c3grass`.
+Set what makes the site (PFT, soil, location) and, optionally, change process parameters for
+sensitivity or calibration.
 
 ## Inputs
-
-- `--operation defaults --pft <pft>` to create a default parameter file.
-- `--fin <params.json>` for `validate`, `modify`, `query`, and `list`.
-- `--param` and `--value` for single-parameter modification.
-- Parameter ranges and PFT defaults defined in `tools/convert_parameters_to_quincy.py`.
+- `build_quincy_site_config.py --lat --lon [--site ID | --pft NAME] --soil hwsd|explicit|default`
+- `edit_quincy_parameters.py --set NAME=MULT [--pft N] --out p.list`
 
 ## Outputs
-
-- JSON parameter file with top-level metadata and `params`.
-- Optional validation report JSON from `--report`.
-- CLI JSON summaries for validation status and warnings.
+- `site_config.json`: `nml` = {group: {key: value}} written into qs.namelist, plus `provenance`.
+- `parameter_slm_run.list`: namelist groups of multipliers.
 
 ## Procedure
-
-Inspect available parameters and PFT defaults:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-sed -n '1,180p' tools/convert_parameters_to_quincy.py
-python3 tools/convert_parameters_to_quincy.py --help
 ```
-
-Create default ENF parameters:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_parameters_to_quincy.py \
-  --operation defaults \
-  --pft enf \
-  --fout /tmp/quincy_fi_hyy/enf_params.json
+$PY tools/build_quincy_site_config.py --lat 61.8474 --lon 24.2948 --site FI-Hyy --soil hwsd \
+    --elevation_m 181 --out case/site_config.json
+$PY tools/edit_quincy_parameters.py --list            # valid names per group (from engine source)
+$PY tools/edit_quincy_parameters.py --set vcmax2n=1.1 --set sla=0.9 --pft 5 --out case/p.list
 ```
-
-Validate and report the parameter file:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_parameters_to_quincy.py \
-  --operation validate \
-  --fin /tmp/quincy_fi_hyy/enf_params.json \
-  --report /tmp/quincy_fi_hyy/enf_params_report.json
-```
-
-Modify a parameter only when the change is ecologically justified:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_parameters_to_quincy.py \
-  --operation modify \
-  --fin /tmp/quincy_fi_hyy/enf_params.json \
-  --param vcmax25 \
-  --value 50.0 \
-  --fout /tmp/quincy_fi_hyy/enf_params_vcmax50.json
-```
+PFTs: 1 BEM, 2 BED, 3 BDR, 4 BDS, 5 NE (BNE), 6 NS, 7 TeH, 8 TrH, 9 TeP, 10 TrP, 11 TeC, 12 TrC, 13 BSO, 14 UAR.
 
 ## Verification
-
-- `validate` returns no errors for all required keys.
-- Values stay inside `PARAMETER_RANGES` in `tools/convert_parameters_to_quincy.py`.
-- `lai_min < lai_max` for a meaningful seasonal LAI response.
-- Activation energies are in `J/mol`, not `kJ/mol`.
-- `n_leaf_ref` is in `gN/m2_leaf`; it controls `vcmax25_eff = vcmax_n_slope * n_leaf_ref`, capped at `vcmax25`.
+- `site_config.json` → `provenance.pft` names the engine csv row (FI-Hyy → BNE 5).
+- After a run with `--param_list`, `run_manifest.json.parameters_applied` lists name, old, new;
+  the engine file `parameter_sensi_param_values.txt` holds every parameter it read.
 
 ## Traps
-
-- `dt_quincy_004`: leaf nitrogen in kgN or mgN instead of gN shuts down N-limited GPP.
-- `dt_quincy_007`: `lai_min == lai_max` removes the seasonal GPP cycle.
-- `dt_quincy_008`: PFT-mismatched `vcmax25` creates large GPP magnitude bias.
-- `dt_quincy_009`: high `rh_q10` or `rh_base` inflates Reco and NEE.
-- `dt_quincy_016`: stoichiometry must use C:N and C:P ratios, not reciprocals.
-- `dt_quincy_017`: parameter JSON must use the exact keys expected by the converter.
-- `dt_quincy_018`: activation energies are J/mol.
-- `dt_quincy_022`, `dt_quincy_023`, `dt_quincy_024`: LAI, growth respiration, and Rh moisture parameters have stage-specific failure modes.
+- Texture as FRACTIONS (HWSD gives percent) and bulk density in kg m-3 (HWSD g cm-3) (dt_quincy_032).
+- Texture must go into both `lnd_spq_nml` and `jsb_sse_nml`; the site tool does both (dt_quincy_032).
+- HWSD at FI-Hyy is silty clay with 34 % organic C; the real site is a podzol on sandy till
+  (dt_quincy_038). Use `--soil explicit` when site texture is known.
+- Absolute parameter values are transformed by the engine before use (e.g. jmax2n/4); the tool
+  always uses proportional mode (dt_quincy_036). PFT parameters exist for PFTs 1-8 only (dt_quincy_037).
 
 ## Example
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_parameters_to_quincy.py --operation defaults --pft enf --fout /tmp/quincy_fi_hyy/enf_params.json
-python3 tools/convert_parameters_to_quincy.py --operation query --fin /tmp/quincy_fi_hyy/enf_params.json --param n_leaf_ref
-python3 tools/convert_parameters_to_quincy.py --operation validate --fin /tmp/quincy_fi_hyy/enf_params.json
-```
+`outputs/quincy_fihyy_real_engine/site_config.json`.

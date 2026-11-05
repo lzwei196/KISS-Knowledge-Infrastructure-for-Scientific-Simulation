@@ -25,6 +25,8 @@ import numpy as np
 
 CHINA_DEM_PATH = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"
 CMFD_ELEV_PATH = "KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"
+# MERIT DEM v1.0.2, 3-arcsec (~90 m), GLOBAL — 5x5 deg tiles named by SW corner.
+MERIT_DEM_DIR = "KISSPATH_DATA/MERIT_DEM"
 
 # Minimum slope for models that need nonzero (e.g., EPIC erosion)
 MIN_SLOPE = 0.001
@@ -99,6 +101,66 @@ def _from_cmfd_elev(lat, lon):
     return None
 
 
+def _merit_tile_name(lat, lon):
+    """MERIT DEM tiles are 5x5 deg, named by their SW corner, e.g. n20w105."""
+    tlat = int(np.floor(lat / 5.0) * 5)
+    tlon = int(np.floor(lon / 5.0) * 5)
+    ns = 'n' if tlat >= 0 else 's'
+    ew = 'e' if tlon >= 0 else 'w'
+    return f"{ns}{abs(tlat):02d}{ew}{abs(tlon):03d}"
+
+
+def _from_merit_dem(lat, lon):
+    """Extract elevation and slope from the GLOBAL MERIT DEM 90m tiles.
+
+    Added 2026-08-20. Before this, get_terrain() only knew the China DEM and the
+    China-only CMFD elevation grid, so EVERY point outside China silently fell
+    through to the 100 m / 0.001 default. A SWAT+ weather station in the Sierra
+    Madre Occidental (~2000 m) was therefore written at 100 m, which biases PET,
+    the temperature lapse and snow. Any global basin hits this.
+    """
+    try:
+        import rasterio
+    except ImportError:
+        return None
+
+    path = os.path.join(MERIT_DEM_DIR, f"{_merit_tile_name(lat, lon)}_dem.tif")
+    if not os.path.isfile(path):
+        return None
+
+    try:
+        with rasterio.open(path) as src:
+            row, col = src.index(lon, lat)
+            if not (2 <= row < src.height - 2 and 2 <= col < src.width - 2):
+                return None
+
+            win = rasterio.windows.Window(col - 2, row - 2, 5, 5)
+            data = src.read(1, window=win).astype(float)
+            if src.nodata is not None:
+                data[data == src.nodata] = np.nan
+
+            center = float(data[2, 2])
+            if np.isnan(center) or center < -500 or center > 9000:
+                return None
+
+            cellx = abs(src.res[0]) * 111320 * np.cos(np.radians(lat))
+            celly = abs(src.res[1]) * 111320
+            dzdx = (data[2, 3] - data[2, 1]) / (2 * cellx)
+            dzdy = (data[1, 2] - data[3, 2]) / (2 * celly)
+            slope = float(np.sqrt(dzdx ** 2 + dzdy ** 2))
+            if not np.isfinite(slope):
+                slope = MIN_SLOPE
+
+            return {
+                'elevation': round(center, 1),
+                'slope': max(MIN_SLOPE, round(slope, 6)),
+                'slope_degrees': round(float(np.degrees(np.arctan(slope))), 3),
+                'source': 'merit_dem_90m',
+            }
+    except Exception:
+        return None
+
+
 def get_terrain(lat: float, lon: float) -> Dict:
     """Look up elevation and slope at a point.
 
@@ -119,6 +181,11 @@ def get_terrain(lat: float, lon: float) -> Dict:
 
     # Try CMFD elevation
     result = _from_cmfd_elev(lat, lon)
+    if result:
+        return result
+
+    # GLOBAL fallback — everywhere outside the two China sources above
+    result = _from_merit_dem(lat, lon)
     if result:
         return result
 

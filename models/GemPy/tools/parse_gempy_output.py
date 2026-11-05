@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Parse GemPy model results and extract to CSV/JSON.
 
-Loads a computed GemPy model (from .gempy binary or in-memory) and extracts:
+Loads a GemPy model (.gempy file) and extracts:
   - Block model (formation IDs at each grid point) to CSV
   - Scalar field values to CSV
   - Surface mesh vertices/edges to CSV per surface
   - Model summary statistics to JSON
+
+A GemPy 3 .gempy file holds the model inputs and grid but NOT the solutions. For block,
+scalar and mesh the model is therefore recomputed once from the saved inputs and
+interpolation options with the NumPy backend (JSON: "solutions_recomputed": true); the
+original backend/GPU choice is not stored in the file. --extract summary does not compute.
+Exit code 1 when loading, recomputing or any requested extraction fails.
 
 Usage:
   python parse_gempy_output.py \
@@ -52,8 +58,8 @@ def load_model(model_file):
     """Load a GemPy model from .gempy binary file."""
     try:
         import gempy as gp
-    except ImportError:
-        return None, "gempy not installed. Run: pip install 'gempy[base]'"
+    except ImportError as e:
+        return None, f"gempy cannot be imported ({e}). Run with the GemPy venv python or pip install 'gempy[base]'"
 
     try:
         model = gp.load_model(model_file)
@@ -62,25 +68,64 @@ def load_model(model_file):
         return None, f"Failed to load model: {str(e)}"
 
 
+def ensure_solutions(model):
+    """GemPy 3 .gempy files store inputs + grid only, not solutions: recompute if missing.
+
+    Same engine, saved inputs and interpolation options; NumPy backend (the original
+    backend/GPU choice is not stored in the file). Returns (recomputed: bool, error or None).
+    """
+    if model.solutions is not None:
+        return False, None
+    try:
+        import gempy as gp
+        # explicit NumPy engine config (GemPy's default backend follows the environment)
+        gp.compute_model(model, engine_config=gp.data.GemPyEngineConfig(
+            backend=gp.data.AvailableBackends.numpy, use_gpu=False))
+    except Exception as e:
+        return False, f"Recomputing solutions from the saved model failed: {e}"
+    if model.solutions is None:
+        return False, "Recomputing solutions from the saved model gave no solutions"
+    return True, None
+
+
+def _raw_array(raw, *names):
+    """First present, non-None attribute of raw arrays (GemPy 3 name first, legacy after)."""
+    for name in names:
+        val = getattr(raw, name, None)
+        if val is not None:
+            return val
+    return None
+
+
+def _dense_coords(model, n_points):
+    """Coordinates of the dense (regular) grid that lith_block / scalar_field_matrix are on."""
+    import numpy as np
+    for cand in (getattr(getattr(model.grid, "regular_grid", None), "values", None),
+                 getattr(getattr(model.grid, "dense_grid", None), "values", None),
+                 model.grid.values):
+        if cand is not None and len(cand) == n_points:
+            return np.asarray(cand)
+    raise ValueError(f"No grid with {n_points} points to match the result array "
+                     f"(grid.values has {0 if model.grid.values is None else len(model.grid.values)})")
+
+
 def extract_block_model(model, output_dir):
     """Extract block model (formation IDs) to CSV."""
     import numpy as np
 
-    raw = model.solutions.raw_arrays
-    if raw is None or not hasattr(raw, 'block') or raw.block is None:
+    raw = model.solutions.raw_arrays if model.solutions is not None else None
+    block = _raw_array(raw, "lith_block", "block") if raw is not None else None
+    if block is None:
         return {"status": "skipped", "reason": "No block model in solutions"}
 
-    block = raw.block
-    grid_values = model.grid.values
-
-    if grid_values is None:
-        return {"status": "skipped", "reason": "No grid values available"}
+    block = np.asarray(block).reshape(-1)
+    grid_values = _dense_coords(model, len(block))
 
     # Write block model CSV
     filepath = os.path.join(output_dir, "block_model.csv")
     os.makedirs(output_dir, exist_ok=True)
 
-    n_points = min(len(grid_values), len(block))
+    n_points = len(block)
     with open(filepath, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["X", "Y", "Z", "formation_id"])
@@ -89,10 +134,10 @@ def extract_block_model(model, output_dir):
                 round(float(grid_values[i, 0]), 4),
                 round(float(grid_values[i, 1]), 4),
                 round(float(grid_values[i, 2]), 4),
-                int(block[i])
+                int(round(float(block[i])))
             ])
 
-    unique_ids, counts = np.unique(block[:n_points], return_counts=True)
+    unique_ids, counts = np.unique(np.rint(block).astype(int), return_counts=True)
     formation_stats = {
         str(int(uid)): int(count) for uid, count in zip(unique_ids, counts)
     }
@@ -107,64 +152,85 @@ def extract_block_model(model, output_dir):
 
 
 def extract_scalar_field(model, output_dir):
-    """Extract scalar field values to CSV."""
-    raw = model.solutions.raw_arrays
-    if raw is None or not hasattr(raw, 'scalar_field') or raw.scalar_field is None:
+    """Extract scalar field values to CSV (one column per structural group)."""
+    import numpy as np
+
+    raw = model.solutions.raw_arrays if model.solutions is not None else None
+    scalar = _raw_array(raw, "scalar_field_matrix", "scalar_field") if raw is not None else None
+    if scalar is None:
         return {"status": "skipped", "reason": "No scalar field in solutions"}
 
-    scalar = raw.scalar_field
-    grid_values = model.grid.values
-
-    if grid_values is None:
-        return {"status": "skipped", "reason": "No grid values available"}
+    scalar = np.asarray(scalar, dtype=float)
+    if scalar.ndim == 1:
+        scalar = scalar[np.newaxis, :]
+    n_groups, n_points = scalar.shape
+    grid_values = _dense_coords(model, n_points)
+    group_names = [g.name for g in model.structural_frame.structural_groups]
+    if n_groups == 1:
+        columns = ["scalar_value"]
+    elif len(group_names) == n_groups:
+        columns = [f"scalar_value_{name}" for name in group_names]
+    else:
+        columns = [f"scalar_value_{i}" for i in range(n_groups)]
 
     filepath = os.path.join(output_dir, "scalar_field.csv")
     os.makedirs(output_dir, exist_ok=True)
 
-    n_points = min(len(grid_values), len(scalar))
     with open(filepath, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["X", "Y", "Z", "scalar_value"])
+        writer.writerow(["X", "Y", "Z"] + columns)
         for i in range(n_points):
             writer.writerow([
                 round(float(grid_values[i, 0]), 4),
                 round(float(grid_values[i, 1]), 4),
-                round(float(grid_values[i, 2]), 4),
-                round(float(scalar[i]), 6)
-            ])
+                round(float(grid_values[i, 2]), 4)
+            ] + [round(float(scalar[g, i]), 6) for g in range(n_groups)])
 
-    import numpy as np
-    return {
+    result = {
         "status": "success",
         "file": filepath,
         "n_points": n_points,
+        "n_groups": n_groups,
+        "columns": columns,
         "scalar_range": [
-            round(float(np.nanmin(scalar[:n_points])), 6),
-            round(float(np.nanmax(scalar[:n_points])), 6)
+            round(float(np.nanmin(scalar)), 6),
+            round(float(np.nanmax(scalar)), 6)
         ],
-        "scalar_mean": round(float(np.nanmean(scalar[:n_points])), 6)
+        "scalar_mean": round(float(np.nanmean(scalar)), 6)
     }
+    if n_groups > 1:
+        result["per_group"] = {
+            col: {"range": [round(float(np.nanmin(scalar[g])), 6), round(float(np.nanmax(scalar[g])), 6)],
+                  "mean": round(float(np.nanmean(scalar[g])), 6)}
+            for g, col in enumerate(columns)}
+    return result
 
 
 def extract_meshes(model, output_dir):
-    """Extract surface meshes (vertices + edges) to CSV files."""
-    raw = model.solutions.raw_arrays
-    if raw is None:
+    """Extract surface meshes (vertices + triangles) to CSV files.
+
+    Uses each structural element's own mesh (element.vertices / element.edges), which GemPy
+    sets in WORLD coordinates when solutions are assigned (raw_arrays.vertices are internal,
+    rescaled engine coordinates and their order is not tied to the element list).
+    """
+    import numpy as np
+
+    if model.solutions is None:
         return {"status": "skipped", "reason": "No solutions available"}
 
-    vertices_list = getattr(raw, 'vertices', None)
-    edges_list = getattr(raw, 'edges', None)
-
-    if vertices_list is None or not vertices_list:
-        return {"status": "skipped", "reason": "No mesh data in solutions"}
+    elements = list(model.structural_frame.structural_elements)
+    if elements and elements[-1].name.lower() == "basement":
+        elements = elements[:-1]
 
     mesh_dir = os.path.join(output_dir, "meshes")
     os.makedirs(mesh_dir, exist_ok=True)
 
     mesh_results = []
-    for idx, vertices in enumerate(vertices_list):
+    for idx, element in enumerate(elements):
+        vertices = getattr(element, "vertices", None)
         if vertices is None or len(vertices) == 0:
             continue
+        vertices = np.asarray(vertices)
 
         surface_name = f"surface_{idx:03d}"
 
@@ -182,13 +248,14 @@ def extract_meshes(model, output_dir):
 
         mesh_info = {
             "surface": surface_name,
+            "element": element.name,
             "vertices_file": vert_file,
             "n_vertices": len(vertices),
         }
 
-        # Write edges if available
-        if edges_list and idx < len(edges_list) and edges_list[idx] is not None:
-            edges = edges_list[idx]
+        # Write triangles if available
+        edges = getattr(element, "edges", None)
+        if edges is not None and len(edges) > 0:
             edge_file = os.path.join(mesh_dir, f"{surface_name}_triangles.csv")
             with open(edge_file, "w", newline="") as f:
                 writer = csv.writer(f)
@@ -200,6 +267,9 @@ def extract_meshes(model, output_dir):
 
         mesh_results.append(mesh_info)
 
+    if not mesh_results:
+        return {"status": "skipped", "reason": "No mesh data in solutions"}
+
     return {
         "status": "success",
         "mesh_dir": mesh_dir,
@@ -210,9 +280,12 @@ def extract_meshes(model, output_dir):
 
 def extract_summary(model):
     """Extract model summary statistics."""
+    meta = model.meta
+    project_name = (getattr(meta, "name", None) or getattr(meta, "project_name", None)
+                    or "unknown")
     summary = {
-        "project_name": model.meta.project_name if hasattr(model.meta, 'project_name') else "unknown",
-        "extent": list(model.grid.extent) if hasattr(model.grid, 'extent') else [],
+        "project_name": project_name,
+        "extent": [float(v) for v in model.grid.extent] if getattr(model.grid, "extent", None) is not None else [],
     }
 
     # Structural frame info
@@ -240,15 +313,22 @@ def extract_summary(model):
     # Solutions info
     if model.solutions is not None:
         raw = model.solutions.raw_arrays
+        block = _raw_array(raw, "lith_block", "block")
+        scalar = _raw_array(raw, "scalar_field_matrix", "scalar_field")
+        vertices = _raw_array(raw, "vertices")
         sol_info = {
-            "has_block": hasattr(raw, 'block') and raw.block is not None,
-            "has_scalar_field": hasattr(raw, 'scalar_field') and raw.scalar_field is not None,
-            "has_meshes": hasattr(raw, 'vertices') and raw.vertices is not None,
+            "computed": True,
+            "has_block": block is not None,
+            "has_scalar_field": scalar is not None,
+            "has_meshes": vertices is not None and len(vertices) > 0,
         }
-        if sol_info["has_block"]:
+        if block is not None:
             import numpy as np
-            sol_info["n_unique_formations"] = int(len(np.unique(raw.block)))
+            sol_info["n_unique_formations"] = int(len(np.unique(np.asarray(block))))
         summary["solutions"] = sol_info
+    else:
+        summary["solutions"] = {"computed": False,
+                                "note": "no solutions in the file (GemPy 3 .gempy stores inputs only)"}
 
     return {"status": "success", "summary": summary}
 
@@ -265,17 +345,29 @@ def process(args):
 
     results = {"status": "success", "model_file": args.model_file}
 
-    if "block" in extracts:
-        results["block"] = extract_block_model(model, args.output_dir)
+    if extracts & {"block", "scalar", "mesh"}:
+        recomputed, error = ensure_solutions(model)
+        if error:
+            return {"status": "error", "model_file": args.model_file, "errors": [error]}
+        results["solutions_recomputed"] = recomputed
+        if recomputed:
+            results["recompute_backend"] = "numpy"
 
-    if "scalar" in extracts:
-        results["scalar"] = extract_scalar_field(model, args.output_dir)
-
-    if "mesh" in extracts:
-        results["mesh"] = extract_meshes(model, args.output_dir)
-
-    if "summary" in extracts:
-        results["summary"] = extract_summary(model)
+    errors = []
+    for key, func in (("block", lambda: extract_block_model(model, args.output_dir)),
+                      ("scalar", lambda: extract_scalar_field(model, args.output_dir)),
+                      ("mesh", lambda: extract_meshes(model, args.output_dir)),
+                      ("summary", lambda: extract_summary(model))):
+        if key not in extracts:
+            continue
+        try:
+            results[key] = func()
+        except Exception as e:
+            results[key] = {"status": "error", "error": str(e)}
+            errors.append(f"{key}: {e}")
+    if errors:
+        results["status"] = "error"
+        results["errors"] = errors
 
     return results
 
@@ -331,6 +423,11 @@ def main():
         print(f"Result written to {args.output}", file=sys.stderr)
     else:
         print(output_json)
+
+    if result.get("status") != "success":
+        print("GemPy parse FAILED: " + "; ".join(result.get("errors", ["see JSON result"])),
+              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

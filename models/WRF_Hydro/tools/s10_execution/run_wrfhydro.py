@@ -21,6 +21,7 @@ The script prints a JSON summary to stdout on completion.
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -97,13 +98,33 @@ def setup_symlinks(run_dir, exe_path, tbl_dir):
         exe_link.unlink()
     exe_link.symlink_to(exe_path.resolve())
 
-    # Symlink TBL files
+    # COPY the parameter tables — never symlink them (dt_v043 follow-up, 2026-09-09,
+    # codex + second-seat review both: "copy all four unconditionally, it fails safer").
+    #
+    # These are NOT inert reference data. On a build without -DSPATIAL_SOIL, GENPARM.TBL holds
+    # REFKDT/REFDK/SLOPE and SOILPARM.TBL holds SMCMAX and the other texture properties — i.e.
+    # live calibration parameters. Symlinked, every concurrent evaluation shares one copy in the
+    # source tree, so the first candidate that writes a table silently corrupts every other run
+    # on the machine, and the damage is invisible to every metric computed afterwards.
+    #
+    # Copying unconditionally rather than "only the tables carrying declared parameters": the
+    # narrow rule derives its copy set from the box's declared addresses, and it was exactly a
+    # wrong declared address that caused this whole episode — a rule whose input is the artifact
+    # under suspicion cannot protect it. The cost is a few KB of ASCII per multi-minute MPI run.
     tbl_files = list(tbl_dir.glob('*.TBL'))
     for tbl in tbl_files:
-        link = run_dir / tbl.name
-        if link.exists() or link.is_symlink():
-            link.unlink()
-        link.symlink_to(tbl.resolve())
+        dest = run_dir / tbl.name
+        if dest.exists() or dest.is_symlink():
+            dest.unlink()
+        shutil.copyfile(tbl.resolve(), dest)      # copyfile, not copy2: a fresh mtime per eval
+
+    # Tripwire: silent cross-contamination is invisible to every metric, so assert rather than
+    # trust. Any *.TBL still resolving outside the workdir is a containment failure.
+    for stray in run_dir.glob('*.TBL'):
+        if stray.is_symlink():
+            raise RuntimeError(
+                f"containment failure: {stray.name} is a symlink to {stray.resolve()} — parameter "
+                f"tables must be real files inside the run directory (dt_v043)")
 
     return [exe_link.name] + [t.name for t in tbl_files]
 
@@ -130,6 +151,19 @@ def scan_diag_for_banner(run_dir):
         if lines:
             last_lines[diag.name] = lines[-1]
     return found, last_lines
+
+
+def _invalidate_completion(run_dir):
+    """Old run_complete.json must not vouch for this launch (wrfhydro_run_gate,
+    one implementation in knowledge_infrastructure/tools/)."""
+    import importlib.util as _ilu
+    _src = Path(__file__).resolve().parent.parent / "wrfhydro_run_gate.py"
+    _spec = _ilu.spec_from_file_location("_wrfhydro_run_gate", _src)
+    _g = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_g)
+    kept = _g.invalidate_completion(run_dir)
+    if kept:
+        print(f"  old {kept.name.split('.superseded_')[0]} kept as {kept.name} (this launch is not yet confirmed)")
 
 
 def run_model(run_dir, mpirun_path, nproc, timeout):
@@ -161,8 +195,17 @@ def run_model(run_dir, mpirun_path, nproc, timeout):
     print(f"  LD_LIBRARY_PATH includes: {lib_dir}")
     print()
 
+    _invalidate_completion(run_dir)      # before MPI starts, at every launch
     t0 = time.time()
     try:
+        # Old diag_hydro.* would let an earlier run's banner vouch for this one:
+        # keep them in a dated subfolder, never read them as this run's result.
+        _old = sorted(Path(run_dir).glob('diag_hydro.*'))
+        if _old:
+            _keep = Path(run_dir) / time.strftime('previous_diag_%Y%m%dT%H%M%S')
+            _keep.mkdir(exist_ok=True)
+            for _f in _old:
+                _f.rename(_keep / _f.name)
         proc = subprocess.run(
             cmd,
             cwd=str(run_dir),
@@ -182,6 +225,8 @@ def run_model(run_dir, mpirun_path, nproc, timeout):
         diag_banner, diag_last_lines = scan_diag_for_banner(run_dir)
         if not success:
             success = diag_banner
+        # The banner alone is not enough: the process must also exit 0.
+        success = bool(success) and proc.returncode == 0
 
         return {
             'returncode': proc.returncode,

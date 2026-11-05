@@ -38,15 +38,14 @@ The OWI format is the most commonly used for operational forecasting.
 
 **fort.22 (control file)**:
 ```
-1             ! Number of basin-scale sets
-0             ! Number of region-scale sets
-fort.221      ! Pressure filename
-fort.222      ! Wind filename
+1             ! NWSET: one grid overlay (fort.221 and fort.222)
+0             ! NWBS: no blank wind/pressure snapshots
+1.0           ! DWM: unit wind multiplier
 ```
 
 **fort.221 (pressure) header per timestep**:
 ```
-iLat=  29iLong=  41DX=0.2500DY=0.2500SWLat= 24.0000SWLon= -98.0000DT=200508250000
+iLat=  29iLong=  41DX=0.2500DY=0.2500SWLat= 24.0000SWLon=-98.0000DT=200508250000
 ```
 
 **Critical fields**:
@@ -55,20 +54,64 @@ iLat=  29iLong=  41DX=0.2500DY=0.2500SWLat= 24.0000SWLon= -98.0000DT=20050825000
 - `SWLat`, `SWLon`: Southwest corner coordinates
 - `DT`: Datetime string (YYYYMMDDHHmm)
 
-**Data values**: 8 values per line, space-separated, fixed width 10.4f format.
+**Data values**: eight fixed-width 10.4f values per line (last line may be shorter). One header per time in each file; wind has a complete U block followed by V without a second header. File start/end dates occupy columns 56–65 and 71–80. Snapshot coordinates follow native fixed columns; unrepresentable coordinates are rejected. Numeric rounding is at most 0.00005 in output units.
+
+
+### Strict converter contract (2026-10 repair)
+
+Supported inputs are CSV (`time,lat,lon,u10,v10,pressure`) and ERA5 NetCDF
+(`u10,v10,msl` with recognized units). ERA5 `sp` is not a substitute for `msl`.
+CSV pressure semantics remain the caller's responsibility: use sea-level pressure
+for coastal applications; do not relabel land surface pressure as sea-level pressure.
+CSV defaults are m/s and mb; set `--wind_unit` and `--pressure_unit` for other
+supported units. No magnitude-based conversion, clipping, or gap filling occurs.
+
+Start/end arguments are inclusive UTC instants (a date means midnight);
+`--step_seconds` defaults to 3600. Every requested snapshot must include every
+cell of the complete uniform grid, including the declared SW/NE endpoints.
+`--resolution` must match both source axes; resampling must be explicit upstream.
+All input validation and staged output validation precede publishing files.
+Existing forcing files are refused. `forcing_provenance.json` records source
+SHA256s, units, cadence and zero locally filled values.
+
+**Start-time alignment (required).** ADCIRC does not use the `DT=` stamps to place
+snapshots in time. It reads snapshots one after another: the first snapshot is
+applied at the run time origin and each next one `WTIMINC` seconds later
+(`src/wind.F`: `WTIME1 = STATIM*86400` for `NWS=+12`; `WTIME1 = TimeLoc` for
+`NWS=-12`). For `NWS=+12` the origin is the cold-start time, also on a hot start
+(ADCIRC fast-forwards from the cold start). For `NWS=-12` the origin is the
+hot-start time. The converter writes `NWBS=0` (line 2 of fort.22), so set
+`--start_date` to that origin. Example: forcing that starts on August 25 for a
+cold start on August 26 covers the run but applies every weather snapshot one day
+late. If the file must start earlier, set line 2 of fort.22 to `-N`, where
+`N = (origin - first snapshot) / WTIMINC` is a whole number; ADCIRC then skips
+the first `N` snapshots (`src/owiwind.F`, `numSkipSnaps`). A positive `NWBS`
+instead inserts `N` blank snapshots (zero wind, background pressure) before the
+data. See the [official NWS12 documentation](https://wiki.adcirc.org/NWS12).
+
+Set native `WTIMINC` to the converter cadence. Cover the entire native run plus
+the next interpolation snapshot; ADCIRC can silently use blank forcing after
+EOF. The weather grid must enclose every mesh node, with strictly greater
+maximum latitude/longitude on its N/E edges. The converter does not read fort.14
+or fort.15, so verify these requirements (start alignment, coverage, enclosure)
+before execution.
+
+Native format reference: [official ADCIRC NWS12 documentation](https://wiki.adcirc.org/NWS12),
+and `src/owiwind.F` fixed-column reads (not a free-format whitespace parser).
+The regression test is `python -m unittest discover -s tests -p test_owi_contract.py -v`.
 
 ### Unit Conversions
 
 | Variable | Source Unit | ADCIRC (OWI) Unit | Conversion |
 |----------|-----------|-------------------|------------|
 | Pressure | Pa | mb (hPa) | ÷ 100 |
-| Pressure | inHg | mb | × 33.8639 |
 | Wind speed | knots | m/s | × 0.5144 |
 | Wind speed | km/h | m/s | ÷ 3.6 |
-| Wind speed | mph | m/s | × 0.44704 |
 
-**WARNING**: ADCIRC internally converts pressure from mb to meters of water column:
-`P_mH2O = (P_standard - P_actual) × 100 / (rho_water × g)`
+**WARNING**: ADCIRC internally converts the absolute pressure from mb to a pressure
+head in meters of water (`src/owiwind.F`, `NWS12GET`: `PRN = 100 × P_actual / (RHOWAT0 × G)`).
+This is the absolute pressure head, not a deficit from a standard pressure; blank
+or uncovered nodes get the background pressure the same way (`PRN = 100 × PRBCKGRND / (RHOWAT0 × G)`).
 Getting the input units wrong (e.g., Pa instead of mb) produces extreme or zero surge (dt_003).
 
 ### Wind Drag
@@ -85,39 +128,15 @@ For major hurricanes (Category 3+), consider alternative drag laws:
 
 ## Verification
 
+Run the converter's native-format validator; malformed records and missing values
+raise an error instead of being skipped:
+
 ```bash
-# Check OWI header format
-head -2 fort.221
-
-# Verify pressure range (should be 900-1050 mb)
-python3 -c "
-import numpy as np
-vals = []
-with open('fort.221') as f:
-    for line in f:
-        if line.startswith('iLat') or line.startswith('Basin'): continue
-        try: vals.extend([float(x) for x in line.split()])
-        except: pass
-a = np.array(vals)
-print(f'Pressure: min={a.min():.1f}, max={a.max():.1f} mb')
-if a.min() < 100: print('WARNING: Pressure likely in Pa, not mb!')
-if a.max() > 50000: print('WARNING: Pressure definitely in Pa!')
-"
-
-# Verify wind speed range (should be 0-80 m/s)
-python3 -c "
-import numpy as np
-vals = []
-with open('fort.222') as f:
-    for line in f:
-        if line.startswith('iLat') or line.startswith('Basin'): continue
-        try: vals.extend([float(x) for x in line.split()])
-        except: pass
-a = np.array(vals)
-print(f'Wind: min={a.min():.1f}, max={a.max():.1f} m/s')
-if a.max() > 100: print('WARNING: Wind may be in knots or km/h!')
-"
+python -c 'from tools.convert_forcing_to_adcirc import validate_outputs; validate_outputs("/path/to/forcing")'
 ```
+
+Also verify mesh coverage, simulation duration and `WTIMINC` as described above.
+A plausible value range alone does not establish correct units or complete data.
 
 ## Traps
 

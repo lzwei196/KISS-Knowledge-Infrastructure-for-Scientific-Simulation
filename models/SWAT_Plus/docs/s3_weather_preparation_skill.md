@@ -200,3 +200,20 @@ python tools/s3/validate_weather_data.py
 
 *This skill document is part of the SWAT+ knowledge infrastructure.*
 *Stage 3 of 9 | Tools used: prepare_weather_files, generate_weather_stations, validate_weather_data | Related triplets: dt_002, dt_003, dt_012*
+
+### Strict weather contract (2026-10-03)
+
+`prepare_weather_files.py` validates every station before creating or replacing
+weather files. Each requested date and each precipitation, Tmin/Tmax, solar,
+wind, specific-humidity and pressure value must be present and finite. Dates
+outside the requested interval are excluded; duplicate/unordered source dates
+are rejected. No missing value becomes dry weather, a typical temperature,
+solar, humidity or wind. Negative fluxes and Tmax below Tmin are errors.
+
+Elevation lookup failure/nonfinite elevation also stops preparation. A genuine
+zero elevation is valid. Station names must be unique and match the coordinates.
+Relative humidity retains the specific-humidity derivation and physical [0,1]
+limit, without the previous arbitrary 5% minimum. The existing station-file
+precision and unit conversions are retained. An input failure at a later station
+leaves all existing weather files untouched. Disk-write failures still require
+rerunning preparation and checking the resulting files before model execution.

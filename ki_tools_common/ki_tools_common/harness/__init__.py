@@ -16,6 +16,7 @@ _EXPORTS = {
     "manifest": ("ki_harness", "manifest"),
     "tool_command": ("ki_harness", "tool_command"),
     "run_preflight": ("ki_harness", "run_preflight"),
+    "evaluate_preflight_output": ("ki_harness", "evaluate_preflight_output"),
     "assert_injected": ("ki_harness", "assert_injected"),
     "KiHarnessError": ("ki_harness", "KiHarnessError"),
     "MARKER": ("ki_harness", "MARKER"),

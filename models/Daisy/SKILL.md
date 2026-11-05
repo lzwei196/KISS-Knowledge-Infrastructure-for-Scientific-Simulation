@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: Daisy v7.1.4 — Mechanistic simulation of agricultural fields
 **Origin**: Agrohydrology Group, University of Copenhagen
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 6 skill documents | 18 diagnostic triplets | ~2,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `example_validated` (Taastrup, Denmark, 1986-1988)
 
 ---
@@ -82,7 +82,7 @@ See `data_ki/RISMA/SKILL.md` for soil moisture observations.
 
 This knowledge infrastructure enables autonomous simulation of agricultural field processes
 using the Daisy model, covering water, nitrogen, carbon, and pesticide dynamics in the
-soil-plant-atmosphere system. The 4 validated tools replace manual `.dai` file editing with
+soil-plant-atmosphere system. The validated tools replace manual `.dai` file editing with
 a Python pipeline that integrates with global forcing data and standardized soil databases.
 
 **What Daisy does**: 1D mechanistic model for agricultural field simulation. Simulates:

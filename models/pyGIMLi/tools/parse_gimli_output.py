@@ -32,6 +32,65 @@ import sys
 import csv
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Engine python: pyGIMLi lives in its own venv (pygimli + pgcore pip wheels), not in the HydroCraft python_env that
+# SKILL.md uses to start the KI tools. Lookup (same as preflight_check.py): --pygimli-python ->
+# $PYGIMLI_PYTHON (empty = unset) -> server default -> this python (only if it imports pygimli). An explicit value is
+# used as given (no fallback). If the chosen python is not the one running this tool, the tool
+# re-launches itself with it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+ENGINE_PYTHON_ENV = "PYGIMLI_PYTHON"
+ENGINE_PYTHON_DEFAULT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python"
+_REEXEC_GUARD = "KI_PYGIMLI_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the pyGIMLi interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--pygimli-python"
+    env_value = os.environ.get(ENGINE_PYTHON_ENV, "").strip() or None  # as preflight_check.py
+    if env_value is not None:
+        return env_value, "$" + ENGINE_PYTHON_ENV
+    if os.path.isfile(ENGINE_PYTHON_DEFAULT):
+        return ENGINE_PYTHON_DEFAULT, "server default"
+    try:
+        import pygimli  # noqa: F401
+        return sys.executable, "running python (imports pygimli)"
+    except ImportError:
+        return None, (f"no python with pygimli: --pygimli-python and ${ENGINE_PYTHON_ENV} not set, "
+                      f"server default {ENGINE_PYTHON_DEFAULT} not found, and {sys.executable} "
+                      "cannot import pygimli")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the pyGIMLi python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        print(json.dumps({"status": "error", "errors": [source]}), file=sys.stderr)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        print(json.dumps({"status": "error", "errors": [
+            f"re-launch loop: running {sys.executable}, expected {python} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    if not (os.path.isfile(python) and os.access(python, os.X_OK)):
+        print(json.dumps({"status": "error", "errors": [
+            f"pyGIMLi python not found or not executable: {python!r} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: a venv python must keep its own path
+    print(f"[{os.path.basename(__file__)}] re-launching with {python} ({source})",
+          file=sys.stderr, flush=True)
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        print(json.dumps({"status": "error", "errors": [
+            f"could not start pyGIMLi python {python!r} ({source}): {e}"]}), file=sys.stderr)
+        sys.exit(1)
+
 
 def validate_inputs(args):
     """Validate input paths and requirements."""
@@ -89,21 +148,16 @@ def load_results(args):
 def compute_cell_coordinates(mesh_path):
     """Extract cell centres from a pyGIMLi mesh file.
 
-    Falls back to index-based coordinates if pygimli not available.
+    Needs pygimli; errors (no pygimli, unreadable mesh) are raised to the caller.
     """
-    try:
-        import pygimli as pg
-        mesh = pg.load(mesh_path)
-        centres = []
-        for cell in mesh.cells():
-            c = cell.center()
-            centres.append((c.x(), c.y(), c.z() if c.dim() > 2 else 0.0))
-        return np.array(centres)
-    except ImportError:
-        return None
-    except Exception as e:
-        print(f"WARNING: Could not load mesh: {e}", file=sys.stderr)
-        return None
+    import pygimli as pg
+    mesh = pg.load(mesh_path)
+    three_d = mesh.dim() > 2  # a cell centre (RVector3) has no dim(); the mesh has
+    centres = []
+    for cell in mesh.cells():
+        c = cell.center()
+        centres.append((c.x(), c.y(), c.z() if three_d else 0.0))
+    return np.array(centres)
 
 
 def compute_metrics(observed, predicted, errors=None):
@@ -247,7 +301,21 @@ def process(args):
     # Cell coordinates from mesh
     cell_coords = None
     if "mesh_path" in data:
-        cell_coords = compute_cell_coordinates(data["mesh_path"])
+        try:
+            cell_coords = compute_cell_coordinates(data["mesh_path"])
+        except Exception as e:  # no pygimli, unreadable mesh, ...
+            print(json.dumps({"status": "error", "errors": [
+                f"could not read cell centres from {data['mesh_path']}: "
+                f"{type(e).__name__}: {e}"]}), file=sys.stderr)
+            sys.exit(1)
+        if len(cell_coords) != len(model):
+            print(json.dumps({"status": "error", "errors": [
+                f"mesh {data['mesh_path']} has {len(cell_coords)} cells but the model "
+                f"has {len(model)} values"]}), file=sys.stderr)
+            sys.exit(1)
+    else:
+        result["warnings"] = ["no mesh given/found: x in model_cells.csv is the cell "
+                              "index, y and z are 0"]
 
     # Create output directory
     os.makedirs(args.output, exist_ok=True)
@@ -292,7 +360,7 @@ def process(args):
 
 def validate_outputs(result):
     """Post-validation of parsed outputs."""
-    warnings = []
+    warnings = list(result.get("warnings", []))
 
     stats = result.get("model_stats", {})
     method = result.get("method", "")
@@ -342,8 +410,16 @@ def main():
                         help="Output directory (default: analysis/)")
     parser.add_argument("--coverage-threshold", type=float, default=0.1,
                         help="Coverage threshold for masking (default: 0.1)")
+    parser.add_argument("--pygimli-python", default=None,
+                        help="Python of the pyGIMLi venv, used to read mesh cell centres "
+                             "(default: $PYGIMLI_PYTHON, else the server venv, else this "
+                             "python if it imports pygimli). The tool re-launches itself "
+                             "with it; without any such python only a model without a "
+                             "mesh can be parsed.")
 
     args = parser.parse_args()
+    if args.pygimli_python is not None or resolve_engine_python()[0] is not None:
+        ensure_engine_python(args.pygimli_python)
 
     validate_inputs(args)
     result = process(args)

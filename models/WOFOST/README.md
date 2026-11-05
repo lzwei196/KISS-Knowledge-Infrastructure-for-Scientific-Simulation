@@ -66,7 +66,7 @@ print(pcse.__version__)  # Should print 6.0.x
 |-------|-------|---------------|-----------|
 | 1 | Crop Parameter Configuration | [s1_crop_params_skill.md](docs/s1_crop_params_skill.md) | `load_crop_parameters`, `validate_crop_params` |
 | 2 | Soil Parameter Setup | [s2_soil_params_skill.md](docs/s2_soil_params_skill.md) | `convert_hwsd_to_pcse_soil`, `validate_soil_params` |
-| 3 | Weather Data Preparation | [s3_weather_prep_skill.md](docs/s3_weather_prep_skill.md) | `convert_vic_to_pcse_weather`, `create_csv_weather_file`, `validate_weather_data` |
+| 3 | Weather Data Preparation | [s3_weather_prep_skill.md](docs/s3_weather_prep_skill.md) | `build_pcse_weather_from_source`, `create_csv_weather_file`, `validate_weather_data` |
 | 4 | Agromanagement Definition | [s4_agromanagement_skill.md](docs/s4_agromanagement_skill.md) | `generate_agromanagement_yaml`, `validate_agromanagement` |
 | 5 | Engine Configuration | [s5_engine_config_skill.md](docs/s5_engine_config_skill.md) | `configure_pcse_engine`, `validate_engine_config` |
 | 6 | Simulation Execution | [s6_execution_skill.md](docs/s6_execution_skill.md) | `run_wofost_simulation`, `check_simulation_status` |
@@ -156,7 +156,7 @@ print(f"Final DVS: {df['DVS'].iloc[-1]:.2f}")
 
 ### 1. Unit Traps (SILENT ERRORS) — VERIFIED 2026-03-19
 
-- **⚠️ IRRAD is J/m2/day (JOULES), NOT kJ or MJ!** — The PCSE documentation says "kJ" but the internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m²/d = 15.7 MJ. **Convert from VIC: IRRAD = SW_W_m2 × 86400** (not × 86.4). If IRRAD < 100,000, it's 1000x too low and yield will be ZERO. This is the #1 cause of WOFOST zero-yield bugs. **(dt_v005)**
+- **⚠️ IRRAD is J/m2/day (JOULES), NOT kJ or MJ!** — The PCSE documentation says "kJ" but the internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m²/d = 15.7 MJ. **From a W/m² source: IRRAD = SW_W_m2 × 86400** (not × 86.4). If IRRAD < 100,000, it's 1000x too low and yield will be ZERO. This is the #1 cause of WOFOST zero-yield bugs. **(dt_v005)**
 - **E0/ES0/ET0 are cm/day, NOT mm/day** — Spain DB values: ET0=0.08-0.88 cm/d. If Hargreaves gives mm/day, **divide by 10**. Values >1.5 cm/d cause extreme water stress. **(dt_v006)**
 - **RAIN is cm/day, NOT mm/day** — If you pass mm values (e.g., 5.0 mm as 5.0 cm), precipitation is 10x too high. The model runs fine but soil is permanently waterlogged.
 - **VAP is kPa, NOT hPa or mbar** — Vapor pressure must be in kPa. 1 kPa = 10 hPa = 10 mbar.
@@ -208,7 +208,7 @@ When errors occur during WOFOST/PCSE simulation, consult the diagnostic triplets
 ## Model Couplings
 
 See [`docs/model_couplings.yaml`](docs/model_couplings.yaml) for formal coupling definitions:
-- **VIC weather → PCSE weather provider**: VIC forcing output → unit conversion → PCSE CSV weather
+- **Forcing source → PCSE weather**: CMFD/MSWX/NASA POWER straight from the source (`build_pcse_weather_from_source`), never from VIC forcing files
 - **HWSD → PCSE soil**: HWSD raster/MDB → pedotransfer → WOFOST soil parameters
 - **WOFOST ↔ DSSAT ensemble**: Run both models per grid cell → average yields → uncertainty bounds
 - **WOFOST LAI → VIC feedback**: WOFOST daily LAI → VIC vegetation parameter update (experimental)
@@ -231,7 +231,7 @@ knowledge_infrastructure/
 │   │   ├── convert_hwsd_to_pcse_soil.py
 │   │   └── validate_soil_params.py
 │   ├── s3_weather_prep/
-│   │   ├── convert_vic_to_pcse_weather.py
+│   │   ├── build_pcse_weather_from_source.py
 │   │   ├── create_csv_weather_file.py
 │   │   └── validate_weather_data.py
 │   ├── s4_agromanagement/

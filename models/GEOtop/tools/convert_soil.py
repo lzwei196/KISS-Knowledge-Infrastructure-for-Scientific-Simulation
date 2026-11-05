@@ -7,14 +7,15 @@ functions, then writes soilXXXX.txt files in GEOtop format.
 
 CRITICAL UNIT CONVERSIONS:
   - Dz (layer thickness): MILLIMETERS, not meters or centimeters
-  - Kh, Kv (hydraulic conductivity): m/s, not cm/day or mm/hr
+  - Kh, Kv (hydraulic conductivity): mm/s (GEOtop source constants.h: jKn/jKl
+    "hydr. conductivity [mm/s]"; the soil file value is used as read)
   - alpha (Van Genuchten): 1/mm, not 1/cm or 1/m
   - n (Van Genuchten): dimensionless
   - vwc_r, vwc_w, vwc_fc, vwc_s: volumetric fraction (m3/m3, 0-1)
   - stor (specific storativity): 1/m
 
 Common errors:
-  - HWSD Ksat is in cm/day -> divide by 86400 and by 100 for m/s
+  - Ksat in cm/day -> mm/s: multiply by 10, divide by 86400 (25 cm/day = 2.89E-03 mm/s)
   - Literature alpha is usually in 1/cm -> divide by 10 for 1/mm
   - SoilGrids depth is in cm -> multiply by 10 for mm
 
@@ -76,6 +77,61 @@ def validate_inputs(args):
     return layers
 
 
+def usda_texture_class(sand, silt, clay):
+    """USDA soil texture class from sand/silt/clay (%).
+
+    The three fractions are first scaled to sum to 100 (HWSD rows sum to
+    95-105). Class limits are the USDA texture triangle (Soil Survey Manual,
+    USDA Handbook 18, the same lines as the NRCS texture calculator):
+      sand            silt + 1.5 clay < 15
+      loamy sand      silt + 1.5 clay >= 15 and silt + 2 clay < 30
+      sandy loam      (7 <= clay < 20, sand > 52, silt + 2 clay >= 30)
+                      or (clay < 7, silt < 50, silt + 2 clay >= 30)
+      loam            7 <= clay < 27, 28 <= silt < 50, sand <= 52
+      silt loam       (silt >= 50, 12 <= clay < 27) or (50 <= silt < 80, clay < 12)
+      silt            silt >= 80, clay < 12
+      sandy clay loam 20 <= clay < 35, silt < 28, sand > 45
+      clay loam       27 <= clay < 40, 20 < sand <= 45
+      silty clay loam 27 <= clay < 40, sand <= 20
+      sandy clay      clay >= 35, sand > 45
+      silty clay      clay >= 40, silt >= 40
+      clay            clay >= 40, sand <= 45, silt < 40
+    Example: 30/35/35 is clay loam (the old chain called it sandy clay loam,
+    and its silty-clay-loam branch could never be reached).
+    """
+    vals = [float(sand), float(silt), float(clay)]
+    if any(not math.isfinite(v) or v < 0 for v in vals) or sum(vals) <= 0:
+        raise ValueError(f"bad soil fractions sand/silt/clay = {vals}")
+    tot = sum(vals)
+    sand, silt, clay = (100.0 * v / tot for v in vals)
+    if silt + 1.5 * clay < 15:
+        return "sand"
+    if silt + 2 * clay < 30:
+        return "loamy_sand"
+    if (7 <= clay < 20 and sand > 52) or (clay < 7 and silt < 50):
+        return "sandy_loam"
+    if 7 <= clay < 27 and 28 <= silt < 50 and sand <= 52:
+        return "loam"
+    if (silt >= 50 and 12 <= clay < 27) or (50 <= silt < 80 and clay < 12):
+        return "silt_loam"
+    if silt >= 80 and clay < 12:
+        return "silt"
+    if 20 <= clay < 35 and silt < 28 and sand > 45:
+        return "sandy_clay_loam"
+    if 27 <= clay < 40 and 20 < sand <= 45:
+        return "clay_loam"
+    if 27 <= clay < 40 and sand <= 20:
+        return "silty_clay_loam"
+    if clay >= 35 and sand > 45:
+        return "sandy_clay"
+    if clay >= 40 and silt >= 40:
+        return "silty_clay"
+    if clay >= 40 and sand <= 45 and silt < 40:
+        return "clay"
+    raise ValueError(f"no USDA texture class for sand/silt/clay = "
+                     f"{sand:.1f}/{silt:.1f}/{clay:.1f}")
+
+
 def rosetta_pedotransfer(sand, silt, clay, bulk_density=1400, organic_carbon=1.0):
     """Estimate Van Genuchten parameters from soil texture using Rosetta-style PTFs.
 
@@ -92,31 +148,7 @@ def rosetta_pedotransfer(sand, silt, clay, bulk_density=1400, organic_carbon=1.0
         dict with keys: theta_r, theta_s, alpha_cm, n, Ksat_cm_day
         (in LITERATURE units - must convert for GEOtop)
     """
-    # USDA texture class determination
-    if sand >= 85:
-        texture = "sand"
-    elif sand >= 70 and clay <= 15:
-        texture = "loamy_sand"
-    elif (sand >= 50 and clay <= 20) or (sand >= 43 and silt <= 28 and clay >= 7):
-        texture = "sandy_loam"
-    elif silt >= 80:
-        texture = "silt"
-    elif silt >= 50 and clay <= 27:
-        texture = "silt_loam"
-    elif clay >= 27 and clay <= 40 and sand >= 20:
-        texture = "sandy_clay_loam"
-    elif clay >= 27 and clay <= 40 and sand < 20:
-        texture = "clay_loam"
-    elif silt >= 40 and clay >= 27 and clay <= 40:
-        texture = "silty_clay_loam"
-    elif clay >= 35 and sand >= 45:
-        texture = "sandy_clay"
-    elif clay >= 40 and silt >= 40:
-        texture = "silty_clay"
-    elif clay >= 40:
-        texture = "clay"
-    else:
-        texture = "loam"
+    texture = usda_texture_class(sand, silt, clay)
 
     # Schaap et al. (2001) class-average Van Genuchten parameters
     # theta_r, theta_s, alpha (1/cm), n, Ksat (cm/day)
@@ -135,7 +167,7 @@ def rosetta_pedotransfer(sand, silt, clay, bulk_density=1400, organic_carbon=1.0
         "clay":             (0.098, 0.459, 0.015, 1.25, 4.8),
     }
 
-    params = ptf_table.get(texture, ptf_table["loam"])
+    params = ptf_table[texture]
 
     # Adjust theta_s for bulk density (if provided)
     porosity = 1.0 - (bulk_density / 2650.0)  # Assume particle density 2650 kg/m3
@@ -180,10 +212,16 @@ def convert_to_geotop_units(params):
 
     CRITICAL CONVERSIONS:
         alpha: 1/cm -> 1/mm  (divide by 10)
-        Ksat:  cm/day -> m/s (divide by 86400, divide by 100)
+        Ksat:  cm/day -> mm/s (x10 cm->mm, /86400 day->s)
+
+    GEOtop reads Kh/Kv in mm/s: source/repo/src/geotop/constants.h
+    (jKn/jKl "hydr. conductivity [mm/s]"), parameters.cc reads the soil-file
+    value without any conversion, and the shipped test
+    tests/1D/B2_BeG_017/soil/soil0001.txt uses Kh = 0.021 (mm/s, ~181 cm/day).
+    The old m/s conversion wrote values 1000x too small.
     """
     alpha_mm = params["alpha_cm"] / 10.0   # 1/cm -> 1/mm
-    ksat_ms = params["Ksat_cm_day"] / 86400.0 / 100.0  # cm/day -> m/s
+    ksat_mms = params["Ksat_cm_day"] * 10.0 / 86400.0  # cm/day -> mm/s
 
     fc = estimate_field_capacity(params["theta_r"], params["theta_s"],
                                   params["alpha_cm"], params["n"])
@@ -195,15 +233,15 @@ def convert_to_geotop_units(params):
         "theta_s": params["theta_s"],
         "alpha": alpha_mm,
         "n": params["n"],
-        "Kh": ksat_ms,
-        "Kv": ksat_ms,
+        "Kh": ksat_mms,
+        "Kv": ksat_mms,
         "vwc_fc": fc,
         "vwc_w": wp,
         "stor": 5.0e-7,  # Default specific storativity (1/m)
     }
 
 
-def read_hwsd(input_path, lat, lon):
+def read_hwsd(input_path, lat, lon, need_subsoil=True):
     """Look up HWSD topsoil/subsoil texture at a point.
 
     BUGFIX (2026-07-21, GEOtop NCP MODIS-LST real case): this used to
@@ -218,30 +256,40 @@ def read_hwsd(input_path, lat, lon):
     ki_tools_common.soil_utils.lookup_hwsd(lat, lon), which does the
     raster -> MU_GLOBAL -> attribute-table join and returns T_*/S_* texture.
     `input_path` is now OPTIONAL and, when given, is an explicit hwsd.bil path.
+
+    need_subsoil: read the S_* (30-100 cm) fields only when a requested layer
+    uses them. A topsoil-only profile (all layers within 300 mm) is valid for
+    a map unit that lacks subsoil data; when a layer does reach below 300 mm,
+    a missing subsoil field still stops the run (ValueError from lookup_hwsd).
+    Returns (topsoil, subsoil); subsoil is None when not needed.
     """
     from ki_tools_common.soil_utils import lookup_hwsd
 
-    raster = input_path if (input_path and os.path.exists(input_path)) else None
+    if input_path and not os.path.exists(input_path):
+        raise FileNotFoundError(f"--input HWSD raster not found: {input_path} "
+                                f"(the default raster is not used in its place)")
+    raster = input_path or None
     h = lookup_hwsd(lat, lon, hwsd_raster=raster)
 
-    # HWSD T_REF_BULK_DENSITY is g/cm3; the pedotransfer wants kg/m3.
-    bd = float(h.get("bulk_density", 1.3))
-    bd_kgm3 = bd * 1000.0 if bd < 100 else bd
-
+    # HWSD T/S_REF_BULK_DENSITY is g/cm3; the pedotransfer wants kg/m3 (x1000,
+    # never guessed from size). oc / sub_oc are HWSD % organic carbon. Every
+    # value comes from lookup_hwsd; a missing field raises there.
     topsoil = {
         "sand": float(h["sand"]),
         "silt": float(h["silt"]),
         "clay": float(h["clay"]),
-        "bulk_density": bd_kgm3,
-        "organic_carbon": float(h.get("oc", 1.0)),
+        "bulk_density": float(h["bulk_density"]) * 1000.0,
+        "organic_carbon": float(h["oc"]),
     }
-    subsoil = {
-        "sand": float(h.get("sub_sand", topsoil["sand"])),
-        "silt": float(h.get("sub_silt", topsoil["silt"])),
-        "clay": float(h.get("sub_clay", topsoil["clay"])),
-        "bulk_density": bd_kgm3,
-        "organic_carbon": max(0.1, topsoil["organic_carbon"] * 0.5),
-    }
+    subsoil = None
+    if need_subsoil:
+        subsoil = {
+            "sand": float(h["sub_sand"]),
+            "silt": float(h["sub_silt"]),
+            "clay": float(h["sub_clay"]),
+            "bulk_density": float(h["sub_bulk_density"]) * 1000.0,
+            "organic_carbon": float(h["sub_oc"]),
+        }
     print(json.dumps({"hwsd_mu_global": h.get("mu_id"), "texture": h.get("texture"),
                       "topsoil": topsoil, "subsoil": subsoil}), file=sys.stderr)
     return topsoil, subsoil
@@ -257,21 +305,16 @@ def process(args, layers):
         layer_params = [geotop_params] * len(layers)
 
     elif args.source == "hwsd":
-        topsoil, subsoil = read_hwsd(args.input, args.lat, args.lon)
-        ptf_top = rosetta_pedotransfer(**topsoil)
-        ptf_sub = rosetta_pedotransfer(**subsoil)
-        gp_top = convert_to_geotop_units(ptf_top)
-        gp_sub = convert_to_geotop_units(ptf_sub)
-
-        # Top 30 cm = topsoil, below = subsoil
-        cumulative = 0
-        layer_params = []
-        for dz in layers:
-            cumulative += dz
-            if cumulative <= 300:  # 300 mm = 30 cm
-                layer_params.append(gp_top)
-            else:
-                layer_params.append(gp_sub)
+        # Top 30 cm = topsoil, below = subsoil (a layer whose bottom is
+        # deeper than 300 mm uses the subsoil row)
+        bottoms = np.cumsum(layers)
+        uses_sub = [b > 300 for b in bottoms]   # 300 mm = 30 cm
+        topsoil, subsoil = read_hwsd(args.input, args.lat, args.lon,
+                                     need_subsoil=any(uses_sub))
+        gp_top = convert_to_geotop_units(rosetta_pedotransfer(**topsoil))
+        gp_sub = (convert_to_geotop_units(rosetta_pedotransfer(**subsoil))
+                  if subsoil is not None else None)
+        layer_params = [gp_sub if u else gp_top for u in uses_sub]
     else:
         print(json.dumps({"status": "error", "errors": [f"Unknown source: {args.source}"]}),
               file=sys.stderr)
@@ -321,10 +364,15 @@ def validate_outputs(output_path, layers):
 
         if dz < 1:
             warnings.append(f"Layer {i+1}: Dz={dz} < 1 mm. Probably in meters (need mm).")
-        if kh > 0.01:
-            warnings.append(f"Layer {i+1}: Kh={kh:.2E} m/s > 0.01. Unrealistically high.")
-        if kh < 1e-10:
-            warnings.append(f"Layer {i+1}: Kh={kh:.2E} m/s < 1E-10. Unrealistically low.")
+        # Kh in mm/s: 10 mm/s = 86400 cm/day (far above gravel), 1E-7 mm/s
+        # = 8.6E-4 cm/day (tighter than any class mean). Outside that the
+        # value is almost surely in the wrong unit (cm/day or m/s).
+        if kh > 10:
+            warnings.append(f"Layer {i+1}: Kh={kh:.2E} mm/s > 10. Unrealistically high "
+                            f"(cm/day instead of mm/s?).")
+        if kh < 1e-7:
+            warnings.append(f"Layer {i+1}: Kh={kh:.2E} mm/s < 1E-7. Unrealistically low "
+                            f"(m/s instead of mm/s?).")
         if alpha > 0.1:
             warnings.append(f"Layer {i+1}: alpha={alpha} (1/mm) > 0.1. Might be in 1/cm (divide by 10).")
         if n_vg < 1.01 or n_vg > 5:

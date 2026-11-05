@@ -1,0 +1,97 @@
+{
+	"__UNDERSCORES IN FRONT MEANS IGNORE THE KEY, this is just to keep a valid JSON file": "",
+	"__!!! check and beautify JSON files with http://codebeautify.org/jsonviewer !!!": "",
+	
+	"__this is the path which is prepended to 'include-from-file' paths, if they are relative paths": "",
+  "_include-file-base-path": "../",
+	
+	"__site parameters object": "",
+  "SiteParameters": {
+    "Latitude": 52.80939865112305,
+    "Slope": 0,
+    "HeightNN": [0 , "m"],
+    "NDeposition": [30, "kg N ha-1 y-1"],
+		
+		"__soil profile parameters define the soil-column, the 'Thickness' parameter is optional and means create as many 10cm layers as necessary for the 'Thickness'": "",
+    "SoilProfileParameters": [
+			{
+				"Thickness": [0.3, "m"],
+				"SoilOrganicCarbon": [0.8, "%"],
+				"KA5TextureClass": "Sl2",
+				"SoilRawDensity": [1446, "kg m-3"]
+			}, 
+			{
+				"Thickness": 0.1,
+				"SoilOrganicCarbon": [0.15, "%"],
+				"KA5TextureClass": "Sl2",
+				"SoilRawDensity": [1446, "kg m-3"]
+			},
+			{
+				"Thickness": 1.6,
+				"SoilOrganicCarbon": [0.05, "%"],
+				"KA5TextureClass": "Sl2",
+				"SoilRawDensity": [1446, "kg m-3"]
+			}
+		],
+		
+		"__example of another soil profile (not Hohenfinow)": "",
+		"1 SoilProfileParameters": [
+			{
+				"Thickness": [0.35, "m"],
+				"KA5TextureClass": "Sl3",
+				"Sand": 0.58,
+				"Clay": 0.1,
+				"SoilRawDensity": [1710, "kg m-3"],
+				"SoilOrganicCarbon": [0.59, "%"],
+				"pH": 7.66,
+				"Sceleton": 0.058,
+				"PoreVolume": 0.353
+			}, 
+			{
+				"Thickness": [0.12, "m"],
+				"KA5TextureClass": "Sl3",
+				"Sand": 0.58,
+				"Clay": 0.1,
+				"SoilRawDensity": [1890, "kg m-3"],
+				"SoilOrganicCarbon": [0.19, "%"],
+				"pH": 6.22,
+				"Sceleton": 0.048,
+				"PoreVolume": 0.285
+			},
+			{
+				"Thickness": [0.39, "m"],
+				"KA5TextureClass": "Ls3",
+				"Sand": 0.50,
+				"Clay": 0.19,
+				"SoilRawDensity": [1800, "kg m-3"],
+				"SoilOrganicCarbon": [0.34, "%"],
+				"pH": 6.9,
+				"Sceleton": 0.021,
+				"PoreVolume": 0.317
+			},
+			{
+				"Thickness": [1.14, "m"],
+				"KA5TextureClass": "Sl4",
+				"Sand": 0.57,
+				"Clay": 0.13,
+				"SoilRawDensity": [1910, "kg m-3"],
+				"SoilOrganicCarbon": [0.02, "%"],
+				"pH": 7.76,
+				"Sceleton": 0.041,
+				"PoreVolume": 0.276
+			}
+    ]
+  },
+	
+	"__all kinds of more general monica parameters": "",
+  "SoilTemperatureParameters": ["include-from-file", "general/soil-temperature.json"],
+  "EnvironmentParameters": {
+    "=": ["include-from-file", "general/environment.json"],
+    "LeachingDepth": 2.0,
+    "WindSpeedHeight": 2.5,
+    "rcp": "rcp85"
+  },
+  "SoilOrganicParameters": ["include-from-file", "general/soil-organic.json"],
+  "SoilTransportParameters": ["include-from-file", "general/soil-transport.json"],
+  "SoilMoistureParameters": ["include-from-file", "general/soil-moisture.json"]
+}

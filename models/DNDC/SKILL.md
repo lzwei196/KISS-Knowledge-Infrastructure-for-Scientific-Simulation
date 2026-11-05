@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Source**: https://github.com/BrianBGrant/DNDCv.CAN (binary only; source code proprietary)
 **Domain**: Crop growth, soil carbon/nitrogen cycling, greenhouse gas emissions
 **Last updated**: 2026-03-28
-**Stats**: 4 tools | 7 skill documents | 18 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 

@@ -6,11 +6,11 @@
 
 ## Purpose
 
-Provide the PCSE engine with daily meteorological data via a WeatherDataProvider. This is the most error-prone stage because PCSE uses non-standard *internal* units (kJ/m2/day for radiation, cm/day for precipitation) that differ from both VIC and DSSAT — but note the **CSVWeatherDataProvider CSV columns are mm/day for RAIN** (provider divides /10 → cm) and kJ/m2/day for IRRAD; the provider does the unit scaling, so author the CSV in mm. Getting units wrong produces no error — the model runs to completion with plausible-looking but scientifically wrong results.
+Provide the PCSE engine with daily meteorological data via a WeatherDataProvider. This is the most error-prone stage because PCSE uses non-standard *internal* units (kJ/m2/day for radiation, cm/day for precipitation) that differ from DSSAT and from the weather products — but note the **CSVWeatherDataProvider CSV columns are mm/day for RAIN** (provider divides /10 → cm) and kJ/m2/day for IRRAD; the provider does the unit scaling, so author the CSV in mm. Getting units wrong produces no error — the model runs to completion with plausible-looking but scientifically wrong results.
 
 ## Prerequisites
 
-- [ ] Raw weather data available (VIC forcing, station data, or internet access for NASA POWER)
+- [ ] Weather source chosen: a product read by the shared loader (`cmfd` China, `mswx` global local disk, `nasa_power` global, needs the network) or your own station table
 - [ ] Location coordinates known (lat, lon, elevation)
 - [ ] Simulation period defined (start/end dates)
 - [ ] Knowledge of source data units for conversion
@@ -58,8 +58,8 @@ from pcse.input import ExcelWeatherDataProvider
 weather = ExcelWeatherDataProvider('/path/to/weather.xlsx')
 ```
 
-**Option D: Custom provider from VIC forcing (HydroCraft coupling)**
-Use tool `convert_vic_to_pcse_weather` to create CSV files from VIC forcing.
+**Option D: CSV built straight from a weather product (the HydroCraft route)**
+Use tool `build_pcse_weather_from_source` (Step 3): CMFD, MSWX or NASA POWER, read through the shared loader, written as the Option B CSV.
 
 ### Step 2: Create CSV weather file (if using Option B)
 
@@ -67,23 +67,19 @@ The CSV format has two sections: header and data.
 
 ```csv
 ## Site Characteristics
-Country    = Netherlands
-Station    = Wageningen
-Description = Example weather data
-Source     = VIC forcing
-Contact    = user@example.com
-Longitude  = 5.5; decimal degrees
-Latitude   = 52.0; decimal degrees
-Elevation  = 10; meters
-AngstromA  = 0.18; Angstrom A coefficient
-AngstromB  = 0.55; Angstrom B coefficient
-HasSunshine = False
-
-## Daily weather observations
+Country = 'Netherlands'
+Station = 'Wageningen'
+Description = 'Example weather data'
+Source = 'station file'
+Contact = 'user@example.com'
+Longitude = 5.5; Latitude = 52.0; Elevation = 10.0; AngstromA = 0.18; AngstromB = 0.55; HasSunshine = False
+## Daily weather observations (missing values are NaN)
 DAY,IRRAD,TMIN,TMAX,VAP,WIND,RAIN,SNOWDEPTH
-2000-01-01,2500,0.5,5.2,0.65,3.5,1.2,-999
-2000-01-02,3100,-1.0,3.8,0.55,2.8,0.00,-999
+20000101,2500.0,0.5,5.2,0.650,3.5,1.2000,NaN
+20000102,3100.0,-1.0,3.8,0.550,2.8,0.0000,NaN
 ```
+
+**HEADER RULES** (pcse 6.0.12 runs `ast.literal_eval` on every header value): text values are quoted; the site line is ONE line of `name = value` pairs split by `;` with no comments after the values; `DAY` is `YYYYMMDD`; a missing value is `NaN`, not `-999`. Do not hand-write this file: both stage tools write it through the same writer (`write_pcse_csv` in `create_csv_weather_file.py`).
 
 **CRITICAL UNIT RULES**:
 - IRRAD: **kJ/m2/day** — typical range 2000-35000. If your values are 2-35, you have MJ — multiply by 1000.
@@ -92,26 +88,42 @@ DAY,IRRAD,TMIN,TMAX,VAP,WIND,RAIN,SNOWDEPTH
 - WIND: **m/s** — typical range 0-15. If your values are 0-500, you have km/day — divide by 86.4.
 - TMIN/TMAX: **Celsius** — if values > 200, you have Kelvin — subtract 273.15.
 
-### Step 3: Convert VIC forcing to PCSE weather (HydroCraft coupling)
+### Step 3: Build the PCSE weather file from a weather product
 
-```python
-# VIC forcing columns: PREC(mm), TMAX(C), TMIN(C), WIND(m/s), SW(W/m2), LW(W/m2), VP(kPa), PRESS(kPa)
-# PCSE CSV needs: IRRAD(kJ/m2/day), TMIN(C), TMAX(C), VAP(kPa), WIND(m/s), RAIN(mm/day)
+One tool, one point, straight from the data source:
 
-# Unit conversions:
-IRRAD_kj = sw_wm2 * 86.4       # W/m2 → kJ/m2/day (×3600×24/1000)
-RAIN_mm = prec_mm               # keep mm — CSVWeatherDataProvider divides /10 → cm
-# TMIN, TMAX, WIND, VAP: no conversion needed (same units)
-```
-
-Run tool `convert_vic_to_pcse_weather`:
 ```bash
-python tools/s3_weather_prep/convert_vic_to_pcse_weather.py
+PY=KISSPATH_PYTHON_ENV/bin/python
+# NASA POWER (global, needs the network; the loader goes around the proxy)
+$PY tools/s3_weather_prep/build_pcse_weather_from_source.py --source nasa_power \
+    --lat 41.5 --lon -93.5 --elev 300 --start_year 2016 --end_year 2020 \
+    --output weather_pcse_41.50_-93.50.csv
+# CMFD (China, local 3-hourly store, about 50 s per point-year)
+$PY tools/s3_weather_prep/build_pcse_weather_from_source.py --source cmfd \
+    --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+    --lat 36.5 --lon 116.5 --elev 30 --start_year 2015 --end_year 2015 \
+    --output weather_pcse_36.50_116.50.csv
+# MSWX (global, local): --source mswx --forcing_dir KISSPATH_FORCING   (ONE build at a time)
 ```
 
-**Expected result**: One CSV weather file per VIC grid cell in `outputs/{run}/wofost/weather/`.
+`--source` has no default. What the tool does:
 
-**If this fails**: Check VIC forcing file column order — it must match the expected layout.
+| Loader value (`load_daily_forcing`) | PCSE CSV column | Conversion |
+|---|---|---|
+| `srad_wm2` (24-h mean W/m2) | `IRRAD` kJ/m2/day | × 86.4 |
+| `temp_min_c`, `temp_max_c` | `TMIN`, `TMAX` °C | none |
+| `shum_kgkg` + `pres_pa` (the source's own pressure) | `VAP` kPa | e = q·p / (0.622 + 0.378·q), ÷ 1000 |
+| `wind_ms` | `WIND` m/s | none (source height, 10 m) |
+| `precip_mm` (mm in the day) | `RAIN` mm/day | none |
+| — | `SNOWDEPTH` | NaN |
+
+**Expected result**: the CSV plus `<output>.summary.json` (source, point, period, rain per year, mean temperature). Read the summary and check the numbers are believable for the site. Checked 2026-10-03: `nasa_power` (41.5, -93.5) 2016-2020 = 1827 days, 862 mm/yr, 10.3 °C; `cmfd` (36.5, 116.5) 2015 = 365 days, 617 mm, 15.7 °C.
+
+**If this fails** (exit code 2, nothing written): the tool refuses a missing or non-finite value, a time axis that is not one row per day, a period the source does not fully cover (NASA POWER daily starts 1981; CMFD is China only) and impossible values. Pick another source or period. Do not patch the gap by hand. See dt_023.
+
+**Many points**: give every point its own output file name. PCSE caches a loaded CSV under the file's basename, so two files with the same name in different folders can return the first one's weather (dt_022).
+
+**Own station data**: put it in a daily CSV (`date,IRRAD,TMIN,TMAX,VAP,WIND,RAIN`) and run `create_csv_weather_file.py <in.csv> <lat> <lon> <out.csv> [elev]`; unit flags are the `WX_*` environment variables listed in that tool.
 
 ### Step 4: Validate weather data
 
@@ -185,4 +197,4 @@ assert len(df) == len(date_range), \
 ---
 
 *This skill document is part of the wofost-pcse-knowledge infrastructure.*
-*Stage 3 of 8 | Tools: convert_vic_to_pcse_weather, create_csv_weather_file, validate_weather_data | Related triplets: dt_003, dt_004, dt_011, dt_015*
+*Stage 3 of 8 | Tools: build_pcse_weather_from_source, create_csv_weather_file, validate_weather_data | Related triplets: dt_003, dt_004, dt_011, dt_015, dt_017-dt_023*

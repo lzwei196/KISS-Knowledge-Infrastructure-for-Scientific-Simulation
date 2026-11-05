@@ -20,6 +20,10 @@ Set the initial pressure head field and boundary conditions. The initial conditi
 | MODFLOW steady-state | If MODFLOW run exists | Minimal (1-5 yr) |
 | Previous ParFlow restart | Continuing a run | None |
 
+## Box geometry: every cell gets an IC
+
+The s7 run script uses Box geometry, so ParFlow simulates every cell of the rectangle. `generate_initial_conditions.py` gives every cell, inside and outside the basin mask, the same IC rule (outside cells used to get pressure 0 in every layer, which is not a hydrostatic column). With `--method reinecke` a cell with no usable water-table depth stops the tool (it used to fall back to `--wtd` silently). A given `--elevation_npy` that does not exist stops the tool. The water table is placed below the same surface the cells are built from (terrain-following: elevation.npy; flat grid: the grid top).
+
 ## Procedure
 
 1. **Choose method** based on available data.

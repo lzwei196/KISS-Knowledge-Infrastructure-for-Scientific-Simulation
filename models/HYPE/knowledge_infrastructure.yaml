@@ -12,10 +12,20 @@ package:
     semi-distributed water + N/P/OC/sediment model). SMHI versions the line continuously (5-10 releases/year);
     this dag pins the 5.35.0 numerics.
   binary:
-    path: KISSPATH_BINARIES/hype_latest.zip
+    path: KISSPATH_BINARIES/hype/hype
     type: ELF
 pipeline:
-  stages: []
+  stages:
+  - s10_calibration
+  - s1_subbasin_delineation
+  - s2_slc_classification
+  - s3_forcing_preparation
+  - s4_geodata_generation
+  - s5_parameter_setup
+  - s6_lake_reservoir_config
+  - s7_execution
+  - s8_output_analysis
+  - s9_water_quality
 tools:
   count: 23
   files:
@@ -132,7 +142,7 @@ validation:
     best_r: 0.8438
 summary:
   total_tools: 23
-  total_stage_docs: 0
+  total_stage_docs: 10
   total_diagnostic_triplets: 25
-  generated: '2026-08-15'
+  generated: '2026-09-30'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

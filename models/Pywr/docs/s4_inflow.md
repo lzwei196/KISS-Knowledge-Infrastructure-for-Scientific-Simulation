@@ -38,13 +38,21 @@ Convert observed discharge when VIC output is unavailable:
 
 ```bash
 "$PYWR_PYTHON" "$KI/tools/s4_inflow/convert_obs_to_inflow.py" \
-  --obs_file data/obs/WJB/HUAIH-51030-wangjiaba.txt \
+  --obs_file KISSPATH_OBS/WJB/HUAIH-51030-wangjiaba.txt \
   --station_area_km2 30630 \
   --dam_area_km2 1094 \
   --start_date 1981-01-01 \
-  --end_date 1990-12-31 \
+  --end_date 1988-12-31 \
   --output /tmp/pywr_inflow.csv
 ```
+
+The tool stops (no output) if any requested day has no observed Q, unless you choose `--gap_fill`. In this Wangjiaba file every 1989 day is `-99` (missing), and 1952, 1959, 1966, 1968-1971 are incomplete; complete runs are 1972-1988 and 1990-1998 (checked 2026-10-05).
+
+## Observed-discharge data contract
+
+Observed discharge conversion is strict by default (`--gap_fill error`): all requested daily Q values must exist, be finite and nonnegative. Known missing flags (-99/-9999/NaN) remain missing; malformed dates/numbers, duplicate or unordered dates and mixed stations fail. Both drainage areas must be supplied together, finite and positive. Valid zero discharge is preserved, including small nonzero values without two-decimal rounding.
+
+Optional `--gap_fill interpolate` only reconstructs internal gaps up to 30 days with two observed endpoints. `--gap_fill zero` explicitly assumes zero inflow on missing days. Neither mode has a secondary fallback. Every output has `<output>.provenance.json` with source/output hashes, area ratio, counts and every filled date, original flag, method, Q and scaled inflow; interpolation also records its observed endpoints. Retain this sidecar with the CSV. These assumptions require the caller's explicit choice and are not observed discharge. Validation occurs before output replacement; the two file replacements are individually atomic, and the output hash detects an interrupted pair.
 
 ## Verification
 - Confirm `/tmp/pywr_inflow.csv` covers every daily timestep that S7 will request.

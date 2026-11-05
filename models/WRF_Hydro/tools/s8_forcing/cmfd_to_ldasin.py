@@ -16,7 +16,7 @@ CMFD variables and mapping to WRF-Hydro LDASIN:
   shum       | kg/kg        | Q2D        | kg/kg   | direct
   wind       | m/s          | U2D, V2D   | m/s     | wind * 0.7071 each
   pres       | Pa           | PSFC       | Pa      | direct
-  srad       | W/m^2        | SWDOWN     | W/m^2   | direct, cap at 1361
+  srad       | W/m^2        | SWDOWN     | W/m^2   | direct; outside 0-1361 stops (no clip)
   lrad       | W/m^2        | LWDOWN     | W/m^2   | direct
   prec       | kg/m^2/s     | RAINRATE   | mm/s    | direct (1 kg/m^2/s = 1 mm/s)
 
@@ -283,12 +283,18 @@ def regrid_to_lcc(cmfd_lats, cmfd_lons, data_2d, xlat_2d, xlon_2d, method='linea
     -------
     result : 2D array on LCC grid (south_north, west_east)
     """
-    # Create interpolator on regular grid
+    # 2026-10-05: no extrapolation. A target cell outside the CMFD grid used to
+    # take the nearest edge value; now it stops (forcing is never filled).
+    out = ((xlat_2d < cmfd_lats.min()) | (xlat_2d > cmfd_lats.max()) |
+           (xlon_2d < cmfd_lons.min()) | (xlon_2d > cmfd_lons.max()))
+    if out.any():
+        raise SystemExit(f"ERROR: {int(out.sum())} target cells lie outside the CMFD grid "
+                         f"(lat {cmfd_lats.min():.3f}..{cmfd_lats.max():.3f}, lon "
+                         f"{cmfd_lons.min():.3f}..{cmfd_lons.max():.3f}); no extrapolation")
     interp = RegularGridInterpolator(
         (cmfd_lats, cmfd_lons), data_2d,
         method=method,
-        bounds_error=False,
-        fill_value=None  # extrapolate using nearest
+        bounds_error=True,
     )
 
     # Target points: (lat, lon) pairs
@@ -325,6 +331,15 @@ def temporal_interpolate_3hr_to_hourly(data_3hr, times_3hr, hourly_times, var_ty
     hrs_3hr = np.array([(t - t0).total_seconds() / 3600.0 for t in times_3hr])
     hrs_hourly = np.array([(t - t0).total_seconds() / 3600.0 for t in hourly_times])
 
+    # 2026-10-05: an hour outside the 3-hourly records was filled by holding
+    # the edge value (persistence); now the caller must supply the bracketing
+    # record (next month's first step) or the run stops.
+    if nhours and (hrs_hourly.min() < hrs_3hr[0] or
+                   (var_type != 'step' and hrs_hourly.max() > hrs_3hr[-1]) or
+                   (var_type == 'step' and hrs_hourly.max() >= hrs_3hr[-1] + 3.0)):
+        raise SystemExit(f"ERROR: hourly times {hourly_times[0]}..{hourly_times[-1]} are not "
+                         f"bracketed by the 3-hourly records {times_3hr[0]}..{times_3hr[-1]}; "
+                         f"no persistence fill")
     for ih in range(nhours):
         h = hrs_hourly[ih]
         # Find bracket: idx such that hrs_3hr[idx] <= h < hrs_3hr[idx+1]
@@ -430,7 +445,10 @@ def elevation_correction(t2d, psfc, q2d, hgt_target, hgt_source_interp):
     # P_target = P_source * exp(-g * dz / (R * Tv))
     # where Tv = T * (1 + 0.61 * q) is virtual temperature
     tv = t2d_corr * (1.0 + 0.61 * q2d)
-    tv = np.maximum(tv, 200.0)  # prevent division by zero
+    if not np.all(np.isfinite(tv)) or (tv < 200.0).any():
+        # was: floored at 200 K silently
+        raise SystemExit(f"ERROR: virtual temperature < 200 K or non-finite in "
+                         f"{int((~np.isfinite(tv) | (tv < 200.0)).sum())} cells; not clipped")
     psfc_corr = psfc * np.exp(-9.80665 * delta_z / (287.0 * tv))
 
     return t2d_corr.astype(np.float32), psfc_corr.astype(np.float32)
@@ -461,9 +479,13 @@ def estimate_cmfd_elevation(cmfd_lats, cmfd_lons, pres_3hr, temp_3hr):
     p_mean = np.nanmean(pres_3hr, axis=0)
     t_mean = np.nanmean(temp_3hr, axis=0)
 
-    # Avoid issues with extreme values
-    p_mean = np.clip(p_mean, 10000.0, 110000.0)
-    t_mean = np.clip(t_mean, 200.0, 350.0)
+    # Out-of-range means used to be clipped to 10000..110000 Pa / 200..350 K;
+    # now they stop (source data problem).
+    bad = (~np.isfinite(p_mean) | (p_mean < 10000.0) | (p_mean > 110000.0) |
+           ~np.isfinite(t_mean) | (t_mean < 200.0) | (t_mean > 350.0))
+    if bad.any():
+        raise SystemExit(f"ERROR: CMFD mean pressure/temperature missing or out of range in "
+                         f"{int(bad.sum())} source cells; not clipped")
 
     exponent = 287.0 * 0.0065 / 9.80665  # ~0.19026
     hgt = (t_mean / 0.0065) * (1.0 - (p_mean / 101325.0) ** exponent)
@@ -667,6 +689,26 @@ def main():
             'wind': 'linear',
         }
 
+        # Hours after this month's last 3-hourly record need the NEXT month's first
+        # record for linear interpolation (was: the last value was held).
+        if hourly_times and hourly_times[-1] > cmfd_times[-1]:
+            ny_, nm_ = (year + 1, 1) if month == 12 else (year, month + 1)
+            _nt = None
+            for var_name, subdir, prefix in CMFD_VAR_MAP:
+                try:
+                    d2, t2, la2, lo2 = read_cmfd_month(cmfd_dir, (var_name, subdir, prefix), ny_, nm_,
+                                                       lat_range=lat_range, lon_range=lon_range)
+                except FileNotFoundError as e:
+                    raise SystemExit(f"ERROR: hours after {cmfd_times[-1]} need the first CMFD record of "
+                                     f"{ny_}-{nm_:02d} ({var_name}), not found; no persistence fill: {e}")
+                if not (np.array_equal(la2, cmfd_lats) and np.array_equal(lo2, cmfd_lons)):
+                    raise SystemExit(f"ERROR: CMFD grid of {ny_}-{nm_:02d} differs from {year}-{month:02d}")
+                if t2[0] - cmfd_times[-1] != timedelta(hours=3):
+                    raise SystemExit(f"ERROR: next CMFD record {t2[0]} is not 3 h after {cmfd_times[-1]}")
+                cmfd_data[var_name] = np.concatenate([cmfd_data[var_name], d2[:1]], axis=0)
+                _nt = t2[0]
+            cmfd_times = list(cmfd_times) + [_nt]
+
         hourly_cmfd = {}
         for var_name in cmfd_data:
             hourly_cmfd[var_name] = temporal_interpolate_3hr_to_hourly(
@@ -707,12 +749,11 @@ def main():
             v2d = wind_lcc * factor
             # PSFC: CMFD pres is already Pa
             psfc = pres_lcc
-            # SWDOWN: direct, cap at solar constant
-            swdown = np.clip(srad_lcc, 0.0, 1361.0)
-            # LWDOWN: direct
+            # SWDOWN / LWDOWN / RAINRATE: direct (no clipping; checked below)
+            swdown = srad_lcc
             lwdown = lrad_lcc
             # RAINRATE: CMFD prec is already kg/m^2/s = mm/s
-            rainrate = np.maximum(prec_lcc, 0.0)
+            rainrate = prec_lcc
 
             # Elevation correction
             if (do_elev_correct and hgt_target is not None
@@ -721,11 +762,25 @@ def main():
                     t2d, psfc, q2d, hgt_target, cmfd_hgt_interp
                 )
 
-            # Physical constraints
-            q2d = np.clip(q2d, 0.0, 0.05)
-            psfc = np.maximum(psfc, 10000.0)
-            swdown = np.maximum(swdown, 0.0)
-            lwdown = np.maximum(lwdown, 0.0)
+            # Physical ranges: CHECKED, never clipped (was: clip q to 0..0.05,
+            # PSFC >= 10000 Pa, SW 0..1361, LW >= 0, rain >= 0). Any non-finite or
+            # out-of-range value stops with variable, time and cell count.
+            _ranges = {'T2D': (t2d, 150.0, 350.0), 'Q2D': (q2d, 0.0, 0.05),
+                       'PSFC': (psfc, 10000.0, 110000.0), 'SWDOWN': (swdown, 0.0, 1361.0),
+                       'LWDOWN': (lwdown, 0.0, 1000.0), 'RAINRATE': (rainrate, 0.0, None),
+                       'U2D': (u2d, None, None), 'V2D': (v2d, None, None)}
+            for _vn, (_a, _lo, _hi) in _ranges.items():
+                _bad = ~np.isfinite(_a)
+                if _lo is not None:
+                    _bad |= _a < _lo
+                if _hi is not None:
+                    _bad |= _a > _hi
+                if _bad.any():
+                    _jj, _ii = np.argwhere(_bad)[0]
+                    raise SystemExit(
+                        f"ERROR: {_vn} at {t:%Y-%m-%d %H:00}: {int(_bad.sum())} cells non-finite or "
+                        f"outside [{_lo}, {_hi}] (first j={_jj}, i={_ii}, lat={xlat_2d[_jj, _ii]:.4f}, "
+                        f"lon={xlon_2d[_jj, _ii]:.4f}); forcing is never filled or clipped")
 
             grids = {
                 'T2D': t2d,
@@ -765,7 +820,8 @@ def main():
         print(f"  Rate:     {n_written / wall_elapsed:.1f} files/s")
 
     if n_written != nhours_expected:
-        print(f"  WARNING: wrote {n_written} files but expected {nhours_expected}")
+        print(f"  ERROR: wrote {n_written} files but expected {nhours_expected}")
+        return 1
 
     # Sanity check first and last files
     for label, dt in [("First", start_date), ("Last", end_date + timedelta(hours=23))]:

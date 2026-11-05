@@ -12,7 +12,16 @@ from pathlib import Path
 
 MODEL_ID = "pyBadlands"
 KI_DIR = Path(__file__).resolve().parent
-PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
+# pyBadlands runs from its own venv (numpy 1.26, triangle, badlands from source); tools such as
+# tools/s5_run/run_badlands.py import badlands in-process, so they must be run with this python.
+# Override with PYBADLANDS_PYTHON. The path is used as given (never resolved), to keep the venv.
+# An override set to "" is invalid (it fails below); it does not fall back to the default.
+PYTHON = Path(
+    os.environ.get(
+        "PYBADLANDS_PYTHON",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python",
+    )
+)
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 
 
@@ -49,17 +58,21 @@ def add_check(
         print(f"        Fix: {fix}")
 
 
-def run_python(code: str, timeout: int = 15) -> subprocess.CompletedProcess[str]:
+def run_python(code: str, timeout: int = 180) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONNOUSERSITE"] = "1"
-    return subprocess.run(
-        [str(PYTHON), "-c", code],
-        cwd=str(KI_DIR),
-        env=env,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-    )
+    try:
+        return subprocess.run(
+            [str(PYTHON), "-c", code],
+            cwd=str(KI_DIR),
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        # Report as a failed run so the check fails and PREFLIGHT_REPORT is still printed.
+        return subprocess.CompletedProcess([str(PYTHON), "-c", code], 1, "", f"{PYTHON} did not finish: {exc}")
 
 
 def check_python_executable(checks: list[dict]) -> bool:
@@ -71,7 +84,9 @@ def check_python_executable(checks: list[dict]) -> bool:
             subject=subject,
             critical=True,
             status="fail",
-            fix=diagnostic_fix(f"Restore or recreate the HydroCraft Python environment at {PYTHON}"),
+            fix=diagnostic_fix(
+                f"pyBadlands python not found at {PYTHON}; restore the pyBadlands venv or set PYBADLANDS_PYTHON"
+            ),
         )
         return False
     if not os.access(PYTHON, os.X_OK):
@@ -90,7 +105,7 @@ def check_python_executable(checks: list[dict]) -> bool:
             [str(PYTHON), "--version"],
             text=True,
             capture_output=True,
-            timeout=10,
+            timeout=60,
         )
     except Exception as exc:
         add_check(
@@ -107,6 +122,7 @@ def check_python_executable(checks: list[dict]) -> bool:
         version = (proc.stdout or proc.stderr).strip()
         add_check(checks, kind="binary", subject=subject, critical=True, status="pass")
         print(f"        Version: {version}")
+        print(f"        Interpreter used for all checks: {PYTHON}")
         return True
 
     add_check(
@@ -120,11 +136,21 @@ def check_python_executable(checks: list[dict]) -> bool:
     return False
 
 
-def check_import(checks: list[dict], module: str, *, critical: bool = True, fix: str | None = None) -> None:
+def check_import(
+    checks: list[dict],
+    module: str,
+    *,
+    critical: bool = True,
+    fix: str | None = None,
+    code: str | None = None,
+) -> None:
     proc = run_python(
-        "import importlib, json; "
-        f"m=importlib.import_module({module!r}); "
-        "print(json.dumps({'module': m.__name__, 'file': getattr(m, '__file__', '')}))"
+        code
+        or (
+            "import importlib, json; "
+            f"m=importlib.import_module({module!r}); "
+            "print(json.dumps({'module': m.__name__, 'file': getattr(m, '__file__', '')}))"
+        )
     )
     if proc.returncode == 0:
         add_check(checks, kind="import", subject=module, critical=critical, status="pass")
@@ -154,7 +180,7 @@ def check_numpy_contract(checks: list[dict]) -> None:
             subject="numpy<2",
             critical=True,
             status="fail",
-            fix=diagnostic_fix("Install NumPy < 2 in KISSPATH_PYTHON_ENV"),
+            fix=diagnostic_fix(f"NumPy does not import in {PYTHON}; install NumPy < 2 in the pyBadlands venv"),
         )
         return
 
@@ -170,8 +196,8 @@ def check_numpy_contract(checks: list[dict]) -> None:
             critical=True,
             status="fail",
             fix=diagnostic_fix(
-                "pyBadlands requires NumPy < 2; install a compatible NumPy in "
-                "KISSPATH_PYTHON_ENV before running the model"
+                f"pyBadlands requires NumPy < 2; {PYTHON} has {version}. Use the pyBadlands venv "
+                "(set PYBADLANDS_PYTHON) or install NumPy < 2 there"
             ),
         )
 
@@ -253,8 +279,8 @@ def main() -> None:
             "triangle",
             critical=True,
             fix=diagnostic_fix(
-                "Install the pyBadlands triangulation dependency in "
-                "KISSPATH_PYTHON_ENV (for example: python -m pip install triangle)"
+                f"Install the pyBadlands triangulation dependency in the pyBadlands venv "
+                f"(for example: {PYTHON} -m pip install triangle)"
             ),
         )
         check_import(
@@ -262,14 +288,16 @@ def main() -> None:
             "badlands",
             critical=True,
             fix=diagnostic_fix(
-                "Install/build pyBadlands into KISSPATH_PYTHON_ENV; "
-                "do not use the stale auto_dissect/_work venv path"
+                f"badlands does not import in {PYTHON}; repair the pyBadlands venv "
+                "(badlands is installed from auto_dissect/_work/pyBadlands/source/repo/badlands) "
+                "or set PYBADLANDS_PYTHON to a python that has it"
             ),
         )
         check_import(
             checks,
             "badlands.model",
             critical=True,
+            code="from badlands.model import Model; print('Model', Model.__module__)",
             fix=diagnostic_fix(
                 "Repair the pyBadlands package installation so from badlands.model import Model works"
             ),

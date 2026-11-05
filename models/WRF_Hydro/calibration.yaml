@@ -68,7 +68,13 @@ parameters:
     tie: null
     activation: "RUNOFF_OPTION == 3"
     address: {kind: api, setter: "tools.calib_run:apply_params",
-              file: "DOMAIN/soil_properties.nc", variable: refkdt}
+              file: "GENPARM.TBL", variable: REFKDT_DATA}
+    address_note: "dt_v043, fixed 2026-09-12: this build has NO -DSPATIAL_SOIL, so the model
+      reads this parameter from the TABLE named above, never from DOMAIN/soil_properties.nc.
+      calib_run.py writes the run-dir copy of the table (copied in by setup_symlinks) and
+      reads it back. Liveness at this address is measured in the H03 fix receipt. If the
+      binary is ever rebuilt WITH the flag, the live address moves back to the NetCDF and
+      this contract must be re-probed under the new setup_fp."
     cite: ["liu2020_wrfhydro_param_sensitivity", "yucel2015_wrfhydro_flood_calibration",
            "dixit2025_wrfhydro_himalaya_sensitivity", "docs/calibration_guide.md#tier-1"]
     confidence: high
@@ -93,7 +99,13 @@ parameters:
     tie: null
     activation: always
     address: {kind: api, setter: "tools.calib_run:apply_params",
-              file: "DOMAIN/soil_properties.nc", variable: slope}
+              file: "GENPARM.TBL", variable: "SLOPE_DATA[1]"}
+    address_note: "dt_v043, fixed 2026-09-12: this build has NO -DSPATIAL_SOIL, so the model
+      reads this parameter from the TABLE named above, never from DOMAIN/soil_properties.nc.
+      calib_run.py writes the run-dir copy of the table (copied in by setup_symlinks) and
+      reads it back. Liveness at this address is measured in the H03 fix receipt. If the
+      binary is ever rebuilt WITH the flag, the live address moves back to the NetCDF and
+      this contract must be re-probed under the new setup_fp."
     cite: ["docs/calibration_guide.md#tier-2", "mascaro2023_wrfhydro_process_calibration"]
     confidence: high
     prior: "calibration_guide.md Tier 2 gives default 0.1-1.0 over the range 0-1.
@@ -104,20 +116,32 @@ parameters:
 
   # ---------------- storage capacity (dag: SMCMAX -> streamflow, MEDIUM)
   - name: smcmax_mult
-    description: "Multiplier on maximum soil moisture (porosity) across all four
-                  Noah layers; sets the storage deficit that must be filled before
-                  saturation-excess runoff is generated."
+    description: "Proportional scale on the WHOLE soil retention set — DRYSMC, WLTSMC, REFSMC,
+                  MAXSMC in SOILPARM.TBL AND SMCMAX1/SMCREF1/SMCWLT1 in hydro2dtbl.nc — applied
+                  identically to the land model and the routing. Scaling porosity alone put field
+                  capacity above porosity below x0.88 and desynchronised the two halves of the model
+                  (dt_v045: +10% porosity RAISED the flood peak). Scaling the set keeps the ordering
+                  by construction; calib_run.validate_soil_physics() asserts it after every write."
     type: continuous
     units: "-"
     default: 1.0
-    range: [0.85, 1.10]
+    range: [0.85, 1.10]   # now VALID across the range: validate_soil_physics passes at both ends (dryrun 2026-09-12)
     hard_bounds: [0.7, 1.15]
     transform: identity
     scope: global
     tie: "all soil layers and cells move together (single multiplier)"
     activation: always
     address: {kind: api, setter: "tools.calib_run:apply_params",
-              file: "DOMAIN/soil_properties.nc", variable: smcmax}
+              file: "SOILPARM.TBL + DOMAIN/hydro2dtbl.nc", variable: "DRYSMC,WLTSMC,REFSMC,MAXSMC / SMCMAX1,SMCREF1,SMCWLT1"}
+    range_note: "dt_v045 RESOLVED 2026-09-12 by scaling the full retention set rather than
+      porosity alone; the cell-wise physical check now runs after apply_params and fails the
+      run on any violation, so the range floor no longer needs to be derived per domain."
+    address_note: "dt_v043, fixed 2026-09-12: this build has NO -DSPATIAL_SOIL, so the model
+      reads this parameter from the TABLE named above, never from DOMAIN/soil_properties.nc.
+      calib_run.py writes the run-dir copy of the table (copied in by setup_symlinks) and
+      reads it back. Liveness at this address is measured in the H03 fix receipt. If the
+      binary is ever rebuilt WITH the flag, the live address moves back to the NetCDF and
+      this contract must be re-probed under the new setup_fp."
     cite: ["hr2024_wrfhydro_flood_precip_sensitivity"]
     confidence: medium
     prior: "The literature grades SMCMAX sensitive for flood generation in humid
@@ -125,12 +149,31 @@ parameters:
             bound is set conservatively about the dataset default.  The multiplier is
             applied ONLY to cells whose base porosity is < 0.9 (136 of 2112 layer-cells
             carry the 1.0 open-water sentinel); scaling those would push porosity above
-            unity.  At +10% the highest real soil cell reaches 0.524, well under the
-            ~0.7 physical porosity ceiling, and smcref/smcwlt maxima (0.412/0.138) stay
-            below smcmax at the -15% bound, so the ordering the LSM requires holds."
+            unity.  At +10% the highest real soil cell reaches 0.524, well under the ~0.7 physical porosity ceiling. WITHDRAWN 2026-09-09 (dt_v045): the claim that 'smcref/smcwlt maxima (0.412/0.138) stay below smcmax at the -15% bound, so the ordering the LSM requires holds' is FALSE. It compares GLOBAL MAXIMA when the constraint is CELL-WISE, which is exactly how the violation hid: at the -15% bound the CLAY cells have smcref 0.4120 against smcmax 0.3978, so field capacity exceeds porosity on 10.5% of land cells. The binding quantity is max(smcref/smcmax) over land = 0.8803 at this domain, and it must be derived per domain, not asserted. Compare cell-wise or not at all."
     expected_sensitivity: medium
 
   # ---------------- groundwater bucket (error-mode lever: volume + recession)
+    semantics_note: "kimi 2026-09-12 (FIXED-WITH-FIX): the NAME smcmax_mult promises a porosity
+      multiplier; since dt_v045 the lever is a RETENTION-SET multiplier (DRYSMC/WLTSMC/REFSMC/MAXSMC
+      and the routing copies, one factor). Codex judged the description explicit enough not to
+      block; kimi judged that fit logs, receipts and Morris reports will misread the name. BLESSED
+      AS-IS for this fix so the frozen, twice-reviewed driver is not renamed mid-review; the
+      RECOMMENDED FOLLOW-UP is to rename it soil_retention_scale in PARAMS, this contract, the
+      System 1 contract and the probe records in ONE reviewed change. Until then, read every
+      smcmax_mult value as a retention-curve scale, not a porosity."
+    warm_start_note: "round-7 mechanism 2, measured by kimi 2026-09-12 and NOT a gate: the warm-start
+      restart SMC already exceeds the DEFAULT table porosity on 8.7% of land cells at mult=1.0
+      (max SMC/MAXSMC 2.31), 38.7% at 0.90, 61.9% at 0.85. A validate-on-restart rule would fail the
+      untouched default run, so the inconsistency is pre-existing, not introduced by this lever;
+      NOAHMP_INIT clamps SMOIS > SMCMAX after the restart read and the 6-month spin-up absorbs it
+      (the 0.85 run completed with finite, correct-signed output). Audit before any calibration-FIT
+      claim; not a blocker for liveness."
+    rebuild_note: "kimi: compile_options.json in this KI says SPATIAL_SOIL:1, which does NOT describe
+      the pinned binary (built without the macro — verified by nm on the driver object). A future
+      rebuilder reading that file would flip the live address back to soil_properties.nc. Do not
+      trust that file for build state; trust nm on module_NoahMP_hrldas_driver.o. Also: the Noah
+      (non-MP) executable reads SLOPE_DATA index 2 via REDPRM; this contract's [1] is correct only
+      for the pinned NoahMP binary."
   - name: gw_coeff
     description: "Exponential bucket discharge coefficient C in Q = C*(exp(E*z/Zmax)-1).
                   Sets baseflow magnitude — the dominant contributor to total volume

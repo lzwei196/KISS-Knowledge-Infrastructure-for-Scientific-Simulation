@@ -196,15 +196,15 @@ def resolve_soil_category(mu_global, lat, lon):
         except (KeyError, TypeError, ValueError):
             pass
 
-    # Fallback only: the modal unit is not in the table, so ask for this point.
+    # The modal unit is not in the table, so ask for this point. If that
+    # lookup fails the tool stops (naming the point); loam is NOT used in its place.
+    from ki_tools_common.soil_utils import lookup_hwsd
     try:
-        from ki_tools_common.soil_utils import lookup_hwsd
         soil = lookup_hwsd(lat, lon)
-        return TEXTURE_TO_STAS.get(soil.get("texture"), STAS_DEFAULT)
-    except Exception as exc:
-        logger.warning(f"Soil texture lookup failed at {lat:.4f},{lon:.4f} "
-                       f"(MU_GLOBAL={mu_global}): {exc}; using loam.")
-        return STAS_DEFAULT
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        raise RuntimeError(f"HWSD soil lookup failed at lat={lat:.4f}, lon={lon:.4f} "
+                           f"(GRU modal MU_GLOBAL={mu_global}): {exc}") from exc
+    return TEXTURE_TO_STAS.get(soil.get("texture"), STAS_DEFAULT)
 
 
 def validate_inputs():

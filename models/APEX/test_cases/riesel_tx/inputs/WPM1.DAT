@@ -1,0 +1,112 @@
+       1         1.WP1   32.41  -99.68   545.6   TX ABILENE RGNL AP
+       2         2.WP1   32.73  -99.30   426.7   TX ALBANY
+       3         3.WP1   32.75  -99.85   520.3   TX ANSON 3ESE
+       4         4.WP1   33.60  -98.61   321.2   TX ARCHER CITY 1E
+       5         5.WP1   32.74  -97.13   199.6   TX ARLINGTON
+       6         6.WP1   32.16  -95.83   136.5   TX ATHENS
+       7         7.WP1   30.32  -97.76   204.2   TX AUSTIN-CAMP MABR
+       8         8.WP1   32.26  -96.64   140.5   TX BARDWELL DAM
+       9         9.WP1   28.46  -97.71    77.7   TX BEEVILLE 5 NE
+      10        10.WP1   31.10  -97.48   202.4   TX BELTON DAM
+      11        11.WP1   32.65  -97.44   240.8   TX BENBROOK DAM
+      12        12.WP1   30.11  -98.43   419.1   TX BLANCO
+      13        13.WP1   29.80  -98.74   440.1   TX BOERNE
+      14        14.WP1   33.64  -96.17   182.9   TX BONHAM 3NNE
+      15        15.WP1   33.55  -97.85   329.2   TX BOWIE
+      16        16.WP1   31.14  -99.35   521.2   TX BRADY
+      17        17.WP1   32.75  -98.90   356.6   TX BRECKENRIDGE
+      18        18.WP1   30.16  -96.40    95.4   TX BRENHAM
+      19        19.WP1   33.21  -97.78   234.4   TX BRIDGEPORT
+      20        20.WP1   31.74  -98.95   426.7   TX BROWNWOOD 2ENE
+      21        21.WP1   32.51  -97.34   232.2   TX BURLESON
+      22        22.WP1   30.76  -98.23   391.6   TX BURNET
+      23        23.WP1   30.85  -96.97   110.9   TX CAMERON
+      24        24.WP1   29.87  -98.20   304.8   TX CANYON DAM
+      25        25.WP1   31.26  -95.97    97.5   TX CENTERVILLE
+      26        26.WP1   33.62  -95.07   132.6   TX CLARKSVILLE 2NE
+      27        27.WP1   32.31  -97.41   238.6   TX CLEBURNE
+      28        28.WP1   31.82  -99.42   526.4   TX COLEMAN
+      29        29.WP1   30.59  -96.37    93.0   TX CLG STN EASTERWD
+      30        30.WP1   29.70  -96.57    68.6   TX COLUMBUS
+      31        31.WP1   32.12  -96.49   136.8   TX CORSICANA
+      32        32.WP1   32.90  -97.02   170.7   TX DAL-FTW WSCMO AP
+      33        33.WP1   32.85  -96.86   134.1   TX DALLAS FAA AP
+      34        34.WP1   33.82  -96.57   186.8   TX DENISON DAM
+      35        35.WP1   33.20  -97.11   192.0   TX DENTON 2 SE
+      36        36.WP1   30.21  -97.98   341.4   TX DRIPPING SPRINGS
+      37        37.WP1   32.06  -98.31   447.4   TX DUBLIN 2SE
+      38        38.WP1   32.40  -98.82   438.3   TX EASTLAND
+      39        39.WP1   30.35  -97.37   176.5   TX ELGIN
+      40        40.WP1   32.87  -95.78   147.5   TX EMORY
+      41        41.WP1   31.46  -98.16   379.5   TX EVANT 1SSW
+      42        42.WP1   31.73  -96.21   131.7   TX FAIRFIELD 3W
+      43        43.WP1   32.53  -96.66   143.2   TX FERRIS
+      44        44.WP1   29.63  -97.07   143.2   TX FLATONIA 4SE
+      45        45.WP1   31.03  -96.49   142.3   TX FRANKLIN
+      46        46.WP1   33.64  -97.15   237.7   TX GAINESVILLE
+      47        47.WP1   31.41  -97.70   251.8   TX GATESVILLE
+      48        48.WP1   30.63  -97.68   228.0   TX GEORGETOWN
+      49        49.WP1   32.23  -97.79   199.6   TX GLEN ROSE 2 W
+      50        50.WP1   31.44  -98.59   459.3   TX GOLDTHWAITE 1 WS
+      51        51.WP1   29.53  -97.45   115.8   TX GONZALES 1N
+      52        52.WP1   33.12  -98.57   328.6   TX GRAHAM
+      53        53.WP1   32.95  -97.06   178.3   TX GRAPEVINE DAM
+      54        54.WP1   33.17  -96.10   166.1   TX GREENVILLE KGVL
+      55        55.WP1   29.47  -96.94    83.8   TX HALLETTSVILLE 2
+      56        56.WP1   33.16  -99.75   487.7   TX HASKELL
+      57        57.WP1   33.81  -98.20   283.5   TX HENRIETTA
+      58        58.WP1   31.98  -98.03   317.9   TX HICO
+      59        59.WP1   32.02  -97.11   167.6   TX HILLSBORO
+      60        60.WP1   31.85  -99.56   591.9   TX HORDS CREEK DAM
+      61        61.WP1   33.22  -98.16   329.8   TX JACKSBORO
+      62        62.WP1   30.28  -98.42   375.5   TX JOHNSON CITY
+      63        63.WP1   32.56  -96.27   128.0   TX KAUFMAN 3 SE
+      64        64.WP1   29.92  -96.88   108.8   TX LA GRANGE
+      65        65.WP1   31.07  -98.19   314.5   TX LAMPASAS
+      66        66.WP1   30.41  -97.01   141.7   TX LEXINGTON
+      67        67.WP1   29.68  -97.66   121.9   TX LULING
+      68        68.WP1   30.94  -95.92    76.8   TX MADISONVILLE
+      69        69.WP1   31.33  -96.86   117.3   TX MARLIN 3 NE
+      70        70.WP1   30.75  -99.23   472.4   TX MASON
+      71        71.WP1   31.44  -97.40   220.4   TX MCGREGOR
+      72        72.WP1   31.70  -96.51   161.5   TX MEXIA
+      73        73.WP1   32.78  -98.06   283.5   TX MINERAL WELLS AP
+      74        74.WP1   31.96  -96.69   138.4   TX NAVARRO MILLS DA
+      75        75.WP1   29.72  -98.12   208.8   TX NEW BRAUNFELS
+      76        76.WP1   29.27  -97.76   121.9   TX NIXON
+      77        77.WP1   33.37  -98.77   364.2   TX OLNEY
+      78        78.WP1   30.02  -97.15   103.6   TX SMITHVILLE
+      79        79.WP1   31.07  -97.73   277.4   TX KILLEEN 3 S
+      80        80.WP1   31.04  -97.53   215.2   TX STILLHOUSE HOLLO
+      81        81.WP1   31.08  -97.32   193.5   TX TEMPLE
+      82        82.WP1   31.86  -97.38   174.9   TX WHITNEY DAM
+      83        83.WP1   30.34  -96.54    80.2   TX SOMERVILLE DAM
+      84        84.WP1   32.37  -99.19   496.8   TX PUTNAM
+      85        85.WP1   33.04  -96.49   155.4   TX LAVON DAM
+      86        86.WP1   33.24  -96.64   189.6   TX MCKINNEY
+      87        87.WP1   31.96  -98.49   372.1   TX PROCTOR RSVR
+      88        88.WP1   33.65  -97.06   265.2   TX GAINESVILLE 5 EN
+      89        89.WP1   33.37  -97.01   210.3   TX PILOT POINT ISL
+      90        90.WP1   32.08  -98.97   497.7   TX RISING STAR 1S
+      91        91.WP1   32.43  -96.84   192.0   TX WAXAHACHIE
+      92        92.WP1   32.25  -98.20   399.0   TX STEPHENVILLE 1 N
+      93        93.WP1   33.70  -96.64   231.6   TX SHERMAN
+      94        94.WP1   31.70  -98.10   384.0   TX HAMILTON 2E
+      95        95.WP1   29.87  -97.92   186.5   TX SAN MARCOS
+      96        96.WP1   33.67  -95.56   165.2   TX PARIS
+      97        97.WP1   31.60  -97.22   150.9   TX WACO DAM
+      98        98.WP1   31.62  -97.23   152.4   TX WACO RGNL AP
+      99        99.WP1   32.75  -97.77   291.1   TX WEATHERFORD
+     100       100.WP1   32.77  -98.93   406.0   TX BRECKENRIDGE 2 W
+     101       101.WP1   33.18  -99.19   417.6   TX THROCKMORTON
+     102       102.WP1   33.29  -99.10   374.9   TX THROCKMORTON 7 N
+     103       103.WP1   30.32  -96.16    65.5   TX WASHINGTON SP
+     104       104.WP1   30.68  -97.72   256.0   TX GEORGETOWN LAKE
+     105       105.WP1   30.70  -97.35   172.2   TX GRANGER DAM
+     106       106.WP1   30.57  -97.41   172.2   TX TAYLOR
+     107       107.WP1   30.58  -97.42   174.0   TX TAYLOR 1NW
+     108       108.WP1   33.08  -97.56   222.5   TX BOYD
+     109       109.WP1   31.33  -96.85    36.1   Riesel ARS Station
+
+
+

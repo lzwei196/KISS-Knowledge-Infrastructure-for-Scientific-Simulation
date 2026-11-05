@@ -1,0 +1,369 @@
+{
+    "__UNDERSCORES IN FRONT MEANS IGNORE THE KEY, this is just to keep a valid JSON file": "",
+    "__!!! check and beautify JSON files with http://codebeautify.org/jsonviewer !!!": "",
+
+    "__this is the path which is prepended to 'include-from-file' paths, if they are relative paths": "",
+    "_include-file-base-path": "../",
+
+    "__user defined crops section to be used via references": "",
+    "crops": {
+        "CGL": {
+            "is-winter-crop": false,
+            "cropParams": {
+                "species": ["include-from-file", "crops/clover-grass-ley.json"],
+                "cultivar": ["include-from-file", "crops/clover-grass-ley/.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/clover-grass-ley.json"]
+        },
+        "WR": {
+            "is-winter-crop": true,
+            "cropParams": {
+                "species": ["include-from-file", "crops/rye.json"],
+                "cultivar": ["include-from-file", "crops/rye/winter-rye.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/rye.json"]
+        },
+        "SM": {
+            "is-winter-crop": false,
+            "cropParams": {
+                "species": ["include-from-file", "crops/maize.json"],
+                "cultivar": ["include-from-file", "crops/maize/silage-maize.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/maize.json"]
+        },
+        "MEP": {
+            "is-winter-crop": false,
+            "cropParams": {
+                "species": ["include-from-file", "crops/potato.json"],
+                "cultivar": ["include-from-file", "crops/potato/moderately-early-potato.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/potato.json"]
+        },
+        "WW": {
+            "is-winter-crop": true,
+            "cropParams": {
+                "species": ["include-from-file", "crops/wheat.json"],
+                "cultivar": ["include-from-file", "crops/wheat/winter-wheat.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/wheat.json"]
+        },
+        "WG": {
+            "is-winter-crop": true,
+            "cropParams": {
+                "species": ["include-from-file", "crops/barley.json"],
+                "cultivar": ["include-from-file", "crops/barley/winter-barley.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/barley.json"]
+        },
+        "SG": {
+            "is-winter-crop": false,
+            "cropParams": {
+                "species": ["include-from-file", "crops/barley.json"],
+                "cultivar": ["include-from-file", "crops/barley/spring-barley.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/barley.json"]
+        },
+        "SC": {
+            "is-winter-crop": true,
+            "cropParams": {
+                "species": ["include-from-file", "crops/rape.json"],
+                "cultivar": ["include-from-file", "crops/rape/winter-rape.json"]
+            },
+            "residueParams": ["include-from-file", "crop-residues/rape.json"]
+        }
+    },
+
+    "__user defined fertilizer parameteres section to be used via references": "",
+    "fert-params": {
+        "AN": ["include-from-file", "mineral-fertilisers/AN.json"],
+        "CADLM": ["include-from-file", "organic-fertilisers/CADLM.json"]
+    },
+
+    "0 cropRotation": [
+        {
+            "worksteps": [
+                { "date": "0000-09-23", "type": "Sowing", "crop": {
+                    "is-winter-crop": true,
+                    "cropParams": {
+                        "species": ["include-from-file", "crops/wheat.json"],
+                        "cultivar": ["include-from-file", "crops/wheat/winter-wheat.json"]
+                    },
+                    "residueParams": ["include-from-file", "crop-residues/wheat.json"]
+                } },
+                { "date": "0001-07-27", "type": "Harvest" }
+            ]
+        }
+    ],
+
+    "__example using automatic sowing and harvesting": "",
+    "_cropRotations": [
+        {
+            "start": "1991-02-01",
+            "end": "1994-12-31",
+            "cropRotation": [
+                {
+                    "worksteps": [
+                        {
+                            "type": "AutomaticSowing",
+                            "crop": [
+                                "ref",
+                                "crops",
+                                "WW"
+                            ],
+                            "earliest-date": "0000-02-11",
+                            "latest-date": "0000-11-08",
+                            "min-temp": 18.5,
+                            "days-in-temp-window": 14,
+                            "min-%-asw": 0,
+                            "max-%-asw": 100,
+                            "max-3d-precip-sum": 2,
+                            "max-curr-day-precip": 0.1,
+                            "temp-sum-above-base-temp": 0,
+                            "base-temp": 0
+                        },
+                        {
+                            "type": "AutomaticHarvest",
+                            "latest-date": "0001-10-03",
+                            "min-%-asw": 0,
+                            "max-%-asw": 150,
+                            "max-3d-precip-sum": 999,
+                            "max-curr-day-precip": 999,
+                            "harvest-time": "maturity"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "start": "1995-03-01",
+            "end": "1997-12-31",
+            "cropRotation": [
+                {
+                    "worksteps": [
+                        {
+                            "type": "AutomaticSowing",
+                            "crop": [
+                                "ref",
+                                "crops",
+                                "WR"
+                            ],
+                            "earliest-date": "0000-02-11",
+                            "latest-date": "0000-11-08",
+                            "min-temp": 18.5,
+                            "days-in-temp-window": 14,
+                            "min-%-asw": 0,
+                            "max-%-asw": 100,
+                            "max-3d-precip-sum": 2,
+                            "max-curr-day-precip": 0.1,
+                            "temp-sum-above-base-temp": 0,
+                            "base-temp": 0
+                        },
+                        {
+                            "type": "AutomaticHarvest",
+                            "latest-date": "0001-10-03",
+                            "min-%-asw": 0,
+                            "max-%-asw": 150,
+                            "max-3d-precip-sum": 999,
+                            "max-curr-day-precip": 999,
+                            "harvest-time": "maturity"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+
+    "__cropRotation": [
+        {
+            "worksteps": [
+                {
+                    "type": "AutomaticSowing",
+                    "crop": ["ref", "crops", "WW"],
+                    "earliest-date": "0000-02-11",
+                    "latest-date": "0000-11-08",
+                    "min-temp": 18.5,
+                    "days-in-temp-window": 14,
+                    "min-%-asw": 0,
+                    "max-%-asw": 100,
+                    "max-3d-precip-sum": 2,
+                    "max-curr-day-precip": 0.1,
+                    "temp-sum-above-base-temp": 0,
+                    "base-temp": 0
+                },
+                {
+                    "type": "AutomaticHarvest",
+                    "latest-date": "0001-10-03",
+                    "min-%-asw": 0,
+                    "max-%-asw": 150,
+                    "max-3d-precip-sum": 999,
+                    "max-curr-day-precip": 999,
+                    "harvest-time": "maturity"
+                }
+            ]
+        }
+    ],
+
+    "__relative date crop rotation example": "",
+    "2 cropRotation": [
+        {
+            "worksteps": [
+                { "date": "0000-09-23", "type": "Sowing", "crop": ["ref", "crops", "WR"] },
+                {
+                    "date": "0001-05-05",
+                    "type": "Irrigation",
+                    "amount": [1.0, "mm"],
+                    "parameters": {
+                        "nitrateConcentration": [0.0, "mg dm-3"],
+                        "sulfateConcentration": [334, "mg dm-3"]
+                    }
+                },
+                {
+                    "date": "0001-04-03",
+                    "type": "MineralFertilization",
+                    "amount": [40.0, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                {
+                    "date": "0001-05-07",
+                    "type": "MineralFertilization",
+                    "amount": [40.0, "kg N"],
+                    "_db_partition": ["include-from-db", "mineral_fertiliser", "AN"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "0001-07-27", "type": "Harvest" }
+            ]
+        }
+    ],
+
+    "__absolute date crop rotation example": "",
+    "cropRotation": [
+        {
+            "worksteps": [
+                { "date": "1991-09-23", "type": "Sowing", "crop": ["ref", "crops", "WR"] },
+                {
+                    "date": "1992-05-05",
+                    "type": "Irrigation",
+                    "amount": [1.0, "mm"],
+                    "parameters": {
+                        "nitrateConcentration": [0.0, "mg dm-3"],
+                        "sulfateConcentration": [334, "mg dm-3"]
+                    }
+                },
+                {
+                    "date": "1992-04-03",
+                    "type": "MineralFertilization",
+                    "amount": [40.0, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                {
+                    "date": "1992-05-07",
+                    "type": "MineralFertilization",
+                    "amount": [40.0, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1992-07-27", "type": "Harvest" }
+            ]
+        },
+        {
+            "worksteps": [
+                {
+                    "date": "1993-04-23",
+                    "type": "MineralFertilization",
+                    "amount": [125, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1993-04-27", "type": "Tillage", "depth": [0.15, "m"] },
+                { "date": "1993-05-04", "type": "Sowing", "crop": ["ref", "crops", "SM"] },
+                {
+                    "date": "1993-05-10",
+                    "type": "MineralFertilization",
+                    "amount": [60, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1993-09-23", "type": "Harvest" },
+                {
+                    "date": "1993-12-16",
+                    "type": "OrganicFertilization",
+                    "amount": [30000, "kg"],
+                    "parameters": ["ref", "fert-params", "CADLM"],
+                    "incorporation": true
+                },
+                { "date": "1993-12-22", "type": "Tillage", "depth": [0.1, "m"] }
+            ]
+        },
+        {
+            "worksteps": [
+                { "date": "1994-04-25", "type": "Sowing", "crop": ["ref", "crops", "MEP"] },
+                {
+                    "date": "1994-05-04",
+                    "type": "MineralFertilization",
+                    "amount": [90, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1994-09-06", "type": "Harvest" },
+                { "date": "1994-09-29", "type": "Tillage", "depth": [0.15, "m"] }
+            ]
+        },
+        {
+            "worksteps": [
+                { "date": "1994-10-11", "type": "Sowing", "crop": ["ref", "crops", "WW"] },
+                {
+                    "date": "1995-03-24",
+                    "type": "MineralFertilization",
+                    "amount": [60, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                {
+                    "date": "1995-04-27",
+                    "type": "MineralFertilization",
+                    "amount": [40, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                {
+                    "date": "1995-05-12",
+                    "type": "MineralFertilization",
+                    "amount": [60, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1995-08-02", "type": "Harvest" },
+                { "date": "1995-08-03", "type": "Tillage", "depth": [0.15, "m"] }
+            ]
+        },
+        {
+            "worksteps": [
+                { "date": "1995-09-07", "type": "Sowing", "crop": ["ref", "crops", "WG"] },
+                {
+                    "date": "1996-03-21",
+                    "type": "MineralFertilization",
+                    "amount": [60, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1996-04-13", "type": "Harvest" },
+                { "date": "1996-04-14", "type": "Tillage", "depth": [0.10, "m"] }
+            ]
+        },
+        {
+            "worksteps": [
+                { "date": "1996-04-17", "type": "Sowing", "crop": ["ref", "crops", "SG"] },
+                { "date": "1996-09-10", "type": "Harvest" },
+                { "date": "1996-09-17", "type": "Tillage", "depth": [0.10, "m"] }
+            ]
+        },
+        {
+            "worksteps": [
+                { "date": "1997-04-04", "type": "Sowing", "crop": ["ref", "crops", "SC"] },
+                {
+                    "date": "1997-04-10",
+                    "type": "MineralFertilization",
+                    "amount": [80, "kg N"],
+                    "partition": ["ref", "fert-params", "AN"]
+                },
+                { "date": "1997-07-08", "type": "Harvest" },
+                { "date": "1997-07-09", "type": "Tillage", "depth": [0.10, "m"] }
+            ]
+        }
+    ],
+
+    "__general crop parameters for the monica model": "",
+    "CropParameters": ["include-from-file", "general/crop.json"]
+}

@@ -96,11 +96,13 @@ def test_run_uses_staged_paths_and_contains_model_logs(runner, example, monkeypa
     def run(command, **kwargs):
         calls.append((command, kwargs))
         assert Path(command[-1]) == e.run / "badlake.prj"
-        assert command[command.index("-o") + 1] == str(output)
+        written = Path(command[command.index("-o") + 1])
+        # CRHM writes beside the requested output; it replaces it only once valid.
+        assert written.parent == output.parent and written.name.startswith(output.name + ".")
         assert "--obs_file_directory" not in command
         assert Path(kwargs["cwd"]) == e.run
         (Path(kwargs["cwd"]) / "crhmRun.log").write_text("model log")
-        output.write_text("date\tSWE(1)\n()\t(mm)\n1973-01-01T01:00\t1.25\n")
+        written.write_text("date\tSWE(1)\n()\t(mm)\n1973-01-01T01:00\t1.25\n")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(runner.subprocess, "run", run)
@@ -132,6 +134,7 @@ def test_model_civil_time_is_independent_of_host_timezone(runner, example, monke
         assert kwargs["env"] is not os.environ
         assert kwargs["env"] == {**before, "TZ": "UTC0"}
         assert dict(os.environ) == before
+        Path(command[command.index("-o") + 1]).write_text("date\tSWE(1)\n()\t(mm)\n1973-01-01T01:00\t1.25\n")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(runner.subprocess, "run", run)

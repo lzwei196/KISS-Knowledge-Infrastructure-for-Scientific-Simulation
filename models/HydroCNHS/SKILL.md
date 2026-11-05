@@ -66,10 +66,10 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | Metric | Value |
 |--------|-------|
-| Tools | 5 |
+| Tools | see the KI map at the top of this file |
 | Pipeline stages | 8 |
-| Diagnostic triplets | 18 |
-| Skill documents | 6 |
+| Diagnostic triplets | see the KI map at the top of this file |
+| Skill documents | see the KI map at the top of this file |
 | Validation basin | TRB, Oregon |
 
 ---
@@ -331,7 +331,12 @@ These facts are non-obvious and cause **silent failures** if violated:
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
+
+Official HydroCNHS tutorial case (shipped with the model, Lin et al. 2022):
 
 **Basin**: Tualatin River Basin (TRB), Oregon, USA
 **Period**: 1981/1/1 – 2013/12/31 (33 years, 12,053 days)
@@ -350,11 +355,6 @@ model run and scored against the bars below.
 | `Q_routed` | `point_time_series` | `pbias` | zero_centered | very_good \|PBIAS\| <= 10 [`moriasi_repro_nh2017`, `mikeswat2014`]; good \|PBIAS\| <= 15 [`moriasi_repro_nh2017`, `mikeswat2014`]; satisfactory \|PBIAS\| <= 25 [`moriasi_repro_nh2017`, `mikeswat2014`] | pending body campaign | pending body campaign | pending body campaign |
 | `Q_routed` | `point_snapshot` | `pbias` | zero_centered | very_good \|PBIAS\| <= 10 [`moriasi_repro_nh2017`]; good \|PBIAS\| <= 15 [`moriasi_repro_nh2017`]; satisfactory \|PBIAS\| <= 25 [`moriasi_repro_nh2017`] | pending body campaign | pending body campaign | pending body campaign |
 | `Q_runoff` | `point_time_series` | `nse` | maximize | satisfactory >= 0.5 [`moriasi_repro_nh2017`, `arnold2012`]; good >= 0.65 [`moriasi_repro_nh2017`, `arnold2012`]; very_good >= 0.75 [`moriasi_repro_nh2017`, `arnold2012`] | pending body campaign | pending body campaign | pending body campaign |
-
-**Legacy body note already present in this SKILL**: calibrated performance at WSLO outlet (monthly):
-- KGE ≈ 0.80–0.90
-- NSE ≈ 0.75–0.85
-- r ≈ 0.90–0.95
 
 Key findings:
 1. CN2 ranges 46–99 across subbasins, reflecting diverse land use
@@ -440,7 +440,7 @@ as input, `TSS_monthly` is sediment-mode monthly routed total suspended sediment
 
 ## 9. Diagnostic Triplets (Top 5)
 
-See `diagnostics/triplets.yaml` for 18 symptom → diagnosis → remedy entries.
+See `diagnostics/triplets.yaml` for the symptom → diagnosis → remedy entries (current count: the KI map at the top of this file).
 Do not duplicate the full corpus here; read the YAML first on any error.
 
 | # | Triplet ID | Error / symptom | Diagnosis | Remedy |
@@ -479,5 +479,5 @@ ki/
 │   ├── s7_output_analysis_skill.md     # Output analysis
 │   └── s8_calibration_skill.md         # Calibration workflow
 └── diagnostics/
-    └── triplets.yaml              # 18 diagnostic triplets
+    └── triplets.yaml              # diagnostic triplets (count: KI map)
 ```

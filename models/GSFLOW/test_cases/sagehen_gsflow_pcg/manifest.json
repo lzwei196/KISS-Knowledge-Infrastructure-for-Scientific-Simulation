@@ -1,0 +1,114 @@
+{
+  "test_case": "GSFLOW sagehen_gsflow_pcg (official USGS Sagehen Creek sample problem, condition 1: GSFLOW mode, PCG solver)",
+  "engine": {
+    "name": "GSFLOW",
+    "version": "2.4.0 02/01/2025 (MODFLOW-NWT 1.3.0, PRMS 6.0.0)",
+    "binary": "gsflow (server build: knowledge-dissection-toolkit/auto_dissect/_work/GSFLOW/source/repo/autotest/gsflow)",
+    "source": "https://github.com/rniswon/gsflow_v2 GSFLOW/data/sagehen (commit cec18ae99e4093b5cdf10714ace0f5d1d9fe632d)",
+    "license": "USGS software, public domain (U.S. Government work); see upstream repository"
+  },
+  "ki": {
+    "model": "GSFLOW"
+  },
+  "simulation": {
+    "basin": "Sagehen Creek, California (USGS sample problem)",
+    "mode": "GSFLOW (PRMS + MODFLOW coupled)",
+    "solver": "PCG",
+    "control_file": "inputs/windows/gsflow.control",
+    "start": "1980-10-01",
+    "end": "1996-09-30",
+    "days": 5844,
+    "modflow_packages": [
+      "BAS6",
+      "OC",
+      "DIS",
+      "LPF",
+      "PCG",
+      "UZF",
+      "SFR",
+      "GAGE"
+    ],
+    "prms_modules": [
+      "temp_1sta",
+      "precip_1sta",
+      "ddsolrad",
+      "potet_jh",
+      "srunoff_smidx",
+      "soilzone",
+      "strmflow",
+      "subbasin"
+    ],
+    "run_time": "about 15 min on one core (official screen log: 14 min 44 s)",
+    "reference_output": "GSFLOW/data/sagehen/output-test/1_GSFLOW_mode.PCG (not copied; values in expected.json)"
+  },
+  "files": {
+    "inputs/Readme.sagehen.txt": {
+      "bytes": 5151,
+      "sha256": "cf2b386940644ac959ab6b725e71f37f39a4ba435087a8833d88d4e58671906b"
+    },
+    "inputs/input/modflow/sagehen.bas": {
+      "bytes": 94701,
+      "sha256": "f3b54046562ccd6a3cf547ef7b2b2a37eaab6170b2d782e096cd5c0bcaf6c7b9"
+    },
+    "inputs/input/modflow/sagehen.dis": {
+      "bytes": 80788,
+      "sha256": "32e23b52909ae0db2dc24c7800ed587ec7249868e60a2d9451d4e0c0d7b982a9"
+    },
+    "inputs/input/modflow/sagehen.gag": {
+      "bytes": 327,
+      "sha256": "7df89c3485baaa9d88d3eef6a5ae0a2e4f647461fa39fe357ee0f7b4cbd9a878"
+    },
+    "inputs/input/modflow/sagehen.lpf": {
+      "bytes": 100352,
+      "sha256": "cd3dfe75872bc769cee827828e1f00213e0b7f762210b5b9cd71c3627a0bf098"
+    },
+    "inputs/input/modflow/sagehen.nam": {
+      "bytes": 931,
+      "sha256": "6fc979e1db65d02075bc9c319edd21a9baee75a08af9003edfbf60c105f75b9e"
+    },
+    "inputs/input/modflow/sagehen.oc": {
+      "bytes": 540,
+      "sha256": "7dee9606e31629d8c4a325a0259111c514ce371fa7a009de62f55e9a5d5f01fb"
+    },
+    "inputs/input/modflow/sagehen.pcg": {
+      "bytes": 157,
+      "sha256": "f10c87628538f588dfab70450c7ac4a54c4b72e9fc29397f192fac6cabdda03e"
+    },
+    "inputs/input/modflow/sagehen.sfr": {
+      "bytes": 21695,
+      "sha256": "0708d7d4f18df175d51c0d10ddaf546c9bb8820d8825a6eedaf5cf9333571e46"
+    },
+    "inputs/input/modflow/sagehen.uzf": {
+      "bytes": 93054,
+      "sha256": "d4360cfcbb6cd6397c3e9710d657de1c79f77d39dfb95affa6f42b9fb50fa059"
+    },
+    "inputs/input/prms/gis.params": {
+      "bytes": 9946,
+      "sha256": "8023dd15be11d9fb22848da0258076bb15f0805431d91c704ed14844def018db"
+    },
+    "inputs/input/prms/gsflow.params": {
+      "bytes": 67426,
+      "sha256": "216256d1413e68de129b0b82ef21e4a8ec0c69179e2360162cc7c6b35c81da9a"
+    },
+    "inputs/input/prms/gvr.params": {
+      "bytes": 160484,
+      "sha256": "323c12e0df9b771614142773214eeeebcdfad7cfd21d1ca55349876aa6e956f3"
+    },
+    "inputs/input/prms/ncascade.params": {
+      "bytes": 4891,
+      "sha256": "6502b9347d49e21d10c2eb4967a400bae7afdcd524d1afd33a300621a9f155f9"
+    },
+    "inputs/input/prms/sagehen.data": {
+      "bytes": 459474,
+      "sha256": "604c42c34d5fafc763942bdcfce343b7f3a5ca53396bd04bcaa3a867c730f418"
+    },
+    "inputs/input/prms/subbasin.params": {
+      "bytes": 325,
+      "sha256": "0f92ec358fba80ef213b3157441e6be20a0e3bbde012ddaecb9f718237a9feed"
+    },
+    "inputs/windows/gsflow.control": {
+      "bytes": 1333,
+      "sha256": "f2000d6f1840a9ecd5d0fe74977a5c52277bb0efc57a9e9ea05a3745cf7cd79a"
+    }
+  }
+}

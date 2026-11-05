@@ -1,5 +1,7 @@
 # Stage 7: Calibration
 
+**REAL engine:** no calibration tool for the real engine exists in this KI yet; the WS10 result uses the EPA example parameters as shipped (validation, no calibration). Everything below calibrates the Python SURROGATE only; its parameters are not VELMA parameters.
+
 ## Purpose
 Optimize the 14 VELMA process parameters against observed daily discharge using the differential evolution path in `tools/run_velma.py --mode calibrate`.
 

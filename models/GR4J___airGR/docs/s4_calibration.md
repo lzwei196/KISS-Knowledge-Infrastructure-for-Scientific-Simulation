@@ -50,10 +50,14 @@ CalibOptions <- CreateCalibOptions(
 ```
 
 Default search ranges (in real parameter space):
-- X1: exp(-0.916) to exp(7.601) → ~0.4 to 2000 mm
-- X2: sinh(-10) to sinh(10) → ~-11000 to 11000 mm/d
-- X3: exp(-0.693) to exp(6.215) → ~0.5 to 500 mm
-- X4: 0.5 to 39.5 d
+- X1: exp(-9.99) to exp(9.99) → ~4.6e-5 to ~21,807 mm
+- X2: sinh(-9.99) to sinh(9.99) → ~-10,904 to +10,904 mm/d
+- X3: exp(-9.99) to exp(9.99) → ~4.6e-5 to ~21,807 mm
+- X4: 0.5 to 20 d
+(Default Calibration_Michel search box = transformed ±9.99 in every dimension; endpoints verified by calling
+airGR 1.7.8 TransfoParam_GR4J(Direction="TR") on ±9.99, 2026-09-03. The earlier text (X1 to 2000, X3 to 500,
+X4 to 39.5) was WRONG. These are the *code* bounds; the Perrin-2003 generalist ranges (X1≈126–4006, X2≈−54.5–0.8,
+X3≈8.2–318, X4≈1.21–3.47) are the sensible *calibration* ranges.)
 
 ### Step 3: Run Calibration_Michel
 
@@ -116,8 +120,11 @@ result = run_gr4j(
     run_start="1990-01-01",
     run_end="1999-12-31",
 )
-# result["calibrated_params"] ≈ [257, 1.01, 88, 2.21]
-# result["NSE"] ≈ 0.92
+# result["calibrated_params"] -> [X1, X2, X3, X4] for THIS basin (values depend on the basin)
+# result["NSE"] -> calibration-period NSE
+# NOTE (2026-09-04): this example previously printed the Calibration_Michel optimum for the airGR
+# bundled basin L0123001. Removed: a basin-specific optimum must not appear in the KI, because a
+# calibration agent reading it could copy it as a default or range anchor (answer-key leakage).
 ```
 
 ## Typical Calibration Results (Literature)

@@ -5,7 +5,7 @@ Period {start_date}..{end_date} ({total_hours} h), restart offset {start_time_ho
 Key structure follows parflow source test/python/washita/LW_Test.py.
 Rendered from workflow/run_script_template.py.fmt by s7_solver/generate_parflow_script.py."""
 import glob, os
-PARFLOW_DIR = os.environ.get("PARFLOW_DIR", "/mnt/disk1/Hydrocraft_server/model/parflow/install")
+PARFLOW_DIR = os.environ.get("PARFLOW_DIR", {parflow_dir_repr})
 os.environ["PARFLOW_DIR"] = PARFLOW_DIR
 os.environ["PATH"] = os.path.join(PARFLOW_DIR, "bin") + ":" + os.environ.get("PATH", "")
 from parflow import Run

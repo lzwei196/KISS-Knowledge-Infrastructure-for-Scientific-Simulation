@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """
+*** SURROGATE -- NOT THE LPJ-GUESS MODEL ***
+Part of the Python light-use-efficiency stand-in (LUE GPP, Q10 Ra/Rh). It
+does not run, read or write the real LPJ-GUESS engine and its numbers must
+never be reported as LPJ-GUESS results. For the real engine use
+run_lpjguess_engine.py, build_lpjguess_cf_forcing.py, build_lpjguess_co2_file.py
+and parse_lpjguess_engine_output.py (triplet dt_lpjguess_033).
+
 convert_forcing_to_lpjguess.py
 Convert meteorological forcing data to LPJ-GUESS expected format.
 
@@ -859,7 +866,8 @@ def convert_forcing(source, input_path, output_path, lat=None, lon=None,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
-            "Convert meteorological forcing data to LPJ-GUESS format.\n"
+            "SURROGATE (Python LUE stand-in, NOT the LPJ-GUESS engine; real engine: run_lpjguess_engine.py). \n"
+            "Convert meteorological forcing data to the surrogate's CSV format.\n"
             "Supports FLUXNET2015, CMFD, and MSWX as input sources."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

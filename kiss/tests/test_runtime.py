@@ -785,9 +785,17 @@ print(MARKER, len(text), implementation.__file__)
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=dict(os.environ, PYTHONIOENCODING="utf-8"),
             )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("SOFTWARE PREFLIGHT PASSED", result.stdout)
-        self.assertIn("Project data not installed globally", result.stdout)
+            report = json.loads(next(line.split("=", 1)[1] for line in result.stdout.splitlines()
+                                     if line.startswith("PREFLIGHT_REPORT=")))
+            data_root = str(cfg.roles["data"])
+        # The placeholder binaries cannot pass the real startup smoke tests; what
+        # matters here is that no project-data check can block software verification.
+        data = [c for c in report["checks"] if str(c["subject"]).startswith(data_root)]
+        self.assertGreaterEqual(len(data), 10, result.stdout)
+        self.assertTrue(all(c["status"] == "fail" and not c["critical"] for c in data), data)
+        blocking = [c for c in report["checks"] if c["critical"] and c["status"] != "pass"]
+        self.assertFalse([c for c in blocking if str(c["subject"]).startswith(data_root)])
+        self.assertIn("Reference project data (informational, not install blockers)", result.stdout)
 
     def test_private_kdt_build_path_resolves_from_current_workspace(self):
         with tempfile.TemporaryDirectory() as td:

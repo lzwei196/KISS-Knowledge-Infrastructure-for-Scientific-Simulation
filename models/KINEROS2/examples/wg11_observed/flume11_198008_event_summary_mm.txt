@@ -1,0 +1,16 @@
+#source_url: https://www.tucson.ars.ag.gov/dap/runoff_eventh.asp
+#form: Watershed=63&StartMonth=8&StartDay=1&StartYear=1980&EndMonth=8&EndDay=10&EndYear=1980&all=ON&type=summary&format=text&units=mm&submit=Submit&flumes=11&sortby=sortby_flume
+#route: http://127.0.0.1:7877
+#fetched_at: 2026-10-06T22:23:05
+#data_use: WGEW Data Use Agreement, https://www.tucson.ars.ag.gov/dap/data_use_agreement.htm
+#Event report generated 10/6/2026 7:23:04 AM
+#Watershed 63 (Walnut Gulch)
+#Flumes: 11
+#For the period 8/1/1980 to 8/10/1980
+#For all months
+#Summary Information sorted by flume, volume in Millimeters (over the watershed).
+#Flume areas in acres:
+#Flume 11:2035#
+#
+#eventID, Flume,Date,Start_Time,Duration,Volume,Peak_Rate,Estimated
+3054,11,8/4/1980,13:27,181.5,4.43089,11.0669,N

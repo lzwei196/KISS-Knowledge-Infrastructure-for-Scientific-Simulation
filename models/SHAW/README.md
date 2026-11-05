@@ -179,7 +179,7 @@ Configure snow parameters and crop residue layer properties.
 Run SHAW model, monitor progress, parse output files.
 
 ### s7_vic_coupling
-Convert VIC grid cell parameters to SHAW format, run SHAW per cell for enhanced freeze-thaw.
+Coupling with VIC results only (e.g. initial state); SHAW soil and weather come from their own sources, not from VIC inputs.
 
 ## VIC Coupling Strategy
 
@@ -187,7 +187,7 @@ SHAW provides detailed freeze-thaw physics that VIC's simplified frost scheme ca
 The coupling approach:
 1. Run VIC normally to get grid-cell water/energy balance
 2. For cells where freeze-thaw is important (high latitude, high altitude):
-   - Convert VIC soil parameters to SHAW format (via `vic_to_shaw_soil.py`)
+   - Build SHAW soil from HWSD (`create_site_file.py --soil_source hwsd`)
    - Convert CMFD/MSWX forcing to SHAW weather format (via `convert_forcing_to_shaw.py`)
    - Initialize SHAW from VIC soil moisture/temperature
    - Run SHAW per cell for detailed frost depth, ice content, freeze-thaw timing

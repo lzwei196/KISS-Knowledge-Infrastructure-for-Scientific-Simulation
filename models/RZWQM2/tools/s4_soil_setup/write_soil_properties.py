@@ -161,7 +161,7 @@ def process(args):
 
         # --- Step 3: Write hydraulic properties (Brooks-Corey) ---
         # Uses values from soil_config horizons directly (already computed
-        # by soil_source_adapter or vic_soil_converter with pedotransfer)
+        # by soil_source_adapter / hwsd_soil_adapter with pedotransfer)
         hydraulic_dict = {}
         for i, h in enumerate(horizons):
             horizon_num = i + 1

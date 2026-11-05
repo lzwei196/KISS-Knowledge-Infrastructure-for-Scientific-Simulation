@@ -30,6 +30,65 @@ import sys
 import time
 import traceback
 
+# ---------------------------------------------------------------------------
+# Engine python: openAMUNDSEN lives in its own venv (openamundsen editable from _work/openAMUNDSEN/source/repo), not in the HydroCraft python_env that
+# SKILL.md uses to start the KI tools. Lookup (same as preflight_check.py): --openamundsen-python ->
+# $OPENAMUNDSEN_PYTHON -> server default -> this python (only if it imports openamundsen). An explicit value is
+# used as given (no fallback). If the chosen python is not the one running this tool, the tool
+# re-launches itself with it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+ENGINE_PYTHON_ENV = "OPENAMUNDSEN_PYTHON"
+ENGINE_PYTHON_DEFAULT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/openAMUNDSEN/venv/bin/python"
+_REEXEC_GUARD = "KI_OPENAMUNDSEN_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the openAMUNDSEN interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--openamundsen-python"
+    env_value = os.environ.get(ENGINE_PYTHON_ENV)
+    if env_value is not None:
+        return env_value, "$" + ENGINE_PYTHON_ENV
+    if os.path.isfile(ENGINE_PYTHON_DEFAULT):
+        return ENGINE_PYTHON_DEFAULT, "server default"
+    try:
+        import openamundsen  # noqa: F401
+        return sys.executable, "running python (imports openamundsen)"
+    except ImportError:
+        return None, (f"no python with openamundsen: --openamundsen-python and ${ENGINE_PYTHON_ENV} not set, "
+                      f"server default {ENGINE_PYTHON_DEFAULT} not found, and {sys.executable} "
+                      "cannot import openamundsen")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the openAMUNDSEN python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        print(json.dumps({"status": "error", "errors": [source]}), file=sys.stderr)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        print(json.dumps({"status": "error", "errors": [
+            f"re-launch loop: running {sys.executable}, expected {python} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    if not (os.path.isfile(python) and os.access(python, os.X_OK)):
+        print(json.dumps({"status": "error", "errors": [
+            f"openAMUNDSEN python not found or not executable: {python!r} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: a venv python must keep its own path
+    print(f"[{os.path.basename(__file__)}] re-launching with {python} ({source})",
+          file=sys.stderr, flush=True)
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        print(json.dumps({"status": "error", "errors": [
+            f"could not start openAMUNDSEN python {python!r} ({source}): {e}"]}), file=sys.stderr)
+        sys.exit(1)
+
 
 def validate_inputs(args):
     """Validate the configuration file and environment."""
@@ -187,9 +246,10 @@ def run_model(config_path, log_file=None):
             "num_timesteps": len(model.dates),
             "start_date": str(model.dates[0]),
             "end_date": str(model.dates[-1]),
-            "grid_shape": list(model.grid.dem.shape),
+            "grid_shape": [int(model.grid.rows), int(model.grid.cols)],
             "num_stations": model.meteo.dims.get("station", 0) if hasattr(model, "meteo") else 0,
             "results_dir": str(config.results_dir),
+            "disk_output_expected": _disk_output_expected(model),
         }
 
     except Exception as e:
@@ -203,9 +263,33 @@ def run_model(config_path, log_file=None):
         }
 
 
-def validate_outputs(results_dir, config_path):
+def _disk_output_expected(model):
+    """True when the model's own output managers write result files (fileio/*output.py).
+
+    Point (time series) output: "netcdf" always writes output_timeseries.nc (also with no
+    points or variables), "csv" writes one file per point, "memory" writes nothing.
+    Gridded output: written for every non-"memory" format, but only when grid variables
+    (fields) are configured (the engine default is none).
+    """
+    po = getattr(model, "point_output", None)
+    go = getattr(model, "gridded_output", None)
+    ts = po is not None and (po.format == "netcdf"
+                             or (po.format == "csv" and len(po.points) > 0))
+    grids = go is not None and go.format != "memory" and len(go.fields) > 0
+    return bool(ts or grids)
+
+
+def validate_outputs(results_dir, config_path, disk_output_expected=True):
     """Validate that expected output files were created."""
     warnings = []
+
+    if not disk_output_expected:
+        return {
+            "status": "warning",
+            "warnings": ["the configuration writes no result files (time series in memory "
+                         "or CSV without points, grid output in memory or without "
+                         "variables), so there are no files to check"],
+        }
 
     if not os.path.isdir(results_dir):
         return {"status": "error", "errors": [f"Results directory not found: {results_dir}"]}
@@ -263,7 +347,9 @@ def process(args):
 
     # Step 3: Validate outputs
     results_dir = run_result.get("results_dir", ".")
-    output_check = validate_outputs(results_dir, args.config)
+    output_check = validate_outputs(
+        results_dir, args.config,
+        disk_output_expected=run_result.get("disk_output_expected", True))
 
     result = {
         "stage": "complete",
@@ -283,11 +369,28 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Only run preflight checks, do not execute model")
     parser.add_argument("--log-file", help="Path to write detailed log")
+    parser.add_argument("--openamundsen-python", default=None,
+                        help="Python of the openAMUNDSEN venv (default: $OPENAMUNDSEN_PYTHON, "
+                             "else the server venv, else this python if it imports openamundsen). "
+                             "The tool re-launches itself with it.")
 
     args = parser.parse_args()
+    ensure_engine_python(args.openamundsen_python)
     validate_inputs(args)
-    process(args)
+    result = process(args)
+    return 1 if _has_error(result) else 0
+
+
+def _has_error(result):
+    """True when any stage of the returned result reports an error."""
+    if result.get("status") == "error":
+        return True
+    for key in ("preflight", "run", "output_validation"):
+        part = result.get(key)
+        if isinstance(part, dict) and part.get("status") == "error":
+            return True
+    return False
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -26,6 +26,7 @@ import os
 import sys
 import subprocess
 import re
+import shutil
 import time
 import datetime
 import numpy as np
@@ -40,12 +41,74 @@ if os.path.isdir(PYSWAN_ROOT):
 _PENV = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
 if os.path.isdir(_PENV) and _PENV not in sys.path:
     sys.path.append(_PENV)
-try:
-    from pyswan import oceanwaves as ow, swan
-except ImportError:
-    sys.path.insert(0, os.path.join(PYSWAN_ROOT, 'pyswan'))
-    import oceanwaves as ow
-    import swan
+# pyswan is needed ONLY by the PySWaN spectral pipeline.  It is imported lazily
+# (see _import_pyswan) so that binary mode, and a plain `import run_swan`, work
+# in a python without pyswan.
+ow = None
+swan = None
+
+
+def _import_pyswan():
+    """Import pyswan (same search order as before) into the module globals."""
+    global ow, swan
+    if ow is not None and swan is not None:
+        return
+    try:
+        from pyswan import oceanwaves as _ow, swan as _swan
+    except ImportError:
+        sys.path.insert(0, os.path.join(PYSWAN_ROOT, 'pyswan'))
+        import oceanwaves as _ow
+        import swan as _swan
+    ow, swan = _ow, _swan
+
+
+# Server default SWAN executable (serial swan.exe, SWAN 41.45, built from the
+# SWAN source bundled in ADCIRC thirdparty/swan).  Same binary GeoForge's real
+# cases use (models/SWAN/run_and_score.py SWAN_EXE).
+DEFAULT_SWAN_EXE = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+                    "ADCIRC/source/repo/thirdparty/swan/swan.exe")
+
+
+def resolve_swan_binary(explicit=None):
+    """Find the SWAN executable: explicit value -> $SWAN_BIN -> server default.
+
+    An explicit value (function argument / --swan-exe) or $SWAN_BIN that does
+    not point to an executable is an error; there is no silent fall-through to
+    another engine.  A bare name (no '/') is looked up on PATH.
+    Returns (path or None, message).
+    """
+    for src, val in (('--swan-exe', explicit), ('$SWAN_BIN', os.environ.get('SWAN_BIN'))):
+        if val is not None:   # given (even empty) -> must be valid, no fall-through
+            path = (shutil.which(val) if os.sep not in val else val) if val else None
+            if path and os.path.isfile(path) and os.access(path, os.X_OK):
+                return os.path.abspath(path), f"{src}={val}"
+            return None, f"FAIL: SWAN binary from {src} not found or not executable: {val}"
+    if os.path.isfile(DEFAULT_SWAN_EXE) and os.access(DEFAULT_SWAN_EXE, os.X_OK):
+        return DEFAULT_SWAN_EXE, "server default"
+    return None, (f"FAIL: SWAN binary not found (no --swan-exe, no $SWAN_BIN, "
+                  f"server default missing: {DEFAULT_SWAN_EXE})")
+
+
+def read_swaninit_names(work_dir):
+    """Return (command_file, print_file) that swan.exe will use in work_dir.
+
+    swan.exe ignores its command-line argument and reads the command file named
+    on line 4 of `swaninit` (print file: line 6), each read as FORMAT(A40)
+    (ocpids.f).  When `swaninit` is absent, SWAN creates it with INPUT / PRINT.
+    Raises ValueError for an unreadable or blank field.
+    """
+    init = os.path.join(work_dir, 'swaninit')
+    if not os.path.exists(init):
+        return 'INPUT', 'PRINT'
+    with open(init, 'r', errors='replace') as f:
+        lines = f.read().split('\n')
+    if len(lines) < 6:
+        raise ValueError(f"{init}: fewer than 6 lines")
+    cmd_file = lines[3][:40].rstrip()
+    prt_file = lines[5][:40].rstrip()
+    if not cmd_file.strip() or not prt_file.strip():
+        raise ValueError(f"{init}: blank command-file (line 4) or print-file (line 6) name")
+    return cmd_file, prt_file
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +264,7 @@ def validate_swn_inputs(swn_path, swan_binary=None):
     return results
 
 
-def validate_outputs_after_run(swn_path, output_dir=None):
+def validate_outputs_after_run(swn_path, output_dir=None, print_file='PRINT'):
     """
     Check SWAN outputs after execution.
 
@@ -211,6 +274,8 @@ def validate_outputs_after_run(swn_path, output_dir=None):
         Path to .swn file (to find referenced output files).
     output_dir : str, optional
         Directory where outputs are expected.
+    print_file : str
+        Name of SWAN's print file (line 6 of swaninit; default PRINT).
 
     Returns
     -------
@@ -265,7 +330,7 @@ def validate_outputs_after_run(swn_path, output_dir=None):
                 results['errors'].append(f"Missing output: {outfile}")
 
     # Check PRINT file for errors
-    print_file = os.path.join(swn_dir, 'PRINT')
+    print_file = os.path.join(swn_dir, print_file)
     if os.path.exists(print_file):
         with open(print_file, 'r') as f:
             print_content = f.read()
@@ -286,7 +351,7 @@ def validate_outputs_after_run(swn_path, output_dir=None):
 # SWAN binary execution
 # ---------------------------------------------------------------------------
 
-def run_swan_binary(swn_path, swan_binary='swan.exe', work_dir=None,
+def run_swan_binary(swn_path, swan_binary=None, work_dir=None,
                     timeout=3600, verbose=True):
     """
     Execute SWAN binary on a .swn input file.
@@ -295,8 +360,9 @@ def run_swan_binary(swn_path, swan_binary='swan.exe', work_dir=None,
     ----------
     swn_path : str
         Path to .swn input file.
-    swan_binary : str
-        Path to SWAN executable (default: 'swan.exe').
+    swan_binary : str, optional
+        SWAN executable (path, or a bare name looked up on PATH).  If not
+        given: $SWAN_BIN, then the server default (DEFAULT_SWAN_EXE).
     work_dir : str, optional
         Working directory for execution (default: directory of .swn file).
     timeout : int
@@ -316,6 +382,11 @@ def run_swan_binary(swn_path, swan_binary='swan.exe', work_dir=None,
         'stderr': ''
     }
 
+    swan_binary, how = resolve_swan_binary(swan_binary)
+    if swan_binary is None:
+        results['status'] = how
+        return results
+
     # Preflight
     preflight = validate_swn_inputs(swn_path, swan_binary)
     if 'FAIL' in preflight['status']:
@@ -328,9 +399,24 @@ def run_swan_binary(swn_path, swan_binary='swan.exe', work_dir=None,
     swn_basename = os.path.basename(swn_path)
     swn_stem = os.path.splitext(swn_basename)[0]
 
+    # swan.exe ignores its argument and always reads the command file named in
+    # swaninit (INPUT by default).  Stage the .swn under that name, as the
+    # official `swanrun` script does; without it SWAN stops at once with
+    # "Terminating error: Input file missing".
+    try:
+        cmd_name, print_name = read_swaninit_names(work_dir)
+        src = os.path.abspath(swn_path)
+        dst = os.path.abspath(os.path.join(work_dir, cmd_name))
+        if not (os.path.exists(dst) and os.path.samefile(src, dst)):
+            shutil.copyfile(src, dst)
+    except (OSError, ValueError) as e:
+        results['status'] = f'FAIL: cannot stage command file for SWAN: {e}'
+        return results
+    results['command_file'] = cmd_name
+
     if verbose:
-        print(f"[SWAN] Running {swn_basename} in {work_dir}")
-        print(f"[SWAN] Binary: {swan_binary}")
+        print(f"[SWAN] Running {swn_basename} in {work_dir} (staged as {cmd_name})")
+        print(f"[SWAN] Binary: {swan_binary} ({how})")
 
     t0 = time.time()
     try:
@@ -357,7 +443,7 @@ def run_swan_binary(swn_path, swan_binary='swan.exe', work_dir=None,
         results['status'] = f'FAIL: return code {proc.returncode}'
     else:
         # Postflight
-        postflight = validate_outputs_after_run(swn_path, work_dir)
+        postflight = validate_outputs_after_run(swn_path, work_dir, print_name)
         if 'FAIL' in postflight['status']:
             results['status'] = postflight['status']
         else:
@@ -394,6 +480,11 @@ def run_pyswan_pipeline(params, output_dir, mode='roundtrip_test'):
     dict : results with status, files created, verification metrics
     """
     results = {'status': 'unknown', 'files': [], 'metrics': {}}
+    try:
+        _import_pyswan()
+    except ImportError as e:
+        results['status'] = f'FAIL: pyswan not importable ({e})'
+        return results
     os.makedirs(output_dir, exist_ok=True)
 
     Hs = params.get('Hs', 1.0)
@@ -495,7 +586,9 @@ if __name__ == '__main__':
     # SWAN binary mode
     p_bin = sub.add_parser('binary', help='Run SWAN binary')
     p_bin.add_argument('swn', help='Path to .swn input file')
-    p_bin.add_argument('--swan-exe', default='swan.exe', help='SWAN executable')
+    p_bin.add_argument('--swan-exe', default=None,
+                       help='SWAN executable (path or name on PATH); default: '
+                            '$SWAN_BIN, then the server swan.exe')
     p_bin.add_argument('--timeout', type=int, default=3600, help='Timeout (s)')
 
     # PySWaN pipeline mode
@@ -524,3 +617,8 @@ if __name__ == '__main__':
     if result.get('metrics'):
         for k, v in result['metrics'].items():
             print(f"  {k}: {v}")
+    if result['status'] != 'OK':
+        print(f"ERROR: run_swan {args.command} did not succeed: {result['status']}",
+              file=sys.stderr)
+        sys.exit(1)
+    sys.exit(0)

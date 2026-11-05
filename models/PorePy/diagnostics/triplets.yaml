@@ -1,6 +1,6 @@
 # PorePy Diagnostic Triplets
 # Symptom → Diagnosis → Remedy for common PorePy failures
-# 18 entries covering unit conversions, solver failures, and mesh issues
+# Entries (18 when this header was written; current count: the SKILL.md KI map) covering unit conversions, solver failures, and mesh issues
 
 - id: dt_001
   stage: s2_forcing

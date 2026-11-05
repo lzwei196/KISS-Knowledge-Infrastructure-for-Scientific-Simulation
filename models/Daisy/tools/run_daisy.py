@@ -136,21 +136,39 @@ def validate_outputs(work_dir, expected_outputs=None):
 
 
 # ---------------------------------------------------------------------------
-# Binary locator
+# Binary / library locator
 # ---------------------------------------------------------------------------
+
+# Server defaults (same as preflight_check.py DAISY_BIN / DAISY_REPO and
+# tools/calib_run.py).
+DEFAULT_DAISY_BIN = "KISSPATH_KI_ROOT/Daisy/bin/daisy"
+DEFAULT_DAISY_HOME = "KISSPATH_KI_ROOT/Daisy/source/repo"
+
+
+def _is_exe(path):
+    return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
+
 
 def find_daisy_binary(explicit_path=None, source_dir=None):
     """Locate the Daisy binary.
 
     Search order:
-    1. Explicit path (--binary flag)
-    2. Build directory within source
-    3. System PATH
-    """
-    candidates = []
+    1. Explicit path (--binary flag) -- must be valid, no fall-through
+    2. $DAISY_BIN -- must be valid, no fall-through
+    3. Build directory within source (--source-dir)
+    4. Server default (DEFAULT_DAISY_BIN, as in preflight_check.py)
+    5. System PATH (only if the server default is missing)
 
-    if explicit_path:
-        candidates.append(explicit_path)
+    Raises FileNotFoundError for an invalid explicit/env binary.
+    """
+    for src, val in (("--binary", explicit_path), ("$DAISY_BIN", os.environ.get("DAISY_BIN"))):
+        if val is not None:   # given (even empty) -> must be valid, no fall-through
+            if val and _is_exe(val):
+                return os.path.abspath(val)
+            raise FileNotFoundError(
+                f"Daisy binary from {src} not found or not executable: {val}")
+
+    candidates = []
 
     if source_dir:
         # Check common build locations
@@ -162,16 +180,83 @@ def find_daisy_binary(explicit_path=None, source_dir=None):
         ]:
             candidates.append(os.path.join(source_dir, build_dir, "daisy"))
 
-    # Check system PATH
-    system_daisy = shutil.which("daisy")
-    if system_daisy:
-        candidates.append(system_daisy)
-
     for c in candidates:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
+        if _is_exe(c):
+            return os.path.abspath(c)
+
+    if os.path.exists(DEFAULT_DAISY_BIN):
+        if _is_exe(DEFAULT_DAISY_BIN):
+            return DEFAULT_DAISY_BIN
+        raise FileNotFoundError(
+            f"server default Daisy binary exists but is not an executable file: {DEFAULT_DAISY_BIN}")
+
+    # System PATH -- only when the server default is missing
+    system_daisy = shutil.which("daisy")
+    if system_daisy and _is_exe(system_daisy):
+        return os.path.abspath(system_daisy)
 
     return None
+
+
+def _has_daisy_lib(home):
+    return bool(home) and os.path.isdir(os.path.join(home, "lib"))
+
+
+def find_daisy_home(source_dir=None, binary=None):
+    """Find the Daisy home (the dir holding lib/ with tillage.dai, crop.dai, ...).
+
+    Order: --source-dir, <binary dir>/../source/repo, server default.
+    Returns an absolute path or None.
+    """
+    cands = [source_dir]
+    if binary:
+        cands.append(os.path.join(os.path.dirname(os.path.realpath(binary)),
+                                  "..", "source", "repo"))
+    cands.append(DEFAULT_DAISY_HOME)
+    for c in cands:
+        if _has_daisy_lib(c):
+            return os.path.abspath(c)
+    return None
+
+
+def daisy_env(binary, source_dir=None, daisy_home=None):
+    """Environment for the Daisy subprocess.
+
+    Daisy finds its parameter library (lib/tillage.dai, crop.dai, log.dai, ...)
+    through $DAISYPATH, else through $DAISYHOME ("." + HOME/lib + HOME/sample),
+    else the compiled-in home /opt/daisy, which does not exist on this server
+    -> "Unknown 'action' model 'plowing'".  So:
+      * explicit daisy_home (--daisy-home): must hold lib/; sets DAISYHOME and
+        drops an inherited DAISYPATH (explicit choice wins, reported);
+      * else, if the caller set DAISYPATH or DAISYHOME: leave the env untouched;
+      * else: set DAISYHOME to the found home (same search path as
+        tools/calib_run.py's DAISYPATH=.:<repo>/lib:<repo>/sample).
+    Raises FileNotFoundError for an invalid explicit home.
+    """
+    env = dict(os.environ)
+    if daisy_home is not None:
+        if not _has_daisy_lib(daisy_home):
+            raise FileNotFoundError(
+                f"--daisy-home has no lib/ directory: {daisy_home}")
+        home = os.path.abspath(daisy_home)
+        if "DAISYPATH" in env:
+            print(f"NOTE: --daisy-home given; ignoring inherited DAISYPATH={env['DAISYPATH']}")
+            del env["DAISYPATH"]
+        env["DAISYHOME"] = home
+        print(f"Daisy library: DAISYHOME={home} (from --daisy-home)")
+        return env
+    if "DAISYPATH" in env or "DAISYHOME" in env:
+        print("Daisy library: using caller's "
+              + ", ".join(f"{k}={env[k]}" for k in ("DAISYPATH", "DAISYHOME") if k in env))
+        return env
+    home = find_daisy_home(source_dir, binary)
+    if home is None:
+        print("WARNING: Daisy library dir (lib/) not found and DAISYPATH/DAISYHOME not set; "
+              "Daisy will look in its built-in home and library models may be unknown.")
+        return env
+    env["DAISYHOME"] = home
+    print(f"Daisy library: DAISYHOME={home} (set by run_daisy)")
+    return env
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +303,8 @@ def parse_daisy_log(log_path):
 # Main execution pipeline
 # ---------------------------------------------------------------------------
 
-def process(dai_file, work_dir, binary_path, timeout=600, source_dir=None):
+def process(dai_file, work_dir, binary_path, timeout=600, source_dir=None,
+            daisy_home=None):
     """Run a Daisy simulation.
 
     Parameters
@@ -233,6 +319,9 @@ def process(dai_file, work_dir, binary_path, timeout=600, source_dir=None):
         Timeout in seconds.
     source_dir : str or None
         Path to Daisy source for binary search.
+    daisy_home : str or None
+        Daisy home holding lib/ (sets DAISYHOME).  If None and neither
+        DAISYPATH nor DAISYHOME is set, it is found automatically.
 
     Returns
     -------
@@ -246,6 +335,7 @@ def process(dai_file, work_dir, binary_path, timeout=600, source_dir=None):
             "Cannot find Daisy binary. Specify --binary or build from source first.")
 
     print(f"Using binary: {binary}")
+    env = daisy_env(binary, source_dir, daisy_home)
 
     # Step 2: Validate inputs
     validated = validate_inputs(dai_file, work_dir, binary)
@@ -267,6 +357,7 @@ def process(dai_file, work_dir, binary_path, timeout=600, source_dir=None):
         result = subprocess.run(
             cmd,
             cwd=work_dir,
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -341,6 +432,10 @@ def main():
                         help="Path to Daisy binary (auto-detected if not given)")
     parser.add_argument("--source-dir", default=None,
                         help="Path to Daisy source tree (for binary search)")
+    parser.add_argument("--daisy-home", default=None,
+                        help="Daisy home holding lib/ (sets DAISYHOME). Default: keep "
+                             "the caller's DAISYPATH/DAISYHOME, else --source-dir, "
+                             "<binary>/../source/repo, server default")
     parser.add_argument("--timeout", type=int, default=600,
                         help="Timeout in seconds (default: 600)")
     parser.add_argument("--output-json", default=None,
@@ -348,19 +443,30 @@ def main():
 
     args = parser.parse_args()
 
-    result = process(
-        dai_file=args.dai_file,
-        work_dir=args.work_dir,
-        binary_path=args.binary,
-        timeout=args.timeout,
-        source_dir=args.source_dir,
-    )
+    try:
+        result = process(
+            dai_file=args.dai_file,
+            work_dir=args.work_dir,
+            binary_path=args.binary,
+            timeout=args.timeout,
+            source_dir=args.source_dir,
+            daisy_home=args.daisy_home,
+        )
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
 
     if args.output_json:
         with open(args.output_json, "w") as f:
             json.dump(result, f, indent=2)
         print(f"Result written to {args.output_json}")
 
+    if result["exit_code"] != 0:
+        print(f"ERROR: Daisy run failed (exit code {result['exit_code']})",
+              file=sys.stderr)
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

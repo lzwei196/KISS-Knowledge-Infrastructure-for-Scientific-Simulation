@@ -1,0 +1,261 @@
+/**************************************************************************************/
+/**                                                                                \n**/
+/**                        m  a  n  a  g  e  p  a  r  .  h                         \n**/
+/**                                                                                \n**/
+/**     C implementation of LPJmL                                                  \n**/
+/**                                                                                \n**/
+/**     Country codes for management practices                                     \m**/
+/**                                                                                \n**/
+/** (C) Potsdam Institute for Climate Impact Research (PIK), see COPYRIGHT file    \n**/
+/** authors, and contributors see AUTHORS file                                     \n**/
+/** This file is part of LPJmL and licensed under GNU AGPL Version 3               \n**/
+/** or later. See LICENSE file or go to http://www.gnu.org/licenses/               \n**/
+/** Contact: https://github.com/PIK-LPJmL/LPJmL                                    \n**/
+/**                                                                                \n**/
+/**************************************************************************************/
+
+#ifndef MANAGEPAR_H /* Already included? */
+#define MANAGEPAR_H
+
+/* Definition of country-codes*/
+/* Definition of region-codes*/
+
+#define Afghanistan 0
+#define Aland_Islands 1
+#define Albania 2
+#define Algeria 3
+#define American_Samoa 4
+#define Angola 5
+#define Anguilla 6
+#define Antigua_and_Barbuda 7
+#define Argentina 8
+#define Armenia 9
+#define Austria 10
+#define Azerbaijan 11
+#define Bahamas_The 12
+#define Bahrain 13
+#define Bangladesh 14
+#define Barbados 15
+#define Belgium 16
+#define Belize 17
+#define Benin 18
+#define Bermuda 19
+#define Bhutan 20
+#define Bolivia 21
+#define Bosnia_and_Herzegovina 22
+#define Botswana 23
+#define British_Indian_Ocean_Territory 24
+#define Brunei 25
+#define Bulgaria 26
+#define Burkina_Faso 27
+#define Burundi 28
+#define Byelarus 29
+#define Cambodia 30
+#define Cameroon 31
+#define Cape_Verde 32
+#define Cayman_Islands 33
+#define Central_African_Republic 34
+#define Chad 35
+#define Chile 36
+#define Christmas_Island 37
+#define Cocos_Keeling_Islands 38
+#define Colombia 39
+#define Comoros 40
+#define Congo_Brazzaville 41
+#define Cook_Islands 42
+#define Costa_Rica 43
+#define Croatia 44
+#define Cuba 45
+#define Curacao 46
+#define Cyprus 47
+#define Czech_Republic 48
+#define Denmark 49
+#define Djibouti 50
+#define Dominica 51
+#define Dominican_Republic 52
+#define Ecuador 53
+#define Egypt 54
+#define El_Salvador 55
+#define Equatorial_Guinea 56
+#define Eritrea 57
+#define Estonia 58
+#define Ethiopia 59
+#define Falkland_Islands_or_Islas_Malvinas 60
+#define Faroe_Islands 61
+#define Federated_States_of_Micronesia 62
+#define Fiji 63
+#define Finland 64
+#define France 65
+#define French_Guiana 66
+#define French_Polynesia 67
+#define French_Southern_and_Antarctica_Lands 68
+#define Gabon 69
+#define Gambia_The 70
+#define Georgia 71
+#define Germany 72
+#define Ghana 73
+#define Greece 74
+#define Greenland 75
+#define Grenada 76
+#define Guadeloupe 77
+#define Guam 78
+#define Guatemala 79
+#define Guernsey 80
+#define Guinea 81
+#define Guinea_Bissau 82
+#define Guyana 83
+#define Haiti 84
+#define Heard_Island_and_McDonald_Islands 85
+#define Honduras 86
+#define Hong_Kong 87
+#define Hungary 88
+#define Iceland 89
+#define Indonesia 90
+#define Iran 91
+#define Iraq 92
+#define Ireland 93
+#define Isle_of_Man 94
+#define Israel 95
+#define Italy 96
+#define Ivory_Coast 97
+#define Jamaica 98
+#define Japan 99
+#define Jersey 100
+#define Jordan 101
+#define Kazakhstan 102
+#define Kenya 103
+#define Kiribati 104
+#define Kosovo 105
+#define Kuwait 106
+#define Kyrgyzstan 107
+#define Laos 108
+#define Latvia 109
+#define Lebanon 110
+#define Lesotho 111
+#define Liberia 112
+#define Libya 113
+#define Lithuania 114
+#define Luxembourg 115
+#define Macedonia 116
+#define Madagascar 117
+#define Malawi 118
+#define Malaysia 119
+#define Maldives 120
+#define Mali 121
+#define Malta 122
+#define Marshall_Islands 123
+#define Martinique 124
+#define Mauritania 125
+#define Mauritius 126
+#define Mayotte 127
+#define Mexico 128
+#define Moldova 129
+#define Mongolia 130
+#define Montenegro 131
+#define Montserrat 132
+#define Morocco 133
+#define Mozambique 134
+#define Myanmar_or_Burma 135
+#define Namibia 136
+#define Nauru 137
+#define Nepal 138
+#define Netherlands 139
+#define New_Caledonia 140
+#define New_Zealand 141
+#define Nicaragua 142
+#define Niger 143
+#define Nigeria 144
+#define Niue 145
+#define No_Land 146
+#define Norfolk_Island 147
+#define North_Korea 148
+#define Northern_Mariana_Islands 149
+#define Norway 150
+#define Oman 151
+#define Pakistan 152
+#define Palau 153
+#define Panama 154
+#define Papua_New_Guinea 155
+#define Paraguay 156
+#define Peru 157
+#define Philippines 158
+#define Pitcairn_Islands 159
+#define Poland 160
+#define Portugal 161
+#define Puerto_Rico 162
+#define Qatar 163
+#define Reunion 164
+#define Romania 165
+#define Rwanda 166
+#define Saint_Helena_Ascension_and_Tristan_da_Cunha 167
+#define Saint_Kitts_and_Nevis 168
+#define Saint_Lucia 169
+#define Saint_Pierre_and_Miquelon 170
+#define Sao_Tome_and_Principe 171
+#define Saudi_Arabia 172
+#define Senegal 173
+#define Serbia 174
+#define Seychelles 175
+#define Sierra_Leone 176
+#define Singapore 177
+#define Slovakia 178
+#define Slovenia 179
+#define Solomon_Islands 180
+#define Somalia 181
+#define South_Africa 182
+#define South_Georgia_and_the_South_Sandwich_Islands 183
+#define South_Korea 184
+#define South_Sudan 185
+#define Spain 186
+#define Sri_Lanka 187
+#define St_Vincent_and_the_Grenadines 188
+#define Sudan 189
+#define Suriname 190
+#define Svalbard 191
+#define Swaziland 192
+#define Sweden 193
+#define Switzerland 194
+#define Syria 195
+#define Taiwan 196
+#define Tajikistan 197
+#define Tanzania_United_Republic_of 198
+#define Thailand 199
+#define Timor_Leste 200
+#define Togo 201
+#define Tokelau 202
+#define Tonga 203
+#define Trinidad_and_Tobago 204
+#define Tunisia 205
+#define Turkey 206
+#define Turkmenistan 207
+#define Turks_and_Caicos_Islands 208
+#define Tuvalu 209
+#define Uganda 210
+#define Ukraine 211
+#define United_Arab_Emirates 212
+#define United_Kingdom 213
+#define United_States_Minor_Outlying_Islands 214
+#define Uruguay 215
+#define Uzbekistan 216
+#define Vanuatu 217
+#define Venezuela 218
+#define Vietnam 219
+#define Virgin_Islands 220
+#define Wallis_and_Futuna 221
+#define West_Bank 222
+#define Western_Sahara 223
+#define Western_Samoa 224
+#define Yemen 225
+#define Zaire_DR_Congo 226
+#define Zambia 227
+#define Zimbabwe 228
+
+#define Australia 229
+#define Brazil 230
+#define Canada 231
+#define China 232
+#define India 233
+#define Russia 234
+#define United_States 235
+
+#endif

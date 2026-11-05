@@ -62,26 +62,22 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Groundwater flow and transport in porous media
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 22 diagnostic triplets | ~1,500 lines of validated Python | 4 new obs_datasets entries
+**Stats**: 4 new obs_datasets entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
-## 11. Validated Results
+## 11. Validation Status
 
-**Validation status**: `production_validated` — 4 independent real-case tests (2026-04-29/30)
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-| Case | Domain | Obs source | Key metric | Output |
-|---|---|---|---|---|
-| **s7 binary** | 1ptracer synthetic | — | 2500 cells, 26.85 s, PASS | stage_log s7 |
-| **HP-2019** | High Plains KS 37–40°N 100–102°W | D2WT 2019, Zenodo #5851676 (14,351 wells) | NSE=0.74 R²=0.85 RMSE=53.5m | `outputs/dumux_highplains_validation/` |
-| **HP-1989** | Same domain | D2WT 1989, Zenodo #5851676 | NSE=0.71 R²=0.83 RMSE=55.4m | `outputs/dumux_cases/case_a/` |
-| **HP-depletion** | Same domain | D2WT 2019−1989 change | Obs mean −9.3m, Sim −8.7m; excess depletion map reveals pumping hotspots | `outputs/dumux_cases/case_a/case_a_depletion.png` |
-| **Po Plain** | N Italy 9–11°E 44.5–46°N | 421 NGWMN wells (Zenodo #14013762) | Darcy flux 160mm/yr ✓ (lit 50–300); confined amp < unconfined (p=0.045) ✓; K–amp r=−0.165 ✓ | `outputs/dumux_cases/case_b/case_b_poplain.png` |
-| **NCP** | N China Plain 114–120°E 34–40°N | China TWSA 0.1° 2002–2019 (Zenodo #19502907) | TWSA depletion −22.4mm/yr (r=−0.915) consistent with NCP GW crisis; Darcy 24mm/yr | `outputs/dumux_cases/case_c/case_c_ncp.png` |
+**Validation status**: `production_validated`
+
+Install check: the official `1ptracer` example (synthetic, 2500 cells) runs end to end (stage s7).
 
 ### Performance metrics - field convention for rank-1 output
 
 The rank-1 dag output is `pressure`. The convention bars below are restated from
 `docs/validation_convention.yaml`; all three pressure bars have null bands and no citation keys
-listed in the convention. Treat the case metrics above as reported results, not as pass/fail
+listed in the convention. Report run metrics as results, not as pass/fail
 verdicts from generic hydrologic thresholds.
 
 | Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key from convention |
@@ -92,9 +88,9 @@ verdicts from generic hydrologic thresholds.
 
 **Key limitations documented:**
 - Uniform K (GLHYMPS median per domain) — real heterogeneity reduces NSE
-- Fan WTD unreliable for confined/artesian basins (Po Plain, NCP mountain edge) — use D2WT or published head maps instead
+- Fan WTD unreliable for confined/artesian basins and mountain-edge domains — use D2WT for US unconfined aquifers, published regional head maps for confined systems (dt_019)
 - Steady-state only — pumping wells need transient mode + source/sink terms
-- High Plains depletion NSE=0.09: spatial pumping pattern not captured by uniform-K model (expected)
+- The uniform-K 1p steady-state setup with prescribed linear boundary conditions does not capture pumping-dominated spatial head patterns (dt_020)
 
 ---
 
@@ -270,6 +266,15 @@ Parameters can be overridden on the command line:
 ./example_1ptracer params.input -Problem.Name my_run -TimeLoop.TEnd 10000
 ```
 
+Server program (since 2026-10-06): the clean build of the official DuMux 3.10 commit
+`KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer`
+(preflight default; `$DUMUX_BIN` overrides). Run it through the tool (use absolute paths):
+`KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/DuMux/knowledge_infrastructure/tools/run_dumux.py --source_dir KISSPATH_HOME/engine_builds_20261006/dumux/src/dumux --build_dir KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer --target example_1ptracer --skip_build --binary KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer --params /abs/path/run_dir/params.input --work_dir /abs/path/run_dir`.
+It runs the official bottom-top flow and ignores `Problem.FlowDirection`, `Problem.PressureLeft`,
+`Problem.PressureRight`; `run_dumux.py` refuses those keys with it. Those keys, and reproducing any run
+made before 2026-10-06 with the older build of a KI-edited `problem_1p.hh` (its default FlowDirection=0 is a
+left-right flow), need that older build: `--binary KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer`.
+
 ---
 
 ## 6. Output Description
@@ -355,7 +360,7 @@ DuMux writes output in VTK format (`.vtu` for unstructured, `.pvd` for time seri
 | `run_dumux` | s4 | `tools/run_dumux.py` | Build and execute DuMux simulation |
 | `parse_dumux_output` | s5 | `tools/parse_dumux_output.py` | VTK → CSV extraction, time series, spatial fields |
 
-**Total**: 4 tools, ~1,500 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 

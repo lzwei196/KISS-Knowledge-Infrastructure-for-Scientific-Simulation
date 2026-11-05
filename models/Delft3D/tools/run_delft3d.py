@@ -15,6 +15,9 @@ Supports:
   - D-Flow FM (dflowfm) standalone
   - Delft3D-FLOW (flow2d3d) standalone
   - Coupled simulations via DIMR
+  - Delft3D-FLOW 4 via d_hydro (config root <deltaresHydro>), e.g. the server
+    build that has only d_hydro + libflow2d3d.so (no dimr):
+      run_delft3d.py --mode d_hydro --config config_d_hydro.xml --work_dir <case_dir>
 """
 
 import argparse
@@ -43,6 +46,13 @@ DIMR_BINARY = "dimr"
 DFLOWFM_BINARY = "dflowfm"
 FLOW2D3D_BINARY = "flow2d3d"
 RUN_DIMR_SCRIPT = "run_dimr.sh"
+
+D_HYDRO_BINARY = "d_hydro"
+# Server default d_hydro (same as preflight_check.py D_HYDRO); libflow2d3d.so is in ../flow2d3d
+SERVER_D_HYDRO = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+                  "Delft3D/build_flow2d3d/d_hydro/d_hydro")
+FLOW_FINISHED = "FINISHED    Delft3D-FLOW"
+FLOW_ABNORMAL = "Flow exited abnormally"
 
 MAX_RUNTIME_SECONDS = 86400 * 7  # 7 days
 PROGRESS_CHECK_INTERVAL = 30  # seconds
@@ -203,15 +213,193 @@ def _validate_mdf(content, config_dir, errors, warnings):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# d_hydro (Delft3D-FLOW 4) support
+# ──────────────────────────────────────────────────────────────────────
+
+def _local(tag):
+    """XML tag without namespace."""
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _child_text(elem, name):
+    for c in elem:
+        if _local(c.tag) == name and c.text and c.text.strip():
+            return c.text.strip()
+    return ""
+
+
+def config_kind(config_path):
+    """'d_hydro' if the XML root is <deltaresHydro>, else 'dimr'."""
+    root = ET.parse(config_path).getroot()
+    return "d_hydro" if _local(root.tag) == "deltaresHydro" else "dimr"
+
+
+def d_hydro_components(config_path):
+    """<flow2D3D> elements of a d_hydro config (namespace-agnostic)."""
+    root = ET.parse(config_path).getroot()
+    comps = []
+    for el in root.iter():
+        if _local(el.tag) == "flow2D3D":
+            comps.append({
+                "name": el.get("name", "unnamed"),
+                "library": _child_text(el, "library") or "flow2d3d",
+                "mdf": _child_text(el, "mdfFile"),
+                "ddb": _child_text(el, "ddbFile"),
+            })
+    return comps
+
+
+def resolve_d_hydro(d_hydro_arg, binary_dir):
+    """--d_hydro -> $D_HYDRO -> <binary_dir>/d_hydro -> server default.
+
+    An explicitly chosen path that is not an executable file is an error (no further
+    search, never a silent switch to another engine).
+    """
+    for label, cand in (("--d_hydro", d_hydro_arg), ("$D_HYDRO", os.environ.get("D_HYDRO")),
+                        ("--binary_dir", os.path.join(binary_dir, D_HYDRO_BINARY)
+                         if binary_dir else None)):
+        if cand:
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return os.path.abspath(cand), None
+            return None, f"d_hydro from {label} is not an executable file: {cand}"
+    if os.path.isfile(SERVER_D_HYDRO) and os.access(SERVER_D_HYDRO, os.X_OK):
+        return SERVER_D_HYDRO, None
+    return None, (f"d_hydro not found (server default {SERVER_D_HYDRO}); "
+                  "use --d_hydro or set D_HYDRO")
+
+
+def resolve_flow2d3d_lib(lib_dir_arg, d_hydro, components):
+    """Library dir for libflow2d3d.so: --flow2d3d_lib_dir -> $FLOW2D3D_LIB_DIR ->
+    <d_hydro dir>/../flow2d3d (build layout). Returns (lib_dir or None, errors).
+
+    A <library> given as an absolute path in the XML is kept as is (it must exist);
+    a library name (e.g. flow2d3d) must exist as lib<name>.so in the lib dir.
+    """
+    errors = []
+    explicit = lib_dir_arg or os.environ.get("FLOW2D3D_LIB_DIR")
+    if explicit:
+        explicit = os.path.abspath(explicit)  # the child runs in work_dir
+    lib_dir = explicit or os.path.join(os.path.dirname(os.path.dirname(d_hydro)), "flow2d3d")
+    if explicit and not os.path.isdir(explicit):
+        errors.append(f"flow2d3d lib dir not found: {explicit}")
+    for comp in components:
+        lib = comp["library"]
+        if os.path.isabs(lib):
+            if not os.path.isfile(lib):
+                errors.append(f"<library> of component {comp['name']} not found: {lib}")
+        else:
+            so = os.path.join(lib_dir, f"lib{lib}.so")
+            if not os.path.isfile(so):
+                errors.append(f"lib{lib}.so not found in {lib_dir} "
+                              "(use --flow2d3d_lib_dir or set FLOW2D3D_LIB_DIR)")
+    return (lib_dir if os.path.isdir(lib_dir) else None), errors
+
+
+def preflight_d_hydro(config, work_dir, nproc):
+    """Validate a d_hydro (Delft3D-FLOW) configuration. Returns (errors, warnings, comps)."""
+    errors, warnings = [], []
+    config_path = os.path.join(work_dir, config)
+    if not os.path.isfile(config_path):
+        return [f"d_hydro config not found: {config_path}"], warnings, []
+    try:
+        comps = d_hydro_components(config_path)
+    except ET.ParseError as e:
+        return [f"d_hydro config XML parse error: {e}"], warnings, []
+    if nproc != 1:
+        errors.append("d_hydro mode runs serially here (nproc must be 1)")
+    if not comps:
+        errors.append("No <flow2D3D> element found in d_hydro config")
+    for comp in comps:
+        print(f"  Component: {comp['name']} (library={comp['library']})")
+        if comp["ddb"]:
+            errors.append(f"Domain decomposition (<ddbFile>{comp['ddb']}) is not supported by "
+                          "run_delft3d.py d_hydro mode; run d_hydro directly")
+            continue
+        if not comp["mdf"]:
+            errors.append(f"Component {comp['name']} has no <mdfFile>")
+            continue
+        mdf_path = os.path.join(work_dir, comp["mdf"])
+        if not os.path.isfile(mdf_path):
+            errors.append(f"MDF file not found: {mdf_path}")
+        else:
+            print(f"    Input: {mdf_path} ✓")
+            _validate_mdf(open(mdf_path, errors="replace").read(),
+                          os.path.dirname(mdf_path), errors, warnings)
+    return errors, warnings, comps
+
+
+def _diag_state(path):
+    try:
+        st = os.stat(path)
+        return (st.st_ino, st.st_size)
+    except OSError:
+        return None
+
+
+def read_new_diag(path, before):
+    """Text written to tri-diag.<runid> by this run (tri-diag is appended to)."""
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as f:
+        data = f.read()
+    if before is not None:
+        ino, size = before
+        if os.stat(path).st_ino == ino and len(data) >= size:
+            data = data[size:]
+    return data.decode("latin-1", errors="replace")
+
+
+def validate_flow_output(work_dir, runid):
+    """Check Delft3D-FLOW output (trih-/trim-<runid>.*). Returns warnings."""
+    warnings = []
+    files = sorted(Path(work_dir).glob(f"tri[hm]-{runid}.*"))
+    if not files:
+        warnings.append(f"No trih-/trim-{runid} output files found in {work_dir}")
+        return warnings
+    print(f"\n[validate_output] Found {len(files)} Delft3D-FLOW output file(s):")
+    for f in files:
+        print(f"  {f.name}: {f.stat().st_size / 1024 / 1024:.1f} MB")
+        if f.suffix != ".nc" or nc is None:
+            continue
+        try:
+            ds = nc.Dataset(str(f), "r")
+            for vname in ("ZWL", "S1"):
+                if vname in ds.variables:
+                    data = np.ma.filled(ds.variables[vname][-1].astype(float), np.nan)
+                    n_bad = int(np.sum(~np.isfinite(data)))
+                    print(f"    {vname}: last step range "
+                          f"[{np.nanmin(data):.4f}, {np.nanmax(data):.4f}]")
+                    if n_bad:
+                        warnings.append(f"{f.name} {vname} has {n_bad} NaN/Inf values in last step")
+            ds.close()
+        except Exception as e:
+            warnings.append(f"Could not read {f.name}: {e}")
+    return warnings
+
+
+def _log_tail(work_dir, log_file, n=40):
+    if not log_file:
+        return []
+    path = os.path.join(work_dir, log_file)
+    if not os.path.isfile(path):
+        return []
+    with open(path, errors="replace") as f:
+        return f.read().splitlines()[-n:]
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Execution
 # ──────────────────────────────────────────────────────────────────────
 
 def run_simulation(dimr_config, binary_dir, work_dir, nproc=1,
-                   max_runtime=MAX_RUNTIME_SECONDS, log_file=None):
-    """Execute Delft3D via DIMR."""
+                   max_runtime=MAX_RUNTIME_SECONDS, log_file=None,
+                   cmd=None, lib_dirs=None):
+    """Execute Delft3D via DIMR, or the given command (d_hydro mode)."""
 
     # Build command
-    if binary_dir:
+    if cmd is not None:
+        pass  # d_hydro mode: command given by caller
+    elif binary_dir:
         run_script = os.path.join(binary_dir, RUN_DIMR_SCRIPT)
         dimr_binary = os.path.join(binary_dir, DIMR_BINARY)
 
@@ -243,7 +431,11 @@ def run_simulation(dimr_config, binary_dir, work_dir, nproc=1,
 
     # Set up environment
     env = os.environ.copy()
-    if binary_dir:
+    if lib_dirs:
+        env["LD_LIBRARY_PATH"] = ":".join(lib_dirs) + (
+            ":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
+        print(f"[execute] LD_LIBRARY_PATH += {':'.join(lib_dirs)}")
+    elif binary_dir:
         lib_dir = os.path.join(os.path.dirname(binary_dir), "lib")
         if os.path.isdir(lib_dir):
             env["LD_LIBRARY_PATH"] = lib_dir + ":" + env.get("LD_LIBRARY_PATH", "")
@@ -251,20 +443,24 @@ def run_simulation(dimr_config, binary_dir, work_dir, nproc=1,
     # Run simulation
     start_time = time.time()
 
-    if log_file:
-        log_path = os.path.join(work_dir, log_file)
-        with open(log_path, "w") as lf:
+    try:
+        if log_file:
+            log_path = os.path.join(work_dir, log_file)
+            with open(log_path, "w") as lf:
+                proc = subprocess.Popen(
+                    cmd, cwd=work_dir, env=env,
+                    stdout=lf, stderr=subprocess.STDOUT,
+                    text=True
+                )
+        else:
             proc = subprocess.Popen(
                 cmd, cwd=work_dir, env=env,
-                stdout=lf, stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True
             )
-    else:
-        proc = subprocess.Popen(
-            cmd, cwd=work_dir, env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True
-        )
+    except OSError as e:
+        print(f"ERROR: could not start {cmd[0]}: {e}", file=sys.stderr)
+        return None, f"Could not start {cmd[0]}: {e}"
 
     # Monitor execution
     stdout_lines = []
@@ -402,8 +598,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="Execute Delft3D simulation via DIMR"
     )
-    parser.add_argument("--dimr_config", default="dimr_config.xml",
-                        help="DIMR configuration XML file")
+    parser.add_argument("--dimr_config", "--config", dest="dimr_config",
+                        default="dimr_config.xml",
+                        help="DIMR configuration XML file, or a d_hydro config "
+                             "(<deltaresHydro>) for Delft3D-FLOW 4")
+    parser.add_argument("--mode", choices=["auto", "dimr", "d_hydro"], default="auto",
+                        help="auto (default): d_hydro if the config root is "
+                             "<deltaresHydro>, else DIMR")
+    parser.add_argument("--d_hydro",
+                        help="d_hydro executable (default: $D_HYDRO, "
+                             "<binary_dir>/d_hydro, then the server build)")
+    parser.add_argument("--flow2d3d_lib_dir",
+                        help="Folder with libflow2d3d.so (default: $FLOW2D3D_LIB_DIR, "
+                             "then <d_hydro dir>/../flow2d3d)")
     parser.add_argument("--binary_dir",
                         help="Directory containing DIMR binary / run_dimr.sh")
     parser.add_argument("--work_dir", default=".",
@@ -417,6 +624,16 @@ def main():
     parser.add_argument("--skip_preflight", action="store_true",
                         help="Skip preflight checks")
     args = parser.parse_args()
+
+    mode = args.mode
+    if mode == "auto":
+        cfg_path = os.path.join(args.work_dir, args.dimr_config)
+        try:
+            mode = config_kind(cfg_path) if os.path.isfile(cfg_path) else "dimr"
+        except ET.ParseError:
+            mode = "dimr"  # the DIMR preflight reports the XML error
+    if mode == "d_hydro":
+        sys.exit(main_d_hydro(args))
 
     # Step 1: Preflight validation
     if not args.skip_preflight:
@@ -454,7 +671,12 @@ def main():
     if returncode is None or returncode != 0:
         print(f"\n[FAILED] Simulation failed (return code: {returncode})")
         if output and isinstance(output, str):
-            print(f"[FAILED] Last output: {output[:500]}")
+            print(f"[FAILED] Last output: {output[-2000:]}")
+        tail = _log_tail(args.work_dir, args.log_file)
+        if tail:
+            print(f"[FAILED] Last {len(tail)} lines of {args.log_file}:")
+            for line in tail:
+                print(f"  {line}")
         sys.exit(1)
 
     # Step 3: Validate output
@@ -468,6 +690,112 @@ def main():
         print(f"\n[DONE] Simulation completed with {len(warnings)} warning(s)")
     else:
         print(f"\n[DONE] Simulation completed successfully")
+
+
+def main_d_hydro(args):
+    """Run a Delft3D-FLOW 4 case with d_hydro. Returns the exit code."""
+    print("=" * 60)
+    print("[preflight] d_hydro mode (Delft3D-FLOW 4)")
+    print("=" * 60)
+    errors, warnings, comps = [], [], []
+    if args.nproc != 1:
+        errors.append("d_hydro mode runs serially here (nproc must be 1)")
+    if args.skip_preflight:
+        try:
+            comps = d_hydro_components(os.path.join(args.work_dir, args.dimr_config))
+        except (OSError, ET.ParseError) as e:
+            errors.append(f"Cannot read d_hydro config: {e}")
+        if any(c["ddb"] for c in comps):
+            errors.append("Domain decomposition (<ddbFile>) is not supported by "
+                          "run_delft3d.py d_hydro mode")
+        if not comps:
+            errors.append("No <flow2D3D> element found in d_hydro config")
+        elif any(not c["mdf"] for c in comps):
+            errors.append("Every <flow2D3D> component needs an <mdfFile> "
+                          "(its tri-diag.<runid> proves the run finished)")
+    else:
+        e2, warnings, comps = preflight_d_hydro(args.dimr_config, args.work_dir, 1)
+        errors += e2
+    d_hydro, err = resolve_d_hydro(args.d_hydro, args.binary_dir)
+    if err:
+        errors.append(err)
+    lib_dir = None
+    if d_hydro:
+        print(f"  Binary: {d_hydro} ✓")
+        lib_dir, lib_errors = resolve_flow2d3d_lib(args.flow2d3d_lib_dir, d_hydro, comps)
+        errors += lib_errors
+    if errors:
+        print("\n[preflight] ERRORS (cannot proceed):")
+        for e in errors:
+            print(f"  ✗ {e}")
+        return 1
+    for w in warnings:
+        print(f"  ⚠ {w}")
+    print("\n[preflight] All checks passed.")
+
+    runids = [os.path.splitext(os.path.basename(c["mdf"]))[0] for c in comps if c["mdf"]]
+    if not runids:  # guarded above; never report success without a completion check
+        print("\n[preflight] ERRORS (cannot proceed):\n  ✗ no <mdfFile> to check completion")
+        return 1
+    diags = {r: os.path.join(args.work_dir, f"tri-diag.{r}") for r in runids}
+    before = {r: _diag_state(p) for r, p in diags.items()}
+
+    print("\n" + "=" * 60)
+    print("[execute] Running Delft3D-FLOW with d_hydro...")
+    print("=" * 60)
+    returncode, output = run_simulation(
+        args.dimr_config, None, args.work_dir, nproc=1,
+        max_runtime=args.max_runtime, log_file=args.log_file,
+        cmd=[d_hydro, args.dimr_config], lib_dirs=[lib_dir] if lib_dir else None)
+
+    failures = []
+    if returncode is None or returncode != 0:
+        failures.append(f"d_hydro return code: {returncode}"
+                        + (f" ({output})" if returncode is None and output else ""))
+    log_lines = _log_tail(args.work_dir, args.log_file, n=10 ** 9) if args.log_file \
+        else (output or "").splitlines()
+    if any(FLOW_ABNORMAL in line for line in log_lines):
+        failures.append(f"log says '{FLOW_ABNORMAL}'")
+    diag_errors = []
+    for r, path in diags.items():
+        new = read_new_diag(path, before[r])
+        if new is None:
+            failures.append(f"{os.path.basename(path)} was not written")
+            continue
+        diag_errors += [l.strip() for l in new.splitlines() if "*** ERROR" in l]
+        if FLOW_ABNORMAL in new:
+            failures.append(f"{os.path.basename(path)} says '{FLOW_ABNORMAL}'")
+        elif FLOW_FINISHED not in new:
+            failures.append(f"{os.path.basename(path)} has no '{FLOW_FINISHED}' from this run")
+
+    if failures:
+        print("\n[FAILED] Delft3D-FLOW run failed:")
+        for f in failures:
+            print(f"  ✗ {f}")
+        for line in diag_errors[:40]:
+            print(f"  {line}")
+        tail = log_lines[-40:]
+        if tail:
+            print(f"[FAILED] Last {len(tail)} lines of output:")
+            for line in tail:
+                print(f"  {line}")
+        return 1
+    print(f"\n[execute] tri-diag: '{FLOW_FINISHED}' ✓")
+
+    print("\n" + "=" * 60)
+    print("[validate] Checking output files...")
+    print("=" * 60)
+    out_warnings = []
+    for r in runids:
+        out_warnings += validate_flow_output(args.work_dir, r)
+    if out_warnings:
+        print("\n[validate_output] WARNINGS:")
+        for w in out_warnings:
+            print(f"  ⚠ {w}")
+        print(f"\n[DONE] Simulation completed with {len(out_warnings)} warning(s)")
+    else:
+        print(f"\n[DONE] Simulation completed successfully")
+    return 0
 
 
 if __name__ == "__main__":

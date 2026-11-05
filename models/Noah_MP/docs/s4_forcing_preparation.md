@@ -131,6 +131,29 @@ python ki/tools/convert_forcing_to_noahmp.py \
   --timestep 3600
 ```
 
+What the tool checks before it writes anything (each one stops with exit 1):
+
+- `--timestep` is the HRLDAS `FORCING_TIMESTEP`. The source records must be
+  exactly that far apart over everything the reader returned (finer or coarser
+  stops; the tool does not aggregate or resample NetCDF sources), every step of
+  start..end must be present.
+- Each variable keeps its own time axis; all variables must share the same
+  stamps (a file shifted by a day stops, it is not matched by position).
+  Stamps with minutes (CMFD V2 daily is stamped 10:30) are written under the
+  whole hour (file name has no minutes); the shift is printed and stored as
+  `stamp_label_shift` in `forcing_summary.json`, values are unchanged.
+  NetCDF fill/missing values become missing and stop the tool.
+- An accumulated precipitation field (`m`, `mm`, `kg m-2`) is divided by its
+  ACCUMULATION PERIOD, never by the record spacing: from the time `bounds`
+  or `--precip_accum_hours N`. A CF `cell_methods` "interval" is NOT used: it
+  is the spacing of the original samples that were summed (CF 1.12 §7.3.2). ERA5 hourly single-level `tp` is a 1-hour total
+  ending at the stamp (ECMWF "ERA5: understanding accumulations"), so pass
+  `--precip_accum_hours 1` for it, also when only every 3rd hour is kept.
+  ERA5-Land `tp` is accumulated since 00 UTC: de-accumulate it first.
+- After writing, the run fails (exit 1, `validation: failed` in
+  `forcing_summary.json`) if files overwrote each other or other LDASIN files
+  are already in the output folder.
+
 ## Verification
 
 - [ ] T2D values are in range [200, 340] K — not Celsius!

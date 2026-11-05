@@ -43,28 +43,6 @@ errors:
     domain: parameter_format
     promoted_to: dt_030
 
-  - id: err_005
-    timestamp: "2026-03-22T08:45:00"
-    stage: s3
-    symptom: "convert_forcing_to_rvt.py produces 44,551 mm/yr precip, temperature 50C — bounds violations on ALL variables"
-    root_cause: "Tool assumed VIC forcing column order [PRECIP, TMAX, TMIN, WIND, SW, LW, PRESSURE] but actual output from process_forcing.py is [AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND]. Column 0 (AIR_TEMP in C) was summed as precip (mm/3hr), giving 44x overestimate. Column 2 (PRESSURE in kPa ~95) was read as TMIN, producing 'temperature' of 95C."
-    fix: "Fixed aggregate_3hourly_to_daily() column indices: VIC col 0->TEMP, col 1->PRECIP, col 2->PRESSURE, col 3->SW, col 4->LW, col 5->VP, col 6->WIND. After fix: annual precip 1035mm, mean temp 15.4C — correct for Bengbu."
-    severity: silent
-    domain: unit_conversion
-    promoted_to: dt_026
-    discovered_during: "Bengbu Step 3 validation (2026-03-22)"
-
-  - id: err_006
-    timestamp: "2026-03-22T08:40:00"
-    stage: s3
-    symptom: "convert_forcing_to_rvt.py reports 'No grid cells found' for Bengbu grid NC"
-    root_cause: "Tool reads ds.variables['lat']/['lon'] but HydroCraft VIC grid NC files use 'y'/'x' variable names with a 2D 'mask' array. NetCDF4 KeyError on 'lat' caught by bare except, then filename parser also fails because Bengbu forcing files have no .txt/.dat extension."
-    fix: "Added y/x + 2D mask support. Also removed extension filter from filename parser so it works with extensionless VIC forcing files."
-    severity: fatal
-    domain: dependency_mismatch
-    promoted_to: dt_027
-    discovered_during: "Bengbu Step 3 validation (2026-03-22)"
-
   - id: err_007
     timestamp: "2026-03-22T08:50:00"
     stage: s2

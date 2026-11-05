@@ -18,11 +18,30 @@ Author: Jianyun Zhang Research Group, Hohai University
 """
 
 import argparse
+import glob
 import json
 import os
 import shutil
 import sys
+import tempfile
 from datetime import datetime
+
+# ParFlow install used as the generated script's PARFLOW_DIR default. It lives
+# here (a .py, which the desktop port rewrites), never in the .fmt template.
+# PARFLOW_DIR in the environment overrides it, at render time and at run time.
+PARFLOW_INSTALL = "KISSPATH_BINARIES/parflow/install"
+
+
+def resolve_parflow_dir(parflow_dir=None):
+    """--parflow_dir, else $PARFLOW_DIR, else PARFLOW_INSTALL; must hold bin/parflow."""
+    d = parflow_dir or os.environ.get("PARFLOW_DIR") or PARFLOW_INSTALL
+    exe = os.path.join(d, "bin", "parflow")
+    if not os.path.isfile(exe):
+        raise FileNotFoundError(
+            f"ParFlow install not found: {exe} does not exist. Pass --parflow_dir or set "
+            f"PARFLOW_DIR to the ParFlow install folder (the one holding bin/parflow).")
+    return os.path.abspath(d)
+
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "..", "workflow", "run_script_template.py.fmt")
@@ -56,8 +75,8 @@ def process(domain_json, run_name, output_dir,
             mannings_hr=1.0e-5, k_anisotropy=0.1, start_time_hours=0,
             nl_max_iter=300, eta_value=0.001, use_jacobian=True,
             derivative_epsilon=1e-16, krylov_dim=70,
-            pc_matrix_type="FullJacobian"):
-    os.makedirs(output_dir, exist_ok=True)
+            pc_matrix_type="FullJacobian", homogeneous_default_soil=False,
+            parflow_dir=None):
     with open(domain_json) as f:
         grid = json.load(f)["grid"]
     nx, ny, nz = grid["nx"], grid["ny"], grid["nz"]
@@ -70,6 +89,52 @@ def process(domain_json, run_name, output_dir,
             "Non-uniform dz with Box geometry activates only the bottom layer "
             "(dt_pf_v005): regenerate the domain with uniform --dz_layers.")
 
+    # Check all referenced inputs before creating/overwriting any run products.
+    if (not run_name or run_name in (".", "..") or "/" in run_name or "\\" in run_name
+            or (os.sep in run_name) or (os.altsep and os.altsep in run_name)):
+        raise ValueError(f"run_name {run_name!r} must be a plain name (no path separators)")
+    parflow_dir = resolve_parflow_dir(parflow_dir)
+    required = [(ic_pfb, "ic_pfb", (nz, ny, nx)),
+                (slope_x_pfb, "slope_x_pfb", (1, ny, nx)),
+                (slope_y_pfb, "slope_y_pfb", (1, ny, nx))]
+    if bool(texture_params) != bool(indicator_pfb):
+        raise ValueError("texture_params and indicator_pfb must be supplied together")
+    if not texture_params and not homogeneous_default_soil:
+        # Without them the template's fixed domain soil (Perm 0.00104 m/h,
+        # porosity 0.43, van Genuchten alpha 3.6 / n 1.56, SRes 0.18) would be
+        # used for every cell. That must be an explicit choice.
+        raise ValueError("texture_params and indicator_pfb (from s2) are required; pass "
+                         "--homogeneous_default_soil to run the template's one fixed soil "
+                         "everywhere (recorded in soil_provenance.json)")
+    if indicator_pfb:
+        required.append((indicator_pfb, "indicator_pfb", (nz, ny, nx)))
+    for path, label, shape in required:
+        if not path:
+            raise ValueError(f"{label} is required; missing inputs have no fallback")
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"{label}: input file not found: {path}")
+    import numpy as np
+    from parflow.tools.io import read_pfb
+    for path, label, shape in required:
+        try:
+            values = read_pfb(path)
+        except Exception as exc:
+            raise ValueError(f"{label}: cannot read PFB {path}: {exc}") from exc
+        if values.shape != shape or not np.isfinite(values).all():
+            raise ValueError(f"{label}: expected finite PFB of shape {shape}, got {values.shape}")
+    clm_inputs = []
+    if enable_clm:
+        if not clm_dir:
+            raise ValueError("clm_dir is required with CLM enabled")
+        for fn in ("drv_clmin.dat", "drv_vegm.dat", "drv_vegp.dat"):
+            src = os.path.join(clm_dir, fn)
+            if not os.path.isfile(src) or os.path.getsize(src) == 0:
+                raise FileNotFoundError(f"CLM driver file missing or empty: {src}")
+            clm_inputs.append((src, fn))
+        if not forcing_dir or not glob.glob(os.path.join(forcing_dir, f"{met_name}.*.pfb")):
+            raise ValueError("forcing_dir must contain the requested CLM forcing PFB chunks")
+        forcing_dir = os.path.abspath(forcing_dir)
+
     total_hours = int((datetime.strptime(end_date, "%Y-%m-%d")
                        - datetime.strptime(start_date, "%Y-%m-%d")).total_seconds() / 3600)
     if start_time_hours % dump_interval_hours != 0:
@@ -77,13 +142,33 @@ def process(domain_json, run_name, output_dir,
     istep_start = int(start_time_hours) + 1
 
     classes = {}
-    if texture_params and os.path.exists(texture_params):
+    if texture_params:
         with open(texture_params) as f:
             classes = {int(k): v for k, v in json.load(f).items()}
+        if not classes:
+            raise ValueError("texture_params must contain at least one soil class")
     for prm in classes.values():
         # ParFlow VanGenuchten SRes is a saturation FRACTION, not theta_r
         prm["sres_frac"] = round(prm["sres"] / max(prm["porosity"], 1e-6), 4)
     gnames = " ".join(f"c{c}" for c in sorted(classes))
+    if classes:
+        # Every indicator value must be a class; a cell with any other value
+        # would silently get the template's domain soil instead.
+        import numpy as np
+        from parflow.tools.io import read_pfb
+        raw = np.unique(np.asarray(read_pfb(indicator_pfb), dtype=np.float64))
+        # Class ids are whole numbers; a value such as 1.49 is not class 1
+        # and is never rounded to one.
+        not_int = raw[~(np.isfinite(raw) & (raw == np.floor(raw)))]
+        if not_int.size:
+            raise ValueError(f"indicator_pfb has {not_int.size} distinct non-integer values "
+                             f"(first {min(5, not_int.size)}: {not_int[:5].tolist()}); "
+                             f"class ids must be whole numbers")
+        ind = raw.astype(np.int64)
+        unknown = sorted(set(ind.tolist()) - set(classes))
+        if unknown:
+            raise ValueError(f"indicator_pfb has values {unknown[:10]} with no class in "
+                             f"texture_params (classes {sorted(classes)[:10]})")
 
     def per_class(*fmts):
         return "\n".join(f.format(c=c, **prm)
@@ -96,15 +181,9 @@ def process(domain_json, run_name, output_dir,
                 'run.Geom.indi_input.FileName = "texture_indicator.pfb"\n'
                 + per_class('run.GeomInput.c{c}.Value = {c}'))
 
-    if slope_x_pfb and slope_y_pfb:
-        slopes = "\n".join(f'run.TopoSlopes{a}.Type = "PFBFile"\n'
+    slopes = "\n".join(f'run.TopoSlopes{a}.Type = "PFBFile"\n'
                            f'run.TopoSlopes{a}.GeomNames = "domain"\n'
                            f'run.TopoSlopes{a}.FileName = "slope_{a.lower()}.pfb"'
-                           for a in ("X", "Y"))
-    else:
-        slopes = "\n".join(f'run.TopoSlopes{a}.Type = "Constant"\n'
-                           f'run.TopoSlopes{a}.GeomNames = "domain"\n'
-                           f'run.TopoSlopes{a}.Geom.domain.Value = -0.001'
                            for a in ("X", "Y"))
 
     bcs = "\n".join(f'run.Patch.{pa}.BCPressure.Type = "FluxConst"\n'
@@ -185,34 +264,94 @@ def process(domain_json, run_name, output_dir,
             use_jacobian=use_jacobian,
             derivative_epsilon=derivative_epsilon,
             krylov_dim=krylov_dim, pc_matrix_type=pc_matrix_type,
+            parflow_dir_repr=repr(parflow_dir),
         )
 
     script_path = os.path.join(output_dir, f"run_{run_name}.py")
-    with open(script_path, "w") as f:
-        f.write(script)
-    os.chmod(script_path, 0o755)
+    compile(script, script_path, "exec")
+    provenance = {"soil": "indicator classes from texture_params" if classes else
+                  "HOMOGENEOUS template default (--homogeneous_default_soil): Perm 0.00104 m/h, "
+                  "porosity 0.43, VG alpha 3.6, n 1.56, SRes 0.18 in every cell",
+                  "texture_params": texture_params, "indicator_pfb": indicator_pfb,
+                  "n_classes": len(classes)}
 
-    # Stage inputs next to the script under the canonical names it references
+    # Stage the COMPLETE run (inputs under canonical names, provenance, script)
+    # in a private folder next to output_dir. Nothing in output_dir changes
+    # until every copy has succeeded; a failed copy leaves the old script,
+    # inputs and provenance exactly as they were.
+    out_abs = os.path.realpath(os.path.abspath(output_dir))
+    parent = os.path.dirname(out_abs)
+    os.makedirs(parent, exist_ok=True)
+    stage = tempfile.mkdtemp(prefix="." + os.path.basename(out_abs) + ".staging_", dir=parent)
     staged = {}
-    for src, dst in [(indicator_pfb, "texture_indicator.pfb"),
-                     (slope_x_pfb, "slope_x.pfb"), (slope_y_pfb, "slope_y.pfb"),
-                     (ic_pfb, "ic_pressure.pfb")]:
-        if src:
-            if not os.path.exists(src):
-                raise FileNotFoundError(f"Input file not found: {src}")
-            dstp = os.path.join(output_dir, dst)
-            if os.path.abspath(src) != os.path.abspath(dstp):
-                shutil.copyfile(src, dstp)
-            staged[dst] = dstp
-    if enable_clm:
-        if not clm_dir:
-            raise ValueError("--clm_dir is required with CLM enabled")
-        for fn in ("drv_clmin.dat", "drv_vegm.dat", "drv_vegp.dat"):
-            src = os.path.join(clm_dir, fn)
-            if not os.path.exists(src):
-                raise FileNotFoundError(f"CLM driver file missing: {src}")
-            shutil.copyfile(src, os.path.join(output_dir, fn))
-            staged[fn] = os.path.join(output_dir, fn)
+    stage_keep = [False]
+    try:
+        names = []
+        for src, dst in [(indicator_pfb, "texture_indicator.pfb"),
+                         (slope_x_pfb, "slope_x.pfb"), (slope_y_pfb, "slope_y.pfb"),
+                         (ic_pfb, "ic_pressure.pfb")] + clm_inputs:
+            if src:
+                if not os.path.isfile(src):
+                    raise FileNotFoundError(f"Input file not found: {src}")
+                shutil.copyfile(src, os.path.join(stage, dst))
+                names.append(dst)
+        with open(os.path.join(stage, "soil_provenance.json"), "w") as fh:
+            json.dump(provenance, fh, indent=2)
+        names.append("soil_provenance.json")
+        with open(os.path.join(stage, os.path.basename(script_path)), "w") as fh:
+            fh.write(script)
+        os.chmod(os.path.join(stage, os.path.basename(script_path)), 0o755)
+        names.append(os.path.basename(script_path))  # script is published LAST
+        # Publish as one transaction: same-filesystem renames only. Each
+        # existing target is first moved aside into the staging folder; if
+        # any step fails, published files are removed and the old ones are
+        # moved back, so output_dir ends exactly as it was.
+        for nm in names:
+            if os.path.isdir(os.path.join(out_abs, nm)):
+                raise IsADirectoryError(f"cannot publish {nm}: {os.path.join(out_abs, nm)} is a folder")
+        created_out = not os.path.isdir(out_abs)
+        os.makedirs(out_abs, exist_ok=True)
+        old_dir = os.path.join(stage, "_previous")
+        os.mkdir(old_dir)
+        moved_aside, published = [], []
+        try:
+            for nm in names:
+                dst = os.path.join(out_abs, nm)
+                if os.path.lexists(dst):
+                    os.replace(dst, os.path.join(old_dir, nm))
+                    moved_aside.append(nm)
+                os.replace(os.path.join(stage, nm), dst)
+                published.append(nm)
+        except BaseException as exc:
+            problems = []
+            for nm in reversed(published):
+                try:
+                    os.unlink(os.path.join(out_abs, nm))
+                except OSError as e:
+                    problems.append(f"remove new {nm}: {e}")
+            for nm in reversed(moved_aside):
+                try:
+                    os.replace(os.path.join(old_dir, nm), os.path.join(out_abs, nm))
+                except OSError as e:
+                    problems.append(f"restore old {nm}: {e}")
+            if created_out and not problems:
+                try:
+                    os.rmdir(out_abs)
+                except OSError:
+                    pass
+            if problems:
+                # Keep the staging folder (it holds the old files) and say so.
+                stage_keep[0] = True
+                raise RuntimeError(
+                    f"publishing the run into {out_abs} failed ({exc}) and the rollback was "
+                    f"incomplete: {problems}. Old files are kept in {old_dir}.") from exc
+            raise
+        for nm in published:
+            if nm.endswith(".pfb") or nm.startswith("drv_"):
+                staged[nm] = os.path.join(output_dir, nm)
+    finally:
+        if not stage_keep[0]:
+            shutil.rmtree(stage, ignore_errors=True)
 
     return {
         "status": "success", "run_script": script_path, "run_name": run_name,
@@ -224,6 +363,7 @@ def process(domain_json, run_name, output_dir,
         "clm_enabled": enable_clm,
         "subsurface_classes": {c: v["name"] for c, v in classes.items()},
         "staged_inputs": staged,
+        "parflow_dir": parflow_dir,
         "run_command": f"cd {output_dir} && python run_{run_name}.py",
     }
 
@@ -261,6 +401,12 @@ ARGS = [
     ("--krylov_dim", dict(type=int, default=70)),
     ("--pc_matrix_type", dict(choices=["FullJacobian", "PFSymmetric"],
                               default="FullJacobian")),
+    ("--homogeneous_default_soil", dict(action="store_true",
+        help="explicitly run without texture inputs: the template's one fixed soil in "
+             "every cell (recorded in soil_provenance.json)")),
+    ("--parflow_dir", dict(default=None,
+        help="ParFlow install folder (holds bin/parflow); default $PARFLOW_DIR, else the KI's "
+             "install path. Written as the generated script's PARFLOW_DIR default.")),
     ("--start_time_hours", dict(type=int, default=0,
                                 help="restart offset (multiple of dump_interval)")),
 ]
@@ -285,10 +431,15 @@ def main():
         k_anisotropy=a.k_anisotropy, start_time_hours=a.start_time_hours,
         nl_max_iter=a.nl_max_iter, eta_value=a.eta_value,
         use_jacobian=(a.use_jacobian == "true"),
+        homogeneous_default_soil=a.homogeneous_default_soil,
         derivative_epsilon=a.derivative_epsilon, krylov_dim=a.krylov_dim,
-        pc_matrix_type=a.pc_matrix_type)
+        pc_matrix_type=a.pc_matrix_type, parflow_dir=a.parflow_dir)
     print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, OSError, KeyError) as exc:
+        print(json.dumps({"status": "error", "errors": [str(exc)]}), file=sys.stderr)
+        sys.exit(1)

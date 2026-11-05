@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: ADCIRC v56.2.1 — 2D/3D finite element circulation model
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 7 skill documents | 20 diagnostic triplets | ~1,600 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `build_tested`
 
 ---
@@ -70,7 +70,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Forcing contract**: Use complete UTC gridded 10 m vector winds and atmospheric pressure through `tools/convert_forcing_to_adcirc.py` (CSV or ERA5 NetCDF). A daily hydrological loader does not supply this contract. Missing fields, time steps, grid cells, duplicate records and unknown units stop conversion; no calm-wind or standard-pressure replacement. See `docs/s4_meteorological_forcing.md`.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
 See `data_ki/NOAA_Tides/SKILL.md` for tidal observation data.
@@ -79,7 +79,7 @@ See `data_ki/NDBC/SKILL.md` for wave buoy observations.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model). The 4 validated tools cover the core pipeline from meteorological forcing conversion through output extraction, replacing manual Fortran-era workflows with a Python pipeline that integrates with HydroCraft's coastal modeling infrastructure.
+This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model). The validated tools cover the core pipeline from meteorological forcing conversion through output extraction, replacing manual Fortran-era workflows with a Python pipeline that integrates with HydroCraft's coastal modeling infrastructure.
 
 **What ADCIRC does**: 2D/3D finite element hydrodynamic model for time-dependent free surface circulation and transport. Simulates:
 - Storm surge prediction (wind + pressure + tide + wave interaction)
@@ -186,7 +186,7 @@ For parallel (padcirc) runs, stage 6 includes:
 | `run_adcirc` | s6 | `tools/run_adcirc.py` | 350 | Execute ADCIRC with preflight and postflight checks |
 | `parse_adcirc_output` | s7 | `tools/parse_adcirc_output.py` | 450 | Parse fort.63/64/maxele to CSV + statistics |
 
-**Total**: 4 tools, ~1,600 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -383,9 +383,12 @@ No achieved calibration, validation, or full-period metric values are stated her
 
 ```bash
 # 1. Convert meteorological forcing to OWI format
+# --format: csv (time,lat,lon,u10,v10,pressure; units via --wind_unit/--pressure_unit)
+#        or era5_nc (u10, v10, msl with units attributes; surface pressure sp is refused).
+# GRIB2/GFS is not read by this tool; convert it to one of these first.
 python ki/tools/convert_forcing_to_adcirc.py \
-  --input_dir /path/to/gfs_grib2/ \
-  --format gfs_grib2 \
+  --input_dir /path/to/era5_nc/ \
+  --format era5_nc \
   --domain_sw 24.0,-98.0 --domain_ne 31.0,-88.0 \
   --resolution 0.25 \
   --start_date 2005-08-25 --end_date 2005-09-01 \
@@ -425,7 +428,7 @@ python ki/tools/parse_adcirc_output.py \
 
 ## Diagnostic Triplets
 
-20 triplets covering 6 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 6 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -450,7 +453,7 @@ python ki/tools/parse_adcirc_output.py \
 | dt_019 | **silent** | dependency_mismatch | MPI version mismatch between adcprep and padcirc |
 | dt_020 | fatal | runtime | Domain decomposition fails on disconnected mesh |
 
-**Silent error count**: 11/20 (55%) — high due to ADCIRC's minimal runtime validation of input units.
+**Silent error count** (when this section was written): 11/20 (55%) — high due to ADCIRC's minimal runtime validation of input units.
 
 ---
 
@@ -473,5 +476,5 @@ ADCIRC/ki/
     s6_execution.md                     # Running serial and parallel ADCIRC
     s7_output_analysis.md               # Parsing and visualizing results
   diagnostics/
-    triplets.yaml                       # 20 diagnostic triplets
+    triplets.yaml                       # diagnostic triplets (count: KI map)
 ```

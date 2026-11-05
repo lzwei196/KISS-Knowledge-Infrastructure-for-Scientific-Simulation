@@ -17,8 +17,19 @@ import sys
 
 MODEL_ID = "openAMUNDSEN"
 KI_ROOT = Path(__file__).resolve().parent
-HYDRO_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
+# openAMUNDSEN runs from its own venv (openamundsen editable from _work/openAMUNDSEN/source/repo);
+# tools/run_openamundsen.py imports openamundsen in-process, so it must be run with this python.
+# Overrides: OPENAMUNDSEN_PYTHON (interpreter), OPENAMUNDSEN_CLI (openamundsen CLI). The python path
+# is used as given (never resolved), so the venv is kept. An explicit override never falls back.
+# (An override set to an empty string is invalid and fails; it does not fall back.)
+_PY_OVERRIDE = os.environ.get("OPENAMUNDSEN_PYTHON")
+HYDRO_PYTHON = Path(
+    _PY_OVERRIDE if _PY_OVERRIDE is not None
+    else "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/openAMUNDSEN/venv/bin/python"
+)
 HYDRO_BIN = HYDRO_PYTHON.parent
+CLI_OVERRIDE = os.environ.get("OPENAMUNDSEN_CLI")
+IMPORT_TIMEOUT_S = 180  # cold imports (numba, rasterio) can be slow on a loaded server
 TRIPLETS = KI_ROOT / "diagnostics" / "triplets.yaml"
 
 CHECKS: list[dict[str, object]] = []
@@ -91,15 +102,16 @@ def check_file(path: Path, kind: str, critical: bool, executable: bool = False) 
 
 def check_python_starts() -> bool:
     subject = realpath_if_exists(HYDRO_PYTHON)
-    proc = run_command([str(HYDRO_PYTHON), "--version"], timeout=5) if HYDRO_PYTHON.exists() else None
+    proc = run_command([str(HYDRO_PYTHON), "--version"], timeout=30) if HYDRO_PYTHON.exists() else None
     if proc is not None and proc.returncode == 0:
+        print(f"        Interpreter used for imports and tools: {HYDRO_PYTHON}")
         return add_check("run", subject, True, True)
     return add_check(
         "run",
         subject,
         True,
         False,
-        "Repair KISSPATH_PYTHON_ENV/bin/python so it starts; then rerun this preflight.",
+        f"Repair the openAMUNDSEN venv python {HYDRO_PYTHON} so it starts, or set OPENAMUNDSEN_PYTHON; then rerun this preflight.",
     )
 
 
@@ -111,11 +123,11 @@ def check_import(module: str, critical: bool = True, package_hint: str | None = 
             subject,
             critical,
             False,
-            "HydroCraft Python interpreter is missing; restore KISSPATH_PYTHON_ENV first.",
+            f"openAMUNDSEN python is missing at {HYDRO_PYTHON}; restore the openAMUNDSEN venv or set OPENAMUNDSEN_PYTHON.",
         )
 
     code = f"import {module}; print(getattr({module.split('.')[0]}, '__file__', 'built-in'))"
-    proc = run_command([str(HYDRO_PYTHON), "-c", code], timeout=15)
+    proc = run_command([str(HYDRO_PYTHON), "-c", code], timeout=IMPORT_TIMEOUT_S)
     if proc is not None and proc.returncode == 0:
         detail = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else subject
         return add_check("import", f"{subject} -> {detail}", critical, True)
@@ -130,21 +142,25 @@ def check_import(module: str, critical: bool = True, package_hint: str | None = 
         subject,
         critical,
         False,
-        f"Install into HydroCraft Python: {HYDRO_PYTHON} -m pip install {package}; see {TRIPLETS}. {stderr}".strip(),
+        f"Install into the openAMUNDSEN venv: {HYDRO_PYTHON} -m pip install {package} (or set OPENAMUNDSEN_PYTHON); see {TRIPLETS}. {stderr}".strip(),
     )
 
 
 def check_openamundsen_cli() -> bool:
-    env_path = os.pathsep.join([str(HYDRO_BIN), os.environ.get("PATH", "")])
-    cli = shutil.which("openamundsen", path=env_path)
-    subject = Path(cli).resolve() if cli else HYDRO_BIN / "openamundsen"
+    if CLI_OVERRIDE is not None:
+        cli = CLI_OVERRIDE if CLI_OVERRIDE and Path(CLI_OVERRIDE).is_file() else None
+        subject = Path(CLI_OVERRIDE)
+    else:
+        env_path = os.pathsep.join([str(HYDRO_BIN), os.environ.get("PATH", "")])
+        cli = shutil.which("openamundsen", path=env_path)
+        subject = Path(cli).resolve() if cli else HYDRO_BIN / "openamundsen"
     if not cli:
         return add_check(
             "binary",
             subject,
             True,
             False,
-            f"Install openAMUNDSEN into the HydroCraft environment: {HYDRO_PYTHON} -m pip install openamundsen; see {TRIPLETS}.",
+            f"openamundsen CLI not found ({'OPENAMUNDSEN_CLI=' + repr(CLI_OVERRIDE) if CLI_OVERRIDE is not None else 'looked in ' + str(HYDRO_BIN) + ' and PATH'}). Restore the openAMUNDSEN venv ({HYDRO_PYTHON} -m pip install -e <openAMUNDSEN source>) or set OPENAMUNDSEN_CLI; see {TRIPLETS}.",
         )
     if not os.access(cli, os.X_OK):
         return add_check(
@@ -155,7 +171,7 @@ def check_openamundsen_cli() -> bool:
             f"Make CLI executable: chmod +x {cli}; see {TRIPLETS} if it still fails.",
         )
 
-    proc = run_command([cli, "--help"], timeout=10)
+    proc = run_command([cli, "--help"], timeout=IMPORT_TIMEOUT_S)
     if proc is not None and proc.returncode == 0:
         return add_check("binary", Path(cli).resolve(), True, True)
     return add_check(
@@ -163,7 +179,7 @@ def check_openamundsen_cli() -> bool:
         Path(cli).resolve(),
         True,
         False,
-        f"openamundsen CLI exists but does not start with --help; reinstall with {HYDRO_PYTHON} -m pip install --force-reinstall openamundsen and check {TRIPLETS}.",
+        f"openamundsen CLI exists but does not start with --help; repair the openAMUNDSEN venv ({HYDRO_PYTHON}) and check {TRIPLETS}.",
     )
 
 
@@ -177,7 +193,7 @@ def check_tool_help(tool: Path) -> bool:
             False,
             f"Restore KI tool {tool}; consult {TRIPLETS} for recovery.",
         )
-    proc = run_command([str(HYDRO_PYTHON), str(tool), "--help"], timeout=15)
+    proc = run_command([str(HYDRO_PYTHON), str(tool), "--help"], timeout=IMPORT_TIMEOUT_S)
     if proc is not None and proc.returncode == 0:
         return add_check("run", subject, True, True)
     stderr = ""
@@ -189,7 +205,7 @@ def check_tool_help(tool: Path) -> bool:
         subject,
         True,
         False,
-        f"Tool must start under HydroCraft Python; install missing dependencies or repair the tool. See {TRIPLETS}. {stderr}".strip(),
+        f"Tool must start under the openAMUNDSEN python {HYDRO_PYTHON}; install missing dependencies there or repair the tool. See {TRIPLETS}. {stderr}".strip(),
     )
 
 
@@ -211,7 +227,7 @@ def main() -> None:
     check_python_starts()
     check_openamundsen_cli()
 
-    print("\n  Required Python imports via HydroCraft Python")
+    print("\n  Required Python imports via the openAMUNDSEN venv python")
     check_import("openamundsen", True)
     for module, package in [
         ("numpy", None),

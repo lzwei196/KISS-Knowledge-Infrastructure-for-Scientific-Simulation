@@ -25,13 +25,12 @@ pipeline:
   - s7_physics_comparison_skill
   - s8_routing_skill
 tools:
-  count: 19
+  count: 18
   files:
   - tools/calib_run.py
   - tools/s1_domain_setup/create_gru_hru.py
   - tools/s1_domain_setup/create_local_attributes.py
   - tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py
-  - tools/s2_forcing_prep/convert_vic_forcing_to_summa.py
   - tools/s3_decisions/configure_decisions.py
   - tools/s4_parameters/set_trial_parameters.py
   - tools/s5_initial_conditions/create_initial_conditions.py
@@ -142,8 +141,8 @@ validation:
     best_kge: 0.8308
     best_r: 0.997
 summary:
-  total_tools: 19
+  total_tools: 18
   total_stage_docs: 8
-  total_diagnostic_triplets: 34
+  total_diagnostic_triplets: 33
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -17,6 +17,11 @@ CRITICAL NOTES (verified against simfire 2.0.1 source + official MITRE docs):
   - Moisture is a FRACTION (0.03 = 3%), not a percentage.
   - Pixel scale is in FEET per pixel (area.pixel_scale).
   - Operational area height/width is in METERS (not feet).
+  - Operational terrain: simfire's own `landfire` 0.5.0 client posts to a
+    RETIRED USGS endpoint (JSONDecodeError, dt_020). When the config asks for
+    `type: operational` terrain or fuel, this wrapper installs
+    convert_landfire_to_simfire.install_lfps2_shim() BEFORE Config() (the
+    download happens inside Config.__init__). --no-lfps-shim opts out.
 
 Output:
   - fire_map_final.npy: final burn status array (0=unburned, 1=burning, 2=burned)
@@ -38,6 +43,12 @@ import time
 from pathlib import Path
 
 import numpy as np
+
+# simfire imports pygame and opens its display on import; default SDL to its headless
+# driver unless the caller chose one (same as models/SimFire/run_and_score.py).
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+TOOLS_DIR = str(Path(__file__).resolve().parent)
 
 
 def validate_inputs(args):
@@ -69,6 +80,15 @@ def generate_quick_test_config(output_dir):
 
     Uses procedural terrain (no LandFire download needed),
     small grid, short runtime, headless mode.
+
+    NOTE (verified 2026-08-09 against simfire 2.0.1): ``Config.__init__`` calls
+    ``_load_operational()`` UNCONDITIONALLY (config.py:263 -> :527,
+    ``OperationalConfig(**self.yaml_data["operational"])``).  A config without an
+    ``operational:`` block therefore dies with ``KeyError: 'operational'`` even in
+    pure functional mode.  The same is true of the ``wind.cfd`` / ``wind.perlin``
+    sub-blocks, which ``_load_wind`` reads before dispatching on
+    ``wind.function``.  The shipped example ``configs/functional_config.yml``
+    carries all of them -- mirror it.  See diagnostics/triplets.yaml dt_019.
     """
     config_content = """
 area:
@@ -79,6 +99,7 @@ display:
   fire_size: 2
   control_line_size: 2
   agent_size: 4
+  rescale_factor: 2
 
 simulation:
   update_rate: 1
@@ -92,6 +113,15 @@ simulation:
 
 mitigation:
   ros_attenuation: true
+
+operational:
+  seed:
+  latitude: 39.67
+  longitude: -119.8
+  height: 4000
+  width: 4000
+  resolution: 30
+  year: 2020
 
 terrain:
   topography:
@@ -118,11 +148,39 @@ environment:
 
 wind:
   function: simple
+  cfd:
+    time_to_train: 1000
+    result_accuracy: 1
+    iterations: 1
+    scale: 1
+    timestep_dt: 1.0
+    diffusion: 0.0
+    viscosity: 0.0000001
+    speed: 19.0
+    direction: north
   simple:
     speed: 7
     direction: 90.0
+  perlin:
+    speed:
+      seed: 2345
+      scale: 400
+      octaves: 3
+      persistence: 0.7
+      lacunarity: 2.0
+      range_min: 7
+      range_max: 47
+    direction:
+      seed: 650
+      scale: 1500
+      octaves: 2
+      persistence: 0.9
+      lacunarity: 1.0
+      range_min: 0.0
+      range_max: 360.0
 """.format(sf_home=os.path.join(output_dir, ".simfire"))
 
+    os.makedirs(output_dir, exist_ok=True)
     config_path = os.path.join(output_dir, "quick_test_config.yml")
     with open(config_path, "w") as f:
         f.write(config_content)
@@ -130,7 +188,22 @@ wind:
     return config_path
 
 
-def run_simulation(config_path, runtime=None, headless_override=None, output_dir=None):
+def config_uses_operational_terrain(config_path):
+    """True when the YAML asks simfire to DOWNLOAD LandFire data
+    (terrain.topography.type or terrain.fuel.type == "operational")."""
+    import yaml
+
+    with open(str(config_path)) as fh:
+        terrain = (yaml.safe_load(fh) or {}).get("terrain") or {}
+    types = [
+        str(((terrain.get(key) or {}).get("type") or "")).strip().lower()
+        for key in ("topography", "fuel")
+    ]
+    return "operational" in types
+
+
+def run_simulation(config_path, runtime=None, headless_override=None, output_dir=None,
+                   lfps_shim=True):
     """Run SimFire simulation and collect results.
 
     Args:
@@ -138,6 +211,8 @@ def run_simulation(config_path, runtime=None, headless_override=None, output_dir
         runtime: override runtime (e.g., "1h")
         headless_override: force headless mode if True
         output_dir: directory for outputs
+        lfps_shim: install the LFPS v2 shim before Config() when the config
+            uses operational terrain/fuel (default True; see dt_020)
 
     Returns:
         dict with fire_map, statistics, output paths
@@ -151,6 +226,15 @@ def run_simulation(config_path, runtime=None, headless_override=None, output_dir
             "errors": [f"SimFire not installed: {e}. Run: pip install simfire"]
         }))
         sys.exit(1)
+
+    # LandFire transport must be patched BEFORE Config(): Config.__init__ is
+    # where the operational download happens.
+    if lfps_shim and config_uses_operational_terrain(config_path):
+        if TOOLS_DIR not in sys.path:
+            sys.path.insert(0, TOOLS_DIR)
+        from convert_landfire_to_simfire import install_lfps2_shim
+
+        install_lfps2_shim()
 
     # Load config
     config = Config(config_path)
@@ -283,6 +367,7 @@ def process(args):
     stats, fire_map = run_simulation(
         config_path, runtime=runtime,
         headless_override=headless, output_dir=output_dir,
+        lfps_shim=not args.no_lfps_shim,
     )
 
     warnings = validate_outputs(stats, fire_map)
@@ -306,6 +391,9 @@ def main():
                         help="Output directory for results")
     parser.add_argument("--quick-test", action="store_true",
                         help="Run minimal functional test (no config needed)")
+    parser.add_argument("--no-lfps-shim", action="store_true",
+                        help="Do NOT patch simfire's retired landfire client "
+                             "onto LFPS v2 for operational configs (dt_020)")
 
     args = parser.parse_args()
     validate_inputs(args)

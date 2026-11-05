@@ -1,0 +1,36 @@
+{
+  "test_case": "BIOME-BGC enf_test1 (official Missoula ENF example)",
+  "engine": {
+    "name": "Biome-BGC",
+    "binary": "bgc",
+    "source": "NTSG/Univ. of Montana Biome-BGC; shipped example enf_test1 (Missoula miss5093 met)",
+    "license": "see Biome-BGC distribution"
+  },
+  "ki": {
+    "model": "BIOME_BGC"
+  },
+  "simulation": {
+    "first_year": 1950,
+    "n_years": 44,
+    "note": "evergreen needleleaf forest, constant CO2 294.842 ppm"
+  },
+  "files": {
+    "inputs/enf_test1.ini": {
+      "bytes": 4997,
+      "sha256": "73b60fcb33c8fb0477da2b4810771b0c87783af51b925362977c6902b4180f6a"
+    },
+    "inputs/epc/enf.epc": {
+      "bytes": 2757,
+      "sha256": "e6a9421ae7a937b197e6cdd781cb8d9d259d83e05e1b533cdd2e343009319893"
+    },
+    "inputs/metdata/miss5093.mtc41": {
+      "bytes": 1140504,
+      "sha256": "6b8c1f9f3504aa7060c62893b783151765bd8536f21437b1eb224195f5833c92"
+    }
+  },
+  "run": {
+    "cwd": "clean dir with enf_test1.ini, metdata/, epc/ and empty outputs/ restart/",
+    "command": "bgc enf_test1.ini",
+    "reference": "python run_reference.py"
+  }
+}

@@ -69,9 +69,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Metric | Value |
 |--------|-------|
 | Pipeline stages | 9 |
-| Python tools | 4 |
-| Skill documents | 5 |
-| Diagnostic triplets | 20 |
+| Python tools | see the KI map at the top of this file |
+| Skill documents | see the KI map at the top of this file |
+| Diagnostic triplets | see the KI map at the top of this file |
 | Failure domains | 5 |
 
 ---
@@ -189,9 +189,6 @@ python tools/mesh_builder.py --dem KISSPATH_DATA/MERIT_DEM/n40e005_dem.tif \
     --out-dir input/ChiuniFR --project ChiuniFR \
     --target-elem-area-km2 0.12 --aquifer-thickness-m 15
 ```
-
-Verified 2026-08-02: 49.5 km² Chiuni catchment (Corsica, FR) → 752 elements,
-446 nodes, 14 river segments; `flux-pihm` runs it end to end.
 
 **Conventions the generator encodes** (all verified against `input/ShaleHills`):
 
@@ -645,5 +642,5 @@ ki/
     s7_model_execution.md           # Model execution skill
     s8_output_analysis.md           # Output analysis skill
   diagnostics/
-    triplets.yaml                   # 20 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```

@@ -1,0 +1,142 @@
+{
+  "description": "Expected results for ISSM NightlyRun test101 (SquareShelfConstrainedStressSSA2d): 2D SSA stress balance of a square, fully floating ice shelf, 50 km mesh (340 vertices), 2 MPI ranks. All 13 field checks use the official reference file test/Archives/Archive101.arch and the official per-field tolerances from test101.py, with the same error formula as test/NightlyRun/runme.py. The two KI-tool checks use max/mean of the official Vel archive field.",
+  "engine_version": "ISSM 2026.1 (git ab809d35b83c5c34f2d80a959324b9ee1a0853f3), PETSc 3.23, MPICH",
+  "numeric_checks": [
+    {
+      "name": "Vx vs Archive101_field1",
+      "kind": "official_rel_diff",
+      "field": "Vx",
+      "archive_field": "Archive101_field1",
+      "expected": 0.0,
+      "tol": 4e-13,
+      "why": "ice velocity x (m/yr), 340 vertices; ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "Vy vs Archive101_field2",
+      "kind": "official_rel_diff",
+      "field": "Vy",
+      "archive_field": "Archive101_field2",
+      "expected": 0.0,
+      "tol": 4e-13,
+      "why": "ice velocity y (m/yr), 340 vertices; ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "Vel vs Archive101_field3",
+      "kind": "official_rel_diff",
+      "field": "Vel",
+      "archive_field": "Archive101_field3",
+      "expected": 0.0,
+      "tol": 4e-13,
+      "why": "ice speed (m/yr), 340 vertices; ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "Pressure vs Archive101_field4",
+      "kind": "official_rel_diff",
+      "field": "Pressure",
+      "archive_field": "Archive101_field4",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "pressure (Pa), 340 vertices; ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "DeviatoricStressxx vs Archive101_field5",
+      "kind": "official_rel_diff",
+      "field": "DeviatoricStressxx",
+      "archive_field": "Archive101_field5",
+      "expected": 0.0,
+      "tol": 2e-13,
+      "why": "deviatoric stress xx (Pa); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "DeviatoricStressyy vs Archive101_field6",
+      "kind": "official_rel_diff",
+      "field": "DeviatoricStressyy",
+      "archive_field": "Archive101_field6",
+      "expected": 0.0,
+      "tol": 2e-13,
+      "why": "deviatoric stress yy (Pa); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "DeviatoricStressxy vs Archive101_field7",
+      "kind": "official_rel_diff",
+      "field": "DeviatoricStressxy",
+      "archive_field": "Archive101_field7",
+      "expected": 0.0,
+      "tol": 2e-13,
+      "why": "deviatoric stress xy (Pa); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "MassFlux1 vs Archive101_field8",
+      "kind": "official_rel_diff",
+      "field": "MassFlux1",
+      "archive_field": "Archive101_field8",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "ice flux across gate 1 (Exp/MassFlux1.exp); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "MassFlux2 vs Archive101_field9",
+      "kind": "official_rel_diff",
+      "field": "MassFlux2",
+      "archive_field": "Archive101_field9",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "ice flux across gate 2 (Exp/MassFlux2.exp); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "MassFlux3 vs Archive101_field10",
+      "kind": "official_rel_diff",
+      "field": "MassFlux3",
+      "archive_field": "Archive101_field10",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "ice flux across gate 3 (Exp/MassFlux3.exp); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "MassFlux4 vs Archive101_field11",
+      "kind": "official_rel_diff",
+      "field": "MassFlux4",
+      "archive_field": "Archive101_field11",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "ice flux across gate 4 (Exp/MassFlux4.exp); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "MassFlux5 vs Archive101_field12",
+      "kind": "official_rel_diff",
+      "field": "MassFlux5",
+      "archive_field": "Archive101_field12",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "ice flux across gate 5 (Exp/MassFlux5.exp); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "MassFlux6 vs Archive101_field13",
+      "kind": "official_rel_diff",
+      "field": "MassFlux6",
+      "archive_field": "Archive101_field13",
+      "expected": 0.0,
+      "tol": 1e-13,
+      "why": "ice flux across gate 6 (Exp/MassFlux6.exp); ISSM's own NightlyRun check: max|run-archive| / (max|archive| + eps) must be <= the tolerance written in test101.py"
+    },
+    {
+      "name": "ki_tool_vel_max",
+      "kind": "abs",
+      "expected": 1639.6505642504992,
+      "tol": 1e-06,
+      "why": "KI tool run_issm.py (custom mode, same mesh/par/SSA) must give the same max ice speed (m/yr) as max of Archive101_field3 (Vel)"
+    },
+    {
+      "name": "ki_tool_vel_mean",
+      "kind": "abs",
+      "expected": 903.7193498639116,
+      "tol": 1e-06,
+      "why": "KI tool run_issm.py must give the same mean ice speed (m/yr) as mean of Archive101_field3 (Vel)"
+    }
+  ],
+  "finished_normally": "test101.py driver exits 0, md.results.StressbalanceSolution exists, issm.exe wrote a non-empty .outbin and an empty .errlog; KI tool run_issm.py exits 0 with status 'success' in results.json",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "official values: Archive101.arch shipped in ISSM git (not from our run)",
+  "reference": "https://github.com/ISSMteam/ISSM test/NightlyRun/test101.py + test/Archives/Archive101.arch",
+  "notes": "Inputs are unmodified. The only run-time addition is a generic_settings.py file (ISSM's own user-settings hook for the generic cluster class) written into the temp run dir so issm.exe writes its run files to the temp dir instead of $ISSM_DIR/execution. It sets only executionpath and does not touch the model."
+}

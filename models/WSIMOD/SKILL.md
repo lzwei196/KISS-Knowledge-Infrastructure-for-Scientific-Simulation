@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 - **Domain**: Integrated water cycle modelling — water quantity and quality
 - **Authors**: Barnaby Dobson, Imperial College London
 - **References**: Dobson et al. 2023 (JOSS, doi:10.21105/joss.04996); Dobson et al. 2024 (GMD, doi:10.5194/gmd-17-4495-2024)
-- **Stats**: 4 tools, 5 skill docs, 18 diagnostic triplets, ~11,500 lines Python source
+- **Stats**: ~11,500 lines Python source, current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -650,5 +650,5 @@ ki/
 │   ├── s5_execution_skill.md             # Execution guide
 │   └── s6_output_analysis_skill.md       # Output analysis guide
 └── diagnostics/
-    └── triplets.yaml                     # 18 diagnostic triplets
+    └── triplets.yaml                     # diagnostic triplets (count: KI map)
 ```

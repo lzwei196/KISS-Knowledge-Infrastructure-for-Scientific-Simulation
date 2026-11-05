@@ -1,0 +1,8 @@
+# Hand-written; read by ki_tools_common/generate_skill_map.py (2026-10-06).
+# These tools load the BMI model class, which python_env does not have, so the KI-TOOL-INDEX in
+# SKILL.md names the BMI venv (or $BMI_HEAT_PYTHON) for them. Not projected: edit by hand.
+python:
+  env_var: BMI_HEAT_PYTHON
+  default: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python
+  note: "run with the Python where the BMI model is installed; this one has the heat example `heat.bmi_heat BmiHeat`, python_env has no model"
+  tools: [tools/bmi_runner.py, tools/compliance_checker.py]

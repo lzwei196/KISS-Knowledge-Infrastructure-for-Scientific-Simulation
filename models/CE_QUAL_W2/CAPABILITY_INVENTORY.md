@@ -201,8 +201,8 @@
 |---|-----------|----------------|-----------|-------|
 | 91 | CaMa-Flood upstream inflow | s4 tools | **DONE** | convert_inflow_to_w2 |
 | 92 | CaMa-Flood downstream coupling | s13 tool | **DONE** | w2_to_cama_coupling |
-| 93 | VIC distributed tributary inflow | s4 tools | **DONE** | generate_distributed_inflow |
-| 94 | CMFD/MSWX met forcing | s3 tool | **DONE** | convert_met_to_w2 |
+| 93 | VIC distributed tributary inflow | s4 tools | **NOT DONE** (found 2026-10-03) | generate_distributed_inflow writes a synthetic seasonal curve and never read VIC results; real runoff goes through convert_inflow_to_w2 |
+| 94 | CMFD/MSWX/NASA POWER met forcing (direct from the source) | s3 tool | **DONE** (rebuilt 2026-10-03 on `load_hourly_forcing`; proven on MSWX at DeGray 1980; the earlier DONE was not true: only a VIC-forcing route worked, now removed) | convert_met_to_w2 `--source` |
 | 95 | SWAT+ nutrient loading coupling | SKILL.md reference | TODO | Mentioned in coupling table; no tool |
 | 96 | CMIP6 climate scenario forcing | SKILL.md reference | TODO | Delta-change on met files; no tool |
 | 97 | GLM comparison framework | SKILL.md reference | TODO | No automated 1D vs 2D comparison tool |

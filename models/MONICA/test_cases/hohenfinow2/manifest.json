@@ -1,0 +1,47 @@
+{
+  "test_case": "MONICA hohenfinow2 (official Hohenfinow2 example)",
+  "engine": {
+    "name": "MONICA",
+    "version": "monica-run 3.6.53.0",
+    "binary": "monica-run",
+    "source": "github.com/zalf-rpm/monica, installer/Hohenfinow2 (git f821718, 2026-03-17); crop/soil/fertiliser parameter library github.com/zalf-rpm/monica-parameters (git fb0f478, 2023-10-27), not packaged, needed at run time via MONICA_PARAMETERS",
+    "license": "MPL-2.0 (MONICA and monica-parameters)"
+  },
+  "ki": {
+    "model": "MONICA",
+    "run_tool": "tools/run_monica.py"
+  },
+  "simulation": {
+    "site": "Hohenfinow, Brandenburg, Germany (lat 52.81)",
+    "period": "1991-01-01 to 1997-12-31 (daily)",
+    "rotation": [
+      "winter rye",
+      "silage maize",
+      "moderately early potato",
+      "winter wheat",
+      "winter barley",
+      "spring barley",
+      "winter rape"
+    ],
+    "outputs": "one CSV (sim-out.csv) with sections daily, monthly, yearly, run, crop, xxxx-03-31",
+    "runtime_s": 0.2
+  },
+  "files": {
+    "inputs/climate.csv": {
+      "bytes": 131260,
+      "sha256": "8f9422e50eb5728fa057936677492d6ecf92f53d6b9727e762c3cc162239c98b"
+    },
+    "inputs/crop.json": {
+      "bytes": 14541,
+      "sha256": "bcc7b6ae804be5ca9c58f8bdaf981b7ea965d69524f0ce6aaed05c4497271cb1"
+    },
+    "inputs/sim.json": {
+      "bytes": 5935,
+      "sha256": "34e2eac07e785f3a0f773fca48ffd6f47da0c451e9e00f0f2c524a643e3a3cff"
+    },
+    "inputs/site.json": {
+      "bytes": 2780,
+      "sha256": "82c4f88e7f29413e9c8c8a6a2075825a69548fe961b9d81a4bb6c6dd9db696b1"
+    }
+  }
+}

@@ -9,8 +9,7 @@ Required CSV columns:
 
 Optional CSV columns:
     elevation, slope, soil_source, forcing_source, soil_source_path,
-    forcing_source_path, state_code, warmup_years, vic_grid_id,
-    vic_soil_param_file, vic_forcing_dir
+    forcing_source_path, state_code, warmup_years
 
 Validation checks:
     - All required columns present
@@ -45,7 +44,7 @@ REQUIRED_COLUMNS = ['site_id', 'lat', 'lon', 'start_date', 'end_date', 'crop_nam
 OPTIONAL_COLUMNS = [
     'elevation', 'slope', 'soil_source', 'forcing_source',
     'soil_source_path', 'forcing_source_path', 'state_code',
-    'warmup_years', 'vic_grid_id', 'vic_soil_param_file', 'vic_forcing_dir'
+    'warmup_years'
 ]
 
 KNOWN_CROPS = [
@@ -56,8 +55,8 @@ KNOWN_CROPS = [
     'bermudagrass', 'foxtail_millet', 'proso_millet', 'beet_sugar',
 ]
 
-VALID_SOIL_SOURCES = ['vic_global', 'soilgrids', 'canada_shapefile', 'gssurgo', 'hwsd']
-VALID_FORCING_SOURCES = ['cmfd', 'era5_api', 'vic_forcing', 'csv']
+VALID_SOIL_SOURCES = ['soilgrids', 'canada_shapefile', 'gssurgo', 'hwsd']
+VALID_FORCING_SOURCES = ['cmfd', 'mswx', 'era5_api', 'csv']
 
 
 def validate_inputs(sites_csv):
@@ -194,9 +193,6 @@ def process(args):
                         'forcing_source_path': row.get('forcing_source_path', '').strip() or None,
                         'state_code': row.get('state_code', '').strip() or None,
                         'warmup_years': int(row.get('warmup_years', 0) or 0),
-                        'vic_grid_id': row.get('vic_grid_id', '').strip() or None,
-                        'vic_soil_param_file': row.get('vic_soil_param_file', '').strip() or None,
-                        'vic_forcing_dir': row.get('vic_forcing_dir', '').strip() or None,
                     })
 
         if errors:

@@ -28,7 +28,7 @@ S1 Project Setup
                           |
                           +---> S9 Output Parsing & Analysis
 
-S10 VIC-LDNDC Coupling (feeds into S2 + S4)
+S10 Coupling on model results (VIC soil moisture -> initial conditions)
 ```
 
 ## Stage Details
@@ -63,7 +63,7 @@ S10 VIC-LDNDC Coupling (feeds into S2 + S4)
 - **Purpose**: Provide daily meteorological forcing to LDNDC
 - **Tools**: `convert_forcing_to_ldndc_climate`, `validate_climate_file`
 - **Milestone**: climate.txt has header + daily rows covering simulation period
-- **Data sources**: CMFD (China), MSWX (global), ERA5, VIC forcing, NASA POWER
+- **Data sources**: CMFD (China), MSWX (global), NASA POWER, FLUXNET site files; always read straight from the data source
 - **Key unit conversions**: K->C (temperature), W/m2 (radiation), mm (precip), m/s (wind), % (RH)
 - **Typical time**: 2-30 minutes (depends on forcing source)
 
@@ -111,12 +111,12 @@ S10 VIC-LDNDC Coupling (feeds into S2 + S4)
 ### S10: Multi-Model Coupling (VIC/CaMa-Flood/DSSAT)
 - **Purpose**: Bridge HydroCraft model outputs to LDNDC inputs; cross-validate with DSSAT
 - **Skill document**: `docs/s9_coupling_skill.md`
-- **Tools**: `vic_to_ldndc_climate`, `vic_to_ldndc_soilwater`, `vic_soil_to_ldndc_site`
+- **Tools**: `vic_to_ldndc_soilwater`
 - **Coupling pathways**:
-  - **VIC -> LDNDC**: Climate forcing (K->C, sub-daily->daily), soil params (BD kg/m3->g/cm3), soil moisture
+  - **VIC -> LDNDC**: simulated soil moisture for the initial water content. Climate and soil are NOT taken from VIC files: S4 and S2 build them from the data source
   - **CaMa-Flood -> LDNDC**: Water table depth for anaerobic zone (CH4/N2O), flood inundation (conceptual)
   - **DSSAT <-> LDNDC**: Yield cross-validation (kgC/ha vs. kg DM/ha), N leaching for water quality
-- **Milestone**: Consistent climate and soil data between VIC and LDNDC
+- **Milestone**: LDNDC initial soil water set from the VIC result on the start date
 - **When to use**: After VIC simulation completes (Step 7 of HydroCraft workflow)
 - **Typical time**: 1-5 minutes
 
@@ -127,13 +127,13 @@ S10 VIC-LDNDC Coupling (feeds into S2 + S4)
 | S1 | 2 | Yes | dt_001 |
 | S2 | 2 | Yes | dt_002, dt_003 |
 | S3 | 1 | Yes | dt_004 |
-| S4 | 2 | Yes | dt_005, dt_006 |
+| S4 | 2 | Yes | dt_005, dt_006, dt_014 |
 | S5 | 1 | Yes | dt_007 |
 | S6 | 1 | Yes | dt_008, dt_009 |
 | S7 | 1 | Yes | - |
 | S8 | 1 | Yes | dt_010, dt_011 |
 | S9 | 4 | Yes | dt_012, dt_013 |
-| S10 | 3 | Yes | dt_014, dt_015 |
+| S10 | 1 | Yes | - |
 
 ---
 *Generated from LandscapeDNDC knowledge infrastructure v1.0.0*

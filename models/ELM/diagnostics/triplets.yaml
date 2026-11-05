@@ -1,5 +1,5 @@
 # ELM Diagnostic Triplets
-# 20 symptom → diagnosis → remedy entries for the E3SM Land Model
+# Symptom → diagnosis → remedy entries (20 when this header was written; current count: the SKILL.md KI map) for the E3SM Land Model
 # Covers unit conversion, parameter format, initialization, runtime, and grid issues
 
 - id: dt_001

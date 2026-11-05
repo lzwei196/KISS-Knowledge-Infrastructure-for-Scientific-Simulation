@@ -1,84 +1,42 @@
-# S1 Forcing Conversion
+# s1 — Forcing: build `climate.dat`
 
 ## Purpose
-
-Convert meteorological forcing into the QUINCY-format CSV consumed by `tools/run_quincy.py`. This KI supports FLUXNET2015 FULLSET CSV directly and contains placeholder CMFD/MSWX NetCDF readers that document the required unit conversions.
+Write the engine's only time-varying input: meteorology, CO2 and N/P deposition, in the exact
+column order and FILE units the Fortran reader expects.
 
 ## Inputs
-
-- Source forcing file or directory passed to `tools/convert_forcing_to_quincy.py --input`.
-- `--source fluxnet`, `--source cmfd`, `--source mswx`, or `--source quincy`.
-- `--lat` for daylength; `--lon` is accepted for site metadata.
-- `--start-year` and `--end-year` for CMFD/MSWX.
-- Expected FLUXNET columns are mapped in `tools/convert_forcing_to_quincy.py`: `SW_IN_F`, `TA_F`, `VPD_F`, `P_F`, `CO2_F_MDS`, plus optional observation columns.
+- `--source fluxnet --site <ID>`: FLUXNET2015 `FULLSET_HH.csv` (or `_HR`), gap-filled `_F` columns.
+- `--source nasa_power|cmfd|mswx --lat --lon`: `ki_tools_common.load_daily_forcing`.
+- `--ndep_kgN_ha_yr`, `--pdep_kgP_ha_yr` (required; cite the value), `--nhx_fraction` (default 0.5).
+- CO2: `KISSPATH_KI_ROOT/QUINCY/inputs/co2/` (Law Dome + Mauna Loa annual).
 
 ## Outputs
-
-- QUINCY forcing CSV with header and units row:
-  `TIMESTAMP,YEAR,MONTH,SW_IN,TA,VPD,PRECIP,CO2,DAYLENGTH`.
-- Optional observation columns when present and non-empty: `GPP_OBS`, `NEE_OBS`, `RECO_OBS`, `LE_OBS`, `H_OBS`.
+`<out_dir>/climate.dat`, `<out_dir>/climate_meta.json` (route, dtime, years, row count, deposition,
+summary means). The run tool reads the meta file to set `is_daily_forcing`, `read_precipitation`
+and `dtime_step_length_sec`.
 
 ## Procedure
-
-Review converter source and accepted CLI flags:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-sed -n '1,120p' tools/convert_forcing_to_quincy.py
-python3 tools/convert_forcing_to_quincy.py --help
 ```
-
-Convert FLUXNET2015 monthly or daily data:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_forcing_to_quincy.py \
-  --source fluxnet \
-  --input /path/to/FLX_FI-Hyy_FLUXNET2015_FULLSET_MM.csv \
-  --output /tmp/quincy_fi_hyy/quincy_forcing.csv \
-  --lat 61.85 \
-  --lon 24.29 \
-  --temporal auto
+$PY tools/build_quincy_climate.py --source fluxnet --site FI-Hyy --start_year 1996 --end_year 2014 \
+    --ndep_kgN_ha_yr 7.4 --pdep_kgP_ha_yr 0.05 --out_dir case/climate
+$PY tools/build_quincy_climate.py --source nasa_power --lat 61.8474 --lon 24.2948 \
+    --start_year 2004 --end_year 2005 --ndep_kgN_ha_yr 7.4 --pdep_kgP_ha_yr 0.05 --out_dir case/climate_np
 ```
-
-Validate an existing QUINCY forcing CSV before running the model:
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_forcing_to_quincy.py \
-  --source quincy \
-  --input /tmp/quincy_fi_hyy/quincy_forcing.csv \
-  --operation validate
-```
+Units and columns: see `docs/input_preparation.md` §1 and the tool docstring.
 
 ## Verification
-
-- The converter prints a JSON result whose `status` is `success` or `completed_with_warnings`.
-- Re-run `--operation validate` on the output forcing CSV.
-- Inspect that monthly values fall inside the physical ranges encoded in `QUINCY_VARIABLES`: `TA` roughly `-60..55 degC`, `VPD` `0..80 hPa`, `PRECIP` `0..200 mm/day`, `CO2` `250..600 ppm`.
-- Confirm the output includes `DAYLENGTH`; S3 scales GPP by `DAYLENGTH / 24`.
+`validate_outputs()` refuses the file (exit 3) when mean T is outside 230-315 K, SW 40-350 W m-2,
+LW 150-450, q 0.3-30 g kg-1, p 500-1100 hPa, P 0.05-15 mm day-1, wind 0.1-20 m s-1, CO2 270-450 ppm.
+FI-Hyy 1996-2014: 332 880 rows, mean T 4.37 °C, P 604 mm yr-1, SW 99 W m-2, CO2 383 ppm.
 
 ## Traps
-
-- `dt_quincy_001`: CMFD/MSWX temperature left in Kelvin explodes Arrhenius rates.
-- `dt_quincy_002`: CMFD precipitation left as `kg/m2/s` suppresses heterotrophic respiration.
-- `dt_quincy_003`: VPD supplied as Pa or kPa instead of hPa distorts the Ci/Ca surrogate.
-- `dt_quincy_005`: non-FULLSET FLUXNET column names can trigger missing-column failures.
-- `dt_quincy_006`: FLUXNET `-9999` missing values must be converted to NaN.
-- `dt_quincy_020`: CO2 must be ppm, not mole fraction.
+- t_air must be K, q_air g kg-1, pressure hPa (dt_quincy_029).
+- Precipitation is a mm/day RATE on every row, also half-hourly (dt_quincy_030).
+- Feb 29 must be dropped; whole years only (dt_quincy_027, dt_quincy_028).
+- Daily vs timestep columns differ (tmin/tmax/precip vs t_air/rain/snow); the flags must match the
+  file (dt_quincy_040). Daily SW must be the 24-h mean.
+- FLUXNET HH timestamps are local standard time; the engine clock is local SOLAR time — up to
+  ~1 h phase offset at sites far from their time-zone meridian.
 
 ## Example
-
-```bash
-cd KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure
-python3 tools/convert_forcing_to_quincy.py \
-  --source fluxnet \
-  --input /data/fluxnet/FI-Hyy_FULLSET_MM.csv \
-  --output /tmp/quincy_fi_hyy/quincy_forcing.csv \
-  --lat 61.85 \
-  --lon 24.29
-python3 tools/convert_forcing_to_quincy.py \
-  --source quincy \
-  --input /tmp/quincy_fi_hyy/quincy_forcing.csv \
-  --operation validate
-```
+`outputs/quincy_fihyy_real_engine/climate/` (FI-Hyy, tower met, 1996-2014).

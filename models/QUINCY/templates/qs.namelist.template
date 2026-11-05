@@ -1,0 +1,68 @@
+! QUINCY standalone namelist template used by tools/run_quincy_engine.py.
+! The public release qs-2026.04-public ships NO namelist (BUILD_LOG.md); this file
+! lists the engine's own defaults (mo_jsb_config_class.f90, mo_qs_forcing.f90,
+! mo_*_config_class.f90) for the keys the tools change. The run tool copies this
+! file and replaces single values; every key not listed keeps the engine default.
+&grid_ctl
+  latitude = 50.91
+  longitude = 11.56
+/
+&base_ctl
+  quincy_model_name = 'land'
+  dtime_step_length_sec = 1800.0
+  output_txt_file_set = 'basic'
+  output_interval_pool = 'daily'
+  output_interval_flux = 'daily'
+  output_interval_pool_spinup = 'yearly'
+  output_interval_flux_spinup = 'yearly'
+  output_start_first_day_year = 1
+  output_end_last_day_year = 10
+  forcing_file_start_yr = 1500
+  forcing_file_last_yr = 1500
+  include_nitrogen = .TRUE.
+  include_phosphorus = .TRUE.
+  set_parameter_values_from_file = .FALSE.
+  set_parameter_values_proportional = .FALSE.
+  flag_slow_sb_pool_spinup_accelerator = .FALSE.
+/
+&jsb_forcing_ctl
+  forcing_mode = 'static'
+  transient_spinup_start_year = 1901
+  transient_spinup_end_year = 1930
+  transient_spinup_years = 500
+  transient_simulation_start_year = 1901
+  simulation_length_unit = 'y'
+  simulation_length_number = 30
+  is_daily_forcing = .FALSE.
+  read_precipitation = .FALSE.
+  flag_forcing_with_snow_data = .TRUE.
+  flag_read_dC13 = .TRUE.
+  flag_read_DC14 = .TRUE.
+  flag_forcing_co2_const = .FALSE.
+  n_deposition_scheme = 'dynamic'
+  p_deposition_scheme = 'dynamic'
+/
+&lnd_veg_nml
+  plant_functional_type_id = 1
+/
+&lnd_spq_nml
+  flag_snow = .TRUE.
+  spq_soil_depth = 9.5
+  spq_elevation = 0.0
+  spq_soil_sand = 0.3
+  spq_soil_silt = 0.4
+  spq_soil_clay = 0.3
+  spq_bulk_density = 1500.0
+/
+&jsb_sse_nml
+  qs_soil_sand = 0.3
+  qs_soil_silt = 0.4
+  qs_soil_clay = 0.3
+  qs_bulk_density = 1500.0
+/
+&jsb_hydro_nml
+  qs_soil_depth = 9.5
+/
+&lnd_sb_nml
+  soil_ph = 6.5
+/

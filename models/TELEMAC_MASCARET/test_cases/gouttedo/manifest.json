@@ -1,0 +1,58 @@
+{
+  "test_case": "TELEMAC-MASCARET telemac2d gouttedo (official example: water drop in a square basin, sequential run)",
+  "engine": {
+    "name": "TELEMAC-MASCARET (telemac2d)",
+    "version": "9.1-dev, main branch commit be14a12315ac9346ca0ce8da065aba5d0ec5766e (2026-03-26)",
+    "binary": "scripts/python3/telemac2d.py + builds/main_gfortran_release (bin/telemac2d, lib/*.so), serial",
+    "source": "https://gitlab.pam-retd.fr/otm/telemac-mascaret examples/telemac2d/gouttedo (commit be14a123; .slf files are Git LFS objects)",
+    "license": "GNU General Public License v3.0 (LICENSE.txt in the TELEMAC-MASCARET repo)"
+  },
+  "ki": {
+    "model": "TELEMAC_MASCARET",
+    "run_tool": "tools/run_telemac.py",
+    "parse_tool": "tools/parse_selafin.py"
+  },
+  "simulation": {
+    "module": "telemac2d",
+    "equations": "SAINT-VENANT FE",
+    "mesh": "4624 nodes, 8978 triangles, 20.1 m x 20.1 m closed basin",
+    "time_step_s": 0.04,
+    "n_time_steps": 100,
+    "duration_s": 4.0,
+    "output_records": 21,
+    "initial_condition": "user_fortran/user_condin_h.f (Gaussian water drop on 2.4 m depth)",
+    "mpi_ranks": 1,
+    "reference_file": "reference/f2d_gouttedo.slf",
+    "official_tolerance": "check_epsilons eps=1e-7 (vnv_gouttedo.py, seq vs f2d_gouttedo.slf)"
+  },
+  "files": {
+    "inputs/geo_gouttedo.cli": {
+      "bytes": 21708,
+      "sha256": "bd0793ca3fff8e6fb902ad4afe678db61f94e5151100b064a302fc996a32bf50"
+    },
+    "inputs/geo_gouttedo.slf": {
+      "bytes": 181989,
+      "sha256": "56e1d13117de3532a5f6306ea7dd76f9b113912c216c90ef7f1345999b434498"
+    },
+    "inputs/t2d_gouttedo.cas": {
+      "bytes": 1387,
+      "sha256": "46302957c1cb44810459d0580092a5527816b7d6f9a1a087043ea485626d6b17"
+    },
+    "inputs/user_fortran/user_condin_h.f": {
+      "bytes": 726,
+      "sha256": "e62ddbdcb38f4b1cfbb4c03c6ca30fcc09581052d98b80f3348bb9ce49a66b6a"
+    },
+    "inputs/user_fortran/user_condin_trac.f": {
+      "bytes": 790,
+      "sha256": "f3999e2c0338e80c8b2f6c79ca7ca477f54904e5e9124881cdaa4672125a683d"
+    },
+    "reference/f2d_gouttedo.slf": {
+      "bytes": 1329589,
+      "sha256": "051a9303afab21bf0d458a7282781f33e09984bc178d7bbed9d5d980b3a31521"
+    },
+    "reference/vnv_gouttedo.py": {
+      "bytes": 7223,
+      "sha256": "66c82c74e1882a39ac1e970146bc16454581f921c2fb7e1a6b7fd5a49471d9e1"
+    }
+  }
+}

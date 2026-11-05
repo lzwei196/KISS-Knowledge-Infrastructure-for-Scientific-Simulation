@@ -111,10 +111,20 @@ def write_cli_file(filepath, var_name, station_files):
 def process():
     """Extract and convert weather data to SWAT+ format."""
     output_dir = Path(OUTPUT_DIR)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     start = datetime.strptime(START_DATE, "%Y-%m-%d")
     end = datetime.strptime(END_DATE, "%Y-%m-%d")
+    if start > end or not STATION_COORDS:
+        raise ValueError('Valid dates and at least one station are required')
+    if STATION_NAMES and len(STATION_NAMES) != len(STATION_COORDS):
+        raise ValueError('Station names must match the number of coordinates')
+    names = STATION_NAMES or [f'p{i+1:06d}' for i in range(len(STATION_COORDS))]
+    if len(set(names)) != len(names) or any(not name or Path(name).name != name or name in ('.','..') for name in names):
+        raise ValueError('Station names must be unique safe file stems')
+    for lat,lon in STATION_COORDS:
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ValueError('Invalid station coordinates')
+    expected_dates = [start + timedelta(days=i) for i in range((end-start).days+1)]
     nbyr = end.year - start.year + 1
 
     pcp_files = []
@@ -147,19 +157,21 @@ def process():
     fdir_arg = FORCING_DIR if (FORCING_DIR and Path(FORCING_DIR).exists()) else None
     forcings = load_daily_forcing_points(FORCING_SOURCE,
                                          [(lat, lon) for lat, lon in STATION_COORDS],
-                                         start.year, end.year, forcing_dir=fdir_arg)
+                                         start.year, end.year, forcing_dir=fdir_arg,
+                                         period=(start.date(), end.date()))
 
+    if len(forcings) != len(STATION_COORDS):
+        raise ValueError("Source returned the wrong station count")
+    prepared = []
     for idx, (lat, lon) in enumerate(STATION_COORDS):
         station_name = (STATION_NAMES[idx] if idx < len(STATION_NAMES)
                         else f"p{idx+1:06d}")
         try:
             elev = float(get_terrain(lat, lon)["elevation"])
-        except Exception as e:
-            logger.warning(f"get_terrain failed at ({lat},{lon}): {e}")
-            elev = 0.0
-        if elev == 0.0:
-            logger.warning(f"station {station_name} ({lat:.3f},{lon:.3f}) has elev=0.0 m "
-                           f"— check the terrain lookup before trusting PET/snowmelt")
+        except Exception as exc:
+            raise ValueError(f'{station_name}: terrain lookup failed; no sea-level fallback: {exc}') from exc
+        if not np.isfinite(elev):
+            raise ValueError(f'{station_name}: nonfinite elevation')
 
         fc = forcings[idx]
         # The loaders do NOT agree on a date type: CMFD/MSWX return
@@ -169,41 +181,63 @@ def process():
         # in fact never been exercised through this tool. Normalise once here
         # instead of trusting the loader (fixed 2026-08-20).
         import pandas as _pd
-        fdates = [_pd.Timestamp(d).to_pydatetime() for d in fc["dates"]]
-        precip = np.asarray(fc["precip_mm"], dtype=float)
-        tmax = np.asarray(fc["temp_max_c"], dtype=float)
-        tmin = np.asarray(fc["temp_min_c"], dtype=float)
-        srad = np.asarray(fc.get("srad_wm2", [np.nan] * len(fdates)), dtype=float)
-        wind = np.asarray(fc.get("wind_ms", [np.nan] * len(fdates)), dtype=float)
-        shum = np.asarray(fc.get("shum_kgkg", [np.nan] * len(fdates)), dtype=float)
-        pres = np.asarray(fc.get("pres_pa", [np.nan] * len(fdates)), dtype=float)
+        fdates = [_pd.Timestamp(str(d) if isinstance(d, np.str_) else d).to_pydatetime() for d in fc["dates"]]
+        if any(_pd.isna(d) for d in fdates):
+            raise ValueError(f"{station_name}: invalid source dates")
+        if any(b <= a for a,b in zip(fdates,fdates[1:])):
+            raise ValueError(f'{station_name}: duplicate or unordered dates')
+        selected = np.array([start <= d <= end for d in fdates])
+        if [d for d,keep in zip(fdates,selected) if keep] != expected_dates:
+            raise ValueError(f'{station_name}: incomplete requested daily calendar')
+        fields = ['precip_mm','temp_max_c','temp_min_c','srad_wm2','wind_ms','shum_kgkg','pres_pa']
+        arrays = []
+        for field in fields:
+            values = np.asarray(fc.get(field,[]),dtype=float)
+            if values.shape != (len(fdates),):
+                raise ValueError(f'{station_name}: {field} length does not match source dates')
+            values = values[selected]
+            bad = np.flatnonzero(~np.isfinite(values))
+            if len(bad):
+                raise ValueError(f'{station_name}: {field} missing/nonfinite on {expected_dates[bad[0]]:%Y-%m-%d}')
+            arrays.append(values)
+        precip,tmax,tmin,srad,wind,shum,pres = arrays
+        if any((a < 0).any() for a in [precip,srad,wind,shum]) or (pres <= 0).any() or (shum >= 1).any():
+            raise ValueError(f'{station_name}: invalid precipitation, radiation, wind, humidity or pressure')
+        if (tmax < tmin).any():
+            raise ValueError(f'{station_name}: Tmax below Tmin')
+        fdates = expected_dates
 
         # Derived: solar W/m2 -> MJ/m2/day; specific humidity -> RH fraction
         slr_mj = srad * 0.0864
         tmean = (tmax + tmin) / 2.0
         with np.errstate(invalid="ignore", divide="ignore"):
             e_act = shum * pres / (0.622 + 0.378 * shum)
-            rh = np.clip(e_act / _es_pa(tmean), 0.05, 1.0)
+            rh = np.clip(e_act / _es_pa(tmean), 0.0, 1.0)
 
-        def _clean(v, fill):
-            return fill if (v is None or not np.isfinite(v)) else float(v)
+        if not np.isfinite(rh).all():
+            raise ValueError(f"{station_name}: nonfinite derived relative humidity")
 
         pcp_data, tmp_data, slr_data, hmd_data, wnd_data = [], [], [], [], []
         for i, d in enumerate(fdates):
             yr = d.year
             jday = d.timetuple().tm_yday
-            pcp_data.append({"year": yr, "jday": jday, "value": max(0.0, _clean(precip[i], 0.0))})
+            pcp_data.append({"year": yr, "jday": jday, "value": float(precip[i])})
             tmp_data.append({"year": yr, "jday": jday,
-                             "tmax": _clean(tmax[i], 25.0), "tmin": _clean(tmin[i], 15.0)})
-            slr_data.append({"year": yr, "jday": jday, "value": _clean(slr_mj[i], 15.0)})
-            hmd_data.append({"year": yr, "jday": jday, "value": _clean(rh[i], 0.65)})
-            wnd_data.append({"year": yr, "jday": jday, "value": _clean(wind[i], 2.5)})
+                             "tmax": float(tmax[i]), "tmin": float(tmin[i])})
+            slr_data.append({"year": yr, "jday": jday, "value": float(slr_mj[i])})
+            hmd_data.append({"year": yr, "jday": jday, "value": float(rh[i])})
+            wnd_data.append({"year": yr, "jday": jday, "value": float(wind[i])})
 
         logger.info(f"Loaded {len(pcp_data)} days for station {station_name} "
                     f"({lat:.3f},{lon:.3f}) from {FORCING_SOURCE}: "
                     f"mean precip {np.nanmean(precip)*365:.0f} mm/yr, "
                     f"Tmax {np.nanmean(tmax):.1f} Tmin {np.nanmean(tmin):.1f} C")
 
+        prepared.append((station_name,lat,lon,elev,pcp_data,tmp_data,slr_data,hmd_data,wnd_data))
+
+    # Validate EVERY station before creating or overwriting any weather artifact.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for station_name,lat,lon,elev,pcp_data,tmp_data,slr_data,hmd_data,wnd_data in prepared:
         # Write individual station files
         pcp_name = f"{station_name}.pcp"
         write_weather_file(output_dir / pcp_name, f"Precipitation data for station {station_name}",

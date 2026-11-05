@@ -16,6 +16,14 @@ Hard limits from DSSAT Fortran source:
     NL = 20 (maximum soil layers)
     LL < DUL < SAT for every layer
     SAT - DUL >= 0.01 (minimum drainage gap)
+    (1 - SBDM/2.65) - DUL >= 0.01: the gap DSSAT itself uses. DSSAT computes the pore
+        space from the bulk density (SOILDYN.for: POROS = 1 - BD/2.65) and its soil N
+        code divides by POROS - DUL; near zero the run crashes (DayCent diffusivity).
+    SSAT at most 1 - SBDM/2.65 (compared at SSAT's printed precision, 0.0005): a warning,
+        an error in STRICT_MODE (DSSAT accepts it, and some shipped DSSAT soils have it).
+    Every layer number is read twice, by spaces and by header position as DSSAT reads it
+    (READS.for PARSE_HEADERS); if the two differ, a column has shifted and DSSAT reads
+    another number: an error.
 
 Exit codes:
     0 = success (validation complete, may have warnings)
@@ -44,6 +52,11 @@ OUTPUT_JSON = True          # If True, print JSON report to stdout
 # DSSAT CONSTANTS
 # ---------------------------------------------------------------------------
 MAX_LAYERS = 20             # NL=20 hard limit in DSSAT Fortran source
+MIN_GAP = 0.01              # SSAT - SDUL and (1 - SBDM/2.65) - SDUL; DSSAT repairs SAT = DUL + 0.01 (IPSOIL_Inp.for)
+PARTICLE_DENSITY = 2.65     # g/cm3 (SOILDYN.for: POROS = 1 - BD/2.65)
+SSAT_PRINT_TOL = 0.0005     # SSAT is printed with 3 decimals
+SSAT_ABOVE_PORE_IS_ERROR = False   # SSAT above the pore space of SBDM: warning (error in STRICT_MODE)
+POSITION_CHECK_COLUMNS = ("SLLL", "SDUL", "SSAT", "SRGF", "SSKS", "SBDM", "SLOC")
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -83,12 +96,44 @@ def safe_float(val_str, default=None):
         return default
 
 
+def dssat_header_spans(hdr):
+    """(name, start, end) python slices of a '@' header line exactly as DSSAT's PARSE_HEADERS
+    (Utilities/READS.for): the first field starts at column 1; a field ends at the last character of its
+    header token and the next one starts one column after the first blank that follows; trailing periods are
+    dropped; '!' ends the line. So under a right-justified 6-wide header such as '  SSKS', DSSAT reads only the
+    last 5 characters of the 6-wide data field."""
+    length = len(hdr.rstrip())
+    bang = hdr.find("!", 1)
+    if 0 < bang < length:
+        length = bang
+    spans = []
+    start = 0
+    spaces = True
+    for i in range(1, length):
+        if hdr[i] == " ":
+            if spaces:
+                continue
+            spans.append([start, i])
+            start = i + 1
+            spaces = True
+        else:
+            spaces = False
+    spans.append([start, length])
+    out = []
+    for k, (a, b) in enumerate(spans):
+        name = (hdr[1:b] if k == 0 else hdr[a:b]).strip().rstrip(".")
+        out.append((name, a, b))
+    return out
+
+
 def parse_sol_file(filepath):
     """Parse a DSSAT .SOL file into a list of soil profiles.
 
     Each profile is a dict with:
         pedon_id, source, texture, max_depth, description,
         site_data (dict), surface_params (dict), layers (list of dicts),
+        layers_dssat (list of dicts: the same layer values read by header
+        position as DSSAT reads them, first token of each field or None),
         header_line_num (int).
 
     Args:
@@ -104,6 +149,7 @@ def parse_sol_file(filepath):
     current_profile = None
     section = None  # 'site', 'surface', 'layers'
     layer_headers = []
+    layer_spans = []
     surface_headers = []
 
     for i, line in enumerate(raw_lines):
@@ -132,6 +178,7 @@ def parse_sol_file(filepath):
                 "site_data": {},
                 "surface_params": {},
                 "layers": [],
+                "layers_dssat": [],
                 "header_line_num": i + 1,
                 "raw_header": stripped,
             }
@@ -156,6 +203,7 @@ def parse_sol_file(filepath):
             elif "SLB" in cols:
                 section = "layer_data"
                 layer_headers = cols
+                layer_spans = dssat_header_spans(line.rstrip("\r\n"))
                 continue
             else:
                 # Unknown section header; keep current section
@@ -202,6 +250,12 @@ def parse_sol_file(filepath):
                 else:
                     layer[col] = None
             current_profile["layers"].append(layer)
+            raw = line.rstrip("\r\n")
+            by_position = {}
+            for name, a, b in layer_spans:
+                toks = raw[a:b].split()
+                by_position[name] = toks[0] if toks else None
+            current_profile["layers_dssat"].append(by_position)
             continue
 
     # Don't forget the last profile
@@ -354,12 +408,29 @@ def validate_profile(profile):
             )
 
         # SAT - DUL >= 0.01 (DSSAT minimum gap enforcement)
-        if sat - dul < 0.01:
+        if sat - dul < MIN_GAP - 1e-9:
             errors.append(
                 f"Profile {pedon}, layer {idx + 1} (SLB={layer_depth}): "
-                f"SSAT - SDUL = {sat - dul:.4f} < 0.01. "
-                f"DSSAT requires minimum gap of 0.01 cm3/cm3 for drainage."
+                f"SSAT - SDUL = {sat - dul:.4f} < {MIN_GAP}. "
+                f"DSSAT requires minimum gap of {MIN_GAP} cm3/cm3 for drainage."
             )
+
+        # The gap DSSAT itself uses: pore space of the printed SBDM minus SDUL
+        bd = safe_float(layer.get("SBDM"))
+        if bd is not None and bd > 0:
+            pore = 1.0 - bd / PARTICLE_DENSITY
+            if pore - dul < MIN_GAP - 1e-9:
+                errors.append(
+                    f"Profile {pedon}, layer {idx + 1} (SLB={layer_depth}): "
+                    f"pore space of SBDM {bd:.2f} (1 - SBDM/2.65 = {pore:.4f}) - SDUL ({dul:.3f}) "
+                    f"= {pore - dul:.4f} < {MIN_GAP}. DSSAT computes its pore space from SBDM "
+                    f"(SOILDYN.for) and its soil N code divides by pore space - DUL; lower SBDM or SDUL."
+                )
+            if sat > pore + SSAT_PRINT_TOL + 1e-9:
+                msg = (f"Profile {pedon}, layer {idx + 1} (SLB={layer_depth}): "
+                       f"SSAT ({sat:.3f}) is above the pore space of SBDM {bd:.2f} "
+                       f"(1 - SBDM/2.65 = {pore:.4f}).")
+                (errors if SSAT_ABOVE_PORE_IS_ERROR else warnings).append(msg)
 
         # Physical plausibility: LL >= 0 and SAT <= 1.0
         if ll < 0:
@@ -481,6 +552,24 @@ def validate_profile(profile):
 
     if nan_count > 5:
         errors.append(f"... and {nan_count - 5} more NaN/Inf values.")
+
+    # -------------------------------------------------------------------
+    # CHECK that DSSAT reads the same numbers (header position, READS.for)
+    # -------------------------------------------------------------------
+    for idx, (layer, by_pos) in enumerate(zip(layers, profile.get("layers_dssat", []))):
+        for col in POSITION_CHECK_COLUMNS:
+            if col not in layer or layer.get(col) is None:
+                continue
+            a = safe_float(layer.get(col))
+            b = safe_float(by_pos.get(col))
+            if a is None and b is None:
+                continue
+            if a is None or b is None or abs(a - b) > 1e-9:
+                errors.append(
+                    f"Profile {pedon}, layer {idx + 1}: column {col} reads '{layer.get(col)}' by spaces "
+                    f"but '{by_pos.get(col)}' by header position, which is how DSSAT reads it "
+                    f"(a field is too wide or shifted)."
+                )
 
     # -------------------------------------------------------------------
     # CHECK SRGF (root growth factor) monotonically decreasing

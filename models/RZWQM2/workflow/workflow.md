@@ -27,7 +27,7 @@ At minimum:
 - **crop_name** — crop to simulate (e.g., "maize", "soybean", "wheat")
 
 Optional:
-- **soil_source** — "soilgrids" (default), "hwsd", "vic_global"
+- **soil_source** — "soilgrids" (default), "hwsd"
 - **forcing_source** — "mswx" (default), "cmfd", "csv"
 - **forcing_path** — path to forcing data directory
 - **cultivar_id** — specific DSSAT cultivar (default: auto-select)
@@ -112,7 +112,6 @@ shutil.copytree(
 |--------|----------|---------|
 | `soilgrids` | Global (gaps in NE China) | No local data needed — API-based |
 | `hwsd` | China (full coverage) | `tools/s0_global_data/hwsd_soil_adapter.py` — needs HWSD raster + .mdb + mdbtools |
-| `vic_global` | Global 0.25deg | Needs `global_soil_param_new.txt` — NOT recommended (model-derived, not atlas) |
 
 **HWSD data paths (this server)**:
 - Raster: `KISSPATH_STATIC/HWSD_China_Geo.img`
@@ -421,7 +420,6 @@ These cause silent failures if violated — no error message, just wrong results
 | Data | Path | Notes |
 |------|------|-------|
 | MSWX forcing | `KISSPATH_FORCING/` | 1979-2026, global 0.1deg, ~9GB/year/var |
-| VIC global soil | `KISSPATH_HOME/桌面/yc/doc/soil/data/global_soil_param_new.txt` | NOT recommended for RZWQM2 |
 | HydroCraft tools | `KISSPATH_ROOT/` | Reference for MSWX reading patterns |
 | RZWQM2 template | `linux/` directory in this repo | Working Ohio scenario |
 | DSSAT database | `data/databases/DSSAT/` or `linux/DSSAT/` | 41 crop models |

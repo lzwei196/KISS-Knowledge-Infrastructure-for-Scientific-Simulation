@@ -12,12 +12,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Total capabilities identified | 62 |
-| DONE (tool exists and covers capability) | 33 |
+| Total capabilities identified | 61 |
+| DONE (tool exists and covers capability) | 32 |
 | PARTIAL (mentioned in SKILL.md or options but no dedicated tool) | 10 |
 | TODO (SWMM supports it, KI has zero coverage) | 19 |
-| Coverage (DONE + PARTIAL) / Total | 69.4% |
-| Coverage (DONE only) / Total | 53.2% |
+| Coverage (DONE + PARTIAL) / Total | 68.9% |
+| Coverage (DONE only) / Total | 52.5% |
 
 ---
 
@@ -85,7 +85,7 @@
 | R01 | Rain gage definition | [RAINGAGES] | **DONE** | `assemble_inp_file` -- writes RAINGAGES section from JSON |
 | R02 | Rainfall timeseries from gauge data | [TIMESERIES] | **DONE** | `create_rain_timeseries` -- CSV to SWMM DAT format with unit conversion |
 | R03 | Design storm generation (SCS/Chicago/Uniform/Triangular) | [TIMESERIES] | **DONE** | `generate_design_storm` -- 7 storm types with proper depth distribution |
-| R04 | VIC forcing to SWMM rainfall | [TIMESERIES] | **DONE** | `convert_vic_forcing_to_swmm` -- handles VIC 3-hourly precip to mm/hr intensity |
+| R04 | Gridded source (CMFD / MSWX / NASA POWER) to SWMM rainfall | [TIMESERIES] | **DONE** | `build_rain_timeseries_from_source` -- reads the source through the shared loader; 3-hourly / hourly mm per step to mm/hr intensity or volume; prints the matching INTERVAL and FORMAT |
 | R05 | Rainfall input validation | N/A (validation) | **DONE** | `validate_rainfall_input` -- negative values, gaps, extreme intensities, format checks |
 | R06 | CMIP6 climate-scaled rainfall | [TIMESERIES] | **DONE** | `scale_cmip6_rainfall_to_swmm` -- delta-change method with literature defaults |
 
@@ -132,12 +132,11 @@
 | E03 | Timeseries result extraction | .out binary | **DONE** | `extract_results` -- node (depth, head, inflow, flooding), link (flow, depth, velocity), subcatchment (rainfall, runoff, infiltration) |
 | E04 | System-level result extraction | .out / .rpt | **PARTIAL** | check_continuity_errors extracts system totals from RPT but no tool produces system-level timeseries (total inflow, outflow, storage) from .out |
 
-### I. MODEL COUPLING (5 capabilities)
+### I. MODEL COUPLING (4 capabilities)
 
 | ID | Capability | SWMM Section(s) | Status | Tool(s) / Notes |
 |----|-----------|-----------------|--------|-----------------|
 | C01 | VIC runoff to SWMM inflow | [INFLOWS] | **DONE** | `convert_vic_runoff_to_swmm_inflow` -- mm/day to m3/s with temporal disaggregation |
-| C02 | VIC forcing to SWMM rainfall | [TIMESERIES] | **DONE** | `convert_vic_forcing_to_swmm` -- shared meteorology |
 | C03 | CaMa-Flood stage to SWMM outfall BC | [TIMESERIES], [OUTFALLS] | **DONE** | `convert_cama_stage_to_outfall_bc` -- sfcelv extraction, datum offset |
 | C04 | SWMM outflow to CaMa-Flood lateral inflow | NetCDF output | **DONE** | `convert_swmm_outflow_to_cama_lateral` -- outfall aggregation to CaMa grid |
 | C05 | Coupling water balance validation | N/A (validation) | **DONE** | `validate_coupling_water_balance` -- VIC/SWMM/CaMa mass balance closure |
@@ -176,7 +175,7 @@
 | F. LID / Green Infrastructure | 5 | 4 | 1 | 0 | 100.0% |
 | G. Model Assembly | 5 | 4 | 1 | 0 | 100.0% |
 | H. Execution & Results | 4 | 3 | 1 | 0 | 100.0% |
-| I. Model Coupling | 5 | 5 | 0 | 0 | 100.0% |
+| I. Model Coupling | 4 | 4 | 0 | 0 | 100.0% |
 | J. Real-Time Control | 2 | 0 | 0 | 2 | 0.0% |
 | K. RDII | 1 | 0 | 0 | 1 | 0.0% |
 | L. External Inflows | 2 | 1 | 0 | 1 | 50.0% |

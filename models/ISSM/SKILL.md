@@ -61,16 +61,13 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: ISSM v2026.1 (Ice-sheet and Sea-level System Model)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-30
-**Stats**: 4 tools | 5 skill documents | 20 diagnostic triplets | ~2,000 lines of validated Python
-**Validation status**: `synthetic_only` — only the SquareIceShelf/SquareSheet
-NightlyRun benchmarks have been executed (`_work/ISSM/issm_run_test{101,201,301}.py`,
-domain `Square.exp` is a 5-point square, not a real glacier).
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
+**Validation status**: `synthetic_only` (SquareIceShelf/SquareSheet
+NightlyRun benchmarks; domain `Square.exp` is a 5-point square, not a real glacier).
 **Real-site validation**: NOT DONE. Before claiming a real-site result, fetch
 BedMachine geometry + MEaSUREs surface velocity for a chosen target
 (e.g. Pine Island Glacier, Thwaites, Jakobshavn) and use
-`tools/convert_geometry_to_issm.py` to build a real `md` from them. Today
-the KI's `outputs/` and `_work/ISSM/` contain no real-glacier mesh,
-geometry, friction, or velocity data.
+`tools/convert_geometry_to_issm.py` to build a real `md` from them.
 
 ---
 
@@ -243,7 +240,7 @@ All stages are sequential. Stage 4 (extrusion) is only needed for 3D simulations
 | `run_issm` | s7 | `tools/run_issm.py` | 310 | Execute ISSM Python simulation end-to-end |
 | `parse_issm_output` | s8 | `tools/parse_issm_output.py` | 260 | Parse ISSM results to CSV/JSON |
 
-**Total**: 4 tools, ~1,100 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -535,7 +532,7 @@ In ISSM, prescribed boundary conditions (spcvx, spcvy, spctemperature) use NaN t
 
 ## Diagnostic Triplets
 
-20 triplets covering 5 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 5 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -560,22 +557,22 @@ In ISSM, prescribed boundary conditions (spcvx, spcvy, spctemperature) use NaN t
 | dt_019 | degraded | physics_coupling | Missing initial conditions for transient |
 | dt_020 | **silent** | physics_coupling | Wrong density constants (ρ_ice, ρ_water) |
 
-**Silent error count**: 13/20 (65%) — extremely high due to the model's tolerance of physically unreasonable inputs.
+**Silent error count** (when this section was written): 13/20 (65%) — extremely high due to the model's tolerance of physically unreasonable inputs.
 
 ---
 
-## Validated Results (template section 11)
+## Validation Status (template section 11)
 
-**Current validation status**: `synthetic_only`. The KI has executed only the
-SquareIceShelf/SquareSheet NightlyRun benchmarks in
-`_work/ISSM/issm_run_test{101,201,301}.py`; the `Square.exp` domain is a
-5-point square, not a real glacier. Real-site validation is not done.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
+
+**Current validation status**: `synthetic_only` (SquareIceShelf/SquareSheet
+NightlyRun benchmarks; the `Square.exp` domain is a 5-point square, not a real
+glacier). Real-site validation is not done.
 
 Before claiming a real-site result, fetch BedMachine geometry and MEaSUREs surface
 velocity for a glaciated target such as Pine Island Glacier, Thwaites, or Jakobshavn,
-then use `tools/convert_geometry_to_issm.py` to build a real `md`. The current
-`outputs/` and `_work/ISSM/` contents contain no real-glacier mesh, geometry,
-friction, or velocity data.
+then use `tools/convert_geometry_to_issm.py` to build a real `md`.
 
 ### Convention Bars from `docs/validation_convention.yaml`
 
@@ -670,5 +667,5 @@ ki/
     s5_flow_equations.md              # Physics and solver config
     s7_execution.md                   # Running and post-processing
   diagnostics/
-    triplets.yaml                     # 20 diagnostic triplets
+    triplets.yaml                     # diagnostic triplets (count: KI map)
 ```

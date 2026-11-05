@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Score the ALREADY-COMPLETED WRF-Hydro verify_2 run (Laoguan He @ Xixia, GRDC 2182250).
 
+2026-10-05: a truncated run is a failure and is never scored. This script now scores
+RUN only if wrfhydro_run_gate says the run finished (completion banner in a current
+diag_hydro.* AND run_inputs.json, written at launch by run_and_score_verify2.py,
+matching the current inputs); otherwise it stops with an error. The old note below
+(a run killed at 97.8 % and scored as-is) describes what this script USED to do.
+
 The real WRF-Hydro binary ran end-to-end 1985-07-01 .. 1991-11-09 (2323/2375 daily
 CHRTOUT = 97.8%; diag_hydro confirms a live run, no crash -- the detached process was
 externally killed at the tail). Rather than wipe and redo the ~3 h run, we score the
@@ -16,18 +22,19 @@ import datetime as _dt
 from pathlib import Path
 
 import run_and_score_verify2 as R   # module-level import; main() is __main__-guarded
+import wrfhydro_run_gate as gate    # on sys.path via run_and_score_verify2
 
 RUN = R.RUN
 STATE_DIR = R.STATE_DIR
 
 
 def main():
-    # last simulated day from the CHRTOUT set
+    ok, why = gate.check_finished(RUN, R.START.isoformat(), R.END.isoformat(), tables=True, exe=R.TBL / "wrf_hydro.exe", tbl_dir=R.TBL)
+    if not ok:
+        R.log(f"=== SCORE-ONLY refused: run not finished ({why}) ===")
+        raise RuntimeError(f"verify_2 run in {RUN} is not finished: {why}; a truncated run is never scored")
     chrt = sorted(glob.glob(str(RUN / "*.CHRTOUT_DOMAIN1")))
-    last_tag = Path(chrt[-1]).name[:8]
-    last_day = _dt.date(int(last_tag[:4]), int(last_tag[4:6]), int(last_tag[6:8]))
-    R.END = last_day                       # so water_balance() reads an existing LDASOUT
-    R.log(f"=== SCORE-ONLY: {len(chrt)} CHRTOUT, last simulated day {last_day} ===")
+    R.log(f"=== SCORE-ONLY: run finished ({why}); {len(chrt)} CHRTOUT ===")
 
     # record the full pipeline that produced the on-disk artifacts
     R.TOOLS_USED.extend([
@@ -69,16 +76,14 @@ def main():
         "pbias": round(float(m["PBIAS"]), 2),
         "r": round(float(m["r"]), 4),
         "period": (f"{merged.index.min():%Y-%m-%d}..{merged.index.max():%Y-%m-%d} "
-                   f"({len(merged)} paired daily values; 1985-H2 discarded as spinup; "
-                   f"tail 1991-11-10..12-31 not simulated -- run externally "
-                   f"truncated at 97.8%)"),
+                   f"({len(merged)} paired daily values; 1985-H2 discarded as spinup)"),
         "nse_cal": round(float(cal["NSE"]), 4), "kge_cal": round(float(cal["KGE"]), 4),
         "pbias_cal": round(float(cal["PBIAS"]), 2), "r_cal": round(float(cal["r"]), 4),
         "nse_val": round(float(val["NSE"]), 4), "kge_val": round(float(val["KGE"]), 4),
         "pbias_val": round(float(val["PBIAS"]), 2), "r_val": round(float(val["r"]), 4),
         "n_cal": int(cal["n"]), "n_val": int(val["n"]), "n_full": int(full["n"]),
         "period_calibration": f"{R.CAL[0]}..{R.CAL[1]}",
-        "period_validation": f"{R.VAL[0]}..1991-11-09",
+        "period_validation": f"{R.VAL[0]}..{R.VAL[1]}",
         "sim_mean_m3s": round(float(merged["Q_sim"].mean()), 3),
         "obs_mean_m3s": round(float(merged["Q_obs"].mean()), 3),
     }
@@ -94,7 +99,7 @@ def main():
         "find_gauge_feature(); neither exists on disk (only argmax find_outlet_feature)",
         "D3 hydro.namelist template hard-codes CHRTOUT_GRID=1 / RTOUT_DOMAIN=1",
         "D4 dt_v036 water-soil-type on land cells + dt_v005 GREENFRAC=0 -> "
-        "crash-avoidance sanitation of the DOMAIN NetCDF outputs",
+        "opt-in, recorded stand-in edits (--fix-domain-gaps, domain_edits.json)",
     ]
     result["notes"] = (
         "WRF-Hydro v5.2.0 standalone (NoahMP + gridded diffusive-wave routing) verifier "
@@ -110,11 +115,9 @@ def main():
         "channel_option=3 diffusive wave, GWBASESWCRT=1, UDMP_OPT=0, rst_typ=0); "
         "REFKDT=0.8 baked into build_soil_properties, GW bucket left STOCK -- an "
         "UNCALIBRATED stock-parameter run matching the verify_1 convention. The real "
-        "WRF-Hydro binary ran end-to-end 1985-07-01..1991-11-09 (2323/2375 daily CHRTOUT "
-        "= 97.8%; diag_hydro shows a live run, no crash -- the detached process was "
-        "externally truncated at the tail, so the final ~52 days of val 1991 are "
-        "unsimulated). Metrics scored on the real-model output over 1986-01-01.."
-        "1991-11-09 (1985 H2 discarded as spinup). Discharge from CHRTOUT at the "
+        "WRF-Hydro binary ran 1985-07-01..1991-12-31 and finished (completion banner + "
+        "matching run_inputs.json). Metrics scored on the real-model output from "
+        "1986-01-01 (1985 H2 discarded as spinup). Discharge from CHRTOUT at the "
         "gauge-matched max-order feature (dt_v009 -- NOT basin-mean LDASOUT SFCRNOFF). "
         + (" ".join(R.NOTES_EXTRA) if R.NOTES_EXTRA else "")
     )
@@ -123,6 +126,13 @@ def main():
     result["tools_used"] = [t for t in R.TOOLS_USED if not (t in seen or seen.add(t))]
     result["tools_failed"] = R.TOOLS_FAILED
 
+    # The domain's stand-in edits must be on record (written by run_and_score_verify2.py).
+    _rp = R.DOMAIN / R.de.RECORD
+    if not _rp.is_file():
+        raise RuntimeError(f"no {_rp}: the domain's edit history is unknown; not scored")
+    _rec = json.loads(_rp.read_text())
+    result["domain_edits"] = R.de.summary_for_result(_rec)
+    result["notes"] = (result["notes"] + " " + R.de.summary_sentence(_rec)).strip()
     out = STATE_DIR / "result.json"
     with open(out, "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)

@@ -35,7 +35,7 @@ tools:
   - tools/s2_drainage_network/define_cross_sections.py
   - tools/s2_drainage_network/import_network_from_gis.py
   - tools/s2_drainage_network/validate_network_connectivity.py
-  - tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py
+  - tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py
   - tools/s3_rainfall_forcing/create_rain_timeseries.py
   - tools/s3_rainfall_forcing/generate_design_storm.py
   - tools/s3_rainfall_forcing/scale_cmip6_rainfall_to_swmm.py
@@ -145,6 +145,6 @@ validation:
 summary:
   total_tools: 27
   total_stage_docs: 7
-  total_diagnostic_triplets: 24
-  generated: '2026-08-15'
+  total_diagnostic_triplets: 31
+  generated: '2026-10-03'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

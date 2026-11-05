@@ -1,0 +1,46 @@
+{
+  "test_case": "SHAW Trial (official v3.0.3 distribution demo)",
+  "engine": {
+    "name": "SHAW",
+    "version": "3.0.3",
+    "binary": "shaw303",
+    "source": "USDA-ARS Northwest Watershed Research Center (G.N. Flerchinger); distribution archive Shaw303.zip",
+    "license": "USDA-ARS public release (US Government work)"
+  },
+  "ki": {
+    "model": "SHAW",
+    "repo": "KISS-Knowledge-Infrastructure-for-Scientific-Simulation"
+  },
+  "simulation": {
+    "start": "JD 338, 1986",
+    "end": "JD 350, 1986",
+    "note": "12-day demo shipped with SHAW 3.0.3"
+  },
+  "files": {
+    "inputs/Trial.30.sit": {
+      "bytes": 2456,
+      "sha256": "924909e7b55c9def43d63882279dfa89358583e63b68cfa5ccb29bb525447fbc"
+    },
+    "inputs/Trial.30.wea": {
+      "bytes": 16102,
+      "sha256": "5643a5d3ddaeda2637730b847b02e462734786545e46fb642ce028fb1604a460"
+    },
+    "inputs/Trial.303.inp": {
+      "bytes": 523,
+      "sha256": "acbbad31af19d8cea1da8148ad3e3c9144f291d9c4a53b98f6e510cbb11c6e1f"
+    },
+    "inputs/Trial.moi": {
+      "bytes": 1859,
+      "sha256": "e763b117dd1b4570dacf6f03287f20b70a48d69dc23c9d8712396a51f3bf25c9"
+    },
+    "inputs/Trial.tem": {
+      "bytes": 4447,
+      "sha256": "50dfc0d4ad7bb48bcbf2c9b42a526f557e93499761c2f29c354aac2cd56b4b51"
+    }
+  },
+  "run": {
+    "cwd": "a clean dir containing the inputs/ files",
+    "command": "printf 'Trial.303.inp\\n\\n' | shaw303",
+    "reference": "python run_reference.py"
+  }
+}

@@ -1,6 +1,6 @@
 # GemPy Diagnostic Triplets
 # Format: symptom → diagnosis → remedy
-# 15+ entries covering unit conversion, parameter format, runtime, and silent errors
+# Entries (15+ when this header was written; current count: the SKILL.md KI map) covering unit conversion, parameter format, runtime, and silent errors
 
 - id: dt_001
   stage: s1_input_data

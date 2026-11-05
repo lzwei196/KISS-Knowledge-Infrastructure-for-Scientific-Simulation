@@ -1,5 +1,7 @@
 # Stage 4: PET Computation
 
+**REAL engine:** PET is the engine's own Hamon equation (cover keys petParam1, petParam2, temperaturePetOff; VELMA 2.0 manual sec. 10.1) and is reported as `PET(mm/day)_Delineated_Average` in DailyResults.csv. Everything below is the Python SURROGATE's PET (not VELMA).
+
 ## Purpose
 Document the internal PET stage in `tools/run_velma.py`. PET is not a standalone CLI in this KI; it is computed inside `pet_hargreaves()` during every `velma_4layer()` timestep and then used for root-weighted actual ET extraction.
 

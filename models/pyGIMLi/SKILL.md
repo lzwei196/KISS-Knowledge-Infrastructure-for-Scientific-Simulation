@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Geophysics — Electrical Resistivity Tomography (ERT), Seismic Refraction (SRT), Electromagnetics (EM), Induced Polarization (IP)
 **Authors**: Carsten Rücker, Thomas Günther, Florian Wagner
 **License**: Apache 2.0
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~71,000 lines Python
+**Stats**: ~71,000 lines Python | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -461,7 +461,7 @@ ki/
 │   ├── s3_forward_inversion.md       # Running forward/inverse problems
 │   └── s4_output_analysis.md         # Result extraction and QC
 ├── diagnostics/
-│   └── triplets.yaml                 # 18 symptom→diagnosis→remedy
+│   └── triplets.yaml                 # diagnostic triplets (count: KI map)
 └── workflow/
     └── workflow.md                   # Auto-generated pipeline
 ```

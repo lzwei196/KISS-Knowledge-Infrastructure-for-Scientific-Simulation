@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT EPA WASP. This tool belongs to the KI's analytic Python stand-in (sinusoidal
+temperature, Streeter-Phelps DO, Carlson TSI). Its numbers are NOT WASP results; label them
+"surrogate". The real EPA WASP 8.5 route is build_wasp_weather_from_source.py ->
+build_wasp_lake_case.py -> run_wasp_engine.py -> parse_wasp_engine_output.py.
+
 parse_output_wasp.py -- Parse WASP simulation output and compute validation metrics.
 
 Reads the JSON output from run_wasp.py, extracts temperature and dissolved
@@ -385,7 +390,7 @@ def generate_figure(data, all_metrics, figure_path, log):
             doy_sorted = doy[sort_idx]
             T_sim_sorted = T_sim[sort_idx]
             ax.plot(doy_sorted, T_sim_sorted, "r-", lw=2, alpha=0.8,
-                    label="WASP model")
+                    label="WASP SURROGATE (analytic stand-in, not EPA WASP)")
 
             metrics = all_metrics.get("temperature", {})
             ax.set_xlabel("Day of Year")
@@ -419,7 +424,7 @@ def generate_figure(data, all_metrics, figure_path, log):
             ax.scatter(doy, DO_obs, s=4, alpha=0.1, c="steelblue", label="Observed")
             sort_idx = np.argsort(doy)
             ax.plot(doy[sort_idx], DO_sim[sort_idx], "r-", lw=2, alpha=0.8,
-                    label="WASP model")
+                    label="WASP SURROGATE (analytic stand-in, not EPA WASP)")
 
             metrics = all_metrics.get("dissolved_oxygen", {})
             ax.set_xlabel("Day of Year")
@@ -470,10 +475,10 @@ def generate_figure(data, all_metrics, figure_path, log):
 
         T_range = np.linspace(0, 35, 200)
         DOsat = do_saturation(T_range)
-        ax.plot(T_range, DOsat, "b-", lw=2, label="Benson-Krause (WASP)")
+        ax.plot(T_range, DOsat, "b-", lw=2, label="Benson-Krause (surrogate)")
         ax.set_xlabel("Temperature (C)")
         ax.set_ylabel("DO saturation (mg/L)")
-        ax.set_title("DO Saturation Curve\n(WASP thermal coupling)")
+        ax.set_title("DO Saturation Curve\n(surrogate thermal coupling)")
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
@@ -525,7 +530,7 @@ def generate_figure(data, all_metrics, figure_path, log):
             ax.legend(fontsize=8)
             ax.grid(True, alpha=0.3, axis="x")
 
-    plt.suptitle("WASP Water Quality Model Output", fontsize=13,
+    plt.suptitle("WASP SURROGATE (analytic Python stand-in, NOT EPA WASP) output", fontsize=13,
                  fontweight="bold", y=1.01)
 
     out_dir = os.path.dirname(figure_path)
@@ -579,7 +584,7 @@ def validate_output(all_metrics, log):
 def process(args):
     """Main processing: parse output, compute metrics, export."""
     log = []
-    log.append("WASP Output Parser")
+    log.append("WASP SURROGATE Output Parser (analytic stand-in, NOT EPA WASP)")
     log.append("=" * 50)
 
     # Load simulation results
@@ -648,6 +653,9 @@ def process(args):
             return obj
 
         metrics_out = np2py(all_metrics)
+        if isinstance(metrics_out, dict):
+            metrics_out = {"implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never "
+                                              "report these numbers as WASP results", **metrics_out}
 
         with open(args.metrics_json, "w") as f:
             json.dump(metrics_out, f, indent=2)
@@ -660,6 +668,7 @@ def process(args):
     result = {
         "status": "success",
         "model": "WASP",
+        "implementation": "SURROGATE - analytic Python stand-in, NOT EPA WASP; never report its numbers as WASP results",
         "output": {
             "mode": mode,
             "metrics": all_metrics,
@@ -673,7 +682,7 @@ def process(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse WASP output and compute validation metrics")
+        description="SURROGATE (analytic Python stand-in, NOT EPA WASP): parse run_wasp.py output and compute metrics. Real-engine output is read by tools/parse_wasp_engine_output.py.")
     parser.add_argument("--input", required=True,
                         help="Simulation JSON from run_wasp.py")
     parser.add_argument("--output", default=None,

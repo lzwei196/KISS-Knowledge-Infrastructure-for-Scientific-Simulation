@@ -23,6 +23,11 @@ WORKSPACE_ROOT = Path("KISSPATH_ROOT")
 BASIN_NAME = os.environ.get("VIC_BASIN_NAME", "mekong_travinh_slr")
 
 # 路径配置字典
+if abs(float(os.environ.get("VIC_RES", "0.25")) * 100 - round(float(os.environ.get("VIC_RES", "0.25")) * 100)) > 1e-6:
+    # codex structure_sync r2 #4: the NNNdeg token holds hundredths of a degree only; 0.125 and
+    # 0.12 would both be "012deg" and silently share grid/forcing files. Refuse, never round.
+    raise SystemExit(f"VIC_RES={os.environ.get('VIC_RES')} is not a whole number of 0.01 deg; "
+                     f"the resolution token (e.g. 025deg) cannot represent it")
 PATH_CONFIG = {
     # 数据路径
     "shp_dir": WORKSPACE_ROOT / "data" / "shp" / "mekong_lower_shp" / "mekong_lower_boundary_shp",
@@ -38,7 +43,7 @@ PATH_CONFIG = {
     "his_average_prec": WORKSPACE_ROOT / "data" / "his_average_prec",
 
     # 输出路径 (使用流域专属目录)
-    "output_grid_nc": WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / "grid" / f"grid_{BASIN_NAME}_025deg.nc",
+    "output_grid_nc": WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / "grid" / f"grid_{BASIN_NAME}_{int(round(float(os.environ.get('VIC_RES', '0.25')) * 100)):03d}deg.nc",   # System 1 W5
     "output_forcing_1d": WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / "forcing" / "forcing_1d",
     "output_forcing_final": WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / "forcing" / "forcing_final",
     "output_soil_dir": WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / "soil",

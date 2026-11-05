@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
@@ -36,7 +36,7 @@
 | for claims and thresholds | `docs/gathered_papers.json` (11 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-06 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -47,12 +47,14 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | tool (exact path) | invocation |
 |---|---|
-| `tools/convert_landfire_to_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_landfire_to_simfire.py --help` |
-| `tools/convert_wind_to_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_wind_to_simfire.py --help` |
-| `tools/parse_simfire_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_simfire_output.py --help` |
-| `tools/run_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_simfire.py --help` |
+| `tools/convert_landfire_to_simfire.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/convert_landfire_to_simfire.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/convert_wind_to_simfire.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/convert_wind_to_simfire.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/derive_fire_environment.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/derive_fire_environment.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/mtbs_perimeter_to_grid.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/mtbs_perimeter_to_grid.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/parse_simfire_output.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/parse_simfire_output.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
+| `tools/run_simfire.py` | `"${SIMFIRE_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python}" {KI}/tools/run_simfire.py --help` (shared SimFire pipeline venv; python_env lacks simfire/landfire; override with $SIMFIRE_PYTHON) |
 
-*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 # SimFire — Wildfire Spread Simulation (Knowledge Infrastructure)
@@ -62,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Wildfire simulation, fire behavior prediction, reinforcement learning
 **Authors**: MITRE Fireline (Welsh, Dotter, Doyle, Gandikota, Kempis, Schambach, Tapley, Threet)
 **Last updated**: 2026-08-09
-**Stats**: 6 tools, 5 skill docs, 25 diagnostic triplets, ~10,600 lines Python source
+**Stats**: ~10,600 lines Python source, current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -467,7 +469,7 @@ sim.run("2h")
 
 ## S7 — Validating against an observed fire perimeter (MTBS)
 
-The end-to-end recipe, verified 2026-08-09 on six 2020 Great Basin wildfires.
+The end-to-end recipe.
 `tools/mtbs_perimeter_to_grid.py` owns both halves of the dag's hard caveat
 ("compared maps must share grid size and georeferencing").
 
@@ -514,77 +516,50 @@ max_fire_duration x update_rate x RoS  >=  pixel_scale x sqrt(2)
 
 The shipped examples use 4-5 with `pixel_scale: 50` ft. At LandFire's 30 m
 (98 ft) pixel that demands RoS >= 28 ft/min, which a realistic 1.6 mph midflame
-wind in FBFM 2 does not reach — the 2020 SLINK fire died after ONE pixel.
-**Verify convergence rather than guessing**: with `update_rate: 10`,
-`max_fire_duration` of 12, 36 and 96 all produced the identical 12 428 burned
-pixels for the 2020 BISHOP fire, i.e. 12 is already non-truncating and the
-fire's self-extinction is physical, not numerical.
+wind in FBFM 2 does not reach, so the fire can die after one pixel.
+**Verify convergence rather than guessing**: run the same fire with two or three
+increasing values of `max_fire_duration`; if they give the identical burned-pixel
+count, the smallest value is already non-truncating and the fire's
+self-extinction is physical, not numerical.
 
-### What an uncalibrated operational run actually scores
+### Comparing a run to an MTBS final perimeter
 
-Six 2020 Great Basin wildfires (SLINK, NUMBERS, MOUNTAIN VIEW, POODLE, BISHOP,
-STEWART CANYON), gridded at 30 m, ignited at the MTBS perimeter centroid, run
-unsuppressed to self-extinction, weather from NASA POWER:
-
-| pooled over 2 998 271 pixels | value |
-|---|---|
-| Sorensen | 0.171 |
-| Cohen's kappa | 0.144 |
-| CSI | 0.093 |
-| POD / FAR | 0.096 / 0.208 |
-| Overestimation Index | -0.78 |
-| burned-area PBIAS | -87.9 % |
-
-That is **below** the Giannaros (2020) operational acceptance threshold of 0.40
-for both SC and KC. The dominant error is omission: surface-only Rothermel with
-a spatially uniform, temporally constant midflame wind from a 0.5 deg reanalysis
-self-extinguishes after ~36 h, whereas the MTBS perimeter is a multi-day final
-extent driven by wind events, spotting and crown fire that SimFire does not
-represent. Treat these numbers as the uncalibrated baseline for the KI, not as a
-target to tune toward.
+An MTBS perimeter is a multi-day final extent driven by wind events, spotting
+and crown fire. SimFire is surface-only Rothermel and does not represent
+spotting or crown fire, and a spatially uniform, temporally constant midflame
+wind from a coarse reanalysis widens the gap. So omission (too little burned
+area) is the error to look for first. Judge the run against the bars in
+section 11.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-**Source: `docs/validation_convention.yaml` and the S7 MTBS baseline above.**
-The current body campaign is an uncalibrated operational baseline, not a
-validated pass. The six-fire MTBS run is useful evidence, but it is below the
-field bar for `fire_map`; the dag's rank-1 variable `burned_area` has no cited
-numeric PBIAS threshold in the convention.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-### Test Campaign: 2020 Great Basin MTBS Perimeters
-
-| Property | Value |
-|---|---|
-| Fires | SLINK, NUMBERS, MOUNTAIN VIEW, POODLE, BISHOP, STEWART CANYON |
-| Period | 2020 fire events |
-| Resolution | 30 m LandFire grid |
-| Forcing | NASA POWER weather-derived environment |
-| Ignition | MTBS perimeter centroid |
-| Suppression | unsuppressed to self-extinction |
-| Pixels pooled | 2 998 271 |
+**Source: `docs/validation_convention.yaml`.** The dag's rank-1 variable
+`burned_area` has no cited numeric PBIAS threshold in the convention.
 
 ### Performance Metrics -- judged against the field's bar, not intuition
 
-| Dag variable | Metric | Direction | Achieved baseline | Bar (convention, cited) | Verdict |
-|---|---|---|---:|---|---|
-| `fire_map` | sorensen | maximize | 0.171 | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `peterson_hfire`) | below satisfactory |
-| `fire_map` | kappa | maximize | 0.144 | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `jahdi2015`) | below satisfactory |
-| `fire_map` | sorensen | maximize | 0.171 | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `peterson_hfire`) | below satisfactory |
-| `burned_area` | pbias | zero_centered | -87.9 % | no cited threshold | unresolved numeric verdict |
+| Dag variable | Metric | Direction | Bar (convention, cited) |
+|---|---|---|---|
+| `fire_map` | sorensen | maximize | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `peterson_hfire`) |
+| `fire_map` | kappa | maximize | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `jahdi2015`) |
+| `fire_map` | sorensen | maximize | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `peterson_hfire`) |
+| `burned_area` | pbias | zero_centered | no cited threshold |
 
 The convention's `burned_area` PBIAS band is null, so this section deliberately
 states **no cited threshold** instead of inventing a percent-error cutoff.
 
-### Data Replacement Tracking
+### Input data rules
 
-| Component | Source | Status | Notes |
-|---|---|---|---|
-| Fire perimeter observations | MTBS via `tools/mtbs_perimeter_to_grid.py` | baseline run completed | Compared maps must share grid size and georeferencing. |
-| Terrain / fuel | LandFire operational layers | baseline run completed | 30 m grid; `pixel_scale` controls area and spread timing. |
-| Weather forcing | NASA POWER-derived wind/moisture tools | baseline run completed | Uniform, temporally constant midflame wind is a known limitation. |
-| Calibration | none | pending | Baseline is uncalibrated and below the cited `fire_map` convention bar. |
+| Component | Source | Rule |
+|---|---|---|
+| Fire perimeter observations | MTBS via `tools/mtbs_perimeter_to_grid.py` | Compared maps must share grid size and georeferencing. |
+| Terrain / fuel | LandFire operational layers | 30 m grid; `pixel_scale` controls area and spread timing. |
+| Weather forcing | NASA POWER-derived wind/moisture tools | Uniform, temporally constant midflame wind is a known limitation. |
 
 ---
 
@@ -653,7 +628,7 @@ ki/
 │   ├── s4_execution.md                   # Running the simulation
 │   └── s5_output_analysis.md             # Interpreting and validating results
 ├── diagnostics/
-│   └── triplets.yaml                     # 15+ diagnostic triplets
+│   └── triplets.yaml                     # diagnostic triplets (count: KI map)
 └── workflow/
     └── workflow.md                        # Pipeline workflow diagram
 ```

@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Language**: C (cmake build)
 **License**: MIT
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 
 ---
 

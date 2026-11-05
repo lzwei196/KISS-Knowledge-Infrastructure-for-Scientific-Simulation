@@ -471,5 +471,5 @@ ki/
 │   ├── s4_model_execution.md         # Running the model
 │   └── s5_output_analysis.md         # Output parsing and validation
 └── diagnostics/
-    └── triplets.yaml                 # 18 symptom→diagnosis→remedy entries
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

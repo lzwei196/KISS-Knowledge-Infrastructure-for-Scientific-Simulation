@@ -44,22 +44,25 @@ Choose cell size based on basin area and modeling objectives:
 
 ### Step 2: Create Grid from Basin
 
-Run the grid creation tool:
+Run the grid creation tool. It writes the grid NetCDF that `build_layers_from_global.py`,
+`assign_k_from_glhymps.py` and `build_riv_from_cama.py` read as `--grid_nc`:
 
 ```bash
-python tools/s2/create_grid_from_basin.py
+# basin outline: a cell is active when its centre is inside the basin
+python tools/s2/create_grid_from_basin.py --shapefile data/shp/<basin>.shp \
+    --cell_deg 0.05 --out_nc <case>/grid.nc          # or --cell_m 2000
+# lat/lon box: every cell active
+python tools/s2/create_grid_from_basin.py --box -0.445 0.355 44.534 45.134 \
+    --nrow 30 --ncol 40 --out_nc <case>/grid.nc
 ```
 
-Set input variables in the script:
-- `SHAPEFILE_PATH`: path to basin .shp
-- `CELL_SIZE`: grid cell size in meters
-- `NLAY`: number of layers
-- `LAYER_BOTTOMS`: list of bottom elevations relative to surface (negative values)
-- `DEM_PATH`: optional DEM raster
+**Expected result**: `<case>/grid.nc` (NETCDF3_64BIT: `lat` row 0 = north, `lon`, `mask` int32)
+and a printed JSON with nrow, ncol, cell size (deg and approx. m) and active cells. `mask` becomes
+IDOMAIN in `build_layers_from_global.py`. Layer tops/bottoms are built there, from the DEM.
 
-**Expected result**: JSON with nlay, nrow, ncol, and IDOMAIN mask.
-
-**If this fails**: Check shapefile CRS (must be projected, not geographic for meter-based cell size). See dt_mf6_005.
+**If this fails**: exit 1 = bad arguments; exit 3 = no cell centre inside the shapefile (cell size
+too large) or the file cannot be re-opened. A shapefile without a CRS (.prj) is refused. See
+dt_mf6_005, dt_mf6_018.
 
 ### Step 3: Build DIS Package
 

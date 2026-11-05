@@ -6,10 +6,18 @@ Stage:        s6_calibration_parameters
 Description:  Create calibration.cal with parameter adjustments for SWAT+.
               Change types: absval (set), abschg (add), pctchg (percent change).
 
+Every requested value must be a finite number (NaN / Infinity are rejected
+with exit 1 before any file is touched). Every requested STRUCTURAL parameter
+(aquifer.aqu / parameters.bsn / hydrology.hyd / soils.sol) must really be
+written: a missing file, a missing column, a malformed data row or zero edited
+rows is a processing error (exit 2) and NO file is modified. Names that rev59
+never applies (dt_045 no-ops, names absent from cal_parms.cal) are dropped with
+a warning and listed under `dropped_parameters`, never under the applied lists.
+
 Exit codes: 0=success, 1=input error, 2=processing error, 3=output error
 """
 
-import sys, os, logging, json
+import sys, os, re, logging, json, math
 from pathlib import Path
 
 PARAMETER_SET = {}  # {"cn2": {"change_type": "pctchg", "value": -10}, ...}
@@ -53,6 +61,15 @@ VALID_PARAMS = {
     # intercepts them and edits aquifer.aqu directly instead.
     "rchg_dp":   {"range": (0, 1), "recommended_type": "absval", "obj_typ": "aqu-struct"},
     "spec_yld":  {"range": (0.001, 0.5), "recommended_type": "absval", "obj_typ": "aqu-struct"},
+    # STRUCTURAL basin/hydrology/soil params (dt_045): these names are DECLARED
+    # in cal_parms.cal but the rev59 binary never applies them from
+    # calibration.cal (bit-identical output, measured at Zijingguan 2026-07-10).
+    # SKILL.md's parameter table routes them to their real home file; this tool
+    # now performs that routing instead of writing silent no-op rows.
+    "msk_co1":   {"range": (0, 10), "recommended_type": "absval", "obj_typ": "bsn-struct"},
+    "msk_co2":   {"range": (0, 10), "recommended_type": "absval", "obj_typ": "bsn-struct"},
+    "msk_x":     {"range": (0, 0.5), "recommended_type": "absval", "obj_typ": "bsn-struct"},
+    "cn3_swf":   {"range": (0, 1), "recommended_type": "absval", "obj_typ": "hyd-struct"},
 }
 
 # Aquifer parameters that live ONLY in aquifer.aqu and are absent from
@@ -70,9 +87,131 @@ VALID_PARAMS = {
 # consumptive losses (irrigation withdrawal, flood diversion/detention, regional
 # groundwater pumping) for heavily human-impacted basins.
 STRUCTURAL_AQU = {
-    "rchg_dp":  {"col": 13, "absmin": 0.0,   "absmax": 1.0},
-    "spec_yld": {"col": 14, "absmin": 0.001, "absmax": 0.5},
+    # col_name is what the edit uses (the header must name it); col is the
+    # documented position in the rev59 layout above.
+    "rchg_dp":  {"col": 13, "col_name": "rchg_dp",  "absmin": 0.0,   "absmax": 1.0},
+    "spec_yld": {"col": 14, "col_name": "spec_yld", "absmin": 0.001, "absmax": 0.5},
+    # revap_co stays a calibration.cal row (cal_only), NOT a structural edit:
+    # the calibration runner writes and reads back a `revap_co` row in
+    # calibration.cal, so routing it here breaks the runner's readback.
 }
+
+# parameters.bsn: title line, header line of column names, ONE data row.
+# surlag / Muskingum weights are calibration.cal no-ops in rev59 (every `bsn`
+# object name is — dt_045); the real values live in these named columns.
+STRUCTURAL_BSN = {
+    "surlag":  {"col_name": "surq_lag", "absmin": 0.05, "absmax": 24.0},
+    "msk_co1": {"col_name": "msk_co1",  "absmin": 0.0,  "absmax": 10.0},
+    "msk_co2": {"col_name": "msk_co2",  "absmin": 0.0,  "absmax": 10.0},
+    "msk_x":   {"col_name": "msk_x",    "absmin": 0.0,  "absmax": 0.5},
+}
+
+# hydrology.hyd: title, header (name + 14 columns), one row per hyd object.
+# canmx/perco/cn3_swf cannot be changed from calibration.cal (canmx is a
+# dt_045 no-op; perco/cn3_swf are not calibratable names at all).
+STRUCTURAL_HYD = {
+    "canmx":   {"col_name": "can_max", "absmin": 0.0, "absmax": 100.0},
+    "perco":   {"col_name": "perco",   "absmin": 0.0, "absmax": 1.0},
+    "cn3_swf": {"col_name": "cn3_swf", "absmin": 0.0, "absmax": 1.0},
+}
+
+# soils.sol layer rows are exactly 14 floats:
+#   dp bd awc soil_k carbon clay silt sand rock alb usle_k ec caco3 ph
+# awc (index 2) is a dt_045 calibration.cal no-op; edit the layer rows.
+# Bounds = the model's documented valid band for awc (cal_parms.cal obj_typ
+# sol absmin/absmax, mm_H2O/mm), same as calib_run.py's SOL_AWC_PHYS_RANGE —
+# a tighter cap here would silently clamp valid pctchg results.
+STRUCTURAL_SOL = {
+    "awc": {"col": 2, "absmin": 0.01, "absmax": 1.0},
+}
+
+# dt_045 no-ops with NO structural home in this deck layout: never write them
+# to calibration.cal (SWAT+ reads the row and silently ignores it).
+NOOP_DROP = {"delay", "dep_imp"}
+
+
+class StructuralEditError(RuntimeError):
+    """A requested structural parameter could not be written to its deck file."""
+
+
+def _new_value(old, pcfg, absmin, absmax, where=""):
+    # value was checked finite in validate_inputs; the deck's own old value and
+    # the result are checked here so a NaN/inf can never be clamped into a
+    # valid-looking bound.
+    if not math.isfinite(old):
+        raise StructuralEditError(f"{where}: existing value {old!r} is not finite")
+    ct = pcfg["change_type"]
+    v = float(pcfg["value"])
+    if ct == "pctchg":
+        nv = old * (1.0 + v / 100.0)
+    elif ct == "abschg":
+        nv = old + v
+    else:
+        nv = v
+    if not math.isfinite(nv):
+        raise StructuralEditError(f"{where}: new value {nv!r} is not finite")
+    return max(absmin, min(absmax, nv))
+
+
+def _replace_token(line, idx, new_text):
+    """Return `line` with only whitespace-separated token `idx` replaced.
+    Every other token keeps its exact original text (and the line layout), so
+    an edit of one column never re-rounds unrelated values."""
+    spans = [m.span() for m in re.finditer(r"\S+", line)]
+    a, b = spans[idx]
+    old_w = b - a
+    return line[:a] + new_text.rjust(old_w) + line[b:]
+
+
+def _edit_named_table(path, params, spec_map, label, errors, pending):
+    """Edit named columns of a title/header/data-rows table (parameters.bsn,
+    hydrology.hyd). Every non-blank data row must have the header width; every
+    requested column must exist; at least one row must be edited. On any problem
+    the error is recorded and nothing is queued for writing."""
+    if not path.exists():
+        errors.append(f"{label} params {list(params)} requested but {path.name} "
+                      f"not found in {path.parent}")
+        return {}
+    L = path.read_text().splitlines()
+    if len(L) < 3:
+        errors.append(f"{path.name}: fewer than 3 lines (title, header, data); "
+                      f"{list(params)} NOT applied")
+        return {}
+    hdr = L[1].split()
+    cols = {}
+    for pname in params:
+        cn = spec_map[pname]["col_name"]
+        if cn not in hdr:
+            errors.append(f"{path.name} has no column '{cn}' for {pname}")
+        else:
+            cols[pname] = hdr.index(cn)
+    if len(cols) != len(params):
+        return {}
+    out, n_rows, bad = L[:2], 0, []
+    for lineno, ln in enumerate(L[2:], start=3):
+        t = ln.split()
+        if not t:
+            out.append(ln); continue
+        if len(t) != len(hdr):
+            bad.append(f"line {lineno} has {len(t)} fields, header has {len(hdr)}")
+            continue
+        for pname, pcfg in params.items():
+            spec = spec_map[pname]; i = cols[pname]
+            nv = _new_value(float(t[i]), pcfg, spec["absmin"], spec["absmax"],
+                            f"{path.name} line {lineno} {pname}")
+            ln = _replace_token(ln, i, f"{nv:.5f}")
+        n_rows += 1
+        out.append(ln)
+    if bad:
+        errors.append(f"{path.name}: malformed data rows ({'; '.join(bad[:5])}); "
+                      f"{list(params)} NOT applied")
+        return {}
+    if n_rows == 0:
+        errors.append(f"{path.name}: no data rows; {list(params)} NOT applied")
+        return {}
+    pending[path] = "\n".join(out) + "\n"
+    return {k: {"file": path.name, "rows": n_rows, "value": v["value"],
+                "change_type": v["change_type"]} for k, v in params.items()}
 
 # Recommended starting calibration presets by climate zone
 # Based on validated Bengbu (humid subtropical, NSE=0.757) and literature
@@ -129,13 +268,36 @@ def validate_inputs():
         errors.append("No parameters provided")
     if not OUTPUT_DIR:
         errors.append("OUTPUT_DIR is not set")
-    for pname, pconfig in PARAMETER_SET.items():
+    if not isinstance(PARAMETER_SET, dict):
+        errors.append(f"PARAMETER_SET must be a JSON object, got {type(PARAMETER_SET).__name__}")
+    for pname, pconfig in (PARAMETER_SET.items() if isinstance(PARAMETER_SET, dict) else []):
         if pname not in VALID_PARAMS:
             errors.append(f"Unknown parameter: {pname}")
+        if not isinstance(pconfig, dict):
+            errors.append(f"Config for {pname} must be an object with change_type and value")
+            continue
         if "change_type" not in pconfig:
             errors.append(f"Missing change_type for {pname}")
         elif pconfig["change_type"] not in ["absval", "abschg", "pctchg"]:
             errors.append(f"Invalid change_type for {pname}: {pconfig['change_type']}")
+        # value is REQUIRED (no silent default of 0) and must be a finite number:
+        # json.loads accepts NaN/Infinity, which the old clamp turned into a
+        # valid-looking bound (e.g. perco NaN -> 1.00000).
+        if "value" not in pconfig:
+            errors.append(f"Missing value for {pname}")
+            continue
+        v = pconfig["value"]
+        try:
+            if isinstance(v, bool):
+                raise TypeError("boolean")
+            fv = float(v)
+        except (TypeError, ValueError):
+            errors.append(f"value for {pname} must be a number, got {v!r}")
+            continue
+        if not math.isfinite(fv):
+            errors.append(f"value for {pname} must be finite, got {v!r}")
+            continue
+        pconfig["value"] = fv
     if errors:
         for e in errors: logger.error(e)
         sys.exit(1)
@@ -147,6 +309,8 @@ def process():
 
     cal_path = output_dir / "calibration.cal"
     warnings = []
+    errors = []          # structural failures -> exit 2, nothing written
+    pending = {}         # path -> new text; written only if errors stays empty
     struct_applied = {}
 
     # --- STRUCTURAL aquifer params (rchg_dp, spec_yld): edit aquifer.aqu in
@@ -156,30 +320,121 @@ def process():
     struct_params = {k: v for k, v in PARAMETER_SET.items() if k in STRUCTURAL_AQU}
     cal_only = {k: v for k, v in PARAMETER_SET.items() if k not in STRUCTURAL_AQU}
     if struct_params:
-        aqu_path = output_dir / "aquifer.aqu"
-        if not aqu_path.exists():
-            warnings.append(f"Structural aquifer params {list(struct_params)} requested "
-                            f"but aquifer.aqu not found in {output_dir}; skipped.")
+        struct_applied.update(_edit_named_table(output_dir / "aquifer.aqu", struct_params,
+                                                STRUCTURAL_AQU, "Structural aquifer", errors, pending))
+
+    # --- STRUCTURAL basin params (surlag, msk_co1/2, msk_x): parameters.bsn ---
+    bsn_params = {k: v for k, v in cal_only.items() if k in STRUCTURAL_BSN}
+    for k in bsn_params:
+        del cal_only[k]
+    if bsn_params:
+        struct_applied.update(_edit_named_table(output_dir / "parameters.bsn", bsn_params,
+                                                STRUCTURAL_BSN, "Structural bsn", errors, pending))
+
+    # --- STRUCTURAL hydrology params (canmx, perco, cn3_swf): hydrology.hyd ---
+    hyd_params = {k: v for k, v in cal_only.items() if k in STRUCTURAL_HYD}
+    for k in hyd_params:
+        del cal_only[k]
+    if hyd_params:
+        struct_applied.update(_edit_named_table(output_dir / "hydrology.hyd", hyd_params,
+                                                STRUCTURAL_HYD, "Structural hyd", errors, pending))
+
+    # --- STRUCTURAL soil params (awc): soils.sol layer rows ---
+    # Layout read exactly as SWAT+ soil_db_read.f90 reads it: title line,
+    # header line, then per soil one row `name nly hyd_grp dp_tot anion_excl
+    # perc_crk texture` followed by exactly `nly` layer rows of 14 values
+    # (z bd awc k cbn clay silt sand rock alb usle_k ec cal ph; awc = index 2).
+    # Every soil and every layer is checked; a malformed or missing layer is an
+    # error and nothing is written. Only the awc token is rewritten; all other
+    # tokens keep their original text.
+    sol_params = {k: v for k, v in cal_only.items() if k in STRUCTURAL_SOL}
+    for k in sol_params:
+        del cal_only[k]
+    if sol_params:
+        s_path = output_dir / "soils.sol"
+        if not s_path.exists():
+            errors.append(f"Structural soil params {list(sol_params)} requested "
+                          f"but soils.sol not found in {output_dir}")
         else:
-            L = aqu_path.read_text().splitlines()
-            out_a = L[:2]
-            for ln in L[2:]:
-                p = ln.split()
-                if len(p) < 16:
-                    out_a.append(ln); continue
-                for pname, pcfg in struct_params.items():
-                    spec = STRUCTURAL_AQU[pname]; col = spec["col"]
-                    ct = pcfg.get("change_type", "absval"); v = float(pcfg.get("value", 0))
-                    if ct == "pctchg":   newv = float(p[col]) * (1.0 + v / 100.0)
-                    elif ct == "abschg": newv = float(p[col]) + v
-                    else:                newv = v               # absval
-                    newv = max(spec["absmin"], min(spec["absmax"], newv))
-                    p[col] = f"{newv:.5f}"
-                out_a.append("   ".join(p))
-            aqu_path.write_text("\n".join(out_a) + "\n")
-            struct_applied = struct_params
-            logger.info(f"Applied structural aquifer params to aquifer.aqu: "
-                        f"{ {k: v.get('value') for k, v in struct_params.items()} }")
+            L = s_path.read_text().splitlines()
+            out_s, n_layer, n_soil, bad = L[:2], 0, 0, []
+            i = 2
+            while i < len(L):
+                t = L[i].split()
+                if not t:                       # blank line between soils
+                    out_s.append(L[i]); i += 1; continue
+                lineno = i + 1
+                try:
+                    nly = int(t[1]) if len(t) >= 7 else None
+                except ValueError:
+                    nly = None
+                if nly is None or nly < 1:
+                    bad.append(f"line {lineno}: expected a soil row 'name nly hyd_grp dp_tot "
+                               f"anion_excl perc_crk texture' with nly >= 1, got {len(t)} fields")
+                    break
+                out_s.append(L[i]); n_soil += 1
+                for j in range(1, nly + 1):
+                    k_i = i + j
+                    if k_i >= len(L):
+                        bad.append(f"soil {t[0]} (line {lineno}): declares {nly} layers, "
+                                   f"file ends after {j - 1}")
+                        break
+                    lt = L[k_i].split()
+                    try:
+                        vals = [float(x) for x in lt]
+                    except ValueError:
+                        vals = None
+                    if vals is None or len(lt) != 14:
+                        bad.append(f"soil {t[0]} layer {j} (line {k_i + 1}): expected 14 numbers, "
+                                   f"got {len(lt)} fields")
+                        break
+                    ln = L[k_i]
+                    for pname, pcfg in sol_params.items():
+                        spec = STRUCTURAL_SOL[pname]
+                        nv = _new_value(vals[spec["col"]], pcfg, spec["absmin"], spec["absmax"],
+                                        f"soils.sol line {k_i + 1} {pname}")
+                        ln = _replace_token(ln, spec["col"], f"{nv:.5f}")
+                    out_s.append(ln); n_layer += 1
+                if bad:
+                    break
+                i += nly + 1
+            if bad:
+                errors.append(f"soils.sol: malformed ({'; '.join(bad)}); "
+                              f"{list(sol_params)} NOT applied")
+            elif n_layer == 0:
+                errors.append("soils.sol: no soils/layer rows found; "
+                              f"{list(sol_params)} NOT applied")
+            else:
+                pending[s_path] = "\n".join(out_s) + "\n"
+                struct_applied.update({k: {"file": "soils.sol", "rows": n_layer, "soils": n_soil,
+                                           "value": v["value"], "change_type": v["change_type"]}
+                                       for k, v in sol_params.items()})
+
+    # Every requested structural parameter must be applied, or nothing is written.
+    if errors:
+        for e in errors:
+            logger.error(e)
+        raise StructuralEditError(f"{len(errors)} structural edit(s) failed; no file modified: "
+                                  + " | ".join(errors))
+    for path, text in pending.items():
+        path.write_text(text)
+        logger.info(f"Applied structural params to {path.name}: "
+                    f"{ {k: v['value'] for k, v in struct_applied.items() if v['file'] == path.name} }")
+
+    # Rewrite legacy SWAT2012 names to their rev59 spellings BEFORE the no-op
+    # drop, so a request for e.g. `gw_delay` is recognised as `delay` and
+    # dropped too, instead of slipping past the drop and still writing a
+    # silent no-op calibration.cal row.
+    ALIASES = {"alpha_bf": "alpha", "gw_delay": "delay"}
+    cal_only = {ALIASES.get(k, k): v for k, v in cal_only.items()}
+
+    # --- dt_045 no-ops with no structural home: never write silent no-op rows
+    dropped = {}
+    for k in [k for k in cal_only if k in NOOP_DROP]:
+        dropped[k] = "dt_045 no-op with no structural home"
+        warnings.append(f"DROPPED '{k}': rev59 never applies it from "
+                        f"calibration.cal (dt_045) and it has no structural home.")
+        del cal_only[k]
 
     # SWAT+ calibration.cal format (verified against the working
     # chaohe_2000_2010 cn2_test3 example and SWAT+ cal_parmread source):
@@ -197,12 +452,10 @@ def process():
     # the integer read of that column.
     # rev59's cal_parms.cal names the baseflow recession `alpha` and the groundwater
     # delay `delay`. SWAT+ reads an unmatched NAME row, fails to match, and SILENTLY
-    # ignores it — the parameter simply never applies. Alias the legacy SWAT2012 names
-    # and DROP anything the project's own cal_parms.cal does not declare (e.g. perco /
-    # cn3_swf, which live in hydrology.hyd) with a loud warning instead of a no-op row.
-    ALIASES = {"alpha_bf": "alpha", "gw_delay": "delay"}
-    cal_only = {ALIASES.get(k, k): v for k, v in cal_only.items()}
-
+    # ignores it — the parameter simply never applies. The legacy SWAT2012 names were
+    # already aliased above (before the no-op drop); here, DROP anything the project's
+    # own cal_parms.cal does not declare (e.g. perco / cn3_swf, which live in
+    # hydrology.hyd) with a loud warning instead of a no-op row.
     known = None
     cp = output_dir / "cal_parms.cal"
     if cp.exists():
@@ -211,8 +464,8 @@ def process():
         except Exception as e:
             warnings.append(f"could not parse cal_parms.cal ({e}); not filtering parameter names")
     if known:
-        dropped = [k for k in cal_only if k.lower() not in known]
-        for k in dropped:
+        for k in [k for k in cal_only if k.lower() not in known]:
+            dropped[k] = f"absent from {cp.name}"
             warnings.append(f"DROPPED '{k}': absent from {cp.name}. SWAT+ would have "
                             f"silently ignored this row (it is not a calibratable name).")
             del cal_only[k]
@@ -227,7 +480,7 @@ def process():
 
         for pname, pconfig in cal_only.items():
             chg_type = pconfig["change_type"]
-            chg_val = pconfig.get("value", 0)
+            chg_val = pconfig["value"]
 
             # Warn if using absval for spatially variable params
             if pname in ["cn2", "awc", "k"] and chg_type == "absval":
@@ -245,7 +498,11 @@ def process():
         "status": "success",
         "calibration_cal": str(cal_path),
         "n_parameters": len(cal_only),
-        "structural_aqu_applied": {k: v.get("value") for k, v in struct_applied.items()},
+        "calibration_cal_parameters": list(cal_only),
+        # kept for back-compat with existing callers: every structural param applied
+        "structural_aqu_applied": {k: v["value"] for k, v in struct_applied.items()},
+        "structural_applied": struct_applied,
+        "dropped_parameters": dropped,
         "warnings": warnings
     }
 

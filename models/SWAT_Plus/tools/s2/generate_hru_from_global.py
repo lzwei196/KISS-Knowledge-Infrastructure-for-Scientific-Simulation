@@ -22,7 +22,6 @@ Inputs:
   --hru_threshold   : Minimum HRU area fraction to keep (default: 0.05 = 5%)
   --start_year      : Simulation start year
   --end_year        : Simulation end year
-  --grid_nc         : Optional VIC grid NC; if provided, each VIC cell = one subbasin
 
 Outputs:
   - Complete runnable TxtInOut directory with:
@@ -93,6 +92,49 @@ UMD_TO_SWAT = {
     13: {"plant": "urld", "lum": "urld_lum",  "desc": "Urban"},
     14: {"plant": "watr", "lum": "watr_lum",  "desc": "Snow/Ice"},
 }
+
+# CLCD (China Land Cover Dataset, Yang & Huang 30 m annual, KISSPATH_DATA/vegetation/CLCD_raw).
+# Added 2026-09-02 because the AVHRR default is a 1 km 1981-1994 composite: over the Huai it
+# returns ZERO forest and pushes the Dabie headwater forest into "range", which biases ET
+# partitioning. CLCD is 30 m, annual, and China-specific. Class codes are CLCD v01's own.
+# Wetland is mapped to range (vegetated) rather than SWAT+'s `wetl`, which is not guaranteed
+# to exist in plants.plt — a declared simplification, not a silent one.
+CLCD_TO_SWAT = {
+    1: {"plant": "agrl", "lum": "agrl_lum", "desc": "Cropland"},
+    2: {"plant": "frst", "lum": "frst_lum", "desc": "Forest"},
+    3: {"plant": "rngb", "lum": "rngb_lum", "desc": "Shrub"},
+    4: {"plant": "rnge", "lum": "rnge_lum", "desc": "Grassland"},
+    5: {"plant": "watr", "lum": "watr_lum", "desc": "Water"},
+    6: {"plant": "watr", "lum": "watr_lum", "desc": "Snow/Ice"},
+    7: {"plant": "barr", "lum": "barr_lum", "desc": "Barren"},
+    8: {"plant": "urld", "lum": "urld_lum", "desc": "Impervious"},
+    9: {"plant": "rnge", "lum": "rnge_lum", "desc": "Wetland (mapped to range)"},
+}
+
+# The scheme in force for this run. Selected by --lc_scheme; UMD stays the default, so UMD
+# CLASSIFICATION is unchanged. Note (kimi, 2026-09-02): plant.ini is NOT byte-identical for decks
+# that contain UMD class 1 (needleleaf) — those are exactly the decks the old code wrote a
+# `pine_comm` for while landuse.lum asked for `frse_comm`, i.e. the decks SWAT+ refused to start.
+# The name change there is the fix, not a regression.
+LC_SCHEMES = {"umd": UMD_TO_SWAT, "clcd": CLCD_TO_SWAT}
+LC_SCHEME_NAME = "umd"
+ACTIVE_LC = UMD_TO_SWAT
+LC_FALLBACK_CODE = {"umd": 10, "clcd": 4}      # grassland in each scheme
+
+
+def set_lc_scheme(name):
+    """Select the land-cover code scheme (module-level, read by every classifier path)."""
+    global ACTIVE_LC, LC_SCHEME_NAME
+    if name not in LC_SCHEMES:
+        raise ValueError(f"unknown --lc_scheme {name!r}; expected one of {sorted(LC_SCHEMES)}")
+    LC_SCHEME_NAME = name
+    ACTIVE_LC = LC_SCHEMES[name]
+    return ACTIVE_LC
+
+
+def lc_fallback():
+    """The scheme's grassland entry, used when a cell has no usable class."""
+    return ACTIVE_LC[LC_FALLBACK_CODE[LC_SCHEME_NAME]]
 
 # Manning's n for overland flow per land use
 OVN_TABLE = {
@@ -319,6 +361,9 @@ def parse_args():
                     help="Basin boundary shapefile")
     p.add_argument("--dem_path", default="auto",
                     help="DEM raster path, or 'auto' (default)")
+    p.add_argument("--lc_scheme", default="umd", choices=sorted(LC_SCHEMES),
+                   help="land-cover CODE scheme of --landcover_path: 'umd' (AVHRR 1km default) "
+                        "or 'clcd' (China Land Cover Dataset 30 m). Must match the raster you pass.")
     p.add_argument("--landcover_path", default=str(DEFAULT_LANDCOVER),
                     help="Land cover raster (default: AVHRR 1km global)")
     p.add_argument("--hwsd_raster", default=str(DEFAULT_HWSD_RASTER),
@@ -344,8 +389,6 @@ def parse_args():
                          "tools/s1/delineate_watershed.py. Without it, subbasins "
                          "fall back to a rectangular lat/lon grid clipped to the "
                          "basin outline (not a hydrologic partition).")
-    p.add_argument("--grid_nc", default=None,
-                    help="Optional VIC grid NC: each VIC cell = one subbasin")
     p.add_argument("--channel_topology", default="",
                     help="channel_topology.json from tools/s1/build_channel_topology.py. "
                          "Supplies the real downstream id, network-accumulated upstream "
@@ -373,60 +416,6 @@ def parse_slope_classes(spec):
 # ===========================================================================
 # Step 1: Subbasin delineation
 # ===========================================================================
-def create_subbasins_from_grid_nc(grid_nc_path, basin_shp):
-    """Create subbasins from a VIC grid NC -- each cell = one subbasin."""
-    import xarray as xr
-    import geopandas as gpd
-    from shapely.geometry import box
-
-    logger.info(f"Creating subbasins from VIC grid: {grid_nc_path}")
-    ds = xr.open_dataset(grid_nc_path)
-
-    if 'mask' in ds:
-        valid = ds['mask'].stack(cell=('y', 'x')).dropna('cell')
-        lats = valid.coords['y'].values.astype(float)
-        lons = valid.coords['x'].values.astype(float)
-    elif 'lat' in ds and 'lon' in ds:
-        lats = ds['lat'].values.astype(float)
-        lons = ds['lon'].values.astype(float)
-    else:
-        raise ValueError("Grid NC must have (mask, y, x) or (lat, lon)")
-
-    if 'y' in ds.coords and len(ds.coords['y']) > 1:
-        resolution = abs(float(ds.coords['y'].values[1] - ds.coords['y'].values[0]))
-    else:
-        resolution = 0.25
-    ds.close()
-
-    half = resolution / 2.0
-    geoms = []
-    sub_data = []
-    for i, (lat, lon) in enumerate(zip(lats, lons)):
-        geom = box(lon - half, lat - half, lon + half, lat + half)
-        geoms.append(geom)
-        sub_data.append({
-            'sub_id': i + 1,
-            'lat': float(lat),
-            'lon': float(lon),
-        })
-
-    gdf = gpd.GeoDataFrame(sub_data, geometry=geoms, crs="EPSG:4326")
-
-    # Clip to basin boundary
-    basin_gdf = gpd.read_file(basin_shp).to_crs("EPSG:4326")
-    basin_union = basin_gdf.geometry.unary_union
-    gdf['geometry'] = gdf.geometry.intersection(basin_union)
-    gdf = gdf[~gdf.geometry.is_empty].copy()
-
-    # Compute area in ha using equal-area projection
-    gdf_ea = gdf.to_crs(epsg=6933)
-    gdf['area_ha'] = gdf_ea.geometry.area / 10000.0
-
-    logger.info(f"  Created {len(gdf)} subbasins from grid cells "
-                f"(resolution={resolution}deg)")
-    return gdf
-
-
 def warn_rectangular_subbasins():
     """The rectangular fallback is not a hydrologic partition. Say so."""
     logger.warning("=" * 78)
@@ -451,7 +440,7 @@ def load_subbasins_from_shapefile(subbasin_shp, basin_shp=None):
     subbasins.shp comes from wbt.subbasins() run over the WHOLE clipped-DEM
     flow network (the delineation bbox), not just the target watershed -- it
     is NOT pre-clipped to the basin polygon the way create_subbasins_from_basin
-    / create_subbasins_from_grid_nc already are. Without clipping here too,
+    already is. Without clipping here too,
     the deck silently covers the DEM's bbox instead of the gauge's drainage
     area (caught at Bengbu: 385 unclipped subbasins totalled 277,488 km2
     against a published 121,330 km2 basin). When basin_shp is given, intersect
@@ -597,7 +586,7 @@ def create_subbasins_from_basin(basin_shp, dem_path, n_subbasins):
 # Step 2: Land cover classification
 # ===========================================================================
 def classify_landcover(subbasins_gdf, landcover_path):
-    """Extract dominant UMD land cover class per subbasin."""
+    """Extract the dominant land-cover class per subbasin (scheme-agnostic: reads ACTIVE_LC)."""
     import rasterio
     from rasterstats import zonal_stats
 
@@ -615,14 +604,14 @@ def classify_landcover(subbasins_gdf, landcover_path):
     lc_classes = []
     for s in stats:
         majority = s.get("majority")
-        if majority is None or int(majority) not in UMD_TO_SWAT:
-            majority = 10  # Default to grassland
+        if majority is None or int(majority) not in ACTIVE_LC:
+            majority = LC_FALLBACK_CODE[LC_SCHEME_NAME]  # scheme's grassland
         lc_classes.append(int(majority))
 
     # Distribution summary
     dist = Counter(lc_classes)
     for cls, cnt in sorted(dist.items()):
-        desc = UMD_TO_SWAT.get(cls, {}).get("desc", "Unknown")
+        desc = ACTIVE_LC.get(cls, {}).get("desc", "Unknown")
         logger.info(f"  Land cover {cls} ({desc}): {cnt} subbasins")
 
     return lc_classes
@@ -654,10 +643,10 @@ def classify_landcover_fractions(subbasins_gdf, landcover_path):
         fracs = {}
         for cls_val, count in s.items():
             cls_int = int(cls_val)
-            if cls_int in UMD_TO_SWAT:
+            if cls_int in ACTIVE_LC:
                 fracs[cls_int] = count / total
         if not fracs:
-            fracs = {10: 1.0}  # Default grassland
+            fracs = {LC_FALLBACK_CODE[LC_SCHEME_NAME]: 1.0}  # scheme's grassland
         lc_fractions.append(fracs)
 
     return lc_fractions
@@ -950,7 +939,7 @@ def generate_hrus(subbasins_gdf, lc_fractions, soil_names, slopes, elevations,
         for lc_code, frac in sorted(lc_frac.items(), key=lambda x: -x[1]):
             if frac < hru_threshold and candidates:
                 continue  # Skip small fractions (redistribute below)
-            swat_info = UMD_TO_SWAT.get(lc_code, UMD_TO_SWAT[10])
+            swat_info = ACTIVE_LC.get(lc_code, lc_fallback())
             candidates.append({
                 'lc_code': lc_code,
                 'plant': swat_info['plant'],
@@ -961,7 +950,7 @@ def generate_hrus(subbasins_gdf, lc_fractions, soil_names, slopes, elevations,
         if not candidates:
             # Fallback: use dominant
             dominant = max(lc_frac.items(), key=lambda x: x[1])
-            swat_info = UMD_TO_SWAT.get(dominant[0], UMD_TO_SWAT[10])
+            swat_info = ACTIVE_LC.get(dominant[0], lc_fallback())
             candidates = [{
                 'lc_code': dominant[0],
                 'plant': swat_info['plant'],
@@ -1154,8 +1143,15 @@ def write_hru_con(hrus, n_subbasins, output_path):
                 f"{'rule':>{CW-3}}"
                 f"{'out_tot':>{CW-2}}  \n")
 
+        # Station index = the subbasin's RANK among sorted unique sub_ids, so
+        # every subbasin gets ITS OWN station. Raw whitebox sub_ids are
+        # non-contiguous, so the old `(sub_id-1) % n_subbasins` hash aliased
+        # distant subbasins onto one shared station (Tar deck: 2/13 routing
+        # units 32-41 km from their assigned forcing).
+        sub_rank = {sid: i for i, sid in
+                    enumerate(sorted({h['sub_id'] for h in hrus}))}
         for h in hrus:
-            sta_name = f"sta{((h['sub_id']-1) % n_subbasins) + 1:02d}"
+            sta_name = f"sta{sub_rank[h['sub_id']] + 1:02d}"
             f.write(f"{h['id']:>8}  {h['name']:<{NW}}"
                     f"{h['id']:>{CW}}"
                     f"{h['area_ha']:>{CW}.2f}"
@@ -1284,7 +1280,9 @@ def write_routing_units(subbasins_gdf, hrus, n_subbasins, output_dir):
             sub_lon = sub_hrus[0]['lon']
             sub_elev = sub_hrus[0]['elev']
             rtu_name = f"rtu{sub_id:04d}"
-            sta_name = f"sta{((sub_id-1) % n_subbasins) + 1:02d}"
+            # idx = rank of sub_id in sorted(sub_ids): each subbasin binds its
+            # OWN station (the modulo hash aliased non-contiguous sub_ids).
+            sta_name = f"sta{idx + 1:02d}"
 
             # Routing (SWAT+ Editor convention, verified against the test_lrew
             # and test_osu decks written by SWAT+ Editor v2.1.0 / v2.2.0):
@@ -1525,7 +1523,8 @@ def write_channel_files(subbasins_gdf, hrus, output_dir, channel_topology=None):
             cha_name = f"cha{idx+1}"
             sub_lat = sub_hrus[0]['lat']
             sub_lon = sub_hrus[0]['lon']
-            sta_name = f"sta{((sub_id-1) % n_ch) + 1:02d}"
+            # rank-based station binding (see rout_unit.con note above)
+            sta_name = f"sta{idx + 1:02d}"
 
             # Downstream target from the flow network. Exactly one channel (the
             # true terminal) carries out_tot=0; every other channel routes to its
@@ -1677,7 +1676,8 @@ def write_aquifer_files(subbasins_gdf, hrus, output_dir):
             sub_lat = sub_hrus[0]['lat']
             sub_lon = sub_hrus[0]['lon']
             sub_elev = sub_hrus[0]['elev'] * 0.9  # aquifer slightly below surface
-            sta_name = f"sta{((sub_id-1) % n_aqu) + 1:02d}"
+            # rank-based station binding (see rout_unit.con note above)
+            sta_name = f"sta{idx + 1:02d}"
 
             f.write(f"{idx+1:>8}  {f'aqu{idx+1}':<20}"
                     f"{idx+1:>{CW}}"
@@ -1940,16 +1940,77 @@ def write_topography_rtu(subbasins_gdf, hrus, slopes, output_dir):
 # ---------------------------------------------------------------------------
 # Write plant community init files
 # ---------------------------------------------------------------------------
+def lum_to_plant(hrus):
+    """Map each land-use name to the plant that will represent it, deterministically.
+
+    dt_plantini (2026-09-02): landuse.lum derives its plant community name FROM THE LUM NAME
+    (`plant = lum.replace('_lum','')`, write_landuse_lum), while plant.ini used to key
+    communities on the HRU's `plant` attribute. Those disagree wherever UMD_TO_SWAT maps a
+    class whose plant differs from its lum stem — class 1 (Evergreen Needleleaf) is
+    plant='pine' / lum='frse_lum'. A basin with needleleaf but no broadleaf evergreen then
+    got `pine_comm` in plant.ini while landuse.lum asked for `frse_comm`, and SWAT+ rev59
+    aborted at initialization: "frse_lum frse_comm not found in plant.ini" (ticket
+    SWAT+_retry2, zero output, all metrics null). Both writers now use THIS map, and
+    validate_plant_ini_refs() re-reads the two files afterwards and fails closed.
+
+    Returns {lum_name: plant_name}; the plant is the most common one for that lum
+    (ties broken alphabetically, so the deck is reproducible).
+    """
+    votes = {}
+    for h in hrus:
+        # dt_lcscheme (codex MED): weight by AREA where the HRU carries one, so a shared lum
+        # (UMD pine+frse -> frse_lum) takes the plant of the dominant AREA, not of whichever
+        # plant happens to be split into more fragments. Falls back to a count when no area.
+        w = float(h.get('area_ha') or h.get('area') or h.get('frac') or 1.0)
+        votes.setdefault(h['lum'], Counter())[h['plant']] += w
+    out = {}
+    for lum, c in votes.items():
+        out[lum] = sorted(c.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    return out
+
+
+def validate_plant_ini_refs(output_dir):
+    """Fail closed if landuse.lum references a plant community that plant.ini does not define.
+
+    This is the exact condition that made SWAT+ abort at initialization with zero output.
+    Cheap to check, so it is checked every build rather than trusted.
+    """
+    lum_path = Path(output_dir) / "landuse.lum"
+    ini_path = Path(output_dir) / "plant.ini"
+    if not lum_path.exists() or not ini_path.exists():
+        raise RuntimeError("validate_plant_ini_refs: landuse.lum / plant.ini missing")
+    referenced = set()
+    for ln in lum_path.read_text().splitlines()[2:]:
+        parts = ln.split()
+        if len(parts) >= 3 and parts[2].casefold() not in ("null", "none"):
+            referenced.add(parts[2])
+    defined = set()
+    for ln in ini_path.read_text().splitlines()[2:]:
+        # a community header row is "<pcom_name> <plt_cnt> <rot_yr_ini>"; its plant lines are
+        # indented. Require the numeric plt_cnt so a stray comment cannot register as a
+        # community and produce a false PASS (kimi, 2026-09-02).
+        if ln and not ln.startswith(" "):
+            parts = ln.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                defined.add(parts[0])
+    missing = referenced - defined
+    if missing:
+        raise RuntimeError(
+            f"plant.ini is missing communities referenced by landuse.lum: {sorted(missing)} "
+            f"(defined: {sorted(defined)}). SWAT+ would abort at initialization.")
+    logger.info(f"plant.ini/landuse.lum cross-check OK: {len(referenced)} communities referenced, all defined")
+
+
 def write_plant_ini(hrus, output_dir):
     """Write plant.ini for plant community initialization."""
-    # Collect unique plant communities
+    # Collect unique plant communities. The community NAME must match what landuse.lum
+    # writes (derived from the lum stem); the PLANT inside it stays the real plant.
     communities = set()
-    for h in hrus:
-        plant = h['plant']
-        lum = h['lum']
-        comm_name = f"{plant}_comm"
-        if plant not in ('watr', 'barr', 'urld'):
-            communities.add((comm_name, plant))
+    l2p = lum_to_plant(hrus)
+    for lum, plant in l2p.items():
+        stem = lum.replace('_lum', '')
+        if stem not in ('watr', 'barr', 'urld'):
+            communities.add((f"{stem}_comm", plant))
 
     with open(Path(output_dir) / "plant.ini", 'w') as f:
         f.write("plant.ini: written by SWAT+ HRU generator (HydroCraft)\n")
@@ -2244,7 +2305,16 @@ def write_file_cio(output_dir, basin_name):
 
 
 def write_codes_bsn(output_dir):
-    """Write codes.bsn with default settings."""
+    """Write codes.bsn with default settings.
+
+    rte_cha is 0 (daily rate / variable storage — the official SWAT+ default) as of
+    2026-09-06 (dt_054): rte_cha=1 selected rev59 Muskingum, which with this generator's
+    textbook coefficients (msk_co1 .75 / msk_co2 .25 / msk_x .20) delayed the outlet
+    hydrograph by ~3+ WEEKS on a 61-channel main-stem network (Huaibin 16,005 km2) —
+    volume preserved, timing destroyed, uncalibratable (every speed lever pinned at its
+    bound left the flood ~20 d late). One-flag discriminator: rte_cha 1->0 collapsed the
+    best-lag from -25 d to +2 d in a single untuned run. Do NOT set 1 without validating
+    timing on the target network first."""
     with open(Path(output_dir) / "codes.bsn", 'w') as f:
         f.write("codes.bsn: written by SWAT+ HRU generator (HydroCraft)\n")
         cols = ['pet_file', 'wq_file', 'pet', 'event', 'crack',
@@ -2253,7 +2323,7 @@ def write_codes_bsn(output_dir):
                 'uhyd', 'sed_cha', 'tiledrain', 'wtable', 'soil_p',
                 'abstr_init', 'atmo_dep', 'stor_max', 'headwater']
         f.write("".join(f"{c:>{14}}" for c in cols) + "  \n")
-        vals = ['null', 'null', 0, 0, 0, 0, 0, 1, 0, 0,
+        vals = ['null', 'null', 0, 0, 0, 0, 0, 0, 0, 0,   # rte_cha=0 (dt_054; official default)
                 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
         f.write("".join(f"{str(v):>{14}}" for v in vals) + "  \n")
 
@@ -2394,8 +2464,6 @@ def validate_inputs(args):
         errors.append(f"Template directory not found: {args.template_dir}")
     if args.start_year >= args.end_year:
         errors.append(f"start_year ({args.start_year}) must be < end_year ({args.end_year})")
-    if args.grid_nc and not Path(args.grid_nc).exists():
-        errors.append(f"Grid NC not found: {args.grid_nc}")
 
     try:
         subprocess.run(['mdb-export', '--version'],
@@ -2445,6 +2513,10 @@ def validate_outputs(output_dir):
 # Main processing pipeline
 # ===========================================================================
 def process(args):
+    # dt_lcscheme (codex HIGH, 2026-09-02): activate the land-cover scheme HERE, not only in the
+    # __main__ block — a programmatic caller doing process(args) with lc_scheme='clcd' would
+    # otherwise classify silently against UMD codes. set_lc_scheme() is idempotent.
+    set_lc_scheme(getattr(args, "lc_scheme", "umd"))
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2455,11 +2527,9 @@ def process(args):
     logger.info(f"Using DEM: {dem_path}")
 
     # Step 1: Create subbasins.
-    # Priority: real flow-network subbasins > VIC grid > rectangular fallback.
+    # Priority: real flow-network subbasins > rectangular fallback.
     if args.subbasin_shp:
         subbasins_gdf = load_subbasins_from_shapefile(args.subbasin_shp, args.basin_shp)
-    elif args.grid_nc:
-        subbasins_gdf = create_subbasins_from_grid_nc(args.grid_nc, args.basin_shp)
     else:
         warn_rectangular_subbasins()
         subbasins_gdf = create_subbasins_from_basin(
@@ -2509,6 +2579,7 @@ def process(args):
                      str(output_dir))
     write_field_fld(subbasins_gdf, hrus, str(output_dir))
     write_plant_ini(hrus, str(output_dir))
+    validate_plant_ini_refs(str(output_dir))   # dt_plantini: fail closed, never ship a deck SWAT+ cannot start
     write_soil_plant_ini(str(output_dir))
     write_snow_sno(str(output_dir))
     write_nutrients_sol(str(output_dir))
@@ -2575,6 +2646,10 @@ if __name__ == "__main__":
     logger.info(f"Running tool: {os.path.basename(__file__)}")
 
     args = parse_args()
+
+    set_lc_scheme(args.lc_scheme)
+
+    logger.info(f"land-cover scheme: {LC_SCHEME_NAME} ({len(ACTIVE_LC)} classes) from {args.landcover_path}")
     validate_inputs(args)
 
     try:

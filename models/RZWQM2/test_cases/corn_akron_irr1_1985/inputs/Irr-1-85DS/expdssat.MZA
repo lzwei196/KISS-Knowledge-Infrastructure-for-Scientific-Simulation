@@ -1,0 +1,30 @@
+*EXP. DATA (A): irr-ls-85MZ Z dryland, Akron                               
+
+! File last edited on day 06/29/2009 space removed before BWAH values
+! File edit 04/14/2009 corrections CWAM, BWAH
+!
+! -99 = missing data
+! TRTNO - Treatment Number
+! HWAM - Grain yield harvest at Maturity  (kg [dm]/ha)
+! HWUM - Unit (ie. seed) weight at Maturity  (g [dm]/unit) 
+! H#AM - Number at Maturity (no/m2)
+! H#UM - Number at Maturity  (no/unit)
+! LAIX - Maximum Leaf Area index
+! CWAM - Tops weight at Maturity (kg [dm]/ha)
+! BWAH - By Product removed during Harvest (kg [dm]/ha) 
+! ADAT - Anthesis Date (YrDOY)
+! MDAT - Maturity Date (YrDOY)
+! GN%M - Grain Nitrogen % at Maturity 
+! CNAM - Tops Nitrogen at Maturity (kg/ha)
+! SNAM - Stem Nitrogen at Maturity (kg/ha)
+! GNAM - Grain Nitrogen at Maturity (kg/ha)
+@TRNO   HWAM  HWUM  H#AM  H#UM  LAIX  CWAM  BWAH  ADAT  MDAT  GN%M  CNAM  SNAM  GNAM
+     1 6854.   -99   -99   -99   -99 18624 11770  -99   -99   -99   -99   -99   -99
+     2 7733.   -99   -99   -99   -99 19920 12187  -99   -99   -99   -99   -99   -99
+     3 9007.   -99   -99   -99   -99 19810 10803  -99   -99   -99   -99   -99   -99
+     4 9854.   -99   -99   -99   -99 21112 11258  -99   -99   -99   -99   -99   -99
+
+
+
+
+

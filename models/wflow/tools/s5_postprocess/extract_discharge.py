@@ -28,6 +28,11 @@ import json
 import os
 import sys
 
+# netCDF4 must be loaded BEFORE xarray: python_env holds two copies of the HDF5
+# library and only the one loaded first can open or write a file afterwards;
+# xarray alone loads h5py's copy and the default engine then fails with
+# "NetCDF: HDF error" (measured 2026-10-03).
+import netCDF4  # noqa: F401
 import numpy as np
 
 

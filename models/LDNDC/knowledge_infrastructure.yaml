@@ -31,12 +31,10 @@ pipeline:
   - s9_coupling_skill
   - s9_output_parsing_skill
 tools:
-  count: 20
+  count: 18
   files:
   - tools/run_ldndc_bengbu_ghg.py
   - tools/run_ldndc_rice_paddy_ch4.py
-  - tools/s10_vic_coupling/vic_soil_to_ldndc_site.py
-  - tools/s10_vic_coupling/vic_to_ldndc_climate.py
   - tools/s10_vic_coupling/vic_to_ldndc_soilwater.py
   - tools/s1_project_setup/create_project_structure.py
   - tools/s1_project_setup/generate_project_xml.py
@@ -132,8 +130,8 @@ validation:
   tier: validated
   tier_justification: 'measured: 8 scorecard(s)'
 summary:
-  total_tools: 20
+  total_tools: 18
   total_stage_docs: 12
-  total_diagnostic_triplets: 27
+  total_diagnostic_triplets: 25
   generated: '2026-08-15'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

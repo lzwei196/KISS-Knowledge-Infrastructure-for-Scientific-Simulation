@@ -1,0 +1,41 @@
+EQUATIONS : 'SAINT-VENANT FE'
+/
+FORTRAN FILE             : 'user_fortran'
+BOUNDARY CONDITIONS FILE : geo_gouttedo.cli
+GEOMETRY FILE            : geo_gouttedo.slf
+RESULTS FILE             : r2d_gouttedo_v1p0.slf
+/
+/----------------------------------------------------------------------
+/                     OPTIONS GENERALES
+/----------------------------------------------------------------------
+TITLE = 'TELEMAC 2D: DROPLET IN A BASIN'
+VARIABLES FOR GRAPHIC PRINTOUTS : 'U,V,H,T*'
+TIME STEP = 0.04
+NUMBER OF TIME STEPS = 100
+GRAPHIC PRINTOUT PERIOD : 5
+LISTING FOR PRINTOUT PERIOD = 10
+LAW OF BOTTOM FRICTION : 3
+FRICTION COEFFICIENT = 40.
+/----------------------------------------------------------------------
+/     PROPAGATION
+/----------------------------------------------------------------------
+TURBULENCE MODEL : 1
+VELOCITY DIFFUSIVITY = 0.D0
+SOLVER : 7
+SOLVER OPTION : 3
+MAXIMUM NUMBER OF ITERATIONS FOR SOLVER : 100
+SOLVER ACCURACY = 1.E-4
+IMPLICITATION FOR DEPTH = 0.6
+IMPLICITATION FOR VELOCITY = 0.6
+/---------------------------------------------------------------
+MASS-BALANCE : YES
+INITIAL CONDITIONS : 'PARTICULAR'
+TYPE OF ADVECTION   : 2;5
+SUPG OPTION         : 2;2
+DISCRETIZATIONS IN SPACE: 11;11
+/
+/ DEFAULT VALUE UNTIL V8P1 MANDATORY WITH SUPG
+TREATMENT OF THE LINEAR SYSTEM = 1
+/
+/ DEFAULT VALUE UNTIL V8P5 KEPT FOR NON REGRESSION
+TREATMENT OF NEGATIVE DEPTHS = 1

@@ -62,6 +62,12 @@ KEY_VARIABLES = {
     "S1": {"long_name": "water_level", "unit": "m"},
     "U1": {"long_name": "velocity_u", "unit": "m/s"},
     "V1": {"long_name": "velocity_v", "unit": "m/s"},
+    # Delft3D-FLOW history (trih-*.nc) station variables
+    "ZWL": {"long_name": "water_level", "unit": "m"},
+    "ZCURU": {"long_name": "velocity_u", "unit": "m/s"},
+    "ZCURV": {"long_name": "velocity_v", "unit": "m/s"},
+    "ZTAUKS": {"long_name": "bed_shear_stress_u", "unit": "N/m2"},
+    "ZTAUET": {"long_name": "bed_shear_stress_v", "unit": "N/m2"},
 }
 
 
@@ -210,6 +216,14 @@ def read_his_file(his_file, variables=None, stations=None):
                     continue
                 col = f"{info['long_name']}_{sname}_{info['unit']}"
                 results[col] = data[:, si]
+        elif data.ndim == 3 and var.dimensions[1].upper().startswith("KMAXOUT"):
+            # Delft3D-FLOW trih: (time, KMAXOUT_RESTR, station) → first saved layer
+            for si in range(min(data.shape[2], n_stations)):
+                sname = station_names[si] if si < len(station_names) else f"sta_{si}"
+                if stations and sname not in stations:
+                    continue
+                col = f"{info['long_name']}_{sname}_{info['unit']}"
+                results[col] = data[:, 0, si]  # first saved output layer
         elif data.ndim == 3:
             # (time, station, layer) → take surface layer
             for si in range(min(data.shape[1], n_stations)):

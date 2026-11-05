@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Authors**: Andrew J. Moodie, Jayaram Hariharan, Eric Barefoot, Paola Passalacqua
 **Paper**: Moodie et al. (2021), JOSS, 6(64), 3398
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `tested` (default delta, 5 timesteps)
 
 ---
@@ -384,7 +384,10 @@ Example: 1 year of model time at If=0.05 represents 20 years of real time.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 This section restates `docs/validation_convention.yaml` and `knowledge_infrastructure.yaml`; do not substitute remembered thresholds. The convention file wins for pass bands, and null bands are written as `no cited threshold`.
 
@@ -393,10 +396,6 @@ This section restates `docs/validation_convention.yaml` and `knowledge_infrastru
 | Source | Field | Value |
 |--------|-------|-------|
 | `knowledge_infrastructure.yaml` | validation tier | `validated` |
-| `knowledge_infrastructure.yaml` | tier justification | `measured: NSE=1.000, KGE=0.999, R=1.000, 2 scorecard(s)` |
-| `knowledge_infrastructure.yaml` | best_nse | `0.99999` |
-| `knowledge_infrastructure.yaml` | best_kge | `0.999` |
-| `knowledge_infrastructure.yaml` | best_r | `0.99999` |
 
 ### Performance Metrics - Convention Bars
 
@@ -574,8 +573,8 @@ Length: 5000
 Width: 10000
 SLR: 5e-9
 # Note: SLR is in m/s of model time. With If=0.05:
-# Real rate = 5e-9 m/s * 86400 s/day * 365.25 day/yr / If
-#           = 3.15 mm/yr real-world equivalent
+# Real rate = 5e-9 m/s * 86400 s/day * 365.25 day/yr * If
+#           = about 7.9 mm/yr real-world equivalent
 ```
 
 ---

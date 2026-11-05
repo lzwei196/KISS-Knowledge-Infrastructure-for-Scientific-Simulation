@@ -252,58 +252,89 @@ def find_outlet_feature(run_dir):
 
 
 def extract_daily_discharge(run_dir, feature_idx, start_year=None, end_year=None):
-    """
-    Read all CHRTOUT files, extract streamflow at feature_idx,
-    aggregate hourly to daily mean.
-    Returns dict {datetime.date: Q_daily_mean_m3s}.
-    """
-    run_dir = Path(run_dir)
-    chrtout_files = sorted(run_dir.glob('*.CHRTOUT_DOMAIN1'))
-    if not chrtout_files:
-        raise FileNotFoundError(f"No CHRTOUT files in {run_dir}")
+    """Daily mean streamflow at feature_idx as {datetime.date: Q m3/s}.
 
-    # Collect hourly values grouped by date
-    daily_accum = {}  # date -> list of Q values
-    for fpath in chrtout_files:
-        fname = fpath.name  # e.g. 200007010000.CHRTOUT_DOMAIN1
-        try:
-            yr = int(fname[:4])
-            mon = int(fname[4:6])
-            day = int(fname[6:8])
-        except (ValueError, IndexError):
-            continue
-
-        if start_year and yr < start_year:
-            continue
-        if end_year and yr > end_year:
-            continue
-
-        try:
-            d = datetime.date(yr, mon, day)
-        except ValueError:
-            continue
-
-        try:
-            with nc.Dataset(str(fpath), 'r') as ds:
-                q = float(ds.variables['streamflow'][feature_idx])
-        except Exception:
-            continue
-
-        if d not in daily_accum:
-            daily_accum[d] = []
-        daily_accum[d].append(q)
-
-    # Compute daily means
-    daily_q = {}
-    for d, vals in sorted(daily_accum.items()):
-        daily_q[d] = np.mean(vals)
-
-    return daily_q
+    Uses the KI's s11 extractor, which stops on an unreadable or misnamed
+    CHRTOUT and on any output time the run should have written but did not
+    (start, end and every step from namelist.hrldas / hydro.namelist). The old
+    helper here skipped such files and returned a partial series."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_s11_extract_discharge",
+        Path(__file__).resolve().parent.parent / "s11_output" / "extract_discharge.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    daily = mod.extract_daily_discharge(run_dir, feature_idx,
+                                        start_year=start_year, end_year=end_year)
+    return {ts.date(): float(q) for ts, q in daily["Q_sim"].items()}
 
 
 # ===================================================================
 # Parameter modification
 # ===================================================================
+
+BUILD_RECORD = Path(__file__).resolve().parent / 'wrfhydro_builds.json'
+
+
+def build_record_help(exe_path=None):
+    return (f"Add an entry to {BUILD_RECORD} for this executable: exe_sha256 (sha256sum of the "
+            f"real file, symlinks resolved), spatial_soil true/false, and evidence about THAT binary "
+            f"(e.g. objdump -d shows read_3d_soil is called or never called; or the build log / "
+            f"environment with SPATIAL_SOIL=1 used for exactly this file). Never guess.")
+
+
+def spatial_soil_compiled(exe_path=None):
+    """dt_v043 / 2026-10-15: does THIS executable read soil_properties.nc (SPATIAL_SOIL on)?
+
+    One certain rule: the sha256 of the selected executable (symlinks resolved) must match an
+    entry in wrfhydro_builds.json, which records spatial_soil for that exact binary and the
+    evidence for it. Object files next to the binary, nm, or folder searches are NOT used (they
+    can belong to another build). Returns True / False from the record, or None when the
+    executable is missing, has no record, or the record is unreadable -- callers must treat None
+    as "unknown" and stop.
+    """
+    import hashlib
+    exe = Path(exe_path or DEFAULT_WRF_HYDRO_EXE).resolve()
+    if not exe.is_file():
+        return None
+    h = hashlib.sha256()
+    with open(exe, 'rb') as fh:
+        for b in iter(lambda: fh.read(1 << 20), b''):
+            h.update(b)
+    try:
+        rec = json.loads(BUILD_RECORD.read_text())
+    except (OSError, ValueError):
+        return None
+    for b in rec.get('builds', []):
+        if b.get('exe_sha256') == h.hexdigest() and isinstance(b.get('spatial_soil'), bool):
+            return b['spatial_soil']
+    return None
+
+
+SPATIAL_SOIL_FILE = 'soil_properties.nc'
+
+
+def assert_parameter_is_reachable(param_name, file_name, exe_path=None):
+    """Refuse to sweep a parameter this build cannot read (dt_v043). Fail-closed."""
+    if file_name != SPATIAL_SOIL_FILE:
+        return
+    compiled = spatial_soil_compiled(exe_path)
+    if compiled is True:
+        return
+    detail = ("the build has NO -DSPATIAL_SOIL, so this file is never opened"
+              if compiled is False else
+              "this executable has no entry in the build record. " + build_record_help())
+    alt = {'REFKDT': 'GENPARM.TBL REFKDT_DATA', 'REFDK': 'GENPARM.TBL REFDK_DATA',
+           'SLOPE': 'GENPARM.TBL SLOPE_DATA(SLOPETYPE)',
+           'SMCMAX': 'SOILPARM.TBL MAXSMC by texture class'}.get(
+               param_name.upper(), 'its SOILPARM.TBL / GENPARM.TBL table entry')
+    raise RuntimeError(
+        f"dt_v043: refusing to calibrate {param_name} via {file_name} — {detail}. "
+        f"Every candidate would score identically and --apply_best would write a value the model "
+        f"never reads. On this build the live address is {alt}. "
+        f"Rebuild with SPATIAL_SOIL=1 to make the spatial file live (this changes the binary and "
+        f"therefore the case identity), or address the table instead.")
+
 
 # Map of canonical parameter names to (file, variable_name)
 PARAM_REGISTRY = {
@@ -351,7 +382,7 @@ def restore_param_file(domain_dir, filename):
         print(f"  WARNING: No backup found for {filename}")
 
 
-def set_parameter(domain_dir, param_name, value):
+def set_parameter(domain_dir, param_name, value, exe_path=None):
     """
     Set a parameter to a uniform value in the appropriate NetCDF file.
     For soil_properties.nc, sets all non-masked cells.
@@ -363,6 +394,10 @@ def set_parameter(domain_dir, param_name, value):
             f"Unknown parameter '{param_name}'. Known: {list(PARAM_REGISTRY.keys())}")
 
     filename, varname = PARAM_REGISTRY[param_key]
+    # dt_v043: fail BEFORE writing. A write to an address this build never reads produces a
+    # sweep in which every candidate scores identically and --apply_best is arbitrary.
+    # exe_path = the executable MPI will really run (run_dir/wrf_hydro.exe), not the default
+    assert_parameter_is_reachable(param_key, filename, exe_path)
     filepath = Path(domain_dir) / filename
 
     with nc.Dataset(str(filepath), 'r+') as ds:
@@ -420,10 +455,52 @@ def ensure_symlinks(run_dir, exe_path=None, tbl_dir=None):
     if not exe_link.exists():
         exe_link.symlink_to(exe_path.resolve())
 
+    # dt_v043: COPY the parameter tables, never symlink. On a build without -DSPATIAL_SOIL these
+    # hold the live REFKDT/REFDK/SLOPE (GENPARM.TBL) and SMCMAX (SOILPARM.TBL), so a symlink makes
+    # every concurrent evaluation share one file in the source tree — the first sweep that writes a
+    # table silently corrupts every other run on the machine, invisibly to every metric.
+    #
+    # 2026-10-15: a REAL table already in the run dir is kept as it is -- it may
+    # hold calibrated values from an earlier step (e.g. REFKDT in GENPARM.TBL), and
+    # resetting it to the install default would silently undo them. A symlinked
+    # table is turned into a real file with the content it points to NOW (not the
+    # install default). Only a table that is missing is copied from tbl_dir.
+    import shutil as _sh
     for tbl in tbl_dir.glob('*.TBL'):
-        link = run_dir / tbl.name
-        if not link.exists():
-            link.symlink_to(tbl.resolve())
+        dest = run_dir / tbl.name
+        if dest.is_symlink():
+            if not dest.exists():
+                raise RuntimeError(f"{dest} is a broken symlink (-> {os.readlink(dest)}); "
+                                   f"its parameter values are unknown, fix or remove it")
+            data = dest.resolve().read_bytes()
+            tmp = dest.with_name(dest.name + '.materialize.tmp')
+            tmp.write_bytes(data)
+            os.replace(tmp, dest)        # replaces the link itself, not its target
+            print(f"  {dest.name}: symlink replaced by a copy of its current content")
+        elif dest.is_file():
+            print(f"  {dest.name}: run-local table kept")
+        elif dest.exists():
+            raise RuntimeError(f"{dest} exists but is not a regular file")
+        else:
+            _sh.copyfile(tbl.resolve(), dest)
+            print(f"  {dest.name}: copied from {tbl_dir}")
+    for stray in run_dir.glob('*.TBL'):
+        if stray.is_symlink():
+            raise RuntimeError(f"containment failure: {stray.name} is a symlink to {stray.resolve()} "
+                               f"— parameter tables must be real files in the run dir (dt_v043)")
+
+
+def _invalidate_completion(run_dir):
+    """Old run_complete.json must not vouch for this launch (wrfhydro_run_gate,
+    one implementation in knowledge_infrastructure/tools/)."""
+    import importlib.util as _ilu
+    _src = Path(__file__).resolve().parent.parent / "wrfhydro_run_gate.py"
+    _spec = _ilu.spec_from_file_location("_wrfhydro_run_gate", _src)
+    _g = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_g)
+    kept = _g.invalidate_completion(run_dir)
+    if kept:
+        print(f"  old {kept.name.split('.superseded_')[0]} kept as {kept.name} (this launch is not yet confirmed)")
 
 
 def run_wrfhydro(run_dir, nproc=2, timeout=3600):
@@ -434,6 +511,7 @@ def run_wrfhydro(run_dir, nproc=2, timeout=3600):
     mpirun = str(MPICH_BIN / 'mpirun')
 
     cmd = [mpirun, '-np', str(nproc), './wrf_hydro.exe']
+    _invalidate_completion(run_dir)      # before MPI starts, at every launch
 
     env = os.environ.copy()
     env['PATH'] = f"{MPICH_BIN}:" + env['PATH']
@@ -451,21 +529,22 @@ def run_wrfhydro(run_dir, nproc=2, timeout=3600):
         )
         elapsed = time.time() - t0
 
-        # WRF-Hydro "succeeds" even when forcing runs out — check for
-        # the success string OR a non-zero exit with "The model finished"
+        # Success needs exit code 0 AND the model's own completion banner.
+        # Under mpirun the banner is written to diag_hydro.* rather than
+        # stdout (dt_v044), so both are read. A run that stops early (e.g.
+        # "no forcing data found") is a failure however many CHRTOUT files it
+        # left behind.
         stdout = proc.stdout
-        success = 'The model finished successfully' in stdout
+        banner = 'The model finished successfully'
+        in_diag = any(banner in f.read_text(errors='replace')
+                      for f in run_dir.glob('diag_hydro.*') if f.is_file())
+        success = proc.returncode == 0 and (banner in stdout or in_diag)
 
-        # Also treat "no forcing data" gracefully — it means the model
-        # ran to the end of available forcing, which is expected
-        no_forcing = ('STOP' in stdout and 'forc' in stdout.lower()) or \
-                     proc.returncode != 0
-
-        # Count output files to verify something was produced
+        # Count output files (reported only; never a success criterion)
         n_chrtout = len(list(run_dir.glob('*.CHRTOUT_DOMAIN1')))
 
         return {
-            'success': success or n_chrtout > 100,
+            'success': success,
             'returncode': proc.returncode,
             'elapsed_s': round(elapsed, 1),
             'n_chrtout': n_chrtout,
@@ -550,7 +629,7 @@ def run_calibration(args):
         print(f"\n  === Trial {i + 1}/{len(values)}: {args.param} = {val} ===")
 
         # Set parameter
-        set_parameter(domain_dir, args.param, val)
+        set_parameter(domain_dir, args.param, val, exe_path=run_dir / 'wrf_hydro.exe')
 
         # Clean previous outputs
         clean_output_files(run_dir)
@@ -563,16 +642,16 @@ def run_calibration(args):
               f"CHRTOUT files={run_result['n_chrtout']}")
 
         if not run_result['success']:
-            print(f"  WARNING: Run may have failed. Attempting to extract output anyway.")
-            if run_result['n_chrtout'] == 0:
-                print(f"  SKIP: No output produced.")
-                results.append({
-                    'value': val,
-                    'run_success': False,
-                    'elapsed_s': run_result['elapsed_s'],
-                    'metrics': None,
-                })
-                continue
+            # A failed run is never scored, whatever output it left behind.
+            print(f"  FAILED: WRF-Hydro run did not succeed; trial not scored.")
+            results.append({
+                'value': val,
+                'run_success': False,
+                'elapsed_s': run_result['elapsed_s'],
+                'n_chrtout': run_result['n_chrtout'],
+                'metrics': None,
+            })
+            continue
 
         # Find outlet (detect on first successful trial, reuse for subsequent)
         if outlet_idx is None:
@@ -590,25 +669,37 @@ def run_calibration(args):
 
         # Extract daily discharge
         print(f"  Extracting daily discharge (feature_idx={outlet_idx})...")
-        sim_data = extract_daily_discharge(
-            run_dir, outlet_idx, args.start_year, args.end_year)
+        try:
+            sim_data = extract_daily_discharge(
+                run_dir, outlet_idx, args.start_year, args.end_year)
+        except (ValueError, FileNotFoundError) as e:
+            print(f"  FAILED: output incomplete or unreadable: {e}")
+            results.append({
+                'value': val,
+                'run_success': False,
+                'elapsed_s': run_result['elapsed_s'],
+                'error': str(e),
+                'metrics': None,
+            })
+            continue
         print(f"  Extracted {len(sim_data)} daily values")
 
         # Align sim and obs on common dates
         common_dates = sorted(set(sim_data.keys()) & set(obs_data.keys()))
         if len(common_dates) < 30:
-            print(f"  WARNING: Only {len(common_dates)} overlapping days. "
-                  f"Need >= 30 for meaningful metrics.")
-            if len(common_dates) == 0:
-                results.append({
-                    'value': val,
-                    'run_success': True,
-                    'elapsed_s': run_result['elapsed_s'],
-                    'n_sim_days': len(sim_data),
-                    'n_overlap_days': 0,
-                    'metrics': None,
-                })
-                continue
+            # The run worked, but there is too little overlap to score it:
+            # no metrics, so it can never be chosen as best.
+            print(f"  NOT SCORED: only {len(common_dates)} overlapping days (need >= 30).")
+            results.append({
+                'value': val,
+                'run_success': True,
+                'elapsed_s': run_result['elapsed_s'],
+                'n_sim_days': len(sim_data),
+                'n_overlap_days': len(common_dates),
+                'metrics': None,
+                'not_scored': 'fewer than 30 overlapping days',
+            })
+            continue
 
         sim_arr = np.array([sim_data[d] for d in common_dates])
         obs_arr = np.array([obs_data[d] for d in common_dates])
@@ -643,19 +734,24 @@ def run_calibration(args):
     restore_param_file(domain_dir, param_file)
 
     # Apply best value
+    final_result = {'success': False}
     if best_value is not None:
         print(f"\n  BEST: {args.param} = {best_value} (NSE = {best_nse:.4f})")
         if args.apply_best:
             print(f"  Applying best value and running final simulation...")
-            set_parameter(domain_dir, args.param, best_value)
+            set_parameter(domain_dir, args.param, best_value, exe_path=run_dir / 'wrf_hydro.exe')
             clean_output_files(run_dir)
             final_result = run_wrfhydro(run_dir, args.nproc, args.timeout)
-            print(f"  Final run completed in {final_result['elapsed_s']}s")
+            if not final_result['success']:
+                print(f"  FAILED: final run with the best value did not succeed "
+                      f"(exit={final_result['returncode']})")
+            else:
+                print(f"  Final run completed in {final_result['elapsed_s']}s")
         else:
             print(f"  Use --apply_best to apply this value and run a final simulation.")
             print(f"  Or manually set: set {args.param}={best_value} in DOMAIN/{param_file}")
     else:
-        print("  WARNING: No successful trials. Check WRF-Hydro setup.")
+        print("  FAILED: no trial was run successfully and scored. Check WRF-Hydro setup.")
 
     # ---- Build output JSON ----
     summary = {
@@ -666,7 +762,8 @@ def run_calibration(args):
         'n_successful': sum(1 for r in results if r.get('metrics') is not None),
         'best_value': best_value,
         'best_nse': best_nse if best_nse > -999 else None,
-        'best_applied': args.apply_best and best_value is not None,
+        'best_applied': bool(args.apply_best and best_value is not None
+                             and final_result['success']),
         'obs_file': str(args.obs_file),
         'run_dir': str(run_dir),
         'start_year': args.start_year,
@@ -704,6 +801,10 @@ def run_calibration(args):
                   f"{m['RMSE']:8.2f} {m['r']:6.4f} {t:8.1f} {mark:>6s}")
     print("=" * 70)
 
+    if best_value is None:
+        return 1                      # nothing calibrated
+    if args.apply_best and not final_result['success']:
+        return 1                      # the best value could not be applied
     return 0
 
 

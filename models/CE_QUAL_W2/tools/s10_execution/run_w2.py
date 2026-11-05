@@ -2,8 +2,10 @@
 """
 run_w2.py — Execute CE-QUAL-W2 with preflight checks and output validation.
 
-CE-QUAL-W2 reads w2_con.npt from the CURRENT WORKING DIRECTORY.
-The binary must be run from the directory containing all input files.
+CE-QUAL-W2 reads its control file from the CURRENT WORKING DIRECTORY:
+w2_con.csv for the v5 binary on this server (the DeGray example), w2_con.npt
+for the v4.x fixed-width form. The binary must be run from the directory
+containing all input files.
 
 Preflight checks:
   1. w2_con.npt exists in run_dir
@@ -45,10 +47,24 @@ def preflight_checks(run_dir, binary):
     elif not os.access(binary, os.X_OK):
         warnings.append(f"Binary may not be executable: {binary}")
 
-    # Check w2_con.npt
+    # Check the control file: v5 reads w2_con.csv, v4.x reads w2_con.npt
+    w2_con_csv = os.path.join(run_dir, "w2_con.csv")
     w2_con = os.path.join(run_dir, "w2_con.npt")
-    if not os.path.isfile(w2_con):
-        errors.append(f"w2_con.npt not found in run directory: {run_dir}")
+    if os.path.isfile(w2_con_csv):
+        # v5 CSV control file: a file-name row holds the name in its first field
+        with open(w2_con_csv, errors="replace") as f:
+            for line in f:
+                first = line.split(",")[0].strip().strip('"')
+                if re.fullmatch(r"[\w\-]+\.(npt|csv)", first) and \
+                        re.match(r"(met|bth|qin|tin|cin|qot|qtr|ttr|ctr|qdt|tdt|pre|tpr|wsc|vpr|lpr|shade)",
+                                 first, re.I):
+                    # a warning, not an error: the control file also names the files of
+                    # options that are switched off (the DeGray example has no lpr.npt,
+                    # pre_br1.npt, ...); the binary stops with w2.err if it needs one
+                    if not os.path.isfile(os.path.join(run_dir, first)):
+                        warnings.append(f"Named in w2_con.csv but not in the run directory: {first}")
+    elif not os.path.isfile(w2_con):
+        errors.append(f"No control file (w2_con.csv for v5, w2_con.npt for v4.x) in run directory: {run_dir}")
     else:
         # Parse w2_con.npt for referenced files
         with open(w2_con) as f:
@@ -97,12 +113,18 @@ def postrun_checks(run_dir):
             errors.append(f"w2l.opt contains errors: {'; '.join(error_lines[:3])}")
         if "NaN" in log_content or "Infinity" in log_content:
             warnings.append("w2l.opt contains NaN/Infinity — possible numerical instability (dt_023)")
-    else:
+    elif not os.path.isfile(os.path.join(run_dir, "w2_con.csv")):
         warnings.append("w2l.opt not found — model may not have run")
+
+    # v5 writes its stop reasons to w2.err (the .w2l file of v5 is binary, not a log)
+    w2err = os.path.join(run_dir, "w2.err")
+    if os.path.isfile(w2err) and os.path.getsize(w2err) > 0:
+        with open(w2err, errors="replace") as f:
+            errors.append(f"w2.err: {f.read(600).strip()}")
 
     # Check output files exist and are non-empty (dt_025)
     output_found = False
-    for pattern in ["snp_*.opt", "tsr_*.opt", "spr_*.opt"]:
+    for pattern in ["snp_*.opt", "tsr_*.opt", "spr_*.opt", "snp.opt", "tsr_*.csv", "spr*.csv"]:
         for f in Path(run_dir).glob(pattern):
             if f.stat().st_size > 0:
                 output_found = True
@@ -128,6 +150,11 @@ def process(args):
             result["warnings"] = pre_warnings
         print(json.dumps(result, indent=2))
         return 1
+
+    # A stop reason left by an earlier run must not be read as this run's
+    stale = os.path.join(run_dir, "w2.err")
+    if os.path.isfile(stale):
+        os.remove(stale)
 
     # Run CE-QUAL-W2
     print(f"Running CE-QUAL-W2 in {run_dir}...", file=sys.stderr)
@@ -165,7 +192,7 @@ def process(args):
 
     # Collect output files
     output_files = []
-    for pattern in ["snp_*.opt", "tsr_*.opt", "spr_*.opt", "*.nc"]:
+    for pattern in ["snp_*.opt", "tsr_*.opt", "spr_*.opt", "snp.opt", "tsr_*.csv", "spr*.csv", "*.nc"]:
         for f in Path(run_dir).glob(pattern):
             if f.stat().st_size > 0:
                 output_files.append(str(f))
@@ -192,7 +219,7 @@ def process(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Run CE-QUAL-W2")
-    parser.add_argument("--run_dir", required=True, help="Directory with w2_con.npt and all input files")
+    parser.add_argument("--run_dir", required=True, help="Directory with the control file (w2_con.csv for v5, w2_con.npt for v4.x) and all input files")
     parser.add_argument("--binary", default=W2_BINARY_DEFAULT, help="Path to w2_v5")
     parser.add_argument("--timeout", type=int, default=7200, help="Timeout in seconds (default: 7200)")
     args = parser.parse_args()

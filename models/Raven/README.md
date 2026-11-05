@@ -241,8 +241,8 @@ python $KI/tools/s2_parameters/build_rvp_parameters.py \
 
 # 4. Convert forcing to .rvt (CRITICAL — unit conversions happen here)
 python $KI/tools/s3_forcing/convert_forcing_to_rvt.py \
-    --forcing_dir outputs/chaohe_2000_2010_025deg/vic_temp/forcing/forcing_final \
-    --grid_nc outputs/chaohe_2000_2010_025deg/vic_temp/grid/basin_grid.nc \
+    --forcing_dir data/forcing/Data_forcing_03hr_010deg \
+    --basin_shp data/shp/chaohe_shp/chaohe.shp \
     --output_dir outputs/chaohe_raven/ --basin_name chaohe \
     --start_year 2000 --end_year 2010 --forcing_source cmfd
 

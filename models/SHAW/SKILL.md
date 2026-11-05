@@ -30,14 +30,15 @@
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (1 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (33 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (35 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -59,10 +60,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `s6_execution/tools/run_shaw.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/run_shaw.py --help` |
 | `s6_execution/tools/shaw_frost_analysis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/shaw_frost_analysis.py --help` |
 | `s6_execution/tools/validate_shaw_inputs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/validate_shaw_inputs.py --help` |
-| `s7_vic_coupling/tools/vic_to_shaw_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s7_vic_coupling/tools/vic_to_shaw_soil.py --help` |
 | `tools/s1_site_setup/setup_shaw_from_template.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_site_setup/setup_shaw_from_template.py --help` |
 
-*13 public tools; `_`-prefixed helpers and packaging files excluded.*
+*12 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -99,7 +99,7 @@ SHAW simulates coupled heat, water, and solute transfer through a vertical soil-
 | Air temperature | degC | CMFD / MSWX / NASA POWER | CMFD: K; MSWX: degC | CMFD subtracts 273.15; MSWX uses Celsius directly |
 | Dew-point / humidity | degC or relative humidity depending on weather mode | CMFD / MSWX / NASA POWER | Specific humidity may be present | Convert specific humidity to RH when preparing SHAW weather |
 | Wind speed | m/s | CMFD / MSWX / NASA POWER | m/s | Keep m/s and set `IFLAGSI=1` |
-| Precipitation | mm | CMFD / MSWX / NASA POWER | CMFD: kg/m2/s; MSWX: mm/3hr | CMFD is accumulated over the forcing step; MSWX 3-hour values are summed |
+| Precipitation | mm | CMFD / MSWX / NASA POWER | CMFD: kg/m2/s; MSWX: mm/3hr | The shared loader returns mm per day (or per step); the SHAW tool never converts source rain itself |
 | Solar radiation | W/m2 | CMFD / MSWX / NASA POWER | W/m2 or MJ/m2/day depending on source file | Keep W/m2; convert MJ/m2/day to W/m2 when encountered |
 | New snow density | g/cm3 | Weather input or auto-calculated | 0 may be used | `0` lets SHAW auto-calculate |
 
@@ -108,9 +108,9 @@ SHAW simulates coupled heat, water, and solute transfer through a vertical soil-
 | Input | Source / preparation path | Notes |
 |-------|---------------------------|-------|
 | Soil texture and hydraulics | `from ki_tools_common.soil_utils import lookup_hwsd` | Returns sand/silt/clay/OC/pH, texture class, and Saxton-Rawls hydraulic properties |
-| Soil node properties | `.sit` file, preferably from the SHAW template setup tool | Apply BPAR and QUARTZ pedotransfer corrections before running freeze-thaw cases |
+| Soil node properties | `.sit` file, preferably from the SHAW template setup tool | Apply the Campbell b and SAT corrections (`fix_bpar_sat_from_soil`) before running; column 11 of a soil line is SAT, not quartz |
 | DEM slope/aspect | Site setup stage | Used in `.sit` site characteristics |
-| Land cover / canopy | AVHRR land cover or DSSAT crop parameters | Drives canopy configuration when plant canopy is enabled |
+| Land cover / canopy | Site record, AVHRR land cover or DSSAT crop parameters | A cropped or grassed site MUST run with a plant (`NPLANT>=1`) and a growth file; the compton template is bare soil |
 | Initial soil moisture and temperature | `.moi` and `.tem` files | Can be initialized from VIC output or climatology |
 
 ### 3.3 Configuration Files
@@ -199,13 +199,13 @@ Operational SHAW files that commonly carry these outputs are listed in the legac
 | Tool / stage | Purpose | Inputs | Outputs |
 |--------------|---------|--------|---------|
 | `preflight_check.py` | Verify binary, environment, and required data before debugging | KI directory | `PREFLIGHT_REPORT=` line and health checks |
-| `s2_weather_prep/tools/convert_forcing_to_shaw.py` | Convert CMFD/MSWX/NASA POWER forcing into SHAW weather format | Raw or extracted forcing | `.wea` weather files |
+| `s2_weather_prep/tools/convert_forcing_to_shaw.py` | Build the SHAW `.wea` file directly from the forcing source: `--source nasa_power\|cmfd\|mswx --lat --lon` reads through `ki_tools_common.load_forcing` (daily and hourly). Also `--csv` (daily station table). It is the only weather tool; it does not read another model's forcing files | Lat/lon + years (loader source), or a station CSV | `.wea` weather files |
 | `s1_site_setup` | Generate `.sit` site file from soil, topography, and land-cover inputs | HWSD, DEM slope/aspect, land cover | `.sit` |
 | `s3_plant_config` | Configure plant canopy parameters | AVHRR land cover or DSSAT crop parameters | Plant canopy input settings |
 | `s4_initial_conditions` | Generate initial soil moisture and temperature profiles | VIC output or climatology | `.moi`, `.tem` |
 | `s5_snow_residue_config` | Configure snow and residue properties | Site/residue assumptions | Snow and residue input settings |
 | `s6_execution` | Run SHAW and parse output files | Complete SHAW input set | `.out` files and parsed products |
-| `s7_vic_coupling` | Convert VIC grid-cell parameters to SHAW and run per cell | VIC parameters and forcing | Enhanced freeze-thaw outputs |
+| `s7_vic_coupling` | Run SHAW per cell beside a VIC run, started from VIC RESULTS (soil moisture / temperature through s4); soil comes from HWSD through s1 and weather from the forcing source through s2 | VIC output | Enhanced freeze-thaw outputs |
 
 Shared utilities should be used instead of ad hoc extraction code:
 
@@ -222,7 +222,7 @@ This unit table documents the conversions and traps stated by the KI body. For e
 
 | Variable / field | Source unit stated here | SHAW/model unit | Conversion / rule | Type |
 |------------------|-------------------------|-----------------|-------------------|------|
-| CMFD precipitation | kg/m2/s | mm over weather step / daily total | Accumulate over the source timestep; for 3-hour CMFD, multiply by 10800 per step and sum 8 steps for daily | multiplicative accumulation |
+| CMFD precipitation | kg/m2/s | mm over weather step / daily total | Done INSIDE the shared loader (rate x 10800 per 3-hour step, 8 steps summed per day). Do not redo it in SHAW code: the old tool summed the raw rates and got rain 10800 times too small (triplet shaw_035) | multiplicative accumulation |
 | MSWX precipitation | mm/3hr | mm daily total or step total | Sum 3-hour values; do not multiply by 10800 | accumulation |
 | Air temperature from CMFD | K | degC | subtract 273.15 | additive |
 | Air temperature from MSWX | degC | degC | no conversion | identity |
@@ -238,7 +238,7 @@ This unit table documents the conversions and traps stated by the KI body. For e
 | Soil initial water content | m3/m3 | m3/m3 | no conversion | identity |
 | Soil initial temperature | degC | degC | no conversion | identity |
 | Campbell `BCAP` | m | m | negative air-entry potential | sign-sensitive parameter |
-| `QUARTZ` | fraction 0-1 | fraction 0-1 | clamp from texture workflow; do not use impossible template values | bounded fraction |
+| `SAT` (soil column 11) | m3/m3 | m3/m3 | `1 - RHOB/2650` from bulk density; SHAW has no quartz input | bounded fraction |
 | `BPAR` | dimensionless | dimensionless | estimate from texture workflow; avoid `BPAR=30` freeze-thaw failure | parameter correction |
 | `soil_temperature_profile` | SHAW `TEMP.out` profile | degC | canonical dag unit is `degC` | output unit |
 
@@ -283,7 +283,10 @@ Check `diagnostics/triplets.yaml` before debugging. The full corpus stays in YAM
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Headline Validation Target
 
@@ -301,16 +304,6 @@ Every threshold below is the convention threshold and carries its citation key. 
 | `liquid_water_content_profile` | NSE | maximize | `>= 0.5` (`moriasi2015`) | `>= 0.6` (`moriasi2015`) | `>= 0.8` (`moriasi2015`) |
 | `liquid_water_content_profile` | RMSE | minimize | `<= 0.08` (`zhao2016`) | `<= 0.05` (`zhao2016`) | `<= 0.03` (`zhao2016`) |
 
-No convention-sourced achieved NSE value for `soil_temperature_profile` is stated in the extracted facts above. The validation narratives below report site-specific RMSE, Bias, R2, frost/snow behavior, and water-balance checks; do not recast those as NSE verdicts unless the metric is computed against the convention.
-
-### Existing Validation Cases in This SKILL
-
-| Case | Location / domain | Period | Main reported checks |
-|------|-------------------|--------|----------------------|
-| JackPine Boreal Forest, OJP BERMS | Saskatchewan, Canada | 1999 | Soil temperature RMSE/Bias/R2 by depth; water balance |
-| Manitoba Station 544, Alexander Prairie | Manitoba, Canada | Nov 2019-Oct 2020 | Soil temperature RMSE/Bias/R2 by depth; frost/snow behavior; water balance |
-| NE China Black Soil Domain | 6 stations, 2021-2022 | 2021-2022 | Liquid water-content behavior, BPAR freeze-thaw correction, growing-season dry bias |
-
 ---
 
 ## 12. Parameter Selection by Region
@@ -319,7 +312,7 @@ These are physically informed starting rules already stated by the KI, not calib
 
 | Climate / region | Key parameters / setup | Rationale |
 |------------------|------------------------|-----------|
-| Freeze-thaw soils, including boreal/prairie/black-soil cases | Apply texture-based `BPAR`, `QUARTZ`, and `BCAP` corrections after template setup | Prevents the known `BPAR=30` failure where liquid water remains unrealistically high at subfreezing temperatures |
+| Freeze-thaw soils, including boreal/prairie/black-soil cases | Apply texture-based `BPAR` and `BCAP` corrections and density-based `SAT` after template setup | Prevents the known `BPAR=30` failure where liquid water remains unrealistically high at subfreezing temperatures |
 | Sites using SI forcing | Set `IFLAGSI=1` | Keeps wind in m/s and precipitation in mm |
 | Daily station forcing | Set `MTSTEP=1` and use the daily weather columns | Daily weather has no hour column and uses TMAX/TMIN/TDEW |
 | Sensor validation in frozen soil | Compare liquid-water sensors to `liquid.out`, not total `moist.out` | Sensors detect liquid water only during frozen periods |
@@ -330,12 +323,38 @@ These are physically informed starting rules already stated by the KI, not calib
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-SHAW forcing tool is in `s2_weather_prep/tools/` in this KI:
-- `s2_weather_prep/tools/convert_forcing_to_shaw.py` — Converts CMFD/MSWX/NASA POWER to SHAW weather format (hourly or daily); handles specific humidity→RH, pressure Pa→kPa, solar radiation units
+**Standard path (direct)**: SHAW weather is built DIRECTLY from the forcing source through the shared loader
+`ki_tools_common.load_forcing` (`load_daily_forcing` for daily, `load_hourly_forcing` for hourly; sources `nasa_power`, `cmfd`, `mswx`).
+The weather tool reads no other model's forcing files; do NOT read the source NetCDF files with your own code either.
+The SHAW tool that does this is `s2_weather_prep/tools/convert_forcing_to_shaw.py`:
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/HWSD/SKILL.md` for soil property documentation.
+```bash
+# outside China, point fetch (no --forcing_dir needed)
+python {KI}/s2_weather_prep/tools/convert_forcing_to_shaw.py --source nasa_power \
+    --lat 45.3 --lon -75.0 --start_year 2015 --end_year 2019 --mode daily --output site.wea
+# China, CMFD store
+python {KI}/s2_weather_prep/tools/convert_forcing_to_shaw.py --source cmfd \
+    --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+    --lat 32.43 --lon 115.6 --start_year 2010 --end_year 2010 --mode daily --output site.wea
+```
+
+| `--source` | Read by | Notes |
+|---|---|---|
+| `nasa_power` | shared loader (network, one request per year) | Global. Daily from 1981, hourly from 2001. Wind is the 10 m wind. |
+| `cmfd` | shared loader | China only. `--forcing_dir` = CMFD 3-hour store. About 4 minutes per point-year. |
+| `mswx` | shared loader | Global, on `KISSPATH_DATA` (exfat): read with ONE process only; a point read takes hours. |
+| `csv` (or just `--csv FILE`) | the tool's daily CSV reader | Station table (RISMA / EC / AAFC). Daily mode only. |
+
+Rules the tool enforces:
+- There is no default source: name `--source` (or give `--csv`). `--forcing_dir` is only the root of the CMFD / MSWX store.
+- No made-up fill values. If the source lacks a needed variable (missing key or NaN), the tool stops and names the variable and the first bad date.
+- `--mode daily` writes `JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR` (use `MTSTEP=1`); dew point comes from specific humidity + pressure.
+- `--mode hourly` writes `JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR` (use `MTSTEP=0`, JH 0..23). Loader times are UTC, so the tool shifts them to local standard time (`--utc_offset`, default `round(lon/15)`) and keeps whole local days only. 3-hour sources (CMFD, MSWX) are written as three hourly records per step (state held, rain split evenly).
+- The tool prints annual rain totals and mean temperature (`--summary_json` saves them). Check them: annual rain should be several hundred to about 1500 mm for most land sites, never near zero.
+- Loader wind is at 10 m. Set the `.sit` Line E instrument height (2nd value) to 10.0 when using loader weather.
+
+**Data Validation Reference**: CMFD/MSWX/NASA POWER units and traps are handled and documented in `ki_tools_common/load_forcing.py` (the `data_ki/*/tools` paths are stale).
+Soil properties: `from ki_tools_common.soil_utils import lookup_hwsd`.
 
 ---
 
@@ -446,7 +465,7 @@ JD  JYR  TMAX  TMIN  TDEW  WIND  PRECIP  SOLAR
 | Variable | SI (IFLAGSI=1) | English (IFLAGSI=0) | Common error |
 |----------|---------------|---------------------|--------------|
 | Wind speed | m/s | mph (hourly) or miles/day (daily) | CMFD/MSWX wind is m/s -- set IFLAGSI=1 |
-| Precipitation | mm | inches | VIC precip is mm -- set IFLAGSI=1 |
+| Precipitation | mm | inches | Loader precip is mm -- set IFLAGSI=1 |
 | Solar radiation | W/m2 | W/m2 | Same in both -- no conversion needed |
 | Soil Ksat | cm/hr | cm/hr | Always cm/hr regardless of IFLAGSI |
 | Soil depth | m | m | Always meters |
@@ -468,32 +487,50 @@ The site file (.sit) has a complex multi-section structure:
 | 2 | Brooks-Corey | psi_e, theta_s, lambda, theta_r, l |
 | 3 | Van Genuchten | theta_s, n, theta_r, l, alpha (set psi_e=0) |
 
+### ⚠️ Land cover and lower boundary — set these before any real-site run
+
+- **Land cover.** Before a real-site run, find the land cover of the site. A cropped or grassed site must run with `NPLANT>=1` and a growth file; bare soil (`NPLANT=0`) is only for a fallow or bare plot. **The compton template is bare soil**: with it `water.out` TRANSP is zero and the root zone stays near field capacity all summer (triplet shaw_038).
+  - Build the growth file with `s3_plant_config/tools/create_plant_file.py` (or `build_growth_file()`), then call `add_plant(sit_path, crop_type, gro_filename)` in `tools/s1_site_setup/setup_shaw_from_template.py` (CLI: `--crop_type grass --gro_file case.gro`). It sets `NPLANT=1` on Line D and inserts the canopy block after Line E, as in the shipped `US-Rms.sit`:
+    ```
+    MCANFLG ISTOMATE CANMA CANMB WCAN
+    ITYPE PINTRCP XANGLE CANALB TCCRIT RSTOM0 RSTEXP PLEAF0 RLEAF0 RROOT0
+    <growth file name>
+    ```
+  - With `MCANFLG=1` there is no root line; rooting depth comes from the growth file. The growth file year style must match the `.sit` (2-digit with the compton template, shaw_032) and it must cover the run from start to end. `add_plant` stops with an error if not; it never falls back to bare soil.
+  - Position 1 of Line D is `NPLANT`, not `MCANFLG`. Never change it without adding or removing the canopy block.
+  - After the run check that `water.out` TRANSP is above zero in summer.
+- **Lower water boundary.** Soil header line = `IVLCBC ITMPBC ALBDRY ALBEXP IWRC`. Use `IVLCBC=1` (unit gradient) unless measured deep water content is on hand (`set_lower_boundary(sit_path, 1)` or `--ivlcbc 1`). With `IVLCBC=0` SHAW reads the bottom-node water content from `.moi` for the whole run, so never write an invented water-content series into `.moi` as a boundary. With `IVLCBC=1` the `.moi` file only gives the start profile. `out.out` states which one is in use ("INPUT WATER CONTENT SPECIFIED FOR LOWER BOUNDARY" means `IVLCBC=0`).
+
 ### ⚠️ Soil Node Column Format — IWRC=1 (Campbell) — ACTUAL .sit format
 
-The actual binary format used by SHAW v3.03 for each soil node line is **12 columns**:
+Each soil node line has **12 columns**, in the order `Shaw303.for` reads them (`READ ZS,SAND,SILT,CLAY,ROCK,OM,RHOB,SATCON,SATKL,SOILWRC(1..3)`); `out.out` prints the same table:
 
 ```
-DEPTH  SAND  SILT  CLAY  OM  KSAT  BD  THETA_INIT  TINIT  BCAP  QUARTZ  BPAR
+ZS  SAND  SILT  CLAY  ROCK  OM  RHOB  SATK  SATKLAT  AIRENTRY  SAT  B
 ```
 
 | Col | Name | Units | Notes |
 |-----|------|-------|-------|
-| 0 | DEPTH | m | Node depth (0.00 = surface) |
-| 1 | SAND | % | Sand fraction (0–100) |
-| 2 | SILT | % | Silt fraction |
-| 3 | CLAY | % | Clay fraction |
-| 4 | OM | % | Organic matter (OC × 1.724) |
-| 5 | KSAT | cm/hr | Saturated hydraulic conductivity |
-| 6 | BD | kg/m³ | Bulk density (written as `1360.`) |
-| 7 | THETA_INIT | m³/m³ | Initial volumetric water content |
-| 8 | TINIT | °C | Initial soil temperature |
-| 9 | BCAP | m | Air-entry potential (negative, e.g. `-0.30`) |
-| 10 | QUARTZ | 0–1 | **Thermal parameter** — quartz fraction of mineral particles (Johansen 1975) |
-| 11 | BPAR | — | **Campbell's b** — pore-size distribution index (Rawls et al. 1982) |
+| 0 | ZS | m | Node depth (0.00 = surface) |
+| 1 | SAND | % | Sand (0–100) |
+| 2 | SILT | % | Silt |
+| 3 | CLAY | % | Clay |
+| 4 | ROCK | % by **weight** | Rock/gravel share of the soil mass (SHAW 3.0 user manual). HWSD gravel is % by **volume**: `create_site_file.py` converts it as ROCK = gravel_vol × 2650 / RHOB (2650 kg/m³ = SHAW's RHOM; SHAW turns it back into a volume the same way) |
+| 5 | OM | % by weight | Organic **matter** = organic carbon × 1.724 (van Bemmelen factor). In `update_sit_file(soil_properties=...)` pass `om` (organic matter, written as is) or `oc` (organic carbon, converted); both must agree. Before 2026-10-15 `oc` was written into OM unconverted, so check results made before then used OM about 1.7× too low |
+| 6 | RHOB | kg/m³ | Bulk density (written as `1360.`) |
+| 7 | SATK | cm/hr | Saturated hydraulic conductivity |
+| 8 | SATKLAT | cm/hr | Lateral saturated conductivity (0 = none) |
+| 9 | AIRENTRY (BCAP) | m | Air-entry potential (negative, e.g. `-0.30`) |
+| 10 | SAT | m³/m³ | **Saturated water content.** Not quartz: SHAW has no quartz input |
+| 11 | B (BPAR) | — | **Campbell's b** — pore-size distribution index (Rawls et al. 1982) |
 
-> **WARNING — template trap**: The Compton Quebec template ships with `QUARTZ=8.5` and `BPAR=30.0` — both physically impossible or wrong. `QUARTZ` must be 0–1. `BPAR=30` means soil stays liquid to −150°C, disabling freeze-thaw simulation. ALWAYS apply pedotransfer corrections (see below).
+Initial water content and temperature are NOT on this line; they come from `.moi` and `.tem`. `setup_shaw_from_template.py` keeps the template's own `.tem`/`.moi` unless real profiles are given (it no longer writes latitude-formula profiles), and stops if they do not fit the run (`check_profile_file`, following Shaw303.for): a record at the start (hour 0 of day D counts as hour 24 of day D-1, both forms are accepted); when the file is a lower boundary (`.moi` with IVLCBC=0, `.tem` with ITMPBC=0) a record at or after hour 24 of the last day JEND (a file that ends at JEND hour 0 runs out of records on the last day); and exactly NS values per record (NS from Line D of the copied `.sit`). Trailing notes after the NS values and a text footer are allowed, as SHAW ignores them. The Compton template's own files end at day 364 hour 0 with JEND=364 and IVLCBC=ITMPBC=0, so they fail this check as shipped: give real profiles that reach past the end.
 
-### ⚠️ BPAR and QUARTZ — Pedotransfer Functions (CRITICAL for freeze-thaw)
+> **WARNING — template trap**: Older copies of the Compton Quebec template carry `8.5` in column 10 and `30.0` in column 11. `SAT` must be a porosity (about 0.35–0.60) and `B=30` means soil stays liquid to −150°C, disabling freeze-thaw simulation. ALWAYS apply the corrections below.
+
+> **WARNING — old "QUARTZ" label**: before 2026-10-02 this page and the tool called column 10 `QUARTZ` and wrote `sand/100*0.9+0.10` there. That set SAT from sand content (0.19 for a clay, 0.87 for a sand). Any `.sit` made by the old `fix_bpar_quartz_from_texture` has a wrong SAT; rebuild it.
+
+### ⚠️ BPAR and SAT — soil corrections (CRITICAL for freeze-thaw and water storage)
 
 **BPAR (Campbell's b)** controls both:
 - Water retention curve shape: ψ = BCAP × (θ/θ_sat)^(−BPAR)
@@ -501,15 +538,15 @@ DEPTH  SAND  SILT  CLAY  OM  KSAT  BD  THETA_INIT  TINIT  BCAP  QUARTZ  BPAR
 
 With BPAR=30: 72% liquid water at −15°C → soil never freezes. With BPAR=6–9 (correct for loam/clay): 5–20% liquid at −15°C → realistic freeze-thaw.
 
-**Pedotransfer functions** (apply via `fix_bpar_quartz_from_texture()` in `setup_shaw_from_template.py`):
+**Formulas** (apply via `fix_bpar_sat_from_soil()` in `setup_shaw_from_template.py`; the old name `fix_bpar_quartz_from_texture` is kept as an alias):
 
 ```python
 # Rawls et al. (1982) — Campbell b from texture
 bpar   = 3.10 + 0.157 * clay - 0.003 * sand     # typical NE China: 6–10
 bpar   = max(2.0, min(12.0, bpar))               # clamped
 
-# Johansen (1975) — quartz fraction from sand content  
-quartz = min(0.85, max(0.10, sand/100.0 * 0.9 + 0.10))
+# SAT (column 10) — porosity from bulk density RHOB (kg/m3, column 6)
+sat    = 1.0 - rhob / 2650.0                     # SHAW also caps SAT by density
 
 # Cosby et al. (1984) — BCAP (air-entry, m, negative)
 bcap   = -0.01 * (10.0 ** (1.54 - 0.0095*sand + 0.0063*(100-sand-clay)))
@@ -519,11 +556,11 @@ bcap   = min(bcap, -0.05)
 
 **Always call after template setup:**
 ```python
-from models.SHAW.knowledge_infrastructure.tools.s1_site_setup.setup_shaw_from_template import fix_bpar_quartz_from_texture
-n = fix_bpar_quartz_from_texture(sit_path)
+from models.SHAW.knowledge_infrastructure.tools.s1_site_setup.setup_shaw_from_template import fix_bpar_sat_from_soil
+n = fix_bpar_sat_from_soil(sit_path)
 ```
 
-Or from `run_shaw_parallel.py` — `fix_bpar_quartz_in_sit(sit_path)` is defined inline and called after every template setup.
+`run_shaw_parallel.py` has its own inline `fix_bpar_quartz_in_sit(sit_path)`. It has not been checked against the SAT column fix above; check it before reuse.
 
 ## Output Files (up to 19)
 
@@ -552,10 +589,21 @@ Or from `run_shaw_parallel.py` — `fix_bpar_quartz_in_sit(sit_path)` is defined
 Generate the `.sit` file from HWSD soil database + DEM slope/aspect + land cover.
 
 ### s2_weather_prep
-Convert CMFD/MSWX/NASA POWER forcing to SHAW weather format.
+Build the SHAW weather file (`.wea`) directly from the forcing source.
+
+- Tool: `s2_weather_prep/tools/convert_forcing_to_shaw.py`
+- Standard call: `--source nasa_power|cmfd|mswx --lat LAT --lon LON --start_year Y0 --end_year Y1 --mode daily|hourly --output case.wea`
+  (the tool calls `ki_tools_common.load_forcing.load_daily_forcing` / `load_hourly_forcing`; add `--forcing_dir` for the CMFD or MSWX store).
+- Pick the source by place: China -> `cmfd`; elsewhere -> `nasa_power` for one point (MSWX point reads take hours and must run one at a time).
+- Other input: `--csv FILE` for a daily station table.
+- After the step: check the printed annual rain and mean temperature, check the file has every day (daily: one line per calendar day),
+  keep the first weather day one day BEFORE `JSTART` (shaw_030), and match `MTSTEP` to the mode (daily=1, hourly=0).
+- Stage notes with the same content: `s2_weather_prep/README.md`. Known faults of the old tool: triplets shaw_034, shaw_035, shaw_036.
 
 ### s3_plant_config
-Configure plant canopy parameters from AVHRR land cover or DSSAT crop parameters.
+Configure plant canopy parameters from the site record, AVHRR land cover or DSSAT crop parameters.
+A cropped or grassed site must get a plant: build the growth file with `s3_plant_config/tools/create_plant_file.py`,
+then `add_plant()` from the s1 tool (see "Land cover and lower boundary" above). Bare soil is only for a fallow or bare plot.
 
 ### s4_initial_conditions
 Generate initial soil moisture and temperature profiles from VIC output or climatology.
@@ -567,7 +615,7 @@ Configure snow parameters and crop residue layer properties.
 Run SHAW model, monitor progress, parse output files.
 
 ### s7_vic_coupling
-Convert VIC grid cell parameters to SHAW format, run SHAW per cell for enhanced freeze-thaw.
+Run SHAW per cell beside a VIC run for enhanced freeze-thaw, started from VIC results. No SHAW input is made from VIC setup files.
 
 ## VIC Coupling Strategy
 
@@ -575,8 +623,8 @@ SHAW provides detailed freeze-thaw physics that VIC's simplified frost scheme ca
 The coupling approach:
 1. Run VIC normally to get grid-cell water/energy balance
 2. For cells where freeze-thaw is important (high latitude, high altitude):
-   - Convert VIC soil parameters to SHAW format (via `vic_to_shaw_soil.py`)
-   - Convert CMFD/MSWX forcing to SHAW weather format (via `convert_forcing_to_shaw.py`)
+   - Build the SHAW site file with soil straight from HWSD (`s1_site_setup/tools/create_site_file.py`, stops if HWSD has no soil at the point)
+   - Build SHAW weather directly from CMFD/MSWX/NASA POWER through the shared loader (`convert_forcing_to_shaw.py --source cmfd|mswx|nasa_power`), naming the same source and period as the VIC run
    - Initialize SHAW from VIC soil moisture/temperature
    - Run SHAW per cell for detailed frost depth, ice content, freeze-thaw timing
 3. Use SHAW output to correct VIC's infiltration/runoff during frozen soil periods
@@ -600,83 +648,20 @@ The coupling approach:
 
 ---
 
-## Validated: JackPine Boreal Forest (OJP BERMS), Saskatchewan, Canada
+## Setup errors seen in past runs (rules)
 
-**Data source**: BERMS (Boreal Ecosystem Research and Monitoring Sites)
-- Operated by Environment and Climate Change Canada (ECCC)
-- Site: Old Jack Pine (OJP), ~53.916°N, 104.692°W, 580m elevation
-- Part of FLUXNET / AmeriFlux network
-- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/sas_forest/`
-- Reference: Barr et al. (2012) JGR-Biogeosciences; Zha et al. (2010) Global Change Biology
-
-**Data used**:
-- `JackPine_Met.csv` — 30-min: T, P, SWi, RH, WS, LWi (1998-2016)
-- `JackPine_Soil.csv` — 30-min: VWC (5 depths) + ST (6 depths: 2,5,10,20,50,100 cm)
-- `JackPine_Snow.csv` — 30-min: SnowT, SD_Clearing, SD_BlwCanopy
-
-**Simulation**: 1999, hourly timestep, 365 days, ~30 seconds runtime
-
-### Soil Temperature Performance (uncalibrated)
-
-| Depth | RMSE (°C) | Bias (°C) | R² |
-|-------|----------|----------|-----|
-| 2 cm | 4.32 | +0.01 | 0.921 |
-| 5 cm | 4.32 | +0.05 | 0.910 |
-| 10 cm | 3.95 | +0.16 | 0.914 |
-| 20 cm | 3.33 | +0.25 | 0.921 |
-| 50 cm | 1.45 | +0.19 | 0.955 |
-| 100 cm | 1.83 | +0.31 | 0.913 |
-
-### Water Balance
-- Annual P: 466 mm (literature ~430 mm)
-- ET: 499 mm
-- Snowmelt: 47 mm
-
-### Input Format Issues Found (3 triplets)
+### Input format issues
 - dt_v003: MCANFLG=0 must NOT have root distribution line
 - dt_v004: NSALT=0 must NOT have ASALT/DISPER columns
 - dt_v005: Weather file needs +24h padding for EOF avoidance
 
-### Output files
-All at `outputs/shaw_jackpine/`: 6 validation plots + SHAW input/output files
-
----
-
-## Validated: Manitoba Station 544 (Alexander Prairie), Canada
-
-**Data source**: Manitoba Agriculture Weather Program (MAWP)
-- Station 544, Alexander, Manitoba (49.81°N, 100.37°W, 460m elevation)
-- Prairie grassland (no canopy, MCANFLG=0)
-- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba/`
-- Soil temperature at 4 depths: 5, 20, 50, 100 cm
-
-**Simulation**: Nov 2019 – Oct 2020, **daily weather input (MTSTEP=1)**, 364 days
-
-### Soil Temperature Performance (uncalibrated)
-
-| Depth | RMSE (°C) | Bias (°C) | R² |
-|-------|----------|----------|-----|
-| 5 cm | 6.17 | -2.54 | 0.895 |
-| 20 cm | 5.00 | -1.81 | 0.894 |
-| 50 cm | 3.89 | -0.70 | 0.821 |
-| 100 cm | 2.93 | -2.09 | 0.778 |
-
-### Frost & Snow
-- Max frost depth: 25.1 cm (realistic for thin snowpack)
-- Max snow depth: 11.8 cm, SWE: 11.8 mm (low — station precip gauge undercounts snow)
-- Cold bias (-2 to -3°C) caused by insufficient snow insulation
-
-### Water Balance
-- Annual ET: ~208 mm (expected ~350 mm — low due to precip undercatch)
-- Freeze-thaw cycle captured: soil freezes Nov-Mar, thaws by April
-
-### Errors Found During Validation (6 triplets: shaw_026-031)
+### Errors found during setup (6 triplets: shaw_026-031)
 
 | # | Error | Impact | Fix |
 |---|-------|--------|-----|
 | shaw_026 | MTSTEP=0 but daily data | Zero precip read | Set MTSTEP=1 for daily |
 | shaw_027 | Weather columns YR DOY instead of DOY YR | Wrong dates | Swap columns 1-2 |
-| shaw_028 | Solar noon HRNOON=0.01 (should be 12.3) | Precip assigned to hour 0 | Compute from longitude |
+| shaw_028 | Solar noon HRNOON=0.01 (should be ~12.0-12.5) | Precip assigned to hour 0 | Compute from longitude |
 | shaw_029 | Solar radiation MJ/m²/day not converted to W/m² | 11.6x too low energy | Multiply by 11.574 |
 | shaw_030 | JSTART = first .wea DOY (needs +1) | No previous-day data | JSTART = first_wea_doy + 1 |
 | shaw_031 | .sit generated from scratch, not from template | Multiple format errors | Use setup_shaw_from_template.py |
@@ -687,70 +672,28 @@ SHAW supports BOTH formats via the MTSTEP flag in .inp Line B:
 
 | MTSTEP | Format | Columns | Use when |
 |--------|--------|---------|----------|
-| 0 | Hourly | JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR (9 cols) | BERMS, FLUXNET, NASA POWER hourly |
-| 1 | **Daily** | JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR (8 cols) | Manitoba MAWP, CMFD/MSWX aggregated, Environment Canada |
+| 0 | Hourly | JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR (9 cols) | FLUXNET, NASA POWER hourly |
+| 1 | **Daily** | JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR (8 cols) | CMFD/MSWX aggregated, Environment Canada |
 | 2 | Custom | Same as hourly, at NHRPDT intervals | Custom interval data |
 
 **CRITICAL**: The daily format has NO hour column and uses TMAX/TMIN (not instantaneous TA). SOLAR is average daily W/m² (not instantaneous). Always verify column count matches MTSTEP.
 
-### Output files
-All at `outputs/shaw_manitoba_544/`: validation_soil_temp.png, validation_frost_snow.png
 
----
+### Daily CSV integrity (2026-10-03)
 
-## Validated: NE China Black Soil Domain — 6 Stations (2021–2022)
+CSV conversion rejects missing/nonfinite required values, malformed dates,
+negative rainfall/wind/radiation, invalid RH, duplicates and calendar gaps.
+It neither drops incomplete rows nor reconstructs missing days. If year bounds
+are supplied, the file must cover those Jan-1/Dec-31 boundaries. A valid zero
+rainfall value is retained. RH must be positive for a finite dew point.
 
-**Data source**: Black Soil Observation Data NE China V2.0 (32 AWS/soil stations)
-- Local path: `data/china_data/BlackSoilObsData_NE_China_V2.0/ObservationData/`
-- Sensor: combined AWS with TDR soil moisture + soil temperature at a single depth
-- Format: xlsx, header at row 10, ~30-min records
-- Column format varies by station (8–15 columns): use column index, not name matching
+Radiation units follow headers: `srad_mj_m2`, `solar_mj`, `totrs_mj` mean
+MJ/m²/day; `srad_wm2`, `solar_wm2`, `swdown_wm2` mean daily-average W/m².
+Generic `solar`/`srad` columns require `--csv-solar-units mj_m2_day|wm2`.
+There is no per-value unit guessing. Conversion from MJ/m²/day is ×1e6/86400.
+Errors identify the field/date and occur before an existing `.wea` is replaced.
+Regression check: `python -B tests/test_csv_weather.py`.
 
-**6 validation cells and station mapping:**
-
-| Cell label | Station name | Lat/Lon (sensor) | 0.25° cell | Data period | Depth |
-|---|---|---|---|---|---|
-| `47p3750_123p6250` | EcologicalQiqihar (Fulaerji) | 47.269°N, 123.686°E | 47.375°N, 123.625°E | May 2021–Dec 2022 | unknown (est. 5–10cm) |
-| `47p8750_125p3750` | YianVegetables | 47.875°N, 125.375°E | same | May 2021–Dec 2022 | **20cm and 40cm** |
-| `43p3750_124p3750` | LishuSiping | 43.375°N, 124.375°E | same | Jun–Nov 2022 | **20cm** (mulch + bare) |
-| `47p3750_126p3750` | HailunSuihua | 47.254°N, 126.473°E | 47.375°N, 126.375°E | Jun–Dec 2022 | unknown (est. 5–10cm) |
-| `44p6250_123p6250` | ChanglingSongyuan | 44.625°N, 123.625°E | same | Jun–Dec 2022 | unknown (est. 5–10cm) |
-| `46p6250_131p6250` | YouyiShuangyashan | 46.625°N, 131.625°E | same | Jun–Dec 2022 | unknown (est. 5–10cm) |
-
-**Observed monthly soil moisture (% VWC)** — EcologicalQiqihar (best station, 2 full years):
-
-| Month | SM (%) | ST (°C) | Notes |
-|-------|--------|---------|-------|
-| May | 33–35 | 12–16 | Post-snowmelt refill |
-| Jun | 37–38 | 20 | Peak growing season onset |
-| Jul | 40–41 | 23–25 | Maximum moisture |
-| Aug | 34–40 | 21–22 | Post-rain peak |
-| Sep | 26–39 | 16–18 | Drainage |
-| Oct | 27–35 | 6–8 | Pre-freeze drying |
-| Nov | 21–29 | -1 | Onset of freezing |
-| Dec | 13–17 | -5 to -9 | Partially frozen (liquid water) |
-| Jan | ~13 | -9 | Deeply frozen |
-| Feb | ~13 | -9 | Peak frozen |
-| Mar | ~21 | -3 | Thaw begins |
-| Apr | ~33 | 4 | Rapid thaw refill |
-
-Growing season (May–Oct) mean: **35.5%**  |  Winter (Nov–Mar) mean: **18.2%** (liquid only)
-
-**Literature reference (Chinese Geographical Science, Springer):**  
-NE China Mollisol field capacity = 23.5–37% VWC, mean **31.65%** across 113 soil profiles.  
-Winter liquid water (frozen Mollisol, 5–20cm): **0–10% VWC** in frozen layers [from-memory, unverified beyond search result].
-
-**Key obs data notes:**
-- EcologicalQiqihar is the only station with complete freeze-thaw cycle data (Qiqihar city, MWRC experimental base)
-- YianVegetables and LishuSiping measure at 20–40cm — not directly comparable to SHAW 5cm node
-- HailunSuihua, ChanglingSongyuan, YouyiShuangyashan show anomalously high SM (50–70%) starting Jun 2022 only — likely sensor calibration issue or near-saturated wetland soil; treat with caution
-- Compare SHAW `liquid.out` (not `moist.out`) against these sensors — sensors detect liquid water only
-
-**SHAW performance (6-cell HWSD-corrected run, `ne_china_shaw_hwsd/`):**
-- Before BPAR fix (BPAR=30): Qiqihar SM PBIAS = +29.4% (soil never froze, liquid stayed at 35% while obs dropped to 13%)
-- After BPAR fix (BPAR=6.92 from Rawls 1982): Qiqihar winter liquid drops to 11–17% — physically correct
-- Growing season dry bias (PBIAS ≈ −24%): caused by HWSD bulk density overestimate (BD=1380 vs. ~1100 kg/m³ for NE China Mollisols)
-
-**Run scripts:**
-- 6-cell validation: `outputs/ne_china_shaw_vic_dssat/run_shaw_hwsd_validation.py`
-- Full 2223-cell domain: `outputs/ne_china_shaw_vic_dssat/run_shaw_parallel.py` (includes `fix_bpar_quartz_in_sit()` as of 2026-05-13)
+The setup date patch follows SHAW's Line B order: `JSTART HRSTAR YRSTAR JEND YREND`.
+`start_doy` updates JSTART; `year` updates both start/end years. The prior
+implementation incorrectly put start_doy into YRSTAR.

@@ -1,5 +1,5 @@
 # dfnWorks Diagnostic Triplets
-# 17 symptom -> diagnosis -> remedy entries for common failure modes
+# Symptom -> diagnosis -> remedy entries (17 when this header was written; current count: the SKILL.md KI map) for common failure modes
 # Covers: unit conversion traps, parameter format, runtime, path resolution, dependencies
 
 - id: dt_001

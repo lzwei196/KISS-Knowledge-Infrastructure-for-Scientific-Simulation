@@ -1,87 +1,33 @@
-# Stage 1: Forcing Preparation
+# Stage 1: Forcing preparation
 
-## Purpose
+`convert_forcing_to_topmodel.py` requires complete precipitation and actual temperature samples. Its strict source adapter reads native subdaily CMFD precipitation rates and Kelvin temperatures at the supplied representative point, validates aligned timestamps and every sample against the native step the files DECLARE (CMFD V0200: `03hr` in the file name, "3-hourly" in the title, "Category: B-01: 03hr" in the description; all must agree), then aggregates complete days. The step is never guessed from the timestamps present, so a regularly thinned series (e.g. every other 3-hourly sample) fails instead of passing as 6-hourly. Files with no declared step fail. It uses the sampled temperature minimum/maximum for Hargreaves; it never substitutes mean ±5 °C or turns missing rain/PET into zero.
 
-Convert gridded forcing data (CMFD or MSWX) into TOPMODEL's `inputs.dat` format.
-This is the most error-prone stage due to critical unit conversions.
+The older shared daily adapters can discard missing substeps or substitute extrema. They are bypassed here. **The CLI currently supports native subdaily CMFD only**; daily-mean-only files and the legacy MSWX/NASA POWER routes fail rather than claim unsupported source quality. Adding another adapter requires original extrema and completeness checks before aggregation. The conversion function can still consume explicitly supplied, validated daily arrays with Tmin/Tmax/Tmean and a declared calendar.
 
-## Inputs
+The spatial selection is the nearest source grid cell to `--lat/--lon`, not an area mean. An optional shapefile is reference geometry only. A representative point outside the source grid is rejected. Use an independently prepared and documented basin-average series through the conversion function when a point sample is inadequate.
 
-| Input | Unit | Source |
-|-------|------|--------|
-| Precipitation | mm/day (CMFD) or mm/3hr (MSWX) | NetCDF files |
-| Temperature | K | NetCDF files |
-| Shortwave radiation | W/m² | NetCDF files |
-| Wind speed | m/s | NetCDF files (for Penman-Monteith) |
-| Pressure | Pa | NetCDF files (for Penman-Monteith) |
-| Specific humidity | kg/kg | NetCDF files (for Penman-Monteith) |
-| Basin shapefile | — | From Stage 0 |
+Hargreaves uses source Tmin/Tmax/Tmean in °C and FAO-56 extraterrestrial radiation derived from latitude/day of year. Ra is converted from MJ m-2 day-1 to equivalent mm/day with 0.408. Tmin <= Tmean <= Tmax is required; equal extrema legitimately give zero Hargreaves PET. Polar-day/night trigonometry is bounded before arccos. There is no made-up minimum temperature range.
 
-## Outputs
+For `N = 24 / --dt-hours` steps/day (an exact positive integer), each row contains **depth per step in metres**:
 
-| Output | Format | Description |
-|--------|--------|-------------|
-| inputs.dat | TOPMODEL text | nstep, dt, then rain/pe/qobs per timestep |
+| Quantity | Conversion |
+|---|---|
+| Precipitation | daily mm / 1000 / N |
+| PET | daily mm / 1000 / N |
+| Provided Qobs | Q in m3/s × 86400 / basin area in m2 / N |
 
-## Procedure
+Daily amounts are distributed uniformly within a day when N > 1, an explicit temporal assumption recorded in provenance. This is not gap filling. The native BMI header is always `nstep 1.0` because its update routine uses dt as the input-row index increment. Physical step length is separate; rate parameters must use that physical time basis. Existing parameter units must not be changed just to make a run pass.
 
-1. **Extract basin-average forcing**:
-   - Load NetCDF files for each variable and year
-   - Clip to basin boundary (shapefile mask) or use nearest grid cell
-   - Compute spatial mean for each time step
-
-2. **Compute Potential Evapotranspiration (PET)**:
-   - TOPMODEL needs PE in m/hr — it does NOT compute PET internally
-   - Use Hargreaves (simple): `PE = 0.0023 * (Tmean+17.8) * sqrt(Trange) * Ra`
-   - Or Penman-Monteith (full): requires wind, pressure, humidity, radiation
-   - Output: PE in mm/day
-
-3. **CRITICAL UNIT CONVERSIONS**:
-
-   | Variable | From | To | Conversion |
-   |----------|------|-----|------------|
-   | Precipitation | mm/day | **m/hr** | ÷ 24,000 |
-   | PE | mm/day | **m/hr** | ÷ 24,000 |
-   | Temperature | K | °C | − 273.15 (for PET calc only) |
-   | Qobs | m³/s | **m/hr** | × 3600 / basin_area_m² |
-
-4. **Temporal disaggregation** (if needed):
-   - Daily → hourly: divide by 24 (uniform) or use diurnal pattern
-   - 3-hourly → hourly: interpolate or divide by 3
-
-5. **Write inputs.dat**:
-   ```
-   {nstep}  {dt_hours}
-   {rain_m_hr}  {pe_m_hr}  {qobs_m_hr}
-   ...
-   ```
-
-## Verification
-
-- [ ] Rain values are O(1e-4 to 1e-3) m/hr for typical storms
-- [ ] PE values are O(1e-5 to 1e-4) m/hr
-- [ ] Qobs values match expected range (or are 0 if not available)
-- [ ] No negative values for rain or PE
-- [ ] nstep matches expected number of time steps
-- [ ] Total precipitation makes physical sense (~700–1200 mm/yr for Bengbu)
-
-## Traps
-
-| Trap | Symptom | Diagnosis | Fix |
-|------|---------|-----------|-----|
-| Precip in mm/day not m/hr | Discharge 24,000× too high | Check `max(rain)` — if >0.01, likely mm/day | ÷ 24,000 |
-| Precip in mm/hr not m/hr | Discharge 1,000× too high | Check `max(rain)` — if >0.001, likely mm/hr | ÷ 1,000 |
-| PE not computed | No evapotranspiration, all rain becomes runoff | sumae ≈ 0 in water balance | Compute PET from forcing |
-| PE in mm/day not m/hr | ET way too large, negative root zone deficit | deficit_root_zone goes wildly negative | ÷ 24,000 |
-| Temperature still in K | PET hugely overestimated | Hargreaves: (290+17.8) instead of (17+17.8) | − 273.15 |
-| Missing data (NaN) | Model crashes or produces garbage | Check for NaN in inputs.dat | Fill with 0 (rain) or interpolate |
-
-## Example
+Supplied observations need a finite positive basin area. Every observed day must be a finite Q >= 0; true zero discharge is retained. A day is **missing** when its Q equals a declared sentinel (`--obs-missing-value`, repeatable, negative only, default `-99.9` and `-99`; given values replace the defaults), its Q cell is empty (the row must still have every tab-separated field; a short row, such as a date with no Q field, is refused), or the file has no row for that date. Missing days are written as Qobs `-9999` on every step of the day and listed in the sidecar (`observation_mode: provided_with_gaps`). Any other negative, infinite, non-numeric or written `nan`/`NA` Q, bad, unordered, duplicated or time-of-day dates, or a period with no observed day at all, still fail before output. The `-9999` value is negative on purpose: an unmasked score is clearly wrong, not quietly wrong. The binary's own internal NSE uses every row, so it is meaningless when there are gaps. If no observations are supplied, the native Qobs column is a format placeholder of zeros, labeled `not_supplied_placeholder_not_for_scoring` in the sidecar. Do not interpret the native internal objective or these placeholders as observed skill. Score only against independently identified observations, retaining valid dry days.
 
 ```bash
 python tools/convert_forcing_to_topmodel.py \
-  --forcing-dir KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/ \
-  --start-date 1980-01-01 --end-date 1990-12-31 \
+  --forcing-dir KISSPATH_FORCING/Data_forcing_03hr_010deg/ \
+  --source cmfd --start-date 1980-01-01 --end-date 1990-12-31 \
   --lat 33.0 --lon 117.0 --dt-hours 24 \
   --output data/inputs.dat
+# with observations (Bengbu: 215 missing days, -99.9):
+#   --obs-file $ROOT/data/obs/BB/51080_bengbu.txt --basin-area-km2 121330
 ```
+
+`inputs.dat.provenance.json` records the source files/point, original timestep, PET method, physical timestep, redistribution assumption, missing-fill count (zero), observation mode, obs file hash and output hash. With gaps it also records `obs_placeholder_value` (-9999), `obs_missing_values`, `obs_missing_count_days`, `obs_missing_days` (dates) and `obs_missing_rows` (1-based `inputs.dat` rows); `validate_outputs` allows the placeholder only on those rows. Keep it with the input file. Validation happens before writing; output/sidecar writes are not a multi-file filesystem transaction. The existing 0.5 m/step rain ceiling is retained. CLI input or output validation errors return a nonzero exit code.

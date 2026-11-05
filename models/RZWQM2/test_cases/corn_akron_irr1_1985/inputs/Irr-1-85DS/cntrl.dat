@@ -1,0 +1,143 @@
+========================================================================
+=======================  R Z W Q M 2   V E R  3.41.00 ==================
+========================================================================
+==              Text Headers Last Modified:  11.01.2007 (V1.6)
+========================================================================
+==                                                                   ==
+==          O U T P U T   C O N T R O L   D A T A                    ==
+==                                                                   ==
+=======================================================================
+=======================================================================
+== Output from RZWQM is controlled by this data file by indicating the
+== scenario that you would like to see generated.  Those available are:
+==  number     description
+==  ------     -----------
+==   -1        SHUTDOWN;     No Tabular or Plot files are generated
+==    1        Hydrology;    daily long term physical processes output
+==    2        Nitrogen;     nitrogen cycling output
+==    3        Pesticides;   pesticide dynamics output
+==    4        Plant growth; crop growth information output
+==    5        Management;   effects of management output
+==    6        General;      mixed bag of output
+==    7        User defined; pick and choose from whole list
+=======================================================================
+ 7
+=======================================================================
+==  Two dimensional graph information
+==
+==  The number of variables that are plotted on a X-Y graph are provided
+==  below.  Indicate the number of plots you intent to generate.  Next
+==  indicate for which variables you want statistics generated for by
+==  placing a 1 under the variable and a 0 under ones not needed.
+==  From this list choose which data is the independent and which
+==  are the dependent (you can have as many independent variables as you
+==  wish on one graph).  Place a 1 below the independent variable and a
+==  2 below your choice(s) for dependent variables.
+==
+== 1 2 11 14 15 22 35 42 44 62 79  80  81  82  83  84  85  86  87  88
+==
+==    NUMBER OF       NUMBER OF
+== SCALAR VARIABLES   2-D PLOTS
+=======================================================================
+        14         1
+======= VARIABLE NUMBERS ... REMEMBER TIME IS THE FIRST VARIABLE ======
+ 5  6  22  88  82  95  15  44  32  33  11  12  13  14 
+======= STATSTICS GENERATION VECTOR  ==================================
+ 0  1  1  1  1  1  1  1  1  1  1  1  1  1  1 
+======= PLOT GENERATION MATRIX  =======================================
+ 1  2  2  2  2  2  2  2  2  2  2  2  2  2  2 
+======================================================================
+==  Three dimensional graph information
+==
+==  Indicate the number of variables you would like to have plotted.
+==  Then list the variables, these will be plotted allows as the z
+==  component of a X-Y-Z surface plot.  The X variable is always time,
+==  the Y variable is always depth, and the Z variable is one listed
+==  below.  MAXIMUN # OF VECTOR VARIABLES = 8
+==
+=======================================================================
+==== NUMBER OF VECTOR VARIABLES: ======================================
+ 8  
+==== VARIABLES TO BE PLOTTED AGAINST TIME AND DEPTH  ==================
+ 2  43  9  32  33  39  36  20 
+=======================================================================
+==  Output Control
+==
+==  The input indicates the form that the output will take.  You may
+==  select what type of output you want by entering a 1 to include the
+==  indicated output or a 0 to exclude it.
+=======================================================================
+= VECTOR   SCALAR   VECTOR   SCALAR
+= TABULAR  TABULAR  PLOT     PLOT
+= OUTPUT   OUTPUT   FILE     FILE
+=======================================================================
+    0        0        1        1    
+=======================================================================
+==  Break Through curve node
+==
+==  Break Through curves record the amount of chemical/water/temp
+==  that passes through a specific node or layer.  Enter layer number
+==  for Break Through curves here
+=======================================================================
+ 1  
+=========================================================================
+==  model debug flag  2:  verification of BRKPNT.DAT
+==                    1:  verification of DAYMET.DAT
+==                    0:  NO DEBUG OUTPUT GENERATED
+==                   -1:  water mass balance for each time step
+==                   -2:  water mass balance for daily time scale
+==                   -3:  3-D output of water parameters
+==                   -4:  nitrogen mass balance within NUTRI whole profile
+==                   -5:  running mass balance within NUTRI per layer
+==                   -7:  detailed information for Plant model
+==                   -8:  switches generic plant model into non-stressed mode
+==                   -9:  detailed pesticide output (total, and profile)
+==                   -10: detailed infiltration information.
+==                   -11: 6in average NO3-N, Pesticides, Theta
+==                   -12: generate msea specific output files ONLY
+==                   -13: rzinit.dat (nutrient,water,temp) info at terminate
+=========================================================================
+ -7  
+=========================================================================
+== first flag --- phosphorus chemistry model shutdown flag
+==    0 - Chemical Equilibrium is shutdown (default)
+==    1 - Chemical Equilibrium model will run.
+==        initial values for inorganic chemistry are assumed the equilibrium values:
+==        .. ph is set to neutral (7.0)
+==        .. ionic strength (u) is set = 0.01
+==        .. NH4-n is assumed non-adsorbed
+============================================================
+== second flag --- Disable Soil Microbial Population Growth?
+==    0 - Microbial growth is disabled
+==    1 - Microbial growth is enabled (default)
+============================================================
+== third flag --- phosphorus chemistry model shutdown flag
+==    0 - phosphorus model is shutdown and not output every day (default)
+==    1 - phosphorus model will run and output every day.
+==========================================================================
+ 0    1    0
+=========================================================================
+==  System State Reset Flags - Read state from binary file STATE.BIN
+==
+==    Use these flags to selectively reset certain state variables.  Place a
+==    0 (no reset) or 1 (reset) in the order represented in the list below.
+==    The first flag will nullify all other choices if this is set to 0. When
+==    1 is placed for items 3-12, the value read in from the binary file will
+==    replace that value which was read in from RZWQM.DAT or RZINIT.DAT.
+==
+==      1 - Read from Binary File (0=no, 1=yes).
+==      2 - Write Binary file at program termination (0=no, 1=yes).
+==      3 - Soil hydraulic properties (Ksat, theta-s, etc).
+==      4 - Soil physical properties (bulk density, porosity, etc).
+==      5 - Soil profile carbon pools (residue, humus, microorganisms).
+==      6 - Soil inorganic nitrogen pools (NO3-N, NH4-N, UREA-N).
+==      7 - Soil water profile.
+==      8 - Soil temperature profile.
+==      9 - Soil aqueous chemistry profile.
+==     10 - Soil pesticide kinetic pool profile.
+==     11 - Surface mulch mass and standing dead mass and C:N ratios.
+==     12 - Snow pack water equivalence.
+==
+==  1  2  3  4  5  6  7  8  9  10  11  12
+==========================================================================
+  0   1   1   1   1   1   1   1   1   1   1   1 

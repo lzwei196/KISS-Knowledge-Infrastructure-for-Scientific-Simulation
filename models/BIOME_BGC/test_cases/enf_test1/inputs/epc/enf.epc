@@ -1,0 +1,44 @@
+ECOPHYS       ENF-cool (evergreen needleleaf forest - cool climate) 
+1             (flag)    1 = WOODY             0 = NON-WOODY
+1             (flag)    1 = EVERGREEN         0 = DECIDUOUS
+1             (flag)    1 = C3 PSN            0 = C4 PSN
+1             (flag)    1 = MODEL PHENOLOGY   0 = USER-SPECIFIED PHENOLOGY
+0            *(yday)    yearday to start new growth  (when phenology flag = 0)
+0            *(yday)    yearday to end litterfall  (when phenology flag = 0)
+0.3          *(prop.)   transfer growth period as fraction of growing season
+0.3          *(prop.)   litterfall as fraction of growing season
+0.25          (1/yr)    annual leaf and fine root turnover fraction
+0.70          (1/yr)    annual live wood turnover fraction
+0.005         (1/yr)    annual whole-plant mortality fraction
+0.005         (1/yr)    annual fire mortality fraction
+1.0           (ratio)   (ALLOCATION) new fine root C : new leaf C
+2.2           (ratio)   (ALLOCATION) new stem C : new leaf C
+0.1           (ratio)   (ALLOCATION) new live wood C : new total wood C
+0.3           (ratio)   (ALLOCATION) new croot C : new stem C
+0.5           (prop.)   (ALLOCATION) current growth proportion 
+42.0          (kgC/kgN) C:N of leaves
+93.0          (kgC/kgN) C:N of leaf litter, after retranslocation
+42.0          (kgC/kgN) C:N of fine roots 
+50.0          (kgC/kgN) C:N of live wood 
+729.0         (kgC/kgN) C:N of dead wood
+0.32          (DIM)     leaf litter labile proportion
+0.44          (DIM)     leaf litter cellulose proportion
+0.24          (DIM)     leaf litter lignin proportion
+0.30          (DIM)     fine root labile proportion
+0.45          (DIM)     fine root cellulose proportion
+0.25          (DIM)     fine root lignin proportion
+0.76          (DIM)     dead wood cellulose proportion
+0.24          (DIM)     dead wood lignin proportion
+0.041         (1/LAI/d) canopy water interception coefficient 
+0.5           (DIM)     canopy light extinction coefficient
+2.6           (DIM)     all-sided to projected leaf area ratio
+12.0          (m2/kgC)  canopy average specific leaf area (projected area basis)
+2.0           (DIM)     ratio of shaded SLA:sunlit SLA
+0.04          (DIM)     fraction of leaf N in Rubisco
+0.003         (m/s)     maximum stomatal conductance (projected area basis)
+0.00001       (m/s)     cuticular conductance (projected area basis) 
+0.08          (m/s)     boundary layer conductance (projected area basis)
+-0.6          (MPa)     leaf water potential: start of conductance reduction
+-2.3          (MPa)     leaf water potential: complete conductance reduction
+930.0         (Pa)      vapor pressure deficit: start of conductance reduction
+4100.0        (Pa)      vapor pressure deficit: complete conductance reduction

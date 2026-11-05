@@ -49,8 +49,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 |---|---|
 | `tools/build_structural_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_structural_params.py --help` |
 | `tools/convert_geological_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_geological_data.py --help` |
-| `tools/parse_gempy_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gempy_output.py --help` |
-| `tools/run_gempy_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gempy_model.py --help` |
+| `tools/parse_gempy_output.py` | `"${GEMPY_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python}" {KI}/tools/parse_gempy_output.py --help` (needs gempy: python_env has none; GemPy venv, or $GEMPY_PYTHON) |
+| `tools/run_gempy_model.py` | `"${GEMPY_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python}" {KI}/tools/run_gempy_model.py --help` (needs gempy: python_env has none; GemPy venv, or $GEMPY_PYTHON) |
 
 *4 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
@@ -66,7 +66,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | Language          | Python 3.10–3.12                                   |
 | License           | EUPL-1.2                                           |
 | Repository        | https://github.com/cgre-aachen/gempy               |
-| Validation status | Phase 3 — DTB validated (model-to-model, 2026-05-13)|
+| Validation status | Phase 3 |
 
 ---
 
@@ -78,13 +78,11 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 **Data Validation Reference**: See `data_ki/DTB/SKILL.md` for depth-to-bedrock data.
 
-## DTB Validation Record (2026-05-13)
+## Depth-to-bedrock (DTB) modelling notes
 
 **Reference dataset**: `DTB_CHINA_100.tif` — ML-derived product (machine learning
 applied to geological, topographic, and remote-sensing predictors). **Not borehole
-measurements.** This is a model-to-model consistency check, not an observational validation.
-
-**Validation type**: GemPy implicit surface co-kriging (150 train pts) vs. ML DTB raster.
+measurements.** A comparison against it is a model-to-model consistency check, not an observational validation.
 
 **Key implementation notes confirmed by debugging**:
 - Use **DENSE grid** (`resolution=[nx,ny,nz]`), NOT octree (octree hangs for DTB-scale data)
@@ -95,21 +93,9 @@ measurements.** This is a model-to-model consistency check, not an observational
 - Custom grid via `gp.set_custom_grid(model.grid, test_profiles)` then
   `model.solutions.raw_arrays.custom.lith_block`
 
-**Results across 3 Chinese sites** (Loess Plateau, Sichuan Basin, Tibetan Plateau):
-
-| Site          | Mean DTB | PBIAS   | RMSE   | R     |
-|---------------|----------|---------|--------|-------|
-| Loess Plateau | 36.6 m   | +13.7%  | 12.5 m | 0.17  |
-| Sichuan Basin | 14.9 m   | −2.9%   | 5.6 m  | 0.31  |
-| Tibetan Plat. | 21.2 m   | +3.3%   | 10.9 m | 0.25  |
-
-**Primary KPI: |PBIAS| < 15% (all sites pass).** R is NOT the primary KPI —
-GemPy fits a smooth geological surface and cannot reproduce fine-scale ML raster
-variability (sub-km spatial correlation). R is stable at 0.15–0.35 regardless of
-training density (confirmed by sensitivity test). Alice (external reviewer) confirmed
-results are reasonable and comparable to other model outputs against this reference.
-
-**Outputs**: `KISSPATH_OUTPUTS/gempy_dtb_multisite/`
+**Point correlation (R) against a fine raster**: GemPy fits a smooth geological surface and
+cannot reproduce fine-scale ML raster variability (sub-km spatial correlation), so a low R
+against such a raster is expected and is not by itself a sign of a broken setup.
 
 
 ## 1. Overview
@@ -494,40 +480,21 @@ ki/
 │   ├── s6_computation.md                 ← computation skill
 │   └── s7_output_analysis.md             ← analysis skill
 └── diagnostics/
-    └── triplets.yaml                     ← 15+ diagnostic triplets
+    └── triplets.yaml                     ← diagnostic triplets (count: KI map)
 ```
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-### DTB Validation Record (2026-05-13)
-
-This KI's recorded validation is a model-to-model consistency check:
-GemPy implicit surface co-kriging (150 train pts) vs. the ML-derived
-`DTB_CHINA_100.tif` depth-to-bedrock raster.
-
-| Property | Value |
-|----------|-------|
-| Reference dataset | `DTB_CHINA_100.tif` — ML-derived product |
-| Validation type | GemPy implicit surface co-kriging (150 train pts) vs. ML DTB raster |
-| Sites | Loess Plateau, Sichuan Basin, Tibetan Plateau |
-| Output directory | `KISSPATH_OUTPUTS/gempy_dtb_multisite/` |
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Performance Metrics
 
-The DTB record reports PBIAS, RMSE, and R. The validation convention bars below
+The validation convention bars below
 come from `docs/validation_convention.yaml`; they use `csi`, direction
 `maximize`, and no cited thresholds for the listed dag variables.
-
-| Site | Mean DTB | PBIAS | RMSE | R |
-|------|----------|-------|------|---|
-| Loess Plateau | 36.6 m | +13.7% | 12.5 m | 0.17 |
-| Sichuan Basin | 14.9 m | −2.9% | 5.6 m | 0.31 |
-| Tibetan Plat. | 21.2 m | +3.3% | 10.9 m | 0.25 |
-
-**Existing DTB KPI**: `|PBIAS| < 15%` (all sites pass). This is distinct
-from the `csi` convention bars below.
 
 ### Convention Bars
 

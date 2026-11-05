@@ -7,7 +7,9 @@ This tool handles both formats, normalizes headers, applies unit conversions,
 and produces analysis-ready CSV.
 
 Key conversions:
-  - Streamflow: m/day/m^2 -> m^3/s (requires basin area)
+  - Streamflow: mm/day -> m^3/s (requires basin area). Legacy <prefix>_basin.daily
+    writes water fluxes x1000 = mm/day (output_basin.c:446). Output-filter CSV writes
+    raw model values (m/day): pass --streamflow-unit m/day for that file.
   - Dates: day/month/year columns -> ISO date string
 
 Usage:
@@ -151,6 +153,7 @@ def parse_legacy_output(filepath, level):
     """Parse space-delimited RHESSys legacy output."""
     columns = COLUMN_MAP.get(level, BASIN_DAILY_COLUMNS)
     records = []
+    header_found = False
 
     with open(filepath) as f:
         for line_num, line in enumerate(f, 1):
@@ -160,8 +163,13 @@ def parse_legacy_output(filepath, level):
 
             parts = line.split()
 
-            # Skip header lines (start with non-numeric)
+            # Header line (non-numeric first token). RHESSys legacy output always writes
+            # one (main.c:433 add_headers): read columns BY NAME from it; the fixed
+            # lists above do not match the file (streamflow is column 19, not 24).
             if not parts[0].replace("-", "").replace(".", "").isdigit():
+                if not records:
+                    columns = parts
+                    header_found = True
                 continue
 
             row = {}
@@ -172,6 +180,11 @@ def parse_legacy_output(filepath, level):
                     row[col] = ""
 
             records.append(row)
+
+    if records and not header_found:
+        print(f"WARNING: no header line in {filepath}; using the old fixed column list, "
+              "which does not match real RHESSys files (e.g. 'streamflow' there is gw.storage). "
+              "Check the columns before using the numbers.", file=sys.stderr)
 
     return records
 
@@ -206,11 +219,12 @@ def add_date_column(records):
     return records
 
 
-def convert_streamflow(records, basin_area_m2):
-    """Convert streamflow from m/day/m^2 to m^3/s.
+def convert_streamflow(records, basin_area_m2, depth_unit="mm/day"):
+    """Convert streamflow depth (mm/day or m/day over the basin) to m^3/s.
 
-    Formula: Q_m3s = streamflow_m_day * basin_area_m2 / 86400
+    Formula: Q_m3s = streamflow_mm_day / 1000 * basin_area_m2 / 86400
     """
+    to_m = 0.001 if depth_unit == "mm/day" else 1.0
     for rec in records:
         sf_key = None
         for k in ["streamflow", "Qout"]:
@@ -219,7 +233,7 @@ def convert_streamflow(records, basin_area_m2):
                 break
         if sf_key and basin_area_m2:
             try:
-                sf_m_day = float(rec[sf_key])
+                sf_m_day = float(rec[sf_key]) * to_m
                 rec["streamflow_m3s"] = sf_m_day * basin_area_m2 / 86400.0
             except (ValueError, TypeError):
                 rec["streamflow_m3s"] = ""
@@ -227,15 +241,19 @@ def convert_streamflow(records, basin_area_m2):
 
 
 def compute_water_balance(records):
-    """Add water balance check column: P - ET - Q - dS."""
+    """Add water balance check column: P - ET - Q.
+
+    There is no storage-change (dS) term here, so a large residual can be water stored
+    in the basin (snow, soil, surface detention), not a parser error.
+    """
     for rec in records:
         try:
-            rain = float(rec.get("rain", 0) or 0)
-            snow = float(rec.get("snow_thr", 0) or 0)
+            # basin.daily header names (add_headers.c): precip = rain+snow, trans = sat+unsat
+            precip = float(rec.get("precip", 0) or 0)
             evap = float(rec.get("evap", 0) or 0)
-            trans = float(rec.get("trans_sat", 0) or 0) + float(rec.get("trans_unsat", 0) or 0)
+            trans = float(rec.get("trans", 0) or 0)
             sf = float(rec.get("streamflow", 0) or 0)
-            total_in = rain + snow
+            total_in = precip
             total_out = evap + trans + sf
             rec["water_balance_residual"] = total_in - total_out
         except (ValueError, TypeError):
@@ -295,6 +313,9 @@ def main():
                         help="Input is already CSV (output filter format)")
     parser.add_argument("--basin-area", type=float, default=None,
                         help="Basin area in m^2 (for streamflow conversion to m^3/s)")
+    parser.add_argument("--streamflow-unit", default=None, choices=["mm/day", "m/day"],
+                        help="Unit of the streamflow column. Legacy basin.daily is mm/day (default). "
+                             "Required with --csv-input --basin-area (output-filter CSV is m/day).")
     parser.add_argument("--water-balance", action="store_true",
                         help="Add water balance residual column")
     args = parser.parse_args()
@@ -319,7 +340,12 @@ def main():
     records = add_date_column(records)
 
     if args.basin_area:
-        records = convert_streamflow(records, args.basin_area)
+        if args.csv_input and args.streamflow_unit is None:
+            print(json.dumps({"status": "error", "errors": [
+                "--csv-input with --basin-area needs --streamflow-unit (mm/day or m/day)"]}),
+                file=sys.stderr)
+            sys.exit(1)
+        records = convert_streamflow(records, args.basin_area, args.streamflow_unit or "mm/day")
         print(f"Converted streamflow to m^3/s (basin area = {args.basin_area} m^2)")
 
     if args.water_balance:

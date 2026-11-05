@@ -1,5 +1,5 @@
 # HydroCNHS Diagnostic Triplets
-# 18 symptom → diagnosis → remedy entries organized by failure domain
+# Symptom → diagnosis → remedy entries (18 when this header was written; current count: the SKILL.md KI map) organized by failure domain
 # Last updated: 2026-03-25
 
 - id: dt_001

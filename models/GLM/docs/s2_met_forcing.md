@@ -66,6 +66,9 @@ python tools/s2_met_forcing/convert_met_to_glm.py \
 - `dt_003`: negative shortwave after interpolation can produce NaNs.
 - `dt_020`: `lw_type` inconsistent with the `LongWave` column can create a 3-5 degC warm bias.
 - `dt_024`: older CMFD/VIC conversions may produce all-zero precipitation; check annual rain/snow sums.
+- VIC ASCII forcing has no dates: the first row is `start_date 00:00`, and the file must hold exactly `start_date..end_date` at 24, 8, 4 or 1 rows a day, or the tool stops.
+- MSWX: the current year's files are only part-filled; a request inside the filled part works, a request past the last step of any variable stops (nothing is filled).
+- `Rain` is a rate: one 150 mm / 3 h step is 1.2 m/day and is accepted (warning only); units are checked at the source.
 - `dt_026`: 3-hourly CMFD with `subdaily=.true.` produced flat temperatures; use daily forcing with `subdaily=.false.` unless forcing is hourly.
 
 ## Example

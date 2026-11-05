@@ -63,10 +63,12 @@ S2 Sub   S3 Topo  S4 CLM  (parallel)
 ### S3: Topography (parallel with S2, S4)
 - Tool: `build_slopes.py` -> slope_x.npy, slope_y.npy, elevation.npy
 - **CRITICAL**: Sinks must be filled, minimum slope enforced
+- Every cell of the Box (inside and outside the basin mask) gets its DEM slope; DEM gaps stop the tool
 - Milestone: No NaN in slopes, sinks filled
 
 ### S4: CLM Setup (parallel with S2, S3)
-- Tool: `setup_clm_driver.py` -> drv_clmin.dat, drv_vegm.dat, drv_vegp.dat
+- Tool: `setup_clm_driver.py --soil_color N` -> drv_clmin.dat, drv_vegm.dat, drv_vegp.dat, clm_provenance.json
+- Every cell gets AVHRR->IGBP land cover and HWSD topsoil sand/clay; soil colour is the user's stated choice (no default)
 - Milestone: Vegetation types are realistic (IGBP 1-14, not all zeros)
 
 ### S5: Forcing (depends on S1, S4)

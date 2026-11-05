@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: GEOPHIRES-X (v3.11.25) — Geothermal Techno-Economic Simulator
 **Developer**: NREL (National Renewable Energy Laboratory)
 **License**: MIT
-**Stats**: 6 tools | 6 skill documents | 18 diagnostic triplets | ~1,800 lines of Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation Status**: Production-validated (built-in examples, Fervo Cape Station case study)
 
 ---

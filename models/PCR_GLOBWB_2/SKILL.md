@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: PCR-GLOBWB 2 — Global Hydrological & Water Resources Model
 **Created by**: Department of Physical Geography, Utrecht University (Model); HydroCraft KI Dissection (Package)
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets | ~1,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `initial_dissection`
 
 ---
@@ -302,7 +302,7 @@ Structure:
 | `run_pcrglobwb` | s5/s6 | `tools/run_pcrglobwb.py` | Execute PCR-GLOBWB with preflight checks |
 | `parse_pcrglobwb_output` | s7 | `tools/parse_pcrglobwb_output.py` | Parse output NetCDF to CSV time series |
 
-### New-basin recipe (validated at Songhua @ 哈尔滨, 2026-07-09)
+### New-basin recipe
 
 A 30-arcmin regional run needs no manual file authoring. For a gauge at
 (`LAT`, `LON`) with reported drainage area `AREA` km²:
@@ -335,7 +335,7 @@ $PCR_PY tools/parse_pcrglobwb_output.py $O/netcdf --variable discharge \
     --aggregation dailyTot --lat <gauge_cell_lat> --lon <gauge_cell_lon> -o sim.csv
 ```
 
-**Hard constraints discovered on the Songhua run:**
+**Hard constraints:**
 
 - **Simulation end date ≤ 2010-12-31** with the shipped water-use inputs.
   `domestic/industrial/desalination` water demand and `irrigationArea30ArcMin`
@@ -345,8 +345,7 @@ $PCR_PY tools/parse_pcrglobwb_output.py $O/netcdf --variable discharge \
 - **Initial conditions** are only published for a few years under
   `initialConditions/non-natural/consistent_run_201903XX/<year>/`. Start the run
   on 1 January of `ic_year + 1` and treat the first year as warm-up
-  (`maxSpinUpsInYears = 0` is then fine — this is what the Rhine/Kaub reference
-  run does).
+  (`maxSpinUpsInYears = 0` is then fine).
 - **Derive reference ET whenever the forcing allows it.** CMFD V0200 ships
   `srad`, `wind`, `shum` and `pres` alongside `prec`/`temp`, so FAO-56
   Penman-Monteith refET is computable. Call
@@ -359,9 +358,9 @@ $PCR_PY tools/parse_pcrglobwb_output.py $O/netcdf --variable discharge \
   unless you override `referenceEPotVariableName`.
   Reserve `referenceETPotMethod = Hamon` for forcings that genuinely lack
   radiation/wind/humidity. Temperature-only Hamon under-estimates PET in cold
-  continental monsoon basins (~665 vs ~907 mm/yr at Songhua); PCR-GLOBWB caps
+  continental monsoon basins; PCR-GLOBWB caps
   actualET by referencePotET, so the water the basin fails to evaporate routes
-  to the outlet and inflates discharge (+76% PBIAS while r stayed 0.864).
+  to the outlet and inflates discharge (strongly positive PBIAS while r stays high).
   See dt_031.
 - **Always pass `--aggregation dailyTot`** when extracting a daily series
   (see dt_027).
@@ -374,21 +373,6 @@ the preflight on 2026-07-12/13, and again on 2026-07-19: the host answers at
 down endpoint does not crash — it retries for hours in a detached run where
 nobody is watching. **Do not launch a run that depends on a fetch you have not
 proved reachable.**
-
-Complete 30 arcmin trees already exist locally and cover whole regions:
-
-```
-KISSPATH_OUTPUTS_ALT/pcrglobwb2_huai_bengbu/input      # Huai   111.5-118.0E, 30.5-35.0N
-KISSPATH_OUTPUTS_ALT/pcrglobwb2_araguaia_araguatins/input
-KISSPATH_OUTPUTS_ALT/pcrglobwb2_rhine_kaub_2000_2005/input
-```
-
-Each holds ~100 NetCDFs (LDD, cell area, soil, topography, groundwater, all
-four landCover sets, the full waterUse stack) plus initial conditions and, for
-the Huai tree, CMFD forcing with Penman-Monteith refET for 1979-01-01..1997-12-31.
-**A gauge anywhere inside one of those bboxes needs NO fetch at all** — point
-`inputDir` at the existing tree and reuse its clone/landmask if your catchment
-is a topological subset of it.
 
 **TRAP — the orphaned cache (2026-07-19).**
 `KISSPATH_OUTPUTS` is now a SYMLINK to
@@ -404,25 +388,12 @@ exactly how the 2026-07-12/13 runs burned out with null metrics. Always
 
 `make_clone_map.py` now applies a **river-identity guard**: the cell containing
 the reported lon/lat must lie on the snapped cell's flow path. Area alone is
-NOT sufficient — at Wangjiaba the area-only rule chose a Shaying tributary cell
-at +0.83% over the correct Huai mainstem cell at +45%. Check
+NOT sufficient — an area-only rule can pick a tributary cell with a near-perfect
+area match over the correct mainstem cell with a large area error. Check
 `river_identity_guard: PASS|FAIL` in the emitted `clone.json`.
 
-At 30 arcmin the Huai mainstem is legitimately over-aggregated, so a *large*
-area error is the honest answer there and a *tiny* one is the suspicious one:
-
-| gauge | cell | traced km² | reported km² | err |
-|---|---|---|---|---|
-| Xixian 息县 | (32.25, 114.75) | 15,751 | 10,190 | +54.6% |
-| Huaibin 淮滨 | (32.25, 115.25) | 21,006 | 16,005 | +31.2% |
-| Wangjiaba 王家坝 | (32.25, 115.75) | 44,414 | 30,630 | +45.0% |
-| Lutaizi 鲁台子 | (32.75, 116.75) | 104,178 | 88,630 | +17.5% |
-| **Zhoukou 周口** | (33.75, 114.75) | **25,701** | **25,800** | **−0.4%** |
-| Fuyang 阜阳 | (32.75, 115.75) | 33,489 | 35,246 | −5.0% |
-
-For a 30 arcmin Huai validation, **Zhoukou (Shaying) is the well-posed gauge**;
-Fuyang's record starts in 2001 and so misses the 1979-1997 forcing window.
-Bengbu (51080) is the excluded guardrail gauge and must not be scored.
+At 30 arcmin a mainstem can be legitimately over-aggregated, so a *large*
+area error can be the honest answer there and a *tiny* one is the suspicious one.
 
 ---
 

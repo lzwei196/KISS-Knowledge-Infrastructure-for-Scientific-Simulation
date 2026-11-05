@@ -1,0 +1,68 @@
+{
+  "_about": "Reference results for the two official USDA-ARS KINEROS2 sample runs (Samples.zip, readme 3/2002, sha256 4842737128bb1409fbd8d2eaa9f9e9e8f4b3c086dc34ca151e25c95eb950dc7c). Values are the ones printed by the gfortran build of KINEROS2 25-Oct-2019 (ARS-SWRC/KINEROS2 f0bbae2) on 2026-10-06 and cross-checked against the official ARS Windows k2_x64.exe under WINE (agreement to the 6th-7th significant digit). Source: KISSPATH_HOME/engine_builds_20261006/KINEROS2/BUILD_LOG.md.",
+  "tolerance": {
+    "rel": 0.0001,
+    "why": "official k2_x64.exe vs gfortran build differ only in the 6th-7th digit (wg11 peak 668.4023 vs 668.4020 cfs; ex1 sediment 5.172343 vs 5.172339 t/ha); 1e-4 relative covers that, nothing more"
+  },
+  "examples": {
+    "ex1": {
+      "description": "EX1: one plane draining laterally into one channel, with erosion and sediment transport (metric units)",
+      "parfile": "EX1.PAR",
+      "rainfile": "EX1.PRE",
+      "title": "Example Run",
+      "tfin_min": 200,
+      "dt_min": 1,
+      "courant": false,
+      "sediment": true,
+      "multfile": null,
+      "units": "metric",
+      "expected": {
+        "rainfall_depth": 77.0,
+        "rainfall_volume": 1540.0,
+        "plane_infiltration_depth": 41.51009,
+        "outflow_depth": 35.29868,
+        "outflow_volume": 705.974,
+        "watershed_area": 2.0,
+        "sediment_yield_t_per_ha": 5.172343,
+        "element_peak_flow": {"1": 133.335, "2": 130.816}
+      },
+      "units_of_expected": {
+        "rainfall_depth": "mm", "rainfall_volume": "m3", "plane_infiltration_depth": "mm",
+        "outflow_depth": "mm", "outflow_volume": "m3", "watershed_area": "ha",
+        "sediment_yield_t_per_ha": "t/ha", "element_peak_flow": "mm/hr"
+      }
+    },
+    "wg11": {
+      "description": "Walnut Gulch subwatershed 11 (17 elements), storm of 4 Aug 1980, 10 rain gages, runoff only (English units)",
+      "parfile": "wg11.par",
+      "rainfile": "4Aug80.pre",
+      "title": "Subwatershed 11, storm of August 4, 1980",
+      "tfin_min": 360,
+      "dt_min": 3,
+      "courant": true,
+      "sediment": false,
+      "multfile": "wg11_mult.txt",
+      "multipliers_from_readme": {"ks": 0.5, "manning": 1.0, "cv": 1.0, "g": 1.5, "interception": 1.0, "cohesion": 1.0, "splash": 1.0},
+      "units": "english",
+      "expected": {
+        "rainfall_depth": 1.3642,
+        "rainfall_volume": 7680759.0,
+        "plane_infiltration_depth": 0.94959,
+        "channel_infiltration_depth": 0.099552,
+        "interception_depth": 0.014,
+        "outflow_depth": 0.292209,
+        "outflow_volume": 1645201.0,
+        "watershed_area": 1551.028,
+        "outlet_element_id": 27,
+        "outlet_peak_discharge": 668.4023,
+        "outlet_peak_time_min": 64.7
+      },
+      "units_of_expected": {
+        "rainfall_depth": "in", "rainfall_volume": "ft3", "plane_infiltration_depth": "in",
+        "channel_infiltration_depth": "in", "interception_depth": "in", "outflow_depth": "in",
+        "outflow_volume": "ft3", "watershed_area": "acre", "outlet_peak_discharge": "ft3/s",
+        "outlet_peak_time_min": "min after the rain-file clock origin (12:35 local, 4 Aug 1980)"
+      }
+    }
+  }
+}

@@ -2,241 +2,197 @@ template_version: "3.5"
 
 identity:
   model_id: "QUINCY"
-  scientific_reference_version: "QUINCY v1.0 (Thum et al. 2019, GMD; revision 1996 lineage) — analytic single-site C-N reimplementation of the coupled C-N(-P) terrestrial-biogeochemistry formulation"
+  scientific_reference_version: "QUINCY v1.0 (Thum et al. 2019, GMD 12:4781) lineage; public release qs-2026.04-public (MPI-BGC, BSD-3-Clause, DOI 10.17871/quincy-model-2019)"
   implementation:
-    id: "quincy-analytic-py"
-    version: "analytic reimplementation (QUINCYModel, monthly timestep)"
-    provenance: "Python; HydroCraft analytic reimplementation of QUINCY's core biogeochemistry (Farquhar photosynthesis with N-limited Vcmax, CENTURY-like heterotrophic respiration, temperature-driven LAI), not the upstream MPI-BGC Fortran QUINCY."
+    id: "quincy-standalone-qs.bin"
+    version: "qs-2026.04-public, commit 2851ba3120a268fbdf7947537c12c071493b1735, gfortran 13.3 build, ASCII text output"
+    provenance: "Upstream MPI-BGC Fortran QUINCY standalone, cloned from https://git.bgc-jena.mpg.de/quincy-model/qs-open-access and built with ./compile_quincy.sh gs; binary KISSPATH_HOME/engine_builds_20261006/QUINCY/src/x86_64-gfortran/bin/qs.bin. The older Python stand-in (tools/run_quincy.py) is a SURROGATE and is not described by this dag; its own contract is docs/surrogate/surrogate_quincy_analytic_dag.yaml (the dag.yaml of this KI until 2026-10-07)."
   ki_class: "forward_model"
   is_family_dag: false
-  language: "python"
-  license: "GPLv3 (upstream QUINCY code; model description CC-BY-4.0)"
-  repo_url: "https://gmd.copernicus.org/articles/12/4781/2019/"
+  language: "fortran"
+  license: "BSD-3-Clause (QUINCY public release since March 2025)"
+  repo_url: "https://git.bgc-jena.mpg.de/quincy-model/qs-open-access"
 
 boundary:
   scope_in:
-    - "Single-site terrestrial ecosystem carbon exchange (GPP, NEE, Reco, autotrophic and heterotrophic respiration)"
-    - "Temperature-driven LAI phenology"
-    - "Coupled carbon-nitrogen control of photosynthesis (leaf N modulates effective Vcmax)"
-    - "Approximate latent and sensible heat fluxes"
+    - "Single-site (0-D column) terrestrial ecosystem carbon exchange: GPP, autotrophic and heterotrophic respiration, NEE"
+    - "Coupled vegetation and soil C-N-P cycling with explicit plant and soil organic/inorganic pools"
+    - "Canopy photosynthesis with N-dependent capacity and chlorophyll, multi-layer canopy radiation"
+    - "Soil water, soil temperature, snow and the surface energy balance (latent, sensible, ground heat, net radiation)"
+    - "Vegetation dynamics (height, diameter, density, LAI) from bare ground through spin-up"
   scope_out:
-    - "Spatial coupling / lateral transport (point-scale only)"
-    - "Fully implemented phosphorus limitation (stoichiometry tracked structurally; P limitation not realized)"
-    - "Explicit prognostic vegetation/soil C-N-P pools (respiration is diagnostic, coupled to instantaneous GPP)"
-    - "Closed surface energy balance (H is the Rn-LE residual)"
-    - "Isotope tracking, biological N fixation, nitrification/denitrification (present in full QUINCY, absent in this analytic version)"
+    - "Spatial coupling or lateral transport (point model; the engine reads one forcing file)"
+    - "Gridded / NetCDF runs (this build writes ASCII text output only)"
+    - "Land-use change, harvest schedules from files, fertiliser files (bc_*.nc inputs are not available in the public release)"
   spatial: "0-D point"
-  temporal: "monthly (daily forcing aggregated to monthly; full QUINCY runs half-hourly)"
-  closure: "none"
-  notes: "Mass-balance is NOT enforced in the analytic reimplementation: respiration is diagnostic (Ra derived from instantaneous GPP via npp_approx = gpp - r_maint; Rh from a temperature x moisture response), with no explicit C-N-P pools or pool carryover, so annual (GPP-Reco) need not equal cumulative NEE. Energy is not closed: LE is derived from GPP via a fixed water-use efficiency and H is taken as the Rn-LE residual. The upstream QUINCY v1.0 enforces C/N/P mass balance and resolves explicit vegetation/soil pools at a half-hourly step; that closure does not transfer to this surrogate."
+  temporal: "half-hourly time step (dtime_step_length_sec 1800); forcing half-hourly/hourly (timestep route) or daily (engine-made diurnal cycle)"
+  closure: "C, N and P mass are conserved by the engine (matter_conservation_test output); energy balance closed at the surface; water balance P = ET + runoff + drainage + dS, except that snow sublimation is in LE but not in the water output files"
+  notes: "Runs follow QUINCY's transient protocol: spin-up from bare ground by cycling the first forcing years (default 500 yr), then the forcing period. 365-day calendar; climate.dat is read line by line with no date matching."
 
 inputs:
   forcing:
-    - {category: forcing, name: "SW_IN (incoming shortwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column SW_IN; converted internally to PPFD via a fixed factor", notes: "Drives light-limited (Wj) electron transport and canopy assimilation; also sets net radiation for the energy-flux approximation."}
-    - {category: forcing, name: "TA (air temperature at 2 m)", unit: "deg C", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column TA", notes: "Must be deg C, NOT Kelvin; drives Arrhenius temperature response of Vcmax/Jmax/Rd/Rh and the Gaussian LAI phenology."}
-    - {category: forcing, name: "VPD (vapor pressure deficit)", unit: "hPa", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column VPD; used internally in hPa", notes: "Reduces the Ci/Ca ratio (VPD-linear surrogate in lieu of a Ball-Berry solve), constraining assimilation."}
-    - {category: forcing, name: "PRECIP (precipitation)", unit: "mm/day", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column PRECIP", notes: "Drives the bell-shaped soil-moisture scalar of heterotrophic respiration; not used for a prognostic soil-water balance."}
-    - {category: forcing, name: "CO2 (atmospheric CO2 mole fraction)", unit: "ppm", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column CO2", notes: "Sets ambient CO2 entering the Farquhar Ci computation; must be ppm, not mole fraction."}
-    - {category: forcing, name: "DAYLENGTH (day fraction driver)", unit: "hours", source_kind: derived, model_input_format: "QUINCY-format forcing CSV column DAYLENGTH (derived from latitude and day-of-year)", notes: "Instantaneous daytime GPP is scaled by daylength/24 to a 24-h mean for comparison against eddy-covariance daily means."}
-    - {category: forcing, name: "LW_IN (incoming longwave radiation, optional)", unit: "W/m2", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column LW_IN (optional)"}
-    - {category: forcing, name: "WIND (wind speed, optional)", unit: "m/s", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column WIND (optional)"}
-    - {category: forcing, name: "PA (air pressure, optional)", unit: "kPa", source_kind: forcing, model_input_format: "QUINCY-format forcing CSV column PA (optional)"}
+    - {category: forcing, name: "sw_srf_down (surface downward shortwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "climate.dat column 4; daily route = 24-h mean"}
+    - {category: forcing, name: "lw_srf_down (surface downward longwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "climate.dat column 5"}
+    - {category: forcing, name: "t_air (near-surface air temperature)", unit: "K", source_kind: forcing, model_input_format: "climate.dat column 6 (timestep route); tmin, tmax in K on the daily route", notes: "Kelvin, not deg C."}
+    - {category: forcing, name: "q_air (near-surface specific humidity)", unit: "g/kg", source_kind: forcing, model_input_format: "climate.dat; engine divides by 1000"}
+    - {category: forcing, name: "press_srf (surface air pressure)", unit: "hPa", source_kind: forcing, model_input_format: "climate.dat; engine multiplies by 100"}
+    - {category: forcing, name: "rain / snow or precip (precipitation rate)", unit: "mm/day", source_kind: forcing, model_input_format: "climate.dat; a RATE in mm/day even on half-hourly rows (engine divides by 86400)"}
+    - {category: forcing, name: "wind_air (wind speed)", unit: "m/s", source_kind: forcing, model_input_format: "climate.dat"}
+    - {category: forcing, name: "co2_mixing_ratio (atmospheric CO2)", unit: "ppm", source_kind: forcing, model_input_format: "climate.dat; FLUXNET CO2_F_MDS or the annual Law Dome / Mauna Loa record"}
+    - {category: forcing, name: "nhx_srf_down, noy_srf_down (N deposition)", unit: "mg N/m2/day", source_kind: user_provided, model_input_format: "climate.dat; from build_quincy_climate.py --ndep_kgN_ha_yr"}
+    - {category: forcing, name: "p_srf_down (P deposition)", unit: "mg P/m2/day", source_kind: user_provided, model_input_format: "climate.dat; from --pdep_kgP_ha_yr"}
   parameters:
-    - {category: photosynthesis, name: "vcmax25 (max carboxylation rate at 25C)", unit: "umol/m2/s", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Acts only as an upper cap on the N-derived value: effective Vcmax25 = min(vcmax_n_slope*leaf_N, vcmax25). PFT-specific (boreal ENF default 45)."}
-    - {category: photosynthesis, name: "jmax_vcmax_ratio (Jmax/Vcmax ratio)", unit: "-", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Controls whether RuBP-regeneration (Wj) ever limits assimilation; default 1.9."}
-    - {category: photosynthesis, name: "alpha_j (quantum yield of electron transport)", unit: "mol/mol", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: photosynthesis, name: "theta_j (curvature of light response)", unit: "-", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: photosynthesis, name: "ea_vcmax (activation energy for Vcmax)", unit: "J/mol", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Must be J/mol, not kJ/mol; default 65330."}
-    - {category: photosynthesis, name: "ea_jmax (activation energy for Jmax)", unit: "J/mol", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Default 43540."}
-    - {category: n_limitation, name: "n_leaf_ref (reference leaf nitrogen content)", unit: "gN/m2_leaf", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Must be gN/m2; ENF 1.5-2.5. Sets the N-limited carboxylation capacity."}
-    - {category: n_limitation, name: "vcmax_n_slope (Vcmax per unit leaf N)", unit: "umol/s/gN", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Vcmax25_eff = vcmax_n_slope*leaf_N, capped at vcmax25; the analytic surrogate's realization of QUINCY's N-control on photosynthesis."}
-    - {category: stomatal_conductance, name: "g1_bb (Ball-Berry slope parameter)", unit: "-", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Declared and range-checked but NOT consumed by the assimilation routine in this analytic version; the Ci/Ca effect is realized by a hardcoded VPD-linear surrogate. Documented Ball-Berry conductance is not wired in here."}
-    - {category: respiration, name: "r_maint_leaf (leaf maintenance respiration at 25C)", unit: "umol/m2leaf/s", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: respiration, name: "r_maint_stem (stem maintenance respiration at 25C)", unit: "umol/m2ground/s", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: respiration, name: "r_maint_root (root maintenance respiration at 25C)", unit: "umol/m2ground/s", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: respiration, name: "r_growth_frac (growth respiration fraction of NPP)", unit: "-", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Growth respiration term r_growth_frac*(GPP-R_maint); default 0.25."}
-    - {category: respiration, name: "ea_rd (activation energy for dark respiration)", unit: "J/mol", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Default 46390; must be J/mol."}
-    - {category: soil_decomposition, name: "rh_base (base heterotrophic respiration rate at Tref)", unit: "umol/m2/s", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Default 1.8."}
-    - {category: soil_decomposition, name: "rh_q10 (Q10 temperature sensitivity of Rh)", unit: "-", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Default 2.0; >3 inflates Reco and flips NEE to net source."}
-    - {category: soil_decomposition, name: "rh_t_ref (reference temperature for Rh)", unit: "deg C", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Default 15."}
-    - {category: soil_decomposition, name: "rh_precip_scale (precipitation scaling for moisture response)", unit: "-", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Must be positive; default 0.02. Bell-shaped exp(-scale*(P-opt)^2)."}
-    - {category: soil_decomposition, name: "rh_precip_opt (optimal precipitation for decomposition)", unit: "mm/day", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Default 2.5; moisture response peaks here."}
-    - {category: phenology, name: "lai_max (maximum LAI)", unit: "m2/m2", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Must exceed lai_min or the seasonal GPP cycle vanishes."}
-    - {category: phenology, name: "lai_min (minimum / evergreen-base LAI)", unit: "m2/m2", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: phenology, name: "lai_t_opt (temperature for maximum LAI)", unit: "deg C", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Set near mean growing-season T; if above site T range, LAI stays at lai_min."}
-    - {category: phenology, name: "lai_t_range (temperature range for LAI response)", unit: "deg C", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON"}
-    - {category: stoichiometry, name: "cn_leaf (leaf C:N ratio)", unit: "gC/gN", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "gC/gN (leaf 30-60); tracked stoichiometrically, not as prognostic pools in this version."}
-    - {category: stoichiometry, name: "cn_root (fine-root C:N ratio)", unit: "gC/gN", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Typical 40-80."}
-    - {category: stoichiometry, name: "cn_wood (wood C:N ratio)", unit: "gC/gN", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Typical 200-500."}
-    - {category: stoichiometry, name: "cp_leaf (leaf C:P ratio)", unit: "gC/gP", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Tracked structurally; P limitation not realized in this analytic version."}
-    - {category: stoichiometry, name: "np_leaf (leaf N:P ratio)", unit: "gN/gP", source_kind: calibrated, model_input_format: "PFT parameter dict / JSON", notes: "Tracked structurally; P limitation not realized."}
-    - {category: kinetic_constant, name: "Kc (Michaelis constant for carboxylation at 25C; Ea 79430 J/mol)", unit: "umol/mol", source_kind: default, model_input_format: "hardcoded Farquhar kinetic constant (404.9) in the analytic core", notes: "Not exposed as configurable."}
-    - {category: kinetic_constant, name: "Ko (Michaelis constant for oxygenation at 25C; Ea 36380 J/mol)", unit: "mmol/mol", source_kind: default, model_input_format: "hardcoded kinetic constant (278.4)"}
-    - {category: kinetic_constant, name: "Gamma_star (CO2 compensation point at 25C; Ea 37830 J/mol)", unit: "umol/mol", source_kind: default, model_input_format: "hardcoded kinetic constant (42.75)"}
-    - {category: kinetic_constant, name: "Oi (intercellular O2 concentration)", unit: "mmol/mol", source_kind: default, model_input_format: "hardcoded kinetic constant (210)"}
+    - {category: site_config, name: "plant_functional_type_id (QUINCY PFT 1-14)", unit: "-", source_kind: user_provided, model_input_format: "qs.namelist &lnd_veg_nml", notes: "From the engine's fluxnet2/cruncep site lists or --pft."}
+    - {category: soil, name: "soil sand / silt / clay fractions", unit: "fraction 0-1", source_kind: derived, model_input_format: "qs.namelist &lnd_spq_nml spq_soil_* AND &jsb_sse_nml qs_soil_*", notes: "HWSD percent / 100."}
+    - {category: soil, name: "bulk density", unit: "kg/m3", source_kind: derived, model_input_format: "spq_bulk_density, qs_bulk_density", notes: "HWSD g/cm3 x 1000."}
+    - {category: soil, name: "soil_ph", unit: "-", source_kind: derived, model_input_format: "&lnd_sb_nml soil_ph"}
+    - {category: soil, name: "soil depth", unit: "m", source_kind: default, model_input_format: "spq_soil_depth and &jsb_hydro_nml qs_soil_depth (default 9.5)"}
+    - {category: calibration, name: "process parameters (lnd_q_assimi/veg/sb/spq/pheno/rad, lctlib PFT 1-8)", unit: "multiplier of engine default", source_kind: calibrated, model_input_format: "parameter_slm_run.list, proportional mode", notes: "Written by tools/edit_quincy_parameters.py; engine echoes old/new values to parameter_sensi_param_values.txt."}
   initial_conditions:
-    _reason: "The analytic reimplementation carries no explicit prognostic pool state and does not document initial-condition inputs; LAI and effective Vcmax are recomputed diagnostically each timestep from forcing and parameters. (Upstream QUINCY initializes from bare-ground plus a default SOM profile and a multi-decade spin-up; that does not apply to this surrogate.)"
+    _reason: "The engine starts from bare ground and default soil pools; the state is built by the transient spin-up (run_quincy_engine.py --spinup_years). No restart files exist in the text-output build."
   boundary_conditions:
-    - {category: site_config, name: "lat (site latitude)", unit: "deg", source_kind: user_provided, model_input_format: "run configuration", notes: "Used for daylength / day-fraction scaling of GPP; wrong hemisphere sign swaps the seasonal cycle."}
-    - {category: site_config, name: "lon (site longitude)", unit: "deg", source_kind: user_provided, model_input_format: "run configuration"}
-    - {category: control_switch, name: "pft (plant functional type selector)", unit: "-", source_kind: user_provided, model_input_format: "run configuration (e.g., enf = evergreen needleleaf)", notes: "Selects the default parameter set; defaults are boreal ENF (Scots pine)."}
+    - {category: site_config, name: "latitude, longitude", unit: "deg", source_kind: user_provided, model_input_format: "qs.namelist &grid_ctl", notes: "Latitude sets the solar geometry; the solar clock is local solar time."}
+    - {category: site_config, name: "elevation", unit: "m", source_kind: user_provided, model_input_format: "&lnd_spq_nml spq_elevation"}
 
 processes:
   modules:
-    - {name: "TemperatureResponse", role: process_solver, brief: "Arrhenius scaling of rate constants (Vcmax, Jmax, dark respiration, kinetic constants) from a 25C reference to ambient temperature."}
-    - {name: "Phenology_LAI", role: process_solver, brief: "Gaussian temperature-modulated LAI interpolated between lai_min and lai_max (evergreen base maintained year-round)."}
-    - {name: "N_Limitation", role: process_solver, brief: "Sets effective carboxylation capacity vcmax25_eff = min(vcmax_n_slope*leaf_N, vcmax25); the analytic realization of QUINCY's coupled-N control on photosynthesis (reduced here to a cap)."}
-    - {name: "Photosynthesis_Farquhar", role: process_solver, brief: "Farquhar Rubisco-limited (Wc) and RuBP-regeneration-limited (Wj) co-limitation with N-limited Vcmax, Beer's-law canopy scaling, VPD-based Ci/Ca surrogate, and daylength scaling to a 24-h GPP mean."}
-    - {name: "AutotrophicRespiration", role: process_solver, brief: "Maintenance respiration (leaf/stem/root, Arrhenius temperature dependence) plus growth respiration as a fixed fraction of NPP; coupled to instantaneous GPP via npp_approx = gpp - r_maint."}
-    - {name: "HeterotrophicRespiration_CENTURY", role: process_solver, brief: "CENTURY-like base rate with a Q10 temperature factor and a bell-shaped precipitation moisture factor; diagnostic, no explicit SOM pools in this version."}
-    - {name: "EnergyFluxes", role: process_solver, brief: "Latent heat LE derived from GPP via a fixed water-use efficiency; sensible heat H taken as the Rn-LE residual (simplified Penman-Monteith, no closed energy budget)."}
-    - {name: "ModelRunner", role: integrator, brief: "Per-timestep loop calling LAI -> GPP -> Reco -> NEE -> energy fluxes; assembles output arrays. (Silent NaN-forcing fallback behavior is a wrapper hazard, see safety.)"}
+    - {name: "Q_ASSIMI", role: process_solver, brief: "Canopy photosynthesis and stomatal conductance with N- and chlorophyll-dependent capacity over canopy layers."}
+    - {name: "VEG", role: process_solver, brief: "Vegetation C-N-P pools, allocation, respiration, turnover, nutrient uptake and vegetation dynamics."}
+    - {name: "Q_PHENO", role: process_solver, brief: "Phenology (growing season, leaf onset/shedding)."}
+    - {name: "SB", role: process_solver, brief: "Soil biogeochemistry: litter and SOM pools, microbial decomposition, N and P mineralisation, sorption, leaching."}
+    - {name: "SPQ", role: process_solver, brief: "Soil physics: soil water, soil temperature, snow, surface energy balance (LE, H, G)."}
+    - {name: "RADIATION", role: process_solver, brief: "Canopy radiation transfer and albedo."}
+    - {name: "atmland_forcing", role: integrator, brief: "Reads climate.dat line by line, converts units, makes sub-daily values from daily forcing."}
   internal_edges:
-    - {from: "Inputs", to: "ModelRunner", kind: consumes_input, brief: "Forcing arrays (TA, SW_IN, VPD, PRECIP, CO2, DAYLENGTH) feed the per-timestep loop."}
-    - {from: "ModelRunner", to: "Phenology_LAI", kind: invokes, brief: "calc_lai(TA, month) each timestep."}
-    - {from: "Phenology_LAI", to: "LAI", kind: writes_state, brief: "Updates the effective leaf area index state."}
-    - {from: "Phenology_LAI", to: "Photosynthesis_Farquhar", kind: invokes, brief: "LAI feeds the Beer's-law canopy light-extinction fraction in the assimilation routine."}
-    - {from: "TemperatureResponse", to: "Photosynthesis_Farquhar", kind: invokes, brief: "Arrhenius scaling of Vcmax and Jmax."}
-    - {from: "N_Limitation", to: "vcmax25_eff", kind: writes_state, brief: "Sets the N-limited carboxylation capacity before temperature scaling."}
-    - {from: "vcmax25_eff", to: "Photosynthesis_Farquhar", kind: reads_state, brief: "Effective Vcmax25 entering the Rubisco-limited rate."}
-    - {from: "Photosynthesis_Farquhar", to: "GPP", kind: produces_output, brief: "Gross primary production per timestep (daylength-scaled)."}
-    - {from: "TemperatureResponse", to: "AutotrophicRespiration", kind: invokes, brief: "Arrhenius scaling of maintenance respiration."}
-    - {from: "Photosynthesis_Farquhar", to: "AutotrophicRespiration", kind: invokes, brief: "GPP drives growth respiration via npp_approx = gpp - r_maint (Ra coupled to GPP)."}
-    - {from: "AutotrophicRespiration", to: "Ra", kind: produces_output, brief: "Autotrophic respiration."}
-    - {from: "HeterotrophicRespiration_CENTURY", to: "Rh", kind: produces_output, brief: "Heterotrophic respiration from Q10 temperature x precipitation moisture factor."}
-    - {from: "Ra", to: "Reco", kind: reads_state, brief: "Reco = Ra + Rh."}
-    - {from: "Rh", to: "Reco", kind: reads_state, brief: "Reco = Ra + Rh."}
-    - {from: "Reco", to: "NEE", kind: reads_state, brief: "NEE = Reco - GPP (micrometeorological sign convention, positive = net source)."}
-    - {from: "GPP", to: "NEE", kind: reads_state, brief: "NEE = Reco - GPP."}
-    - {from: "Photosynthesis_Farquhar", to: "EnergyFluxes", kind: invokes, brief: "LE derived from GPP via a fixed water-use efficiency."}
-    - {from: "EnergyFluxes", to: "LE", kind: produces_output, brief: "Latent heat flux."}
-    - {from: "EnergyFluxes", to: "H", kind: produces_output, brief: "Sensible heat flux as the Rn-LE residual."}
+    - {from: "atmland_forcing", to: "Q_ASSIMI", kind: invokes, brief: "Radiation, temperature, humidity, CO2."}
+    - {from: "Q_ASSIMI", to: "GPP", kind: produces_output, brief: "Gross assimilation summed per output interval."}
+    - {from: "VEG", to: "Ra", kind: produces_output, brief: "Growth + maintenance + N-transform + N-fixation respiration."}
+    - {from: "SB", to: "Rh", kind: produces_output, brief: "Heterotrophic respiration."}
+    - {from: "SPQ", to: "LE", kind: produces_output, brief: "Latent heat from the surface energy balance."}
+    - {from: "SPQ", to: "H", kind: produces_output, brief: "Sensible heat from the surface energy balance."}
+    - {from: "VEG", to: "LAI", kind: produces_output, brief: "LAI from leaf C and SLA."}
 
 states:
   variables:
-    - {name: "LAI", unit: "m2/m2", role: diagnostic}
-    - {name: "vcmax25_eff", unit: "umol/m2/s", role: diagnostic}
-    - {name: "vcmax", unit: "umol/m2/s", role: diagnostic}
-    - {name: "jmax", unit: "umol/m2/s", role: diagnostic}
-    - {name: "ci", unit: "ppm", role: diagnostic}
-    - {name: "a_gross", unit: "umol/m2/s", role: diagnostic}
-    - {name: "npp_approx", unit: "umol/m2/s", role: diagnostic}
-  provenance: "structural"
+    - {name: "vegetation C/N/P pools (leaf, fine root, sapwood, heartwood, coarse root, labile, reserve, fruit, seed bed)", unit: "mol/m2", role: prognostic}
+    - {name: "soil organic pools (litter, microbial, residue, DOM) and inorganic N/P", unit: "mol/m2", role: prognostic}
+    - {name: "soil water, soil temperature, snow", unit: "m / K / m", role: prognostic}
+  provenance: "engine source (mo_qs_output_txt.f90 headers)"
 
 outputs:
   - var: "GPP"
     validation_rank: 1
     unit: "umol CO2/m2/s"
-    description: "Gross primary production (Farquhar co-limitation with N-limited Vcmax and Beer's-law canopy scaling), scaled by day fraction (daylength/24) to a 24-h mean."
-    emitted_in: "results CSV"
+    description: "Terrestrial ecosystem gross primary production of the vegetation canopy (gross carbon assimilation), daily mean; engine writes mol C/m2/day in vegflux_c_daily.txt, the parser converts (also g C/m2/day as GPP_gC)."
+    emitted_in: "vegflux_c_daily.txt -> quincy_daily.csv (parse_quincy_engine_output.py)"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["Eddy-covariance GPP is a 24-h mean partitioned from NEE; ensure the day-fraction scaling is applied before comparison.", "Defaults are boreal-ENF (Scots pine) specific; expect 2-3x magnitude bias if Vcmax25 / PFT is mismatched."]
+          caveats: ["Eddy-covariance GPP is partitioned from NEE (FLUXNET GPP_NT_VUT_REF); FLUXNET DAILY files are g C/m2/day, not umol/m2/s.", "Model vegetation is a spun-up equilibrium stand of the site PFT, not the managed stand history."]
         - obs_shape: "point_snapshot"
           comparison_mode: "scalar_comparison"
           metric_families: ["magnitude_accuracy"]
           determining_metric: "pbias"
-          caveats: ["Annual or seasonal-mean GPP only; single-instant comparison is weak for a monthly model."]
+          caveats: ["Annual GPP sum only."]
       detrending_options: ["none"]
   - var: "NEE"
     validation_rank: 3
     unit: "umol CO2/m2/s"
-    description: "Net ecosystem exchange = Reco - GPP (micrometeorological convention, positive = net source to atmosphere)."
-    emitted_in: "results CSV"
+    description: "Terrestrial ecosystem net ecosystem exchange of CO2 between the land surface and the atmosphere, NEE = Ra + Rh - GPP (positive = net source to the atmosphere), daily mean."
+    emitted_in: "vegflux_c_daily.txt + soilflux_cdc13dc14_daily.txt -> quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["Sign convention must match (Reco - GPP, positive = source); a flipped sign produces apparent carbon-balance non-closure.", "First 1-2 years can be biased by spin-up transient if SOM-equivalent terms are far from equilibrium."]
+          caveats: ["A spun-up stand is near carbon equilibrium, so the long-term sink of a managed, aging forest is not reproduced; judge timing (r) separately from the mean."]
       detrending_options: ["none"]
   - var: "Reco"
     validation_rank: 4
     unit: "umol CO2/m2/s"
-    description: "Ecosystem respiration (Ra + Rh)."
-    emitted_in: "results CSV"
+    description: "Terrestrial ecosystem respiration (autotrophic plus soil heterotrophic), daily mean."
+    emitted_in: "quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["Eddy-covariance Reco is partitioned, not directly measured; carries partitioning uncertainty.", "Healthy mature forest annual Reco/GPP ~0.7-0.9."]
+          caveats: ["Eddy-covariance Reco is partitioned (RECO_NT_VUT_REF), not measured."]
       detrending_options: ["none"]
   - var: "Ra"
     validation_rank: 5
     unit: "umol CO2/m2/s"
-    description: "Terrestrial ecosystem autotrophic respiration (maintenance + growth), coupled to instantaneous GPP."
-    emitted_in: "results CSV"
+    description: "Terrestrial ecosystem autotrophic (plant) respiration: growth + maintenance + N-transformation + N-fixation respiration, daily mean."
+    emitted_in: "vegflux_c_daily.txt -> quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["Rarely measured directly at flux sites; usually only available via partitioning/upscaling, so comparison is indirect."]
+          caveats: ["Rarely measured directly at flux sites."]
       detrending_options: ["none"]
   - var: "Rh"
     validation_rank: 6
     unit: "umol CO2/m2/s"
-    description: "Soil heterotrophic respiration in the terrestrial ecosystem (CENTURY-like Q10 temperature response with a bell-shaped precipitation moisture response)."
-    emitted_in: "results CSV"
+    description: "Soil heterotrophic respiration from litter and soil organic matter decomposition in the soil column, daily mean."
+    emitted_in: "soilflux_cdc13dc14_daily.txt -> quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["Soil heterotrophic respiration is hard to isolate observationally; chamber/partitioned estimates carry large uncertainty."]
+          caveats: ["Soil heterotrophic respiration is hard to isolate observationally (chamber / trenching data)."]
       detrending_options: ["none"]
   - var: "LAI"
     validation_rank: 7
     unit: "m2/m2"
-    description: "Vegetation leaf area index from temperature-driven (Gaussian) phenology."
-    emitted_in: "results CSV"
+    description: "Vegetation canopy leaf area index (one-sided green leaf area per ground area) from leaf carbon and specific leaf area."
+    emitted_in: "veg_diagnostics_daily.txt -> quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
           determining_metric: "nse"
-          caveats: ["Seasonal amplitude should be >=1.0 m2/m2; lai_min == lai_max yields a flat (uncomparable) cycle."]
+          caveats: ["Spun-up equilibrium canopy of the site PFT."]
         - obs_shape: "spatial_snapshot"
           comparison_mode: "scalar_comparison"
           metric_families: ["magnitude_accuracy"]
           determining_metric: "pbias"
-          caveats: ["Satellite-LAI point extraction at the site only; the model is 0-D and has no spatial field to match."]
+          caveats: ["Satellite LAI point extraction at the site only."]
       detrending_options: ["none"]
   - var: "LE"
     validation_rank: 2
     unit: "W/m2"
-    description: "Latent heat flux (water-use-efficiency approximation from GPP; simplified Penman-Monteith)."
-    emitted_in: "results CSV"
+    description: "Terrestrial land-surface latent heat flux to the atmosphere from the surface energy balance (includes snow sublimation), daily mean; engine writes MJ/m2/day (Qle)."
+    emitted_in: "vegflux_energy_daily.txt -> quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["LE is diagnosed from GPP via a fixed WUE, not from a closed surface-energy budget; monthly LE should stay below Rnet (peak ~80-150 W/m2)."]
+          caveats: ["Tower energy balance is not closed (LE_F_MDS vs LE_CORR); the model balance is closed."]
       detrending_options: ["none"]
   - var: "H"
     validation_rank: 8
     unit: "W/m2"
-    description: "Terrestrial ecosystem sensible heat flux as the Rn-LE residual (no independent energy-balance closure)."
-    emitted_in: "results CSV"
+    description: "Terrestrial land-surface sensible heat flux to the atmosphere from the surface energy balance, daily mean; engine writes MJ/m2/day (Qh)."
+    emitted_in: "vegflux_energy_daily.txt -> quincy_daily.csv"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
           metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
           determining_metric: "nse"
-          caveats: ["H is a residual, so it inherits all LE/Rn errors; an over-large g1_bb-driven LE drives H negative."]
+          caveats: ["Tower energy imbalance mostly shows up in H."]
       detrending_options: ["none"]
 
 influence:
@@ -246,28 +202,28 @@ influence:
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "always (analytic surrogate realizes this as vcmax_n_slope x leaf_N capped at vcmax25)"
+      applicability: "always (engine lever: lnd_q_assimi_nml vcmax2n via tools/edit_quincy_parameters.py)"
       citations: ["thum2019_quincy_v10_gmd", "caldararu2020_quincy_nue_optimality_nph"]
     - from: "kfnchl / achln (leaf N-to-chlorophyll scaling)"
       to: "GPP"
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "full QUINCY chlorophyll-resolved photosynthesis; not explicit in the analytic surrogate"
+      applicability: "QUINCY engine chlorophyll-resolved photosynthesis (lnd_veg_nml k0_fn_chl_C3 / kfn_chl, lnd_q_assimi_nml chl2n)"
       citations: ["thum2019_quincy_v10_gmd", "miinalainen2025_quincy_chlorophyll_bg"]
     - from: "k0struc (structural N fraction in leaves)"
       to: "GPP"
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "full QUINCY leaf-N allocation; not explicit in the analytic surrogate"
+      applicability: "QUINCY engine leaf-N allocation (lnd_q_assimi_nml k1_fn_struc)"
       citations: ["thum2019_quincy_v10_gmd"]
     - from: "leaf C:N ratio"
       to: "leaf chlorophyll"
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "full QUINCY (chlorophyll not emitted by the analytic surrogate)"
+      applicability: "QUINCY engine (leaf chlorophyll is internal; not in the basic text output set)"
       citations: ["miinalainen2025_quincy_chlorophyll_bg"]
     - from: "leaf chlorophyll"
       to: "GPP"
@@ -281,7 +237,7 @@ influence:
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: boundary_forcing
-      applicability: "full QUINCY, evergreen sites; N deposition is not an input to the analytic surrogate"
+      applicability: "QUINCY engine, evergreen sites; N deposition enters via climate.dat nhx/noy columns (build_quincy_climate.py --ndep_kgN_ha_yr)"
       citations: ["miinalainen2025_quincy_chlorophyll_bg"]
     - from: "air temperature"
       to: "leaf chlorophyll"
@@ -295,14 +251,14 @@ influence:
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "full QUINCY optimality-based N allocation; collapsed to a vcmax_n_slope cap in the analytic surrogate"
+      applicability: "QUINCY engine optimality-based N allocation (flag_optimal_Nfraction in lnd_q_assimi_nml)"
       citations: ["caldararu2020_quincy_nue_optimality_nph"]
     - from: "tau_slowbase (slow SOM pool turnover rate)"
       to: "net N/P mineralization"
       sensitivity_grade: HIGH
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "full QUINCY soil biogeochemistry; the analytic surrogate has no explicit SOM pools or mineralization output"
+      applicability: "QUINCY engine soil biogeochemistry (lnd_sb_nml tau_slow; soilflux_n output)"
       citations: ["thum2019_quincy_v10_gmd"]
     - from: "Topt,decomp (decomposition temperature optimum)"
       to: "net N/P mineralization"
@@ -330,7 +286,7 @@ influence:
       sensitivity_grade: MEDIUM
       basis: literature_quantitative
       lever_type: parameter
-      applicability: "full QUINCY vegetation dynamics; the analytic surrogate sets LAI by a temperature-Gaussian, not by SLA"
+      applicability: "QUINCY engine vegetation dynamics (lctlib sla; edit_quincy_parameters.py --pft N --set sla=..)"
       citations: ["thum2019_quincy_v10_gmd", "thum2025_quincy_decadal_borden_bg"]
     - from: "klatosa (leaf-to-sapwood area ratio)"
       to: "vegetation carbon"
@@ -344,21 +300,21 @@ influence:
       sensitivity_grade: MEDIUM
       basis: literature_qualitative
       lever_type: parameter
-      applicability: "full QUINCY P-enabled configuration at P-limited sites; P limitation is NOT realized in the analytic surrogate"
+      applicability: "QUINCY engine with include_phosphorus = .TRUE. (default) at P-limited sites"
       citations: ["yu2020_quincy_phosphorus_nph"]
     - from: "leaf area index (LAI)"
       to: "NEE"
       sensitivity_grade: MEDIUM
       basis: literature_qualitative
       lever_type: parameter
-      applicability: "seasonal canopy dynamics (applies to the analytic surrogate, where LAI modulates GPP and hence NEE)"
+      applicability: "seasonal canopy dynamics (engine LAI from vegetation C pools and SLA)"
       citations: ["thum2025_quincy_decadal_borden_bg"]
     - from: "labile carbohydrate (reserve) pool"
       to: "NEE"
       sensitivity_grade: MEDIUM
       basis: literature_qualitative
       lever_type: parameter
-      applicability: "full QUINCY interannual-decadal legacy effects; no reserve pool in the analytic surrogate"
+      applicability: "QUINCY engine interannual-decadal legacy effects (labile/reserve pools in vegpool_c output)"
       citations: ["thum2025_quincy_decadal_borden_bg"]
     - from: "temperature acclimation of photosynthesis"
       to: "GPP"
@@ -392,137 +348,69 @@ influence:
 
 safety:
   hazards:
-    - id: "temperature_in_kelvin"
-      kind: weather_file_semantic
-      description: "Air temperature left in Kelvin instead of deg C explodes the Arrhenius (T-Tref) terms, silently inflating GPP and Rh (monthly GPP >50 umol/m2/s). (dt_quincy_001)"
-      severity: fatal
-    - id: "precip_kg_m2_s_not_mm_day"
-      kind: weather_file_semantic
-      description: "Precipitation left in kg/m2/s instead of mm/day is ~86400x too small, driving the bell-shaped moisture scalar to zero and shutting down heterotrophic respiration (Rh~0, NEE strongly negative). (dt_quincy_002)"
-      severity: fatal
-    - id: "precip_subdaily_not_summed"
-      kind: weather_file_semantic
-      description: "Sub-daily precipitation (e.g., mm/3hr) used as a single step instead of summing 8 makes precip ~8x too small, distorting the Rh moisture response. (dt_quincy_002)"
-      severity: degraded
-    - id: "vpd_wrong_pressure_unit"
-      kind: weather_file_semantic
-      description: "VPD supplied in kPa or Pa instead of hPa distorts the Ci/Ca surrogate, opening/closing the stomatal effect wrongly and giving summer GPP that looks like extreme drought. (dt_quincy_003)"
+    - id: "engine_finish_exits_zero"
+      kind: control_semantic
+      description: "The engine's finish() writes the error to quincy_standalone.err and stops with exit code 0; success must be judged by the end message and an empty .err (dt_quincy_026)."
       severity: silent
-    - id: "co2_mole_fraction_not_ppm"
+    - id: "climate_file_rewound_silently"
       kind: weather_file_semantic
-      description: "CO2 supplied as a mole fraction (~0.0004) instead of ppm (~400) drives Farquhar Ci to ~zero, making the Rubisco-limited rate negligible and GPP near zero. (dt_quincy_020)"
+      description: "climate.dat is read line by line; a short file is silently rewound and reused, only a log note says so (dt_quincy_027)."
       severity: silent
-    - id: "missing_value_sentinel_not_replaced"
+    - id: "leap_day_in_forcing"
       kind: weather_file_semantic
-      description: "FLUXNET2015 -9999 sentinel not replaced with NaN corrupts means (T~-2000 deg C) and propagates NaN through all fluxes. (dt_quincy_006)"
-      severity: fatal
-    - id: "fluxnet_subset_column_names"
+      description: "The engine calendar has 365 days; Feb 29 rows shift every later day by one per leap year (dt_quincy_028)."
+      severity: silent
+    - id: "forcing_units"
+      kind: weather_file_semantic
+      description: "t_air in K, q_air in g/kg, pressure in hPa, precipitation as a mm/day RATE on every row, deposition in mg/m2/day (dt_quincy_029, dt_quincy_030)."
+      severity: silent
+    - id: "namelist_duplicate_group"
+      kind: control_semantic
+      description: "Fortran reads only the first copy of a namelist group; a duplicated group silently drops its values (dt_quincy_031)."
+      severity: silent
+    - id: "soil_texture_in_one_namelist_only"
+      kind: control_semantic
+      description: "Soil texture is read by three processes (lnd_spq_nml, jsb_sse_nml, jsb_hydro_nml); setting one leaves the others at 0.3/0.4/0.3 (dt_quincy_032)."
+      severity: silent
+    - id: "fluxnet_daily_carbon_units"
       kind: parser_semantic
-      description: "FLUXNET2015 SUBSET column suffixes (e.g., SW_IN_F_MDS, TA_ERA) differ from expected FULLSET names, raising a KeyError when reading forcing. (dt_quincy_005)"
-      severity: fatal
-    - id: "n_leaf_ref_wrong_mass_unit"
-      kind: coefficient_runtime_silent_fallback
-      description: "n_leaf_ref in kgN/m2 or mgN/m2 instead of gN/m2 collapses vcmax25_eff = vcmax_n_slope*leaf_N, silently dropping GPP to 20-50% of expected. (dt_quincy_004)"
+      description: "FLUXNET FULLSET_DD carbon fluxes are g C/m2/day, not umol/m2/s (dt_quincy_033)."
       severity: silent
-    - id: "activation_energy_kJ_not_J"
-      kind: coefficient_runtime_silent_fallback
-      description: "ea_vcmax/ea_jmax/ea_rd in kJ/mol instead of J/mol make the Arrhenius exponent 1000x too small, flattening the temperature response of photosynthesis. (dt_quincy_018)"
-      severity: silent
-    - id: "cn_leaf_as_reciprocal"
-      kind: coefficient_runtime_silent_fallback
-      description: "cn_leaf entered as an N:C ratio (e.g., 0.025) instead of C:N (gC/gN) silently breaks stoichiometric consistency. (dt_quincy_016)"
-      severity: silent
-    - id: "lai_min_equals_lai_max"
+    - id: "short_spinup"
       kind: control_semantic
-      description: "lai_min set equal to (or near) lai_max removes the Gaussian-temperature LAI seasonality, so simulated GPP loses its seasonal cycle. (dt_quincy_007)"
-      severity: silent
-    - id: "lai_t_opt_above_site_range"
-      kind: control_semantic
-      description: "lai_t_opt set far above the site temperature range means the Gaussian LAI response never fires and LAI stays at lai_min year-round. (dt_quincy_022)"
+      description: "Too short a spin-up leaves LAI and soil pools far from equilibrium; GPP low and NEE biased (dt_quincy_034)."
       severity: degraded
-    - id: "vcmax25_too_high_for_pft"
-      kind: coefficient_runtime_silent_fallback
-      description: "Vcmax25 too high for the PFT (or N-limitation effectively disabled via a very high n_leaf_ref) overestimates GPP 2-3x with the seasonal pattern preserved. (dt_quincy_008)"
-      severity: silent
-    - id: "rh_q10_or_base_too_high"
-      kind: coefficient_runtime_silent_fallback
-      description: "rh_q10 too high (3-4 vs 2.0) or rh_base too large exponentially inflates Rh in warm months, pushing Reco/GPP out of range and flipping NEE to a net source. (dt_quincy_009)"
-      severity: degraded
-    - id: "jmax_vcmax_ratio_too_high"
-      kind: coefficient_runtime_silent_fallback
-      description: "jmax_vcmax_ratio >3 or alpha_j >0.5 makes the RuBP-regeneration rate (Wj) never limiting, so GPP loses light sensitivity. (dt_quincy_010)"
-      severity: silent
-    - id: "rh_precip_response_inverted"
-      kind: coefficient_runtime_silent_fallback
-      description: "rh_precip_scale with the wrong sign or rh_precip_opt=0 inverts the bell-shaped moisture response so decomposition peaks in dry months. (dt_quincy_024)"
-      severity: degraded
-    - id: "g1_bb_too_high_energy_imbalance"
-      kind: coefficient_runtime_silent_fallback
-      description: "An over-large stomatal-slope-driven conductance inflates LE >300 W/m2, driving the residual sensible heat H negative and breaking the energy partition. (Note: g1_bb itself is not consumed by the analytic assimilation routine; see warnings.) (dt_quincy_013)"
-      severity: degraded
-    - id: "arrhenius_overflow_extreme_T"
-      kind: numerical_instability
-      description: "Extreme temperature (>60 or <-60 deg C) from bad forcing overflows the Vcmax/Jmax Arrhenius exp(), returning Inf and propagating NaN from that month onward. (dt_quincy_011)"
-      severity: fatal_or_silent
-    - id: "nee_sign_convention_flip"
-      kind: parser_semantic
-      description: "Computing NEE as GPP-Reco instead of Reco-GPP flips the sign relative to the FLUXNET convention, producing apparent carbon-balance non-closure. (dt_quincy_012)"
-      severity: silent
-    - id: "daylength_scaling_omitted"
-      kind: control_semantic
-      description: "Omitting the day-fraction (daylength/24) scaling leaves instantaneous daytime GPP compared against a 24-h eddy-covariance mean, inflating GPP ~2x. (dt_quincy_014)"
-      severity: silent
-    - id: "latitude_hemisphere_sign"
-      kind: control_semantic
-      description: "Site latitude entered with the wrong hemisphere sign swaps the solar-declination daylength, shifting the GPP seasonal peak by ~6 months. (dt_quincy_021)"
-      severity: degraded
-    - id: "output_delimiter_column_shift"
-      kind: parser_semantic
-      description: "A delimiter mismatch (tab vs comma) when parsing the output CSV misaligns rows, so columns are silently shifted (GPP holds NEE, etc.). (dt_quincy_025)"
-      severity: silent
   validation_limits:
-    - "Point-scale (0-D) only: no spatial coupling, lateral transport, or distributed routing."
-    - "Monthly effective timestep: cannot resolve diurnal or sub-daily processes (the upstream QUINCY runs half-hourly)."
-    - "Default parameters are boreal-ENF (Scots pine) specific; uncalibrated application to other PFTs/biomes is unreliable without recalibration."
-    - "No realized phosphorus limitation: P stoichiometry is tracked but does not constrain productivity, so P-limited (e.g., tropical) sites are not represented."
-    - "Validated as 'real-data' at a single boreal site (FLUXNET2015 monthly); generalization beyond that is unestablished."
+    - "Point-scale (0-D) only."
+    - "The public release ships no official site example; the engine check is the built-in test_canopy / test_radiation self-tests, reproduced byte for byte."
+    - "A spun-up equilibrium stand does not carry the site's management or age history, so the mean NEE sink of a managed forest is underestimated."
+    - "N and P deposition have no gridded server dataset; they are user inputs with a cited or stated source."
   warnings:
-    - "The documented Ball-Berry conductance (g1_bb) is declared and range-checked but not consumed by the analytic assimilation routine; the Ci/Ca effect is realized by a VPD-linear surrogate, so g1_bb-based tuning has no direct effect on GPP in this implementation."
-    - "Respiration is diagnostic and coupled to instantaneous GPP (Ra via npp_approx = gpp - r_maint, Rh via a temperature x moisture response); there are no explicit C-N-P pools, so annual (GPP-Reco) is not guaranteed to equal cumulative NEE."
-    - "Energy balance is not closed: LE is diagnosed from GPP via a fixed water-use efficiency and H is the Rn-LE residual, so H inherits all LE/Rn errors."
-    - "Without leaf-N data the model falls back to reference N values; the N-control on photosynthesis then reflects defaults, not site conditions."
-    - "Early years (first 1-2) can be biased by a respiration spin-up transient when initial decomposition terms are far from equilibrium; discard or add spin-up for short runs."
+    - "tools/run_quincy.py and its helpers are a Python SURROGATE (contract: docs/surrogate/surrogate_quincy_analytic_dag.yaml); their numbers are not QUINCY output."
+    - "LE includes snow sublimation but the water output files do not; LE/(lambda*ET) > 1 at snowy sites is expected."
   assumptions:
     - statement: "The model represents a 0-D single-column point ecosystem with no lateral exchange."
-      scope: "spatial geometry of all fluxes and states"
-      source: "Thum et al. 2019 (GMD 12, 4781-4802), stand-alone site application; analytic reimplementation single-column structure"
+      scope: "all fluxes and states"
+      source: "Thum et al. 2019 (GMD 12, 4781-4802), standalone site application"
       status: adopted
-    - statement: "NEE follows the micrometeorological sign convention, NEE = Reco - GPP (positive = net source to atmosphere)."
-      scope: "NEE output and any obs comparison"
-      source: "QUINCY documentation and FLUXNET sign convention"
+    - statement: "NEE follows the micrometeorological sign convention, NEE = Reco - GPP (positive = net source)."
+      scope: "NEE output and obs comparison"
+      source: "FLUXNET convention; parse_quincy_engine_output.py"
       status: adopted
-    - statement: "QUINCY's coupled-nitrogen control on photosynthesis is realized here only as an upper cap, vcmax25_eff = min(vcmax_n_slope*leaf_N, vcmax25), rather than the full optimality-based N-allocation scheme."
-      scope: "photosynthesis / N-limitation behavior"
-      source: "Caldararu et al. 2020 (New Phytologist, 10.1111/nph.16320) optimality N-use-efficiency scheme vs the analytic reimplementation"
-      status: adopted
-    - statement: "Phosphorus is tracked stoichiometrically (cp_leaf, np_leaf) but does not limit productivity in this implementation."
-      scope: "nutrient limitation; tropical / P-limited applicability"
-      source: "Yu et al. 2020 (New Phytologist, 10.1111/nph.16538); QUINCY P scheme not realized in the analytic version"
-      status: adopted
-    - statement: "Mass and energy balance are not enforced; respiration is diagnostic and surface energy is partitioned as a residual, not closed."
-      scope: "carbon/energy conservation interpretation of the analytic surrogate"
-      source: "QUINCY analytic reimplementation core (calc_reco / calc_energy_fluxes structure) vs Thum et al. 2019 mass-balanced formulation"
+    - statement: "Spin-up cycles the leading forcing years of the site record from bare ground."
+      scope: "initial state of every site run"
+      source: "QUINCY transient forcing_mode (quincy_qs_model_driver.f90)"
       status: adopted
 
 medium_evidence:
   - var: "Ra"
     source: "dag.yaml"
-    quote: "Single-site terrestrial ecosystem carbon exchange (GPP, NEE, Reco, autotrophic and heterotrophic respiration)"
+    quote: "Single-site (0-D column) terrestrial ecosystem carbon exchange: GPP, autotrophic and heterotrophic respiration, NEE"
     note: "boundary.scope_in declares autotrophic respiration as terrestrial ecosystem carbon exchange."
   - var: "Rh"
     source: "dag.yaml"
-    quote: "Drives the bell-shaped soil-moisture scalar of heterotrophic respiration; not used for a prognostic soil-water balance."
-    note: "The forcing notes tie heterotrophic respiration to the soil-moisture/soil-water medium."
+    quote: "Soil heterotrophic respiration from litter and soil organic matter decomposition in the soil column, daily mean."
+    note: "The output description places heterotrophic respiration in the soil medium."
   - var: "LAI"
     source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018rg000608.txt"
     quote: "Abstract Leaf area index (LAI) is a critical vegetation structural variable and is essential in the feedback of vegetation to the climate system."

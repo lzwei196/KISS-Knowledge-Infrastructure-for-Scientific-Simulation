@@ -1,0 +1,64 @@
+ QUARTER ANNULAR TEST V20051108      ! 32 CHARACTER ALPHANUMERIC RUN DESCRIPTION
+ ADCIRC V45.07                       ! 24 CHARACTER ALPANUMERIC RUN IDENTIFICATION
+ 0                                   ! NFOVER - NONFATAL ERROR OVERRIDE OPTION
+ 0                                   ! NABOUT - ABREVIATED OUTPUT OPTION PARAMETER
+ 600                                 ! NSCREEN - UNIT 6 OUTPUT OPTION PARAMETER
+ 0                                   ! IHOT - HOT START PARAMETER
+ 1                                   ! ICS - COORDINATE SYSTEM SELECTION PARAMETER
+ 0                                   ! IM - MODEL SELECTION PARAMETER 
+ 1                                   ! NOLIBF - BOTTOM FRICTION TERM SELECTION PARAMETER
+ 1                                   ! NOLIFA - FINITE AMPLITUDE TERM SELECTION PARAMETER
+ 1                                   ! NOLICA - SPATIAL DERIVATIVE CONVECTIVE SELECTION PARAMETER
+ 1                                   ! NOLICAT - TIME DERIVATIVE CONVECTIVE TERM SELECTION PARAMETER
+ 0                                   ! NWP - VARIABLE BOTTOM FRICTION AND LATERAL VISCOSITY OPTION PARAMETER
+ 0                                   ! NCOR - VARIABLE CORIOLIS IN SPACE OPTION PARAMETER
+ 0                                   ! NTIP - TIDAL POTENTIAL OPTION PARAMETER
+ 0                                   ! NWS - WIND STRESS AND BAROMETRIC PRESSURE OPTION PARAMETER
+ 1                                   ! NRAMP - RAMP FUNCTION OPTION
+ 9.81                                ! G - ACCELERATION DUE TO GRAVITY - DETERMINES UNITS
+ 0.005                               ! TAU0 - WEIGHTING FACTOR IN GWCE
+ 174.656                             ! DT - TIME STEP (IN SECONDS)
+ 0.00                                ! STATIM - STARTING TIME (IN DAYS)
+ 0.00                                ! REFTIM - REFERENCE TIME (IN DAYS)
+ 5.0                                 ! RNDAY - TOTAL LENGTH OF SIMULATION (IN DAYS)
+ 2.0                                 ! DRAMP - DURATION OF RAMP FUNCTION (IN DAYS)
+ 0.35 0.30 0.35                      ! TIME WEIGHTING FACTORS FOR THE GWCE EQUATION
+ 1.0                                 ! H0 - MIMINMUM CUTOFF DEPTH
+ 0.0 0.0                             ! SLAM0,SFEA0 - CENTER OF CPP PROJECTION (NOT USED IF ICS=1, NTIP=0, NCOR=0)
+ 0.0025                              ! FFACTOR - HOMOGENEOUS LINEAR OR NONLINEAR BOTTOM FRICTION COEFFICIENT     
+ 0.0                                 ! ESL - LATERAL EDDY VISCOSITY COEFFICIENT; IGNORED IF NWP =1
+ 0.0                                 ! CORI - CORIOLIS PARAMETER - IGNORED IF NCOR = 1
+ 0                                   ! NTIF - TOTAL NUMBER OF TIDAL POTENTIAL CONSTITUENTS BEING FORCED
+ 1                                   ! NBFR - TOTAL NUMBER OF FORCING FREQUENCIES ON OPEN BOUNDARIES
+ M2                                  ! CONSTITUENT. 1  ALPHA DESCRIPTOR
+ 0.000140525700000 1.0 0.0           ! CONSTITUENT. 1 FREQ., NODAL FACTOR, EQUIL. ARG. 
+  M2                                 ! ALPHA NUMERIC DESCRIPTION OF OPEN BOUNDARY FORCING DATA SET WHICH FOLLOWS 
+  0.3048  0.00                       ! BOUNDARY FORCING DATA FOR CONSTITUENT NO. 1 AT FIRST NODE
+  0.3048  0.00
+  0.3048  0.00
+  0.3048  0.00
+  0.3048  0.00
+  0.3048  0.00
+  0.3048  0.00
+  0.3048  0.00
+  0.3048  0.00                       ! BOUNDARY FORCING DATA FOR CONSTITUENT NO. 1 AT LAST NODE
+ 110.0                               ! ANGINN : INNER ANGLE THRESHOLD
+ 1 0.0 5.0  3                        ! NOUTE,TOUTSE,TOUTFE,NSPOOLE:ELEV STATION OUTPUT INFO (UNIT  61)
+ 3                                   ! TOTAL NUMBER OF ELEVATION RECORDING STATIONS
+   80668.4   12256.0                 ! COORD. OF ELEVATION STATION
+  126205.2   10686.9        
+   51131.1   88884.3
+ 1 0.0 5.0  3                        ! NOUTV,TOUTSV,TOUTFV,NSPOOLV:VEL STATION OUTPUT INFO (UNIT  62)
+ 3                                   ! TOTAL NUMBER OF VELOCITY RECORDING STATIONS
+   80668.4   12256.0                 ! COORD. OF VELOCITY STATION
+  126205.2   10686.9        
+   51131.1   88884.3
+ 1 0.0 5.0 3                         ! NOUTGE,TOUTSGE,TOUTFGE,NSPOOLGE : GLOBAL ELEVATION OUTPUT INFO (UNIT  63)
+ 1 0.0 5.0 3                         ! NOUTGV,TOUTSGV,TOUTFGV,NSPOOLGV : GLOBAL VELOCITY  OUTPUT INFO (UNIT  64)    
+ 1                                   ! NHARFR - NUMBER OF CONSTITUENTS TO BE INCLUDED IN THE HARMONIC ANALYSIS
+ M2                                  ! HAFNAM(I) - ALHPANUMERIC DESCRIPTION OF HARMONIC CONSTITUENT I=1
+ 0.0001405257 1.0 0.0                ! HAFREQ(I=1),HAFF(I=1),HAFACE(I=1)
+ 4.00  5.00  1  0.0                  ! THAS,THAF,NHAINC,FMV - HARMONIC ANALYSIS PARAMETERS         
+ 1 1 1 1                             ! NHASE,NHASV,NHAGE,NHAGV - CONTROL HARMONIC ANALYSIS AND OUTPUT TO UNITS 51,52,53,54
+ 1 1236                               ! NHSTAR,NHSINC - HOT START FILE GENERATION PARAMETERS                  
+ 1  0  1.E-10  25                     ! ITITER, ISLDIA, CONVCR, ITMAX - ALGEBRAIC SOLUTION PARAMETERS

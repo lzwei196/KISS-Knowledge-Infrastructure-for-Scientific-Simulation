@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-HEC-HMS Core Simulation Engine (Python implementation).
+SURROGATE -- NOT HEC-HMS. Python stand-in for a few HEC-HMS methods.
 
-Implements the core HEC-HMS algorithms:
+Output of this file is NOT a HEC-HMS result and must never be reported as one.
+The real USACE HEC-HMS 4.14 engine is run by tools/run_hms_engine.py. No
+equivalence between this stand-in and the real engine has been shown.
+
+Implements simplified versions of these HEC-HMS methods:
   1. SCS Curve Number (loss/infiltration)
   2. SCS Unit Hydrograph (direct runoff transform)
   3. Linear Reservoir (baseflow)
   4. Muskingum (channel routing, optional)
 
-This is a Python implementation of the public-domain USDA/USACE algorithms
-used internally by HEC-HMS. It produces equivalent results for lumped basins.
+It is a re-implementation of public-domain USDA/USACE algorithms, written by
+HydroCraft; it is kept for the legacy GLUE loop in calibrate_hms.py.
 
 Usage:
   python3 run_hec_hms.py \
@@ -295,9 +299,9 @@ def estimate_tp_from_area(area_km2, cn=75):
 # Process (main simulation)
 # ---------------------------------------------------------------------------
 def process(args):
-    """Run HEC-HMS simulation."""
+    """Run the Python SURROGATE (not HEC-HMS)."""
     print("=" * 60)
-    print("HEC-HMS Simulation Engine (SCS-CN + SCS UH + Linear Reservoir)")
+    print("SURROGATE -- NOT HEC-HMS: Python stand-in (SCS-CN + SCS UH + Linear Reservoir)")
     print("=" * 60)
 
     # 1. Read forcing
@@ -407,7 +411,7 @@ def validate_outputs(df, basin_area_km2):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Run HEC-HMS SCS-CN simulation")
+    parser = argparse.ArgumentParser(description="SURROGATE (not HEC-HMS): Python stand-in SCS-CN run; the real engine is run_hms_engine.py")
     parser.add_argument("--forcing_csv", required=True, help="Forcing CSV file")
     parser.add_argument("--soil_params", default=None, help="Soil parameters JSON")
     parser.add_argument("--basin_area_km2", type=float, required=True, help="Basin area (km²)")

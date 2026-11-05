@@ -22,7 +22,7 @@ pipeline:
   - s5_routing
   - s6_post
 tools:
-  count: 26
+  count: 30
   files:
   - s1_grid/make_basin_grid_nc.py
   - s2_forcing/fix_lwd_1979.py
@@ -40,8 +40,12 @@ tools:
   - s6_post/compare_runoff_field.py
   - s6_post/grid_runoff_nc.py
   - tools/calib_run.py
+  - tools/calib_run_huaibin_merit.py
   - tools/calib_run_wangjiaba.py
+  - tools/calib_run_wangjiaba_merit.py
+  - tools/calib_run_wangjiaba_modern.py
   - tools/calib_run_wjb_flatrain.py
+  - tools/calib_run_xixian_merit.py
   - tools/calibration/run_bengbu_ai_batch10.py
   - tools/calibration/run_bengbu_ai_calibration.py
   - tools/check_data.py
@@ -179,7 +183,7 @@ validation:
     best_kge: 0.765350941706327
     best_r: 0.95
 summary:
-  total_tools: 26
+  total_tools: 30
   total_stage_docs: 6
   total_diagnostic_triplets: 31
   generated: '2026-08-26'

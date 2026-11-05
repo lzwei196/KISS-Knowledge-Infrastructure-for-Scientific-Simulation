@@ -67,7 +67,7 @@ inputs:
     source_kind: dataset_lookup
     model_input_format: soils.in (13 columns per layer, rev 491)
     notes: 'Per-layer: top/bottom depth (cm), bulk density (g/cm3), field capacity (vol/vol), wilting
-      point (vol/vol), evap coefficient, root fraction (sums to ~1.0), sand fraction, clay fraction, organic-matter
+      point (vol/vol), evap coefficient, root fraction (Wooster reference values; sum > 0 and <= 1, the Wooster column sums to 0.85), sand fraction, clay fraction, organic-matter
       MASS fraction (0-1, not percent), delta_min (~WP*0.9), saturated K (cm/s), pH. rev 491 requires
       13 columns (delta_min added vs rev 470); depth structure must match ADEP/EDEPTH in fix.100.'
   - name: DayCent-specific site parameters
@@ -442,12 +442,12 @@ known_issues:
 - id: 6
   symptom: soils.in column 3 (bulk density) values are 1230, 1300, 1340.
   diagnosis: Bulk density was written in kg/m³ instead of g/cm³.
-  remedy: Divide by 1000. convert_soil_to_daycent.py auto-detects values > 100 and converts.
+  remedy: 'Fixed 2026-10-05: convert_soil_to_daycent.py writes HWSD T/S_REF_BULK_DENSITY as is (kg/dm3 = g/cm3); it no longer converts by the size of the value. A value ~1300 in soils.in means a wrong source unit; fix the source.'
   severity: silent
 - id: 7
   symptom: DayCent runs but ANPP is 0 every year.
   diagnosis: soils.in root-fraction column (col 7) sums to 0, so no roots can extract water.
-  remedy: Check sum(col 7) ~ 1.0. The convert_soil_to_daycent.py validator warns when out of [0.95, 1.05].
+  remedy: 'Check sum(col 7) > 0. convert_soil_to_daycent.py writes the Wooster reference values (0-90 cm, sum 0.84; the full Wooster column sums to 0.85) and its check FAILS (no soils.in written) if the column differs from them or the sum is not in (0, 1].'
   severity: fatal
 - id: 8
   symptom: Wilting point > field capacity in soils.in.
@@ -595,7 +595,5 @@ known_issues:
   diagnosis: HWSD returns OC as percent (e.g., 0.86% = 0.86). The old threshold (> 1.5) missed typical
     values 0.5-1.5 which were written directly as OM fraction instead of being divided by 100. A value
     of 0.86 in the fraction column means 86% organic matter (peat), not 0.86% OC.
-  remedy: 'Fixed in convert_soil_to_daycent.py (2026-04-22): lowered the OM threshold from > 1.5 to >
-    0.2. Any OM value > 0.2 is now treated as percent and divided by 100. Typical mineral soil OM fraction
-    should be 0.005-0.05.'
+  remedy: 'Fixed 2026-10-05: convert_soil_to_daycent.py no longer guesses percent from the size of the value. HWSD T_OC/S_OC is % organic carbon; column 10 is organic MATTER, written as OM = OC/100 x 1.724. Typical mineral soil OM fraction is 0.005-0.05; the tool stops if any OM > 0.2.'
   severity: silent

@@ -287,13 +287,50 @@ def extract_timeseries(data, columns, date_col="Date"):
     return ts
 
 
-def compute_summary(data, header_names):
-    """Compute summary statistics from parsed data."""
+# Sections a summary value may come from when the file has several sections
+# (daily, monthly, yearly, run, crop, event snapshots). Values are never added
+# across sections, and only sections whose meaning is certain are used:
+#   Yield / n_harvests : "crop" (one row per crop; same text test as before)
+#   fluxes (sums)      : "daily" (non-daily sections hold MONICA time
+#                        aggregates, AVG by default, so their sum is not a total)
+#   Mois/1 (mean)      : "daily"
+# If that section is missing the value is left out and a note says why.
+SUMMARY_SECTION = {"yield": "crop", "flux": "daily", "state": "daily"}
+
+
+def _section_rows(data, var, kind, notes, key):
+    """Rows to use for var. Single-section file: all rows (as before).
+    Several sections: the rows of SUMMARY_SECTION[kind], or [] with a note."""
+    if not data or "section" not in data[0]:
+        return data
+    want = SUMMARY_SECTION[kind]
+    rows = [r for r in data if r["section"] == want]
+    if not any(r.get(var, "") != "" for r in rows):
+        others = sorted({r["section"] for r in data if r.get(var, "") != ""})
+        if others:
+            notes.append(f"summary {key} left out: no '{var}' in section '{want}' "
+                         f"(found in {others}, which cannot be summed/used for it)")
+        return []
+    notes.append(f"summary {key} from section '{want}'")
+    return rows
+
+
+def compute_summary(data, header_names, notes=None):
+    """Compute summary statistics from parsed data.
+
+    For a file with several sections each value comes from one section only
+    (see SUMMARY_SECTION); notes (a list) gets one line per value saying which.
+    n_harvests keeps its old meaning: rows with a Yield that is not '' or '0'
+    (text test), not the number of harvest events.
+    """
     summary = {}
+    if notes is None:
+        notes = []
 
     # Yield: take max non-empty value
     if "Yield" in header_names:
-        yields = [float(r["Yield"]) for r in data
+        rows = _section_rows(data, "Yield", "yield", notes, "max_yield_kg_ha/n_harvests")
+        yields = [float(r["Yield"]) for r in rows
                   if r.get("Yield", "") not in ("", "0")]
         if yields:
             summary["max_yield_kg_ha"] = round(max(yields), 1)
@@ -310,23 +347,33 @@ def compute_summary(data, header_names):
     }
     for var, key in cum_vars.items():
         if var in header_names:
-            vals = [float(r[var]) for r in data if r.get(var, "") not in ("", )]
+            rows = _section_rows(data, var, "flux", notes, key)
+            vals = [float(r[var]) for r in rows if r.get(var, "") not in ("", )]
             if vals:
                 summary[key] = round(sum(vals), 2)
 
     # Mean soil moisture (top layer)
     if "Mois/1" in header_names:
-        mois = [float(r["Mois/1"]) for r in data if r.get("Mois/1", "") != ""]
+        rows = _section_rows(data, "Mois/1", "state", notes, "mean_mois_layer1_m3m3")
+        mois = [float(r["Mois/1"]) for r in rows if r.get("Mois/1", "") != ""]
         if mois:
             summary["mean_mois_layer1_m3m3"] = round(sum(mois) / len(mois), 4)
 
     return summary
 
 
+def section_names(input_path):
+    """Labels of the sections in a MONICA output file (in file order)."""
+    with open(input_path, "r", newline="", encoding="utf-8", errors="replace") as f:
+        return [ln.strip()[1:-1] for ln in f.read().splitlines() if _is_section_label(ln)]
+
+
 def compare_with_observed(data, args):
     """Compare simulated vs observed data and compute metrics."""
-    if not args.observed or not args.sim_col:
+    if not args.observed:
         return {}
+    if not args.sim_col or not args.obs_col:
+        return {"error": "--observed needs --obs-col and --sim-col"}
 
     # Read observed data
     obs_data = {}
@@ -341,9 +388,24 @@ def compare_with_observed(data, args):
                 except ValueError:
                     pass
 
+    # Rows of one section only: a date can appear in several sections, which
+    # would pair one observation twice
+    if data and "section" in data[0]:
+        with_col = []
+        for r in data:
+            if (r.get("Date", "").strip() in obs_data and r.get(args.sim_col, "") != ""
+                    and r["section"] not in with_col):
+                with_col.append(r["section"])
+        if args.section:
+            data = [r for r in data if r["section"] == args.section]
+        elif len(with_col) > 1:
+            return {"error": f"dates of the observations match rows in several output sections "
+                             f"{with_col}; choose one with --section"}
+
     # Match dates
     obs_vals = []
     sim_vals = []
+    matched_dates = []
     for row in data:
         date_key = row.get("Date", "").strip()
         if date_key in obs_data and row.get(args.sim_col, "") != "":
@@ -351,11 +413,16 @@ def compare_with_observed(data, args):
                 sim_val = float(row[args.sim_col])
                 obs_vals.append(obs_data[date_key])
                 sim_vals.append(sim_val)
+                matched_dates.append(date_key)
             except ValueError:
                 pass
 
     if not obs_vals:
         return {"error": "No matching date pairs found between observed and simulated"}
+    dup = sorted({d for d in matched_dates if matched_dates.count(d) > 1})
+    if dup:
+        return {"error": f"several simulated rows for the same date {dup[:5]}; "
+                         "choose one section with --section"}
 
     metrics = {"n_pairs": len(obs_vals)}
     requested = args.metric or ["rmse", "r2", "pbias"]
@@ -412,15 +479,28 @@ def main():
     parser.add_argument("--sim-col", help="Simulated column to compare")
     parser.add_argument("--metric", nargs="*", choices=list(METRIC_FUNCS.keys()),
                         help="Metrics to compute")
+    parser.add_argument("--section", help="Output section (e.g. daily, crop) to compare with "
+                        "--observed when the file has several sections")
 
     args = parser.parse_args()
     validate_inputs(args)
+    if args.section:
+        names = section_names(args.input)
+        if args.section not in names or len(names) < 2:
+            print(json.dumps({"status": "error", "errors": [
+                f"--section {args.section!r}: sections in {args.input} are {names} "
+                "(--section is for files with several sections)"]}), file=sys.stderr)
+            sys.exit(1)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Parse
     header_names, header_units, data = parse_monica_output(args.input)
     warnings = validate_outputs(data, args.output_dir)
+    if not data:
+        print(json.dumps({"status": "error", "errors": [f"No data rows parsed from {args.input}"]}),
+              file=sys.stderr)
+        sys.exit(1)
 
     # Extract columns
     cols = args.columns or [h for h in header_names if h not in ("Date", "Crop")]
@@ -431,7 +511,7 @@ def main():
     write_clean_csv(ts, clean_csv)
 
     # Compute summary
-    summary = compute_summary(data, header_names)
+    summary = compute_summary(data, header_names, warnings)
 
     # Compare with observed
     metrics = {}
@@ -439,8 +519,9 @@ def main():
         metrics = compare_with_observed(data, args)
 
     # Write summary
+    failed = bool(args.observed) and "error" in metrics
     result = {
-        "status": "success",
+        "status": "error" if failed else "success",
         "input": args.input,
         "n_rows": len(data),
         "columns": header_names,
@@ -456,6 +537,8 @@ def main():
         json.dump(result, f, indent=2)
 
     print(json.dumps(result, indent=2))
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

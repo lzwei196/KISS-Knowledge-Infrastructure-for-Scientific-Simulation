@@ -246,9 +246,9 @@ inputs:
 outputs:
   primary:
   - name: streamflow
-    unit: m/day (depth per unit basin area)
-    description: Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow *
-      basin_area / 86400.
+    unit: mm/day
+    description: Total basin streamflow as water depth per area (basin.daily writes astreamflow x 1000,
+      output_basin.c:446); convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400.
     validation_rank: 1
     emitted_in: basin daily output
     observability:
@@ -260,13 +260,14 @@ outputs:
         - magnitude_accuracy
         determining_metric: nse
         caveats:
-        - Output is m/day/m^2 not m^3/s; must convert with basin area before gauge comparison (dt_002).
+        - Output is mm/day over the basin, not m^3/s; must convert with basin area before gauge comparison
+          (dt_002).
         - Comparing a small RHESSys domain against a large-basin gauge via specific discharge assumes
           uniform runoff generation over the full gauge drainage area.
       detrending_options:
       - none
   - name: evaporation
-    unit: m/day
+    unit: mm/day
     description: Total surface/soil/litter evaporation.
     validation_rank: 3
     emitted_in: basin/patch daily output
@@ -284,7 +285,7 @@ outputs:
       detrending_options:
       - none
   - name: transpiration (sat + unsat zone)
-    unit: m/day
+    unit: mm/day
     description: Canopy transpiration drawn from saturated and unsaturated zones.
     validation_rank: 5
     emitted_in: basin/patch daily output
@@ -302,7 +303,7 @@ outputs:
       detrending_options:
       - none
   - name: snowpack.water_equivalent_depth
-    unit: m
+    unit: mm
     description: Snow water equivalent per patch.
     validation_rank: 4
     emitted_in: patch daily output
@@ -371,10 +372,10 @@ outputs:
       detrending_options:
       - none
   - name: streamflow_NO3 / streamflow_DON
-    unit: kgN/m^2/day
+    unit: gN/m^2/day
     description: Nitrate and dissolved organic nitrogen export in streamflow.
     validation_rank: 2
-    emitted_in: basin daily output
+    emitted_in: basin daily growth output (<prefix>_grow_basin.daily)
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -406,7 +407,7 @@ outputs:
       detrending_options:
       - none
   - name: sat_deficit / unsat_storage / rz_storage / theta (soil moisture)
-    unit: m (storage) or dimensionless (relative saturation)
+    unit: mm (storage) or dimensionless (relative saturation)
     description: Patch-level subsurface water storage / relative saturation state.
     validation_rank: 9
     emitted_in: patch daily output
@@ -433,7 +434,7 @@ known_issues:
     per day (m/day). Most global datasets (ERA5, CMFD, NASA POWER, station data) report precipitation
     in mm/day. Forgetting to divide by 1000 inflates all water fluxes by 3 orders of magnitude.
 
-    ; [''climate forcing'
+    ; [''climate forcing files (.rain)'', ''all downstream water balance variables'']'
   remedy: Divide precipitation values by 1000 before writing .rain file; convert_forcing.py --precip-unit
     mm; ['Open the .rain file', 'Divide all values by 1000', 'Verify max daily precip is reasonable (<
     0.3 m/day = 300 mm/day)']; Always use convert_forcing.py which handles mm->m conversion
@@ -443,14 +444,16 @@ known_issues:
     (m^3/s). NSE and other metrics are meaningless.
 
     '
-  diagnosis: 'Streamflow output is in m/day per m^2 basin area, not m^3/s; RHESSys reports streamflow
-    as depth per time per unit area (m/day/m^2). To compare with observed discharge in m^3/s: Q_m3s =
-    streamflow * basin_area_m2 / 86400. Skipping this conversion gives dimensionally incorrect comparisons.
+  diagnosis: 'Streamflow output is water depth over the basin in mm/day, not m^3/s; RHESSys basin.daily
+    reports streamflow as depth per day over the basin in mm/day (it writes astreamflow x 1000, output_basin.c:446).
+    To compare with observed discharge in m^3/s: Q_m3s = streamflow / 1000 * basin_area_m2 / 86400. Skipping
+    this conversion gives dimensionally incorrect comparisons.
 
-    ; [''output'
-  remedy: 'Apply conversion: Q_m3s = streamflow * basin_area / 86400; parse_output.py --basin-area <area_m2>;
-    [''Determine total basin area in m^2'', ''Multiply streamflow values by basin area'', ''Divide by
-    86400 (seconds per day)'']; Always specify --basin-area when parsing output for comparison'
+    ; [''output parsing'', ''validation metrics'']'
+  remedy: 'Apply conversion: Q_m3s = streamflow / 1000 * basin_area / 86400; parse_output.py --basin-area
+    <area_m2>; [''Determine total basin area in m^2'', ''Divide streamflow values by 1000 (mm to m)'',
+    ''Multiply by basin area'', ''Divide by 86400 (seconds per day)'']; Always specify --basin-area when
+    parsing output for comparison'
   severity: silent
 - id: dt_003
   symptom: 'Extreme evapotranspiration values; soil dries out instantly. Temperature values in output
@@ -486,7 +489,7 @@ known_issues:
     expects m/day. Conversion: m/day = cm/hr * 0.24. Without conversion, a typical Ksat of 10 cm/hr becomes
     10 m/day (should be 2.4 m/day).
 
-    ; [''soil definition files (.def)'', ''lateral drainage, vertical infiltration'
+    ; [''soil definition files (.def)'', ''lateral drainage, vertical infiltration'']'
   remedy: Multiply Ksat by 0.24 (cm/hr -> m/day); convert_soil_params.py; ['Check Ksat_0 value in .def
     file', 'If originally from cm/hr source, multiply by 0.24']; Use convert_soil_params.py which handles
     unit conversion
@@ -512,7 +515,7 @@ known_issues:
     GIS tools sometimes output radians. A 45-degree slope in radians is 0.785, which RHESSys interprets
     as nearly flat (0.785 degrees).
 
-    ; [''worldfile (patch slope, aspect)'', ''radiation partitioning, water rou'
+    ; [''worldfile (patch slope, aspect)'', ''radiation partitioning, water routing'']'
   remedy: 'Multiply by 180/pi (57.2958); [''Check slope/aspect values in worldfile'', ''If all < 6.28,
     they are likely in radians'', ''Convert: degrees = radians * 180 / pi'']; Always verify slope range
     matches DEM (typical: 0-60 degrees)'
@@ -537,7 +540,7 @@ known_issues:
     pools in kg/m^2. Literature and some databases report g/m^2. Initializing with g/m^2 values gives
     1000x excess, leading to unrealistic growth and respiration.
 
-    ; [''worldfile initial C/N pools'', ''BGC cycling'
+    ; [''worldfile initial C/N pools'', ''BGC cycling (growth, respiration, decomposition)'']'
   remedy: 'Divide all C/N pool values by 1000 in worldfile; [''Check leafc, stemc, rootc, litr1c, soil1c
     values in worldfile'', ''If they seem very large, divide by 1000'', ''Typical leafc: 0.01-0.5 kg C/m^2''];
     Verify carbon pool units match kg/m^2 before running'
@@ -565,7 +568,7 @@ known_issues:
     lines, wrong ordering, or tab/space issues cause the parser to misalign, reading values for wrong
     parameters.
 
-    '
+    ; [''worldfile (.world)'', ''all initialization routines'']'
   remedy: 'Regenerate worldfile with correct formatting; [''Check worldfile line by line against template'',
     ''Ensure no extra blank lines between parameter blocks'', ''Ensure each line is: value<whitespace>variable_name''];
     Use worldfile generation tools (CreateWorldfile) rather than manual editing'
@@ -579,11 +582,11 @@ known_issues:
     require 200-500 years of cycling to reach equilibrium. Without spin-up, initial pools from the worldfile
     are far from steady state, causing crashes in carbon allocation.
 
-    ; [''vegetation carbon/nitrogen pools'', ''s'
+    ; [''vegetation carbon/nitrogen pools'', ''soil carbon/nitrogen pools'', ''all BGC processes'']'
   remedy: Perform multi-century spin-up before production run; ['Create spin-up TEC file with repeated
     climate', 'Run 200-500 years with -g flag', 'Use -vegspinup flag for acceleration', 'Save final state
     with output_current_state TEC event', 'Use saved state for production worldfile']; Always spin up
-    BGC poo
+    BGC pools before production runs
   severity: silent
 - id: dt_013
   symptom: 'Model crashes immediately or hangs in infinite loop. Division by zero errors in soil drainage
@@ -619,7 +622,7 @@ known_issues:
     entries for every patch in the worldfile. If patches are added/removed from the worldfile without
     updating the flow table, the model accesses invalid memory.
 
-    ; [''flow table (.flow)'', ''worldfile (.world)'', ''r'
+    ; [''flow table (.flow)'', ''worldfile (.world)'', ''routing initialization'']'
   remedy: 'Regenerate flow table to match current worldfile; [''Extract patch IDs from worldfile: grep
     patch_ID worldfile'', ''Extract patch IDs from flow table'', ''Compare for mismatches'', ''Regenerate
     flow table using CreateFlowTable'']; Always regenerate flow table after modifying worldfile patches'
@@ -645,7 +648,7 @@ known_issues:
     strata (e.g., overstory + understory). Their cover_fraction values must sum to <= 1.0. If they exceed
     1.0, precipitation interception is over-counted.
 
-    ; [''worldfile (canopy_strata cover_fraction)'', ''interception'
+    ; [''worldfile (canopy_strata cover_fraction)'', ''interception, throughfall calculations'']'
   remedy: Normalize cover fractions to sum to 1.0; ["Check cover_fraction values for each patch's strata",
     'Sum should be <= 1.0', 'Scale proportionally if > 1.0']; Validate cover fractions when creating worldfile
   severity: silent
@@ -658,11 +661,11 @@ known_issues:
     (e.g., very high Ksat with very low porosity, or very small m with very deep soil), the numerical
     integration can become unstable, producing negative storage values that propagate as NaN.
 
-    ; [''soil defin'
+    ; [''soil definition parameters'', ''vertical/lateral drainage routines'']'
   remedy: Check soil parameter consistency and physical plausibility; ['Verify Ksat_0, porosity_0, m,
     soil_depth are physically consistent', 'Reduce Ksat if drainage is too aggressive', 'Ensure m > 0
     and porosity < 1.0', 'Consider reducing timestep to hourly']; Use pedotransfer functions for consistent
-    parame
+    parameter sets
   severity: fatal
 - id: dt_019
   symptom: 'Kdown in output is constant for 7-8 day blocks (smooth seasonal curve, no day-to-day variation
@@ -673,24 +676,34 @@ known_issues:
   diagnosis: 'Kdown_direct provided without Kdown_diffuse in station file; RHESSys zone_daily_I.c line
     895: if EITHER Kdown_direct_flag==0 OR Kdown_diffuse_flag==0, the model ZEROES both and recomputes
     from clear-sky atm_trans. With tmax-tmin=constant (common when using VIC tavg±offset), the MTCLIM
-    Bristow-Campbe'
+    Bristow-Campbell cloud correction is also disabled. Result: all days get maximum clear-sky radiation,
+    soil dries too fast, drought mortality cascades.
+
+    ; [''clim/bengbu_base station file'', ''zone_daily_I.c radiation reading'', ''transpiration / soil
+    moisture balance'']'
   remedy: 'Split total Kdown into Kdown_direct (beam) + Kdown_diffuse using Erbs et al. partition model;
     python ki/tools/split_kdown.py --kdown <total_file> --lat <lat> --out-direct <beam> --out-diffuse
     <diffuse>; [''Run split_kdown.py to produce .Kdown_direct and .Kdown_diffuse files'', ''Update station
-    file: ch'
+    file: change count 3→4, add Kdown_diffuse to list'', ''Verify Kdown output now varies day-to-day (rainy
+    days 3000-6000, clear days 10000-13000 kJ/m2/day)'']; Always provide BOTH Kdown_direct AND Kdown_diffuse
+    when supplying radiation forcing'
   severity: critical
 - id: dt_020
   symptom: 'MTCLIM Bristow-Campbell cloud correction produces constant cloud fraction every day even without
     measured Kdown. All days look equally sunny.
 
     '
-  diagnosis: tmax and tmin constructed as tavg+offset and tavg-offset with fixed offset; The MTCLIM method
+  diagnosis: 'tmax and tmin constructed as tavg+offset and tavg-offset with fixed offset; The MTCLIM method
     uses tmax-tmin (daily temperature range) to estimate cloud cover via the Bristow-Campbell transmissivity
     estimator. When VIC forcing uses tavg±constant (e.g., ±4°C), delta_T is fixed for all days. The cloud
+    correction then gives the same transmissivity every day. This is a common trap when tmax/tmin are
+    not available and are derived from daily average temperature.
+
+    ; [''clim/*.tmax, clim/*.tmin climate files'', ''MTCLIM Bristow-Campbell transmissivity estimator'']'
   remedy: 'Use measured tmax/tmin, OR fix by providing Kdown_direct+Kdown_diffuse (dt_019); [''Obtain
     actual tmax/tmin data (CMFD has both)'', ''Alternatively: use split_kdown.py to provide both Kdown
     components'', ''Verify tmax-tmin varies daily before running'']; Never construct tmax = tavg + constant_offset
-    for R'
+    for RHESSys climate forcing'
   severity: moderate
 - id: dt_021
   symptom: 'Transpiration drops to exactly zero on any day with any precipitation, even trace amounts
@@ -702,11 +715,31 @@ known_issues:
     when daytime net radiation is negative.
 
     ; Line 1159: if (rnet_evap_night < ZERO) rnet_evap_night = 0.0;  [correct] Line 1160: if (rnet_evap_day
-    < ZERO) rnet_evap_night = 0.0;    [BUG: should be rnet_evap_d'
+    < ZERO) rnet_evap_night = 0.0;    [BUG: should be rnet_evap_day]
+
+    On rainy/cloudy days, daytime net radiation (rnet_evap_day) can go negative (surface_heat_flux_day
+    < 0 and Lstar_day < 0 outweigh absorbed shortwave). The buggy line should zero rnet_evap_day, but
+    instead zeros rnet_evap_night. This leaves rnet_evap_day negative, making total rnet_evap = rnet_evap_night
+    + (negative rnet_evap_day) potentially zero or negative, which sets potential_evaporation ≤ 0. The
+    transpiration gate at line 1493 then sets trans = 0.
+
+    RHESSys version: 7.4 (confirmed present in the public GitHub repo at rhessys/cycle/canopy_stratum_daily_F.c,
+    line 1160 as of 2025)
+
+    ; [''canopy_stratum_daily_F.c line 1160'', ''transpiration calculation (lines 1487-1503)'', ''annual
+    water balance in humid/monsoon regions'']'
   remedy: 'Fix line 1160 in canopy_stratum_daily_F.c and recompile; {''file'': ''rhessys/cycle/canopy_stratum_daily_F.c'',
     ''line'': 1160, ''before'': ''if (rnet_evap_day < ZERO) rnet_evap_night = 0.0;'', ''after'': ''if
     (rnet_evap_day < ZERO) rnet_evap_day = 0.0;''}; [''Edit canopy_stratum_daily_F.c line 1160'', "Change
-    ''rne'
+    ''rnet_evap_night = 0.0'' to ''rnet_evap_day = 0.0''", ''Recompile: cd rhessys/ && make CC=gcc (if
+    clang unavailable)'', ''If make fails on test targets (glib.h missing):'', ''  gcc -c -std=c99 -O2
+    -I include cycle/canopy_stratum_daily_F.c -o objects/canopy_stratum_daily_F.o'', "  printf ''int yywrap(void)
+    { return 1; }'' > /tmp/yw.c && gcc -c /tmp/yw.c -o /tmp/yw.o", ''  OBJS=$(ls objects/*.o) && gcc $OBJS
+    /tmp/yw.o -lm -lnetcdf -o rhessys7.4_fixed'', ''Verify fix: on a rainy day, trans should now be proportional
+    to radiation'']; Before running in humid/monsoon basins, check a single rainy day: if trans=0 while
+    LAI>0 and Kdown>0, suspect this bug.
+
+    '
   severity: critical
 - id: dt_022
   symptom: 'Transpiration is zero on any day with non-zero precipitation, including trace amounts (0.001
@@ -717,10 +750,22 @@ known_issues:
   diagnosis: "When no 'daytime_rain_duration' climate file is provided, RHESSys defaults rain_duration\
     \ = 86400 s (all 24 hours) for any non-zero precipitation.\n; In zone_daily_F.c (lines 293-309):\n\
     \  if (zone[0].rain_duration == -999.0) {\n      if (zone[0].rain == 0) { zone[0].rain_duration =\
-    \ 0; }\n      else      "
-  remedy: Generate and provide a daytime_rain_duration climate file; python ki/tools/gen_rain_duration.py
-    --precip clim/<prefix>.rain --out clim/<prefix>.daytime_rain_duration --rate 2.0; ['Generate daytime_rain_duration
-    (hours) from daily precip (m/day):', '  hours = min(24, precip_mm / rain_rate)  where rai
+    \ 0; }\n      else                   { zone[0].rain_duration = 86400; }  // ALL DAY!\n  }\n\nThe transpiration\
+    \ formula then subtracts (rain_duration * dayl / 86400) from available daylight, giving exactly 0\
+    \ when rain_duration = 86400 s. In humid/monsoon basins, 80-90% of days have trace or real precipitation,\
+    \ so transpiration is suppressed nearly all summer.\n; ['zone_daily_F.c lines 293-309 (rain_duration\
+    \ default)', 'canopy_stratum_daily_F.c lines 1495-1498 (transpiration formula)', 'all basins without\
+    \ daytime_rain_duration climate file']"
+  remedy: 'Generate and provide a daytime_rain_duration climate file; python ki/tools/gen_rain_duration.py
+    --precip clim/<prefix>.rain --out clim/<prefix>.daytime_rain_duration --rate 2.0; [''Generate daytime_rain_duration
+    (hours) from daily precip (m/day):'', ''  hours = min(24, precip_mm / rain_rate)  where rain_rate=2
+    mm/hr'', ''  This gives 0.005 hrs for 0.01mm trace, 5 hrs for 10mm, 24 hrs for 48mm+'', "Add to station
+    file: increment non-critical daily count, add ''daytime_rain_duration''", ''Verify: trans should now
+    be non-zero on lightly-rainy days'']; Always generate a daytime_rain_duration file when setting up
+    climate station files for RHESSys in humid or monsoonal climates. Provide it as a non-critical daily
+    climate sequence in the base station file.
+
+    '
   severity: critical
 - id: dt_023
   symptom: 'UnicodeDecodeError when opening Bengbu (or other Chinese) observed discharge files. Error:
@@ -732,11 +777,18 @@ known_issues:
     in ISO-8859-1 (Latin-1), not UTF-8. Station names in Chinese characters appear as multi-byte sequences
     in the name column.
 
-    ; Python''s default open() uses UTF-8. Chinese obs files from HydroInfo or the local data/'
+    ; Python''s default open() uses UTF-8. Chinese obs files from HydroInfo or the local data/obs/ collection
+    use ISO-8859-1 (Latin-1), which is the de-facto encoding for many pre-2010 Chinese data products.
+    The station name column (e.g. ''蚌埠'') triggers the decode error.
+
+    ; [''data/obs/BB/51080_bengbu.txt'', ''data/obs/HB/HUAIH-*.txt'', ''data/obs/WJB/HUAIH-*.txt'', ''data/obs/GT/HAIH-*.txt'',
+    ''any local obs file with Chinese station names'']'
   remedy: 'Open the file with encoding=''latin-1'' (alias for ISO-8859-1); python compare_to_obs.py  #
     already fixed in cal15 script; [''Replace: open(OBS_FILE)'', "With:    open(OBS_FILE, encoding=''latin-1'')"];
     Always specify encoding=''latin-1'' when reading any file under data/obs/ that originates from Chinese
-    na'
+    national data archives.
+
+    '
   severity: critical
 - id: dt_024
   symptom: 'Only ~65 observation days per year parse successfully instead of 300-365. Observed discharge
@@ -747,9 +799,18 @@ known_issues:
   diagnosis: 'Chinese obs files use non-zero-padded dates: ''1950-1-1'', ''1982-7-4'' etc. datetime.date.fromisoformat()
     requires strictly ISO 8601 format: ''YYYY-MM-DD''. Non-zero-padded strings raise ValueError which
     is silently swallowed, so only dates with 2-digit month AND 2-digit day parse (Oct-Dec, days 10+,
-    ~65'
+    ~65 days/year).
+
+    ; fromisoformat(''1982-7-4'') → ValueError (silently caught → day skipped). fromisoformat(''1982-10-14'')
+    → succeeds. Only ~18 combinations of (month 10-12) × (day 10-31) parse per year.
+
+    ; [''any Python script reading data/obs/*.txt with date parsing'', ''compare_to_obs.py (fixed in Cal15
+    scripts)'']'
   remedy: 'Use datetime.datetime.strptime(date_str.strip(), ''%Y-%m-%d'').date(); python compare_to_obs.py  #
     already fixed in cal15 script; ["Replace: datetime.date.fromisoformat(date_str.replace('' '', ''''))",
     "With:    datetime.datetime.strptime(date_str.strip(), ''%Y-%m-%d'').date()", "strptime(''%Y-%m-%d'')
-    accept'
+    accepts both ''1982-7-4'' and ''1982-07-04''"]; Never use fromisoformat() for Chinese obs files. Always
+    use strptime with the explicit format string.
+
+    '
   severity: silent

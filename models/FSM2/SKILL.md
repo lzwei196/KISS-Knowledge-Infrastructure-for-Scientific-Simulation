@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Cryosphere (snow accumulation, melt, forest canopy snow processes)
 **Author**: Richard Essery, School of GeoSciences, University of Edinburgh
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `example_validated` (Alptal, Switzerland, 2004-2005)
 
 ---

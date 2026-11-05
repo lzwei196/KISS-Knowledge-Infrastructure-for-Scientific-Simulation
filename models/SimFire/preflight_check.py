@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, getproxies, proxy_bypass
 
 
 MODEL_ID = "SimFire"
@@ -29,6 +29,11 @@ MTBS_SHAPEFILE = Path(
     "mtbs_perims/mtbs_perims_DD.shp"
 )
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
+LFPS_URL = "https://lfps.usgs.gov/api/products"
+LFPS_TIMEOUT = 30
+# Extra proxy routes tried after "environment" and "direct". Override with a
+# comma list in SIMFIRE_LFPS_PROXIES (an empty value disables extra proxies).
+DEFAULT_LFPS_PROXIES = "http://127.0.0.1:7877,http://127.0.0.1:7897"
 TOOLS = [
     KI_DIR / "tools" / "convert_landfire_to_simfire.py",
     KI_DIR / "tools" / "convert_wind_to_simfire.py",
@@ -189,28 +194,66 @@ def check_tools_compile() -> bool:
     return record("run", "tools/*.py py_compile", True, False, f"fix tool syntax; see diagnostics/triplets.yaml: {detail[0]}")
 
 
-def check_lfps() -> bool:
-    subject = "https://lfps.usgs.gov/api/products"
+def _lfps_routes() -> list[tuple[str, dict[str, str] | None]]:
+    """Routes to try: (label, proxies). proxies=None means use the environment."""
+    def norm(url: str) -> str:
+        return url.strip().rstrip("/")
+
+    # If NO_PROXY covers the host, urllib connects directly even through an
+    # explicit ProxyHandler, so every route is effectively direct.
+    bypass = bool(proxy_bypass("lfps.usgs.gov"))
+    env_proxy = "" if bypass else norm(getproxies().get("https", ""))
+    routes: list[tuple[str, dict[str, str] | None]] = [
+        (f"environment (proxy {env_proxy})" if env_proxy else "environment (no proxy)", None)
+    ]
+    seen = {env_proxy}
+    if "" not in seen:
+        routes.append(("direct (no proxy)", {}))
+        seen.add("")
+    extra = os.environ.get("SIMFIRE_LFPS_PROXIES", DEFAULT_LFPS_PROXIES)
+    for proxy in (norm(p) for p in extra.split(",")):
+        effective = "" if bypass else proxy
+        if proxy and effective not in seen:
+            routes.append((f"proxy {proxy}", {"http": proxy, "https": proxy}))
+            seen.add(proxy)
+    return routes
+
+
+def _try_lfps_route(proxies: dict[str, str] | None) -> str:
+    """Return '' on success (JSON with a non-empty products list), else the error."""
+    opener = build_opener() if proxies is None else build_opener(ProxyHandler(proxies))
+    request = Request(LFPS_URL, headers={"User-Agent": "KDT SimFire preflight"})
     try:
-        request = Request(subject, headers={"User-Agent": "KDT SimFire preflight"})
-        with urlopen(request, timeout=60) as response:
+        with opener.open(request, timeout=LFPS_TIMEOUT) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        products = payload.get("products", [])
-        ok = isinstance(products, list) and len(products) > 0
-    except Exception as exc:
-        return record(
-            "network",
-            subject,
-            True,
-            False,
-            f"LandFire Product Service v2 is required for operational terrain; check diagnostics/triplets.yaml: {exc}",
-        )
+    except Exception as exc:  # network, HTTP, SSL, JSON errors
+        return f"{type(exc).__name__}: {exc}"
+    products = payload.get("products") if isinstance(payload, dict) else None
+    if not isinstance(products, list) or not products:
+        return "reply had no non-empty 'products' list"
+    return ""
+
+
+def check_lfps() -> bool:
+    """LFPS catalog reachability. Non-critical: LFPS is only needed to download
+    LANDFIRE data for new sites; the engine and runs on local data do not need it."""
+    failures: list[str] = []
+    for label, proxies in _lfps_routes():
+        error = _try_lfps_route(proxies)
+        if not error:
+            subject = f"{LFPS_URL} reachable via {label}"
+            if failures:
+                subject += f" (failed first: {'; '.join(failures)}; downloads must use the working route)"
+            return record("network", subject, False, True)
+        failures.append(f"{label}: {error}")
     return record(
         "network",
-        subject,
-        True,
-        ok,
-        "LandFire Product Service returned no products; check diagnostics/triplets.yaml and the LFPS endpoint",
+        f"{LFPS_URL} not reachable on any route",
+        False,
+        False,
+        "LandFire Product Service (LFPS) could not be reached, so LANDFIRE data for new sites cannot be "
+        "downloaded right now; the SimFire engine and runs on local data are not blocked. Tried: "
+        + " | ".join(failures),
     )
 
 

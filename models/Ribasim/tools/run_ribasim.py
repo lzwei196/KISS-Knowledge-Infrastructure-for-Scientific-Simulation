@@ -24,6 +24,35 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
+EXPECTED_OUTPUTS = ("basin.nc", "flow.nc", "basin_state.nc")
+
+
+def snapshot_outputs(toml_path: Path) -> dict:
+    """Record existing products without deleting or changing them."""
+    with toml_path.open("rb") as stream:
+        config = tomllib.load(stream)
+    directory = toml_path.parent / config.get("results_dir", "results")
+    snapshot = {}
+    for name in EXPECTED_OUTPUTS:
+        path = directory / name
+        if path.exists():
+            stat = path.stat()
+            snapshot[name] = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        else:
+            snapshot[name] = None
+    return snapshot
+
+
+def output_freshness_errors(toml_path: Path, before: dict) -> list[str]:
+    after = snapshot_outputs(toml_path)
+    return [f"Output was not created or updated by this run: {name}"
+            for name in EXPECTED_OUTPUTS if after[name] is None or after[name] == before[name]]
+
 
 # ---------------------------------------------------------------------------
 # Preflight checks
@@ -82,8 +111,10 @@ def preflight_check_binary(ribasim_bin: str | None) -> tuple[str | None, list[st
     errors = []
 
     # Search order: explicit path → RIBASIM_HOME → PATH
-    if ribasim_bin and Path(ribasim_bin).exists():
-        return ribasim_bin, errors
+    if ribasim_bin:
+        if Path(ribasim_bin).is_file() and os.access(ribasim_bin, os.X_OK):
+            return str(Path(ribasim_bin).resolve()), errors
+        return None, [f"Requested Ribasim binary is missing or not executable: {ribasim_bin}"]
 
     # Check RIBASIM_HOME env var
     ribasim_home = os.environ.get("RIBASIM_HOME")
@@ -241,23 +272,38 @@ def run_with_python_api(toml_path: Path) -> dict:
 # ---------------------------------------------------------------------------
 # Post-run validation
 # ---------------------------------------------------------------------------
-def validate_output(toml_path: Path) -> list[str]:
-    """Validate output files after a successful run."""
-    errors = []
-    warnings = []
+def expected_output_steps(config: dict) -> int | None:
+    """Number of time rows Ribasim writes to basin.nc / flow.nc.
 
-    # Read TOML to find results_dir
-    try:
-        import tomllib
-    except ImportError:
-        try:
-            import tomli as tomllib
-        except ImportError:
-            results_dir = toml_path.parent / "results"
-            if not results_dir.exists():
-                errors.append(f"Results directory not found: {results_dir}")
-                return errors
-            return errors
+    Ribasim core (core/src/config.jl convert_saveat, callback.jl
+    save_flow_cb with save_start=false, write.jl basin_data which drops the
+    last saved time) writes one row per saveat interval, labelled by the
+    interval START; the final timestamp (endtime) is never a row. So:
+      finite saveat > 0 -> ceil((endtime - starttime) / saveat) rows
+      saveat = Inf      -> 1 row (whole period)
+      saveat = 0        -> one row per solver step (count not known: None)
+    Returns None when the count cannot be known in advance.
+    """
+    import datetime as _dt
+    import math
+
+    start, end = config.get("starttime"), config.get("endtime")
+    if not isinstance(start, _dt.datetime) or not isinstance(end, _dt.datetime):
+        return None
+    duration = (end - start).total_seconds()
+    saveat = float(config.get("solver", {}).get("saveat", 86400.0))
+    if duration <= 0:
+        return None
+    if saveat == math.inf:
+        return 1
+    if saveat > 0 and math.isfinite(saveat):
+        return math.ceil(duration / saveat)
+    return None
+
+
+def validate_output(toml_path: Path) -> list[str]:
+    """Validate output files after a run: present, readable, right length."""
+    errors = []
 
     with open(toml_path, "rb") as f:
         config = tomllib.load(f)
@@ -267,40 +313,52 @@ def validate_output(toml_path: Path) -> list[str]:
         errors.append(f"Results directory not found: {results_dir}")
         return errors
 
-    # Check expected output files
-    expected_files = ["basin.nc", "flow.nc", "basin_state.nc"]
     optional_files = ["control.nc", "allocation.nc", "subgrid_level.nc", "solver_stats.nc"]
-
-    for fname in expected_files:
-        fpath = results_dir / fname
-        if not fpath.exists():
-            errors.append(f"Missing expected output: {fpath}")
-        elif fpath.stat().st_size < 100:
-            errors.append(f"Output file appears empty: {fpath} ({fpath.stat().st_size} bytes)")
-
     for fname in optional_files:
         fpath = results_dir / fname
         if fpath.exists():
             print(f"  Optional output found: {fname} ({fpath.stat().st_size} bytes)")
 
-    # Quick NetCDF sanity check.
     # engine="h5netcdf": the HydroCraft python_env's netCDF4/HDF5 build fails
     # with "NetCDF: HDF error" on Ribasim's CF NetCDF outputs; h5netcdf reads
-    # them correctly.
+    # them correctly. EVERY expected file is opened, so a corrupt file that
+    # is merely large enough cannot pass.
     try:
         import xarray as xr
-        basin_nc = results_dir / "basin.nc"
-        if basin_nc.exists():
-            ds = xr.open_dataset(basin_nc, engine="h5netcdf")
-            n_times = ds.dims.get("time", 0)
-            print(f"  basin.nc: {n_times} timesteps")
-            if n_times < 2:
-                errors.append(f"basin.nc has only {n_times} timestep(s) — solver may have failed")
-            ds.close()
-    except ImportError:
-        pass
-    except Exception as e:
-        errors.append(f"Cannot read basin.nc: {e}")
+    except ImportError as e:
+        return errors + [f"Cannot validate NetCDF outputs: {e}"]
+
+    expected = expected_output_steps(config)
+    for fname in EXPECTED_OUTPUTS:
+        fpath = results_dir / fname
+        if not fpath.exists():
+            errors.append(f"Missing expected output: {fpath}")
+            continue
+        if fpath.stat().st_size < 100:
+            errors.append(f"Output file appears empty: {fpath} ({fpath.stat().st_size} bytes)")
+            continue
+        try:
+            with xr.open_dataset(fpath, engine="h5netcdf") as ds:
+                if not ds.data_vars:
+                    errors.append(f"{fname} has no data variables")
+                # Read every variable's values (one at a time) so a damaged
+                # data chunk is found here, not later by the user.
+                for name in list(ds.variables):
+                    ds[name].values
+                if fname == "basin_state.nc":
+                    # end state: one value per Basin, no time axis needed
+                    continue
+                n_times = ds.sizes.get("time", 0)
+                print(f"  {fname}: {n_times} timesteps (expected {expected if expected is not None else '>= 1'})")
+                if n_times < 1:
+                    errors.append(f"{fname} has no timesteps — solver may have failed")
+                elif expected is not None and n_times != expected:
+                    errors.append(
+                        f"{fname} has {n_times} timestep(s) but starttime/endtime/saveat "
+                        f"give {expected} — run may be cut short"
+                    )
+        except Exception as e:
+            errors.append(f"Cannot read {fname}: {e}")
 
     return errors
 
@@ -311,14 +369,18 @@ def validate_output(toml_path: Path) -> list[str]:
 def run_batch(args) -> None:
     """Run every TOML listed in --toml_batch_file in one Ribasim session.
 
-    Per-model outcome is validated from each model's own results (basin.nc
-    present and sane); a single diverging trial does not abort the batch.
-    Exits non-zero only if NO model in the batch succeeded.
+    Success requires a zero session exit and fresh, valid outputs for EVERY
+    model. Partial results are recorded, but cannot make a failed batch pass.
     """
     batch_file = Path(args.toml_batch_file)
     if not batch_file.exists():
         print(f"FATAL: batch file not found: {batch_file}")
         sys.exit(1)
+    report_path = batch_file.parent / "batch_run_report.json"
+    # Replace any earlier report at once so an early stop cannot leave an
+    # old "success": true behind.
+    report_path.write_text(json.dumps({"batch_file": str(batch_file), "success": False,
+                                       "status": "started; batch did not finish"}, indent=2))
 
     toml_paths = [
         Path(line.strip()).resolve()
@@ -351,6 +413,7 @@ def run_batch(args) -> None:
     if args.threads > 1:
         env["JULIA_NUM_THREADS"] = str(args.threads)
     cmd = [binary_path] + [str(p) for p in toml_paths]
+    before = {str(tp): snapshot_outputs(tp) for tp in toml_paths}
     start_time = time.time()
     try:
         result = subprocess.run(
@@ -358,10 +421,14 @@ def run_batch(args) -> None:
         )
         batch_rc = result.returncode
         stdout = result.stdout
+        stderr = result.stderr
     except subprocess.TimeoutExpired as e:
         batch_rc = -1
         stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stderr = f"Timeout after {args.timeout}s: {e.stderr or ''}"
         print(f"  Batch TIMED OUT after {args.timeout}s")
+    except OSError as e:
+        batch_rc, stdout, stderr = -1, "", str(e)
     elapsed = time.time() - start_time
     print(f"  Batch finished in {elapsed:.1f}s (session exit code {batch_rc})")
 
@@ -369,13 +436,15 @@ def run_batch(args) -> None:
     statuses = {}
     n_ok = 0
     for tp in toml_paths:
-        errors = validate_output(tp)
-        ok = not errors
-        statuses[str(tp)] = {"success": ok, "output_errors": errors}
+        errors = output_freshness_errors(tp, before[str(tp)]) + validate_output(tp)
+        ok = batch_rc == 0 and not errors
+        statuses[str(tp)] = {"success": ok, "outputs_valid_and_fresh": not errors,
+                             "output_errors": errors}
         n_ok += ok
         print(f"  {'OK  ' if ok else 'FAIL'} {tp}")
 
     report = {
+        "success": batch_rc == 0 and n_ok == len(toml_paths),
         "batch_file": str(batch_file),
         "method": "binary_batch",
         "binary": str(binary_path),
@@ -385,12 +454,13 @@ def run_batch(args) -> None:
         "session_returncode": batch_rc,
         "models": statuses,
         "stdout_tail": stdout[-4000:],
+        "stderr_tail": stderr[-4000:],
     }
-    report_path = batch_file.parent / "batch_run_report.json"
     report_path.write_text(json.dumps(report, indent=2))
     print(f"\nBatch report: {report_path}")
-    print(f"SUCCESS: {n_ok}/{len(toml_paths)} models completed.")
-    if n_ok == 0:
+    label = "SUCCESS" if report["success"] else "FAILED"
+    print(f"{label}: {n_ok}/{len(toml_paths)} models passed; session exit code {batch_rc}.")
+    if not report["success"]:
         sys.exit(1)
 
 
@@ -420,6 +490,18 @@ def main():
         return
 
     toml_path = Path(args.toml_path).resolve()
+    report_path = toml_path.parent / "run_report.json"
+
+    def write_report(report: dict) -> None:
+        report_path.write_text(json.dumps(report, indent=2))
+        print(f"\nRun report: {report_path}")
+
+    # Replace any earlier report at once: if this run stops early (preflight
+    # failure, crash, timeout), an old "success": true must not remain.
+    if toml_path.parent.is_dir():
+        write_report({"toml_path": str(toml_path), "success": False,
+                      "status": "started; run did not finish",
+                      "output_errors": []})
 
     # --- Preflight checks ---
     if not args.skip_preflight:
@@ -466,6 +548,7 @@ def main():
 
     # --- Run model ---
     print("[2/3] Running Ribasim...")
+    before = snapshot_outputs(toml_path)
     if binary_path == "__python_api__":
         result = run_with_python_api(toml_path)
     elif binary_path:
@@ -480,11 +563,21 @@ def main():
         print(f"  Model FAILED (exit code {result['returncode']})")
         if result["stderr"]:
             print(f"  STDERR: {result['stderr'][:500]}")
+        write_report({
+            "toml_path": str(toml_path),
+            "method": result["method"],
+            "success": False,
+            "status": "model process failed or timed out",
+            "elapsed_s": result["elapsed_s"],
+            "returncode": result["returncode"],
+            "stderr_tail": (result.get("stderr") or "")[-4000:],
+            "output_errors": [],
+        })
         sys.exit(1)
 
     # --- Post-run validation ---
     print("[3/3] Validating outputs...")
-    errors = validate_output(toml_path)
+    errors = output_freshness_errors(toml_path, before) + validate_output(toml_path)
     if errors:
         print("WARNING: Output validation issues:")
         for e in errors:
@@ -494,19 +587,18 @@ def main():
     report = {
         "toml_path": str(toml_path),
         "method": result["method"],
-        "success": result["success"],
+        "success": result["success"] and not errors,
         "elapsed_s": result["elapsed_s"],
         "returncode": result["returncode"],
         "output_errors": errors,
     }
-    report_path = toml_path.parent / "run_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    print(f"\nRun report: {report_path}")
+    write_report(report)
 
     if result["success"] and not errors:
         print("SUCCESS: Model run completed and outputs validated.")
     elif result["success"]:
-        print("PARTIAL SUCCESS: Model ran but output validation has warnings.")
+        print("FAILED: Model exited zero but outputs failed validation.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

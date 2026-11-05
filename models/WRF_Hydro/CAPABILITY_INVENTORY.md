@@ -14,12 +14,12 @@
 | Skill documents | 5 + calibration guide + model_couplings.yaml |
 | Diagnostic triplets | 46 (45 failure + 1 status) |
 | Pipeline stages | 12 (s0-s11) |
-| Validated basins | 6 (Chaohe, Bengbu 1km, Bengbu 0.25deg, Chaohe systematic, Spain GRDC, 3 global basins) |
+| Tested basins | 6 (Chaohe, Bengbu 1km, Bengbu 0.25deg, Chaohe systematic, Spain GRDC, 3 global basins; the tropical one, Balsas, scores poorly: 7-year NSE -17.9) |
 | Best result | **NSE = 0.711, KGE = 0.815** (Bengbu, uncalibrated, 10-year, BEST of all HydroCraft models) |
 | Forcing sources | 3 (CMFD, MSWX, NASA POWER) |
 | Routing options | 3 channel options documented (diffusive wave, Muskingum, Muskingum-Cunge) |
 | Physics options | Complete master switch table with 14 Noah-MP + 12 routing switches |
-| Climate coverage | Humid subtropical, semi-humid monsoon, Mediterranean/arid, snow-dominated, tropical, oceanic |
+| Climate coverage | Runs in: humid subtropical, semi-humid monsoon, Mediterranean/arid, snow-dominated, tropical (scores poorly at Balsas), oceanic |
 
 ---
 
@@ -149,20 +149,20 @@ The NSE=0.711 on Bengbu (121,330 km2, humid subtropical, flat terrain, 10 years,
 | Mountain/steep terrain | Flat alluvial | Thin soils, orographic precip, fast response | **COVERED** -- Chaohe diagnosis, REFKDT tuning documented |
 | Arid/semi-arid climate | Humid subtropical | Dry-soil crashes, sparse precipitation | **COVERED** -- Spain test, arid cascade (dt_v036-38) |
 | Snow-dominated | Minor snow | Snowpack/frozen soil dynamics | **COVERED** -- Kettle River (r=0.70), cold-start triplets |
-| Tropical basins | Monsoon | Year-round convective rainfall | **COVERED** -- Balsas Brazil (r=0.83, PBIAS=-3%) |
+| Tropical basins | Monsoon | Year-round convective rainfall | **PARTIAL** -- runs at Balsas Brazil, but the 7-year score at the gauge is poor (NSE -17.9, r 0.68, PBIAS +43%); r=0.83 / PBIAS -3% was a short 2011 test at a point that is not the gauge-matched reach (NSE -3.8) |
 | Oceanic/maritime | Continental | High rainfall frequency, low seasonality | **COVERED** -- Clutha NZ (r=0.52) |
 | Small basins (<10,000 km2) | 121,330 km2 | Resolution sensitivity, sparse channels | **COVERED** -- Chaohe (8,783 km2), resolution analysis |
 | Basin with major lakes/dams | No major impoundments | Reservoir regulation | **GAP** -- no LAKEPARM tool |
-| Calibration beyond REFKDT | Uncalibrated | Multi-parameter optimization | **PARTIAL** -- calibrate_wrfhydro.py exists but only tested for REFKDT sweep |
+| Calibration beyond REFKDT | Uncalibrated | Multi-parameter optimization | **PARTIAL** -- calibrate_wrfhydro.py exists but only tested for REFKDT sweep (the 2026-07-19 Balsas REFKDT sweep is void: all values gave the same score) |
 
 ### The Global Robustness Test (2026-04-03)
 The 24-configuration x 3-basin matrix test already demonstrated global robustness:
 - Config A (Schaake96 + Diffusive Wave + Exp. Bucket) runs to completion on all 3 continents
-- Results: r = 0.52-0.83 uncalibrated across snow/tropical/oceanic climates
+- Results: r = 0.52-0.83 uncalibrated across snow/tropical/oceanic climates (the Balsas 0.83 is a short 2011 test; the 7-year Balsas run at the gauge has NSE -17.9, r 0.68)
 - Only Config A survives globally (known NCAR bug in `Noah_distr_routing.F:1143`)
 - This constraint is fully documented (dt_v042)
 
-**Assessment**: The gap between "works on Bengbu" and "works globally" has ALREADY BEEN BRIDGED by the Spain test, the 3-continent global test, and the comprehensive climate-specific configuration guides. The KI currently handles 6 climate zones.
+**Assessment**: The gap between "works on Bengbu" and "works globally" is only partly bridged: the Spain test, the 3-continent global test and the climate-specific configuration guides show the KI runs in 6 climate zones, but the tropical case (Balsas) scores poorly over 7 years (NSE -17.9).
 
 ---
 
@@ -174,7 +174,7 @@ The 24-configuration x 3-basin matrix test already demonstrated global robustnes
 - **15 tools / 8,182 lines** of production-tested Python
 - **46 diagnostic triplets** covering real crashes from 6+ basin tests
 - **NSE = 0.711** uncalibrated, beating all other HydroCraft models
-- **6 climate zones** validated (humid, semi-arid, arid/Mediterranean, snow, tropical, oceanic)
+- **6 climate zones** run (humid, semi-arid, arid/Mediterranean, snow, tropical, oceanic); tropical runs but scores poorly at Balsas (NSE -17.9)
 - **Complete physics option reference** with interaction matrix and scenario guides
 - **3 forcing sources** covering China, global reanalysis, and API-based anywhere
 
@@ -237,8 +237,8 @@ Do NOT expand the KI for:
 
 ## 7. Bottom Line
 
-**The WRF-Hydro KI is COMPLETE for HydroCraft's mission.** It covers 100% of the capabilities needed for research-grade distributed hydrological modeling across all major climate zones. The 5 uncovered capabilities are either experimental, US-NWM-operational, or irrelevant to the platform's use cases.
+**The WRF-Hydro KI is COMPLETE for HydroCraft's mission.** It covers 100% of the capabilities needed for research-grade distributed hydrological modeling across the major climate zones it has been run in (tropical scores poorly at Balsas). The 5 uncovered capabilities are either experimental, US-NWM-operational, or irrelevant to the platform's use cases.
 
-The NSE=0.711 on Bengbu is not a fluke of one basin -- it reflects a well-engineered pipeline that has been battle-tested across 6 climate zones and 3 continents. The 46 diagnostic triplets encode hard-won knowledge from real crashes that would trap any new user.
+The NSE=0.711 on Bengbu is not a fluke of one basin -- it reflects a well-engineered pipeline that has been run in 6 climate zones on 3 continents (the tropical case, Balsas, scores poorly: 7-year NSE -17.9). The 46 diagnostic triplets encode hard-won knowledge from real crashes that would trap any new user.
 
 **No expansion needed. The KI earns its keep.**

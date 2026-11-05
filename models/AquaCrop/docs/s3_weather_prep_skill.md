@@ -18,7 +18,7 @@ Prepare the daily weather DataFrame that drives the AquaCrop simulation. This is
 
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
-| weather_source | file/DataFrame | VIC forcing, CMFD, MSWX, local station | Raw daily weather data |
+| weather_source | forcing source / file | CMFD, MSWX, NASA POWER (through `load_daily_forcing`), local station, AquaCrop text file | Daily weather data |
 | lat | float | Site location | Latitude in degrees (for ET0 computation) |
 | elevation | float | DEM | Elevation in meters (for ET0 computation) |
 
@@ -29,8 +29,7 @@ Prepare the daily weather DataFrame that drives the AquaCrop simulation. This is
 | Source | Available Variables | ET0 Available? | Action |
 |--------|-------------------|---------------|--------|
 | AquaCrop sample files | MinTemp, MaxTemp, Precip, ET0 | Yes | Use `prepare_weather()` directly |
-| VIC forcing | Tmin, Tmax, Precip, SWrad, LWrad, Wind, Pressure, Humidity | No | Compute ET0 via Penman-Monteith |
-| CMFD/MSWX | Same as VIC | No | Compute ET0 via Penman-Monteith |
+| CMFD/MSWX | Tmin, Tmax, Precip, SWrad, LWrad, Wind, Pressure, Humidity (through `load_daily_forcing`) | No | Compute ET0 via Penman-Monteith |
 | Local station | Tmin, Tmax, Precip, possibly SWrad | Maybe | Compute ET0 or use Hargreaves if only T available |
 | NASA POWER | Tmin, Tmax, Precip, SWrad, LWrad, Wind, Humidity | No | Compute ET0 via Penman-Monteith |
 
@@ -48,19 +47,27 @@ Day Month Year MinTemp MaxTemp Precipitation ReferenceET
 2   1     2000 1.8     11.9    3.2           1.1
 ```
 
-### Step 2B: Construct DataFrame from VIC/CMFD/MSWX
+### Step 2B: Build the DataFrame straight from a forcing source (CMFD / MSWX / NASA POWER)
+
+Read the source through the shared loader; do not extract it from another model's forcing files.
 
 ```python
-import pandas as pd
+from ki_tools_common.load_forcing import load_daily_forcing
+from tools.s3_weather_prep.compute_eto_penman_monteith import compute_et0_fao56   # this KI's ET0 function
 import numpy as np
+import pandas as pd
 
-# After extracting VIC forcing variables for the grid cell:
+fc = load_daily_forcing('nasa_power', lat, lon, y0, y1)        # or 'cmfd' / 'mswx' with forcing_dir=<3-hourly store>
+fc = {k: (v if k == 'dates' else np.asarray(v, dtype=float)) for k, v in fc.items()}   # the loader returns lists
+dates = pd.to_datetime(fc['dates'])
+et0 = compute_et0_fao56(fc['temp_min_c'], fc['temp_max_c'], fc['srad_wm2'] * 0.0864,   # W/m2 -> MJ/m2/day
+                        fc['wind_ms'], lat, elevation, dates.dayofyear.values)
 weather_df = pd.DataFrame({
-    'MinTemp': daily_tmin,          # deg C
-    'MaxTemp': daily_tmax,          # deg C
-    'Precipitation': daily_precip,  # mm/day
-    'ReferenceET': daily_et0,       # mm/day (MUST compute first!)
-    'Date': pd.date_range(start='2000-01-01', periods=N, freq='D')
+    'MinTemp': fc['temp_min_c'],        # deg C
+    'MaxTemp': fc['temp_max_c'],        # deg C
+    'Precipitation': fc['precip_mm'],   # mm/day (the loader already returns daily totals)
+    'ReferenceET': et0,                 # mm/day
+    'Date': dates,
 })
 ```
 
@@ -125,7 +132,7 @@ The weather DataFrame must cover at least `sim_start_time` to `sim_end_time`. Ex
 > See diagnostic triplet dt_007.
 
 > **PITFALL**: Precipitation in mm/timestep instead of mm/day
-> VIC forcing provides precipitation per timestep (3-hourly = mm/3hr). Must sum to daily before passing to AquaCrop.
+> A sub-daily series gives precipitation per timestep (3-hourly = mm/3hr); it must be summed to daily before passing to AquaCrop. `load_daily_forcing` already returns daily totals.
 > **Do this instead**: Resample to daily: `daily_precip = hourly_precip.resample('D').sum()`
 
 ---

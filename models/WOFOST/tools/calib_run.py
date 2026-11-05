@@ -21,7 +21,7 @@ It reproduces EXACTLY the validated real-case coupling recorded in
 It NEVER reimplements the model: every simulation goes through the KI's own
 canonical tools
 
-    s3_weather_prep/create_csv_weather_file.py     (PCSE CSV weather)
+    s3_weather_prep/build_pcse_weather_from_source.py (source -> PCSE CSV weather)
     s2_soil_params/convert_hwsd_to_pcse_soil.py    (HWSD -> PCSE soil hydraulics)
     s4_agromanagement/generate_agromanagement_yaml.py (crop calendar)
     s6_execution/run_wofost_simulation.py          (engine instantiate + run + extract)
@@ -328,26 +328,6 @@ def cache_root():
     raise CalibError("no writable cache root for the prepared WOFOST inputs")
 
 
-def _vap_kpa(shum_kgkg, pres_pa):
-    q = max(float(shum_kgkg), 1e-6)
-    return ((q * float(pres_pa)) / (0.622 + 0.378 * q)) / 1000.0
-
-
-def _write_generic_weather(forcing, out_csv):
-    """The generic CSV the s3 KI tool consumes (W/m2 IRRAD, mm RAIN) — identical to
-    the validated real-case runner."""
-    dates = [str(d) for d in forcing["dates"]]
-    srad, tmin = forcing["srad_wm2"], forcing["temp_min_c"]
-    tmax, wind = forcing["temp_max_c"], forcing["wind_ms"]
-    rain, shum, pres = forcing["precip_mm"], forcing["shum_kgkg"], forcing["pres_pa"]
-    with open(out_csv, "w") as f:
-        f.write("date,IRRAD,TMIN,TMAX,VAP,WIND,RAIN\n")
-        for i in range(len(dates)):
-            f.write(f"{dates[i]},{float(srad[i]):.2f},{float(tmin[i]):.2f},"
-                    f"{float(tmax[i]):.2f},{_vap_kpa(shum[i], pres[i]):.4f},"
-                    f"{float(wind[i]):.2f},{float(rain[i]):.4f}\n")
-
-
 def _check_weather_csv(path, lat, lon):
     """Validate the cached PCSE weather CSV really is this cell's full record."""
     hdr, ndays, first, last = None, 0, None, None
@@ -385,26 +365,23 @@ def ensure_cell_inputs(cache_dir, lat, lon, s2, s3):
     soil = os.path.join(cdir, "soil.json")
     if not os.path.isfile(wx):
         os.makedirs(cdir, exist_ok=True)
-        from ki_tools_common.load_forcing import load_daily_forcing
+        # ONE stage tool: shared loader -> PCSE CSV (W/m2 x86.4 -> kJ/m2/day, RAIN
+        # in mm). It refuses gaps / missing values and writes nothing then.
         forcing, last = None, None
         for _try in range(4):                    # NASA POWER is occasionally flaky
             try:
-                forcing = load_daily_forcing(FORCING_SOURCE, lat, lon, YEAR_START, YEAR_END)
+                forcing = s3.load_source(FORCING_SOURCE, lat, lon, YEAR_START, YEAR_END)
                 break
             except Exception as e:               # noqa: BLE001 - retried, then raised
                 last = e
                 log.warning("forcing fetch %s,%s attempt %d failed: %s", lat, lon, _try + 1, e)
         if forcing is None:
             raise CalibError(f"forcing unavailable for cell ({lat},{lon}): {last}")
-        generic = os.path.join(cdir, "weather_generic.csv")
-        _write_generic_weather(forcing, generic)
-        s3.INPUT_CSV = generic
-        s3.LAT, s3.LON, s3.ELEV = lat, lon, ELEV_M
-        s3.OUTPUT_FILE = wx
-        s3.IRRAD_IS_WM2 = True                   # srad is W/m2 -> x86.4 kJ/m2/day
-        s3.RAIN_IS_CM = False                    # load_forcing already gives mm
-        s3.validate_inputs()
-        s3.process()
+        try:
+            s3.build_from_forcing(forcing, FORCING_SOURCE, lat, lon, ELEV_M,
+                                  YEAR_START, YEAR_END, wx)
+        except s3.WeatherRefused as e:
+            raise CalibError(f"weather refused for cell ({lat},{lon}): {e}")
     _check_weather_csv(wx, lat, lon)
     if not os.path.isfile(soil):
         os.makedirs(cdir, exist_ok=True)
@@ -655,7 +632,7 @@ def evaluate(workdir):
     cells = select_split(obs["cells"], split)
 
     s2 = _load_tool("kdt_s2", "s2_soil_params", "convert_hwsd_to_pcse_soil.py")
-    s3 = _load_tool("kdt_s3", "s3_weather_prep", "create_csv_weather_file.py")
+    s3 = _load_tool("kdt_s3", "s3_weather_prep", "build_pcse_weather_from_source.py")
     s4 = _load_tool("kdt_s4", "s4_agromanagement", "generate_agromanagement_yaml.py")
     s6 = _load_tool("kdt_s6", "s6_execution", "run_wofost_simulation.py")
 
@@ -755,7 +732,7 @@ def main():
             cdir = cache_root()
             obs = resolve_obs(cdir)
             s2 = _load_tool("kdt_s2", "s2_soil_params", "convert_hwsd_to_pcse_soil.py")
-            s3 = _load_tool("kdt_s3", "s3_weather_prep", "create_csv_weather_file.py")
+            s3 = _load_tool("kdt_s3", "s3_weather_prep", "build_pcse_weather_from_source.py")
             for (lat, lon, _y, _a) in obs["cells"]:
                 ensure_cell_inputs(cdir, lat, lon, s2, s3)
                 print(f"  prepared {lat},{lon}", flush=True)

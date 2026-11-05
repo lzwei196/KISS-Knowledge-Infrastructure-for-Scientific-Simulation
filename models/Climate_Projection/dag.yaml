@@ -35,25 +35,25 @@ inputs:
       unit: "mm/day"
       source_kind: "forcing"
       model_input_format: "CMIP6 bias-corrected daily series; China tab-separated text (Cor_{Model}_PreDaily.txt, 3 metadata cols + 2 header rows) or global NEX-GDDP-CMIP6 NetCDF"
-      notes: "Multiplicative variable; only the monthly climatology is used to form a change factor. NEX-GDDP pr arrives as kg/m2/s and is unit-converted, China product is already mm/day."
+      notes: "Multiplicative variable; only the monthly climatology is used to form a change factor. NEX-GDDP pr arrives as kg/m2/s and is unit-converted, China product is already mm/day. Valid range (after conversion to mm/day): hard physical limit pr >= 0; plausibility range [0, 500] mm/day (a daily total above 500 is suspect, e.g. a unit mix-up; very rare real extremes can exceed it, so check before discarding)."
     - category: "climate_change_signal"
       name: "tasmax"
       unit: "degC"
       source_kind: "forcing"
       model_input_format: "CMIP6 bias-corrected daily series (Cor_{Model}_tasmaxDaily.txt or NEX-GDDP NetCDF)"
-      notes: "Additive variable; 5 China models carry precip only and lack temperature."
+      notes: "Additive variable; 5 China models carry precip only and lack temperature. Plausibility range [-60, 60] degC (no hard physical bound; values near 230-330 mean the data are in Kelvin and must be converted first). tasmax should be >= tasmin on the same day."
     - category: "climate_change_signal"
       name: "tasmin"
       unit: "degC"
       source_kind: "forcing"
       model_input_format: "CMIP6 bias-corrected daily series (Cor_{Model}_tasminDaily.txt or NEX-GDDP NetCDF)"
-      notes: "Additive variable."
+      notes: "Additive variable. Plausibility range [-80, 50] degC (no hard physical bound; values near 190-320 mean the data are in Kelvin and must be converted first). tasmin should be <= tasmax on the same day."
     - category: "baseline_meteorology"
-      name: "baseline_forcing_1d (air_temp, prec, pressure, swdown, lwdown, vp/shum, wind)"
-      unit: "mixed (degC, mm, kPa, W/m2, W/m2, kPa, m/s)"
+      name: "baseline_forcing_1d (temp, prec, pres, srad, lrad, shum, wind)"
+      unit: "NetCDF native units: temp K, prec kg m-2 s-1, pres Pa, srad W m-2, lrad W m-2, shum kg kg-1 (specific humidity), wind m s-1"
       source_kind: "forcing"
-      model_input_format: "VIC forcing_1d NetCDF (CMFD or MSWX baseline)"
-      notes: "Supplies sub-daily variability and all 7 VIC variables. Temperature is shifted additively, precipitation scaled multiplicatively; the other 4 variables pass through unchanged. Baseline years are recycled (modulo) onto target years."
+      model_input_format: "VIC forcing_1d NetCDF (CMFD or MSWX baseline): one file per variable per month, named {var}_..._{YYYYMM}_..._{basin}.nc, 3-hourly time steps"
+      notes: "Supplies sub-daily variability and all 7 VIC variables. These are the NetCDF INPUT units (checked on a real CMFD forcing_1d file and required by tools/s3_apply_deltas/convert_projected_forcing.py); do NOT pre-convert to degC/mm/kPa/vapour pressure - those are the VIC ASCII OUTPUT units written by convert_projected_forcing.py (air_temp degC, prec mm per 3-h step, pressure kPa, swdown W/m2, lwdown W/m2, vp kPa from shum and pres, wind m/s). Temperature is shifted additively (a degC delta added to K is the same shift), precipitation scaled multiplicatively; the other 5 variables pass through unchanged. Baseline years are recycled onto target years, choosing a baseline year with the same leap status as each target year."
   parameters:
     - category: "numerical_clamp"
       name: "PR_FLOOR"
@@ -270,7 +270,7 @@ outputs:
   - var: "delta_pr"
     validation_rank: 2
     unit: "dimensionless (ratio)"
-    description: "Monthly multiplicative precipitation change factor (future vs historical climatology), floored at 0.1 mm/day and clipped to [0.1, 5.0]."
+    description: "Monthly multiplicative change factor for basin precipitation (atmospheric water input; future vs historical climatology), floored at 0.1 mm/day and clipped to [0.1, 5.0]."
     emitted_in: "deltas/{MODEL}_{ssp}_deltas_{basin}_{start}-{end}.nc"
     observability:
       comparable_obs_shapes:
@@ -285,7 +285,7 @@ outputs:
   - var: "delta_tas"
     validation_rank: 3
     unit: "degC"
-    description: "Monthly additive temperature change factor (tasmax/tasmin future minus historical climatology)."
+    description: "Monthly additive change factor for near-surface air temperature (tasmax/tasmin future minus historical climatology)."
     emitted_in: "deltas/{MODEL}_{ssp}_deltas_{basin}_{start}-{end}.nc"
     observability:
       comparable_obs_shapes:
@@ -298,8 +298,8 @@ outputs:
       detrending_options: ["none"]
   - var: "projected_precipitation"
     validation_rank: 4
-    unit: "mm/day"
-    description: "Future VIC precipitation forcing = baseline precipitation scaled by the monthly delta_pr factor."
+    unit: "kg m-2 s-1"
+    description: "Future VIC basin precipitation forcing (atmospheric water input) = baseline precipitation scaled by the monthly delta_pr factor. prec_*.nc keeps the baseline NetCDF unit kg m-2 s-1 (3-hourly); the VIC ASCII copy in forcing_final_* holds mm per 3-h step (column 2)."
     emitted_in: "forcing_{MODEL}_{ssp}/prec_*.nc (and forcing_final_{MODEL}_{ssp}/ ASCII)"
     observability:
       comparable_obs_shapes:
@@ -319,8 +319,8 @@ outputs:
       detrending_options: ["none"]
   - var: "projected_air_temperature"
     validation_rank: 1
-    unit: "degC"
-    description: "Future VIC mean-temperature forcing = baseline temperature shifted by the mean of the monthly tasmax and tasmin deltas."
+    unit: "K"
+    description: "Future VIC mean near-surface air temperature forcing = baseline temperature shifted by the mean of the monthly tasmax and tasmin deltas. temp_*.nc keeps the baseline NetCDF unit K; the VIC ASCII copy in forcing_final_* holds degC (column 1)."
     emitted_in: "forcing_{MODEL}_{ssp}/temp_*.nc"
     observability:
       comparable_obs_shapes:
@@ -355,7 +355,7 @@ outputs:
   - var: "change_summary_pct_Q"
     validation_rank: 6
     unit: "%"
-    description: "Percent change in mean / maximum / minimum discharge (future vs historical) summarised across the ensemble."
+    description: "Percent change in mean / maximum / minimum river discharge at the basin outlet (future vs historical) summarised across the ensemble."
     emitted_in: "change_summary.csv"
     observability:
       comparable_obs_shapes:

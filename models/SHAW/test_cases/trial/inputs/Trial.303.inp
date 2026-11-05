@@ -1,0 +1,32 @@
+Shaw 3.0
+0 1 0 0
+Trial.30.sit
+Trial.30.wea
+Trial.moi
+Trial.tem
+  24   1   1  24  0  0  0  0   1  24  0  0  0  6  0  0  2  0  0  24
+out.out
+temp.out
+moist.out
+liquid.out
+matric.out
+cantmp.out
+canhum.out
+snowtmp.out
+energy.out
+water.out
+wflow.out
+rootxt.out
+lateral.out
+frost.out
+salts.out
+solute.out
+ShawPest.out
+extra1.out
+extra2.out
+   0   1   0   0  0  0  0  0   0   0  0  0  0  0  0  0  2  0  0  24
+Trial.tem
+ 338  86 350  86  0  0  7 9998  1
+  1  2  3  5  6  7  8
+  1  2  3  5  6  7  8
+

@@ -15,11 +15,19 @@ TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python3")
 PYTHON = str(PYTHON_ENV if PYTHON_ENV.exists() else Path(sys.executable))
 
-BINARY_PATH = Path(
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/"
-    "dumux_real_run/example_1ptracer"
+# Engine: $DUMUX_BIN if set, else the server default = the clean build of the official
+# DuMux releases/3.10 commit 3e151aeb (2026-10-06, KISSPATH_HOME/engine_builds_20261006/dumux).
+# The older build of a KI-edited problem_1p.hh (needed only for Problem.FlowDirection /
+# PressureLeft / PressureRight, and to reproduce runs made with it: its default FlowDirection=0
+# is a left-right flow) is used only when DUMUX_BIN points to it.
+CLEAN_BINARY = Path(
+    "KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/"
+    "examples/1ptracer/example_1ptracer"
 )
+BINARY_PATH = (Path(os.path.abspath(os.environ["DUMUX_BIN"])) if os.environ.get("DUMUX_BIN")
+               else CLEAN_BINARY)
 RUN_DIR = BINARY_PATH.parent
+# The DuMux build links the example's official params.input next to the program.
 PARAMS_INPUT = RUN_DIR / "params.input"
 
 

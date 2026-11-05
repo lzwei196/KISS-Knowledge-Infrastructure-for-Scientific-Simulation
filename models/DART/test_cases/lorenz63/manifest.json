@@ -1,0 +1,48 @@
+{
+  "test_case": "DART lorenz63 (official Lorenz-63 example)",
+  "engine": {
+    "name": "DART",
+    "version": "v11.21.2",
+    "programs": [
+      "perfect_model_obs",
+      "filter"
+    ],
+    "source": "NCAR/DART git, models/lorenz_63/work (commit 56fee97)",
+    "license": "Apache-2.0 (DART)"
+  },
+  "ki": {
+    "model": "DART"
+  },
+  "simulation": {
+    "model": "Lorenz 1963 (3 variables)",
+    "ensemble_size": 20,
+    "n_obs": 600,
+    "filter": "EAKF"
+  },
+  "files": {
+    "inputs/filter_input.cdl": {
+      "bytes": 8684,
+      "sha256": "de4723e787859357e6337bcbbe0b70bb07ab71dfe770dc8053eca97f49dea266"
+    },
+    "inputs/filter_input_list.txt": {
+      "bytes": 16,
+      "sha256": "595fd7d798c14e172e9b2d82fae79d48a6ca27bef6c5deb873821a5431421c77"
+    },
+    "inputs/filter_output_list.txt": {
+      "bytes": 17,
+      "sha256": "cd3f983b347e6d63f57a38260ebcfdcd544359daf7808dcd69130477b67b9c68"
+    },
+    "inputs/input.nml": {
+      "bytes": 5903,
+      "sha256": "86d26ec739788e904b454510c32fbc01ff15abc4d7d9c165d5ad393d365515a5"
+    },
+    "inputs/obs_seq.in": {
+      "bytes": 65249,
+      "sha256": "b47cfe5b001697b11a4d45373d210752927862d67928d8c63aa478505b22973e"
+    },
+    "inputs/perfect_input.cdl": {
+      "bytes": 1054,
+      "sha256": "64f36ac9aaf82c52492e92339f6e0eddd8ec57e1d65bd12098ed7dfa5cee8101"
+    }
+  }
+}

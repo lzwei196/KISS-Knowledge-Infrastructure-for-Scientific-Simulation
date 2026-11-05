@@ -1,0 +1,26 @@
+{
+  "test_case": "ADCIRC quarterannular_2d (official adcirc-testsuite case)",
+  "engine": {
+    "name": "ADCIRC",
+    "binary": "adcirc (serial)",
+    "source": "github.com/adcirc/adcirc-testsuite adcirc/adcirc_quarterannular-2d (commit 72bb573)",
+    "license": "ADCIRC test suite (see upstream repository); ADCIRC is distributed under its own licence"
+  },
+  "ki": {
+    "model": "ADCIRC"
+  },
+  "simulation": {
+    "grid": "quarter annulus, 63 nodes, 96 elements",
+    "days": 5
+  },
+  "files": {
+    "inputs/fort.14": {
+      "bytes": 5251,
+      "sha256": "fb1712979b53c9c42197e5721e3b2aa6e61c27448377c48636615ec0993c29d0"
+    },
+    "inputs/fort.15": {
+      "bytes": 5022,
+      "sha256": "2dd8b72522bccfcccbcd00be8040d92635d3f57832f46f1683d26e2181f71e5f"
+    }
+  }
+}

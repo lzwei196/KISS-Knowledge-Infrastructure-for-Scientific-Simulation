@@ -1,0 +1,35 @@
+# Place your use-case specific settings overrides here.
+
+simulation:
+    # name this simulation
+    name: tutorial
+    # path to a directory for writing output files; will be created if it doesn't exist
+    output_path: ./output
+    # date to begin the simulation
+    start_date: 1981-05-01
+    # date to end the simulation
+    end_date: 1981-05-30
+
+grid:
+  subdomain: ~
+  unmask_output: true
+  path: ./input/domains/mosart_conus_nldas_grid.nc
+
+runoff:
+  read_from_file: true
+  path: ./input/runoff/runoff_1981_05.nc
+
+water_management:
+  enabled: true
+  demand:
+    read_from_file: true
+    path: ./input/demand/demand_1981_05.nc
+  reservoirs:
+    parameters:
+      path: ./input/reservoirs/reservoirs.nc
+    dependencies:
+      path: ./input/reservoirs/dependency_database.parquet
+    streamflow:
+      path: ./input/reservoirs/mean_monthly_reservoir_flow.parquet
+    demand:
+      path: ./input/reservoirs/mean_monthly_reservoir_demand.parquet

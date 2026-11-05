@@ -1,0 +1,171 @@
+{
+  "description": "Expected results for the official LPJmL 2-cell test case (testcase_2cell, run by upstream `make test`) at LPJmL v6.1.9 (PIK-LPJmL/LPJmL tag v6.1.9, commit 4595764). Two runs: spinup (3800 years) then transient from restart (output 1481-2019). Expected values are computed from the official reference outputs globalflux_spinup.csv and globalflux.csv that upstream ships in testcase_2cell/ (made by PIK with LPJmL 6.1.9); run_reference.py recomputes them from those files and checks they match the numbers stored here.",
+  "engine_version": "LPJmL C Version 6.1.9 (git 4595764150e981da2dd5672621544c41e77b1c6a), gcc 13.3 -O2 build",
+  "finished_checks": [
+    "spinup: KI tool rc 0 and stdout contains 'lpjml successfully terminated, 2 grid cells processed'",
+    "transient: same",
+    "spinup + transient CSV: names row and units row identical to the official files",
+    "spinup + transient CSV: Year column identical to the official files (-2099..1700 and 1481..2019)"
+  ],
+  "numeric_checks": [
+    {
+      "name": "spinup_n_rows",
+      "file": "spinup",
+      "kind": "n_rows",
+      "expected": 3800,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "3800 spinup years (-2099..1700) written, same as official file",
+      "expected_source": "official inputs/testcase_2cell/globalflux_spinup.csv"
+    },
+    {
+      "name": "transient_n_rows",
+      "file": "transient",
+      "kind": "n_rows",
+      "expected": 539,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "539 transient output years (1481..2019) written, same as official file",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    },
+    {
+      "name": "spinup_prec_identical",
+      "file": "spinup",
+      "kind": "column_identical",
+      "column": "prec",
+      "expected": 0.0,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "precipitation is the climate input passed through; must match the official file exactly (inputs read correctly)",
+      "expected_source": "official inputs/testcase_2cell/globalflux_spinup.csv (max abs difference of the column)"
+    },
+    {
+      "name": "transient_prec_identical",
+      "file": "transient",
+      "kind": "column_identical",
+      "column": "prec",
+      "expected": 0.0,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "same for the transient run (1481-2019 forcing)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv (max abs difference of the column)"
+    },
+    {
+      "name": "transient_area_identical",
+      "file": "transient",
+      "kind": "column_identical",
+      "column": "area",
+      "expected": 0.0,
+      "tol": 0,
+      "tol_type": "abs",
+      "why": "land area of the 2 cells (incl. land-use input) must match exactly",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv (max abs difference of the column)"
+    },
+    {
+      "name": "spinup_GPP_mean_last300",
+      "file": "spinup",
+      "kind": "mean",
+      "column": "GPP",
+      "last_n_years": 300,
+      "expected": 0.0073787214000000005,
+      "tol": 0.001,
+      "tol_type": "rel",
+      "why": "near-equilibrium gross primary production at end of spinup (1e15 gC/yr)",
+      "expected_source": "official inputs/testcase_2cell/globalflux_spinup.csv"
+    },
+    {
+      "name": "spinup_VegC_mean_last300",
+      "file": "spinup",
+      "kind": "mean",
+      "column": "VegC",
+      "last_n_years": 300,
+      "expected": 0.040444001,
+      "tol": 0.001,
+      "tol_type": "rel",
+      "why": "near-equilibrium vegetation carbon at end of spinup (1e15 gC)",
+      "expected_source": "official inputs/testcase_2cell/globalflux_spinup.csv"
+    },
+    {
+      "name": "spinup_SoilC_mean_last300",
+      "file": "spinup",
+      "kind": "mean",
+      "column": "SoilC",
+      "last_n_years": 300,
+      "expected": 0.075545181,
+      "tol": 0.001,
+      "tol_type": "rel",
+      "why": "near-equilibrium soil carbon at end of spinup (1e15 gC)",
+      "expected_source": "official inputs/testcase_2cell/globalflux_spinup.csv"
+    },
+    {
+      "name": "transient_GPP_mean",
+      "file": "transient",
+      "kind": "mean",
+      "column": "GPP",
+      "expected": 0.0035571112987012985,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean gross primary production 1481-2019 (1e15 gC/yr)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    },
+    {
+      "name": "transient_NPP_mean",
+      "file": "transient",
+      "kind": "mean",
+      "column": "NPP",
+      "expected": 0.0015700847569573284,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean net primary production 1481-2019 (1e15 gC/yr)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    },
+    {
+      "name": "transient_VegC_mean",
+      "file": "transient",
+      "kind": "mean",
+      "column": "VegC",
+      "expected": 0.013885844675324676,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean vegetation carbon 1481-2019 (1e15 gC)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    },
+    {
+      "name": "transient_SoilC_mean",
+      "file": "transient",
+      "kind": "mean",
+      "column": "SoilC",
+      "expected": 0.04962174749536178,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean soil carbon 1481-2019 (1e15 gC)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    },
+    {
+      "name": "transient_transp_mean",
+      "file": "transient",
+      "kind": "mean",
+      "column": "transp",
+      "expected": 0.0010931608293135435,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean transpiration 1481-2019 (1e15 dm3/yr)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    },
+    {
+      "name": "transient_discharge_mean",
+      "file": "transient",
+      "kind": "mean",
+      "column": "discharge",
+      "expected": 0.0021053746345083488,
+      "tol": 0.01,
+      "tol_type": "rel",
+      "why": "mean river discharge 1481-2019 (1e15 dm3/yr)",
+      "expected_source": "official inputs/testcase_2cell/globalflux.csv"
+    }
+  ],
+  "tolerance_note": "Upstream has NO comparison script and NO tolerance: its merge-request rule is to re-run `make test` and commit the new globalflux files, so upstream expects a fresh run on its own build to give these files (not stated as a bitwise guarantee). Across compilers they do not: on this server (gcc 13.3) the first 3 spinup years are bit-identical to the official files, then small differences grow through threshold logic (fire, establishment, random cell order). The tolerances here are LOCALLY CHOSEN, not upstream. Evidence: we built the same v6.1.9 source twice with different gcc options (-O2, and -O2 -march=native -ffp-contract=fast); the two builds differ from each other by about the same size as either differs from the official files. This shows the results are sensitive to compiler options and the differences are consistent with floating-point effects; it does not prove that no other build difference exists (the official files record a PIK-internal git hash 86db983 and their exact build settings are not published). Largest relative difference seen among the three result sets: 5.59e-5 for the spinup last-300-year means and 2.86e-3 for the transient period means used here. Tolerance: 1e-3 and 1e-2 (rule |run - ref| <= tol * |ref|). Single-year values are not checked (they differ by up to ~4% between builds). Exact checks (tol 0): row counts, headers, and the pass-through columns prec and area. Every number in both CSVs must be finite.",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "values copied by script from the official reference files (not from our run). Our engine (gcc 13.3 -O2 build of v6.1.9): 5 clean runs on 2026-10-06 gave byte-identical globalflux_spinup.csv (sha256 7bd5d7371c7d2eafb44d3a49b5f1b9f18a2fe3b292306758292eb9c55ccd138d) and globalflux.csv (sha256 2486285c73d1a9eb1dcdc057ab12dea59cbbe68c475a7fae69e43b11bf595858); they are not byte-identical to the official files (see tolerance_note).",
+  "reference": "https://github.com/PIK-LPJmL/LPJmL/tree/v6.1.9/testcase_2cell (globalflux.csv.json: source 'LPJmL C Version 6.1.9', made 2026-09-01 with 'bin/lpjml -DTESTCASE_2CELL -DFROM_RESTART lpjml_config.cjson')"
+}

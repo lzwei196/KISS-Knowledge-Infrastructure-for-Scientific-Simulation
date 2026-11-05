@@ -10,8 +10,20 @@ from pathlib import Path
 
 MODEL_ID = "PCR_GLOBWB_2"
 KI_DIR = Path(__file__).resolve().parent
-HC_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
-MODEL_DIR = Path("KISSPATH_KI_ROOT/PCR_GLOBWB_2/source/repo/model")
+HC_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")  # KI converter tools
+_WORK = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2"
+# The PCR-GLOBWB engine: tools/run_pcrglobwb.py imports pcraster + netCDF4 and runs
+# [sys.executable, <model_dir>/deterministic_runner.py], so it must be started with this conda
+# python and --model-dir set to MODEL_DIR (models/PCR_GLOBWB_2/source/repo is an empty repo).
+# Overrides: PCRGLOBWB_PYTHON, PCRGLOBWB_MODEL_DIR. An override set to "" is invalid and fails.
+_PY_OVERRIDE = os.environ.get("PCRGLOBWB_PYTHON")
+MODEL_PYTHON = Path(
+    _PY_OVERRIDE if _PY_OVERRIDE is not None
+    else _WORK + "/miniconda/envs/pcrglobwb_python3/bin/python"
+)
+_DIR_OVERRIDE = os.environ.get("PCRGLOBWB_MODEL_DIR")
+MODEL_DIR = Path(_DIR_OVERRIDE if _DIR_OVERRIDE is not None else _WORK + "/source/repo/model")
+IMPORT_TIMEOUT_S = 180
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 LOCAL_INPUT_TREE = Path("KISSPATH_OUTPUTS_ALT/pcrglobwb2_huai_bengbu/input")
 
@@ -94,11 +106,11 @@ def run_python_check(python_path, code, label, critical=True):
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=15,
+            timeout=IMPORT_TIMEOUT_S,
             env=env,
         )
-    except subprocess.TimeoutExpired:
-        add_check("run", subject, critical, "fail", triplet_fix(f"{label} timed out while starting"))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        add_check("run", subject, critical, "fail", triplet_fix(f"{label} did not start: {exc}"))
         return False
 
     if proc.returncode == 0:
@@ -124,10 +136,10 @@ def check_import_with(python_path, module, label, critical=True):
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=15,
+            timeout=IMPORT_TIMEOUT_S,
         )
-    except subprocess.TimeoutExpired:
-        add_check("import", subject, critical, "fail", triplet_fix(f"Import {label} timed out"))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        add_check("import", subject, critical, "fail", triplet_fix(f"Import {label} with {python_path} did not finish: {exc}"))
         return False
 
     if proc.returncode == 0:
@@ -169,9 +181,23 @@ def main():
         ("numpy", "NumPy"),
         ("netCDF4", "netCDF4"),
         ("ki_tools_common.load_forcing", "ki_tools_common.load_forcing"),
-        ("pcraster", "PCRaster"),
     ]:
         check_import_with(HC_PYTHON, module, label, critical=True)
+
+    # Engine python (run_pcrglobwb.py + deterministic_runner.py run under it)
+    print(f"  Engine python (PCRGLOBWB_PYTHON): {MODEL_PYTHON}")
+    check_file(MODEL_PYTHON, "PCR-GLOBWB engine Python (set PCRGLOBWB_PYTHON)", critical=True, executable=True, kind="binary")
+    if run_python_check(
+        MODEL_PYTHON,
+        "import sys; print(sys.executable)",
+        "PCR-GLOBWB engine Python startup",
+        critical=True,
+    ):
+        for module, label in [
+            ("pcraster", "PCRaster"),
+            ("netCDF4", "netCDF4"),
+        ]:
+            check_import_with(MODEL_PYTHON, module, f"{label} (engine Python; set PCRGLOBWB_PYTHON)", critical=True)
 
     check_dir(KI_DIR / "tools", "KI tools directory", critical=True, min_items=6)
     for tool in [
@@ -184,7 +210,11 @@ def main():
     ]:
         check_file(KI_DIR / "tools" / tool, f"KI tool {tool}", critical=True)
 
-    check_file(MODEL_DIR / "deterministic_runner.py", "PCR-GLOBWB deterministic runner", critical=True)
+    if _DIR_OVERRIDE == "":
+        add_check("data", "PCRGLOBWB_MODEL_DIR (empty)", True, "fail",
+                  triplet_fix("PCRGLOBWB_MODEL_DIR is set but empty; point it at the PCR-GLOBWB model/ folder or unset it"))
+    else:
+        check_file(MODEL_DIR / "deterministic_runner.py", "PCR-GLOBWB deterministic runner (set PCRGLOBWB_MODEL_DIR)", critical=True)
     check_file(TRIPLETS, "diagnostic triplets", critical=True)
     check_nc_count(LOCAL_INPUT_TREE, "known local 30 arcmin PCR-GLOBWB input cache", critical=False, minimum=30)
 

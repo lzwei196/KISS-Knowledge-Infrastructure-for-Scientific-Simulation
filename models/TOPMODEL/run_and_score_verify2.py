@@ -20,6 +20,15 @@ import os, sys, json, subprocess, re
 from datetime import datetime, timedelta
 import numpy as np
 
+# 2026-10-05: convert_forcing_to_topmodel.py accepts only --source cmfd (its
+# MSWX route was removed in the 2026-10-03 repair), and this basin is outside
+# CMFD's China domain. The "resume" path below would otherwise reuse an
+# inputs.dat built by the removed MSWX route. Stop until an MSWX route is
+# rebuilt in the KI converter and reviewed.
+sys.exit("TOPMODEL runner: the KI forcing converter supports CMFD only and this basin is "
+         "outside CMFD; the MSWX route was removed (2026-10-03). Not run; an existing "
+         "inputs.dat from the old MSWX route is not reused.")
+
 RUN_DIR = "KISSPATH_KI_ROOT/TOPMODEL/_collingwood_5803089"
 KI = "KISSPATH_KI_ROOT/TOPMODEL/knowledge_infrastructure"
 OUT_DIR = "KISSPATH_KI_ROOT/TOPMODEL/detached/verify_2"

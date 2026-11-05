@@ -1,0 +1,39 @@
+{
+  "test_case": "GLM Sparkling Lake (official example)",
+  "engine": {
+    "name": "GLM (General Lake Model)",
+    "version": "3.3.3",
+    "binary": "glm",
+    "source": "AED/UWA GLM distribution, Sparkling Lake example (NTL-LTER, Wisconsin)",
+    "license": "GPL (GLM)"
+  },
+  "ki": {
+    "model": "GLM"
+  },
+  "simulation": {
+    "note": "Sparkling Lake 1980-1982, daily lake summary"
+  },
+  "files": {
+    "inputs/glm3.nml": {
+      "bytes": 3760,
+      "sha256": "8cf56768528414718f7125f3b03339988b80d714caa6687895c6fc47da708e63"
+    },
+    "inputs/bcs/nldas_driver.csv": {
+      "bytes": 1332425,
+      "sha256": "1201aeda53ceb6ed124befaf27bdb9d8f0d2b8b74952b5c22935144cb1a2f724"
+    },
+    "inputs/bcs/north_temperate_lakes_lter__ice_duration_-_trout_lake_area.csv": {
+      "bytes": 2564,
+      "sha256": "1e170f01f662ce26281a9638211ff68a346316f25bba88c8214dacdedbeef76b"
+    },
+    "inputs/bcs/sparkling_lter_temp.csv": {
+      "bytes": 226927,
+      "sha256": "6150d9fb04d097218e57967e8eb64b201712fd3ae2cecf8a2b474c88208ed1f5"
+    }
+  },
+  "run": {
+    "cwd": "clean dir with glm3.nml, bcs/, empty output/",
+    "command": "glm --nml glm3.nml",
+    "reference": "python run_reference.py"
+  }
+}

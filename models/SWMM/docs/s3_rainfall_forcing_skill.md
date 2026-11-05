@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Rainfall is the primary driver of stormwater runoff in SWMM. This stage prepares rainfall time series from historical gauge data, gridded model forcing (VIC/HydroCraft), or synthetic design storms, and configures rain gages that assign rainfall to subcatchments.
+Rainfall is the primary driver of stormwater runoff in SWMM. This stage prepares rainfall time series from historical gauge data, a gridded forcing source (CMFD, MSWX, NASA POWER), or synthetic design storms, and configures rain gages that assign rainfall to subcatchments.
 
 The rainfall forcing stage has the highest potential for SILENT ERRORS in the entire SWMM workflow. Two critical issues dominate:
 
@@ -19,7 +19,7 @@ This stage must be completed with extreme attention to data conventions.
 
 Before starting this stage, verify:
 
-- [ ] Rainfall source data is available (gauge records, VIC forcing, or design storm parameters)
+- [ ] Rainfall source data is available (gauge records, a gridded source: CMFD / MSWX / NASA POWER, or design storm parameters)
 - [ ] Recording interval is known (5-min, 15-min, hourly, daily)
 - [ ] Data convention is known: is each value an instantaneous rate (mm/hr) or accumulated depth (mm/interval)?
 - [ ] FLOW_UNITS has been decided (CFS or CMS) — this determines whether rainfall is in inches or mm
@@ -30,12 +30,12 @@ Before starting this stage, verify:
 
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
-| Rainfall data | file | Gauge CSV, VIC forcing, or design parameters | Raw precipitation data |
+| Rainfall data | file / store | Gauge CSV, gridded source (CMFD / MSWX / NASA POWER), or design parameters | Raw precipitation data |
 | Data format | string | Data documentation | 'intensity' (rate, mm/hr) or 'volume' (depth per interval, mm) |
 | Recording interval | number | Data documentation | Minutes between measurements |
 | FLOW_UNITS | string | Model configuration | CFS (rain in inches) or CMS (rain in mm) |
-| VIC forcing dir | directory | HydroCraft output | For VIC-to-SWMM conversion (optional) |
-| VIC grid NC | file | HydroCraft output | For coordinate mapping (optional) |
+| Forcing store | directory | `KISSPATH_DATA/forcing/Data_forcing_03hr_010deg` (CMFD 3-hourly), `KISSPATH_FORCING` (MSWX) | For `--source cmfd` / `mswx`; NASA POWER needs the network, no folder |
+| Rain gage point(s) | lat,lon | Study area | Where the gridded source is read |
 
 ## Procedure
 
@@ -48,11 +48,11 @@ Three main sources, in order of preference:
 - Must verify recording interval and format convention
 - May have gaps that need filling
 
-**VIC/HydroCraft forcing** (best for coupled modeling):
-- Consistent with the upstream VIC simulation
-- 3-hourly or hourly timestep, gridded
-- Requires spatial mapping from VIC grid to SWMM rain gages
-- Use the `convert_vic_forcing_to_swmm` tool
+**Gridded forcing source** (when there is no gauge; real rain for any place and period):
+- CMFD (China, 0.1 deg, 3-hourly, on disk), MSWX (global, 0.1 deg, 3-hourly, on disk), NASA POWER (global, hourly, network)
+- Read straight from the source through the shared loader `ki_tools_common.load_forcing.load_hourly_forcing`; never from another model's input files (dt_023)
+- 3-hourly or hourly: fine for multi-day totals and continuity, coarse for a street-scale peak (a 0.1 deg cell mean over 3 hours is far below a gauge's 5-minute peak)
+- Use the `build_rain_timeseries_from_source` tool
 
 **Design storms** (best for drainage design):
 - Synthetic hyetographs for specific return periods
@@ -66,51 +66,63 @@ Three main sources, in order of preference:
 
 ```bash
 python tools/s3_rainfall_forcing/create_rain_timeseries.py \
-  --rainfall_csv data/rainfall/gauge_001.csv \
-  --datetime_col datetime \
+  --rain_csv data/rainfall/gauge_001.csv \
   --value_col rainfall_mm \
-  --data_format volume \
-  --interval_minutes 60 \
-  --output_file outputs/swmm_run/rainfall/rain_gauge1.dat
+  --format depth_mm \
+  --timestep_min 60 \
+  --series_name RainGage1 \
+  --output outputs/swmm_run/rainfall/rain_gauge1.dat
 ```
 
-SWMM TIMESERIES format:
+`--format depth_mm` (mm per step) is turned into mm/hr, so the gage FORMAT is INTENSITY; `--format intensity_mm_hr` is written as it is.
+
+The `.dat` the rain tools write (tab-separated; rows with no rain are left out, SWMM reads a missing row of a rain gage as no rain):
 ```
-;Rainfall time series for Gauge 1
-;Date        Time       Value
-01/15/2020   00:00:00   0.0
-01/15/2020   01:00:00   2.3
-01/15/2020   02:00:00   5.1
-01/15/2020   03:00:00   8.7
+;;SWMM Rainfall Timeseries: RainGage1
+RainGage1	01/15/2020	01:00:00	2.3000
+RainGage1	01/15/2020	02:00:00	5.1000
+RainGage1	01/15/2020	03:00:00	8.7000
 ```
+These rows go into `[TIMESERIES]` of the `.inp` as they are.
 
 Date format: MM/DD/YYYY. Time format: HH:MM:SS. Value in mm (CMS) or inches (CFS).
 
-#### From VIC forcing:
+#### From a gridded source (CMFD / MSWX / NASA POWER):
 
 ```bash
-python tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py \
-  --vic_forcing_dir outputs/vic_run/vic_temp/forcing/forcing_final \
-  --forcing_prefix basin_0.25deg_ \
-  --subcatchment_shapefile outputs/swmm_run/subcatchments/subcatchments.shp \
-  --vic_grid_nc outputs/vic_run/vic_temp/grid/basin_grid.nc \
-  --output_format intensity \
-  --output_dir outputs/swmm_run/rainfall/
+python tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py \
+  --source cmfd \
+  --points "32.05,118.80" \
+  --start_date 2020-07-01 --end_date 2020-07-31 \
+  --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+  --rain_format intensity \
+  --series_name CMFD_Rain \
+  --output outputs/swmm_run/rainfall/cmfd_rain.dat
 ```
 
-VIC forcing files contain precipitation as the 5th column (0-indexed col 4), in mm per timestep (typically 3 hours). To convert to SWMM:
-- For FORMAT=VOLUME: keep as mm per interval, set RAINGAGE INTERVAL = 3:00 (3 hours)
-- For FORMAT=INTENSITY: divide by 3 to get mm/hr, set RAINGAGE INTERVAL = 3:00
+Options: `--source cmfd|mswx|nasa_power` (required, no default); `--points "lat,lon;lat,lon"` (one or more; `--method average` = mean of the points, `nearest` = the point nearest to their centre); `--start_date` / `--end_date` (both days included); `--forcing_dir` (cmfd / mswx store; not used by nasa_power); `--rain_format intensity|volume`; `--series_name`; `--output`.
+
+What it does: calls `load_hourly_forcing` (which returns `precip_mm` = mm IN THE STEP: 3 hours for cmfd / mswx, 1 hour for nasa_power), then
+- `--rain_format intensity`: value = `precip_mm / step hours` (mm/hr) -> gage `FORMAT INTENSITY`
+- `--rain_format volume`: value = `precip_mm` (mm per step) -> gage `FORMAT VOLUME`
+
+and prints the `[RAINGAGES]` line to use: `INTERVAL 3:00` for cmfd / mswx, `1:00` for nasa_power. The same facts are in `<output stem>.summary.json` (source, points, step, total mm, daily totals).
+
+It writes nothing and stops with an error when a value is missing or not finite, the time axis is uneven, or the period is not fully in the store. Time stamps are UTC.
+
+Checked (2026-10-02): CMFD at Nanjing (32.05, 118.80), July 2020: 329.6 mm in the `.dat` (both formats) = the loader's sum for the same days. One 3-hourly point is right for a city core inside one 0.1 deg cell; for a larger area give several points.
+
+To run the whole-city model on this series: `tools/run_city_swmm.py --rain_dat ... --rain_interval 3:00 --rain_format intensity` (see SKILL.md, Data Preparation).
 
 #### Design storm:
 
 ```bash
 python tools/s3_rainfall_forcing/generate_design_storm.py \
-  --storm_type scs_type_II \
-  --total_depth_mm 100 \
-  --duration_hours 24 \
-  --timestep_minutes 5 \
-  --output_file outputs/swmm_run/rainfall/design_storm_100yr.dat
+  --type SCS_II \
+  --depth_mm 100 \
+  --duration_hr 24 \
+  --timestep_min 5 \
+  --output outputs/swmm_run/rainfall/design_storm_100yr.dat
 ```
 
 ### Step 3: Define Rain Gages
@@ -134,7 +146,7 @@ Rain gages in SWMM connect rainfall time series to subcatchments. Each rain gage
 - 5-minute data: `0:05`
 - 15-minute data: `0:15`
 - Hourly data: `1:00`
-- 3-hourly VIC forcing: `3:00`
+- 3-hourly CMFD / MSWX (from `build_rain_timeseries_from_source`): `3:00`
 
 ### Step 4: Assign Rain Gages to Subcatchments
 
@@ -147,9 +159,8 @@ Every subcatchment in `[SUBCATCHMENTS]` must reference a valid rain gage. Assign
 
 ```bash
 python tools/s3_rainfall_forcing/validate_rainfall_input.py \
-  --timeseries_files '["outputs/swmm_run/rainfall/rain_gauge1.dat"]' \
-  --raingage_config '{"RG1": {"format": "VOLUME", "interval": "1:00"}}' \
-  --flow_units CMS
+  --timeseries outputs/swmm_run/rainfall/rain_gauge1.dat \
+  --max_intensity 300
 ```
 
 Validation checks:
@@ -184,9 +195,11 @@ Validation checks:
 
 **Missing rain gage in [RAINGAGES]**: If a subcatchment references a rain gage that is not defined, SWMM reports an error at startup. This is at least a detectable error, unlike FORMAT mismatches.
 
-**VIC forcing unit conversion**: VIC stores precipitation as mm per timestep. For 3-hourly VIC forcing:
-- SWMM FORMAT=VOLUME, INTERVAL=3:00 → use raw VIC values (mm per 3 hours) ← **recommended**
-- SWMM FORMAT=INTENSITY, INTERVAL=3:00 → divide VIC values by 3 to get mm/hr
+**Gridded source read with the wrong INTERVAL (SILENT — dt_024)**: a 3-hourly series must have `INTERVAL 3:00`. With a design storm's `0:05` left in `[RAINGAGES]`, SWMM holds each value for 5 minutes instead of 3 hours and keeps 1/36 of the rain, with no error. Always take FORMAT and INTERVAL from what `build_rain_timeseries_from_source` printed, and check `Total Precipitation` (mm) in the `.rpt` against `total_mm` in the summary file.
+
+**Rain made from another model's input files (dt_023)**: do not. The former `convert_vic_forcing_to_swmm` tool read column 0 of VIC forcing files as rain; in this server's VIC files that column is air temperature. It was removed on 2026-10-02.
+
+**Daily data from the loader (dt_025)**: `load_daily_forcing` gives one value per day; SWMM needs sub-daily rain. Use the tool above (it calls `load_hourly_forcing`).
 
 **Timezone mismatch**: Rainfall data recorded in local time vs. UTC. A 6-hour timezone offset shifts the hydrograph peak by 6 hours. Always verify timezone consistency between rainfall data and simulation dates.
 
@@ -197,6 +210,6 @@ Validation checks:
 | Tool ID | Script | Purpose |
 |---------|--------|---------|
 | `create_rain_timeseries` | `tools/s3_rainfall_forcing/create_rain_timeseries.py` | Convert gauge CSV to SWMM format |
-| `convert_vic_forcing_to_swmm` | `tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py` | Map VIC forcing to SWMM rain gages |
+| `build_rain_timeseries_from_source` | `tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py` | Rain series straight from CMFD / MSWX / NASA POWER |
 | `generate_design_storm` | `tools/s3_rainfall_forcing/generate_design_storm.py` | Create synthetic design storms |
 | `validate_rainfall_input` | `tools/s3_rainfall_forcing/validate_rainfall_input.py` | Validate rainfall data and gage config |

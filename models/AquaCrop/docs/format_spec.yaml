@@ -510,7 +510,7 @@ known_issues:
     (Date MinTemp MaxTemp Precipitation ReferenceET)'''
   diagnosis: 'Weather DataFrame is missing the ReferenceET column; Unlike DSSAT which computes evapotranspiration
     internally from radiation, wind, and humidity variables, AquaCrop requires pre-computed reference
-    ET0 as an input. Most raw weather data sources (VIC forcing, CMFD, MSWX, station data) do not include '
+    ET0 as an input. Most raw weather data sources (CMFD, MSWX, NASA POWER, station data) do not include '
   remedy: Compute ReferenceET using FAO Penman-Monteith from available met variables (Tmin, Tmax, solar
     radiation, wind, humidity, elevation, latitude); compute_eto_penman_monteith; ['Check source data
     for available variables (at minimum need Tmin, Tmax, solar radiation)', 'If only Tmin/Tmax available,
@@ -696,16 +696,6 @@ known_issues:
     (0.25° offset from river centerline)'', ''Verify new cell has seasonal flood pattern (flood days <
     50% of year'
   severity: degraded
-- id: dt_v002
-  symptom: VIC vapor pressure column misidentified as specific humidity, causing ET0 calculation errors
-  diagnosis: VIC forcing column 6 is vapor pressure (kPa), not specific humidity (kg/kg); HydroCraft VIC
-    forcing stores vapor pressure directly in kPa (range 0.1-4.2). If treated as specific humidity and
-    used in Penman-Monteith ET0 calculation, the result is wrong. AquaCrop needs ET0 in mm/day — compute
-    from Har
-  remedy: 'Use Hargreaves ET0: 0.0023*(Tavg+17.8)*sqrt(Tmax-Tmin)*Ra*0.408; compute_eto_penman_monteith;
-    [''Compute ET0 from temperature and radiation only'', ''Do not use VIC column 6 in ET0 formula unless
-    confirmed as specific humidity'']; Always validate ET0 range: 0.5-10 mm/day for most climates'
-  severity: silent
 - id: dt_016_multiyear_faostat_validation
   symptom: 'Real-case validation against an annual national-yield series (FAOSTAT/GDHY) produces no result/metrics:
     the run hangs on a ''CPU-bound forcing load'' for a multi-decade window and never emits output, or

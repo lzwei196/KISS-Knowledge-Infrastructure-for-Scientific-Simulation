@@ -35,6 +35,10 @@ REQUIRED_TOOLS = [
 
 TOOL_IMPORTS = ["numpy", "xarray", "pandas", "rasterio", "geopandas", "shapely"]
 
+# Cold first imports (empty disk cache, busy server) can take far longer than a
+# warm import (mosartwmpy: ~19 s cold, ~2 s warm, >45 s under load).
+IMPORT_TIMEOUT = 180
+
 
 def diagnostic_fix(message):
     return f"{message}; then check {DIAGNOSTICS} for matching recovery triplets"
@@ -134,6 +138,17 @@ def check_python_starts(checks):
             ],
             timeout=10,
         )
+    except OSError as exc:
+        print(f"  FAIL  MOSART Python: cannot start {MOSART_PYTHON}: {exc}")
+        add_check(
+            checks,
+            "binary",
+            os.path.realpath(MOSART_PYTHON),
+            True,
+            "fail",
+            diagnostic_fix("repair the MOSART Python environment startup"),
+        )
+        return
     except subprocess.TimeoutExpired:
         print(f"  FAIL  MOSART Python: did not start within 10s: {MOSART_PYTHON}")
         add_check(
@@ -164,19 +179,20 @@ def check_python_starts(checks):
         )
 
 
-def check_import_with_python(checks, python_path, module, label, critical=True, timeout=45):
+def check_import_with_python(checks, python_path, module, label, critical=True,
+                             timeout=IMPORT_TIMEOUT, code=None):
     subject = f"{module} via {python_path}"
     try:
         proc = run_command(
             [
                 python_path,
                 "-c",
-                f"import {module}; print('import-ok')",
+                code or f"import {module}; print('import-ok')",
             ],
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        print(f"  FAIL  {label}: import {module} timed out after {timeout}s")
+        print(f"  FAIL  {label}: import {module} did not finish within {timeout}s")
         add_check(
             checks,
             "import",
@@ -184,8 +200,20 @@ def check_import_with_python(checks, python_path, module, label, critical=True, 
             critical,
             "fail",
             diagnostic_fix(
-                f"repair or warm up {module} in {python_path}; import exceeded {timeout}s"
+                f"import of {module} in {python_path} did not finish within {timeout}s; "
+                "investigate cold disk cache/server load or a broken installation"
             ),
+        )
+        return
+    except OSError as exc:
+        print(f"  FAIL  {label}: cannot start {python_path}: {exc}")
+        add_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            "fail",
+            diagnostic_fix(f"repair the interpreter {python_path} or rebuild the MOSART venv"),
         )
         return
 
@@ -210,9 +238,23 @@ def check_tool_imports(checks):
     code = "import " + ", ".join(TOOL_IMPORTS) + "; print('tool-imports-ok')"
     subject = f"{','.join(TOOL_IMPORTS)} via {sys.executable}"
     try:
-        proc = run_command([sys.executable, "-c", code], timeout=20)
+        proc = run_command([sys.executable, "-c", code], timeout=IMPORT_TIMEOUT)
     except subprocess.TimeoutExpired:
-        print("  FAIL  KI tool imports: timed out")
+        print(f"  FAIL  KI tool imports: did not finish within {IMPORT_TIMEOUT}s")
+        add_check(
+            checks,
+            "import",
+            subject,
+            True,
+            "fail",
+            diagnostic_fix(
+                f"KI tool imports in {sys.executable} did not finish within {IMPORT_TIMEOUT}s; "
+                "investigate cold disk cache/server load or a broken installation"
+            ),
+        )
+        return
+    except OSError as exc:
+        print(f"  FAIL  KI tool imports: cannot start {sys.executable}: {exc}")
         add_check(
             checks,
             "import",
@@ -260,7 +302,8 @@ def main():
         "mosartwmpy",
         "MOSART package",
         critical=True,
-        timeout=45,
+        timeout=IMPORT_TIMEOUT,
+        code="import mosartwmpy; from mosartwmpy import Model; print('import-ok')",
     )
 
     for path in REQUIRED_KI_FILES:

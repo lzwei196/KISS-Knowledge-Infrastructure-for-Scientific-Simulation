@@ -1,0 +1,8 @@
+# Hand-written; read by ki_tools_common/generate_skill_map.py (2026-10-06).
+# These tools import firedrake/icepack, which python_env does not have, so the KI-TOOL-INDEX in
+# SKILL.md names the Firedrake venv (or $ICEPACK_PYTHON) for them. Not projected: edit by hand.
+python:
+  env_var: ICEPACK_PYTHON
+  default: KISSPATH_HOME/engine_builds_20261006/firedrake/venv/bin/python
+  note: "needs firedrake + icepack (parser: only --type checkpoint): python_env has none; Firedrake venv, or $ICEPACK_PYTHON"
+  tools: [tools/parse_icepack_output.py, tools/run_icepack_simulation.py]

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SURROGATE -- NOT THE KINEROS2 MODEL.  This file belongs to the Python stand-in (a lumped, daily,
+Green-Ampt + two-reservoir re-implementation written before the real engine was installed).  Its
+output must never be reported as KINEROS2 results.  The real USDA-ARS engine is driven by
+tools/run_kineros2_engine.py.  Kept only for history and for comparison with old runs.
+
 convert_soil_to_kineros2.py -- Convert soil data to KINEROS2 Green-Ampt parameters.
 
 Translates soil properties from HWSD, SoilGrids, or manual input into the

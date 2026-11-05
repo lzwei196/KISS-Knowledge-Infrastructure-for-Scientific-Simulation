@@ -4,19 +4,26 @@ Knowledge Infrastructure -- Validated Tool
 ============================================
 Tool ID:      build_summa_forcing_from_reanalysis
 Stage:        s2_forcing_prep
-Description:  Build per-year SUMMA forcing NetCDF (time, hru) from a gridded
-              reanalysis archive (CMFD) for an arbitrary GRU/HRU domain.
+Description:  Build per-year SUMMA forcing NetCDF (time, hru) straight from a
+              forcing source for an arbitrary GRU/HRU domain. It is the ONLY
+              forcing tool of this KI: SUMMA weather input always comes from
+              the data source, through the shared loader
+              ki_tools_common.load_forcing.
 
-              The sibling tool convert_vic_forcing_to_summa.py only accepts
-              --vic_forcing_dir, so building SUMMA forcing without it required
-              a full VIC run upstream purely to produce forcing. This tool
-              reads the reanalysis archive directly.
+              Sources:
+                cmfd        3-hourly, China. All HRU points are read in one
+                            pass per file (load_subdaily_forcing_points).
+                nasa_power  hourly, global, from 2001 (network).
+                mswx        3-hourly, global, from 1979.
+              nasa_power and mswx are read point by point (load_hourly_forcing),
+              once per DISTINCT HRU location. An MSWX point-year takes about
+              20 minutes on this server, so a many-HRU MSWX build is slow.
 
 Inputs:
   - ATTRIBUTES_NC: SUMMA local attributes NetCDF. Supplies hruId, latitude,
     longitude and elevation. The hruId ORDER here is canonical -- every
     downstream tool must match it.
-  - SOURCE:        Reanalysis archive identifier (currently 'cmfd').
+  - SOURCE:        'cmfd', 'nasa_power' or 'mswx'. No default: name it.
   - START_YEAR / END_YEAR: inclusive year range.
 
 Outputs:
@@ -86,7 +93,7 @@ FORCING_VARS = [
 # check can run on the FIRST year too -- deriving it from the loader would mean
 # year one could never be skipped -- and so a loader returning a different step
 # is caught rather than silently written into data_step.
-SOURCE_DT = {"cmfd": 10800}
+SOURCE_DT = {"cmfd": 10800, "mswx": 10800, "nasa_power": 3600}
 
 # Physical plausibility gates. A year that violates these is a processing
 # error, not something to write out and discover later as a null metric.
@@ -251,6 +258,73 @@ def _epoch_from_units(units):
         except ValueError:
             continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# Reading the source (always through the shared loader)
+# ---------------------------------------------------------------------------
+
+POINT_KEYS = ("temp_c", "prec_kgm2s", "srad_wm2", "lrad_wm2", "wind_ms",
+              "pres_pa", "shum_kgkg")
+
+
+def load_points(source, latlons, year, forcing_dir=None):
+    """One year of sub-daily forcing at every HRU point, as a list of dicts with
+    the keys of load_subdaily_forcing_points: dates, timestep_seconds, temp_c,
+    prec_kgm2s (a RATE), srad_wm2, lrad_wm2, wind_ms, pres_pa, shum_kgkg.
+
+    cmfd goes through the many-point loader. nasa_power and mswx have no
+    many-point sub-daily loader, so each DISTINCT (lat, lon) is read once with
+    load_hourly_forcing and its precipitation (mm in the step) is turned into
+    the rate SUMMA needs: mm / step seconds = kg m-2 s-1.
+    """
+    from ki_tools_common.load_forcing import (load_hourly_forcing,
+                                              load_subdaily_forcing_points)
+    if source == "cmfd":
+        return load_subdaily_forcing_points(source, latlons, year, year,
+                                            forcing_dir=forcing_dir)
+    cache = {}
+    for la, lo in latlons:
+        key = (float(la), float(lo))
+        if key in cache:
+            continue
+        d = load_hourly_forcing(source, key[0], key[1], year, year,
+                                forcing_dir=forcing_dir)
+        ts = int(d["timestep_seconds"])
+        if ts <= 0:
+            raise ValueError(f"{source}: loader gave timestep_seconds={ts}")
+        missing = [k for k in ("precip_mm", "temp_c", "srad_wm2", "lrad_wm2",
+                               "wind_ms", "pres_pa", "shum_kgkg") if k not in d]
+        if missing:
+            raise ValueError(f"{source}: loader result lacks {missing}")
+        cache[key] = {
+            "dates": [x.astype("datetime64[s]").astype(datetime)
+                      for x in np.asarray(d["dates"])],
+            "timestep_seconds": ts,
+            "temp_c": np.asarray(d["temp_c"], dtype=float),
+            "prec_kgm2s": np.asarray(d["precip_mm"], dtype=float) / float(ts),
+            "srad_wm2": np.asarray(d["srad_wm2"], dtype=float),
+            "lrad_wm2": np.asarray(d["lrad_wm2"], dtype=float),
+            "wind_ms": np.asarray(d["wind_ms"], dtype=float),
+            "pres_pa": np.asarray(d["pres_pa"], dtype=float),
+            "shum_kgkg": np.asarray(d["shum_kgkg"], dtype=float),
+        }
+    return [cache[(float(la), float(lo))] for la, lo in latlons]
+
+
+def check_no_missing(pts, year):
+    """Nothing is filled: a missing value in the source stops the build."""
+    bad = {}
+    for p in pts:
+        for k in POINT_KEYS:
+            n = int((~np.isfinite(np.asarray(p[k], dtype=float))).sum())
+            if n:
+                bad[k] = bad.get(k, 0) + n
+    if bad:
+        raise ValueError(
+            f"{year}: the source has missing values ("
+            + ", ".join(f"{k}: {n}" for k, n in sorted(bad.items()))
+            + "). Nothing is filled in; choose another source or period.")
 
 
 # ---------------------------------------------------------------------------
@@ -431,8 +505,11 @@ def main():
                     "reanalysis archive.")
     ap.add_argument("--attributes_nc", required=True,
                     help="SUMMA attributes.nc; defines the canonical hruId order.")
-    ap.add_argument("--source", default="cmfd", choices=["cmfd"],
-                    help="Reanalysis archive identifier.")
+    ap.add_argument("--source", required=True, choices=sorted(SOURCE_DT),
+                    help="Forcing source, read through ki_tools_common.load_forcing. "
+                         "No default: name it. cmfd = China, 3-hourly; nasa_power = "
+                         "global hourly from 2001; mswx = global 3-hourly from 1979 "
+                         "(slow: about 20 min per HRU point and year).")
     ap.add_argument("--start_year", type=int, required=True)
     ap.add_argument("--end_year", type=int, required=True)
     ap.add_argument("--output_dir", required=True)
@@ -449,6 +526,11 @@ def main():
     ap.add_argument("--reference_elev_nc", default=None,
                     help="Reanalysis orography NetCDF, used as the elevation the "
                          "archive values are valid at.")
+    ap.add_argument("--reference_elev_m", type=float, default=None,
+                    help="The same as ONE number (m), for a source with no orography "
+                         "file at hand (e.g. the site elevation NASA POWER reports "
+                         "for its cell). Used for every HRU. Give this OR "
+                         "--reference_elev_nc OR --no_lapse.")
     ap.add_argument("--force", action="store_true",
                     help="Rebuild every year even if a complete file exists.")
     args = ap.parse_args()
@@ -461,12 +543,18 @@ def main():
         return EXIT_INPUT
     # No silent no-op: asking for a lapse correction without a reference
     # elevation is an input error, not something to quietly skip.
-    if args.reference_elev_nc and args.no_lapse:
-        logger.error("--no_lapse and --reference_elev_nc are mutually exclusive")
+    n_ref = sum(x is not None and x is not False for x in
+                (args.reference_elev_nc, args.reference_elev_m, args.no_lapse or None))
+    if n_ref > 1:
+        logger.error("--reference_elev_nc, --reference_elev_m and --no_lapse are "
+                     "mutually exclusive: give exactly one")
         return EXIT_INPUT
-    if not args.reference_elev_nc and not args.no_lapse:
+    if args.reference_elev_m is not None and not (-500.0 <= args.reference_elev_m <= 9000.0):
+        logger.error(f"--reference_elev_m {args.reference_elev_m} is not an elevation in m")
+        return EXIT_INPUT
+    if n_ref == 0:
         logger.error(
-            "No --reference_elev_nc supplied. Lapse correction would be silently "
+            "No --reference_elev_nc / --reference_elev_m supplied. Lapse correction would be silently "
             "skipped, and on a high-elevation domain that leaves airtemp/airpres "
             "valid at the archive's native elevation rather than the HRU's "
             "(dt_031). Pass --reference_elev_nc (with --lapse_rate) to correct, "
@@ -499,12 +587,14 @@ def main():
         except Exception as exc:
             logger.error(f"reference elevation read failed: {exc}")
             return EXIT_INPUT
+    elif args.reference_elev_m is not None:
+        ref_elev = np.full(n_hru, float(args.reference_elev_m))
+        logger.info(f"Lapse correction ON: {args.lapse_rate} K/m against the given "
+                    f"reference elevation {args.reference_elev_m:.0f} m (all HRUs)")
     else:
         logger.warning("Lapse correction DISABLED by explicit --no_lapse: archive "
                        "values are used at their native elevation. airtemp and "
                        "airpres are NOT adjusted to the HRU elevation.")
-
-    from ki_tools_common.load_forcing import load_subdaily_forcing_points
 
     latlons = list(zip(lat.tolist(), lon.tolist()))
     written, skipped = [], []
@@ -528,8 +618,7 @@ def main():
 
         logger.info(f"{year}: loading {args.source} at {n_hru} points")
         try:
-            pts = load_subdaily_forcing_points(
-                args.source, latlons, year, year, forcing_dir=args.forcing_dir)
+            pts = load_points(args.source, latlons, year, forcing_dir=args.forcing_dir)
         except Exception as exc:
             logger.error(f"{year}: forcing load failed: {exc}")
             return EXIT_PROCESS
@@ -537,6 +626,12 @@ def main():
         if not pts or len(pts) != n_hru:
             logger.error(f"{year}: loader returned {len(pts) if pts else 0} points "
                          f"for {n_hru} HRUs")
+            return EXIT_PROCESS
+
+        try:
+            check_no_missing(pts, year)
+        except ValueError as exc:
+            logger.error(str(exc))
             return EXIT_PROCESS
 
         dates = list(pts[0]["dates"])

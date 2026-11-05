@@ -15,7 +15,9 @@ MSWX annual files). Missing source data is now a HARD ERROR.
 
 Units (verified from file attrs, not docs): MSWX P 'mm 3h-1'->/10800,
 Tair degC->+273.15, SWd/LWd W/m2, Pres Pa, spechum kg/kg, wind m/s scalar->
-UGRD (VGRD=0). CMFD prec mm/hr->/3600, rest native.
+UGRD (VGRD=0). CMFD: scale from each file's own units attr (CMFD_UNITS):
+V2.0 prec is kg m-2 s-1 = mm/s (x1; the old fixed /3600 made rain 3600x too
+small), mm/hr sources /3600; temp K; unknown units stop the tool.
 
 MSWX reads reuse ki_tools_common.load_forcing helpers (_mswx_grid/
 _mswx_read_box); per-(var,year) extractions cache as .npy under
@@ -56,12 +58,12 @@ MSWX_VAR_MAP = {
     "SPFH": ("spechum", "kg kg-1", 1.0, 0.0),
 }
 
-# CLM var -> (CMFD file pattern, scale, offset); CMFD units are documented in
-# data_ki/CMFD/SKILL.md and were verified in the Chaohe/Bengbu BODY tests.
+# CLM var -> (CMFD file pattern, unused, unused). The scale/offset come from
+# each file's units attribute via CMFD_UNITS / cmfd_scale(), never from here.
 CMFD_VAR_MAP = {
     "DSWR": ("srad", 1.0, 0.0),
     "DLWR": ("lrad", 1.0, 0.0),
-    "APCP": ("prec", 1.0 / 3600.0, 0.0),  # mm/hr -> mm/s
+    "APCP": ("prec", None, None),  # units read from the file
     "Temp": ("temp", 1.0, 0.0),
     "UGRD": ("wind", 1.0, 0.0),
     "VGRD": (None, 0.0, 0.0),
@@ -69,7 +71,37 @@ CMFD_VAR_MAP = {
     "SPFH": ("shum", 1.0, 0.0),
 }
 
+# CMFD: the scale/offset to CLM units is chosen from each file's own 'units'
+# attribute (CMFD V2.0 stores prec as kg m-2 s-1 = mm/s, older releases as
+# mm/hr). A missing or unknown unit stops the tool; nothing is assumed.
+CMFD_UNITS = {
+    "prec": {"kg m-2 s-1": (1.0, 0.0), "kg m**-2 s**-1": (1.0, 0.0), "mm s-1": (1.0, 0.0),
+             "mm/s": (1.0, 0.0), "mm hr-1": (1.0 / 3600.0, 0.0), "mm h-1": (1.0 / 3600.0, 0.0),
+             "mm/hr": (1.0 / 3600.0, 0.0), "mm/h": (1.0 / 3600.0, 0.0)},
+    "temp": {"K": (1.0, 0.0), "degC": (1.0, 273.15), "C": (1.0, 273.15)},
+    "pres": {"Pa": (1.0, 0.0), "hPa": (100.0, 0.0)},
+    "shum": {"kg kg-1": (1.0, 0.0), "kg/kg": (1.0, 0.0), "1": (1.0, 0.0)},
+    "srad": {"W m-2": (1.0, 0.0), "W/m2": (1.0, 0.0), "W m**-2": (1.0, 0.0)},
+    "lrad": {"W m-2": (1.0, 0.0), "W/m2": (1.0, 0.0), "W m**-2": (1.0, 0.0)},
+    "wind": {"m s-1": (1.0, 0.0), "m/s": (1.0, 0.0), "m s**-1": (1.0, 0.0)},
+}
+
+
+def cmfd_scale(pattern, units, where=""):
+    """(scale, offset) to CLM units for a CMFD variable from its units attr."""
+    table = CMFD_UNITS[pattern]
+    u = (units or "").strip()
+    if u not in table:
+        raise ValueError(f"CMFD {pattern}{where}: units {units!r} not one of "
+                         f"{sorted(table)}; cannot convert to CLM units")
+    return table[u]
+
+
 SRC_DT_HOURS = 3  # both MSWX and CMFD stores used here are 3-hourly
+
+# Written to <output_dir>/forcing_conversion.json; chunks are reused only
+# under the same id (bump it whenever the conversion of values changes).
+CONVERSION_ID = "2026-10-16-cmfd-units-from-file"
 
 
 def cell_latlon(domain):
@@ -112,17 +144,22 @@ def _extract_mswx_year(forcing_dir, year, clm_var, lats, lons, cache_dir):
 
 
 def _extract_cmfd_month(forcing_dir, year, month, clm_var, lats, lons):
-    pattern, scale, offset = CMFD_VAR_MAP[clm_var]
+    pattern, _scale_unused, _offset_unused = CMFD_VAR_MAP[clm_var]
     if pattern is None:
         return None  # caller fills zeros sized like APCP
     import xarray as xr
     fp = Path(forcing_dir)
     nc_files = []
-    for sub in (pattern, pattern.capitalize(), pattern.upper()):
-        d = fp / sub
-        if d.exists():
-            nc_files = sorted(d.glob(f"*{year}{month:02d}*"))
-            break
+    # The CMFD store names its folders SRad / LRad / SHum / Prec ...; match
+    # the variable folder case-insensitively (capitalize()/upper() missed
+    # SRad, LRad and SHum, so CMFD runs stopped on the real store).
+    subdirs = sorted(d for d in fp.iterdir() if d.is_dir() and d.name.lower() == pattern) \
+        if fp.is_dir() else []
+    if len(subdirs) > 1:
+        raise ValueError(f"CMFD: more than one folder for {pattern} under {forcing_dir}: "
+                         f"{[d.name for d in subdirs]}")
+    for d in subdirs:
+        nc_files = sorted(d.glob(f"*{year}{month:02d}*"))
     if not nc_files:
         nc_files = sorted(fp.glob(f"*{pattern}*{year}{month:02d}*"))
     if not nc_files:
@@ -132,7 +169,22 @@ def _extract_cmfd_month(forcing_dir, year, month, clm_var, lats, lons):
     dv = next((v for v in ds.data_vars if pattern in v.lower()), list(ds.data_vars)[0])
     glat = ds["lat"].values if "lat" in ds else ds["latitude"].values
     glon = ds["lon"].values if "lon" in ds else ds["longitude"].values
+    scale, offset = cmfd_scale(pattern, ds[dv].attrs.get("units"),
+                               f" ({nc_files[0].name})")
     raw = ds[dv].values
+    # Every cell centre must lie inside the source grid (half a grid step
+    # beyond the outer centres at most); nearest-cell lookup would otherwise
+    # hand edge weather to a domain the file does not cover.
+    def _half(g):
+        return 0.5 * float(np.min(np.abs(np.diff(g)))) if g.size > 1 else 0.0
+    out_lat = (lats < glat.min() - _half(glat)) | (lats > glat.max() + _half(glat))
+    out_lon = (lons < glon.min() - _half(glon)) | (lons > glon.max() + _half(glon))
+    if np.any(out_lat | out_lon):
+        ds.close()
+        raise ValueError(
+            f"CMFD {pattern} {year}-{month:02d}: {int(np.sum(out_lat | out_lon))} domain cell(s) "
+            f"lie outside the source grid (lat {glat.min()}..{glat.max()}, lon "
+            f"{glon.min()}..{glon.max()}); CMFD covers China only")
     r_idx = np.array([np.argmin(np.abs(glat - la)) for la in lats.ravel()])
     c_idx = np.array([np.argmin(np.abs(glon - lo)) for lo in lons.ravel()])
     ext = raw[:, r_idx, c_idx].reshape((raw.shape[0],) + lats.shape) * scale + offset
@@ -167,6 +219,33 @@ def process(domain_json, forcing_source, forcing_dir, start_date, end_date,
         raise ValueError(f"period ({total_hours} h) must be a whole number of "
                          f"{chunk_hours}-hour chunks")
     n_chunks = total_hours // chunk_hours
+
+    # Existing chunks are reused only when they were written by this
+    # conversion version for the same source, start date and grid. Chunks
+    # from before 2026-10-16 have no stamp (CMFD prec was 3600x too small
+    # then): they stop the tool instead of being kept as "already done".
+    stamp_path = os.path.join(output_dir, "forcing_conversion.json")
+    stamp = {"conversion": CONVERSION_ID, "forcing_source": forcing_source,
+             "forcing_dir": os.path.abspath(forcing_dir), "start_date": start_date,
+             "met_name": met_name, "chunk_hours": chunk_hours, "nx": nx, "ny": ny,
+             "dx": float(dx), "dy": float(dy),
+             "origin_x": float(domain["origin"]["x"]), "origin_y": float(domain["origin"]["y"]),
+             "crs_epsg": int(domain["crs"]["epsg"])}
+    existing = (_glob.glob(os.path.join(output_dir, f"{met_name}.*.pfb"))
+                + _glob.glob(os.path.join(cache_dir, "*.npy")))  # cached MSWX arrays too
+    old_stamp = None
+    if os.path.exists(stamp_path):
+        with open(stamp_path) as fh:
+            old_stamp = json.load(fh)
+    if existing and old_stamp != stamp:
+        raise ValueError(
+            f"{output_dir} already holds {len(existing)} {met_name} forcing chunk(s) / cached "
+            f"array(s) "
+            f"{'with no conversion stamp' if old_stamp is None else 'from a different conversion/source/start/grid'} "
+            f"({stamp_path}); they may be from an older, wrong conversion (CMFD prec was 3600x too "
+            f"small before 2026-10-16). Use a fresh --output_dir.")
+    with open(stamp_path, "w") as fh:
+        json.dump(stamp, fh, indent=2)
 
     files_created = 0
     files_skipped = 0
@@ -254,7 +333,8 @@ def process(domain_json, forcing_source, forcing_dir, start_date, end_date,
         "period": {"start": start_date, "end": end_date},
         "unit_conversions_applied": {
             "mswx": "P mm/3h->mm/s (/10800); Tair degC->K (+273.15); rest native",
-            "cmfd": "prec mm/hr->mm/s (/3600); rest native",
+            "cmfd": ("from each file's units attr: prec kg m-2 s-1 (= mm/s, CMFD V2.0) x1 or "
+                     "mm/hr /3600; temp K (degC +273.15); pres Pa; rest native"),
         },
         "istep_note": "IstepStart=1 corresponds to the first hour after "
                       f"{start_date} 00:00; slice t of a chunk is hour t.",

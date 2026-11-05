@@ -15,6 +15,8 @@ This tool wraps the complete airGR workflow:
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -383,21 +385,62 @@ def run_gr4j(forcing_csv: str, output_csv: str,
     result : dict with execution summary
     """
     # --- Validate inputs ---
-    errors = validate_inputs(forcing_csv, params, mode, model)
+    errors = list(validate_inputs(forcing_csv, params, mode, model))
+    if Path(output_csv).resolve() == Path(forcing_csv).resolve() or (
+            output_json and Path(output_json).resolve() == Path(forcing_csv).resolve()):
+        errors.append("an output path is the same file as --forcing; "
+                      "the input forcing would be overwritten")
+    if bool(run_start) != bool(run_end):
+        # The R script only honours a run period when BOTH bounds are given;
+        # one bound alone used to be silently ignored (automatic period used).
+        errors.append("--start and --end must be given together (got "
+                      f"start={run_start!r}, end={run_end!r})")
+    if output_json and Path(output_json).resolve() == Path(output_csv).resolve():
+        errors.append(f"--meta-json and --output are the same file ({output_csv}); "
+                      "the JSON would overwrite the simulation CSV")
     if errors:
         raise ValueError("Input validation failed:\n" + "\n".join(errors))
 
+    # --- Temporary outputs ---
+    # R writes into a brand-new private temp folder (tempfile.mkdtemp, unique
+    # per call) next to each final path. Files there replace the final files
+    # only after a successful, checked run, so a failed rerun never destroys an
+    # earlier good result, and no leftover file from any earlier or killed run
+    # can be read back as this run's result (the folder starts empty).
+    tmp_dirs = []
+
+    def _tmp_path(final):
+        fp = Path(final)
+        d = tempfile.mkdtemp(prefix=f".{fp.stem}.run_gr4j_", dir=str(fp.parent))
+        tmp_dirs.append(d)
+        return str(Path(d) / fp.name)
+
+    try:
+        tmp_csv = _tmp_path(output_csv)
+        tmp_json = _tmp_path(output_json) if output_json else None
+        return _run_gr4j_to_tmp(forcing_csv, output_csv, tmp_csv, output_json,
+                                tmp_json, mode, params, warmup_years, run_start,
+                                run_end, criterion, model, hypso, nlayers)
+    finally:
+        for d in tmp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def _run_gr4j_to_tmp(forcing_csv, output_csv, tmp_csv, output_json, tmp_json,
+                     mode, params, warmup_years, run_start, run_end, criterion,
+                     model, hypso, nlayers) -> dict:
+    """Run R writing to tmp_csv/tmp_json; move them to the final paths on success."""
     # --- Generate R script ---
     r_script = generate_r_script(
         forcing_csv=forcing_csv,
-        output_csv=output_csv,
+        output_csv=tmp_csv,
         mode=mode,
         params=params,
         warmup_years=warmup_years,
         run_start=run_start,
         run_end=run_end,
         criterion=criterion,
-        output_json=output_json,
+        output_json=tmp_json,
         model=model,
         hypso=hypso,
         nlayers=nlayers,
@@ -409,10 +452,14 @@ def run_gr4j(forcing_csv: str, output_csv: str,
         r_script_path = f.name
 
     print(f"[run_gr4j] Executing R script: {r_script_path}")
-    proc = subprocess.run(
-        ["Rscript", "--vanilla", r_script_path],
-        capture_output=True, text=True, timeout=600
-    )
+    try:
+        proc = subprocess.run(
+            ["Rscript", "--vanilla", r_script_path],
+            capture_output=True, text=True, timeout=600
+        )
+    finally:
+        # R stdout/stderr are kept in the result; the script file is not needed.
+        Path(r_script_path).unlink(missing_ok=True)
 
     # --- Parse results ---
     result = {
@@ -450,18 +497,46 @@ def run_gr4j(forcing_csv: str, output_csv: str,
         elif line.startswith("CALIBRATION_CRIT:"):
             result["calib_crit"] = float(line.split(":")[1].strip())
 
-    # Read output and compute basic stats
-    if Path(output_csv).exists():
-        df = pd.read_csv(output_csv)
-        result["qsim_mean"] = float(df["Qsim_mm"].mean())
-        result["qsim_max"] = float(df["Qsim_mm"].max())
-        result["qsim_min"] = float(df["Qsim_mm"].min())
-        result["qsim"] = df["Qsim_mm"].tolist()
+    # Read output and compute basic stats. R exiting 0 without writing the
+    # output CSV (or the requested metadata JSON) is a failed run.
+    if not Path(tmp_csv).exists():
+        print(f"[run_gr4j] ERROR: R exited 0 but output CSV was not written: {output_csv}")
+        result["status"] = "failed"
+        result["error"] = f"output CSV not written: {output_csv}"
+        return result
+    if tmp_json and not Path(tmp_json).exists():
+        print(f"[run_gr4j] ERROR: metadata JSON was not written (R package "
+              f"jsonlite missing?): {output_json}")
+        result["status"] = "failed"
+        result["error"] = f"metadata JSON not written: {output_json}"
+        return result
+    df = pd.read_csv(tmp_csv)
+    # Success needs a finite simulated discharge on every output row.
+    if "Qsim_mm" not in df.columns or len(df) == 0:
+        n_bad = "all"
+    else:
+        qv = pd.to_numeric(df["Qsim_mm"], errors="coerce").to_numpy(dtype=float)
+        n_bad = int((~np.isfinite(qv)).sum())
+    if n_bad:
+        print(f"[run_gr4j] ERROR: simulated discharge Qsim_mm missing or "
+              f"non-finite ({n_bad} rows)")
+        result["status"] = "failed"
+        result["error"] = f"Qsim_mm missing or non-finite ({n_bad} rows)"
+        return result
+    result["qsim_mean"] = float(df["Qsim_mm"].mean())
+    result["qsim_max"] = float(df["Qsim_mm"].max())
+    result["qsim_min"] = float(df["Qsim_mm"].min())
+    result["qsim"] = df["Qsim_mm"].tolist()
 
     # Validate outputs
     warnings = validate_outputs(result)
     for w in warnings:
         print(f"[run_gr4j] WARNING: {w}")
+
+    # Success: move the new outputs into place (atomic, same directory).
+    os.replace(tmp_csv, output_csv)
+    if tmp_json:
+        os.replace(tmp_json, output_json)
 
     result["status"] = "completed"
     print(f"[run_gr4j] Completed in {mode} mode, {result.get('n_timesteps', '?')} timesteps")
@@ -540,7 +615,7 @@ def main():
             params["X5"] = args.x5 if args.x5 is not None else 0.5
             params["X6"] = args.x6 if args.x6 is not None else 3.0
 
-    run_gr4j(
+    result = run_gr4j(
         forcing_csv=args.forcing,
         output_csv=args.output,
         mode=args.mode,
@@ -554,6 +629,12 @@ def main():
         hypso=hypso,
         nlayers=args.nlayers,
     )
+    # Honest exit code: a failed R run must not look like success to callers
+    # that only check the process exit status.
+    if result.get("status") != "completed":
+        print(f"[run_gr4j] FAILED: status={result.get('status')!r} "
+              f"returncode={result.get('returncode')}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

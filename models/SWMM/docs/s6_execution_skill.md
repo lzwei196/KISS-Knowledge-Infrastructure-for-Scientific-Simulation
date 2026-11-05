@@ -10,6 +10,34 @@ This stage runs the SWMM simulation and extracts results. SWMM's C engine perfor
 
 After execution, continuity errors must be checked to verify numerical stability. Results are then extracted for analysis, plotting, and comparison with observed data or other models.
 
+The checker reads EPA's `Continuity Error (%) ..... value` report syntax.
+Missing, unreadable, NaN or infinite balances are FAIL, never zero. The city
+runner sets `continuity_valid: false` and `continuity_error: null`, and exits
+unsuccessfully when either required balance is invalid; a finite routing balance
+does not validate a NaN runoff balance.
+Non-finite component balances and storage depths are serialized as JSON `null`,
+with `continuity_has_nan: true`, so web/API clients can read failed-run diagnostics.
+
+The Nanjing NaN was reproduced as an engine initialization defect: SWMM 5.2.4
+leaves a snowpack melt value uninitialized on zero-area snow surfaces, then reads
+it during runoff calculation. The generated city's unused `empty` snowpack
+can therefore produce `0 * NaN`, depending on earlier heap contents. A fresh
+process can conceal the defect.
+
+`run_city_swmm.py` now removes that exact inactive template when no temperature
+forcing, climate adjustment, initial snow or hotstart is present. Real snow
+configurations are preserved. A controlled regression using the real engine
+reproduces NaN before this change and finite balance afterward. All 23,974
+Nanjing subcatchments retain their original rainfall, infiltration, depression
+storage, slopes, roughness and impervious fractions. The runoff-only control
+closes at -0.038%. See `dt_snowpack_uninitialized_imelt_20261003`; the earlier
+roughness/impervious-overshoot diagnoses are superseded by this evidence.
+
+The allocator used to reproduce the defect exists only in the regression
+workspace. It is never installed into the production model. Real snow models
+need the engine's missing initialization corrected; removing real snow physics
+is not an acceptable workaround.
+
 ## Prerequisites
 
 Before starting this stage, verify:
@@ -33,10 +61,41 @@ Before starting this stage, verify:
 
 ```bash
 python tools/s6_execution/run_swmm.py \
-  --inp_file outputs/swmm_run/model.inp \
-  --rpt_file outputs/swmm_run/model.rpt \
-  --out_file outputs/swmm_run/model.out
+  --inp outputs/swmm_run/model.inp \
+  --rpt outputs/swmm_run/model.rpt \
+  --out outputs/swmm_run/model.out
 ```
+
+Both the pyswmm and CLI backends validate the completed report after the engine
+finalizes its balances. Missing, non-finite, stale, or greater-than-10% balances
+produce a nonzero exit code. The older `--inp_file`, `--rpt_file`, and
+`--out_file` spellings remain accepted aliases.
+
+When element IDs are requested, `extract_results.py` reads the binary output
+using the installed toolkit's attribute enums and writes one complete CSV row
+per reporting time, with columns for every requested element and variable.
+Unknown/duplicate IDs, missing time steps, and non-finite data fail before
+replacing an existing CSV. A report summary cannot substitute for requested
+time series. With no element selectors, the tool extracts available RPT node
+and link summaries; the link depth field is explicitly a full-depth ratio.
+Section titles are recognised only between the report's `*` rule lines, so an
+element ID such as `SummaryPipe` cannot end a table early. With `[FILES] USE
+RUNOFF`, EPA prints "Runoff supplied by interface file" and no runoff balance;
+the runoff balance is then not required (none is made up) and routing is still
+checked. The runoff balance is also not required when the total subcatchment area
+is zero (EPA then prints no runoff table). Every continuity block, including
+each group of five pollutants, must have its `Continuity Error (%)` row with one value per pollutant
+(counted from the `----------` groups on the `*` line below the title; long
+pollutant IDs above it can run together), or the check fails.
+Reports are read as latin-1 because EPA writes raw bytes such as 0xB3 in some
+headers. An unreadable flooding row also fails both the checker and
+`run_swmm.py`. With `[REPORT] CONTINUITY NO` EPA prints balances only above 10%,
+so the runner cannot check them and stops; set `CONTINUITY YES`.
+
+`check_continuity_errors.py` keeps the worst quality continuity error over all
+pollutant blocks (EPA prints pollutants five per block). Runoff-table depths are
+reported in mm: a US-unit report prints inches, which are converted with 25.4
+mm/inch; an unknown depth unit leaves the depth values empty.
 
 The tool uses pyswmm internally:
 
@@ -66,7 +125,7 @@ After simulation completes, immediately check the RPT file for errors:
 
 ```bash
 python tools/s6_execution/check_continuity_errors.py \
-  --rpt_file outputs/swmm_run/model.rpt
+  --rpt outputs/swmm_run/model.rpt
 ```
 
 The tool extracts:
@@ -102,44 +161,38 @@ The tool extracts:
 
 ```bash
 python tools/s6_execution/extract_results.py \
-  --out_file outputs/swmm_run/model.out \
-  --extract_config '{"nodes": ["OF1", "J1"], "links": ["C1"], "subcatchments": ["S1"], "system": true}' \
-  --output_format csv \
+  --out outputs/swmm_run/model.out \
+  --nodes OF1,J1 \
+  --links C1 \
+  --subcatchments S1 \
   --output_dir outputs/swmm_run/results/
 ```
 
-Available result variables:
+The selectors are comma-separated element IDs; output is always CSV
+(`node_results.csv`, `link_results.csv`, `subcatchment_results.csv`). There is
+no system-results option. With no selectors, the tool reads the RPT Link Flow
+and Node Depth summaries instead. Link rows are parsed by link type, as EPA
+`statsrpt.c` prints them: conduits have velocity, max/full flow and max/full
+depth; pumps have only max/full flow (when a pump curve gives a capacity);
+orifices and weirs have only max/full depth; dummy and outlet links have none.
+Columns that do not apply stay empty. `link_summary.csv` also records the flow
+and velocity units from the report header.
 
-**Node results**:
-| Variable | Description | Units (CMS) |
-|----------|-------------|-------------|
-| Depth | Water depth above invert | meters |
-| Head | Hydraulic head (invert + depth) | meters |
-| Volume | Stored water volume | m3 |
-| Lateral_Inflow | Direct inflow from subcatchments | m3/s |
-| Total_Inflow | Total inflow from all sources | m3/s |
-| Flooding | Overflow rate (if flooded) | m3/s |
+Columns written by `extract_results.py` (one column per requested element ID and
+variable, named `<ID>_<variable>`; one row per reporting time in `datetime`).
+Values are in the model's own units as stored in the .out file: SI flow units
+(CMS, LPS, MLD) give metres, mm/hr and the chosen flow unit; US flow units (CFS,
+GPM, MGD) give feet, in/hr and the chosen flow unit.
 
-**Link results**:
-| Variable | Description | Units (CMS) |
-|----------|-------------|-------------|
-| Flow | Flow rate | m3/s |
-| Depth | Flow depth | meters |
-| Velocity | Flow velocity | m/s |
-| Volume | Water volume in link | m3 |
-| Capacity | Fraction of full capacity used | fraction |
+| File | Variables | Units |
+|------|-----------|-------|
+| `node_results.csv` | `depth` (water depth above invert), `head` (hydraulic head), `total_inflow`, `flooding` (overflow rate) | length; length; flow unit; flow unit |
+| `link_results.csv` | `flow`, `depth`, `velocity` | flow unit; length; length/s |
+| `subcatchment_results.csv` | `rainfall`, `runoff`, `infiltration` (loss rate) | depth/hr; flow unit; depth/hr |
 
-**Subcatchment results**:
-| Variable | Description | Units (CMS) |
-|----------|-------------|-------------|
-| Rainfall | Rainfall rate | mm/hr |
-| Snow_Depth | Snow depth | mm |
-| Evaporation | Evaporation + infiltration loss | mm/hr |
-| Infiltration | Infiltration rate | mm/hr |
-| Runoff | Surface runoff rate | m3/s |
-| GW_Outflow | Groundwater discharge | m3/s |
-
-**System results**: Aggregate totals for the entire system.
+Other output variables (node volume, lateral inflow, link volume/capacity, snow,
+evaporation, groundwater) are not extracted by this tool, and there is no
+system-results file.
 
 ### Step 5: Post-Process Results
 
@@ -147,10 +200,12 @@ Extract outfall discharge for comparison with CaMa-Flood or observed data:
 
 ```python
 import pandas as pd
-# Read extracted CSV
-df = pd.read_csv("outputs/swmm_run/results/node_OF1_results.csv")
-# Outfall discharge = total inflow at outfall node
-outfall_Q = df[["datetime", "Total_Inflow"]].copy()
+# Read extracted CSV (from extract_results.py --nodes OF1,...)
+df = pd.read_csv("outputs/swmm_run/results/node_results.csv")
+# Outfall discharge = total inflow at outfall node, in the model's FLOW_UNITS
+outfall_Q = df[["datetime", "OF1_total_inflow"]].copy()
+# Only label it m3/s when FLOW_UNITS is CMS; convert first otherwise
+# (LPS / 1000, CFS * 0.0283168).
 outfall_Q.columns = ["datetime", "Q_m3s"]
 outfall_Q.to_csv("outputs/swmm_run/results/outfall_discharge.csv", index=False)
 ```

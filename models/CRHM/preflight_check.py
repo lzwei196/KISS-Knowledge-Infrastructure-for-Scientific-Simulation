@@ -35,7 +35,7 @@ CRHM_EXE = native_binary(Path("KISSPATH_BINARIES"))
 TOOL_FILES = [
     "tools/calib_run.py",
     "tools/s1_basin_setup/create_hru_config.py",
-    "tools/s2_observation_data/convert_vic_to_obs.py",
+    "tools/s2_observation_data/build_obs.py",
     "tools/s2_observation_data/netcdf_safe.py",
     "tools/s2_observation_data/screen_swe_obs.py",
     "tools/s2_observation_data/validate_obs_file.py",

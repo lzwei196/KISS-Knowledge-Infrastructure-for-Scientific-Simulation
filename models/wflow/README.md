@@ -143,7 +143,7 @@ Stages 0-1 are sequential. Stages 2 and 3 depend on 1. Stage 4 depends on 2+3. S
 | `setup_wflow_config` | s0 | `tools/s0_config/setup_wflow_config.py` | 150 | Generate wflow_config.yaml |
 | `build_data_catalog` | s1 | `tools/s1_hydromt/build_data_catalog.py` | 160 | HydroMT catalog -> HydroCraft data |
 | `run_hydromt_build` | s1 | `tools/s1_hydromt/run_hydromt_build.py` | 250 | Build staticmaps.nc |
-| `convert_forcing_to_wflow` | s2 | `tools/s2_forcing/convert_forcing_to_wflow.py` | 320 | CMFD/MSWX/VIC -> wflow forcing.nc |
+| `convert_forcing_to_wflow` | s2 | `tools/s2_forcing/convert_forcing_to_wflow.py` | 320 | CMFD/MSWX/NASA POWER/GSWP3 -> wflow forcing.nc |
 | `calculate_pet` | s2 | `tools/s2_forcing/calculate_pet.py` | 220 | Hargreaves or Penman-Monteith PET |
 | `generate_wflow_toml` | s3 | `tools/s3_parameters/generate_wflow_toml.py` | 230 | wflow v1.0+ TOML generator |
 | `adjust_parameters` | s3 | `tools/s3_parameters/adjust_parameters.py` | 280 | Scale/offset calibration |
@@ -213,7 +213,7 @@ Naive D8 flow direction on coarse grids (0.25 deg) creates CYCLES in flat areas.
 
 ### 9. VIC forcing file naming pattern needs custom parsing (dt_w028)
 
-HydroCraft VIC forcing files use pattern `{basin}_{res}deg_{lat}_{lon}` (e.g., `bengbu_0.25deg_31.1250_115.6250`). The `convert_forcing_to_wflow.py` tool's default pattern matching does not handle this. Parse with `parts = fname.split("_"); lat = float(parts[2]); lon = float(parts[3])`.
+Historical. `convert_forcing_to_wflow.py` no longer reads VIC forcing files; it reads the source directly (`--source cmfd|mswx|nasa_power|gswp3`).
 
 ### 10. Inactive cells must be NaN, not 0 (dt_w029)
 
@@ -251,7 +251,7 @@ wflow_sbm needs PET as forcing input. If PET is missing, all precipitation becom
 | # | Source | Target | Variable | Tool |
 |---|--------|--------|----------|------|
 | 1 | wflow | CaMa-Flood | Unrouted runoff | `wflow_to_cama` |
-| 2 | VIC | wflow | Forcing (shared CMFD/MSWX) | `convert_forcing_to_wflow` |
+| 2 | forcing source (shared with VIC) | wflow | Forcing (CMFD/MSWX/NASA POWER/GSWP3, read directly) | `convert_forcing_to_wflow` |
 | 3 | wflow | MODFLOW | GW recharge (m/day) | `wflow_recharge_to_modflow` |
 | 4 | wflow_sed | SWAT+ | Sediment loading | (manual) |
 | 5 | wflow | VIC | Discharge comparison | `compare_with_vic` |
@@ -327,7 +327,7 @@ python tools/s1_hydromt/run_hydromt_build.py \
 
 # 3. Convert forcing
 python tools/s2_forcing/convert_forcing_to_wflow.py \
-  --forcing_dir outputs/chaohe_2000_2010_025deg/vic_temp/forcing/forcing_final \
+  --source cmfd --forcing_dir data/forcing/Data_forcing_03hr_010deg \
   --grid_nc outputs/chaohe_wflow/wflow_project/staticmaps.nc \
   --start_year 2000 --end_year 2010 \
   --output outputs/chaohe_wflow/wflow_project/forcing.nc

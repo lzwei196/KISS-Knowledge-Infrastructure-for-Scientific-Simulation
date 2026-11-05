@@ -119,7 +119,7 @@ def assert_selected_chain(root, monkeypatch, selected, prefix, probe):
         if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)}
     assert ast.literal_eval(values["PYTHON"]) == str(selected).replace("\\", "/")
     assert ast.literal_eval(values["KI_TOOLS_COMMON"]) == str(project_cfg.roles["ki_tools_common"]).replace("\\", "/")
-    assert "tools/s3_weather_prep/convert_vic_to_pcse_weather.py" in ast.literal_eval(values["TOOL_FILES"])
+    assert "tools/s3_weather_prep/build_pcse_weather_from_source.py" in ast.literal_eval(values["TOOL_FILES"])
     assert not project_verification.status(project, working)["can_run"]
     before = ki_fresh_paths.tree_files(working.root)
     reopened, reopened_cfg = handler._session_workspace(project, ki)

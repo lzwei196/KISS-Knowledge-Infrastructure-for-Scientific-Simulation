@@ -1,0 +1,33 @@
+$W2 V5 Updated selective with drawal computation,,
+Single wet well withdrawal computation algorithm referenced from Howington (1990),,
+"WD Calculation for Single Wet Well Outflow",OFF,
+"Shape of intake port (1 = circular, 2 = rectangular)",BR1,BR2
+STR1,1,
+STR2,1,
+STR3,1,
+STR4,1,
+STR5,1,
+"Cross-sectional area coefficient for intake port (meter) (diameter if port shape=1, port height if port shape=2)",BR1,BR2
+STR1,3.3,
+STR2,3.3,
+STR3,3.3,
+STR4,3.3,
+STR5,3.3,
+"Cross-sectional area coefficient for intake port (meter) if port shape=2",BR1,BR2
+STR1,6,
+STR2,6,
+STR3,6,
+STR4,6,
+STR5,6,
+"Intake port loss coefficient",BR1,BR2
+STR1,0.2,
+STR2,0.2,
+STR3,0.2,
+STR4,0.2,
+STR5,0.2,
+"Calculating vertical flow rate profile (1 =Original, 2 = Davis1987)",BR1,BR2
+STR1,1,
+STR2,1,
+STR3,2,
+STR4,2,
+STR5,2,

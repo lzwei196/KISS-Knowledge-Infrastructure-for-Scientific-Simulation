@@ -1,408 +1,305 @@
 #!/usr/bin/env python3
+"""Convert complete daily CMFD weather and explicit PET to an HEC-HMS CSV.
+
+No missing-value filling, magnitude-based unit guessing or automatic PET method
+is used. --pet_csv must contain dated pet_mm values in mm/day from an identified
+source/derivation. --temperature_mode unused omits T only for a model configured
+without a temperature-dependent process. This converter does not run HEC-HMS.
 """
-Convert CMFD/MSWX forcing data to HEC-HMS input format.
-
-Reads NetCDF forcing files (precipitation, temperature, radiation) and produces
-basin-averaged daily CSV suitable for HEC-HMS SCS-CN continuous simulation.
-
-Unit conversions applied:
-  - Precipitation: CMFD mm/day → mm/day (no conversion needed for daily)
-  - Temperature: CMFD Kelvin → Celsius (subtract 273.15)
-  - Radiation: CMFD W/m² → MJ/m²/day (multiply by 0.0864)
-  - PET: Computed via Hargreaves equation from Tmin, Tmax, radiation
-
-Usage:
-  python3 convert_forcing_to_hms.py \
-    --forcing_dir /path/to/cmfd/ \
-    --basin_shp /path/to/basin.shp \
-    --start_date 1980-01-01 --end_date 1990-12-31 \
-    --output_dir ./forcing_out/
-"""
-
 import argparse
+import hashlib
 import json
-import os
-import sys
-import warnings
 from pathlib import Path
-
+import sys
 import numpy as np
 import pandas as pd
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+def _calendar(start_date, end_date):
+    start,end=pd.Timestamp(start_date),pd.Timestamp(end_date)
+    if any(pd.isna(x) or x.tz is not None or x!=x.normalize() for x in [start,end]) or start>end:
+        raise ValueError('Expected start_date <= end_date as daily calendar dates')
+    return pd.date_range(start,end,freq='D')
 
 
-# ---------------------------------------------------------------------------
-# Validate inputs
-# ---------------------------------------------------------------------------
+def _dates(values,label):
+    dates=pd.DatetimeIndex(pd.to_datetime(values,errors='raise'))
+    if dates.hasnans or dates.tz is not None:
+        raise ValueError(f'{label}: invalid or timezone-bearing daily dates')
+    # Daily CMFD timestamps may label the average at 10:30; retain their date.
+    dates=dates.normalize()
+    if dates.has_duplicates or not dates.is_monotonic_increasing:
+        raise ValueError(f'{label}: daily dates must be unique and increasing')
+    return dates
+
+
+def _finite(values,label,minimum=None,maximum=None):
+    arr=np.asarray(values,dtype=float)
+    bad=~np.isfinite(arr)
+    if minimum is not None:bad|=arr<minimum
+    if maximum is not None:bad|=arr>maximum
+    if bad.any():
+        locations=np.argwhere(bad)[:5].tolist()
+        raise ValueError(f'{label}: invalid/missing values at indices {locations}')
+    return arr
+
+
 def validate_inputs(args):
-    """Check all input paths and parameters exist and are valid."""
-    errors = []
-
-    if not os.path.isdir(args.forcing_dir):
-        errors.append(f"Forcing directory not found: {args.forcing_dir}")
-
-    if not os.path.isfile(args.basin_shp):
-        errors.append(f"Basin shapefile not found: {args.basin_shp}")
-
-    try:
-        pd.Timestamp(args.start_date)
-        pd.Timestamp(args.end_date)
-    except Exception as e:
-        errors.append(f"Invalid date format: {e}")
-
-    if pd.Timestamp(args.start_date) >= pd.Timestamp(args.end_date):
-        errors.append("start_date must be before end_date")
-
-    if errors:
-        for e in errors:
-            print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"[validate_inputs] All inputs valid.")
-    print(f"  Forcing dir: {args.forcing_dir}")
-    print(f"  Basin shp:   {args.basin_shp}")
-    print(f"  Period:       {args.start_date} to {args.end_date}")
+    _calendar(args.start_date,args.end_date)
+    for path,kind in [(args.forcing_dir,'forcing directory'),(args.basin_shp,'basin geometry'),(args.pet_csv,'PET CSV')]:
+        if not Path(path).exists():raise FileNotFoundError(f'{kind} not found: {path}')
 
 
-# ---------------------------------------------------------------------------
-# Read basin geometry
-# ---------------------------------------------------------------------------
-def read_basin_mask(basin_shp, resolution=0.25):
-    """Read basin shapefile and create a spatial mask at given resolution."""
+def read_basin_mask(basin_shp,resolution=None):
     import geopandas as gpd
-    from shapely.geometry import box
-
-    gdf = gpd.read_file(basin_shp)
-    gdf = gdf.to_crs(epsg=4326)
-
-    bounds = gdf.total_bounds  # minx, miny, maxx, maxy
-    print(f"[read_basin_mask] Basin bounds: {bounds}")
-
-    # Compute basin area in km²
-    gdf_proj = gdf.to_crs(epsg=6933)  # Equal-area projection
-    area_km2 = gdf_proj.area.sum() / 1e6
-    print(f"[read_basin_mask] Basin area: {area_km2:.1f} km²")
-
-    return gdf, bounds, area_km2
+    gdf=gpd.read_file(basin_shp)
+    if gdf.empty or gdf.crs is None or not gdf.geometry.is_valid.all() or gdf.geometry.is_empty.any():
+        raise ValueError('Basin geometry must be nonempty and valid, with an explicit CRS')
+    gdf=gdf.to_crs(4326)
+    area=float(gdf.to_crs(6933).area.sum()/1e6)
+    if not np.isfinite(area) or area<=0:raise ValueError('Invalid basin area')
+    return gdf,gdf.total_bounds,area
 
 
-# ---------------------------------------------------------------------------
-# Read CMFD NetCDF forcing
-# ---------------------------------------------------------------------------
-def read_cmfd_forcing(forcing_dir, bounds, start_date, end_date):
+def _coordinate(ds,names,standard_name,units):
+    for name in names:
+        if name in ds.coords and ds[name].ndim==1:
+            coord=ds[name]
+            declared=str(coord.attrs.get('units','')).strip().lower().replace(' ','')
+            if name in ('x','y') and coord.attrs.get('standard_name')!=standard_name and declared not in units:
+                continue
+            # Selection and cos(latitude) weights assume degrees; never assume
+            # an undeclared or non-degree (e.g. radian, projected) coordinate.
+            if declared not in units:
+                raise ValueError(f'{name}: coordinate units {coord.attrs.get("units")!r} are not declared {standard_name} degrees {sorted(units)}')
+            values=_finite(coord.values,name)
+            if len(values)<2 or not (np.all(np.diff(values)>0) or np.all(np.diff(values)<0)):
+                raise ValueError(f'{name}: require a monotonic rectilinear geographic grid')
+            return name
+    raise ValueError(f'Missing one-dimensional geographic {standard_name} coordinate')
+
+
+_DAY_FREQUENCIES={'day','1day','daily','1d','d'}
+
+
+def _check_daily_support(ds,da,path):
+    """Require each value to represent one whole calendar day.
+
+    Declared time bounds must be midnight-aligned 24 h intervals on the labelled
+    date. Without bounds, consecutive labels must be exactly 24 h apart (a single
+    label needs a declared daily frequency). A declared time cell method must be
+    a mean or sum. Partial-day support (e.g. one hourly mean per day) fails.
     """
-    Read CMFD daily forcing NetCDF files and extract basin-average time series.
+    path=str(path);time=da['time']
+    labels=pd.DatetimeIndex(pd.to_datetime(time.values,errors='raise'))
+    methods=str(da.attrs.get('cell_methods',''))
+    if 'time:' in methods:
+        method=(methods.split('time:',1)[1].split() or [''])[0]
+        if method not in ('mean','sum'):raise ValueError(f'{path}: time cell_methods {methods!r} is not a daily mean or sum')
+    bounds_name=time.attrs.get('bounds') or time.encoding.get('bounds')
+    if bounds_name:
+        if bounds_name not in ds:raise ValueError(f'{path}: declared time bounds {bounds_name!r} are absent')
+        bounds=np.asarray(ds[bounds_name].values)
+        if bounds.shape!=(len(labels),2):raise ValueError(f'{path}: time bounds must have shape (time, 2)')
+        start=pd.DatetimeIndex(pd.to_datetime(bounds[:,0],errors='raise'));end=pd.DatetimeIndex(pd.to_datetime(bounds[:,1],errors='raise'))
+        bad=(end-start!=pd.Timedelta(days=1))|(start!=start.normalize())|(start!=labels.normalize())
+        if bad.any():raise ValueError(f'{path}: time bounds do not cover whole labelled days; first bad interval {start[bad][0]} to {end[bad][0]}')
+        return
+    if len(labels)>1:
+        steps=np.diff(labels.asi8)
+        if (steps!=pd.Timedelta(days=1).value).any():raise ValueError(f'{path}: time step is not exactly one day and no daily time bounds are declared')
+    elif str(ds.attrs.get('frequency','')).strip().lower() not in _DAY_FREQUENCIES:
+        raise ValueError(f'{path}: one time value without daily time bounds or a daily frequency attribute')
 
-    CMFD file naming: {var}_CMFD_V0106_B-01_01dy_025deg_{yyyy}.nc
-    Variables: prec (mm/day), temp (K), srad (W/m²)
+
+def _check_valid_range(path,da,select,label):
+    """Apply NetCDF valid_range/valid_min/valid_max to the selected values.
+
+    Checked in the stored domain: raw packed integers when scale_factor/add_offset
+    are present (CF packed-units rule), else values against limits cast to the
+    stored float type, so declared endpoints are not rejected by rounding.
     """
     import xarray as xr
+    attrs={**da.encoding,**da.attrs}
+    low=high=None
+    if 'valid_range' in attrs:
+        rng=np.asarray(attrs['valid_range']).ravel()
+        if rng.size!=2:raise ValueError(f'{label}: malformed valid_range {attrs["valid_range"]!r}')
+        low,high=rng
+    if 'valid_min' in attrs:low=np.asarray(attrs['valid_min']).ravel()[0]
+    if 'valid_max' in attrs:high=np.asarray(attrs['valid_max']).ravel()[0]
+    if low is None and high is None:return
+    if 'scale_factor' in da.encoding or 'add_offset' in da.encoding:
+        with xr.open_dataset(path,mask_and_scale=False) as raw:values=np.asarray(select(raw[da.name]))
+        domain='packed'
+    else:
+        values=np.asarray(select(da));domain='stored'
+        stored=np.dtype(da.encoding.get('dtype',values.dtype))
+        if stored.kind=='f':
+            low=None if low is None else np.asarray(low).astype(stored);high=None if high is None else np.asarray(high).astype(stored)
+    bad=np.zeros(values.shape,dtype=bool)
+    if low is not None:bad|=values<low
+    if high is not None:bad|=values>high
+    if bad.any():raise ValueError(f'{label}: values outside declared valid range [{low}, {high}] ({domain} units) at indices {np.argwhere(bad)[:5].tolist()}')
 
-    start_year = pd.Timestamp(start_date).year
-    end_year = pd.Timestamp(end_date).year
 
-    minx, miny, maxx, maxy = bounds
-    # Add buffer for cell centers
-    buf = 0.25
-    lon_slice = slice(minx - buf, maxx + buf)
-    lat_slice = slice(miny - buf, maxy + buf)
+def read_cmfd_forcing(forcing_dir,bounds,start_date,end_date,*,basin_geometry=None,temperature_required=True):
+    """Select complete daily source cells before an area-weighted basin average.
 
-    var_map = {
-        "prec": "prec",
-        "temp": "temp",
-        "srad": "srad",
-    }
-
-    all_data = {v: [] for v in var_map}
-
-    forcing_dir = Path(forcing_dir)
-    for year in range(start_year, end_year + 1):
-        for var_key, var_name in var_map.items():
-            # Try multiple naming patterns
-            patterns = [
-                f"{var_key}_CMFD_*_025deg_{year}.nc",
-                f"{var_key}*{year}*.nc",
-                f"{var_name}*{year}*.nc",
-            ]
-            nc_file = None
-            for pat in patterns:
-                matches = list(forcing_dir.glob(pat))
-                if matches:
-                    nc_file = matches[0]
-                    break
-
-            if nc_file is None:
-                print(f"  WARNING: No {var_key} file for {year}, skipping")
-                continue
-
-            try:
-                try:
-                    ds = xr.open_dataset(nc_file, engine="h5netcdf")
-                except Exception:
-                    ds = xr.open_dataset(nc_file)
-                # Handle different coordinate names
-                lon_name = "lon" if "lon" in ds.dims else "longitude"
-                lat_name = "lat" if "lat" in ds.dims else "latitude"
-
-                # Select spatial subset
-                ds_sub = ds.sel(
-                    **{lon_name: lon_slice, lat_name: lat_slice}
-                )
-
-                # Get the data variable (first non-coordinate variable)
-                data_vars = [v for v in ds_sub.data_vars]
-                if data_vars:
-                    da = ds_sub[data_vars[0]]
-                    # Basin average (simple mean over spatial dims)
-                    basin_avg = da.mean(dim=[lon_name, lat_name])
-                    all_data[var_key].append(basin_avg)
-
-                ds.close()
-            except Exception as e:
-                print(f"  WARNING: Error reading {nc_file}: {e}")
-
-    # Concatenate along time
-    result = {}
-    for var_key, da_list in all_data.items():
-        if da_list:
-            combined = xr.concat(da_list, dim="time")
-            result[var_key] = combined
-
+    Grid centers covered by the basin are active. Cell areas are proportional to
+    cos(latitude) on a regular longitude/latitude grid. All active cells must be
+    finite for every requested day; cells outside the basin are not required.
+    With bounds only, the stated rectangle is the selection geometry.
+    """
+    import xarray as xr
+    from shapely.geometry import box,Point
+    calendar=_calendar(start_date,end_date)
+    geometry=basin_geometry if basin_geometry is not None else box(*bounds)
+    result={}
+    for var in (['prec','temp'] if temperature_required else ['prec']):
+        files=[]
+        for year in sorted(set(calendar.year)):
+            found=sorted(Path(forcing_dir).glob(f'{var}*{year}*.nc'))
+            if not found:raise FileNotFoundError(f'{var}: no source NetCDF for {year} in {forcing_dir}')
+            files.extend(found)
+        parts=[];sources=[];unit=None
+        for path in files:
+            with xr.open_dataset(path) as ds:
+                if var not in ds:raise ValueError(f'{path}: required variable {var} is absent')
+                da=ds[var]
+                current=da.attrs.get('units','')
+                if not current or (unit is not None and current!=unit):raise ValueError(f'{path}: missing or inconsistent {var} units')
+                unit=current
+                lon=_coordinate(ds,['lon','longitude','x'],'longitude',{'degrees_east','degree_east','degrees_e','degree_e','degreese','degreee'})
+                lat=_coordinate(ds,['lat','latitude','y'],'latitude',{'degrees_north','degree_north','degrees_n','degree_n','degreesn','degreen'})
+                x,y=np.asarray(ds[lon].values),np.asarray(ds[lat].values)
+                dx,dy=np.abs(np.diff(x)),np.abs(np.diff(y))
+                if not np.allclose(dx,dx[0]) or not np.allclose(dy,dy[0]):raise ValueError(f'{path}: only regular geographic grids are supported')
+                extent=box(x.min()-dx[0]/2,y.min()-dy[0]/2,x.max()+dx[0]/2,y.max()+dy[0]/2)
+                if not extent.covers(geometry):raise ValueError(f'{path}: source grid does not cover the basin')
+                xx,yy=np.meshgrid(x,y)
+                mask=np.array([geometry.covers(Point(a,b)) for a,b in zip(xx.ravel(),yy.ravel())]).reshape(xx.shape)
+                if not mask.any():raise ValueError(f'{path}: no source grid centers inside basin')
+                _check_daily_support(ds,da,path)
+                dates=_dates(da.time.values,str(path))
+                selected=(dates>=calendar[0])&(dates<=calendar[-1])
+                if not selected.any():continue
+                if set(da.dims)!={'time',ds[lat].dims[0],ds[lon].dims[0]}:raise ValueError(f'{path}: unsupported data dimensions {da.dims}')
+                select=lambda a:a.isel(time=np.flatnonzero(selected)).transpose('time',ds[lat].dims[0],ds[lon].dims[0]).values[:,mask]
+                values=select(da)
+                _finite(values,f'{path} {var} active cells, first date {dates[selected][0].date()}')
+                _check_valid_range(path,da,select,f'{path} {var} active cells')
+                # Validate physical values and declared units before averaging,
+                # including negative sentinels that lack NetCDF fill metadata.
+                convert_units({var:xr.DataArray(values,attrs={'units':unit})})
+                weights=np.cos(np.deg2rad(yy[mask]))
+                if not np.isfinite(weights).all() or (weights<=0).any():raise ValueError('Invalid geographic area weights')
+                mean=np.average(values,axis=1,weights=weights)
+                parts.append(xr.DataArray(mean,dims='time',coords={'time':dates[selected]},attrs={'units':unit}))
+                sources.append(dict(path=str(path.resolve()),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),active_cells=int(mask.sum())))
+        if not parts:raise ValueError(f'{var}: no requested daily values')
+        combined=xr.concat(parts,dim='time')
+        dates=_dates(combined.time.values,var)
+        if not dates.equals(calendar):raise ValueError(f'{var}: source calendar must cover every requested date exactly; missing {calendar.difference(dates).strftime("%Y-%m-%d").tolist()[:10]}')
+        combined.attrs.update(units=unit,sources=sources,spatial_method='cos(latitude)-weighted mean of basin-covered grid centers')
+        result[var]=combined
     return result
 
 
-# ---------------------------------------------------------------------------
-# Unit conversions
-# ---------------------------------------------------------------------------
 def convert_units(data_dict):
-    """
-    Apply unit conversions:
-      prec: mm/day (CMFD) → mm/day (no change)
-      temp: K (CMFD) → °C (subtract 273.15)
-      srad: W/m² (CMFD) → MJ/m²/day (multiply 0.0864)
-    """
-    converted = {}
-
-    if "prec" in data_dict:
-        prec = data_dict["prec"].values.copy()
-        prec = np.maximum(prec, 0.0)  # No negative precipitation
-        # dt_101: actual CMFD NetCDF precip is a RATE in kg/m2/s (= mm/s),
-        # NOT mm/day as some docs state. Detect by magnitude and convert.
-        if np.nanmean(prec) < 0.1:
-            prec = prec * 86400.0
-            print("[convert_units] Precip rate kg/m2/s detected -> x86400 to mm/day")
-        converted["prec_mm"] = prec
-        print(f"[convert_units] Precip: mean={np.nanmean(prec):.2f} mm/day, "
-              f"max={np.nanmax(prec):.1f} mm/day")
-
-    if "temp" in data_dict:
-        temp_k = data_dict["temp"].values.copy()
-        # CRITICAL: Convert Kelvin to Celsius (dt_102)
-        if np.nanmean(temp_k) > 100:
-            temp_c = temp_k - 273.15
-            print(f"[convert_units] Temperature: Kelvin detected (mean={np.nanmean(temp_k):.1f}K), "
-                  f"converting to Celsius (mean={np.nanmean(temp_c):.1f}°C)")
+    """Convert declared units only; small legitimate rain is never a rate guess."""
+    converted={}
+    for var,da in data_dict.items():
+        if var not in ['prec','temp','srad']:continue
+        unit=str(da.attrs.get('units','')).lower().replace(' ','').replace('**','').replace('^','')
+        values=_finite(da.values,var)
+        if var=='prec':
+            _finite(values,var,minimum=0)
+            if unit in ('kgm-2s-1','mm/s','mms-1'):values=values*86400
+            elif unit not in ('mm/day','mmd-1','mmday-1','mm'):raise ValueError(f'prec: unsupported or absent daily units {unit!r}')
+            converted['prec_mm']=values
+        elif var=='temp':
+            if unit in ('k','kelvin','degk'):values=values-273.15
+            elif unit not in ('c','degc','celsius','degree_celsius','degrees_celsius'):raise ValueError(f'temp: unsupported or absent units {unit!r}')
+            converted['temp_c']=_finite(values,var,minimum=-100,maximum=70)
         else:
-            temp_c = temp_k
-            print(f"[convert_units] Temperature: already Celsius (mean={np.nanmean(temp_c):.1f}°C)")
-        converted["temp_c"] = temp_c
-
-    if "srad" in data_dict:
-        srad = data_dict["srad"].values.copy()
-        srad = np.maximum(srad, 0.0)
-        # Convert W/m² → MJ/m²/day (dt_110)
-        srad_mj = srad * 0.0864
-        converted["srad_mj"] = srad_mj
-        print(f"[convert_units] Radiation: {np.nanmean(srad):.1f} W/m² → "
-              f"{np.nanmean(srad_mj):.2f} MJ/m²/day")
-
+            _finite(values,var,minimum=0)
+            if unit in ('wm-2','w/m2'):values=values*.0864
+            elif unit not in ('mjm-2d-1','mj/m2/day'):raise ValueError(f'srad: unsupported or absent units {unit!r}')
+            converted['srad_mj']=values
     return converted
 
 
-# ---------------------------------------------------------------------------
-# PET computation (Hargreaves)
-# ---------------------------------------------------------------------------
-def compute_pet_hargreaves(temp_c, srad_mj, lat_deg=33.0):
-    """
-    Compute potential evapotranspiration using Hargreaves equation.
-
-    PET = 0.0023 * (T_mean + 17.8) * (T_max - T_min)^0.5 * Ra
-    Simplified for daily mean temperature (assume Trange ~ 10°C):
-    PET = 0.0023 * (T + 17.8) * 10^0.5 * Ra
-    Where Ra is extraterrestrial radiation ≈ srad_mj / 0.5 (rough approximation)
-    """
-    t_range = 10.0  # Assumed daily temperature range (°C)
-    # Hargreaves equation
-    pet = 0.0023 * (temp_c + 17.8) * np.sqrt(t_range) * srad_mj
-    pet = np.maximum(pet, 0.0)
-
-    # Clip unrealistic values (dt_118)
-    pet = np.minimum(pet, 15.0)  # Max ~15 mm/day
-
-    print(f"[compute_pet] PET: mean={np.nanmean(pet):.2f} mm/day, "
-          f"max={np.nanmax(pet):.1f} mm/day")
-    return pet
+def load_pet_csv(path,start_date,end_date):
+    df=pd.read_csv(path)
+    if not {'date','pet_mm'}.issubset(df):raise ValueError(f'{path}: PET CSV requires date,pet_mm (mm/day)')
+    dates=_dates(df.date,str(path));calendar=_calendar(start_date,end_date)
+    series=pd.Series(pd.to_numeric(df.pet_mm,errors='raise').to_numpy(),index=dates)
+    selected=series.reindex(calendar)
+    _finite(selected.values,f'{path}: pet_mm on requested dates',minimum=0)
+    return selected
 
 
-# ---------------------------------------------------------------------------
-# Build output DataFrame
-# ---------------------------------------------------------------------------
-def build_forcing_csv(data_dict, converted, pet, start_date, end_date):
-    """Build daily forcing CSV with columns: date, precip_mm, temp_c, pet_mm."""
-    time_index = pd.date_range(start_date, end_date, freq="D")
-
-    # Handle length mismatch
-    n = min(len(time_index), len(converted.get("prec_mm", [])))
-    if n == 0:
-        print("ERROR: No forcing data available for the specified period", file=sys.stderr)
-        sys.exit(1)
-
-    df = pd.DataFrame(index=time_index[:n])
-    df.index.name = "date"
-
-    if "prec_mm" in converted:
-        df["precip_mm"] = converted["prec_mm"][:n]
-    if "temp_c" in converted:
-        df["temp_c"] = converted["temp_c"][:n]
-    if pet is not None:
-        df["pet_mm"] = pet[:n]
-
-    # Fill NaN with 0 for precip, interpolate for temp/pet
-    if "precip_mm" in df.columns:
-        df["precip_mm"] = df["precip_mm"].fillna(0.0)
-    if "temp_c" in df.columns:
-        df["temp_c"] = df["temp_c"].interpolate(method="linear").fillna(method="bfill").fillna(method="ffill")
-    if "pet_mm" in df.columns:
-        df["pet_mm"] = df["pet_mm"].interpolate(method="linear").fillna(method="bfill").fillna(method="ffill")
-
-    return df
+def build_forcing_csv(data_dict,converted,pet,start_date,end_date,*,temperature_required=True):
+    """Align arrays to their actual source dates; never truncate, pad or relabel."""
+    calendar=_calendar(start_date,end_date);out=pd.DataFrame(index=calendar);out.index.name='date'
+    fields=[('prec','prec_mm','precip_mm',0,None)]
+    if temperature_required:fields.append(('temp','temp_c','temp_c',-100,70))
+    for source,key,column,low,high in fields:
+        if source not in data_dict or key not in converted:raise ValueError(f'Missing required {source}/{key}')
+        dates=_dates(data_dict[source].time.values,source);values=np.asarray(converted[key],dtype=float)
+        if values.shape!=(len(dates),):raise ValueError(f'{key}: array length does not match source dates')
+        selected=pd.Series(values,index=dates).reindex(calendar)
+        _finite(selected.values,f'{key}: requested dates {calendar[0].date()} to {calendar[-1].date()}',low,high)
+        out[column]=selected
+    if not isinstance(pet,pd.Series):raise ValueError('PET must be an explicit dated pandas Series in mm/day (use --pet_csv)')
+    pet=pd.Series(pet.to_numpy(),index=_dates(pet.index,'PET'))
+    selected=pet.reindex(calendar);_finite(selected.values,'pet_mm on requested dates',minimum=0);out['pet_mm']=selected
+    return out
 
 
-# ---------------------------------------------------------------------------
-# Validate outputs
-# ---------------------------------------------------------------------------
-def validate_outputs(df, output_dir):
-    """Check output CSV for unrealistic values."""
-    warnings_list = []
-
-    if "precip_mm" in df.columns:
-        annual_precip = df["precip_mm"].sum() / (len(df) / 365.25)
-        if annual_precip < 100:
-            warnings_list.append(f"Annual precip very low: {annual_precip:.0f} mm/yr (expected 400-2000)")
-        if annual_precip > 5000:
-            warnings_list.append(f"Annual precip very high: {annual_precip:.0f} mm/yr (check units!)")
-        if df["precip_mm"].max() > 500:
-            warnings_list.append(f"Max daily precip = {df['precip_mm'].max():.0f} mm (>500 is extreme)")
-        print(f"[validate_outputs] Annual precipitation: {annual_precip:.0f} mm/yr")
-
-    if "temp_c" in df.columns:
-        t_mean = df["temp_c"].mean()
-        if t_mean > 50 or t_mean < -30:
-            warnings_list.append(f"Mean temperature {t_mean:.1f}°C is unrealistic — check Kelvin conversion!")
-        print(f"[validate_outputs] Mean temperature: {t_mean:.1f}°C")
-
-    if "pet_mm" in df.columns:
-        annual_pet = df["pet_mm"].sum() / (len(df) / 365.25)
-        print(f"[validate_outputs] Annual PET: {annual_pet:.0f} mm/yr")
-        if annual_pet > 3000:
-            warnings_list.append(f"Annual PET very high: {annual_pet:.0f} mm/yr")
-
-    for w in warnings_list:
-        print(f"  WARNING: {w}")
-
-    # Check for gaps
-    n_missing = df.isna().sum().sum()
-    if n_missing > 0:
-        warnings_list.append(f"{n_missing} missing values remain after filling")
-
-    return warnings_list
+def validate_outputs(df,output_dir=None):
+    for name in ['precip_mm','pet_mm']:
+        if name not in df:raise ValueError(f'Missing output column {name}')
+        _finite(df[name],name,minimum=0)
+    if 'temp_c' in df:_finite(df.temp_c,'temp_c',-100,70)
+    return []
 
 
-# ---------------------------------------------------------------------------
-# Process
-# ---------------------------------------------------------------------------
 def process(args):
-    """Main processing workflow."""
-    print("=" * 60)
-    print("HEC-HMS Forcing Converter (CMFD → HEC-HMS)")
-    print("=" * 60)
-
-    # 1. Read basin mask
-    gdf, bounds, area_km2 = read_basin_mask(args.basin_shp)
-
-    # 2. Read CMFD forcing
-    print("\n[read_cmfd] Reading CMFD forcing files...")
-    data_dict = read_cmfd_forcing(args.forcing_dir, bounds, args.start_date, args.end_date)
-
-    if not data_dict:
-        print("ERROR: No forcing data found!", file=sys.stderr)
-        sys.exit(1)
-
-    # 3. Convert units
-    print("\n[convert_units] Applying unit conversions...")
-    converted = convert_units(data_dict)
-
-    # 4. Compute PET
-    print("\n[compute_pet] Computing Hargreaves PET...")
-    pet = None
-    if "temp_c" in converted and "srad_mj" in converted:
-        pet = compute_pet_hargreaves(converted["temp_c"], converted["srad_mj"])
-    elif "temp_c" in converted:
-        # Estimate PET from temperature only (simplified Hargreaves)
-        pet = 0.0023 * (converted["temp_c"] + 17.8) * np.sqrt(10.0) * 15.0  # assume 15 MJ/m²/day
-        pet = np.maximum(pet, 0.0)
-        pet = np.minimum(pet, 15.0)
-        print(f"[compute_pet] PET estimated from temperature only: "
-              f"mean={np.nanmean(pet):.2f} mm/day")
-
-    # 5. Build CSV
-    print("\n[build_csv] Building forcing CSV...")
-    df = build_forcing_csv(data_dict, converted, pet, args.start_date, args.end_date)
-
-    # 6. Write output
-    os.makedirs(args.output_dir, exist_ok=True)
-    out_csv = os.path.join(args.output_dir, "basin_avg_forcing.csv")
-    df.to_csv(out_csv)
-    print(f"\n[write] Forcing CSV: {out_csv}")
-    print(f"  Rows: {len(df)}, Columns: {list(df.columns)}")
-
-    # Write area info
-    area_json = os.path.join(args.output_dir, "basin_info.json")
-    with open(area_json, "w") as f:
-        json.dump({"area_km2": area_km2, "bounds": list(bounds)}, f, indent=2)
-    print(f"  Basin info: {area_json}")
-
-    # 7. Validate
-    print("\n[validate_outputs] Checking output...")
-    warnings_list = validate_outputs(df, args.output_dir)
-
-    result = {
-        "status": "success",
-        "output_csv": out_csv,
-        "n_days": len(df),
-        "area_km2": area_km2,
-        "warnings": warnings_list,
-    }
-    print(f"\n{json.dumps(result, indent=2)}")
-    return result
+    calendar=_calendar(args.start_date,args.end_date)
+    pet=load_pet_csv(args.pet_csv,args.start_date,args.end_date)
+    gdf,bounds,area=read_basin_mask(args.basin_shp)
+    required=getattr(args,'temperature_mode','required')=='required'
+    data=read_cmfd_forcing(args.forcing_dir,bounds,args.start_date,args.end_date,basin_geometry=gdf.geometry.union_all(),temperature_required=required)
+    df=build_forcing_csv(data,convert_units(data),pet,args.start_date,args.end_date,temperature_required=required)
+    validate_outputs(df)
+    content=df.to_csv(float_format='%.17g')
+    info=dict(area_km2=area,bounds=bounds.tolist(),start_date=str(calendar[0].date()),end_date=str(calendar[-1].date()),n_days=len(df),temperature_mode='required' if required else 'unused',fill_count=0,
+              pet_source=str(Path(args.pet_csv).resolve()),pet_source_sha256=hashlib.sha256(Path(args.pet_csv).read_bytes()).hexdigest(),pet_method='provided daily pet_mm; no automatic method selection',
+              forcing_sources={key:da.attrs for key,da in data.items()},output_sha256=hashlib.sha256(content.encode()).hexdigest())
+    out=Path(args.output_dir);out.mkdir(parents=True,exist_ok=True)
+    (out/'basin_avg_forcing.csv').write_text(content)
+    (out/'basin_info.json').write_text(json.dumps(info,indent=2,allow_nan=False)+'\n')
+    result=dict(status='success',output_csv=str(out/'basin_avg_forcing.csv'),n_days=len(df),area_km2=area,fill_count=0)
+    print(json.dumps(result,indent=2));return result
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Convert CMFD forcing to HEC-HMS format")
-    parser.add_argument("--forcing_dir", required=True, help="CMFD forcing directory")
-    parser.add_argument("--basin_shp", required=True, help="Basin shapefile path")
-    parser.add_argument("--start_date", required=True, help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end_date", required=True, help="End date (YYYY-MM-DD)")
-    parser.add_argument("--output_dir", required=True, help="Output directory")
-    args = parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--forcing_dir',required=True)
+    parser.add_argument('--basin_shp',required=True)
+    parser.add_argument('--start_date',required=True)
+    parser.add_argument('--end_date',required=True)
+    parser.add_argument('--pet_csv',required=True,help='Explicit daily date,pet_mm file; retain its source/derivation')
+    parser.add_argument('--temperature_mode',choices=['required','unused'],default='required',help='unused is only for a native model with no temperature-dependent process')
+    parser.add_argument('--output_dir',required=True)
+    args=parser.parse_args()
+    try:
+        validate_inputs(args);process(args)
+    except (ValueError,OSError,KeyError) as exc:
+        print(f'ERROR: {exc}',file=sys.stderr);return 2
+    return 0
 
-    validate_inputs(args)
-    process(args)
 
-
-if __name__ == "__main__":
-    main()
+if __name__=='__main__':raise SystemExit(main())

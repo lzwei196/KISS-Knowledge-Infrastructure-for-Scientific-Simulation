@@ -1,0 +1,9 @@
+# Hand-written labels for the projected KI map / tool index in SKILL.md.
+# generate_skill_map.py reads this file, so a re-projection keeps these words.
+# Edit here, not inside the projected blocks.
+tools:
+  tools/calibrate_hms.py: '**SURROGATE, not HEC-HMS**'
+  tools/run_hec_hms.py: '**SURROGATE, not HEC-HMS**'
+  tools/run_hms_engine.py: '**default run route: the REAL engine**'
+rows:
+  tools: the REAL engine is `tools/run_hms_engine.py`

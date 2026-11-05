@@ -44,8 +44,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | tool (exact path) | invocation |
 |---|---|
-| `tools/bmi_runner.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/bmi_runner.py --help` |
-| `tools/compliance_checker.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/compliance_checker.py --help` |
+| `tools/bmi_runner.py` | `"${BMI_HEAT_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python}" {KI}/tools/bmi_runner.py --help` (run with the Python where the BMI model is installed; this one has the heat example `heat.bmi_heat BmiHeat`, python_env has no model) |
+| `tools/compliance_checker.py` | `"${BMI_HEAT_PYTHON:-KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/BMI/venv/bin/python}" {KI}/tools/compliance_checker.py --help` (run with the Python where the BMI model is installed; this one has the heat example `heat.bmi_heat BmiHeat`, python_env has no model) |
 | `tools/config_generator.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/config_generator.py --help` |
 | `tools/output_extractor.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/output_extractor.py --help` |
 
@@ -60,7 +60,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Created by**: CSDMS (Community Surface Dynamics Modeling System), University of Colorado Boulder
 **Authors**: Eric W.H. Hutton, Mark D. Piper, Gregory E. Tucker
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 17 diagnostic triplets | ~1,200 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `specification_validated` (bmi-example-python heat model)
 
 ---

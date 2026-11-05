@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Land surface processes (energy, water, carbon, nitrogen, phosphorus)
 **Created by**: Auto-dissection pipeline
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 7 skill documents | 20 diagnostic triplets | ~1,800 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `documentation_validated` (no HPC cluster available for execution)
 
 ---
@@ -552,7 +552,7 @@ ELM exchanges fields with other E3SM components through the MCT coupler:
 
 ## 14. Diagnostic Triplets Summary
 
-20 triplets covering 6 failure domains:
+Triplets covering 6 failure domains (current count: the KI map at the top of this file):
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -640,7 +640,7 @@ ki/
 │   ├── s6_execution.md               # Running the model
 │   └── s7_output_analysis.md          # Analyzing model output
 ├── diagnostics/
-│   └── triplets.yaml                  # 20 symptom→diagnosis→remedy entries
+│   └── triplets.yaml                  # diagnostic triplets (count: KI map)
 └── workflow/
     └── workflow.md                    # Pipeline workflow description
 ```

@@ -477,5 +477,5 @@ ki/
 │   ├── s4_execution.md             # Running PHREEQC
 │   └── s5_output_analysis.md       # Output interpretation
 └── diagnostics/
-    └── triplets.yaml               # 15+ symptom-diagnosis-remedy entries
+    └── triplets.yaml               # diagnostic triplets (count: KI map)
 ```

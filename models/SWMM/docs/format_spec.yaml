@@ -672,3 +672,81 @@ known_issues:
   remedy: Clamp [SUBCATCHMENTS] %Imperv (0-based column 4) into [0,100] in place before running, alongside
     the existing %Slope and Manning-n floors (run_city_swmm._clamp_subcatchment_imperv). Then both continuity
     terms are finite and scorable.
+- id: dt_023
+  symptom: SWMM rain made from VIC forcing files (the former convert_vic_forcing_to_swmm tool) has values
+    of about 20 to 30 in every step in summer, never a dry step, and negative values in winter. The run
+    ends without an error and the runoff volume is far too large.
+  diagnosis: The tool read column 0 of the VIC forcing file as rain. In this server's VIC forcing files
+    column 0 is air temperature (rain is column 1), so the SWMM rain series was air temperature.; The
+    KI made its input out of another model's input files. The tool's docstring, docs/s3_rainfall_forcing_skill.md
+    (
+  remedy: Build the rain straight from the data source with tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py
+    (--source cmfd|mswx|nasa_power). Never build SWMM rain from VIC forcing files or from any other model's
+    input files. The removed tool is kept outside the KI at models/SWMM/_removed_vic_in
+  severity: silent
+- id: dt_024
+  symptom: A 3-hourly (CMFD / MSWX) or hourly (NASA POWER) rain series is in the model, the run ends without
+    an error, but 'Total Precipitation' in the .rpt is a small part of the series total (1/36 for 3-hourly
+    data, 1/12 for hourly data).
+  diagnosis: The [RAINGAGES] INTERVAL is not the data step. The swmmanywhere city model ships a 5-minute
+    design-storm gage (INTERVAL 00:05); with that INTERVAL kept, SWMM holds each rain value for 5 minutes
+    instead of 3 hours.; For a rain gage SWMM applies each value for one INTERVAL from its time stamp
+    and read
+  remedy: 'Use the INTERVAL and FORMAT that build_rain_timeseries_from_source printed (3:00 for cmfd /
+    mswx, 1:00 for nasa_power; also in <output>.summary.json). For the city model pass them to run_city_swmm.py
+    with --rain_dat --rain_interval --rain_format; do not edit the .inp by hand.; run_city_swmm; [''Read '
+  severity: silent
+- id: dt_025
+  symptom: An agent that needs real rain for a place with no gauge finds no tool that reads CMFD, MSWX
+    or NASA POWER. SKILL.md said to call load_daily_forcing and then convert_vic_forcing_to_swmm, which
+    fails ('Directory not found' / no forcing file for the cell) because that tool only read VIC forcing
+    files a
+  diagnosis: The KI had no tool that reads a gridded forcing source. The only non-gauge path went through
+    VIC forcing files, and the documented loader call returned daily data, which is too coarse for SWMM
+    (a day total hides the storm peak).; Without a direct tool the agent either runs the VIC forcing preparatio
+  remedy: Use tools/s3_rainfall_forcing/build_rain_timeseries_from_source.py. It calls ki_tools_common.load_forcing.load_hourly_forcing
+    itself (precip_mm = mm in the step; 10800 s for cmfd / mswx, 3600 s for nasa_power) and writes the
+    SWMM .dat plus a summary file. It stops with nothing written on a missing v
+  severity: degraded
+- id: dt_026
+  symptom: 'A command copied from docs/s3_rainfall_forcing_skill.md stops at once with ''error: unrecognized
+    arguments'' or ''the following arguments are required''.'
+  diagnosis: The stage document showed commands with options the tools do not have (for the VIC forcing
+    tool --forcing_prefix, --subcatchment_shapefile, --vic_grid_nc, --output_format, --output_dir; for
+    create_rain_timeseries --rainfall_csv, --data_format, --interval_minutes, --output_file; for generate_design_s
+  remedy: Run the tool with --help and use the options it lists; the tool is right, the document was wrong.
+    Then correct the document.; None; ['Run <tool> --help', 'Use the listed options']; When a tool's options
+    change, run each command shown in its stage document once.
+  severity: fatal
+- id: dt_027
+  symptom: docs/model_couplings.yaml listed 'Coupling 4, VIC Forcing to SWMM Rainfall' (id vic_forcing_to_swmm_rainfall),
+    so a planner asked for a coupled run prepared VIC forcing files first in order to get SWMM rain.
+  diagnosis: A forcing shortcut was written down as a model coupling. No VIC result is passed in it; it
+    only reused VIC's input files as SWMM input.; A coupling is one model's RESULTS feeding another model
+    (VIC runoff as SWMM inflow, CaMa stage as outfall boundary, SWMM outflow as CaMa lateral inflow).
+    Rain is i
+  remedy: The entry was removed on 2026-10-02; three couplings stay. For the same rain as an upstream
+    VIC run, build the SWMM rain from the same dataset VIC was driven with, using build_rain_timeseries_from_source.;
+    build_rain_timeseries_from_source; ['Name the forcing dataset of the VIC run (cmfd / mswx / na
+  severity: degraded
+- id: dt_snowpack_uninitialized_imelt_20261003
+  symptom: An unchanged city model sometimes has NaN final storage/runoff continuity after GIS construction,
+    while a clean-process rerun is finite. Some impervious subareas produce no runoff.
+  diagnosis: 'SWMM 5.2.4 allocates TSnowpack with malloc; snow_initSnowpack does not initialize imelt.
+    snow_plowSnow resets imelt only for positive-area surfaces, while snow_getSnowMelt reads it for every
+    surface. NaN in a zero-area PLOWABLE surface enters the weighted impervious precipitation through
+    0*NaN. The '
+  remedy: run_city_swmm removes only the exact swmmanywhere empty snowpack template, only when there is
+    no temperature forcing, climate adjustment, initial snow, or hotstart. Real snow configurations are
+    preserved. Check finalized runoff AND routing continuity; missing or non-finite components fail the
+    run. F
+- id: dt_empty_timeseries_export_20261003
+  symptom: extract_results reports success but requested node/link/subcatchment CSVs are absent or contain
+    only headers.
+  diagnosis: An unused import from nonexistent pyswmm.lib forced report fallback even with pyswmm installed.
+    The binary branch also used strings instead of attribute enums and never wrote node data rows. Summary
+    parsing reset at the blank line after its heading and mistook the Type field for a number.
+  remedy: Use pyswmm.Output with toolkit attribute enums, align all requested series by report time, and
+    write complete CSVs only after checking IDs, coverage and finite values. Fail instead of substituting
+    an RPT summary for requested time series. Parse native report summary columns when no element IDs
+    are r

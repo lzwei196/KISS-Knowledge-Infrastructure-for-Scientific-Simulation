@@ -1,0 +1,60 @@
+{
+  "test_case": "WASP steady_state (official EPA WASP 'Steady State' example)",
+  "engine": {
+    "name": "EPA WASP (Water Quality Analysis Simulation Program)",
+    "version": "8.5.0",
+    "runtime_banner": "Wasp suite version 8.5.0, Gui develop af12325 dirty, Model master e86fb43",
+    "binary": "C:\\WASP8\\wasp\\bin\\waspccli.exe (Windows) run under WINE 9.0; results extracted with C:\\WASP8\\wasp\\bin\\BMD2_Extract.exe",
+    "installer": {
+      "file": "wasp-version-8.5.0-install-64-bit-10-25-2025.exe",
+      "url": "https://www.epa.gov/system/files/other-files/2026-08/wasp-version-8.5.0-install-64-bit-10-25-2025.exe",
+      "sha256": "2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4"
+    },
+    "source": "US EPA official Windows release (closed-source binaries; no public source repository)",
+    "license": "US EPA public software release (US Government work); see the WASP installer terms"
+  },
+  "ki": {
+    "model": "WASP",
+    "run_tool": "tools/run_wasp_engine.py",
+    "note": "tools/run_wasp.py is the KI's analytic surrogate and is NOT used by this case"
+  },
+  "example_source": {
+    "file": "steady-state-example.zip",
+    "url": "https://www.epa.gov/sites/default/files/2018-05/steady-state-example.zip",
+    "listed_on": "https://www.epa.gov/hydrowq/wasp-model-examples",
+    "sha256": "6b9571929c7c1abdbacc43c37447b40f17240e5c2e3d45c872c672539c5f1579",
+    "note": "EPA web download (not bundled in the installer). All 4 files of the zip are kept unmodified in inputs/; only SteadyState.wif is run."
+  },
+  "simulation": {
+    "model": "10-segment river, kinematic-wave flow, upstream boundary + NPDES point source",
+    "systems": [
+      "Upstream BOD",
+      "NPDES BOD",
+      "DO",
+      "Solids",
+      "Temp"
+    ],
+    "start": "2012-07-01 00:00",
+    "length_days": 4.96,
+    "output_interval_days": 0.014,
+    "n_output_times": 355
+  },
+  "files": {
+    "inputs/4-Steady State Example.pdf": {
+      "bytes": 461542,
+      "sha256": "71d3c33e6ba0acfa1a226d77b5171c676b21b0dcce7649a3c0d7bf200885e5aa"
+    },
+    "inputs/4-Steady State Example.pptx": {
+      "bytes": 208076,
+      "sha256": "86270fd16432656364503a8909b76271657f0acc5c95fdcb6050c352dae2decd"
+    },
+    "inputs/SteadyState.wif": {
+      "bytes": 42183,
+      "sha256": "41a3178f444dfc3ef8952a2de05713187ce4aeed55a88ef5fe5f78611e0eb4cf"
+    },
+    "inputs/SteadyState.xlsx": {
+      "bytes": 82534,
+      "sha256": "e249455edbf2694ab07c4541b6a028ae17e5ebfc9b52c955fee544340a433bed"
+    }
+  }
+}

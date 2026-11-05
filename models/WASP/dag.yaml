@@ -1,439 +1,400 @@
-template_version: "3.5"
-
+template_version: '3.5'
 identity:
-  model_id: "WASP"
-  scientific_reference_version: "WASP (US EPA Water Analysis Simulation Program) core water-quality physics; analytic lake/reservoir reimplementation (temperature, DO, BOD, TSI)"
+  model_id: WASP
+  scientific_reference_version: US EPA WASP 8.5.0 (Water Quality Analysis Simulation Program), Advanced Eutrophication
+    model (multi-algae.dll) with the WASP heat module; runtime banner 'Wasp suite version 8.5.0, Gui develop af12325
+    dirty, Model master e86fb43'
   implementation:
-    id: "hydrocraft-wasp"
-    version: "1.0.0"
-    provenance: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
-  ki_class: "forward_model"
+    id: usepa-wasp-8.5.0
+    version: 8.5.0
+    provenance: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe) from
+      the official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+      run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older Python
+      tools run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not this implementation
+      and not described by this dag; their own contract is docs/surrogate/surrogate_wasp_analytic_dag.yaml.
+  ki_class: forward_model
   is_family_dag: false
-  language: "python"
-  license: "Public-Domain"
-  repo_url: ""
-
+  language: fortran/c++ (closed-source EPA Windows binaries)
+  license: Public-Domain
+  repo_url: ''
+  notes: 'Hand-updated 2026-10-07 (real-engine wiring, case wasp_real_engine_wiring_20261006): the 2026-06 auto
+    dag described the analytic surrogate. Output names and validation ranks are kept so the obs map and validation_convention.yaml
+    stay bound; descriptions now state what the real engine emits and through which KI tool. Previous version (the
+    surrogate''s contract): docs/surrogate/surrogate_wasp_analytic_dag.yaml.'
 boundary:
   scope_in:
-    - "Seasonal surface water temperature (sinusoidal annual cycle)"
-    - "Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps)"
-    - "1-D vertical temperature profile (logistic thermocline structure)"
-    - "1-D vertical dissolved-oxygen profile (epilimnion/hypolimnion)"
-    - "DO saturation from temperature (Benson-Krause)"
-    - "BOD decay and oxygen-deficit sag (time-dependent Streeter-Phelps)"
-    - "Carlson Trophic State Index from Chl-a, Secchi, TP"
+  - Water temperature from a full surface heat balance (short-wave, long-wave, evaporation, conduction, optional
+    ice) driven by weather time functions
+  - 'Dissolved oxygen: reaeration (hydraulic and wind-driven), CBOD decay, sediment oxygen demand, DO saturation
+    with elevation (pressure) correction'
+  - CBOD (ultimate) first-order decay with temperature correction
+  - Segment networks with flow routing options (stream routing, kinematic wave, flow routing, ponded weir, Lake
+    1D-vertical, dynamic) - the KI builds well-mixed constant-volume boxes (Flow Routing) only
+  - Nutrients, phytoplankton, solids, pH/alkalinity, bacteria, tracer (Advanced Eutrophication systems) - available
+    in the engine, NOT configured by the KI builder yet
   scope_out:
-    - "Internal unit conversion (inputs must already be in expected units)"
-    - "Interannual variability in loading and stratification"
-    - "Seasonally varying thermocline depth (fixed thermocline depth)"
-    - "Horizontal transport / multi-segment advection-dispersion network"
-  spatial: "0-D point | 1-D column"
-  temporal: "daily"
-  closure: "mass-balance"
-  notes: >
-    Mass-balance closure applies to the BOD-DO oxygen budget (first-order BOD
-    decay, atmospheric reaeration, and sediment/hypolimnetic oxygen demand).
-    The seasonal temperature model and the 1-D logistic thermocline are
-    prescribed analytic structural forms (sinusoidal in day-of-year, logistic
-    in depth), not a closed surface energy budget. The seasonal DO output uses
-    a steady-state Streeter-Phelps simplification; the time-dependent oxygen-
-    deficit sag solution is a distinct mode. Profile/thermocline outputs are
-    valid only during summer stratification (Jun-Aug NH) given the fixed
-    thermocline depth.
-
+  - Hydrodynamics in the box case (no current; Flow Routing keeps volume/depth fixed)
+  - Vertical stratification in the KI lake-box case (one well-mixed layer; a layered or Lake 1D-vertical deck is
+    needed)
+  - Building a new segment network from nothing (the API can edit counts but shrinking segments crashes; copy-first
+    only)
+  spatial: 0-D well-mixed box per segment (KI case) | 1-D network of segments (engine)
+  temporal: engine time step <= max dt (KI default 0.05 d); daily weather breakpoints; BMD2 output about every 0.02
+    d
+  closure: mass-balance
+  notes: Mass balance per segment for every simulated system; heat balance for water temperature. The KI's Lake
+    Erie case uses 10 hydraulically isolated identical boxes (flow 1e-4 m3/s) and scores segment 1.
 inputs:
   forcing:
-    - category: forcing
-      name: "water temperature"
-      unit: "deg C"
-      source_kind: forcing
-      model_input_format: "observed surface/profile temperature time series in Celsius"
-      notes: "Model performs no internal conversion; Benson-Krause adds 273.15 internally, so inputs must be Celsius."
-    - category: forcing
-      name: "dissolved_oxygen"
-      unit: "mg/L"
-      source_kind: forcing
-      model_input_format: "observed DO concentration time series"
-    - category: forcing
-      name: "chlorophyll_a"
-      unit: "ug/L"
-      source_kind: forcing
-      model_input_format: "observed Chl-a; drives TSI(Chl-a)"
-    - category: forcing
-      name: "depth"
-      unit: "m"
-      source_kind: forcing
-      model_input_format: "observation depth for profile modes"
-    - category: forcing
-      name: "day_of_year"
-      unit: "integer 1-366"
-      source_kind: forcing
-      model_input_format: "day-of-year index driving the sinusoidal seasonal model"
-    - category: forcing
-      name: "secchi_depth"
-      unit: "m"
-      source_kind: forcing
-      model_input_format: "Secchi transparency; drives TSI(Secchi)"
-    - category: forcing
-      name: "total_phosphorus"
-      unit: "ug/L"
-      source_kind: forcing
-      model_input_format: "TP concentration; drives TSI(TP)"
+  - category: forcing
+    name: solar_radiation
+    unit: W/m2
+    source_kind: forcing
+    model_input_format: time function Solar Radiation - 1 (ISC 4), daily-mean breakpoints, days relative to the
+      seed date
+    notes: from load_daily_forcing srad_wm2
+  - category: forcing
+    name: air_temperature
+    unit: deg C
+    source_kind: forcing
+    model_input_format: time function Air Temperature Function 1 (ISC 17)
+  - category: forcing
+    name: dew_point_temperature
+    unit: deg C
+    source_kind: derived
+    model_input_format: time function Dew Point Function 1 (ISC 29)
+    notes: Magnus inverse of specific humidity and surface pressure
+  - category: forcing
+    name: wind_speed
+    unit: m/s
+    source_kind: forcing
+    model_input_format: time function Wind Speed Function 1 (ISC 21); 10 m wind from the loader
+  - category: forcing
+    name: cloud_cover
+    unit: fraction 0-1
+    source_kind: derived
+    model_input_format: time function Cloud Cover Function 1 (ISC 25); a 0-1 FRACTION (tenths gives 70 C water,
+      percent hangs the engine)
+    notes: Kasten-Czeplak inverse of shortwave / FAO-56 clear-sky shortwave
   parameters:
-    - category: parameters
-      name: "T_mean"
-      unit: "deg C"
-      source_kind: calibrated
-      model_input_format: "annual average surface temperature (sinusoidal model); typical 2-30"
-    - category: parameters
-      name: "amplitude"
-      unit: "deg C"
-      source_kind: calibrated
-      model_input_format: "seasonal temperature swing; typical 3-18"
-    - category: parameters
-      name: "phase"
-      unit: "day"
-      source_kind: calibrated
-      model_input_format: "day-of-year of temperature peak (~130 NH); typical 90-170"
-    - category: parameters
-      name: "kd"
-      unit: "1/d"
-      source_kind: calibrated
-      model_input_format: "BOD deoxygenation rate; 0.05-0.3 typical for lakes"
-    - category: parameters
-      name: "ka"
-      unit: "1/d"
-      source_kind: calibrated
-      model_input_format: "atmospheric reaeration rate; 0.1-1.0 typical for lakes"
-    - category: parameters
-      name: "BOD0"
-      unit: "mg/L"
-      source_kind: calibrated
-      model_input_format: "background/initial BOD loading; 1-10 typical for lakes"
-      notes: "Dual role — calibration parameter in the seasonal DO model and an initial condition for the time-dependent deficit solution."
-    - category: parameters
-      name: "DO_offset"
-      unit: "mg/L"
-      source_kind: calibrated
-      model_input_format: "systematic DO correction; typical -3 to 3"
-    - category: parameters
-      name: "T_surface"
-      unit: "deg C"
-      source_kind: calibrated
-      model_input_format: "epilimnion (summer surface) temperature; typical 15-30"
-    - category: parameters
-      name: "T_bottom"
-      unit: "deg C"
-      source_kind: calibrated
-      model_input_format: "hypolimnion temperature; typical 4-15"
-    - category: parameters
-      name: "thermo_depth"
-      unit: "m"
-      source_kind: calibrated
-      model_input_format: "depth of maximum dT/dz; typical 3-30"
-    - category: parameters
-      name: "thermo_width"
-      unit: "m"
-      source_kind: calibrated
-      model_input_format: "thermocline transition thickness; typical 0.5-10"
-    - category: parameters
-      name: "z_max"
-      unit: "m"
-      source_kind: dataset_lookup
-      model_input_format: "maximum lake depth (morphometry)"
-    - category: parameters
-      name: "z_mean"
-      unit: "m"
-      source_kind: dataset_lookup
-      model_input_format: "mean depth = volume / surface area"
-    - category: parameters
-      name: "area"
-      unit: "km2"
-      source_kind: dataset_lookup
-      model_input_format: "lake surface area"
-    - category: parameters
-      name: "volume"
-      unit: "m3"
-      source_kind: dataset_lookup
-      model_input_format: "total lake volume"
-    - category: parameters
-      name: "SOD"
-      unit: "g O2/m2/d"
-      source_kind: calibrated
-      model_input_format: "sediment oxygen demand; typical 0.1-3.0"
-    - category: parameters
-      name: "depletion_rate"
-      unit: "per meter below thermocline"
-      source_kind: calibrated
-      model_input_format: "hypolimnetic DO depletion rate; oligotrophic 0.01-0.03, eutrophic 0.05-0.15"
+  - category: parameters
+    name: segment_depth
+    unit: m
+    source_kind: user_provided
+    model_input_format: DMULT with DEXP 0 and INITIALDEPTH under Flow Routing (flow option 7)
+  - category: parameters
+    name: segment_volume
+    unit: m3
+    source_kind: derived
+    model_input_format: VOLUME = area x depth
+  - category: parameters
+    name: elevation
+    unit: m a.s.l.
+    source_kind: dataset_lookup
+    model_input_format: constant 57 and segment parameter 24 (DO saturation pressure); needs the 'used' flag
+  - category: parameters
+    name: latitude_longitude
+    unit: degrees
+    source_kind: user_provided
+    model_input_format: constants 2 and 3
+  - category: parameters
+    name: sediment_oxygen_demand
+    unit: g O2/m2/d
+    source_kind: calibrated
+    model_input_format: segment parameter 32 (temperature-corrected with constant 61)
+  - category: parameters
+    name: cbod_decay_rate
+    unit: 1/d at 20 C
+    source_kind: calibrated
+    model_input_format: constant 47, one instance per CBOD system
+  - category: parameters
+    name: global_reaeration_rate
+    unit: 1/d at 20 C
+    source_kind: calibrated
+    model_input_format: constant 55; 0 = engine computes hydraulic/wind reaeration
+  - category: parameters
+    name: ice_switch
+    unit: 0/1/2
+    source_kind: user_provided
+    model_input_format: constant 501
   initial_conditions:
-    - category: initial_conditions
-      name: "D0"
-      unit: "mg/L"
-      source_kind: user_provided
-      model_input_format: "initial oxygen deficit (DO_sat - DO) for the Streeter-Phelps deficit solution"
-    - category: initial_conditions
-      name: "BOD0"
-      unit: "mg/L"
-      source_kind: user_provided
-      model_input_format: "initial BOD for first-order decay (time-dependent mode)"
-  boundary_conditions: []
-
+  - category: initial_conditions
+    name: initial_concentrations
+    unit: system units (mg/L, deg C)
+    source_kind: user_provided
+    model_input_format: INITC per system and segment
+  boundary_conditions:
+  - category: boundary_conditions
+    name: boundary_concentrations_and_flows
+    unit: system units; m3/s
+    source_kind: user_provided
+    model_input_format: BOUNDFUNC per system/boundary, NOQFUNC per flow function; in the KI box case flows are 1e-4
+      m3/s and boundaries equal the initial values
 processes:
   modules:
-    - name: "SeasonalTemperature"
-      role: "process_solver"
-      brief: "Sinusoidal annual surface temperature T(doy)=T_mean+amplitude*sin(2pi(doy-phase)/365)."
-    - name: "DOSaturation_BensonKrause"
-      role: "process_solver"
-      brief: "Temperature-dependent DO saturation, ln(DO_sat) polynomial in absolute temperature (Benson & Krause 1984)."
-    - name: "StreeterPhelps_BOD_DO"
-      role: "process_solver"
-      brief: "First-order BOD decay coupled with reaeration; analytic oxygen-deficit sag and steady-state seasonal-DO simplification."
-    - name: "LogisticThermocline"
-      role: "process_solver"
-      brief: "CE-QUAL-W2-style sigmoid T(z)=T_bottom+(T_surface-T_bottom)/(1+exp((z-thermo_depth)/thermo_width)); valid in summer stratification."
-      applicability: "summer-stratification profile mode"
-    - name: "DOProfile_1D"
-      role: "process_solver"
-      brief: "Epilimnion near saturation; hypolimnion depleted by SOD/depletion_rate below the thermocline."
-      applicability: "summer-stratification profile mode"
-    - name: "CarlsonTSI"
-      role: "process_solver"
-      brief: "Trophic State Index from Chl-a, Secchi, and/or TP (Carlson 1977 log relations)."
+  - name: HeatModule
+    role: process_solver
+    brief: 'Surface heat balance (CE-QUAL-W2 lineage): solar, Brunt long-wave with cloud cover, evaporation and
+      conduction with a wind function, bottom exchange, optional ice.'
+  - name: DissolvedOxygen
+    role: process_solver
+    brief: Reaeration (Covar/O'Connor/Owens/Churchill/Tsivoglou/Zappa; wind-driven for lakes) toward a temperature-
+      and pressure-dependent saturation; CBOD decay; SOD.
+  - name: CBOD
+    role: process_solver
+    brief: First-order decay of ultimate CBOD with theta correction and oxygen half-saturation.
+  - name: Transport
+    role: process_solver
+    brief: Segment advection/dispersion; Flow Routing keeps volume, depth and velocity fixed.
   internal_edges:
-    - from: "Inputs"
-      to: "SeasonalTemperature"
-      kind: "consumes_input"
-      brief: "Reads day_of_year and the seasonal temperature parameters."
-    - from: "SeasonalTemperature"
-      to: "DOSaturation_BensonKrause"
-      kind: "invokes"
-      brief: "Modeled (or observed) temperature drives DO saturation."
-    - from: "DOSaturation_BensonKrause"
-      to: "DO_sat"
-      kind: "writes_state"
-      brief: "Computes the diagnostic DO_sat field."
-    - from: "DO_sat"
-      to: "StreeterPhelps_BOD_DO"
-      kind: "reads_state"
-      brief: "Reaeration drives DO toward saturation."
-    - from: "StreeterPhelps_BOD_DO"
-      to: "BOD"
-      kind: "writes_state"
-      brief: "First-order BOD decay BOD(t)=BOD0*exp(-kd*t)."
-    - from: "StreeterPhelps_BOD_DO"
-      to: "oxygen_deficit_D"
-      kind: "writes_state"
-      brief: "Oxygen-deficit sag D(t); peaks at t_c=ln(ka/kd)/(ka-kd)."
-    - from: "StreeterPhelps_BOD_DO"
-      to: "DO"
-      kind: "writes_state"
-      brief: "DO = DO_sat - deficit, clipped to plausible bounds."
-    - from: "StreeterPhelps_BOD_DO"
-      to: "Outputs"
-      kind: "produces_output"
-      brief: "Emits seasonal DO time series."
-    - from: "Inputs"
-      to: "LogisticThermocline"
-      kind: "consumes_input"
-      brief: "Reads depth and thermal-profile parameters."
-    - from: "LogisticThermocline"
-      to: "DOProfile_1D"
-      kind: "invokes"
-      brief: "Vertical thermal structure conditions the vertical DO structure."
-    - from: "DOProfile_1D"
-      to: "Outputs"
-      kind: "produces_output"
-      brief: "Emits 1-D vertical DO profile."
-    - from: "Inputs"
-      to: "CarlsonTSI"
-      kind: "consumes_input"
-      brief: "Reads Chl-a, Secchi, TP."
-    - from: "CarlsonTSI"
-      to: "Outputs"
-      kind: "produces_output"
-      brief: "Emits Carlson TSI."
-
+  - from: Inputs
+    to: HeatModule
+    kind: consumes_input
+    brief: weather time functions
+  - from: HeatModule
+    to: water_temperature
+    kind: writes_state
+    brief: segment water temperature
+  - from: water_temperature
+    to: DissolvedOxygen
+    kind: reads_state
+    brief: saturation and rate temperature correction
+  - from: CBOD
+    to: DissolvedOxygen
+    kind: invokes
+    brief: oxygen consumed by CBOD decay
+  - from: DissolvedOxygen
+    to: Outputs
+    kind: produces_output
+    brief: BMD2 'Dissolved Oxygen'
+  - from: HeatModule
+    to: Outputs
+    kind: produces_output
+    brief: BMD2 'Water Temperature'
 states:
   variables:
-    - name: "BOD"
-      unit: "mg/L"
-      role: "prognostic"
-    - name: "DO"
-      unit: "mg/L"
-      role: "prognostic"
-    - name: "oxygen_deficit_D"
-      unit: "mg/L"
-      role: "prognostic"
-    - name: "DO_sat"
-      unit: "mg/L"
-      role: "diagnostic"
-    - name: "T_z"
-      unit: "deg C"
-      role: "diagnostic"
-    - name: "T_doy"
-      unit: "deg C"
-      role: "diagnostic"
-    - name: "TSI"
-      unit: "dimensionless"
-      role: "diagnostic"
-  provenance: "structural"
-
+  - name: water_temperature
+    unit: deg C
+    role: prognostic
+  - name: dissolved_oxygen
+    unit: mg/L
+    role: prognostic
+  - name: cbod_ultimate
+    unit: mg O2/L
+    role: prognostic
+  - name: inorganic_solids
+    unit: mg/L
+    role: prognostic
+  - name: segment_volume
+    unit: m3
+    role: diagnostic
+  provenance: structural
 outputs:
-  - var: "temperature_timeseries"
-    validation_rank: 4
-    unit: "deg C"
-    description: "Seasonal surface water temperature time series (sinusoidal annual cycle)."
-    emitted_in: "WASP output (seasonal time-series mode)"
-    observability:
-      comparable_obs_shapes:
-        - obs_shape: "point_time_series"
-          comparison_mode: "time_series_comparison"
-          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
-          determining_metric: "nse"
-          caveats: ["Single seasonal cycle; cannot reproduce interannual variability. Exclude warmup year."]
-      detrending_options: ["none"]
-  - var: "do_timeseries"
-    validation_rank: 1
-    unit: "mg/L"
-    description: "Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps)."
-    emitted_in: "WASP output (seasonal time-series mode)"
-    observability:
-      comparable_obs_shapes:
-        - obs_shape: "point_time_series"
-          comparison_mode: "time_series_comparison"
-          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
-          determining_metric: "nse"
-          caveats: ["Steady-state seasonal simplification; reduced skill where interannual loading variability dominates."]
-      detrending_options: ["none"]
-  - var: "temperature_profile"
-    validation_rank: 5
-    unit: "deg C"
-    description: "1-D vertical lake/reservoir water-column temperature profile vs depth (logistic thermocline)."
-    emitted_in: "WASP output (profile mode)"
-    observability:
-      comparable_obs_shapes:
-        - obs_shape: "point_snapshot"
-          comparison_mode: "scalar_comparison"
-          metric_families: ["magnitude_accuracy"]
-          determining_metric: "pbias"
-          caveats: ["Per-depth comparison; valid only for summer stratification (Jun-Aug NH) given fixed thermocline depth."]
-      detrending_options: ["none"]
-  - var: "do_profile"
-    validation_rank: 2
-    unit: "mg/L"
-    description: "1-D vertical lake/reservoir water-column DO profile vs depth (epilimnion/hypolimnion)."
-    emitted_in: "WASP output (profile mode)"
-    observability:
-      comparable_obs_shapes:
-        - obs_shape: "point_snapshot"
-          comparison_mode: "scalar_comparison"
-          metric_families: ["magnitude_accuracy"]
-          determining_metric: "pbias"
-          caveats: ["Hypolimnetic depletion depends on SOD/depletion_rate set per lake productivity; summer-stratification only."]
-      detrending_options: ["none"]
-  - var: "do_saturation"
-    validation_rank: 3
-    unit: "mg/L"
-    description: "Benson-Krause DO saturation in lake/reservoir water as a function of water temperature."
-    emitted_in: "WASP output (diagnostic)"
-    observability:
-      comparable_obs_shapes:
-        - obs_shape: "point_snapshot"
-          comparison_mode: "scalar_comparison"
-          metric_families: ["magnitude_accuracy"]
-          determining_metric: "pbias"
-          caveats: ["Closed-form function of temperature; comparison is effectively a check of the temperature input."]
-      detrending_options: ["none"]
-  - var: "TSI"
-    validation_rank: 6
-    unit: "dimensionless"
-    description: "Carlson Trophic State Index for lake/reservoir water from Chl-a, Secchi, and/or TP (Carlson 1977 scale)."
-    emitted_in: "WASP output (TSI mode)"
-    observability:
-      comparable_obs_shapes:
-        - obs_shape: "point_snapshot"
-          comparison_mode: "scalar_comparison"
-          metric_families: ["magnitude_accuracy", "ranking_quality"]
-          determining_metric: "spearman"
-          caveats: ["TSI(Chl-a)/TSI(Secchi)/TSI(TP) agree only for algae-dominated systems; divergence diagnoses non-algal turbidity or P-limitation."]
-        - obs_shape: "point_time_series"
-          comparison_mode: "time_series_comparison"
-          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
-          determining_metric: "nse"
-          caveats: ["When TSI is tracked across a season."]
-      detrending_options: ["none"]
-
+- var: temperature_timeseries
+  validation_rank: 4
+  unit: deg C
+  description: Lake/river surface-water temperature time series per segment (WASP 8.5 heat balance), daily mean
+    of the BMD2 variable 'Water Temperature'.
+  emitted_in: <model>.BMD2 'Water Temperature' (deg C) via run_wasp_engine.py --extract; daily means by parse_wasp_engine_output.py
+  observability:
+    comparable_obs_shapes:
+    - obs_shape: point_time_series
+      comparison_mode: time_series_comparison
+      metric_families:
+      - temporal_pattern_match
+      - magnitude_accuracy
+      determining_metric: nse
+      caveats:
+      - Engine output; in the KI lake-box case it is the temperature of a 12 m well-mixed surface layer - compare
+        with surface (<= 5 m) samples, not whole-column means.
+    detrending_options:
+    - none
+- var: do_timeseries
+  validation_rank: 1
+  unit: mg/L
+  description: Dissolved-oxygen concentration time series in lake/river surface water per segment (WASP 8.5), daily
+    mean of the BMD2 variable 'Dissolved Oxygen'.
+  emitted_in: <model>.BMD2 'Dissolved Oxygen' (mg/L) via run_wasp_engine.py --extract; daily means by parse_wasp_engine_output.py
+  observability:
+    comparable_obs_shapes:
+    - obs_shape: point_time_series
+      comparison_mode: time_series_comparison
+      metric_families:
+      - temporal_pattern_match
+      - magnitude_accuracy
+      determining_metric: nse
+      caveats:
+      - 'The KI box case has no phytoplankton or nutrients configured (no photosynthetic supersaturation, no algal
+        respiration) and no stratification: simulated DO stays near saturation (Lake Erie: 1.03 x). Not configured
+        yet - a scope limit, not an engine fault (dt_wasp_042).'
+      - 'Obs: whole GLNPO CTD cruises can have a failed DO sensor (dt_wasp_041). The headline is ALL data
+        (do_all, station-day rows); the cruise-QC subset (do_sensor_qc, only proven sensor faults left out) is
+        reported next to it, never instead.'
+    detrending_options:
+    - none
+- var: temperature_profile
+  validation_rank: 5
+  unit: deg C
+  description: Vertical lake/reservoir water-column temperature profile vs depth (WASP 8.5 layered segments or Lake
+    1D-vertical flow option).
+  emitted_in: NOT produced by the current KI builder (single well-mixed box); needs a layered deck (surface/subsurface
+    segments) or flow option 5 Lake (1D-Vertical)
+  observability:
+    comparable_obs_shapes:
+    - obs_shape: point_snapshot
+      comparison_mode: scalar_comparison
+      metric_families:
+      - magnitude_accuracy
+      determining_metric: pbias
+      caveats:
+      - No KI tool emits this yet; do not score until a layered deck exists.
+    detrending_options:
+    - none
+- var: do_profile
+  validation_rank: 2
+  unit: mg/L
+  description: Vertical lake/reservoir water-column dissolved-oxygen profile vs depth (WASP 8.5 layered segments
+    or Lake 1D-vertical flow option).
+  emitted_in: NOT produced by the current KI builder (single well-mixed box); needs a layered deck or flow option
+    5 Lake (1D-Vertical)
+  observability:
+    comparable_obs_shapes:
+    - obs_shape: point_snapshot
+      comparison_mode: scalar_comparison
+      metric_families:
+      - magnitude_accuracy
+      determining_metric: pbias
+      caveats:
+      - No KI tool emits this yet; hypolimnetic hypoxia (Lake Erie Central Basin, Aug) needs a bottom layer with
+        SOD.
+    detrending_options:
+    - none
+- var: do_saturation
+  validation_rank: 3
+  unit: mg/L
+  description: Dissolved-oxygen saturation concentration in lake/river surface water at the simulated water temperature
+    and site pressure.
+  emitted_in: computed by parse_wasp_engine_output.py (APHA 1992 fresh-water equation x standard-atmosphere pressure
+    ratio) from the engine's 'Water Temperature'; the engine's own saturation is not written to the BMD2 by the
+    KI case
+  observability:
+    comparable_obs_shapes:
+    - obs_shape: point_snapshot
+      comparison_mode: scalar_comparison
+      metric_families:
+      - magnitude_accuracy
+      determining_metric: pbias
+      caveats:
+      - Diagnostic of the temperature output; the engine's DO in the box case sits ~2.5 % above this value on average.
+    detrending_options:
+    - none
+- var: TSI
+  validation_rank: 6
+  unit: dimensionless
+  description: Carlson Trophic State Index for lake/reservoir water from chlorophyll-a, Secchi depth and/or total
+    phosphorus.
+  emitted_in: 'NOT produced: the KI case deck has no phytoplankton/phosphorus systems; would be post-processed from
+    Advanced Eutrophication chlorophyll and TP output'
+  observability:
+    comparable_obs_shapes:
+    - obs_shape: point_snapshot
+      comparison_mode: scalar_comparison
+      metric_families:
+      - magnitude_accuracy
+      - ranking_quality
+      determining_metric: spearman
+      caveats:
+      - No KI tool emits this from the real engine; the old value came from the SURROGATE.
+    - obs_shape: point_time_series
+      comparison_mode: time_series_comparison
+      metric_families:
+      - temporal_pattern_match
+      - magnitude_accuracy
+      determining_metric: nse
+      caveats:
+      - When TSI is tracked across a season.
+    detrending_options:
+    - none
 influence:
   edges: []
-  _reason: "Sensitivity literature stream (lit_reader.json) returned null; no citation-backed sensitivity edges could be established. Mechanistic dependencies (temperature->DO_sat, BOD->DO, reaeration->DO, T(z)->DO_profile, Chl-a/Secchi/TP->TSI) are captured in processes.internal_edges, not here."
+  _reason: Sensitivity literature stream (lit_reader.json) returned null; no citation-backed sensitivity edges could
+    be established. Mechanistic dependencies (temperature->DO_sat, BOD->DO, reaeration->DO, T(z)->DO_profile, Chl-a/Secchi/TP->TSI)
+    are captured in processes.internal_edges, not here.
   citation_index: {}
-
 safety:
   hazards:
-    - id: "temperature_unit_not_celsius"
-      kind: "weather_file_semantic"
-      description: "Model performs no internal unit conversion and adds 273.15 internally (Benson-Krause); Fahrenheit or Kelvin temperature inputs run silently and collapse DO_sat toward zero."
-      severity: "silent"
-    - id: "do_unit_not_mgL"
-      kind: "weather_file_semantic"
-      description: "DO supplied as percent-saturation or ug/L instead of mg/L runs without error and yields physically meaningless calibrated DO_offset; DO>20 mg/L almost always signals a unit error."
-      severity: "silent"
-    - id: "depth_or_morphometry_unit_error"
-      kind: "soil_semantic"
-      description: "Depth in feet/cm or area/volume in non-canonical units (ha, m2, acre-ft) silently distort profile and morphometry-derived quantities; observation depth > 1.1*z_max indicates a depth-unit error."
-      severity: "silent"
-    - id: "rate_coefficient_unit_error"
-      kind: "coefficient_runtime_silent_fallback"
-      description: "kd/ka supplied in 1/h instead of 1/d shifts the oxygen-deficit sag timing and magnitude (factor of 24) without raising an error."
-      severity: "silent"
-    - id: "do_clipping_masks_error"
-      kind: "numerical_instability"
-      description: "DO is clipped to [0, DO_sat] (and [0,20] in seasonal mode), so upstream errors can be silently masked by saturation/floor clamping rather than producing obvious out-of-range output."
-      severity: "silent"
+  - id: param_used_flag_off
+    kind: coefficient_runtime_silent_fallback
+    description: 'A segment parameter, constant or time function whose ''used'' flag is 0 is ignored by the engine
+      even though the API PUT echoes the new value (EPA template: params 8/9/11/24/32, constants 2/3/57, cloud TF
+      25 are off) - e.g. elevation then stays 0 m.'
+    severity: silent
+  - id: cloud_cover_units
+    kind: weather_file_semantic
+    description: Cloud cover must be a 0-1 fraction; tenths gave 70 C water, percent made waspccli spin forever.
+    severity: silent
+  - id: time_axis_relative_to_seed
+    kind: weather_file_semantic
+    description: Time-function, flow, boundary and print breakpoints are days relative to the seed date but stored
+      as absolute dates; changing the seed after writing series shifts them.
+    severity: silent
+  - id: wine_exit_code
+    kind: numerical_instability
+    description: waspccli returns 2 on good runs and can spin forever on a bad deck; success = close-out line +
+      fresh .OUT/.BMD2 (run_wasp_engine.py).
+    severity: silent
+  - id: surrogate_confusion
+    kind: coefficient_runtime_silent_fallback
+    description: run_wasp.py is an analytic surrogate; its results are not WASP results.
+    severity: silent
   validation_limits:
-    - "Profile/thermocline outputs are structurally invalid outside summer stratification (Jun-Aug NH): the thermocline depth is fixed and does not migrate seasonally."
-    - "Seasonal DO and temperature models cannot resolve interannual variability in loading or stratification."
-    - "Steady-state Streeter-Phelps seasonal DO mode cannot resolve sub-seasonal transient oxygen-deficit dynamics that the time-dependent deficit mode addresses."
-    - "Carlson TSI three-index agreement assumption holds only for algae-dominated systems."
+  - 'The KI lake-box case is one well-mixed 12 m layer: no stratification, no hypolimnion, no algae, no nutrients
+    (not configured yet), so simulated DO is about 1.03 x saturation.'
+  - WQP 'Lake_Erie_Central' folder is mostly tributary streams; only 'Great Lake' stations are lake water.
+  - GLNPO cruises are April and August only, so scores are dominated by the seasonal contrast.
   warnings:
-    - "BOD0 has a dual role (seasonal-DO calibration parameter and time-dependent initial condition); ensure the intended mode's value is used."
-    - "Warmup data (first year) should generally be excluded for the seasonal models."
-    - "Hypolimnetic depletion_rate and SOD must be set per lake productivity (oligotrophic vs eutrophic); defaults can bias hypolimnetic DO substantially."
-    - "Negative or zero DO observations are instrument artifacts and should be filtered before calibration."
+  - Use EPA's official Steady State example as the regression test after any engine or tool change.
+  - Score every simulated variable in test_runs (not only in notes).
   assumptions:
-    - statement: "Surface temperature follows a single-harmonic sinusoidal annual cycle (one mean/amplitude/phase)."
-      scope: "Seasonal temperature and seasonal DO modes."
-      source: "WASP analytic reimplementation SKILL.md seasonal-model section."
-      status: "adopted"
-    - statement: "Seasonal DO is computed with a steady-state Streeter-Phelps simplification distinct from the time-dependent oxygen-deficit sag solution."
-      scope: "do_timeseries output."
-      source: "WASP analytic reimplementation SKILL.md Streeter-Phelps physics section."
-      status: "adopted"
-    - statement: "Vertical thermal structure is a fixed-depth logistic (CE-QUAL-W2-style) three-layer profile, valid only during summer stratification."
-      scope: "temperature_profile and do_profile outputs."
-      source: "WASP analytic reimplementation SKILL.md thermal-profile section."
-      status: "adopted"
-    - statement: "Carlson TSI indices from Chl-a, Secchi and TP are mutually consistent for algae-dominated systems."
-      scope: "TSI output."
-      source: "Carlson (1977) Trophic State Index; WASP SKILL.md TSI section."
-      status: "tentative"
-
+  - statement: 'A 12 m well-mixed box represents the Central Basin summer epilimnion (August GLNPO profiles: 23.8
+      C to 10-12 m, thermocline 12-18 m).'
+    scope: Lake Erie real case
+    source: GLNPO profile depths parsed from ResultCommentText
+    status: adopted
+  - statement: NASA POWER 0.5 deg weather over the lake represents over-water forcing.
+    scope: Lake Erie real case
+    source: case choice
+    status: tentative
 medium_evidence:
-  - var: "temperature_profile"
-    source: "dag.yaml"
-    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
-    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
-  - var: "do_profile"
-    source: "dag.yaml"
-    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
-    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
-  - var: "do_saturation"
-    source: "dag.yaml"
-    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
-    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
-  - var: "TSI"
-    source: "dag.yaml"
-    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
-    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
+- var: temperature_profile
+  source: dag.yaml
+  quote: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe) from the
+    official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+    run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older Python tools
+    run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not this implementation.
+  note: identity.implementation.provenance declares the engine as surface-water (river, lake and reservoir) water
+    quality.
+- var: do_profile
+  source: dag.yaml
+  quote: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe) from the
+    official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+    run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older Python tools
+    run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not this implementation.
+  note: identity.implementation.provenance declares the engine as surface-water (river, lake and reservoir) water
+    quality.
+- var: do_saturation
+  source: dag.yaml
+  quote: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe) from the
+    official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+    run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older Python tools
+    run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not this implementation.
+  note: identity.implementation.provenance declares the engine as surface-water (river, lake and reservoir) water
+    quality.
+- var: TSI
+  source: dag.yaml
+  quote: EPA WASP 8.5.0 Windows binaries (waspccli.exe engine, wasptool.exe data API, BMD2_Extract.exe) from the
+    official installer wasp-version-8.5.0-install-64-bit-10-25-2025.exe (sha256 2bb410b59ead76d5ba3681f05f61c4b1193a1be8b5393ab7a33f234957b293d4),
+    run headless under WINE 9.0 for surface-water (river, lake and reservoir) water quality. The older Python tools
+    run_wasp.py/convert_*_to_wasp.py/parse_output_wasp.py are an analytic SURROGATE, not this implementation.
+  note: identity.implementation.provenance declares the engine as surface-water (river, lake and reservoir) water
+    quality.

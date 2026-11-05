@@ -22,5 +22,6 @@ class ROMSPreflightSignalTests(unittest.TestCase):
                     result = subprocess.CompletedProcess([], code, b'ROMS version 4.3', b'')
                     checks = []
                     with patch.object(module.subprocess, 'run', return_value=result):
-                        self.assertEqual(module.check_binary_starts(checks, binary), accepted)
+                        started, _app = module.check_binary_starts(checks, binary)
+                    self.assertEqual(started, accepted)
                     self.assertEqual(checks[-1]['status'], 'pass' if accepted else 'fail')

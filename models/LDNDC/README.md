@@ -50,9 +50,9 @@ Same biogeochemistry science, different architecture:
 `tools/run_ldndc_bengbu_ghg.py` (1,032 lines) — complete end-to-end:
 ```bash
 python run_ldndc_bengbu_ghg.py --lat 32.94 --lon 117.35 \
-  --forcing_file outputs/bengbu_.../forcing_final/bengbu_0.25deg_32.8750_117.3750
+  --forcing_source cmfd --forcing_dir <cmfd store>
 ```
-Steps: VIC forcing → climate.txt, HWSD → site.xml, management XML, setup XML, airchemistry, project → run LDNDC → parse JSON results.
+Steps: forcing source (CMFD/MSWX/NASA POWER) → climate.txt, HWSD → site.xml, management XML, setup XML, airchemistry, project → run LDNDC → parse JSON results.
 
 ## Critical Species Names (verified)
 
@@ -116,7 +116,7 @@ source KISSPATH_PYTHON_ENV/bin/activate
 | S7 | Species Parameters | `docs/s7_species_params_skill.md` | `validate_species_params` |
 | S8 | Model Execution | `docs/s8_execution_skill.md` | `run_ldndc` |
 | S9 | Output Parsing and Analysis | `docs/s9_output_parsing_skill.md` | `parse_soilchemistry_output`, `parse_watercycle_output`, `parse_physiology_output`, `aggregate_annual_budget` |
-| S10 | Multi-Model Coupling | `docs/s9_coupling_skill.md` | `vic_to_ldndc_climate`, `vic_to_ldndc_soilwater`, `vic_soil_to_ldndc_site` |
+| S10 | Multi-Model Coupling | `docs/s9_coupling_skill.md` | `vic_to_ldndc_soilwater` |
 
 ## Tools Reference
 
@@ -127,7 +127,7 @@ source KISSPATH_PYTHON_ENV/bin/activate
 | `generate_site_xml` | `tools/s2_site_config/generate_site_xml.py` | Generate site.xml with soil profile and canopy |
 | `hwsd_to_ldndc_soil` | `tools/s2_site_config/hwsd_to_ldndc_soil.py` | Convert HWSD global soil data to LDNDC format |
 | `generate_setup_xml` | `tools/s3_setup_modules/generate_setup_xml.py` | Generate module selection config |
-| `convert_forcing_to_ldndc_climate` | `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py` | Convert CMFD/MSWX/VIC forcing to climate.txt |
+| `convert_forcing_to_ldndc_climate` | `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py` | Convert CMFD/MSWX/NASA POWER/FLUXNET forcing to climate.txt |
 | `validate_climate_file` | `tools/s4_climate_prep/validate_climate_file.py` | Validate climate.txt ranges and completeness |
 | `generate_airchemistry_file` | `tools/s5_airchemistry_prep/generate_airchemistry_file.py` | Generate CO2 + N deposition input |
 | `generate_management_xml` | `tools/s6_management_config/generate_management_xml.py` | Generate sowing/fertilizer/harvest events |
@@ -137,9 +137,7 @@ source KISSPATH_PYTHON_ENV/bin/activate
 | `parse_watercycle_output` | `tools/s9_output_parsing/parse_watercycle_output.py` | Extract ET, drainage, runoff, soil moisture |
 | `parse_physiology_output` | `tools/s9_output_parsing/parse_physiology_output.py` | Extract GPP, NPP, yield, LAI, biomass |
 | `aggregate_annual_budget` | `tools/s9_output_parsing/aggregate_annual_budget.py` | Compute annual C/N budgets with mass balance |
-| `vic_to_ldndc_climate` | `tools/s10_vic_coupling/vic_to_ldndc_climate.py` | Convert VIC forcing to LDNDC climate format |
 | `vic_to_ldndc_soilwater` | `tools/s10_vic_coupling/vic_to_ldndc_soilwater.py` | Map VIC soil moisture to LDNDC layers |
-| `vic_soil_to_ldndc_site` | `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` | Convert VIC soil params to LDNDC site.xml |
 
 ## Critical Domain Knowledge
 
@@ -220,8 +218,7 @@ Example:
 ## Coupling Points with HydroCraft Models
 
 ### VIC -> LDNDC
-- **Climate forcing**: VIC forcing files (7-col ASCII) converted to LDNDC climate.txt via `vic_to_ldndc_climate`. Unit conversions: K->C (temperature), specific humidity->RH%, sub-daily->daily aggregation.
-- **Soil parameters**: VIC soil param file (texture, Ksat, porosity, bulk density) mapped to LDNDC site.xml soil horizons via `vic_soil_to_ldndc_site`. VIC 3-layer to LDNDC multi-layer interpolation.
+- **Climate forcing and soil** are NOT taken from VIC: climate comes straight from the source (`convert_forcing_to_ldndc_climate`), soil from HWSD (`hwsd_to_ldndc_soil`).
 - **Soil moisture**: VIC simulated soil moisture used for LDNDC initial conditions via `vic_to_ldndc_soilwater`.
 
 ### CaMa-Flood -> LDNDC

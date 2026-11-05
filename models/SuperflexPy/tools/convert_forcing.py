@@ -153,6 +153,150 @@ def _open_any_netcdf(path):
     )
 
 
+def _nonfinite_label(x):
+    x = float(x)
+    return "NaN" if np.isnan(x) else "+Inf" if x > 0 else "-Inf" if x < 0 else repr(x)
+
+
+def _gap_policy(P, PET, dates, enabled, sources=None, transforms=None):
+    """Explicit interior interpolation with a complete per-value repair record.
+
+    `P`/`PET` are the converted series (mm/d, after any requested PET sign/floor
+    step); interpolation runs on them. `sources` holds the same series exactly as
+    read from the file, BEFORE unit factors and sign/floor steps, so the record
+    keeps the true source value ("original") even when a transform changed it
+    (e.g. --pet-sign flip turns a source -Inf into +Inf).
+    """
+    sources = sources or {}
+    report = {"enabled": bool(enabled), "method": "linear interpolation between finite neighbours",
+              "interpolated_on": "converted mm/d values after the transforms listed here",
+              "transforms_before_interpolation": transforms or {},
+              "counts": {}, "masks": {}, "records": []}
+    for name, arr in (("P", P), ("PET", PET)):
+        if arr.ndim != 1 or not arr.size:
+            raise ValueError(f"{name}: a nonempty one-dimensional daily series is required")
+        src = np.asarray(sources.get(name, arr), dtype=float)
+        if src.shape != arr.shape:
+            raise ValueError(f"{name}: source and converted series differ in length")
+        good = np.isfinite(arr)
+        if not np.array_equal(good, np.isfinite(src)):
+            raise ValueError(f"{name}: conversion changed which values are finite")
+        report["counts"][name] = int((~good).sum())
+        report["masks"][name] = (~good).tolist()
+        if good.all():
+            continue
+        if not enabled:
+            i = int(np.flatnonzero(~good)[0])
+            raise ValueError(f"{name}: missing/nonfinite value at {dates[i] if dates else i}; "
+                             "supply complete data or explicitly request --fill-forcing-gaps")
+        if not good[0] or not good[-1]:
+            raise ValueError(f"{name}: gap filling needs finite observations on both sides; "
+                             "edge/all-missing gaps cannot be interpolated")
+        valid = np.flatnonzero(good)
+        for i in np.flatnonzero(~good):
+            pos = np.searchsorted(valid, i)
+            left, right = int(valid[pos-1]), int(valid[pos])
+            value = float(np.interp(i, valid, arr[good]))
+            def neighbour(j):
+                return {"index": j, "date": dates[j] if dates else None,
+                        "value": float(arr[j]), "source_value": float(src[j])}
+            report["records"].append({"field": name, "index": int(i),
+                "date": dates[i] if dates else None,
+                "original": _nonfinite_label(src[i]),
+                "after_transforms": _nonfinite_label(arr[i]),
+                "filled_value": value, "method": "linear", "left": neighbour(left), "right": neighbour(right)})
+            arr[i] = value
+    return report
+
+
+def _pet_transform(PET, args, source_label, all_zero_ok=False):
+    """Apply the requested PET sign and floor steps, the same way for every format.
+
+    Returns (PET, info). A wrong sign is never guessed:
+    - finite PET that has negative values and no positive value is the raw
+      downward-positive sign: it stops unless --pet-sign flip is given;
+    - --pet-sign flip is accepted ONLY for that case (on PET with positive
+      values it would invert real demand, on all-zero PET it changes nothing
+      and would record a false sign correction);
+    - finite PET that is all zero is real zero demand for text input
+      (all_zero_ok=True) but an empty field for Caravan basin-mean ERA5-Land
+      PET, which is never zero over a whole window (all_zero_ok=False).
+    """
+    PET = np.asarray(PET, dtype=float).copy()
+    finite = PET[np.isfinite(PET)]
+    has_pos = bool(finite.size) and bool(np.any(finite > 0))
+    has_neg = bool(finite.size) and bool(np.any(finite < 0))
+    negative_only = has_neg and not has_pos
+    all_zero = bool(finite.size) and not has_pos and not has_neg
+    flipped = False
+    if getattr(args, "pet_sign", "asis") == "flip":
+        if not negative_only:
+            raise ValueError(
+                f"--pet-sign flip was requested but {source_label} PET is not negative-only "
+                "(it has positive values, is all zero, or has no finite values); flipping "
+                "would invert real demand or record a sign change that did nothing. "
+                "Drop --pet-sign flip.")
+        PET = -PET
+        flipped = True
+    elif negative_only:
+        raise ValueError(
+            f"{source_label} finite PET has negative values and is never > 0 in the window "
+            "(raw ERA5-Land downward-positive sign). Re-run with --pet-sign flip, or the "
+            "model runs with zero evaporative demand and silently over-predicts runoff (dt_002).")
+    elif all_zero and not all_zero_ok:
+        raise ValueError(
+            f"{source_label} finite PET is zero on every day of the window; basin-mean "
+            "ERA5-Land PET is never zero for a whole window, so this is an empty PET field.")
+    # Reanalysis daily PET goes slightly NEGATIVE on condensation days (34/4383
+    # days in Ireland, min -0.45 mm/d). Negative PET is not "less demand": in
+    # GR4J's InterceptionFilter, remove = min(PET, P) becomes negative, so
+    # P - remove ADDS water that never fell, and the ProductionStore's
+    # evaporation term reverses sign. Floor it. --pet-min 0 is the correct
+    # setting for every reanalysis PET product; None keeps the raw values.
+    n_neg = int(np.sum(np.isfinite(PET) & (PET < 0)))
+    n_floored = 0
+    pet_min = getattr(args, "pet_min", None)
+    if pet_min is not None:
+        if not np.isfinite(pet_min):
+            raise ValueError("--pet-min must be finite")
+        n_floored = int(np.sum(np.isfinite(PET) & (PET < pet_min)))
+        PET = np.where(np.isfinite(PET), np.maximum(PET, float(pet_min)), PET)
+    info = {
+        "PET_sign": "negated (--pet-sign flip)" if flipped else "as in source",
+        "PET_all_zero": bool(all_zero),
+        "PET_floor": (f"floored at {pet_min} mm/d ({n_floored} finite values clipped)"
+                      if pet_min is not None else f"NOT floored ({n_neg} negative values left as-is)"),
+    }
+    return PET, info
+
+
+def _check_dates(dates, n, timestep, start=None, end=None):
+    if dates is None:
+        return
+    axis = np.asarray(dates, dtype="datetime64[D]")
+    if axis.shape != (n,) or np.isnat(axis).any():
+        raise ValueError("dates must have one valid daily date per forcing value")
+    if timestep < 1:
+        # Sub-daily rows carry only a day (no hour column): every day must be
+        # there, in order, with exactly 1/timestep rows (e.g. 24 for hourly).
+        per_day = round(1.0 / timestep)
+        if abs(1.0 / timestep - per_day) > 1e-9:
+            raise ValueError(f"--timestep {timestep} d does not divide a day")
+        days, counts = np.unique(axis, return_counts=True)
+        if np.any(np.diff(axis).astype(int) < 0):
+            raise ValueError("dates must be in order")
+        if len(days) > 1 and np.any(np.diff(days).astype(int) != 1):
+            raise ValueError("days must be consecutive, without missing days")
+        if np.any(counts != per_day):
+            bad = days[counts != per_day][:5]
+            raise ValueError(f"every day needs exactly {per_day} rows at --timestep {timestep}; "
+                             f"not so on {[str(d) for d in bad]}")
+    elif n > 1 and np.any(np.diff(axis).astype(int) != timestep):
+        raise ValueError("dates must be ordered and consecutive, without gaps/duplicates")
+    if (start and axis[0] != np.datetime64(start, 'D')) or (end and axis[-1] != np.datetime64(end, 'D')):
+        raise ValueError("forcing does not cover the requested start/end dates")
+
+
 def process_caravan(args):
     """Read a Caravan / GRDC-Caravan per-gauge netCDF into the forcing contract.
 
@@ -168,99 +312,75 @@ def process_caravan(args):
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "errors": [str(exc)]}
 
-    missing = [v for v in (CARAVAN_VARS["P"], CARAVAN_VARS["PET"]) if v not in ds.variables]
-    if missing:
-        return {
-            "status": "error",
-            "errors": [
-                f"Caravan file is missing required variable(s): {missing}. "
-                f"Present: {sorted(ds.data_vars)[:10]}..."
-            ],
-        }
-    if CARAVAN_TIME_DIM not in ds.coords:
-        return {
-            "status": "error",
-            "errors": [f"Caravan file has no '{CARAVAN_TIME_DIM}' coordinate"],
-        }
-
-    if args.start or args.end:
-        ds = ds.sel({CARAVAN_TIME_DIM: slice(args.start, args.end)})
-    n_rows = ds.sizes[CARAVAN_TIME_DIM]
-    if n_rows == 0:
-        return {
-            "status": "error",
-            "errors": [
-                f"No timesteps in requested window {args.start}..{args.end}"
-            ],
-        }
-
-    P = np.asarray(ds[CARAVAN_VARS["P"]].values, dtype=float)
-    PET = np.asarray(ds[CARAVAN_VARS["PET"]].values, dtype=float)
-
-    # Caravan ships PET as positive demand. If a release ever ships the raw
-    # negative-downward ERA5-Land sign, running as-is would give the model zero
-    # evaporative demand and a runoff ratio near 1 with NO error. Fail loudly.
-    finite_pet = PET[np.isfinite(PET)]
-    if finite_pet.size and np.nanmax(finite_pet) <= 0:
-        if args.pet_sign == "flip":
-            PET = -PET
-        else:
+    try:
+        missing = [v for v in (CARAVAN_VARS["P"], CARAVAN_VARS["PET"]) if v not in ds.variables]
+        if missing:
             return {
                 "status": "error",
                 "errors": [
-                    "Caravan PET is all <= 0 (raw ERA5-Land downward-positive sign). "
-                    "Re-run with --pet-sign flip, or the model runs with zero "
-                    "evaporative demand and silently over-predicts runoff (dt_002)."
+                    f"Caravan file is missing required variable(s): {missing}. "
+                    f"Present: {sorted(ds.data_vars)[:10]}..."
+                ],
+            }
+        if CARAVAN_TIME_DIM not in ds.coords:
+            return {
+                "status": "error",
+                "errors": [f"Caravan file has no '{CARAVAN_TIME_DIM}' coordinate"],
+            }
+
+        if args.start or args.end:
+            ds = ds.sel({CARAVAN_TIME_DIM: slice(args.start, args.end)})
+        n_rows = ds.sizes[CARAVAN_TIME_DIM]
+        if n_rows == 0:
+            return {
+                "status": "error",
+                "errors": [
+                    f"No timesteps in requested window {args.start}..{args.end}"
                 ],
             }
 
-    # Reanalysis daily PET goes slightly NEGATIVE on condensation days (34/4383
-    # days in Ireland, min -0.45 mm/d). Negative PET is not "less demand": in
-    # GR4J's InterceptionFilter, remove = min(PET, P) becomes negative, so
-    # P - remove ADDS water that never fell, and the ProductionStore's
-    # evaporation term reverses sign. Floor it. --pet-min 0 is the correct
-    # setting for every reanalysis PET product; None keeps the raw values.
-    n_neg_pet = int(np.sum(PET < 0))
-    if args.pet_min is not None:
-        PET = np.maximum(PET, float(args.pet_min))
+        P = np.asarray(ds[CARAVAN_VARS["P"]].values, dtype=float)
+        PET = np.asarray(ds[CARAVAN_VARS["PET"]].values, dtype=float)
 
-    Q_obs = None
-    if CARAVAN_VARS["Q"] in ds.variables:
-        Q_obs = np.asarray(ds[CARAVAN_VARS["Q"]].values, dtype=float)
+        # Caravan ships PET as positive demand; the sign check and the floor are
+        # shared with text input (_pet_transform) and run after the window cut.
+        P_src = P.copy()
+        PET_src = PET.copy()
 
-    T = None
-    if CARAVAN_VARS["T"] in ds.variables:
-        T = np.asarray(ds[CARAVAN_VARS["T"]].values, dtype=float)
+        Q_obs = None
+        if CARAVAN_VARS["Q"] in ds.variables:
+            Q_obs = np.asarray(ds[CARAVAN_VARS["Q"]].values, dtype=float)
 
-    times = ds[CARAVAN_TIME_DIM].values
-    dates = [str(np.datetime_as_string(t, unit="D")) for t in times]
-    ds.close()
+        T = None
+        if CARAVAN_VARS["T"] in ds.variables:
+            T = np.asarray(ds[CARAVAN_VARS["T"]].values, dtype=float)
 
-    # A single NaN in P or PET poisons the whole downstream ODE solution: the
-    # implicit solver propagates NaN into the storage state and EVERY later
-    # timestep of Q_sim is NaN, with exit code 0. Refuse to emit such forcing.
-    for name, arr in (("P", P), ("PET", PET)):
-        n_bad = int(np.sum(~np.isfinite(arr)))
-        if n_bad:
-            if args.fill_forcing_gaps:
-                idx = np.arange(len(arr))
-                good = np.isfinite(arr)
-                arr[~good] = np.interp(idx[~good], idx[good], arr[good])
-            else:
-                return {
-                    "status": "error",
-                    "errors": [
-                        f"{name} has {n_bad}/{len(arr)} non-finite values in the "
-                        "requested window. A single NaN makes EVERY subsequent "
-                        "Q_sim NaN with exit code 0. Re-run with "
-                        "--fill-forcing-gaps to linearly interpolate, or narrow "
-                        "the window."
-                    ],
-                }
+        times = ds[CARAVAN_TIME_DIM].values
+        dates = [str(np.datetime_as_string(t, unit="D")) for t in times]
+
+    except (ValueError, KeyError, TypeError) as exc:
+        return {"status": "error", "errors": [str(exc)]}
+    finally:
+        ds.close()
+
+    try:
+        if args.timestep != 1.:
+            raise ValueError("Caravan forcing has a daily timestep; --timestep must be 1")
+        if P.shape != (n_rows,) or PET.shape != (n_rows,):
+            raise ValueError("Caravan P/PET must have one value per date")
+        if np.any(times.astype('datetime64[s]') != times.astype('datetime64[D]')):
+            raise ValueError("Caravan timestamps must be daily midnight values")
+        _check_dates(dates, n_rows, 1, args.start, args.end)
+        PET, pet_info = _pet_transform(PET, args, "Caravan")
+        gap_filling = _gap_policy(P, PET, dates, args.fill_forcing_gaps,
+                                  sources={"P": P_src, "PET": PET_src}, transforms=pet_info)
+    except ValueError as exc:
+        return {"status": "error", "errors": [str(exc)]}
 
     result = {
         "status": "success",
         "source_format": "caravan",
+        "gap_filling": gap_filling,
         "source_file": str(input_path),
         "gauge_id": input_path.stem,
         "n_timesteps": int(n_rows),
@@ -270,16 +390,16 @@ def process_caravan(args):
             "P": "Caravan total_precipitation_sum is mm/d basin mean -> mm/d (factor=1.0)",
             "PET": "Caravan potential_evaporation_sum is mm/d basin mean, positive demand -> mm/d (factor=1.0)",
             "Q_obs": "Caravan streamflow is BASIN-AVERAGED mm/d (NOT m3/s) -> mm/d (factor=1.0, no area conversion)",
-            "PET_floor": (
-                f"floored at {args.pet_min} mm/d ({n_neg_pet} negative days clipped)"
-                if args.pet_min is not None
-                else f"NOT floored ({n_neg_pet} negative days left as-is)"
-            ),
+            "PET_sign": pet_info["PET_sign"],
+            "PET_floor": pet_info["PET_floor"],
         },
         "statistics": {
+            "gap_filled_counts": gap_filling["counts"],
             "P_mean": float(np.nanmean(P)),
             "P_max": float(np.nanmax(P)),
-            "P_total": float(np.nansum(P)),
+            # P is a rate (mm/d); the total depth needs the step length.
+            "P_total": float(np.nansum(P) * args.timestep),
+            "P_total_unit": "mm",
             "PET_mean": float(np.nanmean(PET)),
             "PET_max": float(np.nanmax(PET)),
         },
@@ -326,11 +446,14 @@ def process(args):
             skip_header=args.header_lines,
             delimiter="," if sep == "," else None,
             filling_values=np.nan,
+            ndmin=2,  # keep a one-row file 2-D, so it is not mistaken for one column
         )
     except Exception as e:
         return {"status": "error", "errors": [f"Failed to read data: {str(e)}"]}
 
-    if data.ndim == 1:
+    if data.ndim != 2 or data.shape[0] == 0:
+        return {"status": "error", "errors": ["No data rows after the header"]}
+    if data.shape[1] < 2:
         return {"status": "error", "errors": ["Data appears to have only one column"]}
 
     n_cols = data.shape[1]
@@ -348,30 +471,42 @@ def process(args):
         }
 
     # Extract precipitation
-    P = data[:, p_col].copy()
+    P_src = data[:, p_col].copy()
+    P = P_src.copy()
     P_factor = PRECIP_CONVERSIONS[args.p_unit]
     P *= P_factor
 
     # Extract PET
     if pet_col is not None and pet_col < n_cols:
-        PET = data[:, pet_col].copy()
+        PET_src = data[:, pet_col].copy()
         PET_factor = PET_CONVERSIONS[args.pet_unit]
-        PET *= PET_factor
+        PET = PET_src * PET_factor
     else:
-        PET = np.zeros(n_rows)
-        print("WARNING: No PET column specified, using zeros", file=sys.stderr)
+        return {"status": "error", "errors": ["Missing required PET column; no zero substitute is used"]}
 
     # Extract observed Q if available
     Q_obs = None
     if q_col is not None and q_col < n_cols:
         Q_obs = data[:, q_col].copy()
-        if args.q_unit in Q_CONVERSIONS and Q_CONVERSIONS[args.q_unit] is not None:
+        if args.q_unit not in Q_CONVERSIONS:
+            return {"status": "error", "errors": [
+                f"Unknown Q unit: {args.q_unit}. Supported: {list(Q_CONVERSIONS.keys())}"]}
+        if Q_CONVERSIONS[args.q_unit] is not None:
             Q_obs *= Q_CONVERSIONS[args.q_unit]
-        elif args.q_unit in ("m3/s", "cms") and args.area is not None:
-            # Convert m3/s to mm/d: Q * 86400 / (area_km2 * 1e6) * 1000
-            Q_obs = Q_obs * 86400.0 / (args.area * 1e6) * 1000.0
-        elif args.q_unit in ("l/s",) and args.area is not None:
-            Q_obs = Q_obs * 86.4 / (args.area * 1e6) * 1000.0
+            q_note = f"{args.q_unit} -> mm/d (factor={Q_CONVERSIONS[args.q_unit]})"
+        else:
+            # A volume flow can only become a basin depth with the basin area.
+            # Never pass m3/s or l/s numbers on labelled as mm/d.
+            if args.area is None or not np.isfinite(args.area) or args.area <= 0:
+                return {"status": "error", "errors": [
+                    f"--q-unit {args.q_unit} needs --area (catchment area in km2, > 0) "
+                    "to convert observed Q to mm/d; no conversion is guessed"]}
+            if args.q_unit in ("m3/s", "cms"):
+                # m3/s * 86400 s/d / (area_km2 * 1e6 m2) * 1000 mm/m
+                Q_obs = Q_obs * 86400.0 / (args.area * 1e6) * 1000.0
+            else:  # l/s = 1e-3 m3/s
+                Q_obs = Q_obs * 86.4 / (args.area * 1e6) * 1000.0
+            q_note = f"{args.q_unit} -> mm/d using area {args.area} km2"
 
     # Extract dates if available
     dates = None
@@ -381,19 +516,33 @@ def process(args):
         days = data[:, args.day_col].astype(int)
         dates = [f"{y:04d}-{m:02d}-{d:02d}" for y, m, d in zip(years, months, days)]
 
+    try:
+        _check_dates(dates, n_rows, args.timestep)
+        PET, pet_info = _pet_transform(PET, args, "text", all_zero_ok=True)
+        gap_filling = _gap_policy(P, PET, dates, args.fill_forcing_gaps,
+                                  sources={"P": P_src, "PET": PET_src}, transforms=pet_info)
+    except ValueError as exc:
+        return {"status": "error", "errors": [str(exc)]}
+
     result = {
         "status": "success",
+        "gap_filling": gap_filling,
         "n_timesteps": int(n_rows),
         "timestep_d": args.timestep,
         "units": {"P": "mm/d", "PET": "mm/d", "Q_obs": "mm/d"},
         "conversions_applied": {
             "P": f"{args.p_unit} -> mm/d (factor={P_factor})",
             "PET": f"{args.pet_unit} -> mm/d (factor={PET_CONVERSIONS[args.pet_unit]})",
+            "PET_sign": pet_info["PET_sign"],
+            "PET_floor": pet_info["PET_floor"],
         },
         "statistics": {
+            "gap_filled_counts": gap_filling["counts"],
             "P_mean": float(np.nanmean(P)),
             "P_max": float(np.nanmax(P)),
-            "P_total": float(np.nansum(P)),
+            # P is a rate (mm/d); the total depth needs the step length.
+            "P_total": float(np.nansum(P) * args.timestep),
+            "P_total_unit": "mm",
             "PET_mean": float(np.nanmean(PET)),
             "PET_max": float(np.nanmax(PET)),
         },
@@ -403,6 +552,7 @@ def process(args):
 
     if Q_obs is not None:
         result["Q_obs"] = Q_obs.tolist()
+        result["conversions_applied"]["Q_obs"] = q_note
         result["statistics"]["Q_obs_mean"] = float(np.nanmean(Q_obs))
 
     if dates is not None:
@@ -420,6 +570,9 @@ def validate_outputs(result):
 
     P = np.array(result["P"])
     PET = np.array(result["PET"])
+
+    if not np.isfinite(P).all() or not np.isfinite(PET).all():
+        return {"status": "error", "errors": ["P/PET contain nonfinite values after conversion"]}
 
     # Check for negative values
     if np.any(P < 0):
@@ -497,7 +650,7 @@ def main():
     parser.add_argument(
         "--fill-forcing-gaps",
         action="store_true",
-        help="Linearly interpolate non-finite P/PET instead of refusing to emit NaN-poisoned forcing",
+        help="Interpolate interior P/PET gaps and record dates, masks, original values and neighbours; edge gaps fail",
     )
     parser.add_argument("--header-lines", type=int, default=7, help="Number of header lines to skip (default: 7)")
     parser.add_argument("--p-col", type=int, default=6, help="Precipitation column index (0-based, default: 6)")
@@ -515,8 +668,13 @@ def main():
     args = parser.parse_args()
 
     validate_inputs(args)
-    result = process(args)
-    result = validate_outputs(result)
+    try:
+        result = validate_outputs(process(args))
+    except (ValueError, IndexError, OSError) as exc:
+        result = {"status": "error", "errors": [str(exc)]}
+    if result["status"] != "success":
+        print(json.dumps(result, indent=2), file=sys.stderr)
+        sys.exit(1)
 
     output_json = json.dumps(result, indent=2, ensure_ascii=False)
     if args.output:

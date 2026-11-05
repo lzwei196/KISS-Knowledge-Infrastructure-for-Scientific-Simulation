@@ -474,6 +474,8 @@ runner:
   env_contract:
     KDT_CALIB_PARAMS: "JSON object {name: value}; every key is echoed in __kdt__.applied_params"
     KDT_CALIB_SPLIT: "'calibration' | 'holdout'; unset scores the full 2004-2012 record"
+    KDT_NOAHMP_PREP_DIR: "REQUIRED (unless --prep-dir is passed): folder for the one-time forcing/soil preparation cache; unset -> calib_run.py stops (exit 2), no default location"
+    KDT_NOAHMP_STAGED_FORCING: "optional: a validated US-Ne1 LDASIN folder to reuse instead of converting the FLUXNET forcing again"
   notes: >-
     One evaluation = a fresh single-column HRLDAS run over the whole
     2004-01-01..2013-01-02 forcing record with SPINUP_LOOPS=3 (the model is

@@ -2,18 +2,18 @@
 """
 crop_selector.py
 ================
-Select DSSAT crop model files for a given crop name or VIC vegetation class.
+Select DSSAT crop model files for a given crop name or land-cover class.
 
 Maps common crop names to DSSAT file prefixes (cultivar, ecotype, species)
 and returns file paths and a default cultivar ID.
 
-Supports all 41 crops in the RZWQM2 DSSAT database. Optionally maps VIC
-AVHRR vegetation classes (1-15) to crop types.
+Supports all 41 crops in the RZWQM2 DSSAT database. Optionally maps AVHRR/UMD
+land-cover classes (1-15) to crop types.
 
 Inputs:
     crop_name       - Common crop name (e.g., "maize", "wheat", "soybean")
     dssat_db_path   - Path to DSSAT database directory (optional)
-    vic_veg_class   - VIC AVHRR vegetation class number (optional, alternative to crop_name)
+    landcover_class - AVHRR/UMD land-cover class number 1-15 (optional, alternative to crop_name)
     region          - Region hint for cultivar selection (optional: "tropical", "temperate")
 
 Exit codes:
@@ -33,7 +33,7 @@ import glob
 # ---------------------------------------------------------------------------
 CROP_NAME = ""          # Common crop name
 DSSAT_DB_PATH = ""      # Path to DSSAT database directory
-VIC_VEG_CLASS = ""      # VIC AVHRR vegetation class (1-15), alternative to crop_name
+LANDCOVER_CLASS = ""    # AVHRR/UMD land-cover class (1-15), alternative to crop_name
 REGION = ""             # Region hint: "tropical", "temperate", "boreal"
 
 # ---------------------------------------------------------------------------
@@ -71,8 +71,8 @@ CROP_TO_DSSAT = {
     'beet_sugar':     'BSCER040',
 }
 
-# VIC AVHRR vegetation classes -> default crop mapping
-VIC_VEG_TO_CROP = {
+# AVHRR/UMD land-cover classes -> default crop mapping
+LANDCOVER_TO_CROP = {
     1:  None,         # Evergreen Needleleaf Forest
     2:  None,         # Evergreen Broadleaf Forest
     3:  None,         # Deciduous Needleleaf Forest
@@ -90,39 +90,39 @@ VIC_VEG_TO_CROP = {
     15: None,         # Ice/Snow
 }
 
-# Region-specific crop refinements for VIC cropland class (11)
-VIC_CROPLAND_BY_REGION = {
+# Region-specific crop refinements for the cropland class (11)
+CROPLAND_BY_REGION = {
     'tropical':  'rice',
     'temperate': 'maize',
     'boreal':    'wheat',
 }
 
 
-def validate_inputs(crop_name, dssat_db_path, vic_veg_class, region):
+def validate_inputs(crop_name, dssat_db_path, landcover_class, region):
     """Validate inputs."""
     errors = []
 
-    if not crop_name and not vic_veg_class:
-        errors.append("Either CROP_NAME or VIC_VEG_CLASS is required.")
+    if not crop_name and not landcover_class:
+        errors.append("Either CROP_NAME or LANDCOVER_CLASS is required.")
 
-    # Resolve crop from VIC class if needed
+    # Resolve crop from the land-cover class if needed
     resolved_crop = None
-    if vic_veg_class:
+    if landcover_class:
         try:
-            veg_class = int(vic_veg_class)
-            if veg_class not in VIC_VEG_TO_CROP:
-                errors.append(f"VIC_VEG_CLASS={veg_class} not recognized (valid: 1-15).")
+            veg_class = int(landcover_class)
+            if veg_class not in LANDCOVER_TO_CROP:
+                errors.append(f"LANDCOVER_CLASS={veg_class} not recognized (valid: 1-15).")
             else:
-                resolved_crop = VIC_VEG_TO_CROP[veg_class]
+                resolved_crop = LANDCOVER_TO_CROP[veg_class]
                 if resolved_crop is None:
                     errors.append(
-                        f"VIC_VEG_CLASS={veg_class} is non-agricultural (forest/urban/bare). "
+                        f"LANDCOVER_CLASS={veg_class} is non-agricultural (forest/urban/bare). "
                         f"No DSSAT crop mapping available."
                     )
                 elif veg_class == 11 and region:
-                    resolved_crop = VIC_CROPLAND_BY_REGION.get(region.lower(), resolved_crop)
+                    resolved_crop = CROPLAND_BY_REGION.get(region.lower(), resolved_crop)
         except ValueError:
-            errors.append(f"VIC_VEG_CLASS must be an integer, got: {vic_veg_class}")
+            errors.append(f"LANDCOVER_CLASS must be an integer, got: {landcover_class}")
 
     if crop_name:
         resolved_crop = crop_name.strip().lower()
@@ -226,10 +226,10 @@ def validate_outputs(result):
 def main():
     crop_name = sys.argv[1] if len(sys.argv) > 1 else CROP_NAME
     dssat_db_path = sys.argv[2] if len(sys.argv) > 2 else DSSAT_DB_PATH
-    vic_veg_class = sys.argv[3] if len(sys.argv) > 3 else VIC_VEG_CLASS
+    landcover_class = sys.argv[3] if len(sys.argv) > 3 else LANDCOVER_CLASS
     region = sys.argv[4] if len(sys.argv) > 4 else REGION
 
-    valid, err, args = validate_inputs(crop_name, dssat_db_path, vic_veg_class, region)
+    valid, err, args = validate_inputs(crop_name, dssat_db_path, landcover_class, region)
     if not valid:
         print(json.dumps({"status": "INPUT_ERROR", "message": err}))
         sys.exit(1)

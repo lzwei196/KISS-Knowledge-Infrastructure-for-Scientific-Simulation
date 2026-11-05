@@ -1,0 +1,73 @@
+{
+  "test_case": "GeoClaw bowl_slosh (official Clawpack regression test geoclaw/tests/bowl_slosh)",
+  "engine": {
+    "name": "GeoClaw (Clawpack)",
+    "version": "Clawpack 5.14.0; geoclaw 37d0bf5, amrclaw 98ba14a (v5.14.0), clawutil 02bcfb4, riemann f4ac312; gfortran 13.3.0",
+    "binary": "xgeoclaw, compiled per case with `make .exe` from the Clawpack Fortran sources in a temp copy (no prebuilt binary)",
+    "source": "github.com/clawpack/geoclaw tests/bowl_slosh (commit 37d0bf5909e360f975469d95e109098643ddc41c)",
+    "license": "BSD 3-Clause (Clawpack Developers)"
+  },
+  "ki": {
+    "model": "GeoClaw",
+    "run_tool": "tools/run_geoclaw.py --use-makefile",
+    "parse_tool": "tools/parse_geoclaw_output.py (frames only)"
+  },
+  "simulation": {
+    "domain": "[-2,2] x [-2,2] m, parabolic bowl h0=0.1 m",
+    "grid": "41x41 base, 2 AMR levels (ratio 4)",
+    "t_final_s": 0.5,
+    "gauges": 1,
+    "fgmax_grids": 1,
+    "runtime_s": "about 4 (compile + run)"
+  },
+  "files": {
+    "inputs/Makefile": {
+      "bytes": 1982,
+      "sha256": "459a02741573a9ce45f4a0034d0c6e1700a44137ff7ee69697152047327b9275"
+    },
+    "inputs/__init__.py": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "inputs/make_fgmax_grid.py": {
+      "bytes": 868,
+      "sha256": "00b996bdd2661da86efd58d2fc9171689f02d544528e735274648e02e4bf9162"
+    },
+    "inputs/maketopo.py": {
+      "bytes": 883,
+      "sha256": "692f3fbd07563c552baea33772824b050f8c2c7f164106bcfa046e23101afc32"
+    },
+    "inputs/plot_fgmax.py": {
+      "bytes": 686,
+      "sha256": "6f97279eaff719c339644e9e438dd4414bbbbc14973779a5a9fdea40cd5f4971"
+    },
+    "inputs/qinit.f90": {
+      "bytes": 1100,
+      "sha256": "75f43cf43dd9268e13037930fe03a4ba437800c83ebf8650872caadc5f1b0ff8"
+    },
+    "inputs/regression_data/claw_git_status.txt": {
+      "bytes": 2667,
+      "sha256": "545ea3e5def1235943bca3be024a30db79ed26283fe7a9cad983c8b145bb35e5"
+    },
+    "inputs/regression_data/gauge00001.txt": {
+      "bytes": 4593,
+      "sha256": "a76801e35c985946bdd7cd114110a83a3ac2fc3d8846f494c7039f42f7799293"
+    },
+    "inputs/regression_data/regression_data_fgmax.txt": {
+      "bytes": 50,
+      "sha256": "26b45c0c41332d2bef7f1c62cc044895c4bf35f9fc418f9f280a70bb16ea35e8"
+    },
+    "inputs/regression_tests.py": {
+      "bytes": 1902,
+      "sha256": "12a4309f00c3a22e4fde729c368c0edf45c790786b38a2752a2d2f18fb0fae0c"
+    },
+    "inputs/setplot.py": {
+      "bytes": 6092,
+      "sha256": "42ad916e421346a8af3eff3d19dc77251e19efa38da0167eeea17cdb9a623706"
+    },
+    "inputs/setrun.py": {
+      "bytes": 13192,
+      "sha256": "d2e534e4b1901a57359c19d559232440e45070c1c2196b6825bd375c538ae281"
+    }
+  }
+}

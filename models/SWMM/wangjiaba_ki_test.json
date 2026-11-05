@@ -54,7 +54,7 @@
     "s6_execution/extract_results.py \u2014 extracted results (fell back to RPT parsing)"
   ],
   "ki_tools_not_usable": [
-    "s3_rainfall_forcing/convert_vic_forcing_to_swmm.py \u2014 only supports VIC ASCII forcing, not CMFD NetCDF directly",
+    "s3_rainfall_forcing/convert_vic_forcing_to_swmm.py \u2014 only supports VIC ASCII forcing, not CMFD NetCDF directly [2026-10-02: this tool was REMOVED; rain now comes straight from CMFD/MSWX/NASA POWER with s3_rainfall_forcing/build_rain_timeseries_from_source.py]",
     "s1_subcatchment_delineation/* \u2014 requires urban GIS data not available for Wangjiaba",
     "s2_drainage_network/* \u2014 requires pipe network GIS data not available for Wangjiaba"
   ],
@@ -69,7 +69,7 @@
     "BUG: assemble_inp_file.py writes ROUTING_MODEL (SWMM 4.x syntax) instead of FLOW_ROUTING (SWMM 5.x). This is a blocking error for ALL new basins \u2014 the model cannot run until manually fixed. Fix: line ~9 in opts dict, change key from ROUTING_MODEL to FLOW_ROUTING.",
     "BUG: run_swmm.py uses sim.routing_error, sim.runoff_error, sim.quality_error attributes that do not exist in pyswmm 2.x. These were removed/renamed. The tool reports exit code 2 (failure) even when the simulation completes successfully. Fix: use try/except or check pyswmm version.",
     "BUG: check_continuity_errors.py false-positive on lines containing the word ERROR/Error in non-error contexts (e.g., column headers like \"Flow Balance Error\"). Fix: only match lines starting with ERROR or in specific sections.",
-    "GAP: No tool for converting raw CMFD/MSWX NetCDF to SWMM rainfall. convert_vic_forcing_to_swmm.py only handles VIC ASCII forcing files. For new basins without prior VIC runs, users must write custom code to extract rainfall from NetCDF.",
+    "GAP: No tool for converting raw CMFD/MSWX NetCDF to SWMM rainfall. convert_vic_forcing_to_swmm.py only handles VIC ASCII forcing files. For new basins without prior VIC runs, users must write custom code to extract rainfall from NetCDF. [2026-10-02: gap CLOSED by s3_rainfall_forcing/build_rain_timeseries_from_source.py; the VIC converter was removed]",
     "GAP: No diagnostic triplet for ERROR 205 (invalid keyword in OPTIONS). This is the first error new users will encounter due to the ROUTING_MODEL bug.",
     "GAP: SKILL.md example INP uses ROUTING_MODEL which propagates the bug to users who copy the example.",
     "GAP: No guidance on continuous simulation performance \u2014 DYNWAVE with daily data over multi-year periods can take >10 min for small networks. Should recommend KINWAVE for continuous or suggest event-based approach.",

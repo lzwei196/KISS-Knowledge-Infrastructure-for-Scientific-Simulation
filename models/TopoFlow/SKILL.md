@@ -603,5 +603,5 @@ ki/
 │   ├── s5_execution.md             # Running the model
 │   └── s6_output_analysis.md       # Output interpretation
 └── diagnostics/
-    └── triplets.yaml                # 17 diagnostic triplets
+    └── triplets.yaml                # diagnostic triplets (count: KI map)
 ```

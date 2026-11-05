@@ -70,27 +70,20 @@ def run_example_model(example_name, output_dir):
     t0 = time.time()
 
     try:
-        model = gp.create_geomodel(
-            project_name=example_name,
-            extent=[0, 1000, 0, 1000, 0, 1000],
-            resolution=[20, 20, 20],
-            refinement=4
-        )
-
-        # Add simple horizontal stratigraphy
+        # Add simple horizontal stratigraphy. The structural frame must exist before
+        # create_geomodel (GemPy 3 needs structural_frame or importer_helper). Surface ids
+        # are left to GemPy (hand-set ids break gp.save_model's serialization check).
         element1 = gp.data.StructuralElement(
             name="Layer1",
             color="#015482",
             surface_points=gp.data.SurfacePointsTable.from_arrays(
                 x=[500], y=[500], z=[700],
-                names=["Layer1"],
-                name_id_map={"Layer1": 1}
+                names=["Layer1"]
             ),
             orientations=gp.data.OrientationsTable.from_arrays(
                 x=[500], y=[500], z=[700],
                 G_x=[0], G_y=[0], G_z=[1],
-                names=["Layer1"],
-                name_id_map={"Layer1": 1}
+                names=["Layer1"]
             )
         )
         element2 = gp.data.StructuralElement(
@@ -98,8 +91,7 @@ def run_example_model(example_name, output_dir):
             color="#9f0052",
             surface_points=gp.data.SurfacePointsTable.from_arrays(
                 x=[500], y=[500], z=[400],
-                names=["Layer2"],
-                name_id_map={"Layer2": 2}
+                names=["Layer2"]
             ),
             orientations=gp.data.OrientationsTable.initialize_empty()
         )
@@ -109,20 +101,32 @@ def run_example_model(example_name, output_dir):
             elements=[element1, element2],
             structural_relation=gp.data.StackRelationType.ERODE
         )
-        model.structural_frame.structural_groups = [group]
+
+        model = gp.create_geomodel(
+            project_name=example_name,
+            extent=[0, 1000, 0, 1000, 0, 1000],
+            resolution=[20, 20, 20],
+            refinement=4,
+            structural_frame=gp.data.StructuralFrame(
+                structural_groups=[group],
+                color_gen=gp.data.ColorsGenerator()
+            )
+        )
 
         solutions = gp.compute_model(model)
         elapsed = time.time() - t0
 
         # Save model
         os.makedirs(output_dir, exist_ok=True)
-        gp.save_model(model, path=output_dir, name=example_name)
+        # GemPy 3 API: save_model(model, path) with the full .gempy file path
+        model_file = gp.save_model(
+            model, path=os.path.join(output_dir, f"{example_name}.gempy"))
 
         return {
             "status": "success",
             "project_name": example_name,
             "computation_time_s": round(elapsed, 2),
-            "model_file": os.path.join(output_dir, f"{example_name}.gempy"),
+            "model_file": model_file,
             "n_grid_points": int(model.grid.values.shape[0]) if model.grid.values is not None else 0,
             "has_solutions": solutions is not None,
         }
@@ -218,7 +222,8 @@ def run_from_params(args):
         # Save outputs
         os.makedirs(args.output_dir, exist_ok=True)
         model_path = os.path.join(args.output_dir, f"{project_name}.gempy")
-        gp.save_model(model, path=args.output_dir, name=project_name)
+        # GemPy 3 API: save_model(model, path) with the full .gempy file path
+        model_path = gp.save_model(model, path=model_path)
 
         # Collect result metadata
         result = {
@@ -237,11 +242,16 @@ def run_from_params(args):
         # Extract block model stats
         if solutions is not None:
             raw = model.solutions.raw_arrays
-            if hasattr(raw, 'block') and raw.block is not None:
+            # GemPy 3 names the lithology block `lith_block` (older: `block`)
+            block = getattr(raw, 'block', None)
+            if block is None:
+                block = getattr(raw, 'lith_block', None)
+            if block is not None:
                 import numpy as np
-                unique_ids = np.unique(raw.block)
+                block = np.asarray(block)
+                unique_ids = np.unique(block)
                 result["n_unique_formations"] = int(len(unique_ids))
-                result["block_shape"] = list(raw.block.shape)
+                result["block_shape"] = list(block.shape)
 
         return result
 
@@ -278,7 +288,7 @@ def validate_outputs(result):
             f"Computation took {ct:.0f}s. Consider using OCTREE or lower resolution."
         )
 
-    if result.get("n_unique_formations", 0) <= 1:
+    if "n_unique_formations" in result and result["n_unique_formations"] <= 1:
         warnings.append(
             "Only 1 formation in block model — "
             "check structural mapping and input data."
@@ -340,6 +350,11 @@ def main():
         print(f"Result written to {args.output}", file=sys.stderr)
     else:
         print(output_json)
+
+    if result.get("status") != "success":
+        print("GemPy run FAILED: " + "; ".join(result.get("errors", ["see JSON result"])),
+              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

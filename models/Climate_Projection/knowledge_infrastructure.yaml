@@ -393,11 +393,11 @@ diagnostic_triplets:
     severity: "fatal"
 
 summary:
-  total_tools: 4
+  total_tools: 5
   total_tool_lines: 730
   total_skill_documents: 4
   total_skill_words: 2850
-  total_diagnostic_triplets: 9
+  total_diagnostic_triplets: 10
   failure_domains:
     - "dependency_mismatch"
     - "path_resolution"

@@ -82,7 +82,7 @@ inputs:
       unit: "various"
       source_kind: "dataset_lookup"
       model_input_format: "soils.in (13 columns per layer, rev 491)"
-      notes: "Per-layer: top/bottom depth (cm), bulk density (g/cm3), field capacity (vol/vol), wilting point (vol/vol), evap coefficient, root fraction (sums to ~1.0), sand fraction, clay fraction, organic-matter MASS fraction (0-1, not percent), delta_min (~WP*0.9), saturated K (cm/s), pH. rev 491 requires 13 columns (delta_min added vs rev 470); depth structure must match ADEP/EDEPTH in fix.100."
+      notes: "Per-layer: top/bottom depth (cm), bulk density (g/cm3), field capacity (vol/vol), wilting point (vol/vol), evap coefficient, root fraction (Wooster reference values; sum > 0 and <= 1, the Wooster column sums to 0.85), sand fraction, clay fraction, organic-matter MASS fraction (0-1, not percent), delta_min (~WP*0.9), saturated K (cm/s), pH. rev 491 requires 13 columns (delta_min added vs rev 470); depth structure must match ADEP/EDEPTH in fix.100."
     - category: "site_physical"
       name: "DayCent-specific site parameters"
       unit: "various"

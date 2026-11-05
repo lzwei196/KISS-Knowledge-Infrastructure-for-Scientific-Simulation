@@ -1,0 +1,12 @@
+starttime = 2020-01-01 00:00:00
+endtime = 2021-01-01 00:00:00
+crs = "EPSG:28992"
+input_dir = "input"
+results_dir = "results"
+ribasim_version = "2026.1.0-rc2"
+
+[logging]
+verbosity = "debug"
+
+[experimental]
+concentration = true

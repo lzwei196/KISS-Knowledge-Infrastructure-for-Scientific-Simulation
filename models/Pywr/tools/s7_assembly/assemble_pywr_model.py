@@ -231,7 +231,7 @@ def wire_control_curve_and_units(model, storage_name):
     for k, v in list(params.items()):
         if not isinstance(v, dict):
             continue
-        if k.endswith("_m3s") or k.endswith("_max_flow"):
+        if k.endswith("_m3s") or k.endswith("_max_flow") or k.endswith("_min_flow"):
             if v.get("type") in ("monthlyprofile", "dailyprofile") and "values" in v:
                 v["values"] = [x * _SECONDS_PER_DAY for x in v["values"]]
                 v["comment"] = (v.get("comment", "") + " [m3/s -> m3/day]").strip()
@@ -242,6 +242,20 @@ def wire_control_curve_and_units(model, storage_name):
     for node in model["nodes"]:
         if node.get("type") == "link" and node.get("max_flow") == 1e6:
             node["max_flow"] = 1e12
+            node["_flow_units_converted"] = True
+    # literal numeric max_flow/min_flow on other flow nodes (e.g. the industrial
+    # demand node carries max_flow=<m3/s number>, not a parameter dict) are m3/s too.
+    for node in model["nodes"]:
+        if node.pop("_flow_units_converted", False):
+            continue
+        if str(node.get("type", "")).lower() in ("storage", "catchment"):
+            continue
+        for key in ("max_flow", "min_flow"):
+            val = node.get(key)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                node[key] = float(val) * _SECONDS_PER_DAY
+    # Tell readers (run_pywr.py) what unit the model's flows are in.
+    model.setdefault("metadata", {})["flow_units"] = "m3/day"
     return model
 
 

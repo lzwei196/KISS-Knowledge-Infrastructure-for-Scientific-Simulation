@@ -1,0 +1,36 @@
+{
+  "test_case": "Ribasim basic (official ribasim_testmodels test model)",
+  "engine": {
+    "name": "Ribasim",
+    "version": "2026.1.0-rc2",
+    "binary": "ribasim (wrapper that runs the Ribasim Julia core: Ribasim.main(toml))",
+    "source": "github.com/Deltares/Ribasim commit fcfb329a3831babc90c52d2f4d67bb7d26a674d8",
+    "license": "MIT (Ribasim developers / Deltares)"
+  },
+  "ki": {
+    "model": "Ribasim",
+    "run_tool": "tools/run_ribasim.py"
+  },
+  "simulation": {
+    "start": "2020-01-01",
+    "end": "2021-01-01",
+    "output_step": "1 day",
+    "basins": 4,
+    "nodes": 17,
+    "links": 17,
+    "crs": "EPSG:28992",
+    "concentration": true,
+    "generator": "python utils/generate-testmodels.py basic  (calls ribasim_testmodels.basic_model(), python/ribasim_testmodels/ribasim_testmodels/basic.py)",
+    "official_check": "core/test/run_models_test.jl testitem 'basic model'"
+  },
+  "files": {
+    "inputs/ribasim.toml": {
+      "bytes": 226,
+      "sha256": "b6181567ce2d2d6594b740163eef79a8e23cbc332c9d7292db4c0a47c5477fe1"
+    },
+    "inputs/input/database.gpkg": {
+      "bytes": 495616,
+      "sha256": "9215d8c58819e737b189dce2516cf5fcc8189dbd76ce1f17791d26341a118deb"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+This directory contains the following files:
+
+a11refr.swn             : SWAN input file
+a11refr.bot             : contains bottom values
+a11refr.loc             : contains some locations in problem area
+a11refr.ana             : contains analytical solution

@@ -66,9 +66,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | **Authors**    | Cockett, Kang, Heagy, Pidlisecky, Oldenburg                |
 | **License**    | MIT                                                         |
 | **Repository** | https://github.com/simpeg/simpeg                            |
-| **Tools**      | 4 scripts, ~1200 lines                                      |
-| **Skill docs** | 5 markdown documents                                        |
-| **Triplets**   | 18 diagnostic entries                                       |
+| **Tools**      | see the KI map at the top of this file |
+| **Skill docs** | see the KI map at the top of this file |
+| **Triplets**   | see the KI map at the top of this file |
 
 ---
 
@@ -365,7 +365,7 @@ No achieved calibration or validation metric values are stated in the supplied K
 
 ## 8. Diagnostic Triplets Summary
 
-18 triplets organized by failure domain:
+Triplets organized by failure domain (current count: the KI map at the top of this file):
 
 | Domain              | Count | IDs                    |
 |---------------------|-------|------------------------|
@@ -471,7 +471,7 @@ ki/
 │   ├── s4_inversion_setup.md         # Inversion configuration
 │   └── s5_output_analysis.md         # Parsing, visualization, QC
 └── diagnostics/
-    └── triplets.yaml                 # 18 symptom→diagnosis→remedy entries
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```
 
 ---

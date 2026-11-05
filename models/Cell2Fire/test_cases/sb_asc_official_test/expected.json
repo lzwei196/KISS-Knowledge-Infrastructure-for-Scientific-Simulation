@@ -1,0 +1,120 @@
+{
+  "description": "Expected results for the official C2F-W (Cell2Fire W) test case 'sb-asc' (test/model/sb-asc): Scott & Burgan fire model, 7x7 grid with one cell of each S&B fuel type, 113 fires, seed 123, scenario 1. inputs/ are the unmodified files from git HEAD of the C2F-W repo (commit 38ff0a0). All expected values were read FROM THE OFFICIAL TARGET FILES (reference/target_results.zip, target_results/sb-asc, unmodified copy from the repo). The official tolerance is exact: test/test.sh fails on any byte difference.",
+  "engine_version": "Cell2Fire W built from fire2a/C2F-W git 38ff0a0 (2026-03-02); binary prints 'version: v0.0.0' (local build, no release tag)",
+  "command": "Cell2Fire --input-instance-folder model/sb-asc --output-folder test_results/sb-asc --nsims 113 --output-messages --grids --out-intensity --sim S --seed 123 --ignitionsLog --scenario 1",
+  "numeric_checks": [
+    {
+      "name": "files_differing_from_official_target",
+      "expected": 0,
+      "tol": 0,
+      "why": "the official test (test/test.sh) passes only when every output file equals the official target byte for byte (after removing the log 'version:' line)"
+    },
+    {
+      "name": "n_output_files",
+      "expected": 753,
+      "tol": 0,
+      "why": "official target folder target_results/sb-asc holds 753 files (log, ignition log, 113 message files, 113 intensity grids, 525 grid snapshots)"
+    },
+    {
+      "name": "n_simulations_finished",
+      "expected": 113,
+      "tol": 0,
+      "why": "113 fires asked for (--nsims 113); each ends with a 'Results' table whose Total row is 49 cells = 100.00%"
+    },
+    {
+      "name": "n_message_files",
+      "expected": 113,
+      "tol": 0,
+      "why": "one spread-message file per fire (--output-messages)"
+    },
+    {
+      "name": "n_surface_intensity_files",
+      "expected": 113,
+      "tol": 0,
+      "why": "one surface fire intensity grid per fire (--out-intensity)"
+    },
+    {
+      "name": "n_grid_folders",
+      "expected": 113,
+      "tol": 0,
+      "why": "one Grids folder per fire (--grids)"
+    },
+    {
+      "name": "n_ignition_log_rows",
+      "expected": 113,
+      "tol": 0,
+      "why": "one ignition cell per fire (--ignitionsLog); ignition points are drawn from seed 123"
+    },
+    {
+      "name": "non_burnable_cells",
+      "expected": 6,
+      "tol": 0,
+      "why": "the 7x7 fuel map has 6 cells that cannot burn (fuel codes 0, 91, 92, 93, 98, 99)"
+    },
+    {
+      "name": "message_scar_matches_log_burnt",
+      "expected": 1,
+      "tol": 0,
+      "why": "1 = for every fire, ignition cell + cells reached by spread messages equals the Burnt count the model prints (inner consistency)"
+    },
+    {
+      "name": "burnt_cells_mean",
+      "expected": 41.93805309734513,
+      "tol": 1e-09,
+      "why": "mean burnt cells per fire over the 113 fires, from the official log Burnt rows"
+    },
+    {
+      "name": "burnt_cells_min",
+      "expected": 28,
+      "tol": 0,
+      "why": "smallest fire in the official log"
+    },
+    {
+      "name": "burnt_cells_max",
+      "expected": 43,
+      "tol": 0,
+      "why": "largest fire = all 43 burnable cells"
+    },
+    {
+      "name": "total_spread_messages",
+      "expected": 4782,
+      "tol": 0,
+      "why": "total cell-to-cell spread events over all 113 official message files"
+    },
+    {
+      "name": "max_spread_message_period",
+      "expected": 298,
+      "tol": 0,
+      "why": "latest fire period at which a spread happened (limit is 300 periods)"
+    },
+    {
+      "name": "burn_probability_mean",
+      "expected": 0.8558786346396965,
+      "tol": 1e-09,
+      "why": "mean over the 49 cells of the share of fires that burnt the cell"
+    },
+    {
+      "name": "burn_probability_max",
+      "expected": 1.0,
+      "tol": 1e-09,
+      "why": "some cells burn in every fire"
+    },
+    {
+      "name": "surface_intensity_max",
+      "expected": 41063.4,
+      "tol": 1e-09,
+      "why": "largest surface fire intensity (kW/m) in the 113 official intensity grids"
+    },
+    {
+      "name": "surface_intensity_mean",
+      "expected": 5707.264426584793,
+      "tol": 1e-09,
+      "why": "mean of all cells of the 113 official intensity grids (unburnt = 0)"
+    }
+  ],
+  "finished_normally": "return code 0 and 113 'Simulation N Results' tables with 'Total 49 100.00%' (checked as n_simulations_finished)",
+  "recorded_on": "2026-10-05",
+  "recorded_with": "values computed by run_reference.py --print-metrics on the official target folder; a fresh run on this server matched all 753 target files byte for byte, two separate runs both identical",
+  "reference": "reference/target_results.zip = test/target_results.zip from fire2a/C2F-W at 38ff0a0 (sha256 0361457b10af0b2cbd10484e4937491df4d9d9eabe952952388fc79cb4a7b6cf); only the target_results/sb-asc part is used",
+  "notes": "Tolerance 0 for counts and 1e-9 for means, because the official check is an exact file match. The ForestGrid files written by --grids are timed snapshots, not the final burn scar, so burnt cells are taken from the spread messages plus the ignition cell. The only change to the run output before comparing is dropping the log 'version:' line, which the official test.sh also does."
+}

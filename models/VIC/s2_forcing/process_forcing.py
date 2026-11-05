@@ -10,6 +10,8 @@ import pandas as pd
 from pathlib import Path
 import os
 import numpy as np
+import re
+import sys
 import warnings
 
 # --- 0. 忽略不必要的警告 ---
@@ -43,6 +45,17 @@ _OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 FORCING_PREFIX = os.environ.get("VIC_FORCING_PREFIX", "huai_01dy_025deg_")
 
 INPUT_DATA_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "forcing" / "forcing_1d"
+# codex structure_sync r1 #4: forcing_1d.py tags every file with the target resolution token
+# (025deg / 010deg, same rule as s1_grid). A 0.25 and a 0.1 build of one basin share
+# forcing_1d, so only files of THIS VIC_RES are read — mixing them doubled every timestamp.
+_RES = float(os.environ.get("VIC_RES", "0.25"))
+if abs(float(os.environ.get("VIC_RES", "0.25")) * 100 - round(float(os.environ.get("VIC_RES", "0.25")) * 100)) > 1e-6:
+    # codex structure_sync r2 #4: the NNNdeg token holds hundredths of a degree only; 0.125 and
+    # 0.12 would both be "012deg" and silently share grid/forcing files. Refuse, never round.
+    raise SystemExit(f"VIC_RES={os.environ.get('VIC_RES')} is not a whole number of 0.01 deg; "
+                     f"the resolution token (e.g. 025deg) cannot represent it")
+_RTOK = f"{int(round(_RES * 100)):03d}deg"
+_RTOK_RE = re.compile(rf"_{_RTOK}_")
 # 输出：最终气象驱动文件存放的文件夹
 OUTPUT_FORCING_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "forcing" / "forcing_final"
 # 土壤参数文件（用于获取准确的经纬度和grid_id）
@@ -72,7 +85,7 @@ try:
 except Exception as e:
     print(f"✗ 错误：无法读取土壤参数文件 '{SOIL_PARAM_FILE}'")
     print(f"  错误信息: {e}")
-    exit()
+    sys.exit(1)
 
 # --- 3. 一次性读取所有变量和所有年份的数据 ---
 print(f"\n步骤2: 读取所有变量的NC文件")
@@ -86,15 +99,20 @@ try:
     for var in variables_to_load:
         print(f"  - 正在加载变量: {var}")
         # 使用 glob 找到所有文件并逐个打开
-        var_files = sorted(glob.glob(str(INPUT_DATA_DIR / f"{var}_*_{_BASIN}.nc")))
+        var_files = sorted(f for f in glob.glob(str(INPUT_DATA_DIR / f"{var}_*_{_BASIN}.nc"))
+                           if _RTOK_RE.search(Path(f).name))
         if not var_files:
-            raise FileNotFoundError(f"未找到 {var} 的文件")
+            raise FileNotFoundError(f"未找到 {var} 的 {_RTOK} 文件 (VIC_RES={_RES}) in {INPUT_DATA_DIR}")
 
         # KDT 2026-07-09: was an incremental xr.concat inside the loop, which
         # re-copies the whole accumulated array on every file (O(n^2) in both
         # time and memory). One concat over the full list is O(n).
         ds_var = xr.concat([open_nc(f) for f in var_files], dim='time')
         ds_var = ds_var.sortby('time')
+        _dup = ds_var.indexes['time'].duplicated()
+        if _dup.any():     # fail closed: two files for one timestamp is never a valid forcing
+            raise ValueError(f"{var}: {int(_dup.sum())} duplicate timestamps across {len(var_files)} "
+                             f"files (first {ds_var.indexes['time'][_dup][0]}) — mixed builds in {INPUT_DATA_DIR}")
 
         all_ds.append(ds_var)
 
@@ -106,7 +124,7 @@ except Exception as e:
     print(f"✗ 错误：读取NC文件时出错。")
     print(f"  请确保路径 '{INPUT_DATA_DIR}' 下包含所有必需的变量文件。")
     print(f"  错误信息: {e}")
-    exit()
+    sys.exit(1)
 
 # --- 4. 筛选时间范围 ---
 print(f"\n步骤3: 筛选时间范围")
@@ -117,6 +135,26 @@ END_DATE = os.environ.get("VIC_END_DATE", '1980-12-31')
 print(f"时间范围: {START_DATE} 到 {END_DATE}")
 
 ds_merged = ds_merged.sel(time=slice(START_DATE, END_DATE))
+# codex structure_sync r5: the VIC forcing file has no time column, so the selected axis must be
+# non-empty, evenly stepped and cover the WHOLE requested period. An empty selection (dates outside
+# the NetCDF period) or a timestamp missing in every variable would otherwise write short or
+# shifted files and report success. Stop before any output file is opened.
+_t = pd.DatetimeIndex(ds_merged.indexes["time"])
+if len(_t) == 0:
+    print(f"✗ 错误：{START_DATE}..{END_DATE} 内没有任何时间步 (forcing_1d covers other dates)", file=sys.stderr)
+    sys.exit(1)
+if len(_t) > 1:
+    _steps = pd.Series(_t[1:] - _t[:-1]).unique()
+    if len(_steps) != 1:
+        _bad = _t[1:][(_t[1:] - _t[:-1]) != _steps.min()][:3]
+        print(f"✗ 错误：时间步不连续 (steps {[str(x) for x in _steps[:4]]}; gap after e.g. {list(map(str, _bad))})", file=sys.stderr)
+        sys.exit(1)
+    _dt = pd.Timedelta(_steps[0])
+else:
+    _dt = pd.Timedelta(hours=24)
+if _t[0] > pd.Timestamp(START_DATE) or _t[-1] < pd.Timestamp(END_DATE) + pd.Timedelta(hours=24) - _dt:
+    print(f"✗ 错误：forcing covers {_t[0]}..{_t[-1]}, not the whole requested {START_DATE}..{END_DATE}", file=sys.stderr)
+    sys.exit(1)
 print(f"✓ 数据筛选完毕，共包含 {len(ds_merged.time)} 个时间步。")
 
 # --- 5. 检查坐标系统 ---
@@ -132,7 +170,7 @@ elif 'lat' in ds_merged.coords and 'lon' in ds_merged.coords:
     print(f"✓ 使用坐标名: lat, lon")
 else:
     print(f"✗ 错误：无法识别nc文件的坐标维度")
-    exit()
+    sys.exit(1)
 
 print(f"  nc文件纬度范围: {float(ds_merged[lat_dim].min().values):.4f} ~ {float(ds_merged[lat_dim].max().values):.4f}")
 print(f"  nc文件经度范围: {float(ds_merged[lon_dim].min().values):.4f} ~ {float(ds_merged[lon_dim].max().values):.4f}")
@@ -173,20 +211,26 @@ for idx, row in df_soil.iterrows():
         cell_data = ds_merged.sel(
             {lat_dim: lat, lon_dim: lon}, 
             method='nearest', 
-            tolerance=0.13  # 容差：0.13度 (约半个0.25度格网)
+            tolerance=_RES / 2.0 + 0.005  # 容差：半个格网 (System 1 W5: follows VIC_RES)
         ).compute()
         
         # 检查是否所有变量都有有效数据
+        # codex structure_sync r4 (pre-existing): ANY missing value fails the cell, not only an
+        # all-NaN variable — a missing month in one variable would otherwise become blank fields in
+        # the VIC forcing file while the converter reported success. A missing variable fails too.
         has_valid_data = True
+        _why = ""
         for var in variables_to_load:
-            if var in cell_data.data_vars:
-                # 检查是否全是NaN
-                if cell_data[var].isnull().all():
-                    has_valid_data = False
-                    break
-        
+            if var not in cell_data.data_vars:
+                has_valid_data, _why = False, f"{var} missing"
+                break
+            _n = int(cell_data[var].isnull().sum())
+            if _n:
+                has_valid_data, _why = False, f"{var} has {_n} NaN steps of {cell_data[var].size}"
+                break
+
         if not has_valid_data:
-            print(f"    ⚠️  警告：grid_id={grid_id} ({lat:.4f}, {lon:.4f}) 的数据全部为NaN，跳过")
+            print(f"    ✗ grid_id={grid_id} ({lat:.4f}, {lon:.4f}): {_why} — no forcing file written")
             fail_count += 1
             missing_coords.append((grid_id, lat, lon))
             continue
@@ -266,3 +310,9 @@ print(f"  - 使用土壤参数文件的经纬度坐标")
 print(f"  - 文件名与土壤文件的经纬度完全一致")
 print(f"  - VIC可以通过经纬度匹配土壤和气象文件")
 print(f"\n{'='*80}")
+
+# honest exit code: a cell without forcing makes VIC fail later (or run short) — stop here
+if fail_count:
+    print(f"✗ process_forcing FAILED: {fail_count} of {len(df_soil)} cells have no forcing file",
+          file=sys.stderr)
+    sys.exit(1)

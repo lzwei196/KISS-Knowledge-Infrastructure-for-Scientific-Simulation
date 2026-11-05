@@ -1,4 +1,3 @@
-triplets:
 - id: dt_cc_001
   stage: s1_extract_cmip
   failure_domain: dependency_mismatch
@@ -7,22 +6,20 @@ triplets:
     error_pattern: No CMIP6 cells match the basin grid
     detection_method: log_match
   diagnosis:
-    root_cause: Basin is outside the China domain covered by Cmip6BaisCorrect_for_China (73.75-135.25E, 15.25-53.75N)
-    explanation: 'The bias-corrected CMIP6 dataset only covers mainland China. Basins in other countries, or in Chinese border
-      areas outside the coverage mask, will have no matching grid cells. The 4,163 cells are land-only within the China boundary.
-
-      '
+    root_cause: Basin is outside the China domain of Cmip6BaisCorrect_for_China (73.75-135.25E, 15.25-53.75N)
+    explanation: The China bias-corrected product covers only mainland-China land (4,163 cells); basins abroad or in border
+      areas outside the mask get no matching cells.
     affected_components:
     - extract_cmip6_basin.py
     - basin_grid.nc
   remedy:
-    action: Use global CMIP6 raw data from ESGF instead of the China-specific bias-corrected product
-    tool_to_run: ''
+    action: 'Use the global path: fetch_nex_gddp_global.py (NEX-GDDP-CMIP6, 0.25 deg, already BCSD bias-corrected); rename
+      its historical output to r1'
+    tool_to_run: fetch_nex_gddp_global
     manual_steps:
-    - 'Verify basin centroid is within China: check basin_grid.nc lat/lon ranges'
-    - If outside China, download CMIP6 raw data from ESGF (https://esgf-node.llnl.gov/)
-    - Apply bias correction manually using quantile mapping against MSWX
-    prevention: Check basin location before starting the climate projection workflow
+    - Check basin_grid.nc lat/lon vs the China box
+    - 'Else: raw ESGF CMIP6, quantile-mapped to MSWX'
+    prevention: Check basin location first
   severity: fatal
   cross_references: []
 - id: dt_cc_002
@@ -33,24 +30,19 @@ triplets:
     error_pattern: CMIP6 pr file not found
     detection_method: log_match
   diagnosis:
-    root_cause: Model name does not match the file naming convention, or the model only has precipitation data (5 models lack
-      temperature)
-    explanation: 'File naming convention is Cor_{ModelName}_PreDaily.txt for pr, Cor_{ModelName}_tasmaxDaily.txt for tasmax.
-      Model names are case-sensitive and use hyphens (e.g., ACCESS-CM2, not access_cm2). Five models (CESM2-WACCM, IITM-ESM,
-      CNRM-CM6-1, KACE-1-0-G, MIROC-ES2L) have precipitation data but lack temperature in the tasmax/tasmin directories.
-
-      '
+    root_cause: Model name does not match file naming, or model has pr only
+    explanation: 'Files: Cor_{Model}_PreDaily.txt, Cor_{Model}_tasmaxDaily.txt; case-sensitive, hyphens (ACCESS-CM2). No tasmax/tasmin:
+      CESM2-WACCM, IITM-ESM, CNRM-CM6-1, KACE-1-0-G, MIROC-ES2L.'
     affected_components:
     - extract_cmip6_basin.py
     - CMIP6 file system
   remedy:
-    action: Check exact model name spelling and verify files exist in the target scenario directory
+    action: Check exact model spelling and that its files exist for the scenario
     tool_to_run: ''
     manual_steps:
-    - 'List available models: ls KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/pr/r1/'
-    - 'Check if model has temperature: ls .../tasmax/r1/ | grep {MODEL}'
-    - Use exact filename spelling (case-sensitive, with hyphens)
-    prevention: Use the 26-model list from the skill document (all have pr + tasmax + tasmin)
+    - ls KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/pr/r1/
+    - ls .../tasmax/r1/ | grep {MODEL}
+    prevention: Use the 26-model list in the skill doc (all have pr+tasmax+tasmin)
   severity: fatal
   cross_references: []
 - id: dt_cc_003
@@ -61,24 +53,19 @@ triplets:
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Grid cell matching returned wrong CMIP6 column index due to coordinate precision mismatch
-    explanation: 'Both grids are nominally 0.25-degree, but floating-point representation may cause cell centres to differ
-      by small amounts (e.g., 31.125 vs 31.1250001). The tool uses nearest-neighbour with a 0.13-degree tolerance (slightly
-      over half a grid cell) to handle this. If tolerance is too tight, valid matches are missed. If too loose, wrong cells
-      are matched.
-
-      '
+    root_cause: Cell matching picked the wrong CMIP6 column (coordinate precision mismatch)
+    explanation: 'Grids are 0.25 deg but centres can differ (31.125 vs 31.1250001). Nearest match uses 0.13 deg tolerance:
+      too tight misses cells, too loose matches wrong ones.'
     affected_components:
     - extract_cmip6_basin.py
     - Grid coordinate precision
   remedy:
-    action: Check matched cell coordinates against expected basin grid
+    action: Check matched cell coordinates against the basin grid
     tool_to_run: ''
     manual_steps:
-    - Open the output NC file and check cell_lat/cell_lon coordinates
-    - Compare against VIC basin_grid.nc coordinates
-    - If mismatched, adjust tolerance in extract_cmip6_basin.py (default 0.13 deg)
-    prevention: Always validate output by checking a few cells' values against the raw CMIP6 text file
+    - Compare output cell_lat/cell_lon with VIC basin_grid.nc
+    - If mismatched, adjust the tolerance in extract_cmip6_basin.py (default 0.13 deg)
+    prevention: Spot-check a few cells against the raw CMIP6 text file
   severity: silent
   cross_references: []
 - id: dt_cc_004
@@ -89,23 +76,20 @@ triplets:
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Historical and future data directories point to the same files, or the reference and future periods overlap
-    explanation: 'If HIST_DIR and FUTURE_DIR both contain the same scenario (e.g., both r1), or if the reference period (e.g.,
-      1981-2010) and future period (e.g., 2000-2029) heavily overlap, the computed deltas will be near-zero/near-one because
-      the climatologies are nearly identical.
-
-      '
+    root_cause: Historical and future inputs are the same, or the periods overlap
+    explanation: 'Same scenario in HIST_DIR and FUTURE_DIR (both r1), or overlap like 1981-2010 vs 2000-2029, makes both climatologies
+      nearly equal: deltas ~1.0 / ~0.0.'
     affected_components:
     - compute_climate_deltas.py
     - Directory paths and period configuration
   remedy:
-    action: Verify that HIST_DIR contains r1 files and FUTURE_DIR contains SSP files, and that periods do not overlap
+    action: Check HIST_DIR has r1 files, FUTURE_DIR has SSP files, and the periods do not overlap
     tool_to_run: ''
     manual_steps:
-    - 'Check HIST_DIR files: ls {HIST_DIR}/*_r1_*.nc (should see r1 in filenames)'
-    - 'Check FUTURE_DIR files: ls {FUTURE_DIR}/*_{ssp}_*.nc (should see SSP code)'
-    - Verify REF_PERIOD is within 1961-2014 and FUTURE_PERIOD is within 2015-2099
-    prevention: Always extract r1 and SSP into the same directory — the tool differentiates by filename pattern
+    - ls {HIST_DIR}/*_r1_*.nc
+    - ls {FUTURE_DIR}/*_{ssp}_*.nc
+    - REF_PERIOD within 1961-2014, FUTURE_PERIOD within 2015-2099
+    prevention: Extract r1 and SSP to one dir; the tool splits by filename
   severity: silent
   cross_references: []
 - id: dt_cc_005
@@ -116,23 +100,18 @@ triplets:
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Division by near-zero historical precipitation in arid months produces extreme ratios
-    explanation: 'In basins with arid seasons (e.g., winter in northern China), historical monthly precipitation may be <
-      0.1 mm/day. If future precipitation for the same month is, say, 0.5 mm/day, the ratio is 5x. The tool caps ratios at
-      [0.1, 5.0] and floors historical at 0.1 mm/day to prevent this, but the cap itself may still produce significant amplification
-      of dry-month precipitation, which is physically acceptable but worth inspecting.
-
-      '
+    root_cause: Near-zero historical precipitation in arid months gives extreme ratios
+    explanation: Dry-month means can be <0.1 mm/day (north China winter). History is floored at 0.1 mm/day, ratios clipped
+      to [0.1, 5.0]; the cap can still amplify dry months.
     affected_components:
     - compute_climate_deltas.py
     - Projected forcing in dry months
   remedy:
-    action: Inspect delta_pr for dry months; verify that capping is acceptable for the study purpose
+    action: Inspect delta_pr in dry months; confirm the cap is acceptable for the study
     tool_to_run: ''
     manual_steps:
-    - 'Plot delta_pr by month: should see values near 1.0 for wet months, potentially capped for dry months'
-    - If dry-month ratios are scientifically problematic, consider using additive deltas for precipitation instead
-    prevention: For very arid basins, consider using additive (mm/day) rather than multiplicative deltas for precipitation
+    - 'Plot delta_pr by month: ~1.0 in wet months, possibly capped in dry months'
+    prevention: For very arid basins use additive (mm/day) instead of multiplicative precipitation deltas
   severity: degraded
   cross_references: []
 - id: dt_cc_006
@@ -143,51 +122,44 @@ triplets:
     error_pattern: Not enough records in forcing file
     detection_method: log_match
   diagnosis:
-    root_cause: The global parameter file STARTYEAR/ENDYEAR don't match the projected forcing time range
-    explanation: 'When applying deltas, the output forcing files have future year timestamps (e.g., 2041-2070). The VIC global
-      parameter file must be updated to match these years. If it still says STARTYEAR=1990, VIC will try to read 1990 data
-      from files timestamped 2041, failing with record count mismatch.
-
-      '
+    root_cause: VIC global STARTYEAR/ENDYEAR do not match the projected forcing years
+    explanation: Projected forcing has future dates (e.g. 2041-2070); with STARTYEAR=1990 still set, VIC seeks 1990 records
+      in files dated 2041 and fails on record count.
     affected_components:
     - global_param_{basin}_{MODEL}_{ssp}.txt
     - Projected forcing files
   remedy:
-    action: Update STARTYEAR/ENDYEAR/FORCEYEAR in the projected global parameter file to match the future period
+    action: Set STARTYEAR/ENDYEAR and FORCEYEAR to the future period in a projection global file
     tool_to_run: ''
     manual_steps:
-    - 'Edit global_param file: set STARTYEAR={future_start}, ENDYEAR={future_end}'
-    - Set FORCEYEARFIRST={future_start}, FORCEYEARLAST={future_end}
-    - Ensure FORCING1 prefix points to the projected forcing directory
-    prevention: Always create a separate global_param file for each projection run — never modify the baseline
+    - STARTYEAR={future_start}, ENDYEAR={future_end}
+    - FORCEYEARFIRST/LAST = same years
+    - FORCING1 prefix = projected forcing dir
+    prevention: One separate global_param file per projection run; never edit the baseline
   severity: fatal
   cross_references: []
 - id: dt_cc_007
   stage: s3_apply_deltas
   failure_domain: silent_error
   symptom:
-    description: Wind, pressure, radiation, humidity are zero or NaN in projected forcing despite being valid in baseline
-    error_pattern: ''
-    detection_method: value_comparison
+    description: A pass-through variable (wind, pres, srad, lrad, shum) is missing from projected forcing; convert_projected_forcing.py
+      stops with 'no NetCDF files for variable(s)'
+    error_pattern: no NetCDF files for variable
+    detection_method: log_match
   diagnosis:
-    root_cause: Pass-through variables were not properly copied — baseline files for these variables were not found in the
-      forcing directory
-    explanation: 'The apply_deltas tool modifies prec and temp but passes through wind, pres, srad, lrad, and shum unchanged.
-      If these baseline files are not in BASELINE_FORCING_DIR (e.g., they have different naming conventions or are in a subdirectory),
-      the tool may produce empty outputs for these variables.
-
-      '
+    root_cause: Pass-through baseline files (pres, srad, lrad, wind, shum) not found
+    explanation: Only prec and temp change; the rest are copied. A variable with another prefix or in a subfolder is skipped
+      (no output); convert_projected_forcing.py then stops.
     affected_components:
     - apply_deltas_forcing.py
     - Baseline forcing file naming
   remedy:
-    action: Verify that all 7 variable files (temp, prec, pres, srad, lrad, wind, shum) exist in BASELINE_FORCING_DIR
+    action: Make sure all 7 variables (temp, prec, pres, srad, lrad, wind, shum) are in BASELINE_FORCING_DIR
     tool_to_run: ''
     manual_steps:
-    - ls outputs/{basin}/vic_temp/forcing/forcing_1d/ — should see files for all 7 variables
-    - If missing, check if naming prefix differs (e.g., MSWX uses different prefixes)
-    - Ensure file prefix matches FORCING_VAR_PREFIXES in the tool
-    prevention: Before running apply_deltas, verify 7 unique variable prefixes in BASELINE_FORCING_DIR
+    - 'ls the forcing_1d dir: 7 prefixes'
+    - If a prefix differs (e.g. MSWX), rename the files or edit FORCING_VAR_PREFIXES in apply_deltas_forcing.py to match
+    prevention: Check 7 prefixes first
   severity: silent
   cross_references: []
 - id: dt_cc_008
@@ -199,26 +171,19 @@ triplets:
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Using uncalibrated (default) VIC soil parameters for climate projection exaggerates runoff sensitivity to
-      precipitation/temperature changes
-    explanation: 'Default VIC parameters (especially binfilt, Ds, Ws) may produce NSE < 0 for the historical period. When
-      climate deltas are applied, the errors are amplified: precipitation increases of 10% may translate to runoff increases
-      of 50% or more due to poor infiltration partitioning. The relative changes (future/historical ratio) are somewhat robust
-      to calibration, but absolute values will be wrong.
-
-      '
+    root_cause: Default (uncalibrated) VIC soil parameters exaggerate runoff sensitivity
+    explanation: Defaults (binfilt, Ds, Ws) can give NSE<0 in history; +10% precipitation may give +50% runoff. Relative (future/historical)
+      changes are fairly robust; absolute values are wrong.
     affected_components:
     - VIC soil parameters
     - All projection runs
   remedy:
-    action: Calibrate VIC against observed discharge before running projections; compare relative changes (ratios) rather
-      than absolute values if uncalibrated
+    action: Calibrate VIC on observed discharge before projecting; if uncalibrated, report relative changes only
     tool_to_run: ''
     manual_steps:
-    - Run calibration using skills/vic_cali_ai/ with observed discharge data
-    - Use calibrated SOIL_PARAM_COMPLETE.txt for all projection runs
-    - If no observed data available, report only relative changes (% change) rather than absolute discharge
-    prevention: Always calibrate before projection. Use find_observed_station.py to auto-search for observed data.
+    - Calibrate with skills/vic_cali_ai/
+    - Use the calibrated SOIL_PARAM_COMPLETE.txt in every run
+    prevention: Find gauges with find_observed_station.py
   severity: degraded
   cross_references: []
 - id: dt_cc_009
@@ -229,22 +194,20 @@ triplets:
     error_pattern: MemoryError|Killed
     detection_method: log_match
   diagnosis:
-    root_cause: Reading the full 4163-column file into memory exceeds available RAM, especially when processing multiple variables
-    explanation: 'Each CMIP6 text file is ~650 MB. Reading with pandas uses ~2-3 GB RAM per file due to string parsing overhead.
-      Processing 3 variables for one model needs ~6-9 GB. With multiple models in parallel, memory may be exhausted.
-
-      '
+    root_cause: Reading a whole 4163-column CMIP6 text file into memory exceeds RAM, worse with several variables
+    explanation: Each file is ~650 MB; pandas needs ~2-3 GB per file, ~6-9 GB for 3 variables of one model, more with models
+      in parallel.
     affected_components:
     - extract_cmip6_basin.py
     - System RAM
   remedy:
-    action: Process one model at a time; use usecols parameter to read only needed columns
+    action: Process one model at a time; read only basin columns (usecols)
     tool_to_run: extract_cmip6_basin
     manual_steps:
-    - 'Check available RAM: free -h'
-    - Process models sequentially, not in parallel
-    - The tool already uses usecols to read only basin columns — ensure this is working
-    prevention: Run models sequentially. The tool reads only basin-relevant columns, keeping memory usage under 2 GB.
+    - free -h
+    - Run models one after another, not in parallel
+    - Confirm usecols reads only basin columns
+    prevention: Sequential runs stay under ~2 GB
   severity: fatal
   cross_references: []
 - id: dt_cc_010
@@ -256,16 +219,16 @@ triplets:
     error_pattern: combine='by_coords'
     detection_method: missing_output
   diagnosis:
-    root_cause: apply_deltas_forcing.py outputs monthly NC but the NC-to-ASCII step was undocumented and had no reusable tool
-    explanation: The knowledge infrastructure documented S3a (apply deltas) but not S3b (NC to ASCII). The workaround for
-      Bengbu was ad-hoc scripts with hardcoded paths. When a new basin (Nuxia) was attempted, the agent could not reuse them.
+    root_cause: Monthly NC from apply_deltas had no documented NC-to-ASCII tool
+    explanation: S3a (apply deltas) was documented but S3b (NC to ASCII) was not; the Bengbu workaround used ad-hoc scripts
+      with hardcoded paths that could not be reused for Nuxia.
     affected_components:
     - apply_deltas_forcing.py
     - process_forcing.py
   remedy:
-    action: Created convert_projected_forcing.py as a dedicated CLI tool with all parameters as arguments
-    tool_to_run: ''
+    action: Use convert_projected_forcing.py (CLI, all settings as arguments) for NC to VIC ASCII
+    tool_to_run: convert_projected_forcing
     manual_steps: []
-    prevention: Tool now registered in YAML and documented in skill doc Step 3
+    prevention: Registered in the KI manifest; see s3 skill doc Step 3
   severity: fatal
   cross_references: []

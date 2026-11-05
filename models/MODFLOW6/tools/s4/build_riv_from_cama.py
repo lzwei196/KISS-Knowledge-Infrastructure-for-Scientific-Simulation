@@ -5,8 +5,12 @@ Identifies river cells in the MODFLOW grid by intersecting with the
 CaMa-Flood river network, and extracts river stage from CaMa output.
 
 Usage:
+    python tools/s2/create_grid_from_basin.py --shapefile data/shp/<basin>.shp \
+        --cell_m 5000 --out_nc outputs/<basin>/modflow/grid.nc
+        (or --box LON_MIN LON_MAX LAT_MIN LAT_MAX --nrow N --ncol M when the
+         domain is a rectangle)
     python build_riv_from_cama.py \
-        --grid_nc outputs/<basin>/vic_temp/grid/basin_grid.nc \
+        --grid_nc outputs/<basin>/modflow/grid.nc \
         --cama_map model/cmf_v420_pkg/map/<basin>_15min \
         --cama_out model/cmf_v420_pkg/out/<run_name> \
         --layers_dir outputs/<basin>/modflow/layers \

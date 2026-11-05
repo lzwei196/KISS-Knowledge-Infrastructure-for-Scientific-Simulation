@@ -12,7 +12,7 @@ package:
   scientific_reference_version: SNOWPACK 3.7.1 (SLF Davos; Bartelt & Lehning 2002 / Lehning et al. 2002
     Parts II–III numerical formulation)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/local_install/bin/snowpack
+    path: KISSPATH_BINARIES/SNOWPACK/bin/snowpack
     type: ELF
 pipeline:
   stages:

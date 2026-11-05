@@ -1029,7 +1029,7 @@ safety:
       severity: "fatal_or_silent"
     - id: "missing_soil_parameters_in_wlp"
       kind: "soil_semantic"
-      description: "Wofost72_WLP_FD requires all 14 soil parameters (SMW, SMFCF, SM0, CRAIRC, K0, SOPE, KSUB, RDMSOL, IFUNRN, SSMAX, SSI, WAV, NOTINF, SMLIM); any missing key raises KeyError at engine initialization."
+      description: "Wofost72_WLP_FD needs 14 parameters at engine init: the 8 soil-hydraulic keys in soildata (SMW, SMFCF, SM0, CRAIRC, K0, SOPE, KSUB, RDMSOL) and the 6 site keys (IFUNRN, SSMAX, SSI, WAV, NOTINF, SMLIM), which in PCSE 6.0 come from WOFOST72SiteDataProvider and must NOT also be in soildata (Duplicate parameter found, dt_v003); a missing key raises an error at engine initialization."
       severity: "fatal"
     - id: "case_sensitive_crop_or_variety_name"
       kind: "parser_semantic"

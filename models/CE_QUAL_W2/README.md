@@ -95,7 +95,7 @@ numpy, pandas, xarray, netCDF4, geopandas, shapely, rasterio, matplotlib, scipy
 | 0 | Configuration | (manual) | Reservoir selection, period, forcing, WQ toggle |
 | 1 | Bathymetry | `build_reservoir_grid` | DEM/idealized geometry to segment-layer grid + bth_wb*.npt |
 | 2 | Branch topology | `build_branch_topology` | Multi-branch connectivity, slopes, segment ranges |
-| 3 | Met forcing | `convert_met_to_w2` | CMFD/MSWX/VIC to W2 met format (**cloud in tenths 0-10!**) |
+| 3 | Met forcing | `convert_met_to_w2` | CMFD/MSWX/NASA POWER to W2 met format (**cloud in tenths 0-10!**) |
 | 4 | Inflow | `convert_inflow_to_w2`, `generate_distributed_inflow` | CaMa/VIC discharge + temperature |
 | 5 | Outflow | `configure_w2_outflow` | Selective withdrawal, dam outlets, outflow timeseries |
 | 6 | Init conditions | `build_init_conditions` | 2D initial temperature/WQ fields |
@@ -195,8 +195,8 @@ Otherwise the reservoir receives double the water input.
 | # | Source | Target | Variable | Tool |
 |---|--------|--------|----------|------|
 | 1 | CaMa-Flood | CE-QUAL-W2 | Upstream discharge | `convert_inflow_to_w2` |
-| 2 | VIC | CE-QUAL-W2 | Met forcing | `convert_met_to_w2` |
-| 3 | VIC | CE-QUAL-W2 | Distributed tributary runoff | `generate_distributed_inflow` |
+| 2 | forcing source (shared with VIC) | CE-QUAL-W2 | Met forcing | `convert_met_to_w2` |
+| 3 | VIC | CE-QUAL-W2 | Distributed tributary runoff | `generate_distributed_inflow` (not built: `--vic_runoff_dir` is refused; `--synthetic` only) |
 | 4 | CE-QUAL-W2 | CaMa-Flood | Dam release discharge | `w2_to_cama_coupling` |
 | 5 | CE-QUAL-W2 | CaMa-Flood | Dam release temperature | `w2_to_cama_coupling` |
 | 6 | SWAT+ | CE-QUAL-W2 | Upstream nutrient loading | (via cin_br*.npt) |
@@ -245,7 +245,7 @@ python tools/s1_bathymetry/build_reservoir_grid.py \
 
 # 2. Convert forcing to W2 met format
 python tools/s3_met_forcing/convert_met_to_w2.py \
-    --vic_forcing_dir outputs/<run>/vic_temp/forcing/forcing_final \
+    --source cmfd --forcing_dir data/forcing/Data_forcing_03hr_010deg \
     --lat 32.54 --lon 111.51 --start_year 2005 --end_year 2010 \
     --output /tmp/w2_test/met_wb1.npt
 

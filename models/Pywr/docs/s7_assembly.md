@@ -71,3 +71,6 @@ PYWR_PYTHON="KISSPATH_HOME/桌面/test/hydro-claude/python_env/bin/python3"
   --end_date 1990-12-31 \
   --output /tmp/pywr_model.json
 ```
+
+## Flow units
+Inputs (inflow CSV, release profiles, demand max/min flows, including plain-number `max_flow` such as the industrial demand) are m3/s. `wire_control_curve_and_units()` multiplies them by 86400 so the model works in m3/day against storage in m3 (Pywr adds flow x timestep-days to storage), and records `metadata.flow_units: m3/day` for `run_pywr.py`.

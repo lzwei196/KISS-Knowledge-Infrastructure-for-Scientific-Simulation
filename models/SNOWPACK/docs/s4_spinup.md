@@ -84,7 +84,7 @@ was wasted.
 ```bash
 # 1. Run 2-year spinup
 python tools/run_snowpack.py \
-    --binary ./build/bin/snowpack \
+    --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \
     --config spinup.ini \
     --end_date "1997-10-01T00:00" \
     --mode spinup
@@ -94,7 +94,7 @@ cp output/spinup_MST96.sno input/MST96.sno
 
 # 3. Run production
 python tools/run_snowpack.py \
-    --binary ./build/bin/snowpack \
+    --binary KISSPATH_BINARIES/SNOWPACK/bin/snowpack \
     --config io.ini \
     --end_date "1998-06-30T00:00"
 ```

@@ -451,7 +451,7 @@ known_issues:
 
     discharge. tools/build_mosart_grid.py does this automatically (steepest-descent inactive
 
-    neighbour becomes a frac=0 terminal sink) a'
+    neighbour becomes a frac=0 terminal sink; i'
 - id: T022
   symptom: No gridded runoff / QOVER-QDRAI file for a China basin; convert_grid_parameters --source-type
     merit produces nothing new
@@ -465,3 +465,52 @@ known_issues:
     flux, grid it (cols 16=OUT_RUNOFF 17=OUT_BASEFLOW, mm/day, skiprows=3), then
 
     convert_runoff_forcing.py --source-units mm/day.'
+- id: T023
+  symptom: 'build_mosart_grid.py: error: unrecognized arguments: --elev-soil ... --elev-cols 3,4,22 (or:
+    an old grid whose channel slopes rslp are flat/floored in cells the soil table missed)'
+  diagnosis: Until 2026-10-03 build_mosart_grid.py took cell elevation from a whitespace table, in practice
+    the VIC soil parameter file (SOIL_PARAM_COMPLETE.txt cols 3,4,22) — another model's SET-UP file, not
+    a data source — and filled every active cell missing from that table with the BASIN MEAN elevation
+    (a ma
+  remedy: "--elev-soil / --elev-cols are REMOVED (owner decision; do not restore them under any\nreview\
+    \ comment). Pass a DEM: --dem <raster or dir of tiles>, e.g.\n  China : KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif\n\
+    \  else  : KISSPATH_DATA/MERIT_DEM   (directory of *_dem.tif tiles, on"
+- id: T024
+  symptom: A MOSART run script reads its direc/xmask/frac triplet from outputs/<basin>/routing_param/<STA>_*.txt
+    (or another VIC/Lohmann routing set-up folder)
+  diagnosis: The VIC/Lohmann routing set-up is VIC's input, not a data source. Taking MOSART's domain
+    from it ties MOSART to a VIC set-up (and it was how the 52%-truncated Wangjiaba domain got in). The
+    KI has its own delineator from MERIT Hydro.
+  remedy: 'Build the triplet with tools/delineate_d8_from_merit.py --merit-dir
+
+    KISSPATH_DATA/merit_hydro --gauge-lat/--gauge-lon <gauge>
+
+    --published-area-km2 <published> --resolution <same as the runoff grid, e.g. 0.25>
+
+    --bbox w,s,e,n (must hold the WHOLE basin; the default box is centred o'
+- id: T025
+  symptom: SKILL.md / docs say MOSART is 'stage 2 of a VIC->MOSART pipeline' whose grid comes from the
+    'VIC/Lohmann D8' and whose elevation comes from the VIC soil file
+  diagnosis: Stale text from the first (2026-07-11) Tangnaihai run. Only the RUNOFF is VIC's (a coupling
+    on results, convert_runoff_forcing.py); the domain must come from MOSART's own tools.
+  remedy: 'Follow SKILL.md ''Static Inputs'' as of 2026-10-03: delineate_d8_from_merit.py ->
+
+    build_mosart_grid.py --dem -> convert_grid_parameters.py --validate-only. Runoff: any
+
+    LSM result (VIC, CLM, mHM, Livneh) through convert_runoff_forcing.py.
+
+    frac_to_basin_shp.py goes the OTHER way (MOSART domain -> VIC ba'
+- id: T026
+  symptom: 'build_grid prints ''WARNING: no inactive neighbour to host a sink; score basin discharge at
+    the cell UPSTREAM'' and the scored discharge is all 0 (or: ''NO SINK: outlet ... has no inactive neighbour'')'
+  diagnosis: 'With a MERIT triplet every neighbour of the gauge cell can hold a small basin fraction,
+    so no inactive neighbour exists for the terminal sink. Before 2026-10-03 the tool then left the gauge
+    as the dnID == -1 ocean cell AND recorded it as the scoring cell, so it scored zeros (T021) while
+    the warning '
+  remedy: 'build_mosart_grid.py now uses the active HEADWATER neighbour (no cell drains into it)
+
+    with the least basin area as the sink; its area leaves the gauge total and the
+
+    --expected-area-km2 gate re-checks (Tangnaihai: 7.1 km2 dropped, still +0.62%).
+
+    If no such neighbour exists either, the tool stops with'

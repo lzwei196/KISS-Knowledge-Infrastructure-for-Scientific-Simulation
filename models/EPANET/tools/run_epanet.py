@@ -42,43 +42,32 @@ ERROR_CATEGORIES = {
 }
 
 
+SERVER_DEFAULT_BINARIES = [
+    "KISSPATH_KI_ROOT/EPANET/source/repo/SRC_engines/build/src/run/runepanet",
+    "KISSPATH_KI_ROOT/EPANET/source/repo/SRC_engines/build_fresh/src/run/runepanet",
+]
+
+
 def find_binary(user_path=None):
     """Locate the runepanet binary.
 
     Search order:
-    1. User-specified path
-    2. Common build directories relative to source
-    3. System PATH
+    1. User-specified path (--binary), then $EPANET_BIN (no fallback if set but invalid)
+    2. Server default build (absolute paths, as in preflight_check.py)
+    Nothing else: a different runepanet is never picked silently.
     """
-    candidates = []
+    # An explicit choice (--binary, then $EPANET_BIN) is used as given or fails;
+    # it never falls back to a different engine.
+    for label, explicit in (("--binary", user_path), ("$EPANET_BIN", os.environ.get("EPANET_BIN"))):
+        if explicit:
+            p = Path(explicit).resolve()
+            if p.is_file() and os.access(str(p), os.X_OK):
+                return str(p)
+            print(f"[ERROR] {label} {explicit} is not an executable file")
+            return None
 
-    if user_path:
-        candidates.append(user_path)
-
-    # Common build locations
-    script_dir = Path(__file__).resolve().parent
-    for rel in [
-        "../../source/repo/SRC_engines/build/src/run/runepanet",
-        "../source/repo/SRC_engines/build/src/run/runepanet",
-        "../../build/src/run/runepanet",
-        "../build/src/run/runepanet",
-        "./runepanet",
-    ]:
-        candidates.append(str(script_dir / rel))
-
-    # Check work directory patterns
-    work_dir = Path(os.getcwd())
-    for rel in [
-        "source/repo/SRC_engines/build/src/run/runepanet",
-        "SRC_engines/build/src/run/runepanet",
-        "build/src/run/runepanet",
-    ]:
-        candidates.append(str(work_dir / rel))
-
-    # System PATH
-    system_binary = shutil.which("runepanet")
-    if system_binary:
-        candidates.append(system_binary)
+    # Server default (same builds the KI preflight_check.py checks); no other fallback
+    candidates = list(SERVER_DEFAULT_BINARIES)
 
     for c in candidates:
         p = Path(c).resolve()
@@ -216,14 +205,15 @@ def validate_output(rpt_path, out_path=None):
             # Validate magic number
             with open(out_path, "rb") as f:
                 import struct
-                magic = struct.unpack('i', f.read(4))[0]
+                head = f.read(4)
+                magic = struct.unpack('i', head)[0] if len(head) == 4 else None
                 if magic != 516114521:
                     errors.append(
                         f"Invalid binary output magic number: {magic} "
                         f"(expected 516114521)"
                     )
         else:
-            warnings.append(f"Binary output file not created: {out_path}")
+            errors.append(f"Binary output file not created: {out_path}")
 
     return errors, warnings
 
@@ -260,9 +250,9 @@ def run_epanet(binary_path, inp_path, rpt_path, out_path=None, timeout=300):
         print(f"\n[TIMEOUT] EPANET exceeded {timeout}s timeout")
         return -1, "", f"Timeout after {timeout}s", elapsed
 
-    except FileNotFoundError:
-        print(f"\n[ERROR] Binary not found: {binary_path}")
-        return -2, "", f"Binary not found: {binary_path}", 0
+    except OSError as exc:
+        print(f"\n[ERROR] Could not start {binary_path}: {exc}")
+        return -2, "", f"Could not start {binary_path}: {exc}", 0
 
 
 def main():
@@ -273,7 +263,7 @@ def main():
     parser.add_argument("--rpt", required=True, help="Output report .rpt file")
     parser.add_argument("--out", default="", help="Binary output .out file (optional)")
     parser.add_argument("--binary", default=None,
-                        help="Path to runepanet binary (auto-detected if omitted)")
+                        help="Path to runepanet binary (else $EPANET_BIN, else auto-detected)")
     parser.add_argument("--timeout", type=int, default=300,
                         help="Execution timeout in seconds (default: 300)")
     parser.add_argument("--skip-preflight", action="store_true",
@@ -289,7 +279,7 @@ def main():
     binary = find_binary(args.binary)
     if not binary:
         print("[ERROR] Could not find runepanet binary")
-        print("  Searched: user path, build directories, system PATH")
+        print("  Searched: --binary, $EPANET_BIN, server default build (build/, build_fresh/)")
         print("  Use --binary /path/to/runepanet to specify manually")
         sys.exit(1)
     print(f"\n[OK] Binary: {binary}")
@@ -323,6 +313,12 @@ def main():
         binary, args.inp, args.rpt, args.out, args.timeout
     )
 
+    if exit_code != 0:
+        # timeout (-1), start failure (-2) or engine error (runepanet returns 100;
+        # it returns 0 also when there are only warnings)
+        print(f"\n[FAILED] EPANET did not finish normally (exit code {exit_code}) {stderr[:300]}")
+        sys.exit(1 if exit_code < 0 else exit_code)
+
     # ── Step 5: Post-run validation ───────────────────────────────────────────
     print(f"\n[POST-RUN] Validating outputs")
     errors, warnings = validate_output(args.rpt, args.out)
@@ -334,18 +330,15 @@ def main():
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print(f"\n{'=' * 60}")
-    if exit_code == 0 and not errors:
+    if not errors:
         print(f"[SUCCESS] EPANET completed in {elapsed:.1f}s")
         print(f"  Report: {args.rpt}")
         if args.out:
             print(f"  Binary: {args.out}")
         sys.exit(0)
-    elif exit_code < 100 and not errors:
-        print(f"[WARNING] EPANET completed with warnings in {elapsed:.1f}s")
-        sys.exit(0)
     else:
-        print(f"[FAILED] EPANET exit code: {exit_code}")
-        sys.exit(exit_code if exit_code > 0 else 1)
+        print(f"[FAILED] EPANET reported errors (exit code {exit_code})")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

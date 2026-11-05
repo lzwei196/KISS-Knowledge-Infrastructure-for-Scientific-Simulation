@@ -113,6 +113,38 @@ If the executable runs and prints model header information or waits for input, c
 
 **IMPORTANT**: After any source code changes, you must re-run `make` from the build directory. Forgetting to recompile after code changes is the most common cause of "my changes had no effect."
 
+#### Step 1.6: The installed build carries one upstream fix (installed 2026-10-04)
+
+`KISSPATH_HOME/DSSAT` is upstream DSSAT commit `c911455` (v4.8.5) with one local edit (`Weather/IPWTH_alt.for`, `MaxRecords`
+10000 -> 40000, 2026-05-31) and one later fix from the DSSAT team: commit `605b4a03` (G. Hoogenboom, 15 March 2026, "Correct
+calculation for surface layer related to immobilization"). It changes one statement in
+`Soil/CENTURY_OrganicMatter/IMMOBLIMIT_C.for`: `CO2FS1(SRFC) = CO2FS1(SRFC) * REDUCFACTMIN(L)` becomes `... * REDUCFACTMIN(1)`
+(line 312 before the fix, line 313 after it).
+
+- **Why.** With Century (`MESOM = P`) that line runs in the surface-layer block, where `L` is 0, but the array starts at 1;
+  every other line of the block uses 1. Our build checks array bounds (`-fbounds-check`), so such runs stopped ("Index '0' of
+  dimension 1 of array 'reducfactmin' below lower bound of 1"; 110 Route B maize cells in run R0). A build without bound checks
+  does not stop: it reads memory next to the array and goes on with wrong numbers from that day on. Godwin runs (`MESOM = G`,
+  what `create_workdir` writes) never reach this code. In the cells that stopped, DSSAT had warned the day after the first maize
+  harvest that the surface residue has an extremely low nutrient content (the CESTR warning in `WARNING.OUT`): that warning
+  marks the state that reaches this line; it is not the cause.
+- **Tested** (old binary against the fixed one, same inputs): all 297 DSSAT example experiments, each with Century and with
+  Godwin: no run changed (288 finish in each soil model; the 9 that do not finish stop the same way with both binaries: the rice
+  examples, whose installed cultivar file is broken, and one sequence example). Route B cells through a scratch copy of the
+  Route B code, maize, soybean, spring wheat and winter wheat, each rainfed and irrigated (`mai_rf`, `mai_ir`, `soy_rf`,
+  `soy_ir`, `swh_rf`, `swh_ir`, `wwh_rf`, `wwh_ir`; 836 runs): in all 724 runs that the old binary finished, the fixed one gave
+  the same outputs, and all 111 runs that the old binary stopped at line 312 now finish. After the install the installed binary
+  was checked again against the tested fixed build: equal on the 297 examples (594 of 594 pairs), on the 110 crash cells and on
+  two Route B blocks. Not tested through Route B: other crops; runs with phosphorus on.
+- **Not included.** The later upstream change to the same file, `37cb7e49` (thresholds `> 1.E-6` -> `> 0.0`), was left out on
+  purpose; it needs its own decision. The two old binary copies `KISSPATH_HOME/DSSAT/dscsm048` and
+  `KISSPATH_HOME/DSSAT/run_test/dscsm048` do NOT have the fix: use `KISSPATH_HOME/DSSAT/build/bin/dscsm048`.
+- **Open points outside this fix** (separate decisions): with phosphorus on, lines 293-295 and 384-385 of the same file set two
+  phosphorus flows from arrays that are never filled (and `LIM_EL` and `AMINRL(1,IEL)` there are not checked); a likely fault in
+  the CERES wheat and barley code (a residue value in `CSCER.for` not kept from one day to the next; not proven) can stop a wheat
+  run now and then with a floating-point error (SIGFPE), with any binary.
+- **Record.** `KISSPATH_HOME/dssat_fix_record/RECORD.md` section 2; `KISSPATH_HOME/dssat_crash_fix_20261003/INSTALL_REPORT.md`.
+
 ### Step 2: Create the Batch File
 
 #### Step 2.1: Understand Batch File Format

@@ -53,18 +53,29 @@ KI defects worked around (same family as the other WRF-Hydro locations):
      cross-checked against that argmax.
   D3 hydro.namelist template hard-codes CHRTOUT_GRID=1 / RTOUT_DOMAIN=1; patched off
      after generation (pure I/O reduction; no physics touched).
-  D4 crash-avoidance sanitation of the built DOMAIN NetCDFs (NOT calibration),
-     mirroring the fixes the real-case applied at source but done here on the tool
-     OUTPUTS so the KI tools are left untouched:
+  D4 stand-in edits of the built DOMAIN NetCDFs (NOT calibration). Since
+     2026-10-05 they run ONLY with --fix-domain-gaps (plus a required
+     --smois-floor); without it any cell that would need an edit stops the run
+     with a per-variable list. Every edited cell is recorded in
+     domain_edits.json and summarised in result.json['domain_edits']; more than
+     1 % of land cells needing the soil fill stops even with the opt-in
+     (wrfhydro_domain_edits.py). What the edits are:
        - dt_v036: HWSD nodata (mu==0) on a LAND cell leaves SCT_DOM=14 (water soil
          type) -> smcmax/wlt/ref=0 -> "SMCRT fully depleted" segfault. Land cells
          with soil class 14 are reset to 6 (Loam) in geo_em BEFORE s3/s5 read it,
-         and smc* floored in soil_properties.nc.
+         and smc* <= 0 set to the LOAM row of SOILPARM.TBL. These FILL MISSING
+         soil data.
        - dt_v005: GREENFRAC==0 -> SHDFAC=0 -> bare cells reach TG=630K. GREENFRAC is
          floored to 0.01 in geo_em and SHDMAX/SHDMIN floored to 1% in wrfinput.
+         These are model-stability guards.
+       - SMOIS = max(SMOIS, --smois-floor): a start-value adjustment (the old code
+         set SMOIS <= 0.02 to 0.10 silently and did not count it).
 
 Resumable: DEM none needed; basin shp cached; domain skipped when all 8 files exist;
-forcing cached per month; model skipped when CHRTOUT count already matches sim days;
+forcing cached per month; model skipped only when wrfhydro_run_gate says the run is
+finished (banner in a current diag_hydro.* AND run_inputs.json, written at launch,
+matching current namelists/DOMAIN/FORCING/dates), else old outputs are moved aside
+(kept) and the model runs from scratch;
 scoring always recomputed. Final action: writes the complete verifier result object
 to  KISSPATH_KI_ROOT/WRF_Hydro/detached/verify_2/result.json
 """
@@ -93,6 +104,10 @@ sys.path.insert(0, str(TOOLS))
 sys.path.insert(0, str(TOOLS / "s11_output"))
 sys.path.insert(0, str(VALID))
 sys.path.insert(0, str(VALID / "validators"))
+# wrfhydro_run_gate / wrfhydro_domain_edits ship inside the KI, in tools/ next to this file
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+import wrfhydro_run_gate as gate
+import wrfhydro_domain_edits as de
 
 STATE_DIR = ROOT / "models/WRF_Hydro/detached/verify_2"
 RUN = ROOT / "outputs/laoguan_wrfhydro_verify2"
@@ -127,6 +142,10 @@ CELL_AREA_KM2 = (DX / 1000.0) ** 2
 
 # ---- period ---------------------------------------------------------------
 START, END = _dt.date(1985, 7, 1), _dt.date(1991, 12, 31)
+# REFKDT for s5 build_soil_properties.py: an explicit choice of THIS runner
+# (the tool has no default since 2026-10-05). 0.8 is the value this runner
+# effectively used before (the tool's old built-in value), kept unchanged.
+REFKDT = 0.8
 SCORE_START = "1986-01-01"                 # 1985 H2 = spinup, discarded
 CAL = ("1986-01-01", "1988-12-31")
 VAL = ("1989-01-01", "1991-12-31")
@@ -155,6 +174,11 @@ def log(msg):
     print(line, flush=True)
     with open(LOG, "a") as f:
         f.write(line + "\n")
+
+
+# Domain stand-in edits: OFF unless --fix-domain-gaps (see __main__).
+EDITS = de.DomainEdits(fix=False, soilparm_tbl=SOILPARM, log=log)
+DOMAIN_EDIT_REC = {}
 
 
 def sh(cmd, cwd=None, timeout=None):
@@ -278,62 +302,36 @@ def ensure_basin_shp():
 
 # ------------------------------------------------------------------ crash-avoidance
 def sanitize_geo():
-    """dt_v036 + dt_v005 on geo_em BEFORE s3/s5 read it (crash avoidance, not calib)."""
-    p = DOMAIN / "geo_em.d01.nc"
-    ds = nc.Dataset(str(p), "a")
-    land = np.asarray(ds["LANDMASK"][0]) > 0.5
-    sct = np.asarray(ds["SCT_DOM"][0])
-    scb = np.asarray(ds["SCB_DOM"][0])
-    bad = land & (sct == 14)
-    nbad = int(bad.sum())
-    if nbad:
-        ds["SCT_DOM"][0][bad] = 6.0
-        top = np.asarray(ds["SOILCTOP"][0]); top[:, bad] = 0.0; top[5, bad] = 1.0
-        ds["SOILCTOP"][0] = top
-    badb = land & (scb == 14)
-    if int(badb.sum()):
-        ds["SCB_DOM"][0][badb] = 6.0
-        bot = np.asarray(ds["SOILCBOT"][0]); bot[:, badb] = 0.0; bot[5, badb] = 1.0
-        ds["SOILCBOT"][0] = bot
-    gf = np.asarray(ds["GREENFRAC"][0])
-    nlow = int((gf < 0.01).sum())
-    if nlow:
-        gf = np.maximum(gf, 0.01)
-        ds["GREENFRAC"][0] = gf
-    ds.close()
-    if nbad or nlow:
-        SANITATION.append(f"geo_em: {nbad} land cells water-soil->Loam(dt_v036), "
-                          f"{nlow} GREENFRAC floored->0.01(dt_v005)")
-    log(f"  sanitize geo_em: water-soil land cells={nbad}, GREENFRAC<0.01={nlow}")
+    """Stand-in edits of geo_em (water soil on land -> loam = fills missing soil
+    data; GREENFRAC floor = stability guard). Off unless --fix-domain-gaps;
+    every edited cell is recorded (wrfhydro_domain_edits)."""
+    EDITS.geo_em(DOMAIN / "geo_em.d01.nc")
 
 
 def sanitize_wrfinput():
-    p = DOMAIN / "wrfinput_d01.nc"
-    ds = nc.Dataset(str(p), "a")
-    for v, floor in [("SHDMAX", 1.0), ("SHDMIN", 1.0)]:
-        if v in ds.variables:
-            a = np.asarray(ds[v][0]); ds[v][0] = np.maximum(a, floor)
-    if "SMOIS" in ds.variables:
-        sm = np.asarray(ds["SMOIS"][0]); ds["SMOIS"][0] = np.where(sm <= 0.02, 0.10, sm)
-    ds.close()
-    log("  sanitize wrfinput: SHDMAX/SHDMIN>=1%, SMOIS>0.02")
+    """SHDMAX/SHDMIN floor (stability guard); SMOIS floor only with an
+    explicit --smois-floor (start-value adjustment). Opt-in, recorded."""
+    EDITS.wrfinput(DOMAIN / "wrfinput_d01.nc")
 
 
 def sanitize_soil():
-    p = DOMAIN / "soil_properties.nc"
-    ds = nc.Dataset(str(p), "a")
-    for v, floor in [("smcmax", 0.434), ("smcwlt", 0.066), ("smcref", 0.329)]:
-        if v in ds.variables:
-            a = np.asarray(ds[v][:]); nfix = int((a <= 0).sum())
-            if nfix:
-                a[a <= 0] = floor; ds[v][:] = a
-                SANITATION.append(f"soil_properties {v}: {nfix} nonpos->{floor}")
-    ds.close()
-    log("  sanitize soil_properties: smc* floored")
+    """smc* <= 0 -> LOAM row of SOILPARM.TBL (fills missing soil data). Opt-in, recorded."""
+    EDITS.soil(DOMAIN / "soil_properties.nc")
 
 
 # ------------------------------------------------------------------ stages 1-6
 def build_domain():
+    # A reused DOMAIN must carry its edit record (same opt-in settings);
+    # otherwise its edit history is unknown: keep it aside and rebuild.
+    if DOMAIN.exists() and any(DOMAIN.iterdir()):
+        _ok, _why, _rec = de.domain_record_matches(DOMAIN, EDITS)
+        if _ok:
+            DOMAIN_EDIT_REC.clear(); DOMAIN_EDIT_REC.update(_rec)
+            (STATE_DIR / de.RECORD).write_text(json.dumps(_rec, indent=1))
+            log(f"  domain: {_why}")
+        else:
+            log(f"  domain: {_why}")
+            de.move_domain_aside(DOMAIN, log)
     DOMAIN.mkdir(parents=True, exist_ok=True)
     ddef = RUN / "domain_def.json"
 
@@ -359,44 +357,57 @@ def build_domain():
         "--domain_json", ddef, "--dem_path", DEM_PATH,
         "--landcover_path", LANDCOVER, "--hwsd_raster", HWSD_RASTER,
         "--hwsd_mdb", HWSD_MDB, "--basin_shp", BASIN_SHP,
-        "--output", geo], timeout=7200)
+        "--output", geo] + EDITS.tool_flags(), timeout=7200)
+    EDITS.merge_tool_record(DOMAIN / "domain_edits.build_geo_em.json")   # tool fills: opt-in, cell list
     TOOLS_USED.append("s2_geo_em/build_geo_em.py")
     sanitize_geo()                       # dt_v036 + dt_v005 before s3/s5 read geo
 
     sh([PY, TOOLS / "s3_wrfinput/build_wrfinput.py",
         "--geo_em", geo, "--output_path", DOMAIN / "wrfinput_d01.nc",
-        "--start_month", START.month, "--soilparm_tbl", SOILPARM])
+        "--start_month", START.month, "--soilparm_tbl", SOILPARM] + EDITS.tool_flags())
+    EDITS.merge_tool_record(DOMAIN / "domain_edits.build_wrfinput.json")   # tool fills: opt-in, cell list
     TOOLS_USED.append("s3_wrfinput/build_wrfinput.py")
     sanitize_wrfinput()
 
     sh([PY, TOOLS / "s4_fulldom/build_fulldom_hires.py",
         "--geo_em", geo, "--domain_json", ddef, "--dem_path", DEM_PATH,
         "--basin_shp", BASIN_SHP, "--output_path", DOMAIN / "Fulldom_hires.nc",
-        "--aggfactrt", AGGFACTRT, "--stream_threshold", STREAM_THRESHOLD],
+        "--aggfactrt", AGGFACTRT, "--stream_threshold", STREAM_THRESHOLD] + EDITS.tool_flags(),
        timeout=7200)
+    EDITS.merge_tool_record(DOMAIN / "domain_edits.build_fulldom_hires.json")   # tool fills: opt-in, cell list
     TOOLS_USED.append("s4_fulldom/build_fulldom_hires.py")
 
-    sh([PY, TOOLS / "s5_soil_properties/build_soil_properties.py",
+    sh([PY, TOOLS / "s5_soil_properties/build_soil_properties.py", "--refkdt", REFKDT,
         "--geo_em", geo, "--output_path", DOMAIN / "soil_properties.nc",
-        "--soilparm_tbl", SOILPARM, "--mptable_tbl", MPTABLE])
+        "--soilparm_tbl", SOILPARM, "--mptable_tbl", MPTABLE] + EDITS.tool_flags())
+    EDITS.merge_tool_record(DOMAIN / "domain_edits.build_soil_properties.json")   # tool fills: opt-in, cell list
     TOOLS_USED.append("s5_soil_properties/build_soil_properties.py")
     sanitize_soil()
 
     sh([PY, TOOLS / "s6_groundwater/build_groundwater.py",
         "--geo_em", geo, "--domain_json", ddef, "--basin_shp", BASIN_SHP,
-        "--output_dir", DOMAIN, "--hydro_tbl", HYDROTBL])
+        "--output_dir", DOMAIN, "--hydro_tbl", HYDROTBL] + EDITS.tool_flags())
+    EDITS.merge_tool_record(DOMAIN / "domain_edits.build_groundwater.json")   # tool fills: opt-in, cell list
     TOOLS_USED.append("s6_groundwater/build_groundwater.py")
 
     missing = [f for f in DOMAIN_FILES if not (DOMAIN / f).exists()]
     if missing:
         raise RuntimeError(f"domain rebuild left files missing: {missing}")
     log("  domain: rebuilt all 8 files")
+    _rec = EDITS.write(DOMAIN / de.RECORD, STATE_DIR / de.RECORD)
+    DOMAIN_EDIT_REC.clear(); DOMAIN_EDIT_REC.update(_rec)
+    log("  " + de.summary_sentence(_rec))
 
 
 # ------------------------------------------------------------------ stage 8
 def build_forcing():
     FORCING.mkdir(parents=True, exist_ok=True)
     force_end = END + _dt.timedelta(days=1)     # dt_v044: need hour-KHOUR file
+    # Forcing on another grid (e.g. before a DOMAIN rebuild) is never reused.
+    _ok, _why = gate.forcing_matches_domain(FORCING, DOMAIN / "geo_em.d01.nc")
+    if not _ok:
+        log(f"  forcing: existing FORCING not reusable ({_why})")
+        gate.move_forcing_aside(FORCING, log)
     for y, m in month_iter(START, force_end):
         ndays = calendar.monthrange(y, m)[1]
         m_start = max(_dt.date(y, m, 1), START)
@@ -416,6 +427,7 @@ def build_forcing():
     n = len(glob.glob(str(FORCING / "*.LDASIN_DOMAIN1")))
     if not force_end_file.exists():
         raise RuntimeError(f"hour-KHOUR forcing {force_end_file.name} missing (dt_v044)")
+    gate.stamp_forcing(FORCING, DOMAIN / "geo_em.d01.nc")
     log(f"  FORCING total: {n} LDASIN files; hour-KHOUR present")
     return n
 
@@ -437,18 +449,8 @@ def patch_hydro_namelist():
 def run_model():
     n_chrt = len(glob.glob(str(RUN / "*.CHRTOUT_DOMAIN1")))
     need = expected_days()
-    if n_chrt >= need * 0.98:
-        log(f"  model: {n_chrt}/{need} CHRTOUT present, skipping run")
-        TOOLS_USED.extend(["s9_namelists/generate_namelists.py",
-                           "s10_execution/run_wrfhydro.py"])
-        return
-    log(f"  model: {n_chrt}/{need} CHRTOUT -> running WRF-Hydro from scratch")
-    for pat in ("*.CHRTOUT_DOMAIN1", "*.LDASOUT_DOMAIN1", "*.GWOUT_DOMAIN1",
-                "*.RTOUT_DOMAIN1", "*.CHRTOUT_GRID1", "RESTART*", "HYDRO_RST*",
-                "diag_hydro.*"):
-        for f in glob.glob(str(RUN / pat)):
-            os.remove(f)
-
+    # Namelists (deterministic) and the FORCING link are set up first so the
+    # finished check compares against the inputs this code would run now.
     sh([PY, TOOLS / "s9_namelists/generate_namelists.py",
         "--domain_dir", DOMAIN, "--forcing_dir", FORCING, "--output_dir", RUN,
         "--start_date", START.isoformat(), "--end_date", END.isoformat(),
@@ -460,15 +462,31 @@ def run_model():
     if not fl.exists():
         os.symlink(str(FORCING), str(fl))
 
+    gate.require_forcing_source(RUN, FORCING)
+    ok, gwhy = gate.check_finished(RUN, START.isoformat(), END.isoformat(), tables=True, exe=TBL / "wrf_hydro.exe", tbl_dir=TBL)
+    if ok:
+        log(f"  model: finished earlier ({gwhy}; {n_chrt}/{need} CHRTOUT), skipping run")
+        TOOLS_USED.append("s10_execution/run_wrfhydro.py")
+        return
+    log(f"  model: not finished ({gwhy}; {n_chrt}/{need} CHRTOUT) -> running WRF-Hydro from scratch")
+    aside, n_aside = gate.move_outputs_aside(RUN)
+    if aside:
+        log(f"  old outputs ({n_aside} files) moved to {aside.name} (kept)")
+    # launch-time only: the run folder gets the install tables; a run-local table
+    # that differs is moved aside (kept), never deleted. Checks only read them.
+    _staged, _kept = gate.stage_tables(RUN, TBL, keep_dir=(aside / "tables") if aside else None)
+    if _kept:
+        log(f"  run-local parameter tables that differed from the install kept in {_kept}")
+    gate.write_run_inputs(RUN, START.isoformat(), END.isoformat(), tables=True, exe=TBL / "wrf_hydro.exe", tbl_dir=TBL)
+
     sh([PY, TOOLS / "s10_execution/run_wrfhydro.py",
-        "--run_dir", RUN, "--nproc", NPROC, "--timeout", 400000],
+        "--run_dir", RUN, "--tbl_dir", TBL, "--exe", TBL / "wrf_hydro.exe", "--nproc", NPROC, "--timeout", 400000],
        timeout=420000)
     TOOLS_USED.append("s10_execution/run_wrfhydro.py")
 
+    gwhy = gate.require_finished_after_run(RUN, START.isoformat(), END.isoformat(), tables=True, exe=TBL / "wrf_hydro.exe", tbl_dir=TBL)
     n_chrt = len(glob.glob(str(RUN / "*.CHRTOUT_DOMAIN1")))
-    log(f"  model finished: {n_chrt} CHRTOUT files")
-    if n_chrt < need * 0.95:
-        raise RuntimeError(f"model produced only {n_chrt}/{need} CHRTOUT files")
+    log(f"  model finished: {n_chrt} CHRTOUT files ({gwhy})")
 
 
 # ------------------------------------------------------------------ stage 11
@@ -553,7 +571,9 @@ def extract_and_score(idx):
 
     obs = load_obs_m3s()
     merged = pd.concat([obs, sim["Q_sim"]], axis=1, join="inner").dropna()
-    merged = merged[merged.index >= pd.Timestamp(SCORE_START)]
+    # END cut too: the run writes one more daily CHRTOUT, stamped END+1 00:00
+    merged = merged[(merged.index >= pd.Timestamp(SCORE_START)) &
+                    (merged.index <= pd.Timestamp(END))]
     merged.to_csv(STATE_DIR / "discharge_comparison.csv")
     log(f"  paired days after spinup: {len(merged)} "
         f"({merged.index.min()} .. {merged.index.max()})")
@@ -697,7 +717,8 @@ def main():
         }
 
         if scored is None:
-            result["status"] = "completed"
+            # no metrics = failed (JSON status and exit code agree)
+            result["status"] = "failed"
             result["metrics"]["metrics_null_reason"] = (
                 f"only {len(merged)} paired sim/obs days after spinup")
         else:
@@ -766,10 +787,9 @@ def main():
             "through END+1 day); D2 SKILL.md documents extract_discharge "
             "--gauge_lat/--min_order + find_gauge_feature(), NEITHER on disk (only "
             "argmax find_outlet_feature); D3 hydro.namelist hard-codes "
-            "CHRTOUT_GRID=1/RTOUT_DOMAIN=1 (patched off, I/O only); D4 crash-avoidance "
-            "sanitation of the built DOMAIN NetCDFs (dt_v036 water-soil-type on land "
-            "-> Loam; dt_v005 GREENFRAC/SHDMAX floor), applied to tool OUTPUTS not the "
-            "tools. " + (" ".join(NOTES_EXTRA) if NOTES_EXTRA else "")
+            "CHRTOUT_GRID=1/RTOUT_DOMAIN=1 (patched off, I/O only); D4 opt-in stand-in "
+            "edits of the built DOMAIN NetCDFs (see the domain edits sentence and "
+            "domain_edits.json), applied to tool OUTPUTS not the tools. " + (" ".join(NOTES_EXTRA) if NOTES_EXTRA else "")
         )
     except Exception as e:  # noqa: BLE001
         import traceback
@@ -789,9 +809,12 @@ def main():
         "find_gauge_feature(); neither exists on disk (only argmax find_outlet_feature)",
         "D3 hydro.namelist template hard-codes CHRTOUT_GRID=1 / RTOUT_DOMAIN=1",
         "D4 dt_v036 water-soil-type on land cells + dt_v005 GREENFRAC=0 -> "
-        "crash-avoidance sanitation of the DOMAIN NetCDF outputs",
+        "opt-in, recorded stand-in edits (--fix-domain-gaps, domain_edits.json)",
     ]
 
+    if DOMAIN_EDIT_REC:
+        result["domain_edits"] = de.summary_for_result(DOMAIN_EDIT_REC)
+        result["notes"] = ((result.get("notes") or "") + " " + de.summary_sentence(DOMAIN_EDIT_REC)).strip()
     out = STATE_DIR / "result.json"
     with open(out, "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
@@ -799,4 +822,12 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse as _ap
+    _args = de.add_cli(_ap.ArgumentParser(description='WRF-Hydro runner')).parse_args()
+    EDITS = de.DomainEdits(fix=_args.fix_domain_gaps, smois_floor=_args.smois_floor,
+                           tslb_floor=_args.tslb_floor, accept_unknown_history=_args.accept_unknown_domain_history, soilparm_tbl=SOILPARM, log=log)
+    import time as _time
+    _t0 = _time.time()
     main()
+    # a failed/partial run, or one without metrics, must not exit 0
+    gate.exit_by_result(STATE_DIR / "result.json", _t0, key="status")

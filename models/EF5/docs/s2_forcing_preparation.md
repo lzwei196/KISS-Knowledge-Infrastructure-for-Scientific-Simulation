@@ -30,7 +30,7 @@ Convert global or regional forcing datasets into EF5-compatible gridded precipit
 | CMFD | mm/hr | 3-hourly | 1.0 (already correct) |
 | GPM IMERG | mm/hr | 30-min | 1.0 |
 | TRMM 3B42RT | mm/hr | 3-hourly | 1.0 |
-| TRMM 3B42V7 | mm/3hr | 3-hourly | ÷ 3 |
+| TRMM 3B42V7 | mm/hr (3-hourly rate, not a 3-h total) | 3-hourly | 1.0 (convert to TIF first: EF5 has no working TRMMV7 reader) |
 | MRMS Q2 | mm/hr | 5-min | 1.0 |
 | ERA5 | m/hr | hourly | × 1000 |
 | MSWX | mm/day | daily | ÷ 24 |
@@ -66,7 +66,7 @@ PET_MM.tif                → FREQ=m,   NAME=PET_MM.tif
 
 ```ini
 [PrecipForcing RAIN]
-TYPE=TIF            # ASC, BIF, TIF, TRMMRT, TRMMV7, MRMS
+TYPE=TIF            # ASC, BIF, TIF, TRMMRT, MRMS (TRMMV7 is parsed but has no reader)
 UNIT=mm/h           # Must match what's in the file
 FREQ=1h             # Ingestion frequency
 LOC=/data/precip    # Directory containing files

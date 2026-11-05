@@ -6,64 +6,99 @@
 
 ## Purpose
 
-Convert meteorological forcing data into SUMMA's NetCDF format with correct variable names, units, and dimensions. SUMMA requires 7 forcing variables, all at the same temporal resolution. Incorrect unit conversions here are the #1 source of silent errors -- the model runs fine but produces scientifically meaningless output.
+Build SUMMA's forcing NetCDF files straight from a forcing source, with the
+variable names, units and time stamps SUMMA needs. SUMMA requires 7 forcing
+variables, all at the same sub-daily step. A wrong unit gives no error, only
+wrong physics.
+
+**One tool does this: `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py`.**
+It reads the source through the shared loader `ki_tools_common.load_forcing` at
+every HRU location of `attributes.nc`. SUMMA forcing is never made out of another
+model's forcing files.
 
 ## Prerequisites
 
-Before starting this stage, verify:
-
 - [ ] Local attributes NetCDF exists from Stage 1 (`attributes.nc`)
-- [ ] VIC forcing files exist (from HydroCraft forcing preparation)
-- [ ] Know the forcing temporal resolution (3-hourly = 10800s, hourly = 3600s)
-- [ ] Know the forcing source (CMFD, MSWX, or NASA POWER)
+- [ ] The forcing source is named: `cmfd`, `nasa_power` or `mswx`
+- [ ] The elevation the source values stand for is known (see Step 1), or it is
+      decided to build without lapse correction (`--no_lapse`)
 
 ## Inputs
 
-| Input | Type | Source | Description |
-|-------|------|--------|-------------|
-| vic_forcing_dir | directory | HydroCraft VIC forcing | Directory of VIC ASCII forcing files |
-| attributes_nc | file | Stage 1 | SUMMA local attributes NetCDF |
-| start_year | value | user | Start year of forcing period |
-| end_year | value | user | End year of forcing period |
-| data_step | value | derived | Time step in seconds (10800 or 3600) |
+| Input | Description |
+|-------|-------------|
+| `--attributes_nc` | SUMMA local attributes NetCDF from Stage 1. Its hruId order is the order of the forcing files. |
+| `--source` | `cmfd`, `nasa_power` or `mswx`. **No default: name it.** |
+| `--start_year --end_year` | whole years |
+| `--forcing_dir` | root folder of the cmfd / mswx store (default: the loader's own) |
+| `--reference_elev_nc` / `--reference_elev_m` / `--no_lapse` | exactly one: the elevation the source stands for (a field, or one number), or no lapse correction |
+| `--lapse_rate` | K/m, default -0.0065 |
+| `--output_dir` | where `forcing_YYYY.nc` and `forcingFileList.txt` go |
 
-## CRITICAL: Unit Conversion Table
+## Sources
 
-| Variable | VIC Unit | SUMMA Unit | Conversion | If Wrong (silent error) |
-|----------|----------|------------|------------|-------------------------|
-| Precipitation | mm/timestep | kg m-2 s-1 | divide by DATA_STEP | Runoff 3-8x wrong |
-| Temperature | Celsius | Kelvin | add 273.15 | Energy balance fails |
-| Shortwave radiation | W/m2 | W m-2 | none | -- |
-| Longwave radiation | W/m2 | W m-2 | none | -- |
-| Wind speed | m/s | m s-1 | none | -- |
-| Air pressure | kPa | Pa | multiply by 1000 | ET 100x wrong, NaN |
-| Specific humidity | kg/kg | g/g | none (same ratio) | -- |
+| Source | Step | Period, area | How it is read |
+|--------|------|--------------|----------------|
+| `cmfd` | 3 h | 1951-2024, China (15-55 N, 70-140 E) | all HRU points in one pass per file; about 3-5 min per year |
+| `nasa_power` | 1 h | 2001 on, global | one request per distinct HRU location and year (network) |
+| `mswx` | 3 h | 1979 on, global | one read per distinct HRU location; about 20 min per location and year, so slow for many HRUs |
+
+## What the tool converts
+
+From the loader's standard series to SUMMA:
+
+| SUMMA variable | From | Conversion | If wrong (silent) |
+|----------------|------|------------|-------------------|
+| `pptrate` kg m-2 s-1 | precipitation in the step (mm), or the store's rate | mm / step seconds | Runoff 3-8x wrong |
+| `airtemp` K | deg C | + 273.15 | Energy balance fails |
+| `SWRadAtm`, `LWRadAtm` W m-2 | W/m2 | none | -- |
+| `windspd` m s-1 | m/s | none | -- |
+| `airpres` Pa | Pa | none (never kPa) | ET 100x wrong, NaN |
+| `spechum` kg/kg | kg/kg | none | -- |
+
+Time stamps are written period-ending and `data_step` is the source's real step
+(10800 s for cmfd and mswx, 3600 s for nasa_power). A missing value in the source
+stops the build; nothing is filled in.
 
 ## Procedure
 
-### Step 1: Identify VIC forcing format
+### Step 1: Decide the reference elevation
 
-```bash
-ls outputs/<run>/vic_temp/forcing/forcing_final/ | head -5
-head -2 outputs/<run>/vic_temp/forcing/forcing_final/<first_file>
-wc -l outputs/<run>/vic_temp/forcing/forcing_final/<first_file>
+The source values stand for the elevation of the source's grid cell, not of the
+HRU. For `cmfd` pass the store's own elevation field:
+
+```
+--reference_elev_nc KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc
 ```
 
-**Expected result**: ASCII files with 7-8 columns, rows per timestep. Count rows per year: 2920 (3-hourly, non-leap) or 8760 (hourly, non-leap).
+For a source with no elevation field at hand, pass the cell elevation as one
+number with `--reference_elev_m` (NASA POWER reports the elevation of its cell
+for a point), or state `--no_lapse`. One of the three must be given.
 
-### Step 2: Convert VIC forcing to SUMMA format
+### Step 2: Build the forcing
 
 ```bash
-python tools/s2_forcing_prep/convert_vic_forcing_to_summa.py \
-  --vic_forcing_dir outputs/<run>/vic_temp/forcing/forcing_final/ \
+python tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py \
   --attributes_nc outputs/<run>/summa_settings/attributes.nc \
-  --output_dir outputs/<run>/summa_forcing/ \
+  --source cmfd \
   --start_year <start> --end_year <end> \
-  --data_step 10800 \
-  --vic_prefix "<basin>_0.25deg_"
+  --reference_elev_nc KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc \
+  --output_dir outputs/<run>/summa_forcing/
+```
+
+Outside China:
+
+```bash
+python tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py \
+  --attributes_nc outputs/<run>/summa_settings/attributes.nc \
+  --source nasa_power \
+  --start_year <start> --end_year <end> \
+  --reference_elev_m <elevation of the NASA POWER cell> \
+  --output_dir outputs/<run>/summa_forcing/
 ```
 
 **Expected result**: One NetCDF file per year in `summa_forcing/`, plus `forcingFileList.txt`.
+A finished year is skipped on a second call; `--force` rebuilds.
 
 **If this fails**: See diagnostic triplet dt_005 (hruId mismatch).
 
@@ -90,7 +125,7 @@ ds.close()
 | LWRadAtm | 250-400 W/m2 | < 100 or > 500 |
 | windspd | 1-5 m/s | negative values |
 | airpres | 80000-105000 Pa | < 1000 (still in kPa!) |
-| spechum | 0.002-0.015 g/g | > 1 (still in g/kg!) |
+| spechum | 0.002-0.015 kg/kg | > 1 (still in g/kg!) |
 
 **If values are outside expected ranges**: See diagnostic triplets dt_003, dt_004, dt_012.
 
@@ -99,22 +134,25 @@ ds.close()
 | Output | Path | Verification |
 |--------|------|--------------|
 | Forcing NetCDFs | `outputs/<run>/summa_forcing/forcing_YYYY.nc` | One per year, all 7 vars present |
-| Forcing file list | `outputs/<run>/summa_forcing/forcingFileList.txt` | Lists all forcing files |
+| Forcing file list | `outputs/<run>/summa_forcing/forcingFileList.txt` | Lists all forcing files; `create_file_manager.py` puts it in settingsPath (dt_032) |
 
 ## Validation Checks
 
 1. **All 7 variables present**: `ncdump -h forcing.nc | grep -c 'pptrate\|airtemp\|SWRadAtm\|LWRadAtm\|windspd\|airpres\|spechum'` should return 7.
-2. **Time dimension correct**: For 3-hourly, 365 days = 2920 steps. `ncdump -h forcing.nc | grep 'time ='`
+2. **Time dimension correct**: For 3-hourly, 365 days = 2920 steps; for hourly, 8760. `ncdump -h forcing.nc | grep 'time ='`
 3. **HRU IDs match attributes**: Compare hruId in forcing and attributes files. See dt_005.
 4. **No fill values in data**: Check for -9999 or NaN values. See dt_013.
 
 ## Common Pitfalls
 
-> **PITFALL**: Dividing precipitation by 86400 instead of 10800 for 3-hourly data.
-> This makes precipitation 8x too low. Runoff will be near-zero. See dt_003.
+> **PITFALL**: Building the forcing by hand instead of with the tool.
+> That brings back the traps the tool handles: precipitation divided by the wrong
+> step (dt_003), pressure in kPa (dt_004), period-start time stamps, shortwave
+> spikes.
 
-> **PITFALL**: Forgetting to multiply pressure by 1000 (kPa to Pa).
-> SUMMA energy balance fails, soil temperatures diverge, then NaN. See dt_004.
+> **PITFALL**: No reference elevation on a high basin.
+> Air temperature and pressure then stand for the source cell's height, not the
+> HRU's; snowmelt timing is wrong. See dt_031.
 
 > **PITFALL**: Reusing forcing files from a different domain setup.
 > hruId mismatch causes immediate crash. Always regenerate after changing GRU/HRU structure. See dt_005.
@@ -122,7 +160,7 @@ ds.close()
 ---
 
 *This skill document is part of the hydrocraft-summa knowledge infrastructure.*
-*Stage 2 of 7 | Tools used: convert_vic_forcing_to_summa | Related triplets: dt_003, dt_004, dt_005, dt_012, dt_013*
+*Stage 2 of 7 | Tools used: build_summa_forcing_from_reanalysis | Related triplets: dt_003, dt_004, dt_005, dt_012, dt_013, dt_031, dt_032*
 
 ## Known archive issue: CMFD V0200 SRad spurious spikes (Tibetan Plateau)
 

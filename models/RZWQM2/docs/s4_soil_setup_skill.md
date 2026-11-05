@@ -17,13 +17,12 @@ Configure the complete soil profile for RZWQM2, including horizon depths, physic
 
 ## Soil Data Source Priority
 
-**Use HWSD global database as primary source** — not VIC soil converter.
+**Use HWSD global database as primary source.** Soil always comes straight from a soil dataset.
 
 | Priority | Source | Tool | When to use |
 |----------|--------|------|-------------|
 | **1 (primary)** | HWSD raster + MDB | `tools/s0_global_data/hwsd_soil_adapter.py` | Always — gives real sand/silt/clay/bulk density/OC per cell directly from the global HWSD database |
-| 2 (fallback) | VIC soil params | `tools/s0_vic_coupling/vic_soil_converter.py` | Only if HWSD raster/MDB unavailable. **WARNING**: VIC soil file column layout varies — column indices in vic_soil_converter.py may not match actual file layout, causing wrong bulk_density/Wcr/Wpwp values and RZWQM2 crash. |
-| 3 (API) | SoilGrids REST API | Manual query | For very specific sites with known coordinates |
+| 2 (API) | SoilGrids REST API | `tools/s0_global_data/soil_source_adapter.py` with source `soilgrids` | Where the HWSD raster/MDB is not available, or outside China |
 
 **HWSD data paths** (shared with HydroCraft VIC):
 - Global raster: `KISSPATH_STATIC/HWSD_RASTER/hwsd.bil` (1.8 GB, 30 arc-sec)
@@ -40,7 +39,7 @@ python knowledge_infrastructure/tools/s0_global_data/hwsd_soil_adapter.py \
 ## Prerequisites
 
 1. A scenario directory exists with a template `RZWQM.dat` file (site configuration S1 completed).
-2. Soil profile data is available from HWSD adapter (primary) or VIC converter (fallback): horizon depths (cm), texture (sand/silt/clay percentages), bulk density (g/cm^3).
+2. Soil profile data is available from the HWSD adapter (primary) or SoilGrids: horizon depths (cm), texture (sand/silt/clay percentages), bulk density (g/cm^3).
 3. Optionally: measured hydraulic properties (field capacity at 33 kPa, wilting point at 1500 kPa, Ksat).
 4. Python environment with access to `rzwqm_file.py` (the `RZWQM` class and soil-related classes and functions).
 

@@ -1,0 +1,27 @@
+========================================================================
+==                                                                    ==
+==             G E N E R I C   P L A N T   G R O W T H                ==
+==                         MODEL PARAMETERS                           ==
+==                                                                    ==
+========================================================================
+==         Text Headers Last Modified:  7.05.2017 (V4.00.00)          ==
+========================================================================
+========================================================================
+==>
+==>   N O T E :  THE FOLLOWING PARAMETERS SHOULD ONLY BE MODIFIED BY AN
+==>              ADVANCED USER.
+==>
+========================================================================
+=     DATA BASE HEADER
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      NUMBER OF PARAMETERIZED SPECIES
+=     2      VARIETY INDEX NUMBER
+=     3      DESCRIPTION OF VARIETY (30 CHARACTERS, MAXIMUM)
+=
+=    NOTE:  ENTER NUMBER OF SPECIES PARAMERIZED THEN
+=           ENTER ONE LINE OF INFORMATION FOR EACH PARAMETER IN THE FILE
+=
+========================================================================
+0

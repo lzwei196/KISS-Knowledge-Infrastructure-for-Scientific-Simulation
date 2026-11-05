@@ -1,0 +1,6 @@
+CONTROL FILE FOR Hypolimnetic aeration,,,,,,,,,,,
+NAER,OUTPUTFILE,# of aerators,,,,,,,,,
+1,'aeration.opt',,,,,,,,,,
+,Layer top,Layer bottom,Rate of O2 mass,Start,End,Increase vertical mixing,mg/l O2,mg/l O2,Seg probe,Layer probe,
+SEG#,KTOP#,KBOT#,MASSRT(kg O2/d),TIMON,TIMOFF,DZFACT,O2OFF,O2ON,iprb,kprb,
+31,25,30,12500,200,300,5,12.5,11,31,30,

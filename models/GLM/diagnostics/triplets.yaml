@@ -1,7 +1,7 @@
 # ============================================================================
 # GLM Diagnostic Triplets
 # ============================================================================
-# 30 diagnostic triplets covering 7 failure domains.
+# Diagnostic triplets (30 when this header was written; current count: the SKILL.md KI map) covering 7 failure domains.
 # Generated during GLM knowledge dissection for HydroCraft platform.
 # Updated 2026-04-03: Added AED2 phytoplankton triplets (dt_028-030).
 # ============================================================================

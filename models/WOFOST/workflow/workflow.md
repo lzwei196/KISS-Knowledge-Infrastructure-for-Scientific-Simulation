@@ -5,7 +5,7 @@
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
 │ S1: Crop Params  │   │ S2: Soil Params  │   │ S3: Weather Prep │   │ S4: AgroMgmt     │
-│ (YAML/Provider)  │   │ (HWSD→bucket)    │   │ (CSV/NASA/VIC)   │   │ (YAML calendar)  │
+│ (YAML/Provider)  │   │ (HWSD→bucket)    │   │ (product → CSV)  │   │ (YAML calendar)  │
 └────────┬─────────┘   └────────┬─────────┘   └────────┬─────────┘   └────────┬─────────┘
          │                      │                       │                      │
          └──────────────────────┼───────────────────────┼──────────────────────┘
@@ -103,19 +103,19 @@
 **Skill document**: `docs/s3_weather_prep_skill.md`
 
 **Tools**:
-- `convert_vic_to_pcse_weather` — VIC forcing → PCSE CSV format
-- `create_csv_weather_file` — Generic data → PCSE CSV format
+- `build_pcse_weather_from_source` — CMFD / MSWX / NASA POWER (shared loader) → PCSE CSV for one point; refuses gaps and missing values
+- `create_csv_weather_file` — a daily table you already hold (station file) → PCSE CSV format
 - `validate_weather_data` — Unit and range checks
 
-**CRITICAL UNIT TABLE**:
-| Variable | PCSE Unit | DSSAT Unit | VIC Unit | Conversion |
-|----------|-----------|------------|----------|------------|
-| IRRAD | kJ/m2/day | MJ/m2/day (SRAD) | W/m2 | W/m2 × 86.4 = kJ/m2/day |
-| TMIN | C | C | C | none |
-| TMAX | C | C | C | none |
-| VAP | kPa | - (DEWP in C) | kPa | none |
-| WIND | m/s | km/day | m/s | none |
-| RAIN | cm/day | mm/day | mm | mm ÷ 10 = cm |
+**CRITICAL UNIT TABLE** (PCSE CSV column units; the provider rescales to the internal units):
+| Variable | PCSE CSV unit | DSSAT Unit | Shared loader (`load_daily_forcing`) | Conversion loader → CSV |
+|----------|---------------|------------|--------------------------------------|-------------------------|
+| IRRAD | kJ/m2/day | MJ/m2/day (SRAD) | `srad_wm2` W/m2 (24-h mean) | W/m2 × 86.4 = kJ/m2/day |
+| TMIN | C | C | `temp_min_c` C | none |
+| TMAX | C | C | `temp_max_c` C | none |
+| VAP | kPa | - (DEWP in C) | `shum_kgkg` + `pres_pa` | e = q·p / (0.622 + 0.378·q), Pa ÷ 1000 |
+| WIND | m/s | km/day | `wind_ms` m/s | none |
+| RAIN | mm/day (provider ÷ 10 → internal cm/day) | mm/day | `precip_mm` mm in the day | none — do NOT write cm |
 
 **Milestone**: `m3_units_correct` — IRRAD 5000-35000, RAIN 0-10
 

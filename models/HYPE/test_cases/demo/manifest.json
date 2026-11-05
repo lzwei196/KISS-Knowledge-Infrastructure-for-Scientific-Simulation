@@ -1,0 +1,57 @@
+{
+  "test_case": "HYPE demo (official SMHI demo basin)",
+  "engine": {
+    "name": "HYPE",
+    "version": "5.35.0",
+    "binary": "hype",
+    "source": "SMHI HYPE distribution demo",
+    "license": "LGPL (HYPE)"
+  },
+  "ki": {
+    "model": "HYPE"
+  },
+  "simulation": {
+    "start": "2005-01-01",
+    "end": "2005-12-31",
+    "subbasins": 3
+  },
+  "files": {
+    "inputs/info.txt": {
+      "bytes": 468,
+      "sha256": "fe029aabd9bd9afba40e3cd890561692bc192370e16da73e8080fab802041a16"
+    },
+    "inputs/forcingdir/ForcKey.txt": {
+      "bytes": 29,
+      "sha256": "923f7a3bd175dd9b285a31586c9b9a28e406d7256b6dc55805e3223d79318aeb"
+    },
+    "inputs/forcingdir/Pobs.txt": {
+      "bytes": 8428,
+      "sha256": "90f67ff88a1100c9a4b3e484676cf2ecad49705a457a006929347bb92a110b50"
+    },
+    "inputs/forcingdir/Qobs.txt": {
+      "bytes": 5696,
+      "sha256": "766e3276f4cdcacf9d108d3096ef5950c15b5bf0ec37f4e0ff5c08aebe5285f5"
+    },
+    "inputs/forcingdir/Tobs.txt": {
+      "bytes": 9202,
+      "sha256": "64085f96d23172d8168266cf41dac5d3a245bb7a629310c23d7f2b4eb0cbfe7b"
+    },
+    "inputs/modelfiles/GeoClass.txt": {
+      "bytes": 274,
+      "sha256": "e131def64ca4259fbc8616f800dc4605eb0231a583ed7629ec0ce87857451b13"
+    },
+    "inputs/modelfiles/GeoData.txt": {
+      "bytes": 265,
+      "sha256": "2f837ff907224d11f372dac986905f796a75ceaa2f45cc40c7d9ff2b29736535"
+    },
+    "inputs/modelfiles/par.txt": {
+      "bytes": 435,
+      "sha256": "e0a531d391fd392c57cc9647dc7e96995dc89693f0b08ac8bccc840b448b2d2f"
+    }
+  },
+  "run": {
+    "cwd": "clean dir with info.txt, modelfiles/, forcingdir/, empty resultdir/",
+    "command": "hype ./",
+    "reference": "python run_reference.py"
+  }
+}

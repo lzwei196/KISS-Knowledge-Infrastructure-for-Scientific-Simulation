@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: RAPID (Routing Application for Parallel computatIon of Discharge)
 **Domain**: River network routing
 **Language**: Fortran 90 + PETSc
-**Tools**: 5 | **Skill Documents**: 6 | **Diagnostic Triplets**: 20
+**Counts**: tools, stage docs and triplets — see the KI map at the top of this file
 
 ---
 
@@ -359,11 +359,11 @@ new runs against the convention bars above, using `Qout` as the rank-1 output.
 Published test case from the JHM 2011 paper. GLDAS-VIC forcing, 3-hourly
 routing, 15-minute sub-steps, 5,175 river reaches.
 
-| Metric | Published | Reproduced |
-|--------|-----------|------------|
-| NSE (monthly) | 0.52–0.89 | 0.52–0.89 |
-| Correlation | 0.72–0.96 | 0.72–0.96 |
-| Bias (%) | -20 to +15 | -20 to +15 |
+| Metric | Published |
+|--------|-----------|
+| NSE (monthly) | 0.52–0.89 |
+| Correlation | 0.72–0.96 |
+| Bias (%) | -20 to +15 |
 
 ### MERIT-Hydro Global Basins (David et al., 2015 WRR)
 
@@ -453,5 +453,5 @@ ki/
 │   ├── s5_execution.md               # Running RAPID
 │   └── s6_output_analysis.md         # Output parsing and metrics
 └── diagnostics/
-    └── triplets.yaml                 # 20 symptom→diagnosis→remedy entries
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

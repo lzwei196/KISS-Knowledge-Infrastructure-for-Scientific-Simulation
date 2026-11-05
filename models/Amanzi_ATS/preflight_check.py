@@ -13,6 +13,13 @@ KI_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON_ENV = "KISSPATH_PYTHON_ENV/bin/python"
 DIAGNOSTICS = os.path.join(KI_DIR, "diagnostics", "triplets.yaml")
 REGISTERED_EXECUTABLE = os.path.join(KI_DIR, "tools", "run_amanzi.py")
+# Server ATS build (Amanzi 42cadd93 + ATS 86114e29, ATS 1.6.0, built 2026-10-06).
+# Lookup (same as tools/run_amanzi.py without --binary): $ATS_BIN (used as-is; a bare
+# name is resolved on PATH), else this server default. No fallback.
+ATS_BIN_ENV = "ATS_BIN"
+SERVER_DEFAULT_BINARY = (
+    "KISSPATH_HOME/engine_builds_20261006/ats/amanzi-install-master42cadd9-Release/bin/ats"
+)
 
 
 def recovery_hint(detail):
@@ -120,14 +127,27 @@ def check_tool_starts(checks, relpath, critical=True):
     return False
 
 
+def resolve_native_binary():
+    """Return (absolute path or None, source label) for the Amanzi/ATS binary."""
+    explicit = os.environ.get(ATS_BIN_ENV, "").strip()
+    cand = explicit or SERVER_DEFAULT_BINARY
+    source = f"${ATS_BIN_ENV}={explicit}" if explicit else "server default"
+    if os.sep not in cand:
+        cand = shutil.which(cand) or ""
+    if cand and os.path.isfile(cand):
+        return os.path.abspath(cand), source
+    return None, f"{source}: {explicit or SERVER_DEFAULT_BINARY} not found"
+
+
 def check_native_amanzi_binary(checks):
-    found = shutil.which("ats") or shutil.which("amanzi")
-    subject = os.path.realpath(found) if found else "ats|amanzi on PATH"
+    found, source = resolve_native_binary()
+    subject = f"{os.path.realpath(found)} ({source})" if found else source
     if not found:
         fix = recovery_hint(
-            "build Amanzi/ATS from source per SKILL.md Installation and put ats or amanzi on PATH"
+            f"set {ATS_BIN_ENV} to the ats binary, or restore the server build "
+            f"{SERVER_DEFAULT_BINARY}"
         )
-        status_line("fail", "Native Amanzi/ATS binary", "ats/amanzi not found on PATH")
+        status_line("fail", "Native Amanzi/ATS binary", f"not found ({source})")
         add_check(checks, "binary", subject, True, "fail", fix)
         return False
     if not os.access(found, os.X_OK):
@@ -144,6 +164,13 @@ def check_native_amanzi_binary(checks):
     )
     if proc.returncode in (0, 1):
         status_line("pass", "Native Amanzi/ATS binary", subject)
+        try:
+            ver = subprocess.run([found, "--version"], text=True, capture_output=True,
+                                 timeout=20).stdout.strip().splitlines()
+            if ver:
+                print(f"        Detail: {ver[-1]}")
+        except Exception:  # information only
+            pass
         add_check(checks, "binary", subject, True, "pass")
         return True
     detail = (proc.stderr or proc.stdout or "binary did not start").strip().splitlines()[-1]

@@ -4,6 +4,8 @@
 **Date**: 2026-03-21
 **Status**: Planning (pre-installation)
 
+> Note (2026-11): this is the pre-installation plan, kept as history. Its mask values (the sfincs.msk row, dt_007, dt_012) are wrong. Right values: 0 inactive, 1 active, 2 water-level boundary, 3 outflow boundary (SKILL.md item 1, dt_v021).
+
 ---
 
 ## Model Overview

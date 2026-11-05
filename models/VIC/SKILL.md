@@ -2,7 +2,7 @@
 >
 > You MUST run the **actual model binary or package** described in this document.
 > If the model fails to import, compile, or execute, you MUST:
-> 1. Check `diagnostics/triplets.md` for a matching error pattern
+> 1. Check `diagnostics/triplets.yaml` for a matching error pattern
 > 2. Try the fix suggested in the triplet's `remedy` section
 > 3. If still failing, report the error to the user with full details
 >
@@ -14,7 +14,7 @@
 > to verify that the model binary/package and required data are available.
 >
 > **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
-> 1. **Check triplets** — `diagnostics/triplets.md` may already cover this error
+> 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
 > 2. **Read official docs** — The model's own documentation for expected formats/units
 > 3. **Find working examples** — Check `outputs/` or the model's shipped test data
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
@@ -27,7 +27,7 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (11 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (15 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | on ANY error, before debugging | `diagnostics/triplets.yaml` (31 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
@@ -35,7 +35,7 @@
 | for claims and thresholds | `docs/gathered_papers.json` (27 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-26 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -62,8 +62,12 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `s6_post/compare_runoff_field.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_post/compare_runoff_field.py --help` |
 | `s6_post/grid_runoff_nc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_post/grid_runoff_nc.py --help` |
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/calib_run_huaibin_merit.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_huaibin_merit.py --help` |
 | `tools/calib_run_wangjiaba.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_wangjiaba.py --help` |
+| `tools/calib_run_wangjiaba_merit.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_wangjiaba_merit.py --help` |
+| `tools/calib_run_wangjiaba_modern.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_wangjiaba_modern.py --help` |
 | `tools/calib_run_wjb_flatrain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_wjb_flatrain.py --help` |
+| `tools/calib_run_xixian_merit.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run_xixian_merit.py --help` |
 | `tools/calibration/run_bengbu_ai_batch10.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calibration/run_bengbu_ai_batch10.py --help` |
 | `tools/calibration/run_bengbu_ai_calibration.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calibration/run_bengbu_ai_calibration.py --help` |
 | `tools/check_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/check_data.py --help` |
@@ -73,8 +77,10 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/plot/plot_discharge_comparison.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/plot/plot_discharge_comparison.py --help` |
 | `tools/run_vic_pipeline_enhanced.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_vic_pipeline_enhanced.py --help` |
 
-*26 public tools; `_`-prefixed helpers and packaging files excluded.*
+*30 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
+
+**Calibration driver note (kept outside the projected index):** `tools/calib_run_huaibin_merit.py` is the System 1 SITE:huaibin driver (gauge 50229350, `huaibin_merit` 38-cell MERIT domain, per-year splits `KDT_CALIB_SPLIT=<year>`, declared sets via `KDT_CALIB_SPLIT_SETS`, `SYS1_DOMAIN_ROOT`/`SYS1_FORCING_ROOT`/`SYS1_FORCEYEAR`).
 
 ---
 
@@ -98,8 +104,8 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 VIC simulates gridded land-surface water balance and, when configured, energy,
 snow, frozen-soil, lake/wetland, and carbon processes. The classic driver emits
 per-cell flux/state outputs; basin gauge discharge requires post-hoc routing of
-`OUT_RUNOFF + OUT_BASEFLOW` unless the optional lake module is the source of
-`OUT_DISCHARGE`.
+`OUT_RUNOFF + OUT_BASEFLOW` (the classic driver does not produce `OUT_DISCHARGE`;
+only the image driver built with RVIC routing writes it).
 
 ---
 
@@ -168,9 +174,8 @@ python preflight_check.py
 # then run s1 through s10 in order.
 ```
 
-Expected runtime depends on basin size and period. The Harbin reference noted
-below used 866 cells; water-balance mode costs about 95 s per simulated year for
-that case.
+Expected runtime depends on basin size and period. Water-balance mode costs about
+95 s per simulated year for a basin of about 870 cells.
 
 ---
 
@@ -181,7 +186,7 @@ wins.
 
 Headline output:
 
-> `OUT_DISCHARGE` -- Routed discharge value emitted only by the lake module; for non-lake cells streamflow is not produced internally. (`m^3/s`)
+> `OUT_DISCHARGE` -- River discharge from the RVIC routing extension (rout_rvic), available only in the image driver built with ROUT_RVIC; the classic driver used here does not write it. (`m^3/s`)
 
 Other dag outputs:
 `OUT_RUNOFF`, `OUT_BASEFLOW`, `OUT_EVAP`, `OUT_SOIL_MOIST`, `OUT_SWE`,
@@ -190,7 +195,7 @@ Other dag outputs:
 
 | Output variable (dag `var`) | Rank | Unit | Emitted in | Description |
 |-----------------------------|------|------|------------|-------------|
-| `OUT_DISCHARGE` | 1 | `m^3/s` | per-cell ASCII flux file | Routed discharge value emitted only by the lake module; for non-lake cells streamflow is not produced internally. |
+| `OUT_DISCHARGE` | 1 | `m^3/s` | image-driver history output (ROUT_RVIC builds only) | River discharge from the RVIC routing extension (rout_rvic), available only in the image driver built with ROUT_RVIC; the classic driver used here does not write it. |
 | `OUT_RUNOFF` | 2 | `mm` | per-cell ASCII flux file; column controlled by `OUTVAR` | Surface runoff generated by the variable infiltration capacity partition (per timestep total). |
 | `OUT_BASEFLOW` | 6 | `mm` | per-cell ASCII flux file | Subsurface drainage from the bottom soil layer via the ARNO / non-linear baseflow function. |
 | `OUT_EVAP` | 3 | `mm` | per-cell ASCII flux file | Total evapotranspiration (canopy interception + transpiration + bare soil + sublimation, per timestep). |
@@ -202,7 +207,7 @@ Other dag outputs:
 | `OUT_SENSIBLE` | 11 | `W/m^2` | per-cell ASCII flux file, full-energy mode | Surface sensible heat flux. |
 | `OUT_R_NET` | 12 | `W/m^2` | per-cell ASCII flux file | Net all-wave radiation at the surface. |
 | `OUT_ALBEDO` | 13 | `fraction` | per-cell ASCII flux file | Surface broadband albedo (snow + canopy + bare soil composite). |
-| `OUT_ZWT` | 5 | `cm` | per-cell ASCII flux file | Water table depth below the surface. |
+| `OUT_ZWT` | 5 | `cm` | per-cell ASCII flux file | Water table position (lowest unsaturated soil layer), positive upward: negative values are below the soil surface, 0 at the surface. |
 | `OUT_GPP` | 14 | `g C/m^2/day` | per-cell ASCII flux file, CARBON mode | Vegetation gross primary production from the optional CARBON module. |
 | `OUT_LAKE_VOLUME` | 15 | `m^3` | per-cell ASCII flux file, LAKES mode | Composite within-cell lake volume (LAKES mode). |
 
@@ -247,7 +252,7 @@ This unit table records the pipeline conversions called out by the KI body,
 | `OUT_RUNOFF` | VIC output | `mm` | no conversion for per-cell flux files | identity |
 | `OUT_BASEFLOW` | VIC output | `mm` | no conversion for per-cell flux files | identity |
 | externally routed gauge streamflow | routed `OUT_RUNOFF + OUT_BASEFLOW` | `m^3/s` | handled by `route_1.0` | routing conversion |
-| `OUT_DISCHARGE` | VIC output | `m^3/s` | emitted only by optional lake module | identity when present |
+| `OUT_DISCHARGE` | VIC output | `m^3/s` | not produced by the classic driver (image driver + RVIC routing only) | not available here |
 | `OUT_EVAP` | VIC output | `mm` | convert separately before comparing to `W/m^2` latent heat | comparison conversion |
 | `OUT_LATENT`, `OUT_SENSIBLE`, `OUT_R_NET` | VIC output | `W/m^2` | no conversion for flux output | identity |
 | `OUT_SOIL_TEMP` | VIC output | `degC` | no conversion for flux output | identity |
@@ -262,7 +267,7 @@ This unit table records the pipeline conversions called out by the KI body,
 |----------|--------------------------|--------------------|-----------------|
 | `OUT_RUNOFF` | positive water leaving the cell surface store, `mm` per cell | treating as gauge `m^3/s` | hydrograph timing and magnitude become invalid without routing |
 | `OUT_BASEFLOW` | positive subsurface drainage from bottom soil layer, `mm` per cell | treating as directly observed baseflow | gauge comparison lacks routing and hydrograph separation uncertainty |
-| `OUT_DISCHARGE` | `m^3/s`, lake-module routed discharge only | assuming normal non-lake streamflow output | false claim that VIC internally routes river discharge |
+| `OUT_DISCHARGE` | `m^3/s`, image driver + RVIC routing only, not produced by the classic driver | assuming normal non-lake streamflow output | false claim that VIC internally routes river discharge |
 | `OUT_EVAP` | positive evapotranspiration total, `mm` | latent heat in `W/m^2` | ET comparisons need unit conversion and closure handling |
 | `OUT_LATENT` | surface latent heat flux, `W/m^2` | ET depth unit | wrong magnitude if mixed with `OUT_EVAP` |
 
@@ -274,7 +279,7 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging.
 
 | # | Error | Diagnosis | Remedy |
 |---|-------|-----------|--------|
-| 1 | `dt_vic_019`: gauge discharge needed but flux files contain only `OUT_RUNOFF` / `OUT_BASEFLOW`; `OUT_DISCHARGE` is zero or absent | VIC has no internal routing for basin-scale gauge discharge; `OUT_DISCHARGE` is lake-module only | Run Lohmann `route_1.0` through `s5_routing/run_routing.py` after preprocessing fluxes |
+| 1 | `dt_vic_019`: gauge discharge needed but flux files contain only `OUT_RUNOFF` / `OUT_BASEFLOW`; `OUT_DISCHARGE` is zero or absent | VIC has no internal routing for basin-scale gauge discharge; `OUT_DISCHARGE` is not produced by the classic driver | Run Lohmann `route_1.0` through `s5_routing/run_routing.py` after preprocessing fluxes |
 | 2 | `dt_vic_020`: routing grid reports nonsensical outlet/connectivity | flow direction grid was built from a coarsened DEM instead of native delineation rasters | Use native `flow_accum.tif`, `basin.tif`, and `dem_filled.tif` through `s5_routing/build_routing_param.py` |
 | 3 | `dt_vic_021`: cal/val metrics are NaN or use too few days | observation record has `-99` gaps and the standard split is not fully observed | Profile valid years first and choose a contiguous observed window |
 | 4 | `dt_vic_028`: routing travel time is too short even with a correct grid | default velocity can make hydrographs peak too early; routing velocity changes timing, not volume bias | Compare observed lag to `basin_mean_uh_lag`, bisect velocity on calibration timing only, and report unreachable plateaus |
@@ -298,29 +303,24 @@ The full corpus is `diagnostics/triplets.yaml`; check it before debugging.
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-Source: `docs/validation_convention.yaml` and the reference-run notes already
-present in this KI body. This section states the field bars and does not invent
-new achieved scores.
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-### Reference Basins Recorded In This KI
-
-| Basin | Cells | Period | Routed daily result note |
-|-------|-------|--------|--------------------------|
-| Bengbu 51080 (Huai, lowland, regulated) | 224 | 1981-90 | routed daily NSE ~0.15; PBIAS +44% |
-| Tangnaihai (upper Yellow, alpine) | 251 | cal 2007-11 / val 2012-16 | see `detached/real_case/result.json` |
-| Harbin (Songhua, cold/snowmelt) | 866 | cal 1981-85 / val 1986-87 | see `detached/real_case/result.json`; held-out NSE plateau 0.488-0.521 across routing velocity plateau |
+Source: `docs/validation_convention.yaml`. This section states the field bars and
+does not invent new achieved scores.
 
 ### Performance Metrics -- judged against the field's bar, not intuition
 
 | Dag variable | Metric | Direction | Convention bar with citation keys |
 |--------------|--------|-----------|-----------------------------------|
 | `OUT_DISCHARGE` | `nse` | maximize | very_good >= 0.75 (`moriasi2007`, `moriasi2015`); good >= 0.65 (`moriasi2007`, `moriasi2015`); satisfactory >= 0.5 (`moriasi2007`, `moriasi2015`) |
-| `OUT_DISCHARGE` | `pbias` | zero_centered | very_good <= 10 (`moriasi2015`, `moriasi2007`); good <= 15 (`moriasi2015`, `moriasi2007`); satisfactory <= 15 (`moriasi2015`, `moriasi2007`) |
+| `OUT_DISCHARGE` | `pbias` | zero_centered | very_good <= 5 (`moriasi2015`, `moriasi2007`); good <= 10 (`moriasi2015`, `moriasi2007`); satisfactory <= 15 (`moriasi2015`, `moriasi2007`) |
 | `OUT_RUNOFF` | `nse` | maximize | very_good >= 0.75 (`moriasi2007`, `moriasi2015`); good >= 0.65 (`moriasi2007`, `moriasi2015`); satisfactory >= 0.5 (`moriasi2007`, `moriasi2015`) |
-| `OUT_RUNOFF` | `pbias` | zero_centered | very_good <= 10 (`moriasi2015`, `moriasi2007`); good <= 15 (`moriasi2015`, `moriasi2007`); satisfactory <= 15 (`moriasi2015`, `moriasi2007`) |
-| `OUT_EVAP` | `nse` | maximize | good >= 0.6 (`ershadi2013`); satisfactory >= 0.5 (`ershadi2013`); very_good: no cited threshold |
+| `OUT_RUNOFF` | `pbias` | zero_centered | very_good <= 5 (`moriasi2015`, `moriasi2007`); good <= 10 (`moriasi2015`, `moriasi2007`); satisfactory <= 15 (`moriasi2015`, `moriasi2007`) |
+| `OUT_EVAP` | `nse` | maximize | satisfactory >= 0.5 (`odusanya2019`, `moriasi2015`); very_good: no cited threshold; good: no cited threshold |
+| `OUT_EVAP` | `pbias` | zero_centered | satisfactory <= 25 (`odusanya2019`); very_good: no cited threshold; good: no cited threshold |
 
 For `pbias`, the zero-centered bars are absolute percent thresholds around
 zero. A metric without a cited convention band must be reported as "no cited
@@ -399,7 +399,7 @@ stages unmodified — no in-place editing, no `config_paths.py` regex rewriting:
 | `VIC_OUTLET_LON`, `VIC_OUTLET_LAT` | gauge coords — **required** for a new basin (s9 pour point + max-accum assertion) |
 | `VIC_DEM` | DEM for delineation, e.g. `data/dem/china_dem_90m/china_dem_90m.tif` |
 | `VIC_STREAM_THRESHOLD` | stream threshold in **native DEM cells**; scale with basin size (20k for 10³ km², 200k for 4×10⁵ km²) |
-| `VIC_ROUT_VELOCITY` | Lohmann channel celerity, m/s. **Default 1.5 is a Bengbu value — do NOT inherit it.** See "routing travel time" below (dt_vic_028) |
+| `VIC_ROUT_VELOCITY` | Lohmann channel celerity, m/s. **Default 1.5 was set on one basin — do NOT inherit it.** See "routing travel time" below (dt_vic_028) |
 | `VIC_ROUT_DIFF` | Lohmann diffusivity, m²/s. Default 800. Larger values *advance* the peak as well as broaden it |
 
 The last four DEM/outlet variables are read only by `s5_routing/build_routing_param.py`,
@@ -427,8 +427,8 @@ Order matters: `process_forcing.py` reads the grid coordinates out of
 
 ### 🔴 VIC DOES NOT ROUTE — discharge requires step s9 + s10
 
-`dag.yaml` is explicit: `OUT_DISCHARGE` is emitted only by the optional lake
-module. VIC's own output is runoff/baseflow **in mm, per cell**. To compare
+`dag.yaml` is explicit: the classic driver used here does not produce
+`OUT_DISCHARGE` (only the image driver built with RVIC routing writes it). VIC's own output is runoff/baseflow **in mm, per cell**. To compare
 against a gauge you MUST run the Lohmann `route_1.0` binary. Summing
 runoff+baseflow over the basin is not discharge — it has no travel time, so the
 hydrograph has no lag and no attenuation (dt_vic_019).
@@ -450,8 +450,8 @@ Validate the routing grid before trusting any hydrograph:
 ### 🔴 Also validate the routing TRAVEL TIME — a correct grid is not enough (dt_vic_028)
 
 A routing grid can be perfect and the hydrograph still worthless, because
-`VIC_ROUT_VELOCITY` defaults to **1.5 m/s — the value that reproduced Bengbu**
-(121,330 km²). Inheriting it at a larger, flatter basin makes the model respond
+`VIC_ROUT_VELOCITY` defaults to **1.5 m/s — a value set on one mid-size lowland basin**.
+Inheriting it at a larger, flatter basin can make the model respond
 weeks too early. Two numbers settle it, both from `s5_routing/run_routing.py`:
 
 ```python
@@ -468,18 +468,16 @@ two agree — on the **calibration window only**. Never fit velocity to NSE.
 `MAKE_UHM` clips each cell's impulse response at `LE*DT = 48 h` and renormalises it, so
 once `xmask/velocity > 48 h` the kernel stops changing and `uh_lag` asymptotes to
 `mean(UH.all) + mean_path_in_cells × ~1.3 d`. Below that threshold velocity is an **inert
-knob** and an optimiser will walk to its lower bound while reporting "improvement". At
-哈尔滨 the ceiling is 29.8 d against an observed demand of ~33 d: v = 0.002 and v = 0.15
-differ by 2 d of lag and 0.03 of held-out NSE. When the target is unreachable, pin
+knob** and an optimiser will walk to its lower bound while reporting "improvement".
+When the target is unreachable, pin
 velocity to the `rout_velocity` `range` lower bound in `calibration.yaml` (0.10 m/s),
 report the plateau's NSE spread, and state that the scheme is structurally insufficient.
 
 Two facts that keep being rediscovered the hard way:
 
 * **`NSE ≤ r²`.** Compute zero-lag `r` *before* concluding a bad NSE needs soil
-  calibration. At 哈尔滨 the default velocity held `r` at 0.589, so NSE could not
-  exceed 0.347 — the target of 0.5 was arithmetically unreachable and no soil
-  parameter could have rescued it.
+  calibration. If zero-lag `r` is low, an NSE target above `r²` is arithmetically
+  unreachable and no soil parameter can rescue it.
 * **Routing conserves mass at every velocity.** `rout` renormalises `UH_S`
   (`unit_hyd_routines.f`), so velocity moves *timing* and can NEVER move PBIAS.
   A volume bias is therefore never evidence that the routing is right, and a
@@ -496,10 +494,10 @@ the within-cell UH alone can never supply more than ~12 d of lag.
 
 `fill_parameters1.py` initialises every soil layer at `init_moist = 66.79 mm`
 (~10-14% saturation) and the KI column is 1.9 m deep. The standard split gives it ONE
-spin-up year. At 哈尔滨 the column needs **5-6 years**: baseflow climbs 22 → 111 mm/yr
-and 31-Dec storage 320 → 500 mm across 1980-1987, so the *calibration* window is the
-least equilibrated part of the record and PBIAS **grows** as the model equilibrates
-(+19.5% → +28.5% → +36.8%). That reads exactly like overfitting and is not.
+spin-up year. Some basins need **several years**: baseflow and 31-Dec storage keep
+climbing through the calibration window, so the *calibration* window is the
+least equilibrated part of the record and PBIAS **grows** as the model equilibrates.
+That reads exactly like overfitting and is not.
 
 Before scoring, plot `OUT_SOIL_MOIST_* + OUT_SWE` on 31 Dec of each year and annual
 `OUT_BASEFLOW`. If either still trends at `CAL_START`, start the simulation earlier —
@@ -515,46 +513,23 @@ contiguous fully-observed decade, or you will "validate" on zero days
 (dt_vic_021). Example: 唐乃亥 has valid daily Q only for
 {1985, 1987, 2007-2020, 2022, 2023}.
 
-### Reference runs
+### Rules from past runs
 
-| basin | cells | period | routed daily NSE |
-|---|---|---|---|
-| Bengbu 51080 (Huai, lowland, regulated) | 224 | 1981-90 | ~0.15 (PBIAS +44%) |
-| 唐乃亥 Tangnaihai (upper Yellow, alpine) | 251 | cal 2007-11 / val 2012-16 | see `detached/real_case/result.json` |
-| 哈尔滨 Harbin (Songhua, cold/snowmelt) | 866 | cal 1981-85 / val 1986-87 | see `detached/real_case/result.json` |
-
-Harbin is the KI's first snow-dominated basin: 384,411 km² above the gauge (398,330 km²
-of frac-weighted routed area), mean annual air temperature −5 … +7 °C, and a spring
-freshet driven by snowmelt. The observed record is ice-affected in winter and the basin is
-partly regulated (Fengman on the Second Songhua, Nierji on the Nen).
-
-**Read this before rerunning Harbin — the 2026-07-10 run overturned three earlier
-assumptions:**
-
-1. The dominant error was **never** the soil parameters. It was `VIC_ROUT_VELOCITY = 1.5`
-   m/s, giving a 6.2 d basin travel time against an observed 28 d lag. Zero-lag `r` was
-   0.589, so NSE was capped at 0.347. Slowing the routing lifts `r` to ~0.90 and the NSE
-   ceiling to ~0.80 — **without touching a single soil parameter and without changing
-   PBIAS by one part in 10⁴** (dt_vic_028). But note the second half of dt_vic_028:
-   `uh_lag` saturates at 29.8 d, the basin demands ~33 d, and velocity is **inert below
-   ~0.15 m/s**. Harbin is run at the pool bound v = 0.10 m/s, and held-out NSE varies only
-   0.488–0.521 across the entire plateau. Route_1.0 is structurally insufficient here;
-   report that rather than optimising inside the plateau.
-2. Spin-up of one year is **not enough** here; the deep store is still filling through the
-   calibration period, and PBIAS grows +19.5% → +36.8% across the record (dt_vic_030).
-3. `FROZEN_SOIL TRUE` was not merely "worth revisiting" — it was **impossible**: the soil
-   file carried `bubble = -9999` and `fs_active = 0`, and `NODES` must be ≥ 10 once
-   `EXP_TRANS` turns on. Both are fixed (dt_vic_031); the cold-region template is
-   `docs/vic_param/global_param_template_frozen.txt`.
-
-What remains after all of that is a **volume** bias (PBIAS ≈ +29% over 1981-87, +37% on
-the equilibrated 1986-87 window) that routing physically cannot touch. Budyko (Fu, ω=2.6)
-on CMFD `P = 589 mm/yr` and `PET ≈ 750 mm/yr` predicts a natural `Q ≈ 134 mm/yr`; VIC
-gives ≈ 150 (trending to ≈ 180 as the store fills) and the gauge records 116. VIC is
-modestly wet of Budyko and the gauge modestly dry of it — consistent with CMFD's
-undercatch-corrected precipitation *plus* real consumptive use on the Songnen Plain and
-reservoir regulation. Report it; do not calibrate it away. NSE at Harbin is **bias-limited,
-not timing-limited**: remove the volume bias post hoc and NSE_val ≈ 0.80 = r².
+1. In a large flat basin the main error can be the routing velocity, not the soil
+   parameters. Measure the observed lag against the UH lag first, and watch for the
+   velocity plateau where `uh_lag` stops changing; if the needed lag is above it,
+   report that route_1.0 is structurally insufficient rather than optimising inside
+   the plateau (dt_vic_028).
+2. One spin-up year can be too short; check the storage and baseflow trend before
+   reading a cal/val gap (dt_vic_030).
+3. `FROZEN_SOIL TRUE` needs real `bubble` values and `fs_active = 1` in the soil file
+   (`fill_parameters2.py` now writes them), and `NODES` must be ≥ 10 once `EXP_TRANS`
+   turns on. Use the cold-region template
+   `docs/vic_param/global_param_template_frozen.txt` (dt_vic_031).
+4. A volume bias that is left after routing and spin-up are fixed cannot be touched by
+   routing. Check it against a Budyko estimate (e.g. Fu) from the forcing P and PET.
+   Where the gauge sits below natural runoff because of water use or reservoir
+   regulation, report the bias; do not calibrate it away.
 
 ---
 

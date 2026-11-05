@@ -49,8 +49,20 @@ BASE = Path("KISSPATH_ROOT")
 KI = BASE / "models/SNOWPACK/knowledge_infrastructure"
 KI_TOOLS = KI / "tools"
 sys.path.insert(0, str(BASE / "models/ki_tools_common"))
-SNOWPACK_BIN = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work"
-                    "/Alpine3D/local_install/bin/snowpack")
+# SNOWPACK engine, looked up in this order: server managed install, then the
+# desktop (KISS) source build. Neither present -> stop with an error naming both.
+SNOWPACK_BIN_CANDIDATES = (
+    Path("KISSPATH_BINARIES/SNOWPACK/bin/snowpack"),
+    Path("KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack"),
+)
+
+
+def find_snowpack_bin():
+    for cand in SNOWPACK_BIN_CANDIDATES:
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return cand
+    sys.exit("SNOWPACK binary not found (or not executable) at any of: "
+             + ", ".join(str(c) for c in SNOWPACK_BIN_CANDIDATES))
 OBS_TXT = Path("KISSPATH_HOME/桌面/数据/Canadian historical snow survey data"
                "/Cdn_Snow_Survey_Dataset_Lat_long_Minus_HQ-MELCC.txt")
 OUT = BASE / "models/SNOWPACK/outputs_run/yanks_1c41p"
@@ -121,7 +133,8 @@ def read_obs():
 # ---------- forcing (NASA POWER daily -> parameterized/real hybrid SMET rows) ----------
 def build_forcing(out_csv):
     from ki_tools_common.load_forcing import load_daily_forcing
-    d = load_daily_forcing("nasa_power", LAT, LON, START_YEAR, END_YEAR)
+    d = load_daily_forcing("nasa_power", LAT, LON, START_YEAR, END_YEAR,
+                           period=(RUN_START, RUN_END))   # only these days are kept
     dates = pd.to_datetime(d["dates"])
     fr = pd.DataFrame({
         "date": dates,
@@ -246,7 +259,7 @@ def run_model():
     ini.write_text(t)
 
     print("[s4/s5] run_snowpack.py", flush=True)
-    rc = run_ki("run_snowpack.py", ["--binary", str(SNOWPACK_BIN), "--config", str(ini),
+    rc = run_ki("run_snowpack.py", ["--binary", str(find_snowpack_bin()), "--config", str(ini),
         "--end_date", end], log)
     assert rc == 0, f"run_snowpack rc={rc}"
 
@@ -298,16 +311,20 @@ def main():
     full, cal, val, obs_peak, sim_peak = score(res_csv)
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-    if full is None:
+    if full is None or cal is None or val is None:
+        why = ("insufficient obs-sim overlap (<30 paired days)" if full is None else
+               "calibration or validation split has <30 paired days "
+               f"(cal={'ok' if cal else 'short'}, val={'ok' if val else 'short'})")
         result = {"model_id": "SNOWPACK",
                   "this_location": "Canadian Historical Snow Survey Data (1951-2016)",
                   "obs_source": "Canadian Historical Snow Survey Data (1951-2016)",
                   "status": "failed", "tools_used": [], "tools_failed": [],
                   "metrics": {"nse": None, "kge": None, "pbias": None, "r": None, "period": None},
                   "water_balance": {"status": "N/A", "residual_pct": None},
-                  "notes": "insufficient obs-sim overlap (<30 paired days)"}
+                  "notes": why}
         (RESULT_DIR / "result.json").write_text(json.dumps(result, indent=2))
-        print(json.dumps(result)); return
+        print(json.dumps(result))
+        sys.exit(1)                                 # a failed score must not exit 0
 
     notes = (
         f"SNOWPACK verifier at BCE-1C41P {NAME}, Cariboo Mts BC ({ELEV:.0f} m, continental "

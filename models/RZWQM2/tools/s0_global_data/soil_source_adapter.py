@@ -9,7 +9,6 @@ data and returns a normalized JSON schema that any downstream RZWQM2 tool
 can consume directly.
 
 Supported sources:
-    - vic_global:        VIC 0.25-degree global soil parameters (global_soil_param_new.txt)
     - soilgrids:         ISRIC SoilGrids REST API (global 250m)
     - gssurgo:           US gSSURGO geodatabase (US coverage)
     - canada_shapefile:  Canadian soil database shapefiles
@@ -59,7 +58,7 @@ STATE_CODE = ""         # US state abbreviation (for gssurgo)
 DATA_PREP_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'lib')
 sys.path.insert(0, os.path.abspath(DATA_PREP_DIR))
 
-VALID_SOURCES = ['vic_global', 'soilgrids', 'gssurgo', 'canada_shapefile', 'hwsd']
+VALID_SOURCES = ['soilgrids', 'gssurgo', 'canada_shapefile', 'hwsd']
 
 # Default horizon depths (cm) when source provides fewer layers
 DEFAULT_HORIZON_DEPTHS = [10, 30, 60, 100, 200]
@@ -81,7 +80,7 @@ def validate_inputs(lat_raw, lon_raw, source, source_path, num_horizons_raw, sta
     except ValueError:
         errors.append(f"LON must be numeric: {lon_raw}")
 
-    source = source.strip().lower() if source else 'vic_global'
+    source = source.strip().lower() if source else 'soilgrids'
     if source not in VALID_SOURCES:
         errors.append(f"SOURCE must be one of {VALID_SOURCES}")
 
@@ -262,123 +261,6 @@ def _fill_hydraulic_params(horizon):
     return horizon
 
 
-def _retrieve_vic_global(lat, lon, source_path, num_horizons):
-    """Retrieve soil data from VIC global parameter file."""
-    if not source_path:
-        # Search common locations — user should provide SOURCE_PATH for portability
-        home = os.path.expanduser('~')
-        candidates = [
-            os.path.join(home, 'Hydrocraft', 'Hydrocraft', 'data', 'soil', 'global_soil_param_new.txt'),
-            os.path.join(home, 'data', 'soil', 'global_soil_param_new.txt'),
-        ]
-        for c in candidates:
-            if os.path.isfile(c):
-                source_path = c
-                break
-
-    if not source_path or not os.path.isfile(source_path):
-        return None, "VIC global soil parameter file not found. Provide SOURCE_PATH."
-
-    # Read the file and find nearest grid cell
-    best_row = None
-    best_dist = float('inf')
-
-    with open(source_path) as f:
-        for line in f:
-            parts = line.split()
-            if len(parts) < 53:
-                continue
-            try:
-                row_lat = float(parts[2])
-                row_lon = float(parts[3])
-                dist = (row_lat - lat) ** 2 + (row_lon - lon) ** 2
-                if dist < best_dist:
-                    best_dist = dist
-                    best_row = parts
-            except (ValueError, IndexError):
-                continue
-
-    if best_row is None:
-        return None, "No matching grid cell found in VIC global soil parameter file."
-
-    if math.sqrt(best_dist) > 1.0:
-        return None, f"Nearest grid cell is {math.sqrt(best_dist):.2f} degrees away — too far."
-
-    # Extract VIC parameters for 3 layers
-    # Column indices (0-based): 9-11=expt, 12-14=ksat(mm/day), 22-24=depth(m),
-    # 33-35=bulk_density(kg/m3), 40-42=Wcr_FRACT, 43-45=Wpwp_FRACT
-    vic_layers = []
-    cumulative_depth = 0
-    for layer in range(3):
-        expt = float(best_row[9 + layer])
-        ksat_mm_day = float(best_row[12 + layer])
-        depth_m = float(best_row[22 + layer])
-        bulk_density_kgm3 = float(best_row[33 + layer])
-        wcr_fract = float(best_row[40 + layer])
-        wpwp_fract = float(best_row[43 + layer])
-
-        # Unit conversions
-        ksat_cm_hr = ksat_mm_day / 240.0
-        pore_size_dist = 2.0 / expt if expt > 0 else 0.5
-        bulk_density_gcc = bulk_density_kgm3 / 1000.0
-        ws = 1.0 - bulk_density_gcc / 2.65
-        ws = max(0.3, min(0.7, ws))  # clamp to physical range
-        fc33 = wcr_fract * ws
-        fc15 = wpwp_fract * ws
-
-        cumulative_depth += depth_m * 100  # m -> cm
-
-        vic_layers.append({
-            'depth_cm': round(cumulative_depth),
-            'ksat_cm_hr': round(ksat_cm_hr, 4),
-            'pore_size_dist': round(pore_size_dist, 3),
-            'ws': round(ws, 4),
-            'fc33': round(fc33, 4),
-            'fc15': round(fc15, 4),
-            'bulk_density_gcc': round(bulk_density_gcc, 3),
-            'sand_pct': None,  # Not in VIC global params
-            'silt_pct': None,
-            'clay_pct': None,
-            'texture_class': None,
-            'wr': None,
-            'bubbling_pressure': None,
-        })
-
-    # Expand VIC 3 layers to target horizon count if needed
-    horizons = []
-    target_depths = DEFAULT_HORIZON_DEPTHS[:num_horizons]
-    if len(target_depths) < num_horizons:
-        target_depths = [round(d) for d in
-                         [i * vic_layers[-1]['depth_cm'] / num_horizons
-                          for i in range(1, num_horizons + 1)]]
-
-    for depth in target_depths:
-        # Find which VIC layer contains this depth
-        source_layer = vic_layers[-1]  # default to deepest
-        for vl in vic_layers:
-            if depth <= vl['depth_cm']:
-                source_layer = vl
-                break
-        h = dict(source_layer)
-        h['depth_cm'] = depth
-        # Estimate texture from bulk density + ksat (rough heuristic)
-        if h['bulk_density_gcc'] > 1.5 and h['ksat_cm_hr'] < 0.5:
-            h['texture_class'] = 'clay loam'
-        elif h['bulk_density_gcc'] < 1.3 and h['ksat_cm_hr'] > 5.0:
-            h['texture_class'] = 'sandy loam'
-        else:
-            h['texture_class'] = 'loam'
-        horizons.append(_fill_hydraulic_params(h))
-
-    return {
-        'source': 'vic_global',
-        'lat': float(best_row[2]),
-        'lon': float(best_row[3]),
-        'vic_grid_id': int(float(best_row[1])),
-        'horizons': horizons
-    }, None
-
-
 def _retrieve_soilgrids(lat, lon, num_horizons):
     """
     Retrieve soil data from ISRIC SoilGrids using the soilgrids Python package.
@@ -549,10 +431,7 @@ def process(args):
         result = None
         err = None
 
-        if source == 'vic_global':
-            result, err = _retrieve_vic_global(lat, lon, source_path, num_horizons)
-
-        elif source == 'soilgrids':
+        if source == 'soilgrids':
             result, err = _retrieve_soilgrids(lat, lon, num_horizons)
 
         elif source == 'gssurgo':

@@ -12,7 +12,7 @@
 | Stage | Name | Tools | Status | Notes |
 |-------|------|-------|--------|-------|
 | s1 | Domain Setup | `create_gru_hru.py`, `create_local_attributes.py` | COMPLETE | GRU/HRU from shapefile+DEM+landcover+soil |
-| s2 | Forcing Prep | `convert_vic_forcing_to_summa.py` | COMPLETE | VIC forcing -> SUMMA NetCDF with unit conversions |
+| s2 | Forcing Prep | `build_summa_forcing_from_reanalysis.py` | COMPLETE | Forcing source (cmfd / nasa_power / mswx, via the shared loader) -> SUMMA NetCDF with unit conversions |
 | s3 | Decisions | `configure_decisions.py` | COMPLETE | Full 35-category decision catalog with validation |
 | s4 | Parameters | `set_trial_parameters.py` | COMPLETE | 27 parameter ranges documented with units |
 | s5 | Initial Conditions | `create_initial_conditions.py` | COMPLETE | Cold-start state generation |
@@ -103,8 +103,8 @@ All options are documented in the tool and validated against SUMMA source code. 
 
 | Dimension | Status | Evidence |
 |-----------|--------|----------|
-| Forcing: VIC format | COMPLETE | `convert_vic_forcing_to_summa.py` with full unit conversion |
-| Forcing: Direct (non-VIC) | NOT SUPPORTED | Only VIC forcing adapter exists |
+| Forcing: direct from the source | COMPLETE | `build_summa_forcing_from_reanalysis.py --source cmfd|nasa_power|mswx` (shared loader); lapse correction against a reference elevation |
+| Forcing: other datasets (ERA5, a station) | NOT SUPPORTED | No reader; the loader would have to learn the dataset first |
 | Domain: Any shapefile | COMPLETE | `create_gru_hru.py` works with any shapefile + DEM |
 | Soil: STATSGO (STAS) tables | COMPLETE | Hardcoded in SUMMA lookup tables |
 | Soil: ROSETTA pedotransfer | AVAILABLE | Decision option exists but not tested |
@@ -112,7 +112,7 @@ All options are documented in the tool and validated against SUMMA source code. 
 | Land cover: USGS | AVAILABLE | Decision option exists |
 | Gauge: Generic | COMPLETE | HRU-based, no specific gauge system dependency |
 
-**Assessment**: SUMMA's domain setup is globally applicable (any shapefile + DEM + landcover + soil raster). The forcing pipeline is coupled to VIC, which means SUMMA can only run where VIC has already been set up. This is by design (VIC-SUMMA comparison workflow) but limits independent SUMMA usage.
+**Assessment**: SUMMA's domain setup is globally applicable (any shapefile + DEM + landcover + soil raster). The forcing tool reads the source directly: CMFD for China, NASA POWER (from 2001) and MSWX (from 1979) elsewhere. MSWX is slow for many HRUs (about 20 minutes per HRU location and year). [Updated 2026-10-02; the earlier text said forcing could only come from another model's forcing files.]
 
 ---
 
@@ -132,13 +132,13 @@ Only one basin tested. NSE=0.147 is poor but expected for uncalibrated SUMMA wit
 
 1. **No calibration tool** -- SUMMA has no built-in optimizer (unlike mHM). External calibration (e.g., Ostrich, MOCOM-UA) is standard practice but no KI tool wraps this. Without calibration, SUMMA cannot produce scientifically useful predictions (NSE=0.147 is not useful).
 
-2. **Forcing coupled to VIC only** -- The only forcing adapter converts VIC format. To run SUMMA independently (without first running VIC), a direct forcing adapter is needed for CMFD, MSWX, ERA5, or other global reanalysis products.
+2. **Forcing sources are three** -- CMFD, NASA POWER and MSWX through the shared loader. ERA5 or station data have no reader yet. MSWX point reads are slow for many-HRU domains (no many-point sub-daily reader for it).
 
 ### MODERATE GAPS
 
 3. **No observation-based physics selection** -- The compare_physics tool runs variants and computes output statistics, but does not compare against observations. It cannot answer "which physics option best matches observed streamflow?"
 
-4. **No SUMMA-native forcing adapter** -- SUMMA expects 7 forcing variables (pptrate, airtemp, SWRadAtm, LWRadAtm, windspd, airpres, spechum) in specific units. A direct adapter from CMFD/MSWX would bypass the VIC dependency.
+4. **Reference elevation for lapse correction** -- CMFD has its own elevation field; for NASA POWER and MSWX the cell elevation must be given as one number (`--reference_elev_m`) or the build stated as `--no_lapse`.
 
 5. **Incomplete incompatibility rules** -- Only 4 decision incompatibilities documented. SUMMA has more (e.g., certain canopySrad options require specific LAI_method). A comprehensive incompatibility matrix would prevent runtime crashes.
 
@@ -162,7 +162,7 @@ SUMMA's multi-physics capability is well-exploited in the KI. The decision catal
 
 - SUMMA's primary value (multi-physics comparison) is FULLY IMPLEMENTED
 - Calibration would improve performance but is a major effort (external optimizer integration) and lower priority than fixing mHM's calibration gap
-- The VIC-coupling dependency is by design (head-to-head comparison is the documented use case)
+- A head-to-head comparison with another model is done by naming the same forcing source for both, each through its own KI tool
 - Only 1 basin tested (Belly River), but the tools are basin-agnostic
 
 **Minor fixes recommended** (not full expansion):
@@ -175,7 +175,7 @@ SUMMA's multi-physics capability is well-exploited in the KI. The decision catal
 
 **If expansion is later prioritized**:
 
-4. **CMFD/MSWX direct forcing adapter** (HIGH effort) -- Would decouple SUMMA from VIC and enable independent global usage.
+4. **Many-point sub-daily reader for MSWX / NASA POWER** (MEDIUM effort, in the shared loader) -- would make multi-HRU builds outside China fast.
 
 5. **Calibration tool wrapping Ostrich/MOCOM-UA** (HIGH effort) -- Would enable scientifically useful predictions. Consider this only after mHM calibration is addressed first.
 
@@ -191,7 +191,7 @@ SUMMA's multi-physics capability is well-exploited in the KI. The decision catal
 | Diagnostic triplets | 26 (3 validated) | 18 (0 validated) | mHM (more battle-tested) |
 | Tested basins | 2 (Mosel, Bengbu) + Wangjiaba data KIs | 1 (Belly River) | mHM |
 | Performance achieved | NSE=0.77 (Mosel, tuned) | NSE=0.147 (Belly River, uncalibrated) | mHM |
-| Global readiness | Global L0 data, China forcing | VIC-coupled forcing only | mHM |
+| Global readiness | Global L0 data; forcing from CMFD (China), NASA POWER or MSWX (global) | MSWX slow for many HRUs | mHM |
 | Tool quality | 2 known bugs (slope, metrics) | 1 known gap (CRS check) | SUMMA |
 
 **Summary**: SUMMA has a more complete and polished KI structure, but mHM has been tested on more basins and has more diagnostic experience. Both lack calibration tools, which is the single biggest barrier to scientific utility. mHM should be expanded first (calibration unlocks MPR), then SUMMA calibration as a follow-up.

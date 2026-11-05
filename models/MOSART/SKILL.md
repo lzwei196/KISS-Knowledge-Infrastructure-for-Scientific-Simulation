@@ -29,14 +29,14 @@
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
 | to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-03 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Repository**: https://github.com/IMMM-SFA/mosartwmpy
 **Created by**: IMMM-SFA / PNNL (Travis Thurber et al.)
 **Last updated**: 2026-03-26
-**Stats**: 7 tools | 5 skill documents | 22 diagnostic triplets | ~2,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `validated`
 
 ---
@@ -112,7 +112,8 @@ This section explains intent and traps; `docs/format_spec.yaml` is the contract.
 |-------|--------|----------------------|
 | D8 river network triplet | MERIT-Hydro-derived Lohmann ArcASCII `direc` / `xmask` / `frac` files | `tools/delineate_d8_from_merit.py` |
 | VIC domain bridge | Delineated `frac` grid | `tools/frac_to_basin_shp.py` |
-| MOSART grid domain | Validated D8 network plus MOSART geometry defaults/fills | `tools/build_mosart_grid.py`, then `tools/convert_grid_parameters.py --validate-only` |
+| Cell elevation (channel / hillslope slopes) | DEM: China 90 m `data/dem/china_dem_90m/china_dem_90m.tif` inside China, MERIT DEM tiles `KISSPATH_DATA/MERIT_DEM/` elsewhere (mean of the DEM pixels in each cell) | `tools/build_mosart_grid.py --dem` |
+| MOSART grid domain | MERIT D8 triplet + DEM elevation plus MOSART geometry defaults | `tools/build_mosart_grid.py --dem ... --expected-area-km2 ...`, then `tools/convert_grid_parameters.py --validate-only` |
 | Reservoir parameters | GRanD reservoir inputs and ISTARF coefficients | `create_grand_parameters` |
 | Mean monthly reservoir flow/demand | Prepared Parquet schedules | External preparation, consumed by mosartwmpy |
 
@@ -182,7 +183,7 @@ Other dag outputs: `channel_outflow`, `STORAGE_LIQ`, `WRM_STORAGE`, `WRM_SUPPLY`
 | `tools/delineate_d8_from_merit.py` | Build a Lohmann-style D8 network triplet at the target gauge | MERIT-Hydro tiles and gauge location | ArcASCII `direc`, `xmask`, `frac` |
 | `tools/frac_to_basin_shp.py` | Derive the VIC basin shapefile from the delineated `frac` grid | D8 `frac` grid | Basin shapefile for VIC |
 | `tools/convert_runoff_forcing.py` | Convert existing runoff to mosartwmpy forcing | Gridded runoff NetCDF | `QOVER` / `QDRAI` NetCDF in mm/s |
-| `tools/build_mosart_grid.py` | Build a MOSART domain grid from a validated D8 network | D8 network triplet | Full MOSART grid NetCDF |
+| `tools/build_mosart_grid.py` | Build a MOSART domain grid from a D8 network | D8 network triplet (from `delineate_d8_from_merit.py`) + DEM (`--dem`) | Full MOSART grid NetCDF (+ `elev` for audit) |
 | `tools/convert_grid_parameters.py` | Validate/fill an existing MOSART grid domain NetCDF | Grid domain NetCDF | Validated MOSART grid NetCDF |
 | `tools/run_mosartwmpy.py` | Execute the real mosartwmpy model through BMI | `config.yaml` plus prepared inputs | Monthly output NetCDF files and restarts |
 | `tools/parse_mosart_output.py` | Extract output time series for scoring or coupling | MOSART output NetCDF | CSV time series |
@@ -225,7 +226,7 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before
 | T002 | Discharge is approximately 1000x higher than expected | Runoff units are m/s but mosartwmpy expects mm/s | Convert m/s to mm/s or use `convert_runoff_forcing.py --source-units m/s` |
 | T003 | All output variables are zero or NaN | Grid mask excludes all cells, or runoff is zero at grid locations | Check active grid cells, runoff maxima, and exact lat/lon alignment |
 | T021 | River discharge is exactly 0 at the gauge cell, but a neighbouring cell carries the full basin flow | The gauge cell was made the terminal `dnID == -1` outlet | Make interior gauges through-cells; use `build_mosart_grid.py` and score at `scoring_lat` / `scoring_lon` |
-| T022 | No gridded runoff / QOVER-QDRAI file for a China basin; `convert_grid_parameters --source-type merit` produces nothing new | MOSART has no runoff-generation tool, and `convert_grid_parameters` only validates an existing grid | Run the VIC KI first, convert VIC flux to runoff forcing, and build the MOSART grid from the D8 triplet |
+| T022 | No gridded runoff / QOVER-QDRAI file for a China basin; `convert_grid_parameters --source-type merit` produces nothing new | MOSART has no runoff-generation tool, and `convert_grid_parameters` only validates an existing grid | Run the VIC KI first and convert its runoff RESULT; build MOSART's own domain with `delineate_d8_from_merit.py` + `build_mosart_grid.py --dem` |
 
 ## 10. Coupling Interfaces
 
@@ -240,7 +241,10 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before
 | Gauge scoring / observed discharge comparison | `RIVER_DISCHARGE_OVER_LAND_LIQ` | m3/s | Output averaging window, commonly daily or monthly |
 | Managed-water analysis | `WRM_SUPPLY`, `WRM_DEFICIT`, `WRM_STORAGE` | m3/s or m3 | Output averaging window |
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Sourced from `knowledge_infrastructure.yaml` and `docs/validation_convention.yaml`; do
 not loosen, transfer, or invent thresholds. Null convention bands are written as
@@ -249,24 +253,20 @@ not loosen, transfer, or invent thresholds. Null convention bands are written as
 | Source field | Value |
 |--------------|-------|
 | Validation tier | `validated` |
-| Manifest tier justification | measured: NSE=0.837, KGE=0.874, R=0.919, 2 scorecard(s) |
-| Manifest metrics | best_nse=0.8367, best_kge=0.8741, best_r=0.9186 |
 | Rank-1 judged output | `RIVER_DISCHARGE_OVER_LAND_LIQ` |
 
 ### Performance Metrics - judged against the field's bar, not intuition
 
-| Dag variable | Metric | Direction | Convention band (cited) | Achieved value in sourced KI files |
-|--------------|--------|-----------|--------------------------|-----------------------------------|
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) | best_nse=0.8367 in `knowledge_infrastructure.yaml` |
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) | not supplied by `knowledge_infrastructure.yaml` |
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) | same convention appears for both point and spatial time-series shapes |
-| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) | same convention appears for both point and spatial time-series shapes |
-| `WRM_SUPPLY` | pbias | zero_centered | no cited threshold | not supplied by `knowledge_infrastructure.yaml` |
+| Dag variable | Metric | Direction | Convention band (cited) |
+|--------------|--------|-----------|--------------------------|
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) |
+| `WRM_SUPPLY` | pbias | zero_centered | no cited threshold |
 
-The rank-1 NSE value `best_nse=0.8367` exceeds the cited very_good band
-(`moriasi2007`, `swat_gomti2019`) for
-`RIVER_DISCHARGE_OVER_LAND_LIQ`. No achieved PBIAS value is stated in the manifest, so
-do not infer one. For `WRM_SUPPLY`, the convention explicitly has no cited threshold, so
+The same NSE and PBIAS bars apply to both point and spatial time-series shapes.
+For `WRM_SUPPLY`, the convention explicitly has no cited threshold, so
 do not transfer the streamflow PBIAS bands (`moriasi2007`, `swat_gomti2019`).
 
 ### Data Replacement Tracking
@@ -274,7 +274,8 @@ do not transfer the streamflow PBIAS bands (`moriasi2007`, `swat_gomti2019`).
 | Component | Source | Status | Notes |
 |-----------|--------|--------|-------|
 | Runoff forcing | Upstream LSM runoff converted by `tools/convert_runoff_forcing.py` | Pipeline-supported | MOSART cannot synthesize runoff |
-| Grid topology | D8 triplet converted by `tools/build_mosart_grid.py` | Pipeline-supported | Gauge cell must be a through-cell for interior gauges |
+| Grid topology | MERIT D8 triplet (`tools/delineate_d8_from_merit.py`) converted by `tools/build_mosart_grid.py` | Pipeline-supported | Gauge cell must be a through-cell for interior gauges |
+| Cell elevation | DEM via `tools/build_mosart_grid.py --dem` | Pipeline-supported | No fill: an active cell without DEM pixels stops the tool |
 | Demand | Water-demand NetCDF or ABM | Optional / input-dependent | Active when water management is enabled |
 | Reservoirs | GRanD parameters and schedules | Optional / input-dependent | Units must be MCM and km2 at input |
 | Output parsing | `tools/parse_mosart_output.py` | Pipeline-supported | Score rank-1 discharge at the recorded scoring cell |
@@ -298,7 +299,7 @@ against the cited convention bars above.
 **Data Validation Reference**: This model takes runoff from upstream hydrological models (VIC, mHM, etc.) as input.
 See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
 
-### REAL-CASE APPLICABILITY — read before attempting a new gauge/period (verified 2026-06-21, MOSART @ HYDAT 05BB001)
+### REAL-CASE APPLICABILITY — read before attempting a new gauge/period
 
 MOSART-WM is a **routing model, not a rainfall-runoff model**. It cannot generate
 discharge from meteorological forcing alone — it requires a **gridded runoff field
@@ -309,61 +310,41 @@ is a CATEGORY ERROR for MOSART: its "forcing" is runoff, not meteorology. There 
 gridded-runoff product on the server (no ERA5-Land/GSWP3/runoff in the dataset index);
 the only runoff source is to run the VIC KI over the basin first.
 
-### CHINA BASIN REAL-CASE — SOLVED via VIC->MOSART (verified 2026-07-11, MOSART @ 唐乃亥/Tangnaihai, upper Yellow R)
+### CHINA BASIN REAL-CASE — VIC runoff routed on MOSART's own domain
 
-The two blockers of the Bengbu/Bow runs are BOTH now closable:
-1. **Missing grid-builder → FIXED.** New KI tool `tools/build_mosart_grid.py` converts a
-   VALIDATED D8 flow-direction network (the ArcASCII `<STA>_direc.txt` + `<STA>_xmask.txt`
-   channel length + `<STA>_frac.txt` that the VIC/Lohmann routing KI already builds &
-   validates) into a full mosartwmpy domain grid (all 20 REQUIRED_VARIABLES). Because the
-   topology is inherited from a routing network independently confirmed at the gauge
-   (VIC+Lohmann NSE 0.63 at Tangnaihai), the main channel PROVABLY reaches the gauge — the
-   exact property the Bengbu synthetic D8 lacked. For Tangnaihai it yields 251 cells,
-   123,042 km² (+0.9% vs published 121,972), and a SINGLE outlet AT the gauge cell.
-   `convert_grid_parameters.py --validate-only` → 0 errors, 0 warnings.
-2. **Runoff exists once VIC is run.** All VIC Tangnaihai inputs (soil/veg/forcing/global
-   param) persist in `outputs/tangnaihai/vic_temp/`; re-running `vic_classic.exe -g
-   global_param_tangnaihai.txt` (~251 cells, minutes) regenerates per-cell flux, which the
-   runner grids and feeds to `convert_runoff_forcing.py` (cols 16=OUT_RUNOFF, 17=OUT_BASEFLOW,
-   mm/day, skiprows=3).
+MOSART needs two things, and they come from different places:
+1. **Its own domain, built from data sources with its own tools** (never from VIC set-up
+   files — owner rule 2026-10-02):
+   - `tools/delineate_d8_from_merit.py` → ArcASCII `direc` / `xmask` / `frac` from MERIT Hydro,
+     gated on the published drainage area (`--published-area-km2`). Give a `--bbox` that holds
+     the WHOLE basin; use the same resolution as the
+     runoff grid (0.25°).
+   - `tools/build_mosart_grid.py --dem <DEM> --expected-area-km2 <published>` → full
+     mosartwmpy grid (all 20 REQUIRED_VARIABLES). Cell elevation = mean of the DEM pixels in
+     the cell (China 90 m DEM inside China, MERIT DEM elsewhere); no fill.
+   - `convert_grid_parameters.py --validate-only` → 0 errors, 0 warnings.
+2. **Runoff = another model's RESULT** (a coupling on results): run the VIC KI over the basin
+   first and use its flux files. The runner
+   grids flux cols 16=OUT_RUNOFF, 17=OUT_BASEFLOW (mm/day, skiprows=3) onto the MOSART mesh and
+   feeds `convert_runoff_forcing.py`. Check that EVERY MOSART cell with frac>0 has a runoff
+   value — a cell with no runoff silently routes zero.
 
-**GAUGE-CELL OUTFLOW TRAP (critical, cost the Bengbu run its number):** a cell with
+**GAUGE-CELL OUTFLOW TRAP (critical, T021):** a cell with
 `dnID == -1` is treated by mosartwmpy as the terminal OCEAN outlet, and its
 `RIVER_DISCHARGE_OVER_LAND_LIQ` is **0** — the basin discharge then appears in the cell
-one step UPSTREAM. An interior gauge (Tangnaihai is NOT a river mouth) must therefore be a
+one step UPSTREAM. An interior gauge (one that is not a river mouth) must therefore be a
 THROUGH-cell: `build_mosart_grid.py` redirects the primary outlet to a steepest-descent
 inactive neighbour (new frac=0 sink) so the gauge cell's channel_outflow == basin
 discharge, and records the cell to score in grid attrs `scoring_lat`/`scoring_lon`. Score
 `parse_mosart_output.py --mode point` at THAT cell, not at the nominal lat/lon.
 
 Full pipeline & scoring live in `models/MOSART/run_and_score.py` (resumable, detached):
-VIC flux → grid runoff (convert_runoff_forcing) → build_mosart_grid → run_mosartwmpy
+VIC flux (result) → delineate_d8_from_merit → build_mosart_grid --dem → grid runoff
+(convert_runoff_forcing) → run_mosartwmpy
 (2005-2016, 3h step, WM disabled — Longyangxia reservoir is DOWNSTREAM of Tangnaihai so the
 gauge is quasi-natural) → parse+score. Spin-up 2005-06; cal 2007-11 / val 2012-16.
 
-### BENGBU / HUAI follow-up (verified 2026-06-22, MOSART @ gauge 51080) — runoff EXISTS but topology still blocks
-
-Unlike Bow@Banff, gridded VIC 5.1.0 runoff DOES exist for the Huai basin
-(`KISSPATH_OUTPUTS/bengbu_1980_1990_cama/cama_input/bengbu_runoff_1d_{Y}.nc`,
-0.25°, 16×24, combined `Runoff` mm/day, 1980-1990). The full real-binary chain runs:
-`convert_runoff_forcing` (combined-runoff split + lat-orient fix, see below) →
-`convert_grid_parameters` (validate) → `run_mosartwmpy` (1980-1990, ~30 min, 132 monthly
-files) → `parse_mosart_output`. **But the result is still structurally invalid:**
-- The only Bengbu grid available is the SYNTHETIC one from the dissection
-  (`auto_dissect*/_work/MOSART/bengbu_mosart_grid.nc`); the KI has no real delineation tool.
-  Its synthetic D8 over-accumulates to 242,644 km² (true basin 121,330) and routes the main
-  channel to cell (33.375,117.625) — NOT the Bengbu gauge.
-- Real-binary discharge at the true gauge cell (32.875,117.375) is **exactly 0** for the
-  whole run (gauge is off the synthetic channel). The subdomain "32.94,117.35" extracts a
-  DISCONNECTED sub-basin whose best outlet peaks ~28 m³/s.
-- Best-available-outlet metrics vs obs 51080 (1980-1990, point_time_series):
-  **NSE −0.39, r 0.46, KGE −0.38, PBIAS −91%** (sim mean 85 vs obs 942 m³/s, ~91% low).
-- The dissection's reported "NSE 0.286 / r 0.828 / PBIAS +44" came from a HAND-CODED routing
-  surrogate (`bengbu_validate_fast.py`, a custom Python accumulation loop), NOT mosartwmpy —
-  it is NOT reproducible with the real binary. Treat that number as non-KDT-compliant.
-- Conclusion: the missing-basin-delineation block applies to China basins too, even when
-  upstream VIC runoff is present. To get a valid Bengbu discharge you need a CORRECT routing
-  grid (MERIT-Hydro topology conditioned on the Huai network), which the KI cannot build.
+### Runoff conversion and tool limits
 
 `convert_runoff_forcing.py` upgrades made 2026-06-22 (now in canonical KI):
 - `--total-var <name> --surface-fraction <f>`: split a single COMBINED total-runoff field
@@ -381,34 +362,29 @@ What the KI tools do and do NOT do:
   logic — it just opens the input and checks fields). There is no basin-delineation /
   grid-building tool.
 
-Consequence for a standalone gauge real-case (e.g. HYDAT 05BB001 Bow R. at Banff, 2006–2015):
-- The bundled NLDAS 1/8° CONUS grid (`input/domains/mosart_conus_nldas_grid.nc`) DOES
-  cover Bow at Banff (cell 51.1875,-115.5625; subdomain extraction works). The binary +
-  full chain (run_mosartwmpy → parse_mosart_output) run end-to-end.
-- BUT the only runoff that ships is `runoff_1981_05.nc` (May 1981 CONUS). NO gridded runoff
-  exists on the server for North America 2006–2015 (all VIC outputs are China basins), and
-  the KI provides no way to make it. **The requested 2006–2015 discharge comparison is
-  therefore structurally uncomputable** without first running VIC/CLM for that basin+period.
-- Best-achievable demo (May-1981 cold start, Bow subdomain): freshet onset timing is
-  captured (r≈0.80 vs HYDAT daily) but magnitude is ~95% low (NSE≈−1.0) — dominated by
-  cold-start channel filling + only-one-month forcing. Not a calibratable real-case.
+For a gauge inside the bundled NLDAS 1/8° CONUS grid
+(`input/domains/mosart_conus_nldas_grid.nc`: the lower 48 US states plus a strip of
+southern Canada; check that the gauge's cell is in the grid first): the grid can serve
+as the domain (subdomain extraction works), but the only runoff that ships is the
+tutorial `runoff_1981_05.nc`
+(May 1981 CONUS). It is not a stand-in for real runoff: a one-month cold-start run is
+dominated by channel filling, so discharge is far too low (timing may still look right)
+and it cannot be calibrated.
 
 To run a genuine new-basin real-case you must FIRST produce gridded runoff for the period
-(run the VIC KI over the basin), then route it here. Treat MOSART as the second stage of a
-VIC→MOSART pipeline, never standalone.
+(run an LSM such as the VIC KI over the basin), then route that RESULT here. MOSART's own
+domain still comes from its own tools (`delineate_d8_from_merit.py`, `build_mosart_grid.py --dem`),
+not from the LSM's set-up files.
 
 ### DOMAIN-CONSISTENCY TRAP — the VIC domain and the MOSART domain must be the SAME cells
 
-(Found 2026-07-19 at Wangjiaba; it silently invalidated the 2026-07-11 run.)
-
 The MOSART domain comes from the delineated triplet; the VIC domain comes from a
 SHAPEFILE fed to the VIC KI's `s1_grid/make_basin_grid_nc.py` via `VIC_BASIN_SHP`.
-Nothing forced them to agree, so it was possible — and it happened — to route a
-correct-looking network over a domain covering only **52% of the published basin
-area** (Wangjiaba: 15,959 of 30,600 km²; the whole northern Hong/Ru headwater arm up
-to ~34°N was outside the ArcASCII bbox). The run still completed, the network was
-internally coherent, and it scored NSE 0.72 — the truncation showed up only as a
-persistent low bias (PBIAS −24%). **A plausible NSE does not prove the domain is
+Nothing forced them to agree, so it is possible to route a correct-looking network
+over a domain that covers only part of the published basin area (part of the basin
+outside the ArcASCII bbox). The run still completes, the network is internally
+coherent and the NSE can look good — the truncation shows up only as a persistent
+low bias. **A plausible NSE does not prove the domain is
 complete.** Guard it with BOTH of:
 
 1. `frac_to_basin_shp.py` — derive the VIC shapefile FROM the delineated frac, so
@@ -418,8 +394,7 @@ complete.** Guard it with BOTH of:
    neighbours.)
 2. `build_mosart_grid.py --expected-area-km2 <published> [--area-tol 0.10]` — hard
    gate: the frac-weighted `areaTotal` AT THE SCORING CELL must match the published
-   basin area. Exits 1 and writes no NetCDF on failure. The reference standard is
-   Tangnaihai's +0.9%; the truncated Wangjiaba domain trips it at −47.84%. The gate
+   basin area. Exits 1 and writes no NetCDF on failure. The gate
    deliberately does NOT fall back to `areaTotal[active].max()` when no scoring cell
    was identified — it hard-fails, because that fallback could pass a network whose
    main channel never reaches the gauge.
@@ -437,7 +412,7 @@ CLI installed; use `mdb-tools`).
 
 ## Overview
 
-This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The 7 validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.
+This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.
 
 **What MOSART-WM does**: Grid-based river routing and water management model. Simulates:
 - Hillslope overland flow (Manning's equation on hillslope surface)
@@ -525,7 +500,7 @@ python -m mosartwmpy.download
 | 0a | Delineation | `delineate_d8_from_merit.py` | MERIT-Hydro D8 → Lohmann ArcASCII direc/xmask/frac at the gauge |
 | 0b | LSM domain bridge | `frac_to_basin_shp.py` | delineated frac → basin shapefile for the VIC KI's `VIC_BASIN_SHP` |
 | 1 | Runoff forcing | `convert_runoff_forcing.py` | CLM/VIC/Livneh runoff to mosartwmpy NetCDF (mm/s) |
-| 2 | Grid preparation | `build_mosart_grid.py` (+ `convert_grid_parameters.py --validate-only`) | triplet → full 20-variable domain grid, with the `--expected-area-km2` gate |
+| 2 | Grid preparation | `build_mosart_grid.py --dem` (+ `convert_grid_parameters.py --validate-only`) | triplet + DEM → full 20-variable domain grid, with the `--expected-area-km2` gate |
 | 3 | Demand preparation | (manual or ABM) | Water demand NetCDF (m3/s totalDemand) |
 | 4 | Reservoir setup | `create_grand_parameters` (CLI) | GRanD reservoir parameters + ISTARF coefficients |
 | 5 | Configuration | config.yaml | Simulation name, dates, paths, WM toggle |
@@ -708,7 +683,7 @@ Q_m_s = Q_m3s / area_m2
 | Tool | Stage | Script Path | Lines | Purpose |
 |------|-------|-------------|------:|---------|
 | `convert_runoff_forcing` | s1 | `tools/convert_runoff_forcing.py` | ~200 | VIC/CLM/generic runoff to mosartwmpy NetCDF |
-| `build_mosart_grid` | s2 | `tools/build_mosart_grid.py` | ~290 | **Build** domain grid from a validated D8 network (direc/xmask/frac) — the missing grid-builder; sets interior gauge as through-cell + records scoring cell |
+| `build_mosart_grid` | s2 | `tools/build_mosart_grid.py` | ~450 | **Build** domain grid from a D8 network (direc/xmask/frac from `delineate_d8_from_merit.py`) + DEM elevation (`--dem`); sets interior gauge as through-cell + records scoring cell |
 | `convert_grid_parameters` | s2 | `tools/convert_grid_parameters.py` | ~220 | **Validate/fill** an EXISTING grid domain NetCDF (NOT a builder; `--source-type merit` is a no-op — use `build_mosart_grid` to build) |
 | `run_mosartwmpy` | s6 | `tools/run_mosartwmpy.py` | ~180 | Execute model via BMI with validation |
 | `parse_mosart_output` | s7 | `tools/parse_mosart_output.py` | ~200 | Extract time series from output NetCDF to CSV |

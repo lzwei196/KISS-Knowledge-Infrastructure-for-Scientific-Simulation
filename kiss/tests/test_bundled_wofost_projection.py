@@ -51,7 +51,7 @@ def test_real_bundled_wofost_setup_then_fresh_gui_project_and_reopen(short_works
     assert result["shared_setup_projection"] and result["fresh_gui_project_projection"]
     assert result["retained_project_reopen"] and result["saved_runtime_and_helpers_bound"]
     assert "preflight_check.py" in result["source_files"]
-    assert "tools/s3_weather_prep/convert_vic_to_pcse_weather.py" in result["source_files"]
+    assert "tools/s3_weather_prep/build_pcse_weather_from_source.py" in result["source_files"]
     assert result["source_unchanged"]
     assert not any(result[key] for key in
         ("preflight_passed", "model_execution", "scientific_validation", "frozen_code_execution"))

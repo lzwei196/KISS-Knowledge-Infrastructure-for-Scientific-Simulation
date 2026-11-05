@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain:** Ocean / Coastal / Tsunami / Storm Surge
 **Creator:** auto_dissect
 **Last Updated:** 2026-03-26
-**Stats:** 4 tools, 5 skill docs, 18 diagnostic triplets, ~1,200 lines of Python
+**Stats:** current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation Status:** example_validated (bowl-slosh analytical solution)
 
 ---
@@ -458,7 +458,7 @@ ki/
 │   ├── s5_execution.md              # Stage 5 skill doc
 │   └── s6_output_analysis.md        # Stage 6 skill doc
 └── diagnostics/
-    └── triplets.yaml                  # 18 symptom→diagnosis→remedy entries
+    └── triplets.yaml                  # diagnostic triplets (count: KI map)
 ```
 
 ---

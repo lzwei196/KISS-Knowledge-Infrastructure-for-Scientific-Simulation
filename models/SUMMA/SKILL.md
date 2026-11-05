@@ -27,16 +27,16 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (19 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (34 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (33 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -51,7 +51,6 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s1_domain_setup/create_gru_hru.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain_setup/create_gru_hru.py --help` |
 | `tools/s1_domain_setup/create_local_attributes.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain_setup/create_local_attributes.py --help` |
 | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --help` |
-| `tools/s2_forcing_prep/convert_vic_forcing_to_summa.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_forcing_prep/convert_vic_forcing_to_summa.py --help` |
 | `tools/s3_decisions/configure_decisions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_decisions/configure_decisions.py --help` |
 | `tools/s4_parameters/set_trial_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameters/set_trial_parameters.py --help` |
 | `tools/s5_initial_conditions/create_initial_conditions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_initial_conditions/create_initial_conditions.py --help` |
@@ -67,7 +66,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s8_routing/run_mizuroute.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_routing/run_mizuroute.py --help` |
 | `tools/s8_routing/summa_to_mizuroute.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_routing/summa_to_mizuroute.py --help` |
 
-*19 public tools; `_`-prefixed helpers and packaging files excluded.*
+*18 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -76,8 +75,12 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-SUMMA forcing tool: `convert_vic_forcing_to_summa.py` — Converts VIC forcing to SUMMA NetCDF format.
+**Build the forcing straight from the forcing source** with the KI's one forcing tool,
+`tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --source cmfd|nasa_power|mswx`
+(no default source). It reads the source through the shared loader
+`ki_tools_common.load_forcing` (sub-daily: `load_subdaily_forcing_points` for CMFD,
+`load_hourly_forcing` for NASA POWER and MSWX) at every HRU of `attributes.nc`.
+SUMMA needs sub-daily forcing; `load_daily_forcing` is not for SUMMA.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -100,7 +103,7 @@ SUMMA forcing tool: `convert_vic_forcing_to_summa.py` — Converts VIC forcing t
 | Stage | Name | Key Tool | Output |
 |-------|------|----------|--------|
 | s1 | Domain Setup (GRU/HRU) | `create_gru_hru.py`, `create_local_attributes.py` | `attributes.nc` |
-| s2 | Forcing Preparation | `convert_vic_forcing_to_summa.py` | `forcing_YYYY.nc` |
+| s2 | Forcing Preparation | `build_summa_forcing_from_reanalysis.py` | `forcing_YYYY.nc` |
 | s3 | Model Decisions | `configure_decisions.py` | `decisions.txt` |
 | s4 | Parameter Configuration | `set_trial_parameters.py` | `trialParams.nc` |
 | s5 | Initial Conditions | `create_initial_conditions.py` | `coldState.nc` |
@@ -136,8 +139,7 @@ Other dag outputs named by this KI: `scalarTotalET`, `scalarSWE`,
 |-------|------|--------|---------|
 | s1 | create_gru_hru | `tools/s1_domain_setup/create_gru_hru.py` | Create GRU/HRU structure from shapefile + DEM |
 | s1 | create_local_attributes | `tools/s1_domain_setup/create_local_attributes.py` | Generate SUMMA attributes NetCDF |
-| s2 | convert_vic_forcing_to_summa | `tools/s2_forcing_prep/convert_vic_forcing_to_summa.py` | VIC forcing -> SUMMA NetCDF with unit conversions |
-| s2 | build_summa_forcing_from_reanalysis | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | CMFD/MSWX -> SUMMA multi-HRU forcing NetCDF, sub-daily, lapse-corrected. Use when there is no VIC run to borrow forcing from |
+| s2 | build_summa_forcing_from_reanalysis | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | Forcing source (cmfd / nasa_power / mswx, through the shared loader) -> SUMMA multi-HRU forcing NetCDF, sub-daily, lapse-corrected, period-ending stamps. The only forcing tool. |
 | s3 | configure_decisions | `tools/s3_decisions/configure_decisions.py` | Generate decisions file with validation |
 | s4 | set_trial_parameters | `tools/s4_parameters/set_trial_parameters.py` | Generate trial parameters NetCDF |
 | s5 | create_initial_conditions | `tools/s5_initial_conditions/create_initial_conditions.py` | Generate cold-start initial conditions |
@@ -247,16 +249,13 @@ with `paramCheck/height of canopy top is less than the height of the canopy bott
 For **Chinese basins**: `MODIFIED_IGBP_MODIS_NOAH`. The USGS table has no rice paddy
 type and the crosswalk is imprecise.
 
-**Worked failure (Jinghong, Lancang, 142,695 km², 2026-07-10).** A driver derived
-`vegTypeIndex` from elevation — `z<1800 m → USGS 13`, `<3000 m → 15`, else `7`.
-AVHRR reads **closed shrubland** (canopy 1.1 m, LAI 0.0 in winter) for all 16 lowland
-sub-basins and 15 of 18 mid-elevation ones. The rule gave 42% of the basin — the
-wettest 42% — an evergreen 16–20 m canopy with LAI 4.5 in *every month*, which
-transpired and re-evaporated intercepted water right through the dry season:
-`scalarTotalET` 766.8 mm/yr against a `P − Q_obs` ceiling of 555 mm/yr, i.e. PBIAS
-−66%. Three rounds of routing and calibration work chased a bias that vegetation had
-already made unreachable. **Check `scalarTotalET < P − Q_obs` before touching routing
-or parameters** — routing is mass-conserving and cannot move PBIAS.
+**Worked failure (dt_027).** Deriving `vegTypeIndex` from elevation instead of land
+cover can give a shrubland basin an evergreen 16–20 m canopy with LAI 4.5 in *every
+month*, which transpires and re-evaporates intercepted water right through the dry
+season, so `scalarTotalET` exceeds the `P − Q_obs` ceiling and PBIAS stays stuck
+strongly negative. Routing and calibration work cannot reach that bias. **Check
+`scalarTotalET < P − Q_obs` before touching routing or parameters** — routing is
+mass-conserving and cannot move PBIAS.
 
 ### 2b. Soil Parameter Estimation — ROSETTA van Genuchten (RECOMMENDED)
 
@@ -332,8 +331,7 @@ About the histogram itself:
 bins, so with daily forcing the delay can span 2000 days. Mean delay =
 `routingGammaShape × routingGammaScale`. The **compiled default scale is 20000 s
 (5.6 h)** — effectively no attenuation. Leaving it at the default is why lumped
-runs on large basins produce a hydrograph far too flashy for the gauge:
-Bengbu (121,330 km²) scored NSE −2.56 with r 0.38.
+runs on large basins produce a hydrograph far too flashy for the gauge.
 
 **Rule of thumb**: basins > ~5,000 km² need an explicit `routingGammaScale`.
 Start at scale ≈ (basin concentration time)/shape, i.e. 1–10 days for 10⁴–10⁵ km².
@@ -355,21 +353,17 @@ SUMMA output variables use **two different unit systems in the same file**:
 
 ### 4. Input Unit Conversions (Silent Error Zone)
 
-| Variable | VIC Unit | SUMMA Unit | Conversion | If wrong |
+The forcing tool does these; the table is for checking its output, not for doing by hand.
+
+| Variable | Source unit | SUMMA Unit | Conversion | If wrong |
 |----------|----------|------------|------------|----------|
-| Precipitation | mm/3hr | kg m-2 s-1 | / 10800 | Runoff 8x wrong |
+| Precipitation | mm in the step | kg m-2 s-1 | / step seconds (10800 or 3600) | Runoff 3-8x wrong |
 | Temperature | C | K | + 273.15 | Energy balance fails |
-| Pressure | kPa | Pa | * 1000 | ET 100x wrong |
+| Pressure | Pa | Pa | none (never kPa) | ET 100x wrong |
 | Shortwave | W/m² | W/m² | none | — |
 | Longwave | W/m² | W/m² | none | — |
 | Humidity | kg/kg | kg/kg | none | — |
 | Wind | m/s | m/s | none | — |
-
-**CRITICAL: VIC Column Order Mismatch (dt_023)**
-
-HydroCraft VIC forcing uses column order: `AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND` (7 cols).
-Classic VIC documentation describes: `PREC, TMAX, TMIN, WIND, SW, LW, PRESSURE, QAIR` (8 cols).
-The `convert_vic_forcing_to_summa.py` tool defaults to `--column_order hydrocraft`. Use `--column_order classic` only for non-HydroCraft VIC setups.
 
 **Always verify forcing after conversion:**
 ```python
@@ -395,7 +389,7 @@ SUMMA's runtime scales linearly with the number of HRUs. The `create_gru_hru.py`
 
 **Guidance from Clark et al. 2015**: GRUs are spatially contiguous with no lateral moisture exchange; HRUs within a GRU can share a conceptual aquifer. Use multi-HRU for mountain basins where sub-grid variability matters (e.g., north vs south facing slopes). For flat/uniform basins, 1 HRU per GRU is standard practice.
 
-**Example**: Bengbu 0.25° with 224 GRUs: single-HRU ran in 98 min; multi-HRU (8304 HRUs) was estimated at 35+ hours.
+**Example**: a 0.25° domain with 224 GRUs: single-HRU ran in 98 min; multi-HRU (8304 HRUs) was estimated at 35+ hours.
 
 ### 5b. Initial Conditions — matric head and moisture MUST agree (dt_034)
 
@@ -428,21 +422,16 @@ negative). **s4 must now run BEFORE s5.** Read back the stdout JSON
 is right. Without `--trial_params_nc` the tool still runs but logs a loud
 WARNING and falls back to the contradictory constant.
 
-Measured on Tangnaihai (74 GRUs, 9-month cold-start smoke, identical forcing /
-parameters / decisions): Jan–Sep runoff **0.33 mm → 67.1 mm**.
-
 ### 6. Spinup Required — Two-Phase Strategy for Subtropical Basins
 
 > **Scope check first.** The two-phase strategy below is a remedy for basins
-> where `nrg_flux` **fails to converge from cold start** (documented on
-> subtropical Bengbu). It is not a universal prescription, and applying it
+> where `nrg_flux` **fails to converge from cold start** (seen on a
+> subtropical basin). It is not a universal prescription, and applying it
 > where it is not needed does harm: `presTemp` produces **zero ET**, so a
 > `presTemp` spinup year fills the soil with water that should have evaporated
 > and hands phase 2 a wetter-than-real profile. **Run a short cold-start
 > `nrg_flux` smoke first** — if it completes, use single-phase `nrg_flux` and
-> discard the spinup year. On Tangnaihai (74 GRUs, alpine, 4160 m) a 9-month
-> cold-start `nrg_flux` smoke ran to completion with no convergence failures in
-> 2 min, so single-phase was the correct choice.
+> discard the spinup year.
 >
 > If the real problem is that runoff stays at zero, the cause is usually the
 > initial **soil moisture**, not the temperature boundary condition — fix
@@ -467,7 +456,7 @@ Cold-start initial conditions produce 1-2 years of unrealistic output. More crit
 - `nrg_flux` boundary condition is used (full energy balance triggers the stiff phase-change equations)
 - Large distributed domains (>50 GRUs) — more HRUs means more chances for one to fail
 
-**Confirmed behavior on Bengbu (Huai River, 32-35°N)**:
+**Behavior seen on a subtropical basin with brief winters**:
 - `nrg_flux` crashes at the first freezing event (Dec/Jan) for ALL GRUs
 - `presTemp` runs but produces zero ET → zero runoff (diagnostic mode only)
 - Summer start (Jul-Nov) runs successfully for 5 months, crashes when Dec freezing begins
@@ -479,7 +468,7 @@ Cold-start initial conditions produce 1-2 years of unrealistic output. More crit
 
 **For subtropical/temperate basins** (China, SE Asia, S. Europe): Use VIC, mHM, HYPE, or wflow instead. These models handle seasonal freezing without convergence issues.
 
-**USGS vegetation table limitation**: No rice paddy or subtropical cropland types. The `create_gru_hru.py` tool now applies IGBP→USGS crosswalk (dt_024) to avoid the critical misclassification where AVHRR class 11 (Wetland/Cropland, 74% of Bengbu) was mapped to USGS class 11 (Deciduous Broadleaf Forest, 20m canopy) — causing `canopySnow` convergence failures due to excessive canopy snow interception on what should be flat rice paddies.
+**USGS vegetation table limitation**: No rice paddy or subtropical cropland types. The `create_gru_hru.py` tool now applies IGBP→USGS crosswalk (dt_024) to avoid the critical misclassification where AVHRR class 11 (Wetland/Cropland) was mapped to USGS class 11 (Deciduous Broadleaf Forest, 20m canopy) — causing `canopySnow` convergence failures due to excessive canopy snow interception on what should be flat rice paddies.
 
 ### 6. HRU ID Consistency
 
@@ -487,15 +476,19 @@ ALL NetCDF files (attributes, forcing, coldState, trialParams) must have identic
 
 ---
 
-## VIC Coupling
+## Comparing SUMMA with another model (for example VIC)
 
-SUMMA can share forcing data with VIC through the `convert_vic_forcing_to_summa.py` tool. This enables head-to-head comparison of VIC vs SUMMA for the same basin, forcing, and period -- isolating the effect of model structure.
+A head-to-head comparison on one basin isolates the effect of model structure
+only if both models are driven by the same weather. Get that by naming the SAME
+forcing source, period and domain in each model's own forcing tool. SUMMA's
+forcing is always built by `build_summa_forcing_from_reanalysis.py` from the
+source; it is not made from the other model's forcing files.
 
-**Coupling workflow**:
-1. Run HydroCraft VIC workflow (Steps 1-7) as usual
-2. After VIC forcing is prepared, run `convert_vic_forcing_to_summa.py`
-3. Configure SUMMA domain from the same basin shapefile
-4. Run SUMMA with decisions that approximate VIC's physics
+**Comparison workflow**:
+1. Set up the SUMMA domain from the basin shapefile (s1)
+2. Build SUMMA forcing from the named source (s2)
+3. Run SUMMA with decisions that approximate the other model's physics
+4. Run the other model with its own KI, same source, period and basin
 5. Compare outputs (runoff, ET, soil moisture)
 
 ---
@@ -583,8 +576,8 @@ model/summa/bin/summa.exe
 python tools/s1_domain_setup/create_gru_hru.py --basin_shp ... --dem ... --output_dir ...
 python tools/s1_domain_setup/create_local_attributes.py --gru_hru_csv ... --output_nc ...
 
-# 2. Convert forcing
-python tools/s2_forcing_prep/convert_vic_forcing_to_summa.py --vic_forcing_dir ... --attributes_nc ...
+# 2. Build forcing straight from the source (cmfd | nasa_power | mswx)
+python tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --attributes_nc ... --source cmfd --start_year ... --end_year ... --reference_elev_nc ... --output_dir ...
 
 # 3. Configure decisions
 python tools/s3_decisions/configure_decisions.py --output ... --use_defaults
@@ -648,7 +641,7 @@ reasoning forbids it here.
 mean facing a *whole-cell* observation — different support, and the resulting
 bias is a masking artifact rather than a model verdict. Pass
 `--min_cell_coverage 0.75` to `compare_spatial_field.py` and read back
-`n_cells_dropped_by_coverage`. On Tangnaihai this keeps 38 of 74 cells.
+`n_cells_dropped_by_coverage`.
 
 **The scored pairs are written to CSV.** `compare_spatial_field.py` emits
 `--output_csv` (default: the JSON path with a `.csv` suffix) with columns
@@ -760,4 +753,4 @@ bands — SUMMA has no glacier module), not a routing problem.
 ---
 
 *This knowledge infrastructure was built using the knowledge dissection methodology (Zhang et al., Nature, under review).*
-*Package: hydrocraft-summa v1.0.0 | 12 tools (~2,826 LOC) | 7 skill documents (~5,158 words) | 18 diagnostic triplets | 7 failure domains*
+*Package: hydrocraft-summa v1.0.0 | 7 failure domains | current tool, stage-doc and triplet counts: the KI map at the top of this file*

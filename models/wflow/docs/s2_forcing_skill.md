@@ -6,22 +6,23 @@ Convert CMFD/MSWX meteorological forcing to wflow NetCDF format with correct uni
 
 ## Prerequisites
 
-- Stage s1 complete (staticmaps.nc or grid_nc exists for grid definition)
-- Forcing data available: CMFD (China), MSWX (global), or VIC ASCII forcing files
+- Stage s1 complete (staticmaps.nc exists for grid definition)
+- Forcing data available: CMFD (China) or MSWX (global), read straight from the data store
 - Python packages: xarray, netCDF4, numpy, pandas
 
 ## Inputs
 
 | Name | Type | Source | Description |
 |------|------|--------|-------------|
-| forcing_dir | directory | VIC pipeline | Pre-processed VIC ASCII forcing files |
-| grid_nc or staticmaps.nc | file | s1 | Grid definition for spatial alignment |
+| source | name | s0 config | `cmfd`, `mswx`, `nasa_power` or `gswp3` (`--source`) |
+| forcing_dir | directory | data store | Root folder of the source (CMFD: `data/forcing/Data_forcing_03hr_010deg`) |
+| staticmaps.nc | file | s1 | Grid definition for spatial alignment |
 | start_year, end_year | int | s0 config | Simulation period |
 
 ## Procedure
 
-1. **Select forcing source**: VIC ASCII files (easiest — already processed), or raw CMFD/MSWX
-2. Run `convert_forcing_to_wflow.py` with appropriate source
+1. **Select forcing source**: CMFD inside China, MSWX elsewhere
+2. Run `convert_forcing_to_wflow.py --source <source> --forcing_dir <dataset root> --staticmaps_nc <staticmaps.nc>`
 3. **Verify units immediately after conversion**:
    - Mean daily precip: 1-10 mm/day for most basins (check: `ncdump -v precip forcing.nc | tail`)
    - Temperature range: -30 to 45 degC (if > 200, still in Kelvin — dt_w002)
@@ -63,3 +64,28 @@ Convert CMFD/MSWX meteorological forcing to wflow NetCDF format with correct uni
 - **dt_w003**: PET missing or zero (all precip becomes runoff)
 - **dt_w004**: Snow in tropical basins (temperature offset not applied)
 - **dt_w008**: Grid mismatch between forcing and staticmaps (DimensionMismatch)
+
+
+## Strict input contract (2026-10-03 repair)
+
+The converter requires the full requested daily calendar and identical records
+for every active `wflow_subcatch` cell. Missing, nonfinite, negative rain/PET,
+inverted temperature extrema, missing cell records and truncated arrays fail
+before writing. No weather is interpolated or substituted. Inactive grid padding
+is NaN and must be excluded from basin statistics.
+
+PET uses the documented Hargreaves approximation for the whole file. Tmin/Tmax
+must be supplied; equal extrema are valid and yield zero PET. The former 0.5 C
+minimum temperature range was removed. Daily precipitation and PET are mm per
+86400-second model step; temperature is Celsius.
+
+For CMFD with original-source validation, pass `--forcing_dir` and omit `--source`.
+This direct route requires exactly one original P and T file per requested month,
+declared kg m-2 s-1 and K units, all matching 3-hourly source timestamps and finite
+values in every active cell before daily reduction. SRad is unnecessary for HG.
+
+The `--source` route validates the shared loader's daily output, but cannot undo
+source gaps or replaced extrema hidden by that dependency. Its NetCDF
+`validation_scope` records this narrower guarantee. Geographic grid coordinates
+and an explicit `wflow_subcatch` mask are required. Projected grids require an
+explicit reprojection before point-source lookup.

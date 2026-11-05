@@ -20,10 +20,16 @@ Outputs:
 
 import argparse
 import os
+import math
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+try:
+    from .check_continuity_errors import parse_rpt_file
+except ImportError:  # direct CLI invocation
+    from check_continuity_errors import parse_rpt_file
 
 
 def run_with_pyswmm(inp_path, rpt_path, out_path):
@@ -57,22 +63,8 @@ def run_with_pyswmm(inp_path, rpt_path, out_path):
             elapsed = time.time() - start_time
             print(f"\n  Completed in {elapsed:.1f} seconds ({step_count} steps)")
 
-            # Report continuity errors
-            # pyswmm 2.x renamed routing_error -> flow_routing_error
-            runoff_error = sim.runoff_error
-            routing_error = getattr(sim, "flow_routing_error", None)
-            if routing_error is None:
-                routing_error = getattr(sim, "routing_error", 0.0)
-            quality_error = sim.quality_error
-
-            print(f"\n  Continuity Errors:")
-            print(f"    Runoff:  {runoff_error:.3f}%")
-            print(f"    Routing: {routing_error:.3f}%")
-            print(f"    Quality: {quality_error:.3f}%")
-
-            if abs(runoff_error) > 10 or abs(routing_error) > 10:
-                print(f"\n  WARNING: Large continuity error (>10%)", file=sys.stderr)
-                return 1
+        # swmm_end (called by __exit__) finalizes the continuity balances.
+        # The main function validates the completed report after this context.
 
     except Exception as e:
         elapsed = time.time() - start_time
@@ -148,54 +140,108 @@ def run_with_cli(inp_path, rpt_path, out_path):
 
 
 def parse_rpt_summary(rpt_path):
-    """Parse .rpt file for key summary statistics."""
-    if not os.path.isfile(rpt_path):
-        return {}
-
-    summary = {
-        "runoff_continuity_error": None,
-        "routing_continuity_error": None,
-        "n_flooded_nodes": 0,
-        "n_surcharging_links": 0,
+    """Read finalized EPA report syntax using the shared continuity parser."""
+    result = parse_rpt_file(rpt_path)
+    return {
+        "runoff_continuity_error": result["runoff_error_pct"],
+        "routing_continuity_error": result["routing_error_pct"],
+        "n_flooded_nodes": len(result["flooded_nodes"]),
+        "n_surcharging_links": len(result["surcharging_links"]),
+        "report": result,
     }
 
-    with open(rpt_path, "r") as f:
-        in_flooding = False
-        for line in f:
-            line = line.strip()
-            if "Runoff Quantity Continuity" in line:
-                # Look for error line
-                pass
-            if "Continuity Error" in line and "%" in line:
-                parts = line.split()
-                for i, p in enumerate(parts):
-                    if "%" in p:
-                        try:
-                            val = float(p.replace("%", ""))
-                            if summary["runoff_continuity_error"] is None:
-                                summary["runoff_continuity_error"] = val
-                            else:
-                                summary["routing_continuity_error"] = val
-                        except ValueError:
-                            pass
-            if "Node Flooding Summary" in line:
-                in_flooding = True
-            if in_flooding and line and not line.startswith("-") and not line.startswith("*"):
-                parts = line.split()
-                if parts and parts[0] not in ("No", "Node", "Flooding"):
-                    summary["n_flooded_nodes"] += 1
 
-    return summary
+def required_balances(inp_path):
+    """Mirror the engine's massbal_report conditions for water balances."""
+    sections = set()
+    options = {}
+    uses_runoff_file = False
+    subcatch_area = 0.0
+    section = None
+    for line in Path(inp_path).read_text(encoding="latin-1").splitlines():
+        line = line.split(";", 1)[0].strip()
+        if line.startswith("["):
+            section = line.upper()
+        elif line:
+            sections.add(section)
+            if section == "[OPTIONS]":
+                fields = line.upper().split()
+                if len(fields) >= 2:
+                    options[fields[0]] = fields[1]
+            elif section == "[SUBCATCHMENTS]":
+                # Name RainGage Outlet Area ...; an unreadable area counts as
+                # contributing so the runoff balance stays required.
+                fields = line.split()
+                try:
+                    area = float(fields[3])
+                    subcatch_area += area if math.isfinite(area) else float("inf")
+                except (IndexError, ValueError):
+                    subcatch_area = float("inf")
+            elif section == "[FILES]":
+                fields = line.upper().split()
+                if fields[:2] == ["USE", "RUNOFF"]:
+                    uses_runoff_file = True
+    required = []
+    # With [FILES] USE RUNOFF, report_writeRunoffError prints "Runoff supplied
+    # by interface file" and no runoff balance (EPA report.c), so none is required.
+    # massbal_report/report_writeRunoffError skip the runoff table when the
+    # total subcatchment area is zero (EPA massbal.c, report.c).
+    if "[SUBCATCHMENTS]" in sections and not uses_runoff_file and subcatch_area > 0:
+        required.append("runoff_error_pct")
+    if (sections & {"[JUNCTIONS]", "[OUTFALLS]", "[STORAGE]", "[DIVIDERS]"}
+            and options.get("IGNORE_ROUTING") != "YES"):
+        required.append("routing_error_pct")
+    return required
+
+
+def continuity_report_off(inp_path):
+    """True when [REPORT] CONTINUITY NO is set (balances then print only above 10%)."""
+    section = None
+    for line in Path(inp_path).read_text(encoding="latin-1").splitlines():
+        line = line.split(";", 1)[0].strip()
+        if line.startswith("["):
+            section = line.upper()
+        elif section == "[REPORT]" and line.upper().split()[:2] == ["CONTINUITY", "NO"]:
+            return True
+    return False
+
+
+def validate_completed_report(inp_path, rpt_path, threshold=10.0):
+    """Fail closed on missing/non-finite balances or engine errors."""
+    if not Path(rpt_path).is_file():
+        print("ERROR: SWMM did not write a report", file=sys.stderr)
+        return 2
+    report = parse_rpt_file(rpt_path)
+    required = set(required_balances(inp_path))
+    required.update(report["continuity_sections"])
+    if (not required or report["continuity_errors"] or report["simulation_errors"]
+            or report["table_errors"]
+            or any(report.get(k) is None or not math.isfinite(report[k]) for k in required)):
+        print("ERROR: Missing/non-finite continuity balance, unreadable report table "
+              "or simulation error; see the report", file=sys.stderr)
+        for problem in report["continuity_errors"] + report["table_errors"]:
+            print(f"  {problem}", file=sys.stderr)
+        if continuity_report_off(inp_path):
+            print("  [REPORT] CONTINUITY NO hides balances below 10%; set CONTINUITY YES "
+                  "so they can be checked", file=sys.stderr)
+        return 2
+    print("\n  Final continuity errors:")
+    for key in sorted(required):
+        print(f"    {key}: {report[key]:.3f}%")
+    if any(abs(report[k]) > threshold for k in required):
+        print(f"ERROR: Continuity error exceeds {threshold:g}%", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Run a SWMM simulation"
     )
-    parser.add_argument("--inp", required=True, help="SWMM .inp file")
-    parser.add_argument("--rpt", default=None,
+    parser.add_argument("--inp", "--inp_file", required=True, help="SWMM .inp file")
+    parser.add_argument("--rpt", "--rpt_file", default=None,
                         help="Report output path (default: <inp>.rpt)")
-    parser.add_argument("--out", default=None,
+    parser.add_argument("--out", "--out_file", default=None,
                         help="Binary output path (default: <inp>.out)")
     args = parser.parse_args()
 
@@ -211,17 +257,23 @@ def main():
     rpt_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Refuse to certify a stale report if a backend returns success without writing.
+    previous_report = rpt_path.stat() if rpt_path.exists() else None
     # Try pyswmm first, fall back to CLI
     result = run_with_pyswmm(inp_path, rpt_path, out_path)
     if result is None:
         print("pyswmm not available, trying CLI...", file=sys.stderr)
         result = run_with_cli(inp_path, rpt_path, out_path)
 
-    # Parse report for summary
-    if os.path.isfile(rpt_path):
-        summary = parse_rpt_summary(rpt_path)
-        if summary.get("n_flooded_nodes", 0) > 0:
-            print(f"\n  Flooded nodes: {summary['n_flooded_nodes']}")
+    if result == 0:
+        current_report = rpt_path.stat() if rpt_path.exists() else None
+        def write_signature(stat):
+            return None if stat is None else (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        if previous_report is not None and write_signature(current_report) == write_signature(previous_report):
+            print("ERROR: SWMM did not replace the previous report", file=sys.stderr)
+            result = 2
+        else:
+            result = validate_completed_report(inp_path, rpt_path)
 
     if result == 0:
         print(f"\nSWMM simulation completed successfully")

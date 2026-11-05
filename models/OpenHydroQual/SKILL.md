@@ -543,7 +543,7 @@ ki/
     s4_model_execution.md           # Running and monitoring
     s5_output_analysis.md           # Parsing, metrics, visualization
   diagnostics/
-    triplets.yaml                   # 15+ diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```
 
 ---

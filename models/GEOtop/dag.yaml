@@ -37,7 +37,7 @@ boundary:
 inputs:
   forcing:
     - {category: forcing, name: "AirT", unit: "Celsius", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column, DD/MM/YYYY hh:mm dates, -9999 nodata", notes: "Required. Kelvin input drives energy-balance non-convergence / hanging."}
-    - {category: forcing, name: "Iprec", unit: "mm per time step", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Accumulated depth per model time step, NOT a rate; wrong rate units scale total precipitation by ~1000x."}
+    - {category: forcing, name: "Iprec", unit: "mm/h", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column read through HeaderIPrec (intensity, keywords.h:437); record stamped at the END of its interval", notes: "Intensity in mm/h whatever the record spacing (depth per record / record hours); a depth written here is 3x too big at 3-hourly records and 24x at daily (dt_004)."}
     - {category: forcing, name: "RelHum", unit: "% (0-100)", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Required. Fraction (0-1) is read as 0.x% (near-zero ET)."}
     - {category: forcing, name: "WindSp", unit: "m/s", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column"}
     - {category: forcing, name: "WindDir", unit: "degrees (0-360)", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Recommended; drives terrain wind redistribution and blowing snow."}
@@ -48,8 +48,8 @@ inputs:
     - {category: forcing, name: "AirPress", unit: "mbar", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Optional air pressure."}
   parameters:
     - {category: soil, name: "Dz", unit: "mm", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV, one row per layer top-to-bottom", notes: "Soil layer thickness (range ~10-500 mm); m or cm input collapses sub-mm layers and diverges the Richards solver."}
-    - {category: soil, name: "Kh", unit: "m/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Lateral saturated hydraulic conductivity (1E-7 to 1E-3 m/s)."}
-    - {category: soil, name: "Kv", unit: "m/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Vertical (normal) saturated hydraulic conductivity (1E-7 to 1E-3 m/s)."}
+    - {category: soil, name: "Kh", unit: "mm/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Lateral saturated hydraulic conductivity in mm/s (about 1E-5 to 1 mm/s; source constants.h jKn/jKl [mm/s])."}
+    - {category: soil, name: "Kv", unit: "mm/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Vertical (normal) saturated hydraulic conductivity in mm/s (about 1E-5 to 1 mm/s; source constants.h jKn/jKl [mm/s])."}
     - {category: soil, name: "vwc_r", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Residual water content; must satisfy vwc_r < vwc_w < vwc_fc < vwc_s."}
     - {category: soil, name: "vwc_w", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Wilting point."}
     - {category: soil, name: "vwc_fc", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Field capacity."}
@@ -410,7 +410,7 @@ safety:
       severity: "fatal"
     - id: "ksat_units_silent_infiltration"
       kind: "soil_semantic"
-      description: "Hydraulic conductivity in cm/day instead of m/s (8.64e6x) silently produces instant drainage or permanent saturation."
+      description: "Hydraulic conductivity in cm/day (8640x too big) or m/s (1000x too small) instead of mm/s silently produces instant drainage or permanent saturation."
       severity: "silent"
     - id: "vg_alpha_units_retention"
       kind: "soil_semantic"

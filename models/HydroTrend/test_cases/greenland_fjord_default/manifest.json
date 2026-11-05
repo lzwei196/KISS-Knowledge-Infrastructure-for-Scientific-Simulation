@@ -1,0 +1,40 @@
+{
+  "test_case": "HydroTrend greenland_fjord_default (official CSDMS HydroTrend default input)",
+  "engine": {
+    "name": "HydroTrend",
+    "version": "3.0.5 (binary --version); source tag v3.1.4",
+    "binary": "hydrotrend",
+    "source": "github.com/csdms-contrib/hydrotrend, data/input + data/output (tag v3.1.4, commit 813a9f1c57085edf5270302c3ad7fbc2adefabf2)",
+    "license": "MIT (Copyright (c) 2014 Albert Kettner)"
+  },
+  "ki": {
+    "model": "HydroTrend",
+    "run_tool": "tools/run_hydrotrend.py"
+  },
+  "simulation": {
+    "title": "Greenland Fjord(Mar 2008), 1000 year simulation",
+    "epochs": 1,
+    "start_year": 1908,
+    "n_years": 1000,
+    "output_averaging": "M (monthly)",
+    "n_records": 12000,
+    "grain_sizes": 4,
+    "climate": "stochastic, from HYDRO.IN monthly stats (no HYDRO.CLIMATE file)",
+    "deterministic": true,
+    "runtime_seconds": "~1.5"
+  },
+  "files": {
+    "inputs/HYDRO.IN": {
+      "bytes": 3005,
+      "sha256": "11a50b4780b9e2db5ddb20ca28542211ccb1cefe3b911c48fc41aa8ed665070b"
+    },
+    "inputs/HYDRO0.HYPS": {
+      "bytes": 1027,
+      "sha256": "73047117fe03992d1875aa61ea11cfe9c52b472be9a6588463014f910760c47e"
+    },
+    "reference/HYDROASCII.Q": {
+      "bytes": 103745,
+      "sha256": "ebbe57747e49cb44267deda87b76504ef7b0a013e52cdc4de06c30b0b3ee3a6e"
+    }
+  }
+}

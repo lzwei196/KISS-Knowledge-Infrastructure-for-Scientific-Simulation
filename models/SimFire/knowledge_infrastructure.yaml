@@ -22,10 +22,12 @@ pipeline:
   - s4_execution
   - s5_output_analysis
 tools:
-  count: 4
+  count: 6
   files:
   - tools/convert_landfire_to_simfire.py
   - tools/convert_wind_to_simfire.py
+  - tools/derive_fire_environment.py
+  - tools/mtbs_perimeter_to_grid.py
   - tools/parse_simfire_output.py
   - tools/run_simfire.py
 inputs:
@@ -93,7 +95,7 @@ validation:
   metrics:
     best_r: 0.9999
 summary:
-  total_tools: 4
+  total_tools: 6
   total_stage_docs: 5
   total_diagnostic_triplets: 25
   generated: '2026-08-15'

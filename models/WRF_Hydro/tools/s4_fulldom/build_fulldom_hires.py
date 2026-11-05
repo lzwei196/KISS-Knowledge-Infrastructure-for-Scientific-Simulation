@@ -52,13 +52,15 @@ from pyproj import Transformer
 import whitebox
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.units import CMFD_PRECIP_KGM2S_TO_MMDAY
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # tools/
+import domain_edit_record as der   # opt-in, recorded stand-in edits (2026-10-05)
 
 # ===================================================================
 # WhiteboxTools D8 -> WRF-Hydro D8 conversion table
 # ===================================================================
 # WBT:      1=E, 2=NE, 4=N, 8=NW, 16=W, 32=SW, 64=S, 128=SE, 0=nodata
 # ArcGIS:   1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE, 0=nodata
-def smart_stream_threshold(cell_area_m2, basin_cells, precip_mm_yr=800, temp_mean_c=15):
+def smart_stream_threshold(cell_area_m2, basin_cells, precip_mm_yr, temp_mean_c):
     """Compute stream threshold using USGS flow-based method for fine grids,
     NCAR scale-aware method for coarse grids.
 
@@ -189,8 +191,18 @@ def compute_strahler(fdir, channel_mask):
 
 
 def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
-                  output_path, aggfactrt=4, stream_threshold=100):
-    """Build Fulldom_hires.nc."""
+                  output_path, aggfactrt=4, stream_threshold=100,
+                  fix_domain_gaps=False, edits_record=None,
+                  precip_mm_yr=None, temp_mean_c=None, chan_depth_default=None):
+    """Build Fulldom_hires.nc.
+
+    2026-10-05: every fill / replacement of source data (routing-DEM nodata,
+    non-positive elevations, channel depth for orders outside the table) is OFF
+    unless fix_domain_gaps and recorded cell by cell in
+    domain_edits.build_fulldom_hires.json; no default numbers where the value is
+    a choice (no 500 m DEM, no 800 mm / 15 C basin climate, no 1 m depth)."""
+    ED = der.ToolEdits("build_fulldom_hires", fix_domain_gaps,
+                       edits_record or der.default_record_path(output_path, "build_fulldom_hires"))
 
     print(f"[build_fulldom] AGGFACTRT={aggfactrt}, stream_threshold={stream_threshold}")
 
@@ -249,20 +261,30 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
             dst_transform=rt_transform,
             dst_crs=lcc_crs,
             resampling=Resampling.bilinear,
+            # 2026-10-05: explicit nodata. Without dst_nodata the source nodata
+            # value (china_dem_90m: 32767) was written as a 32767 m elevation
+            # and never seen by the nodata check below.
+            src_nodata=src.nodata,
+            dst_nodata=-9999.0,
         )
-    # Fill nodata cells with nearest valid neighbor
+    # Nodata cells: nearest-valid fill ONLY with --fix-domain-gaps (recorded
+    # after Step 8, when lat/lon exist); never a default elevation.
     nodata_mask = dem_rt <= -9990.0
-    n_nodata = nodata_mask.sum()
+    n_nodata = int(nodata_mask.sum())
+    dem_nodata_old = nodata_mask.copy()
+    dem_nodata_filled = False
     if n_nodata > 0:
         valid_mask = ~nodata_mask
-        if valid_mask.any():
+        if not valid_mask.any():
+            # was: every cell set to 500 m
+            sys.exit("ERROR: the DEM has no valid value on the routing grid; no default elevation")
+        print(f"  [WARN] Routing DEM: {n_nodata} nodata cells "
+              f"({'nearest-valid fill, recorded' if ED.fix else 'need --fix-domain-gaps'})")
+        if ED.fix:
             from scipy.ndimage import distance_transform_edt
             _, nearest_idx = distance_transform_edt(nodata_mask, return_distances=True, return_indices=True)
             dem_rt[nodata_mask] = dem_rt[nearest_idx[0][nodata_mask], nearest_idx[1][nodata_mask]]
-            print(f"  [WARN] Routing DEM: {n_nodata} nodata cells filled with nearest neighbor")
-        else:
-            dem_rt[:] = 500.0  # Fallback: set all to 500m
-            print(f"  [WARN] No valid DEM data for routing grid, using default 500m")
+            dem_nodata_filled = True
     print(f"    DEM range: {dem_rt.min():.1f} - {dem_rt.max():.1f} m")
 
     # --- Step 2: Hydrological conditioning with WhiteboxTools ---
@@ -321,10 +343,15 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
     # --- Step 4: Channel grid and stream order ---
     # Auto-compute threshold if set to 0 (USGS/Budyko method)
     if stream_threshold <= 0:
+        # The basin climate is a choice: required explicitly (was 800 mm / 15 C
+        # "defaults for Chinese basins" for every basin).
+        if precip_mm_yr is None or temp_mean_c is None:
+            sys.exit("ERROR: --stream_threshold <= 0 (auto) needs explicit --precip_mm_yr and "
+                     "--temp_mean_c for this basin; no default climate")
         basin_cells = int(np.sum(basn_msk >= 0)) if 'basn_msk' in dir() else int(np.sum(fdir_arc > 0))
         auto_thresh, runoff_ratio = smart_stream_threshold(
             cell_area_m2=dxrt**2, basin_cells=basin_cells,
-            precip_mm_yr=800, temp_mean_c=15  # defaults for Chinese basins
+            precip_mm_yr=precip_mm_yr, temp_mean_c=temp_mean_c
         )
         stream_threshold = auto_thresh
         print(f"  Step 4: Auto threshold={stream_threshold} (USGS/Budyko, runoff_ratio={runoff_ratio:.2f})")
@@ -369,6 +396,22 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
     print("  Step 7: Resampling land use to routing grid...")
     geo = nc.Dataset(geo_em_path, "r")
     lu_index_lsm = geo["LU_INDEX"][0, :, :].astype(np.float32)
+    # geo_em rows run south -> north (WRF south_north: j = 0 is the south edge;
+    # s2 build_geo_em.py flips the raster with np.flipud for this), but
+    # lsm_transform below is a north-up raster (row 0 = north). Without a flip
+    # the land use would be mirrored north <-> south on the routing grid.
+    # Read the order from XLAT_M instead of assuming it.
+    if "XLAT_M" not in geo.variables:
+        sys.exit(f"ERROR: {geo_em_path} has no XLAT_M; cannot tell the row order of LU_INDEX")
+    _lat_col = np.asarray(geo["XLAT_M"][0, :, :], dtype=np.float64).mean(axis=1)
+    if lu_index_lsm.shape != (e_sn, e_we) or _lat_col.size != e_sn:
+        sys.exit(f"ERROR: geo_em LU_INDEX shape {lu_index_lsm.shape} != domain (e_sn, e_we) = "
+                 f"({e_sn}, {e_we}) from {domain_json_path}")
+    if _lat_col[-1] > _lat_col[0]:
+        lu_index_lsm = np.flipud(lu_index_lsm)     # south-first -> north-first
+    elif not _lat_col[-1] < _lat_col[0]:
+        sys.exit(f"ERROR: {geo_em_path} XLAT_M does not change along south_north; "
+                 f"cannot tell the row order of LU_INDEX")
 
     # Create temp raster of LU on LSM grid
     lsm_transform = from_origin(x_left, y_top, dx_lsm, dy_lsm)
@@ -405,6 +448,11 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
     lons, lats = transformer.transform(xx, yy)
     lats = lats.astype(np.float32)
     lons = lons.astype(np.float32)
+    ED.latlon = (lats, lons)
+    if n_nodata > 0:
+        ED.allow("Fulldom_hires.nc", "TOPOGRAPHY", "routing-DEM nodata -> nearest valid DEM cell",
+                 "fill_missing_data", dem_nodata_old, np.where(dem_nodata_old, np.nan, dem_rt),
+                 "nearest valid DEM cell")
 
     # Default factor fields
     retdep = np.ones((ny_rt, nx_rt), dtype=np.float32)
@@ -422,16 +470,27 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
     channel_grid[fdir_arc == 0] = -9999
     facc[fdir_arc == 0] = 0
     stream_order[fdir_arc == 0] = 0
-    # Basin-aware fill for remaining negative/zero elevation cells
+    # Non-positive elevations (dt_v036: 0 m cells break routing slopes) were
+    # replaced by the basin mean (or a 500 m default). Now only with the flag,
+    # recorded; no default elevation.
     basin_cells = basn_msk == 1
+    unfilled = dem_nodata_old if not dem_nodata_filled else np.zeros_like(dem_nodata_old)
+    nonpos = (dem_rt <= 0) & ~unfilled
     if basin_cells.any():
-        basin_mean = dem_rt[basin_cells & (dem_rt > 0)].mean() if (basin_cells & (dem_rt > 0)).any() else 500.0
-        # Inside basin: fill zeros/negatives with basin mean
-        dem_rt[(dem_rt <= 0) & basin_cells] = basin_mean
-        # Outside basin: fill with nearest valid or basin mean
-        dem_rt[dem_rt <= 0] = basin_mean
+        if nonpos.any():
+            ok_basin = basin_cells & (dem_rt > 0)
+            if not ok_basin.any():
+                sys.exit("ERROR: no positive elevation inside the basin; no default elevation")
+            basin_mean = float(dem_rt[ok_basin].mean())
+            if ED.allow("Fulldom_hires.nc", "TOPOGRAPHY",
+                        f"elevation <= 0 m -> basin mean of positive cells ({basin_mean:.1f} m)",
+                        "fill_missing_data", nonpos, dem_rt, basin_mean):
+                dem_rt[nonpos] = basin_mean
     else:
-        dem_rt[dem_rt < 0] = 0  # Fallback to original behavior
+        neg = (dem_rt < 0) & ~unfilled
+        if ED.allow("Fulldom_hires.nc", "TOPOGRAPHY", "negative elevation -> 0 m (no basin cells)",
+                    "value_clip", neg, dem_rt, 0.0):
+            dem_rt[neg] = 0
     # Coverage validation
     n_zero_inside = ((dem_rt <= 0.1) & basin_cells).sum() if basin_cells.any() else 0
     if n_zero_inside > 0:
@@ -440,6 +499,25 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
     n_active = int(np.sum(fdir_arc > 0))
     n_chan = int(np.sum(channel_grid >= 0))
     print(f"    Active flow cells: {n_active:,}, channels: {n_chan:,}")
+
+    # Channel depth for channel cells whose stream order has no entry in the
+    # depth table: was 1.0 m silently; now an explicit --chan_depth_default with
+    # the flag, recorded (computed before writing so the tool can stop first).
+    order_depth_map = {1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 4.0, 7: 5.0, 8: 6.0}
+    _chan = channel_grid == 0
+    _no_depth = _chan & ~np.isin(stream_order, list(order_depth_map.keys()))
+    if _no_depth.any():
+        if ED.fix and chan_depth_default is None:
+            sys.exit(f"ERROR: {int(_no_depth.sum())} channel cells have a stream order outside the "
+                     f"depth table; give --chan_depth_default (m) explicitly")
+        ED.allow("Fulldom_hires.nc", "CHAN_DEPTH",
+                 f"channel cell with stream order outside the depth table -> {chan_depth_default} m",
+                 "fill_missing_data", _no_depth, stream_order,
+                 chan_depth_default if chan_depth_default is not None else "none given")
+
+    # Stop (nothing written) if stand-in edits were needed without the flag;
+    # else write the edit record.
+    ED.finish()
 
     # --- Step 9: Write Fulldom_hires.nc ---
     print(f"  Step 9: Writing {output_path} ...")
@@ -520,11 +598,11 @@ def build_fulldom(geo_em_path, domain_json_path, dem_path, basin_shp_path,
     # WRF-Hydro requires this variable — crashes with MPI_Abort if missing
     chan_depth = np.full_like(dem_rt, -9999.0, dtype="f4")
     channel_mask = channel_grid == 0  # 0 = channel in WRF-Hydro convention
-    order_depth_map = {1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 4.0, 7: 5.0, 8: 6.0}
     for order_val, depth in order_depth_map.items():
         chan_depth[(stream_order == order_val) & channel_mask] = depth
-    # Default depth for any remaining channel cells
-    chan_depth[channel_mask & (chan_depth < 0)] = 1.0
+    # Channel cells outside the depth table: only the explicit value (recorded above)
+    if _no_depth.any():
+        chan_depth[_no_depth] = float(chan_depth_default)
     write_var("CHAN_DEPTH", chan_depth, "f4", units="m")
 
     # Global attributes
@@ -577,6 +655,14 @@ def main():
                         help="Aggregation factor for routing grid (default: 4)")
     parser.add_argument("--stream_threshold", type=int, default=100,
                         help="Flow accumulation threshold for channel definition (default: 100)")
+    parser.add_argument("--precip_mm_yr", type=float, default=None,
+                        help="basin mean annual precipitation; required when --stream_threshold <= 0")
+    parser.add_argument("--temp_mean_c", type=float, default=None,
+                        help="basin mean air temperature (C); required when --stream_threshold <= 0")
+    parser.add_argument("--chan_depth_default", type=float, default=None,
+                        help="channel depth (m) for stream orders outside the depth table; "
+                             "required (with --fix-domain-gaps) only if such cells exist")
+    der.add_cli(parser)
     args = parser.parse_args()
 
     build_fulldom(
@@ -587,6 +673,11 @@ def main():
         output_path=args.output_path,
         aggfactrt=args.aggfactrt,
         stream_threshold=args.stream_threshold,
+        fix_domain_gaps=args.fix_domain_gaps,
+        edits_record=args.edits_record,
+        precip_mm_yr=args.precip_mm_yr,
+        temp_mean_c=args.temp_mean_c,
+        chan_depth_default=args.chan_depth_default,
     )
 
 

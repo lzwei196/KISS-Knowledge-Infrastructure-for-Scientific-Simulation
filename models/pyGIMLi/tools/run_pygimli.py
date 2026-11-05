@@ -41,6 +41,65 @@ import sys
 import time
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Engine python: pyGIMLi lives in its own venv (pygimli + pgcore pip wheels), not in the HydroCraft python_env that
+# SKILL.md uses to start the KI tools. Lookup (same as preflight_check.py): --pygimli-python ->
+# $PYGIMLI_PYTHON (empty = unset) -> server default -> this python (only if it imports pygimli). An explicit value is
+# used as given (no fallback). If the chosen python is not the one running this tool, the tool
+# re-launches itself with it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+ENGINE_PYTHON_ENV = "PYGIMLI_PYTHON"
+ENGINE_PYTHON_DEFAULT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python"
+_REEXEC_GUARD = "KI_PYGIMLI_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the pyGIMLi interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--pygimli-python"
+    env_value = os.environ.get(ENGINE_PYTHON_ENV, "").strip() or None  # as preflight_check.py
+    if env_value is not None:
+        return env_value, "$" + ENGINE_PYTHON_ENV
+    if os.path.isfile(ENGINE_PYTHON_DEFAULT):
+        return ENGINE_PYTHON_DEFAULT, "server default"
+    try:
+        import pygimli  # noqa: F401
+        return sys.executable, "running python (imports pygimli)"
+    except ImportError:
+        return None, (f"no python with pygimli: --pygimli-python and ${ENGINE_PYTHON_ENV} not set, "
+                      f"server default {ENGINE_PYTHON_DEFAULT} not found, and {sys.executable} "
+                      "cannot import pygimli")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the pyGIMLi python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        print(json.dumps({"status": "error", "errors": [source]}), file=sys.stderr)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        print(json.dumps({"status": "error", "errors": [
+            f"re-launch loop: running {sys.executable}, expected {python} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    if not (os.path.isfile(python) and os.access(python, os.X_OK)):
+        print(json.dumps({"status": "error", "errors": [
+            f"pyGIMLi python not found or not executable: {python!r} ({source})"]}),
+            file=sys.stderr)
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: a venv python must keep its own path
+    print(f"[{os.path.basename(__file__)}] re-launching with {python} ({source})",
+          file=sys.stderr, flush=True)
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        print(json.dumps({"status": "error", "errors": [
+            f"could not start pyGIMLi python {python!r} ({source}): {e}"]}), file=sys.stderr)
+        sys.exit(1)
+
 
 def validate_inputs(args):
     """Validate arguments and check pyGIMLi availability."""
@@ -252,6 +311,35 @@ def validate_outputs(result):
     return result
 
 
+def nonfinite_errors(result):
+    """A model/response/chi2 with NaN or Inf means the run FAILED (diverged), not a warning."""
+    errors = []
+    for key in ("model", "response"):
+        arr = result.get(key)
+        if arr is None:
+            continue
+        arr = np.asarray(arr, dtype=float)
+        n_nan, n_inf = int(np.isnan(arr).sum()), int(np.isinf(arr).sum())
+        if n_nan or n_inf:
+            errors.append(f"{key} has {n_nan} NaN and {n_inf} Inf of {arr.size} values "
+                          f"(inversion diverged or bad data/transform)")
+    chi2 = result.get("chi2")
+    if chi2 is not None and not np.isfinite(chi2):
+        errors.append(f"chi2 is not finite ({chi2})")
+    return errors
+
+
+def _json_safe(obj):
+    """Non-finite floats -> None so the JSON stays strict."""
+    if isinstance(obj, (float, np.floating)):
+        return float(obj) if np.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def save_results(result, output_dir):
     """Save all results to output directory."""
     import pygimli as pg
@@ -276,9 +364,11 @@ def save_results(result, output_dir):
         except Exception:
             pass
 
-    # Save summary
+    # Save summary (a non-finite model/response/chi2 makes the run an error; the
+    # arrays and mesh above are still written for diagnosis)
+    errors = nonfinite_errors(result)
     summary = {
-        "status": "success",
+        "status": "error" if errors else "success",
         "chi2": result["chi2"],
         "n_iterations": result["n_iterations"],
         "elapsed_s": result["elapsed_s"],
@@ -287,8 +377,11 @@ def save_results(result, output_dir):
         "model_range": result["model_range"],
         "warnings": result.get("warnings", []),
     }
+    if errors:
+        summary["errors"] = errors
+        summary = _json_safe(summary)
     with open(os.path.join(output_dir, "result.json"), "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(summary, f, indent=2, allow_nan=False)
 
     return summary
 
@@ -323,15 +416,23 @@ def main():
                         help="Homogeneous resistivity for forward mode (Ohm·m)")
     parser.add_argument("--robust", action="store_true",
                         help="Use robust (L1) data weighting")
+    parser.add_argument("--pygimli-python", default=None,
+                        help="Python of the pyGIMLi venv (default: $PYGIMLI_PYTHON, else the "
+                             "server venv, else this python if it imports pygimli). "
+                             "The tool re-launches itself with it.")
 
     args = parser.parse_args()
+    ensure_engine_python(args.pygimli_python)
 
     validate_inputs(args)
     result = process(args)
     result = validate_outputs(result)
     summary = save_results(result, args.output)
 
-    print(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2, allow_nan=False))
+    if summary["status"] != "success":
+        print("pyGIMLi run FAILED: " + "; ".join(summary.get("errors", [])), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

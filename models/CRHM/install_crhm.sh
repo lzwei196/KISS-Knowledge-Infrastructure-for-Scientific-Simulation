@@ -23,6 +23,14 @@ CRHM_DIR="${MODEL_DIR}/crhmcode"
 SRC_DIR="${CRHM_DIR}/crhmcode/src"
 BUILD_DIR="${CRHM_DIR}/crhmcode/build"
 BOOST_VERSION="1_75_0"
+# The crhmcode commit every machine builds. Upstream has no release tags, and a
+# bare `git clone --depth 1` takes whatever the default branch holds that day,
+# so two machines could build different sources under the same "4.7_16" banner.
+# This is the commit the server binary was built from (2026-03-13) and the one
+# the KI's source line references (ClassSnobalCRHM.cpp:170, NewModules.cpp:278,
+# ...) were read against. Override with CRHM_COMMIT=<sha> only on purpose.
+CRHM_COMMIT="${CRHM_COMMIT:-b6f7e707e855980a3d050c6654c1b8674af9cf00}"
+CRHM_REPO_URL="https://github.com/srlabUsask/crhmcode.git"
 BOOST_URL="https://archives.boost.io/release/1.75.0/source/boost_${BOOST_VERSION}.tar.gz"
 
 echo "=== CRHM Installation Script ==="
@@ -46,9 +54,21 @@ echo "[2/6] Cloning crhmcode repository..."
 if [ -d "${CRHM_DIR}/.git" ]; then
     echo "  Repository already exists at ${CRHM_DIR}, skipping clone."
 else
-    cd "${MODEL_DIR}"
-    git clone --depth 1 https://github.com/srlabUsask/crhmcode.git
+    mkdir -p "${CRHM_DIR}"
+    cd "${CRHM_DIR}"
+    git init -q
+    git remote add origin "${CRHM_REPO_URL}"
+    # fetch exactly the pinned commit (GitHub serves a commit by its full sha)
+    git fetch --depth 1 origin "${CRHM_COMMIT}"
+    git checkout -q FETCH_HEAD
 fi
+HAVE_COMMIT="$(git -C "${CRHM_DIR}" rev-parse HEAD)"
+if [ "${HAVE_COMMIT}" != "${CRHM_COMMIT}" ]; then
+    echo "ERROR: ${CRHM_DIR} is at ${HAVE_COMMIT}, but the KI is pinned to ${CRHM_COMMIT}."
+    echo "  Check out the pinned commit, or set CRHM_COMMIT=${HAVE_COMMIT} to build this one on purpose."
+    exit 1
+fi
+echo "  crhmcode commit: ${HAVE_COMMIT} ($(git -C "${CRHM_DIR}" log -1 --format=%ci))"
 
 # Step 3: Download Boost 1.75.0 (if not present)
 echo ""
@@ -113,9 +133,14 @@ if [ -f "${BUILD_DIR}/crhm" ]; then
     echo ""
     echo "=== Installation complete ==="
     echo "Executable: ${BUILD_DIR}/crhm"
+    echo "Built from crhmcode commit: ${HAVE_COMMIT}"
+    echo "${HAVE_COMMIT}" > "${BUILD_DIR}/CRHM_COMMIT.txt"
     echo ""
     echo "Quick test:"
-    echo "  ${BUILD_DIR}/crhm -p 100 ${CRHM_DIR}/crhmcode/prj/badlake.prj -o /tmp/crhm_test.txt"
+    echo "  badlake.prj is part of the crhmcode SOURCE tree (${CRHM_DIR}/crhmcode/prj/), not of"
+    echo "  the KI. Its Observations line is a Windows path from the authors' machine; copy the"
+    echo "  file and point that line at ${CRHM_DIR}/crhmcode/obs/Badlake73_76.obs first, then:"
+    echo "  ${BUILD_DIR}/crhm -p 100 <your copy of badlake.prj> -o /tmp/crhm_test.txt"
 else
     echo "  FAILED: crhm executable not found in ${BUILD_DIR}"
     echo "  Check build output above for errors."

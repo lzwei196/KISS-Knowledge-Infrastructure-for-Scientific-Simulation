@@ -28,16 +28,17 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (17 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (19 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (4 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (48 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (49 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -49,6 +50,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | tool (exact path) | invocation |
 |---|---|
 | `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/domain_edit_record.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/domain_edit_record.py --help` |
 | `tools/run_wrfhydro_full_pipeline.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wrfhydro_full_pipeline.py --help` |
 | `tools/s10_execution/calibrate_wrfhydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/calibrate_wrfhydro.py --help` |
 | `tools/s10_execution/run_wrfhydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/run_wrfhydro.py --help` |
@@ -62,14 +64,55 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s5_soil_properties/build_soil_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_soil_properties/build_soil_properties.py --help` |
 | `tools/s6_groundwater/build_groundwater.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_groundwater/build_groundwater.py --help` |
 | `tools/s8_forcing/cmfd_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/cmfd_to_ldasin.py --help` |
-| `tools/s8_forcing/convert_forcing_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/convert_forcing_to_ldasin.py --help` |
 | `tools/s8_forcing/nasa_power_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/nasa_power_to_ldasin.py --help` |
 | `tools/s9_namelists/generate_namelists.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_namelists/generate_namelists.py --help` |
+| `tools/wrfhydro_domain_edits.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/wrfhydro_domain_edits.py --help` |
+| `tools/wrfhydro_run_gate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/wrfhydro_run_gate.py --help` |
 
-*17 public tools; `_`-prefixed helpers and packaging files excluded.*
+*19 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
+
+## Strict NASA POWER forcing contract (2026-10-03 repair)
+
+`tools/s8_forcing/nasa_power_to_ldasin.py` now requires a complete, ordered UTC
+hourly calendar and all eight requested source parameters at every sampled point.
+Missing fields, dates, NaN/Inf, source fill values, invalid physical values and
+out-of-domain interpolation stop conversion. Nothing is filled, clipped or
+extrapolated. Real zero rain, wind and radiation are retained.
+
+Conversion follows each original response's unit metadata. In particular, older
+POWER responses label precipitation `mm/day`, while API v2.10.2 responses observed
+in this repair label it `mm/hour`; these require divisors 86400 and 3600 respectively.
+Hourly `Wh/m^2` radiation is one-hour energy converted to hourly mean `W/m^2` with
+the same numerical value. Radiation units are never inferred from magnitude.
+Original UTC JSON is cached separately under `strict_utc_10m`; timestamp-free
+legacy NPZ caches remain untouched and are not consumed. Missing or malformed
+metadata is an error.
+
+Wind now comes from POWER `WS10M` and `WD10M`, using the meteorological direction
+from north clockwise. Earth east/north components are interpolated and rotated
+using `geo_em` COSALPHA/SINALPHA. The previous 45-degree split of 2-m wind is removed.
+See [NASA wind conventions](https://power.larc.nasa.gov/docs/methodology/meteorology/wind/).
+The half-degree query spacing samples POWER products; it does not increase their
+native spatial resolution or establish catchment-scale observational accuracy.
+
+Elevation correction now defaults to `none`. The former pressure-based elevation
+estimate is an explicit approximation via `--elev-correction barometric-estimate`
+(101325 Pa assumed sea-level pressure, 0.0065 K/m lapse rate). It is not an elevation
+measurement or a way to repair unavailable weather. `--no_elev_correct` remains a
+compatibility alias. Correction outputs must pass the same finite/physical checks.
+
+Use a **new** output directory. Files are staged until all requested hours pass,
+then published as a directory with `forcing_provenance.json` containing source
+JSON hashes, units, time keys and transformation choices. A failed conversion
+never publishes a partial forcing directory or overwrites an existing one.
+This repair covers this NASA POWER route; the independent CMFD converter is not
+certified by these tests. It was made strict on 2026-10-05: no extrapolation
+outside the CMFD grid, no persistence at month ends (the next month's first
+record is read), no clipping (out-of-range values stop with variable, time and
+cell count), and a short file count exits 1.
 
 ## Data Preparation
 
@@ -94,7 +137,8 @@ python tools/s8_forcing/nasa_power_to_ldasin.py \
     --start_date YYYY-MM-DD --end_date YYYY-MM-DD
 ```
 This tool fetches NASA POWER data for ALL grid points covering the domain (not just one point),
-spatially interpolates to the LCC grid, and applies elevation corrections.
+spatially interpolates to the LCC grid. Elevation correction requires the explicit
+`--elev-correction barometric-estimate` option; the default is none.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -106,13 +150,13 @@ spatially interpolates to the LCC grid, and applies elevation corrections.
 **Model**: WRF-Hydro v5.2.0 offline (NoahMP land surface + gridded routing)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21 (4 routing skill documents added)
-**Stats**: 14 tools | 6 skill documents | 46 diagnostic triplets | 28 error log entries | ~6,200 lines of validated Python
+**Stats**: 28 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous construction and execution of WRF-Hydro v5.2.0 in standalone/offline mode on any basin, **without requiring WPS or ArcGIS**. The 11 validated tools replace the standard NCAR workflow (WPS geogrid + ArcGIS GIS_tool + manual IDL scripts) with a Python-only pipeline that builds all domain files from raw global datasets.
+This knowledge infrastructure enables fully autonomous construction and execution of WRF-Hydro v5.2.0 in standalone/offline mode on any basin, **without requiring WPS or ArcGIS**. The validated tools replace the standard NCAR workflow (WPS geogrid + ArcGIS GIS_tool + manual IDL scripts) with a Python-only pipeline that builds all domain files from raw global datasets.
 
 **What WRF-Hydro standalone does**: Couples the Noah-MP land surface model (LSM) with gridded overland/subsurface/channel routing to simulate:
 - Surface/subsurface runoff, evapotranspiration, soil moisture (hourly, per LSM cell)
@@ -234,14 +278,13 @@ netCDF4, numpy, scipy, geopandas, rasterio, pyproj, whitebox
 | 5 | Soil properties | `build_soil_properties.py` (302 lines) | SOILPARM + MPTABLE lookup |
 | 6 | Groundwater/ancillary | `build_groundwater.py` (416 lines) | GWBASINS, GWBUCKPARM, hydro2dtbl, metadata |
 | 7 | Spatial metadata | (validation only) | Verify x/y resolution attributes |
-| 8 | Forcing conversion | `convert_forcing_to_ldasin.py` (556 lines) | VIC 3hr -> hourly LDASIN on LCC |
-| 8b | Forcing (direct CMFD) | `cmfd_to_ldasin.py` (790 lines) | CMFD -> hourly LDASIN directly (no VIC intermediate) |
+| 8 | Forcing | `cmfd_to_ldasin.py` (790 lines; China) or `nasa_power_to_ldasin.py` (global, from 2001) | Forcing source -> hourly LDASIN on the LCC grid, read straight from the source |
 | 9 | Namelist generation | `generate_namelists.py` (384 lines) | namelist.hrldas + hydro.namelist |
 | 10 | Execution | `run_wrfhydro.py` (291 lines) | MPI run + output collection |
 | 11 | Output processing | (manual/future tool) | Discharge extraction from CHRTOUT |
 | -- | Full pipeline | `run_wrfhydro_full_pipeline.py` (438 lines) | End-to-end wrapper (stages 1-10) |
 
-**Total**: 14 tools, ~6,100 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Documents
 
@@ -251,7 +294,7 @@ netCDF4, numpy, scipy, geopandas, rasterio, pyproj, whitebox
 | s6 | `docs/s6_groundwater_skill.md` | GW bucket model (Coeff/Expon/Zmax), inverted seasonal cycle diagnosis, baseflow calibration |
 | s9 | `docs/s9_runoff_options_skill.md` | All 5 RUNOFF_OPTIONS (SIMGM, SIMTOP, Schaake96, BATS, Xinanjiang), REFKDT calibration |
 | s11 | `docs/s11_output_interpretation_skill.md` | LDASOUT vs CHRTOUT vs RTOUT vs GWOUT, correct discharge extraction, water balance verification, VIC comparison |
-| -- | `docs/calibration_guide.md` | 24 parameters across 6 files, Tier 1-3 priority, Schaake formula, Chaohe results |
+| -- | `docs/calibration_guide.md` | 24 parameters across 6 files, Tier 1-3 priority, Schaake formula, Chaohe lessons |
 
 ### Parallelism
 
@@ -271,8 +314,7 @@ Stages 3, 4, 5, 6 can run in parallel after stage 2 (geo_em). Stage 8 (forcing) 
 | `build_spatial_weights` | s4c | `tools/s4_fulldom/build_spatial_weights.py` | 250 | Generate spatialweights.nc LSM-to-reach mapping (UDMP) |
 | `build_soil_properties` | s5 | `tools/s5_soil_properties/build_soil_properties.py` | 302 | Soil/veg params from SOILPARM.TBL + MPTABLE.TBL |
 | `build_groundwater` | s6 | `tools/s6_groundwater/build_groundwater.py` | 416 | GWBASINS, GWBUCKPARM, hydro2dtbl, spatial metadata |
-| `convert_forcing_to_ldasin` | s8 | `tools/s8_forcing/convert_forcing_to_ldasin.py` | 556 | VIC 3hr ASCII -> hourly LDASIN NetCDF on LCC grid |
-| `cmfd_to_ldasin` | s8b | `tools/s8_forcing/cmfd_to_ldasin.py` | 790 | CMFD 3hr NetCDF -> hourly LDASIN directly (no VIC) |
+| `cmfd_to_ldasin` | s8 | `tools/s8_forcing/cmfd_to_ldasin.py` | 790 | CMFD 3hr NetCDF -> hourly LDASIN, read straight from the CMFD store |
 | `generate_namelists` | s9 | `tools/s9_namelists/generate_namelists.py` | 384 | Generate namelist.hrldas + hydro.namelist |
 | `run_wrfhydro` | s10 | `tools/s10_execution/run_wrfhydro.py` | 291 | MPI execution wrapper with preflight + JSON summary |
 | `calibrate_wrfhydro` | s10 | `tools/s10_execution/calibrate_wrfhydro.py` | 780 | Parameter sweep (default REFKDT) with re-run + metric scoring + `--apply_best` |
@@ -282,113 +324,37 @@ Stages 3, 4, 5, 6 can run in parallel after stage 2 (geo_em). Stage 8 (forcing) 
 
 ---
 
-## VALIDATED Results
+## Validation Status: Lessons from Past Test Runs
 
-### Chaohe Basin (2026-03-19)
+Scores from single test cases are not kept in this file. They live in each run's own
+result file and in the run records. What those tests taught:
 
-- **Basin**: Chaohe, ~8,783 km^2, semi-humid North China
-- **Period**: 2001-01-01 to 2001-01-07 (7 days)
-- **Grid**: 126 x 116 LSM cells @ 1 km, 504 x 464 routing cells @ 250 m
-- **Forcing**: VIC 3-hourly from existing Chaohe run, converted to 168 hourly LDASIN files
-- **Result**: 168 hourly LDASOUT + CHRTOUT + RTOUT + GWOUT outputs
-- **Status**: SUCCESS — "The model finished successfully" in stdout
-- **Output directory**: `outputs/chaohe_wrf_test/`
-
-### Bengbu Basin 1km (2026-03-20)
-
-- **Basin**: Bengbu (Huai River), ~121,330 km^2, humid subtropical
-- **Period**: 2001-07-01 to 2001-07-14 (14 days, July start to avoid frozen soil crash)
-- **Grid**: 535 x 442 LSM cells @ 1 km, 2140 x 1768 routing cells @ 250 m (3.8M routing cells)
-- **Forcing**: VIC 3-hourly from existing Bengbu run (CMFD), converted to hourly LDASIN
-- **Result**: 14 LDASOUT + 14 GWOUT outputs, 72 min on 2 MPI cores
-- **Status**: SUCCESS — physically meaningful output after 3 critical bug fixes (D8, SWDOWN, elevation)
-- **Output directory**: `outputs/bengbu_wrfhydro_2000_2005/`
-
-### Bengbu Basin 0.25deg 6-year (2026-03-20) — CHRTOUT Comparison
-
-- **Basin**: Bengbu (Huai River), ~121,330 km^2, humid subtropical
-- **Period**: 2000-01-01 to 2005-12-31 (6 years)
-- **Grid**: 22 x 18 LSM cells @ 0.25deg, 88 x 72 routing cells @ ~7 km
-- **Forcing**: CMFD direct via `cmfd_to_ldasin.py` (no VIC intermediate)
-- **Result**: 2,192 daily LDASOUT + CHRTOUT + GWOUT outputs, **19 min runtime**
-- **Discharge comparison with VIC (CHRTOUT)**:
-  - **WRF-Hydro mean**: 1,090 m^3/s
-  - **VIC mean**: 1,535 m^3/s
-  - **Correlation r = 0.84** (daily, 2000-2005)
-  - **Best year**: 2003, r = 0.92
-  - **Ratio**: WRF-Hydro/VIC = 0.71 (WRF-Hydro 29% lower)
-  - Both bracket observed ~1,000-1,500 m^3/s at Bengbu station
-- **Output directory**: `outputs/bengbu_wrfhydro_025deg_2000_2005/`
-
-**Key finding**: WRF-Hydro and VIC agree well in timing (r=0.84) despite being completely independent models with different physics (Noah-MP vs VIC energy balance). The 29% amplitude difference is expected with default uncalibrated parameters.
-
-### Chaohe Basin Systematic Investigation (2026-03-20) — WHY WRF-Hydro FAILS HERE
-
-- **Basin**: Chaohe, ~8,783 km^2, semi-humid monsoon North China
-- **Period**: 2000-01-01 to 2000-12-31 (1 year)
-- **Resolutions tested**: 0.1deg and 0.25deg
-- **Result**: r ~ 0 (no correlation with VIC), Q far below VIC
-
-#### Two-Basin Comparison
-
-| Metric | Bengbu (Huai River) | Chaohe |
-|--------|-------------------|--------|
-| Basin area | 121,330 km^2 | 8,783 km^2 |
-| Climate | Humid subtropical | Semi-humid monsoon |
-| Terrain | Flat plain | Mountain |
-| VIC mean Q | 1,535 m^3/s | 23.2 m^3/s |
-| WRF-Hydro Q (0.25deg) | 1,090 m^3/s | 5.8 m^3/s |
-| WRF-Hydro Q (0.1deg) | — | 17.8 m^3/s |
-| Correlation r | **0.84** | **~0** |
-| Verdict | Good agreement | **FAILS** |
-
-#### Resolution Sensitivity
-
-| Resolution | Mean Q (m^3/s) | r vs VIC | Grid cells |
-|-----------|---------------|---------|------------|
-| 0.25deg | 5.8 | 0.19 | ~20 |
-| 0.1deg | 17.8 | -0.08 | ~110 |
-
-Resolution affects **volume** (3x difference) but NOT **event timing** (r still ~0).
-
-#### Systematic Investigation: 6 Hypotheses Tested
-
-1. **Channel threshold scaling** — Tested 5 thresholds (5, 10, 20, 50, 170): all give same Q (4-6 m^3/s). **Not the bottleneck.**
-2. **Resolution** — 0.1deg gives 3x more Q than 0.25deg, but r still ~0. Volume improves, timing doesn't.
-3. **Noah-MP infiltration** — Schaake96 with REFKDT=3.0 produces only 0.158mm surface runoff from 23.8mm rain (VIC: 3.78mm). **24x less surface runoff.** **ROOT CAUSE of timing failure.**
-4. **RUNOFF_OPTION=5 (MMF)** — Crashes: needs MMF_RUNOFF_FILE not in standard pipeline. Use option 1 or 3.
-5. **GW bucket dominance** — When channels are broken, all flow goes through GW bucket producing **inverted seasonal cycle** (winter > summer in monsoon basin).
-6. **Inverted seasonality** — Consequence of items 3+5: no storm peaks + GW-dominated baseflow.
-
-#### Root Cause: Noah-MP REFKDT Too High
-
-The fundamental issue is that Noah-MP's Schaake96 scheme with default REFKDT=3.0 produces essentially zero surface runoff in mountain basins. All rain infiltrates into soil, and the only discharge pathway is through the groundwater bucket (slow, dampened, wrong timing). This explains why:
-- Channel threshold doesn't matter (nothing to route)
-- Resolution changes volume but not timing
-- Seasonal cycle is inverted (GW baseflow timing, not rainfall timing)
-
-**Fix**: Reduce REFKDT from 3.0 to 0.5-1.0 in `soil_properties.nc`. This is the #1 calibration priority for mountain/semi-arid basins.
-
-#### Shared Findings
-
-`outputs/chaohe_wrfhydro_010deg_2000/wrfhydro_chaohe_findings.yaml`
-
-### Spain GRDC Basin (2026-04-03) — GLOBAL BASIN + ARID CLIMATE TEST
-
-- **Basin**: GRDC_6217140, Guadalquivir tributary, ~15,660 km², Mediterranean Spain
-- **Period**: 2010-10-01 to 2011-01-24 (115 days of output)
-- **Grid**: 24 x 22 LSM cells @ 10 km, 96 x 88 routing cells @ 2.5 km
-- **Forcing**: NASA POWER hourly via `tools/s8_forcing/nasa_power_to_ldasin.py`, 13,176 LDASIN files
-- **Observed data**: GRDC station 6217140, daily discharge (365 days in 2011)
-- **Channel routing**: All 3 options tested (diffusive wave = 115 days, Muskingum = 5 days, Musk-Cunge = 3 days)
-- **Result (channel_option=3)**:
-  - **r = 0.456** (timing correlation, uncalibrated)
-  - **PBIAS = -96.3%** (severe volume underestimate)
-  - **Sim mean**: 3.85 m³/s vs **Obs mean**: 104.5 m³/s
-  - Volume underestimate caused by uncalibrated REFKDT=3.0 (same as Chaohe)
-- **Key finding**: **Arid Basin Trap Cascade** — 3 sequential crashes (dt_v037 → dt_v038 → dt_v036) that each mask the next. All 3 fixes must be applied simultaneously. Documented as Section 21 in Critical Domain Knowledge.
-- **Routing KI validation**: Route_Link.nc (142 reaches), spatialweights.nc (490 data records), GWBUCKPARM_UDMP (142 BasinDim) — all generated correctly by new KI tools.
-- **Output directory**: `outputs/grdc_spain_wrfhydro_test/`
+- **Cold start in a basin with frozen winter soil: start in July, not January**
+  (dt_v023). The early Bengbu 1 km test needed this.
+- **D8 encoding, SWDOWN cap and elevation correction** (Critical Domain Knowledge
+  sections 5, 10 and 9) were the three fixes that first made the output physically
+  meaningful.
+- **Mountain / semi-arid basins (Chaohe test, 2026-03-20): low, mistimed flow comes from
+  infiltration, not from the channels or the grid.**
+  - Changing the channel threshold did not change discharge: it is not the bottleneck.
+  - A finer grid raised the volume but did not fix the event timing.
+  - Schaake96 with the default REFKDT=3.0 lets almost all rain infiltrate in mountain
+    basins, so almost no surface runoff forms. All flow then goes through the slow
+    groundwater bucket: no storm peaks, and an inverted seasonal cycle (winter flow
+    above summer flow in a monsoon basin).
+  - **Fix**: reduce REFKDT from 3.0 to 0.5-1.0 (⚠️ address is BUILD-DEPENDENT — see
+    dt_v043: on a build without `-DSPATIAL_SOIL` this file is never read and REFKDT
+    lives in GENPARM.TBL). This is the #1 calibration priority for mountain/semi-arid basins.
+  - RUNOFF_OPTION=5 (MMF) crashes: it needs an MMF_RUNOFF_FILE that the standard
+    pipeline does not build. Use option 1 or 3.
+  - Findings file: `outputs/chaohe_wrfhydro_010deg_2000/wrfhydro_chaohe_findings.yaml`.
+- **Arid basins (Spain GRDC_6217140 test, 2026-04-03): three crashes in a row, each
+  hiding the next** (dt_v037 → dt_v038 → dt_v036). All three fixes must be applied
+  together (Critical Domain Knowledge section 21). Of the three channel routing options
+  only diffusive wave kept running; Muskingum and Muskingum-Cunge stopped within days.
+  With the uncalibrated REFKDT=3.0 the volume was far too low, the same cause as in
+  Chaohe. The KI routing tools built Route_Link.nc, spatialweights.nc and
+  GWBUCKPARM_UDMP correctly in this test.
 
 ---
 
@@ -406,7 +372,7 @@ User wants discharge simulation
     │   - NO Route_Link.nc needed
     │   - NO spatialweights.nc needed
     │   - CHRTOUT output: discharge at every channel GRID CELL
-    │   - DEFAULT for HydroCraft — proven on Bengbu (r=0.84), Chaohe, Miyun
+    │   - DEFAULT for HydroCraft — used in the Bengbu, Chaohe and Miyun tests
     │
     └── Reach-based routing? ────────► channel_option = 1 (Muskingum) or 2 (Muskingum-Cunge)
         - REQUIRES: Route_Link.nc (reach topology + channel geometry)
@@ -565,10 +531,10 @@ This section is the authoritative reference for ALL physics switches in WRF-Hydr
 
 | Switch | Valid Values | Default | Status | Description | Key Dependencies |
 |--------|-------------|---------|--------|-------------|------------------|
-| `RUNOFF_OPTION` | 1-5, 7 | 3 | See below | Runoff generation scheme | soil_properties.nc (REFKDT, DKSAT, BEXP) |
+| `RUNOFF_OPTION` | 1-5, 7 | 3 | See below | Runoff generation scheme | soil_properties.nc (REFKDT, DKSAT, BEXP) — **build-dependent, dt_v043**; without -DSPATIAL_SOIL these come from GENPARM.TBL/SOILPARM.TBL |
 | `DYNAMIC_VEG_OPTION` | 1-9 | 4 | All available | Vegetation phenology | geo_em.d01.nc (SHDFAC, LAI) |
 | `CANOPY_STOMATAL_RESISTANCE_OPTION` | 1-2 | 1 | All available | Stomatal resistance model | MPTABLE.TBL |
-| `BTR_OPTION` | 1-3 | 1 | All available | Soil moisture factor for stomatal resistance | soil_properties.nc |
+| `BTR_OPTION` | 1-3 | 1 | All available | Soil moisture factor for stomatal resistance | soil_properties.nc — build-dependent, dt_v043 |
 | `SURFACE_DRAG_OPTION` | 1-2 | 1 | All available | Surface layer drag coefficient (CH, CM) | -- |
 | `FROZEN_SOIL_OPTION` | 1-2 | 1 | All available | Frozen soil permeability | -- |
 | `SUPERCOOLED_WATER_OPTION` | 1-2 | 1 | All available | Supercooled liquid water fraction | -- |
@@ -587,7 +553,7 @@ This section is the authoritative reference for ALL physics switches in WRF-Hydr
 |-------|------|--------|---------------|-----------|-------|
 | 1 | TOPMODEL (SIMGM) | ✅ Available | Standard pipeline only | Chaohe (recommended for mountain) | Saturation-excess with GW table; best for mountain/semi-arid |
 | 2 | TOPMODEL-equilibrium (SIMTOP) | ✅ Available | Standard pipeline only | -- | Simplified Option 1 without explicit GW model |
-| 3 | Schaake96 | ✅ Available (DEFAULT) | Standard pipeline only | Bengbu (r=0.84), Spain (r=0.46) | Infiltration-excess; REFKDT=3.0 too high for mountains (dt_v018) |
+| 3 | Schaake96 | ✅ Available (DEFAULT) | Standard pipeline only | Bengbu, Spain | Infiltration-excess; REFKDT=3.0 too high for mountains (dt_v018) |
 | 4 | BATS | ✅ Available | Standard pipeline only | -- | Simple bucket; limited calibration potential |
 | 5 | Miguez-Macho & Fan | ❌ CRASHES | MMF_RUNOFF_FILE (not in pipeline) | Chaohe (crash confirmed) | Fatal: dt_v019. Use Option 1 instead |
 | 7 | Xinanjiang | ⚠️ Untested | Unknown | -- | Listed in v5.4 docs; not present in v5.2 source. DO NOT USE without verification |
@@ -614,7 +580,7 @@ This section is the authoritative reference for ALL physics switches in WRF-Hydr
 |-------|------|--------|---------------|-----------|-------|
 | 1 | Muskingum (reach-based) | ✅ Available | Route_Link.nc + spatialweights.nc + UDMP_OPT=1 | Spain (5 days output) | Requires reach-based setup |
 | 2 | Muskingum-Cunge (reach-based) | ✅ Available | Route_Link.nc + spatialweights.nc + UDMP_OPT=1 | Spain (3 days output) | Supports compound_channel |
-| 3 | Diffusive Wave (gridded) | ✅ Available (DEFAULT) | Fulldom_hires.nc + CHANPARM.TBL only | Bengbu (r=0.84), Chaohe, Spain (115 days) | Simplest setup; proven reliable |
+| 3 | Diffusive Wave (gridded) | ✅ Available (DEFAULT) | Fulldom_hires.nc + CHANPARM.TBL only | Bengbu, Chaohe, Spain | Simplest setup; proven reliable |
 
 **GWBASESWCRT detail:**
 
@@ -641,7 +607,7 @@ This section is the authoritative reference for ALL physics switches in WRF-Hydr
 ```
 namelist.hrldas:
   RUNOFF_OPTION     = 3        # Schaake96 (default, well-tested)
-  # REFKDT = 3.0 in soil_properties.nc (default OK for flat terrain)
+  # REFKDT = 3.0 in soil_properties.nc, or GENPARM.TBL without -DSPATIAL_SOIL (dt_v043); default OK for flat terrain
 
 hydro.namelist:
   OVRTSWCRT         = 1        # Overland flow ON
@@ -659,7 +625,7 @@ hydro.namelist:
 ```
 namelist.hrldas:
   RUNOFF_OPTION     = 1        # TOPMODEL (saturation-excess, better for steep terrain)
-  # OR: RUNOFF_OPTION = 3 with REFKDT = 0.3-0.5 in soil_properties.nc
+  # OR: RUNOFF_OPTION = 3 with REFKDT = 0.3-0.5 in soil_properties.nc (or GENPARM.TBL — dt_v043)
 
 hydro.namelist:
   OVRTSWCRT         = 1
@@ -695,7 +661,7 @@ hydro.namelist:
   UDMP_OPT          = 0
 ```
 
-**CRITICAL**: Apply ALL three arid basin fixes simultaneously (dt_v036 + dt_v037 + dt_v038). Also patch wrfinput_d01.nc: `SMOIS = max(SMOIS, 0.25)`. Start from wet season (October for Mediterranean, NOT July). See Section 21 in Critical Domain Knowledge.
+**CRITICAL**: Apply ALL three arid basin fixes simultaneously (dt_v036 + dt_v037 + dt_v038). A SMOIS start-value floor in wrfinput_d01.nc is a STAND-IN, not a fix: no source supports a single number (this file used to say 0.25, the dt_v036 triplet said > 0.15, one runner used 0.10 for SMOIS <= 0.02), so it is applied only as `SMOIS = max(SMOIS, F)` with an explicit `--smois-floor F` under `--fix-domain-gaps`, and every changed cell is recorded in `domain_edits.json`. Start from wet season (October for Mediterranean, NOT July). See Section 21 in Critical Domain Knowledge.
 
 #### Reach-based routing (NWM compatibility, gage nudging)
 
@@ -835,7 +801,7 @@ WRF-Hydro expects CHANNELGRID=0 for channel cells and -9999 for non-channel. Usi
 
 ### 7. RAINRATE is mm/s = kg/m^2/s (dt_011, dt_v011)
 
-VIC forcing gives mm/3hr. Divide by 10800. CMFD stores rate in kg/m^2/s (NOT mm/3hr — the VIC pipeline multiplies by 10800 for its own use, creating a false impression).
+CMFD stores precipitation as a RATE in kg/m^2/s, which is RAINRATE directly (the forcing tools read it straight from the source). A series given as mm per 3-hour step must be divided by 10800.
 
 ### 8. Vapor pressure kPa must become specific humidity kg/kg (dt_012)
 
@@ -848,6 +814,8 @@ When interpolating coarse forcing (0.25deg) to fine grid (1km), apply:
 - `PSFC *= exp(-g * dz / (R * Tv))` (barometric formula)
 
 Without correction, mountain cells at 1955m get 20% pressure error and 10.7C temperature error.
+`nasa_power_to_ldasin.py` applies it only when asked: pass `--elev-correction barometric-estimate`
+(its default is none). `run_and_score.py` passes it and records the choice in `forcing_provenance.json`.
 
 ### 10. SWDOWN cap at solar constant (dt_v022)
 
@@ -879,7 +847,7 @@ First days produce 237 mm/d runoff. Discard first 6-12 months as spinup.
 
 ### 17. Noah-MP zero-veg crash (dt_v005)
 
-Cells with SHDFAC=0 and VAI=0 in summer get TG=630K — set minimum SHDFAC=0.01.
+Cells with SHDFAC=0 and VAI=0 in summer get TG=630K. The guard (GREENFRAC < 0.01 -> 0.01 in geo_em, SHDMAX/SHDMIN < 1 % -> 1 % in wrfinput) is a model-stability STAND-IN, not observed data. Stand-in domain edits are OPT-IN and RECORDED (2026-10-05): the runners apply them only with `--fix-domain-gaps` (and `--smois-floor` only if a SMOIS floor is wanted), every edited cell goes to `domain_edits.json` next to result.json (summary under `result.json["domain_edits"]`), and without the flag any cell that would need an edit stops the run (`wrfhydro_domain_edits.py` at the model root). The KI tool `tools/s3_wrfinput/build_wrfinput.py` follows the same rule itself: its SHDMAX-on-land floor runs only with its own `--fix-domain-gaps` and is recorded cell by cell in `DOMAIN/domain_edits.build_wrfinput.json`; without the flag it stops and lists the cells (no output written).
 
 ### 18. OOM on large domains (dt_v006)
 
@@ -887,7 +855,7 @@ Cells with SHDFAC=0 and VAI=0 in summer get TG=630K — set minimum SHDFAC=0.01.
 
 ### 19. ISLTYP=14 on land cells (dt_v012)
 
-HWSD/AVHRR mismatch gives water soil type on land cells. Noah-MP writes -9999. Fix: replace with default soil type.
+HWSD/AVHRR mismatch gives water soil type on land cells (HWSD map unit 0 = no soil data). Noah-MP writes -9999. Replacing it FILLS MISSING DATA: filled from NEIGHBOURS, not with a fixed loam (owner decision 2026-10-05): each gap cell takes the most common soil class of its nearest valid land cells (8-neighbours first, then wider rings; tie -> closest cell, then lowest class id), top and bottom layer separately; the soil water values then come from that class's own SOILPARM.TBL / HYDRO.TBL row. Only with --fix-domain-gaps; every filled cell is recorded with its source cells and the class taken. No 1 % limit. Stand-in domain edits are OPT-IN and RECORDED (2026-10-05): the runners apply them only with `--fix-domain-gaps` (and `--smois-floor` only if a SMOIS floor is wanted), every edited cell goes to `domain_edits.json` next to result.json (summary under `result.json["domain_edits"]`), and without the flag any cell that would need an edit stops the run (`wrfhydro_domain_edits.py` at the model root). The KI tool `tools/s2_geo_em/build_geo_em.py` follows the same rule itself (2026-10-05): every fill it makes -- water soil on land (top and bottom layer separately), HWSD map units missing from the MDB, partly empty texture, cells with no soil fraction, land-cover codes not in the UMD table, DEM nodata (nearest valid cell), negative elevations -> 0 -- runs only with `--fix-domain-gaps`, is recorded cell by cell in `DOMAIN/domain_edits.build_geo_em.json`, soil gaps filled from neighbours as above. An HWSD MDB that cannot be read now stops (it used to make every cell loam). Runners merge the tool records into `domain_edits.json`.
 
 ### 20. GW bucket Zmax too shallow (dt_v013)
 
@@ -922,15 +890,16 @@ These three crashes occur IN SEQUENCE. Each masks the next — you cannot see Cr
 **Crash 3: "SMCRT fully depleted upon disaggregation" or SILENT SEGFAULT (dt_v036)**
 - **Cause**: In arid/semi-arid basins, Noah-MP computes zero liquid soil moisture (`SH2O=0`) during dry months. The disaggregation routine maps this to the routing grid, producing `SMCRT<=0` at some cells. The Fortran code at `Noah_distr_routing.F:1143` crashes when `SMCRT<=0` AND soil is NOT frozen.
 - **Symptom**: MPI process exits with code 1, NO error message in `diag_hydro` (segfault). Occurs 3-20 days into simulation.
-- **Fix**: Apply ALL of these:
+- **Fix**: Apply ALL of these. Items 1 and 2 are STAND-IN edits: Stand-in domain edits are OPT-IN and RECORDED (2026-10-05): the runners apply them only with `--fix-domain-gaps` (and `--smois-floor` only if a SMOIS floor is wanted), every edited cell goes to `domain_edits.json` next to result.json (summary under `result.json["domain_edits"]`), and without the flag any cell that would need an edit stops the run (`wrfhydro_domain_edits.py` at the model root).
   ```python
-  # 1. Set minimum SMOIS in wrfinput_d01.nc
-  smois[smois < 0.25] = 0.25
+  # 1. SMOIS start-value floor (start-value adjustment) -- explicit value only:
+  #    --fix-domain-gaps --smois-floor F  ->  SMOIS = max(SMOIS, F)
+  #    (no source supports 0.25 / 0.15 / 0.10; the run states the value it used)
 
-  # 2. Fix zero soil properties (ISLTYP=14 water cells on land)
-  smcmax[smcmax <= 0] = 0.434
-  smcwlt[smcwlt <= 0] = 0.066
-  smcref[smcref <= 0] = 0.329
+  # 2. Zero soil properties on water-soil land cells (fills missing data):
+  #    smcmax/smcwlt/smcref <= 0 -> the cell's class is taken from its nearest
+  #    valid land neighbours (majority; tie -> closest, then lowest id) and the
+  #    values come from THAT class's SOILPARM.TBL row (no fixed loam numbers)
 
   # 3. Start from wet season (NOT July in Mediterranean!)
   # Mediterranean: start October  
@@ -951,9 +920,9 @@ rst_dt = -99999                     ! No hydro restart
 rst_typ = 0                         ! Don't overwrite LSM soil from routing
 t0OutputFlag = 0                    ! No output at time 0
 ```
-And patch wrfinput_d01.nc: `SMOIS = max(SMOIS, 0.25)` for all cells.
+A SMOIS floor in wrfinput_d01.nc is only applied as an opt-in stand-in with an explicit value (`--fix-domain-gaps --smois-floor F`, rule `SMOIS = max(SMOIS, F)`), recorded cell by cell in `domain_edits.json`.
 
-**Validated**: Spain GRDC_6217140 (Mediterranean, 15,660 km²). With all fixes: 115 days of CHRTOUT output, r=0.456 vs observed. Without fixes: crashes within 1-5 days through 3 different error paths.
+**Evidence**: Spain GRDC_6217140 test (Mediterranean). With all fixes the run keeps going; without them it crashes within 1-5 days through 3 different error paths.
 
 ### 22. Only Config A is Production-Ready for Global Basins (dt_v042) — CRITICAL
 
@@ -982,13 +951,10 @@ All other 7 configurations crash within 0-7 days:
 
 **Basins tested**: Kettle River WA/BC (snow), Balsas Brazil (tropical), Clutha NZ (oceanic) — identical behavior across all 3 continents.
 
-**Config A results (uncalibrated):**
-
-| Basin | r | PBIAS | Sim/Obs Q |
-|-------|---|-------|-----------|
-| Kettle River | **0.70** | +54% | 86/56 m³/s |
-| Balsas Brazil | **0.83** | **-3%** | 104/107 m³/s |
-| Clutha NZ | **0.52** | -52% | 290/601 m³/s |
+**Rule (void sweeps)**: a parameter sweep in which every run ends with rc=1, or every value gives
+the same score, is void: most likely the scorer read old output. Before scoring, check that each run's
+diag_hydro says `The model finished successfully` (the exit code alone is not enough, see section 23)
+and that its CHRTOUT files are new (seen in the 2026-07-19 Balsas REFKDT sweep).
 
 **Rule**: Always use Config A for production.
 
@@ -998,9 +964,233 @@ All other 7 configurations crash within 0-7 days:
 
 ---
 
+### 23. `soil_properties.nc` is INERT unless the build defined `-DSPATIAL_SOIL` (dt_v043) — CRITICAL
+
+**Applies to**: the WRF-Hydro v5.2 Noah-MP HRLDAS offline path in this tree. Other code paths or a
+patched reader may behave differently.
+
+**Symptom**: You edit `REFKDT` / `SLOPE` / `SMCMAX` in `soil_properties.nc`, a read-back confirms
+the new value is in the file, the run completes normally — and the output is **bit-identical**.
+
+**The file is unread. The PARAMETERS ARE NOT DEAD.** Read that twice before you drop anything.
+Without the macro, the `#ifndef SPATIAL_SOIL` block at `module_sf_noahmpdrv.F:1177-1197` takes the
+same quantities from the **parameter tables** instead:
+
+| parameter | live address on a NO-SPATIAL_SOIL build | measured 48 h sensitivity at Wangjiaba |
+|---|---|---|
+| `REFKDT` | **GENPARM.TBL** `REFKDT_DATA` (scalar) | 3.0 → 0.5 ⇒ max\|dQ\| **16.8 m³/s** |
+| `REFDK` | **GENPARM.TBL** `REFDK_DATA` (scalar) | collinear with REFKDT via `KDT = REFKDT*DKSAT(1)/REFDK` |
+| `SLOPE` | **GENPARM.TBL** `SLOPE_DATA(SLOPETYPE)` | 0.05 → 0.90 ⇒ max\|dQ\| **3.7 m³/s** |
+| `SMCMAX` and the other texture properties | **SOILPARM.TBL** by soil texture class | ×0.9 ⇒ max\|dQ\| **451 m³/s** |
+
+Note only `SMCMAX` comes from SOILPARM.TBL. `REFKDT` and `SLOPE` come from **GENPARM.TBL** — an
+easy and costly thing to get backwards.
+
+⚠️ **Those 48 h numbers prove liveness, not magnitude.** They come from a cold-start window whose
+own peak is 226.8 m³/s, so `max|dQ|` of 451 is ~199% of peak — the dt_v014 cold-start artifact
+amplifying the signal. Never rank levers across different windows or displacement conventions.
+
+**Re-measured properly** on a full 1981-1983 post-spin-up window (baseline peak 2416 m³/s), with
+`smcmax_mult` at a physically valid 0.89 (dt_v045 — the declared floor of 0.85 is not valid) and a
+*smaller* displacement than the other levers received:
+
+| lever | max\|dQ\| on one consistent window (1981-1983, baseline peak 2416) |
+|---|---|
+| `gw_coeff` | 1886 |
+| `gw_zmax` | 1650 |
+| **`smcmax_mult`, measured COHERENTLY** | **1516** |
+| `gw_expon` | 1362 |
+| `mann_n_mult` | 419 |
+| `lksatfac` | 373 |
+| `ovroughrtfac` | 120 |
+| `retdeprtfac` | 5.9 |
+| *(`smcmax_mult` as the lever is actually declared)* | *(5286 — **do not use**, see dt_v045: wrong sign, 71% artifact)* |
+
+So on a build without `-DSPATIAL_SOIL` the soil parameters reached through the tables are a
+**top-three** influence on this basin's streamflow — and they are exactly the ones a probe pointed at
+`soil_properties.nc` reports as bitwise-zero dead. A calibration that drops them is missing a major
+dimension, not a minor one.
+
+These are one-sided OAT responses at a single displacement, near a nonlinear boundary: read them as
+evidence of relative importance at that point, **not** as per-unit sensitivity coefficients.
+
+**What the missing macro actually costs you**: *spatial variation* of these parameters, not the
+parameters. As global scalars they are live today. Do not "drop them as dead" and do not rebuild
+expecting to resurrect them — rebuild only if you need them to vary in space.
+
+**Cause**: the only `READ_3D_SOIL` call sits inside `#ifdef SPATIAL_SOIL`
+(`module_NoahMP_hrldas_driver.F:1085`), as do the `*_3D`/`*_2D` declarations and allocations. In
+`NDHMS/macros`, `SPATIAL_SOIL` is a **make variable**:
+
+```make
+ifeq ($(SPATIAL_SOIL),1)
+SPATIAL_SOIL = -DSPATIAL_SOIL
+else
+SPATIAL_SOIL =                      # <-- empty
+endif
+CPPFLAGS = -DMPP_LAND -I"../Data_Rec" $(HYDRO_D) $(SPATIAL_SOIL) ...
+```
+
+so unless `SPATIAL_SOIL=1` was exported **at build time** the macro is empty. `SPATIAL_FILENAME`
+still parses from `namelist.hrldas` — that variable is declared outside the `#ifdef` — so the
+namelist gives no signal either.
+
+**Do NOT diagnose this by grepping the binary or reading `macros`.** Both mislead: every Noah-MP
+build carries the table paths, and the `CPPFLAGS` line *mentions* `$(SPATIAL_SOIL)` whether or not
+it resolves to anything.
+
+**Check 1 — the artifact, one second, no run:**
+
+```bash
+nm module_NoahMP_hrldas_driver.o | grep read_3d_soil   # nothing => the CALL was not compiled
+nm wrf_hydro_NoahMP.exe | grep read_3d_soil            # present => the SUBROUTINE is linked anyway
+```
+The second line is exactly why grepping the executable misleads: `read_3d_soil` itself is not
+inside any `#ifdef`, so it is always linked in. Only the **call site** is conditional.
+
+**Check 2 — behaviour:**
+
+```bash
+rm -f *CHRTOUT* *LDASOUT* *GWOUT*                     # MUST clear: stale outputs read as a pass
+mv DOMAIN/soil_properties.nc DOMAIN/soil_properties.nc.MOVED
+mpirun -np 4 ./wrf_hydro.exe
+grep -c "finished successfully" diag_hydro.00000      # MUST be 1 — see below
+```
+`read_3d_soil` hard-`stop`s on `nf90_open` failure, so a SPATIAL_SOIL build cannot survive the
+rename. **Never judge this by the exit code**: Fortran `stop` exits **0**, so a run that died at
+initialisation returns `rc=0` like a healthy one. Check `diag_hydro` for
+`The model finished successfully` and confirm the outputs were actually regenerated. This test is
+decisive only because *this* reader hard-stops; readers that warn and fall back give the opposite
+wrong answer.
+
+Also useless as evidence here: comparing `LDASOUT` when `OUTPUT_TIMESTEP` is longer than the run.
+The only file written is then the t=0 state, whose accumulators are identically zero and whose
+`SOIL_M` is the restart — it reads `max|diff| = 0.0` even for a parameter that is demonstrably
+alive. Compare `CHRTOUT`, or set a real `OUTPUT_TIMESTEP` first.
+
+**Calibration consequence**: on such a build, address these three at their **table** locations, not
+at `soil_properties.nc`. Before you do, fix containment: in a standard eval deck `GENPARM.TBL`,
+`SOILPARM.TBL`, `MPTABLE.TBL` and `HYDRO.TBL` are **symlinks into the shared source tree**
+`.../NDHMS/Run/`, so writing them per candidate corrupts every concurrent evaluation. Copy them into
+the workdir first and hash them as part of case identity.
+
+**The general rule this yields**: an **exactly bitwise 0.0** sensitivity is a signature of *"not
+read at this address"*, never of *"insensitive"*. A genuinely insensitive parameter gives a small
+non-zero number. Treat exact zero as fail-closed: audit the address before recording anything dead.
+
+### 24. `gw_zinit` is alive but erased by spin-up (dt_v044)
+
+**Symptom**: displacing `Zinit` in `GWBUCKPARM.nc` (e.g. 25 → 45 mm) changes nothing in a
+scored window that begins after a multi-month spin-up — `max|dQ| = 0.0` exactly.
+
+**It is NOT dead, and `rst_typ` is NOT the cause.** `rst_typ` gates the fine-grid soil and
+routing states (`sh2ox`, `infxsrt`, …), not the bucket. The bucket depth `z_gwsubbas` is
+restored from `HYDRO_RST` only when `GW_RESTART != 0`; with `GW_RESTART = 0` the bucket
+always cold-starts from `Zinit` regardless of `rst_typ`.
+
+**Measured** (Wangjiaba, 2026-09-09): paired 48 h runs from the run start at `Zinit` 25 vs 45
+differ — day 1 `max|dQ| = 2.400`, day 2 `max|dQ| = 5.047` m³/s. The declared 6-month spin-up
+(1980-07-01 → 1981-01-01) then damps the difference to exactly zero before scoring opens.
+
+**Rule**: under a spin-up long enough to equilibrate the bucket, `Zinit` is an
+**initial-state** parameter rather than a calibration lever, and belongs to the case's
+warm-start protocol. It is **not** generally inert: under a short or absent spin-up — event
+forecasting from a recent analysis, DA cycling — it is a live control and possibly a DA
+state. A parameter box fitted under a long spin-up must therefore not be carried into such a
+protocol without re-deriving it. The erasure argument cuts both ways.
+
+**Scope of the measurement**: one displacement pair (25 vs 45 mm) in one spin-up window. The
+range endpoints and the holdout block's own spin-up were not probed. Erasure is
+state-dependent — do not read this as a general result.
+
+**The converse, which is the reusable part**: a "dead" parameter measured only inside a
+post-spin-up window has not been shown dead — probe from the run start before concluding.
+But that alone is not enough: `refkdt`/`slope`/`smcmax` also read exactly 0.0 and probing
+from the run start would still have read 0.0, because their problem was the *address*, not
+the window (dt_v043). The rule that covers both: **an exactly bitwise 0.0 sensitivity means
+"not read at this address", never "insensitive", and must trigger an address audit and a
+window audit before anything is recorded dead.**
+
+### 25. `smcmax_mult` below ~0.88 makes the soil physically impossible (dt_v045)
+
+**Symptom**: none. The run completes, writes plausible-looking discharge, and the calibration
+happily scores it. Nothing warns you.
+
+**Cause**: `smcmax_mult` scales **porosity only** — `smcmax` in `soil_properties.nc`, or `MAXSMC` in
+`SOILPARM.TBL` on a build without `-DSPATIAL_SOIL` (dt_v043). It does **not** scale the dependent
+moisture limits `smcref` (field capacity) and `smcwlt` (wilting point), which are separate fields.
+Push the multiplier low enough and field capacity rises **above** porosity — a soil that can hold
+more water than it has pore space.
+
+Measured at Wangjiaba (0.25°/7 km): the binding ratio is `max(smcref/smcmax) = 0.8803` over land
+cells, so **any multiplier below 0.8803 is unphysical**, and at the KI template's declared range
+floor of `0.85` it corrupts **10.5% of land cells** (the CLAY class, `smcref` 0.4120 vs `smcmax`
+0.3978). The KI template declares `range: [0.85, 1.1]`, `hard_bounds: [0.7, 1.15]` — so the bottom
+of the declared range, and a wide band of the hard bounds, generate impossible soils.
+
+Worse, the liveness probe displaces each parameter to the range end farthest from the default, which
+for this lever is **exactly 0.85** — the worst corner. A sensitivity measured there conflates the
+parameter's real effect with the effect of an invalid soil state, and it is large: `max|dQ|` reached
+3509 m³/s over 1981-1983, above the basin's own 2416 m³/s peak.
+
+**A SECOND constraint, independent of the first** (round-7 review; I verified it): the warm-start
+restart carries `SMC` filled against the ORIGINAL porosity (95th percentile `SMC/smcmax` = 0.911).
+Shrinking `smcmax` therefore leaves cells *supersaturated at t=0*, and the ordering floor does not
+protect against it:
+
+| multiplier | land layer-cells starting above the new porosity |
+|---|---|
+| 0.85 | 346 / 1976 (17.5%) |
+| **0.8803** — the ordering "valid floor" | **209 / 1976 (10.6%)** |
+| 0.89 | 162 (8.2%) |
+| 0.95 | 38 (1.9%) |
+| 1.00 | 4 (0.2%) — pre-existing in the restart file, max ratio 2.14 |
+| 1.10 | 4 (0.2%) — **adds none** |
+
+So a downward multiplier is never clean under this warm start, even above the ordering floor, while
+the upward branch adds nothing. Deriving a floor from `max(smcref/smcmax)` alone is **not
+sufficient** — it fixes the table ordering and leaves the initial condition broken.
+
+**A third, unfixed facet**: `hydro2dtbl.nc` carries its own `SMCMAX1`/`SMCREF1`/`SMCWLT1` (bit-equal
+to `soil_properties` `smcmax`) which the subsurface routing reads and which `smcmax_mult` never
+touches — so **every** multiplier, up or down, leaves the LSM and the routing disagreeing about
+porosity.
+
+**Note on where the constraint is derived**: the 0.8803 above comes from `soil_properties.nc`, the
+file this build never opens. The two agree here only because that file was generated by table lookup
+on `ISLTYP`. Derive the constraint at the **effective** address, or it will be wrong on the next
+domain.
+
+**The lever is not merely mis-bounded — as declared it gives a PHYSICALLY WRONG-SIGNED response.**
+Measured on the full 1981-1983 window: scaling only the LSM porosity by 1.10 *raises* the peak from
+2416 to 5392 m³/s (`max|dQ|` 5286). Raising porosity should add storage and *lower* the peak. Scaling
+`hydro2dtbl.nc` `SMCMAX1` by the same factor — decks otherwise identical — gives `max|dQ|` 1516 with
+the peak *falling* to 2279, the correct direction. **71% of the apparent sensitivity was the LSM and
+the routing disagreeing about porosity, not the parameter.** A calibration using this lever as
+declared would fit that artifact. Fix the lever before reinstating it.
+
+**Fix, in order of preference:**
+1. Redefine the lever to keep the soil consistent — scale `smcref`/`smcwlt` with `smcmax`, or
+   rescale the retention curve, so the ordering `smcwlt < smcref < smcmax` always holds.
+2. Failing that, derive the lower bound **per domain** from `max(smcref/smcmax)` rather than
+   declaring a fixed 0.85 — and separately rescale the restart `SMC`, or the initial condition stays
+   broken. Refuse any candidate that violates either constraint.
+
+Do **not** hard-code 0.8803 into the contract: a hand-written bound is another fixed address of the
+kind that has now been wrong four times, and it is domain- and warm-start-specific. Declare the
+*invariant* (`smcwlt < smcref < smcmax` cell-wise, and `restart_SMC <= smcmax`), evaluate it against
+the actual artifacts after `apply_params`, and have the probe call the same validator to pick a
+feasible displacement. One validator, two callers.
+
+Either way, **assert the ordering after applying parameters and fail the run** — this is a silent
+corruption, so it needs a hard check, not a note. The same hazard applies to any multiplier that
+moves one member of a physically constrained set.
+
+---
+
 ## Diagnostic Triplets
 
-45 triplets covering 8 failure domains + 6 Chaohe investigation + 3 audit additions + 3 arid basin cascade + 3 physics options audit. See `diagnostics/triplets.yaml` and `diagnostics/error_log.yaml` for full details.
+Triplets (current count: the KI map at the top of this file; the authoritative count is `diagnostics/triplets.yaml` itself — the prose here has been wrong four different ways; regenerate rather than hand-count). Covering 8 failure domains + 6 Chaohe investigation + 3 audit additions + 3 arid basin cascade + 3 physics options audit + 3 address/spin-up/range (dt_v043, dt_v044, dt_v045). See `diagnostics/triplets.yaml` and `diagnostics/error_log.yaml`.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -1036,6 +1226,10 @@ All other 7 configurations crash within 0-7 days:
 | dt_v039 | silent | silent_error | rt_option=2 (CASC2D) not active — produces wrong routing silently |
 | dt_v040 | silent | silent_error | GWBASESWCRT=0 creates water sink — drainage exits system |
 | dt_v041 | silent | silent_error | lake_option=0 with gridded routing masks channels at lake locations |
+| dt_v042 | degraded | dependency_mismatch | Only Config A is production-ready for global basins (see section 22) |
+| dt_v043 | silent | silent_error | soil_properties.nc inert unless built with -DSPATIAL_SOIL — REFKDT/SLOPE/SMCMAX edits land, read back, and do nothing |
+| dt_v044 | silent | silent_error | gw_zinit alive at t=0 but erased by spin-up — reads as a dead lever if probed only inside the scored window |
+| dt_v045 | silent | silent_error | smcmax_mult below ~0.88 puts field capacity ABOVE porosity — declared range floor 0.85 corrupts 10.5% of cells, silently |
 
 ---
 
@@ -1052,15 +1246,13 @@ All other 7 configurations crash within 0-7 days:
 | Land surface | VIC energy/water balance | Noah-MP (multiple physics options) |
 | Parallelism | None (serial) | MPI (domain decomposition) |
 | Setup complexity | grid + soil + veg + forcing | 8 domain files + forcing + TBL |
-| **Bengbu discharge** | **1,535 m^3/s mean** | **1,090 m^3/s mean (r=0.84)** |
 
 ---
 
 ## Model Coupling
 
 See `docs/model_couplings.yaml` for:
-- VIC forcing -> WRF-Hydro LDASIN (3-hourly to hourly, unit conversions)
-- CMFD -> WRF-Hydro LDASIN (direct, no VIC intermediate) via `cmfd_to_ldasin.py`
+- CMFD -> WRF-Hydro LDASIN, read straight from the source, via `cmfd_to_ldasin.py`
 - WRF-Hydro -> CaMa-Flood (SFCRNOFF + UGDRNOFF as alternative runoff source)
 
 ---
@@ -1073,6 +1265,9 @@ python tools/s1_domain/define_lambert_domain.py \
   --basin_shp data/shp/chaohe_boundary.shp --dx 1000 --output domain_def.json
 
 # 2. Build geo_em
+#    Any fill / replace / clip of source data (DEM nodata, soil gaps, unknown land
+#    cover) stops the tool and lists the cells unless --fix-domain-gaps is given;
+#    with it every changed cell is recorded in DOMAIN/domain_edits.build_geo_em.json.
 python tools/s2_geo_em/build_geo_em.py \
   --domain_json domain_def.json \
   --dem_path data/dem/china_dem_90m/china_dem_90m.tif \
@@ -1083,20 +1278,16 @@ python tools/s2_geo_em/build_geo_em.py \
 
 # 3-6. Build remaining domain files (can run in parallel)
 python tools/s3_wrfinput/build_wrfinput.py --geo_em DOMAIN/geo_em.d01.nc --output_path DOMAIN/wrfinput_d01.nc
+#   (SHDMAX floor / soil-gap neighbour class fill for ISLTYP+SMOIS / TMN on land: same opt-in --fix-domain-gaps, recorded)
+#   s4/s5/s6: DEM gaps, elevations <= 0, table fallbacks: same opt-in --fix-domain-gaps, recorded;
+#   s4 auto threshold (--stream_threshold 0) needs --precip_mm_yr/--temp_mean_c
 python tools/s4_fulldom/build_fulldom_hires.py --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json --dem_path ... --basin_shp ... --output_path DOMAIN/Fulldom_hires.nc
 python tools/s5_soil_properties/build_soil_properties.py --geo_em DOMAIN/geo_em.d01.nc --output_path DOMAIN/soil_properties.nc
 python tools/s6_groundwater/build_groundwater.py --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json --basin_shp ... --output_dir DOMAIN/
 
 # 7. Validate spatial metadata (add resolution attribute if missing)
 
-# 8. Convert forcing (choose one):
-# Option A: From VIC forcing files
-python tools/s8_forcing/convert_forcing_to_ldasin.py \
-  --forcing_dir vic_forcing/ --grid_nc basin_grid.nc \
-  --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json \
-  --output_dir FORCING/ --start_date 2001-01-01 --end_date 2001-01-07
-
-# Option B: Direct from CMFD (no VIC intermediate)
+# 8. Build forcing straight from the source (China: CMFD; elsewhere: nasa_power_to_ldasin.py)
 python tools/s8_forcing/cmfd_to_ldasin.py \
   --cmfd_dir data/forcing/Data_forcing_03hr_010deg \
   --geo_em DOMAIN/geo_em.d01.nc --domain_json domain_def.json \
@@ -1111,6 +1302,9 @@ python tools/s9_namelists/generate_namelists.py \
 python tools/s10_execution/run_wrfhydro.py --run_dir . --nproc 4
 
 # OR: Run entire pipeline in one command
+#   step 3b SMOIS/TSLB floors are no longer applied by default (were 0.25 / 285 K):
+#   add --fix-domain-gaps --smois-floor F [--tslb-floor T] to opt in; the pipeline
+#   passes --fix-domain-gaps to s2/s3 and merges all records into DOMAIN/domain_edits.json
 python tools/run_wrfhydro_full_pipeline.py \
   --basin_shp data/shp/basin.shp --start_date 2000-01-01 --end_date 2005-12-31 \
   --forcing_source cmfd --output_dir outputs/my_run/
@@ -1135,7 +1329,6 @@ knowledge_infrastructure/
     s4_fulldom/build_spatial_weights.py
     s5_soil_properties/build_soil_properties.py
     s6_groundwater/build_groundwater.py
-    s8_forcing/convert_forcing_to_ldasin.py
     s8_forcing/cmfd_to_ldasin.py
     s9_namelists/generate_namelists.py
     s10_execution/run_wrfhydro.py
@@ -1148,7 +1341,7 @@ knowledge_infrastructure/
     s11_output_interpretation_skill.md # CHRTOUT vs LDASOUT output guide
     model_couplings.yaml
   diagnostics/
-    triplets.yaml                   # 25 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
     error_log.yaml                  # 25 recorded errors from real runs (Chaohe + Bengbu)
 ```
 
@@ -1158,16 +1351,26 @@ knowledge_infrastructure/
 
 | Parameter | File | Default | What it controls |
 |-----------|------|---------|-----------------|
-| REFKDT | `soil_properties.nc` (NOT geo_em.d01.nc) | 3.0 | Infiltration vs runoff split |
-| REFDK | GENPARM.TBL | 2.0e-6 | Reference conductivity |
-| SLOPE | `soil_properties.nc` | from DEM | Surface slope |
-| SMCMAX | `soil_properties.nc` | from soil type | Porosity |
+| REFKDT | **build-dependent**: `soil_properties.nc` if built `-DSPATIAL_SOIL`, else GENPARM.TBL `REFKDT_DATA` | 3.0 | Infiltration vs runoff split |
+| REFDK | GENPARM.TBL `REFDK_DATA` (spatial file only under `-DSPATIAL_SOIL`) | 2.0e-6 | Reference conductivity |
+| SLOPE | **build-dependent**: `soil_properties.nc` if `-DSPATIAL_SOIL`, else GENPARM.TBL `SLOPE_DATA(SLOPETYPE)` | from DEM / table | Surface slope |
+| SMCMAX | **build-dependent**: `soil_properties.nc` if `-DSPATIAL_SOIL`, else SOILPARM.TBL by texture class | from soil type | Porosity |
 | Manning N | `CHANPARM.TBL` | by order | Channel roughness |
 | OVROUGHRTFAC | `Fulldom_hires.nc` (2D field, NOT hydro.namelist) | 1.0 | Overland flow roughness |
 | GW Coeff/Expon/Zmax | `GWBUCKPARM.nc` | 1.0 / 3.0 / 50 mm | Baseflow magnitude, recession, memory |
 
-**CRITICAL**: REFKDT is the #1 calibration parameter but it is in `soil_properties.nc`,
-NOT in `geo_em.d01.nc`. Modifying the wrong file has no effect.
+**CRITICAL**: REFKDT is the #1 calibration parameter and it is never in `geo_em.d01.nc`. It lives in
+`soil_properties.nc` **only on a build with `-DSPATIAL_SOIL`**; otherwise in GENPARM.TBL (dt_v043).
+Modifying the wrong one has no effect — and gives a bitwise-zero sensitivity that must NOT be read
+as 'this parameter does not matter'.
+
+**CRITICAL (dt_v043)**: which of the two addresses above is live depends on a **build flag**,
+not on the namelist. On a build without `-DSPATIAL_SOIL`, `soil_properties.nc` is never opened:
+the edit lands, a read-back verifies it, the run completes, and the output is bit-identical —
+while the parameter itself is perfectly alive at its GENPARM/SOILPARM address. Establish which
+build you have (`nm module_NoahMP_hrldas_driver.o | grep read_3d_soil`, see section 23) **before**
+you address any of these in a calibration vector, and never conclude "dead" from a bitwise-zero
+sensitivity.
 
 **CRITICAL**: `OVROUGHRTFAC`, `RETDEPRTFAC` and `LKSATFAC` are 2D fields on the routing
 grid inside `Fulldom_hires.nc` (`module_RT.F` allocates each as `(IXRT,JXRT)`). They are
@@ -1179,7 +1382,7 @@ Zijingguan 2026-07-10). Set them with `build_fulldom_hires.py --ovroughrtfac/--r
 
 | Parameter | Tool flag |
 |---|---|
-| REFKDT | `build_soil_properties.py --refkdt` (default 0.8, mountain-tuned) |
+| REFKDT | `build_soil_properties.py --refkdt` (REQUIRED, no default since 2026-10-05; the caller states its value, recorded as `refkdt_value` in soil_properties.nc; the pipeline takes `--refkdt`) |
 | GW Coeff/Expon/Zmax/Zinit | `build_groundwater.py --gw_coeff --gw_expon --gw_zmax --gw_zinit` |
 | OVROUGHRTFAC / RETDEPRTFAC / LKSATFAC | `build_fulldom_hires.py --ovroughrtfac ...` |
 | RUNOFF_OPTION / channel_option / GWBASESWCRT / DTRT / CHRTOUT_GRID / RTOUT_DOMAIN | `generate_namelists.py --runoff_option --channel_option --gwbaseswcrt --dtrt_ch --dtrt_ter --chrtout_grid --rtout_domain --t0_output` |
@@ -1200,8 +1403,8 @@ These warnings appear during normal operation and can be safely ignored:
 ### 22. Regulated North-China (Haihe) gauges: r-ceiling domain limit (Zijingguan 2026-07-10)
 
 At Juma/拒马河 @ 紫荆关 (Zijingguan, Haihe, Hebei) the stock Config-A run with the
-mountain-tuned default REFKDT=0.8 already applied scores **r=0.32, NSE=-1.25,
-PBIAS=+128%**. This is NOT a tool bug — every tool this basin exercised was verified
+mountain-tuned default REFKDT=0.8 already applied gave a very low r and a large
+over-prediction (scores in that run's own result file, not here). This is NOT a tool bug — every tool this basin exercised was verified
 correct (discharge extraction gauge-matched to 0.12 km; REFKDT=0.8; OVROUGHRTFAC a
 Fulldom 2D field). It is a **domain limitation**:
 
@@ -1209,9 +1412,9 @@ Fulldom 2D field). It is a **domain limitation**:
   operation, irrigation withdrawal, or groundwater-pumping** representation. Haihe /
   North-China gauges are among the most heavily human-managed in China, so the observed
   record's phase and volume are decoupled from natural runoff.
-- **NSE <= r^2.** With r pinned at ~0.32, r^2 = 0.10, so **NSE >= 0.5 is structurally
-  unreachable at this gauge by ANY parameter set.** Check r BEFORE targeting an NSE.
-- The +128% over-prediction is the mirror image of the pre-REFKDT-fix Chaohe/Spain
+- **NSE <= r^2.** When r is below about 0.71 (r^2 < 0.5) at a gauge, **NSE >= 0.5 is
+  structurally unreachable there by ANY parameter set.** Check r BEFORE targeting an NSE.
+- The over-prediction is the mirror image of the pre-REFKDT-fix Chaohe/Spain
   under-prediction: with REFKDT lowered the surface-runoff pathway is open and the model
   now over-produces relative to abstraction-depressed observed flow.
 

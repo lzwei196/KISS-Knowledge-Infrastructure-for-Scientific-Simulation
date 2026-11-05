@@ -3,30 +3,47 @@
 
 package:
   name: HEC-HMS
-  language: python
+  language: java
   implementation:
-    id: hec-hms-python-equiv
-    version: HydroCraft Python equivalent of HEC-HMS 4.x lumped methods
-    provenance: Python; HydroCraft reimplementation of the public-domain SCS-CN / SCS-UH / Muskingum /
-      Linear-Reservoir algorithms, producing equivalent results for lumped/semi-distributed basins.
+    id: usace-hec-hms-4.14
+    version: HEC-HMS 4.14 (official USACE Linux x64 build, bundled JRE), run headless through its Jython
+      API by tools/run_hms_engine.py
+    provenance: Official USACE HEC release (github.com/HydrologicEngineeringCenter/hec-downloads 1.0.47,
+      HEC-HMS-4.14-linux64.tar.gz, sha256 02219337cc1df427e2231778d6e34bf0116dd72433d7e5e336e561d0599f39bb); launcher KISSPATH_HOME/engine_builds_20261006/HEC_HMS/run_hms_headless.sh.
+      tools/run_hec_hms.py is a separate Python SURROGATE (SCS-CN / SCS-UH / Muskingum / Linear-Reservoir
+      re-implementation), not this engine.
+    surrogate_not_this_model: tools/run_hec_hms.py -- HydroCraft Python stand-in (SCS-CN + SCS UH + Linear
+      Reservoir + Muskingum); no equivalence with HEC-HMS shown; its output is never a HEC-HMS result
   scientific_reference_version: HEC-HMS public-domain rainfall-runoff method set (USACE HEC; SCS Curve
     Number loss, SCS dimensionless Unit Hydrograph transform, Muskingum channel routing, Linear Reservoir
     baseflow)
   binary:
-    path: KISSPATH_KI_ROOT/HEC_HMS/knowledge_infrastructure/tools/run_hec_hms.py
-    type: Python
+    path: KISSPATH_HOME/engine_builds_20261006/HEC_HMS/run_hms_headless.sh
+    type: Java
+  run_tool: tools/run_hms_engine.py
+  run_tool_note: default run route = the REAL engine (HEC-HMS 4.14 headless, Jython Project.open -> computeRun)
+    via tools/run_hms_engine.py on an HMS project folder
+  surrogate_tools_not_this_model:
+  - tools/run_hec_hms.py
+  - tools/calibrate_hms.py
 pipeline:
   stages:
   - s0_configuration_skill
   - s1_domain_setup_skill
+  - s2_soil_parameters_skill
+  - s4_forcing_conversion_skill
+  - s5_model_execution_skill
+  - s6_output_analysis_skill
+  - s7_calibration_skill
 tools:
-  count: 6
+  count: 7
   files:
   - tools/calibrate_hms.py
   - tools/convert_forcing_to_hms.py
   - tools/convert_soil_to_hms.py
   - tools/parse_hms_output.py
   - tools/run_hec_hms.py
+  - tools/run_hms_engine.py
   - tools/validate_hms.py
 inputs:
   forcing:
@@ -88,15 +105,36 @@ outputs:
   - subbasin_outflow
   other: []
 validation:
-  tier: not_runnable
-  tier_justification: 'measured: NSE=0.909, KGE=0.948, R=0.955'
+  tier: tested
+  tier_justification: 'REAL engine: official USACE castro sample (HEC-HMS 4.14 samples.zip), runs Current
+    and Future reproduce the USACE-shipped RUN_*.results exactly (9 elements x peak, volume, peak time =
+    54/54 values; run_hms_engine.py --reference_results); one real-observation comparison, Castro Valley
+    outlet gage, storm of 16 Jan 1973, IN-SAMPLE (USACE parameters, likely set for this storm): NSE 0.858
+    on 60 points'
   metrics:
-    best_nse: 0.9086
-    best_kge: 0.9475
-    best_r: 0.9554
+    castro_current_outlet_19730116_nse: 0.8579
+    castro_current_outlet_19730116_kge: 0.8107
+    castro_current_outlet_19730116_r: 0.9329
+    castro_current_outlet_19730116_pbias_pct: 0.98
+  metrics_source:
+    engine: REAL HEC-HMS 4.14 (tools/run_hms_engine.py), not the Python surrogate
+    reproduce: unzip samples/castro from HEC-HMS-4.14/samples.zip; run_hms_engine.py --project castro/castro.hms
+      --run Current --workdir OUT --export Outlet:FLOW --export_dss "castro.dss::/CASTRO VALLEY/OUTLET/FLOW//10MIN/OBS/";
+      pair OUT/exports Current_Outlet_FLOW.csv and dss_CASTRO_VALLEY_OUTLET_FLOW_10MIN_OBS.csv on value_m3s
+      at shared timestamps; ki_tools_common.metrics.all_metrics(obs, sim)
+    scored_series: junction Outlet (5.51 mi2) FLOW, 5-min sim, observed gage 'Out' 10-min (CFS -> m3/s),
+      60 shared times 1973-01-16 03:00..12:50
+    kind: in-sample single event, not a blind validation
+  surrogate_metrics_not_hec_hms:
+    note: these are the OLD Python SURROGATE (tools/run_hec_hms.py) daily metrics on the Huai River at
+      Bengbu (station 51080), still stored in the models DB; they are NOT HEC-HMS results
+    tool: tools/run_hec_hms.py
+    nse: 0.9086
+    kge: 0.9475
+    r: 0.9554
 summary:
-  total_tools: 6
-  total_stage_docs: 2
-  total_diagnostic_triplets: 18
-  generated: '2026-08-15'
+  total_tools: 7
+  total_stage_docs: 7
+  total_diagnostic_triplets: 22
+  generated: '2026-10-06'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

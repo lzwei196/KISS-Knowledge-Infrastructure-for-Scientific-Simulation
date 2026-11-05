@@ -12,8 +12,8 @@ Units: tmin/tmax in C, wind in km/day, radiation in MJ/m2/day,
        rain in mm.
 
 Supported sources:
-    - cmfd:         CMFD NetCDF (China, 0.25 degree, 3-hourly)
-    - vic_forcing:  VIC-format text files (space-delimited daily)
+    - cmfd:         CMFD NetCDF (China, 0.1 degree, 3-hourly)
+    - mswx:         MSWX NetCDF (global, 0.1 degree, 3-hourly)
     - era5_api:     ERA5 via CDS API (global, requires cdsapi)
     - csv:          User-provided CSV (pass-through)
 
@@ -60,7 +60,7 @@ K_TO_C = -273.15                # Kelvin -> Celsius
 PAR_FRACTION = 0.48             # PAR as fraction of total shortwave
 EPAN_ET0_RATIO = 0.7            # E-pan ≈ 0.7 × ET0 (rough)
 
-VALID_SOURCES = ['cmfd', 'mswx', 'vic_forcing', 'era5_api', 'csv']
+VALID_SOURCES = ['cmfd', 'mswx', 'era5_api', 'csv']
 
 
 def validate_inputs(lat_raw, lon_raw, start_raw, end_raw, source, source_path, output_csv):
@@ -98,7 +98,7 @@ def validate_inputs(lat_raw, lon_raw, start_raw, end_raw, source, source_path, o
     if source not in VALID_SOURCES:
         errors.append(f"SOURCE must be one of {VALID_SOURCES}")
 
-    if source in ('cmfd', 'mswx', 'vic_forcing', 'csv') and not source_path:
+    if source in ('cmfd', 'mswx', 'csv') and not source_path:
         errors.append(f"SOURCE_PATH is required for source '{source}'.")
     if source_path and source == 'csv' and not os.path.isfile(source_path):
         errors.append(f"SOURCE_PATH file not found: {source_path}")
@@ -320,79 +320,6 @@ def _retrieve_cmfd(args):
     return count
 
 
-def _retrieve_vic_forcing(args):
-    """Read VIC forcing text files for a specific grid cell."""
-    lat = args['lat']
-    lon = args['lon']
-    source_path = args['source_path']
-    start_date = args['start_date']
-    end_date = args['end_date']
-    output_csv = args['output_csv']
-
-    # Find the forcing file matching this lat/lon
-    # VIC naming: prefix_LAT_LON (e.g., huai_01dy_025deg_31.1250_115.6250)
-    best_file = None
-    best_dist = float('inf')
-
-    for fname in os.listdir(source_path):
-        parts = fname.rsplit('_', 2)
-        if len(parts) >= 3:
-            try:
-                f_lat = float(parts[-2])
-                f_lon = float(parts[-1])
-                dist = (f_lat - lat) ** 2 + (f_lon - lon) ** 2
-                if dist < best_dist:
-                    best_dist = dist
-                    best_file = os.path.join(source_path, fname)
-            except ValueError:
-                continue
-
-    if best_file is None:
-        raise RuntimeError(f"No VIC forcing file found matching ({lat}, {lon}) in {source_path}")
-
-    # Read VIC forcing: columns are typically [air_temp, precip, shortwave, longwave, pressure, vp, wind]
-    records = []
-    with open(best_file) as f:
-        for line in f:
-            parts = line.split()
-            if len(parts) >= 7:
-                records.append([float(p) for p in parts])
-
-    # Write daily CSV
-    num_days = (end_date - start_date).days + 1
-    with open(output_csv, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['date', 'tmin', 'tmax', 'wind', 'radiation', 'epan', 'rh', 'par', 'rain'])
-
-        for day_idx in range(min(num_days, len(records))):
-            day_date = start_date + timedelta(days=day_idx)
-            rec = records[day_idx]
-
-            temp_c = rec[0]  # air temp (C or K)
-            if temp_c > 100:
-                temp_c += K_TO_C  # was in Kelvin
-            tmin = round(temp_c - 3, 1)  # estimate diurnal range
-            tmax = round(temp_c + 3, 1)
-            rain = round(rec[1], 1)
-            srad = rec[2] if len(rec) > 2 else 200
-            wind = round(rec[6] * WIND_MS_TO_KMDAY if len(rec) > 6 else 100, 1)
-            radiation = round(srad * SRAD_WM2_TO_MJ, 2)
-            rh = 70.0  # default
-            if len(rec) > 5:
-                # vapor pressure (kPa) -> RH
-                vp = rec[5]
-                es = _saturation_vapor_pressure(temp_c)
-                if es > 0:
-                    rh = round(min(100, max(0, vp / es * 100)), 1)
-
-            epan = _estimate_epan(tmin, tmax, radiation, wind, rh)
-            par = round(radiation * PAR_FRACTION, 2)
-
-            writer.writerow([day_date.strftime('%Y-%m-%d'), tmin, tmax, wind, radiation, epan, rh, par, rain])
-
-    return min(num_days, len(records))
-
-
 def _read_mswx_var(task):
     """Worker: read one MSWX variable file, extract single pixel, return (var_key, times, values)."""
     import netCDF4
@@ -561,8 +488,6 @@ def process(args):
             record_count = _retrieve_cmfd(args)
         elif source == 'mswx':
             record_count = _retrieve_mswx(args)
-        elif source == 'vic_forcing':
-            record_count = _retrieve_vic_forcing(args)
         elif source == 'era5_api':
             return False, "era5_api backend not yet implemented (requires cdsapi package).", None
 

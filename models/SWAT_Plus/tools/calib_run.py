@@ -641,6 +641,17 @@ def load_obs():
     return np.array(dates), np.array(q, dtype=float), identity
 
 
+
+def _target_proof(sim, dates, split):
+    """Shared kdt-target-proof/1 (ki_tools_common.kdt_proof) — one implementation for every KI."""
+    import sys as _sys
+    _sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+    from ki_tools_common.kdt_proof import target_proof
+    d = [np.datetime_as_string(x, unit="D") for x in np.asarray(dates)]
+    return target_proof(np.asarray(sim, dtype=float), d, target=TARGET_VAR, unit="m3/s", split=split,
+                        window=(d[0], d[-1]) if d else ("", ""),
+                        source="SWAT+ channel outlet flo_out, paired to obs by pair_and_window, split window")
+
 def pair_and_window(obs_d, obs_q, sim_d, sim_q, split: str):
     lo, hi = (np.datetime64(x) for x in SPLITS[split])
     common = np.intersect1d(obs_d, sim_d)
@@ -740,6 +751,10 @@ def main() -> None:
         "binary": str(BIN),
         "ki_tools_used": ["s6/generate_calibration_file.py", "s8/run_swatplus.py",
                           "s9/extract_discharge.py"],
+        # kdt-target-proof/1 (2026-09-15): the RAW scored series (`s` as paired and windowed by
+        # pair_and_window — the Huaibin wrapper may override that function; whatever it returned
+        # is exactly what score() saw). One proof per calibration target.
+        "target_proofs": [_target_proof(s, dates, split)],
     }
 
     tmp = out_path.with_suffix(out_path.suffix + ".tmp")

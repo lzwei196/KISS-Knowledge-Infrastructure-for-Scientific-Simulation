@@ -1,3 +1,5 @@
+> **Updated 2026-10-07.** `preflight_check.py` now checks the REAL engine first (binary realpath, `guess -help`, libnetcdf, shipped .ins/env files, CO2 file, netCDF4/ki_tools_common imports, engine tools `--help`). The four surrogate tools below are checked as NON-critical. Exit 0 = ready, 1 = a critical check failed. Text below describes the older surrogate-only preflight.
+
 # Stage 1: Preflight
 
 ## Purpose

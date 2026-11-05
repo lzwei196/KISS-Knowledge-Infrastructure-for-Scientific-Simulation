@@ -1,0 +1,139 @@
+permafrost_dir:
+  description: Directory containing permamodel files
+  value:
+    type: string
+    default: .
+comp_status:
+  description: Component status
+  value:
+    type: choice
+    default: Enabled
+    choices:
+    - Enabled
+    - Disabled
+in_directory:
+  description: Input directory
+  value:
+    type: string
+    default: .
+out_directory:
+  description: Output directory
+  value:
+    type: string
+    default: .
+site_prefix:
+  description: File prefix for the study site
+  value:
+    type: string
+    default: Test
+case_prefix:
+  description: File prefix for the model scenario
+  value:
+    type: string
+    default: Case_test
+# T_air_min_ptype:
+#   description: Mean temperature of coldest month per modeled year
+#   value:
+#     type: choice
+#     default: Scalar
+#     choices:
+#       - Scalar
+#       - Time_Series
+#     units: degC
+# T_air_min_dtype:
+#   description: T_air_min data type
+#   value:
+#     type: choice
+#     default: float
+#     choices:
+#       - float
+#       - int
+#       - long
+#       - string
+#     units: '-'
+T_air_min:
+  description: Scalar value
+  value:
+    type: float
+    default: -9.0
+    range:
+      min: -100.0
+      max: 100.0
+    units: degC
+T_air_min_file:
+  description: Time series file
+  value:
+    type: file
+    default: 'off'
+    choices:
+      - 'fn_t_air_min.dat'
+      - 'off'
+# T_air_max_ptype:
+#   description: Mean temperature of warmest month per modeled year
+#   value:
+#     type: choice
+#     default: Scalar
+#     choices:
+#       - Scalar
+#       - Time_Series
+#     units: degC
+# T_air_max_dtype:
+#   description: T_air_max data type
+#   value:
+#     type: choice
+#     default: float
+#     choices:
+#       - float
+#       - int
+#       - long
+#       - string
+#     units: '-'
+T_air_max:
+  description: Scalar value
+  value:
+    type: float
+    default: 15.4
+    range:
+      min: -100.0
+      max: 100.0
+    units: degC
+T_air_max_file:
+  description: Time series file
+  value:
+    type: file
+    default: 'off'
+    choices:
+      - 'fn_t_air_max.dat'
+      - 'off'
+start_year:
+  description: Simulation start time
+  value:
+    type: long
+    default: 2000
+    range:
+      min: 1000
+      max: 2200
+    units: yr
+end_year:
+  description: Simulation end time
+  value:
+    type: long
+    default: 2000
+    range:
+      min: 1000
+      max: 2200
+    units: yr
+dt:
+  description: Simulation time step
+  value:
+    type: float
+    default: 1.0
+    range:
+      min: 0.001
+      max: 1e3
+    units: yr
+fn_out_filename:
+  description: Name of output file
+  value:
+    type: string
+    default: frostnumber_output.dat

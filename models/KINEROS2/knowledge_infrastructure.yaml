@@ -3,77 +3,132 @@
 
 package:
   name: KINEROS2
-  language: python
+  language: fortran
   implementation:
-    id: hydrocraft-kineros2-lumped
-    version: 1.0.0
-    provenance: Python; HydroCraft lumped daily continuous reimplementation of KINEROS2 physics (Green-Ampt
-      infiltration + dual nonlinear/linear reservoir kinematic-wave routing). NOT the canonical USDA-ARS
-      event-based distributed Fortran binary.
-  scientific_reference_version: KINEROS2 (USDA-ARS Kinematic Runoff and Erosion Model lineage; Woolhiser/Smith/Goodrich),
-    instantiated here as a lumped daily continuous Green-Ampt + dual-reservoir kinematic-wave reimplementation
+    id: ars-swrc-kineros2-k2shell
+    version: 25-Oct-2019 (ARS-SWRC/KINEROS2 commit f0bbae2a19238fe98d5b42fbc9e55a993bfbba41)
+    provenance: Fortran 77/90; official USDA-ARS source (github.com/ARS-SWRC/KINEROS2) compiled with gfortran
+      13.3; output matches the official ARS Windows k2_x64.exe to the 6th-7th digit on both ARS sample
+      cases. A separate Python lumped daily SURROGATE that predates this engine is NOT this implementation
+      and its results are not KINEROS2 results.
+    surrogate_not_this_model: tools/run_kineros2.py -- Python lumped daily Green-Ampt + two-reservoir
+      stand-in (Hamon PET); kept for history only
+  scientific_reference_version: KINEROS2 (Kinematic Runoff and Erosion model, USDA-ARS Southwest Watershed
+    Research Center; Woolhiser, Smith & Goodrich 1990; Smith et al. 1995; Goodrich et al. 2012), K2shell
+    version 25-Oct-2019
   binary:
-    path: KISSPATH_KI_ROOT/KINEROS2/knowledge_infrastructure/tools/run_kineros2.py
-    type: Python
-pipeline:
-  stages: []
-tools:
-  count: 4
-  files:
+    path: KISSPATH_HOME/engine_builds_20261006/KINEROS2/build_github/k2
+    type: ELF
+  run_tool: tools/run_kineros2_engine.py
+  run_tool_note: default run route = the REAL engine (k2 -b kin.fil) via tools/run_kineros2_engine.py
+  surrogate_tools_not_this_model:
+  - tools/run_kineros2.py
   - tools/convert_forcing_to_kineros2.py
   - tools/convert_soil_to_kineros2.py
   - tools/parse_output_kineros2.py
+pipeline:
+  stages:
+  - s1_rainfall_input
+  - s2_infiltration_soil_parameters
+  - s3_watershed_parameter_file
+  - s4_sediment_erosion
+  - s5_ponds_injection_elements
+  - s6_execution_real_engine
+  - s7_output_parsing
+  - s8_calibration_multipliers
+  - s9_validation_wg11
+tools:
+  count: 15
+  files:
+  - tools/_k2lib.py
+  - tools/add_kineros2_element.py
+  - tools/build_kineros2_rainfall.py
+  - tools/calibrate_kineros2_multipliers.py
+  - tools/configure_kineros2_sediment.py
+  - tools/convert_forcing_to_kineros2.py
+  - tools/convert_soil_to_kineros2.py
+  - tools/edit_kineros2_par.py
+  - tools/fetch_wgew_dap.py
+  - tools/kineros2_soil_params.py
+  - tools/parse_kineros2_output.py
+  - tools/parse_output_kineros2.py
   - tools/run_kineros2.py
+  - tools/run_kineros2_engine.py
+  - tools/score_kineros2_event.py
 inputs:
   forcing:
-  - name: precipitation
-    unit: mm/d
-  - name: temperature
-    unit: deg C
+  - name: rainfall_depth_cumulative
+    unit: mm (UNITS=METRIC) or in (UNITS=ENGLISH) vs minutes
   parameters:
-  - name: Ks
-    unit: mm/d
-  - name: psi_f
-    unit: mm
-  - name: Smax
-    unit: mm
-  - name: fc
-    unit: fraction
-  - name: k_fast
-    unit: 1/d
-  - name: k_slow
-    unit: 1/d
-  - name: f_slow
-    unit: fraction
-  - name: alpha
-    unit: unitless
-  - name: basin_area
-    unit: km2
-  - name: latitude
-    unit: deg
+  - name: KS
+    unit: mm/hr or in/hr
+  - name: G
+    unit: mm or in
+  - name: DIST
+    unit: dimensionless
+  - name: POR
+    unit: dimensionless
+  - name: ROCK
+    unit: dimensionless
+  - name: CV
+    unit: dimensionless
+  - name: MANNING
+    unit: s m^-1/3 (Manning n) or Chezy C
+  - name: element_geometry
+    unit: m or ft; slope m/m
+  - name: INTER
+    unit: mm or in
+  - name: sediment_parameters
+    unit: SPLASH, COH dimensionless; DIAMS mm or in; DENSITY g/cc; FRACT fraction
   initial_conditions:
-  - name: initial_soil_moisture_storage
-    unit: mm
-  - name: initial_reservoir_storage
-    unit: mm
-  boundary_conditions: []
+  - name: SAT
+    unit: dimensionless (relative saturation of pore space)
+  - name: STORAGE
+    unit: m3 or ft3
+  boundary_conditions:
+  - name: injected_inflow
+    unit: m3/s or ft3/s vs minutes (+ optional sediment concentrations)
+  - name: QB
+    unit: m3/s or ft3/s
 io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
   observable:
   - discharge
+  - runoff_volume
+  - peak_discharge
+  - sediment_yield
+  other:
   - infiltration
-  - surface_excess
-  other: []
+  - sediment_discharge
 validation:
-  tier: not_runnable
-  tier_justification: 'measured: NSE=0.851, KGE=0.882, R=0.923'
+  tier: tested
+  tier_justification: 'REAL engine: official ARS samples EX1 and WG11 reproduced exactly (run_kineros2_engine.py
+    --example ex1|wg11 --check); one real-observation comparison, Walnut Gulch flume 11, storm 4 Aug 1980,
+    IN-SAMPLE (ARS readme multipliers set for this storm): NSE 0.8115 on 121 points'
   metrics:
-    best_nse: 0.8512
-    best_kge: 0.8819
-    best_r: 0.9235
+    wg11_flume11_19800804_nse: 0.8115
+    wg11_flume11_19800804_kge: 0.7197
+    wg11_flume11_19800804_r: 0.9100
+    wg11_flume11_19800804_pbias_pct: 26.55
+  metrics_source:
+    engine: REAL KINEROS2 k2 (tools/run_kineros2_engine.py), not the Python surrogate
+    reproduce: run_kineros2_engine.py --example wg11 --check --out-dir OUT/wg11; then score_kineros2_event.py
+      --sim OUT/wg11/run_result.json --obs examples/wg11_observed/flume11_19800804_breakpoint_cfs.txt
+      --obs-offset-min 52 --clock-origin "1980-08-04 12:35" --out OUT/wg11/score.json
+    scored_series: outlet CHANNEL 27 (m3/s) on the 3-min sim time grid, observed flume 11 breakpoints
+      interpolated onto it (0 outside the record), 121 points; multipliers Ks 0.5, n 1.0, CV 1.0, G 1.5,
+      Inter 1.0 (examples/ars_samples/wg11_mult.txt)
+    kind: in-sample single event, not a blind validation
+  surrogate_metrics_not_kineros2:
+    note: these are the OLD Python lumped daily SURROGATE (tools/run_kineros2.py) on the Huaihe at Bengbu
+      (daily, 121,330 km2) and are still stored in the models DB; they are NOT KINEROS2 results
+    tool: tools/run_kineros2.py
+    nse: 0.8512
+    kge: 0.8819
+    r: 0.9235
 summary:
-  total_tools: 4
-  total_stage_docs: 0
-  total_diagnostic_triplets: 26
-  generated: '2026-08-15'
+  total_tools: 15
+  total_stage_docs: 9
+  total_diagnostic_triplets: 53
+  generated: '2026-10-06'
   generated_by: generate_ki_manifest.py (projection; regenerate any time)

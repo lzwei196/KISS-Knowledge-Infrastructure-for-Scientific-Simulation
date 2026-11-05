@@ -26,11 +26,12 @@ pipeline:
   - s8_batch_execution_skill
   - s9_output_parsing_skill
 tools:
-  count: 19
+  count: 20
   files:
   - tools/calib_run.py
   - tools/dssat_workdir_setup.py
   - tools/parse_plantgro.py
+  - tools/run_reference_case.py
   - tools/s10_calibrate_rice_nsga2.py
   - tools/s1_experiment_design/validate_filex_structure.py
   - tools/s2_weather_prep/calculate_tav_amp.py
@@ -238,7 +239,7 @@ validation:
     best_kge: -0.15117749986948148
     best_r: -0.005492540795535065
 summary:
-  total_tools: 19
+  total_tools: 20
   total_stage_docs: 9
   total_diagnostic_triplets: 56
   generated: '2026-08-15'

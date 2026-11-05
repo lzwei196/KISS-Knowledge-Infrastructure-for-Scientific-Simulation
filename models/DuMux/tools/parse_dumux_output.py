@@ -44,6 +44,7 @@ def parse_vtu_file(filepath: str) -> dict:
     result = {
         "points": None,
         "cells": None,
+        "cell_centers": None,
         "point_data": {},
         "cell_data": {},
         "metadata": {"filepath": filepath},
@@ -57,15 +58,29 @@ def parse_vtu_file(filepath: str) -> dict:
         return result
 
     # Find UnstructuredGrid piece
-    piece = root.find(".//Piece")
-    if piece is None:
+    pieces = root.findall(".//Piece")
+    if not pieces:
         result["metadata"]["error"] = "No <Piece> element found in VTU file"
         return result
+    if len(pieces) > 1:
+        result["metadata"]["error"] = (f"{len(pieces)} <Piece> elements; only single-piece "
+                                       "VTU files are supported")
+        return result
+    piece = pieces[0]
 
     n_points = int(piece.get("NumberOfPoints", 0))
     n_cells = int(piece.get("NumberOfCells", 0))
     result["metadata"]["n_points"] = n_points
     result["metadata"]["n_cells"] = n_cells
+
+    # Only ASCII DataArrays are read; binary/appended data would be misread
+    for da in piece.iter("DataArray"):
+        fmt = da.get("format", "ascii")
+        if fmt != "ascii":
+            result["metadata"]["error"] = (
+                f"DataArray '{da.get('Name')}' has format='{fmt}'; only ASCII VTU is "
+                f"supported (set Vtk.OutputFormat / write ascii)")
+            return result
 
     # Parse Points
     points_elem = piece.find(".//Points/DataArray")
@@ -75,6 +90,28 @@ def parse_vtu_file(filepath: str) -> dict:
             vals = [float(v) for v in points_text.split()]
             n_comp = int(points_elem.get("NumberOfComponents", 3))
             result["points"] = np.array(vals).reshape(-1, n_comp)
+
+    # Cell centres = mean of each cell's vertices (cell data belong to cells,
+    # not to the first n_cells vertices)
+    conn_elem = piece.find(".//Cells/DataArray[@Name='connectivity']")
+    offs_elem = piece.find(".//Cells/DataArray[@Name='offsets']")
+    if result["points"] is not None and conn_elem is not None and offs_elem is not None \
+            and conn_elem.text and offs_elem.text:
+        conn = np.array(conn_elem.text.split(), dtype=np.int64)
+        offs = np.array(offs_elem.text.split(), dtype=np.int64)
+        starts = np.concatenate(([0], offs[:-1]))
+        counts = offs - starts
+        n_pts = len(result["points"])
+        if (len(offs) != n_cells or len(offs) == 0 or np.any(counts <= 0)
+                or offs[-1] != len(conn) or np.any(conn < 0) or np.any(conn >= n_pts)):
+            result["metadata"]["error"] = (
+                "cell connectivity/offsets are not consistent (cell count, increasing offsets, "
+                "last offset = connectivity length, vertex ids in range)")
+            return result
+        cell_ids = np.repeat(np.arange(len(offs)), counts)
+        sums = np.zeros((len(offs), result["points"].shape[1]))
+        np.add.at(sums, cell_ids, result["points"][conn])
+        result["cell_centers"] = sums / counts[:, None]
 
     # Parse PointData
     point_data_elem = piece.find(".//PointData")
@@ -101,6 +138,17 @@ def parse_vtu_file(filepath: str) -> dict:
                     result["cell_data"][name] = np.array(vals)
                 else:
                     result["cell_data"][name] = np.array(vals).reshape(-1, n_comp)
+
+    # Every data array must have one value (tuple) per cell / per point
+    for kind, n in (("cell_data", n_cells), ("point_data", n_points)):
+        for name, arr in result[kind].items():
+            if len(arr) != n:
+                result["metadata"]["error"] = (f"{kind} '{name}' has {len(arr)} values, "
+                                               f"expected {n}")
+                return result
+    if result["points"] is not None and len(result["points"]) != n_points:
+        result["metadata"]["error"] = (f"{len(result['points'])} points, expected {n_points}")
+        return result
 
     return result
 
@@ -141,6 +189,61 @@ def extract_time_from_filename(filename: str) -> float:
     if match:
         return int(match.group(1))
     return 0.0
+
+
+# ─── Variable lookup ─────────────────────────────────────────────────────────
+
+# DuMux names the pressure of single-phase models "p" (2p models: p_w/p_n, p_liq/p_gas).
+VARIABLE_ALIASES = {"pressure": ["p"]}
+
+
+def resolve_variable(vtus: list, var: str):
+    """Field name to use for var across all files: (name, None) or (None, reason).
+
+    Order: exact name, then case-insensitive exact, then alias (exact), then a
+    case-insensitive substring match - the last only for names of 3+ characters
+    and only if exactly one field name matches. A better match in any file wins for
+    all files, so e.g. 'p' is never taken from 'process rank'.
+    """
+    names = []
+    for vtu in vtus:
+        for data in (vtu.get("cell_data", {}), vtu.get("point_data", {})):
+            for k in data:
+                if k not in names:
+                    names.append(k)
+    for test in (lambda k: k == var,
+                 lambda k: k.lower() == var.lower(),
+                 lambda k: k in VARIABLE_ALIASES.get(var.lower(), [])):
+        hits = [k for k in names if test(k)]
+        if len(hits) == 1:
+            return hits[0], None
+        if len(hits) > 1:
+            return None, f"'{var}' is ambiguous: {hits}"
+    if len(var) >= 3:
+        hits = [k for k in names if var.lower() in k.lower()]
+        if len(hits) == 1:
+            return hits[0], None
+        if len(hits) > 1:
+            return None, f"'{var}' matches several fields: {hits}; give the exact name"
+    return None, f"'{var}' not found"
+
+
+def get_field(vtu: dict, key: str):
+    """(array, 'cell'|'point') for an exact field name, else (None, None)."""
+    if key in vtu.get("cell_data", {}):
+        return vtu["cell_data"][key], "cell"
+    if key in vtu.get("point_data", {}):
+        return vtu["point_data"][key], "point"
+    return None, None
+
+
+def find_variable(vtu: dict, var: str):
+    """Return (name, array, location) for var in one file, else (None, None, None)."""
+    key, _ = resolve_variable([vtu], var)
+    if key is None:
+        return None, None, None
+    arr, loc = get_field(vtu, key)
+    return key, arr, loc
 
 
 # ─── Spatial operations ──────────────────────────────────────────────────────
@@ -263,32 +366,41 @@ def extract_timeseries(
             result["data"][f"{var}_min"] = []
             result["data"][f"{var}_max"] = []
 
+    vtus = []
+    for fpath in files:
+        vtu = parse_vtu_file(fpath)
+        if vtu["metadata"].get("error"):
+            raise ValueError(f"{fpath}: {vtu['metadata']['error']}")
+        vtus.append(vtu)
+    resolved = {var: resolve_variable(vtus, var) for var in variables}
+    keys = {var: r[0] for var, r in resolved.items()}
+    result["matched"] = {v: k for v, k in keys.items() if k is not None}
+    result["missing_variables"] = [r[1] for v, r in resolved.items() if r[0] is None]
+    result["files_without"] = {}
+    result["nonfinite"] = {}
+
     for fi, fpath in enumerate(files):
-        # Time value
-        if time_values and fi < len(time_values):
+        # Time value: from the .pvd entry of this file, else the file number
+        if isinstance(time_values, dict):
+            t = time_values.get(os.path.normpath(os.path.abspath(fpath)))
+            if t is None:
+                t = extract_time_from_filename(fpath)
+                result.setdefault("time_from_filename", []).append(os.path.basename(fpath))
+        elif time_values and fi < len(time_values):
             t = time_values[fi]
         else:
             t = extract_time_from_filename(fpath)
         result["times"].append(t)
 
-        # Parse VTU
-        vtu = parse_vtu_file(fpath)
-
-        # Merge point_data and cell_data for variable search
-        all_data = {}
-        all_data.update(vtu.get("point_data", {}))
-        all_data.update(vtu.get("cell_data", {}))
+        vtu = vtus[fi]
 
         for var in variables:
-            # Find variable (case-insensitive search)
-            found_key = None
-            for k in all_data:
-                if k.lower() == var.lower() or var.lower() in k.lower():
-                    found_key = k
-                    break
+            found_key = keys[var]
+            field, loc = get_field(vtu, found_key) if found_key else (None, None)
 
-            if found_key is None:
+            if field is None:
                 # Variable not found in this file
+                result["files_without"].setdefault(var, []).append(os.path.basename(fpath))
                 if probe_points:
                     for i in range(len(probe_points)):
                         result["data"][f"{var}_probe{i}"].append(np.nan)
@@ -298,29 +410,27 @@ def extract_timeseries(
                     result["data"][f"{var}_max"].append(np.nan)
                 continue
 
-            field = all_data[found_key]
             if field.ndim > 1:
                 # Vector field: compute magnitude
                 field = np.linalg.norm(field, axis=1)
+            n_bad = int(np.count_nonzero(~np.isfinite(field)))
+            if n_bad:
+                result["nonfinite"].setdefault(var, []).append((os.path.basename(fpath), n_bad))
 
             if probe_points:
-                # Get values at probe locations
-                centers = vtu.get("points", np.array([]))
-                if len(centers) == 0:
-                    # Use cell centers approximation
-                    centers = compute_cell_centers(vtu.get("points"))
+                # Locations of the values: cell centres for cell data, vertices for point data
+                centers = vtu.get("cell_centers") if loc == "cell" else vtu.get("points")
+                if centers is None or len(centers) != len(field):
+                    raise ValueError(f"{fpath}: no coordinates for the {loc} data '{found_key}' "
+                                     f"(need {len(field)} {loc} locations)")
 
                 for i, pt in enumerate(probe_points):
-                    pt_arr = np.array(pt)
-                    if len(centers) > 0 and len(field) > 0:
-                        # Match dimensions
-                        if pt_arr.shape[0] < centers.shape[1]:
-                            pt_arr = np.append(pt_arr, [0] * (centers.shape[1] - pt_arr.shape[0]))
-                        idx = find_nearest_cell(centers[:len(field)], pt_arr[:centers.shape[1]])
-                        if 0 <= idx < len(field):
-                            result["data"][f"{var}_probe{i}"].append(float(field[idx]))
-                        else:
-                            result["data"][f"{var}_probe{i}"].append(np.nan)
+                    pt_arr = np.array(pt, dtype=float)
+                    if pt_arr.shape[0] < centers.shape[1]:
+                        pt_arr = np.append(pt_arr, [0] * (centers.shape[1] - pt_arr.shape[0]))
+                    idx = find_nearest_cell(centers, pt_arr[:centers.shape[1]])
+                    if 0 <= idx < len(field):
+                        result["data"][f"{var}_probe{i}"].append(float(field[idx]))
                     else:
                         result["data"][f"{var}_probe{i}"].append(np.nan)
             else:
@@ -364,44 +474,54 @@ def write_spatial_snapshot(output_path: str, vtu_data: dict, variables: list) ->
     """
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    all_data = {}
-    all_data.update(vtu_data.get("point_data", {}))
-    all_data.update(vtu_data.get("cell_data", {}))
-
-    points = vtu_data.get("points")
-    if points is None:
-        return 0
-
-    n_pts = len(points)
-    headers = ["x", "y"]
-    if points.shape[1] > 2:
-        headers.append("z")
-
+    headers = []
     var_arrays = []
+    locs = set()
+    missing = []
     for var in variables:
-        for k in all_data:
-            if var.lower() in k.lower():
-                arr = all_data[k]
-                if arr.ndim > 1:
-                    # Vector: write components
-                    for c in range(arr.shape[1]):
-                        headers.append(f"{k}_{c}")
-                        var_arrays.append(arr[:, c])
-                else:
-                    headers.append(k)
-                    var_arrays.append(arr)
-                break
+        k, arr, loc = find_variable(vtu_data, var)
+        if k is None:
+            missing.append(var)
+            continue
+        locs.add(loc)
+        if arr.ndim > 1:
+            # Vector: write components
+            for c in range(arr.shape[1]):
+                headers.append(f"{k}_{c}")
+                var_arrays.append(arr[:, c])
+        else:
+            headers.append(k)
+            var_arrays.append(arr)
+    if missing:
+        raise ValueError(f"variable(s) {missing} not in this file")
+    if len(locs) > 1:
+        raise ValueError("cannot mix cell data and point data in one snapshot; "
+                         "run once per kind")
+
+    # Coordinates of the values: cell centres for cell data, vertices for point data
+    loc = locs.pop() if locs else "point"
+    coords = vtu_data.get("cell_centers") if loc == "cell" else vtu_data.get("points")
+    if coords is None:
+        raise ValueError(f"no {loc} coordinates in this file")
+    n_rows = len(coords)
+    if any(len(a) != n_rows for a in var_arrays):
+        raise ValueError(f"{loc} coordinates ({n_rows}) and data lengths differ")
+    coord_headers = ["x", "y"] + (["z"] if coords.shape[1] > 2 else [])
+    for name, arr in zip(headers, var_arrays):
+        n_bad = int(np.count_nonzero(~np.isfinite(arr)))
+        if n_bad:
+            print(f"  WARNING: '{name}' has {n_bad} non-finite values (written as they are)")
 
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(headers)
-        for i in range(min(n_pts, *[len(a) for a in var_arrays] if var_arrays else [n_pts])):
-            row = list(points[i, :len(headers)-len(var_arrays)])
+        writer.writerow(coord_headers + headers)
+        for i in range(n_rows):
+            row = list(coords[i, :len(coord_headers)])
             for arr in var_arrays:
-                row.append(float(arr[i]) if i < len(arr) else "")
+                row.append(float(arr[i]))
             writer.writerow(row)
 
-    return n_pts
+    return n_rows
 
 
 # ─── Main Pipeline ───────────────────────────────────────────────────────────
@@ -430,15 +550,30 @@ def process(
 
     files = sorted(glob.glob(os.path.join(input_dir, pattern)))
     print(f"  Found {len(files)} VTK files")
+    if not files:
+        msg = f"No files match '{pattern}' in {input_dir}"
+        print(f"  ERROR: {msg}")
+        summary["errors"] = [msg]
+        return summary
 
-    # Parse time values from PVD if available
-    time_values = None
-    pvd_file = input_val["metadata"].get("pvd_file")
-    if pvd_file:
+    # Time values from the .pvd files, matched to each .vtu by file name
+    # (not by position: the folder can hold other .vtu files, e.g. 1p.vtu)
+    time_values = {}
+    for pvd_file in sorted(glob.glob(os.path.join(input_dir, "*.pvd"))):
         pvd_entries = parse_pvd_file(pvd_file)
+        pvd_dir = os.path.dirname(os.path.abspath(pvd_file))
+        for e in pvd_entries:
+            key = os.path.normpath(os.path.join(pvd_dir, e["file"]))
+            if key in time_values and time_values[key] != e["timestep"]:
+                msg = (f"{key} has time {time_values[key]} in one .pvd and {e['timestep']} "
+                       f"in {pvd_file}")
+                print(f"  ERROR: {msg}")
+                summary["errors"] = [msg]
+                return summary
+            time_values[key] = e["timestep"]
         if pvd_entries:
-            time_values = [e["timestep"] for e in pvd_entries]
-            print(f"  PVD time range: {time_values[0]} – {time_values[-1]}")
+            print(f"  PVD {os.path.basename(pvd_file)}: {len(pvd_entries)} files, time "
+                  f"{pvd_entries[0]['timestep']} – {pvd_entries[-1]['timestep']}")
 
     # Parse probe points
     probe_points = None
@@ -455,15 +590,53 @@ def process(
     if snapshot_index >= 0:
         # Single spatial snapshot
         if snapshot_index >= len(files):
-            snapshot_index = len(files) - 1
+            msg = f"--snapshot {snapshot_index} out of range: {len(files)} files match"
+            print(f"  ERROR: {msg}")
+            summary["errors"] = [msg]
+            return summary
         print(f"  Extracting spatial snapshot from: {files[snapshot_index]}")
         vtu_data = parse_vtu_file(files[snapshot_index])
-        n_rows = write_spatial_snapshot(output_path, vtu_data, variables)
+        try:
+            if vtu_data["metadata"].get("error"):
+                raise ValueError(vtu_data["metadata"]["error"])
+            n_rows = write_spatial_snapshot(output_path, vtu_data, variables)
+        except ValueError as exc:
+            avail = sorted(set(vtu_data.get("cell_data", {})) | set(vtu_data.get("point_data", {})))
+            msg = f"{files[snapshot_index]}: {exc}. Fields in file: {avail}"
+            print(f"  ERROR: {msg}")
+            summary["errors"] = [msg]
+            return summary
         summary["mode"] = "snapshot"
     else:
         # Time series extraction
         print(f"  Extracting time series for variables: {variables}")
-        ts = extract_timeseries(files, variables, probe_points, time_values)
+        try:
+            ts = extract_timeseries(files, variables, probe_points, time_values)
+        except ValueError as exc:
+            print(f"  ERROR: {exc}")
+            summary["errors"] = [str(exc)]
+            return summary
+        if ts.get("missing_variables"):
+            avail = set()
+            for fpath in files:
+                v = parse_vtu_file(fpath)
+                avail |= set(v.get("cell_data", {})) | set(v.get("point_data", {}))
+            msg = (f"{'; '.join(ts['missing_variables'])} (checked {len(files)} files); "
+                   f"fields present: {sorted(avail)}")
+            print(f"  ERROR: {msg}")
+            summary["errors"] = [msg]
+            return summary
+        for var, key in ts.get("matched", {}).items():
+            if key != var:
+                print(f"  Variable '{var}' read from field '{key}'")
+        for var, fns in ts.get("files_without", {}).items():
+            print(f"  WARNING: '{var}' not in {len(fns)} of {len(files)} files (NaN there): {fns[:5]}")
+        for var, bad in ts.get("nonfinite", {}).items():
+            print(f"  WARNING: '{var}' has non-finite values (file, count): {bad[:5]}; "
+                  "NaN is left out of mean/min/max, +-inf is kept")
+        if ts.get("time_from_filename"):
+            print(f"  WARNING: {len(ts['time_from_filename'])} file(s) not in any .pvd; their "
+                  f"'time' is the file number, not a time: {ts['time_from_filename']}")
         n_rows = write_csv(output_path, ts)
         summary["mode"] = "timeseries"
         summary["n_timesteps"] = len(ts["times"])

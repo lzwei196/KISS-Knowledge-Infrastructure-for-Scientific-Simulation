@@ -12,7 +12,7 @@ package:
   scientific_reference_version: DuMux 3.10 (DUNE-based finite-volume porous-media flow/transport library;
     Koch et al. 2021, DuMux 3)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux_real_run/example_1ptracer
+    path: KISSPATH_HOME/engine_builds_20261006/dumux/src/build-cmake/dumux/examples/1ptracer/example_1ptracer
     type: work_dir
 pipeline:
   stages:

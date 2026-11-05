@@ -91,7 +91,7 @@ head -5 hyd.out
 - [ ] topmod.out contains water balance summary
 - [ ] hyd.out has expected number of lines (= nstep)
 - [ ] BAL (water balance residual) is small relative to SUMP
-- [ ] Q values in hyd.out are non-negative and physically reasonable
+- [ ] Q values in hyd.out are non-negative and physically reasonable (Qobs `-9999` = missing observed day, listed in the inputs.dat sidecar)
 
 ## Traps
 

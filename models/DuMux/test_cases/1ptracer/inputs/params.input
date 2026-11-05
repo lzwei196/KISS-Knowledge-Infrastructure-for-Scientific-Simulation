@@ -1,0 +1,21 @@
+[Grid]
+UpperRight = 1 1
+Cells = 50 50
+
+[SpatialParams]
+LensLowerLeft = 0.2 0.2
+LensUpperRight = 0.8 0.8
+
+Permeability = 1e-10 # [m^2]
+PermeabilityLens = 1e-11 # [m^2]
+
+[TimeLoop]
+DtInitial = 10 # [s]
+MaxTimeStepSize = 10
+TEnd = 5000 # [s]
+
+[Problem]
+Name = tracer # name passed to the output routines
+
+[Vtk]
+AddVelocity = true

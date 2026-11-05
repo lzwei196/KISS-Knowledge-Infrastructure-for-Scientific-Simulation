@@ -221,7 +221,6 @@ def check_stage_tools() -> None:
     tool_files = [
         "tools/s1_domain_setup/create_gru_hru.py",
         "tools/s1_domain_setup/create_local_attributes.py",
-        "tools/s2_forcing_prep/convert_vic_forcing_to_summa.py",
         "tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py",
         "tools/s3_decisions/configure_decisions.py",
         "tools/s4_parameters/set_trial_parameters.py",

@@ -140,7 +140,12 @@ def reconstruct_model(model_config, mesh):
 
     # Load starting model
     m0_file = mc.get("starting_model_file")
-    if m0_file and os.path.isfile(m0_file):
+    if m0_file and not os.path.isfile(m0_file):
+        raise FileNotFoundError(
+            f"starting_model_file given in model config but not found: {m0_file} "
+            f"(relative paths are read from the current directory {os.getcwd()})"
+        )
+    if m0_file:
         m0 = np.load(m0_file)
     else:
         m0 = np.ones(n_active) * mc["background_si"]
@@ -189,7 +194,8 @@ def build_simulation(method, mesh, model_map, survey_config, active_cells):
 
         receivers = gravity.receivers.Point(receiver_locs, components="gz")
         source = gravity.sources.SourceField(receiver_list=[receivers])
-        survey = gravity.survey.Survey(source_list=[source])
+        # potential-field Survey takes one positional source_field (SimPEG 0.25 API)
+        survey = gravity.survey.Survey(source)
         sim = gravity.simulation.Simulation3DIntegral(
             mesh,
             survey=survey,
@@ -209,7 +215,7 @@ def build_simulation(method, mesh, model_map, survey_config, active_cells):
             inclination=inducing.get("inclination", 60.0),
             declination=inducing.get("declination", 0.0),
         )
-        survey = magnetics.survey.Survey(source_list=[source])
+        survey = magnetics.survey.Survey(source)
         sim = magnetics.simulation.Simulation3DIntegral(
             mesh,
             survey=survey,
@@ -391,22 +397,27 @@ def run_inversion(sim, m0, data_file, rel_error, noise_floor,
 # ---------------------------------------------------------------------------
 
 def validate_outputs(output_dir, mode):
-    """Verify outputs exist and are reasonable."""
+    """Verify outputs exist and are reasonable.
+
+    Returns (warnings, errors); errors mean the run failed (no or non-finite
+    predicted data) and make the tool exit non-zero.
+    """
     warnings = []
+    errors = []
 
     dpred_path = os.path.join(output_dir, "dpred.npy")
     if not os.path.isfile(dpred_path):
-        warnings.append("Predicted data file not created")
-        return warnings
+        errors.append("Predicted data file not created")
+        return warnings, errors
 
     dpred = np.load(dpred_path)
     if np.any(np.isnan(dpred)):
-        warnings.append(
+        errors.append(
             "Predicted data contains NaN — likely numerical instability. "
             "Check mesh quality and model bounds."
         )
     if np.any(np.isinf(dpred)):
-        warnings.append(
+        errors.append(
             "Predicted data contains Inf — likely singular system. "
             "Check conductivity air values (dt_009)."
         )
@@ -428,7 +439,7 @@ def validate_outputs(output_dir, mode):
                     "uncertainties and starting model."
                 )
 
-    return warnings
+    return warnings, errors
 
 
 # ---------------------------------------------------------------------------
@@ -473,19 +484,23 @@ def process(args):
         )
 
     # Validate outputs
-    warnings = validate_outputs(output_dir, args.mode)
+    warnings, errors = validate_outputs(output_dir, args.mode)
 
     result = {
-        "status": "success",
+        "status": "error" if errors else "success",
         "mode": args.mode,
         "method": args.method,
         "output_dir": output_dir,
         "metrics": metrics,
     }
+    if errors:
+        result["errors"] = errors
     if warnings:
         result["warnings"] = warnings
 
     print(json.dumps(result, indent=2))
+    if errors:
+        sys.exit(1)
 
 
 def main():

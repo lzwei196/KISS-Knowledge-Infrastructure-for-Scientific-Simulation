@@ -93,6 +93,7 @@ errors:
     domain: file_format
     promoted_to_triplet: dt_v004
 
+  # Note (2026-11): mask=2 is the water-level boundary, not outflow; the inland fix is mask=3 on the outlet edge (dt_v021). Entry kept as history.
   - id: err_010
     timestamp: "2026-03-21T19:00:00Z"
     stage: s2_topobathy

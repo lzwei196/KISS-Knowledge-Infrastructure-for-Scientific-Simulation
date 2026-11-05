@@ -338,10 +338,11 @@ outputs:
       - linear_residual
   - name: OUT_DISCHARGE
     unit: m^3/s
-    description: Routed discharge value emitted only by the lake module; for non-lake cells streamflow
-      is not produced internally.
+    description: River discharge from the RVIC routing extension (rout_rvic), available only in the image
+      driver built with ROUT_RVIC; the classic driver used here does not write it.
     validation_rank: 1
-    emitted_in: per-cell ASCII flux file
+    emitted_in: image-driver history output (ROUT_RVIC builds only); not in the classic per-cell ASCII
+      flux file
     observability:
       comparable_obs_shapes:
       - obs_shape: point_time_series
@@ -349,10 +350,19 @@ outputs:
         metric_families:
         - temporal_pattern_match
         - magnitude_accuracy
+        - timing_accuracy
         determining_metric: nse
         caveats:
-        - Inside VIC, OUT_DISCHARGE is generated only by the optional lake module; basin-scale discharge
-          against a gauge requires an external routing model.
+        - timing_accuracy is the WINDOWED peak-day error day_bias = |day of the simulated maximum within
+          ±30 d of the observed annual peak − observed annual peak day| (days, mean over the declared
+          years); it is not the plain annual-argmax difference. The plain annual-argmax error is reported
+          beside it as day_bias_annual_argmax, and years whose simulated annual peak lies outside the
+          ±30 d window are flagged (peak_outside_window, n_peak_outside_window). Only day_bias enters
+          the calibration objective.
+        - In this KI the discharge series is produced by the external Lohmann routing binary (model/route_1.0/src/rout,
+          routed .day file), not by VIC itself.
+        - The classic driver used here does not produce OUT_DISCHARGE; basin-scale discharge against a
+          gauge requires an external routing model (e.g. CaMa-Flood).
       detrending_options:
       - none
   - name: OUT_EVAP
@@ -563,7 +573,8 @@ outputs:
       - none
   - name: OUT_ZWT
     unit: cm
-    description: Water table depth below the surface.
+    description: 'Water table position (lowest unsaturated soil layer), positive upward: negative values
+      are below the soil surface, 0 at the surface.'
     validation_rank: 5
     emitted_in: per-cell ASCII flux file
     observability:
@@ -768,9 +779,9 @@ known_issues:
 - id: dt_vic_019
   symptom: You need daily discharge (m3/s) at a gauge, but the flux files only contain `OUT_RUNOFF` /
     `OUT_BASEFLOW` in mm. `OUT_DISCHARGE` is all zeros (or absent).
-  diagnosis: '`dag.yaml` states it plainly: "Inside VIC, OUT_DISCHARGE is generated only by the optional
-    lake module; basin-scale discharge against a gauge requires an external routing model." Summing runoff+baseflow
-    over the basin and calling it discharge is wrong — it has no travel time, so the hydrograph has n'
+  diagnosis: '`dag.yaml` states it plainly: "The classic driver used here does not produce OUT_DISCHARGE;
+    basin-scale discharge against a gauge requires an external routing model (e.g. CaMa-Flood)." Summing
+    runoff+baseflow over the basin and calling it discharge is wrong — it has no travel time, so the hydrograph'
   remedy: Run the Lohmann routing binary `model/route_1.0/src/rout` after VIC. Its 5 parameter files are
     built by the KI tool `s5_routing/build_routing_param.py` (added 2026-07-09). Preprocess each VIC flux
     file to 7 columns — `year month day prec evap runoff baseflow`, i.e. `df.iloc[:, [0,1,2,3,18,16,17]]`

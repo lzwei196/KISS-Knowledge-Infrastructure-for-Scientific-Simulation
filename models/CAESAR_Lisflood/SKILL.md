@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Source**: https://github.com/dvalters/HAIL-CAESAR
 **Created by**: Hydrocraft dissection pipeline
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `test_validated` (Boscastle 50m, 72hr flood simulation)
 
 ---

@@ -64,7 +64,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: Noah-MP v5.2.0 (HRLDAS offline driver)
 **Created by**: Auto-dissect pipeline
 **Last updated**: 2026-08-02
-**Stats**: 5 tools | 5 skill documents | 26 diagnostic triplets | ~2,300 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `initial` (compilation and structural validation)
 
 ---
@@ -223,7 +223,7 @@ model and its absence is not a skipped stage.
 
 This knowledge infrastructure enables autonomous land surface simulation using Noah-MP
 (Noah Multi-Parameterization) driven offline via the HRLDAS (High Resolution Land Data
-Assimilation System) framework, **without manual data preparation**. The 4 validated tools
+Assimilation System) framework, **without manual data preparation**. The validated tools
 replace the standard WRF-preprocessing workflow with a Python pipeline that integrates
 with HydroCraft's forcing, soil, and observation infrastructure.
 
@@ -321,7 +321,7 @@ Stages 7 and 8 depend on 6.
 | `run_noahmp` | s6 | `tools/run_noahmp.py` | ~320 | Compile, preflight check, execute HRLDAS binary |
 | `parse_noahmp_output` | s7 | `tools/parse_noahmp_output.py` | ~400 | Parse LDASOUT NetCDF to CSV timeseries |
 
-**Total**: 5 tools, ~1,930 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -727,7 +727,7 @@ ki/
 │   ├── s6_model_execution.md             # Running Noah-MP
 │   └── s7_output_analysis.md             # Output parsing and analysis
 └── diagnostics/
-    └── triplets.yaml                     # 26 symptom→diagnosis→remedy entries
+    └── triplets.yaml                     # diagnostic triplets (count: KI map)
 ```
 
 ---

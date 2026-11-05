@@ -36,6 +36,9 @@ from pathlib import Path
 import netCDF4 as nc
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # tools/
+import domain_edit_record as der   # opt-in, recorded stand-in edits (2026-10-05)
+
 
 # ===================================================================
 # Constants
@@ -102,8 +105,15 @@ def parse_soilparm_tbl(tbl_path):
     return soil_params
 
 
-def build_wrfinput(geo_em_path, output_path, start_month=1, soilparm_tbl=None):
-    """Build wrfinput_d01.nc from geo_em.d01.nc."""
+def build_wrfinput(geo_em_path, output_path, start_month=1, soilparm_tbl=None,
+                   fix_domain_gaps=False, edits_record=None):
+    """Build wrfinput_d01.nc from geo_em.d01.nc.
+
+    Stand-in edits (SHDMAX floor on land, soil-gap neighbour class fill for
+    ISLTYP/SMOIS, TMN placeholder) are OFF unless fix_domain_gaps; every
+    changed cell is recorded in domain_edits.build_wrfinput.json."""
+    ED = der.ToolEdits("build_wrfinput", fix_domain_gaps,
+                       edits_record or der.default_record_path(output_path, "build_wrfinput"))
 
     if soilparm_tbl is None:
         soilparm_tbl = DEFAULT_SOILPARM
@@ -127,6 +137,7 @@ def build_wrfinput(geo_em_path, output_path, start_month=1, soilparm_tbl=None):
     lai12  = geo["LAI12M"][0, :, :, :]     # (month, sn, we)
     soilt  = geo["SOILTEMP"][0, :, :]
     lmask  = geo["LANDMASK"][0, :, :]
+    ED.latlon = (np.asarray(xlat), np.asarray(xlong))
 
     # Parse soil table
     print(f"  Parsing SOILPARM.TBL: {soilparm_tbl}")
@@ -152,28 +163,68 @@ def build_wrfinput(geo_em_path, output_path, start_month=1, soilparm_tbl=None):
     # dt_v005 fix: barren / high-altitude land cells with SHDMAX=0 and VAI=0 drive
     # Noah-MP ground temperature to ~630 K in summer and abort the run. Enforce a
     # small minimum green fraction (0.01 = 1%) on LAND cells (IVGTYP != water=16).
+    # 2026-10-05: a model-stability STAND-IN, only with --fix-domain-gaps, recorded.
     land2d = lu_idx != 16
-    shdmax[land2d & (shdmax < 1.0)] = 1.0
-    shdmin = np.minimum(shdmin, shdmax)
+    _shd = land2d & (shdmax < 1.0)
+    if ED.allow("wrfinput_d01.nc", "SHDMAX", "SHDMAX < 1 % on land -> 1 % (dt_v005)",
+                "model_stability_guard", _shd, shdmax, 1.0):
+        shdmax[_shd] = 1.0
+    _shdmin = shdmin > shdmax
+    if ED.allow("wrfinput_d01.nc", "SHDMIN", "SHDMIN > SHDMAX -> SHDMAX (follows the SHDMAX floor)",
+                "model_stability_guard", _shdmin, shdmin, "SHDMAX of the cell"):
+        shdmin = np.minimum(shdmin, shdmax)
 
     # TMN = SOILTEMP (annual mean deep-soil temperature, K)
     # Fix zero/missing values: SOILTEMP=0 means nodata (water cells etc.)
     tmn = soilt.astype(np.float32)
-    tmn[tmn < 200.0] = TSK_DEFAULT  # replace unphysical values with TSK default
+    # SOILTEMP is 0 on water cells by construction (build_geo_em): a placeholder
+    # there is recorded (not gated); on a LAND cell it is missing data -> flag.
+    _tmn_bad = np.asarray(tmn) < 200.0
+    _water = ~land2d
+    ED.allow("wrfinput_d01.nc", "TMN", f"SOILTEMP < 200 K on a water cell -> {TSK_DEFAULT} K placeholder",
+             "water_cell_placeholder", _tmn_bad & _water, tmn, TSK_DEFAULT)
+    _tmn_land = _tmn_bad & land2d
+    if ED.allow("wrfinput_d01.nc", "TMN", f"SOILTEMP < 200 K on land (no data) -> {TSK_DEFAULT} K",
+                "fill_missing_data", _tmn_land, tmn, TSK_DEFAULT):
+        tmn[_tmn_land] = TSK_DEFAULT
+    tmn[_tmn_bad & _water] = TSK_DEFAULT
 
     # TSK = constant 290 K
     tsk = np.full((sn, we), TSK_DEFAULT, dtype=np.float32)
 
-    # SMOIS: from SOILPARM REFSMC for each cell's soil type, 4 layers identical
+    # Soil gaps on land (owner decision 2026-10-05, same rule and same cells as
+    # s5 build_soil_properties): a soil type not in SOILPARM.TBL, or water soil
+    # (14) on a land cell, takes the most common class of its nearest valid land
+    # neighbours (8-neighbours, then wider rings; tie -> closest, then lowest
+    # class id) -- only with --fix-domain-gaps, recorded with source cells. ISLTYP
+    # and SMOIS then both come from that class (no fixed loam numbers).
+    _land_s = (np.asarray(lmask) > 0.5)
+    _known = np.isin(isltyp, list(sparams.keys()))
+    _soil_gap = _land_s & (~_known | (isltyp == 14))
+    if (~_land_s & ~_known).any():
+        sys.exit(f"ERROR: {int((~_land_s & ~_known).sum())} water cells have a soil type "
+                 "missing from SOILPARM.TBL")
+    if _soil_gap.any():
+        try:
+            _filled, _info = der.neighbour_class_fill(isltyp, _soil_gap, _land_s & ~_soil_gap,
+                                                      latlon=(np.asarray(xlat), np.asarray(xlong)))
+        except ValueError as exc:
+            sys.exit(f"ERROR: soil gaps cannot be filled from neighbours: {exc}")
+        if ED.allow("wrfinput_d01.nc", "ISLTYP/SMOIS",
+                    "land cell with a soil type not in SOILPARM.TBL or water soil (14) -> most common "
+                    "class of the nearest valid land neighbours, then that class's REFSMC",
+                    "fill_missing_data", _soil_gap, isltyp, "neighbour class (see cells[].class_taken)",
+                    tag=der.SOIL_FILL_TAG, cell_info=_info):
+            isltyp = np.asarray(_filled).astype(np.int32)
+
+    # SMOIS: from SOILPARM REFSMC for each cell's soil type, 4 layers identical.
+    # A type still unknown here (gap not filled: ED.finish() below stops) is left 0.
     smois = np.zeros((NSOIL, sn, we), dtype=np.float32)
     for j in range(sn):
         for i in range(we):
             st = int(isltyp[j, i])
             if st in sparams:
                 smois[:, j, i] = sparams[st]["REFSMC"]
-            else:
-                # Default: use type 6 (Loam) as fallback
-                smois[:, j, i] = sparams.get(6, {}).get("REFSMC", 0.329)
 
     # TSLB: interpolate from TSK (surface) to TMN (deep)
     # Layer fractions: ZS / max_depth
@@ -185,6 +236,10 @@ def build_wrfinput(geo_em_path, output_path, start_month=1, soilparm_tbl=None):
 
     # SNOW, CANWAT, SEAICE = 0
     zeros = np.zeros((sn, we), dtype=np.float32)
+
+    # Stop (nothing written) if stand-in edits were needed without the flag;
+    # else write the edit record.
+    ED.finish()
 
     # --- Write output ---
     print(f"  Writing wrfinput: {output_path}")
@@ -267,6 +322,7 @@ def main():
     parser.add_argument("--soilparm_tbl",
                         default=str(DEFAULT_SOILPARM),
                         help="Path to SOILPARM.TBL")
+    der.add_cli(parser)
     args = parser.parse_args()
 
     build_wrfinput(
@@ -274,6 +330,8 @@ def main():
         output_path=args.output_path,
         start_month=args.start_month,
         soilparm_tbl=args.soilparm_tbl,
+        fix_domain_gaps=args.fix_domain_gaps,
+        edits_record=args.edits_record,
     )
 
 

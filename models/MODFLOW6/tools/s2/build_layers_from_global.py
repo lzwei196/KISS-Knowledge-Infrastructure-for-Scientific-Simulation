@@ -16,8 +16,12 @@ Data sources (priority order):
   - Uniform depth assumption — fallback
 
 Usage:
+    python tools/s2/create_grid_from_basin.py --shapefile data/shp/<basin>.shp \
+        --cell_m 5000 --out_nc outputs/<basin>/modflow/grid.nc
+        (or --box LON_MIN LON_MAX LAT_MIN LAT_MAX --nrow N --ncol M when the
+         domain is a rectangle; mask in the file = IDOMAIN from the boundary)
     python build_layers_from_global.py \
-        --grid_nc outputs/<basin>/vic_temp/grid/basin_grid.nc \
+        --grid_nc outputs/<basin>/modflow/grid.nc \
         --dem data/dem/china_dem_90m/china_dem_90m.tif \
         --output_dir outputs/<basin>/modflow/layers \
         --nlayers 3 \
@@ -69,7 +73,8 @@ def resample_raster_to_grid(raster_path: str, lats: np.ndarray, lons: np.ndarray
 
 def main():
     parser = argparse.ArgumentParser(description="Build MODFLOW layers from DEM + global datasets")
-    parser.add_argument("--grid_nc", type=Path, required=True, help="Basin grid NetCDF")
+    parser.add_argument("--grid_nc", type=Path, required=True,
+                        help="Grid NetCDF from tools/s2/create_grid_from_basin.py")
     parser.add_argument("--dem", type=str, required=True, help="DEM raster (GeoTIFF)")
     parser.add_argument("--dtb_raster", type=str, default=None,
                         help="Depth-to-bedrock raster (m). If not provided, uses uniform depths.")

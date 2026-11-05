@@ -1,0 +1,7 @@
+numpy
+pandas
+scipy
+matplotlib
+requests
+PyYAML
+# plus ki_tools_common (HydroCraft shared library) on sys.path; WINE + EPA WASP 8.5 (see SKILL.md section 0)

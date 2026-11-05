@@ -1,3 +1,5 @@
+> **SURROGATE STAGE** — this page documents the Python light-use-efficiency stand-in, not the LPJ-GUESS engine. For real-engine runs read `s6_build_cf_forcing.md` → `s9_parse_engine_output.md`.
+
 # Stage 2: Convert Forcing
 
 ## Purpose

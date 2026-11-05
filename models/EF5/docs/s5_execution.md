@@ -9,7 +9,7 @@ Run the EF5 binary to perform hydrologic simulation, calibration, or basin proce
 | Input | Source |
 |-------|--------|
 | `control.txt` | Stage 4 (configuration assembly) |
-| EF5 binary (`bin/ef5`) | Compiled from source |
+| EF5 binary (`bin/ef5`) | Server install `KISSPATH_BINARIES/EF5/bin/ef5` (its shared libraries in `../lib`, RUNPATH `$ORIGIN/../lib`); or compiled from source |
 | Basic grids (DEM, DDM, FAM) | Stage 1 |
 | Forcing grids (precip, PET, temp) | Stage 2 |
 | Parameter grids | Stage 3 |
@@ -29,9 +29,15 @@ Run the EF5 binary to perform hydrologic simulation, calibration, or basin proce
 ### 1. Pre-flight validation
 
 ```bash
-python tools/run_ef5.py --binary bin/ef5 --control control.txt
+python tools/run_ef5.py --control control.txt
+# Without --binary it uses the first that exists of: the server install
+# KISSPATH_BINARIES/EF5/bin/ef5, then the source build
+# KISSPATH_BINARIES/EF5/source/repo/bin/ef5; neither -> exit 1 naming both.
 # This runs preflight checks before execution
 ```
+
+In the shell examples below, `./bin/ef5` stands for that binary (`KISSPATH_BINARIES/EF5/bin/ef5`
+on this server). It needs no `LD_LIBRARY_PATH`; leave it unset so the libraries in its own `lib/` are used.
 
 Or manually:
 ```bash
@@ -54,6 +60,9 @@ cd /path/to/workspace
 ```
 
 ### 3. Run with OpenMP parallelism
+
+Only for an OpenMP build. The server binary is not one (it does not link libgomp), so
+`OMP_NUM_THREADS` has no effect on it.
 
 ```bash
 # Set number of threads
@@ -117,6 +126,24 @@ OUTPUT_GRIDS=STREAMFLOW|SOILMOISTURE|MAXSTREAMFLOW
 ./bin/ef5 -z DEM.tif -d DDM.tif -a FAM.tif -p    # pit-fill + process
 ./bin/ef5 -z DEM.tif -d DDM.tif -a FAM.tif -s     # slope computation
 ```
+
+### 6. Several tasks in one control file
+
+If `[Execute]` runs two or more tasks, give each task its own
+`OUTPUT=` directory and its own `CO_FILE=` (and do not put one task's `CO_FILE` inside another
+task's `OUTPUT`). Paths are resolved from the control file's folder, as EF5 sees them.
+`tools/run_ef5.py` refuses to run (exit 1) when executed tasks share one, because it then
+cannot tell which task wrote which output.
+
+`tools/run_ef5.py` also exits 1 when an executed SIMU, SIMU_RP or BASIN_AVG task shows no time-step line
+(`YYYY-MM-DD HH:UU`) after warm-up in its own part of EF5's stdout (after `Executing task <name>`), and,
+before the run, when a CALI_* task's TIME_BEGIN/TIME_WARMEND/TIME_END/TIMESTEP leave no post-warm-up step
+(calibration prints no step lines).
+
+`tools/run_ef5.py` refuses (exit 1, before running) any executed task that sets `TIME_BEGIN_LR` or
+`TIMESTEP_LR`: EF5 then switches to a second step size mid-run (Simulator.cpp:1574), and the wrapper's
+output check assumes one TIMESTEP. Run without them, or check the output by hand.
+`[Execute] ENSEMBLETASK=` (ensemble calibration) is also refused: its output is not covered by the check.
 
 ## Verification
 

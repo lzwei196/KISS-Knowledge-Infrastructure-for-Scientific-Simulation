@@ -32,7 +32,7 @@
 | Stage | Name | Key Tool | Output |
 |-------|------|----------|--------|
 | s1 | Domain Setup (GRU/HRU) | `create_gru_hru.py`, `create_local_attributes.py` | `attributes.nc` |
-| s2 | Forcing Preparation | `convert_vic_forcing_to_summa.py` | `forcing_YYYY.nc` |
+| s2 | Forcing Preparation | `build_summa_forcing_from_reanalysis.py` | `forcing_YYYY.nc` |
 | s3 | Model Decisions | `configure_decisions.py` | `decisions.txt` |
 | s4 | Parameter Configuration | `set_trial_parameters.py` | `trialParams.nc` |
 | s5 | Initial Conditions | `create_initial_conditions.py` | `coldState.nc` |
@@ -49,7 +49,7 @@
 |-------|------|--------|---------|
 | s1 | create_gru_hru | `tools/s1_domain_setup/create_gru_hru.py` | Create GRU/HRU structure from shapefile + DEM |
 | s1 | create_local_attributes | `tools/s1_domain_setup/create_local_attributes.py` | Generate SUMMA attributes NetCDF |
-| s2 | convert_vic_forcing_to_summa | `tools/s2_forcing_prep/convert_vic_forcing_to_summa.py` | VIC forcing -> SUMMA NetCDF with unit conversions |
+| s2 | build_summa_forcing_from_reanalysis | `tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py` | Forcing source (cmfd, mswx, ...) -> SUMMA NetCDF with unit conversions |
 | s3 | configure_decisions | `tools/s3_decisions/configure_decisions.py` | Generate decisions file with validation |
 | s4 | set_trial_parameters | `tools/s4_parameters/set_trial_parameters.py` | Generate trial parameters NetCDF |
 | s5 | create_initial_conditions | `tools/s5_initial_conditions/create_initial_conditions.py` | Generate cold-start initial conditions |
@@ -96,11 +96,11 @@ ALL NetCDF files (attributes, forcing, coldState, trialParams) must have identic
 
 ## VIC Coupling
 
-SUMMA can share forcing data with VIC through the `convert_vic_forcing_to_summa.py` tool. This enables head-to-head comparison of VIC vs SUMMA for the same basin, forcing, and period -- isolating the effect of model structure.
+SUMMA reads its forcing straight from the same source as VIC (`build_summa_forcing_from_reanalysis.py`), never from VIC's forcing files. This enables head-to-head comparison of VIC vs SUMMA for the same basin, forcing, and period -- isolating the effect of model structure.
 
 **Coupling workflow**:
 1. Run HydroCraft VIC workflow (Steps 1-7) as usual
-2. After VIC forcing is prepared, run `convert_vic_forcing_to_summa.py`
+2. Build SUMMA forcing from the same source with `build_summa_forcing_from_reanalysis.py`
 3. Configure SUMMA domain from the same basin shapefile
 4. Run SUMMA with decisions that approximate VIC's physics
 5. Compare outputs (runoff, ET, soil moisture)
@@ -168,7 +168,7 @@ python tools/s1_domain_setup/create_gru_hru.py --basin_shp ... --dem ... --outpu
 python tools/s1_domain_setup/create_local_attributes.py --gru_hru_csv ... --output_nc ...
 
 # 2. Convert forcing
-python tools/s2_forcing_prep/convert_vic_forcing_to_summa.py --vic_forcing_dir ... --attributes_nc ...
+python tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py --source cmfd --forcing_dir ... --attributes_nc ... --start_year ... --end_year ... --output_dir ...
 
 # 3. Configure decisions
 python tools/s3_decisions/configure_decisions.py --output ... --use_defaults

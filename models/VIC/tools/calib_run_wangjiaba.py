@@ -150,8 +150,11 @@ ROUT_SRC = f"{BASE}/outputs/vic_wangjiaba_routed_1981_1985"
 # basin tangnaihai's unit-hydrograph grid. Keep both caches under a per-basin root.
 UH_CACHE_DIR = os.environ.get("KDT_VIC_UH_CACHE", f"/dev/shm/kdt_vic_calib/uh_s_{BASIN}")
 
-VIC_EXE = f"{BASE}/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
-ROUT_EXE = f"{BASE}/model/route_1.0/src/rout"
+# codex structure_sync r2 (pre-existing): full literals under the model/ role prefix, so the KISS
+# porter maps them to KISSPATH_BINARIES (a f"{BASE}/model" join became KISSPATH_ROOT/model).
+# Same files on this server as before.
+VIC_EXE = "KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
+ROUT_EXE = "KISSPATH_BINARIES/route_1.0/src/rout"
 
 # ---------------------------------------------------------------------------
 # TARGET CASE — pinned, not configurable (System 1 Phase-1 probe: 王家坝 Wangjiaba).
@@ -252,17 +255,26 @@ def stage_forcing() -> str:
         return f"{FORCING_SRC}/{FORCING_PREFIX}"
     done = Path(FORCING_CACHE + ".complete")
 
+    def _manifest() -> str:
+        """codex structure_sync (pre-existing P2): name + size + mtime of every source forcing
+        file. Recorded in the .complete marker when the cache is built and compared on reuse,
+        so forcing replaced at the same path with the same file count is detected (the cache is
+        rebuilt; results then come from the new files)."""
+        return json.dumps(sorted((p.name, st.st_size, st.st_mtime_ns)
+                                 for p in Path(FORCING_SRC).glob(f"{FORCING_PREFIX}*")
+                                 for st in [p.stat()]))
+
     def _stale() -> bool:
         """A cache built for a different cell set (e.g. the basin was re-delineated and
-        outputs/<basin>/ regenerated) must not be silently fed to VIC."""
+        outputs/<basin>/ regenerated) or from changed files must not be silently fed to VIC."""
         n_src = len(list(Path(FORCING_SRC).glob(f"{FORCING_PREFIX}*")))
         n_cache = len(list(Path(FORCING_CACHE).glob(f"{FORCING_PREFIX}*")))
-        return n_src != n_cache
+        return n_src != n_cache or done.read_text() != _manifest()
 
     try:
         if done.exists():
             if _stale():
-                print("[calib_run] forcing cache cell count != source; rebuilding", flush=True)
+                print("[calib_run] forcing cache cell count or file manifest != source; rebuilding", flush=True)
                 done.unlink(missing_ok=True)
                 shutil.rmtree(FORCING_CACHE, ignore_errors=True)
             else:
@@ -285,9 +297,10 @@ def stage_forcing() -> str:
             tmp = FORCING_CACHE + ".partial"
             shutil.rmtree(tmp, ignore_errors=True)
             shutil.rmtree(FORCING_CACHE, ignore_errors=True)   # a partial cache from a killed eval
+            man = _manifest()                       # taken BEFORE the copy: a change during it -> rebuild next time
             shutil.copytree(FORCING_SRC, tmp)
             os.replace(tmp, FORCING_CACHE)
-            done.write_text("ok\n")
+            done.write_text(man)
         finally:
             lock.unlink(missing_ok=True)
         return f"{FORCING_CACHE}/{FORCING_PREFIX}"

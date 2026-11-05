@@ -290,7 +290,7 @@ outputs:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"
           comparison_mode: "time_series_comparison"
-          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]   # timing_accuracy added 2026-08-30 (System 1): day_bias = |sim peak day − obs peak day|, emitted by tools/calib_run_huaibin.py
           determining_metric: "nse"
           caveats:
             - "Observed discharge in m3/s must be converted to mm/d using the gauged upstream catchment area (Q_mm = Q_m3s * 86400 / (A_km2 * 1e6) * 1000) before comparison."

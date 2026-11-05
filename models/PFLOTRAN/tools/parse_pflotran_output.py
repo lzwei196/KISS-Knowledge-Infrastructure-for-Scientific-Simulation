@@ -8,13 +8,15 @@ them to analysis-ready CSV and summary JSON.
 
 Inputs:
     --hdf5-file    : Path to PFLOTRAN HDF5 output (.h5)
-    --obs-file     : Path to TecPlot observation file (.tec) (optional)
+    --obs-file     : Path to observation file (<prefix>-obs-N.tec or .pft) (optional)
+    --regression-file : Path to a PFLOTRAN .regression file (optional)
     --variables    : Variables to extract (default: all)
     --output-dir   : Directory for output CSV/JSON files
 
 Outputs:
     - Time series CSV per variable (e.g., liquid_pressure.csv)
     - Observation point CSV (from .tec files)
+    - regression.csv (section, quantity, key, component, value) from a .regression file
     - Summary statistics JSON
     - Water balance summary (if mass balance file exists)
 
@@ -39,8 +41,26 @@ import numpy as np
 # ──────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────
-SECONDS_PER_YEAR = 3.15576e7
+# PFLOTRAN's own year: DAYS_PER_YEAR = 365 (src/pflotran/pflotran_constants.F90);
+# time unit factors as in src/pflotran/units.F90
 SECONDS_PER_DAY = 86400.0
+SECONDS_PER_YEAR = 365.0 * SECONDS_PER_DAY
+TIME_UNIT_SECONDS = {
+    "s": 1.0, "sec": 1.0, "second": 1.0,
+    "min": 60.0, "minute": 60.0,
+    "h": 3600.0, "hr": 3600.0, "hour": 3600.0,
+    "d": SECONDS_PER_DAY, "day": SECONDS_PER_DAY,
+    "w": 7 * SECONDS_PER_DAY, "week": 7 * SECONDS_PER_DAY,
+    "mo": SECONDS_PER_YEAR / 12.0, "month": SECONDS_PER_YEAR / 12.0,
+    "y": SECONDS_PER_YEAR, "yr": SECONDS_PER_YEAR, "year": SECONDS_PER_YEAR,
+}
+
+
+def time_to_years(value, unit):
+    """Convert a PFLOTRAN time value to years (365-day PFLOTRAN year)."""
+    if unit not in TIME_UNIT_SECONDS:
+        raise ValueError(f"unknown PFLOTRAN time unit '{unit}'")
+    return value * TIME_UNIT_SECONDS[unit] / SECONDS_PER_YEAR
 PA_TO_M_HEAD = 1.0 / (998.2 * 9.80665)  # Pa to m of water head
 
 
@@ -58,8 +78,11 @@ def validate_inputs(args):
     if args.obs_file and not os.path.isfile(args.obs_file):
         errors.append(f"Observation file not found: {args.obs_file}")
 
-    if not args.hdf5_file and not args.obs_file:
-        errors.append("At least one of --hdf5-file or --obs-file is required")
+    if args.regression_file and not os.path.isfile(args.regression_file):
+        errors.append(f"Regression file not found: {args.regression_file}")
+
+    if not args.hdf5_file and not args.obs_file and not args.regression_file:
+        errors.append("At least one of --hdf5-file, --obs-file or --regression-file is required")
 
     return {"valid": len(errors) == 0, "errors": errors}
 
@@ -91,12 +114,26 @@ def parse_hdf5_output(hdf5_path, variables=None):
 
     f = h5py.File(hdf5_path, "r")
 
-    # Extract coordinates
+    # Extract coordinates. PFLOTRAN v6 structured-grid output stores the grid
+    # lines as "Coordinates/X [m]" (nx+1 values) etc. and each variable as an
+    # (nx, ny, nz) array; cell centres are the midpoints of the grid lines.
     coords = {}
+    grid_lines = {}
     if "Coordinates" in f:
-        for dim in ["X", "Y", "Z"]:
-            if dim in f["Coordinates"]:
-                coords[dim] = np.array(f["Coordinates"][dim])
+        for key in f["Coordinates"].keys():
+            dim = key.split()[0]
+            if dim in ("X", "Y", "Z"):
+                grid_lines[dim] = np.array(f["Coordinates"][key], dtype=float)
+    for dim, gl in grid_lines.items():
+        if gl.ndim != 1 or len(gl) < 2 or not np.all(np.isfinite(gl)) or np.any(np.diff(gl) <= 0):
+            raise ValueError(f"Coordinates/{dim}: grid lines must be finite and increasing")
+    if len(grid_lines) == 3:
+        mids = [0.5 * (grid_lines[d][1:] + grid_lines[d][:-1]) for d in ("X", "Y", "Z")]
+        cx, cy, cz = np.meshgrid(*mids, indexing="ij")
+        coords = {"X": cx.ravel(), "Y": cy.ravel(), "Z": cz.ravel()}
+        grid_shape = tuple(len(m) for m in mids)
+    else:
+        grid_shape = None
 
     ncells = len(coords.get("X", []))
 
@@ -110,15 +147,8 @@ def parse_hdf5_output(hdf5_path, variables=None):
         if match:
             time_val = float(match.group(1))
             time_unit = match.group(2)
-            # Convert to years
-            if time_unit == "s":
-                time_yr = time_val / SECONDS_PER_YEAR
-            elif time_unit == "d":
-                time_yr = time_val / 365.25
-            elif time_unit == "h":
-                time_yr = time_val / (365.25 * 24)
-            else:
-                time_yr = time_val  # assume years
+            # Convert to years (raises on an unknown unit)
+            time_yr = time_to_years(time_val, time_unit)
 
             times.append(time_yr)
             time_groups[time_yr] = key
@@ -138,7 +168,14 @@ def parse_hdf5_output(hdf5_path, variables=None):
                 continue
             if var_name not in var_data:
                 var_data[var_name] = {}
-            var_data[var_name][t_yr] = np.array(group[var_name])
+            arr = np.array(group[var_name])
+            if grid_shape is not None:
+                if arr.shape != grid_shape:
+                    raise ValueError(f"{group_name}/{var_name} has shape {arr.shape}, grid "
+                                     f"is {grid_shape} (only cell-centred structured output "
+                                     "is supported)")
+                arr = arr.ravel()  # same (i, j, k) order as the cell centres
+            var_data[var_name][t_yr] = arr
 
     f.close()
 
@@ -173,10 +210,14 @@ def parse_tecplot_observation(obs_path):
     data_lines = []
 
     with open(obs_path, "r") as f:
-        for line in f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
             if line.startswith("TITLE"):
                 continue
+            elif line.startswith('"') and not var_names:
+                # PFLOTRAN v6 observation files (-obs-N.tec / .pft): first line is the
+                # quoted column names, e.g. "Time [y]","2-Liquid Pressure [Pa] east (100) ..."
+                var_names = re.findall(r'"([^"]+)"', line)
             elif line.startswith("VARIABLES"):
                 # Parse variable names from quoted strings
                 matches = re.findall(r'"([^"]+)"', line)
@@ -186,12 +227,19 @@ def parse_tecplot_observation(obs_path):
                 if match:
                     obs_name = match.group(1)
             elif line and not line.startswith("#"):
+                # A data row: every value a finite number, one per column
                 try:
                     values = [float(x) for x in line.split()]
-                    if len(values) == len(var_names):
-                        data_lines.append(values)
                 except ValueError:
-                    continue
+                    raise ValueError(f"{obs_path}:{lineno}: not a data row: {line[:80]}")
+                if not var_names:
+                    raise ValueError(f"{obs_path}:{lineno}: data before the column-name line")
+                if len(values) != len(var_names):
+                    raise ValueError(f"{obs_path}:{lineno}: {len(values)} values for "
+                                     f"{len(var_names)} columns")
+                if not all(np.isfinite(values)):
+                    raise ValueError(f"{obs_path}:{lineno}: non-finite value")
+                data_lines.append(values)
 
     if not data_lines:
         return {"observation_name": obs_name, "variables": var_names,
@@ -209,6 +257,57 @@ def parse_tecplot_observation(obs_path):
         result["data"][var] = data_array[:, i]
 
     return result
+
+
+def parse_regression_file(reg_path):
+    """Parse a PFLOTRAN .regression file.
+
+    Format (written by PFLOTRAN's REGRESSION block):
+        -- PRESSURE: Liquid Pressure --
+              Max:   4.0763719684121E+05
+               29:   2.3584750178849E+05
+        -- GENERIC: LIQUID VELOCITY [m/y] --
+               29:  -2.2482369131225E+02  1.4654128808109E+02 -1.2881825353295E+00
+        -- SOLUTION: Flow --
+           Time Steps:          100
+
+    Returns:
+        list of dicts with section, quantity, key, values (list of float)
+    """
+    records = []
+    section = quantity = None
+    with open(reg_path) as f:
+        for lineno, line in enumerate(f, 1):
+            m = re.match(r"^--\s*([A-Za-z_]+):\s*(.*?)\s*--\s*$", line.strip())
+            if m:
+                section, quantity = m.group(1), m.group(2)
+                continue
+            if section is None or ":" not in line:
+                continue
+            key, rest = line.split(":", 1)
+            try:
+                values = [float(v) for v in rest.split()]
+            except ValueError:
+                raise ValueError(f"{reg_path}:{lineno}: not a number: {line.strip()[:80]}")
+            if not values:
+                raise ValueError(f"{reg_path}:{lineno}: no value: {line.strip()[:80]}")
+            if not all(np.isfinite(values)):
+                raise ValueError(f"{reg_path}:{lineno}: non-finite value")
+            if values:
+                records.append({"section": section, "quantity": quantity,
+                                "key": key.strip(), "values": values})
+    return records
+
+
+def write_regression_csv(records, output_path):
+    """One row per value: section, quantity, key, component, value."""
+    with open(output_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["section", "quantity", "key", "component", "value"])
+        for r in records:
+            for i, v in enumerate(r["values"]):
+                writer.writerow([r["section"], r["quantity"], r["key"], i, repr(v)])
+    print(f"  Written {sum(len(r['values']) for r in records)} values to {output_path}")
 
 
 def compute_water_balance(mas_path):
@@ -279,6 +378,10 @@ def write_observation_csv(obs_data, output_path):
         if "Pressure" in var or "pressure" in var:
             pressure_col = var
             break
+    if pressure_col:
+        print(f"  NOTE: Head_m = (P - 101325 Pa) / (998.2 kg/m3 * 9.80665 m/s2) from column "
+              f"'{pressure_col}' with elevation 0 m: a pressure head, not the hydraulic head "
+              "at the point's elevation")
 
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -321,7 +424,10 @@ def write_spatial_csv(hdf5_data, output_dir):
             with open(csv_path, "w", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(["X_m", "Y_m", "Z_m", var_name])
-                for i in range(min(len(values), len(coords.get("X", [])))):
+                if len(values) != len(coords.get("X", [])):
+                    raise ValueError(f"{var_name}: {len(values)} values but "
+                                     f"{len(coords.get('X', []))} cell coordinates")
+                for i in range(len(values)):
                     writer.writerow([
                         coords["X"][i] if "X" in coords else 0,
                         coords["Y"][i] if "Y" in coords else 0,
@@ -362,11 +468,19 @@ def compute_summary_statistics(hdf5_data, obs_data=None):
 
     # Add observation stats if available
     if obs_data and obs_data["time"].size > 0:
+        t0, t1 = float(obs_data["time"][0]), float(obs_data["time"][-1])
+        m = re.search(r"\[(\w+)\]", obs_data["variables"][0]) if obs_data["variables"] else None
+        unit = m.group(1) if m else None
         stats["observation"] = {
             "name": obs_data["observation_name"],
             "n_records": len(obs_data["time"]),
-            "time_range_yr": [float(obs_data["time"][0]), float(obs_data["time"][-1])],
         }
+        if unit in TIME_UNIT_SECONDS:
+            stats["observation"]["time_range_yr"] = [time_to_years(t0, unit), time_to_years(t1, unit)]
+        else:
+            # unit unknown: report the file's own values and say so
+            stats["observation"]["time_range"] = [t0, t1]
+            stats["observation"]["time_unit"] = unit or "unknown"
 
     return stats
 
@@ -414,7 +528,8 @@ def main():
         description="Parse PFLOTRAN output to CSV and summary statistics"
     )
     parser.add_argument("--hdf5-file", help="Path to HDF5 output file")
-    parser.add_argument("--obs-file", help="Path to TecPlot observation file")
+    parser.add_argument("--obs-file", help="Path to observation file (-obs-N.tec or .pft)")
+    parser.add_argument("--regression-file", help="Path to a PFLOTRAN .regression file")
     parser.add_argument("--variables", nargs="+", help="Variables to extract")
     parser.add_argument("--output-dir", required=True, help="Output directory")
 
@@ -434,20 +549,42 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
+    failures = []
+
     # Step 2: Parse HDF5
     hdf5_data = {"coordinates": {}, "times": [], "variables": {},
                  "ncells": 0, "available_variables": []}
 
     if args.hdf5_file:
         print(f"\n[2/4] Parsing HDF5: {args.hdf5_file}...")
-        hdf5_data = parse_hdf5_output(args.hdf5_file, args.variables)
+        try:
+            hdf5_data = parse_hdf5_output(args.hdf5_file, args.variables)
+        except ValueError as exc:
+            print(f"  ERROR: {exc}")
+            sys.exit(1)
         print(f"  Cells: {hdf5_data['ncells']}")
         print(f"  Time steps: {len(hdf5_data['times'])}")
         print(f"  Variables: {hdf5_data['available_variables']}")
+        if not hdf5_data["times"]:
+            print(f"  ERROR: no 'Time: ...' groups in {args.hdf5_file}")
+            failures.append("hdf5")
+        elif not hdf5_data["variables"]:
+            what = f"none of {args.variables}" if args.variables else "no datasets"
+            print(f"  ERROR: {what} in the time groups of {args.hdf5_file}")
+            failures.append("hdf5")
 
         # Write spatial CSVs
-        written = write_spatial_csv(hdf5_data, args.output_dir)
+        try:
+            written = write_spatial_csv(hdf5_data, args.output_dir)
+        except ValueError as exc:
+            print(f"  ERROR: {exc}")
+            written = []
+            failures.append("hdf5")
         print(f"  Written {len(written)} spatial CSV files")
+        if hdf5_data["variables"] and not written and "hdf5" not in failures:
+            print("  ERROR: no cell coordinates found (only structured-grid "
+                  "'Coordinates/X|Y|Z' output is supported); no spatial CSVs written")
+            failures.append("hdf5")
     else:
         print("\n[2/4] No HDF5 file specified, skipping.")
 
@@ -455,19 +592,48 @@ def main():
     obs_data = None
     if args.obs_file:
         print(f"\n[3/4] Parsing observation file: {args.obs_file}...")
-        obs_data = parse_tecplot_observation(args.obs_file)
+        try:
+            obs_data = parse_tecplot_observation(args.obs_file)
+        except ValueError as exc:
+            print(f"  ERROR: {exc}")
+            sys.exit(1)
         print(f"  Observation: {obs_data['observation_name']}")
         print(f"  Records: {len(obs_data['time'])}")
         print(f"  Variables: {obs_data['variables']}")
 
         obs_csv = os.path.join(args.output_dir, "observations.csv")
+        if len(obs_data["time"]) == 0:
+            print(f"  ERROR: no data rows read from {args.obs_file}")
+            failures.append("obs")
         write_observation_csv(obs_data, obs_csv)
     else:
         print("\n[3/4] No observation file specified, skipping.")
 
+    # Regression file (optional)
+    reg_records = None
+    if args.regression_file:
+        print(f"\n[3b] Parsing regression file: {args.regression_file}...")
+        try:
+            reg_records = parse_regression_file(args.regression_file)
+        except ValueError as exc:
+            print(f"  ERROR: {exc}")
+            sys.exit(1)
+        if not reg_records:
+            print(f"  ERROR: no values read from {args.regression_file}")
+            failures.append("regression")
+        else:
+            print(f"  Sections: {sorted({r['section'] for r in reg_records})}")
+            write_regression_csv(reg_records, os.path.join(args.output_dir, "regression.csv"))
+
     # Step 4: Summary and validation
     print("\n[4/4] Computing summary statistics...")
     stats = compute_summary_statistics(hdf5_data, obs_data)
+    if reg_records:
+        reg = {}
+        for r in reg_records:
+            sec = reg.setdefault(f"{r['section']}: {r['quantity']}", {"values": {}})
+            sec["values"][r["key"]] = r["values"] if len(r["values"]) > 1 else r["values"][0]
+        stats["regression"] = reg
 
     output_validation = validate_outputs(args.output_dir, stats)
     for w in output_validation["warnings"]:
@@ -478,6 +644,9 @@ def main():
         json.dump(stats, f, indent=2, default=str)
     print(f"  Summary: {summary_path}")
 
+    if failures:
+        print(f"\nFAILED: no data read from: {failures}")
+        sys.exit(1)
     print("\nDone.")
 
 

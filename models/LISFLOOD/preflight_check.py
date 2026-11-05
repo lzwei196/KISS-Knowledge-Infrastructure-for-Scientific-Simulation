@@ -9,6 +9,8 @@ last line of output.
 import json
 import os
 import py_compile
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +21,11 @@ KI_DIR = Path(__file__).resolve().parent
 MANIFEST = KI_DIR / "knowledge_infrastructure.yaml"
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
 DEFAULT_BINARY = Path("KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood")
+# Separate env built from LISFLOOD's own environment.yml (py3.7, old xarray/dask);
+# needed ONLY for the official chunked-NetCDF test case inputs. GeoForge runs use
+# the env above, so this is a non-critical info check.
+OFFICIAL_CASE_BINARY = Path("KISSPATH_HOME/miniconda3/envs/lisflood_official/bin/lisflood")
+PROBE_TIMEOUT = 180
 IMPORT_MODULES = [
     "lisflood",
     "netCDF4",
@@ -165,17 +172,24 @@ def check_runtime_imports(checks, python_exe):
 
     for module in IMPORT_MODULES:
         snippet = f"import {module}; print(getattr({module}, '__file__', 'built-in'))"
-        result = subprocess.run(
-            [str(python_exe), "-c", snippet],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        ok = result.returncode == 0
         subject = f"{python_exe}:import {module}"
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        last_line = detail[-1] if detail else ""
+        try:
+            result = subprocess.run(
+                [str(python_exe), "-c", snippet],
+                cwd=str(KI_DIR),
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT,
+            )
+            ok = result.returncode == 0
+            detail = (result.stderr or result.stdout or "").strip().splitlines()
+            last_line = detail[-1] if detail else ""
+        except subprocess.TimeoutExpired:
+            ok = False
+            last_line = f"import did not finish within {PROBE_TIMEOUT}s"
+        except OSError as exc:
+            ok = False
+            last_line = f"cannot start {python_exe}: {exc}"
         fix = diagnostic_fix(
             f"Repair package {module} in {python_exe.parent.parent}; last error: {last_line}"
         )
@@ -186,37 +200,124 @@ def check_binary_starts(checks, binary):
     if not (binary.is_file() and os.access(binary, os.X_OK)):
         return
 
-    result = subprocess.run(
-        [str(binary), "--help"],
-        cwd=str(KI_DIR),
-        capture_output=True,
-        text=True,
-        timeout=30,
+    # LISFLOOD reads argument 1 as the settings XML path, so `--help`/`--version`
+    # are not valid probes. With no arguments it prints its banner (with
+    # "Version:") and the usage text ("settings.xml"), then exits 1.
+    subject = f"{binary} (no arguments: banner + usage)"
+    try:
+        result = subprocess.run(
+            [str(binary)],
+            cwd=str(KI_DIR),
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        add_check(checks, "run", subject, True, False, diagnostic_fix(
+            f"Make the LISFLOOD CLI start cleanly; `{binary}` with no arguments did not finish within {PROBE_TIMEOUT}s"))
+        return
+    except OSError as exc:
+        add_check(checks, "run", subject, True, False, diagnostic_fix(
+            f"Make the LISFLOOD CLI start cleanly; cannot start {binary}: {exc}"))
+        return
+    combined = (result.stdout or "") + "\n" + (result.stderr or "")
+    version = re.search(r"^\s*Version:\s*(\S+)", combined, flags=re.M)
+    ok = (
+        result.returncode in (0, 1)
+        and "Lisflood" in combined
+        and version is not None
+        and "settings.xml" in combined
+        and "Traceback" not in combined
     )
-    output = (result.stderr or result.stdout or "").strip().splitlines()
-    last_line = output[-1] if output else f"exit code {result.returncode}"
-    ok = result.returncode == 0
+    if version:
+        subject = f"{binary} (no arguments) -> Version {version.group(1)}"
+    output = combined.strip().splitlines()
+    last_line = output[-1].strip() if output else f"exit code {result.returncode}"
     add_check(
         checks,
         "run",
-        f"{Path(os.path.realpath(binary))} --help",
+        subject,
         True,
         ok,
-        diagnostic_fix(f"Make the LISFLOOD CLI start cleanly; last error: {last_line}"),
+        diagnostic_fix(
+            f"Make the LISFLOOD CLI start cleanly (expected banner with Version: and usage text, "
+            f"exit 0/1; got exit {result.returncode}); last line: {last_line}"
+        ),
     )
+
+
+def resolve_tool_engine():
+    """The engine tools/run_lisflood.py would run without --lisflood-bin, from the tool's own
+    resolve_lisflood_bin() ($LISFLOOD_BIN -> server default -> PATH only if the default is
+    absent). Returns (Path, source) or (None, error text)."""
+    import importlib.util
+    old = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True  # no __pycache__ in the live tools folder
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_ki_run_lisflood", KI_DIR / "tools" / "run_lisflood.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        path, source = module.resolve_lisflood_bin(None)
+        return Path(path), source
+    except Exception as exc:  # import or resolution failure
+        return None, f"{type(exc).__name__}: {exc}"
+    finally:
+        sys.dont_write_bytecode = old
+
+
+def check_tool_engine(checks, binary, source):
+    # The binary checked here IS the run tool's own choice (no PATH requirement any more).
+    add_check(
+        checks,
+        "run",
+        f"tools/run_lisflood.py engine lookup -> {binary or 'none'} ({source})",
+        True,
+        binary is not None,
+        diagnostic_fix(
+            f"tools/run_lisflood.py cannot select a LISFLOOD engine ({source}); give it with "
+            f"--lisflood-bin (run tool) or $LISFLOOD_BIN (run tool and this preflight), or restore "
+            f"the server default {DEFAULT_BINARY}"
+        ),
+    )
+
+
+def check_official_case_env(checks):
+    ok = OFFICIAL_CASE_BINARY.is_file() and os.access(OFFICIAL_CASE_BINARY, os.X_OK)
+    add_check(
+        checks,
+        "binary",
+        f"{OFFICIAL_CASE_BINARY} (info: only for the official chunked-NetCDF test case)",
+        False,
+        ok,
+        "Optional: the official LISFLOOD test case inputs (chunked NetCDF) need the separate env "
+        "lisflood_official built from LISFLOOD's environment.yml; GeoForge runs do not need it",
+    )
+    print(f"Official test case env: {OFFICIAL_CASE_BINARY} "
+          f"({'present' if ok else 'missing - optional, not needed for GeoForge runs'})")
 
 
 def main():
     checks = []
-    binary = manifest_binary_path()
+    manifest_binary = manifest_binary_path()
+    binary, engine_source = resolve_tool_engine()
 
     print(f"{' PREFLIGHT: LISFLOOD ':=^60}")
     print(f"KI directory: {KI_DIR}")
     print(f"Diagnostics: {DIAGNOSTICS}")
-    print(f"Executable from manifest: {binary}")
+    print(f"Executable from manifest: {manifest_binary}")
+    print(f"Engine used by tools/run_lisflood.py: {binary or 'NONE'} ({engine_source})")
 
     check_required_files(checks)
     check_tool_syntax(checks)
+    check_tool_engine(checks, binary, engine_source)
+    if binary is None:
+        # no fallback to another engine: the run tool would fail the same way
+        check_official_case_env(checks)
+        passed = sum(1 for c in checks if c["status"] == "pass")
+        print(f"Results: {passed} passed, {len(checks) - passed} failed")
+        emit_report(MODEL_ID, checks)
+        return
     _, binary_ok = check_binary(checks, binary)
 
     python_exe = run_env_python(binary) if binary_ok else None
@@ -234,6 +335,7 @@ def main():
 
     check_runtime_imports(checks, python_exe)
     check_binary_starts(checks, binary)
+    check_official_case_env(checks)
 
     passed = sum(1 for c in checks if c["status"] == "pass")
     failed = len(checks) - passed

@@ -21,19 +21,23 @@ Supports two modes:
      a new or patched NetCDF.
   2. Point mode: computes K for a single lat/lon (for testing/verification).
 
-Data source: HWSD v1.2 via ki_tools_common.soil_utils.lookup_hwsd
+Data source: raw HWSD v1.2 raster/attribute table; strict dominant-component read
 
 Usage:
     # Grid mode (main use case):
     python derive_usle_k.py --staticmaps /path/to/staticmaps.nc \
-        --output /path/to/usle_k.nc
+        --hwsd-crs EPSG:4326 --output /path/to/usle_k.nc
 
     # Grid mode with patch (writes USLE_K directly into staticmaps_sediment.nc):
     python derive_usle_k.py --staticmaps /path/to/staticmaps.nc \
-        --patch_nc /path/to/staticmaps_sediment.nc
+        --hwsd-crs EPSG:4326 --patch_nc /path/to/staticmaps_sediment.nc
 
     # Point mode (verification):
-    python derive_usle_k.py --lat 32.93 --lon 117.36
+    python derive_usle_k.py --lat 32.93 --lon 117.36 --hwsd-crs EPSG:4326
+
+    (--hwsd-crs is needed because the server hwsd.bil has no CRS metadata.
+    Active cells on HWSD water/rock/glacier/urban units stop the run with a
+    list of those cells; no K value is filled.)
 
     # Use SoilGrids instead of HWSD (Bengbu region only):
     python derive_usle_k.py --staticmaps /path/to/staticmaps.nc \
@@ -45,6 +49,7 @@ import json
 import os
 import sys
 
+import netCDF4  # load before xarray for the installed HDF5 stack
 import numpy as np
 
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
@@ -125,7 +130,7 @@ def structure_code_from_texture(sand, clay, om_pct):
     return sc
 
 
-def compute_usle_k(sand_pct, silt_pct, clay_pct, oc_pct=1.0,
+def compute_usle_k(sand_pct, silt_pct, clay_pct, oc_pct,
                    struct_code=None, perm_class=None):
     """Compute USLE K-factor using Wischmeier & Smith (1978) nomograph.
 
@@ -147,6 +152,17 @@ def compute_usle_k(sand_pct, silt_pct, clay_pct, oc_pct=1.0,
     silt = np.asarray(silt_pct, dtype=np.float64)
     clay = np.asarray(clay_pct, dtype=np.float64)
     oc = np.asarray(oc_pct, dtype=np.float64)
+
+    for values,name in [(sand,"sand"),(silt,"silt"),(clay,"clay"),(oc,"organic carbon")]:
+        if not np.isfinite(values).all() or np.any(values<0) or np.any(values>100):
+            raise ValueError(f"{name} must be supplied as finite percent in [0,100]; no defaults")
+    if np.any(np.abs(sand+silt+clay-100)>0.100001):
+        raise ValueError("sand+silt+clay must sum to 100 percent (0.1 tolerance)")
+    for values,name,upper in [(struct_code,"structure code",4),(perm_class,"permeability class",6)]:
+        if values is not None:
+            values=np.asarray(values,dtype=float)
+            if not np.isfinite(values).all() or np.any(values<1) or np.any(values>upper) or np.any(values!=np.floor(values)):
+                raise ValueError(f"Invalid {name}")
 
     # Convert organic carbon to organic matter (Van Bemmelen factor)
     om = oc * 1.724
@@ -192,7 +208,76 @@ def compute_usle_k(sand_pct, silt_pct, clay_pct, oc_pct=1.0,
 # Grid mode: derive K for every cell in a wflow staticmaps.nc
 # ---------------------------------------------------------------------------
 
-def derive_k_grid(staticmaps_path, soil_source="hwsd"):
+def _axes(ds):
+    for y,x in [("lat","lon"),("latitude","longitude"),("y","x")]:
+        if y in ds.coords and x in ds.coords:
+            if ds[y].ndim!=1 or ds[x].ndim!=1:raise ValueError("Require regular one-dimensional geographic axes")
+            for name in ["spatial_ref","crs"]:
+                if name in ds:
+                    from pyproj import CRS
+                    attrs=ds[name].attrs;crs=attrs.get("crs_wkt",attrs.get("spatial_ref"))
+                    if crs and not CRS.from_user_input(crs).is_geographic:raise ValueError("Projected grids require explicit reprojection before soil lookup")
+            return y,x
+    raise ValueError("Cannot find geographic coordinate axes")
+
+
+def lookup_hwsd_strict(lat,lon,hwsd_raster=None,hwsd_csv=None,hwsd_crs=None):
+    """Read the dominant HWSD component directly; never borrow a minor component or default."""
+    import pandas as pd
+    import rasterio
+    from rasterio.warp import transform
+    from ki_tools_common.soil_utils import HWSD_RASTER,HWSD_CSV
+    raster=hwsd_raster or HWSD_RASTER;csv=hwsd_csv or HWSD_CSV
+    with rasterio.open(raster) as src:
+        explicit=rasterio.crs.CRS.from_user_input(hwsd_crs) if hwsd_crs else None
+        if src.crs and explicit and src.crs!=explicit:raise ValueError("Explicit HWSD CRS conflicts with metadata")
+        crs=src.crs or explicit
+        if crs is None:raise ValueError("HWSD raster lacks CRS; supply verified --hwsd-crs")
+        xs,ys=transform("EPSG:4326",crs,[lon],[lat]);row,col=src.index(xs[0],ys[0])
+        if not (0<=row<src.height and 0<=col<src.width):raise ValueError("Point outside HWSD coverage")
+        cell=src.read(1,window=rasterio.windows.Window(col,row,1,1),masked=True)[0,0]
+        if np.ma.is_masked(cell) or not np.isfinite(cell) or cell<=0 or cell!=int(cell):raise ValueError("No valid HWSD map unit at active point")
+        mu=int(cell)
+    # Cache keyed by the source stat as well as path, never modified source rows.
+    from pathlib import Path
+    key=(str(csv),Path(csv).stat().st_mtime_ns,Path(csv).stat().st_size)
+    if key not in _HWSD_TABLES:
+        _HWSD_TABLES.clear();_HWSD_TABLES[key]=pd.read_csv(csv,low_memory=False)
+    table=_HWSD_TABLES[key];rows=table[table.MU_GLOBAL==mu]
+    if rows.empty:raise ValueError(f"HWSD MU {mu} absent from attribute table")
+    shares=pd.to_numeric(rows.SHARE,errors="coerce")
+    # HWSD lists unused components with SHARE=0 (e.g. MU 12014: 40/30/20/10/0).
+    # They are allowed but never selected; the chosen component must have SHARE>0.
+    if not np.isfinite(shares).all() or (shares<0).any() or (shares>100).any() or not (shares.max()>0):
+        raise ValueError("Invalid HWSD component shares")
+    rows=rows.loc[shares==shares.max()]
+    if len(rows)>1:
+        seq=pd.to_numeric(rows.SEQ,errors="coerce")
+        if not np.isfinite(seq).all():raise ValueError("Ambiguous HWSD component order")
+        rows=rows.loc[seq==seq.min()]
+    row=rows.iloc[0]
+    vals=[float(row.get("T_"+name,np.nan)) for name in ["SAND","SILT","CLAY","OC"]]
+    if not np.isfinite(vals).all():
+        # Water (WR), rock (RK), glacier (GG/GL), urban (UR), dunes (DS) and
+        # similar non-soil units carry no topsoil texture in HWSD v1.2.
+        # Stop with a clear message; never invent a K value for them.
+        symbol=next((str(row.get(c)) for c in ["SU_SYM90","SU_SYM85","SU_SYM74"] if pd.notna(row.get(c))),"none")
+        raise NonSoilHWSDUnit(f"HWSD MU {mu} dominant component has no topsoil texture "
+            f"(symbol {symbol}, ISSOIL={row.get('ISSOIL')}, sand/silt/clay/OC={vals}); "
+            "likely water/rock/glacier/urban; USLE K is not computed and no value is filled")
+    compute_usle_k(*vals)  # Enforce raw fractions/OC before downstream estimates.
+    return dict(mu_id=mu,sand=vals[0],silt=vals[1],clay=vals[2],oc=vals[3],texture="raw dominant HWSD component",
+        source=dict(raster=str(raster),csv=str(csv),crs=str(crs),share_pct=float(row.SHARE),selection="max SHARE, min SEQ, CSV row order"))
+
+
+_HWSD_TABLES={}
+
+
+class NonSoilHWSDUnit(ValueError):
+    """Dominant HWSD component has no texture (water, rock, glacier, urban ...)."""
+
+
+def derive_k_grid(staticmaps_path, soil_source="hwsd", **hwsd_options):
     """Derive USLE K factor for every active cell in a wflow staticmaps.nc.
 
     Parameters
@@ -208,24 +293,22 @@ def derive_k_grid(staticmaps_path, soil_source="hwsd"):
 
     ds = xr.open_dataset(staticmaps_path)
 
-    # Get coordinate arrays
-    if "lat" in ds.coords:
-        lats = ds["lat"].values
-        lons = ds["lon"].values
-    elif "y" in ds.coords:
-        lats = ds["y"].values
-        lons = ds["x"].values
-    else:
-        raise ValueError("Cannot find lat/lon or y/x coordinates in staticmaps")
+    y_name,x_name=_axes(ds)
+    lats,lons=ds[y_name].values,ds[x_name].values
 
     # Get basin mask
     if "wflow_subcatch" in ds:
-        mask = ds["wflow_subcatch"].values > 0
+        # Force (lat, lon) order so mask[i, j] matches lats[i], lons[j].
+        ids=ds["wflow_subcatch"].transpose(y_name,x_name).values
+        if np.isinf(ids).any() or np.any(np.isfinite(ids)&(ids<=0)):
+            raise ValueError("wflow_subcatch requires positive IDs and NaN padding")
+        mask = ids > 0
     else:
-        first_var = list(ds.data_vars)[0]
-        mask = np.isfinite(ds[first_var].values) & (ds[first_var].values != 0)
+        raise ValueError("wflow_subcatch is required; cannot infer active soil cells from an arbitrary field")
 
     ny, nx = mask.shape
+    if not mask.any():raise ValueError("No active cells")
+    if np.any(abs(lats)>90) or np.any(abs(lons)>180):raise ValueError("Expected geographic latitude/longitude grid")
     print(f"  Grid: {nx} x {ny}, active cells: {mask.sum()}", file=sys.stderr)
 
     # Initialize output arrays
@@ -234,45 +317,26 @@ def derive_k_grid(staticmaps_path, soil_source="hwsd"):
     silt_array = np.full((ny, nx), np.nan, dtype=np.float32)
     clay_array = np.full((ny, nx), np.nan, dtype=np.float32)
     oc_array = np.full((ny, nx), np.nan, dtype=np.float32)
+    source_records=[]
 
     if soil_source == "hwsd":
-        from ki_tools_common.soil_utils import lookup_hwsd
-
-        n_active = int(mask.sum())
-        n_done = 0
-        n_water = 0
-
-        for i in range(ny):
-            for j in range(nx):
-                if not mask[i, j]:
-                    continue
-
-                lat = float(lats[i])
-                lon = float(lons[j])
-
-                props = lookup_hwsd(lat, lon)
-
-                if props["mu_id"] == 0:
-                    # Water/ice/rock: use moderate default
-                    sand_array[i, j] = 40.0
-                    silt_array[i, j] = 40.0
-                    clay_array[i, j] = 20.0
-                    oc_array[i, j] = 1.5
-                    n_water += 1
-                else:
-                    sand_array[i, j] = props["sand"]
-                    silt_array[i, j] = props["silt"]
-                    clay_array[i, j] = props["clay"]
-                    oc_array[i, j] = props["oc"]
-
-                n_done += 1
-                if n_done % 50 == 0:
-                    print(f"  HWSD lookup: {n_done}/{n_active} cells done",
-                          file=sys.stderr)
-
-        if n_water > 0:
-            print(f"  WARNING: {n_water} cells had MU_GLOBAL=0 (water/ice/rock), "
-                  f"using default texture (loam)", file=sys.stderr)
+        non_soil=[]
+        for i,j in np.argwhere(mask):
+            try:
+                props=lookup_hwsd_strict(float(lats[i]),float(lons[j]),**hwsd_options)
+            except NonSoilHWSDUnit as exc:
+                # Collect every such active cell, then stop (nothing is written).
+                non_soil.append(f"row {int(i)} col {int(j)} lat {float(lats[i]):.5f} lon {float(lons[j]):.5f}: {exc}")
+                continue
+            source_records.append(dict(row=int(i),column=int(j),**props))
+            sand_array[i,j]=props["sand"];silt_array[i,j]=props["silt"]
+            clay_array[i,j]=props["clay"];oc_array[i,j]=props["oc"]
+        if non_soil:
+            ds.close()
+            raise NonSoilHWSDUnit(f"{len(non_soil)} active cell(s) fall on HWSD units with no soil texture "
+                "(water/rock/glacier/urban etc.). USLE K is not computed for them and no value is filled. "
+                "Remove these cells from wflow_subcatch or use another soil source, then rerun:\n  "
+                +"\n  ".join(non_soil))
 
     elif soil_source == "soilgrids":
         # SoilGrids 250m (Bengbu region only: 113-118E, 31-35N)
@@ -281,14 +345,9 @@ def derive_k_grid(staticmaps_path, soil_source="hwsd"):
     else:
         raise ValueError(f"Unknown soil_source: {soil_source}. Use 'hwsd' or 'soilgrids'.")
 
-    # Compute K for all active cells at once (vectorized)
-    active_sand = np.where(mask, np.nan_to_num(sand_array, nan=40.0), 0.0)
-    active_silt = np.where(mask, np.nan_to_num(silt_array, nan=40.0), 0.0)
-    active_clay = np.where(mask, np.nan_to_num(clay_array, nan=20.0), 0.0)
-    active_oc = np.where(mask, np.nan_to_num(oc_array, nan=1.5), 0.0)
-
-    K_values = compute_usle_k(active_sand, active_silt, active_clay, active_oc)
-    K_array = np.where(mask, K_values.astype(np.float32), np.nan)
+    # Validate only active cells; inactive padding remains masked.
+    K_values=compute_usle_k(sand_array[mask],silt_array[mask],clay_array[mask],oc_array[mask])
+    K_array[mask]=K_values.astype(np.float32)
 
     # Statistics
     valid_K = K_array[mask]
@@ -299,6 +358,8 @@ def derive_k_grid(staticmaps_path, soil_source="hwsd"):
         "std_K": round(float(np.nanstd(valid_K)), 5),
         "n_cells": int(mask.sum()),
         "soil_source": soil_source,
+        "filled_cells": 0,
+        "parameter_assumptions": "texture-estimated structure/permeability, OM capped at 4%, K bounded [0.001,0.070]; no source data defaults",
     }
 
     ds.close()
@@ -313,6 +374,7 @@ def derive_k_grid(staticmaps_path, soil_source="hwsd"):
         "lons": lons,
         "mask": mask,
         "stats": stats,
+        "source_records": source_records,
     }
 
 
@@ -338,9 +400,7 @@ def _derive_k_from_soilgrids(lats, lons, mask, sand_array, silt_array,
 
     for name, path in files.items():
         if not os.path.exists(path):
-            print(f"WARNING: SoilGrids file not found: {path}. "
-                  f"Falling back to defaults.", file=sys.stderr)
-            return
+            raise FileNotFoundError(f"Required SoilGrids file not found: {path}")
 
     ny, nx = mask.shape
 
@@ -353,15 +413,14 @@ def _derive_k_from_soilgrids(lats, lons, mask, sand_array, silt_array,
                     lat = float(lats[i])
                     lon = float(lons[j])
 
-                    try:
-                        row, col = src.index(lon, lat)
-                        val = int(src.read(1, window=rasterio.windows.Window(
-                            col, row, 1, 1))[0, 0])
-                    except Exception:
-                        val = -32768
-
-                    if val == -32768:
-                        continue
+                    if src.crs is None:raise ValueError(f"SoilGrids CRS missing: {path}")
+                    from rasterio.warp import transform
+                    xx,yy=transform("EPSG:4326",src.crs,[lon],[lat])
+                    row,col=src.index(xx[0],yy[0])
+                    if not (0<=row<src.height and 0<=col<src.width):raise ValueError(f"Active cell outside SoilGrids coverage: {lat},{lon}")
+                    val=src.read(1,window=rasterio.windows.Window(col,row,1,1),masked=True)[0,0]
+                    if np.ma.is_masked(val) or not np.isfinite(val) or val<0:raise ValueError(f"Missing SoilGrids {name} at active cell {lat},{lon}")
+                    val=float(val)
 
                     # SoilGrids units: sand/silt/clay in g/kg -> % (/10)
                     # SOC in dg/kg -> % (/100, since OC% = g/kg / 10)
@@ -389,10 +448,7 @@ def write_output(result, output_path, staticmaps_path):
     ds_ref = xr.open_dataset(staticmaps_path)
 
     # Determine coordinate names
-    if "lat" in ds_ref.coords:
-        y_name, x_name = "lat", "lon"
-    else:
-        y_name, x_name = "y", "x"
+    y_name,x_name=_axes(ds_ref)
 
     coords = {
         y_name: result["lats"],
@@ -410,6 +466,11 @@ def write_output(result, output_path, staticmaps_path):
         coords=coords,
     )
 
+    for field in ["sand","silt","clay","oc"]:
+        ds_out[field+"_pct"]=xr.DataArray(result[field+"_array"],dims=[y_name,x_name],attrs={"units":"percent","source":"actual source values before K estimation"})
+    ds_out.attrs["filled_cells"]=0
+    ds_out.attrs["parameter_assumptions"]=result["stats"]["parameter_assumptions"]
+    ds_out.attrs["source_records"]=json.dumps(result.get("source_records",[]))
     ds_out.attrs["title"] = "USLE K-factor derived from soil texture"
     ds_out.attrs["method"] = "Wischmeier-Smith (1978) nomograph equation"
     ds_out.attrs["tool"] = "derive_usle_k.py (wflow KI)"
@@ -428,10 +489,20 @@ def patch_netcdf(result, patch_nc_path):
     ds = xr.open_dataset(patch_nc_path)
 
     # Determine coordinate names
-    if "lat" in ds.coords:
-        y_name, x_name = "lat", "lon"
-    else:
-        y_name, x_name = "y", "x"
+    y_name,x_name=_axes(ds)
+
+    if not np.array_equal(ds[y_name].values,result["lats"]) or not np.array_equal(ds[x_name].values,result["lons"]):
+        ds.close();raise ValueError("Patch grid coordinates differ from derived K grid")
+    if "wflow_subcatch" not in ds:
+        ds.close();raise ValueError("Patch file lacks wflow_subcatch")
+    ids=ds.wflow_subcatch.transpose(y_name,x_name).values
+    if np.isinf(ids).any() or np.any(np.isfinite(ids)&(ids<=0)):
+        # Wflow treats any non-missing ID (also 0) as active; such a cell would get NaN K.
+        ds.close();raise ValueError("Patch wflow_subcatch requires positive IDs and NaN padding")
+    if not np.array_equal(np.isfinite(ids)&(ids>0),result["mask"]):
+        ds.close();raise ValueError("Patch active mask differs from derived K mask")
+    if not np.isfinite(result["K_array"][result["mask"]]).all():
+        ds.close();raise ValueError("Nonfinite K at active cells")
 
     ds["USLE_K"] = xr.DataArray(
         result["K_array"],
@@ -443,6 +514,7 @@ def patch_netcdf(result, patch_nc_path):
         },
     )
 
+    ds.attrs["USLE_K_derivation"]=json.dumps(dict(stats=result["stats"],source_records=result.get("source_records",[])))
     ds.to_netcdf(patch_nc_path + ".tmp")
     ds.close()
 
@@ -454,11 +526,10 @@ def patch_netcdf(result, patch_nc_path):
 # Point mode
 # ---------------------------------------------------------------------------
 
-def point_mode(lat, lon, soil_source="hwsd"):
+def point_mode(lat, lon, soil_source="hwsd", **hwsd_options):
     """Compute USLE K for a single point (verification mode)."""
     if soil_source == "hwsd":
-        from ki_tools_common.soil_utils import lookup_hwsd
-        props = lookup_hwsd(lat, lon)
+        props = lookup_hwsd_strict(lat, lon, **hwsd_options)
         sand, silt, clay = props["sand"], props["silt"], props["clay"]
         oc = props["oc"]
         texture = props["texture"]
@@ -474,6 +545,8 @@ def point_mode(lat, lon, soil_source="hwsd"):
         "lon": lon,
         "soil_source": soil_source,
         "mu_id": mu_id,
+        "source": props["source"],
+        "filled_properties": 0,
         "sand_pct": round(sand, 1),
         "silt_pct": round(silt, 1),
         "clay_pct": round(clay, 1),
@@ -512,14 +585,14 @@ def main():
         epilog="""
 Examples:
     # Grid mode: derive K for all cells
-    python derive_usle_k.py --staticmaps staticmaps.nc --output usle_k.nc
+    python derive_usle_k.py --staticmaps staticmaps.nc --hwsd-crs EPSG:4326 --output usle_k.nc
 
     # Grid mode: patch into existing sediment staticmaps
-    python derive_usle_k.py --staticmaps staticmaps.nc \\
+    python derive_usle_k.py --staticmaps staticmaps.nc --hwsd-crs EPSG:4326 \\
         --patch_nc staticmaps_sediment.nc
 
     # Point mode: check single location
-    python derive_usle_k.py --lat 32.93 --lon 117.36
+    python derive_usle_k.py --lat 32.93 --lon 117.36 --hwsd-crs EPSG:4326
 
     # Use SoilGrids (Bengbu only, 250m resolution)
     python derive_usle_k.py --staticmaps staticmaps.nc --output usle_k.nc \\
@@ -553,11 +626,16 @@ Reference:
                         choices=["hwsd", "soilgrids"],
                         help="Soil data source (default: hwsd)")
 
+    parser.add_argument("--hwsd-raster",help="Explicit HWSD map raster")
+    parser.add_argument("--hwsd-csv",help="Explicit HWSD raw attribute table")
+    parser.add_argument("--hwsd-crs",help="Verified CRS when HWSD raster metadata lacks it")
     args = parser.parse_args()
+    hwsd_options=dict(hwsd_raster=args.hwsd_raster,hwsd_csv=args.hwsd_csv,hwsd_crs=args.hwsd_crs)
+
 
     # --- Point mode ---
     if args.lat is not None and args.lon is not None:
-        result = point_mode(args.lat, args.lon, args.soil_source)
+        result = point_mode(args.lat, args.lon, args.soil_source, **hwsd_options)
         print(json.dumps(result, indent=2))
         return
 
@@ -574,7 +652,7 @@ Reference:
     print(f"Deriving USLE K-factor from {args.soil_source.upper()}...",
           file=sys.stderr)
 
-    result = derive_k_grid(args.staticmaps, args.soil_source)
+    result = derive_k_grid(args.staticmaps, args.soil_source, **hwsd_options)
     stats = result["stats"]
 
     if args.output:

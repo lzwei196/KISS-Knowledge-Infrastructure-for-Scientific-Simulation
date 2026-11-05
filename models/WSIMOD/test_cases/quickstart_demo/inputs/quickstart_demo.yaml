@@ -1,0 +1,87 @@
+inputs: docs/demo/data/processed
+outputs: results/quickstart_results
+
+data:
+  my_land_data:
+    filename: timeseries_data.csv
+    filter:
+      - where: site
+        is: oxford_land
+    scaling:
+      - where: variable
+        is: precipitation
+        variable: value
+        factor: "MM_TO_M"
+    format: dict
+    index: ['variable', 'date']
+    output: 'value'
+    options: parse_dates=['date']
+
+  dates_data:
+    filename: timeseries_data.csv
+    options: usecols=['date'],parse_dates=['date']
+
+dates: data:dates_data
+
+nodes:
+- type_: Sewer
+  name: my_sewer
+  capacity: 0.04
+
+- type_: Land
+  name: my_land
+  data_input_dict: data:my_land_data
+  surfaces:
+  - type_: ImperviousSurface
+    surface: urban
+    area: 10
+    pollutant_load:
+      phosphate: 1.0e-07
+  - type_: PerviousSurface
+    surface: rural
+    area: 100
+    depth: 0.5
+    pollutant_load:
+      phosphate: 1.0e-07
+
+- type_: Groundwater
+  name: my_groundwater
+  capacity: 100
+  area: 100
+
+- type_: Node
+  name: my_river
+
+- type_: Waste
+  name: my_outlet
+
+arcs:
+- type_: Arc
+  name: urban_drainage
+  in_port: my_land
+  out_port: my_sewer
+
+- type_: Arc
+  name: percolation
+  in_port: my_land
+  out_port: my_groundwater
+
+- type_: Arc
+  name: runoff
+  in_port: my_land
+  out_port: my_river
+
+- type_: Arc
+  name: storm_outflow
+  in_port: my_sewer
+  out_port: my_river
+
+- type_: Arc
+  name: baseflow
+  in_port: my_groundwater
+  out_port: my_river
+
+- type_: Arc
+  name: catchment_outflow
+  in_port: my_river
+  out_port: my_outlet

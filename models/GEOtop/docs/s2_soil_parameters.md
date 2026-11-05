@@ -26,8 +26,8 @@ are the most common source of silent model failures.
 | Column   | Name                        | Unit    | Typical Range        | Trap           |
 |----------|-----------------------------|---------|----------------------|----------------|
 | Dz       | Layer thickness             | **mm**  | 10-500               | dt_001: not m! |
-| Kh       | Lateral hydraulic cond.     | **m/s** | 1E-7 to 1E-3        | dt_002: not cm/day|
-| Kv       | Normal hydraulic cond.      | **m/s** | 1E-7 to 1E-3        | dt_002         |
+| Kh       | Lateral hydraulic cond.     | **mm/s**| 1E-5 to 1           | dt_002: not cm/day, not m/s|
+| Kv       | Normal hydraulic cond.      | **mm/s**| 1E-5 to 1           | dt_002         |
 | vwc_r    | Residual water content      | m3/m3   | 0.02-0.15            |                |
 | vwc_w    | Wilting point               | m3/m3   | 0.05-0.30            |                |
 | vwc_fc   | Field capacity              | m3/m3   | 0.15-0.45            |                |
@@ -43,7 +43,7 @@ are the most common source of silent model failures.
 3. **Look up Van Genuchten parameters** from Schaap et al. (2001) or run Rosetta PTF
 4. **CONVERT UNITS** (most critical step):
    - Layer thickness: cm -> mm (multiply by 10)
-   - Ksat: cm/day -> m/s (divide by 8,640,000)
+   - Ksat: cm/day -> mm/s (divide by 8,640)
    - alpha: 1/cm -> 1/mm (divide by 10)
 5. **Write soil file** with CSV header and one row per layer
 6. **Validate** parameter ranges and unit consistency
@@ -53,8 +53,8 @@ are the most common source of silent model failures.
 | Parameter | HWSD/Literature | GEOtop    | Conversion                         |
 |-----------|-----------------|-----------|------------------------------------|
 | Dz        | cm              | mm        | multiply by 10                     |
-| Ksat      | cm/day          | m/s       | divide by 86400, divide by 100     |
-| Ksat      | mm/hr           | m/s       | divide by 3,600,000                |
+| Ksat      | cm/day          | mm/s      | multiply by 10, divide by 86400    |
+| Ksat      | mm/hr           | mm/s      | divide by 3,600                    |
 | alpha     | 1/cm            | 1/mm      | divide by 10                       |
 | alpha     | 1/m             | 1/mm      | divide by 1000                     |
 
@@ -69,7 +69,7 @@ are the most common source of silent model failures.
 ## Verification
 
 - [ ] Dz values are in mm (smallest should be >= 5 mm)
-- [ ] Kh and Kv are in m/s (typical: 1E-7 to 1E-3)
+- [ ] Kh and Kv are in mm/s (typical: 1E-5 to 1). Source: GEOtop constants.h jKn/jKl "[mm/s]"; the shipped test tests/1D/B2_BeG_017 uses Kh=0.021
 - [ ] alpha is in 1/mm (typical: 0.0001 to 0.01, NOT 0.01 to 1.0)
 - [ ] n > 1.0 (Van Genuchten constraint)
 - [ ] vwc_r < vwc_w < vwc_fc < vwc_s
@@ -88,15 +88,17 @@ are the most common source of silent model failures.
 
 ## Example
 
-For a sandy loam soil (40% sand, 35% silt, 25% clay):
+For a loam soil (40% sand, 35% silt, 25% clay; USDA loam), as written by
+`convert_soil.py --source manual --sand 40 --silt 35 --clay 25 --bulk-density 1400`
+(Ksat 25 cm/day = 2.89E-03 mm/s):
 
 ```csv
 Dz,Kh,Kv,vwc_r,vwc_w,vwc_fc,vwc_s,alpha,n,stor
-10,2.86E-04,2.86E-04,0.05,0.08,0.25,0.53,0.00131,1.5,5.00E-07
-10,2.86E-04,2.86E-04,0.05,0.08,0.25,0.53,0.00131,1.5,5.00E-07
-20,2.86E-04,2.86E-04,0.05,0.08,0.25,0.53,0.00131,1.5,5.00E-07
-50,2.86E-04,2.86E-04,0.05,0.08,0.25,0.53,0.00131,1.5,5.00E-07
-100,2.86E-04,2.86E-04,0.05,0.08,0.25,0.53,0.00131,1.5,5.00E-07
+10,2.89E-03,2.89E-03,0.06,0.09,0.24,0.40,0.00110,1.5,5.00E-07
+10,2.89E-03,2.89E-03,0.06,0.09,0.24,0.40,0.00110,1.5,5.00E-07
+20,2.89E-03,2.89E-03,0.06,0.09,0.24,0.40,0.00110,1.5,5.00E-07
+50,2.89E-03,2.89E-03,0.06,0.09,0.24,0.40,0.00110,1.5,5.00E-07
+100,2.89E-03,2.89E-03,0.06,0.09,0.24,0.40,0.00110,1.5,5.00E-07
 ```
 
 Tool command:

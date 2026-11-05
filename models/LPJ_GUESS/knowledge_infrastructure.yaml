@@ -1,71 +1,81 @@
-# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
-# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+# knowledge_infrastructure.yaml -- the KI's manifest. Shape projected from dag.yaml + KI contents;
+# validation hand-written 2026-10-07 so the real engine's numbers and the SURROGATE's numbers stay apart.
 
 package:
   name: LPJ-GUESS
-  language: python
+  language: C++
   implementation:
-    id: lpj-guess-analytic
-    version: HydroCraft analytic reimplementation
-    provenance: Python; analytic reimplementation of LPJ-GUESS core flux processes (LUE GPP, Q10 Ra/Rh,
-      NEE), not the full LPJ-GUESS Fortran/C++ binary.
-  scientific_reference_version: LPJ-GUESS core flux physics (Smith et al. 2001/2014; Sitch et al. 2003;
-    Monteith 1972 LUE) — analytic reimplementation of GPP/Ra/Rh/NEE
+    id: lpj-guess-4.1.1
+    version: 4.1.1 research release (Zenodo 10.5281/zenodo.8065737)
+    provenance: C++ engine built 2026-10-06 from the official release (cmake Release, g++ 13.3, NetCDF
+      linked) at KISSPATH_HOME/engine_builds_20261006/LPJ_GUESS/build/guess; driven by tools/run_lpjguess_engine.py.
+      The Python light-use-efficiency stand-in (tools/run_lpjguess.py) is a SURROGATE and is NOT described
+      by this dag.
+    run_tool: tools/run_lpjguess_engine.py
+    surrogate:
+      id: lpj-guess-analytic
+      tool: tools/run_lpjguess.py
+      contract: docs/surrogate_lpjguess_lue_dag.yaml
+      status: SURROGATE - Python light-use-efficiency stand-in, not LPJ-GUESS; never report its output as LPJ-GUESS
+  scientific_reference_version: LPJ-GUESS 4.1.1 (Smith et al. 2001, 2014; Sitch et al. 2003) — real engine
   binary:
-    path: KISSPATH_KI_ROOT/LPJ_GUESS/knowledge_infrastructure/tools/run_lpjguess.py
-    type: Python
-pipeline:
-  stages: []
-tools:
-  count: 4
-  files:
+    path: KISSPATH_HOME/engine_builds_20261006/LPJ_GUESS/build/guess
+    type: ELF
+  run_tool: tools/run_lpjguess_engine.py
+  run_tool_note: default run route = the REAL LPJ-GUESS 4.1.1 engine (`guess`, headless) via tools/run_lpjguess_engine.py
+    (modes example / cf); CF forcing from tools/build_lpjguess_cf_forcing.py, CO2 from tools/build_lpjguess_co2_file.py,
+    output read by tools/parse_lpjguess_engine_output.py
+  surrogate_tools_not_this_model:
+  - tools/run_lpjguess.py
   - tools/convert_forcing_to_lpjguess.py
   - tools/convert_parameters_to_lpjguess.py
   - tools/parse_output_lpjguess.py
+  surrogate_contract: docs/surrogate_lpjguess_lue_dag.yaml
+pipeline:
+  stages:
+  - s1_preflight
+  - s2_convert_forcing
+  - s3_convert_parameters
+  - s4_run_lpjguess
+  - s5_parse_output
+  - s6_build_cf_forcing
+  - s7_build_co2_file
+  - s8_run_engine
+  - s9_parse_engine_output
+tools:
+  count: 8
+  files:
+  - tools/build_lpjguess_cf_forcing.py
+  - tools/build_lpjguess_co2_file.py
+  - tools/convert_forcing_to_lpjguess.py
+  - tools/convert_parameters_to_lpjguess.py
+  - tools/parse_lpjguess_engine_output.py
+  - tools/parse_output_lpjguess.py
   - tools/run_lpjguess.py
+  - tools/run_lpjguess_engine.py
 inputs:
   forcing:
-  - name: SW_IN
-    unit: W/m2
-  - name: TA
-    unit: deg C
-  - name: VPD
-    unit: hPa
-  - name: P
-    unit: mm/day
+  - name: temp
+    unit: K
+  - name: prec
+    unit: kg m-2 s-1
+  - name: insol
+    unit: W m-2
+  - name: min_temp
+    unit: K
+  - name: max_temp
+    unit: K
+  - name: relhum
+    unit: '1'
+  - name: wind
+    unit: m s-1
+  - name: co2
+    unit: ppm
   parameters:
-  - name: LUE_max
-    unit: gC/MJ PAR
-  - name: T_opt
-    unit: deg C
-  - name: T_min
-    unit: deg C
-  - name: T_max
-    unit: deg C
-  - name: VPD_0
-    unit: hPa
-  - name: VPD_1
-    unit: hPa
-  - name: Ra_base
-    unit: fraction
-  - name: Ra_Q10
-    unit: dimensionless
-  - name: Ra_Tref
-    unit: deg C
-  - name: Rh_base
-    unit: umol/m2/s
-  - name: Rh_Q10
-    unit: dimensionless
-  - name: Rh_Tref
-    unit: deg C
-  - name: C_pool_scale
-    unit: dimensionless
-  - name: leaf_N
-    unit: gN/m2 leaf
-  - name: SLA
-    unit: m2/kgC
-  - name: Vcmax_base
-    unit: umol/m2/s
+  - name: soil code
+    unit: categorical
+  - name: PFT parameters
+    unit: mixed
   initial_conditions: []
   boundary_conditions:
   - name: vegmode
@@ -75,6 +85,8 @@ inputs:
   - name: nyear_spinup
     unit: years
   - name: PFT selection
+    unit: categorical
+  - name: firemodel
     unit: categorical
 io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
@@ -87,15 +99,62 @@ outputs:
   - NPP
   other: []
 validation:
-  tier: not_runnable
-  tier_justification: 'measured: NSE=0.902, KGE=0.908, R=0.975'
+  tier: tested
+  tier_justification: 'REAL engine: official global_demo (13 cells, years 500-599) reproduced through run_lpjguess_engine.py
+    example, 19/19 .out files byte-identical to the build-time run. Real case: FLUXNET2015 DE-Tha, monthly 1996-07..2014-12
+    (221 months with NEE_VUT_REF_QC >= 0.5), VALIDATION of the default untuned run (nothing calibrated): GPP NSE 0.690,
+    r 0.963, PBIAS -34.8 % -> passes the only cited band (NSE >= 0, walker2014); NEE NSE 0.006 = no real skill'
   metrics:
-    best_nse: 0.9022
-    best_kge: 0.9081
-    best_r: 0.9746
+    official_global_demo_files_identical: 19
+    official_global_demo_files_compared: 19
+    detha_gpp_monthly_1996_2014_nse: 0.6896
+    detha_gpp_monthly_1996_2014_kge: 0.6109
+    detha_gpp_monthly_1996_2014_r: 0.9628
+    detha_gpp_monthly_1996_2014_pbias_pct: -34.8
+    detha_gpp_monthly_1996_2014_rmse_gC_m2_d: 2.2151
+    detha_reco_monthly_1996_2014_nse: 0.8511
+    detha_reco_monthly_1996_2014_r: 0.9497
+    detha_reco_monthly_1996_2014_pbias_pct: -12.0
+    detha_nee_monthly_1996_2014_nse: 0.0057
+    detha_nee_monthly_1996_2014_r: 0.8263
+    detha_nee_monthly_1996_2014_pbias_pct: -83.5
+    detha_et_monthly_1996_2014_nse: 0.6857
+    detha_et_monthly_1996_2014_r: 0.9273
+    detha_et_monthly_1996_2014_pbias_pct: 8.8
+    detha_water_balance_1984_2014_residual_pct: 0.4
+  metrics_source:
+    engine: REAL LPJ-GUESS 4.1.1 binary KISSPATH_HOME/engine_builds_20261006/LPJ_GUESS/build/guess via tools/run_lpjguess_engine.py
+      cf, not the Python surrogate
+    role: 'validation: nothing calibrated. Default global.ins: all 12 PFTs as shipped (potential natural vegetation),
+      GLOBFIRM, 500-year spin-up, constant pre-industrial N deposition'
+    run: NASA POWER daily forcing 1984-2014 at 50.9624N 13.5652E (build_lpjguess_cf_forcing.py --source nasa_power);
+      CO2 Law Dome + NOAA Mauna Loa 1901-2014; soil code 2 from cell (13.75, 50.75); run dir KISSPATH_KI_ROOT/LPJ_GUESS/detached/real_case/752ec75aabc741d9b7a241e383174692/work/run_detha/run
+    scored_series: 'monthly means in gC m-2 d-1: GPP = mgpp (GPP minus leaf respiration) vs GPP_NT_VUT_REF; Reco
+      = mra + mrh vs RECO_NT_VUT_REF; NEE = mnee (= mrh - mnpp, fire C excluded) vs NEE_VUT_REF; ET = maet + mevap
+      + mintercep (mm d-1) vs LE_F_MDS x 0.0864/2.45. FLUXNET2015 FULLSET_MM DE-Tha, months with NEE_VUT_REF_QC
+      >= 0.5 only: the same 221 months 1996-07..2014-12 for every variable'
+    known_bias: default run grows potential natural vegetation (2014 cmass 5.96 of 6.77 kgC m-2 temperate broadleaf
+      TeBS) while the real stand is planted Norway spruce -> near-zero winter GPP, GPP 35 % low (dt_lpjguess_027,
+      dt_lpjguess_025); NEE sink far too small because the 500-year spin-up grows unmanaged natural vegetation with no young managed-stand history
+      (dt_lpjguess_034)
+    reproduce: KISSPATH_HOME/ki_fix_campaign/kdt_real_engine/review_LPJ-GUESS/score_detha.py (ki_tools_common.metrics.all_metrics
+      and plain numpy agree)
+    configuration_side_test_not_headline: only BNE + C3G allowed (a configuration choice, not calibration) -> GPP
+      NSE 0.80, PBIAS -25.8 %; NEE NSE -0.22
+  surrogate_metrics_not_lpjguess:
+    note: OLD Python SURROGATE (tools/run_lpjguess.py, LUE GPP + Q10 respiration), calibrated by differential
+      evolution at DE-Tha on 1996-2008 and checked on 2009-2014 (n=72 months). These are NOT LPJ-GUESS results;
+      the models DB row still carries them as best_nse/best_kge/best_r (best_kge 0.9081 is the surrogate's NEE
+      KGE), so a regenerated manifest would project them again -- re-check after any regeneration.
+    tool: tools/run_lpjguess.py
+    gpp_validation_2009_2014_nse: 0.9022
+    gpp_validation_2009_2014_kge: 0.8269
+    gpp_validation_2009_2014_r: 0.9746
+    nee_validation_2009_2014_kge: 0.9081
 summary:
-  total_tools: 4
-  total_stage_docs: 0
-  total_diagnostic_triplets: 18
-  generated: '2026-08-15'
-  generated_by: generate_ki_manifest.py (projection; regenerate any time)
+  total_tools: 8
+  total_stage_docs: 9
+  total_diagnostic_triplets: 35
+  generated: '2026-10-07'
+  generated_by: hand-written in the projected shape (generate_ki_manifest.py would re-project the surrogate's
+    DB metrics; see validation.surrogate_metrics_not_lpjguess)

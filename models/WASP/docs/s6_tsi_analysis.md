@@ -1,5 +1,8 @@
 # s6 TSI Analysis
 
+> **SURROGATE ONLY — not EPA WASP.** This stage uses the KI's analytic Python stand-in (`tools/run_wasp.py`). Its numbers are not WASP results; label them "surrogate". The real engine has no calibration or TSI tool yet (see SKILL.md §10 and §12).
+
+
 ## Purpose
 
 Compute and interpret Carlson Trophic State Index values for lake or reservoir water. In this KI, TSI is computed by `tools/run_wasp.py` during `simulate` when chlorophyll-a forcing is present, and `tools/parse_output_wasp.py` extracts/classifies TSI values from model output.

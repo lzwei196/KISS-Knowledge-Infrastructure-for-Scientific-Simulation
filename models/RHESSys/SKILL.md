@@ -68,9 +68,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 
 | Metric | Value |
 |--------|-------|
-| Tools | 4 |
-| Skill Documents | 5 |
-| Diagnostic Triplets | 20 |
+| Tools | see the KI map at the top of this file |
+| Skill Documents | see `docs/` |
+| Diagnostic Triplets | see the KI map at the top of this file |
 | Validation Status | HJ Andrews Watershed 8 |
 
 ---
@@ -274,7 +274,7 @@ and `dag.yaml` disagree, the dag wins.
 
 **Headline output** (`validation_rank: 1`):
 
-> `streamflow` — Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400. (`m/day (depth per unit basin area)`)
+> `streamflow` — Total basin streamflow as water depth per area (basin.daily writes astreamflow x 1000, output_basin.c:446); convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400. (`mm/day`)
 
 Other dag outputs: `evaporation`, `transpiration (sat + unsat zone)`,
 `snowpack.water_equivalent_depth`, `lai (proj_lai / effective_lai)`,
@@ -311,15 +311,15 @@ filter:
 
 | Variable | Unit | Level | Description |
 |----------|------|-------|-------------|
-| `streamflow` | m/day (depth per unit basin area) | basin | Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400. |
-| `evaporation` | m/day | basin/patch | Total evaporation |
-| `transpiration_sat_zone` | m/day | basin/patch | Transpiration from sat zone |
-| `transpiration_unsat_zone` | m/day | basin/patch | Transpiration from unsat zone |
-| `sat_deficit` | m | patch | Saturation deficit |
-| `unsat_storage` | m | patch | Unsaturated zone storage |
-| `rz_storage` | m | patch | Root zone storage |
-| `snowpack.water_equivalent_depth` | m | patch | SWE |
-| `detention_store` | m | patch | Surface detention |
+| `streamflow` | mm/day in basin.daily (m/day in output-filter CSV) | basin | Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow / 1000 * basin_area / 86400. |
+| `evaporation` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Total evaporation |
+| `transpiration_sat_zone` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Transpiration from sat zone |
+| `transpiration_unsat_zone` | mm/day in .daily files (m/day in output-filter CSV) | basin/patch | Transpiration from unsat zone |
+| `sat_deficit` | mm in .daily files (m in output-filter CSV) | patch | Saturation deficit |
+| `unsat_storage` | mm in .daily files (m in output-filter CSV) | patch | Unsaturated zone storage |
+| `rz_storage` | mm in .daily files (m in output-filter CSV) | patch | Root zone storage |
+| `snowpack.water_equivalent_depth` | mm in .daily files (m in output-filter CSV) | patch | SWE |
+| `detention_store` | mm in .daily files (m in output-filter CSV) | patch | Surface detention |
 | `cs.leafc` | kg C/m^2 | stratum | Leaf carbon |
 | `cs.net_psn` | kg C/m^2/day | stratum | Net photosynthesis |
 | `epv.proj_lai` | m^2/m^2 | stratum | Projected LAI |
@@ -328,9 +328,11 @@ filter:
 | `soil_cs.totalc` | kg C/m^2 | patch | Total soil carbon |
 | `litter_cs.totalc` | kg C/m^2 | patch | Total litter carbon |
 
-**CRITICAL UNIT TRAP:** Streamflow output is in **m/day per unit basin area**,
-not m^3/s. To convert to m^3/s: `Q_m3s = streamflow * basin_area / 86400`.
-See `dt_002`.
+**CRITICAL UNIT TRAP:** Legacy `<prefix>_basin.daily` / `_patch.daily` write water terms x1000,
+so streamflow is **mm/day over the basin** (output_basin.c:446), not m^3/s and not m/day.
+The storage rows above (sat_deficit to detention_store) are also x1000 (mm) in those files. The output filter (`-of`)
+writes raw model values (m, m/day). To convert basin.daily streamflow to m^3/s:
+`Q_m3s = streamflow / 1000 * basin_area / 86400`. See `dt_002`.
 
 ---
 
@@ -353,7 +355,7 @@ outputs, `dag.yaml` is the source of truth.
 | Variable | From unit | To unit | Conversion | Triplet |
 |----------|-----------|---------|------------|---------|
 | Precipitation | mm/day | m/day | / 1000 | dt_001 |
-| Streamflow output | m/day (depth per unit basin area) | m^3/s discharge target | * basin_area / 86400 | dt_002 |
+| Streamflow output (basin.daily) | mm/day (depth over the basin) | m^3/s discharge target | / 1000 * basin_area / 86400 | dt_002 |
 | Temperature | K | deg C | - 273.15 | dt_003 |
 | Soil depth | cm | m | / 100 | dt_004 |
 | Ksat | cm/hr | m/day | * 0.24 | dt_005 |
@@ -490,33 +492,23 @@ python ki/tools/parse_output.py \
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 **Source of truth for performance bars:** `docs/validation_convention.yaml`.
 This section restates the convention bars; null convention bands are written as
 `no cited threshold`, never filled from memory.
 
-### Validation Context Recorded in This Body
-
-| Item | Value |
-|------|-------|
-| Validation status | HJ Andrews Watershed 8 |
-| Specific comparison caveat retained below | Bengbu 51080 gauge, small-domain RHESSys model 156 km^2 compared to 121,000 km^2 gauge drainage area |
-| Specific comparison period retained below | 1982-1990 |
-| Specific comparison length retained below | 9 years |
-
 ### Performance Metrics and Convention Bars
 
-| Variable | Metric | Direction | Convention bar, cited | Achieved value recorded in this body |
-|----------|--------|-----------|------------------------|--------------------------------------|
-| `streamflow` | NSE | maximize | satisfactory >= 0.5 (`das2019`); good >= 0.75 (`das2019`); very good: no cited threshold (`das2019`) | NSE = 0.390 for Cal15 Bengbu specific discharge comparison; below the cited satisfactory threshold |
-| `streamflow` | PBIAS | zero_centered | satisfactory <= +/-25.0% (`das2019`); good: no cited threshold (`das2019`); very good: no cited threshold (`das2019`) | PBIAS = +22.3% for Cal15 Bengbu specific discharge comparison; within the cited satisfactory threshold |
-| `evaporation` | NSE | maximize | satisfactory: no cited threshold; good: no cited threshold; very good: no cited threshold; cites: none in convention | no achieved value recorded in this body |
-| `transpiration (sat + unsat zone)` | r | maximize | satisfactory >= 0.69 (`chen2020`); good: no cited threshold (`chen2020`); very good >= 0.91 (`chen2020`) | no achieved value recorded in this body |
-
-The body also records `r = 0.952` for the Cal15 Bengbu specific discharge
-comparison. That value is retained as a streamflow comparison result here; it is
-not graded against the transpiration convention bar.
+| Variable | Metric | Direction | Convention bar, cited |
+|----------|--------|-----------|------------------------|
+| `streamflow` | NSE | maximize | satisfactory >= 0.5 (`das2019`); good >= 0.75 (`das2019`); very good: no cited threshold (`das2019`) |
+| `streamflow` | PBIAS | zero_centered | satisfactory <= +/-25.0% (`das2019`); good: no cited threshold (`das2019`); very good: no cited threshold (`das2019`) |
+| `evaporation` | NSE | maximize | satisfactory: no cited threshold; good: no cited threshold; very good: no cited threshold; cites: none in convention |
+| `transpiration (sat + unsat zone)` | r | maximize | satisfactory >= 0.69 (`chen2020`); good: no cited threshold (`chen2020`); very good >= 0.91 (`chen2020`) |
 
 ---
 
@@ -551,12 +543,9 @@ not graded against the transpiration convention bar.
 
 See `diagnostics/triplets.yaml` for full symptom-diagnosis-remedy entries.
 
-### Scale mismatch caveat for specific discharge comparison (Bengbu)
+### Scale mismatch caveat for specific discharge comparison
 
-When comparing a small-domain RHESSys model (156 km²) to a large basin gauge (Bengbu 51080: 121,000 km²), the specific discharge comparison (mm/yr) assumes uniform runoff generation across the full gauge drainage area. Results for Cal15:
-- NSE = 0.390, r = 0.952, PBIAS = +22.3% (9 years, 1982-1990)
-- r = 0.952 confirms the physics are correct (interannual dynamics captured)
-- PBIAS = +22% systematic wet bias → soil storage parameters need calibration
+When comparing a small-domain RHESSys model to a gauge with a much larger drainage area, the specific discharge comparison (mm/yr) assumes uniform runoff generation across the full gauge drainage area.
 - Calibrating against the full-basin gauge corrects for basin-average response,
   not necessarily the sub-basin physics. Use with awareness of this scale gap.
 
@@ -579,5 +568,5 @@ ki/
     04_model_execution.md           # Running the model
     05_output_analysis.md           # Parsing and analyzing results
   diagnostics/
-    triplets.yaml                   # 18 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```

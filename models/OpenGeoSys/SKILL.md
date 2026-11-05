@@ -62,7 +62,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Domain**: Groundwater / subsurface THMC processes in porous and fractured media
 **Created by**: Auto-dissection pipeline
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 7 skill documents | 18 diagnostic triplets | ~1,200 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `test_validated` (LiquidFlow gravity-driven benchmark)
 
 ---
@@ -170,7 +170,7 @@ Stage 6 depends on 5.
 | `run_ogs` | s5 | `tools/run_ogs.py` | 320 | Generate .prj, execute OGS, validate output |
 | `parse_ogs_output` | s6 | `tools/parse_ogs_output.py` | 290 | Parse VTU output → CSV time series + summary JSON |
 
-**Total**: 4 tools, ~1,140 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -474,7 +474,7 @@ python tools/parse_ogs_output.py \
 
 ## Diagnostic Triplets
 
-18 triplets covering 5 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 5 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -497,7 +497,7 @@ python tools/parse_ogs_output.py \
 | dt_017 | **silent** | silent_error | Porosity=0 kills transient storage |
 | dt_018 | fatal | runtime | NaN from zero viscosity or density |
 
-**Silent error count**: 10/18 (56%) — dominated by unit conversion traps due to strict SI requirement.
+**Silent error count** (when this section was written): 10/18 (56%) — dominated by unit conversion traps due to strict SI requirement.
 
 ---
 
@@ -521,5 +521,5 @@ ki/
     s5_output_parsing.md            # VTU format, time series extraction
     s6_coupled_processes.md         # Multi-physics coupling strategies
   diagnostics/
-    triplets.yaml                   # 18 diagnostic triplets
+    triplets.yaml                   # diagnostic triplets (count: KI map)
 ```

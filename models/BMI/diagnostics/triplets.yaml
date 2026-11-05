@@ -1,7 +1,7 @@
 # ============================================================================
 # BMI Diagnostic Triplets
 # ============================================================================
-# 17 diagnostic triplets covering 5 failure domains.
+# Diagnostic triplets (17 when this header was written; current count: the SKILL.md KI map) covering 5 failure domains.
 # Generated during BMI knowledge dissection for HydroCraft platform.
 # ============================================================================
 

@@ -72,6 +72,9 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 ### Soil properties
 
 **Data Sources**: Use `from ki_tools_common.soil_utils import lookup_hwsd` for soil properties.
+Note: `tools/s2_subsurface/build_subsurface_properties.py` does not use `lookup_hwsd`; it reads `hwsd.bil` and `HWSD_DATA.csv` directly (dominant component = largest SHARE) and stops (no default or fill texture) when any cell of the rectangular grid, inside or outside the basin mask, has no HWSD texture. The run script uses Box geometry, so every cell of the rectangle is simulated.
+
+**Every cell of the Box gets real data (2026-10-16).** Because the run script uses Box geometry (no SolidFile; `pfmask-to-pfsol` is not built on this server: it needs `tcl-dev` and a ParFlow rebuild with `PARFLOW_ENABLE_TOOLS=ON`), ParFlow and CLM simulate every cell of the rectangle. So every per-cell input is real data for every cell, inside and outside the basin mask: s2 soil (HWSD), s3 DEM slopes (no zero slopes outside, no DEM gap fill), s4 CLM land cover (AVHRR->IGBP, no water/grassland default) and topsoil sand/clay (HWSD, same reader as s2; the old fixed 0.40/0.20 is gone), s6 initial pressure. Any cell without data stops the tool with a clear error. The basin mask only selects what s9 reports. s4 needs `--soil_color N` (CLM class 1-8, no default): there is no soil-colour map on the server, so this one value is a stated user assumption, recorded in the tool output and `clm_provenance.json`. s3 rows are south-first (j = 0 = south) like every other tool; s3/s6 outputs made before 2026-10-16 were mirrored north-south and must be rebuilt.
 
 ### Forcing data
 
@@ -90,13 +93,13 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-22
 **Status**: **PRODUCTION VALIDATED** (Bengbu basin, real CMFD forcing, physically plausible discharge)
-**Stats**: 12 tools | 9 skill documents | 36 diagnostic triplets (12 validated) | 14 error log entries | 3,144 lines of validated Python
+**Stats**: 14 error log entries | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of integrated surface-subsurface hydrology using ParFlow, directly coupled with HydroCraft's basin delineation, forcing, and downstream routing infrastructure. The 12 validated tools handle domain setup, subsurface parameterization, CLM land surface coupling, forcing conversion, solver configuration, execution, and output processing.
+This knowledge infrastructure enables autonomous simulation of integrated surface-subsurface hydrology using ParFlow, directly coupled with HydroCraft's basin delineation, forcing, and downstream routing infrastructure. The validated tools handle domain setup, subsurface parameterization, CLM land surface coupling, forcing conversion, solver configuration, execution, and output processing.
 
 **What ParFlow does**: 3D variably-saturated flow model that solves:
 - **3D Richards equation**: Pressure head through heterogeneous porous media (vadose + saturated zones in one equation)
@@ -148,7 +151,7 @@ Exact I/O shapes live in `docs/format_spec.yaml`. Use this unit table as the BOD
 | Hydraulic conductivity `K` | `m/day` | `m/hr` | `K_m_hr = K_m_day / 24` | `dt_pf_001`; critical domain knowledge |
 | Hydraulic conductivity `K` | `m/s` | `m/hr` | `K_m_hr = K_m_s * 3600` | `dt_pf_001`; critical domain knowledge |
 | van Genuchten `alpha` | `1/cm` | `1/m` | multiply by `100` | `dt_pf_005`; critical domain knowledge |
-| CLM precipitation | `mm/hr` | `mm/s` | divide by `3600` | `dt_pf_002`; critical domain knowledge |
+| CLM precipitation | `mm/hr` | `mm/s` | divide by `3600` (a CMFD V2.0 rate in `kg m-2 s-1` is already mm/s: no conversion) | `dt_pf_002`; critical domain knowledge |
 | CLM temperature | `K` | `K` | no conversion; verify before processing | `dt_pf_006`; critical domain knowledge |
 | Pressure | `Pa` | `m of water` | divide by `9810` | `dt_pf_004`; critical domain knowledge |
 | Pressure | `kPa` | `m of water` | divide by `9.81` | `dt_pf_004`; critical domain knowledge |
@@ -248,7 +251,7 @@ Stage 7 depends on all upstream. Stage 8 depends on 7.
 | `parse_parflow_output` | s9 | `tools/s9_output/parse_parflow_output.py` | 250 | PFB to water table depth, ponding, storage timeseries |
 | `parflow_to_cama` | s10 | `tools/s10_coupling/parflow_to_cama.py` | 210 | ParFlow surface runoff to CaMa-Flood NetCDF input |
 
-**Total**: 12 tools, ~2,730 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ### Skill Documents
 
@@ -284,7 +287,7 @@ Negative = unsaturated (suction/tension). Positive = saturated (positive pore pr
 
 ### 4. CLM precipitation is mm/s, NOT mm/hr (dt_pf_002)
 
-CLM expects rain rate in mm/s (= kg/m2/s). CMFD provides mm/hr. Must divide by 3600. Using mm/hr directly gives 3600x too much rain -- the model floods instantly with no error.
+CLM expects rain rate in mm/s (= kg/m2/s). The CMFD V2.0 store on this server gives `prec` in kg m-2 s-1 (see data_ki/CMFD/SKILL.md), which is already mm/s; a source in mm/hr must be divided by 3600. Read the file's `units` attribute: `convert_forcing_to_pfb.py` now picks the factor from it and stops on an unknown unit. (Before 2026-10-16 it always divided CMFD prec by 3600, so CMFD-forced runs got 3600x too little rain; rebuild their forcing. It also missed the SRad/LRad/SHum folders.) s5 writes `forcing_conversion.json` in its output folder and refuses to reuse chunks with no stamp or a different stamp, so old wrong chunks are never kept as "already done": rebuild into a fresh `--output_dir`. Using mm/hr directly gives 3600x too much rain -- the model floods instantly with no error.
 
 ### 5. CLM temperature is Kelvin, NOT Celsius (dt_pf_006)
 
@@ -400,6 +403,7 @@ python tools/s4_clm/setup_clm_driver.py \
   --domain_json outputs/parflow_chaohe/domain/domain_definition.json \
   --surface_mask_npy outputs/parflow_chaohe/domain/surface_mask.npy \
   --start_date 2005-01-01 --end_date 2005-12-31 \
+  --soil_color N \
   --output_dir outputs/parflow_chaohe/clm/
 
 # 6. Initial conditions (hydrostatic, WTD=5m)
@@ -415,6 +419,13 @@ python tools/s7_solver/generate_parflow_script.py \
   --domain_json outputs/parflow_chaohe/domain/domain_definition.json \
   --run_name chaohe_test \
   --start_date 2005-01-01 --end_date 2005-12-31 \
+  --texture_params outputs/parflow_chaohe/subsurface/texture_params.json \
+  --indicator_pfb outputs/parflow_chaohe/subsurface/texture_indicator.pfb \
+  --slope_x_pfb outputs/parflow_chaohe/topography/slope_x.pfb \
+  --slope_y_pfb outputs/parflow_chaohe/topography/slope_y.pfb \
+  --ic_pfb outputs/parflow_chaohe/ic_bc/ic_pressure.pfb \
+  --clm_dir outputs/parflow_chaohe/clm/ \
+  --forcing_dir outputs/parflow_chaohe/forcing/ \
   --output_dir outputs/parflow_chaohe/run/
 
 # 8. Run ParFlow
@@ -558,7 +569,7 @@ State the bar from `docs/validation_convention.yaml`; a band stored as null in t
 
 ## Diagnostic Triplets
 
-36 triplets covering 9 failure domains. See `diagnostics/triplets.yaml` for full details.
+Triplets covering 9 failure domains (current count: the KI map at the top of this file). See `diagnostics/triplets.yaml` for full details.
 
 | ID | Severity | Domain | Summary |
 |----|----------|--------|---------|
@@ -599,7 +610,7 @@ State the bar from `docs/validation_convention.yaml`; a band stored as null in t
 | dt_pf_v011 | **silent** | pedotransfer | Cosby (1984) from VIC exponent gives sandy Ksat for clay soils |
 | dt_pf_v012 | degraded | domain_setup | Uniform K + uniform slope + uniform forcing = no spatial gradient |
 
-**Silent error count**: 15/36 (42%) -- consistent with cross-model patterns.
+**Silent error count** (when this section was written): 15/36 (42%) -- consistent with cross-model patterns.
 **Validated triplet count**: 12 (5 Chaohe + 7 Bengbu, 2026-03-22)
 
 ---
@@ -648,7 +659,7 @@ models/ParFlow/knowledge_infrastructure/
   docs/
     s1_domain_skill.md ... s9_output_skill.md
   diagnostics/
-    triplets.yaml                 # 25 diagnostic triplets
+    triplets.yaml                 # diagnostic triplets (count: KI map)
     error_log.yaml                # Errors from real runs
 
 model/parflow/
@@ -656,3 +667,7 @@ model/parflow/
   deps/hypre-install/             # HYPRE dependency
   install/bin/parflow             # ParFlow binary
 ```
+
+### Solver input validation (2026-10-03)
+
+Script generation requires explicit initial-pressure and both slope PFB files. Missing, unreadable, nonfinite, or wrong-shaped fields stop before writing the script; zero slopes are valid and are preserved. There is no constant-slope fallback. Soil parameters and indicator must be supplied together. CLM additionally requires its three nonempty driver files and a directory containing the named forcing chunks. These checks establish input presence and PFB dimensions, not full forcing-period coverage or physical validity.

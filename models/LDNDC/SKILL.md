@@ -29,16 +29,16 @@
 | when you need | read | why |
 |---|---|---|
 | FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
-| to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| to run the pipeline stages | `tools/` (18 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
 | before running a stage | `docs/s*_*.md` (12 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
-| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
 | to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
 | when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
 | to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
 | for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
 | for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
 
-*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+*Projected 2026-10-15 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
 <!-- KI-MAP:END -->
 
 <!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
@@ -51,8 +51,6 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 |---|---|
 | `tools/run_ldndc_bengbu_ghg.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ldndc_bengbu_ghg.py --help` |
 | `tools/run_ldndc_rice_paddy_ch4.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ldndc_rice_paddy_ch4.py --help` |
-| `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_vic_coupling/vic_soil_to_ldndc_site.py --help` |
-| `tools/s10_vic_coupling/vic_to_ldndc_climate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_vic_coupling/vic_to_ldndc_climate.py --help` |
 | `tools/s10_vic_coupling/vic_to_ldndc_soilwater.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_vic_coupling/vic_to_ldndc_soilwater.py --help` |
 | `tools/s1_project_setup/create_project_structure.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_project_setup/create_project_structure.py --help` |
 | `tools/s1_project_setup/generate_project_xml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_project_setup/generate_project_xml.py --help` |
@@ -70,7 +68,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 | `tools/s9_output_parsing/parse_soilchemistry_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/parse_soilchemistry_output.py --help` |
 | `tools/s9_output_parsing/parse_watercycle_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/parse_watercycle_output.py --help` |
 
-*20 public tools; `_`-prefixed helpers and packaging files excluded.*
+*18 public tools; `_`-prefixed helpers and packaging files excluded.*
 <!-- KI-TOOL-INDEX:END -->
 
 ---
@@ -80,7 +78,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 ### Forcing data
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-Then convert to LDNDC climate.txt format using this KI's tool: `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py`
+Require complete calendar years and finite weather; FLUXNET daily extrema must come from every HH/HR interval, not day/night means. Missing data stops conversion without filling. See `docs/s4_climate_prep_skill.md` for the strict source contract and shared-loader limits. Then convert to LDNDC climate.txt format using this KI's tool: `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py`
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 
@@ -90,9 +88,9 @@ Then convert to LDNDC climate.txt format using this KI's tool: `tools/s4_climate
 
 > **Model**: LandscapeDNDC v1.37 (KIT/IMK-IFU)
 > **Domain**: Terrestrial biogeochemistry — C/N cycling, GHG emissions (N2O, CO2, CH4), nutrient leaching, crop yield
-> **Pipeline stages**: 10 | **Tools**: 19 | **Skill documents**: 10 | **Diagnostic triplets**: 22
+> **Pipeline stages**: 10 | current tool, stage-doc and triplet counts: the KI map at the top of this file
 > **Binary**: `model/ldndc/ldndc-1.37.linux64/bin/ldndc` (pre-built, Linux 64-bit)
-> **Status**: Validated on Bengbu wheat-maize (2000-2005) — N2O=4.9 kgN/ha/yr matches field measurements
+> **Status**: Validated
 
 ## Overview
 
@@ -125,17 +123,17 @@ LandscapeDNDC simulates C/N cycling, greenhouse gas emissions, nutrient leaching
 | Precipitation | mm/day | MSWX 3-hourly | mm/3hr | sum 8 steps |
 | Temperature | degC | CMFD 3-hourly | K | subtract 273.15 |
 | Temperature | degC | MSWX 3-hourly | degC | none |
-| Shortwave radiation | W/m2 | VIC/forcing pipeline | W/m2 | none |
+| Shortwave radiation | W/m2 | CMFD / MSWX (shared loader) | W/m2 | none (daily mean) |
 | Wind speed | m/s | forcing pipeline | m/s | none |
 | Relative humidity | % | forcing pipeline | % | enforce 0-100 range |
 
-Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER, or `from ki_tools_common.netcdf_utils import load_cmfd_daily_all` when direct CMFD 3-hourly NetCDF reading is needed.
+Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER; `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py` calls it and writes climate.txt.
 
 ### 3.2 Static Inputs
 
 | Input | Source | Tool that prepares it |
 |-------|--------|----------------------|
-| Soil properties | HWSD or VIC soil parameters | `tools/s2_site_config/hwsd_to_ldndc_soil.py`, `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` |
+| Soil properties | HWSD | `tools/s2_site_config/hwsd_to_ldndc_soil.py` |
 | Project structure | User/project settings | `tools/s1_project_setup/create_project_structure.py` |
 | Site XML | Soil profile, canopy, initial conditions | `tools/s2_site_config/generate_site_xml.py` |
 | Species parameters | LDNDC species parameter files | `tools/s7_species_params/validate_species_params.py` |
@@ -152,18 +150,6 @@ Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/
 | `mana.xml` | XML | Sowing, fertilizer, harvest, flood, and drain events |
 | `parameters_species.xml` | XML | Crop and vegetation parameters |
 
-## Validated Results — Bengbu Wheat-Maize (Default Parameters)
-
-| Metric | LDNDC (default) | Published Range | Source |
-|--------|:---:|:---:|--------|
-| N2O emission | 4.9 kgN/ha/yr | 1.9-6.7 kgN/ha/yr | Sichuan field 3yr |
-| N2O EF | 1.4% | 1-2% | IPCC Tier 1 |
-| NO3 leaching (yr1) | 41.4 kgN/ha | 38-60 kgN/ha | NCP field measurements |
-| SOC change | +463 kgC/ha/yr | +113-350 kgC/ha/yr | National avg to straw return |
-| Total GHG | 12,234 kgCO2eq/ha/yr | — | — |
-
-**Key finding**: Default LDNDC parameters with HWSD soil + VIC climate produce publication-quality GHG estimates without calibration.
-
 ## LDNDC vs DNDC
 
 Same biogeochemistry science, different architecture:
@@ -175,9 +161,9 @@ Same biogeochemistry science, different architecture:
 `tools/run_ldndc_bengbu_ghg.py` (1,032 lines) — complete end-to-end:
 ```bash
 python run_ldndc_bengbu_ghg.py --lat 32.94 --lon 117.35 \
-  --forcing_file outputs/bengbu_.../forcing_final/bengbu_0.25deg_32.8750_117.3750
+  --forcing_source cmfd --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg
 ```
-Steps: VIC forcing → climate.txt, HWSD → site.xml, management XML, setup XML, airchemistry, project → run LDNDC → parse JSON results.
+Steps: CMFD (or MSWX / NASA POWER) → climate.txt with the S4 tool, HWSD → site.xml, management XML, setup XML, airchemistry, project → run LDNDC → parse JSON results.
 
 ## Critical Species Names (verified)
 
@@ -192,14 +178,14 @@ Steps: VIC forcing → climate.txt, HWSD → site.xml, management XML, setup XML
 
 ## Critical Unit Conversions (verified)
 
-| Variable | HWSD/VIC Unit | LDNDC Unit | Conversion |
+| Variable | Source unit (HWSD / forcing) | LDNDC Unit | Conversion |
 |----------|:---:|:---:|:---:|
 | corg (SOC) | % | fraction | ÷ 100 |
 | sks (Ksat) | mm/hr | cm/min | ÷ 600 |
 | clay | % | fraction | ÷ 100 |
-| temperature | °C (VIC) | °C | none |
-| radiation | W/m² (VIC) | W/m² | none |
-| precipitation | mm/3hr (VIC) | mm/day | sum 8 steps |
+| temperature | °C (shared loader, daily) | °C | none |
+| radiation | W/m² (shared loader, daily mean) | W/m² | none |
+| precipitation | mm/day (shared loader, daily total) | mm/day | none; a 3-hourly series must be SUMMED over the 8 steps (dt_014) |
 
 Key capabilities:
 - **Greenhouse gas emissions**: N2O, CO2, CH4 from soils (denitrification, nitrification, decomposition, methanogenesis)
@@ -261,7 +247,7 @@ Use the stage table and tool reference below as the operational inventory. Read 
 | S7 | Species Parameters | `docs/s7_species_params_skill.md` | `validate_species_params` |
 | S8 | Model Execution | `docs/s8_execution_skill.md` | `run_ldndc` |
 | S9 | Output Parsing and Analysis | `docs/s9_output_parsing_skill.md` | `parse_soilchemistry_output`, `parse_watercycle_output`, `parse_physiology_output`, `aggregate_annual_budget` |
-| S10 | Multi-Model Coupling | `docs/s9_coupling_skill.md` | `vic_to_ldndc_climate`, `vic_to_ldndc_soilwater`, `vic_soil_to_ldndc_site` |
+| S10 | Multi-Model Coupling | `docs/s9_coupling_skill.md` | `vic_to_ldndc_soilwater` |
 
 ## Tools Reference
 
@@ -272,7 +258,7 @@ Use the stage table and tool reference below as the operational inventory. Read 
 | `generate_site_xml` | `tools/s2_site_config/generate_site_xml.py` | Generate site.xml with soil profile and canopy |
 | `hwsd_to_ldndc_soil` | `tools/s2_site_config/hwsd_to_ldndc_soil.py` | Convert HWSD global soil data to LDNDC format |
 | `generate_setup_xml` | `tools/s3_setup_modules/generate_setup_xml.py` | Generate module selection config |
-| `convert_forcing_to_ldndc_climate` | `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py` | Convert CMFD/MSWX/VIC forcing to climate.txt |
+| `convert_forcing_to_ldndc_climate` | `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py` | Convert CMFD/MSWX/NASA POWER forcing to climate.txt |
 | `validate_climate_file` | `tools/s4_climate_prep/validate_climate_file.py` | Validate climate.txt ranges and completeness |
 | `generate_airchemistry_file` | `tools/s5_airchemistry_prep/generate_airchemistry_file.py` | Generate CO2 + N deposition input |
 | `generate_management_xml` | `tools/s6_management_config/generate_management_xml.py` | Generate sowing/fertilizer/harvest events |
@@ -282,9 +268,7 @@ Use the stage table and tool reference below as the operational inventory. Read 
 | `parse_watercycle_output` | `tools/s9_output_parsing/parse_watercycle_output.py` | Extract ET, drainage, runoff, soil moisture |
 | `parse_physiology_output` | `tools/s9_output_parsing/parse_physiology_output.py` | Extract GPP, NPP, yield, LAI, biomass |
 | `aggregate_annual_budget` | `tools/s9_output_parsing/aggregate_annual_budget.py` | Compute annual C/N budgets with mass balance |
-| `vic_to_ldndc_climate` | `tools/s10_vic_coupling/vic_to_ldndc_climate.py` | Convert VIC forcing to LDNDC climate format |
 | `vic_to_ldndc_soilwater` | `tools/s10_vic_coupling/vic_to_ldndc_soilwater.py` | Map VIC soil moisture to LDNDC layers |
-| `vic_soil_to_ldndc_site` | `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` | Convert VIC soil params to LDNDC site.xml |
 
 Shared utilities should be used instead of raw one-off data extraction code:
 
@@ -414,8 +398,6 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it first 
 ## Coupling Points with HydroCraft Models
 
 ### VIC -> LDNDC
-- **Climate forcing**: VIC forcing files (7-col ASCII) converted to LDNDC climate.txt via `vic_to_ldndc_climate`. Unit conversions: K->C (temperature), specific humidity->RH%, sub-daily->daily aggregation.
-- **Soil parameters**: VIC soil param file (texture, Ksat, porosity, bulk density) mapped to LDNDC site.xml soil horizons via `vic_soil_to_ldndc_site`. VIC 3-layer to LDNDC multi-layer interpolation.
 - **Soil moisture**: VIC simulated soil moisture used for LDNDC initial conditions via `vic_to_ldndc_soilwater`.
 
 ### CaMa-Flood -> LDNDC
@@ -428,13 +410,12 @@ The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it first 
 
 ## Error Handling
 
-See `diagnostics/triplets.yaml` for 15 diagnostic triplets covering:
+See `diagnostics/triplets.yaml` for the diagnostic triplets, covering:
 - Path resolution errors (dt_001)
 - XML format errors (dt_002, dt_004, dt_008)
 - Silent unit conversion errors (dt_005, dt_012, dt_014)
 - Silent biogeochemistry errors (dt_003, dt_007, dt_009, dt_013)
 - Runtime crashes (dt_010, dt_011)
-- Cross-model coupling mismatches (dt_015)
 
 ---
 
@@ -443,17 +424,12 @@ See `diagnostics/triplets.yaml` for 15 diagnostic triplets covering:
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
 
-### Test Site: Bengbu Wheat-Maize
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
-| Property | Value |
-|----------|-------|
-| Location | 32.94, 117.35 |
-| Period | 2000-2005 |
-| Status | Validated on Bengbu wheat-maize |
-
-### Performance Metrics -- judged against the field's bar, not intuition
+### Pass bars -- judged against the field's bar, not intuition
 
 **State the bar from `docs/validation_convention.yaml`; cite every band and write null bands as "no cited threshold".** The convention bars currently restated here are for `dN_n2o_emis` and `dN_no_emis`. No convention bar is stated here for the dag rank-1 `evapotranspiration`; consult `docs/validation_convention.yaml` before judging an evapotranspiration run.
 
@@ -471,7 +447,7 @@ No additional component replacement statuses are restated here. Use `knowledge_i
 
 Use the region guidance below as physically informed starting points, not calibration. When no site-specific calibration exists, prefer documented crop calendars, species names, and module stacks already represented in this KI.
 
-## Rice (Paddy) Configuration — Critical (Validated 2026-03-20)
+## Rice (Paddy) Configuration — Critical
 
 LDNDC rice simulation requires THREE separate fixes that are NOT documented in the standard user guide:
 
@@ -500,38 +476,19 @@ Standard dryland setup.xml (MeTrX) crashes immediately for paddies. Rice needs a
 Without all three fixes, rice either crashes (fix 2 missing) or runs silently with zero output (fix 1 or 3 missing).
 
 ### HWSD Water Body Cells
-If HWSD ISSOIL=0 for a cell (water body), use nearest-neighbor soil donor (0.25° search). 4 cells in Harbin basin required this fix.
+If HWSD ISSOIL=0 for a cell (water body), use nearest-neighbor soil donor (0.25° search) (`dt_v011`).
 
 ---
 
-## Current Limitations & Future Work (Assessed 2026-03-21)
+## Current Limitations & Future Work
 
-### N₂O Underestimate — Root Cause Identified
+### N₂O and plamox maturity (rules)
 
-LDNDC N₂O emissions for Harbin maize are **0.3-0.8 kgN/ha/yr** vs literature **1-3 kgN/ha/yr**. Three coupling approaches were tested:
-
-| Approach | N₂O Result | Why it didn't work |
-|----------|-----------|-------------------|
-| DSSAT residue via `<event type="residue">` | 0.34 (no change) | Event type silently ignored by LDNDC |
-| High `initialbiomass` + `remains=0.85` | 0.15 (worse) | More crop N uptake → less mineral N |
-| Increased fertilizer 180→500 kgN/ha | 0.33→0.81 (improves) | Still below literature even at extreme |
-
-**Root cause**: plamox phenology — DVS only reaches 0.4-0.65 in ~50% of years (crop doesn't mature). This means:
-- No consistent root exudates → less rhizosphere denitrification
-- Variable residue → depleted soil organic C in bad years
-- Different moisture regime → fewer anaerobic microsites
-
-**Correct fix (future work)**: Calibrate plamox GDD parameters for NE China short-season maize. Reduce thermal time from ~1560 to ~1100-1200 GDD in `parameters_species.xml`.
-
-### What IS Usable
-
-| Output | Usable? | Note |
-|--------|---------|------|
-| N₂O **relative change** (future/baseline ratio) | **Yes** | Direction of change is valid |
-| CO₂ heterotrophic respiration | **Yes** | 1,537 kgC/ha/yr is reasonable |
-| CH₄ from rice paddies | **Partial** | High variance, needs paddy module calibration |
-| **Absolute N₂O values** | **No** | 5-10x too low, needs plamox calibration |
-| Crop yields | **No** | Use DSSAT instead |
+- LDNDC has no `residue` event type: `<event type="residue">` in mana.xml is silently ignored.
+- Check that plamox phenology (DVS) reaches maturity in each year. When the crop does not mature,
+  root exudates, residue and soil moisture all change, and the N₂O output can no longer be trusted.
+  The fix is to calibrate the crop's thermal time (GDD to maturity) in `parameters_species.xml`
+  for the local cultivar.
 
 ### LDNDC Execution — Critical Flag
 

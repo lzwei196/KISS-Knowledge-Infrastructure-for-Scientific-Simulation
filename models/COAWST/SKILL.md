@@ -455,5 +455,5 @@ ki/
 │   ├── s9_output_analysis.md         # Output analysis skill
 │   └── calibration_guide.md          # Parameter tuning guide
 └── diagnostics/
-    └── triplets.yaml                 # 15+ symptom→diagnosis→remedy
+    └── triplets.yaml                 # diagnostic triplets (count: KI map)
 ```

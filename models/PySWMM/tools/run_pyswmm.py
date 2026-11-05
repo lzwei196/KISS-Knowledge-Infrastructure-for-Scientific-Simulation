@@ -112,8 +112,19 @@ def run_simulation(args):
     collect_node_ids = args.collect_nodes.split(",") if args.collect_nodes else []
     collect_link_ids = args.collect_links.split(",") if args.collect_links else []
 
+    # SWMM computes its continuity (mass balance) errors in swmm_end(); pyswmm calls the
+    # after_end hooks right after swmm_end() and before swmm_close() when the `with` block exits.
+    mass_balance = {}
+
     try:
         with Simulation(args.input, args.report, args.output) as sim:
+            def _capture_mass_balance():
+                mass_balance["runoff"] = sim.runoff_error
+                mass_balance["routing"] = sim.flow_routing_error
+                mass_balance["quality"] = sim.quality_error
+
+            sim.add_after_end(_capture_mass_balance)
+
             # Initialize collectors
             node_objs = {}
             link_objs = {}
@@ -175,25 +186,28 @@ def run_simulation(args):
 
             t_elapsed = time.time() - t_start
 
-            # Collect mass balance errors
-            results["status"] = "completed"
             results["elapsed_seconds"] = round(t_elapsed, 2)
             results["total_steps"] = step_count
-            results["runoff_error"] = round(sim.runoff_error, 4)
-            results["routing_error"] = round(sim.flow_routing_error, 4)
-            results["quality_error"] = round(sim.quality_error, 4)
             results["flow_units"] = str(sim.flow_units)
             results["system_units"] = str(sim.system_units)
 
-            # Validate mass balance
-            if abs(sim.runoff_error) > 5.0:
-                results["warning_runoff"] = (
-                    f"Runoff continuity error = {sim.runoff_error:.2f}% (>5% threshold)"
-                )
-            if abs(sim.flow_routing_error) > 5.0:
-                results["warning_routing"] = (
-                    f"Routing continuity error = {sim.flow_routing_error:.2f}% (>5% threshold)"
-                )
+        # Mass balance errors (captured after swmm_end, see _capture_mass_balance)
+        if len(mass_balance) != 3:
+            raise RuntimeError("SWMM continuity errors were not available after swmm_end()")
+        results["status"] = "completed"
+        results["runoff_error"] = round(mass_balance["runoff"], 4)
+        results["routing_error"] = round(mass_balance["routing"], 4)
+        results["quality_error"] = round(mass_balance["quality"], 4)
+
+        # Validate mass balance
+        if abs(mass_balance["runoff"]) > 5.0:
+            results["warning_runoff"] = (
+                f"Runoff continuity error = {mass_balance['runoff']:.2f}% (>5% threshold)"
+            )
+        if abs(mass_balance["routing"]) > 5.0:
+            results["warning_routing"] = (
+                f"Routing continuity error = {mass_balance['routing']:.2f}% (>5% threshold)"
+            )
 
     except Exception as e:
         results["status"] = "error"
@@ -293,6 +307,10 @@ def main():
     summary = {k: v for k, v in result.items()
                if k not in ("node_timeseries", "link_timeseries")}
     print(json.dumps(summary, indent=2))
+
+    if result.get("status") != "completed":
+        print("PySWMM run FAILED: " + str(result.get("message", "see JSON result")), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -85,8 +85,8 @@ inputs:
       name: "active cell mask"
       unit: "category code"
       source_kind: user_provided
-      model_input_format: "sfincs.msk (binary uint8): 0=inactive, 1=active(computed), 2=outflow boundary, 3=water-level BC"
-      notes: "SKILL.md convention adopted (1=active). Interior cells must be 1; mask=3 on interior makes SFINCS prescribe water level and compute zero flood depth."
+      model_input_format: "sfincs.msk (binary uint8): 0=inactive, 1=active(computed), 2=water-level boundary, 3=outflow boundary, 4=wave maker, 5=river outflow, 6=lateral (Neumann) boundary"
+      notes: "SFINCS's own convention (solver source; `strings sfincs`). Interior cells must be 1; mask=3 on interior makes every cell a boundary cell and SFINCS computes zero flood depth. mask=2 with no bnd/bzs is held at zs = 0.0 m."
     - category: parameter
       name: "active-cell index map"
       unit: "cell indices"
@@ -537,15 +537,15 @@ safety:
       severity: fatal
     - id: "interior_mask_water_level_bc"
       kind: control_semantic
-      description: "Interior cells set to mask=3 (water-level BC) instead of 1 (active) make SFINCS prescribe water levels and compute zero flood depth."
+      description: "Interior cells set to mask=3 (outflow boundary) instead of 1 (active) make the whole domain boundary cells, and SFINCS computes zero flood depth."
       severity: silent
     - id: "outflow_mask_inland_drain"
       kind: control_semantic
-      description: "mask=2 outflow cells default to 0 m water level; on inland/mountainous terrain (e.g. 143 m bed) the head gradient instantly drains the domain to hmax=0. Use mask=1 closed boundary inland."
+      description: "mask=2 water-level boundary cells are held at 0 m when no bnd/bzs is given; on inland/mountainous terrain (e.g. 143 m bed) the head gradient instantly drains the domain to hmax=0. Use mask=3 (outflow) on the inland outlet edge and mask=1 on the other edges."
       severity: silent
     - id: "bnd_points_off_active_mask"
       kind: control_semantic
-      description: "Water-level boundary points not aligned to active (mask>0) cells are silently ignored; boundary appears dry."
+      description: "bnd/bzs water levels act only on mask=2 cells (each takes the two nearest bnd points); with no mask=2 cells on the open edge the water-level boundary has no effect and appears dry."
       severity: silent
     - id: "datum_mismatch_dem_vs_wl"
       kind: control_semantic
@@ -609,10 +609,10 @@ safety:
       scope: "momentum solver regime"
       source: "SFINCS overview (governing equations, Bates et al. 2010); compile_sfincs.sh advection-off default"
       status: adopted
-    - statement: "Mask convention adopted is 0=inactive, 1=active(computed), 2=outflow boundary, 3=water-level BC (SKILL.md Critical Domain Knowledge)."
+    - statement: "Mask convention is SFINCS's own: 0=inactive, 1=active(computed), 2=water-level boundary, 3=outflow boundary (4=wave maker, 5=river outflow, 6=lateral Neumann)."
       scope: "sfincs.msk interpretation"
-      source: "SFINCS KI SKILL.md; input docs (sfincs.readthedocs.io/input)"
-      status: tentative
+      source: "SFINCS solver source sfincs_boundaries.f90:900-905, sfincs_domain.f90:1885-1888 (main 4e11306e); `strings sfincs` v2.3.2"
+      status: adopted
     - statement: "huthresh default taken as 0.05 m (SFINCS manual / docs) where the stripped binary symbol could not be byte-confirmed; the 0.01 m binary-symbol value is recorded as an unresolved docs-vs-binary split."
       scope: "wetting/drying threshold default"
       source: "SFINCS input docs (sfincs.readthedocs.io/input numerical parameters) vs binary symbol __sfincs_data_MOD_huthresh"

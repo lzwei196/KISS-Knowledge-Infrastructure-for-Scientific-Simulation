@@ -1081,8 +1081,8 @@ known_issues:
     ru, invented `channel_sdmorph`, and dropped the csvout/dbout/cdfout and soilout/mgtout/hydcon/fdcout
     header bloc
   remedy: 'Edit the existing print.prt in place: change nyskip and only the flags of the requested categories,
-    preserving structure and row order. The tool now does this, with a canonical 37-row fallback.; ["diff
-    <(awk ''/^objects/,0{print $1}'' TxtInOut/print.prt) <(awk ''/^objects/,0{print $1}'' /mnt/disk1/Hydro'
+    preserving structure and row order. The tool now does this, with a canonical 37-row fallback.; [''Re-run
+    {KI}/tools/s7/configure_print_prt.py on the deck; its output check exits 3 unless the object row'
   severity: fatal
 - id: dt_042
   symptom: calibration.cal is written and SWAT+ runs, but the simulated hydrograph is bit-identical to
@@ -1226,4 +1226,18 @@ known_issues:
   remedy: Run s3/generate_weather_stations.py after ANY deck regeneration; it derives per-station lat/lon
     from the deck's own rout_unit.con (authoritative wst binding). Then verify with s7/validate_txtinout.py
     — it now FAILS (exit 1) on null or single-station wiring while matching .pcp/.tmp files exist.; /mnt
+  severity: silent
+- id: dt_054
+  symptom: 'Outlet hydrograph systematically WEEKS late on every event while volume is near-perfect (e.g.
+    train NSE 0.016 with PBIAS 0.07%); a lag scan keeps improving out to -20..-25 days with no sharp peak;
+    calibration pins every speed lever (surlag low bound, chn_mann low bound, alpha_bf high bound) and
+    the '
+  diagnosis: write_codes_bsn shipped rte_cha=1 (rev59 Muskingum) while the official SWAT+ default is 0;
+    with the generator's textbook msk coefficients (0.75/0.25/0.20) rev59 Muskingum adds enormous storage
+    delay on multi-channel networks.; The delay compounds along the routed chain, so small validation
+    decks can
+  remedy: 'Generator now writes rte_cha=0 (fixed 2026-09-06). For EXISTING decks: set codes.bsn rte_cha
+    to 0 (column 8, third line) AND delete the _calib_pristine* snapshot so the driver rebuilds it from
+    the corrected deck. If Muskingum is ever genuinely wanted, validate the timing on the target network
+    BEFORE'
   severity: silent

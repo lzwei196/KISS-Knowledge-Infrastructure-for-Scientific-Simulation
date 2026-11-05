@@ -21,9 +21,10 @@ pipeline:
   - s5_execution
   - s6_output_analysis
 tools:
-  count: 5
+  count: 6
   files:
   - tools/calib_run.py
+  - tools/calib_run_huaibin.py
   - tools/convert_forcing.py
   - tools/convert_parameters.py
   - tools/parse_output.py
@@ -75,7 +76,7 @@ validation:
     best_kge: 0.9104
     best_r: 0.9376
 summary:
-  total_tools: 5
+  total_tools: 6
   total_stage_docs: 5
   total_diagnostic_triplets: 20
   generated: '2026-08-15'

@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: dfnWorks v2.10.0 (DFNGen v2.3, DFNTrans, pydfnworks)
 **Created by**: LANL EES-16 (Jeffrey Hyman, Daniel Livingston, Satish Karra)
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 6 skill documents | 17 diagnostic triplets | ~2,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `development_validated` (graph-based flow/transport on 3-family TPL network)
 
 ---
@@ -80,7 +80,7 @@ See `data_ki/GRACE/SKILL.md` for GRACE TWS validation data.
 
 ## Overview
 
-This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks. The 4 validated tools replace manual input-file preparation with a Python pipeline that integrates fracture network generation, meshing, flow simulation, and particle tracking.
+This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks. The validated tools replace manual input-file preparation with a Python pipeline that integrates fracture network generation, meshing, flow simulation, and particle tracking.
 
 **What dfnWorks does**: A computational suite for modeling flow and transport in 3D fracture networks:
 - Stochastic generation of 3D discrete fracture networks (ellipses, rectangles, polygons)
@@ -461,7 +461,7 @@ dfnWorks produces outputs across its pipeline stages: (1) network generation wri
 | dt_016 | silent | silent_error | Flux-weighted particles miss low-flow paths |
 | dt_017 | fatal | dependency | PFLOTRAN input file format mismatch |
 
-**Silent errors**: 7/17 (41%) — model runs but produces wrong results
+**Silent errors** (when this section was written): 7/17 (41%) — model runs but produces wrong results
 
 ---
 
@@ -483,5 +483,5 @@ ki/
     s4_transport_skill.md               # DFNTrans/graph transport
     s5_postprocessing_skill.md          # Analysis and visualization
   diagnostics/
-    triplets.yaml                       # 17 symptom→diagnosis→remedy entries
+    triplets.yaml                       # diagnostic triplets (count: KI map)
 ```

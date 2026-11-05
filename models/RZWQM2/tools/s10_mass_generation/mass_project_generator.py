@@ -48,7 +48,7 @@ from datetime import datetime, timedelta
 SITES_CSV = ""
 PROJECT_PATH = ""
 TEMPLATE_PATH = "KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat"  # Canonical template (clean Bengbu wheat project)
-SOIL_SOURCE = "hwsd"                       # hwsd, soilgrids, vic_global
+SOIL_SOURCE = "hwsd"                       # hwsd, soilgrids
 FORCING_SOURCE = "cmfd"                    # cmfd, mswx, csv
 FORCING_SOURCE_PATH = "KISSPATH_FORCING/Data_forcing_03hr_010deg"
 NUM_HORIZONS = 6

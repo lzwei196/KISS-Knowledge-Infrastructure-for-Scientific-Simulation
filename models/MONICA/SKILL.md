@@ -462,13 +462,16 @@ See `diagnostics/triplets.yaml` for the full set. Key entries:
 | dt_18 | Crash exit -6, no output             | SoilProfileParameters at root not in SiteParameters |
 | dt_19 | Zero yield, 0s elapsed               | csv-separator mismatch (tool outputs ";", default ",") |
 | dt_20 | UnicodeDecodeError in soil tool      | Passing .bil raster to --format hwsd (needs CSV)    |
-| dt_21 | PBIAS < -40% for China wheat         | UseAutomaticIrrigation false (rainfed vs irrigated) |
-| dt_22 | CMFD yields 26% above NASA POWER     | Higher observed radiation in CMFD → more GPP        |
-| dt_23 | Henan -13% despite irrigation        | HWSD 80% sand ≠ cultivated Fluvisol texture         |
+| dt_21 | Yield far too low for China wheat    | UseAutomaticIrrigation false (rainfed vs irrigated) |
+| dt_22 | CMFD yields above NASA POWER         | Higher observed radiation in CMFD → more GPP        |
+| dt_23 | Yield low despite irrigation         | HWSD sandy texture ≠ cultivated Fluvisol texture    |
 
 ---
 
-## Validated Results
+## Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 Validation is judged against `docs/validation_convention.yaml`, not against
 intuition or remembered thresholds. The convention wins over any threshold stated
@@ -492,24 +495,6 @@ elsewhere in prose.
 | Yield | pmare | minimize | ≤10 (sarkar2014) | ≤15 (sarkar2014) | ≤25 (sarkar2014) | sarkar2014 |
 | Yield | pbias | zero_centered | within ±3 (jahr2016, bergez2022) | within ±4 (jahr2016, bergez2022) | within ±15 (jahr2016, bergez2022) | jahr2016, bergez2022 |
 
-### Current documented validation run
-
-The body currently documents a China multi-site CMFD workflow validated on 5
-provinces for winter wheat during 1991–2000, with default parameters and PBIAS
-reported against provincial reference yields.
-
-| Province | Lat | Metric reported | Result |
-|----------|-----|-----------------|--------|
-| Hebei | 38.5° | PBIAS | +5.8% |
-| Shandong | 36.5° | PBIAS | +10.3% |
-| Henan | 34.0° | PBIAS | -13.3% |
-| Jiangsu | 33.5° | PBIAS | +19.7% |
-| Anhui | 32.5° | PBIAS | +16.4% |
-
-These PBIAS results should be interpreted with the zero-centered Yield PBIAS
-bands above: within ±3 is very good (jahr2016, bergez2022), within ±4 is good
-(jahr2016, bergez2022), and within ±15 is satisfactory (jahr2016, bergez2022).
-
 ---
 
 ## Coupling Points
@@ -523,9 +508,6 @@ bands above: within ±3 is very good (jahr2016, bergez2022), within ±4 is good
 ---
 
 ## China Multi-Site Workflow (CMFD forcing)
-
-Validated on 5 provinces (Hebei, Shandong, Henan, Jiangsu, Anhui), winter wheat,
-1991–2000. PBIAS range: -13% to +20% vs. provincial reference yields.
 
 ### Step-by-step
 
@@ -603,11 +585,10 @@ MONICA's stock long-day cultivars (`crops/wheat/winter-wheat.json`: `DaylengthRe
 0/7 h, `VernalisationRequirement` 50 d) are a ~52°N parameterisation: MONICA's photoperiodic daylength (sun at −6°,
 `src/core/crop-module.cpp` "old DLP") peaks at 18.5 h there, at 35°N at only 15.5 h, so the long-day factor
 `(DL − base) / (20 − base)` that multiplies every stage's thermal time stays ~0.45–0.55 through the whole spring.
-Probe (34.6°N / 115.1°E, CMFD, 1999–2015, irrigated, N 203): stem elongation starts ~Apr 2, anthesis ~May 27,
-maturity ~Jun 22 — real NCP wheat joints mid-March, flowers late April–early May and matures Jun 5–10. Grain
-fill lands in the >30 °C late-June window, the harvest index collapses to ~0.2 (AbBiom 16–17 t, Yield ~3 t DM ha⁻¹),
-and 11/17 seasons are cut by `latest-date` — the −50 % PBIAS of the 2026-08-22 GDHY run, NOT a water/N problem
-(TraDef ≈ 1, NDef ≈ 1, HeatRed = 1).
+At North China Plain latitudes this delays development by 3–4 weeks (real NCP wheat joints mid-March, flowers
+late April–early May and matures Jun 5–10). Grain fill lands in the >30 °C late-June window, the harvest index
+collapses and many seasons are cut by `latest-date` — a large yield underestimate that is NOT a water/N problem
+(TraDef ≈ 1, NDef ≈ 1, HeatRed = 1). See dt_29.
 
 Rule (latitude-derived, NO yield fitting): set every positive `DaylengthRequirement` entry to the site's maximum
 photoperiodic daylength, so the photoperiod factor saturates at the local solstice:
@@ -623,18 +604,16 @@ monica-parameters repository (detected from `--base`; `$MONICA_PARAMETERS` is pr
 directories — the parent of `--out` must already exist (make your run directory first) — and writes exactly
 `<out>.tmp` then `<out>` (rename); a pre-existing `<out>.tmp` is refused. EVERY refusal, including command-line
 usage errors (missing `--out`, non-numeric `--lat`, …), is one JSON `{"status":"error","error":…}` on stdout with
-exit 2 (only `-h/--help` prints usage text, exit 0), so a caller can always `json.loads` the stdout. Same probe after the rule:
-anthesis ~May 9, maturity ~Jun 9, 2/17 seasons at the cap, HI 0.28, mean 4849 kg DM ha⁻¹ (+54 %). Keep
-`VernalisationRequirement` (30 vs 50 changes < 2 %) and the stage temperature sums. The shipped low-latitude
-`winter-wheat_AgMIP4_bacanora_St1.json` is a spring type (vern 1, DL 11.5/16.67 h) and is WRONG for the NCP
-(anthesis Apr 1, 2923 kg DM ha⁻¹).
+exit 2 (only `-h/--help` prints usage text, exit 0), so a caller can always `json.loads` the stdout. Keep
+`VernalisationRequirement` (lowering it changes little, see dt_29) and the stage temperature sums. The shipped low-latitude
+`winter-wheat_AgMIP4_bacanora_St1.json` is a spring type (vern 1, DL 11.5/16.67 h) and is WRONG for the NCP.
 
-Also set `"EmergenceMoistureControlOn": false` in sim.json (the validated multisite sim.json had it; the MODEL
+Also set `"EmergenceMoistureControlOn": false` in sim.json (the MODEL
 DEFAULT IS TRUE — `monica-parameters.h` `pc_EmergenceMoistureControlOn{true}` — docs/06 used to say false).
-With it on, a dry NCP autumn seedbed (e.g. the 2010 drought) keeps the crop in germination (output Stage 1) from
+With it on, a dry NCP autumn seedbed keeps the crop in germination (output Stage 1) from
 October to March: auto-irrigation cannot help because `SoilColumn::applyIrrigationViaTrigger` only fires inside
 the cultivar's heat-sum window (`HeatSumIrrigationStart/End` 461–1676 °Cd, i.e. never before emergence), and
-the season yields 0 (13 % of the 2026-08-22 column-seasons; 1999: 63/80 columns).
+the season yields 0 (dt_30).
 
 Phenology gate BEFORE scoring Yield: add the event blocks `"anthesis", ["Date","Crop"]` and
 `"maturity", ["Date","Crop"]` next to the `"crop"` block (parse with `parse_monica_output.py --columns section
@@ -643,16 +622,6 @@ anthesis/maturity within ±10 d of the regional calendar (validation_convention 
 seasons cut at `latest-date` without a maturity row. A season harvested ON `latest-date` without maturity is a
 phenology failure, not a yield. Do NOT add `["Stage|harvest","LAST"]` to the crop block — it duplicates the
 `harvest` header and the parser then returns the stage instead of the harvest date.
-
-### Validated performance (5 sites, default parameters)
-
-| Province | Lat   | PBIAS (sim DM vs. prov. ref FW) | Irrigation/yr |
-|----------|-------|----------------------------------|---------------|
-| Hebei    | 38.5° | +5.8%                           | 150 mm        |
-| Shandong | 36.5° | +10.3%                          | 128 mm        |
-| Henan    | 34.0° | -13.3% (sandy HWSD, see dt_23) | 111 mm        |
-| Jiangsu  | 33.5° | +19.7%                          | 78 mm         |
-| Anhui    | 32.5° | +16.4%                          | 83 mm         |
 
 ### Unit notes for output comparison
 
@@ -665,12 +634,9 @@ Conversion: `yield_FW = yield_DM ÷ 0.88` (÷ (1 − 0.12))
 yearbooks, and the gridded GDHY v1.2/1.3 product, which is harmonised to FAO/national statistics (its `.nc4`
 files carry no unit attribute) — is FW: apply the ÷0.88 to the MONICA DM yield BEFORE scoring and STATE the
 convention in the result (keep the DM-direct number as an auxiliary). Compare DM-direct only against obs
-explicitly reported as dry matter (field trials, GGCMI/AgMIP protocol data). 2026-08-22 GDHY NCP block
-(20 × 0.5° cells, 2000–2016, `run_and_score.py`, phenology gate PASS): per-site median PBIAS −16.0 % DM-direct
-→ −4.6 % FW (block mean sim 4.38 t DM = 4.97 t FW vs obs 5.31 t/ha). The validated 5-site table above is
-DM-direct legacy (dt_25) — never mix it with FW numbers.
+explicitly reported as dry matter (field trials, GGCMI/AgMIP protocol data).
 
-CMFD forcing gives ~26% higher yields than NASA POWER at the same site (higher
+CMFD forcing gives higher yields than NASA POWER at the same site (higher
 observed radiation → more photosynthesis).
 
 ⚠️ **Comparison-scale gate (driven by obs_shape, NOT by the forcing product).** A
@@ -681,10 +647,9 @@ and not a nation. When the observation is a `regional_aggregate_time_series`
 valid and REQUIRES the point sim to be representative-aggregated to the region
 before scoring (see triplet dt_24). Raw NSE/KGE/r (temporal_pattern_match) are
 structurally invalid for this obs_shape and must NOT gate a retry.
-  - Compare a single-province point against the matching PROVINCIAL reference
-    (e.g. Shandong wheat ≈ 4200 kg ha⁻¹ FW → PBIAS +10.3%, table above), NEVER
-    against the national FAOSTAT mean — a single irrigated high-yield province
-    overshoots the national aggregate by +40–45% (structural scale mismatch, the
+  - Compare a single-province point against the matching PROVINCIAL reference,
+    NEVER against the national FAOSTAT mean — a single irrigated high-yield province
+    overshoots the national aggregate (structural scale mismatch, the
     irrigated mirror of dt_21’s rainfed undershoot; not a model/unit error).
   - To compare against the national aggregate honestly, area-weight several
     province point runs into one series and detrend BOTH sim and obs first
@@ -706,9 +671,8 @@ stat, so a structurally ~0 r (dt_24/dt_25) would route the case to fix_ki for ev
 stage 5): `trend_error` = slope of (sim − obs) over the scored years × (n − 1) / mean(obs) — the fraction of the obs
 mean the bias drifts across the record (0 = no residual trend; negative = the sim falls behind a rising obs);
 `decadal_pbias` = max |PBIAS| of the first-half and second-half means; `slope_ratio` = sim/obs linear slope
-(`ki_tools_common.metrics.trend_metrics`). A fixed-management run does NOT carry the technology trend — NCP block
-2000–2016: slope_ratio 0.15, trend_error −0.36, half-period PBIAS +7.8 % → −14.4 % — report it, do not tune for it
-(dt_25). `run_and_score.py` writes `metrics`, `test_runs[0]` and the aux block in exactly this shape; a retest/report
+(`ki_tools_common.metrics.trend_metrics`). A fixed-management run does NOT carry the technology trend — report it,
+do not tune for it (dt_25). `run_and_score.py` writes `metrics`, `test_runs[0]` and the aux block in exactly this shape; a retest/report
 agent hands the runner off with `kdt_detached_run.py`, returns `run_detached` and lets the orchestrator harvest
 `result.json` itself — it copies the row VERBATIM and never re-authors it from the generic nse/kge/pbias template.
 The runner refuses to start (rc 1) without `KDT_RUN_CONTEXT` (exported by `kdt_detached_run.py`) or `KDT_STATE_DIR`

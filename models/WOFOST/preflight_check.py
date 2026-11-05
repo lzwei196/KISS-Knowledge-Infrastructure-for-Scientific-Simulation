@@ -27,7 +27,7 @@ TOOL_FILES = [
     "tools/s1_crop_params/validate_crop_params.py",
     "tools/s2_soil_params/convert_hwsd_to_pcse_soil.py",
     "tools/s2_soil_params/validate_soil_params.py",
-    "tools/s3_weather_prep/convert_vic_to_pcse_weather.py",
+    "tools/s3_weather_prep/build_pcse_weather_from_source.py",
     "tools/s3_weather_prep/create_csv_weather_file.py",
     "tools/s3_weather_prep/validate_weather_data.py",
     "tools/s4_agromanagement/generate_agromanagement_yaml.py",

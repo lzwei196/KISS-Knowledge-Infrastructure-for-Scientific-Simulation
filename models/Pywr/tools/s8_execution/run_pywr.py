@@ -11,6 +11,11 @@ Loads a Pywr JSON model file, runs the simulation, and extracts:
 Usage:
     python run_pywr.py --model model.json --output_dir results/
 
+Flow units: models built by s7 assemble_pywr_model.py carry metadata.flow_units =
+"m3/day" (Pywr adds flow x timestep-days to storage in m3, so flows are volumes per
+day). This tool converts recorded flows back to m3/s before writing *_m3s columns.
+A model without metadata.flow_units must be run with --flow_units; there is no guess.
+
 Output:
     - results/storage_timeseries.csv
     - results/release_timeseries.csv
@@ -35,6 +40,40 @@ def load_and_run_model(model_path):
     model = Model.load(str(model_path))
     model.run()
     return model
+
+
+_SECONDS_PER_DAY = 86400.0
+
+
+def model_flow_units(model_json, cli_units=None):
+    """Return the unit of flows inside the model ('m3/day' or 'm3/s'); fail if unknown."""
+    meta_units = (model_json.get("metadata") or {}).get("flow_units")
+    if meta_units and cli_units and meta_units != cli_units:
+        raise ValueError(f"--flow_units {cli_units} disagrees with model metadata.flow_units {meta_units}")
+    units = meta_units or cli_units
+    if units not in ("m3/day", "m3/s"):
+        raise ValueError("Model flow units unknown: metadata.flow_units is missing and --flow_units "
+                         "was not given (re-assemble with s7 assemble_pywr_model.py, or pass "
+                         "--flow_units m3/day|m3/s)")
+    return units
+
+
+def model_dates(model, n_steps):
+    """Start dates of the recorded timesteps, taken from the Pywr timestepper itself."""
+    dates = pd.DatetimeIndex(model.timestepper.datetime_index.to_timestamp(how="s"))
+    if len(dates) != n_steps:
+        raise ValueError(f"Recorder length {n_steps} does not match {len(dates)} model timesteps")
+    return dates
+
+
+def model_step_days(model):
+    """Length of every timestep in days, computed exactly as pywr Timestepper.setup()
+    does (period end - period start, rounded to the second). Works for "1D", "2D", "M"..."""
+    periods = model.timestepper.datetime_index
+    deltas = periods.to_timestamp(how="e") - periods.to_timestamp(how="s")
+    days = np.round(deltas.total_seconds()) / _SECONDS_PER_DAY
+    return pd.Series(np.asarray(days, dtype=float),
+                     index=pd.DatetimeIndex(periods.to_timestamp(how="s")))
 
 
 def extract_storage_timeseries(model, output_dir):
@@ -63,7 +102,7 @@ def extract_storage_timeseries(model, output_dir):
     # Build date index
     start = model.timestepper.start
     n_steps = max(len(v) for v in storage_data.values()) if storage_data else 0
-    dates = pd.date_range(start=start, periods=n_steps, freq="D")
+    dates = model_dates(model, n_steps) if n_steps else pd.DatetimeIndex([])
 
     df = pd.DataFrame(index=dates)
     df.index.name = "date"
@@ -78,8 +117,9 @@ def extract_storage_timeseries(model, output_dir):
     return df, csv_path
 
 
-def extract_flow_timeseries(model, output_dir):
-    """Extract flow timeseries from link and output nodes."""
+def extract_flow_timeseries(model, output_dir, flow_units):
+    """Extract flow timeseries from link and output nodes, written in m3/s."""
+    to_m3s = 1.0 / _SECONDS_PER_DAY if flow_units == "m3/day" else 1.0
     flow_data = {}
 
     for rec_name, rec in model.recorders.items():
@@ -87,12 +127,10 @@ def extract_flow_timeseries(model, output_dir):
             data = rec.data
             if data is not None and len(data) > 0:
                 col_name = rec_name.replace("_flow_recorder", "")
-                flow_data[col_name] = data.flatten()
+                flow_data[col_name] = data.flatten() * to_m3s
 
-    # Build date index
-    start = model.timestepper.start
     n_steps = max(len(v) for v in flow_data.values()) if flow_data else 0
-    dates = pd.date_range(start=start, periods=n_steps, freq="D")
+    dates = model_dates(model, n_steps) if n_steps else pd.DatetimeIndex([])
 
     df = pd.DataFrame(index=dates)
     df.index.name = "date"
@@ -106,7 +144,7 @@ def extract_flow_timeseries(model, output_dir):
     return df, csv_path
 
 
-def compute_statistics(storage_df, flow_df, model_json):
+def compute_statistics(storage_df, flow_df, model_json, step_days):
     """Compute summary statistics from results."""
     stats = {"storage": {}, "flows": {}, "reliability": {}}
 
@@ -133,7 +171,7 @@ def compute_statistics(storage_df, flow_df, model_json):
                 "mean_m3s": round(float(s.mean()), 4),
                 "max_m3s": round(float(s.max()), 4),
                 "min_m3s": round(float(s.min()), 4),
-                "total_volume_mcm": round(float(s.sum() * 86400 / 1e6), 1),
+                "total_volume_mcm": round(float((s * _SECONDS_PER_DAY * step_days.reindex(s.index)).sum() / 1e6), 1),
             }
 
             # Spill events
@@ -181,6 +219,9 @@ def main():
                         help="Pywr model JSON file")
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Output directory for results")
+    parser.add_argument("--flow_units", choices=["m3/day", "m3/s"], default=None,
+                        help="Unit of flows inside the model; only needed when the model "
+                             "JSON has no metadata.flow_units")
     parser.add_argument("--verbose", action="store_true",
                         help="Print detailed progress")
 
@@ -199,6 +240,12 @@ def main():
         model_json = json.load(f)
 
     try:
+        flow_units = model_flow_units(model_json, args.flow_units)
+    except ValueError as e:
+        print(json.dumps({"error": str(e), "status": "FAIL"}))
+        sys.exit(2)
+
+    try:
         if args.verbose:
             print("Loading model...", file=sys.stderr)
 
@@ -209,10 +256,14 @@ def main():
 
         # Extract timeseries
         storage_df, storage_csv = extract_storage_timeseries(model, output_dir)
-        flow_df, flow_csv = extract_flow_timeseries(model, output_dir)
+        flow_df, flow_csv = extract_flow_timeseries(model, output_dir, flow_units)
+
+        if storage_df.empty and flow_df.empty:
+            raise RuntimeError("Model ran but no storage or flow recorder produced data")
 
         # Compute statistics
-        stats = compute_statistics(storage_df, flow_df, model_json)
+        step_days = model_step_days(model)
+        stats = compute_statistics(storage_df, flow_df, model_json, step_days)
 
         summary = {
             "status": "OK",
@@ -226,7 +277,11 @@ def main():
                 "start_date": str(model.timestepper.start),
                 "end_date": str(model.timestepper.end),
                 "timesteps": len(storage_df) if len(storage_df) > 0 else len(flow_df),
+                "timestep_days_min": float(step_days.min()),
+                "timestep_days_max": float(step_days.max()),
             },
+            "flow_units_in_model": flow_units,
+            "flow_units_written": "m3/s",
             "statistics": stats,
         }
 

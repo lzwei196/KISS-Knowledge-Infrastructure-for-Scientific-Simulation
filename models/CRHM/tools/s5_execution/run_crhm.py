@@ -52,6 +52,7 @@ import subprocess
 import time
 import math
 import shutil
+import uuid
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -197,32 +198,60 @@ def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format, run
         if output_path == prj_path or (cwd / "obs") in output_path.parents:
             raise ValueError("output_path must not overwrite the staged project or observations")
         obs_dir = ""       # staged observation paths are absolute; CRHM must not prefix them
-    before = output_path.stat() if output_path.exists() else None
+    # A failed run must never inherit a previous run's valid-looking output.
+    pending = output_path.with_name(output_path.name + "." + uuid.uuid4().hex + ".pending")
     # Build command
     cmd = [
         str(crhm_exe),
         "-f", "STD",
         "-t", time_format,
-        "-o", str(output_path),
+        "-o", str(pending),
         "-p", str(progress),
     ]
 
     if obs_dir:
-        # CRHM (CRHMmain.cpp:445) prepends obs_file_directory to EVERY obs
-        # path in the .prj by raw string concatenation, including absolute
-        # paths -> "<obs_dir>/mnt/.../basin.obs" -> "Cannot find observation
-        # file. Exiting." Only pass the flag when the .prj actually uses
-        # relative obs paths.
+        # CRHM (CRHMmain.cpp:445) builds every obs path as
+        #     ObsFileDirectory + <path in the .prj>
+        # by RAW string concatenation: no separator is added and nothing checks
+        # whether the .prj path already contains the directory. So
+        #   - an absolute .prj path gives "<obs_dir>/mnt/.../basin.obs";
+        #   - a .prj path that is already relative to the working directory
+        #     ("inputs/forcing/basin.obs") with --obs_dir inputs/forcing gives
+        #     "inputs/forcinginputs/forcing/basin.obs";
+        # and both end in "Cannot find observation file. Exiting."
+        # Pass the flag only when the joined path really exists, and pass it
+        # with a trailing separator.
         obs_paths = read_prj_obs_paths(prj_path)
         rel_paths = [pp for pp in obs_paths if not os.path.isabs(pp)]
-        if rel_paths:
-            cmd.extend(["--obs_file_directory", str(obs_dir)])
-        else:
+        obs_prefix = str(obs_dir).rstrip("/\\") + os.sep
+        if not rel_paths:
             logger.warning(
                 "Ignoring --obs_dir=%s: no relative obs path found in %s "
                 "(parsed obs paths: %s); CRHM prepends the directory to "
                 "every obs path, which breaks absolute paths.",
                 obs_dir, prj_path, obs_paths if obs_paths else "none")
+        elif len(rel_paths) != len(obs_paths):
+            logger.error(
+                "--obs_dir cannot be used: %s mixes relative and absolute obs "
+                "paths (%s) and CRHM prepends the directory to every one.",
+                prj_path, obs_paths)
+            sys.exit(1)
+        elif all(os.path.isfile(obs_prefix + pp) for pp in rel_paths):
+            cmd.extend(["--obs_file_directory", obs_prefix])
+        elif all(os.path.isfile(pp) for pp in rel_paths):
+            logger.warning(
+                "Ignoring --obs_dir=%s: the obs paths in %s (%s) already "
+                "resolve from the working directory %s; CRHM would prepend "
+                "the directory a second time (%s).",
+                obs_dir, prj_path, rel_paths, os.getcwd(),
+                obs_prefix + rel_paths[0])
+        else:
+            logger.error(
+                "Observation file(s) not found. .prj obs paths: %s. Tried "
+                "'%s<path>' (what CRHM builds from --obs_dir) and '<path>' "
+                "from the working directory %s.",
+                rel_paths, obs_prefix, os.getcwd())
+            sys.exit(1)
 
     cmd.append(str(prj_path))
 
@@ -275,14 +304,10 @@ def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format, run
         logger.error(f"Full stderr: {result.stderr}")
         sys.exit(2)
 
-    if before and output_path.exists():
-        after = output_path.stat()
-        if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) == (
-                before.st_size, before.st_mtime_ns, before.st_ctime_ns):
-            logger.error("CRHM did not replace the previous output file: %s", output_path)
-            sys.exit(3)
-
     logger.info(f"CRHM completed in {elapsed:.1f} seconds")
+
+    validate_outputs(pending)
+    os.replace(pending, output_path)
 
     return str(output_path)
 
@@ -299,21 +324,27 @@ def validate_outputs(output_path):
         # errors="replace": CRHM writes Latin-1 degree signs in the units row
         # (e.g. hru_t "(ºC)" = byte 0xBA), which crashes a strict-UTF-8 read.
         with open(p, encoding="utf-8", errors="replace") as f:
-            first_lines = [f.readline() for _ in range(3)]
-        if any(not line.strip() for line in first_lines):
-            errors.append("Output file must contain variable and units headers plus a data row")
-        else:
-            header = first_lines[0].strip().split("\t")
-            row = first_lines[2].strip().split("\t")
-            try:
-                numeric = len(header) > 1 and len(row) == len(header) and all(
-                    math.isfinite(float(value)) for value in row[1:])
-            except ValueError:
-                numeric = False
-            if not numeric:
-                errors.append("Output has no complete, finite numeric data row after its two STD headers")
-        # STD format: line 1 = variable names, line 2 = units
-        logger.info(f"Output header: {first_lines[0].strip()[:100]}...")
+            header, units = f.readline(), f.readline()
+            columns = len(header.rstrip().split("\t"))
+            if columns < 2 or not units.strip():
+                errors.append("Missing STD variable/units headers")
+            rows = 0
+            for number, line in enumerate(f, start=3):
+                if not line.strip():
+                    continue
+                fields = line.rstrip().split("\t")
+                try:
+                    if len(fields) != columns or not fields[0].strip():
+                        raise ValueError("column count differs from header")
+                    if not all(math.isfinite(float(v)) for v in fields[1:]):
+                        raise ValueError("non-finite output")
+                except ValueError as exc:
+                    errors.append(f"Invalid output row {number}: {exc}")
+                    break
+                rows += 1
+            if rows == 0:
+                errors.append("Output contains no valid simulation data rows")
+        logger.info(f"Output header: {header.strip()[:100]}...")
 
     if errors:
         for e in errors:

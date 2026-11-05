@@ -1,7 +1,7 @@
 # ========================================================================
 # mizuRoute Diagnostic Triplets
 # ========================================================================
-# 19 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# 19 triplets on 2026-08-12 (current count: the SKILL.md KI map). Converted that day from the `triplets:` mapping to the
 # canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
 # container only. The two-shape ambiguity is what let the self-improve overlay read
 # a corpus as empty and overwrite it.
@@ -26,7 +26,7 @@
 #     silent_error_percentage: 39
 # Comments preserved from the previous file:
 # mizuRoute Diagnostic Triplets
-# 18 triplets covering 7 failure domains
+# Triplets (18 when this header was written; current count: the SKILL.md KI map) covering 7 failure domains
 # Package: hydrocraft-mizuroute v1.0.0
 # Summary
 # Field names normalised to the controlled vocabulary 2026-08-12

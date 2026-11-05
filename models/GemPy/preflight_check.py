@@ -15,10 +15,13 @@ KI_DIR = Path(__file__).resolve().parent
 TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
 DIAGNOSTIC_FIX = f"Check {TRIPLETS} for the matching symptom and remedy."
 
-HYDROCRAFT_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
+# GemPy is not in HydroCraft python_env; the model runtime is the manifest venv.
+# $GEMPY_PYTHON (same name as the official test cases) overrides it; an explicit
+# value is used as-is, with no fallback, so a broken override fails.
 MANIFEST_PYTHON = Path(
     "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python"
 )
+IMPORT_TIMEOUT = 180
 
 TOOL_FILES = [
     KI_DIR / "tools" / "build_structural_params.py",
@@ -88,7 +91,8 @@ def python_can_import(python_path: Path, module: str) -> tuple[bool, str]:
                     f"m = importlib.import_module({module!r}); "
                     "print(getattr(m, '__version__', 'no_version'))"
                 ),
-            ]
+            ],
+            timeout=IMPORT_TIMEOUT,
         )
     except Exception as exc:
         return False, str(exc)
@@ -97,31 +101,31 @@ def python_can_import(python_path: Path, module: str) -> tuple[bool, str]:
 
 
 def select_model_python(checks: list[dict]) -> Path:
-    """Use HydroCraft python_env when it actually contains GemPy, else the manifest runtime."""
-    hydro_ok, hydro_detail = python_can_import(HYDROCRAFT_PYTHON, "gempy_engine")
+    """Use $GEMPY_PYTHON if set (no fallback), else the manifest runtime venv."""
+    explicit = os.environ.get("GEMPY_PYTHON", "").strip()
+    python_path = Path(os.path.abspath(explicit)) if explicit else MANIFEST_PYTHON
+    source = "GEMPY_PYTHON" if explicit else "manifest runtime"
+    ok, detail = python_can_import(python_path, "gempy_engine")
     add_check(
         checks,
         kind="import",
-        subject=f"{HYDROCRAFT_PYTHON}:gempy_engine",
+        subject=f"{python_path}:gempy_engine (selected model runtime, from {source})",
         critical=False,
-        status="pass" if hydro_ok else "fail",
+        status="pass" if ok else "fail",
         fix=(
-            "Install compatible GemPy packages in KISSPATH_PYTHON_ENV "
-            f"or keep using the manifest runtime. {DIAGNOSTIC_FIX}"
+            f"The selected GemPy runtime {python_path} ({source}) cannot import "
+            f"gempy_engine: {detail}. Repair it, or set GEMPY_PYTHON to a Python with "
+            f"GemPy (default {MANIFEST_PYTHON}). {DIAGNOSTIC_FIX}"
         ),
     )
-    if hydro_ok:
-        print(f"        Detail: {hydro_detail}")
-        return HYDROCRAFT_PYTHON
-
-    manifest_ok, manifest_detail = python_can_import(MANIFEST_PYTHON, "gempy_engine")
-    if manifest_ok:
-        print(f"        Detail: selected manifest runtime; {manifest_detail}")
-    return MANIFEST_PYTHON
+    if ok:
+        print(f"        Detail: {detail}")
+    return python_path
 
 
 def check_python_executable(checks: list[dict], python_path: Path) -> None:
-    real = os.path.realpath(python_path)
+    # Report the venv path itself: a venv python and python_env share one realpath.
+    real = f"{python_path} (realpath {os.path.realpath(python_path)})"
     executable = python_path.is_file() and os.access(python_path, os.X_OK)
     add_check(
         checks,

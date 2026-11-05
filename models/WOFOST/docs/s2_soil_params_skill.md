@@ -45,53 +45,69 @@ props = get_soil_properties(lat=52.0, lon=5.5,
 
 **If this fails**: Check HWSD file paths; verify lat/lon is on land (ocean cells have no soil data).
 
-### Step 2: Convert to WOFOST soil parameters via pedotransfer functions
+### Step 2: Convert to WOFOST soil parameters — use the SHARED hydraulics, never a private formula
+
+> **dt_v007 (fixed 2026-09-12).** This step used to teach three linear formulas labelled
+> "Wösten et al. (1999)". They were NOT Wösten's method, and against an independent Saxton &
+> Rawls (2006) reference they gave soil with a median **0.58×** the real plant-available water.
+> Re-running the C01 maize case with correct soil moved rainfed yield **+7.3% / +35.0% / 0%**
+> over three seasons. Do not re-derive these numbers from a formula in a doc. Use the tool, which
+> uses the shared library:
+
+```bash
+# stdout = the soil JSON (logs go to stderr). SOIL_PARAMS_JSON also makes the tool write
+# soil_params.json.provenance.json (texture used, PTF source, units) next to it.
+SOIL_PARAMS_JSON=soil_params.json \
+  python tools/s2_soil_params/convert_hwsd_to_pcse_soil.py <lat> <lon> > soil_params.json
+```
+
+Then load the result. Every later step uses these two names (`soil_params`, `texture`):
 
 ```python
-# Pedotransfer functions (Wosten et al. 1999)
-import math
+import json
+with open('soil_params.json') as f:
+    soil_params = json.load(f)     # 8 soil-hydraulic keys: SMW SMFCF SM0 CRAIRC K0 SOPE KSUB RDMSOL
+with open('soil_params.json.provenance.json') as f:
+    texture = json.load(f)['texture_input']   # sand/clay/silt/oc (%) and bd the tool used
+```
 
-sand = props['T_SAND']   # %
-clay = props['T_CLAY']   # %
-om = props['T_OC'] * 1.724  # OC% → OM%
-bd = props['T_REF_BULK_DENSITY']  # g/cm3
+If you must build the soil by hand (no tool run), make the SAME 8-key dict from the shared
+library. This is what the tool does:
 
-# Wilting point (pF 4.2, -1500 kPa)
-SMW = 0.001 + 0.26 * clay/100 + 0.05 * om/100
-# Field capacity (pF 2.0, -10 kPa)
-SMFCF = 0.02 + 0.37 * clay/100 + 0.15 * om/100 + 0.10 * (1 - sand/100 - clay/100)
-# Saturation (porosity)
-SM0 = 1.0 - bd / 2.65  # assuming particle density 2.65 g/cm3
-
-# Clamp to valid ranges
-SMW = max(0.01, min(SMW, 0.50))
-SMFCF = max(SMW + 0.01, min(SMFCF, SM0 - 0.02))
-
-# Hydraulic conductivity (simplified Cosby et al.)
-K0 = 10.0 ** (1.26 - 0.0064 * clay - 0.0126 * sand * 0)  # cm/day, simplified
-K0 = max(1.0, min(K0, 100.0))
-
+```python
+from ki_tools_common.soil_utils import lookup_hwsd
+props = lookup_hwsd(lat, lon)          # dominant HWSD component WITH usable texture (fixed 2026-09-11)
+hyd   = props['hydraulics']            # shared Rawls-1982 class table, the same values every crop KI uses
+texture = {'sand': props['sand'], 'clay': props['clay'], 'silt': props['silt'], 'oc': props['oc']}
 soil_params = {
-    'SMW': round(SMW, 3),
-    'SMFCF': round(SMFCF, 3),
-    'SM0': round(SM0, 3),
-    'CRAIRC': round(max(0.02, SM0 - SMFCF - 0.02), 3),
-    'K0': round(K0, 1),
-    'SOPE': 1.0,      # max percolation rate root zone (cm/day)
-    'KSUB': 1.0,      # max percolation rate subsoil (cm/day)
-    'RDMSOL': 120.0,   # max rootable depth (cm) — adjust per soil
-    'IFUNRN': 0,       # 0=no runoff curve, 1=USDA curve number
-    'SSMAX': 0.0,      # max surface storage (cm)
-    'SSI': 0.0,        # initial surface storage (cm)
-    'WAV': 20.0,       # initial available water in profile (cm)
-    'NOTINF': 0.0,     # fraction not infiltrating
-    'SMLIM': round(SMFCF, 3),  # soil moisture limit
+    'SMW':   round(float(hyd['wilting_point']), 4),
+    'SMFCF': round(float(hyd['field_capacity']), 4),
+    'SM0':   round(float(hyd['saturation']), 4),
+    'CRAIRC': 0.06,                    # critical soil air content (standard WOFOST value), NOT SM0-SMFCF
+    'K0':    round(float(hyd['ksat_cm_hr']) * 24.0, 2),   # UNITS: shared table is cm/hr, WOFOST K0 is cm/DAY
+    'SOPE':  1.0,
+    'KSUB':  1.0,
+    'RDMSOL': 120.0,                   # set by texture in Step 4
 }
 ```
 
-**Expected result**: Dictionary with all 14 required soil parameters.
+Do NOT put IFUNRN, NOTINF, SSI, SSMAX, WAV or SMLIM in `soil_params`: in PCSE 6.0 they come from
+`WOFOST72SiteDataProvider`, and having them in both places raises "Duplicate parameter found"
+(dt_v003).
+
+The shared table is itself a coarse 12-class lookup at ~0.86× the continuous reference — good
+enough, and honest, but not perfect. Upgrading it is a `ki_tools_common` job, not a WOFOST one.
+
+**Never** write `SMW = 0.001 + 0.26*clay ...` or any other private pedotransfer here. If you find
+one in a WOFOST tool, it is the bug this note exists to prevent.
 
 ### Step 3: Validate water limits
+
+```bash
+python tools/s2_soil_params/validate_soil_params.py soil_params.json   # exit 0 = pass, 2 = a check failed
+```
+
+or, in the same Python session:
 
 ```python
 assert soil_params['SMW'] < soil_params['SMFCF'], \
@@ -110,15 +126,17 @@ assert soil_params['CRAIRC'] < soil_params['SM0'] - soil_params['SMFCF'], \
 
 ### Step 4: Set rootable depth
 
-RDMSOL should reflect actual soil depth. For shallow soils (rocky, hardpan), reduce from default 120 cm.
+RDMSOL should reflect actual soil depth. The tool already applies the texture rule below; repeat
+it only for a hand-built dict, or lower it further when you know the soil is shallow (rocky, hardpan).
 
 ```python
-# Adjust RDMSOL based on soil type
-if clay > 60:
-    soil_params['RDMSOL'] = 80.0  # heavy clay, shallow roots
-elif sand > 80:
+# Adjust RDMSOL based on soil type (same rule as convert_hwsd_to_pcse_soil.py)
+if texture['clay'] > 60:
+    soil_params['RDMSOL'] = 80.0   # heavy clay, shallow roots
+elif texture['sand'] > 80:
     soil_params['RDMSOL'] = 150.0  # sandy, deep roots possible
-# Leave at 120.0 for medium textures
+else:
+    soil_params['RDMSOL'] = 120.0  # medium textures
 ```
 
 ### Step 5: Save soil parameters
@@ -134,7 +152,7 @@ with open(output_path, 'w') as f:
 
 | Output | Path | Verification |
 |--------|------|--------------|
-| soil_params dict | `outputs/{run}/wofost/soil_params.json` | JSON with 14 keys; SMW < SMFCF < SM0 |
+| soil_params dict | `outputs/{run}/wofost/soil_params.json` | JSON with the 8 soil-hydraulic keys; SMW < SMFCF < SM0 |
 
 ## Validation Checks
 

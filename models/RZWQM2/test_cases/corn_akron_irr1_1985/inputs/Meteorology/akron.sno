@@ -1,0 +1,70 @@
+========================================================================
+==                                                                    ==
+==            P R M S   S N O W   P A R A M E T E R S                 ==
+==                                                                    ==
+==              WATERSHED:  Lucerne, CO 1994-95                       ==
+==                                                                    ==
+========================================================================
+=     GENERAL SNOWPACK DYNAMICS
+=
+= REC.NUM   DESCRIPTION
+= --------  -----------
+=   1.1    AVERAGE MAXIMUM SNOWPACK DENSITY [GM/CM3]
+=   1.2    INITIAL DENSITY OF NEW-FALLEN SNOW IN [GM/CM3]
+=   1.3    FREE-WATER HOLDING CAPACITY OF SNOWPACK
+=   1.4    SNOWPACK SETTLEMENT TIME CONSTANT 
+=   1.5    PRECIP ALL SNOW IF MAX TEMPERATURE BELOW THIS VALUE [F]
+=========================================================================
+0.6  0.1  0.05  0.1  32.0
+========================================================================
+=     ALBEDO ADJUSTMENTS
+=
+= REC.NUM   DESCRIPTION
+= --------  -----------
+=   1.1    ALBEDO RESET - RAIN, MELT STAGE
+=   1.2    ALBEDO RESET - RAIN, ACCUMULATION STAGE
+=   1.3    ALBEDO RESET - SNOW, MELT STAGE
+=   1.4    ALBEDO RESET - SNOW, ACCUMULATION STAGE
+========================================================================
+0.6  0.8  0.2  0.05
+========================================================================
+=     SURFACE COVER ADJUSTMENTS
+=
+= REC.NUM   DESCRIPTION
+= --------  -----------
+=   1.1    COVER TYPE DESIGNATION FOR HRU
+=   1.2    SUMMER VEGETATION COVER DENSITY FOR MAJOR VEGETATION TYPE
+=   1.3    WINTER VEGETATION COVER DENSITY FOR MAJOR VEGETATION TYPE
+========================================================================
+1  0.5  0.5
+========================================================================
+=     GENERAL ATMOSPHERIC PARAMETERS
+=
+= REC.NUM   DESCRIPTION
+= --------  -----------
+=   1.1    SOLAR RADIATION TRANSMISSION COEFFICIENT
+=   1.2    EMISSIVITY OF AIR ON DAYS WITHOUT PRECIPITATION
+=   1.3    PROPORTION OF POTENTIAL ET THAT IS SUBLIMATED FROM SNOW
+=   2      CONVECTION CONDENSATION ENERGY COEFFICIENT
+=   3      SET TO 1 IF THUNDERSTORMS PREVALENT DURING MONTH
+========================================================================
+0.5  0.757  0.5
+5.0  5.0  5.0  5.0  5.0  5.0  5.0  5.0  5.0  5.0  5.0  5.0  
+0  0  0  0  0  0  0  0  0  0  0  0
+========================================================================
+=     SNOWMELT PARAMETERS
+=
+= REC.NUM   DESCRIPTION
+= --------  -----------
+=   1.1    FRACTION OF SNOWMELT THAT WILL INFILTRATED, THE REMAINDER 
+=          WILL BE RUNOFF.                                          [0..1]
+=   1.2    JULIAN DATE TO START LOOKING FOR SPRING SNOWMELT       [1..365]
+=   1.3    JULIAN DATE TO FORCE SNOWPACK TO SPRING SNOWMELT STAGE [1..365]
+=   1.4    MAXIMUM THRESHHOLD WATER EQUIVALENT FOR SNOW DEPLETION
+=   1.5    INDEX NUMBER SPECIFING WHICH SNOWPACK AREAL DEPLETION 
+=          CURVE TO USE FOR SNOWMELT                                [1..5]
+=   1.6    NUMBER OF SNOWPACK DEPLETION CURVES INPUT                [1..5]
+=   2...   SNOWPACK AREAL DEPLETION CURVE VALUES (11 VALUES/CURVE)  [0..1]
+========================================================================
+0.8  90  90  50.0  1  1
+0.05  0.24  0.40  0.53  0.65  0.75  0.82  0.88  0.93  0.99  1.0

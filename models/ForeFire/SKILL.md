@@ -67,7 +67,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Package**: `wildfire-forefire` v1.0.0
 **Model**: ForeFire (C++ wildfire propagation engine)
 **Developed by**: CNRS / Universite de Corse Pascal Paoli
-**Stats**: 6 tools | 5 stage documents | 24 diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 

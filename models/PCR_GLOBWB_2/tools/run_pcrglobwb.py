@@ -31,10 +31,106 @@ import argparse
 import subprocess
 import logging
 import time
+import shutil
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Engine python: PCRaster + PCR-GLOBWB live in the conda env pcrglobwb_python3, not in the
+# HydroCraft python_env that SKILL.md uses to start the KI tools. Lookup (same as
+# preflight_check.py): --pcrglobwb-python -> $PCRGLOBWB_PYTHON -> server default -> this
+# python (only if it imports pcraster). An explicit value is used as given (no fallback).
+# If the chosen python is not the one running this tool, the tool re-launches itself with
+# it (os.execv, same arguments).
+# ---------------------------------------------------------------------------
+PCRGLOBWB_PYTHON_DEFAULT = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+                            "PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin/python")
+_REEXEC_GUARD = "KI_PCRGLOBWB_REEXEC"
+
+
+def resolve_engine_python(cli_value=None):
+    """Return (python, source) for the PCR-GLOBWB interpreter, or (None, reason)."""
+    if cli_value is not None:
+        return cli_value, "--pcrglobwb-python"
+    env_value = os.environ.get("PCRGLOBWB_PYTHON")
+    if env_value is not None:
+        return env_value, "$PCRGLOBWB_PYTHON"
+    if os.path.isfile(PCRGLOBWB_PYTHON_DEFAULT):
+        return PCRGLOBWB_PYTHON_DEFAULT, "server default"
+    try:
+        import pcraster  # noqa: F401
+        return sys.executable, "running python (imports pcraster)"
+    except ImportError:
+        return None, ("no python with pcraster: --pcrglobwb-python and $PCRGLOBWB_PYTHON not "
+                      f"set, server default {PCRGLOBWB_PYTHON_DEFAULT} not found, and "
+                      f"{sys.executable} cannot import pcraster")
+
+
+def ensure_engine_python(cli_value=None):
+    """Re-launch this tool with the PCR-GLOBWB python when another python is running it."""
+    python, source = resolve_engine_python(cli_value)
+    if python is None:
+        logger.error(source)
+        sys.exit(1)
+    if os.path.abspath(python) == os.path.abspath(sys.executable):
+        return
+    if os.environ.get(_REEXEC_GUARD):
+        logger.error(f"re-launch loop: running {sys.executable}, expected {python} ({source})")
+        sys.exit(1)
+    if not (python and os.path.isfile(python) and os.access(python, os.X_OK)):
+        logger.error(f"PCR-GLOBWB python not found or not executable: {python!r} ({source})")
+        sys.exit(1)
+    python = os.path.abspath(python)  # not realpath: keep the env's own path
+    logger.info(f"re-launching with {python} ({source})")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    env = dict(os.environ, **{_REEXEC_GUARD: "1"})
+    try:
+        os.execve(python, [python, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as e:
+        logger.error(f"could not start {python} ({source}): {e}")
+        sys.exit(1)
+
+
+# PCR-GLOBWB model code (folder with deterministic_runner.py); models/PCR_GLOBWB_2/source/repo on
+# this server is an empty repo, the code is in the dissection work tree (same as preflight_check.py).
+PCRGLOBWB_MODEL_DIR_DEFAULT = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+                               "PCR_GLOBWB_2/source/repo/model")
+
+
+def resolve_model_dir(cli_value, ini_file):
+    """--model-dir -> $PCRGLOBWB_MODEL_DIR -> server default -> folders near the ini / cwd."""
+    if cli_value is not None:
+        model_dir, source = cli_value, "--model-dir"
+    elif os.environ.get("PCRGLOBWB_MODEL_DIR") is not None:
+        model_dir, source = os.environ["PCRGLOBWB_MODEL_DIR"], "$PCRGLOBWB_MODEL_DIR"
+    elif os.path.isfile(os.path.join(PCRGLOBWB_MODEL_DIR_DEFAULT, "deterministic_runner.py")):
+        model_dir, source = PCRGLOBWB_MODEL_DIR_DEFAULT, "server default"
+    else:
+        model_dir, source = None, "auto-detect"
+        # Look for deterministic_runner.py relative to ini file or cwd
+        candidates = [
+            os.path.join(os.path.dirname(ini_file), "..", "model"),
+            os.path.join(os.path.dirname(ini_file), "model"),
+            "model",
+            ".",
+        ]
+        for c in candidates:
+            if os.path.exists(os.path.join(c, "deterministic_runner.py")):
+                model_dir = c
+                break
+        if model_dir is None:
+            logger.error("Could not find model/ directory. Use --model-dir "
+                         "(or set PCRGLOBWB_MODEL_DIR).")
+            sys.exit(1)
+    if not model_dir or not os.path.isfile(os.path.join(model_dir, "deterministic_runner.py")):
+        logger.error(f"deterministic_runner.py not found in model dir {model_dir!r} ({source})")
+        sys.exit(1)
+    model_dir = os.path.abspath(model_dir)
+    logger.info(f"PCR-GLOBWB model dir: {model_dir} ({source})")
+    return model_dir
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +331,32 @@ def process(ini_file, model_dir, debug=False, output_dir_override=None,
     """
     runner_script = os.path.join(model_dir, "deterministic_runner.py")
 
-    # Build command
+    # Build command. deterministic_runner.py reads argv[2] == "debug" and argv[3:5] ==
+    # ["--output_dir", <dir>], so --output_dir needs a non-debug placeholder in argv[2].
     cmd = [sys.executable, runner_script, os.path.abspath(ini_file)]
     if debug:
         cmd.append("debug")
+    elif output_dir_override:
+        cmd.append("no_debug")
     if output_dir_override:
-        cmd.extend(["--output_dir", output_dir_override])
+        cmd.extend(["--output_dir", os.path.abspath(output_dir_override)])
+
+    # dt_021: the model shells out to `mapattr`, which sits next to the engine python
+    # (conda env bin/) and is not on the default PATH.
+    env = dict(os.environ)
+    env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
+    mapattr = shutil.which("mapattr", path=env["PATH"])
+    if not mapattr:
+        logger.error("`mapattr` (PCRaster) not found next to %s or on PATH; without it the model "
+                     "fails with a misleading KeyError 'time' (dt_021)", sys.executable)
+        return {
+            "returncode": -1,
+            "elapsed_seconds": 0.0,
+            "stdout": "",
+            "stderr": "mapattr not found",
+            "command": " ".join(cmd),
+            "success": False,
+        }
 
     logger.info(f"Executing: {' '.join(cmd)}")
     logger.info(f"Working directory: {model_dir}")
@@ -253,7 +369,8 @@ def process(ini_file, model_dir, debug=False, output_dir_override=None,
             cwd=model_dir,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            env=env,
         )
 
         elapsed = time.time() - start_time
@@ -320,7 +437,8 @@ def main():
     parser.add_argument("ini_file", help="Path to .ini configuration file")
     parser.add_argument(
         "--model-dir", default=None,
-        help="Path to model/ directory (default: auto-detect)"
+        help="Path to model/ directory (default: $PCRGLOBWB_MODEL_DIR, else the server "
+             "default, else auto-detect near the ini file / cwd)"
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--output-dir", default=None, help="Override output directory")
@@ -332,30 +450,26 @@ def main():
         "--skip-preflight", action="store_true",
         help="Skip preflight checks"
     )
+    parser.add_argument(
+        "--pcrglobwb-python", default=None,
+        help="Python of the PCR-GLOBWB conda env (default: $PCRGLOBWB_PYTHON, else the server "
+             "env pcrglobwb_python3, else this python if it imports pcraster). The tool "
+             "re-launches itself with it; the model runs with it too."
+    )
 
     args = parser.parse_args()
+    ensure_engine_python(args.pcrglobwb_python)
 
-    # Auto-detect model directory
-    model_dir = args.model_dir
-    if model_dir is None:
-        # Look for deterministic_runner.py relative to ini file or cwd
-        candidates = [
-            os.path.join(os.path.dirname(args.ini_file), "..", "model"),
-            os.path.join(os.path.dirname(args.ini_file), "model"),
-            "model",
-            ".",
-        ]
-        for c in candidates:
-            if os.path.exists(os.path.join(c, "deterministic_runner.py")):
-                model_dir = c
-                break
-        if model_dir is None:
-            logger.error("Could not find model/ directory. Use --model-dir.")
-            sys.exit(1)
+    # Model directory: --model-dir -> $PCRGLOBWB_MODEL_DIR -> server default -> auto-detect
+    model_dir = resolve_model_dir(args.model_dir, args.ini_file)
 
     # Validate → Process → Validate
     if not args.skip_preflight:
-        validate_inputs(args.ini_file, model_dir)
+        try:
+            validate_inputs(args.ini_file, model_dir)
+        except ValueError as e:
+            logger.error(f"{e}")
+            sys.exit(1)
 
     result = process(
         args.ini_file, model_dir,
@@ -371,7 +485,8 @@ def main():
             try:
                 validate_outputs(output_dir)
             except Exception as e:
-                logger.warning(f"Output validation issue: {e}")
+                logger.error(f"Output validation failed: {e}")
+                sys.exit(1)
     else:
         logger.error(f"PCR-GLOBWB failed (return code {result['returncode']})")
         sys.exit(1)

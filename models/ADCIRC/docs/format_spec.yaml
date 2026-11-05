@@ -288,7 +288,8 @@ known_issues:
     gradient '
   remedy: 'Divide Pa values by 100 to get mb: pressure_mb = pressure_Pa / 100; convert_forcing_to_adcirc;
     [''Check max value in fort.221 — should be 950-1050 for mb'', ''If values are ~95000-105000, data
-    is in Pa — divide by 100'', ''If values are ~0.95-1.05, data is in atm — multiply by 1013.25'']; convert_forcing_'
+    is in Pa — divide by 100'', ''If values are ~0.95-1.05, data is in atm — multiply by 1013.25'']; convert_forcing_to_adcirc
+    validates pressure range in output'
   severity: silent
 - id: dt_004
   symptom: Peak storm surge is 30-50% lower than expected for a major hurricane. Wind stress appears capped.
@@ -309,8 +310,8 @@ known_issues:
     over- estima
   remedy: Multiply knots by 0.5144 to get m/s; convert_forcing_to_adcirc; ['Check max wind in fort.222
     — Category 5 hurricane should show ~70-80 m/s', 'If max shows ~140-160, data is likely in knots',
-    'If max shows ~250-290, data is likely in km/h']; convert_forcing_to_adcirc auto-detects and converts
-    knots
+    'If max shows ~250-290, data is likely in km/h']; convert_forcing_to_adcirc requires declared CSV
+    units or ERA5 variable metadata; never infer units from magnitudes
   severity: silent
 - id: dt_011
   symptom: Mesh appears point-like or covers wrong area. Domain is tiny or in wrong location.
@@ -376,10 +377,10 @@ known_issues:
     header specifies grid dimensions (iLat, iLong), spacing (DX, DY), and SW corner (SWLat, SWLon). If
     iLat or iLong is off by one, subsequent data rows are read with wrong spatial mapping. This shifts
     the entire
-  remedy: Verify iLat × iLong matches the number of data values per snapshot; convert_forcing_to_adcirc;
-    ['Count data values between consecutive iLat headers', 'Should equal iLat × iLong', 'Verify SWLat/SWLon
-    matches the SW corner of your data grid']; convert_forcing_to_adcirc auto-computes grid dimensions
-    fr
+  remedy: 'Verify iLat × iLong matches the number of data values per snapshot; convert_forcing_to_adcirc;
+    [''Count data values between consecutive iLat headers'', ''Pressure: iLat × iLong; wind: two blocks
+    of iLat × iLong under one header'', ''Verify SWLat/SWLon matches the SW corner of your data grid''];
+    convert_forcing_to_adcirc auto-computes grid dimensions from data'
   severity: silent
 - id: dt_008
   symptom: Inundation extent is smaller than expected. Flooding does not reach areas known to have flooded

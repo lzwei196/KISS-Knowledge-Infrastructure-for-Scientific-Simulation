@@ -1,0 +1,1002 @@
+========================================================================
+======================= R Z W Q M 2   V E R  4.20 ===================
+========================================================================
+==              Text Headers Last Modified:  5.29.2019 (V4.20)
+========================================================================
+==                                                                    ==
+==            P H Y S I O G R A P H I C    P A R A M E T E R S        ==
+==                                                                    ==
+========================================================================
+=     Environmental parameters
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      area of the field                                      [ha]
+=     2      elevation for the field                                 [m]
+=     3      aspect measured clockwise from true north         [radians]
+=     4      latitude of field                                 [radians]
+=     5      slope of field                                    [radians]
+=     6      longitude of field                                [radians]
+=     7      rainfall zones 1-3  [default=2 {10-20Inch annual rainfall}]
+=     8      ambient co2 [ppm]
+========================================================================
+2.0  1384.0  0.0  0.70075  0.0  -1.80013  2  330  
+========================================================================
+==                                                                    ==
+==         SOIL PROPERTIES AND PARAMETERS                             ==
+==                                                                    ==
+========================================================================
+=         SOIL SYSTEM PHYSICAL CONFIGURATION
+=
+= Rec 1: number of soil horizons, profile depth                     [cm]
+= Rec 2: soil horizon lower depths                                  [cm]
+=      ...repeated for each horizon
+========================================================================
+7  178.000000
+15.0  
+30.0  
+60.0  
+90.0  
+120.0  
+150.0  
+178.0  
+========================================================================
+==                                                                    ==
+==        NUMERICAL SYSTEM CONFIGURATION                              ==
+==                                                                    ==
+========================================================================
+=        DEPTH DISCRETIZATION FOR MOISTURE & HEAT MODELS
+=
+= Rec 1: number of numerical nodes.
+= Rec 2: node # , depth of numerical layer [cm], distance from this
+=        node to the next node [cm]
+=
+= . . . Repeat Rec 2 for all remaining node/layer pairs, 1 pair per
+=       record (depth increasing with node no.)
+========================================================================
+44
+1  1.0  1.0  
+2  2.0  1.0  
+3  4.0  3.0  
+4  7.0  3.0  
+5  11.0  5.0  
+6  15.0  3.0  
+7  19.0  5.0  
+8  23.0  3.0  
+9  26.0  3.0  
+10  30.0  5.0  
+11  34.0  3.0  
+12  38.0  5.0  
+13  43.0  5.0  
+14  48.0  5.0  
+15  53.0  5.0  
+16  57.0  3.0  
+17  60.0  3.0  
+18  63.0  3.0  
+19  67.0  5.0  
+20  72.0  5.0  
+21  77.0  5.0  
+22  82.0  5.0  
+23  86.0  3.0  
+24  90.0  5.0  
+25  94.0  3.0  
+26  98.0  5.0  
+27  103.0  5.0  
+28  108.0  5.0  
+29  113.0  5.0  
+30  117.0  3.0  
+31  120.0  3.0  
+32  123.0  3.0  
+33  127.0  5.0  
+34  132.0  5.0  
+35  137.0  5.0  
+36  142.0  5.0  
+37  146.0  3.0  
+38  150.0  5.0  
+39  154.0  3.0  
+40  158.0  5.0  
+41  163.0  5.0  
+42  168.0  5.0  
+43  173.0  5.0  
+44  178.0  0.0  
+========================================================================
+=         SOIL HORIZON PHYSICAL PROPERTIES
+=
+= Rec 1: texture class (soil type) name (<= 32 char)
+= Rec 2: texture code (=1, default hydraulic properties; =0, user specified hydraulic properties required), 
+=        particle dens [g/cm^3], bulk dens [g/cm^3]
+=        porosity [0..1], Fsand [0..1], Fsilt [0..1], Fclay [0..1]
+=
+= . . . Repeat for each horizon, soil surface to profile bottom
+========================================================================
+Rago loam
+0  2.65  1.33  0.498113  0.39  0.417  0.193  
+Rago loam
+0  2.65  1.33  0.498113  0.323  0.443  0.234  
+Rago loam
+0  2.65  1.32  0.501887  0.37  0.407  0.223  
+Rago loam
+0  2.65  1.36  0.486792  0.457  0.367  0.176  
+Rago loam
+0  2.65  1.4  0.471698  0.457  0.423  0.12  
+Rago loam
+0  2.65  1.42  0.464151  0.483  0.417  0.1  
+Rago loam
+0  2.65  1.42  0.464151  0.483  0.417  0.1  
+========================================================================
+=        SOIL HORIZON HYDRAULIC PROPERTIES
+=
+= soil horizon 1:  modified Brooks-Corey parameters
+=               /-- horizon sequence number (ie.1,2,3,...)
+=               |   (1;):   hb    - bubbling pressure O(h) [cm]
+=               |   (2;):   lamda - pore size distribution index
+=       rec #1 <    (3;):   eps   - exponent for K(h) curve
+=               |   (4;):   Ksat  - sat hydraulic conductivity [cm/hr]
+=               |   (5;):   wr    - residual water content
+=               \-- (6;):   ws    - saturation water content
+=               /-- (7;):   wfc   - field capacity (1/3 bar) wc
+=               |   (8;):   wfc   - field capacity (1/10 bar) wc
+=               |   (9;):   wwp   - wilting point (15 bar) wc
+=       rec #2 <    (10;):  hb    - bubbling pressure K(h) curve
+=               |   (11;):  C2    - second intercept on K(h) curve
+=               |   (12;):  N1    - first exponent for K(h) curve
+=               \-- (13;):  A1    - constant for O(h) curve
+=       rec #3  lateral saturated conductivity to the drain [cm/hr]
+=
+= . . . Repeat for each horizon
+========================================================================
+1  5.5285  0.1843  2.5529  14.6  0.0  0.498  
+0.233994  0.292073  0.115995  5.5285  1148.55  0.0  0.0  
+14.6  
+2  6.078  0.187  2.56  14.0  0.0  0.498  
+0.235557  0.29498  0.115575  6.078  1419.75  0.0  0.0  
+14.0  
+3  4.53  0.18  2.539  14.0  0.0  0.498  
+0.229767  0.285317  0.115779  4.53  648.96  0.0  0.0  
+14.0  
+4  1.713  0.177  2.53  14.0  0.0  0.487  
+0.191616  0.237085  0.097664  1.713  54.66  0.0  0.0  
+14.0  
+5  2.045  0.177  2.53  14.0  0.0  0.472  
+0.191629  0.237102  0.097671  2.045  85.56  0.0  0.0  
+14.0  
+6  2.253  0.177  2.53  14.0  0.0  0.464  
+0.191639  0.237114  0.097676  2.253  109.3  0.0  0.0  
+14.0  
+7  2.253  0.177  2.53  14.0  0.0  0.464  
+0.191639  0.237114  0.097676  2.253  109.3  0.0  0.0  
+14.0  
+========================================================================
+=        SOIL HORIZON HEAT MODEL PARAMETERS
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=    1       texture class index (1-coarse,2-med,3-fine)
+=    2       dry vol heat capacity (<=1.0)                    [J/mm^3/C]
+=
+=            . . . Repeat for each horizon
+========================================================================
+2  0.00111  
+2  0.00111  
+2  0.00111  
+2  0.00111  
+2  0.00111  
+2  0.00111  
+2  0.00111  
+========================================================================
+==                                                                    ==
+==            M A C R O P O R E  and  I N F I L T R A T I O N         ==
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=
+=     control information
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      a surface crust is present                     [0=no, 1=yes]
+=     2      crust hydraulic conductivity                         [cm/hr]
+=     3      bottom boundry condition for soil water redistribution:
+=              1: CONSTANT HEAD BOUNDRY, uses initial value and
+=                    maintains this head throughout simulation.
+=              2: UNIT GRADIENT BOUNDRY, assumes the same conductivity
+=                    for last node and bottom psuedo-node (as function
+=                    of water content).
+=              3: CONSTANT FLUX BOUNDRY, uses user specified value of
+=                    leakage rate as long as a water table is maintained
+=                    in the root zone.
+=     4      Field saturation fraction for (THETA-S)
+=     5      Convergence Criteria threshold for Richards equation
+=     6      Maximum number of iterations steps for Richards equation
+=     7      Maximum number of cycles of iterations for Richards equ.
+=     8      Management cutoff threshold for soil moisture content.[0..1]
+=               1st horizon moisture content exceeded, mangt is postponed
+=     9      Perched water table is present in profile      [0=no, 1=yes]
+=    10         value of water table leakage rate                 [cm/hr]
+=    11      Drains are present in the soil profile         [0=no, 1=yes]
+=    12         depth from surface to drains                         [cm]
+=    13         drain spacing                                        [cm]
+=    14         radius of drain                                      [cm]
+=    15      Init gradient flow during infiltration events. [0=no, 1=yes]
+=    16      Lateral hydraulic gradient
+=    17      Minimum water suction head                 [0 to -200000 cm]
+=    18      Field Capacity water suction head          [0 to -1000 cm]
+=    19      Wilting Point water suction head           [ < -10000 cm] 
+========================================================================
+0  0.4285  2  0.9  1.000E-05  1000  2  0.99  0  1.000E-09  0  10.0  1000.0  20.0  0  1.0000E-04  -15000  -333.0  -15000  
+========================================================================
+=
+=     micropore information
+= RECORD # 1
+= item no.   description
+= --------   -----------
+=     1      use horizon microporosity data as given by user  [0=no (default), 1=yes]
+=     2      const A of nonuniform mixing equation: mixing = Ae^(-Bx) [=1.0]
+=     3      const B of nonuniform mixing equation: mixing = Ae^(-Bx)
+= RECORD # 2
+= item no.   description
+= --------   -----------
+=     1      microporosity of each horizon                      [.01..1]
+=
+=     ...  repeat record number 2 for each horizon
+========================================================================
+0  1.0  4.4  
+0.259  
+0.258  
+0.258  
+0.223  
+0.23  
+0.234  
+0.234  
+========================================================================
+=
+=     macropore information
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=    1.1     macropores are present in soil                [0=no, 1=yes]
+=    1.2     Sorptivity factor control for lateral G-A infil      [0..1]
+=    1.3     macropore / tile drain Express Fraction              [0..1]
+=    2       Effective lateral infiltration wetting thickness
+=    2.1       for radial holes                                     [CM]
+=    2.2       for cracks/columns                                   [CM]
+=    3.1     total macroporosity                               [cm3/cm3]
+=    3.2     avg. radius of cylindrical pores                       [cm]
+=    3.3     width of rectangular cracks in lower horizons,
+=            this is zero in the top horizon                        [cm]
+=    3.4     length of cracks in lower horizons,
+=            this is zero in top horizon                            [cm]
+=    3.5     average length of aggregate in lower horizons          [cm]
+=    3.6     fraction of dead end pores                           [0..1]
+=
+=     ...  repeat this record for each horizon
+========================================================================
+0  1.0  0.0  
+0.5  0.5  
+0.0005  0.1  0.0  0.0  0.0  0.001  
+0.01  0.0  0.05  10.0  10.0  0.5  
+0.01  0.0  0.05  10.0  10.0  0.5  
+0.01  0.0  0.05  10.0  10.0  0.5  
+0.01  0.0  0.05  10.0  10.0  0.5  
+0.01  0.0  0.05  10.0  10.0  0.5  
+0.01  0.0  0.05  10.0  10.0  0.5  
+========================================================================
+==                                                                    ==
+==            P O T E N T I A L   E V A P O R A T I O N               ==
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=     Environmental parameters
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      albedo of the dry soil                               [0..1]
+=     2      albedo of the wet soil                               [0..1]
+=     3      albedo of the crop at maturity                       [0..1]
+=     4      albedo of fresh residue                              [0..1]
+=     5      height at which wind measurements are taken             [m]
+=     6      average sunshine fraction for a day                  [0..1]
+=     7      PAN COEFFICIENT                                      [0..1]
+=     8      Using Hourly weather                          [0=no, 1=yes]
+=     9      Using SHAW module                             [0=no, 1=yes]
+=    10      Using Penflux module                          [0=no, 1=yes]
+=    11      surface soil resistance                   [-1 or 0-500 s/m]
+=    12      plant water stress method           [0-4,aet/pet=0 default]
+=    13      plastic mulch cover fraction                          [0-1]
+=    14      emissivity of canopy (emitc)                          [0-1]
+=    15      emissivity of residue (emitr)                         [0-1]
+=    16      emissivity of snow (emitsp)                           [0-1]
+=    17      emissivity of soil (emits)                            [0-1]
+=    18      emissivity of plastic (emitf)                         [0-1]
+=    19      PET calculation method[0=S-W default,1=FAO Ref Tall,2=FAO Ref Short]
+=    20      Initial Crop Coefficient                          [0.0-1.3]
+=    21      Maxiumum Crop Coefficient                         [0.0-1.3]
+=    22      Albedo of plastic                                 [0.0-1.0]
+=    23      Transmissivity of plastic                         [0.0-1.0]
+========================================================================
+0.35  0.2  0.3  0.28  2.0  0.8  1.0  0  0  0  37  0  0.0  1.0  1.0  1.0  1.0  1.0  0  0.4  1.0  0.0  1.0  
+========================================================================
+==                                                                    ==
+==                 S U R F A C E   R E S I D U E                      ==
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=     Current Residue Conditions
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      dry mass of the flat residue on the surface[Metric tons/ha]
+=     2      age of residue at start of simulation                [days]
+=     3      residue cover factor     [corn=2.0, soybean=2.5, wheat=4.0]
+=     4      average height of flat residue layer                   [cm]
+=     5      C:N ratio of dominate residue material            [10..500]
+=     6      residue stem area index       [m2 standing stems/m2 ground]
+=     7      height of standing residue                             [cm]
+=     8      dry mass of the standing residue           [Metric tons/ha]
+=     9      C:P ratio of dominate residue material            [10..500]
+========================================================================
+2.0  50.0  2.0  0.5  80.0  0.0  0.0  0.0  500.0  
+========================================================================
+=     Anhydrous Ammonia Fate
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      delay time for nitrification to restart after a plain
+=            anhydrous application                                [days]
+=     2      delay time attributed to "N-SERV" application, in
+=            addition to item #1                                  [days]
+=     3      length of time from start to full recovery after a
+=            plain anhydrous application                          [days]
+=     4      length of time from start to full recovery after a
+=            "N-SERV" anhydrous application                       [days]
+=     5      The Douglas-Rickman Surface Residue Decomposition Constant [.0004] 
+=            (no longer yearly fraction of surface residue incorporated[.05])
+========================================================================
+14  18  14  14 0.0004  
+========================================================================
+==                                                                    ==
+==                   S O I L   C H E M I S T R Y                      ==
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=     FULL PROFILE CHEMICAL INFORMATION
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      % base saturation                                       [%]
+=     2      salinity of soil expressed as EC of soil water  [mMOLES/cm]
+========================================================================
+0.000000  0.000000 
+========================================================================
+==                                                                    ==
+==                   RAIN WATER CHEMISTRY                             ==
+==                                                                    ==
+==                                                                    ==
+========================================================================
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      ph                                                  [2..14]
+=     2      chem concentrations of (Ca, Na, Mg, Cl, HCO3)        [mg/L]
+=     3      chem concentrations of (SO4, AL, CO3, NH4, NO3)      [mg/L]
+=
+========================================================================
+6.4  
+0.0  0.0  0.0  0.0  0.0  
+0.0  0.0  0.0  0.0  0.0  
+========================================================================
+==                                                                    ==
+==                   IRRIGATION WATER CHEMISTRY                       ==
+==                                                                    ==
+==                                                                    ==
+========================================================================
+=
+= REC  NO.   DESCRIPTION
+= --------   -----------
+=     1      ph                                                  [2..14]
+=     2      chem concentrations of (Ca, Na, Mg, Cl, HCO3)        [mg/L]
+=     3      chem concentrations of (SO4, AL, CO3, NH4, NO3)      [mg/L]
+=
+========================================================================
+6.8  
+0.0  0.0  0.0  0.0  0.0  
+0.0  0.0  0.0  0.0  0.0  
+========================================================================
+==                                                                    ==
+==                      P E S T I C I D E S                           ==
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=     GENERAL PESTICIDE INFORMATION
+=
+= REC.NUM.   DESCRIPTION
+= --------   -----------
+=     1      Number of pesticides                                 [1..3]
+=     2      Name of this pesticide
+=     3      Physiochemical properties:
+=     3.1       Molecular weight                                [g/mole]
+=     3.2       Henry's Law constant                        [real small]
+=     3.3       Daughter product ancestry code [0=parent/none,1=daughter,2=granddaughter]
+=     3.4       Daughter product formation process code (foliage)    [1-3]
+=     3.5       Daughter product formation percentage                [%]
+=     3.6       Daughter product formation process code (residue)    [4-6]
+=     3.7       Daughter product formation percentage                [%]
+=     3.8       Daughter product formation process code (surface)    [7-10]
+=     3.9       Daughter product formation percentage                [%]
+=     3.10       Daughter product formation process code (sub-surface)[11-13]
+=     3.11       Daughter product formation percentage                [%]
+=     3.12       Octanol-water partitioning coefficient (Kow)
+=     3.13      irreversible bound pool formation fraction (not used)
+=     4      Degradation adjustment factors:
+=     4.1       Reference soil volumetric water content          [cc/cc]
+=     4.2       Reference soil temperature                           [C]
+=     4.3       Aerobic arrhenius equation activation energy    [Kj/mol]
+=     4.4       Anerobic arrhenius equation activation energy   [Kj/mol]
+=     4.5       Walker soil moisture adjustment constant
+=     4.6       Flag for depth adjustment, on if = 1.              [0/1]
+=     4.7       Maximum relative adjustment due to depth
+=     5      Plant canopy wash-off parameters: coeff(a),power(b)
+=            Residue wash-off parameters: coeff(a),power(b)
+=     6      Sorption/desorption and kinetic parameters
+=     6.1       pKa:  acid dissociation = 10^(-pKa)
+=     6.2       pKb:  base protonation  = 10^(-pKb)
+=     6.3       Freundlich isotherm (not used)
+=     6.4       Neutral sorption constant for soil OM (Koc)       [cc/g]
+=     6.5       Cationic (+) sorption constant for soil OM (Koc)  [cc/g]
+=     6.6       Anionic (-) sorption constant for soil OM (Koc)   [cc/g]
+=     6.7       Reference soil pH
+=     6.8       Kinetic fraction for adsorption to calcualte EK2 (0-1)
+=     6.9       Kinetic desorption halflife to calculate RK2 (days)
+=     6.10      Diffusion rate for micro<==>meso movement      [cm^2/hr]
+=
+=		...repeat records 2-6 for each pesticide
+========================================================================
+0
+========================================================================
+=
+=     Degradation Halflives (SET EQUAL TO -1 IF NOT USED)
+=
+= ITEM NUM.  DESCRIPTION
+= --------   -----------
+=     1      Foliar biotic halflife (days)
+=     2      Foliar photodegradation halflife (days)
+=     3      Foliar abiotic halflife (days)
+=     4      Residue layer biotic halflife (days)
+=     5      Residue layer photodegradation halflife (days)
+=     6      Residue layer abiotic halflife (days)
+=     7      Soil Surface biotic halflife (days)
+=     8      Soil Surface volatilization halflife (days)
+=     9      Soil Surface photodegradation halflife (days)
+=     10     Soil Profile Lumped halflife (days) * 
+=     11     Soil Subsurface aerobic biodegradation halflife (days)
+=     12     Soil Subsurface anerobic biodegradation halflife (days)
+=     13     Soil Subsurface abiotic halflife (days)
+=     14     Absorbed Pesticide Halflife in the Soil Profile (days)
+=
+=           ... REPEAT FOR EACH PESTICIDE
+========================================================================
+========================================================================
+==                      P L A N T   G R O W T H                       ==  
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=     PLANT MODEL CONTROL
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      number of plants parameterized                       [1..5]
+=     2...   name of plant                                     [30 char]
+=
+=        The order given is used in the plant management section
+=        below as the reference number.
+=
+========================================================================
+1
+7000  maize IB0033 PIO 3780
+========================================================================
+=     SITE SPECIFIC PARAMETERS
+=
+=     THE FOLLOWING PARAMETERS CAN BE USED TO CALIBRATE THE ROOT ZONE
+=     WATER QUALITY MODEL.
+=
+=     NOTES FOR ADJUSTING THE SIX PRIMARY PARAMETERS OF THE GENERIC PLANT
+=     GROWTH MODEL (DESCRIPTIONS OF THE VARIABLES ARE GIVEN BELOW)
+=
+=               ITEM NO.    EXPLANATION OF RESULTS
+=               --------    ----------------------------------------
+=                  1        INCREASE ACTIVE N UPTAKE BY THE ROOTS;
+=                           INCREASING THIS PARAMETER CAUSES AN
+=                           INCREASE IN ACTIVE UPTAKE WHICH, IN MOST
+=                           WILL RESULT IN AN INCREASED YIELD
+=                  2        MAINTAINS N UPTAKE WHILE DECREASING
+=                           BIOMASS ACCUMULATION; INCREASING THIS
+=                           PARAMETER RESULTS IN A DECREASE IN BIOMASS
+=                  3        AFFECTS THE CONVERSION BETWEEN LEAF AREA
+=                           AND BIOMASS.  INCREASING THIS PARAMETER
+=                           CAUSES A DECREASE IN TOTAL PLANT PRODUCTION
+=                  4        THIS IS THE END OF SEASON PLANT DENSITY
+=                           UPON WHICH PARAMETER #3 IS BASED.  NOTE
+=                           THAT PARAMETERS #3 AND #4 ARE TOTALLY
+=                           DEPENDENT ON EACH OTHER.
+=                  5        THIS PARAMETER KEEPS THE TOTAL PRODUCTION
+=                           CONSTANT WHILE DECREASING THE YIELD BY
+=                           DECREASING PHOTOSYNTHESIS EFFICIENCY DURING
+=                           PROPAGULE DEVELOPMENT.  USE THIS AND #6 TO
+=                           ADJUST THE HARVEST INDEX.  DECREASES IN
+=                           #5 RESULT IN A DECREASE IN HARVEST INDEX
+=                  6        SAME AS #5 ABOVE, BUT EFFECT PHOTOSYNTHESIS
+=                           DURING YIELD DEVELOPMENT PERIOD (LATER IN
+=                           GROWING SEASON)
+=                  7        ALLOWS MORE ROOT DEVELOPMENT AND THEREFORE
+=                           INCREASES IN ROOT DEPTH GENERALLY INCREASE
+=                           TOTAL PLANT PRODUCTION
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      MAXIMUM NITROGEN UPTAKE RATE  (CNUP1)         [G/PLANT/DAY]
+=     2      PROPORTION OF PHOTOSYNTHATE TO RESPIRE              [0...1]
+=     3      AMOUNT OF BIOMASS NEEDED TO OBTAIN LEAF AREA
+=                       INDEX OF 1.0                                 [G]
+=     4      PLANT DENSITY UPON WHICH #3 IS BASED
+=     5      AGE EFFECT FOR PROPAGULES AS PROP. OF PHOTO.        [0...1]
+=     6      AGE EFFECT FOR SEEDS AS PROPORTION OF PHOTO.        [0...1]
+=     7      NORMAL MAXIMUM ROOT SYSTEM DEPTH                        [M]
+=     8      POTENTIAL MIN LEAF STOMATAL RESISTANCE (S/M)     [100...400]
+=     9      NITROGEN SUFFICIENCY INDEX THRESHOLD BELOW WHICH FERTILIZER
+=            APPLICATIONS ARE TRIGGERED (aka: CHLOROPHYLL METER)  [0...1]
+=    10      PLANT LUXURIOUS NITROGEN UPTAKE EFFICIENCY FACTOR    [0...1]
+=    11      SENSITIVITY INDEX TO WATER STRESS, WSI, USED AS (AT/PT)^WSI [0...1]
+=    12      PARAMETER SPECIFYING "X" FOR LEAF ANGLE ORIENTATION OF PLANT 
+=            [0 = VERTICAL; 1 = RANDOM; VALUES APPROACHING 5 SIMULATE HORIZONTAL]
+=    13      TEMPERATURE ABOVE WHICH PLANT WILL TRANSPIRE(oC)      [7 oC]
+=    14      CRITICAL LEAF WATER POTENTIAL FOR PLANT AT WHICH STOMATAL 
+=            RESISTANCE IS TWICE ITS MINIMUM VALUE (M)  [-100 M...-300 M]
+=    15      EMPIRICAL EXPONENT RELATING ACTUAL STOMATAL RESISTANCE TO 
+=            LEAF POTENTIAL: rs = rso [1 + (?R/?c)n] [5]
+=    16      RESISTANCE OF LEAVES FOR PLANT (M^3 S KG-1)[1x10^5 M^3S KG-1]
+=
+=    17      Biomass P Fraction at Emergence  [0...1]
+=    18      Biomass P Fraction at Maturity   [0...1]
+=    19      Biomass P Fraction at 50% Maturity [0...1]
+=    20      P Uptake Distribution Parameter  [1-15]
+=    21      P Stress Computation [0: Disabled, 1: Enabled]
+=    ..REPEAT FOR EACH PLANT; INDEPENDENT OF PLANT MODEL USED.
+========================================================================
+5.5  0.01  8.5  85000.0  0.6  0.45  2.0  200.0  0.9  1.0  0.0  1.0  7.0  -100.0  5.0  100000.0  0.006  0.0002  0.004  10.0  0.0  
+========================================================================
+==                                                                    ==
+==                                                                    ==
+==                      N U T R I E N T                               ==
+==                                                                    ==
+==                                                                    ==
+========================================================================
+=     OM TRANSFORMATION DISTRIBUTION CONSTANTS
+=
+=   These are intra-om pool transformation coeficients (ala Parton).
+=   Rij: decimal fraction of pool i decay that is transformed to pool j.
+=   R14: Slow residue to Intermediate humus pool
+=   R23: Fast residue to Fast humus pool
+=   R34: Fast humus to Intemediate humus pool
+=   R25: Fast residue to Slow humus pool
+=   R45: Intermediate humus to Slow humus pool
+=   R15: Slow Residue to Slow humus pool
+=   Liwang used old R53 spot for R15 and R43 spot for R25.
+=   R14  R23  R34  R25  R45  R15
+========================================================================
+0.1  0.1  0.6  0.0  0.4  0.0  
+========================================================================
+=     MISC CONSTANTS
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      Oxygen limitation (Pore water saturation fraction for CH4 emission).
+=     2      bm efficiency in converting decayed om uptake to assimilated
+=            bm (remainder goes off as respiration CO2.
+=     3      Autotroph efficiency in converting "nitrified" NH4 to
+=            auto bm-N (remainder goes off as NO3).
+=     4      Efficiency factor for denitrification (fraction EFFDEN taken
+=            up by denitrifiers; remainder (1 - EFFDEN) goes off as N2,N2O).
+=     5      Dimensionless efficiency factor:
+=            denit rate ==> anaerobic om decay rate.
+=     6,7,8  3-long vector of bm population unit conversion factors:
+=            *RPOP(I): [ug-C/g-soil] ==> [# orgs/g-soil]
+=
+========================================================================
+0.8  0.267  0.01  0.1  0.1  950.0  9500.0  9500.0  
+========================================================================
+=     REACTION RATE CONSTANTS
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      Volatilization Constant                            [/day]
+=     2      Coeff for Arrhenius equation for nitrification     [sec/day]
+=     3      Coeff for Arrhenius equation for denitrification   [sec/day]
+=     4      Coeff for Arrhenius equ for hydrolysis of urea     [sec/day]
+=     5      Coeff for Arrhenius equ for Methane Production     [sec/day]
+=     6      Fraction of Nitrification lost as N2O (default .0016)[0...1]
+=
+========================================================================
+1000.0  1.000E-09  1.000E-13  0.00025  1.000E-15  0.0016  
+========================================================================
+=     INDIVIDUAL OM DECAY "A" VALUES
+=
+=   5-long vector of coefficients for Arrhenius om decay equations,
+=   for om  pools                                              [sec/day]
+=
+========================================================================
+1.673E-07  8.140E-06  2.500E-07  5.000E-08  4.500E-10  
+========================================================================
+=     DEATH EQUATION "A" VALUES
+=
+=   3-long vector of coefficients for bm death equations        [sec/day]
+=    old values 5.000E-035  4.770E-040  3.400E-033  
+========================================================================
+3.440E-11  3.628E-20  4.970E-13  
+========================================================================
+=     KP VALUES
+=
+=   Coefficient for calculation of activation energy.
+=
+========================================================================
+88.6  61.0  63.1  
+========================================================================
+=     C:N RATIOS
+=     C:P RATIOS
+=
+=   1.1 C:N RATIO OF SLOW RESIDUE POOL
+=   1.2 C:N RATIO OF FAST RESIDUE POOL
+=   1.3 C:N RATIO OF FAST SOIL HUMUS POOL
+=   1.4 C:N RATIO OF INTERMEDIATE SOIL HUMUS POOL
+=   1.5 C:N RATIO OF SLOW SOIL HUMUS POOL
+=   1.6 C:N RATIO OF CARBON SINK POOL
+=   1.7 C:N RATIO OF AEROBIC HETEROTROPHS POOL
+=   1.8 C:N RATIO OF AUTOTROPHS POOL
+=   1.9 C:N RATIO OF ANAEROBIC HETEROTROPHS POOL
+=   1.10 C:P RATIO OF SLOW RESIDUE POOL
+=   1.11 C:P RATIO OF FAST RESIDUE POOL
+=   1.12 C:P RATIO OF FAST SOIL HUMUS POOL
+=   1.13 C:P RATIO OF INTERMEDIATE SOIL HUMUS POOL
+=   1.14 C:P RATIO OF SLOW SOIL HUMUS POOL
+=   1.15 P REPLENISHMENT RATE COEFFICIENT (KR)
+=   1.16 P DETACHIBILITY COEFFICIENT (KDH)
+=   1.17 P FILTRATION COEFFICIENT (KF)
+=   1.18 P EXTRACTION COEFFICIENT (PEXTR)
+=   1.19 P INITIAL DRP IN GW RESERVIOR (KG/HA) (INGRPGW)
+=   1.20 P INITIAL PP IN GW RESERVIOR (KG/HA) (INIPPGW)
+========================================================================
+8.0  80.0  8.0  10.0  11.0  0.0  8.0  8.0  8.0  500.0  400.0  500.0  500.0  500.0  1.0  1.0  1.0  1.0  25.0  25.0  
+========================================================================
+==                                                                    ==
+==                      PLANT  MANAGEMENT                             ==
+==                   VARIABLES AND PARAMETERS                         ==
+==                                                                    ==
+========================================================================
+=          planting control and harvest parameters
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=    1       number of plantings                                 [1..40]
+=    2.1     plant reference number (corr. to plant number above)
+=    2.2     date of planting                               [dd/mm/yyyy]
+=    2.3     row spacing for planting operation                     [cm]
+=    2.4     planting depth (layer index number)                 [1..nn]
+=    2.5     planting density                                [#seeds/ha]
+=    2.6     Method of planting- seeds (default)/transplant/pre-Germinated [s=0/t=1/pre=2]
+=    2.7     initial plant material at transplanting (default -99.)        [kg/ha]
+=    2.8     emergence (applies to seeds method only default -99)          [#days after planting]
+=    2.9     sprout length at transplanting (only needed for potato otherwise -99.)[cm]
+=    2.10    plant age at transplanting (default -99) [#days]
+=
+=     These are parameters which direct the harvesting of the crop.
+= ITEM NO.   DESCRIPTION     RECORD 1
+= --------   -----------
+=    1       when to harvest specification                        [1..3]
+=            1:  when growth stage is beyond a point
+=            2:  when % of growth class is beyond certain percentage
+=            3:  on a specified date (specified in items 5-7)
+=    2       growth stage used in option 1                        [0..1]
+=    3       growth class to use in option 2                      [1..7]
+=    4       threshold percentage used in option 2                [0..1]
+=    5-7     date for harvest in option 3                   [dd/mm/yyyy]
+= ITEM NO.   DESCRIPTION     RECORD 2
+= --------   -----------
+=    1       stubble height left after harvesting                   [cm]
+=    2       harvesting efficiency (frac of what is cut that is   [0..1]
+=                actually taken away from site)  (ex. 0.97)
+=    3       type of harvest performed                            [1..6]
+=            (multiple harvest choices removed from Plant Harvest Type)
+=            3:  single harvest; yield seeds only (default)
+=            4:  single harvest; yield all above ground biomass
+=            5:  single harvest; yield roots only
+=            6:  single harvest; all above and below ground biomass
+=    4       soil water at planting in 100 cm profile (cm) [0-99]
+=    5       planting window in days after plant date (# of days) [0-45]
+========================================================================
+1
+1  3   5  1985  76.0   4 76000.0   0 -99.0   -99 -99.0   -99 
+               3 0.0   0 0.0  17 9 1985 
+               30.0  1.0   3 0 0
+========================================================================
+==                                                                    ==
+==               M A N U R E   M A N A G E M E N T                    ==
+==                    VARIABLES AND PARAMETERS                        ==
+==                                                                    ==
+========================================================================
+=     Application control parameters
+=
+= REC  NO.   DESCRIPTION
+= --------   -----------
+=     1      number of manure applications                       [0..40]
+=     2.1    plant reference number that application is used for  [1..5]
+=     2.2    when to apply manure:                                [1..5]
+=                1: preplant,  # of days before planting
+=                2: preemergence,  planting to emergence
+=                3: postemergence,  emerged to maturity
+=                4: layby,  harvest to death
+=                5: specified date, enter date as offset date
+=     2.3    date offset for application time        [day -or- dd mm yy]
+=     2.4    how to apply manure:                                 [1..4]
+=                1: broadcast - leave on surface
+=                2: broadcast - incorporate down with tillage imp.
+=                3: injected
+=                4: irrigation water
+=     2.5    manure identification number                        [1..15]
+=               1) beef w/ bedding      2) beef w/o bedding
+=               3) dairy w/ bedding     4) dairy w/o bedding
+=               5) swine w/ bedding     6) swine w/o bedding
+=               7) poultry w/ litter    8) poultry w/o litter
+=               9) turkey w/ litter     10) turkey w/o litter
+=               11) sheep w/ bedding    12) sheep w/o bedding
+=               13) horse w/ bedding    14) horse w/o bedding
+=               15) bedding, litter, or food processor waste
+=     2.6    amount of NH4-N applied                             [Kg/ha]
+=     2.7    amount of ORGANIC WASTE applied                     [Kg/ha]
+=     2.8    amount of BEDDING, LITTER, OR FOOD PROCESSOR WASTE  [Kg/ha]
+=     2.9    C:N ratio of BEDDING, LITTER, OR FOOD PROCESSOR WASTE
+=     2.10   C:N ratio of ORGANIC WASTE (MANURE) 
+=     2.11   fraction of carbon in the manure material
+=     2.12   P Mass Applied                    [Kg/ha] 
+=     2.13   Water Extratable Inorganic P percentage [%]
+=     2.14   Water Extractable Organic P Percentage [%]  
+=     2.15   Water CONTENT IN MANURE [%]  
+=     2.16   Manure decompose rate 0=same as residue; 1-5=0, 25, 50, 75, 100% partitioning to fast residue pool  
+=     3...   repeat record 2 for each application.
+========================================================================
+0
+========================================================================
+==                                                                    ==
+==            F E R T I L I Z E R   M A N A G E M E N T               ==
+==                    VARIABLES AND PARAMETERS                        ==
+==                                                                    ==
+========================================================================
+=     Application control parameters
+=
+= REC  NO.   DESCRIPTION
+= --------   -----------
+=     1      number of fertilizer applications                   [0..40]
+=     2.1    plant reference number that application is used for  [1..5]
+=     2.2    when to apply fertilizer:                            [1..7]
+=                1: preplant,  # of days before planting
+=                2: preemergence,  AFTER planting
+=                3: postemergence,  POST emergence to maturity
+=                4: layby,  POST harvest
+=                5: specified date, date is value in (offset date)
+=                6: preplant, split applications
+=                7: preplant, split with chlorophyll meter trigger
+=     2.3    date offset for application time        [day -or- dd mm yy]
+=     2.4    how to apply fertilizer:                             [1..6]
+=                1: broadcast - leave on surface
+=                2: broadcast - incorporate down with tillage imp.
+=                3: injected with NH3 applicator
+=                4: injected with NH3 applicator with N-SERVE
+=                5: irrigation water
+=                6: Use Best Management Practice (BMP) options
+=     2.5    amount of NO3 applied                               [Kg/ha]
+=     2.6    amount of NH4 applied                               [Kg/ha]
+=     2.7    amount of UREA applied                              [Kg/ha]
+=     2.8    BMP chemical application options                     [1..6]
+=                1: BMP rec'd fertilizer is applied as NO3-N
+=                2: BMP rec'd fertilizer is applied as NH4-N
+=                3: BMP rec'd fertilizer is applied as NH4NO3-N
+=                4: BMP rec'd fertilizer is applied as NH3-N
+=                5: BMP rec'd fertilizer is applied as NH3-N with N-serve
+=                6: BMP rec'd fertilizer is applied as UAN-N
+=     2.9    BMP application options                              [1..4]
+=                1: broadcast - leave on surface
+=                2: broadcast - incorporate down with tillage imp.
+=                3: injected with NH3 applicator
+=                4: irrigation water
+=     2.10   minimum number of days between split applications
+=     2.11   fraction of initial fert application that is applied
+=            as starter                                           [0..1]
+=     2.12   maximum amount of N to apply each split application [kg/ha]
+=     2.13   P Mass applied [Kg/ha]
+=     ...   repeat record 2 for each application.
+========================================================================
+1
+1  1  0  1  84.0  84.0  0.0  1  1  0  0.0  0.0  0.0  
+========================================================================
+==                                                                    ==
+==                   B M P   M A N A G E M E N T                      ==
+==                  (BEST MANAGEMENT PRACTICES)                       ==
+==                   VARIABLES AND PARAMETERS                         ==
+==                                                                    ==
+========================================================================
+=            Fertilizer recommendation algorithm parameters
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=     1      State code - signifies which state algorithm to use
+=             1: Missouri               (2), (3), (6)
+=             2: Nebraska               (2), (3)  (4), (5), (6)
+=             3: Iowa (fall)            (2), (6), (7), (8), (9)
+=             4: Iowa (late spring)     (2), (4), (6)
+=             5: Colorado               (2), (3), (4), (5), (6)
+=     2      Yield goal                                           [bu/ac]
+=     3      Organic matter adjustment factor
+=     4      Depth at which NO3-N soil tests are taken               [cm]
+=     5      Signifies if last year there was a soybean crop [1=yes,0=no]
+=     6      Misc. credits not included in current algorithm    [lb-N/ac]
+=     7      Soybean crop yield from previous year                [lb/ac]
+=     8      Manure N credit                                    [lb-N/ac]
+=     9      Mapping unit conversion factor                     [lb-N/bu]
+=     10     Amt of water used to apply default irrigation event     [cm]
+=     11     Depth of anhydrous injector used for fertlizer app      [cm]
+=
+========================================================================
+3  150.0  2.0  36.0  0  10.0  0.0  1.0  1.22  1.0  10.0  
+========================================================================
+==                                                                    ==
+==            P E S T I C I D E   M A N A G E M E N T                 ==
+==                    VARIABLES AND PARAMETERS                        ==
+==                                                                    ==
+========================================================================
+=     Application control parameters
+=
+= REC  NO.   DESCRIPTION
+= --------   -----------
+=     1      number of pesticide applications                    [0..40]
+=     2.1    plant reference number that application is used for  [1..5]
+=     2.2    pesticide to apply (corresponds to pesticide number above)
+=     2.3    when to apply pesticide:                             [1..5]
+=                1: preplant,  # of days before planting
+=                2: preemergence,  planting to emergence
+=                3: postemergence,  emerged to maturity
+=                4: layby,  harvest to death
+=                5: specified date, date is value in (offset date)
+=     2.4    date offset for application time        [day -or- dd mm yy]
+=     2.5    how to apply pesticide:                              [1..8]
+=                1: broadcast - leave on surface
+=                2: broadcast - incorporate down with tillage imp.
+=                3: folliar application - on plants and residue
+=                4: irrigation water
+=                5: microencapsulated(slow release) - leave on surface
+=                6: microencapsulated - incorporate down with tillage imp.
+=                7: soil surface - not on residue or plants
+=                8: fumigation - injected into the plow layer
+=     2.6    amount of pesticide applied (Active ingredient only)[Kg/ha]
+=     2.7    percentage daily release for slow release pesticide  [0..1]
+=
+=     ...   repeat record 2 for each pesticide application.
+========================================================================
+0
+========================================================================
+==                                                                    ==
+==            T I L L A G E   M A N A G E M E N T                     ==
+==                    VARIABLES AND PARAMETERS                        ==
+==                                                                    ==
+========================================================================
+=     Application control parameters
+=
+= REC  NO.   DESCRIPTION
+= --------   -----------
+=     1      number of tillage operations                        [1..10]
+=     2.1    plant reference number that application is used for  [1..5]
+=     2.2    when to perform tillage operation:                   [1..5]
+=               1: preplant,  # of days before planting
+=               2: preemergence,  planting to emergence
+=               3: postemergence,  emerged to maturity
+=               4: layby,  harvest to death
+=               5: specified date, date is value in (offset date)
+=     2.3    date offset for application time        [day -or- dd mm yy]
+=     2.4    tillage implement to use:                           [1..29]
+=               1:moldboard plow        2:chisel plow-straight
+=               3:chisel plow-twisted   4:field cultivator
+=               5:tandem disk           6:offset disk
+=               7:one-way disk          8:paraplow
+=               9:spike tooth harrow    10:spring tooth harrow
+=               11:rotary hoe           12:bedder ridge
+=               13:v-blade sweep        14:subsoiler
+=               15:rototiller           16:roller package
+=               17:row planter w/ smooth coulter
+=               18:row planter w/ fluted coulter
+=               19:row planter w/ sweeps
+=               20:lister planter       21:drill
+=               22:drill w/chain drag   23:row cultivator w/sweeps
+=               24:row cultivator w/spider wheels
+=               25:rod weeder           26:rolling cultivator
+=               27:nh3 applicator       28:ridge-till cultivator
+=               29:ridge-till planter
+=     2.5    implement average effective depth                      [cm]
+=     2.6    till intensity enter either index or intensity
+=               - index [(1) corn or (2) soybean] OR            [1 or 2]
+=               - value of intensity [0-min..1-max]               [0..1]
+=     2.7    tillage operation performed                          [1..3]
+=               1: primary tillage operation (major tillage)
+=               2: secondary tillage operation (minor tillage)
+=               3: tertiary tillage operation (compaction)
+=
+=     3...   repeat record 2 for each tillage operation
+========================================================================
+0
+========================================================================
+==                                                                    ==
+==            T I L E H E A D G A T E      M A N A G E M E N T        ==
+==                                                                    ==
+========================================================================
+=     Application control parameters									  
+=																		  
+= REC  NO.   DESCRIPTION												  
+= --------   -----------												  
+=     1      number of applications									  
+=     2.1    date for tile head gate height adjustment      [dd mm yyyy]
+=     2.2    head gate height                                       [cm]
+=																		  
+=     3...   repeat record 2 for each application.					  
+========================================================================
+0
+========================================================================
+==                                                                    ==
+==            I R R I G A T I O N   M A N A G E M E N T               ==
+==                 MODEL VARIABLES AND PARAMETERS                     ==
+==                                                                    ==
+========================================================================
+=     Irrigation control parameters
+=
+= ITEM NO.   DESCRIPTION
+= --------   -----------
+=   1.1      number of irrigation operations
+=   1.2      depth of the rooting zone for depletion calculation, 
+=            (DEFAULT = 0 use active rooting zone) [0...3000 cm] 
+=   1.3      flag to use maximum monthly irrigation amounts [0=NO,1=YES]
+=   1.4      minimum daily irrigation amount                        [cm]
+=   1.5      maximum daily irrigation amount                        [cm] 
+=   1.6      subirrigation depth (default=15 cm)                    [cm]
+=   1.7      irrigation interval limit amount(default=0)            [cm]
+=   1.8      irrigation interval time in years(default=0)           [yrs]
+=   2.1      plant reference number
+=   2.2      type of irrigation [1=sprinkler,2=flood,3=furrow,4=drip,5=subirrigation]
+=   2.3      timing for irrigation practice (interval,specific,root zone deplete, ET deficit, Canopy T)[1..5]
+=   2.4      methodology for irrigation practice                  [1..4]
+=   2.5-7    earliest date for irrigation                   [dd mm yyyy]
+=   2.8-10   latest date for irrigation (D/M/Y)             [dd mm yyyy]
+=   2.11     minimum number of days between irrigations            [day]
+=            note (if item 2.3 equals 1 or 2, set to zero)
+=   2.12     maximum depth of irrigation to be applied during the
+=              season (if = 0.0, water assumed unlimited)           [cm]
+=   2.13     rate at which sprinkler irrigation is applied       [cm/hr]
+=   3        timing of irrigation practice
+=              see the user manual for details about this line
+=   4        methodology of irrigation practice
+=              see the user manual for details about this data
+=   . . .  repeat Rec 2-4 for each operation
+========================================================================
+2  0  0  0.0  100.0  15.0  0.0  0  
+1  1  2  2 29 6 1985 20 8 1985 0 0.0  2.0  
+10
+29  6  1985
+30  7  1985
+8  8  1985
+9  8  1985
+12  8  1985
+14  8  1985
+15  8  1985
+17  8  1985
+19  8  1985
+20  8  1985
+10
+0.3  3.4  0.3  0.1  0.8  0.3  0.5  0.3  0.4  0.3  
+1  1  2  2 22 8 1985 18 9 1985 0 0.0  2.0  
+2
+22  8  1985
+18  9  1985
+2
+0.3  0.0  

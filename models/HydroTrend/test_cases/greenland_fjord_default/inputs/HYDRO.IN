@@ -1,0 +1,47 @@
+Greenland Fjord(Mar 2008), 1000 year simulation 1)TITLE
+ON				2) Write output to ASCII files (ON/OFF)
+./HYDRO_OUTPUT/	3) Location where the output data will be stored (not optional for web)
+1			4) No. of epochs to run (leave 1 line blank between epochs; start copying from nr 5)
+1908 1000 M		5) Start year; no. of years to run; averaging interval: D,M,S or Y
+4			6) Number of suspended sed. grain sizes to simulate (max 10)
+.2 .2 .25 .35	7) Proportion of sediment in each grain size (sum=1)
+24.9 0.001 1.5 	8) Yrly Tbar: start (C), change/yr (C/a), std dev
+1.24 0.0002 0.05 	9) Yrly P sum: start (m/a), change/yr (m/a/a), std. dev (m).
+1.4 1.1 1		10) Rain: Mass Balance Coef, Distribution Exp, Distribution Range
+0.0				11) Constant annual base flow (m^3/s)
+Jan  24 1.98  5 2.22		12-23) monthly climate variables
+Feb  17 1.56 10 1.90 	column  variable	description
+Mar  10 1.87 15 2.20 	------  --------	-----------
+Apr   6 1.84 15 12.74 	1	moname  	month name (not used)
+May    5 1.36 35 12.03 	2	tmpinm  	monthly mean T. (C)
+Jun   10 0.98 35 16.77 	3	tmpstd  	within month Std Dev. of T
+Jul   11 0.94 30 17.46 	4	raininm 	monthly total Precip. (mm)
+Aug    9 1.10 45 13.65 	5	rainstd 	Std Dev of the monthly P.
+Sep    4 1.35 25 22.66		.
+Oct   5 1.49 20 9.02		.
+Nov  12 2.41 15 7.76		.
+Dec  16 1.63 10 3.86		.
+9.9			24) Lapse rate to calculate freezing line (degC/km)
+2500 0 	25) Starting glacier ELA (m) and ELA change per year (m/a)
+0.15				26) Dry precip (nival and ice) evaporation fraction
+-0.1 0.85			26a) canopy interception alphag(-0.1(mm/d)), betag(0.85(-))
+10 1				26b) groundwater pole evapotranspiration alpha_gwe (common 10 (mm/d)), beta_gwe (common 1 (-))
+1e-3				27) Delta plain gradient (m/m)
+1.0				27a) Bedload rating term (-)(typically 1.0; if set to -9999, 1.0 will be used) 
+100				28) River basin length (km)
+0 d0	      	29) Mean volume, (a)ltitude or (d)rainage area of reservoir (km^3)(m) or (km^2)
+0.0504 0.5595			30) River mouth velocity coef. (k) and exponent (m); v=kQ^m, w=aQ^b, d=cQ^f
+27.466 0.2368			31) River mouth width coef.(a) and exponent (b); Q=wvd so ack=1 and b+m+f=1
+1.2				32) Average river velocity (m/s)
+1.5e+8 1.5e+4	      33) Maximum/minimum groundwater storage (m^3)
+1.2e+8			34) Initial groundwater storage (m^3)
+2000 	1.3		35) Groundwater (subsurface storm flow) coefficient (m^3/s) and exp (unitless)
+250				36) Saturated hydraulic conductivity (mm/day)
+55.5 68.25		37) Longitude, latitude position of the river mouth (decimal degrees)
+1				38) Nr. of outlets in a delta, 1 =  no outlets; 
+1				39) Fraction Q for each outlet
+n1				40)	Certain Qpeak, above this, it change the nr of outlets or the Q fr. distribution
+0.249				41) Fraction sediment trapped in delta (0 - 0.9; only if 39 > 1 or u or r)
+2				42) 0)=QRT;  1) =ART)   2) =BQART 
+0.3				43) if line 42 is 2: Lithology factor from hard - weak material (0.3 - 3)
+1				44) if line 42 is 2: Anthropogenic factor (0.5 - 8), human disturbance of the landscape

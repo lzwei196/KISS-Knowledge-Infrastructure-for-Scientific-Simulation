@@ -52,6 +52,11 @@ ESMF_ENV_VARS = {
     "ESMF_OPENACC": "OpenACC support: ON, OFF",
 }
 
+# ESMF_RegridWeightGen for --regrid (same lookup and server default as
+# generate_regrid_weights.py and preflight_check.py): --regridweightgen ->
+# $ESMF_REGRIDWEIGHTGEN -> server default (conda env obs4mips) -> first on PATH -> error.
+REGRIDWEIGHTGEN_DEFAULT = "KISSPATH_HOME/miniconda3/envs/obs4mips/bin/ESMF_RegridWeightGen"
+
 SUPPORTED_COMPILERS = ["gfortran", "intel", "pgi", "nag", "llvm", "absoft"]
 SUPPORTED_COMM = ["openmpi", "mpich", "mvapich2", "mpiuni", "intelmpi"]
 
@@ -295,17 +300,40 @@ def _diagnose_runtime_error(stderr: str):
             logger.error("DIAGNOSIS: %s", msg)
 
 
+def resolve_regridweightgen(cli_value=None):
+    """Return (path, source) of ESMF_RegridWeightGen or raise RuntimeError (no fallback
+    after an explicit or default choice that does not work)."""
+    if cli_value is not None:
+        path, source = cli_value, "--regridweightgen"
+    elif os.environ.get("ESMF_REGRIDWEIGHTGEN") is not None:
+        path, source = os.environ["ESMF_REGRIDWEIGHTGEN"], "$ESMF_REGRIDWEIGHTGEN"
+    elif os.path.lexists(REGRIDWEIGHTGEN_DEFAULT):
+        path, source = REGRIDWEIGHTGEN_DEFAULT, "server default"
+    else:
+        path, source = shutil.which("ESMF_RegridWeightGen"), "PATH"
+        if not path:
+            raise RuntimeError("ESMF_RegridWeightGen not found: no --regridweightgen, no "
+                               f"$ESMF_REGRIDWEIGHTGEN, no server default {REGRIDWEIGHTGEN_DEFAULT}, "
+                               "none on PATH")
+    if not path or not os.path.isfile(path) or not os.access(path, os.X_OK):
+        raise RuntimeError(f"ESMF_RegridWeightGen not found or not executable: {path!r} ({source})")
+    return os.path.abspath(path), source
+
+
 def run_regrid_weight_gen(source_grid: str, dest_grid: str, weight_file: str,
-                          method: str = "bilinear", env: dict = None) -> dict:
+                          method: str = "bilinear", env: dict = None,
+                          regridweightgen: str = None) -> dict:
     """Run ESMF_RegridWeightGen command-line tool.
 
     TRAP: For conservative regridding, both source and destination grids
     MUST have corner coordinates AND cell areas defined.
     """
-    tool = shutil.which("ESMF_RegridWeightGen")
-    if not tool:
-        logger.warning("ESMF_RegridWeightGen not found in PATH")
-        return {"status": "not_found"}
+    try:
+        tool, source = resolve_regridweightgen(regridweightgen)
+    except RuntimeError as e:
+        logger.error("%s", e)
+        return {"status": "not_found", "error": str(e), "returncode": None}
+    logger.info("ESMF_RegridWeightGen: %s (%s)", tool, source)
 
     cmd = [
         tool,
@@ -317,7 +345,11 @@ def run_regrid_weight_gen(source_grid: str, dest_grid: str, weight_file: str,
     ]
 
     logger.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd, env=env or os.environ, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, env=env or os.environ, capture_output=True, text=True)
+    except OSError as e:
+        logger.error("ESMF_RegridWeightGen did not start: %s", e)
+        return {"command": " ".join(cmd), "returncode": None, "error": f"did not start: {e}"}
 
     return {
         "command": " ".join(cmd),
@@ -375,7 +407,11 @@ def main():
     parser.add_argument("--build-only", action="store_true", help="Only build, don't run")
     parser.add_argument("--regrid", nargs=3, metavar=("SRC", "DST", "WGT"),
                         help="Run RegridWeightGen: source dest weight")
+    parser.add_argument("--regridweightgen", default=None,
+                        help="ESMF_RegridWeightGen for --regrid (default: $ESMF_REGRIDWEIGHTGEN, "
+                             f"else {REGRIDWEIGHTGEN_DEFAULT}, else the first on PATH)")
     args = parser.parse_args()
+    failed = []
 
     # Validate environment
     validate_environment(args.esmf_dir, args.compiler, args.comm)
@@ -396,17 +432,29 @@ def main():
     if args.app_source:
         out_name = os.path.splitext(os.path.basename(args.app_source))[0]
         binary = compile_application(args.app_source, out_name, args.esmf_dir, env)
+        if not binary:
+            failed.append(f"compiling {args.app_source} failed")
 
     if binary:
         result = run_application(binary, args.np, args.comm, env)
         validation = validate_output(result)
         print(json.dumps(validation, indent=2))
+        if validation["status"] != "success":
+            failed.append(f"application {binary} failed (rc={result.get('returncode')})")
 
     # Regridding
     if args.regrid:
         src, dst, wgt = args.regrid
-        rg_result = run_regrid_weight_gen(src, dst, wgt, env=env)
+        rg_result = run_regrid_weight_gen(src, dst, wgt, env=env,
+                                          regridweightgen=args.regridweightgen)
         print(json.dumps(rg_result, indent=2))
+        if rg_result.get("returncode") != 0:
+            failed.append(rg_result.get("error") or
+                          f"ESMF_RegridWeightGen failed (rc={rg_result.get('returncode')})")
+
+    if failed:
+        logger.error("FAILED: %s", "; ".join(failed))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

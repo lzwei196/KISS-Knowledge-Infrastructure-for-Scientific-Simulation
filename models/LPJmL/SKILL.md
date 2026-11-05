@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Language**: C (with optional MPI parallelization)
 **Created by**: PIK (Potsdam Institute for Climate Impact Research)
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `dissected`
 
 ---

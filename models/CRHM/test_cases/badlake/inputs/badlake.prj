@@ -1,0 +1,345 @@
+Description - to be added
+###### Version: CRHM 04/12/21  Creation: 2021-08-09 14:19
+Dimensions:
+######
+nhru 3
+nlay 2
+nobs 1
+######
+Macros:
+######
+######
+Observations:
+######
+prj/BadLake/Badlake73_76.obs
+######
+Dates:
+######
+1973 1 1
+1976 1 1
+######
+Modules:
+######
+basin CRHM 02/24/12
+global CRHM 12/19/19
+obs CRHM 04/17/18
+calcsun CRHM 10/01/13
+intcp CRHM 02/24/15
+pbsm CRHM 11/20/17
+albedo CRHM 08/11/11
+ebsm CRHM 01/18/16
+netall CRHM 03/22/16
+crack CRHM 03/31/20
+evap CRHM 09/26/13
+Soil CRHM 02/01/21
+Netroute CRHM 06/20/18
+######
+Parameters:
+###### 'basin' parameters always first
+Shared basin_area <1E-6 to 1E9>
+11.39
+Shared hru_area <1E-6 to 1E9>
+3.58 6.13 1.68
+Shared hru_ASL <0 to 360>
+0 0 0
+Shared hru_elev <0 to 1E5>
+637 637 637
+Shared hru_GSL <0 to 90>
+5 5 5
+Shared hru_lat <-90 to 90>
+51.32 51.32 51.32
+Shared Ht <0.001 to 100>
+0.05 0.25 0.6
+Shared inhibit_evap <0 to 1>
+0 0 0
+Shared Sdmax <0 to 1000>
+10 5 1
+Shared soil_rechr_max <0 to 350>
+50 50 50
+albedo Albedo_bare <0 to 1>
+0.17 0.17 0.17
+albedo Albedo_snow <0 to 1>
+0.85 0.85 0.85
+basin basin_name
+''
+basin hru_names
+'Fallow' 'Stubble' 'Stubble'
+basin INIT_STATE
+''
+basin Loop_to
+'' ''
+basin RapidAdvance_to
+''
+basin RUN_END <0 to 1E5>
+0
+basin RUN_ID <-1E8 to 1E8>
+1
+basin RUN_START <0 to 1E5>
+0
+basin StateVars_to_Update
+'' '' '' '' '' '' '' '' '' ''
+basin TraceVars
+'' '' '' '' '' '' '' '' '' ''
+crack fallstat <-1 to 100>
+46 54 44
+crack infDays <0 to 20>
+6 6 6
+crack Major <1 to 100>
+5 5 5
+crack PriorInfiltration <0 to 1>
+0 0 0
+ebsm delay_melt <0 to 366>
+0 0 0
+ebsm nfactor <0 to 10>
+0 0 0
+ebsm Qe_subl_from_SWE <0 to 1>
+0 0 0
+ebsm tfactor <0 to 10>
+0 0 0
+ebsm Use_QnD <0 to 1>
+0 0 0
+evap evap_type <0 to 2>
+0 0 0
+evap F_Qg <0 to 1>
+0.05 0.05 0.05
+evap rs <0 to 0.01>
+0 0 0
+evap Zwind <0.01 to 100>
+10 10 10
+global Time_Offset <-12 to 12>
+0 0 0
+Netroute gwKstorage <0 to 200>
+0 0 0
+Netroute gwLag <0 to 1E4>
+0 0 0
+Netroute gwwhereto <-1000 to 1000>
+3 3 0
+Netroute Kstorage <0 to 200>
+1 1 0.5
+Netroute Lag <0 to 1E4>
+8 8 3
+Netroute order <1 to 1000>
+1 2 3
+Netroute preferential_flow <0 to 1>
+0 0 0
+Netroute runKstorage <0 to 200>
+0 0 0
+Netroute runLag <0 to 1E4>
+0 0 0
+Netroute Sd_ByPass <0 to 1>
+0 0 0
+Netroute soil_rechr_ByPass <0 to 1>
+0 0 0
+Netroute ssrKstorage <0 to 200>
+0 0 0
+Netroute ssrLag <0 to 1E4>
+0 0 0
+Netroute whereto <0 to 1000>
+3 3 0
+obs catchadjust <0 to 3>
+0 0 0
+obs ClimChng_flag <0 to 1>
+0 0 0
+obs ClimChng_precip <0 to 10>
+1 1 1
+obs ClimChng_t <-50 to 50>
+0 0 0
+obs ElevChng_flag <0 to 1>
+1 1 1
+obs HRU_OBS <1 to 100>
+1 1 1
+1 1 1
+1 1 1
+1 1 1
+1 1 1
+obs lapse_rate <0 to 2>
+0.75 0.75 0.75
+obs obs_elev <0 to 1E5>
+637 637 637
+637 637 637
+obs ppt_daily_distrib <0 to 1>
+1 1 1
+obs precip_elev_adj <-1 to 1>
+0 0 0
+obs snow_rain_determination <0 to 2>
+0 0 0
+obs tmax_allrain <-10 to 10>
+2 2 2
+obs tmax_allsnow <-10 to 10>
+0 0 0
+pbsm A_S <0 to 2>
+0.003 0.003 0.003
+pbsm distrib <-10 to 10>
+1 1 0.1
+pbsm fetch <300 to 1E4>
+1500 2000 2000
+pbsm inhibit_bs <0 to 1>
+0 0 0
+pbsm inhibit_subl <0 to 1>
+0 0 0
+pbsm N_S <1 to 500>
+320 320 320
+Soil cov_type <0 to 2>
+1 1 2
+Soil gw_init <0 to 5000>
+75 85 100
+Soil gw_K <0 to 100>
+0.001 0.001 0.001
+Soil gw_max <0 to 5000>
+150 150 150
+Soil lower_ssr_K <0 to 100>
+0.001 0.001 0.001
+Soil rechr_ssr_K <0 to 100>
+0.001 0.001 0.001
+Soil Sdinit <0 to 5000>
+0 0 0
+Soil Sd_gw_K <0 to 100>
+0.001 0.001 0.001
+Soil Sd_ssr_K <0 to 100>
+0.001 0.001 0.001
+Soil soil_gw_K <0 to 100>
+0.001 0.001 0.001
+Soil soil_moist_init <0 to 5000>
+92 108 88
+Soil soil_moist_max <0 to 5000>
+200 200 200
+Soil soil_rechr_init <0 to 250>
+23 27 22
+Soil soil_ssr_runoff <0 to 1>
+1 1 1
+Soil soil_withdrawal <1 to 4>
+2 2 2
+2 2 2
+Soil transp_limited <0 to 1>
+0 0 0
+Soil Wetlands_scaling_factor <-1 to 1>
+1 1 1
+######
+Initial_State
+######
+######
+Final_State
+######
+######
+Summary_period
+######
+Water_year 10
+######
+Log_Time_Format
+######
+MS_time
+######
+Display_Variable:
+######
+pbsm SWE 1 2 3
+albedo Albedo 1 2 3
+Netroute basinflow 1
+Netroute basingw 1
+global cosxs 1 2 3
+global cosxsflat 1 2 3
+crack crackon 1 2 3
+crack crackstat 1 2 3
+Soil cum_infil_act 1 2 3
+Soil cum_Sd_evap 1 2 3
+pbsm cumrain_on_snow 1 2 3
+ebsm cumsnowmelt 1 2 3
+Soil current_getstep 1
+pbsm Drift 1 2 3
+evap evapGrangerD 1 2 3
+Soil gw 1 2 3
+Soil gw_flow 1 2 3
+Soil gw_flow_D 1 2 3
+Netroute gwinflow 1 2 3
+Netroute gwoutflow 1 2 3
+evap hru_actet 1 2 3
+obs hru_ea 1 2 3
+obs hru_eamean 1 2 3
+evap hru_evap 1 2 3
+evap hru_evap_PT 1 2 3
+evap hru_evapD 1 2 3
+obs hru_newsnow 1 2 3
+obs hru_p 1 2 3
+obs hru_rain 1 2 3
+obs hru_rh 1 2 3
+obs hru_rhmean 1 2 3
+obs hru_snow 1 2 3
+calcsun hru_SunAct 1 2 3
+obs hru_t 1 2 3
+obs hru_tmax 1 2 3
+obs hru_tmean 1 2 3
+obs hru_tmin 1 2 3
+obs hru_u 1 2 3
+obs hru_umean 1 2 3
+crack infil 1 2 3
+Soil infil_act 1 2 3
+Soil infil_act_D 1 2 3
+Netroute inflow 1 2 3
+intcp intcp_evap 1 2 3
+albedo meltflag 1 2 3
+crack meltrunoff 1 2 3
+netall net 1 2 3
+intcp net_p 1 2 3
+intcp net_rain 1 2 3
+ebsm net_rainD 1 2 3
+intcp net_snow 1 2 3
+albedo net_snowD 1 2 3
+netall netD 1 2 3
+albedo newsnowcnt 1 2 3
+Netroute outflow 1 2 3
+obs Pa 1 2 3
+pbsm Prob 1 2 3
+global Qdflat 1 2 3
+global QdflatD 1 2 3
+global QdflatE 1 2 3
+global Qdfo 1 2 3
+global QdfoD 1 2 3
+global Qdro 1 2 3
+global QdroD 1 2 3
+global QdroDext 1 2 3
+ebsm Qmelt 1 2 3
+pbsm rain_on_snow 1 2 3
+Soil rechr_ssr 1 2 3
+Soil redirected_residual 1 2 3
+netall RnD 1 2 3
+basin run_ID 1
+Netroute runinflow 1 2 3
+crack runoff 1 2 3
+Netroute runoutflow 1 2 3
+Soil Sd 1 2 3
+Soil Sd_gw 1 2 3
+pbsm snowdepth 1 2 3
+crack snowinfil 1 2 3
+ebsm snowmeltD 1 2 3
+Soil soil_gw 1 2 3
+Soil soil_gw_D 1 2 3
+Soil soil_moist 1 2 3
+Soil soil_rechr 1 2 3
+Soil soil_runoff 1 2 3
+Soil soil_runoff_D 1 2 3
+Soil soil_ssr 1 2 3
+Soil soil_ssr_D 1 2 3
+global SolAng 1 2 3
+Netroute ssrinflow 1 2 3
+Netroute ssroutflow 1 2 3
+pbsm Subl 1 2 3
+global SunMax 1 2 3
+albedo winter 1 2 3
+######
+Display_Observation:
+######
+######
+Auto_Run
+######
+Auto_Exit
+######
+Log_All
+######
+TChart:
+######
+
+
+()
+
+
+
+######

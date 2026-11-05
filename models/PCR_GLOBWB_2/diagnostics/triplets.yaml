@@ -1,7 +1,7 @@
 # ============================================================================
 # PCR-GLOBWB 2 Diagnostic Triplets
 # ============================================================================
-# 26 diagnostic triplets covering 5 failure domains.
+# Diagnostic triplets (26 when this header was written; current count: the SKILL.md KI map) covering 5 failure domains.
 # Generated during PCR-GLOBWB 2 knowledge dissection for HydroCraft platform.
 # dt_021..dt_026 added from Rhine-Kaub production run 2026-04-29.
 # ============================================================================

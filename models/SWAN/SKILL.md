@@ -65,7 +65,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Source**: [github.com/openearth/swan](https://github.com/openearth/swan)
 **Author**: Gerben de Boer (TU Delft / Van Oord)
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 20 diagnostic triplets | ~1,200 lines of validated Python
+**Stats**: current tool and triplet counts: the KI map at the top of this file; the stage guides are in `docs/`
 **Validation status**: `tested` (round-trip JONSWAP spectrum generation, write, read, Hm0 verification)
 
 ---

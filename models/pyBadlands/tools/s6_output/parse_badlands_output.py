@@ -29,6 +29,7 @@ import json
 import os
 import sys
 import glob
+import re
 import numpy as np
 
 
@@ -48,8 +49,20 @@ def validate_inputs(args):
         # Try direct path
         h5_dir = args.output_dir
 
-    tin_files = sorted(glob.glob(os.path.join(h5_dir, "tin.time*.hdf5")))
-    if not tin_files:
+    # Order by the output number N in tin.time<N>.hdf5 (a plain name sort puts time10
+    # before time2, so the last record would not be the final time step).
+    tin_files = []
+    bad_names = []
+    for path in glob.glob(os.path.join(h5_dir, "tin.time*.hdf5")):
+        m = re.fullmatch(r"tin\.time([0-9]+)\.hdf5", os.path.basename(path))
+        if m:
+            tin_files.append((int(m.group(1)), path))
+        else:
+            bad_names.append(os.path.basename(path))
+    tin_files.sort()
+    if bad_names:
+        errors.append(f"Unexpected file names (not tin.time<N>.hdf5): {sorted(bad_names)}")
+    elif not tin_files:
         errors.append(f"No tin.time*.hdf5 files found in {h5_dir}")
 
     if errors:
@@ -121,13 +134,16 @@ def extract_timeseries(h5_dir, tin_files, points):
     """
     Extract time series at specified points (or domain-wide statistics).
 
-    Returns list of dicts, one per timestep.
+    tin_files: list of (N, path) sorted by N; "step" is N from tin.time<N>.hdf5.
+    Returns (records, skipped_files): one record per timestep with coordinates.
     """
     records = []
+    skipped = []
 
-    for i, h5_path in enumerate(tin_files):
+    for i, h5_path in tin_files:
         data = read_timestep(h5_path)
         if "coords" not in data:
+            skipped.append(os.path.basename(h5_path))
             continue
 
         coords = data["coords"]
@@ -170,7 +186,7 @@ def extract_timeseries(h5_dir, tin_files, points):
 
         records.append(record)
 
-    return records
+    return records, skipped
 
 
 def compute_budget_summary(records):
@@ -235,7 +251,12 @@ def process(args):
     points = parse_points(args.points)
 
     # Extract time series
-    records = extract_timeseries(h5_dir, tin_files, points)
+    records, skipped = extract_timeseries(h5_dir, tin_files, points)
+    if not records:
+        print(json.dumps({"status": "error", "errors": [
+            f"No usable time step: none of the {len(tin_files)} tin files has coordinates "
+            f"(coords or x/y/z)"], "skipped_files": skipped}))
+        sys.exit(1)
 
     result = {
         "status": "success",
@@ -243,6 +264,17 @@ def process(args):
         "h5_dir": h5_dir,
         "n_points_extracted": len(points),
     }
+    warnings = []
+    if skipped:
+        result["skipped_files"] = skipped
+        warnings.append(f"{len(skipped)} tin file(s) without coordinates skipped: {skipped}")
+    numbers = [n for n, _ in tin_files]
+    gaps = sorted(set(range(numbers[0], numbers[-1] + 1)) - set(numbers))
+    if gaps:
+        warnings.append(f"Output numbering has gaps (missing tin.time<N> for N = {gaps}); "
+                        f"step = N from the file name")
+    if warnings:
+        result["warnings"] = warnings
 
     # Write CSV
     if args.csv:

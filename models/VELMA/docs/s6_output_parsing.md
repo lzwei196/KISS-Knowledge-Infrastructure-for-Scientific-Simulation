@@ -1,5 +1,7 @@
 # Stage 6: Output Parsing
 
+**REAL engine:** read `<out>/<run_index>/velma_engine_summary.json` (status must be success), `velma_daily_runoff.csv` (date, runoff_mm_d, Q_sim_m3s) and the engine's `DailyResults.csv` (delineated averages; `Soil_Moisture(mm)` columns are fractions, dt_velma_029; area choice, dt_velma_030). Everything below parses the Python SURROGATE's JSON only (not VELMA).
+
 ## Purpose
 Extract daily discharge from `tools/run_velma.py` JSON, compute validation metrics, and optionally write a CSV and validation figure.
 

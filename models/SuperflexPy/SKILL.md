@@ -63,7 +63,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Authors**: Marco Dal Molin, Fabrizio Fenicia, Dmitri Kavetski
 **Created by**: Hydrocraft / auto_dissect
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill docs | 21 diagnostic triplets | ~2800 lines
+**Stats**: ~2800 lines | current tool, stage-doc and triplet counts: the KI map at the top of this file
 
 ---
 
@@ -130,10 +130,8 @@ published GRDC mean.
 **PET product bias (dt_020)** — ERA5-Land PET is a well-watered potential and in
 humid maritime catchments exceeds P. GR4J's `InterceptionFilter` removes
 `min(P, PET)` first, so raw Caravan PET can cap the model below the *observed*
-runoff. On the Irish gauges: P 995, PET 1208, Q_obs 604 mm/yr — interception
-alone removes 444 mm/yr, leaving a 551 mm/yr ceiling under a 604 mm/yr
-observation. Calibrate a PET coefficient: `--free-params ... cpet` for GR4J,
-`Ce` for HBV (calibrated values 0.44 and 0.39 on the same catchment).
+runoff. Calibrate a PET coefficient: `--free-params ... cpet` for GR4J,
+`Ce` for HBV.
 
 
 ## Overview
@@ -708,7 +706,7 @@ citation key provided by the convention. A null convention band is written as
 | dt_020 | silent | unit_conversion | Reanalysis PET exceeds the demand the structure needs; calibrate `cpet` (GR4J) / `Ce` (HBV) |
 | dt_021 | silent | unit_conversion | Negative reanalysis PET makes GR4J's interception filter ADD precipitation; use `--pet-min 0` |
 
-See `diagnostics/triplets.yaml` for full symptom→diagnosis→remedy entries (21 entries; dt_019-dt_021 added 2026-08-21, dt_018 corrected).
+See `diagnostics/triplets.yaml` for full symptom→diagnosis→remedy entries (21 on 2026-08-21: dt_019-dt_021 added that day, dt_018 corrected; current count: the KI map at the top of this file).
 
 ---
 
@@ -729,5 +727,47 @@ ki/
 │   ├── s5_model_execution.md       # Model execution skill
 │   └── s6_output_extraction.md     # Output parsing skill
 └── diagnostics/
-    └── triplets.yaml               # 21 diagnostic triplets
+    └── triplets.yaml               # diagnostic triplets (count: KI map)
 ```
+
+
+### Missing forcing and recorded opt-in repair (2026-10-03)
+
+Missing/nonfinite P or PET is fatal by default, for Caravan and text input.
+A missing PET column never becomes zero. `--fill-forcing-gaps` permits linear
+interpolation only for interior gaps bracketed by finite samples; missing
+endpoints or entirely missing series are rejected. Date axes must be ordered,
+consecutive and cover the requested interval. Caravan remains daily.
+Sub-daily text input (`--timestep` < 1, e.g. `1/24`): the date columns hold
+days only, so each day must appear in order, with no day missing, and with
+exactly 1/timestep rows (24 for hourly); the order of rows inside a day cannot
+be checked from the file, so it must be sorted by time.
+
+The output `gap_filling` object records each field/index/date, the original
+nonfinite value, replacement, method and both source neighbours, plus per-field
+masks/counts. `statistics.gap_filled_counts` repeats counts in the summary.
+Valid source values are preserved except separately requested PET sign/floor
+transformations. Actual zero P/PET is valid. Failure exits nonzero and leaves
+an existing forcing output untouched. Run `python -B tests/test_gap_provenance.py`.
+
+### PET sign/floor, observed Q units and totals (2026-10-16)
+
+- `--pet-sign` and `--pet-min` act the same way for text and Caravan input.
+  PET that has negative values and no positive value stops unless
+  `--pet-sign flip` is given; `flip` is accepted only for such negative-only
+  PET (on PET with positive values, or all-zero PET, it stops; it is never
+  silently ignored). All-zero PET is accepted as real zero demand for text
+  input (`PET_all_zero: true` in the record); for Caravan it stops as an empty
+  field. A one-row text file is read as one time step.
+  `conversions_applied.PET_sign` / `PET_floor` say what was done.
+- Each `gap_filling` record keeps `original` = the value as read from the file
+  (before unit factor, sign flip and floor), `after_transforms` = the value the
+  interpolation saw, and each neighbour's `value` (converted) and
+  `source_value` (as read). `transforms_before_interpolation` lists the steps.
+- Text `--q-unit m3/s`, `cms` or `l/s` needs `--area` (km2, > 0); without it,
+  or with an unknown unit, the converter stops instead of labelling flow
+  numbers as mm/d. `conversions_applied.Q_obs` records the conversion.
+- P/PET are rates in mm/d. `statistics.P_total` is the depth in mm
+  (sum of rates x `timestep_d`), so 24 hourly rows of 1 mm/h give 24 mm.
+- Tests write their netCDF fixtures with the first working writer among
+  netCDF4, h5netcdf and scipy (set `SFP_TEST_NC_ENGINES` to force one).

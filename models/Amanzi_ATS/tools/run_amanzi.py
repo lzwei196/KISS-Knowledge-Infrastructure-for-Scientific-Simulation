@@ -32,6 +32,14 @@ from xml.etree import ElementTree as ET
 # Constants
 # ============================================================================
 DEFAULT_BINARIES = ["ats", "amanzi"]
+# Server ATS build (Amanzi 42cadd93 + ATS 86114e29, ATS 1.6.0, built 2026-10-06).
+# Lookup (same as preflight_check.py): --binary, else $ATS_BIN, else this server default.
+# An explicit value is used as-is (a bare name is resolved on PATH); no fallback.
+ATS_BIN_ENV = "ATS_BIN"
+SERVER_DEFAULT_BINARY = ("KISSPATH_HOME/engine_builds_20261006/ats/"
+                         "amanzi-install-master42cadd9-Release/bin/ats")
+# Top-level sublists every native ATS input has (ParameterList name="main")
+REQUIRED_XML_BLOCKS_ATS = ["mesh", "regions", "cycle driver", "PKs", "state"]
 REQUIRED_XML_BLOCKS_V1 = [
     "Mesh", "Regions", "Material Properties", "Initial Conditions",
     "Boundary Conditions", "Output"
@@ -66,6 +74,10 @@ def validate_inputs(args):
                 _check_v2_blocks(root, errors, warnings)
                 _check_v2_mesh_file(root, args, errors, warnings)
                 _check_v2_parameters(root, warnings)
+            elif _is_ats_native(root):
+                # Native ATS ParameterList input (lower-case top-level sublists)
+                print("[INFO] Native ATS input (ParameterList with mesh/regions/cycle driver/PKs/state)")
+                _check_ats_blocks(root, errors)
             else:
                 # V1 ParameterList style
                 version_param = root.find(".//Parameter[@name='Amanzi Input Format Version']")
@@ -79,9 +91,12 @@ def validate_inputs(args):
     # Check binary
     binary = _find_binary(args.binary)
     if binary is None:
+        searched = (f"--binary {args.binary}" if args.binary
+                    else f"${ATS_BIN_ENV}={os.environ[ATS_BIN_ENV]}" if os.environ.get(ATS_BIN_ENV, "").strip()
+                    else f"server default {SERVER_DEFAULT_BINARY}")
         errors.append(
-            f"Amanzi/ATS binary not found. Searched: {args.binary or DEFAULT_BINARIES}. "
-            f"Ensure the binary is on PATH or use --binary."
+            f"Amanzi/ATS binary not found or not executable. Searched: {searched}. "
+            f"Use --binary or set ${ATS_BIN_ENV}."
         )
     else:
         print(f"[OK] Binary found: {binary}")
@@ -107,20 +122,34 @@ def validate_inputs(args):
 
 
 def _find_binary(binary_arg):
-    """Find the Amanzi/ATS binary."""
-    if binary_arg:
-        if os.path.isfile(binary_arg) and os.access(binary_arg, os.X_OK):
-            return binary_arg
-        found = shutil.which(binary_arg)
-        if found:
-            return found
-        return None
+    """Find the Amanzi/ATS binary: --binary, else $ATS_BIN, else the server default.
 
-    for name in DEFAULT_BINARIES:
-        found = shutil.which(name)
-        if found:
-            return found
+    An explicit value is used as-is (a bare name such as "ats" is resolved on PATH);
+    there is no fallback to another binary. Returns an absolute path or None."""
+    explicit = binary_arg or os.environ.get(ATS_BIN_ENV, "").strip() or None
+    cand = explicit or SERVER_DEFAULT_BINARY
+    if os.sep not in cand:
+        cand = shutil.which(cand) or ""
+    if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+        return os.path.abspath(cand)
     return None
+
+
+def _is_ats_native(root):
+    """True for a native ATS input: a ParameterList whose direct sublists include
+    'cycle driver' and 'PKs' (Amanzi's own inputs use 'Mesh', 'Regions', ... instead)."""
+    if root.tag != "ParameterList":
+        return False
+    names = {c.get("name") for c in root if c.tag == "ParameterList"}
+    return "cycle driver" in names and "PKs" in names
+
+
+def _check_ats_blocks(root, errors):
+    """Check the top-level sublists every native ATS input needs."""
+    names = {c.get("name") for c in root if c.tag == "ParameterList"}
+    for block in REQUIRED_XML_BLOCKS_ATS:
+        if block not in names:
+            errors.append(f"Required ATS block '{block}' not found in XML")
 
 
 def _check_v2_blocks(root, errors, warnings):
@@ -307,7 +336,8 @@ def main():
     parser.add_argument("--xml_file", type=str, required=True,
                         help="Path to XML input file")
     parser.add_argument("--binary", type=str, default=None,
-                        help="Path to amanzi/ats binary")
+                        help="Path (or PATH name) of the amanzi/ats binary (default: $ATS_BIN, "
+                             "else " + SERVER_DEFAULT_BINARY + ")")
     parser.add_argument("--np", type=int, default=1,
                         help="Number of MPI processes")
     parser.add_argument("--run_dir", type=str, default=None,

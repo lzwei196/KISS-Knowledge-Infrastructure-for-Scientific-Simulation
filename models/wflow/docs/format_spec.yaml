@@ -693,16 +693,6 @@ known_issues:
     are likely still in MCM'', ''Expected range: 1e7 to 1e11 m^3 for large reservoirs'']; Always use lookup_dams.py
     w'
   severity: silent
-- id: dt_w028
-  symptom: 0 forcing files found or coordinates misparsed
-  diagnosis: 'VIC forcing file naming pattern {basin}_{res}deg_{lat}_{lon} not recognized; HydroCraft
-    VIC forcing uses bengbu_0.25deg_31.1250_115.6250 pattern. Fixed in v1.1.0 by adding *_*deg_* glob
-    and parsing parts[2]/parts[3].
-
-    ; [''convert_forcing_to_wflow.py'']'
-  remedy: Use updated convert_forcing_to_wflow.py; convert_forcing_to_wflow.py; []; Updated tool handles
-    all known HydroCraft naming patterns.
-  severity: fatal
 - id: dt_w029
   symptom: Inactive cells have zero instead of NaN, wrong runoff
   diagnosis: 'Inactive cells set to 0 instead of NaN in staticmaps.nc; wflow uses NaN to identify inactive

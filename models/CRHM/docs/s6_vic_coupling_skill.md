@@ -46,20 +46,17 @@ Couple CRHM cold-regions process diagnostics with VIC distributed hydrological s
 
 **If you skip this step and merge all outputs, you get physically impossible water balances.** For example, if both models report 200mm of snowmelt, and you sum them, you get 400mm -- double the actual melt.
 
-### Step 2: Convert VIC forcing to CRHM observations (if not done)
+### Step 2: Build the CRHM weather input (if not done)
 
-If the coupling starts from VIC forcing:
-```bash
-python tools/s2_observation_data/convert_vic_to_obs.py \
-  --forcing_dir outputs/<run>/vic_temp/forcing/forcing_final \
-  --grid_nc outputs/<run>/vic_temp/grid/basin_grid.nc \
-  --output_path outputs/<run>/crhm/obs/basin.obs \
-  --start_year <start> --end_year <end>
-```
+CRHM's weather input is built in stage s2 with `build_obs.py`, straight from the
+forcing source, for a coupled study exactly as for any other run. To drive both
+models with the same weather, name the SAME source, period and domain in both
+(for a basin: `--basin_shp` with the same polygon). There is no tool that turns
+another model's forcing files into a CRHM `.obs`.
 
 ### Step 3: Run CRHM (if not done)
 
-Run CRHM standalone using VIC forcing as observation input. This produces CRHM diagnostics for the same period and domain as the VIC simulation.
+Run CRHM standalone on the `.obs` from stage s2. This produces CRHM diagnostics for the same period and domain as the VIC simulation.
 
 ### Step 4: Spatial mapping
 
@@ -145,12 +142,12 @@ The real value of coupling is using CRHM to diagnose where VIC's simpler snow/fr
 > **Do this instead**: Use area-weighted aggregation (sum of flux*area / total_area).
 > See diagnostic triplet dt_009.
 
-> **PITFALL**: VIC specific humidity fed to CRHM as relative humidity
-> This is the coupling-specific manifestation of dt_001. When converting VIC forcing to CRHM .obs, specific humidity must be converted to relative humidity. If skipped, CRHM sees the atmosphere as 0.001-0.02% RH (bone dry), eliminating all sublimation.
-> **Do this instead**: Use convert_vic_to_obs.py which handles this conversion. Verify RH values are 0-100%.
+> **PITFALL**: Specific humidity fed to CRHM as relative humidity
+> See dt_001. The forcing sources give specific humidity; CRHM needs relative humidity. If skipped, CRHM sees the atmosphere as 0.001-0.02% RH (bone dry), eliminating all sublimation.
+> **Do this instead**: Build the .obs with build_obs.py (stage s2), which does this conversion. Verify RH values are 0-100%.
 > See diagnostic triplet dt_001.
 
 ---
 
 *This skill document is part of the hydrocraft-crhm knowledge infrastructure.*
-*Stage 6 of 6 | Tools used: convert_vic_to_obs, merge_crhm_vic | Related triplets: dt_001, dt_009, dt_010, dt_015*
+*Stage 6 of 6 | Tools used: merge_crhm_vic | Related triplets: dt_001, dt_009, dt_010, dt_015*

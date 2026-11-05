@@ -24,9 +24,9 @@ Usage::
     from ki_tools_common.terrain import get_terrain
     from ki_tools_common.climate_scenarios import harmonize, delta_perturbation, warming_levels
 
-NOTE on climate_scenarios: importing ki_tools_common (this package, any
-submodule) eagerly imports netCDF4 via netcdf_utils below. If a script
-also needs to open raw ISIMIP3b/HiCPC files via
+NOTE on climate_scenarios: importing ``ki_tools_common.climate_scenarios``
+imports netCDF4 via netcdf_utils. If a script also needs to open raw
+ISIMIP3b/HiCPC files via
 climate_scenarios/knowledge_infrastructure/lib/climate_sources_io.py
 (standalone, h5netcdf-based), that file-opening MUST happen BEFORE this
 package is imported in the same process -- see

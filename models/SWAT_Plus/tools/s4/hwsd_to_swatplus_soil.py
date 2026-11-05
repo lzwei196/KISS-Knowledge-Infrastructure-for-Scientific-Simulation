@@ -5,7 +5,7 @@ Knowledge Infrastructure — Validated Tool
 Tool ID:      hwsd_to_swatplus_soil
 Stage:        s4_soil_database
 Description:  Generate SWAT+ soils.sol from HWSD global raster + MDB database
-              for any basin worldwide, keyed to a VIC-style basin_grid.nc.
+              for any basin worldwide, for a list of locations given by the caller.
 
 Reads HWSD raster (hwsd.bil, 30 arc-sec) to obtain MU_GLOBAL per grid cell,
 then looks up topsoil (0-30 cm) and subsoil (30-100 cm) properties from the
@@ -18,7 +18,12 @@ Two layers per soil profile:
   Layer 2 — subsoil  (300-1000 mm, HWSD S_* columns)
 
 Inputs:
-  --grid_nc      Path to basin_grid.nc (VIC grid with y, x, mask)
+  --points       The locations, as JSON: '[[lat, lon], ...]' inline, or the path
+                 of a JSON file with that list (for example the subbasin or
+                 weather-station centroids this SWAT+ setup already uses).
+                 One soil profile is written per location, in this order.
+  --cell_deg     Side of the square (degrees) around each location over which
+                 the dominant HWSD mapping unit is taken. No default.
   --hwsd_raster  Path to HWSD raster (.bil), default: data/soil/HWSD_RASTER/hwsd.bil
   --hwsd_mdb     Path to HWSD.mdb, default: data/forcing/huaihe_raw/soil/HWSD.mdb
   --output_path  Output soils.sol path
@@ -27,13 +32,13 @@ Outputs:
   soils.sol — SWAT+ multi-line format (profile line + N layer lines)
 
 Preconditions:
-  - basin_grid.nc exists with mask, y, x variables
+  - --points holds at least one [lat, lon] pair; --cell_deg > 0
   - HWSD raster and MDB are accessible
   - mdb-tools installed (apt install mdbtools)
-  - rasterio, xarray, numpy, geopandas, rasterstats installed
+  - rasterio, numpy, geopandas, rasterstats installed
 
 Postconditions:
-  - soils.sol contains one profile per valid grid cell
+  - soils.sol contains one profile per location
   - All texture sums = 100%, bulk density in [0.9, 2.5], AWC in [0.01, 0.5]
   - Format matches SWAT+ editor output (readable by SWAT+ rev59+)
 
@@ -630,8 +635,14 @@ def validate_inputs(args):
     """Validate all inputs before processing."""
     errors = []
 
-    if not Path(args.grid_nc).exists():
-        errors.append(f"Grid NC not found: {args.grid_nc}")
+    try:
+        pts = read_points(args.points)
+        if not pts:
+            errors.append("--points holds no location")
+    except Exception as exc:
+        errors.append(f"--points: {exc}")
+    if not (0.0 < args.cell_deg <= 5.0):
+        errors.append(f"--cell_deg must be > 0 and <= 5 degrees (got {args.cell_deg})")
     if not Path(args.hwsd_raster).exists():
         errors.append(f"HWSD raster not found: {args.hwsd_raster}")
     if not Path(args.hwsd_mdb).exists():
@@ -704,47 +715,50 @@ def validate_outputs(profiles, output_path):
         logger.info("Output validation passed — all profiles valid.")
 
 
+def read_points(spec):
+    """--points: inline JSON or a JSON file -> list of (lat, lon) floats."""
+    text = str(spec).strip()
+    if not text.startswith('['):
+        if not Path(text).is_file():
+            raise ValueError(f"not a JSON list and not a file: {text}")
+        text = Path(text).read_text()
+    data = json.loads(text)
+    pts = []
+    for item in data:
+        if not (isinstance(item, (list, tuple)) and len(item) == 2):
+            raise ValueError(f"each location must be [lat, lon], got {item!r}")
+        lat, lon = float(item[0]), float(item[1])
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 360.0):
+            raise ValueError(f"not a lat/lon pair: {item!r}")
+        pts.append((lat, lon))
+    return pts
+
+
 # ---------------------------------------------------------------------------
 # Main processing
 # ---------------------------------------------------------------------------
 def process(args):
     """
     Main pipeline:
-    1. Read basin_grid.nc to get cell coordinates
+    1. Read the locations given with --points
     2. Load HWSD MDB into memory
     3. Extract MU_GLOBAL codes from raster per grid cell
     4. Look up soil properties and compute derived params
     5. Write soils.sol
     """
-    import xarray as xr
     import numpy as np
 
-    # Step 1: Read grid
-    logger.info(f"Reading grid: {args.grid_nc}")
-    ds = xr.open_dataset(args.grid_nc)
-
-    if 'mask' in ds:
-        valid = ds['mask'].stack(cell=('y', 'x')).dropna('cell')
-        lats = valid.coords['y'].values.astype(float)
-        lons = valid.coords['x'].values.astype(float)
-    elif 'lat' in ds and 'lon' in ds:
-        lats = ds['lat'].values.astype(float)
-        lons = ds['lon'].values.astype(float)
-    else:
-        raise ValueError("Grid NC must have (mask, y, x) or (lat, lon) variables")
-
-    # Determine resolution
-    if 'y' in ds.coords and len(ds.coords['y']) > 1:
-        resolution = abs(float(ds.coords['y'].values[1] - ds.coords['y'].values[0]))
-    else:
-        resolution = 0.25  # Fallback
-    ds.close()
+    # Step 1: The locations (stated by the caller; no other model's grid file)
+    pts = read_points(args.points)
+    lats = np.array([p[0] for p in pts], dtype=float)
+    lons = np.array([p[1] for p in pts], dtype=float)
+    resolution = float(args.cell_deg)
 
     n_cells = len(lats)
-    logger.info(f"Grid: {n_cells} cells at {resolution}deg resolution")
+    logger.info(f"{n_cells} locations, HWSD majority over {resolution} deg squares")
 
     if n_cells == 0:
-        raise ValueError("No valid grid cells found in basin_grid.nc")
+        raise ValueError("No location given in --points")
 
     # Step 2: Load HWSD MDB
     hwsd_db = load_hwsd_mdb(args.hwsd_mdb)
@@ -793,8 +807,14 @@ def parse_args():
         description="Generate SWAT+ soils.sol from HWSD global database"
     )
     parser.add_argument(
-        '--grid_nc', required=True,
-        help='Path to basin_grid.nc (VIC grid with y, x, mask)'
+        '--points', required=True,
+        help="Locations as JSON '[[lat, lon], ...]' or the path of a JSON file with "
+             "that list. One soil profile per location, in this order."
+    )
+    parser.add_argument(
+        '--cell_deg', type=float, required=True,
+        help='Side (degrees) of the square around each location over which the '
+             'dominant HWSD mapping unit is taken. No default.'
     )
     parser.add_argument(
         '--hwsd_raster', default=str(DEFAULT_HWSD_RASTER),

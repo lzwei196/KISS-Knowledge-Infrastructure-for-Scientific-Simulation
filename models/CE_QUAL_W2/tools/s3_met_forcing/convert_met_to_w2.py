@@ -1,377 +1,448 @@
 #!/usr/bin/env python3
 """
-convert_met_to_w2.py — Convert CMFD/MSWX/NASA POWER forcing to CE-QUAL-W2 met format.
+convert_met_to_w2.py -- Build the CE-QUAL-W2 met file straight from a forcing source.
 
-CRITICAL UNIT CONVERSIONS (silent errors if wrong — dt_001, dt_002, dt_004, dt_005):
-  - Cloud cover: CE-QUAL-W2 wants TENTHS (0-10), NOT fraction (0-1), NOT percent (0-100)
-    If given as fraction 0-1: multiply by 10
-    If wrong: model sees near-clear sky → 3-5 C warm temperature bias (dt_001)
-  - Dewpoint: CE-QUAL-W2 wants TDEW in deg C, NOT relative humidity, NOT vapor pressure
-    From VP (kPa): TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))  (dt_002)
-  - Julian day: CE-QUAL-W2 wants DECIMAL day of year (1.0 = midnight Jan 1, 1.5 = noon Jan 1)
-    NOT integer day number, NOT astronomical Julian Date  (dt_005)
-  - Wind direction: typically degrees (0-360) in v4.x. Some v3.x versions use radians (dt_004)
+Two halves, kept apart on purpose:
 
-CE-QUAL-W2 met file format (fixed-width, 8-char fields):
-  $Met file for water body 1
-  JDAY      TAIR      TDEW      WIND      WDIR     CLOUD       SRO
-    1.000    -5.200    -8.100     3.100   270.000     7.000     0.000
+  1. source -> STANDARD SERIES   (shared, ki_tools_common.load_forcing.load_hourly_forcing)
+         dates             numpy datetime64 (UTC), one per step
+         timestep_seconds  3600 (nasa_power) or 10800 (cmfd, mswx)
+         temp_c            air temperature      (deg C)
+         srad_wm2          incoming short-wave  (W/m^2)
+         wind_ms           wind speed           (m/s)
+         shum_kgkg         specific humidity    (kg/kg)
+         pres_pa           air pressure         (Pa)
+
+  2. STANDARD SERIES -> met file  (this KI, standard_to_met() below)
+         JDAY, TAIR, TDEW, WIND, PHI, CLOUD, SRO
+
+What half 2 does, column by column (each one is a silent error if wrong):
+  JDAY   decimal day, 1.0 = 00:00 on 1 Jan of --start_year, in LOCAL STANDARD time.
+         The sources are in UTC; CE-QUAL-W2 works out the sun's position from JDAY
+         as local standard time (heat-exchange.f90, SHORT_WAVE_RADIATION). The
+         offset is the model's own rule, int(lon/15) hours, unless
+         --utc_offset_hours is given. Only the time stamp moves; no value changes.
+  TAIR   deg C, the source value.
+  TDEW   deg C, from specific humidity and the source's own pressure:
+         e = q p / (0.622 + 0.378 q), then the inverse of the Tetens formula of
+         ki_tools_common.humidity. Where e is above saturation TDEW is set to
+         TAIR (counted in the summary).
+  WIND   m/s, the source value (no height adjustment).
+  PHI    wind direction in RADIANS (the v5 binary uses cos(PHI - PHI0); the
+         DeGray example file holds 4.37-5.24). The sources have no wind
+         direction: the constant --wind_dir_deg (default 270, westerly) is
+         written as radians (4.712) and the summary says so.
+  CLOUD  TENTHS, 0-10 (dt_001). Estimated per local day from short-wave with the
+         model's own relation (heat-exchange.f90):
+             SRO = (1 - 0.0065 CLOUD^2) * SRO_clear(sun altitude)
+         CLOUD = sqrt((1 - SW_day / SW_clear_day) / 0.0065), limited to 0-10,
+         one value per local day. A day with no usable daylight in the series
+         (the dark hours at either end of the period) takes the value of the
+         nearest day that has one; more than 3 such days in a row stops the tool.
+  SRO    W/m^2, the source short-wave. The model reads it only when SROC is ON
+         in the control file; with SROC OFF it computes short-wave from CLOUD.
+
+File form: the v5 binary's CSV form (time-varying-data.f90): first character '$',
+three header lines, then comma-separated rows. With SROC OFF the binary reads
+the first six values of each row and ignores SRO.
+
+No value is made up. A missing or non-finite value, an uneven time axis or a
+period that is not fully covered stops the tool with a clear error and writes
+nothing. A summary is written next to the met file as <output>.summary.json.
 
 Usage:
-    python convert_met_to_w2.py \
-        --forcing_dir /path/to/cmfd_or_mswx \
-        --lat 32.54 --lon 111.51 \
-        --start_year 2005 --end_year 2010 \
-        --output met_wb1.npt
+    python convert_met_to_w2.py --source mswx --forcing_dir KISSPATH_FORCING \
+        --lat 34.2 --lon -93.1 --start_year 1980 --end_year 1980 \
+        --output <run_dir>/met.npt
 
-    python convert_met_to_w2.py \
-        --vic_forcing_dir /path/to/vic/forcing/forcing_final \
-        --lat 32.54 --lon 111.51 \
-        --start_year 2005 --end_year 2010 \
-        --output met_wb1.npt
+    python convert_met_to_w2.py --source cmfd \
+        --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
+        --lat 32.54 --lon 111.51 --start_year 2005 --end_year 2010 \
+        --output <run_dir>/met.npt
+
+    python convert_met_to_w2.py --source nasa_power \
+        --lat 34.2 --lon -93.1 --start_year 2005 --end_year 2005 \
+        --output <run_dir>/met.npt
+
+Exit codes: 0 success, 1 bad arguments, 2 source or series not usable (nothing written).
 """
 
 import argparse
 import json
 import os
 import sys
-from datetime import datetime, timedelta
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
-sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.humidity import saturation_vapor_pressure
 
+SOURCES = ("cmfd", "mswx", "nasa_power")
 
-def validate_inputs(args):
-    """Validate input arguments."""
-    errors = []
+# The standard series half 2 needs, and the range a real value can lie in.
+# Outside the range is a unit error upstream, not weather.
+NEEDED_SERIES = {
+    "temp_c":    (-90.0, 60.0),
+    "srad_wm2":  (0.0, 1500.0),
+    "wind_ms":   (0.0, 100.0),
+    "shum_kgkg": (0.0, 0.05),
+    "pres_pa":   (30000.0, 110000.0),
+}
 
-    if args.forcing_dir is None and args.vic_forcing_dir is None:
-        errors.append("Must provide either --forcing_dir (CMFD/MSWX) or "
-                      "--vic_forcing_dir (VIC forcing files)")
-
-    if args.forcing_dir and not os.path.isdir(args.forcing_dir):
-        errors.append(f"Forcing directory not found: {args.forcing_dir}")
-
-    if args.vic_forcing_dir and not os.path.isdir(args.vic_forcing_dir):
-        errors.append(f"VIC forcing directory not found: {args.vic_forcing_dir}")
-
-    if not (-90 <= args.lat <= 90):
-        errors.append(f"--lat must be between -90 and 90, got {args.lat}")
-    if not (-180 <= args.lon <= 180):
-        errors.append(f"--lon must be between -180 and 180, got {args.lon}")
-
-    if args.start_year > args.end_year:
-        errors.append(f"start_year ({args.start_year}) > end_year ({args.end_year})")
-
-    if errors:
-        print(json.dumps({"status": "error", "errors": errors}))
-        sys.exit(1)
+CLOUD_COEF = 0.0065          # heat-exchange.f90: SRON = (1.0-0.0065*CLOUD**2)*clear sky
+BTU_FT2_DAY_TO_W_M2 = 0.1314  # heat-exchange.f90
+MIN_CLEAR_DAY_WM2 = 20.0     # a day needs this much mean clear-sky short-wave to give a cloud value
+MAX_CARRY_DAYS = 3
 
 
-def vp_to_dewpoint(vp_kpa):
+def check_standard_series(d):
+    """Problems that make a standard series unusable (empty list = usable).
+
+    Nothing is repaired here.
     """
-    Convert vapor pressure (kPa) to dewpoint temperature (deg C).
-
-    Formula: TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))
-    where VP is in kPa.
-
-    CRITICAL (dt_002): VP must be in kPa. CMFD gives kPa. MSWX also kPa.
-    If VP is in Pa (e.g., ERA5), divide by 1000 first!
-    If VP is in hPa, divide by 10 first!
-    """
-    # Use canonical Tetens reference: es(0°C) in kPa
-    es0_kpa = saturation_vapor_pressure(0.0) / 10.0  # hPa -> kPa (≈0.6108)
-    vp_kpa = np.clip(vp_kpa, 0.001, 10.0)  # prevent log(0)
-    ln_term = np.log(vp_kpa / es0_kpa)
-    tdew = (237.3 * ln_term) / (17.269 - ln_term)  # inverse Tetens (ki_tools_common coefficients)
-    return tdew
-
-
-def estimate_cloud_cover(sw_actual, sw_clearsky):
-    """
-    Estimate cloud cover in TENTHS (0-10) from shortwave radiation.
-
-    CLOUD = 10 * (1 - SW_actual / SW_clearsky)
-
-    CRITICAL (dt_001): Result is in TENTHS (0-10), NOT fraction (0-1)!
-    CE-QUAL-W2 reads cloud cover as 0-10. If you pass 0-1 (fraction),
-    it looks like near-clear sky, resulting in too much shortwave and
-    water temperatures 3-5 C too warm. This is a SILENT error.
-
-    During nighttime (SW_clearsky ≈ 0), use the most recent daytime value.
-    """
-    cloud = np.full_like(sw_actual, 5.0)  # default moderate cloud
-    mask = sw_clearsky > 10  # only compute when sufficient daylight
-    cloud[mask] = 10.0 * np.clip(1.0 - sw_actual[mask] / sw_clearsky[mask], 0, 1)
-    return cloud
-
-
-def compute_clearsky_sw(lat, doy_array, hour_array):
-    """
-    Compute clear-sky shortwave radiation (W/m^2) using simple solar geometry.
-
-    Used as denominator for cloud cover estimation when only measured SW is available.
-    """
-    lat_rad = np.radians(lat)
-    # Solar declination (Spencer formula)
-    day_angle = 2 * np.pi * (doy_array - 1) / 365.25
-    decl = (0.006918 - 0.399912 * np.cos(day_angle) + 0.070257 * np.sin(day_angle)
-            - 0.006758 * np.cos(2 * day_angle) + 0.000907 * np.sin(2 * day_angle))
-
-    # Hour angle (15 deg per hour, 0 at solar noon)
-    hour_angle = np.radians(15.0 * (hour_array - 12.0))
-
-    # Solar elevation
-    sin_elev = (np.sin(lat_rad) * np.sin(decl) +
-                np.cos(lat_rad) * np.cos(decl) * np.cos(hour_angle))
-    sin_elev = np.clip(sin_elev, 0, 1)
-
-    # Clear-sky SW (simplified)
-    solar_constant = 1361.0  # W/m^2
-    transmittance = 0.75  # atmospheric transmittance
-    sw_clearsky = solar_constant * transmittance * sin_elev
-
-    return sw_clearsky
-
-
-def datetime_to_jday(dt):
-    """
-    Convert datetime to CE-QUAL-W2 decimal Julian day (JDAY).
-
-    JDAY = day_of_year + hour/24 + minute/1440
-
-    CRITICAL (dt_005): JDAY is decimal, NOT integer.
-    1.0 = midnight Jan 1, 1.5 = noon Jan 1, 2.0 = midnight Jan 2.
-    """
-    doy = dt.timetuple().tm_yday
-    frac = dt.hour / 24.0 + dt.minute / 1440.0 + dt.second / 86400.0
-    return doy + frac
-
-
-def read_vic_forcing(vic_dir, lat, lon, start_year, end_year):
-    """
-    Read VIC forcing files and extract meteorological variables.
-
-    VIC forcing file format (space-delimited, 7 columns):
-    PREC  TMAX  TMIN  WIND  VP  SRAD_SW  SRAD_LW
-    mm    C     C     m/s   kPa W/m^2    W/m^2
-
-    VIC files are 3-hourly (8 steps/day).
-    """
-    # Find the forcing file closest to the given lat/lon
-    vic_dir = Path(vic_dir)
-    forcing_files = sorted(vic_dir.glob("*"))
-
-    # VIC forcing files are named like: forcing_prefix_LAT_LON
-    best_file = None
-    best_dist = float("inf")
-
-    for f in forcing_files:
-        if f.is_dir():
+    problems = []
+    if "dates" not in d or len(d["dates"]) == 0:
+        return ["no time steps were returned"]
+    n = len(d["dates"])
+    for name, (lo, hi) in NEEDED_SERIES.items():
+        if name not in d or d[name] is None:
+            problems.append(f"{name}: series missing")
             continue
-        parts = f.stem.split("_")
-        try:
-            file_lat = float(parts[-2])
-            file_lon = float(parts[-1])
-            dist = (file_lat - lat) ** 2 + (file_lon - lon) ** 2
-            if dist < best_dist:
-                best_dist = dist
-                best_file = f
-        except (ValueError, IndexError):
+        a = np.asarray(d[name], dtype=float)
+        if a.shape != (n,):
+            problems.append(f"{name}: {a.shape} values for {n} time steps")
             continue
+        bad = int((~np.isfinite(a)).sum())
+        if bad:
+            problems.append(f"{name}: {bad} of {n} values missing or not finite")
+            continue
+        if a.min() < lo or a.max() > hi:
+            problems.append(f"{name}: range {a.min():g} to {a.max():g} is outside "
+                            f"{lo:g} to {hi:g} (wrong unit upstream?)")
+    dates = np.asarray(d["dates"]).astype("datetime64[s]")
+    steps = np.diff(dates).astype("timedelta64[s]").astype(int)
+    ts = int(d.get("timestep_seconds", 0) or 0)
+    if ts <= 0 or 86400 % ts:
+        problems.append(f"timestep_seconds {ts} does not divide a day")
+    elif len(steps) and not (steps == ts).all():
+        off = int((steps != ts).sum())
+        problems.append(f"time axis: {off} of {len(steps)} steps are not {ts} s apart "
+                        f"(first at {dates[int(np.argmax(steps != ts))]})")
+    return problems
 
-    if best_file is None:
-        return None, "No VIC forcing file found near lat={}, lon={}".format(lat, lon)
 
-    # Read the file — VIC forcing column order (CLAUDE.md unit trap):
-    # TEMP(°C), PREC(mm), PRESSURE(kPa), SWDOWN(W/m²), LWDOWN(W/m²), VP(kPa), WIND(m/s)
-    df = pd.read_csv(best_file, sep=r"\s+", header=None,
-                     names=["TAIR", "PREC", "PRESSURE", "SW_DOWN", "LW_DOWN", "VP", "WIND"])
+def check_period_covered(d, start_year, end_year):
+    """The series must hold every step of start_year..end_year, no more, no less."""
+    ts = int(d["timestep_seconds"])
+    first = np.datetime64(f"{start_year:04d}-01-01T00:00:00")
+    days = int((np.datetime64(f"{end_year + 1:04d}-01-01") - np.datetime64(f"{start_year:04d}-01-01"))
+               / np.timedelta64(1, "D"))
+    want = days * (86400 // ts)
+    dates = np.asarray(d["dates"]).astype("datetime64[s]")
+    if len(dates) != want or dates[0] != first:
+        raise ValueError(
+            f"forcing does not cover {start_year}-{end_year}: {len(dates)} steps from "
+            f"{dates[0] if len(dates) else 'nothing'}, expected {want} steps from {first}. "
+            f"Nothing written.")
 
-    # Generate timestamps (3-hourly)
-    start_dt = datetime(start_year, 1, 1)
-    n_steps = len(df)
-    timestamps = [start_dt + timedelta(hours=3 * i) for i in range(n_steps)]
-    df["datetime"] = timestamps
 
-    return df, None
+def dewpoint_from_specific_humidity(shum_kgkg, pres_pa, temp_c):
+    """(TDEW deg C, number of steps limited to TAIR).
 
-
-def read_cmfd_mswx_forcing(forcing_dir, lat, lon, start_year, end_year):
+    e = q p / (0.622 + 0.378 q) in hPa, then the inverse of the Tetens formula
+    es = es0 exp(a T / (b + T)) used by ki_tools_common.humidity.
     """
-    Read CMFD or MSWX forcing NetCDF files.
-    Returns a DataFrame with 3-hourly meteorological data.
+    q = np.asarray(shum_kgkg, dtype=float)
+    e_hpa = q * (np.asarray(pres_pa, dtype=float) / 100.0) / (0.622 + 0.378 * q)
+    if (e_hpa <= 0).any():
+        raise ValueError(f"vapour pressure is zero or negative at {int((e_hpa <= 0).sum())} "
+                         f"steps (specific humidity 0): no dew point exists")
+    es0 = float(saturation_vapor_pressure(0.0))
+    # a and b from the shared formula itself, so the two can never drift apart
+    b = 237.3
+    a = float(np.log(saturation_vapor_pressure(b) / es0) * 2.0)
+    ln_term = np.log(e_hpa / es0)
+    tdew = b * ln_term / (a - ln_term)
+    temp = np.asarray(temp_c, dtype=float)
+    above = tdew > temp
+    return np.where(above, temp, tdew), int(above.sum())
+
+
+def w2_clear_sky_wm2(lat, jday_local, lon, std_meridian):
+    """Clear-sky short-wave (W/m^2) as the v5 binary computes it (heat-exchange.f90).
+
+    jday_local is local standard time; lon and std_meridian are degrees east.
     """
-    try:
-        import xarray as xr
-    except ImportError:
-        return None, "xarray required for CMFD/MSWX reading"
-
-    forcing_dir = Path(forcing_dir)
-
-    all_data = []
-    for year in range(start_year, end_year + 1):
-        # Try CMFD format first (monthly files)
-        cmfd_files = sorted(forcing_dir.glob(f"*{year}*.nc"))
-        if not cmfd_files:
-            # Try MSWX format (yearly files)
-            cmfd_files = sorted(forcing_dir.glob(f"*{year}*"))
-
-        for nc_file in cmfd_files:
-            try:
-                ds = xr.open_dataset(nc_file)
-                # Extract nearest grid point
-                ds_point = ds.sel(lat=lat, lon=lon, method="nearest")
-                df_chunk = ds_point.to_dataframe().reset_index()
-                all_data.append(df_chunk)
-                ds.close()
-            except Exception:
-                continue
-
-    if not all_data:
-        return None, f"No forcing data found in {forcing_dir} for {start_year}-{end_year}"
-
-    df = pd.concat(all_data, ignore_index=True)
-    return df, None
+    jd = np.asarray(jday_local, dtype=float)
+    hour = (jd - np.floor(jd)) * 24.0
+    iday = np.floor(jd) - np.floor(jd / 365.0) * 365.0
+    iday = iday - np.floor(np.floor(jd / 365.0) / 4.0)
+    taud = 2.0 * np.pi * (iday - 1.0) / 365.0
+    eqt = 0.170 * np.sin(4.0 * np.pi * (iday - 80.0) / 373.0) \
+        - 0.129 * np.sin(2.0 * np.pi * (iday - 8.0) / 355.0)
+    # minutes east of the standard meridian put the sun ahead of the clock
+    hh = 0.261799 * (hour + (lon - std_meridian) / 15.0 + eqt - 12.0)
+    decl = (0.006918 - 0.399912 * np.cos(taud) + 0.070257 * np.sin(taud)
+            - 0.006758 * np.cos(2 * taud) + 0.000907 * np.sin(2 * taud)
+            - 0.002697 * np.cos(3 * taud) + 0.001480 * np.sin(3 * taud))
+    lat_r = np.radians(lat)
+    sinal = np.sin(lat_r) * np.sin(decl) + np.cos(lat_r) * np.cos(decl) * np.cos(hh)
+    a0 = np.degrees(np.arcsin(np.clip(sinal, -1.0, 1.0)))
+    clear = 24.0 * (2.044 * a0 + 0.1296 * a0 ** 2 - 1.941e-3 * a0 ** 3
+                    + 7.591e-6 * a0 ** 4) * BTU_FT2_DAY_TO_W_M2
+    return np.where(a0 > 0.0, clear, 0.0)
 
 
-def process(args):
-    """Main processing: read forcing data and write CE-QUAL-W2 met file."""
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+def estimate_cloud_tenths(srad, jday_local, step_days, lat, lon, std_meridian):
+    """(CLOUD in tenths per step, number of steps that took a neighbour day's value).
 
-    # Read forcing data
-    if args.vic_forcing_dir:
-        df, err = read_vic_forcing(args.vic_forcing_dir, args.lat, args.lon,
-                                   args.start_year, args.end_year)
-        if err:
-            print(json.dumps({"status": "error", "errors": [err]}))
-            return 2
+    One value per local day: the cloud cover with which the model's own formula
+    gives that day's mean short-wave. The clear-sky mean of a step is taken over
+    the step [stamp, stamp + step) at 5-minute points; whether the source stamps
+    the start or the end of its step moves only night hours across the day edge.
+    """
+    n_sub = max(1, int(round(step_days * 288)))
+    offs = (np.arange(n_sub) + 0.5) * step_days / n_sub
+    clear_step = w2_clear_sky_wm2(lat, jday_local[:, None] + offs[None, :],
+                                  lon, std_meridian).mean(axis=1)
+    day = np.floor(jday_local + 1e-9).astype(int)
+    days = np.unique(day)
+    cloud_day = np.full(len(days), np.nan)
+    for k, dd in enumerate(days):
+        m = day == dd
+        clear_mean = clear_step[m].mean()
+        if clear_mean >= MIN_CLEAR_DAY_WM2:
+            ratio = srad[m].mean() / clear_mean
+            cloud_day[k] = np.sqrt(np.clip((1.0 - ratio) / CLOUD_COEF, 0.0, 100.0))
+    known = np.where(np.isfinite(cloud_day))[0]
+    if len(known) == 0:
+        raise ValueError("cloud cover cannot be estimated: no day in the series has daylight")
+    carried_steps = 0
+    for k in np.where(~np.isfinite(cloud_day))[0]:
+        near = known[np.argmin(np.abs(known - k))]
+        if abs(int(near) - int(k)) > MAX_CARRY_DAYS:
+            raise ValueError(
+                f"cloud cover cannot be estimated from short-wave around local day {days[k]}: "
+                f"more than {MAX_CARRY_DAYS} days in a row without daylight. Nothing written.")
+        cloud_day[k] = cloud_day[near]
+        carried_steps += int((day == days[k]).sum())
+    return cloud_day[np.searchsorted(days, day)], carried_steps
 
-        # Extract variables from VIC format
-        tair = df["TAIR"].values
-        vp_kpa = df["VP"].values
-        wind = df["WIND"].values
-        sw_down = df["SW_DOWN"].values
-        timestamps = df["datetime"].values
 
-    elif args.forcing_dir:
-        df, err = read_cmfd_mswx_forcing(args.forcing_dir, args.lat, args.lon,
-                                          args.start_year, args.end_year)
-        if err:
-            print(json.dumps({"status": "error", "errors": [err]}))
-            return 2
+def utc_offset_for(lon, utc_offset_hours=None):
+    """(offset in hours, where it came from). Default: the model's own standard-meridian rule."""
+    if utc_offset_hours is None:
+        return float(int(lon / 15.0)), "int(lon/15), the rule the model itself uses for its standard meridian"
+    return float(utc_offset_hours), "--utc_offset_hours"
 
-        # Map CMFD/MSWX variable names (may vary)
-        tair_col = next((c for c in df.columns if "temp" in c.lower() or "tair" in c.lower()), None)
-        vp_col = next((c for c in df.columns if "vp" in c.lower() or "vapor" in c.lower()), None)
-        wind_col = next((c for c in df.columns if "wind" in c.lower()), None)
-        sw_col = next((c for c in df.columns if "sw" in c.lower() or "srad" in c.lower()), None)
-        time_col = next((c for c in df.columns if "time" in c.lower()), None)
 
-        tair = df[tair_col].values if tair_col else np.zeros(len(df))
-        vp_kpa = df[vp_col].values if vp_col else np.full(len(df), 0.8)
-        wind = df[wind_col].values if wind_col else np.full(len(df), 2.0)
-        sw_down = df[sw_col].values if sw_col else np.zeros(len(df))
-        timestamps = pd.to_datetime(df[time_col]).values if time_col else None
+def years_to_load(start_year, end_year, utc_offset_hours):
+    """UTC years needed so that the LOCAL years start_year..end_year are fully covered.
 
-    # Convert units
-    # 1. Dewpoint from vapor pressure (CRITICAL — dt_002)
-    tdew = vp_to_dewpoint(vp_kpa)
+    East of Greenwich local midnight of 1 Jan falls in the UTC year before; west of it
+    the last local hours of 31 Dec fall in the UTC year after.
+    """
+    if utc_offset_hours > 0:
+        return start_year - 1, end_year
+    if utc_offset_hours < 0:
+        return start_year, end_year + 1
+    return start_year, end_year
 
-    # 2. Wind direction: default westerly (270 degrees) if not available
-    wdir = np.full_like(wind, 270.0)
 
-    # 3. Cloud cover in TENTHS 0-10 (CRITICAL — dt_001)
-    if timestamps is not None:
-        dts = pd.to_datetime(timestamps)
-        doy_arr = np.array([d.timetuple().tm_yday for d in dts], dtype=float)
-        hour_arr = np.array([d.hour + d.minute / 60 for d in dts], dtype=float)
-        sw_clearsky = compute_clearsky_sw(args.lat, doy_arr, hour_arr)
-        cloud = estimate_cloud_cover(sw_down, sw_clearsky)
-    else:
-        cloud = np.full_like(tair, 5.0)  # moderate default
+def standard_to_met(d, lat, lon, start_year, end_year, output, source_label,
+                    wind_dir_deg=270.0, utc_offset_hours=None, loaded_years=None):
+    """Half 2: write a STANDARD SERIES dict as a CE-QUAL-W2 v5 met file.
 
-    # 4. Shortwave radiation (optional SRO column)
-    sro = np.clip(sw_down, 0, 1400)
+    Returns the summary dict. Raises ValueError when the series is not usable;
+    in that case no file is written.
+    """
+    problems = check_standard_series(d)
+    if problems:
+        raise ValueError("forcing series not usable, nothing written:\n  - "
+                         + "\n  - ".join(problems))
+    # d holds whole UTC years; loaded_years says which (default: the years asked for)
+    load_y0, load_y1 = loaded_years if loaded_years else (start_year, end_year)
+    check_period_covered(d, load_y0, load_y1)
+    if not (0.0 <= wind_dir_deg <= 360.0):
+        raise ValueError(f"--wind_dir_deg {wind_dir_deg} is not between 0 and 360")
 
-    # 5. Julian days (CRITICAL — dt_005: must be DECIMAL, not integer)
-    if timestamps is not None:
-        dts = pd.to_datetime(timestamps)
-        jdays = np.array([datetime_to_jday(d.to_pydatetime()) for d in dts])
-    else:
-        # Generate from start_year
-        n_steps = len(tair)
-        start_dt = datetime(args.start_year, 1, 1)
-        jdays = np.array([
-            datetime_to_jday(start_dt + timedelta(hours=3 * i)) for i in range(n_steps)
-        ])
+    ts = int(d["timestep_seconds"])
+    dates = np.asarray(d["dates"]).astype("datetime64[s]")
+    tair = np.asarray(d["temp_c"], dtype=float) + 0.0
+    wind = np.asarray(d["wind_ms"], dtype=float) + 0.0
+    sro = np.asarray(d["srad_wm2"], dtype=float) + 0.0
+    tdew, n_tdew_limited = dewpoint_from_specific_humidity(d["shum_kgkg"], d["pres_pa"], tair)
 
-    # Write CE-QUAL-W2 met file (fixed-width, 10-char fields)
-    with open(args.output, "w") as f:
-        f.write(f"$Met file for water body 1 — generated by HydroCraft CE-QUAL-W2 tools\n")
-        f.write(f"$JDAY      TAIR      TDEW      WIND      WDIR     CLOUD       SRO\n")
+    utc_offset_hours, offset_from = utc_offset_for(lon, utc_offset_hours)
+    std_meridian = 15.0 * utc_offset_hours
+    t0 = np.datetime64(f"{start_year:04d}-01-01T00:00:00")
+    jday = 1.0 + (dates - t0).astype("timedelta64[s]").astype(float) / 86400.0 \
+        + utc_offset_hours / 24.0
 
-        for i in range(len(jdays)):
-            line = (f"{jdays[i]:10.3f}"
-                    f"{tair[i]:10.3f}"
-                    f"{tdew[i]:10.3f}"
-                    f"{wind[i]:10.3f}"
-                    f"{wdir[i]:10.3f}"
-                    f"{cloud[i]:10.3f}"
-                    f"{sro[i]:10.3f}")
-            f.write(line + "\n")
+    cloud, n_cloud_carried = estimate_cloud_tenths(sro, jday, ts / 86400.0, lat, lon, std_meridian)
+    phi = np.full(len(jday), np.radians(wind_dir_deg))
 
-    # Validate output
-    warnings = []
-    if np.any(cloud > 10.001):
-        warnings.append("Cloud cover exceeds 10 — check units (should be tenths 0-10)")
-    if np.any(cloud < -0.001):
-        warnings.append("Cloud cover is negative — check calculation")
-    if np.any(tdew > tair + 1):
-        warnings.append("Dewpoint exceeds air temperature at some timesteps — check VP units")
-    if np.all(sro < 1):
-        warnings.append("All shortwave radiation is ~0 — check SW data source")
+    # keep the LOCAL years asked for, bracketed: from the last stamp at or before JDAY 1.0
+    # (00:00 local, 1 Jan start_year) to the first stamp at or after 00:00 local on 1 Jan of
+    # the year after end_year, so a run over the whole period finds met data at both ends
+    n_days_local = int((np.datetime64(f"{end_year + 1:04d}-01-01") - np.datetime64(f"{start_year:04d}-01-01"))
+                       / np.timedelta64(1, "D"))
+    j_start, j_end = 1.0, 1.0 + n_days_local
+    edge_padded = bool(loaded_years) and tuple(loaded_years) != (start_year, end_year)
+    before = np.nonzero(jday <= j_start + 1e-9)[0]
+    after = np.nonzero(jday >= j_end - 1e-9)[0]
+    covered = bool(len(before) and len(after))
+    if edge_padded or covered:
+        if not covered:
+            raise ValueError(f"after the move to local time the series runs from JDAY {jday[0]:.3f} to "
+                             f"{jday[-1]:.3f} and does not bracket {j_start:.1f}..{j_end:.1f} "
+                             f"(local {start_year}-{end_year}). Nothing written.")
+        keep = slice(int(before[-1]), int(after[0]) + 1)
+        jday, tair, tdew, wind, phi, cloud, sro, dates = (
+            a[keep] for a in (jday, tair, tdew, wind, phi, cloud, sro, dates))
 
-    n_steps = len(jdays)
-    n_days = (jdays[-1] - jdays[0]) if n_steps > 1 else 0
+    cols = (jday, tair, tdew, wind, phi, cloud, sro)
+    for name, c in zip(("JDAY", "TAIR", "TDEW", "WIND", "PHI", "CLOUD", "SRO"), cols):
+        if not np.isfinite(c).all():
+            raise ValueError(f"{name}: non-finite value after conversion. Nothing written.")
 
-    result = {
+    out_dir = os.path.dirname(os.path.abspath(output))
+    os.makedirs(out_dir, exist_ok=True)
+    tmp = output + ".tmp"
+    with open(tmp, "w") as f:
+        # exactly three header lines; '$' as first character = the v5 CSV form
+        f.write(f"$CE-QUAL-W2 met file from {source_label} at lat {lat:g} lon {lon:g} "
+                f"{start_year}-{end_year} (HydroCraft convert_met_to_w2)\n")
+        f.write(f"$JDAY 1.0 = 00:00 on 1 Jan {start_year} local standard time (UTC{utc_offset_hours:+g} h); "
+                f"PHI in radians; CLOUD in tenths\n")
+        f.write("JDAY,TAIR,TDEW,WIND,PHI,CLOUD,SRO\n")
+        for i in range(len(jday)):
+            f.write(f"{jday[i]:.5f},{tair[i]:.3f},{tdew[i]:.3f},{wind[i]:.3f},"
+                    f"{phi[i]:.3f},{cloud[i]:.2f},{sro[i]:.3f}\n")
+    os.replace(tmp, output)
+
+    return {
         "status": "success",
-        "output_file": args.output,
-        "n_timesteps": n_steps,
-        "n_days": round(float(n_days), 1),
-        "jday_range": [round(float(jdays[0]), 3), round(float(jdays[-1]), 3)],
-        "tair_range": [round(float(np.min(tair)), 1), round(float(np.max(tair)), 1)],
-        "tdew_range": [round(float(np.min(tdew)), 1), round(float(np.max(tdew)), 1)],
-        "cloud_range": [round(float(np.min(cloud)), 1), round(float(np.max(cloud)), 1)],
-        "wind_range": [round(float(np.min(wind)), 1), round(float(np.max(wind)), 1)],
+        "output_file": output,
+        "file_form": "CE-QUAL-W2 v5 CSV met file ('$' first character, 3 header lines)",
+        "columns": ["JDAY", "TAIR", "TDEW", "WIND", "PHI", "CLOUD", "SRO"],
+        "source": source_label,
+        "point": {"lat": lat, "lon": lon},
+        "timestep_seconds": ts,
+        "n_timesteps": int(len(jday)),
+        "period_utc": [str(dates[0]), str(dates[-1])],
+        "utc_offset_hours": utc_offset_hours,
+        "utc_offset_from": offset_from,
+        "utc_years_loaded": [load_y0, load_y1],
+        "local_period_fully_covered": covered,
+        "jday_range": [round(float(jday[0]), 5), round(float(jday[-1]), 5)],
+        "means": {
+            "TAIR_degC": round(float(tair.mean()), 3),
+            "TDEW_degC": round(float(tdew.mean()), 3),
+            "WIND_ms": round(float(wind.mean()), 3),
+            "CLOUD_tenths": round(float(cloud.mean()), 3),
+            "SRO_wm2": round(float(sro.mean()), 3),
+        },
+        "ranges": {
+            "TAIR_degC": [round(float(tair.min()), 2), round(float(tair.max()), 2)],
+            "TDEW_degC": [round(float(tdew.min()), 2), round(float(tdew.max()), 2)],
+            "WIND_ms": [round(float(wind.min()), 2), round(float(wind.max()), 2)],
+            "CLOUD_tenths": [round(float(cloud.min()), 2), round(float(cloud.max()), 2)],
+            "SRO_wm2": [round(float(sro.min()), 2), round(float(sro.max()), 2)],
+        },
+        "estimated": {
+            "TDEW": "from specific humidity and the source's pressure: e = q p/(0.622+0.378 q), "
+                    "inverse Tetens; limited to TAIR at "
+                    f"{n_tdew_limited} steps where e was above saturation",
+            "PHI": f"NOT from the source (it has no wind direction): the constant "
+                   f"{wind_dir_deg:g} deg = {float(np.radians(wind_dir_deg)):.3f} rad at every step",
+            "CLOUD": "one value per local day from short-wave with the model's own relation "
+                     "SRO = (1-0.0065 CLOUD^2) SRO_clear; "
+                     f"{n_cloud_carried} steps on days without usable daylight took the nearest "
+                     "day's value",
+            "JDAY": "source time is UTC; stamps moved to local standard time, values unchanged",
+        },
+        "notes": [
+            "SRO is read by the model only when SROC is ON; with SROC OFF short-wave comes from CLOUD.",
+            "Wind is at the source's height (no adjustment); set WINDH in the control file to it.",
+            f"The first stamp is JDAY {float(jday[0]):.3f} and the last {float(jday[-1]):.3f}: "
+            "a run must start and end inside this range."
+            + ("" if covered else
+               " --no_edge_padding was given: the first or last local hours of the period are NOT in the file."),
+        ],
     }
-    if warnings:
-        result["warnings"] = warnings
 
-    print(json.dumps(result, indent=2))
-    return 0
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Build a CE-QUAL-W2 v5 met file straight from a forcing source")
+    p.add_argument("--source", required=True, choices=SOURCES,
+                   help="Forcing source, read through ki_tools_common.load_forcing."
+                        "load_hourly_forcing. There is no default: name the source.")
+    p.add_argument("--forcing_dir", default=None,
+                   help="Root folder of the cmfd / mswx store (not used by nasa_power; "
+                        "the loader's own default is used when left out)")
+    p.add_argument("--lat", type=float, required=True, help="Latitude (degrees north)")
+    p.add_argument("--lon", type=float, required=True, help="Longitude (degrees east)")
+    p.add_argument("--start_year", type=int, required=True)
+    p.add_argument("--end_year", type=int, required=True)
+    p.add_argument("--output", required=True,
+                   help="Met file path (give it the name the control file expects)")
+    p.add_argument("--wind_dir_deg", type=float, default=270.0,
+                   help="Wind direction written at every step, degrees (the sources have "
+                        "none). Written to the file in radians. Default 270.")
+    p.add_argument("--utc_offset_hours", type=float, default=None,
+                   help="Local standard time minus UTC, hours. Default int(lon/15), the "
+                        "model's own standard-meridian rule.")
+    p.add_argument("--no_edge_padding", action="store_true",
+                   help="Do NOT read the neighbouring UTC year. The file then misses the first "
+                        "local hours of the period (east of Greenwich) or the last ones (west). "
+                        "Default: the neighbouring year is read so the local years are complete; "
+                        "if the source does not have that year the tool stops.")
+    return p.parse_args()
+
+
+def fail(code, message):
+    print(json.dumps({"status": "error", "errors": [message]}, indent=2))
+    return code
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert forcing to CE-QUAL-W2 met format")
+    args = parse_args()
+    if not (-90 <= args.lat <= 90) or not (-180 <= args.lon <= 180):
+        return fail(1, f"--lat {args.lat} / --lon {args.lon} out of range")
+    if args.start_year > args.end_year:
+        return fail(1, f"start_year {args.start_year} is after end_year {args.end_year}")
+    if args.forcing_dir and not os.path.isdir(args.forcing_dir):
+        return fail(1, f"--forcing_dir not found: {args.forcing_dir}")
 
-    parser.add_argument("--forcing_dir", help="CMFD/MSWX forcing directory")
-    parser.add_argument("--vic_forcing_dir", help="VIC forcing file directory")
-    parser.add_argument("--lat", type=float, required=True, help="Latitude")
-    parser.add_argument("--lon", type=float, required=True, help="Longitude")
-    parser.add_argument("--start_year", type=int, required=True)
-    parser.add_argument("--end_year", type=int, required=True)
-    parser.add_argument("--output", required=True, help="Output met file path (met_wb1.npt)")
-
-    args = parser.parse_args()
-    validate_inputs(args)
-    sys.exit(process(args))
+    from ki_tools_common.load_forcing import load_hourly_forcing
+    offset, _ = utc_offset_for(args.lon, args.utc_offset_hours)
+    y0, y1 = (args.start_year, args.end_year) if args.no_edge_padding \
+        else years_to_load(args.start_year, args.end_year, offset)
+    try:
+        d = load_hourly_forcing(args.source, args.lat, args.lon, y0, y1, args.forcing_dir)
+    except Exception as exc:
+        extra = "" if (y0, y1) == (args.start_year, args.end_year) else (
+            f" (UTC years {y0}-{y1} are needed to cover the local years {args.start_year}-"
+            f"{args.end_year} at UTC{offset:+g} h; if the source does not have the extra year, "
+            f"shorten the period or pass --no_edge_padding and start/end the run inside the file)")
+        return fail(2, f"{args.source} could not be read for {y0}-{y1} "
+                       f"at ({args.lat}, {args.lon}); nothing written{extra}. "
+                       f"{type(exc).__name__}: {exc}")
+    try:
+        summary = standard_to_met(d, args.lat, args.lon, args.start_year, args.end_year,
+                                  args.output, args.source,
+                                  wind_dir_deg=args.wind_dir_deg,
+                                  utc_offset_hours=args.utc_offset_hours,
+                                  loaded_years=(y0, y1))
+    except ValueError as exc:
+        return fail(2, str(exc))
+    summary["forcing_dir"] = args.forcing_dir or "the loader's default"
+    with open(args.output + ".summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+    print(json.dumps(summary, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

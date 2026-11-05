@@ -61,7 +61,7 @@ human-written Tool Inventory above; `--help` on any of these prints its argument
 **Model**: GR4J daily lumped rainfall-runoff model via airGR R package v1.7.8
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 15+ diagnostic triplets | ~1,500 lines of validated Python
+**Stats**: current tool, stage-doc and triplet counts: the KI map at the top of this file
 **Validation status**: `production_validated` (airGR L0123001 built-in dataset)
 
 ---
@@ -79,7 +79,7 @@ See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
 
 ## Overview
 
-This knowledge infrastructure enables fully autonomous simulation of catchment rainfall-runoff processes using the GR4J model (Perrin et al., 2003) implemented in the airGR R package. The 4 validated Python tools replace manual R workflow steps with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and calibration infrastructure.
+This knowledge infrastructure enables fully autonomous simulation of catchment rainfall-runoff processes using the GR4J model (Perrin et al., 2003) implemented in the airGR R package. The validated Python tools replace manual R workflow steps with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and calibration infrastructure.
 
 **What GR4J does**: Four-parameter daily lumped conceptual hydrological model. Simulates:
 - Production store: soil moisture accounting (interception, evaporation, percolation)
@@ -155,7 +155,7 @@ The calibration uses transformed parameters to ensure unconstrained optimization
 - X1: log transform (real = exp(transformed))
 - X2: sinh transform (real = sinh(transformed))
 - X3: log transform (real = exp(transformed))
-- X4: linear rescaling to [0.5, 39.5] range
+- X4: linear rescaling to [0.5, 20] range (airGR 1.7.8 TransfoParam_GR4J: X4 = 20 + 19.5*(t-9.99)/19.98 over transformed t in [-9.99, 9.99]; corrected 2026-09-03 — earlier text said 39.5, which is wrong)
 
 ---
 
@@ -279,7 +279,7 @@ These unit mismatches cause **silent failures** — the model runs but produces 
 | `run_gr4j` | s3-s4 | `tools/run_gr4j.py` | ~350 | Execute GR4J via rpy2 (simulation + calibration) |
 | `parse_gr4j_output` | s5-s6 | `tools/parse_gr4j_output.py` | ~300 | Extract results to CSV, compute metrics, plot |
 
-**Total**: 4 tools, ~1,100 lines of validated Python code.
+**Total**: the current tool count is in the KI map at the top of this file.
 
 ---
 
@@ -313,7 +313,7 @@ GR4J has two stores (production and routing) plus unit hydrograph states. Defaul
 
 ### 4. No missing values in precipitation or PE (dt_007)
 
-airGR does NOT allow NA values in Precip or PotEvap. Any NA causes an error. Gap-fill forcing data BEFORE creating InputsModel. Observed discharge (Qobs) CAN contain NA values.
+airGR does NOT allow NA values in Precip or PotEvap. Any NA causes an error. Stop and recover missing source records BEFORE creating InputsModel; do not silently interpolate or zero-fill. Observed discharge (Qobs) CAN contain NA values.
 
 ### 5. Calibration uses transformed parameter space (dt_008)
 
@@ -329,7 +329,7 @@ GR4J expects daily total precipitation in mm, not instantaneous rates. When aggr
 
 ### 8. X4 minimum is 0.5, not 0 (dt_011)
 
-The unit hydrograph time constant X4 has a hard floor at 0.5 days. Values below 0.5 are silently clipped with a warning. During calibration, the parameter transform ensures X4 stays in [0.5, 39.5].
+The unit hydrograph time constant X4 has a hard floor at 0.5 days. Values below 0.5 are silently clipped with a warning. During calibration, the parameter transform ensures X4 stays in [0.5, 20] days (verified against airGR 1.7.8 source; corrected 2026-09-03).
 
 ---
 
@@ -434,7 +434,10 @@ For each daily time step:
 
 ---
 
-## 11. Validated Results
+## 11. Validation Status
+
+Run results (site, period, scores) are not kept here. They live in the run records
+(`test_runs` in hydrocraft.db and each run's own result files).
 
 ### Test Basin
 
@@ -476,11 +479,10 @@ freshet), run with `--snow` (alias for `--model cemaneige_gr4j`). The CemaNeige
 variant needs the `TempMean_degC` column (written by `convert_forcing_to_gr4j` by
 default) and runs as a single elevation layer if no HypsoData is supplied.
 
-**WHY IT MATTERS (HYDAT 08NH120 Moyie R., BC, 2026-06-23):** plain GR4J on this
-alpine snowmelt basin calibrated to NSE 0.14 only, with X2 forced to +7.3 mm/d
-(far outside the typical −5..3 range) to import phantom groundwater faking the
-spring freshet. Adding `--snow` lifted calibration NSE to 0.80 / validation 0.77
-and returned X2 to a physical +0.34. Diagnostic tell: if your best-fit X2 is large
+**WHY IT MATTERS:** on an alpine snowmelt basin, plain GR4J calibrates poorly and
+pushes X2 far outside the typical −5..3 range, importing phantom groundwater to fake
+the spring freshet. Adding `--snow` gives a much better calibration and returns X2 to
+a physical value. Diagnostic tell: if your best-fit X2 is large
 and you're on a cold catchment, you are missing snow — switch to `--snow`.
 Calibration example (6-param, CemaNeige adds X5=CTG, X6=Kf):
 ```
@@ -489,10 +491,10 @@ run_gr4j.py --forcing forcing_gr4j.csv --output sim.csv --mode calibration --sno
 # then simulate with the calibrated 6 params: --mode simulation --snow --x1..--x6
 ```
 
-**ELEVATION LAYERS (`--hypso-json`, added 2026-07-13, Lancang 允景洪):** by default
+**ELEVATION LAYERS (`--hypso-json`, added 2026-07-13):** by default
 CemaNeige runs as a SINGLE elevation layer at the forcing elevation, which smears
-snow across the full relief. For high-relief basins (>1500 m relief — e.g. the
-Lancang at Jinghong spans ~550-5,500 m), pass the catchment-params JSON written by
+snow across the full relief. For high-relief basins (>1500 m relief), pass the
+catchment-params JSON written by
 `convert_catchment_params` (must contain the 101-point `hypsometry` array from the
 basin-masked DEM): `--snow --hypso-json catchment_params.json [--nlayers 5]`.
 airGR then extrapolates T and P over the elevation bands
@@ -507,3 +509,23 @@ enforced by the tool.
 - Perrin, C., Michel, C. and Andreassian, V. (2003). Improvement of a parsimonious model for streamflow simulation. Journal of Hydrology, 279(1-4), 275-289.
 - Oudin, L., Hervieu, F., Michel, C., Perrin, C., Andreassian, V., Anctil, F. and Loumagne, C. (2005). Which potential evapotranspiration input for a lumped rainfall-runoff model? Part 2. Journal of Hydrology, 303(1-4), 290-306.
 - Valery, A., Andreassian, V. and Perrin, C. (2014). As simple as possible but not simpler: What is useful in a temperature-based snow-accounting routine? Journal of Hydrology, 517, 1176-1187.
+
+
+## Caravan forcing integrity repair (2026-10-03)
+
+`convert_caravan_to_airgr` now requires every requested daily date exactly once,
+in source order, with finite nonnegative precipitation and selected PE and valid
+Celsius temperature. It preserves zero and small values without rounding. The
+selected `--pe-method` is fixed; missing ERA5-Land PE cannot trigger Oudin.
+Negative ERA5-Land PE values fail rather than being clipped; choose and validate
+the Oudin method explicitly when appropriate. No local forcing values are filled.
+Missing observed streamflow remains NA; absent streamflow omits Qobs entirely.
+Negative/infinite observed flow is rejected. The provenance sidecar records source
+and output hashes, dates, method and missing-observation count.
+
+This repair covers the Caravan route. The older CMFD CSV route now refuses
+incomplete sub-daily input (each day must have exactly 8 valid 3-hourly steps,
+no NaN prec/temp, no duplicate or off-grid timestamps; nothing is filled), but it
+still infers temperature units by magnitude and expects prec already in mm per
+3-hour step; it is not certified by this change. Native airGR replay checks execution and exact P/PE
+consumption, not calibrated field accuracy.

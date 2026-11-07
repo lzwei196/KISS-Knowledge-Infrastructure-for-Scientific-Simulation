@@ -3,8 +3,8 @@
 #   real_engine       = the USDA-ARS KINEROS2 program (tools/run_kineros2_engine.py)
 #   python_surrogate  = the old lumped daily stand-in (tools/run_kineros2.py) -- NOT KINEROS2
 # dt_kineros2_001..026 are the original corpus (ids kept); 013/018/020/021/024/026 were corrected
-# on 2026-10-06 against the real source and test runs (see correction_note). 027..053 were added
-# on 2026-10-06 from the source code and verified runs of the real engine.
+# against the real source and test runs. 027..053 were added from the source code and runs of
+# the real engine. When an entry was seen or checked: its seen_at line.
 - id: dt_kineros2_001
   symptom:
     description: Simulated discharge is 86400x too low; hydrograph is nearly flat with negligible runoff despite
@@ -234,8 +234,7 @@
       step itself and still reports at dt. Otherwise choose dt <= the 100% level printed in the event summary. Check
       the element CLEN warnings too (dt_kineros2_037).'
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
-    text described tags/files that do not exist
+  seen_at: "2026-10-06"
 - id: dt_kineros2_019
   symptom:
     description: Negative discharge values appear in the output time series, which is physically impossible for
@@ -263,8 +262,7 @@
       -std=legacy -fallow-argument-mismatch. Then python3 preflight_check.py. Never fall back to the Python surrogate
       as if it were the model.
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
-    text described tags/files that do not exist
+  seen_at: "2026-10-06"
 - id: dt_kineros2_021
   symptom:
     description: Output (or stdout) ends with 'error - K2shell' / "Can't open <file>" and the run has no event summary,
@@ -279,8 +277,7 @@
       kin.fil without spaces. For PRINT=3/INJECT files make the on-disk name upper case. Check status in run_result.json,
       never the exit code (dt_kineros2_027).'
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
-    text described tags/files that do not exist
+  seen_at: "2026-10-06"
 - id: dt_kineros2_022
   symptom:
     description: 'Python reimplementation crashes with ''ModuleNotFoundError: No module named scipy'' or similar
@@ -319,8 +316,7 @@
       and every reference to an undefined or later element. Add the missing id to the receiving element''s UPSTREAM/LATERAL
       list.'
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
-    text described tags/files that do not exist
+  seen_at: "2026-10-06"
 - id: dt_kineros2_025
   symptom:
     description: First year of simulation produces wildly inaccurate discharge regardless of parameter values; subsequent
@@ -348,8 +344,7 @@
       (WG11 4 Aug 1980 gages: 0.09-0.13). Decide where it lives: gage SAT for gage-driven antecedent patterns, element
       SA otherwise -- not both (dt_kineros2_030).'
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  correction_note: corrected 2026-10-06 against the real engine source (src_patched/*.for) and test runs; the earlier
-    text described tags/files that do not exist
+  seen_at: "2026-10-06"
 - id: dt_kineros2_027
   name: engine exits 0 on every error
   severity: silent
@@ -365,7 +360,7 @@
     which returns 3 on such failures.'
   detection: grep -c 'Event Volume Summary' run.out  (0 = failed run);  grep -n '^ *error -' run.out engine_stdout.txt
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_021
   - dt_kineros2_028
@@ -381,7 +376,7 @@
     in the run folder (run_kineros2_engine.py does both).
   detection: cat -A kin.fil | grep ', '
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_050
 - id: dt_kineros2_029
@@ -398,7 +393,7 @@
     --set <outlet_id>:PRINT=2. Check with edit_kineros2_par.py list (column PRI).'
   detection: python3 tools/edit_kineros2_par.py get case.par --tag PRI
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_035
 - id: dt_kineros2_030
@@ -414,7 +409,7 @@
     without --sat/--template SAT); to vary by gage, edit the gage SAT.
   detection: grep -n 'SAT' storm.pre; python3 tools/edit_kineros2_par.py get case.par --tag SA
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_026
 - id: dt_kineros2_031
@@ -430,7 +425,7 @@
     and edit_kineros2_par.py refuses values containing '+'. validate flags split exponents.
   detection: python3 tools/edit_kineros2_par.py validate case.par  (reports "'1.6E+06' -- the reader splits exponents")
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_032
   name: rain depth in the wrong unit system
   severity: silent
@@ -446,7 +441,7 @@
   detection: python3 tools/edit_kineros2_par.py validate case.par --rain storm.pre  (warns when storm totals look
     like the other unit)
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_033
   name: flume nominal area differs from model area
   severity: silent
@@ -461,7 +456,7 @@
     refuses a non-cfs DAP export). State both areas in any report.'
   detection: head -9 obs.txt | grep 'Flume areas';  grep 'Total watershed area' run.out
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_034
   name: FILE= names are upper-cased
   severity: fatal
@@ -474,7 +469,7 @@
     (run_kineros2_engine.py copies every *.CSV it finds).
   detection: ls *.CSV; grep -n 'FILE' case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_035
   name: list values do not continue on the next line
   severity: silent
@@ -488,7 +483,7 @@
     what the engine reads.
   detection: python3 tools/edit_kineros2_par.py get case.par --tag UP --index 3
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_036
   name: gridded hourly rain smears convective storms
   severity: degraded
@@ -504,7 +499,7 @@
     --from-gridded) is a last resort and its runs must be labelled as such.
   detection: max step in the .pre header written by build_kineros2_rainfall.py
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_037
   name: CLEN numerical increment warning
   severity: warning
@@ -519,7 +514,7 @@
     CLEN to the longest single element as the manual defines; compare peaks before/after.
   detection: grep -c 'numerical increment' run.out; run_result.json engine_warnings
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_038
   name: '''rating exceeded'' on every flowing channel'
   severity: warning
@@ -532,7 +527,7 @@
     the table/bank depth and the geometry should be extended.
   detection: grep -n 'rating exceeded' run.out; grep -n 'CHR' case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_039
   name: rain file time/depth order errors
   severity: fatal
@@ -545,7 +540,7 @@
     an INTENSITY column if you have rates.
   detection: python3 tools/build_kineros2_rainfall.py ... (exit 2 on these errors)
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_040
   name: pervious element without saturation source
   severity: fatal
@@ -557,7 +552,7 @@
   remedy: Add SA to the element (edit_kineros2_par.py set --set PLANE:SAT=0.2) or SAT to the gages / GLOBAL block.
   detection: python3 tools/edit_kineros2_par.py validate case.par --rain storm.pre
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_026
 - id: dt_kineros2_041
@@ -574,7 +569,7 @@
     file's unit system.
   detection: python3 tools/configure_kineros2_sediment.py --check case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_042
   name: unreferenced element loses its water
   severity: silent
@@ -586,7 +581,7 @@
   remedy: validate lists elements that no later element references; wire them into a channel's UPSTREAM/LATERAL.
   detection: python3 tools/edit_kineros2_par.py validate case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_024
 - id: dt_kineros2_043
@@ -602,7 +597,7 @@
     configure_kineros2_sediment.py --check prints the method per element.
   detection: python3 tools/configure_kineros2_sediment.py --check case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_044
   name: element referenced before it is defined
   severity: fatal
@@ -614,7 +609,7 @@
   remedy: Reorder blocks so every element comes after the elements it receives; validate reports the offending reference.
   detection: python3 tools/edit_kineros2_par.py validate case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_045
   name: columns beyond 200 are ignored
   severity: silent
@@ -626,21 +621,21 @@
     validate warns on long lines.
   detection: awk 'length > 200' case.par
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_046
   name: surrogate output reported as KINEROS2
   severity: silent
   stage: s6_execution
   failure_domain: validation
-  symptom: KINEROS2 'results' are daily discharge series for a large basin, or quote NSE 0.851 / KGE 0.882 (Huaihe,
-    Bengbu)
+  symptom: KINEROS2 'results' are daily discharge series for a large basin, or quote a high daily NSE/KGE
+    (above 0.8) for a large basin such as the Huaihe at Bengbu
   diagnosis: tools/run_kineros2.py is a Python lumped daily stand-in (Green-Ampt + two reservoirs, Hamon PET) written
     before the real engine existed on this server. The models DB still carries its metrics.
   remedy: Use tools/run_kineros2_engine.py for every KINEROS2 result; check run_result.json 'engine' and 'binary.sha256'
     (d3efaef0...). Surrogate JSON carries model_identity = PYTHON SURROGATE.
   detection: grep -l 'model_identity' *.json; jq .engine run_result.json
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_013
 - id: dt_kineros2_047
@@ -656,7 +651,7 @@
     '< 1 percent' line.
   detection: run_result.json event_water_balance
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_048
   name: peak from the table vs the engine's peak line
   severity: warning
@@ -670,7 +665,7 @@
     the table at dt.
   detection: jq .outlet run_result.json
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_049
   name: observed and simulated clocks misaligned
   severity: silent
@@ -684,7 +679,7 @@
     limbs start together.
   detection: head -3 storm.pre (clock origin comment) and the Start_Time column of the DAP export
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_050
   name: long paths in kin.fil
   severity: fatal
@@ -695,7 +690,7 @@
   remedy: Run in a workspace with inputs copied under short names (run_kineros2_engine.py).
   detection: awk -F, '{for(i=1;i<=NF;i++) if(length($i)>150) print i}' kin.fil
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_028
 - id: dt_kineros2_051
@@ -710,7 +705,7 @@
   remedy: Use --courant, or dt <= the 100% level. Keep dt 1-3 min for small catchments.
   detection: grep 'Time step distribution' run.out
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
   cross_references:
   - dt_kineros2_018
 - id: dt_kineros2_052
@@ -723,18 +718,18 @@
   remedy: Keep every multiplier > 0; the tools reject 0 for G before running.
   detection: cat mult file line 4
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06"
 - id: dt_kineros2_053
   name: texture-class Ks far from field values
   severity: degraded
   stage: s2_infiltration
   failure_domain: validation
   symptom: Runoff from a run parameterised from HWSD/Table 1 is much larger than observed at Walnut Gulch
-  diagnosis: Rawls (1982) class Ks for HWSD's sandy clay loam at 31.72N 110.06W is 0.43 cm/hr -> 0.135 in/hr after
+  diagnosis: Rawls (1982) class Ks for HWSD's sandy clay loam is 0.43 cm/hr -> 0.135 in/hr after
     the 20 % gravel factor; the ARS WG11 file uses 0.40-0.52 in/hr (and then a 0.5 multiplier) -- the class value
     is a starting point, not a site value.
   remedy: Calibrate the Ks multiplier on an observed event (calibrate_kineros2_multipliers.py) or use field-derived
     values; report which.
   detection: python3 tools/kineros2_soil_params.py --hwsd --lat ... --lon ... --units english
   applies_to: real_engine (USDA-ARS K2shell via tools/run_kineros2_engine.py)
-  verified: '2026-10-06'
+  seen_at: "2026-10-06, Walnut Gulch WG11 (31.72N 110.06W)"

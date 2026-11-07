@@ -84,8 +84,7 @@
   severity: silent
   cross_references:
   - dt_001
-  verified: '2026-10-02 against ClassObs.cpp:83-85 and a real run: CRHM hru_p summed to 1,394 mm/yr =
-    the forcing''s own total (Bengbu cell, p written per 3-h step)'
+  seen_at: "2026-10-02, Bengbu cell"
 - id: dt_003
   stage: s2_observation_data
   failure_domain: parameter_format
@@ -614,7 +613,7 @@
   severity: silent
   symptom:
     description: Annual precipitation 3,672-6,205 mm in .obs file vs real Saskatchewan 350-400 mm. Discharge
-      PBIAS=+696%. MSWX 3-hourly values written as daily totals.
+      PBIAS of several hundred percent. MSWX 3-hourly values written as daily totals.
     error_pattern: annual_precip > 2000
     detection_method: value_comparison
   diagnosis:
@@ -715,7 +714,7 @@
     - Use validated dates from belly_river_v6.prj
     prevention: create_prj_file.py now uses flat format by default
   severity: fatal
-  verified: 2026-04-11 (Ghost River)
+  seen_at: "2026-04-11, Ghost River"
   cross_references: []
 - id: dt_020
   stage: s2_observation_data
@@ -742,7 +741,7 @@
     - Check line 2 of .obs — must be a variable declaration (e.g., 't 1'), not text
     prevention: convert_forcing.py now writes single description line
   severity: fatal
-  verified: 2026-04-11 (Ghost River)
+  seen_at: "2026-04-11, Ghost River"
   cross_references:
   - dt_003
 - id: dt_021
@@ -750,7 +749,7 @@
   failure_domain: silent_error
   symptom:
     description: 'Water-balance check FAILs with a 5-10% residual (here 8.3%, ~100 mm/yr) EVEN ON a run
-      with excellent skill (NSE 0.73, r 0.86, KGE 0.82, PBIAS -1.3%). Units are clean (runoff coef < 1).
+      with excellent skill (high NSE and KGE, PBIAS near zero). Units are clean (runoff coef < 1).
       Residual was wrongly blamed on "Netroute routing-storage (gwKstorage/gwLag have no output state)".
 
       '
@@ -767,8 +766,8 @@
       (Subl=0, intcp_evap=0, ebsm cumQe_subl=0).
 
       '
-    explanation: 'Verified on Kaslo 08NH005 by outputting hru_p/Sd/intcp_evap/Subl and parsing crhmRun.log
-      Netroute/Soil/ebsm/crack cumulative reports. Closure terms (basin-mm over 2005-2015): P(hru_p)=14590,
+    explanation: 'Found by outputting hru_p/Sd/intcp_evap/Subl and parsing crhmRun.log
+      Netroute/Soil/ebsm/crack cumulative reports. Closure terms in one 11-year run (basin-mm): P(hru_p)=14590,
       ET(hru_actet)=3077, Q(basinflow)=9826, dS(SWE+soil_moist+soil_rechr+gw+Sd)=500, routing_storage=52
       -> residual 1135. gwcumdiverted=1225 ~= residual.
 
@@ -797,7 +796,7 @@
 
       '
   severity: degraded
-  verified: 2026-06-08 (Kaslo 08NH005)
+  seen_at: "2026-06-08, Kaslo (HYDAT 08NH005)"
   cross_references:
   - dt_010
   - dt_015
@@ -818,10 +817,10 @@
       WB FAIL when r>=0.5 and units are clean.
   format_spec_violated: none (KI-local verification-routing gap)
   canonical_intent: ki_local_if_pass
-  added_by_run: CRHM_retry1
+  seen_at: "date not recorded, run CRHM_retry1"
 - id: dt_023
   symptom:
-    description: Every parameter configuration scores NSE ~= -1.0 with PBIAS ~= -100%; simulated basin
+    description: Every parameter configuration scores NSE far below 0 (around -1) with PBIAS near -100%; simulated basin
       discharge is basin-area-fold too small (e.g. 9908 km2 Heihe basin gave basinflow ~0.035 m3/s vs
       obs ~60 m3/s, ~1700x under). Per-HRU outputs (SWE, hru_t, soil_moist) are IDENTICAL across elevation
       bands despite different hru_elev, and water "vanishes" in the water balance (P - ET - Q - dS >>
@@ -845,9 +844,7 @@
   format_spec_violated: CRHM .prj parameter namespacing (Shared vs module-local)
   canonical_intent: canonical
   severity: fatal
-  verified: 2026-07-23 (Yingluoxia/upper Heihe 01521400; CAL NSE -1.0 -> 0.38 on first fixed un-tuned
-    trial)
-  added_by_run: CRHM_real_case_20260723
+  seen_at: "2026-07-23, Yingluoxia / upper Heihe (station 01521400, run CRHM_real_case_20260723)"
 - id: dt_024
   symptom:
     description: run_crhm.py validate_outputs (or parse_crhm_output.py) crashes with UnicodeDecodeError
@@ -865,8 +862,7 @@
   format_spec_violated: none (CRHM writes non-UTF-8 output)
   canonical_intent: canonical
   severity: blocking
-  verified: 2026-07-23 (Yingluoxia flux-diagnostic run)
-  added_by_run: CRHM_real_case_20260723
+  seen_at: "2026-07-23, Yingluoxia (run CRHM_real_case_20260723)"
 - id: dt_v006
   symptom:
     description: 'CRHM prints its banner (Project file / Time of model run / Program Version 4.7_16) and
@@ -894,15 +890,13 @@
   format_spec_violated: CRHM module dependency contract (declvar/declgetvar)
   canonical_intent: canonical
   severity: fatal
-  verified: 2026-07-25 (Hulunbuir steppe SWE case; chain basin>global>obs>calcsun>pbsm>albedo>ebsm>netall>crack>evap>Soil>Netroute
-    core-dumped with a 70-byte output; the same chain WITH intcp ran a full year cleanly)
-  added_by_run: CRHM_real_case_20260725_hulunbuir
+  seen_at: "2026-07-25, Hulunbuir steppe (run CRHM_real_case_20260725_hulunbuir)"
 - id: dt_025
   stage: s2_observation_data
   failure_domain: silent_error
   symptom:
-    description: 'CRHM is scored against a satellite (passive-microwave) SWE product and NSE sits near
-      0.3-0.4 while r is 0.75-0.80 and PBIAS is near zero. Raising the score seems to require cutting
+    description: 'CRHM is scored against a satellite (passive-microwave) SWE product and NSE stays
+      low (well under 0.5) while r is high and PBIAS is near zero. Raising the score seems to require cutting
       ClimChng_precip below 1.0 and/or lifting obs_elev well above the forcing source elevation. Nothing
       errors.
 
@@ -920,7 +914,7 @@
       cold-season P(T<0), sim peak SWE) = 0.910 while corr(same snowfall, obs peak SWE) = 0.602, i.e.
       the simulated snowpack tracks its forcing better than the retrieval tracks the region precipitation.
       The damage comes next: because SWE is a MASS STATE, ClimChng_precip and obs_elev write the scored
-      quantity directly, so tuning them lifts NSE from -0.70 to 0.35 while silently falsifying the forcing
+      quantity directly, so tuning them lifts NSE from below zero to a passable value while silently falsifying the forcing
       (a 20 percent precipitation cut and every HRU warmed ~1 C). This is the compensating-errors calibration
       hazard in dag.yaml.
 
@@ -936,10 +930,8 @@
     manual_steps:
     - Run tools/s2_observation_data/screen_swe_obs.py --obs_csv <swe.csv> --forcing_obs <obs/*.obs>
     - 'If mass_inconsistent_pct > 2: daily scoring is INADMISSIBLE -- report monthly-mean NSE/KGE/r/PBIAS
-      plus peak-SWE and snow-season mean. Hulunbuir reference values at LOCKED knobs (held out 2009-2014):
-      monthly NSE -0.488 / KGE 0.065 / r 0.828 / PBIAS +59.9 (n=47 months); daily NSE -0.680 / r 0.781
-      (diagnostic only). The earlier "daily 0.36 -> monthly 0.50" figures came from the FORBIDDEN swept
-      configuration -- do not reproduce them.'
+      plus peak-SWE and snow-season mean, at LOCKED knobs on the held-out years. Do not quote figures
+      from a configuration where ClimChng_precip or obs_elev were swept.'
     - Set ClimChng_precip = 1.0 and obs_elev = the derive_parameters.py forcing-source elevation, and
       leave them there for the whole SWE run
     - Report any remaining large bias as an unresolved forcing-vs-retrieval attribution needing in-situ
@@ -960,15 +952,15 @@
   diagnosis:
     root_cause: Reported metric and dumped headline series came from different scoring calls, in a manifest
       flooded with calibration-trial headline candidates
-    explanation: 'Two independent record defects, both seen together on CRHM Hulunbuir run 885e6696. (1)
+    explanation: 'Two independent record defects, both seen together on one CRHM run. (1)
       HEADLINE MISMATCH -- the reported number and the dumped headline series came from different scoring
-      calls. Here the archive held the swept DAILY series (NSE 0.350) while the value that survived review
-      was the locked-knob MONTHLY score (NSE -0.488), because the corrected protocol lived in a separate
+      calls. Here the archive held the swept DAILY series while the value that survived review
+      was the locked-knob MONTHLY score, because the corrected protocol lived in a separate
       retest script instead of the runner, so the run that produced the number and the run that produced
       the evidence were not the same run. (2) TRIAL FLOODING -- every parameter-search evaluation was
       scored through the shared scorer at its default headline_candidate=True, leaving 22 cal_trial dumps
       marked as headline candidates in _series/manifest.jsonl, so the real headline could not be bound
-      unambiguously. Neither defect touches the physics: the model was fine (r 0.83) and the run was still
+      unambiguously. Neither defect touches the physics: the model was fine (high r) and the run was still
       untrustable.
 
       '
@@ -1000,6 +992,7 @@
   failure_domain: silent_error
   cross_references:
   - dt_025
+  seen_at: "date not recorded, Hulunbuir (run 885e6696)"
 - id: dt_v009
   symptom:
     description: 'Detached runner exits with returncode -11 (SIGSEGV) AFTER it has already logged "WROTE
@@ -1016,8 +1009,8 @@
       and the Snow_cci reader. Their atexit handlers and dlclose order are not coordinated, so the segfault
       lands during interpreter finalisation -- strictly after main() has returned and every artifact is
       durable on disk. The work is 100% complete and correct; only the exit status is wrong. Observed
-      on CRHM Hulunbuir 2026-07-26, where a fully clean run (record audit passed, headline reproduced
-      to 4e-16) came back as returncode -11. This is NOT the CRHM binary segfaulting (dt_v006 / the Basin_Group
+      on a fully clean run (record audit passed, headline reproduced to 4e-16) that came back as
+      returncode -11. This is NOT the CRHM binary segfaulting (dt_v006 / the Basin_Group
       case) -- the model exited long before, and the .obs/.prj are fine. Distinguishing the two costs
       an hour if the KI does not say so: check whether "WROTE result.json" is in the log. If it is, the
       model ran and the crash is Python teardown.
@@ -1047,6 +1040,7 @@
   cross_references:
   - dt_v006
   - dt_v008
+  seen_at: "2026-07-26, Hulunbuir"
 - id: dt_v010
   stage: s5_execution
   failure_domain: environment
@@ -1064,7 +1058,7 @@
       their own bundled libhdf5 (both 1.14.6). `import xarray` runs a backend-entrypoint scan that imports
       h5netcdf -> h5py, so h5py''s libhdf5 initialises FIRST and netCDF4''s nc_open then fails inside
       the second HDF5 instance. Import ORDER decides it. /usr/bin/python3 has one shared system libhdf5,
-      hence no conflict -- which is why the 17:41 real_case run passed and the retest crashed on byte-identical
+      hence no conflict -- which is why an earlier run passed and a retest crashed on byte-identical
       code. ki_tools_common.load_forcing is immune because load_forcing.py:414-420 already tries engine="h5netcdf"
       before the default; the exposure is bare xr.open_dataset() with no engine ladder. A .nc that xarray
       itself just wrote is also unreadable unguarded.
@@ -1072,7 +1066,7 @@
       '
     affected_components:
     - any bare xr.open_dataset() under python_env
-    - run_and_score_hulunbuir.py / _retest.py cmfd_cell_elevation
+    - runner scripts that read the CMFD cell elevation (cmfd_cell_elevation) with bare xarray
     - docs/s5_execution_skill.md "xarray-readable" verification step
   remedy:
     action: Import netCDF4 before anything that can reach xarray/h5py; read cells netCDF4-direct
@@ -1101,6 +1095,7 @@
   severity: fatal
   cross_references:
   - dt_v009
+  seen_at: "date not recorded, Hulunbuir (runs of run_and_score_hulunbuir.py and its retest)"
 - id: dt_v011
   stage: s4_parameter_config
   failure_domain: silent_error
@@ -1108,9 +1103,9 @@
     description: 'CRHM runs to completion with no error, but PBSM transports and sublimates almost nothing
       on an open wind-exposed domain: area-weighted cumSubl/cumhru_snow is ~1-3% of snowfall instead of
       the 15-40% the dag requires for prairie. Simulated SWE over-accumulates; the headline shows a large
-      positive PBIAS (+50 to +70%) at a HIGH correlation (r > 0.8), i.e. the timing is right and only
-      the mass is wrong. Verified at Hulunbuir steppe 2002-2014: cumSubl 13.75 mm, cumDrift 3.83 mm, cumhru_snow
-      980.72 mm; sim monthly mean SWE 21.4 mm vs obs 13.4 mm, NSE -0.48.
+      positive PBIAS (tens of percent) at a HIGH correlation (r > 0.8), i.e. the timing is right and only
+      the mass is wrong. In one run: cumSubl 13.75 mm, cumDrift 3.83 mm, cumhru_snow 980.72 mm; sim monthly
+      mean SWE 21.4 mm vs obs 13.4 mm.
 
       '
     error_pattern: ''
@@ -1156,8 +1151,7 @@
   cross_references:
   - dt_016
   - dt_006
-  verified: 2026-07-27 (Hulunbuir steppe SWE case; cumSubl/cumhru_snow = 1.40%, E_StubHt<=0.01 on 2.18%
-    of snow-covered steps for the Ht=0.3 m HRUs)
+  seen_at: "2026-07-27, Hulunbuir steppe"
 - id: dt_v012
   stage: s3_module_selection
   failure_domain: dependency_mismatch
@@ -1185,10 +1179,9 @@
       it writes into the Snobal SWE / z_s / rho (ClasspbsmSnobal.cpp:130-132), which is also why pbsmSnobal
       without SnobalCRHM cannot run. CRHM''s own registered model "Prairie using Qsi and Snobal" (NewModules.cpp:278)
       is basin, global, obs, calcsun, intcp, longVt, netall, pbsmSnobal, albedo, evap, SnobalCRHM#2, ...
-      History: the prairie_reduced preset was switched from ebsm to SnobalCRHM on 2026-07-26 with pbsm left
-      in place, on the false note "pbsm still supplies hru_drift/hru_subl"; a retest the same day showed
-      the crash (Hulunbuir RETEST_A, header-only output) and a clean run with pbsmSnobal (RETEST_B), but
-      the preset was not corrected until 2026-10-02. select_modules.py did not catch it because its dependency
+      History: the prairie_reduced preset once paired SnobalCRHM with plain pbsm, on the false note
+      "pbsm still supplies hru_drift/hru_subl"; a retest showed the crash with pbsm (header-only output)
+      and a clean run with pbsmSnobal, but the preset was not corrected at once. select_modules.py did not catch it because its dependency
       check skips every hru_* name as "provided by obs". Not the same as dt_v006 (missing canopy module):
       same symptom, different missing variable.
 
@@ -1225,21 +1218,13 @@
   cross_references:
   - dt_v006
   - dt_v011
-  verified: '2026-10-02 on the server (crhmcode b6f7e70, Program Version 4.7_16), one-HRU crop-stubble site
-    at 49.17 N 125.23 E, NASA POWER 2003-2004: pbsm + SnobalCRHM -> exit -11, 2 rows, 112 bytes; pbsmSnobal
-    + SnobalCRHM -> exit 0, 17,522 rows. pbsmSnobal reads its own parameter lines: with Ht 0.001 m, fetch
-    300 / 1000 / 5000 m gave hru_subl 1.86 / 2.99 / 4.31 mm and Drift_out 3.71 / 1.54 / 0.29 mm; with the
-    land-cover Ht 0.15 m (snow depth never above 0.054 m) blowing snow stayed off and hru_subl was 0, while
-    SnobalCRHM E_s_int removed 20.9 mm of 110 mm snowfall. Also seen 2026-07-26 at Hulunbuir (RETEST_A crash,
-    RETEST_B ran; SWE score of RETEST_B NSE -0.46, KGE 0.20 - the chain runs, it is not a validated pass).
-    Same crash reported from a Mac build (crhmcode 5fe48ed) on 2026-10-02.'
-  added_by_run: CRHM_handoff_20261002_nenjiang_single_hru
+  seen_at: "2026-07-26, Hulunbuir; 2026-10-02, Nenjiang one-HRU site (49.17N 125.23E, run CRHM_handoff_20261002_nenjiang_single_hru); 2026-10-02, Mac build (crhmcode 5fe48ed)"
 - id: dt_v013
   stage: s2_observation_data
   failure_domain: unit_conversion
   symptom:
     description: 'A .obs built from NASA POWER HOURLY data has a precipitation total about 24 times too
-      small (41 mm in two years at 49.17 N 125.23 E instead of ~990 mm). Every tool exits 0. CRHM runs
+      small (41 mm in two years instead of ~990 mm at the test site). Every tool exits 0. CRHM runs
       and produces almost no snow, soil recharge or flow.
 
       '
@@ -1250,7 +1235,7 @@
       and the shared loader still divided every hourly value by 24
     explanation: 'ki_tools_common/load_forcing.py divided hourly PRECTOTCORR by 24 ("mm/day rate -> mm
       per hour"). That was right when it was written: a .obs built on 2026-06-08 for the Bow basin point
-      (51.1722 N, -115.5718 E) starts 2005-01-01 with 0.045, 0.050, 0.033 mm, i.e. raw values 1.08, 1.20,
+      starts 2005-01-01 with 0.045, 0.050, 0.033 mm, i.e. raw values 1.08, 1.20,
       0.79, and the validated basins got realistic yearly totals (Bow 917 mm in 2005). On 2026-10-02 the
       API (v2.10.2) returns 0.05, 0.05, 0.03 for the same hours, labels them "mm/hour", and the January
       2005 hourly sum (66.42) equals the daily product''s sum (66.24). Dividing by 24 now loses 96% of
@@ -1273,9 +1258,7 @@
     prevention: Read units from the data, not from memory of what the service used to return; the loader
       fails closed on an unknown unit and on an hourly/daily total mismatch
   severity: silent
-  verified: '2026-10-02: API units field mm/hour; Bow point raw values compared with the 2026-06-08 stored
-    .obs; Nenjiang 2003 hourly/daily total ratio 0.997 after the fix.'
-  added_by_run: CRHM_handoff_20261002_nenjiang_single_hru
+  seen_at: "2026-10-02, Nenjiang one-HRU site (49.17N 125.23E, run CRHM_handoff_20261002_nenjiang_single_hru); 2026-10-02, Bow basin point (51.17N 115.57W)"
 - id: dt_v014
   stage: s2_observation_data
   failure_domain: silent_error
@@ -1314,10 +1297,7 @@
   severity: silent
   cross_references:
   - dt_002
-  verified: '2026-10-02, CMFD 1970, Yarlung Tsangpo at Nuxia: centre cell 550 mm, basin mean of 1,944 cells
-    660 mm. Basin-mean .obs checked row by row against the weighted mean of single-cell reads (6-cell
-    box).'
-  added_by_run: CRHM_direct_forcing_20261002
+  seen_at: "2026-10-02, Yarlung Tsangpo at Nuxia (run CRHM_direct_forcing_20261002)"
 
 - id: dt_utc_solar_clock_20261003
   stage: s4_parameter_config
@@ -1335,6 +1315,5 @@
       and weather data, rejects incompatible module chains and invalid weather, and never overwrites old
       projects. Unknown station time must not be assumed UTC.
     verification: At longitude 90 E, UTC Time_Offset is -6 h; the actual binary shifts the solar peak
-      six clock hours earlier. Ten existing multiyear projects were migrated and rerun with finite data
-      on 2026-10-03.
-  added_by_run: ki_fully_resolve_20261003
+      six clock hours earlier. Ten existing multiyear projects were migrated and rerun with finite data.
+  seen_at: "2026-10-03, run ki_fully_resolve_20261003"

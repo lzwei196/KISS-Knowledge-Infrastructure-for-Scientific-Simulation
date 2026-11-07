@@ -638,8 +638,7 @@ known_issues:
     used mask value 3 for active cells. SFINCS convention: 0=inactive, 1=active (flow computed), 2=water-level
     boundary, 3=outflow boundary. With every cell set to 3 the whole domain is boundary cells, and SFINCS
     opens no flow between two boundary cells. The model runs without error but computes nothing — all
-    depths are zero. Found 2026-04-11 Wangjiaba test: 80K cells with mask=3, zero flooding despite 10mm/hr
-    rain.
+    depths are zero. In one test, 80K cells with mask=3 gave zero flooding despite 10mm/hr rain.
 
     ; [''build_sfincs_topobathy.py mask generation'']'
   remedy: 'Set interior cells to mask=1; set only the outlet edge to mask=3 (inland) or mask=2 (coast
@@ -707,11 +706,11 @@ known_issues:
     \ output is read. This affects:\n  (a) Custom Python scripts that read sfincs_map.nc and access 'zsmax'\
     \ by name\n  (b) Any GIS tool (QGIS, ArcGIS) that opens sfincs_map.nc and the user picks\n      the\
     \ 'zsmax' layer without knowing it is elevation not depth\n  (c) Old versions of extract_sfincs_results.py\
-    \ that had zsmax before hmax\n      in the priority list (dt_v007 — fixed 2026-03-22)\nValidated proof\
-    \ (bengbu_sfincs_2003_ki): 25.7% of cells have zsmax > 40m, but their hmax MEAN is only 0.063m (6cm).\
-    \ The VIC→CaMa→SFINCS simulation chain is entirely correct when hmax is used.\n; ['extract_sfincs_results.py\
-    \ (now fixed — hard error + zb subtraction)', 'custom post-processing scripts reading sfincs_map.nc\
-    \ directly', 'GIS visualization of sfincs_map.nc layers']"
+    \ that had zsmax before hmax\n      in the priority list (dt_v007 — fixed 2026-03-22)\nIn one real\
+    \ run, 25.7% of cells had zsmax > 40m, but their hmax MEAN was only 0.063m (6cm). The VIC→CaMa→SFINCS\
+    \ simulation chain is entirely correct when hmax is used.\n; ['extract_sfincs_results.py (now fixed\
+    \ — hard error + zb subtraction)', 'custom post-processing scripts reading sfincs_map.nc directly',\
+    \ 'GIS visualization of sfincs_map.nc layers']"
   remedy: "Always read 'hmax' from sfincs_map.nc for flood depth, never 'zsmax' or 'zs'. To fix a custom\
     \ script:\n  import xarray as xr\n  ds = xr.open_dataset('sfincs_map.nc')\n  assert 'hmax' in ds,\
     \ \"hmax not found — check SFINCS version\"\n  depth = ds['hmax'].values.squeeze()  # shape (nmax,\
@@ -913,22 +912,21 @@ known_issues:
     = -999 with point_zs all NaN.
 
     '
-  diagnosis: "SFINCS v2 binary maps are COMPRESSED. Proven against the solver on 2026-08-05 by reading\
-    \ sfincs_map.nc `zb` back and matching it byte-for-byte to the input:\n  sfincs.ind = int32 n_active,\
-    \ then n_active 1-BASED flat indices in FORTRAN\n               order (n fastest) over an (nmax, mmax)\
-    \ grid whose row 0 is the\n               SOUTH edge (y0 is the LOWER-left origin);\n  sfincs.dep\
-    \ = n_active float32, ONLY the active cells, in index order;\n  sfincs.msk = n_active uint8,   ONLY\
-    \ the active cells, in index order;\n  sfincs.man = n_active float32, ONLY the active cells, in index\
-    \ order.\nThe KI wrote FULL nmax*mmax grids in C order with row 0 = NORTH for all four.\n; SFINCS\
-    \ reads exactly n_active values from each file, so a full C-order north-up grid means it consumes\
-    \ the first n_active entries — the top strip of the raster — as if they were the compressed arrays.\
-    \ Measured on a 345x285 Fraser domain: 25,067 intended active cells became 24,955+112 written but\
-    \ only 5,406 read, and all 112 outflow cells were lost. There is NO error message. Every SFINCS result\
-    \ this KI produced before 2026-08-05 (Chaohe, Bengbu, Wangjiaba, Kangerlussuaq) ran on a scrambled\
-    \ domain — which is the mechanism behind the Chaohe \"flooded_cells == total_cells == 29754, flood_fraction\
-    \ 1.0\" record.\n; ['build_sfincs_topobathy.py (dep/msk/ind writers)', 'build_sfincs_roughness.py\
-    \ (man writer)', \"docs/s2_topobathy_skill.md 'File sizes match: dep = nmax*mmax*4'\", \"any tool\
-    \ doing np.fromfile('sfincs.dep').reshape(nmax, mmax)\"]"
+  diagnosis: "SFINCS v2 binary maps are COMPRESSED. Proven against the solver by reading sfincs_map.nc\
+    \ `zb` back and matching it byte-for-byte to the input:\n  sfincs.ind = int32 n_active, then n_active\
+    \ 1-BASED flat indices in FORTRAN\n               order (n fastest) over an (nmax, mmax) grid whose\
+    \ row 0 is the\n               SOUTH edge (y0 is the LOWER-left origin);\n  sfincs.dep = n_active\
+    \ float32, ONLY the active cells, in index order;\n  sfincs.msk = n_active uint8,   ONLY the active\
+    \ cells, in index order;\n  sfincs.man = n_active float32, ONLY the active cells, in index order.\n\
+    The KI wrote FULL nmax*mmax grids in C order with row 0 = NORTH for all four.\n; SFINCS reads exactly\
+    \ n_active values from each file, so a full C-order north-up grid means it consumes the first n_active\
+    \ entries — the top strip of the raster — as if they were the compressed arrays. Measured on a 345x285\
+    \ domain: 25,067 intended active cells became 24,955+112 written but only 5,406 read, and all 112\
+    \ outflow cells were lost. There is NO error message. Every SFINCS result this KI produced before\
+    \ the fix ran on a scrambled domain — which is the mechanism behind an earlier \"flooded_cells ==\
+    \ total_cells == 29754, flood_fraction 1.0\" record.\n; ['build_sfincs_topobathy.py (dep/msk/ind writers)',\
+    \ 'build_sfincs_roughness.py (man writer)', \"docs/s2_topobathy_skill.md 'File sizes match: dep =\
+    \ nmax*mmax*4'\", \"any tool doing np.fromfile('sfincs.dep').reshape(nmax, mmax)\"]"
   remedy: 'Write the compressed form. Re-expand with build_sfincs_topobathy.read_binary_map(topobathy_dir,
     nmax, mmax) instead of fromfile+reshape. Verify sizes: dep = n_active*4, msk = n_active*1, man = n_active*4,
     ind = (n_active+1)*4.
@@ -955,12 +953,11 @@ known_issues:
     gauge adds no information. Compounded when qinf exceeds the mean rainfall intensity, which deletes
     the pluvial term and leaves the prescribed hydrograph as the sole driver.
 
-    ; Measured on Fraser Hope -> Agassiz (2026-08-05): BC = HYDAT 08MF005 at Hope (217,000 km2) over 25
-    source cells, scored at HYDAT 08MF035 at Agassiz (218,000 km2, +0.5% area, 31 km downstream, no unforced
-    tributary between). screen_obs_independence.py on the real artifacts: r(BC, obs) = 0.99405, NSE_naive_rating
-    = 0.99918, NSE_model = 0.97773, information_gain = -0.02145. The reported nse_val 0.9744 therefore
-    demonstrated NO hydraulic skill. sfincs.inp also set qinf = 1.0 mm/hr against a mean MSWX rainfall
-    of 0.1495 mm/hr (6.7x).
+    ; Typical case: BC = an upstream discharge gauge (217,000 km2) over 25 source cells, scored at a stage
+    gauge downstream (218,000 km2, +0.5% area, 31 km downstream, no unforced tributary between). screen_obs_independence.py
+    on the real artifacts found r(BC, obs) close to 1 and a plain rating curve scoring higher than the
+    model (information_gain below 0), so the reported high NSE demonstrated NO hydraulic skill. sfincs.inp
+    also set qinf = 1.0 mm/hr against a mean MSWX rainfall of 0.1495 mm/hr (6.7x).
 
     ; [''obs-target selection (which gauge to score)'', ''hydat_to_sfincs_boundary.py --flow_station /
     --obs_stations'', ''generate_sfincs_inp.py qinf'', "SKILL.md ''How to score against a stage gauge
@@ -968,10 +965,10 @@ known_issues:
   remedy: 'Run tools/s9_validation/screen_obs_independence.py BEFORE scoring and honour its exit code.
     On exit 1 do NOT report a number: emit a NULL metric with reason ''no_independent_obs_target''. To
     obtain an informative target instead, force every unforced in-domain tributary as an extra source
-    (comma-list --flow_station, e.g. Fraser: 08MF005,08MG013 Harrison River 7890 km2) and score below
-    the confluence, or use a multi-gauge longitudinal water-surface profile, an off-channel floodplain
-    gauge, or the dag''s flood-hazard target (hmax/extent vs a SAR mask, scored with CSI). Keep qinf BELOW
-    the mean precipitation intensity.
+    (comma-list --flow_station, e.g. <main-stem station>,<tributary station>) and score below the confluence,
+    or use a multi-gauge longitudinal water-surface profile, an off-channel floodplain gauge, or the dag''s
+    flood-hazard target (hmax/extent vs a SAR mask, scored with CSI). Keep qinf BELOW the mean precipitation
+    intensity.
 
     ; screen_obs_independence.py; [''python tools/s9_validation/screen_obs_independence.py --dis_file
     <run>/sfincs.dis --src_file <run>/sfincs.src --inp_file <run>/sfincs.inp --precip_file <run>/sfincs.precip

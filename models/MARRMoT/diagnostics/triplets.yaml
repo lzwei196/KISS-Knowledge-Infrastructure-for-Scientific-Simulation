@@ -476,7 +476,7 @@
       5.0 removed data_ki/X).
   format_spec_violated: none — orthogonal tool-coverage gap, not a format_spec rule
   canonical_intent: ki_local_if_pass
-  added_by_run: MARRMoT_retry1
+  seen_at: "date not recorded, run MARRMoT_retry1"
 - id: dt_019
   symptom:
     description: water_balance FAIL (residual ~15-20%) with a negative pbias on a cold, high-altitude,
@@ -497,7 +497,7 @@
       altitude). Re-run and re-check water balance.'
   format_spec_violated: none -- PET-method decision rule, not a format_spec rule
   canonical_intent: ki_local_if_pass
-  added_by_run: MARRMoT_retry1_tangnaihai
+  seen_at: "date not recorded, run MARRMoT_retry1_tangnaihai"
 - id: dt_020
   symptom:
     description: 'A MARRMoT structure dies on its FIRST objective evaluation with "error: ''normcdf''
@@ -520,4 +520,4 @@
       unsuitable for the basin until it has actually produced a theta.'
   format_spec_violated: none -- missing optional Octave-Forge dependency, not a format_spec rule
   canonical_intent: ki_local_if_pass
-  added_by_run: MARRMoT_tangnaihai_all47
+  seen_at: "date not recorded, run MARRMoT_tangnaihai_all47"

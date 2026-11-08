@@ -19,7 +19,7 @@ and produces output to stdout, stderr, and the configured output directory.
 | Output | Location | Description |
 |--------|----------|-------------|
 | Aggregated.Values | output_dir/ | Basin-averaged time series |
-| Stream.Flow | output_dir/ | Stream discharge per segment |
+| Stream.Flow | output_dir/ | Water volume per saved stream segment, m3 per model step |
 | Mass.Balance | output_dir/ | Running water balance |
 | Mass.Final.Balance | stderr | End-of-simulation mass balance summary |
 | Pixel.* | output_dir/ | Point time series (if configured) |

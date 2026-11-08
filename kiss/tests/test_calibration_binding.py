@@ -1,7 +1,9 @@
 """Concrete project calibration authorization and bundled result-writer readiness."""
+import contextlib
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -56,6 +58,11 @@ def test_invalid_invocation_never_gets_review_binding(adapter, change):
     {"kind": "subprocess", "command": ["python", "original-ki/tools/calib_run.py"]},
     {"kind": "subprocess", "command": ["python", "-c", "other_code", "{ki_path}/tools/calib_run.py"]},
     {"kind": "subprocess", "command": ["unrelated.exe", "{ki_path}/tools/calib_run.py"]},
+    # A relative runner started anywhere but the runtime KI is another file:
+    # in the live KI it is the unreviewed original.
+    {"kind": "subprocess", "command": ["python", "tools/calib_run.py"], "cwd": "{workdir}"},
+    {"kind": "subprocess", "command": ["python", "tools/calib_run.py"], "cwd": "C:/project/models/Demo/ki"},
+    {"kind": "subprocess", "command": ["python", "../tools/calib_run.py"]},
     {"kind": "python", "callable": "unreviewed:run"}, [],
 ])
 def test_contract_cannot_bypass_reviewed_runner(adapter, runner):
@@ -64,6 +71,65 @@ def test_contract_cannot_bypass_reviewed_runner(adapter, runner):
     (root / "calibration.yaml").write_text(yaml.safe_dump(contract), encoding="utf-8")
     with pytest.raises(ValueError, match="requires a subprocess runner"):
         calibration.prepare_invocation(project, "Demo", {"obs_shape_by_var": {"Q": "point"}})
+
+
+@pytest.mark.parametrize("runner", [
+    {"kind": "subprocess", "command": ["python3", "tools/calib_run.py", "--workdir", "{workdir}"]},
+    {"kind": "subprocess", "command": ["python3", "tools/calib_run.py"], "cwd": "{ki_path}"},
+    {"kind": "subprocess", "command": ["python", "./tools/calib_run.py"]},
+    {"kind": "subprocess", "command": ["python.exe", "tools\\calib_run.py"]},
+])
+def test_shipped_relative_runner_is_the_reviewed_adapter(adapter, runner):
+    project, root, contract = adapter
+    contract["runner"] = runner
+    (root / "calibration.yaml").write_text(yaml.safe_dump(contract), encoding="utf-8")
+    binding, _ = calibration.prepare_invocation(project, "Demo", {"obs_shape_by_var": {"Q": "point"}})
+    assert binding["runner_sha256"] == hashlib.sha256((root / "tools/calib_run.py").read_bytes()).hexdigest()
+
+
+def test_relative_runner_starts_the_reviewed_adapter_not_the_live_ki(adapter, tmp_path, monkeypatch):
+    project, root, contract = adapter
+    report = "import json, sys\njson.dump({{'ran': '{}'}}, open(sys.argv[1], 'w'))\n"
+    contract["runner"] = {"kind": "subprocess", "command": [sys.executable, "tools/calib_run.py", "{metrics_json}"]}
+    (root / "calibration.yaml").write_text(yaml.safe_dump(contract), encoding="utf-8")
+    (root / "tools/calib_run.py").write_text(report.format("adapter"), encoding="utf-8")
+    live = tmp_path / "ki"
+    (live / "tools").mkdir(parents=True)
+    (live / "tools/calib_run.py").write_text(report.format("live KI"), encoding="utf-8")
+    _, snapshot = calibration.prepare_invocation(project, "Demo", {"obs_shape_by_var": {"Q": "point"}})
+    runtime = calibration._runtime_ki(project, "Demo", live, snapshot, run_id="r1")
+    monkeypatch.syspath_prepend(str(calibration.framework_root()))
+    from calibration_kit.runner import make_run_model
+    spec = yaml.safe_load((runtime / "calibration.yaml").read_text(encoding="utf-8"))["runner"]
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    assert make_run_model(spec, str(runtime), str(workdir))() == {"ran": "adapter"}
+
+
+# Waiting on the server: DSSAT names its runner through its own KI folder and HYPE
+# starts it there, so on a desktop both would run the live KI's unreviewed copy.
+SERVER_FIX_PENDING = {"DSSAT", "HYPE"}
+
+
+@pytest.mark.skipif(not (Path(__file__).resolve().parents[2] / "models").is_dir(),
+                    reason="KI library not in this checkout")
+def test_shipped_contracts_pass_the_runner_check_as_projected(tmp_path):
+    from kiss_cli import port
+    cfg = paths.KissConfig.default(tmp_path / "project")
+    refused = set()
+    for shipped in sorted((Path(__file__).resolve().parents[2] / "models").glob("*/calibration.yaml")):
+        name = shipped.parent.name
+        live = Path(cfg.roles["ki_root"]) / name / "ki"
+        port.materialise(shipped.parent, live, cfg, ki_target=live, model=name)
+        data = (live / "calibration.yaml").read_bytes()
+        try:
+            calibration._resolved_invocation(calibration.AdapterSnapshot(
+                live / "calibration.yaml", live / "tools/calib_run.py", data, b""),
+                {"obs_shape_by_var": {"Q": "point"}})
+        except ValueError as error:
+            assert "requires a subprocess runner" in str(error), name
+            refused.add(name)
+    assert refused <= SERVER_FIX_PENDING
 
 
 def test_materialized_runtime_uses_reviewed_bytes_not_later_edits(adapter, tmp_path):
@@ -249,6 +315,93 @@ def test_worker_hides_only_framework_evaluation_children_and_restores_on_error(m
     assert real_run.call_args.kwargs == {"creationflags": 0x08000400, "capture_output": True}
 
 
+CONFIGURED_PYTHON = "C:/envs/ki/python.exe"
+
+
+@pytest.mark.parametrize("bare", ["python3", "python", "python3.11", "PYTHON.EXE"])
+def test_worker_gives_a_bare_python_contract_the_configured_interpreter(monkeypatch, bare):
+    real_run = Mock(return_value=SimpleNamespace(returncode=0))
+    original = SimpleNamespace(run=real_run, CREATE_NO_WINDOW=0x08000000)
+    runner = SimpleNamespace(subprocess=original)
+    monkeypatch.setattr(calibration.importlib, "import_module", lambda name: runner)
+    with calibration._quiet_evaluation_processes(CONFIGURED_PYTHON):
+        runner.subprocess.run([bare, "tools/calib_run.py", "--workdir", "w"], cwd="k")
+        # Projection already bound full paths; other programs are not Python.
+        runner.subprocess.run(["/opt/env/bin/python3", "x.py"])
+        runner.subprocess.run(["model.exe", "python3"])
+    assert runner.subprocess is original
+    assert [call.args[0] for call in real_run.call_args_list] == [
+        [CONFIGURED_PYTHON, "tools/calib_run.py", "--workdir", "w"],
+        ["/opt/env/bin/python3", "x.py"], ["model.exe", "python3"]]
+    assert real_run.call_args_list[0].kwargs["cwd"] == "k"
+    real_run.reset_mock()
+    with calibration._quiet_evaluation_processes(None):
+        runner.subprocess.run([bare, "tools/calib_run.py"])
+    assert real_run.call_args.args[0] == [bare, "tools/calib_run.py"]
+
+
+def test_bare_python_contract_evaluates_with_the_configured_interpreter(adapter, tmp_path, monkeypatch):
+    # No PATH lookup finds python3.99, so only the configured interpreter can run it.
+    project, root, contract = adapter
+    contract["runner"] = {"kind": "subprocess", "command": ["python3.99", "tools/calib_run.py", "{metrics_json}"]}
+    (root / "calibration.yaml").write_text(yaml.safe_dump(contract), encoding="utf-8")
+    (root / "tools/calib_run.py").write_text(
+        "import json, sys\njson.dump({'python': sys.executable}, open(sys.argv[1], 'w'))\n", encoding="utf-8")
+    live = tmp_path / "ki"
+    live.mkdir()
+    _, snapshot = calibration.prepare_invocation(project, "Demo", {"obs_shape_by_var": {"Q": "point"}})
+    runtime = calibration._runtime_ki(project, "Demo", live, snapshot, run_id="r1")
+    monkeypatch.syspath_prepend(str(calibration.framework_root()))
+    from calibration_kit.runner import make_run_model
+    spec = yaml.safe_load((runtime / "calibration.yaml").read_text(encoding="utf-8"))["runner"]
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    evaluate = make_run_model(spec, str(runtime), str(workdir))
+    assert evaluate() == {}
+    with calibration._quiet_evaluation_processes(sys.executable):
+        result = evaluate()
+    assert os.path.samefile(result["python"], sys.executable)
+
+
+def test_run_project_hands_the_configured_interpreter_to_the_worker(adapter, tmp_path, monkeypatch):
+    from kiss_cli import execution
+    project, _, _ = adapter
+    live = tmp_path / "ki"
+    live.mkdir()
+    monkeypatch.setattr(calibration, "framework_status", lambda: {"ready": True})
+    requests = []
+    def run_process(command, **kwargs):
+        requests.append(json.loads(Path(command[-1]).read_text(encoding="utf-8")))
+        return SimpleNamespace(status="failed", detail="fixture worker", stdout="", stderr="")
+    monkeypatch.setattr(execution, "run_process", run_process)
+    calibration.run_project(project=project, ki_name="Demo", ki_path=live,
+                            obs_shape_by_var={"Q": "point"}, python=CONFIGURED_PYTHON)
+    assert [request["python"] for request in requests] == [CONFIGURED_PYTHON]
+
+
+def test_worker_applies_the_requested_interpreter_to_evaluations(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    request = tmp_path / "request.json"
+    request.write_text(json.dumps({
+        "project": str(tmp_path), "run_dir": str(run_dir), "runtime_ki": str(tmp_path),
+        "shapes": {"Q": "point"}, "seed": 0, "python": CONFIGURED_PYTHON}), encoding="utf-8")
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.delenv("KDT_CALIB_ALGO", raising=False)
+    monkeypatch.setattr(calibration, "framework_root", lambda: tmp_path)
+    engine = SimpleNamespace(calibrate=lambda *a, **k: {"status": "completed", "promotable": False})
+    monkeypatch.setattr(calibration.importlib, "import_module", lambda name: engine)
+    seen = []
+    @contextlib.contextmanager
+    def launch_policy(python=None):
+        seen.append(python)
+        yield
+    monkeypatch.setattr(calibration, "_quiet_evaluation_processes", launch_policy)
+    assert calibration.run_worker(request) == 0
+    assert seen == [CONFIGURED_PYTHON]
+    assert json.loads((run_dir / "engine-report.json").read_text(encoding="utf-8"))["status"] == "completed"
+
+
 @pytest.mark.parametrize("deny", [False, True])
 def test_api_checks_concrete_binding_before_launch_and_receipts_same_approval(adapter, tmp_path, monkeypatch, deny):
     project, root, _ = adapter
@@ -284,6 +437,7 @@ def test_api_checks_concrete_binding_before_launch_and_receipts_same_approval(ad
         assert json.loads(call())["receipt"]["run_id"] == "receipt"
         kwargs = run.call_args.kwargs
         assert kwargs["budget"] == 60 and kwargs["algorithm"] == "dds"
+        assert kwargs["python"] == str(cfg.python)
         assert kwargs["approved_binding"]["runner_sha256"] == hashlib.sha256(kwargs["adapter_snapshot"].runner_bytes).hexdigest()
         receipt = flow.record_tool_run.call_args.kwargs
         assert receipt["expected_approval_sha256"] == "current-signed-id"

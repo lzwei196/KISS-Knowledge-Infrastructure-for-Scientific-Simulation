@@ -489,6 +489,24 @@ def snapshot_adapter(project: Path, ki_name: str) -> AdapterSnapshot:
                            contract.read_bytes(), runner.read_bytes())
 
 
+# A Python interpreter named without a directory (python, python3, python3.11.exe).
+_PYTHON_NAME = re.compile(r"python(?:[23](?:\.\d+)?)?(?:\.exe)?", re.IGNORECASE)
+
+
+def _runs_reviewed_runner(script: str, cwd) -> bool:
+    """Whether a contract's runner script is the reviewed adapter in the runtime KI.
+
+    The engine starts the runner in ``cwd``, by default ``{ki_path}``: the
+    runtime copy that holds the reviewed calib_run.py. Shipped contracts name
+    it relative to there, as ``tools/calib_run.py``. That is the same file only
+    while the runner still starts there; elsewhere, such as the project's live
+    KI, it would be the unreviewed original.
+    """
+    script = script.replace("\\", "/")
+    return (script == "{ki_path}/tools/calib_run.py"
+            or (script in ("tools/calib_run.py", "./tools/calib_run.py") and cwd in (None, "{ki_path}")))
+
+
 def _resolved_invocation(snapshot: AdapterSnapshot, arguments: dict) -> dict:
     import yaml
     doc = yaml.safe_load(snapshot.contract_bytes.decode("utf-8"))
@@ -518,10 +536,11 @@ def _resolved_invocation(snapshot: AdapterSnapshot, arguments: dict) -> dict:
     if (not isinstance(runner, dict) or runner.get("kind") != "subprocess" or not isinstance(command, list)
             or not all(isinstance(part, str) for part in command)
             or len(command) < 2
-            or not re.fullmatch(r"python(?:[23](?:\.\d+)?)?(?:\.exe)?", command[0].replace("\\", "/").rsplit("/", 1)[-1], re.IGNORECASE)
-            or command[1].replace("\\", "/") != "{ki_path}/tools/calib_run.py"):
+            or not _PYTHON_NAME.fullmatch(command[0].replace("\\", "/").rsplit("/", 1)[-1])
+            or not _runs_reviewed_runner(command[1], runner.get("cwd"))):
         raise ValueError("approved calibration requires a subprocess runner command beginning with "
-                         "a Python interpreter and {ki_path}/tools/calib_run.py; update this project's adapter")
+                         "a Python interpreter and {ki_path}/tools/calib_run.py (or tools/calib_run.py "
+                         "started in {ki_path}); update this project's adapter")
     strategy = doc.get("strategy") or {}
     if not isinstance(strategy, dict):
         raise ValueError("calibration strategy must be an object")
@@ -678,12 +697,14 @@ def run_project(*, project: Path, ki_name: str, ki_path: Path,
                 expected_case_id: str | None = None,
                 determining_metric: str | None = None,
                 stop=None, turn_id=None, adapter_snapshot: AdapterSnapshot | None = None,
-                approved_binding: dict | None = None) -> dict:
+                approved_binding: dict | None = None, python: str | None = None) -> dict:
     """Run one real calibration using GeoForge's bundled Python runtime.
 
     This is deliberately a native harness operation.  API models call it as a
     typed tool, while local CLI agents call the frozen GeoForge executable.  In
     both cases numpy/spotpy/pymoo come from the app rather than the user's Python.
+    ``python`` is the KI's configured interpreter; a contract that names its
+    interpreter without a directory runs its model evaluations with it.
     """
     project = Path(project).resolve()
     ki_path = Path(ki_path).resolve()
@@ -757,6 +778,7 @@ def run_project(*, project: Path, ki_name: str, ki_path: Path,
         "budget": int(budget) if budget is not None else None, "seed": int(seed),
         "algorithm": algorithm, "determining_metric": determining_metric,
         "expected_case_id": expected_case_id,
+        "python": str(python) if python else None,
     }), encoding="utf-8")
     env = with_framework_env(env)
     if not getattr(sys, "frozen", False):
@@ -866,15 +888,22 @@ def validate_receipt_result(result: dict, binding: dict) -> dict:
 
 
 @contextlib.contextmanager
-def _quiet_evaluation_processes():
-    """Apply Desktop's Windows launch policy without modifying the pinned engine.
+def _quiet_evaluation_processes(python: str | None = None):
+    """Apply Desktop's launch policy to evaluations without modifying the pinned engine.
+
+    A contract that names its interpreter without a directory (``python3``)
+    leaves it to PATH, which on a desktop is not the KI's environment; on
+    Windows it is often the Microsoft Store alias. Projection already gives a
+    full interpreter path the KI's configured interpreter, so give a bare
+    name the same one.
 
     A windowed frozen executable has no console to inherit. Unlike a Python
     worker launched with CREATE_NO_WINDOW, its ordinary console children open
     a console for each evaluation. Scope this proxy to the framework runner in
     the isolated worker; unrelated application subprocesses remain untouched.
     """
-    if os.name != "nt":
+    hide = os.name == "nt"
+    if not hide and not python:
         yield
         return
     try:
@@ -887,15 +916,20 @@ def _quiet_evaluation_processes():
         yield
         return
     original = runner.subprocess
-    class HiddenSubprocess:
+    class EvaluationSubprocess:
         def __getattr__(self, name):
             return getattr(original, name)
 
         def run(self, *args, **kwargs):
-            kwargs["creationflags"] = (kwargs.get("creationflags", 0)
-                                        | original.CREATE_NO_WINDOW)
+            command = args[0] if args else None
+            if (python and isinstance(command, (list, tuple)) and command
+                    and isinstance(command[0], str) and _PYTHON_NAME.fullmatch(command[0])):
+                args = ([python, *command[1:]], *args[1:])
+            if hide:
+                kwargs["creationflags"] = (kwargs.get("creationflags", 0)
+                                            | original.CREATE_NO_WINDOW)
             return original.run(*args, **kwargs)
-    runner.subprocess = HiddenSubprocess()
+    runner.subprocess = EvaluationSubprocess()
     try:
         yield
     finally:
@@ -921,7 +955,7 @@ def run_worker(request_path: Path) -> int:
         with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
             try:
                 engine = importlib.import_module("calibration_kit.calib")
-                with _quiet_evaluation_processes():
+                with _quiet_evaluation_processes(request.get("python")):
                     report = engine.calibrate(
                         request["runtime_ki"], str(run_dir), request["shapes"],
                         budget=request.get("budget"), seed=request["seed"],

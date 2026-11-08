@@ -2103,6 +2103,13 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             # common KI-tool launcher. It needs the same exact-project check.
             from . import project_verification
             project_verification.require_current(project_root, ki.name, Path(ki.root))
+            # The interpreter run_ki_tool would use for this KI; the worker
+            # gives it to a contract that names its interpreter bare.
+            from . import project_paths
+            selected = getattr(getattr(flow, "ctx", None), "selected_kis", []) or []
+            calibration_python = project_paths.execution_config(
+                project_root, ki.name, root,
+                fallback=cfg if len(selected) <= 1 else None).python
             result = _calibration.run_project(
                 project=project_root,
                 ki_name=ki.name,
@@ -2113,6 +2120,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 expected_case_id=binding["expected_case_id"],
                 stop=stop, turn_id=turn_id, adapter_snapshot=adapter_snapshot,
                 approved_binding=binding if flow is not None else None,
+                python=str(calibration_python) if calibration_python else None,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             raise ToolError(str(exc)) from None

@@ -167,4 +167,4 @@
       a tool bug. Do not apply ×1000/×86400 corrections (triplets dt_001–dt_007 do NOT apply).
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: TOPMODEL_retry1
+  seen_at: "date not recorded, run TOPMODEL_retry1"

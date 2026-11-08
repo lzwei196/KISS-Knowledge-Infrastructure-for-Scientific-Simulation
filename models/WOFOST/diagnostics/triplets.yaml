@@ -88,8 +88,8 @@
       (MJ) should be 15000000 (J). With radiation 1e6x too low, photosynthesis produces negligible assimilates,
       and the crop barely grows.
     explanation: 'PCSE/WOFOST uses J/m2/day for irradiance (Joules, NOT kiloJoules — the PCSE documentation
-      says kJ but the internal DB stores Joules, confirmed by Bengbu validation where wheat=3543 and maize=6102
-      kg/ha using J/m2/day). DSSAT uses MJ/m2/day. A W/m2 daily mean needs ×86400 to get J/m2/day. NASA
+      says kJ but the internal DB stores Joules, confirmed by a real-case run that gave normal wheat and maize
+      yields with J/m2/day). DSSAT uses MJ/m2/day. A W/m2 daily mean needs ×86400 to get J/m2/day. NASA
       POWER API uses MJ/m2/day. This is the #1 silent error in PCSE — the model runs perfectly fine with
       wrong units because it just computes very low photosynthesis. Typical J/m2/day values: winter=2e6-8e6,
       summer=15e6-35e6. Typical MJ/m2/day values: winter=2-8, summer=15-35. If your max IRRAD is < 100000,
@@ -114,6 +114,7 @@
   cross_references:
   - dt_004
   - dt_007
+  seen_at: "date not recorded, Bengbu"
 - id: dt_004
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -582,7 +583,7 @@
   severity: fatal
   cross_references:
   - dt_012
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v002
   stage: s5_engine_config
   failure_domain: api_change
@@ -609,7 +610,7 @@
   severity: fatal
   cross_references:
   - dt_v001
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v003
   stage: s5_engine_config
   failure_domain: parameter_format
@@ -637,7 +638,7 @@
   severity: fatal
   cross_references:
   - dt_v002
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v004
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -667,7 +668,7 @@
     prevention: validate_weather_data tool checks the VAP range
   severity: silent
   cross_references: []
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_v005
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -700,7 +701,7 @@
   severity: silent
   cross_references:
   - dt_003
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v006
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -727,7 +728,7 @@
   severity: silent
   cross_references:
   - dt_v005
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_016
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -771,7 +772,7 @@
   cross_references:
   - dt_004
   - dt_003
-  verified: '2026-06-06'
+  seen_at: "2026-06-06"
 - id: dt_009_csv_rain_mm_not_cm
   symptom:
     description: WOFOST yields are low / crop is chronically water-stressed when weather came through
@@ -788,7 +789,7 @@
       truth.
   format_spec_violated: 'docs/format_spec.yaml: weather CSV RAIN column unit = mm/day (CSVWeatherDataProvider
     internal /10)'
-  added_by_run: WOFOST_retry1
+  seen_at: "date not recorded, run WOFOST_retry1"
 - id: dt_010_hwsd_adapter_missing
   symptom:
     description: convert_hwsd_to_pcse_soil.py logs HWSD adapter failed (No module named skills, Using
@@ -802,8 +803,7 @@
     action: Use ki_tools_common.soil_utils.lookup_hwsd(lat, lon, hwsd_raster=...) instead — it does the
       rasterio MU_GLOBAL lookup -> HWSD_DATA.csv topsoil texture and returns sand/silt/clay/oc/bulk_density.
       Already patched in canonical tool 2026-06-08.
-  added_by_run: WOFOST_real_case_20260608T0040Z
-  verified: '2026-06-08'
+  seen_at: "2026-06-08, run WOFOST_real_case_20260608T0040Z"
 - id: dt_011_pp_mode_needs_soil
   symptom:
     description: 'Running SIMULATION_MODE=PP raises pcse.exceptions.ParameterError: Value for parameter
@@ -815,8 +815,7 @@
   remedy:
     action: Load the soil JSON for ALL modes (PP, WLP_FD, WLP_CWB). Pass a soil params file to run_wofost_simulation.py
       even for PP. Already patched in canonical tool 2026-06-08.
-  added_by_run: WOFOST_real_case_20260608T0040Z
-  verified: '2026-06-08'
+  seen_at: "2026-06-08, run WOFOST_real_case_20260608T0040Z"
 - id: dt_faostat_obs_shape
   symptom:
     description: WOFOST-vs-FAOSTAT-national run reports raw NSE/r/KGE as the headline and the pre-retry
@@ -835,10 +834,8 @@
       It classifies obs_shape=regional_aggregate_time_series and reports magnitude_accuracy (pbias, decadal_mean_pbias,
       mean_abs_pct_err) plus trend_match (detrended r, first-difference r, trend-slope ratio) as the verdict,
       with raw NSE/r/KGE relegated to invalid_for_obs_shape. Report obs_shape in the run JSON so the gate
-      uses the right family. Reference PASS for USA maize PP 1991-2023 -- pbias +6.6 pct, decadal +3.4
-      pct, detrended r 0.506, first-diff r 0.611.
-  added_by_run: WOFOST_real_case_20260608_obs_shape
-  verified: '2026-06-08'
+      uses the right family.
+  seen_at: "2026-06-08, run WOFOST_real_case_20260608_obs_shape"
 - id: dt_v007
   stage: s2_soil_params
   failure_domain: silent_error
@@ -892,7 +889,7 @@
       is not the column order of this server''s VIC forcing files, and it wrote a header with unquoted
       text and trailing comments ("Country = VIC_grid_cell", "Longitude = -93.5; decimal degrees"), DAY
       as YYYY-MM-DD and SNOWDEPTH -999. pcse 6.0.12 runs ast.literal_eval on each header value and stops
-      on the first unquoted word (checked 2026-10-03 with a file in that header style).'
+      on the first unquoted word (checked with a file in that header style).'
     explanation: 'Owner rule 2026-10-02: a model KI builds its input straight from the data source with
       its own tool; it must not turn another model''s input files into its own. The tool was moved to
       models/WOFOST/_removed_vic_input_tools_20261002/ on 2026-10-03. It is not to be restored.
@@ -917,7 +914,7 @@
   cross_references:
   - dt_018
   - dt_021
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_018
   stage: s3_weather_prep
   failure_domain: protocol_gap
@@ -953,7 +950,7 @@
   severity: silent
   cross_references:
   - dt_017
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_019
   stage: s3_weather_prep
   failure_domain: protocol_gap
@@ -977,12 +974,12 @@
     manual_steps:
     - 'CMFD 3-hourly store on this server: KISSPATH_DATA/forcing/Data_forcing_03hr_010deg
       (about 50 s per point-year).'
-    - 'Checked 2026-10-03: (36.5, 116.5) 2015 = 365 days, 617 mm rain, mean 15.7 degC.'
+    - 'Reference check: (36.5, 116.5) 2015 = 365 days, 617 mm rain, mean 15.7 degC.'
     prevention: List tools/ before trusting a tool name in a document.
   severity: fatal
   cross_references:
   - dt_018
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_020
   stage: s3_weather_prep
   failure_domain: unit_conversion
@@ -1014,7 +1011,7 @@
   cross_references:
   - dt_016
   - dt_004
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_021
   stage: s3_weather_prep
   failure_domain: protocol_gap
@@ -1047,7 +1044,7 @@
   severity: silent
   cross_references:
   - dt_017
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_022
   stage: s6_execution
   failure_domain: silent_error
@@ -1077,7 +1074,7 @@
   severity: silent
   cross_references:
   - dt_018
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_023
   stage: s3_weather_prep
   failure_domain: data_quality
@@ -1110,4 +1107,4 @@
   severity: fatal
   cross_references:
   - dt_017
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"

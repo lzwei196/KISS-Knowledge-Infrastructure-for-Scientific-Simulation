@@ -520,4 +520,4 @@
       and docs/format_spec.yaml ('CSV space-delimited').
   format_spec_violated: 'rapid.static_inputs.delimiter: space-delimited, headerless'
   canonical_intent: ki_local_if_pass
-  added_by_run: RAPID_retry3
+  seen_at: "date not recorded, run RAPID_retry3"

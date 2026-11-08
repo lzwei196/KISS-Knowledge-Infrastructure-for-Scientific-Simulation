@@ -27,15 +27,17 @@ inputs:
     model_input_format: inputs.dat column 2, per-timestep depth
     notes: TOPMODEL does NOT compute PET internally; it must be supplied (e.g., from Hargreaves or Penman-Monteith).
   - name: observed discharge (Qobs)
-    unit: m/hr
+    unit: m/day
     category: hydrologic
     source_kind: forcing
     model_input_format: inputs.dat column 3, per-timestep depth; optional, used only for diagnostic NSE
       and hyd.out comparison
-    notes: Read by inputs() in standalone mode; not a BMI input variable. Used by results() to compute
-      internal NSE and to write the observed column of hyd.out. The converter writes -9999 on missing
-      observed days and lists those rows in inputs.dat.provenance.json (observation_mode provided_with_gaps);
-      the internal NSE then uses the placeholder and is meaningless, score with calibrate_topmodel.py.
+    notes: 'Read by inputs() in standalone mode; not a BMI input variable. Used by results() to compute
+      internal NSE and to write the observed column of hyd.out. Same per-step depth as Q (m per model
+      step; m/day on the daily route, --dt-hours 24): the converter writes Q_m3s x 86400 / basin_area_m2
+      / steps_per_day. The converter writes -9999 on missing observed days and lists those rows in inputs.dat.provenance.json
+      (observation_mode provided_with_gaps); the internal NSE then uses the placeholder and is meaningless,
+      score with calibrate_topmodel.py.'
   parameters:
   - name: szm
     unit: m
@@ -161,9 +163,12 @@ inputs:
 outputs:
   primary:
   - name: Q (simulated discharge)
-    unit: m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)
-    description: Per-timestep routed discharge at the catchment outlet (qb + qof routed through the time-delay
-      histogram).
+    unit: m/day
+    description: 'Per-timestep routed discharge at the catchment outlet (qb + qof routed through the time-delay
+      histogram), as a water depth over the catchment in metres per model step. The converter always writes
+      header dt 1.0, so one step is the physical step set by --dt-hours (physical_dt_hours in inputs.dat.provenance.json):
+      m/day on the daily route (--dt-hours 24, the only step calibrate_topmodel.py accepts); at --dt-hours
+      1 the same numbers are m/hr.'
     validation_rank: 1
     emitted_in: hyd.out (column 3) and topmod.out (column 4 'Q[it]')
     observability:
@@ -175,7 +180,9 @@ outputs:
         - magnitude_accuracy
         determining_metric: nse
         caveats:
-        - Observed Q must be reduced to the same units (m/hr per-step depth) as the simulated series.
+        - 'Observed Q must be reduced to the same per-step depth as the simulated series (m per model
+          step; m/day on the daily route): depth = Q_m3s x physical_seconds_per_step / basin_area_m2.
+          Using 3600 on a daily run gives a 24x error.'
         - Single-outlet hydrograph; the model is lumped per subcatchment and cannot resolve internal spatial
           pattern.
       - obs_shape: categorical_event
@@ -190,7 +197,7 @@ outputs:
       - none
       - first_difference
   - name: qb (baseflow)
-    unit: m/hr (per-step depth)
+    unit: m/day
     description: Per-step subsurface baseflow contribution to the outlet; qb = szq*exp(-sbar/szm).
     validation_rank: 3
     emitted_in: topmod.out column 'qb'
@@ -252,7 +259,7 @@ outputs:
       detrending_options:
       - none
   - name: ea (actual evapotranspiration)
-    unit: m/hr (per-step depth)
+    unit: m/day
     description: Area-weighted actual ET = ep*(1 - deficit_root_zone/srmax), capped by available root-zone
       water.
     validation_rank: 2
@@ -280,7 +287,7 @@ outputs:
       - linear_residual
   secondary:
   - name: qof (saturation/Hortonian overland flow)
-    unit: m/hr (per-step depth)
+    unit: m/day
     description: Per-step saturated-area + (optional) infiltration-excess overland flow contribution.
     validation_rank: null
     emitted_in: topmod.out column 'qof'
@@ -330,8 +337,9 @@ known_issues:
   severity: silent
 - id: dt_007
   symptom: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
-  diagnosis: Comparing simulated Q in m/hr with observed Q in m³/s
-  remedy: 'Convert both to same units: Q_m3s = Q_mhr × basin_area_m² / 3600'
+  diagnosis: Comparing simulated Q (depth per model step) with observed Q in m³/s
+  remedy: 'Convert both to same units: Q_m3s = Q_step × basin_area_m² / physical_seconds_per_step (86400
+    on the daily route, 3600 only for hourly steps)'
   severity: silent
 - id: dt_008
   symptom: Segmentation fault during model execution

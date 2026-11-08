@@ -62,8 +62,8 @@
   failure_domain: unit_conversion
   severity: silent
   symptom: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
-  diagnosis: Comparing simulated Q in m/hr with observed Q in m³/s
-  remedy: 'Convert both to same units: Q_m3s = Q_mhr × basin_area_m² / 3600'
+  diagnosis: Comparing simulated Q (depth per model step) with observed Q in m³/s
+  remedy: 'Convert both to same units: Q_m3s = Q_step × basin_area_m² / physical_seconds_per_step (86400 on the daily route, 3600 only for hourly steps)'
   detection: Simulated and observed Q should be same order of magnitude
 - id: dt_008
   stage: s2_twi

@@ -18,7 +18,7 @@ and compute standard hydrological performance metrics.
 
 | Output | Format | Description |
 |--------|--------|-------------|
-| results.csv | CSV | Time series with dates, Q in m/hr and m³/s |
+| results.csv | CSV | Time series with dates, Q as per-step depth (m; columns `Q_sim_mhr`/`Q_obs_mhr` keep their old names) and m³/s |
 | metrics.json | JSON | NSE, KGE, PBIAS, r |
 | validation_plot.png | PNG | Hydrograph and scatter plot |
 
@@ -40,10 +40,12 @@ observed = q_obs_mhr != -9999.0
 ### 2. Convert to m³/s
 
 ```python
-# Q_m3s = Q_mhr × basin_area_m² / 3600
+# Q is a depth per model step: Q_m3s = Q_step × basin_area_m² / physical_seconds_per_step
+# (physical_dt_hours × 3600 from inputs.dat.provenance.json; 86400 on the daily route)
 basin_area_m2 = basin_area_km2 * 1e6
-q_sim_m3s = q_sim_mhr * basin_area_m2 / 3600
-q_obs_m3s = q_obs_mhr * basin_area_m2 / 3600
+seconds_per_step = physical_dt_hours * 3600.0
+q_sim_m3s = q_sim_mhr * basin_area_m2 / seconds_per_step
+q_obs_m3s = q_obs_mhr * basin_area_m2 / seconds_per_step
 ```
 
 ### 3. Load observed discharge (if not in hyd.out)
@@ -90,7 +92,8 @@ q_obs_m3s = obs['Q'].values
 
 | Trap | Symptom | Fix |
 |------|---------|-----|
-| Comparing m/hr sim with m³/s obs | NSE = -∞ | Convert to same units |
+| Comparing per-step depth sim with m³/s obs | NSE = -∞ | Convert to same units |
+| Daily run converted with 3600 s per step | m³/s 24× too high | Use the physical step (86400 s on the daily route) |
 | Spinup included in metrics | Artificially low NSE | Discard first year |
 | Daily obs vs hourly sim | Length mismatch | Aggregate sim to daily |
 | Q_obs = 0 everywhere in hyd.out | Qobs not loaded | Provide obs file separately |

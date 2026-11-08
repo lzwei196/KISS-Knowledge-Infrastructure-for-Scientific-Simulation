@@ -52,10 +52,10 @@ inputs:
       notes: "TOPMODEL does NOT compute PET internally; it must be supplied (e.g., from Hargreaves or Penman-Monteith)."
     - category: "hydrologic"
       name: "observed discharge (Qobs)"
-      unit: "m/hr"
+      unit: "m/day"
       source_kind: "forcing"
       model_input_format: "inputs.dat column 3, per-timestep depth; optional, used only for diagnostic NSE and hyd.out comparison"
-      notes: "Read by inputs() in standalone mode; not a BMI input variable. Used by results() to compute internal NSE and to write the observed column of hyd.out."
+      notes: "Read by inputs() in standalone mode; not a BMI input variable. Used by results() to compute internal NSE and to write the observed column of hyd.out. Same per-step depth as Q (m per model step; m/day on the daily route, --dt-hours 24): the converter writes Q_m3s x 86400 / basin_area_m2 / steps_per_day. The converter writes -9999 on missing observed days and lists those rows in inputs.dat.provenance.json (observation_mode provided_with_gaps); the internal NSE then uses the placeholder and is meaningless, score with calibrate_topmodel.py."
   parameters:
     - category: "subsurface"
       name: "szm"
@@ -386,8 +386,8 @@ states:
 outputs:
   - var: "Q (simulated discharge)"
     validation_rank: 1
-    unit: "m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)"
-    description: "Per-timestep routed discharge at the catchment outlet (qb + qof routed through the time-delay histogram)."
+    unit: "m/day"
+    description: "Per-timestep routed discharge at the catchment outlet (qb + qof routed through the time-delay histogram), as a water depth over the catchment in metres per model step. The converter always writes header dt 1.0, so one step is the physical step set by --dt-hours (physical_dt_hours in inputs.dat.provenance.json): m/day on the daily route (--dt-hours 24, the only step calibrate_topmodel.py accepts); at --dt-hours 1 the same numbers are m/hr."
     emitted_in: "hyd.out (column 3) and topmod.out (column 4 'Q[it]')"
     observability:
       comparable_obs_shapes:
@@ -398,7 +398,7 @@ outputs:
             - "magnitude_accuracy"
           determining_metric: "nse"
           caveats:
-            - "Observed Q must be reduced to the same units (m/hr per-step depth) as the simulated series."
+            - "Observed Q must be reduced to the same per-step depth as the simulated series (m per model step; m/day on the daily route): depth = Q_m3s x physical_seconds_per_step / basin_area_m2. Using 3600 on a daily run gives a 24x error."
             - "Single-outlet hydrograph; the model is lumped per subcatchment and cannot resolve internal spatial pattern."
         - obs_shape: "categorical_event"
           comparison_mode: "categorical_event_comparison"
@@ -412,7 +412,7 @@ outputs:
         - "first_difference"
   - var: "qb (baseflow)"
     validation_rank: 3
-    unit: "m/hr (per-step depth)"
+    unit: "m/day"
     description: "Per-step subsurface baseflow contribution to the outlet; qb = szq*exp(-sbar/szm)."
     emitted_in: "topmod.out column 'qb'"
     observability:
@@ -428,7 +428,7 @@ outputs:
       detrending_options:
         - "none"
   - var: "qof (saturation/Hortonian overland flow)"
-    unit: "m/hr (per-step depth)"
+    unit: "m/day"
     description: "Per-step saturated-area + (optional) infiltration-excess overland flow contribution."
     emitted_in: "topmod.out column 'qof'"
     observability:
@@ -478,7 +478,7 @@ outputs:
         - "none"
   - var: "ea (actual evapotranspiration)"
     validation_rank: 2
-    unit: "m/hr (per-step depth)"
+    unit: "m/day"
     description: "Area-weighted actual ET = ep*(1 - deficit_root_zone/srmax), capped by available root-zone water."
     emitted_in: "topmod.out via 'ep' column and accumulated into sumae"
     observability:
@@ -741,7 +741,7 @@ safety:
       severity: "silent"
     - id: "qobs_unit_m3s_vs_mhr"
       kind: "parser_semantic"
-      description: "Observed Q supplied in m^3/s instead of m/hr makes the internal NSE / KGE comparison meaningless because the model writes simulated Q in per-step depth (m/hr at dt=1)."
+      description: "Observed Q supplied in m^3/s instead of the same per-step depth as simulated Q makes the internal NSE / KGE comparison meaningless because the model writes simulated Q in per-step depth (m per model step; m/day on the daily route)."
       severity: "silent"
     - id: "channel_distance_unit_km_to_m"
       kind: "soil_semantic"

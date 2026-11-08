@@ -336,14 +336,18 @@ outputs:
 known_issues:
 - id: dt_001
   symptom: Ice velocity is essentially zero everywhere. Model converges but produces no meaningful flow.
-  diagnosis: Velocity initialization in m/s instead of m/yr — off by 3.15e7; ISSM uses m/yr for all velocity
+  diagnosis: 'Velocity initialization in m/s instead of m/yr — off by 3.15e7; ISSM uses m/yr for all velocity
     quantities. Satellite-derived velocities (e.g., MEaSUREs, InSAR products) are sometimes provided in
     m/s or m/day. If m/s values are loaded directly as md.initialization.vx/vy, the initial velocity field
-    i
+    is ~31.5 million times too small. The solver converges to near-zero velocity because the initial guess
+    is essentially zero.
+
+    ; [''parameterize'', ''initialization'']'
   remedy: 'Multiply velocity values by 3.1536e7 (seconds per year) before assigning to md.initialization;
     convert_forcing_to_issm; [''Check max velocity after loading: should be 1-15000 m/yr for typical ice
     sheets'', ''If max(vel) < 0.001, values are likely in m/s — multiply by 3.1536e7'', ''If max(vel)
-    < 1, values'
+    < 1, values may be in m/day — multiply by 365.25'']; validate_outputs() in convert_forcing_to_issm
+    checks velocity magnitude range'
   severity: silent
 - id: dt_002
   symptom: Rheology is wildly wrong — ice is either impossibly stiff (no flow) or impossibly soft (instant
@@ -351,11 +355,14 @@ known_issues:
   diagnosis: 'Temperature in °C instead of K when computing rheology via paterson(); ISSM uses Kelvin
     for temperature. The paterson() function converts temperature (K) to the viscosity parameter B (Pa
     s^(1/n)). If temperature is provided in °C (e.g., -10°C = 263.15 K), paterson() interprets it as 263.15
-    K or -10 '
+    K or -10 K depending on the input. Temperatures near 0°C in Celsius are ~273 K, but 0 passed directly
+    would be 0 K = -273°C, producing extremely high B values (ice too stiff) or NaN.
+
+    ; [''parameterize'', ''paterson'']'
   remedy: 'Add 273.15 to Celsius temperatures before calling paterson(); convert_forcing_to_issm; [''Verify
     temperature array: min should be > 200 K (~-73°C)'', ''If min(T) < 200, values are likely in °C —
     add 273.15'', ''Recompute: md.materials.rheology_B = paterson(T_in_kelvin)'']; convert_forcing_to_issm
-    converts'
+    converts temperature to Kelvin automatically'
   severity: silent
 - id: dt_003
   symptom: Ice sheet appears paper-thin. Geometry looks flat. Surface elevation nearly equals bed.
@@ -363,7 +370,7 @@ known_issues:
     GIS datasets or summary tables provide ice thickness in kilometers. If km values are loaded directly,
     a 3 km thick ice sheet becomes 3 m thick, producing unrealistic results with near-zero driving stress.
 
-    ; ['
+    ; [''parameterize'', ''geometry'']'
   remedy: 'Multiply thickness by 1000 if values are in km; convert_geometry_to_issm; [''Check max thickness:
     should be 100-5000 m for ice sheets'', ''If max(thickness) < 10, values are likely in km — multiply
     by 1000'']; convert_geometry_to_issm warns if max thickness < 10 m'
@@ -371,21 +378,26 @@ known_issues:
 - id: dt_004
   symptom: Mesh is microscopic (~1 m domain). Physics produces nonsensical results. All velocities near
     zero.
-  diagnosis: Domain coordinates in degrees (lat/lon) instead of meters (projected); ISSM requires projected
+  diagnosis: 'Domain coordinates in degrees (lat/lon) instead of meters (projected); ISSM requires projected
     coordinates in meters (e.g., polar stereographic EPSG:3031 for Antarctica, EPSG:3413 for Greenland).
-    If geographic coordinates (lat/lon in degrees) are used, the domain is ~180×360 units instead of ~5,000,
+    If geographic coordinates (lat/lon in degrees) are used, the domain is ~180×360 units instead of ~5,000,000×5,000,000
+    m. The mesh resolution also becomes nonsensical (100,000 m resolution on a 360° domain).
+
+    ; [''triangle'', ''bamg'', ''DomainOutline.exp'']'
   remedy: 'Reproject coordinates to polar stereographic before creating .exp file; None; [''Check mesh
     extent: max(x) - min(x) should be > 10,000 m for any ice simulation'', ''If extent < 1000, coordinates
     are in degrees — project to EPSG:3031 or EPSG:3413'', ''Use pyproj or GDAL for coordinate transformation''];
-    Ve'
+    Verify mesh extent after triangle/bamg call'
   severity: silent
 - id: dt_005
   symptom: Ice shelf velocities are unrealistically slow. Floating ice barely moves despite high thickness
     gradients.
-  diagnosis: Non-zero friction coefficient on floating ice; Floating ice has no basal contact — friction
+  diagnosis: 'Non-zero friction coefficient on floating ice; Floating ice has no basal contact — friction
     must be zero. If md.friction.coefficient is set uniformly (e.g., 30 everywhere) without zeroing it
     on floating nodes (where md.mask.ocean_levelset < 0), the solver applies artificial basal drag to
-    the ice she
+    the ice shelf, dramatically reducing velocity.
+
+    ; [''parameterize'', ''friction'']'
   remedy: 'Set friction.coefficient = 0 where ocean_levelset < 0; None; [''md.friction.coefficient[md.mask.ocean_levelset
     < 0] = 0'', ''Verify: all floating vertices should have friction = 0'']; Parameter file template includes
     floating ice friction check'
@@ -395,11 +407,13 @@ known_issues:
   diagnosis: 'Glen''s fluidity A used instead of viscosity B — B = A^(-1/n); ISSM uses the B (viscosity)
     convention: η = B^n / (2 ε̇^(n-1)). Many publications and datasets use the A (fluidity) convention:
     ε̇ = A σ^n. The two are related by B = A^(-1/n). Typical values: A ~ 10^-25 to 10^-23 Pa^-3 s^-1,
-    B ~ 10^7 to '
+    B ~ 10^7 to 10^8 Pa s^(1/3). Using A (10^-24) directly as B produces ice with essentially zero viscosity.
+
+    ; [''parameterize'', ''materials'']'
   remedy: 'Convert A to B: rheology_B = A**(-1.0/n) where n is typically 3; None; [''Check rheology_B
     range: should be 10^6 to 10^9 Pa s^(1/3)'', ''If values are < 1, they are likely in A convention —
     convert'', ''Alternatively, use paterson(temperature_in_K) which returns B directly'']; Always use
-    paterson() for te'
+    paterson() for temperature-dependent rheology'
   severity: silent
 - id: dt_007
   symptom: Surface mass balance is 1000x too large or too small. Ice sheet grows/shrinks unrealistically
@@ -412,14 +426,16 @@ known_issues:
   remedy: 'Convert SMB: m_ice_yr = kg_m2_yr / 917; convert_forcing_to_issm; [''Check SMB range: typical
     -10 to +2 m/yr ice for ice sheets'', ''If max(|SMB|) > 50, values may be in mm/yr — divide by 1000'',
     ''If max(|SMB|) > 50000, values may be in kg/m^2/yr — divide by 917'']; convert_forcing_to_issm handles
-    unit co'
+    unit conversion with --smb_units flag'
   severity: silent
 - id: dt_008
   symptom: Basal temperature too warm. Excessive basal melting. Unrealistic thermal field.
   diagnosis: 'Geothermal heat flux in mW/m^2 instead of W/m^2 — off by 1000x; ISSM expects geothermal
     flux in W/m^2. Common datasets (Shapiro & Ritzwoller, Fox-Maule) provide values in mW/m^2. Typical
     values: 40-150 mW/m^2 = 0.04-0.15 W/m^2. If mW/m^2 values are used directly as W/m^2, the basal heat
-    input is 100'
+    input is 1000x too high.
+
+    ; [''parameterize'', ''basalforcings'']'
   remedy: 'Divide geothermal flux by 1000; convert_forcing_to_issm; [''Check geothermal flux: should be
     0.01-0.3 W/m^2 for typical ice sheets'', ''If values are 20-200, they are in mW/m^2 — divide by 1000''];
     convert_forcing_to_issm handles conversion with --geothermal_units flag'
@@ -430,7 +446,7 @@ known_issues:
     (Pa) for pressure. Ice overburden pressure is typically 1-40 MPa (1e6 to 4e7 Pa). If pressure is provided
     in MPa, it is 1e6 too small. The solver may still converge but stress fields will be wrong.
 
-    ; [''paramet'
+    ; [''parameterize'', ''initialization'']'
   remedy: 'Multiply MPa by 1e6, kPa by 1e3, bar by 1e5 to get Pa; None; [''Ice overburden: P = ρ_ice *
     g * thickness ≈ 917 * 9.81 * H Pa'', ''For 3000 m ice: P ≈ 27 MPa = 2.7e7 Pa'']; Let ISSM compute
     initial pressure internally from geometry'
@@ -441,7 +457,9 @@ known_issues:
   diagnosis: 'Mesh resolution specified in km instead of m; triangle(md, ''Domain.exp'', resolution) takes
     resolution in meters. If 50 is passed (meaning 50 km), the mesh generator creates elements of 50 m
     × 50 m, producing millions of elements for a typical ice sheet domain. Conversely, specifying 50000000
-    (50 km '
+    (50 km in wrong scale) gives 1 element.
+
+    ; [''triangle'', ''bamg'']'
   remedy: 'Specify resolution in meters: 50 km = 50000; None; [''Common resolutions: 5 km = 5000, 10 km
     = 10000, 50 km = 50000, 100 km = 100000'', ''For BAMG: hmin and hmax are also in meters'']; Check
     element count after meshing — should be 1000-100000 for typical studies'
@@ -451,7 +469,10 @@ known_issues:
     to ocean.
   diagnosis: 'Mask levelset sign convention inverted (positive where should be negative); ISSM levelset
     convention: negative = inside, positive = outside. ocean_levelset < 0 means floating, > 0 means grounded.
-    ice_levelset < 0 means ice present, > 0 means no ice. If these are reversed, floating ice gets friction '
+    ice_levelset < 0 means ice present, > 0 means no ice. If these are reversed, floating ice gets friction
+    and grounded ice gets none.
+
+    ; [''setmask'', ''mask'']'
   remedy: 'Negate the levelset arrays if convention is wrong; None; [''Verify: sum(ocean_levelset < 0)
     should match expected floating area'', ''If inverted: md.mask.ocean_levelset = -md.mask.ocean_levelset''];
     Check floating/grounded counts match known ice sheet geography'
@@ -459,13 +480,16 @@ known_issues:
 - id: dt_012
   symptom: Artificial ice divides or frozen boundaries where ice should flow freely. Zero velocity at
     unexpected locations.
-  diagnosis: Using 0 instead of NaN for free (unconstrained) boundary condition nodes; In ISSM, prescribed
+  diagnosis: 'Using 0 instead of NaN for free (unconstrained) boundary condition nodes; In ISSM, prescribed
     BCs (spcvx, spcvy, spctemperature) use NaN to indicate free nodes. A value of 0 means the node is
     constrained to zero velocity/temperature. If an array of zeros is assigned instead of NaNs, every
-    node becom
+    node becomes a Dirichlet BC with value 0.
+
+    ; [''SetIceShelfBC'', ''SetMarineIceSheetBC'', ''stressbalance'']'
   remedy: 'Initialize spc arrays with NaN, only set specific values at constrained nodes; None; [''md.stressbalance.spcvx
     = np.nan * np.ones(nv)'', ''md.stressbalance.spcvy = np.nan * np.ones(nv)'', ''Then set specific BCs:
-    spcvx[boundary_nodes] = prescribed_value'']; Use SetIceShelfBC() or SetMarineIceSheetBC() whi'
+    spcvx[boundary_nodes] = prescribed_value'']; Use SetIceShelfBC() or SetMarineIceSheetBC() which handle
+    this correctly'
   severity: silent
 - id: dt_013
   symptom: Solver crashes immediately with matrix assembly error or singular matrix.
@@ -473,7 +497,7 @@ known_issues:
     singular element stiffness matrices. This can happen when the domain outline has coincident points,
     sharp notches, or when the resolution is too large relative to narrow domain features.
 
-    ; [''triangle'', ''bamg'', ''m'
+    ; [''triangle'', ''bamg'', ''mesh'']'
   remedy: 'Clean domain outline (remove duplicate points) and adjust resolution; None; [''Check element
     areas: min_area should be > 0'', ''Remove coincident points from .exp file'', ''Reduce resolution
     (larger value = coarser mesh)'']; BAMG automatically avoids degenerate elements with gradation control'
@@ -484,7 +508,7 @@ known_issues:
     outline produces multiple disconnected polygons or the mesher creates isolated element groups, the
     solver treats them as separate problems. One region may be solved while others get default zero values.
 
-    ; [''trian'
+    ; [''triangle'', ''bamg'', ''domain_outline'']'
   remedy: Ensure domain outline is a single closed polygon without self-intersections; None; ['Check mesh
     connectivity after generation', 'Merge disconnected domain outlines into a single polygon', "Use BAMG's
     'hmax' to ensure all regions are connected"]; Inspect mesh visually after generation
@@ -492,13 +516,16 @@ known_issues:
 - id: dt_015
   symptom: Velocities qualitatively wrong (pattern correct but magnitude off). Missing vertical shear
     effects.
-  diagnosis: Wrong flow equation for the domain type (e.g., SSA for slow grounded interior); SSA (Shallow
+  diagnosis: 'Wrong flow equation for the domain type (e.g., SSA for slow grounded interior); SSA (Shallow
     Shelf Approximation) neglects vertical shear — it works for ice shelves and fast ice streams but underestimates
-    velocity in slow grounded regions where internal deformation (vertical shear) dominates. SIA ca
+    velocity in slow grounded regions where internal deformation (vertical shear) dominates. SIA captures
+    vertical shear but doesn''t work for ice shelves (no horizontal stretching).
+
+    ; [''setflowequation'', ''flowequation'']'
   remedy: 'Use SIA for slow grounded ice, SSA for fast streams/shelves, HO/FS for complex regions; None;
     [''For ice shelves: use SSA'', ''For grounded interiors: use SIA or HO'', ''For transition zones:
     use HO or FS'', ''When in doubt: start with SSA, compare to observations'']; Compare simulated vs
-    observed velocity '
+    observed velocity patterns during validation'
   severity: degraded
 - id: dt_016
   symptom: 'Error: PETSc library not found. Or: issm binary crashes with shared library error.'
@@ -517,38 +544,47 @@ known_issues:
   diagnosis: 'Time step too large — violates CFL condition for mass transport; The mass transport equation
     has a CFL stability condition: dt < dx / max(vel). For fast-flowing glaciers (vel ~ 10 km/yr) with
     fine mesh (dx ~ 5 km), dt must be < 0.5 yr. Using dt = 1 yr or larger produces numerical oscillations
-    that g'
+    that grow exponentially.
+
+    ; [''timestepping'', ''transient'']'
   remedy: 'Reduce time step: dt < min(dx) / max(vel); None; [''Estimate CFL: dt_max = min_element_size
     / max_velocity'', ''Set md.timestepping.time_step = 0.5 * dt_max for safety margin'', ''Typical values:
     0.01-1.0 years depending on mesh and velocity'']; Start with small dt and increase gradually'
   severity: degraded
 - id: dt_018
   symptom: Solver produces non-physical surface elevation. Surface does not match expected profile.
-  diagnosis: Inconsistent geometry — surface ≠ base + thickness; ISSM enforces the constraint surface
+  diagnosis: 'Inconsistent geometry — surface ≠ base + thickness; ISSM enforces the constraint surface
     = base + thickness. If these three fields are loaded from different datasets at different resolutions
     and not reconciled, small inconsistencies accumulate. Large inconsistencies can cause the solver to
-    fail or p
+    fail or produce non-physical stress fields.
+
+    ; [''parameterize'', ''geometry'']'
   remedy: 'Recompute one field from the other two: surface = base + thickness; convert_geometry_to_issm;
     [''Choose two trusted fields and compute the third'', ''md.geometry.surface = md.geometry.base + md.geometry.thickness'',
-    ''Verify: max(|surface - base - thickness|) < 0.01 m'']; convert_geometry_to_issm enforces'
+    ''Verify: max(|surface - base - thickness|) < 0.01 m'']; convert_geometry_to_issm enforces consistency
+    automatically'
   severity: silent
 - id: dt_019
   symptom: Transient simulation starts from zero velocity. First few timesteps produce unrealistic thickness
     changes.
-  diagnosis: Missing initial velocity for transient solve; Transient simulations need initial velocity
+  diagnosis: 'Missing initial velocity for transient solve; Transient simulations need initial velocity
     fields (md.initialization.vx, vy). If these are zero or NaN, the first mass transport step uses zero
     velocity, producing zero flux divergence and no thickness change — or an abrupt jump when velocity
-    catches up
+    catches up at step 2.
+
+    ; [''initialization'', ''transient'']'
   remedy: 'Run Stressbalance solve first, use results as initialization; run_issm; ["md = solve(md, ''Stressbalance'')",
     ''md.initialization.vx = md.results.StressbalanceSolution.Vx'', ''md.initialization.vy = md.results.StressbalanceSolution.Vy'',
-    "Then: md = solve(md, ''Transient'')"]; Always run diagnostic solve be'
+    "Then: md = solve(md, ''Transient'')"]; Always run diagnostic solve before transient'
   severity: degraded
 - id: dt_020
   symptom: Flotation criterion wrong. Grounding line in wrong position. Ice shelf base elevation incorrect.
   diagnosis: 'Wrong density constants — ρ_ice and/or ρ_water incorrect; ISSM uses md.materials.rho_ice
     (default 917 kg/m^3) and md.materials.rho_water (default 1023 kg/m^3 for ocean). The flotation criterion
     is: base = -ρ_ice/ρ_water × thickness. If freshwater density (1000) is used instead of seawater (1023),
-    th'
+    the grounding line shifts landward.
+
+    ; [''materials'', ''mask'', ''geometry'']'
   remedy: 'Set md.materials.rho_ice = 917, md.materials.rho_water = 1023 for marine ice sheets; None;
     [''Verify: md.materials.rho_ice should be ~917 kg/m^3'', ''Verify: md.materials.rho_water should be
     ~1023 kg/m^3 (ocean) or 1000 (freshwater lakes)'']; ISSM defaults are correct — only check if manually

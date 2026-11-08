@@ -413,7 +413,7 @@
     prevention: The S1 tool handles this automatically. If writing custom LDD code, ALWAYS verify with
       wflow's own flowgraph logic in Julia.
   severity: fatal
-  verified: 2026-04-10 (Bengbu 0 cycles, Xixian 0 cycles)
+  seen_at: "2026-04-10, Bengbu and Xixian"
   cross_references:
   - dt_w027
 - id: dt_w015
@@ -781,7 +781,7 @@
       numpy-space (for the raw array) AND wflow-space (for the transposed+reversed array).
 
       Source: wflow/src/utils.jl (PCR_DIR constant), wflow/src/io.jl (read_standardized, read_y_axis sorts
-      to ascending, reverse_data!). Discovered 2026-04-10 revalidation.
+      to ascending, reverse_data!).
 
       '
     affected_components:
@@ -801,7 +801,7 @@
     - '6. Verify: the Brooks-Corey ''c'' variable must have a layer dimension (layer, y, x)'
     prevention: The S1 tool run_hydromt_build.py handles all this automatically since 2026-04-10
   severity: fatal
-  verified: 2026-04-10 (Bengbu + Xixian)
+  seen_at: "2026-04-10, Bengbu and Xixian"
   cross_references:
   - dt_w014
 - id: dt_w031
@@ -1061,7 +1061,7 @@
   format_spec_violated: wflow.outputs.primary.discharge.variable (q_river, m3/s) vs outputs.primary.runoff
     (unrouted, dt_w025)
   canonical_intent: ki_local_if_pass
-  added_by_run: wflow_retry7
+  seen_at: "date not recorded, run wflow_retry7"
 - id: dt_w040
   stage: s1_hydromt
   failure_domain: silent_error
@@ -1101,7 +1101,7 @@
   - dt_w015
   - dt_w037
   canonical_intent: ki_local_if_pass
-  added_by_run: wflow_grdc_caravan_pelotas
+  seen_at: "date not recorded, run wflow_grdc_caravan_pelotas"
 - id: dt_w041
   stage: s1_hydromt
   failure_domain: parameter_format
@@ -1140,4 +1140,4 @@
   - dt_w036
   - dt_w037
   canonical_intent: ki_local_if_pass
-  added_by_run: wflow_grdc_caravan_pelotas
+  seen_at: "date not recorded, run wflow_grdc_caravan_pelotas"

@@ -552,7 +552,7 @@
   severity: silent
   cross_references: [dt_004]
 
-# --- Miyun Validation Findings (2026-03-22) ---
+# --- Findings from a real-reservoir run (where and when: each entry's seen_at) ---
 
 - id: dt_023
   stage: s8_execution
@@ -578,6 +578,7 @@
     prevention: "generate_glm_nml now always includes dt_iceon_avg and min_ice_thickness"
   severity: silent
   cross_references: [dt_027, dt_014]
+  seen_at: "2026-03-22, Miyun Reservoir"
 
 - id: dt_024
   stage: s2_met_forcing
@@ -603,6 +604,7 @@
     prevention: "validate_outputs() checks that Rain column sum > 0 for simulations > 1 year"
   severity: silent
   cross_references: [dt_001]
+  seen_at: "2026-03-22, Miyun Reservoir"
 
 - id: dt_025
   stage: s6_namelist
@@ -628,6 +630,7 @@
     prevention: "generate_glm_nml.py now auto-detects timefmt from start format"
   severity: fatal
   cross_references: [dt_005]
+  seen_at: "2026-03-22, Miyun Reservoir"
 
 - id: dt_026
   stage: s2_met_forcing
@@ -639,7 +642,7 @@
   diagnosis:
     root_cause: "Timestamp alignment issue between 3-hourly CMFD forcing and GLM internal dt=3600s. GLM may not correctly interpolate between 3-hourly records."
     explanation: >
-      With met_miyun.csv (3-hourly, 29217 rows) and subdaily=.true., GLM produces
+      With a 3-hourly met CSV and subdaily=.true., GLM produces
       unrealistic output: max surface T = 4.55 C instead of ~30 C. The same forcing
       data averaged to daily with subdaily=.false. produces correct seasonal cycle.
       Suggests a parsing or interpolation bug with 3-hourly data.
@@ -653,6 +656,7 @@
     prevention: "Default to subdaily=.false. with daily met. Only use subdaily=.true. with hourly (not 3-hourly) data."
   severity: silent
   cross_references: [dt_020]
+  seen_at: "2026-03-22, Miyun Reservoir"
 
 - id: dt_027
   stage: s6_namelist
@@ -683,6 +687,7 @@
     prevention: "generate_glm_nml always includes dt_iceon_avg=0.02 and min_ice_thickness=0.001 in snowice block"
   severity: silent
   cross_references: [dt_023, dt_014]
+  seen_at: "2026-03-22, Miyun Reservoir"
 
 # --- AED2 Configuration (Phytoplankton / Water Quality) ---
 
@@ -793,7 +798,7 @@
       lake level, or ice thickness.'
   format_spec_violated: none (applicability/domain rule, not a format rule)
   canonical_intent: ki_local_if_pass
-  added_by_run: GLM_retry1
+  seen_at: "date not recorded, run GLM_retry1"
 - id: dt_032
   symptom:
     description: GLM-AED2 runs to completion (exit 0, "Model Run Complete") but ALL AED2 water-column
@@ -819,7 +824,7 @@
       the first csv_point WQ row is finite (not -nan) before trusting the run.'
   format_spec_violated: AED2 module-coupling / solver stability (silent NaN, not a parser rule)
   canonical_intent: ki_local_if_pass
-  added_by_run: GLM_real_case_guokongzhan
+  seen_at: "date not recorded, run GLM_real_case_guokongzhan"
 - id: dt_033
   symptom:
     description: AED2 enabled and WQ state is finite, but parse_aed_output.py returns an empty timeseries
@@ -838,7 +843,7 @@
       in &init_profiles, and inflow_varnum/inflow_vars to glm3.nml after generate_glm_nml.'
   format_spec_violated: output parsing (array rank) + namelist AED2 wiring gap
   canonical_intent: ki_global
-  added_by_run: GLM_real_case_guokongzhan
+  seen_at: "date not recorded, run GLM_real_case_guokongzhan"
 - id: dt_034
   symptom:
     description: 'Validating a depth-resolved AED2 variable (e.g. OXY_oxy dissolved oxygen) over the FULL
@@ -863,14 +868,14 @@
       a depth-uniform profile sampler, and take the top/bottom active layer for surface/bottom DO. Convert
       OXY_oxy mmol/m3 -> mg/L via x32/1000. CALIBRATION LEVER: the shipped Fsed_oxy default (-40 mmol/m2/day
       sediment oxygen demand) OVER-depletes the hypolimnion of meso-/oligotrophic lakes - it drives bottom
-      and column DO to ~0 (DeGray AR column-mean PBIAS -48%, NSE -1.8). Reduce Fsed_oxy to ~-12 and raise
-      Ksed_oxy (~50) so SOD shuts off as DO falls; this lifted DeGray column-mean PBIAS to -6% / NSE +0.06
-      / KGE 0.53 and surface DO to r 0.89 / NSE 0.53 / KGE 0.75. For depthless WQP grab-sample profiles,
+      and column DO to ~0 (a large negative column-mean DO bias). Reduce Fsed_oxy to ~-12 and raise
+      Ksed_oxy (~50) so SOD shuts off as DO falls; in a real-lake run this removed most of the column-mean
+      DO bias and also gave a good surface DO match. For depthless WQP grab-sample profiles,
       the depth-unambiguous comparison is per-date obs-max <-> sim top-layer (surface DO).'
   format_spec_violated: output extraction (fixed-depth csv_point + bulk netcdf read) + SOD calibration
     default
   canonical_intent: ki_global
-  added_by_run: GLM_real_case_degray_do
+  seen_at: "date not recorded, DeGray Lake, Arkansas (run GLM_real_case_degray_do)"
 - id: dt_036
   symptom:
     description: 'Validating simulated water TEMPERATURE against an observation taken at a FIXED depth
@@ -902,7 +907,7 @@
       only for a single near-surface point and carries the spurious-0.0 risk of dt_034.'
   format_spec_violated: output extraction (fixed-depth interpolation on an adaptive grid)
   canonical_intent: ki_global
-  added_by_run: GLM_real_case_lake_catoma_ismn
+  seen_at: "date not recorded, Lake Catoma (run GLM_real_case_lake_catoma_ismn)"
 - id: dt_037
   symptom:
     description: 'Scoring GLM against an in-situ TEMPERATURE network (ISMN KISSPATH_DATA/ismn_clean.db
@@ -926,10 +931,10 @@
       NOTE on interpretation: a soil-temperature station is a PROXY for the lake thermal regime - the
       seasonal pattern (r) is the KI-validity signal, while magnitude (PBIAS) carries a real physical
       offset because water has far more thermal inertia than soil (Lake Catoma 2015-2020: winter sim water
-      ~11.5 C vs obs soil ~7.5 C at 5 cm, PBIAS +14.9%, r 0.94). Do not calibrate GLM to remove that offset.'
+      ~11.5 C vs obs soil ~7.5 C at 5 cm). Do not calibrate GLM to remove that offset.'
   format_spec_violated: observation ingestion (read-only WAL sqlite, depth units, QC/sensor aggregation)
   canonical_intent: ki_global
-  added_by_run: GLM_real_case_lake_catoma_ismn
+  seen_at: "date not recorded, Lake Catoma (run GLM_real_case_lake_catoma_ismn)"
 - id: dth
   stage: s4_outflow
   failure_domain: outflow_geometry
